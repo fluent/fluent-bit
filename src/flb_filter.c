@@ -77,6 +77,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
     ssize_t write_at;
     struct mk_list *head;
     struct flb_filter_instance *f_ins;
+    struct flb_input_instance *i_ins = ic->in;
 
     /* For the incoming Tag make sure to create a NULL terminated reference */
     ntag = flb_malloc(tag_len + 1);
@@ -126,6 +127,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
                                       &out_buf,       /* new data         */
                                       &out_size,      /* new data size    */
                                       f_ins,          /* filter instance  */
+                                      i_ins,          /* input instance   */
                                       f_ins->context, /* filter priv data */
                                       config);
 

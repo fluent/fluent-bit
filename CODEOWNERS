@@ -22,6 +22,8 @@
 /appveyor.yml            @niedbalski @patrick-stephens
 /dockerfiles/            @niedbalski @patrick-stephens
 /packaging/              @niedbalski @patrick-stephens
+/codebase-structure.svg  @niedbalski @patrick-stephens
+/install.sh              @niedbalski @patrick-stephens
 
 # Core: Signv4
 # ------------
@@ -39,7 +41,7 @@
 # Input Plugins
 # -------------
 /plugins/in_collectd     @fujimotos
-/plugins/in_docker       @ashutoshdhundhara
+/plugins/in_docker       @nokute78 @edsiper
 /plugins/in_dummy        @nokute78
 /plugins/in_netif        @nokute78
 /plugins/in_statsd       @fujimotos

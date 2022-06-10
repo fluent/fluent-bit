@@ -37,7 +37,7 @@ jobs:
             local_tag: arm32
     steps:
       - name: Log in to the Container registry
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -72,7 +72,7 @@ jobs:
             format: table
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v1
+        uses: github/codeql-action/upload-sarif@v2
         with:
             sarif_file: trivy-results-${{ matrix.local_tag }}.sarif
             category: ${{ matrix.arch }} container
@@ -80,7 +80,7 @@ jobs:
 
       # In case we need to analyse the uploaded files for some reason.
       - name: Detain results for debug if needed
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: trivy-results-${{ matrix.local_tag }}.sarif
           path: trivy-results-${{ matrix.local_tag }}.sarif

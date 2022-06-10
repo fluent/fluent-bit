@@ -13,6 +13,7 @@ if [ -z "$1" ]; then
     exit 1
 fi
 VERSION="$1"
+MAJOR_VERSION=${MAJOR_VERSION:-$VERSION##\.*}
 
 if [[ ! -d "$SOURCE_DIR" ]]; then
     echo "Missing source directory: $SOURCE_DIR"
@@ -115,3 +116,26 @@ fi
 
 # Sign YUM repo meta-data
 find "/var/www/apt.fluentbit.io" -name repomd.xml -exec gpg --detach-sign --armor --yes -u "releases@fluentbit.io" {} \;
+
+# Windows - we do want word splitting and ensure some files exist
+if compgen -G "$SOURCE_DIR/windows/*$VERSION*" > /dev/null; then
+    echo "Copying Windows artefacts"
+    # shellcheck disable=SC2086
+    cp -vf "$SOURCE_DIR"/windows/*$VERSION* /var/www/releases.fluentbit.io/releases/"$MAJOR_VERSION"/
+else
+    echo "Missing Windows builds"
+fi
+
+# Handle the JSON schema by copying in the new versions (if they exist) and then updating the symlinks that point at the latest.
+if compgen -G "$SOURCE_DIR/fluent-bit-schema*.json" > /dev/null; then
+    echo "Updating JSON schema"
+    cp -vf "$SOURCE_DIR"/fluent-bit-schema*.json /var/www/releases.fluentbit.io/releases/"$MAJOR_VERSION/"
+
+    # Simpler than 'ln --relative --target-directory=/var/www/releases.fluentbit.io/releases/"$MAJOR_VERSION"'
+    pushd /var/www/releases.fluentbit.io/releases/"$MAJOR_VERSION"
+        ln -sf "fluent-bit-schema-$VERSION.json" fluent-bit-schema.json
+        ln -sf "fluent-bit-schema-pretty-$VERSION.json" fluent-bit-schema-pretty.json
+    popd
+else
+    echo "Missing JSON schema"
+fi

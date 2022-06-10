@@ -114,6 +114,12 @@ static int configure(struct flb_filter_throttle_ctx *ctx, struct flb_filter_inst
         flb_plg_error(f_ins, "unable to load configuration");
         return -1;
     }
+    if (ctx->max_rate <= 1.0) {
+        ctx->max_rate = strtod(THROTTLE_DEFAULT_RATE, NULL);
+    }
+    if (ctx->window_size <= 1) {
+        ctx->window_size = strtoul(THROTTLE_DEFAULT_WINDOW, NULL, 10);
+    }
 
     return 0;
 }
@@ -189,6 +195,7 @@ static int cb_throttle_filter(const void *data, size_t bytes,
                               const char *tag, int tag_len,
                               void **out_buf, size_t *out_size,
                               struct flb_filter_instance *f_ins,
+                              struct flb_input_instance *i_ins,
                               void *context,
                               struct flb_config *config)
 {
@@ -199,6 +206,7 @@ static int cb_throttle_filter(const void *data, size_t bytes,
     msgpack_object root;
     size_t off = 0;
     (void) f_ins;
+    (void) i_ins;
     (void) config;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;

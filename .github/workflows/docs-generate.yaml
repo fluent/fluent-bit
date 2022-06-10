@@ -1,0 +1,41 @@
+
+name: Documentation and diagram generation
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    # Do not re-trigger when our own PRs are merged
+    paths-ignore:
+      - codebase-structure.svg
+      - .github/
+jobs:
+  update_diagram:
+    name: Update the codebase structure diagram
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Update diagram
+        # Not "official" enough for a proper semantic release version
+        uses: githubocto/repo-visualizer@main
+        with:
+          excluded_paths: "ignore,.github"
+          output_file: codebase-structure.svg
+          should_push: false
+
+      - name: Generate PR for updates
+        uses: peter-evans/create-pull-request@v4
+        with:
+          commit-message: 'ci: update repo-visualizer diagram'
+          signoff: true
+          branch: ci_update_diagram
+          delete-branch: true
+          title: 'ci: update repo-visualizer diagram'
+          reviewers: 'patrick-stephens,niedbalski'
+          add-paths: |
+            codebase-structure.svg

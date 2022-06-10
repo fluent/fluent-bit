@@ -34,12 +34,11 @@
 #define FLB_STD_SCOPE     "https://www.googleapis.com/auth/logging.write"
 
 /* Stackdriver authorization URL */
-#define FLB_STD_AUTH_URL  "https://www.googleapis.com/oauth2/v4/token"
+#define FLB_STD_AUTH_URL  "https://oauth2.googleapis.com/token"
 
 /* Stackdriver Logging 'write' end-point */
 #define FLB_STD_WRITE_URI "/v2/entries:write"
-#define FLB_STD_WRITE_URL \
-    "https://logging.googleapis.com" FLB_STD_WRITE_URI
+#define FLB_STD_WRITE_URL "https://logging.googleapis.com" FLB_STD_WRITE_URI
 
 /* Timestamp format */
 #define FLB_STD_TIME_FMT  "%Y-%m-%dT%H:%M:%S"
@@ -131,11 +130,15 @@ struct flb_stackdriver {
     flb_sds_t node_name;
     bool is_k8s_resource_type;
 
-    flb_sds_t labels_key;
     flb_sds_t local_resource_id;
     flb_sds_t tag_prefix;
     /* shadow tag_prefix for safe deallocation */
     flb_sds_t tag_prefix_k8s;
+
+    /* labels */
+    flb_sds_t labels_key;
+    struct mk_list *labels;
+    struct mk_list config_labels; 
 
     /* generic resources */
     flb_sds_t location;

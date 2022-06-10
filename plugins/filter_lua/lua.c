@@ -38,6 +38,7 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
                        struct flb_config *config,
                        void *data)
 {
+    int err;
     int ret;
     (void) data;
     struct lua_filter *ctx;
@@ -58,13 +59,31 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
     }
     ctx->lua = lj;
 
-    /* Load Script */
-    ret = flb_luajit_load_script(ctx->lua, ctx->script);
+    /* Lua script source code */
+    if (ctx->code) {
+        ret = flb_luajit_load_buffer(ctx->lua,
+                                     ctx->code, flb_sds_len(ctx->code),
+                                     "fluentbit.lua");
+    }
+    else {
+        /* Load Script / file path*/
+        ret = flb_luajit_load_script(ctx->lua, ctx->script);
+    }
+
     if (ret == -1) {
         lua_config_destroy(ctx);
         return -1;
     }
-    lua_pcall(ctx->lua->state, 0, 0, 0);
+
+    err = lua_pcall(ctx->lua->state, 0, 0, 0);
+    if (err != 0) {
+        flb_error("[luajit] invalid lua content, error=%d: %s",
+                  err, lua_tostring(lj->state, -1));
+        lua_pop(lj->state, 1);
+        lua_config_destroy(ctx);
+        return -1;
+    }
+
 
     if (flb_lua_is_valid_func(ctx->lua->state, ctx->call) != FLB_TRUE) {
         flb_plg_error(ctx->ins, "function %s is not found", ctx->call);
@@ -93,13 +112,54 @@ static void mpack_buffer_flush(mpack_writer_t* writer, const char* buffer, size_
     flb_sds_cat_safe(&ctx->packbuf, buffer, count);
 }
 
+static void pack_result_mpack(lua_State *l,
+                              mpack_writer_t *writer,
+                              struct flb_lua_l2c_config *l2cc,
+                              struct flb_time *t)
+{
+    int i;
+    int len;
+
+    if (lua_type(l, -1) != LUA_TTABLE) {
+        return;
+    }
+
+    len = flb_lua_arraylength(l);
+    if (len > 0) {
+        /* record split */
+        for (i = 1; i <= len; i++) {
+            /* write array tag */
+            mpack_write_tag(writer, mpack_tag_array(2));
+            /* write timestamp */
+            flb_time_append_to_mpack(writer, t, 0);
+            /* get the subrecord */
+            lua_rawgeti(l, -1, i);
+            /* convert */
+            flb_lua_tompack(l, writer, 0, l2cc);
+            lua_pop(l, 1);
+        }
+    }
+    else {
+        /* write array tag */
+        mpack_write_tag(writer, mpack_tag_array(2));
+        /* write timestamp */
+        flb_time_append_to_mpack(writer, t, 0);
+        /* convert */
+        flb_lua_tompack(l, writer, 0, l2cc);
+    }
+    /* pop */
+    lua_pop(l, 1);
+}
+
 static int cb_lua_filter_mpack(const void *data, size_t bytes,
                                const char *tag, int tag_len,
                                void **out_buf, size_t *out_bytes,
                                struct flb_filter_instance *f_ins,
+                               struct flb_input_instance *i_ins,
                                void *filter_context,
                                struct flb_config *config)
 {
+    (void) i_ins;
     int ret;
     struct flb_time t_orig;
     struct flb_time t;
@@ -230,16 +290,18 @@ static int cb_lua_filter_mpack(const void *data, size_t bytes,
         mpack_writer_init(&writer, writebuf, sizeof(writebuf));
         mpack_writer_set_context(&writer, ctx);
         mpack_writer_set_flush(&writer, mpack_buffer_flush);
-        /* write array tag */
-        mpack_write_tag(&writer, mpack_tag_array(2));
-        /* write timestamp: convert from double to Fluent Bit format */
-        flb_time_append_to_mpack(&writer, &t, 0);
-        /* write the lua table */
-        flb_lua_tompack(ctx->lua->state, &writer, 0, &ctx->l2cc);
-        lua_pop(ctx->lua->state, 1);
+        /* write the result */
+        pack_result_mpack(ctx->lua->state, &writer, &ctx->l2cc, &t);
         /* flush the writer */
         mpack_writer_flush_message(&writer);
         mpack_writer_destroy(&writer);
+    }
+
+    if (flb_sds_len(ctx->packbuf) == 0) {
+        /* All records are removed */
+        *out_buf = NULL;
+        *out_bytes = 0;
+        return FLB_FILTER_MODIFIED;
     }
 
     /* allocate outbuf that contains the modified chunks */
@@ -335,12 +397,14 @@ static int cb_lua_filter(const void *data, size_t bytes,
                          const char *tag, int tag_len,
                          void **out_buf, size_t *out_bytes,
                          struct flb_filter_instance *f_ins,
+                         struct flb_input_instance *i_ins,
                          void *filter_context,
                          struct flb_config *config)
 {
     int ret;
     size_t off = 0;
     (void) f_ins;
+    (void) i_ins;
     (void) config;
     double ts = 0;
     msgpack_object *p;
@@ -501,6 +565,11 @@ static struct flb_config_map config_map[] = {
      "The path of lua script."
     },
     {
+     FLB_CONFIG_MAP_STR, "code", NULL,
+     0, FLB_FALSE, 0,
+     "String that contains the Lua script source code"
+    },
+    {
      FLB_CONFIG_MAP_STR, "call", NULL,
      0, FLB_TRUE, offsetof(struct lua_filter, call),
      "Lua function name that will be triggered to do filtering."
@@ -529,6 +598,7 @@ static struct flb_config_map config_map[] = {
      "If enabled, Fluent-bit will pass the timestamp as a Lua table "
      "with keys \"sec\" for seconds since epoch and \"nsec\" for nanoseconds."
     },
+
     {0}
 };
 

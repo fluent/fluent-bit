@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_pthread.h>
+#include <fluent-bit/flb_kv.h>
 
 #include <msgpack.h>
 
@@ -291,8 +292,8 @@ static int get_oauth2_token(struct flb_stackdriver *ctx)
 
     ret = flb_oauth2_payload_append(ctx->o,
                                     "grant_type", -1,
-                                    "urn:ietf:params:oauth:"
-                                    "grant-type:jwt-bearer", -1);
+                                    "urn%3Aietf%3Aparams%3Aoauth%3A"
+                                    "grant-type%3Ajwt-bearer", -1);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error appending oauth2 params");
         flb_sds_destroy(sig_data);
@@ -911,12 +912,12 @@ static int process_local_resource_id(struct flb_stackdriver *ctx,
 }
 
 /*
- * parse_labels
+ * get_payload_labels
  * - Iterate throught the original payload (obj) and find out the entry that matches
  *   the labels_key
  * - Used to convert all labels under labels_key to root-level `labels` field
  */
-static msgpack_object *parse_labels(struct flb_stackdriver *ctx, msgpack_object *obj)
+static msgpack_object *get_payload_labels(struct flb_stackdriver *ctx, msgpack_object *obj)
 {
     int i;
     int len;
@@ -938,6 +939,50 @@ static msgpack_object *parse_labels(struct flb_stackdriver *ctx, msgpack_object 
     //flb_plg_debug(ctx->ins, "labels_key [%s] not found in the payload",
     //              ctx->labels_key);
     return NULL;
+}
+
+static void pack_labels(struct flb_stackdriver *ctx,
+                        msgpack_packer *mp_pck,
+                        msgpack_object *payload_labels_ptr)
+{
+    int i;
+    int ret;
+    int labels_size = 0;
+    char *val;
+    struct mk_list *head;
+    struct flb_kv *list_kv;
+    msgpack_object_kv *obj_kv = NULL;
+
+    /* Determine size of labels map */
+    labels_size = mk_list_size(&ctx->config_labels);
+    if (payload_labels_ptr != NULL &&
+        payload_labels_ptr->type == MSGPACK_OBJECT_MAP) {
+        labels_size += payload_labels_ptr->via.map.size;
+    }
+
+    msgpack_pack_map(mp_pck, labels_size);
+
+    /* pack labels from the payload */
+    if (payload_labels_ptr != NULL &&
+        payload_labels_ptr->type == MSGPACK_OBJECT_MAP) {
+
+        for (i = 0; i < payload_labels_ptr->via.map.size; i++) {
+            obj_kv = &payload_labels_ptr->via.map.ptr[i];
+            msgpack_pack_object(mp_pck, obj_kv->key);
+            msgpack_pack_object(mp_pck, obj_kv->val);
+        }
+    }
+
+    /* pack labels set in configuration */
+    /* in msgpack duplicate keys are overriden by the last set */
+    /* static label keys override payload labels */
+    mk_list_foreach(head, &ctx->config_labels){
+        list_kv = mk_list_entry(head, struct flb_kv, _head);
+        msgpack_pack_str(mp_pck, flb_sds_len(list_kv->key));
+        msgpack_pack_str_body(mp_pck, list_kv->key, flb_sds_len(list_kv->key));
+        msgpack_pack_str(mp_pck, flb_sds_len(list_kv->val));
+        msgpack_pack_str_body(mp_pck, list_kv->val, flb_sds_len(list_kv->val));
+    }
 }
 
 static void cb_results(const char *name, const char *value,
@@ -1496,6 +1541,10 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     /* Count number of records */
     array_size = total_records;
 
+    /* Parameters for labels */
+    msgpack_object *payload_labels_ptr;
+    int labels_size = 0;
+
     /*
      * Search each entry and validate insertId.
      * Reject the entry if insertId is invalid.
@@ -1975,17 +2024,26 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             entry_size += 1;
         }
 
-        /* Extract labels */
-        labels_ptr = parse_labels(ctx, obj);
-        if (labels_ptr != NULL) {
-            if (labels_ptr->type != MSGPACK_OBJECT_MAP) {
-                flb_plg_error(ctx->ins, "the type of labels should be map");
-                flb_sds_destroy(operation_id);
-                flb_sds_destroy(operation_producer);
-                msgpack_unpacked_destroy(&result);
-                msgpack_sbuffer_destroy(&mp_sbuf);
-                return NULL;
-            }
+        /* Extract payload labels */
+        payload_labels_ptr = get_payload_labels(ctx, obj);
+        if (payload_labels_ptr != NULL &&
+            payload_labels_ptr->type != MSGPACK_OBJECT_MAP) {
+            flb_plg_error(ctx->ins, "the type of payload labels should be map");
+            flb_sds_destroy(operation_id);
+            flb_sds_destroy(operation_producer);
+            msgpack_unpacked_destroy(&result);
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            return -1;
+        }
+
+        /* Number of parsed labels */
+        labels_size = mk_list_size(&ctx->config_labels);
+        if (payload_labels_ptr != NULL &&
+            payload_labels_ptr->type == MSGPACK_OBJECT_MAP) {
+            labels_size += payload_labels_ptr->via.map.size;
+        }
+
+        if (labels_size > 0) {
             entry_size += 1;
         }
 
@@ -2043,10 +2101,10 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
         }
 
         /* labels */
-        if (labels_ptr != NULL) {
+        if (labels_size > 0) {
             msgpack_pack_str(&mp_pck, 6);
             msgpack_pack_str_body(&mp_pck, "labels", 6);
-            msgpack_pack_object(&mp_pck, *labels_ptr);
+            pack_labels(ctx, &mp_pck, payload_labels_ptr);
         }
 
         /* Clean up id and producer if operation extracted */
@@ -2368,8 +2426,8 @@ static struct flb_config_map config_map[] = {
      "Set the path for the google service credentials file"
     },
     {
-     FLB_CONFIG_MAP_STR, "metadata_server", FLB_STD_METADATA_SERVER,
-     0, FLB_TRUE, offsetof(struct flb_stackdriver, metadata_server),
+     FLB_CONFIG_MAP_STR, "metadata_server", (char *)NULL,
+     0, FLB_FALSE, 0,
      "Set the metadata server"
     },
     {
@@ -2452,6 +2510,11 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_STR, "task_id", (char *)NULL,
       0, FLB_TRUE, offsetof(struct flb_stackdriver, task_id),
       "Set the resource task id"
+    },
+    {
+      FLB_CONFIG_MAP_CLIST, "labels", NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, labels),
+      "Set the labels"
     },
     {
       FLB_CONFIG_MAP_STR, "labels_key", DEFAULT_LABELS_KEY,

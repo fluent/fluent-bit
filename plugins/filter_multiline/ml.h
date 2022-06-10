@@ -21,10 +21,31 @@
 #define FLB_FILTER_MULTILINE_H
 
 #include <fluent-bit/flb_filter_plugin.h>
+#include "ml_concat.h"
+
+#define FLB_MULTILINE_MEM_BUF_LIMIT_DEFAULT  "10M"
+#define FLB_MULTILINE_METRIC_EMITTED         200
+#define FLB_MULTILINE_MODE_PARTIAL_MESSAGE   "partial_message"
+#define FLB_MULTILINE_MODE_PARSER            "parser"
+
+/* 
+ * input instance + tag is the unique identifier
+ * for a multiline stream
+ * TODO: implement clean up of streams that haven't been used recently
+ */
+struct ml_stream {
+    flb_sds_t tag;
+    flb_sds_t input_name;
+    uint64_t stream_id;
+
+    struct mk_list _head;
+};
 
 struct ml_ctx {
     int debug_flush;
+    int use_buffer;
     flb_sds_t key_content;
+    flb_sds_t mode;
 
     /* packaging buffers */
     msgpack_sbuffer mp_sbuf;  /* temporary msgpack buffer */
@@ -34,8 +55,33 @@ struct ml_ctx {
     uint64_t stream_id;
     struct flb_ml *m;
     struct mk_list *multiline_parsers;
+    int flush_ms;
+
+    int timer_created;
+
+    int partial_mode;
+
+    struct mk_list ml_streams;
+
+    struct mk_list split_message_packers;
 
     struct flb_filter_instance *ins;
+
+    /* emitter */
+    flb_sds_t emitter_name;                 /* emitter input plugin name */
+    flb_sds_t emitter_storage_type;         /* emitter storage type */
+    size_t emitter_mem_buf_limit;           /* Emitter buffer limit */
+    struct flb_input_instance *ins_emitter; /* emitter input plugin instance */
+    struct flb_config *config;              /* Fluent Bit context */
+
+#ifdef FLB_HAVE_METRICS
+    struct cmt_counter *cmt_emitted;
+#endif
 };
+
+/* Register external function to emit records, check 'plugins/in_emitter' */
+int in_emitter_add_record(const char *tag, int tag_len,
+                          const char *buf_data, size_t buf_size,
+                          struct flb_input_instance *in);
 
 #endif

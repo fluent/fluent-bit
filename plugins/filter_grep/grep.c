@@ -113,6 +113,13 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
         /* Get remaining content (regular expression) */
         sentry = mk_list_entry_last(split, struct flb_split_entry, _head);
         rule->regex_pattern = flb_strndup(sentry->value, sentry->len);
+        if (rule->regex_pattern == NULL) {
+            flb_errno();
+            delete_rules(ctx);
+            flb_free(rule);
+            flb_utils_split_free(split);
+            return -1;
+        }
 
         /* Release split */
         flb_utils_split_free(split);
@@ -211,6 +218,7 @@ static int cb_grep_filter(const void *data, size_t bytes,
                           const char *tag, int tag_len,
                           void **out_buf, size_t *out_size,
                           struct flb_filter_instance *f_ins,
+                          struct flb_input_instance *i_ins,
                           void *context,
                           struct flb_config *config)
 {
@@ -222,6 +230,7 @@ static int cb_grep_filter(const void *data, size_t bytes,
     msgpack_object root;
     size_t off = 0;
     (void) f_ins;
+    (void) i_ins;
     (void) config;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;

@@ -45,7 +45,6 @@
 #define FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY_LEN \
     (sizeof(FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY) - 1)
 #define FLB_KUBE_TOKEN_BUF_SIZE 8192       /* 8KB */
-#define FLB_KUBE_TOKEN_TTL 600             /* 10 minutes */
 
 static int file_to_buffer(const char *path,
                           char **out_buf, size_t *out_size)
@@ -161,17 +160,15 @@ static int get_http_auth_header(struct flb_kube *ctx)
         if (ret == -1) {
             flb_plg_warn(ctx->ins, "failed to run command %s", ctx->kube_token_command);
         }
-        ctx->kube_token_create = time(NULL);
-    } 
+    }
     else {
         ret = file_to_buffer(ctx->token_file, &tk, &tk_size);
         if (ret == -1) {
             flb_plg_warn(ctx->ins, "cannot open %s", FLB_KUBE_TOKEN);
         }
-        /* Token from token file will not expire */
-        /* Set the creation time to 0 to aviod refresh */
-        ctx->kube_token_create = 0;
+        flb_plg_info(ctx->ins, " token updated", FLB_KUBE_TOKEN);
     }
+    ctx->kube_token_create = time(NULL);
 
     /* Token */
     if (ctx->token != NULL) {
@@ -210,19 +207,17 @@ static int refresh_token_if_needed(struct flb_kube *ctx)
     int expired = 0;
     int ret;
 
-    if (ctx->kube_token_command != NULL) {
-        if (ctx->kube_token_create > 0) {
-            if (time(NULL) > ctx->kube_token_create + FLB_KUBE_TOKEN_TTL) {
-                expired = FLB_TRUE;
-            }
+    if (ctx->kube_token_create > 0) {
+        if (time(NULL) > ctx->kube_token_create + ctx->kube_token_ttl) {
+            expired = FLB_TRUE;
         }
-        
-        if (expired || ctx->kube_token_create == 0) {
-            ret = get_http_auth_header(ctx);
-            if (ret == -1) {
-                flb_plg_warn(ctx->ins, "failed to set http auth header");
-                return -1;
-            }
+    }
+
+    if (expired || ctx->kube_token_create == 0) {
+        ret = get_http_auth_header(ctx);
+        if (ret == -1) {
+            flb_plg_warn(ctx->ins, "failed to set http auth header");
+            return -1;
         }
     }
 
