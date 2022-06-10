@@ -21,6 +21,8 @@ include_directories(
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_SNAPPY}
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CMETRICS}/include
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CARES}/include
+  ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_RING_BUFFER}/lwrb/src/include
+
   ${CMAKE_CURRENT_BINARY_DIR}/${FLB_PATH_LIB_CARES}
   ${CMAKE_CURRENT_BINARY_DIR}/${FLB_PATH_LIB_JANSSON}/include
   ${CMAKE_CURRENT_BINARY_DIR}/lib/cmetrics
@@ -28,6 +30,8 @@ include_directories(
 
   ${CMAKE_CURRENT_BINARY_DIR}/lib/monkey/include/
   ${CMAKE_CURRENT_BINARY_DIR}/lib/monkey/include/monkey/
+
+
   )
 
 if(FLB_IN_KAFKA OR FLB_OUT_KAFKA)

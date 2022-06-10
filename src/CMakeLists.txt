@@ -63,6 +63,7 @@ set(src
   flb_typecast.c
   flb_event.c
   flb_base64.c
+  flb_ring_buffer.c
   )
 
 # Config format
@@ -334,6 +335,7 @@ set(FLB_DEPS
   mbedtls
   c-ares
   snappy-c
+  lwrb
   )
 
 if(OPENSSL_FOUND)
