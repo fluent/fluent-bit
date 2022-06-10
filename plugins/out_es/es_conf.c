@@ -186,6 +186,15 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         io_flags |= FLB_IO_IPV6;
     }
 
+    /* Compress (gzip) */
+    tmp = flb_output_get_property("compress", ins);
+    ctx->compress_gzip = FLB_FALSE;
+    if (tmp) {
+        if (strcasecmp(tmp, "gzip") == 0) {
+            ctx->compress_gzip = FLB_TRUE;
+        }
+    }
+
     /* Prepare an upstream handler */
     upstream = flb_upstream_create(config,
                                    ins->host.name,
