@@ -21,6 +21,8 @@
 #include <fluent-bit.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
+#include <float.h>
+#include <msgpack.h>
 #include "flb_tests_runtime.h"
 
 struct test_ctx {
@@ -101,6 +103,130 @@ static void cb_check_str_list(void *ctx, int ffd, int res_ret,
     flb_sds_destroy(out_line);
 }
 
+static int msgpack_strncmp(char* str, size_t str_len, msgpack_object obj)
+{
+    int ret = -1;
+
+    if (str == NULL) {
+        flb_error("str is NULL");
+        return -1;
+    }
+
+    switch (obj.type)  {
+    case MSGPACK_OBJECT_STR:
+        if (obj.via.str.size != str_len) {
+            return -1;
+        }
+        ret = strncmp(str, obj.via.str.ptr, str_len);
+        break;
+    case MSGPACK_OBJECT_POSITIVE_INTEGER:
+        {
+            unsigned long val = strtoul(str, NULL, 10);
+            if (val == (unsigned long)obj.via.u64) {
+                ret = 0;
+            }
+        }
+        break;
+    case MSGPACK_OBJECT_NEGATIVE_INTEGER:
+        {
+            long long val = strtoll(str, NULL, 10);
+            if (val == (unsigned long)obj.via.i64) {
+                ret = 0;
+            }
+        }
+        break;
+    case MSGPACK_OBJECT_FLOAT32:
+    case MSGPACK_OBJECT_FLOAT64:
+        {
+            double val = strtod(str, NULL);
+            if ((val - obj.via.f64) < DBL_EPSILON) {
+                ret = 0;
+            }
+        }
+        break;
+    case MSGPACK_OBJECT_BOOLEAN:
+        if (obj.via.boolean) {
+            if (str_len != 4 /*true*/) {
+                return -1;
+            }
+            ret = strncasecmp(str, "true", 4);
+        }
+        else {
+            if (str_len != 5 /*false*/) {
+                return -1;
+            }
+            ret = strncasecmp(str, "false", 5);
+        }
+        break;
+    default:
+        flb_error("not supported");
+    }
+
+    return ret;
+}
+
+/* Callback to check expected results */
+static void cb_check_msgpack_kv(void *ctx, int ffd, int res_ret,
+                                void *res_data, size_t res_size, void *data)
+{
+    msgpack_unpacked result;
+    msgpack_object obj;
+    size_t off = 0;
+    struct str_list *l = (struct str_list *)data;
+    int i_map;
+    int map_size;
+    int i_list;
+    int num = get_output_num();
+
+    if (!TEST_CHECK(res_data != NULL)) {
+        TEST_MSG("res_data is NULL");
+        return;
+    }
+
+    if (!TEST_CHECK(data != NULL)) {
+        flb_error("data is NULL");
+        return;
+    }
+
+    /* Iterate each item array and apply rules */
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, res_data, res_size, &off) == MSGPACK_UNPACK_SUCCESS) {
+        obj = result.data;
+        /*
+        msgpack_object_print(stdout, obj);
+        */
+        if (obj.type != MSGPACK_OBJECT_ARRAY || obj.via.array.size != 2) {
+            flb_error("array error. type = %d", obj.type);
+            continue;
+        }
+        obj = obj.via.array.ptr[1];
+        if (obj.type != MSGPACK_OBJECT_MAP) {
+            flb_error("map error. type = %d", obj.type);
+            continue;
+        }
+        map_size = obj.via.map.size;
+        for (i_map=0; i_map<map_size; i_map++) {
+            if (obj.via.map.ptr[i_map].key.type != MSGPACK_OBJECT_STR) {
+                flb_error("key is not string. type =%d", obj.via.map.ptr[i_map].key.type);
+                continue;
+            }
+            for (i_list=0; i_list< l->size/2; i_list++)  {
+                if (msgpack_strncmp(l->lists[i_list*2], strlen(l->lists[i_list*2]),
+                                    obj.via.map.ptr[i_map].key) == 0 &&
+                    msgpack_strncmp(l->lists[i_list*2+1], strlen(l->lists[i_list*2+1]),
+                                    obj.via.map.ptr[i_map].val) == 0) {
+                    num++;
+                }
+            }
+        }
+    }
+    set_output_num(num);
+
+    msgpack_unpacked_destroy(&result);
+
+    return ;
+}
+
 static struct test_ctx *test_ctx_create(struct flb_lib_out_cb *data)
 {
     int i_ffd;
@@ -142,6 +268,60 @@ static void test_ctx_destroy(struct test_ctx *ctx)
     flb_stop(ctx->flb);
     flb_destroy(ctx->flb);
     flb_free(ctx);
+}
+
+void flb_test_format_msgpack()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    int ret;
+    int num;
+
+    char *buf1 = "[1, {\"msg\":\"hello world\", \"val\":1000, \"nval\":-10000, \"bool\":true, \"float\":1.234}]";
+    size_t size1 = strlen(buf1);
+
+    char *expected_strs[] = {"msg", "hello world", "val", "1000", "nval", "-10000", "bool", "true", "float", "1.234"};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+    clear_output_num();
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "msgpack",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set_test(ctx->flb, ctx->o_ffd,
+                         "formatter", cb_check_msgpack_kv,
+                          &expected, NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf1, size1);
+    TEST_CHECK(ret >= 0);
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num == expected.size / 2))  {
+        TEST_MSG("got %d, expected %lu", num, expected.size/2);
+    }
+
+    test_ctx_destroy(ctx);
 }
 
 void flb_test_format_json()
@@ -875,6 +1055,7 @@ void flb_test_json_date_format_java_sql_timestamp()
 
 /* Test list */
 TEST_LIST = {
+    {"format_msgpack" , flb_test_format_msgpack},
     {"format_json" , flb_test_format_json},
     {"format_json_stream" , flb_test_format_json_stream},
     {"format_json_lines" , flb_test_format_json_lines},
