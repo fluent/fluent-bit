@@ -76,6 +76,7 @@ if(FLB_IN_LIB)
   FLB_RT_TEST(FLB_OUT_SPLUNK           "out_splunk.c")
   FLB_RT_TEST(FLB_OUT_STDOUT           "out_stdout.c")
   FLB_RT_TEST(FLB_OUT_SYSLOG           "out_syslog.c")
+  FLB_RT_TEST(FLB_OUT_TCP              "out_tcp.c")
 
   if (FLB_RECORD_ACCESSOR)
     FLB_RT_TEST(FLB_OUT_STACKDRIVER      "out_stackdriver.c")
