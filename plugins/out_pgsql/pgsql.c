@@ -174,7 +174,7 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
         ctx->schema = flb_sds_create(tmp);
     }
     else {
-        ctx->schema = NULL
+        ctx->schema = NULL;
     }
 
     ret = pgsql_start_connections(ctx);
