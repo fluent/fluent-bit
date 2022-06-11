@@ -402,11 +402,11 @@ static int compose_payload(struct flb_out_http *ctx,
     else if (ctx->out_format == FLB_HTTP_OUT_GELF) {
         return compose_payload_gelf(ctx, in_body, in_size, out_body, out_size);
     }
-    /*
-       Nothing to do, if the format is msgpack
     else {
+        /* Nothing to do, if the format is msgpack */
+        *out_body = (void *)in_body;
+        *out_size = in_size;
     }
-    */
 
     return FLB_OK;
 }
