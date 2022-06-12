@@ -64,6 +64,13 @@
 #define FLB_INPUT_LOGS        0
 #define FLB_INPUT_METRICS     1
 
+/*
+ * Ring buffer size: we make space for 512 entries that each input instance can
+ * use to enqueue data. Note that this value is fixed and only affect input plugins
+ * which runs in threaded mode (separate thread)
+ */
+#define FLB_INPUT_RING_BUFFER_SIZE  (sizeof(void *) * 1024)
+
 struct flb_input_instance;
 
 struct flb_input_plugin {
@@ -271,6 +278,13 @@ struct flb_input_instance {
     /* is the plugin running in a separate thread ? */
     int is_threaded;
     struct flb_input_thread_instance *thi;
+
+    /*
+     * ring buffer: the ring buffer is used by the instance if is running
+     * in threaded mode; so when registering a msgpack buffer this happens
+     * in the ring buffer.
+     */
+    struct flb_ring_buffer *rb;
 
     /* List of upstreams */
     struct mk_list upstreams;
