@@ -327,7 +327,6 @@ void flb_config_exit(struct flb_config *config)
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_cf *cf;
-    struct flb_input_collector *collector;
 
     if (config->log_file) {
         flb_free(config->log_file);
