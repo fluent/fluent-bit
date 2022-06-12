@@ -121,7 +121,7 @@ static int input_collector_fd(flb_pipefd_t fd, struct flb_input_instance *ins)
     struct flb_config *config = ins->config;
 
     mk_list_foreach(head, &ins->collectors) {
-        collector = mk_list_entry(head, struct flb_input_collector, _head_ins);
+        collector = mk_list_entry(head, struct flb_input_collector, _head);
         if (collector->fd_event == fd) {
             break;
         }
@@ -675,7 +675,7 @@ int flb_input_thread_collectors_start(struct flb_input_instance *ins)
     struct flb_input_collector *coll;
 
     mk_list_foreach(head, &ins->collectors) {
-        coll = mk_list_entry(head, struct flb_input_collector, _head_ins);
+        coll = mk_list_entry(head, struct flb_input_collector, _head);
         ret = flb_input_collector_start(coll->id, ins);
         if (ret < 0) {
             return -1;
