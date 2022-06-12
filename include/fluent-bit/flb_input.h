@@ -320,8 +320,7 @@ struct flb_input_collector {
 
     /* General references */
     struct flb_input_instance *instance; /* plugin instance             */
-    struct mk_list _head;                /* link to global collectors   */
-    struct mk_list _head_ins;            /* link to instance collectors */
+    struct mk_list _head;                /* link to instance collectors */
 };
 
 struct flb_input_coro {
