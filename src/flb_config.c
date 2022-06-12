@@ -266,7 +266,6 @@ struct flb_config *flb_config_init()
 
     /* collectors */
     pthread_mutex_init(&config->collectors_mutex, NULL);
-    mk_list_init(&config->collectors);
 
     /* Initialize linked lists */
     mk_list_init(&config->custom_plugins);
