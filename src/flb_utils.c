@@ -192,6 +192,7 @@ int flb_utils_set_daemon(struct flb_config *config)
 void flb_utils_print_setup(struct flb_config *config)
 {
     struct mk_list *head;
+    struct mk_list *head_tmp;
     struct flb_input_plugin *plugin;
     struct flb_input_collector *collector;
     struct flb_input_instance *in;
@@ -232,20 +233,22 @@ void flb_utils_print_setup(struct flb_config *config)
     /* Collectors */
     flb_info("___________");
     flb_info(" collectors:");
-    mk_list_foreach(head, &config->collectors) {
-        collector = mk_list_entry(head, struct flb_input_collector, _head);
-        plugin = collector->instance->p;
+    mk_list_foreach(head, &config->inputs) {
+        in = mk_list_entry(head, struct flb_input_instance, _head);
+        mk_list_foreach(head_tmp, &in->collectors) {
+            collector = mk_list_entry(head_tmp, struct flb_input_collector, _head);
+            plugin = collector->instance->p;
 
-        if (collector->seconds > 0) {
-            flb_info("[%s %lus,%luns] ",
-                      plugin->name,
-                      collector->seconds,
-                      collector->nanoseconds);
+            if (collector->seconds > 0) {
+                flb_info("[%s %lus,%luns] ",
+                          plugin->name,
+                          collector->seconds,
+                          collector->nanoseconds);
+            }
+            else {
+                flb_info("     [%s] ", plugin->name);
+            }
         }
-        else {
-            flb_info("     [%s] ", plugin->name);
-        }
-
     }
 }
 
