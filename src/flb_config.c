@@ -378,13 +378,6 @@ void flb_config_exit(struct flb_config *config)
         }
     }
 
-    /* Collectors */
-    mk_list_foreach_safe(head, tmp, &config->collectors) {
-        collector = mk_list_entry(head, struct flb_input_collector, _head);
-        mk_list_del(&collector->_head);
-        flb_input_collector_destroy(collector);
-    }
-
     flb_env_destroy(config->env);
 
     /* Program name */
