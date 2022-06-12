@@ -24,6 +24,7 @@
 	op->name, op->fs_chunks_size, mod, flb_input_chunk_get_name(chunk));}
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_input_plugin.h>
@@ -34,7 +35,10 @@
 #include <fluent-bit/flb_routes_mask.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/stream_processor/flb_sp.h>
+#include <fluent-bit/flb_ring_buffer.h>
 #include <chunkio/chunkio.h>
+#include <monkey/mk_core.h>
+
 
 #define BLOCK_UNTIL_KEYPRESS() {char temp_keypress_buffer; read(0, &temp_keypress_buffer, 1);}
 
@@ -42,6 +46,15 @@
 #define FLB_INPUT_CHUNK_RELEASE_SCOPE_GLOBAL 1
 
 #ifdef FLB_HAVE_IN_STORAGE_BACKLOG
+
+struct input_chunk_raw {
+    struct flb_input_instance *ins;
+    flb_sds_t tag;
+    size_t records;
+    void *buf_data;
+    size_t buf_size;
+};
+
 
 extern ssize_t sb_get_releasable_output_queue_space(struct flb_output_instance *output_plugin,
                                                     size_t                      required_space);
@@ -1571,14 +1584,129 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     return 0;
 }
 
+static void destroy_chunk_raw(struct input_chunk_raw *cr)
+{
+    if (cr->buf_data) {
+        flb_free(cr->buf_data);
+    }
+
+    if (cr->tag) {
+        flb_sds_destroy(cr->tag);
+    }
+
+    flb_free(cr);
+}
+
+static int append_raw_to_ring_buffer(struct flb_input_instance *ins,
+                                     const char *tag, size_t tag_len,
+                                     size_t records,
+                                     const void *buf, size_t buf_size)
+
+{
+    int ret;
+    struct input_chunk_raw *cr;
+
+    cr = flb_malloc(sizeof(struct input_chunk_raw));
+    if (!cr) {
+        flb_errno();
+        return -1;
+    }
+    cr->ins = ins;
+
+    if (tag && tag_len > 0) {
+        cr->tag = flb_sds_create_len(tag, tag_len);
+        if (!cr->tag) {
+            flb_free(cr);
+            return -1;
+        }
+    }
+    else {
+        cr->tag = NULL;
+    }
+
+    cr->records = records;
+    cr->buf_data = flb_malloc(buf_size);
+    if (!cr->buf_data) {
+        flb_errno();
+        destroy_chunk_raw(cr);
+        return -1;
+    }
+
+    /*
+     * this memory copy is just a simple overhead, the problem we have is that
+     * input instances always assume that they have to release their buffer since
+     * the append raw operation already did a copy. Not a big issue but maybe this
+     * is a tradeoff...
+     */
+    memcpy(cr->buf_data, buf, buf_size);
+    cr->buf_size = buf_size;
+
+retry:
+    /* append chunk raw context to the ring buffer */
+    ret = flb_ring_buffer_write(ins->rb, (void *) &cr, sizeof(cr));
+    if (ret == -1) {
+        flb_plg_info(ins, "[DEV] ring buffer saturated ?, sleep for 0.5 secs");
+        sleep(0.5);
+        goto retry;
+
+        /* yeah, we need to fix this */
+        flb_plg_error(ins, "could not enqueue records into the ring buffer");
+        destroy_chunk_raw(cr);
+        return -1;
+    }
+
+    return 0;
+}
+
+void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data)
+{
+    int ret;
+    int tag_len = 0;
+    struct mk_list *head;
+    struct flb_input_instance *ins;
+    struct input_chunk_raw *cr;
+
+    mk_list_foreach(head, &ctx->inputs) {
+        ins = mk_list_entry(head, struct flb_input_instance, _head);
+        cr = NULL;
+        ret = flb_ring_buffer_read(ins->rb, (void *) &cr, sizeof(cr));
+        if (ret == 0 && cr) {
+            if (cr->tag) {
+                tag_len = flb_sds_len(cr->tag);
+            }
+            else {
+                tag_len = 0;
+            }
+
+            input_chunk_append_raw(cr->ins, cr->records,
+                                   cr->tag, tag_len,
+                                   cr->buf_data, cr->buf_size);
+            destroy_chunk_raw(cr);
+        }
+    }
+}
+
 int flb_input_chunk_append_raw(struct flb_input_instance *in,
                                const char *tag, size_t tag_len,
                                const void *buf, size_t buf_size)
 {
+    int ret;
     size_t records;
 
     records = flb_mp_count(buf, buf_size);
-    return input_chunk_append_raw(in, records, tag, tag_len, buf, buf_size);
+
+    /*
+     * If the plugin instance registering the data runs in a separate thread, we must
+     * add the data reference to the ring buffer.
+     */
+    if (flb_input_is_threaded(in)) {
+        ret = append_raw_to_ring_buffer(in, tag, tag_len, records, buf, buf_size);
+    }
+    else {
+        ret = input_chunk_append_raw(in, records, tag, tag_len, buf, buf_size);
+    }
+
+    return ret;
 }
 
 int flb_input_chunk_append_raw2(struct flb_input_instance *in,
@@ -1586,7 +1714,16 @@ int flb_input_chunk_append_raw2(struct flb_input_instance *in,
                                 const char *tag, size_t tag_len,
                                 const void *buf, size_t buf_size)
 {
-    return input_chunk_append_raw(in, records, tag, tag_len, buf, buf_size);
+    int ret;
+
+    if (flb_input_is_threaded(in)) {
+        ret = append_raw_to_ring_buffer(in, tag, tag_len, records, buf, buf_size);
+    }
+    else {
+        ret = input_chunk_append_raw(in, records, tag, tag_len, buf, buf_size);
+    }
+
+    return ret;
 }
 
 /* Retrieve a raw buffer from a dyntag node */
