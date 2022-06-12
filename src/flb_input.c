@@ -86,7 +86,7 @@ static int collector_id(struct flb_input_instance *ins)
 
     collector = mk_list_entry_last(&ins->collectors,
                                    struct flb_input_collector,
-                                   _head_ins);
+                                   _head);
     return (collector->id + 1);
 }
 
@@ -570,17 +570,16 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
     }
 
     /* Collectors */
-    if (flb_input_is_threaded(ins)) {
-        mk_list_foreach_safe(head, tmp, &ins->collectors) {
-            collector = mk_list_entry(head, struct flb_input_collector, _head_ins);
-            mk_list_del(&collector->_head_ins);
-            flb_input_collector_destroy(collector);
-        }
+    mk_list_foreach_safe(head, tmp, &ins->collectors) {
+        collector = mk_list_entry(head, struct flb_input_collector, _head);
+        mk_list_del(&collector->_head);
+        flb_input_collector_destroy(collector);
     }
 
-    /* Unlink and release */
-    mk_list_del(&ins->_head);
+    /* delete storage context */
+    flb_storage_input_destroy(ins);
 
+    mk_list_del(&ins->_head);
     flb_free(ins);
 }
 
@@ -867,7 +866,10 @@ void flb_input_exit_all(struct flb_config *config)
             continue;
         }
 
+        /* invoke plugin instance exit callback */
         flb_input_instance_exit(ins, config);
+
+        /* destroy the instance */
         flb_input_instance_destroy(ins);
     }
 }
@@ -971,10 +973,7 @@ static struct flb_input_collector *collector_create(int type,
      * added to both lists, the global config collectors list and the instance
      * list.
      */
-    if (!flb_input_is_threaded(ins)) {
-        mk_list_add(&coll->_head, &config->collectors);
-    }
-    mk_list_add(&coll->_head_ins, &ins->collectors);
+    mk_list_add(&coll->_head, &ins->collectors);
 
     return coll;
 }
@@ -1093,7 +1092,7 @@ int flb_input_collector_start(int coll_id, struct flb_input_instance *in)
     struct flb_input_collector *coll;
 
     mk_list_foreach(head, &in->collectors) {
-        coll = mk_list_entry(head, struct flb_input_collector, _head_ins);
+        coll = mk_list_entry(head, struct flb_input_collector, _head);
         if (coll->id == coll_id) {
             ret = collector_start(coll, in->config);
             if (ret == -1) {
@@ -1121,7 +1120,7 @@ int flb_input_collectors_signal_start(struct flb_input_instance *ins)
     }
 
     mk_list_foreach(head, &ins->collectors) {
-        coll = mk_list_entry(head, struct flb_input_collector, _head_ins);
+        coll = mk_list_entry(head, struct flb_input_collector, _head);
         ret = flb_input_collector_start(coll->id, ins);
         if (ret < 0) {
             return -1;
@@ -1171,7 +1170,7 @@ static struct flb_input_collector *get_collector(int id,
     struct flb_input_collector *coll;
 
     mk_list_foreach(head, &in->collectors) {
-        coll = mk_list_entry(head, struct flb_input_collector, _head_ins);
+        coll = mk_list_entry(head, struct flb_input_collector, _head);
         if (coll->id == id) {
             return coll;
         }
@@ -1347,7 +1346,6 @@ int flb_input_collector_delete(int coll_id, struct flb_input_instance *in)
 
     pthread_mutex_lock(&in->config->collectors_mutex);
     mk_list_del(&coll->_head);
-    mk_list_del(&coll->_head_ins);
     pthread_mutex_unlock(&in->config->collectors_mutex);
 
     flb_free(coll);
@@ -1415,19 +1413,28 @@ int flb_input_collector_resume(int coll_id, struct flb_input_instance *in)
 int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config)
 {
     struct mk_list *head;
+    struct mk_list *head_coll;
+    struct flb_input_instance *ins;
     struct flb_input_collector *collector = NULL;
     struct flb_input_coro *input_coro;
 
-    mk_list_foreach(head, &config->collectors) {
-        collector = mk_list_entry(head, struct flb_input_collector, _head);
-        if (collector->fd_event == fd) {
+    mk_list_foreach(head, &config->inputs) {
+        ins = mk_list_entry(head, struct flb_input_instance, _head);
+        mk_list_foreach(head_coll, &ins->collectors) {
+            collector = mk_list_entry(head_coll, struct flb_input_collector, _head);
+            if (collector->fd_event == fd) {
+                break;
+            }
+            else if (collector->fd_timer == fd) {
+                flb_utils_timer_consume(fd);
+                break;
+            }
+            collector = NULL;
+        }
+
+        if (collector) {
             break;
         }
-        else if (collector->fd_timer == fd) {
-            flb_utils_timer_consume(fd);
-            break;
-        }
-        collector = NULL;
     }
 
     /* No matches */
