@@ -89,7 +89,6 @@ struct flb_config {
 
     /* Collectors */
     pthread_mutex_t collectors_mutex;
-    struct mk_list collectors;
 
     /* Dynamic (dso) plugins context */
     void *dso_plugins;
