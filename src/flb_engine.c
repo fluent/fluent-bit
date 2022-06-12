@@ -744,6 +744,16 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
 
+    /* Input instance / Ring buffer collector */
+    ret = flb_sched_timer_cb_create(config->sched,
+                                    FLB_SCHED_TIMER_CB_PERM,
+                                    250, flb_input_chunk_ring_buffer_collector,
+                                    config, NULL);
+    if (ret == -1) {
+        flb_error("[engine] could not schedule permanent callback");
+        return -1;
+    }
+
     /* Signal that we have started */
     flb_engine_started(config);
 
