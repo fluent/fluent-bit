@@ -460,18 +460,6 @@ static int storage_contexts_create(struct flb_config *config)
     return c;
 }
 
-static void storage_contexts_destroy(struct flb_config *config)
-{
-    struct mk_list *head;
-    struct flb_input_instance *in;
-
-    /* Iterate each input instance and destroy the context */
-    mk_list_foreach(head, &config->inputs) {
-        in = mk_list_entry(head, struct flb_input_instance, _head);
-        flb_storage_input_destroy(in);
-    }
-}
-
 int flb_storage_create(struct flb_config *ctx)
 {
     int ret;
@@ -584,8 +572,5 @@ void flb_storage_destroy(struct flb_config *ctx)
     }
 
     cio_destroy(cio);
-
-    /* Delete references from input instances */
-    storage_contexts_destroy(ctx);
     ctx->cio = NULL;
 }
