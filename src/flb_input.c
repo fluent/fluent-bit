@@ -36,6 +36,7 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_scheduler.h>
+#include <fluent-bit/flb_ring_buffer.h>
 
 struct flb_libco_in_params libco_in_param;
 
@@ -248,6 +249,16 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         /* Plugin will run in a separate thread  ? */
         if (plugin->flags & FLB_INPUT_THREADED) {
             instance->is_threaded = FLB_TRUE;
+
+        }
+
+        /* allocate a ring buffer */
+        instance->rb = flb_ring_buffer_create(FLB_INPUT_RING_BUFFER_SIZE);
+        if (!instance->rb) {
+            flb_error("instance %s could not initialize ring buffer",
+                      flb_input_name(instance));
+            flb_free(instance);
+            return NULL;
         }
 
         instance->mp_total_buf_size = 0;
@@ -580,6 +591,10 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
     flb_storage_input_destroy(ins);
 
     mk_list_del(&ins->_head);
+
+    if (ins->rb) {
+        flb_ring_buffer_destroy(ins->rb);
+    }
     flb_free(ins);
 }
 
