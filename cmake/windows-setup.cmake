@@ -15,12 +15,14 @@ if(FLB_WINDOWS_DEFAULTS)
   set(FLB_HTTP_SERVER           Yes)
   set(FLB_METRICS               Yes)
   set(FLB_CONFIG_YAML           No)
+  set(FLB_WASM                  Yes)
 
   # INPUT plugins
   # =============
   set(FLB_IN_CPU                 No)
   set(FLB_IN_DISK                No)
   set(FLB_IN_EXEC                No)
+  set(FLB_IN_EXEC_WASI           No)
   set(FLB_IN_FORWARD            Yes)
   set(FLB_IN_HEALTH              No)
   set(FLB_IN_HTTP                No)

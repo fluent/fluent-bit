@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.0)
-project(fluent-bit)
+project(fluent-bit
+  LANGUAGES C ASM)
 
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  2)
@@ -110,6 +111,7 @@ option(FLB_AVRO_ENCODER        "Build with Avro encoding support"            No)
 option(FLB_AWS_ERROR_REPORTER  "Build with aws error reporting support"      No)
 option(FLB_ARROW               "Build with Apache Arrow support"             No)
 option(FLB_WINDOWS_DEFAULTS    "Build with predefined Windows settings"     Yes)
+option(FLB_WASM                "Build with WASM runtime support"            Yes)
 
 # Native Metrics Support (cmetrics)
 option(FLB_METRICS             "Enable metrics support"       Yes)
@@ -130,6 +132,7 @@ option(FLB_IN_DISK                     "Enable Disk input plugin"               
 option(FLB_IN_DOCKER                   "Enable Docker input plugin"                   Yes)
 option(FLB_IN_DOCKER_EVENTS            "Enable Docker events input plugin"            Yes)
 option(FLB_IN_EXEC                     "Enable Exec input plugin"                     Yes)
+option(FLB_IN_EXEC_WASI                "Enable Exec WASI input plugin"                Yes)
 option(FLB_IN_EVENT_TEST               "Enable Events test plugin"                    Yes)
 option(FLB_IN_FLUENTBIT_METRICS        "Enable Fluent Bit metrics  plugin"            Yes)
 option(FLB_IN_FORWARD                  "Enable Forward input plugin"                  Yes)
@@ -527,6 +530,11 @@ endif()
 # Metrics
 if(FLB_METRICS)
   FLB_DEFINITION(FLB_HAVE_METRICS)
+endif()
+
+# WASM
+if(FLB_WASM)
+  FLB_DEFINITION(FLB_HAVE_WASM)
 endif()
 
 # AWS

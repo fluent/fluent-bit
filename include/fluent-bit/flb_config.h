@@ -221,6 +221,11 @@ struct flb_config {
     struct mk_list luajit_list;
 #endif
 
+    /* WASM environment's context */
+#ifdef FLB_HAVE_WASM
+    struct mk_list wasm_list;
+#endif
+
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     char *stream_processor_file;            /* SP configuration file */
     void *stream_processor_ctx;             /* SP context */
