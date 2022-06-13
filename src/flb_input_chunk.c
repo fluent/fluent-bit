@@ -1454,12 +1454,14 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     }
 
 #ifdef FLB_TRACE
-    if (ic->in->chunk_trace_enabled == 1) {
-        if (ic->chunk_trace != NULL) {
-            flb_trace_chunk_free(ic->chunk_trace);
+    if (ic->in->trace_ctxt) {
+        if (ic->trace != NULL) {
+            flb_trace_chunk_free(ic->trace);
         }
-        flb_trace_chunk_new(ic);
-        flb_trace_chunk_input(ic->chunk_trace, (void *)ic->in);
+        ic->trace = flb_trace_chunk_new(ic);
+        if (ic->trace) {
+            flb_trace_chunk_input(ic->trace, buf, buf_size);
+        }
     }
 #endif // FLB_TRACE
 

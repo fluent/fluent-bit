@@ -145,8 +145,7 @@ struct flb_input_instance {
 
     int id;                              /* instance id                  */
 #ifdef FLB_TRACE
-    int chunk_trace_count;                     /* trace count */
-    int chunk_trace_enabled;
+    struct flb_trace_chunk_context *trace_ctxt;
 #endif
     int log_level;                       /* log level for this plugin    */
     flb_pipefd_t channel[2];             /* pipe(2) channel              */

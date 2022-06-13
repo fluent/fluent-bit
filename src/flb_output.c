@@ -807,266 +807,142 @@ const char *flb_output_get_property(const char *key, struct flb_output_instance 
     return flb_config_prop_get(key, &ins->properties);
 }
 
-/* Trigger the output plugins setup callbacks to prepare them. */
-int flb_output_init_all(struct flb_config *config)
+int flb_output_instance_init(struct flb_output_instance *ins, struct flb_config *config)
 {
     int ret;
 #ifdef FLB_HAVE_METRICS
     char *name;
 #endif
-    struct mk_list *tmp;
-    struct mk_list *head;
     struct mk_list *config_map;
-    struct flb_output_instance *ins;
     struct flb_output_plugin *p;
     uint64_t ts;
 
-    /* Retrieve the plugin reference */
-    mk_list_foreach_safe(head, tmp, &config->outputs) {
-        ins = mk_list_entry(head, struct flb_output_instance, _head);
-        if (ins->log_level == -1) {
-            ins->log_level = config->log->level;
-        }
-        p = ins->p;
+    if (ins->log_level == -1) {
+        ins->log_level = config->log->level;
+    }
+    p = ins->p;
 
-        /* Output Events Channel */
-        ret = mk_event_channel_create(config->evl,
-                                      &ins->ch_events[0],
-                                      &ins->ch_events[1],
-                                      ins);
-        if (ret != 0) {
-            flb_error("could not create events channels for '%s'",
-                      flb_output_name(ins));
-            flb_output_instance_destroy(ins);
-            return -1;
-        }
-        flb_debug("[%s:%s] created event channels: read=%i write=%i",
-                  ins->p->name, flb_output_name(ins),
-                  ins->ch_events[0], ins->ch_events[1]);
+    /* Output Events Channel */
+    ret = mk_event_channel_create(config->evl,
+                                    &ins->ch_events[0],
+                                    &ins->ch_events[1],
+                                    ins);
+    if (ret != 0) {
+        flb_error("could not create events channels for '%s'",
+                    flb_output_name(ins));
+        flb_output_instance_destroy(ins);
+        return -1;
+    }
+    flb_debug("[%s:%s] created event channels: read=%i write=%i",
+                ins->p->name, flb_output_name(ins),
+                ins->ch_events[0], ins->ch_events[1]);
 
-        /*
-         * Note: mk_event_channel_create() sets a type = MK_EVENT_NOTIFICATION by
-         * default, we need to overwrite this value so we can do a clean check
-         * into the Engine when the event is triggered.
-         */
-        ins->event.type = FLB_ENGINE_EV_OUTPUT;
+    /*
+        * Note: mk_event_channel_create() sets a type = MK_EVENT_NOTIFICATION by
+        * default, we need to overwrite this value so we can do a clean check
+        * into the Engine when the event is triggered.
+        */
+    ins->event.type = FLB_ENGINE_EV_OUTPUT;
 
-        /* Metrics */
+    /* Metrics */
 #ifdef FLB_HAVE_METRICS
-        /* Get name or alias for the instance */
-        name = (char *) flb_output_name(ins);
+    /* Get name or alias for the instance */
+    name = (char *) flb_output_name(ins);
 
-        /* get timestamp */
-        ts = cmt_time_now();
+    /* get timestamp */
+    ts = cmt_time_now();
 
-        /* CMetrics */
-        ins->cmt = cmt_create();
-        if (!ins->cmt) {
-            flb_error("[output] could not create cmetrics context");
-            return -1;
-        }
+    /* CMetrics */
+    ins->cmt = cmt_create();
+    if (!ins->cmt) {
+        flb_error("[output] could not create cmetrics context");
+        return -1;
+    }
 
-        /*
-         * Register generic output plugin metrics
-         */
+    /*
+        * Register generic output plugin metrics
+        */
 
-        /* fluentbit_output_proc_records_total */
-        ins->cmt_proc_records = cmt_counter_create(ins->cmt, "fluentbit",
-                                                   "output", "proc_records_total",
-                                                   "Number of processed output records.",
-                                                   1, (char *[]) {"name"});
-        cmt_counter_set(ins->cmt_proc_records, ts, 0, 1, (char *[]) {name});
-
-
-        /* fluentbit_output_proc_bytes_total */
-        ins->cmt_proc_bytes = cmt_counter_create(ins->cmt, "fluentbit",
-                                                 "output", "proc_bytes_total",
-                                                 "Number of processed output bytes.",
-                                                 1, (char *[]) {"name"});
-        cmt_counter_set(ins->cmt_proc_bytes, ts, 0, 1, (char *[]) {name});
+    /* fluentbit_output_proc_records_total */
+    ins->cmt_proc_records = cmt_counter_create(ins->cmt, "fluentbit",
+                                                "output", "proc_records_total",
+                                                "Number of processed output records.",
+                                                1, (char *[]) {"name"});
+    cmt_counter_set(ins->cmt_proc_records, ts, 0, 1, (char *[]) {name});
 
 
-        /* fluentbit_output_errors_total */
-        ins->cmt_errors = cmt_counter_create(ins->cmt, "fluentbit",
-                                             "output", "errors_total",
-                                             "Number of output errors.",
-                                             1, (char *[]) {"name"});
-        cmt_counter_set(ins->cmt_errors, ts, 0, 1, (char *[]) {name});
+    /* fluentbit_output_proc_bytes_total */
+    ins->cmt_proc_bytes = cmt_counter_create(ins->cmt, "fluentbit",
+                                                "output", "proc_bytes_total",
+                                                "Number of processed output bytes.",
+                                                1, (char *[]) {"name"});
+    cmt_counter_set(ins->cmt_proc_bytes, ts, 0, 1, (char *[]) {name});
 
 
-        /* fluentbit_output_retries_total */
-        ins->cmt_retries = cmt_counter_create(ins->cmt, "fluentbit",
-                                             "output", "retries_total",
-                                             "Number of output retries.",
-                                             1, (char *[]) {"name"});
-        cmt_counter_set(ins->cmt_retries, ts, 0, 1, (char *[]) {name});
-
-        /* fluentbit_output_retries_failed_total */
-        ins->cmt_retries_failed = cmt_counter_create(ins->cmt, "fluentbit",
-                                             "output", "retries_failed_total",
-                                             "Number of abandoned batches because "
-                                             "the maximum number of re-tries was "
-                                             "reached.",
-                                             1, (char *[]) {"name"});
-        cmt_counter_set(ins->cmt_retries_failed, ts, 0, 1, (char *[]) {name});
+    /* fluentbit_output_errors_total */
+    ins->cmt_errors = cmt_counter_create(ins->cmt, "fluentbit",
+                                            "output", "errors_total",
+                                            "Number of output errors.",
+                                            1, (char *[]) {"name"});
+    cmt_counter_set(ins->cmt_errors, ts, 0, 1, (char *[]) {name});
 
 
-        /* fluentbit_output_dropped_records_total */
-        ins->cmt_dropped_records = cmt_counter_create(ins->cmt, "fluentbit",
-                                             "output", "dropped_records_total",
-                                             "Number of dropped records.",
-                                             1, (char *[]) {"name"});
-        cmt_counter_set(ins->cmt_dropped_records, ts, 0, 1, (char *[]) {name});
+    /* fluentbit_output_retries_total */
+    ins->cmt_retries = cmt_counter_create(ins->cmt, "fluentbit",
+                                            "output", "retries_total",
+                                            "Number of output retries.",
+                                            1, (char *[]) {"name"});
+    cmt_counter_set(ins->cmt_retries, ts, 0, 1, (char *[]) {name});
 
-        /* fluentbit_output_retried_records_total */
-        ins->cmt_retried_records = cmt_counter_create(ins->cmt, "fluentbit",
-                                             "output", "retried_records_total",
-                                             "Number of retried records.",
-                                             1, (char *[]) {"name"});
-        cmt_counter_set(ins->cmt_retried_records, ts, 0, 1, (char *[]) {name});
+    /* fluentbit_output_retries_failed_total */
+    ins->cmt_retries_failed = cmt_counter_create(ins->cmt, "fluentbit",
+                                            "output", "retries_failed_total",
+                                            "Number of abandoned batches because "
+                                            "the maximum number of re-tries was "
+                                            "reached.",
+                                            1, (char *[]) {"name"});
+    cmt_counter_set(ins->cmt_retries_failed, ts, 0, 1, (char *[]) {name});
 
-        /* old API */
-        ins->metrics = flb_metrics_create(name);
-        if (ins->metrics) {
-            flb_metrics_add(FLB_METRIC_OUT_OK_RECORDS,
-                            "proc_records", ins->metrics);
-            flb_metrics_add(FLB_METRIC_OUT_OK_BYTES,
-                            "proc_bytes", ins->metrics);
-            flb_metrics_add(FLB_METRIC_OUT_ERROR,
-                            "errors", ins->metrics);
-            flb_metrics_add(FLB_METRIC_OUT_RETRY,
-                            "retries", ins->metrics);
-            flb_metrics_add(FLB_METRIC_OUT_RETRY_FAILED,
-                        "retries_failed", ins->metrics);
-            flb_metrics_add(FLB_METRIC_OUT_DROPPED_RECORDS,
-                        "dropped_records", ins->metrics);
-            flb_metrics_add(FLB_METRIC_OUT_RETRIED_RECORDS,
-                        "retried_records", ins->metrics);
-        }
+
+    /* fluentbit_output_dropped_records_total */
+    ins->cmt_dropped_records = cmt_counter_create(ins->cmt, "fluentbit",
+                                            "output", "dropped_records_total",
+                                            "Number of dropped records.",
+                                            1, (char *[]) {"name"});
+    cmt_counter_set(ins->cmt_dropped_records, ts, 0, 1, (char *[]) {name});
+
+    /* fluentbit_output_retried_records_total */
+    ins->cmt_retried_records = cmt_counter_create(ins->cmt, "fluentbit",
+                                            "output", "retried_records_total",
+                                            "Number of retried records.",
+                                            1, (char *[]) {"name"});
+    cmt_counter_set(ins->cmt_retried_records, ts, 0, 1, (char *[]) {name});
+
+    /* old API */
+    ins->metrics = flb_metrics_create(name);
+    if (ins->metrics) {
+        flb_metrics_add(FLB_METRIC_OUT_OK_RECORDS,
+                        "proc_records", ins->metrics);
+        flb_metrics_add(FLB_METRIC_OUT_OK_BYTES,
+                        "proc_bytes", ins->metrics);
+        flb_metrics_add(FLB_METRIC_OUT_ERROR,
+                        "errors", ins->metrics);
+        flb_metrics_add(FLB_METRIC_OUT_RETRY,
+                        "retries", ins->metrics);
+        flb_metrics_add(FLB_METRIC_OUT_RETRY_FAILED,
+                    "retries_failed", ins->metrics);
+        flb_metrics_add(FLB_METRIC_OUT_DROPPED_RECORDS,
+                    "dropped_records", ins->metrics);
+        flb_metrics_add(FLB_METRIC_OUT_RETRIED_RECORDS,
+                    "retried_records", ins->metrics);
+    }
 #endif
 
 #ifdef FLB_HAVE_PROXY_GO
-        /* Proxy plugins have their own initialization */
-        if (p->type == FLB_OUTPUT_PLUGIN_PROXY) {
-            ret = flb_plugin_proxy_init(p->proxy, ins, config);
-            if (ret == -1) {
-                flb_output_instance_destroy(ins);
-                return -1;
-            }
-
-            /* Multi-threading enabled if configured */
-            ret = flb_output_enable_multi_threading(ins, config);
-            if (ret == -1) {
-                flb_error("[output] could not start thread pool for '%s' plugin",
-                          p->name);
-                return -1;
-            }
-
-            continue;
-        }
-#endif
-
-#ifdef FLB_HAVE_TLS
-        if (ins->use_tls == FLB_TRUE) {
-            ins->tls = flb_tls_create(ins->tls_verify,
-                                      ins->tls_debug,
-                                      ins->tls_vhost,
-                                      ins->tls_ca_path,
-                                      ins->tls_ca_file,
-                                      ins->tls_crt_file,
-                                      ins->tls_key_file,
-                                      ins->tls_key_passwd);
-            if (!ins->tls) {
-                flb_error("[output %s] error initializing TLS context",
-                          ins->name);
-                flb_output_instance_destroy(ins);
-                return -1;
-            }
-        }
-#endif
-        /*
-         * Before to call the initialization callback, make sure that the received
-         * configuration parameters are valid if the plugin is registering a config map.
-         */
-        if (p->config_map) {
-            /*
-             * Create a dynamic version of the configmap that will be used by the specific
-             * instance in question.
-             */
-            config_map = flb_config_map_create(config, p->config_map);
-            if (!config_map) {
-                flb_error("[output] error loading config map for '%s' plugin",
-                          p->name);
-                flb_output_instance_destroy(ins);
-                return -1;
-            }
-            ins->config_map = config_map;
-
-            /* Validate incoming properties against config map */
-            ret = flb_config_map_properties_check(ins->p->name,
-                                                  &ins->properties, ins->config_map);
-            if (ret == -1) {
-                if (config->program_name) {
-                    flb_helper("try the command: %s -o %s -h\n",
-                               config->program_name, ins->p->name);
-                }
-                flb_output_instance_destroy(ins);
-                return -1;
-            }
-        }
-
-        /* Init network defaults */
-        flb_net_setup_init(&ins->net_setup);
-
-        /* Get Upstream net_setup configmap */
-        ins->net_config_map = flb_upstream_get_config_map(config);
-        if (!ins->net_config_map) {
-            flb_output_instance_destroy(ins);
-            return -1;
-        }
-
-#ifdef FLB_HAVE_TLS
-        struct flb_config_map *m;
-
-        /* TLS config map (just for 'help' formatting purposes) */
-        ins->tls_config_map = flb_tls_get_config_map(config);
-        if (!ins->tls_config_map) {
-            flb_output_instance_destroy(ins);
-            return -1;
-        }
-
-        /* Override first configmap value based on it plugin flag */
-        m = mk_list_entry_first(ins->tls_config_map, struct flb_config_map, _head);
-        if (p->flags & FLB_IO_TLS) {
-            m->value.val.boolean = FLB_TRUE;
-        }
-        else {
-            m->value.val.boolean = FLB_FALSE;
-        }
-#endif
-        /*
-         * Validate 'net.*' properties: if the plugin use the Upstream interface,
-         * it might receive some networking settings.
-         */
-        if (mk_list_size(&ins->net_properties) > 0) {
-            ret = flb_config_map_properties_check(ins->p->name,
-                                                  &ins->net_properties,
-                                                  ins->net_config_map);
-            if (ret == -1) {
-                if (config->program_name) {
-                    flb_helper("try the command: %s -o %s -h\n",
-                               config->program_name, ins->p->name);
-                }
-                flb_output_instance_destroy(ins);
-                return -1;
-            }
-        }
-
-        /* Initialize plugin through it 'init callback' */
-        ret = p->cb_init(ins, config, ins->data);
+    /* Proxy plugins have their own initialization */
+    if (p->type == FLB_OUTPUT_PLUGIN_PROXY) {
+        ret = flb_plugin_proxy_init(p->proxy, ins, config);
         if (ret == -1) {
-            flb_error("[output] failed to initialize '%s' plugin",
-                      p->name);
             flb_output_instance_destroy(ins);
             return -1;
         }
@@ -1075,9 +951,139 @@ int flb_output_init_all(struct flb_config *config)
         ret = flb_output_enable_multi_threading(ins, config);
         if (ret == -1) {
             flb_error("[output] could not start thread pool for '%s' plugin",
-                      flb_output_name(ins));
+                        p->name);
             return -1;
         }
+
+        return 0;
+    }
+#endif
+
+#ifdef FLB_HAVE_TLS
+    if (ins->use_tls == FLB_TRUE) {
+        ins->tls = flb_tls_create(ins->tls_verify,
+                                    ins->tls_debug,
+                                    ins->tls_vhost,
+                                    ins->tls_ca_path,
+                                    ins->tls_ca_file,
+                                    ins->tls_crt_file,
+                                    ins->tls_key_file,
+                                    ins->tls_key_passwd);
+        if (!ins->tls) {
+            flb_error("[output %s] error initializing TLS context",
+                        ins->name);
+            flb_output_instance_destroy(ins);
+            return -1;
+        }
+    }
+#endif
+    /*
+        * Before to call the initialization callback, make sure that the received
+        * configuration parameters are valid if the plugin is registering a config map.
+        */
+    if (p->config_map) {
+        /*
+            * Create a dynamic version of the configmap that will be used by the specific
+            * instance in question.
+            */
+        config_map = flb_config_map_create(config, p->config_map);
+        if (!config_map) {
+            flb_error("[output] error loading config map for '%s' plugin",
+                        p->name);
+            flb_output_instance_destroy(ins);
+            return -1;
+        }
+        ins->config_map = config_map;
+
+        /* Validate incoming properties against config map */
+        ret = flb_config_map_properties_check(ins->p->name,
+                                                &ins->properties, ins->config_map);
+        if (ret == -1) {
+            if (config->program_name) {
+                flb_helper("try the command: %s -o %s -h\n",
+                            config->program_name, ins->p->name);
+            }
+            flb_output_instance_destroy(ins);
+            return -1;
+        }
+    }
+
+    /* Init network defaults */
+    flb_net_setup_init(&ins->net_setup);
+
+    /* Get Upstream net_setup configmap */
+    ins->net_config_map = flb_upstream_get_config_map(config);
+    if (!ins->net_config_map) {
+        flb_output_instance_destroy(ins);
+        return -1;
+    }
+
+#ifdef FLB_HAVE_TLS
+    struct flb_config_map *m;
+
+    /* TLS config map (just for 'help' formatting purposes) */
+    ins->tls_config_map = flb_tls_get_config_map(config);
+    if (!ins->tls_config_map) {
+        flb_output_instance_destroy(ins);
+        return -1;
+    }
+
+    /* Override first configmap value based on it plugin flag */
+    m = mk_list_entry_first(ins->tls_config_map, struct flb_config_map, _head);
+    if (p->flags & FLB_IO_TLS) {
+        m->value.val.boolean = FLB_TRUE;
+    }
+    else {
+        m->value.val.boolean = FLB_FALSE;
+    }
+#endif
+    /*
+        * Validate 'net.*' properties: if the plugin use the Upstream interface,
+        * it might receive some networking settings.
+        */
+    if (mk_list_size(&ins->net_properties) > 0) {
+        ret = flb_config_map_properties_check(ins->p->name,
+                                                &ins->net_properties,
+                                                ins->net_config_map);
+        if (ret == -1) {
+            if (config->program_name) {
+                flb_helper("try the command: %s -o %s -h\n",
+                            config->program_name, ins->p->name);
+            }
+            flb_output_instance_destroy(ins);
+            return -1;
+        }
+    }
+
+    /* Initialize plugin through it 'init callback' */
+    ret = p->cb_init(ins, config, ins->data);
+    if (ret == -1) {
+        flb_error("[output] failed to initialize '%s' plugin",
+                    p->name);
+        flb_output_instance_destroy(ins);
+        return -1;
+    }
+
+    /* Multi-threading enabled if configured */
+    ret = flb_output_enable_multi_threading(ins, config);
+    if (ret == -1) {
+        flb_error("[output] could not start thread pool for '%s' plugin",
+                    flb_output_name(ins));
+        return -1;
+    }
+}
+
+/* Trigger the output plugins setup callbacks to prepare them. */
+int flb_output_init_all(struct flb_config *config)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_output_instance *ins;
+
+    /* Retrieve the plugin reference */
+    mk_list_foreach_safe(head, tmp, &config->outputs) {
+        ins = mk_list_entry(head, struct flb_output_instance, _head);
+        flb_output_instance_init(ins, config);
     }
 
     return 0;
