@@ -308,6 +308,11 @@ if(FLB_PROXY_GO)
   set(FLB_PROXY_PLUGINS ${FLB_PROXY_PLUGINS} flb-plugin-proxy-go)
 endif()
 
+# WASM runtime
+if(FLB_WASM)
+  add_subdirectory(wasm)
+endif()
+
 # HTTP Server
 if(FLB_HTTP_SERVER)
   set(FLB_DEPS
@@ -322,6 +327,14 @@ set(FLB_DEPS
   avro-static
   jansson
   )
+endif()
+
+# WASM runtime
+if(FLB_WASM)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    vmlib-static
+    flb-wasm-static)
 endif()
 
 # Set static dependencies
