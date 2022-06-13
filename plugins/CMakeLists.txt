@@ -217,6 +217,11 @@ if(FLB_PARSER)
 endif()
 
 REGISTER_IN_PLUGIN("in_udp")
+
+if(FLB_WASM)
+  REGISTER_IN_PLUGIN("in_exec_wasi")
+endif()
+
 REGISTER_IN_PLUGIN("in_tcp")
 REGISTER_IN_PLUGIN("in_unix_socket")
 REGISTER_IN_PLUGIN("in_mqtt")
