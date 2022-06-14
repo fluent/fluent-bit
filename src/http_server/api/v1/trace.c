@@ -44,9 +44,10 @@ struct flb_input_instance *find_input(struct flb_hs *hs, const char *name)
     return NULL;
 }
 
-static int toggle_trace_input(struct flb_hs *hs, const char *name)
+static int toggle_trace_input(struct flb_hs *hs, const char *name, const char *prefix)
 {
     struct flb_input_instance *in;
+    struct mk_list *props = NULL;
     
 
     in = find_input(hs, name);
@@ -55,7 +56,7 @@ static int toggle_trace_input(struct flb_hs *hs, const char *name)
     }
 
     if (in->trace_ctxt == NULL) {
-        in->trace_ctxt = flb_trace_chunk_context_new(hs->config);
+        in->trace_ctxt = flb_trace_chunk_context_new(hs->config, "stdout", prefix, props);
         return 1;
     } else {
         // check to see if we have one to destroy it...
@@ -94,7 +95,7 @@ static void cb_enable_trace(mk_request_t *request, void *data)
     if (ret == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type == MSGPACK_OBJECT_STR) {
             input_name = flb_sds_create_len(result.data.via.str.ptr, result.data.via.str.size);
-            toggled_on = toggle_trace_input(hs, input_name);
+            toggled_on = toggle_trace_input(hs, input_name, "trace.");
             flb_sds_destroy(input_name);
 
             msgpack_pack_map(&mp_pck, 2);

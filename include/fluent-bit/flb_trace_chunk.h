@@ -26,16 +26,17 @@ struct flb_trace_chunk_context {
 	void *input;
 	void *output;
 	int trace_count;
+	flb_sds_t trace_prefix;
 };
 
 struct flb_trace_chunk {
 	struct flb_input_chunk *ic;
 	struct flb_trace_chunk_context *ctxt;
-	int trace_id;
+	flb_sds_t trace_id;
 	int tracer_versions;
 };
 
-struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *config);
+struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *config, const char *output_name, const char *trace_prefix, struct mk_list *props);
 struct flb_trace_chunk *flb_trace_chunk_new(struct flb_input_chunk *chunk);
 int flb_trace_chunk_input(struct flb_trace_chunk *trace, char *buf, int buf_size);
 int flb_trace_chunk_filter(struct flb_trace_chunk *trace, void *pfilter, char *buf, int buf_size);
