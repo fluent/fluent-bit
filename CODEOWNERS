@@ -30,7 +30,7 @@
 /src/flb_signv4.c        @pettitwesley
 /src/flb_lib.c           @edsiper @niedbalski
 
-@ Core: AWS Auth & Utils
+# Core: AWS Auth & Utils
 # ------------
 /src/aws                 @pettitwesley
 
@@ -54,7 +54,7 @@
 
 # Output Plugins
 # --------------
-/plugins/out_datadog     @clamoriniere
+/plugins/out_datadog     @nokute78 @edsiper
 /plugins/out_es          @pettitwesley @edsiper
 /plugins/out_pgsql       @sxd
 # AWS Plugins 
