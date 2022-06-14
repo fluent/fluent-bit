@@ -17,8 +17,8 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_HS_API_V1_PLUGINS_H
-#define FLB_HS_API_V1_PLUGINS_H
+#ifndef FLB_HS_API_V1_TRACE_H
+#define FLB_HS_API_V1_TRACE_H
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_http_server.h>
