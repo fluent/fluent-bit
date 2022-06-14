@@ -9,6 +9,13 @@
 #include <fluent-bit/flb_trace_chunk.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_base64.h>
+#include <fluent-bit/flb_storage.h>
+#include <fluent-bit/flb_router.h>
+
+/* Register external function to emit records, check 'plugins/in_emitter' */
+int in_emitter_add_record(const char *tag, int tag_len,
+                          const char *buf_data, size_t buf_size,
+                          struct flb_input_instance *in);
 
 struct flb_trace_chunk *flb_trace_chunk_new(struct flb_input_chunk *chunk)
 {
