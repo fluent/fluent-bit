@@ -39,6 +39,10 @@
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_ring_buffer.h>
 
+#ifdef FLB_TRACE
+#include <fluent-bit/flb_trace_chunk.h>
+#endif // FLB_TRACE
+
 struct flb_libco_in_params libco_in_param;
 
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
@@ -593,6 +597,14 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
 
     /* release properties */
     flb_kv_release(&ins->properties);
+
+
+#ifdef FLB_TRACE
+    if (ins->trace_ctxt != NULL)
+    {
+        flb_trace_chunk_context_destroy(ins->trace_ctxt);
+    }
+#endif // FLB_TRACE
 
     /* Remove metrics */
 #ifdef FLB_HAVE_METRICS

@@ -36,7 +36,7 @@ struct flb_trace_chunk *flb_trace_chunk_new(struct flb_input_chunk *chunk)
     return trace;
 }
 
-void flb_trace_chunk_free(struct flb_trace_chunk *trace)
+void flb_trace_chunk_destroy(struct flb_trace_chunk *trace)
 {
     flb_free(trace);
 }
@@ -113,6 +113,29 @@ struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *c
     return ctx;
 }
 
+void flb_trace_chunk_context_destroy(struct flb_trace_chunk_context *ctxt)
+{
+    struct flb_output_instance *output = (struct flb_output_instance *)ctxt->output;
+    struct flb_input_instance *input = (struct flb_input_instance *)ctxt->input;
+    
+    /*
+    flb_input_instance_exit(input, input->config);
+    flb_input_instance_destroy(input);
+
+    // Stop any worker thread
+    if (flb_output_is_threaded(output) == FLB_TRUE) {
+        flb_output_thread_pool_destroy(output);
+    }
+    if (output->p->cb_exit != NULL)
+    {
+        output->p->cb_exit(output->context, output->config);
+    }
+    flb_output_instance_destroy(ctxt->output);
+    */
+
+    flb_free(ctxt);
+}
+
 int flb_trace_chunk_input(struct flb_trace_chunk *trace, char *buf, int buf_size)
 {
     msgpack_packer mp_pck;
@@ -149,6 +172,7 @@ int flb_trace_chunk_input(struct flb_trace_chunk *trace, char *buf, int buf_size
     in_emitter_add_record(tag, flb_sds_len(tag), mp_sbuf.data, mp_sbuf.size,
                           trace->ic->in->trace_ctxt->input);
 sbuffer_error:
+    flb_sds_destroy(tag);
     msgpack_sbuffer_destroy(&mp_sbuf);
     return rc;
 }

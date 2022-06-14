@@ -70,7 +70,7 @@ static int toggle_trace_input(struct flb_hs *hs, const char *name, const char *p
 static void cb_enable_trace(mk_request_t *request, void *data)
 {
     flb_sds_t out_buf;
-    char *buf;
+    char *buf = NULL;
     size_t buf_size;
     msgpack_unpacked result;
     msgpack_sbuffer mp_sbuf;

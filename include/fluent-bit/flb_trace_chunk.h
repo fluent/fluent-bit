@@ -37,7 +37,9 @@ struct flb_trace_chunk {
 };
 
 struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *config, const char *output_name, const char *trace_prefix, struct mk_list *props);
+void flb_trace_chunk_context_destroy(struct flb_trace_chunk_context *ctxt);
 struct flb_trace_chunk *flb_trace_chunk_new(struct flb_input_chunk *chunk);
+void flb_trace_chunk_destroy(struct flb_trace_chunk *);
 int flb_trace_chunk_input(struct flb_trace_chunk *trace, char *buf, int buf_size);
 int flb_trace_chunk_filter(struct flb_trace_chunk *trace, void *pfilter, char *buf, int buf_size);
 void flb_trace_chunk_free(struct flb_trace_chunk *trace);
