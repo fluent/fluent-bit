@@ -49,7 +49,7 @@
 #define FLB_INPUT_CHUNK_TYPE_METRIC   1
 
 #ifdef FLB_TRACE
-#define FLB_INPUT_CHUNK_HAS_TRACE     1 << 32
+#define FLB_INPUT_CHUNK_HAS_TRACE     1 << 31
 #endif // FLB_TRACE
 
 /* Max length for Tag */
