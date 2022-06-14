@@ -102,7 +102,6 @@ int flb_trace_chunk_input(struct flb_trace_chunk *trace, char *buf, int buf_size
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
     struct flb_input_instance *input = (struct flb_input_instance *)trace->ic->in;
-    struct flb_output_instance *output = (struct flb_output_instance *)input->trace_ctxt->output;
     int rc = -1;
     int slen;
     flb_sds_t tag = flb_sds_create("trace");
