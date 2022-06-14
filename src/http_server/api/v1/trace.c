@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_lib.h>
 #include <fluent-bit/flb_trace_chunk.h>
+#include <fluent-bit/flb_kv.h>
 #include <msgpack.h>
 
 
@@ -44,10 +45,9 @@ struct flb_input_instance *find_input(struct flb_hs *hs, const char *name)
     return NULL;
 }
 
-static int toggle_trace_input(struct flb_hs *hs, const char *name, const char *prefix)
+static int toggle_trace_input(struct flb_hs *hs, const char *name, const char *prefix, const char *output_name, struct mk_list *props)
 {
     struct flb_input_instance *in;
-    struct mk_list *props = NULL;
     
 
     in = find_input(hs, name);
@@ -56,7 +56,7 @@ static int toggle_trace_input(struct flb_hs *hs, const char *name, const char *p
     }
 
     if (in->trace_ctxt == NULL) {
-        in->trace_ctxt = flb_trace_chunk_context_new(hs->config, "stdout", prefix, props);
+        in->trace_ctxt = flb_trace_chunk_context_new(hs->config, output_name, prefix, props);
         return 1;
     } else {
         // check to see if we have one to destroy it...
@@ -76,11 +76,19 @@ static void cb_enable_trace(mk_request_t *request, void *data)
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     int ret;
+    int i;
+    int x;
     size_t off = 0;
     int root_type = MSGPACK_OBJECT_ARRAY;
     struct flb_hs *hs = data;
     flb_sds_t input_name;
-    int toggled_on;
+    flb_sds_t prefix;
+    flb_sds_t output_name;
+    int toggled_on = -1;
+    msgpack_object *key;
+    msgpack_object *val;
+    struct mk_list *props = NULL;
+
 
     /* initialize buffers */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -95,26 +103,81 @@ static void cb_enable_trace(mk_request_t *request, void *data)
     if (ret == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type == MSGPACK_OBJECT_STR) {
             input_name = flb_sds_create_len(result.data.via.str.ptr, result.data.via.str.size);
-            toggled_on = toggle_trace_input(hs, input_name, "trace.");
+            toggled_on = toggle_trace_input(hs, input_name, "trace.", "stdout", (struct mk_list *)NULL);
             flb_sds_destroy(input_name);
-
-            msgpack_pack_map(&mp_pck, 2);
-            msgpack_pack_str_with_body(&mp_pck, "status", strlen("status"));
-            msgpack_pack_str_with_body(&mp_pck, "ok", strlen("ok"));
-            msgpack_pack_str_with_body(&mp_pck, "enabled", strlen("enabled"));
-            if (toggled_on) msgpack_pack_true(&mp_pck);
-            else msgpack_pack_false(&mp_pck);
-
-            out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
-            mk_http_status(request, 200);
-            mk_http_send(request,
-                            out_buf, flb_sds_len(out_buf), NULL);
-            mk_http_done(request);
-            flb_sds_destroy(out_buf);
-            msgpack_sbuffer_destroy(&mp_sbuf);
-            msgpack_unpacked_destroy(&result);
-            return;
+        } else if (result.data.type == MSGPACK_OBJECT_MAP) {
+            for (i = 0; i < result.data.via.map.size; i++) {
+                key = &result.data.via.map.ptr[i].key;
+                val = &result.data.via.map.ptr[i].val;
+                if (key->type != MSGPACK_OBJECT_STR) {
+                    goto error;
+                }
+                if (strncmp(key->via.str.ptr, "input", key->via.str.size) == 0) {
+                    if (val->type != MSGPACK_OBJECT_STR) {
+                        goto error;
+                    }
+                    input_name = flb_sds_create_len(val->via.str.ptr, val->via.str.size);
+                }
+                if (strncmp(key->via.str.ptr, "prefix", key->via.str.size) == 0) {
+                    if (val->type != MSGPACK_OBJECT_STR) {
+                        goto error;
+                    }
+                    prefix = flb_sds_create_len(val->via.str.ptr, val->via.str.size);
+                }
+                if (strncmp(key->via.str.ptr, "output", key->via.str.size) == 0) {
+                    if (val->type != MSGPACK_OBJECT_STR) {
+                        goto error;
+                    }
+                    output_name = flb_sds_create_len(val->via.str.ptr, val->via.str.size);
+                }
+                if (output_name == NULL) {
+                    output_name = flb_sds_create("stdout");
+                }
+                if (strncmp(key->via.str.ptr, "params", key->via.str.size) == 0) {
+                    if (val->type != MSGPACK_OBJECT_MAP) {
+                        goto error;
+                    }
+                    props = flb_calloc(1, sizeof(struct mk_list));
+                    flb_kv_init(props);
+                    for (x = 0; x < val->via.map.size; x++) {
+                        if (val->via.map.ptr[i].val.type != MSGPACK_OBJECT_STR) {
+                            goto error;
+                        }
+                        if (val->via.map.ptr[i].key.type != MSGPACK_OBJECT_STR) {
+                            goto error;
+                        }
+                        flb_kv_item_create_len(props,
+                                               (char *)val->via.map.ptr[x].key.via.str.ptr, val->via.map.ptr[x].key.via.str.size,
+                                               (char *)val->via.map.ptr[x].val.via.str.ptr, val->via.map.ptr[x].val.via.str.size);
+                    }
+                }
+            }
+            toggled_on = toggle_trace_input(hs, input_name, prefix, output_name, props);
+            flb_sds_destroy(prefix);
+            flb_sds_destroy(input_name);
+            flb_sds_destroy(output_name);
+            if (props != NULL) {
+                flb_kv_release(props);
+                flb_free(props);
+            }
         }
+
+        msgpack_pack_map(&mp_pck, 2);
+        msgpack_pack_str_with_body(&mp_pck, "status", strlen("status"));
+        msgpack_pack_str_with_body(&mp_pck, "ok", strlen("ok"));
+        msgpack_pack_str_with_body(&mp_pck, "enabled", strlen("enabled"));
+        if (toggled_on) msgpack_pack_true(&mp_pck);
+        else msgpack_pack_false(&mp_pck);
+
+        out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+        mk_http_status(request, 200);
+        mk_http_send(request,
+                        out_buf, flb_sds_len(out_buf), NULL);
+        mk_http_done(request);
+        flb_sds_destroy(out_buf);
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        msgpack_unpacked_destroy(&result);
+        return;
     }
 
 error:
