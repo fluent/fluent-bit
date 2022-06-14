@@ -81,7 +81,7 @@ struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *c
         return NULL;
     }
     // this might be unnecessary given the direct routing
-    flb_output_set_property(output, "match", "*");
+    //flb_output_set_property(output, "match", "*");
 
     if (props != NULL) {
         mk_list_foreach(head, props) {
