@@ -45,6 +45,39 @@ struct flb_input_instance *find_input(struct flb_hs *hs, const char *name)
     return NULL;
 }
 
+static int enable_trace_input(struct flb_hs *hs, const char *name, const char *prefix, const char *output_name, struct mk_list *props)
+{
+    struct flb_input_instance *in;
+    
+
+    in = find_input(hs, name);
+    if (in == NULL) {
+        return -1;
+    }
+
+    if (in->trace_ctxt != NULL) {
+        flb_free(in->trace_ctxt);
+    }
+    in->trace_ctxt = flb_trace_chunk_context_new(hs->config, output_name, prefix, props);
+    return (in->trace_ctxt == NULL ? -1 : 0);
+}
+
+static int disable_trace_input(struct flb_hs *hs, const char *name, const char *prefix, const char *output_name, struct mk_list *props)
+{
+    struct flb_input_instance *in;
+    
+
+    in = find_input(hs, name);
+    if (in == NULL) {
+        return -1;
+    }
+
+    if (in->trace_ctxt != NULL) {
+        flb_free(in->trace_ctxt);
+    }
+    in->trace_ctxt = NULL;
+}
+
 static int toggle_trace_input(struct flb_hs *hs, const char *name, const char *prefix, const char *output_name, struct mk_list *props)
 {
     struct flb_input_instance *in;
@@ -88,6 +121,7 @@ static void cb_enable_trace(mk_request_t *request, void *data)
     msgpack_object *key;
     msgpack_object *val;
     struct mk_list *props = NULL;
+    int response = 404;
 
 
     /* initialize buffers */
@@ -97,8 +131,10 @@ static void cb_enable_trace(mk_request_t *request, void *data)
 
     ret = flb_pack_json(request->data.data, request->data.len, &buf, &buf_size, &root_type);
     if (ret == -1) {
-        goto error;
+        response = 503;
+        goto done;
     }
+
     ret = msgpack_unpack_next(&result, buf, buf_size, &off);
     if (ret == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type == MSGPACK_OBJECT_STR) {
@@ -140,10 +176,10 @@ static void cb_enable_trace(mk_request_t *request, void *data)
                     props = flb_calloc(1, sizeof(struct mk_list));
                     flb_kv_init(props);
                     for (x = 0; x < val->via.map.size; x++) {
-                        if (val->via.map.ptr[i].val.type != MSGPACK_OBJECT_STR) {
+                        if (val->via.map.ptr[x].val.type != MSGPACK_OBJECT_STR) {
                             goto error;
                         }
-                        if (val->via.map.ptr[i].key.type != MSGPACK_OBJECT_STR) {
+                        if (val->via.map.ptr[x].key.type != MSGPACK_OBJECT_STR) {
                             goto error;
                         }
                         flb_kv_item_create_len(props,
@@ -169,27 +205,31 @@ static void cb_enable_trace(mk_request_t *request, void *data)
         if (toggled_on) msgpack_pack_true(&mp_pck);
         else msgpack_pack_false(&mp_pck);
 
-        out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
-        mk_http_status(request, 200);
-        mk_http_send(request,
-                        out_buf, flb_sds_len(out_buf), NULL);
-        mk_http_done(request);
-        flb_sds_destroy(out_buf);
-        msgpack_sbuffer_destroy(&mp_sbuf);
-        msgpack_unpacked_destroy(&result);
-        return;
+        response = 200;
     }
 
 error:
-    msgpack_pack_map(&mp_pck, 1);
-    msgpack_pack_str_with_body(&mp_pck, "status", strlen("status"));
-    msgpack_pack_str_with_body(&mp_pck, "not found", strlen("not found"));
+done:
+    if (buf != NULL) {
+        flb_free(buf);
+    }
+    
+    if (response == 404) {
+        msgpack_pack_map(&mp_pck, 1);
+        msgpack_pack_str_with_body(&mp_pck, "status", strlen("status"));
+        msgpack_pack_str_with_body(&mp_pck, "not found", strlen("not found"));
+    } else if (response == 503) {
+        msgpack_pack_map(&mp_pck, 1);
+        msgpack_pack_str_with_body(&mp_pck, "status", strlen("status"));
+        msgpack_pack_str_with_body(&mp_pck, "error", strlen("error"));
+    }
+
     /* Export to JSON */
     out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
     msgpack_unpacked_destroy(&result);
 
-    mk_http_status(request, 404);
+    mk_http_status(request, response);
     mk_http_send(request,
                  out_buf, flb_sds_len(out_buf), NULL);
     mk_http_done(request);
