@@ -54,12 +54,12 @@ struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *c
     if (ret == -1) {
         flb_error("cannot initialize trace emitter");
         flb_input_instance_destroy(input);
-        return -1;
+        return NULL;
     }
     /* Storage context */
     ret = flb_storage_input_create(config->cio, input);
     if (ret == -1) {
-        return -1;
+        return NULL;
     }
     output = flb_output_new(config, (char *)"stdout", NULL, 0);
     if (output == NULL) {
@@ -72,7 +72,7 @@ struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *c
     if (ret == -1) {
         flb_error("cannot initialize trace emitter output");
         flb_output_instance_destroy(output);
-        return -1;
+        return NULL;
     }
 
     ret = flb_router_connect_direct(input, output);
