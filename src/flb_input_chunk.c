@@ -1090,6 +1090,12 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
         }
     }
 
+#ifdef FLB_TRACE
+    if (ic->trace != NULL) {
+        flb_trace_chunk_destroy(ic->trace);
+    }
+#endif // FLB_TRACE
+
     cio_chunk_close(ic->chunk, del);
     mk_list_del(&ic->_head);
     flb_free(ic);
@@ -1456,7 +1462,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
 #ifdef FLB_TRACE
     if (ic->in->trace_ctxt) {
         if (ic->trace != NULL) {
-            flb_trace_chunk_free(ic->trace);
+            flb_trace_chunk_destroy(ic->trace);
         }
         ic->trace = flb_trace_chunk_new(ic);
         if (ic->trace) {
