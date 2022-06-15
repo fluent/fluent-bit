@@ -26,7 +26,7 @@ struct cmt_variant *cmt_variant_create_from_string(char *value)
 
     instance = cmt_variant_create();
 
-    if (instance == NULL) {
+    if (instance != NULL) {
         instance->data.as_string = cmt_sds_create(value);
 
         if (instance->data.as_string == NULL) {

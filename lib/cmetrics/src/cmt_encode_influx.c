@@ -24,6 +24,8 @@
 #include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_untyped.h>
+#include <cmetrics/cmt_summary.h>
+#include <cmetrics/cmt_histogram.h>
 #include <cmetrics/cmt_compat.h>
 
 #include <ctype.h>
@@ -32,7 +34,123 @@
  * Influx wire protocol
  * --------------------
  * https://docs.influxdata.com/influxdb/cloud/reference/syntax/line-protocol/
+ *
+ * Format used by influxdb when ingesting prometheus metrics
+ * ---------------------------------------------------------
+ * https://docs.influxdata.com/influxdb/v2.1/reference/prometheus-metrics/
  */
+
+
+/* Histograms and Summaries :
+ * Just to get started I'll use version 1 which is what I think we have been
+ * following so far, if we were to use version 2 format_metric would need to be
+ * converted to call this function multiple times with a single limit on each line.
+ */
+
+static void append_histogram_metric_value(struct cmt_map *map,
+                                          cmt_sds_t *buf,
+                                          struct cmt_metric *metric)
+{
+    size_t                        entry_buffer_length;
+    size_t                        entry_buffer_index;
+    char                          entry_buffer[256];
+    struct cmt_histogram         *histogram;
+    struct cmt_histogram_buckets *buckets;
+    size_t                        index;
+
+    histogram = (struct cmt_histogram *) map->parent;
+    buckets = histogram->buckets;
+
+    for (index = 0 ; index <= buckets->count ; index++) {
+        if (index < buckets->count) {
+            entry_buffer_index = snprintf(entry_buffer,
+                                           sizeof(entry_buffer) - 1,
+                                           "%g",
+                                           buckets->upper_bounds[index]);
+        }
+        else {
+            entry_buffer_index = snprintf(entry_buffer,
+                                           sizeof(entry_buffer) - 1,
+                                           "+Inf");
+        }
+
+        entry_buffer_length = entry_buffer_index;
+
+        entry_buffer_length += snprintf(&entry_buffer[entry_buffer_index],
+                                        sizeof(entry_buffer) - 1 -
+                                        entry_buffer_index,
+                                        "=%" PRIu64 ",",
+                                        cmt_metric_hist_get_value(metric,
+                                                                  index));
+
+        cmt_sds_cat_safe(buf, entry_buffer, entry_buffer_length);
+    }
+
+    entry_buffer_length = snprintf(entry_buffer,
+                                   sizeof(entry_buffer) - 1 ,
+                                   "sum=%.17g,",
+                                   cmt_metric_hist_get_sum_value(metric));
+
+    cmt_sds_cat_safe(buf, entry_buffer, entry_buffer_length);
+
+    entry_buffer_length = snprintf(entry_buffer,
+                                   sizeof(entry_buffer) - 1 ,
+                                   "count=%" PRIu64 " ",
+                                   cmt_metric_hist_get_count_value(metric));
+
+    cmt_sds_cat_safe(buf, entry_buffer, entry_buffer_length);
+
+    entry_buffer_length = snprintf(entry_buffer,
+                                   sizeof(entry_buffer) - 1 ,
+                                   "%" PRIu64 "\n",
+                                   cmt_metric_get_timestamp(metric));
+
+    cmt_sds_cat_safe(buf, entry_buffer, entry_buffer_length);
+}
+
+static void append_summary_metric_value(struct cmt_map *map,
+                                        cmt_sds_t *buf,
+                                        struct cmt_metric *metric)
+{
+    size_t              entry_buffer_length;
+    char                entry_buffer[256];
+    struct cmt_summary *summary;
+    size_t              index;
+
+    summary = (struct cmt_summary *) map->parent;
+
+    for (index = 0 ; index < summary->quantiles_count ; index++) {
+        entry_buffer_length = snprintf(entry_buffer,
+                                       sizeof(entry_buffer) - 1,
+                                       "%g=%.17g,",
+                                       summary->quantiles[index],
+                                       cmt_summary_quantile_get_value(metric,
+                                                                      index));
+
+        cmt_sds_cat_safe(buf, entry_buffer, entry_buffer_length);
+    }
+
+    entry_buffer_length = snprintf(entry_buffer,
+                                   sizeof(entry_buffer) - 1 ,
+                                   "sum=%.17g,",
+                                   cmt_summary_get_sum_value(metric));
+
+    cmt_sds_cat_safe(buf, entry_buffer, entry_buffer_length);
+
+    entry_buffer_length = snprintf(entry_buffer,
+                                   sizeof(entry_buffer) - 1 ,
+                                   "count=%" PRIu64 " ",
+                                   cmt_summary_get_count_value(metric));
+
+    cmt_sds_cat_safe(buf, entry_buffer, entry_buffer_length);
+
+    entry_buffer_length = snprintf(entry_buffer,
+                                   sizeof(entry_buffer) - 1 ,
+                                   "%" PRIu64 "\n",
+                                   cmt_metric_get_timestamp(metric));
+
+    cmt_sds_cat_safe(buf, entry_buffer, entry_buffer_length);
+}
 
 static void append_metric_value(struct cmt_map *map,
                                 cmt_sds_t *buf, struct cmt_metric *metric)
@@ -42,6 +160,13 @@ static void append_metric_value(struct cmt_map *map,
     double val;
     char tmp[256];
     struct cmt_opts *opts;
+
+    if (map->type == CMT_HISTOGRAM) {
+        return append_histogram_metric_value(map, buf, metric);
+    }
+    else if (map->type == CMT_SUMMARY) {
+        return append_summary_metric_value(map, buf, metric);
+    }
 
     opts = map->opts;
 
@@ -109,6 +234,10 @@ static void format_metric(struct cmt *cmt, cmt_sds_t *buf, struct cmt_map *map,
     struct mk_list *head;
     struct cmt_opts *opts;
     struct cmt_label *slabel;
+
+    if (map->type == CMT_SUMMARY && !metric->sum_quantiles_set) {
+        return;
+    }
 
     opts = map->opts;
 
@@ -198,6 +327,8 @@ cmt_sds_t cmt_encode_influx_create(struct cmt *cmt, int add_timestamp, ...)
     struct cmt_counter *counter;
     struct cmt_gauge *gauge;
     struct cmt_untyped *untyped;
+    struct cmt_summary *summary;
+    struct cmt_histogram *histogram;
 
     /* Allocate a 1KB of buffer */
     buf = cmt_sds_create_size(1024);
@@ -215,6 +346,18 @@ cmt_sds_t cmt_encode_influx_create(struct cmt *cmt, int add_timestamp, ...)
     mk_list_foreach(head, &cmt->gauges) {
         gauge = mk_list_entry(head, struct cmt_gauge, _head);
         format_metrics(cmt, &buf, gauge->map, add_timestamp);
+    }
+
+    /* Summaries */
+    mk_list_foreach(head, &cmt->summaries) {
+        summary = mk_list_entry(head, struct cmt_summary, _head);
+        format_metrics(cmt, &buf, summary->map, add_timestamp);
+    }
+
+    /* Histograms */
+    mk_list_foreach(head, &cmt->histograms) {
+        histogram = mk_list_entry(head, struct cmt_histogram, _head);
+        format_metrics(cmt, &buf, histogram->map, add_timestamp);
     }
 
     /* Untyped */
