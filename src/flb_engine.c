@@ -744,10 +744,22 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
 
+    /* DEV/TEST change only */
+    int rb_ms;
+    char *rb_env;
+
+    rb_env = getenv("FLB_DEV_RB_MS");
+    if (!rb_env) {
+        rb_ms = 250;
+    }
+    else {
+        rb_ms = atoi(rb_env);
+    }
+
     /* Input instance / Ring buffer collector */
     ret = flb_sched_timer_cb_create(config->sched,
                                     FLB_SCHED_TIMER_CB_PERM,
-                                    250, flb_input_chunk_ring_buffer_collector,
+                                    rb_ms, flb_input_chunk_ring_buffer_collector,
                                     config, NULL);
     if (ret == -1) {
         flb_error("[engine] could not schedule permanent callback");
