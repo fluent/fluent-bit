@@ -756,6 +756,47 @@ void test_null_labels()
     cmt_decode_prometheus_destroy(cmt);
 }
 
+// reproduces https://github.com/fluent/fluent-bit/issues/5541
+void test_issue_fluent_bit_5541()
+{
+    int status;
+    char *result;
+    struct cmt *cmt;
+    cmt_sds_t in_buf = read_file(CMT_TESTS_DATA_PATH "/issue_fluent_bit_5541.txt");
+    size_t in_size = cmt_sds_len(in_buf);
+
+    const char expected[] =
+        "# HELP http_request_duration_seconds HTTP request latency (seconds)\n"
+        "# TYPE http_request_duration_seconds histogram\n"
+        "http_request_duration_seconds_bucket{le=\"0.005\"} 2 0\n"
+        "http_request_duration_seconds_bucket{le=\"0.01\"} 2 0\n"
+        "http_request_duration_seconds_bucket{le=\"0.025\"} 2 0\n"
+        "http_request_duration_seconds_bucket{le=\"0.05\"} 2 0\n"
+        "http_request_duration_seconds_bucket{le=\"0.075\"} 2 0\n"
+        "http_request_duration_seconds_bucket{le=\"0.1\"} 2 0\n"
+        "http_request_duration_seconds_bucket{le=\"0.25\"} 2 0\n"
+        "http_request_duration_seconds_bucket{le=\"0.5\"} 2 0\n"
+        "http_request_duration_seconds_bucket{le=\"0.75\"} 2 0\n"
+        "http_request_duration_seconds_bucket{le=\"1.0\"} 2 0\n" 
+        "http_request_duration_seconds_bucket{le=\"2.5\"} 2 0\n"
+        "http_request_duration_seconds_bucket{le=\"5.0\"} 2 0\n"
+        "http_request_duration_seconds_bucket{le=\"7.5\"} 2 0\n"
+        "http_request_duration_seconds_bucket{le=\"10.0\"} 2 0\n"
+        "http_request_duration_seconds_bucket{le=\"+Inf\"} 2 0\n"
+        "http_request_duration_seconds_sum 0.00069131026975810528 0\n"
+        "http_request_duration_seconds_count 2 0\n"
+        ;
+
+    status = cmt_decode_prometheus_create(&cmt, in_buf, in_size, NULL);
+    TEST_CHECK(status == 0);
+
+    result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
+    TEST_CHECK(strcmp(result, expected) == 0);
+
+    cmt_sds_destroy(in_buf);
+    cmt_sds_destroy(result);
+    cmt_decode_prometheus_destroy(cmt);
+}
 
 TEST_LIST = {
     {"header_help", test_header_help},
@@ -781,5 +822,6 @@ TEST_LIST = {
     {"histogram_labels", test_histogram_labels},
     {"summary", test_summary},
     {"null_labels", test_null_labels},
+    {"issue_fluent_bit_5541", test_issue_fluent_bit_5541},
     { 0 }
 };

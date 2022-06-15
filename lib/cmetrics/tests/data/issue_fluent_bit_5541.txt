@@ -1,0 +1,19 @@
+# HELP http_request_duration_seconds HTTP request latency (seconds)
+# TYPE http_request_duration_seconds histogram
+http_request_duration_seconds_bucket{le="0.005"} 2.0
+http_request_duration_seconds_bucket{le="0.01"} 2.0
+http_request_duration_seconds_bucket{le="0.025"} 2.0
+http_request_duration_seconds_bucket{le="0.05"} 2.0
+http_request_duration_seconds_bucket{le="0.075"} 2.0
+http_request_duration_seconds_bucket{le="0.1"} 2.0
+http_request_duration_seconds_bucket{le="0.25"} 2.0
+http_request_duration_seconds_bucket{le="0.5"} 2.0
+http_request_duration_seconds_bucket{le="0.75"} 2.0
+http_request_duration_seconds_bucket{le="1.0"} 2.0
+http_request_duration_seconds_bucket{le="2.5"} 2.0
+http_request_duration_seconds_bucket{le="5.0"} 2.0
+http_request_duration_seconds_bucket{le="7.5"} 2.0
+http_request_duration_seconds_bucket{le="10.0"} 2.0
+http_request_duration_seconds_bucket{le="+Inf"} 2.0
+http_request_duration_seconds_count 2.0
+http_request_duration_seconds_sum 0.0006913102697581053

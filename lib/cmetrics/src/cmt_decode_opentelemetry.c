@@ -237,6 +237,7 @@ static int append_new_map_label_key(struct cmt_map *map, char *name)
     }
 
     mk_list_add(&label->_head, &map->label_keys);
+    map->label_count++;
 
     return CMT_DECODE_OPENTELEMETRY_SUCCESS;
 }
@@ -920,6 +921,13 @@ static int decode_metrics_entry(struct cmt *cmt,
     metric_namespace = "";
     metric_subsystem = "";
     metric_description = metric->description;
+
+    if (metric_description == NULL) {
+        metric_description = "-";
+    }
+    else if (strlen(metric_description) == 0) {
+        metric_description = "-";
+    }
 
     if (metric->data_case == OPENTELEMETRY__PROTO__METRICS__V1__METRIC__DATA_SUM) {
         instance = cmt_counter_create(cmt,
