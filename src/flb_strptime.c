@@ -636,7 +636,7 @@ literal:
 
 	/* Compute some missing values when possible. */
 	if (fields & FIELD_TM_YEAR) {
-		const int year = tm->tm_year + TM_YEAR_BASE;
+		const int year = (unsigned int)tm->tm_year + (unsigned int)TM_YEAR_BASE;
 		const int *mon_lens = mon_lengths[isleap(year)];
 		if (!(fields & FIELD_TM_YDAY) &&
 		    (fields & FIELD_TM_MON) && (fields & FIELD_TM_MDAY)) {

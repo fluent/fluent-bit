@@ -241,6 +241,14 @@ void test_json_pack_mult_iter()
     flb_free(buf);
 }
 
+/* Validate default values of macros used in flb_msgpack_raw_to_json_sds */
+void test_msgpack_to_json_macros()
+{
+    /* Verify default values */
+    TEST_CHECK(FLB_MSGPACK_TO_JSON_INIT_BUFFER_SIZE == 2.0);
+    TEST_CHECK(FLB_MSGPACK_TO_JSON_REALLOC_BUFFER_SIZE == 0.10);
+}
+
 /* Validate that duplicated keys are removed */
 void test_json_dup_keys()
 {
@@ -626,15 +634,165 @@ void test_json_pack_bug1278()
     }
 }
 
+static int check_msgpack_val(msgpack_object obj, int expected_type, char *expected_val)
+{
+    int len;
+
+    if (!TEST_CHECK(obj.type == expected_type)) {
+        TEST_MSG("type mismatch\nexpected=%d got=%d", expected_type, obj.type);
+        return -1;
+    }
+    switch(obj.type) {
+    case MSGPACK_OBJECT_MAP:
+        if(!TEST_CHECK(obj.via.map.size == atoi(expected_val))) {
+            TEST_MSG("map size mismatch\nexpected=%s got=%d", expected_val, obj.via.map.size);
+            return -1;
+        }
+        break;
+
+    case MSGPACK_OBJECT_ARRAY:
+        if(!TEST_CHECK(obj.via.array.size == atoi(expected_val))) {
+            TEST_MSG("array size mismatch\nexpected=%s got=%d", expected_val, obj.via.array.size);
+            return -1;
+        }
+        break;
+
+    case MSGPACK_OBJECT_STR:
+        len = strlen(expected_val);
+        if (!TEST_CHECK(obj.via.str.size == strlen(expected_val))) {
+            TEST_MSG("str size mismatch\nexpected=%d got=%d", len, obj.via.str.size);
+            return -1;
+        }
+        else if(!TEST_CHECK(strncmp(expected_val, obj.via.str.ptr ,len) == 0)) {
+            TEST_MSG("str mismatch\nexpected=%.*s got=%.*s", len, expected_val, len, obj.via.str.ptr);
+            return -1;
+        }
+        break;
+
+    case MSGPACK_OBJECT_POSITIVE_INTEGER:
+        if(!TEST_CHECK(obj.via.u64 == (uint64_t)atoi(expected_val))) {
+            TEST_MSG("int mismatch\nexpected=%s got=%"PRIu64, expected_val, obj.via.u64);
+            return -1;
+        }
+        break;
+
+    case MSGPACK_OBJECT_BOOLEAN:
+        if (obj.via.boolean) {
+            if(!TEST_CHECK(strncasecmp(expected_val, "true",4) == 0)) {
+                TEST_MSG("bool mismatch\nexpected=%s got=true", expected_val);
+                return -1;
+            }
+        }
+        else {
+            if(!TEST_CHECK(strncasecmp(expected_val, "false",5) == 0)) {
+                TEST_MSG("bool mismatch\nexpected=%s got=false", expected_val);
+                return -1;
+            }
+        }
+        break;
+
+    default:
+        TEST_MSG("unknown type %d", obj.type);
+        return -1;
+    }
+
+    return 0;
+}
+
+/*
+ * https://github.com/fluent/fluent-bit/issues/5336
+ * Pack "valid JSON + partial JSON"
+ */
+#define JSON_BUG5336 "{\"int\":10, \"string\":\"hello\", \"bool\":true, \"array\":[0,1,2]}"
+void test_json_pack_bug5336()
+{
+    int ret;
+    char *json_valid = JSON_BUG5336;
+    size_t len = strlen(json_valid);
+
+    char *json_incomplete = JSON_BUG5336 JSON_BUG5336;
+    char *out = NULL;
+    int out_size;
+    struct flb_pack_state state;
+    int i;
+
+    msgpack_unpacked result;
+    msgpack_object obj;
+    size_t off = 0;
+
+    int loop_cnt = 0;
+
+    for (i=len; i<len*2; i++) {
+        loop_cnt++;
+
+        flb_pack_state_init(&state);
+
+        /* Pass small string size to create incomplete JSON */
+        ret = flb_pack_json_state(json_incomplete, i, &out, &out_size, &state);
+        if (!TEST_CHECK(ret != FLB_ERR_JSON_INVAL)) {
+            TEST_MSG("%ld: FLB_ERR_JSON_INVAL\njson=%.*s", i-len, i, json_incomplete);
+            exit(EXIT_FAILURE);
+        }
+        else if(!TEST_CHECK(ret != FLB_ERR_JSON_PART)) {
+            TEST_MSG("%ld: FLB_ERR_JSON_PART\njson=%.*s", i-len, i, json_incomplete);
+            exit(EXIT_FAILURE);
+        }
+
+        /* unpack parsed data */
+        msgpack_unpacked_init(&result);
+        off = 0;
+        TEST_CHECK(msgpack_unpack_next(&result, out, out_size, &off) == MSGPACK_UNPACK_SUCCESS);
+
+        TEST_CHECK(check_msgpack_val(result.data, MSGPACK_OBJECT_MAP, "4" /*map size*/) == 0);
+
+        /* "int":10 */
+        obj = result.data.via.map.ptr[0].key;
+        TEST_CHECK(check_msgpack_val(obj, MSGPACK_OBJECT_STR, "int") == 0);
+        obj = result.data.via.map.ptr[0].val;
+        TEST_CHECK(check_msgpack_val(obj, MSGPACK_OBJECT_POSITIVE_INTEGER, "10") == 0);
+
+        /* "string":"hello"*/
+        obj = result.data.via.map.ptr[1].key;
+        TEST_CHECK(check_msgpack_val(obj, MSGPACK_OBJECT_STR, "string") == 0);
+        obj = result.data.via.map.ptr[1].val;
+        TEST_CHECK(check_msgpack_val(obj, MSGPACK_OBJECT_STR, "hello") == 0);
+
+        /* "bool":true */
+        obj = result.data.via.map.ptr[2].key;
+        TEST_CHECK(check_msgpack_val(obj, MSGPACK_OBJECT_STR, "bool") == 0);
+        obj = result.data.via.map.ptr[2].val;
+        TEST_CHECK(check_msgpack_val(obj, MSGPACK_OBJECT_BOOLEAN, "true") == 0);
+
+        /* "array":[0,1,2] */
+        obj = result.data.via.map.ptr[3].key;
+        TEST_CHECK(check_msgpack_val(obj, MSGPACK_OBJECT_STR, "array") == 0);
+        obj = result.data.via.map.ptr[3].val;
+        TEST_CHECK(check_msgpack_val(obj, MSGPACK_OBJECT_ARRAY, "3" /*array size*/) == 0);
+        TEST_CHECK(check_msgpack_val(obj.via.array.ptr[0], MSGPACK_OBJECT_POSITIVE_INTEGER, "0") == 0);
+        TEST_CHECK(check_msgpack_val(obj.via.array.ptr[1], MSGPACK_OBJECT_POSITIVE_INTEGER, "1") == 0);
+        TEST_CHECK(check_msgpack_val(obj.via.array.ptr[2], MSGPACK_OBJECT_POSITIVE_INTEGER, "2") == 0);
+
+        msgpack_unpacked_destroy(&result);
+        flb_free(out);
+        flb_pack_state_reset(&state);
+    }
+
+    if(!TEST_CHECK(loop_cnt == len)) {
+        TEST_MSG("loop_cnt expect=%ld got=%d", len, loop_cnt);
+    }
+}
+
 TEST_LIST = {
     /* JSON maps iteration */
     { "json_pack"          , test_json_pack },
     { "json_pack_iter"     , test_json_pack_iter},
     { "json_pack_mult"     , test_json_pack_mult},
     { "json_pack_mult_iter", test_json_pack_mult_iter},
+    { "json_macros"        , test_msgpack_to_json_macros},
     { "json_dup_keys"      , test_json_dup_keys},
     { "json_pack_bug342"   , test_json_pack_bug342},
     { "json_pack_bug1278"  , test_json_pack_bug1278},
+    { "json_pack_bug5336"  , test_json_pack_bug5336},
 
     /* Mixed bytes, check JSON encoding */
     { "utf8_to_json", test_utf8_to_json},

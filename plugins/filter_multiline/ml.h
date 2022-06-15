@@ -21,9 +21,12 @@
 #define FLB_FILTER_MULTILINE_H
 
 #include <fluent-bit/flb_filter_plugin.h>
+#include "ml_concat.h"
 
 #define FLB_MULTILINE_MEM_BUF_LIMIT_DEFAULT  "10M"
-#define FLB_MULTILINE_METRIC_EMITTED    200
+#define FLB_MULTILINE_METRIC_EMITTED         200
+#define FLB_MULTILINE_MODE_PARTIAL_MESSAGE   "partial_message"
+#define FLB_MULTILINE_MODE_PARSER            "parser"
 
 /* 
  * input instance + tag is the unique identifier
@@ -42,6 +45,7 @@ struct ml_ctx {
     int debug_flush;
     int use_buffer;
     flb_sds_t key_content;
+    flb_sds_t mode;
 
     /* packaging buffers */
     msgpack_sbuffer mp_sbuf;  /* temporary msgpack buffer */
@@ -53,7 +57,13 @@ struct ml_ctx {
     struct mk_list *multiline_parsers;
     int flush_ms;
 
+    int timer_created;
+
+    int partial_mode;
+
     struct mk_list ml_streams;
+
+    struct mk_list split_message_packers;
 
     struct flb_filter_instance *ins;
 

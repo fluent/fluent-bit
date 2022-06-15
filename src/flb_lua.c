@@ -243,7 +243,7 @@ static int lua_table_maxn(lua_State *l)
 #endif
 }
 
-static int lua_arraylength(lua_State *l)
+int flb_lua_arraylength(lua_State *l)
 {
     lua_Integer n;
     int count = 0;
@@ -442,7 +442,7 @@ void flb_lua_tompack(lua_State *l,
                 mpack_write_false(writer);
             break;
         case LUA_TTABLE:
-            len = lua_arraylength(l);
+            len = flb_lua_arraylength(l);
             if (len > 0) {
                 mpack_write_tag(writer, mpack_tag_array(len));
                 for (i = 1; i <= len; i++) {
@@ -533,7 +533,7 @@ void flb_lua_tomsgpack(lua_State *l,
                 msgpack_pack_false(pck);
             break;
         case LUA_TTABLE:
-            len = lua_arraylength(l);
+            len = flb_lua_arraylength(l);
             if (len > 0) {
                 msgpack_pack_array(pck, len);
                 for (i = 1; i <= len; i++) {

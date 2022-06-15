@@ -22,13 +22,15 @@
 /appveyor.yml            @niedbalski @patrick-stephens
 /dockerfiles/            @niedbalski @patrick-stephens
 /packaging/              @niedbalski @patrick-stephens
+/codebase-structure.svg  @niedbalski @patrick-stephens
+/install.sh              @niedbalski @patrick-stephens
 
 # Core: Signv4
 # ------------
 /src/flb_signv4.c        @pettitwesley
 /src/flb_lib.c           @edsiper @niedbalski
 
-@ Core: AWS Auth & Utils
+# Core: AWS Auth & Utils
 # ------------
 /src/aws                 @pettitwesley
 
@@ -39,7 +41,7 @@
 # Input Plugins
 # -------------
 /plugins/in_collectd     @fujimotos
-/plugins/in_docker       @ashutoshdhundhara
+/plugins/in_docker       @nokute78 @edsiper
 /plugins/in_dummy        @nokute78
 /plugins/in_netif        @nokute78
 /plugins/in_statsd       @fujimotos
@@ -52,7 +54,7 @@
 
 # Output Plugins
 # --------------
-/plugins/out_datadog     @clamoriniere
+/plugins/out_datadog     @nokute78 @edsiper
 /plugins/out_es          @pettitwesley @edsiper
 /plugins/out_pgsql       @sxd
 # AWS Plugins 

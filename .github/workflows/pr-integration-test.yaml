@@ -47,6 +47,11 @@ jobs:
     with:
       image_name: ghcr.io/${{ github.repository }}/pr-${{ github.event.pull_request.number }}
       image_tag: ${{ github.sha }}
+    secrets:
+      opensearch_aws_access_id: ${{ secrets.OPENSEARCH_AWS_ACCESS_ID }}
+      opensearch_aws_secret_key: ${{ secrets.OPENSEARCH_AWS_SECRET_KEY }}
+      opensearch_admin_password: ${{ secrets.OPENSEARCH_ADMIN_PASSWORD }}
+      terraform_api_token: ${{ secrets.TF_API_TOKEN }}
 
   pr-integration-test-run-integration-post-label:
     name: PR - integration test complete

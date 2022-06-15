@@ -5,6 +5,10 @@ on:
   push:
     branches:
       - master
+    # Do not re-trigger when our own PRs are merged
+    paths-ignore:
+      - codebase-structure.svg
+      - .github/
 jobs:
   update_diagram:
     name: Update the codebase structure diagram
@@ -17,7 +21,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Update diagram
-        # TODO: still not "official" enough for a proper semantic release version
+        # Not "official" enough for a proper semantic release version
         uses: githubocto/repo-visualizer@main
         with:
           excluded_paths: "ignore,.github"

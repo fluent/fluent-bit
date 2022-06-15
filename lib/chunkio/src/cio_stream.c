@@ -38,14 +38,14 @@ static char *get_stream_path(struct cio_ctx *ctx, struct cio_stream *st)
     char *p;
 
     /* Compose final path */
-    len = strlen(ctx->root_path) + strlen(st->name) + 2;
+    len = strlen(ctx->options.root_path) + strlen(st->name) + 2;
     p = malloc(len + 1);
     if (!p) {
         cio_errno();
         return NULL;
     }
 
-    ret = snprintf(p, len, "%s/%s", ctx->root_path, st->name);
+    ret = snprintf(p, len, "%s/%s", ctx->options.root_path, st->name);
     if (ret == -1) {
         cio_errno();
         free(p);
@@ -62,13 +62,13 @@ static int check_stream_path(struct cio_ctx *ctx, const char *path)
     char *p;
 
     /* Compose final path */
-    len = strlen(ctx->root_path) + strlen(path) + 2;
+    len = strlen(ctx->options.root_path) + strlen(path) + 2;
     p = malloc(len + 1);
     if (!p) {
         cio_errno();
         return -1;
     }
-    ret = snprintf(p, len, "%s/%s", ctx->root_path, path);
+    ret = snprintf(p, len, "%s/%s", ctx->options.root_path, path);
     if (ret == -1) {
         cio_errno();
         free(p);

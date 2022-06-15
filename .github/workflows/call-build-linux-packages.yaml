@@ -100,10 +100,10 @@ jobs:
           path: packaging
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v1
+        uses: docker/setup-qemu-action@v2
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
+        uses: docker/setup-buildx-action@v2
 
       - uses: frabert/replace-string-action@master
         id: formatted_distro
@@ -229,7 +229,7 @@ jobs:
 
       - name: Import GPG key for signing
         id: import_gpg
-        uses: crazy-max/ghaction-import-gpg@v4
+        uses: crazy-max/ghaction-import-gpg@v5
         with:
           gpg_private_key: ${{ secrets.gpg_private_key }}
           passphrase: ${{ secrets.gpg_private_key_passphrase }}
