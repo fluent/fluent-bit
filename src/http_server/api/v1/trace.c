@@ -156,11 +156,17 @@ static void cb_enable_trace(mk_request_t *request, void *data)
                     if (val->type != MSGPACK_OBJECT_STR) {
                         goto error;
                     }
+                    if (input_name != NULL) {
+                        flb_sds_destroy(input_name);
+                    }
                     input_name = flb_sds_create_len(val->via.str.ptr, val->via.str.size);
                 }
                 if (strncmp(key->via.str.ptr, "prefix", key->via.str.size) == 0) {
                     if (val->type != MSGPACK_OBJECT_STR) {
                         goto error;
+                    }
+                    if (prefix != NULL) {
+                        flb_sds_destroy(prefix);
                     }
                     prefix = flb_sds_create_len(val->via.str.ptr, val->via.str.size);
                 }
@@ -168,10 +174,10 @@ static void cb_enable_trace(mk_request_t *request, void *data)
                     if (val->type != MSGPACK_OBJECT_STR) {
                         goto error;
                     }
+                    if (output_name != NULL) {
+                        flb_sds_destroy(output_name);
+                    }
                     output_name = flb_sds_create_len(val->via.str.ptr, val->via.str.size);
-                }
-                if (output_name == NULL) {
-                    output_name = flb_sds_create("stdout");
                 }
                 if (strncmp(key->via.str.ptr, "params", key->via.str.size) == 0) {
                     if (val->type != MSGPACK_OBJECT_MAP) {
@@ -201,6 +207,11 @@ static void cb_enable_trace(mk_request_t *request, void *data)
                     }
                 }
             }
+
+            if (output_name == NULL) {
+                output_name = flb_sds_create("stdout");
+            }
+
             switch (enable_disable) {
             case -1:
                 toggled_on = toggle_trace_input(hs, input_name, prefix, output_name, props);
