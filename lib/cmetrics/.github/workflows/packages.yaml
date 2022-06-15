@@ -19,7 +19,7 @@ jobs:
         format: [ rpm, deb ]
     steps:
       - uses: actions/checkout@v2
-      - uses: uraimo/run-on-arch-action@v2.1.1
+      - uses: uraimo/run-on-arch-action@v2.2.0
         name: Build the ${{matrix.format}} packages
         with:
           arch: aarch64
@@ -36,7 +36,7 @@ jobs:
             echo ${{ matrix.format }} | awk '{print toupper($0)}' | xargs -I{} cpack -G {}
 
       - name: Store the master package artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ matrix.format }}-arm64
           path: |
@@ -58,7 +58,7 @@ jobs:
           echo ${{ matrix.format }} | awk '{print toupper($0)}' | xargs -I{} cpack -G {}
 
       - name: Store the master package artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ matrix.format }}-amd64
           path: |
@@ -74,7 +74,7 @@ jobs:
       contents: write
     steps:
       - name: Download all artefacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: artifacts/
 
