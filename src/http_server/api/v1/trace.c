@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_lib.h>
 #include <fluent-bit/flb_trace_chunk.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_utils.h>
 #include <msgpack.h>
 
 
@@ -59,10 +60,10 @@ static int enable_trace_input(struct flb_hs *hs, const char *name, const char *p
         flb_free(in->trace_ctxt);
     }
     in->trace_ctxt = flb_trace_chunk_context_new(hs->config, output_name, prefix, props);
-    return (in->trace_ctxt == NULL ? -1 : 0);
+    return (in->trace_ctxt == NULL ? -1 : 1);
 }
 
-static int disable_trace_input(struct flb_hs *hs, const char *name, const char *prefix, const char *output_name, struct mk_list *props)
+static int disable_trace_input(struct flb_hs *hs, const char *name)
 {
     struct flb_input_instance *in;
     
@@ -76,6 +77,7 @@ static int disable_trace_input(struct flb_hs *hs, const char *name, const char *
         flb_free(in->trace_ctxt);
     }
     in->trace_ctxt = NULL;
+    return 0;
 }
 
 static int toggle_trace_input(struct flb_hs *hs, const char *name, const char *prefix, const char *output_name, struct mk_list *props)
@@ -117,7 +119,9 @@ static void cb_enable_trace(mk_request_t *request, void *data)
     flb_sds_t input_name;
     flb_sds_t prefix;
     flb_sds_t output_name;
+    flb_sds_t enable_disable_str;
     int toggled_on = -1;
+    int enable_disable = -1;
     msgpack_object *key;
     msgpack_object *val;
     struct mk_list *props = NULL;
@@ -187,8 +191,28 @@ static void cb_enable_trace(mk_request_t *request, void *data)
                                                (char *)val->via.map.ptr[x].val.via.str.ptr, val->via.map.ptr[x].val.via.str.size);
                     }
                 }
+                if (strncmp(key->via.str.ptr, "enable", key->via.str.size) == 0) {
+                    if (val->type == MSGPACK_OBJECT_BOOLEAN) {
+                        enable_disable = val->via.boolean;
+                    } else if (val->type == MSGPACK_OBJECT_STR) {
+                        enable_disable_str = flb_sds_create_len(val->via.str.ptr, val->via.str.size);
+                        enable_disable = flb_utils_bool(enable_disable_str);
+                        flb_sds_destroy(enable_disable_str);
+                    }
+                }
             }
-            toggled_on = toggle_trace_input(hs, input_name, prefix, output_name, props);
+            switch (enable_disable) {
+            case -1:
+                toggled_on = toggle_trace_input(hs, input_name, prefix, output_name, props);
+                break;
+            case 1:
+                toggled_on = enable_trace_input(hs, input_name, prefix, output_name, props);
+                break;
+            case 0:
+                toggled_on = 0;
+                disable_trace_input(hs, input_name);
+                break;
+            }
             flb_sds_destroy(prefix);
             flb_sds_destroy(input_name);
             flb_sds_destroy(output_name);
