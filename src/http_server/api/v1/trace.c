@@ -57,7 +57,7 @@ static int enable_trace_input(struct flb_hs *hs, const char *name, const char *p
     }
 
     if (in->trace_ctxt != NULL) {
-        flb_free(in->trace_ctxt);
+        flb_trace_chunk_context_destroy(in->trace_ctxt);
     }
     in->trace_ctxt = flb_trace_chunk_context_new(hs->config, output_name, prefix, props);
     return (in->trace_ctxt == NULL ? -1 : 1);
@@ -74,7 +74,7 @@ static int disable_trace_input(struct flb_hs *hs, const char *name)
     }
 
     if (in->trace_ctxt != NULL) {
-        flb_free(in->trace_ctxt);
+        flb_trace_chunk_context_destroy(in->trace_ctxt);
     }
     in->trace_ctxt = NULL;
     return 0;
