@@ -38,6 +38,7 @@ struct flb_trace_chunk *flb_trace_chunk_new(struct flb_input_chunk *chunk)
 
 void flb_trace_chunk_destroy(struct flb_trace_chunk *trace)
 {
+    flb_sds_destroy(trace->trace_id);
     flb_free(trace);
 }
 
@@ -133,6 +134,7 @@ void flb_trace_chunk_context_destroy(struct flb_trace_chunk_context *ctxt)
     flb_output_instance_destroy(ctxt->output);
     */
 
+    flb_sds_destroy(ctxt->trace_prefix);
     flb_free(ctxt);
 }
 
