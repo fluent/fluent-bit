@@ -116,10 +116,10 @@ static void cb_enable_trace(mk_request_t *request, void *data)
     size_t off = 0;
     int root_type = MSGPACK_OBJECT_ARRAY;
     struct flb_hs *hs = data;
-    flb_sds_t input_name;
-    flb_sds_t prefix;
-    flb_sds_t output_name;
-    flb_sds_t enable_disable_str;
+    flb_sds_t input_name = NULL;
+    flb_sds_t prefix = NULL;
+    flb_sds_t output_name = NULL;
+    flb_sds_t enable_disable_str = NULL;
     int toggled_on = -1;
     int enable_disable = -1;
     msgpack_object *key;
@@ -213,9 +213,9 @@ static void cb_enable_trace(mk_request_t *request, void *data)
                 disable_trace_input(hs, input_name);
                 break;
             }
-            flb_sds_destroy(prefix);
-            flb_sds_destroy(input_name);
-            flb_sds_destroy(output_name);
+            if (prefix) flb_sds_destroy(prefix);
+            if (input_name) flb_sds_destroy(input_name);
+            if (output_name) flb_sds_destroy(output_name);
             if (props != NULL) {
                 flb_kv_release(props);
                 flb_free(props);
