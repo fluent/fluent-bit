@@ -42,6 +42,14 @@ struct flb_libco_in_params libco_in_param;
 
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
 
+/*
+ * Ring buffer size: we make space for 512 entries that each input instance can
+ * use to enqueue data. Note that this value is fixed and only affect input plugins
+ * which runs in threaded mode (separate thread)
+ */
+#define FLB_INPUT_RING_BUFFER_SIZE  (sizeof(void *) * 1024)
+
+
 static int check_protocol(const char *prot, const char *output)
 {
     int len;
