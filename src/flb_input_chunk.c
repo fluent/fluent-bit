@@ -1604,9 +1604,11 @@ static int append_raw_to_ring_buffer(struct flb_input_instance *ins,
 
 {
     int ret;
+    int retries = 0;
+    int retry_limit = 10;
     struct input_chunk_raw *cr;
 
-    cr = flb_malloc(sizeof(struct input_chunk_raw));
+    cr = flb_calloc(1, sizeof(struct input_chunk_raw));
     if (!cr) {
         flb_errno();
         return -1;
@@ -1641,18 +1643,30 @@ static int append_raw_to_ring_buffer(struct flb_input_instance *ins,
     memcpy(cr->buf_data, buf, buf_size);
     cr->buf_size = buf_size;
 
-retry:
-    /* append chunk raw context to the ring buffer */
-    ret = flb_ring_buffer_write(ins->rb, (void *) &cr, sizeof(cr));
-    if (ret == -1) {
-        flb_plg_info(ins, "[DEV] ring buffer saturated ?, sleep for 0.5 secs");
-        sleep(0.5);
-        goto retry;
 
-        /* yeah, we need to fix this */
+
+retry:
+    /*
+     * There is a little chance that the ring buffer is full or due to saturation
+     * from the main thread the data is not being consumed. On this scenario we
+     * retry up to 'retry_limit' times with a little wait time.
+     */
+    if (retries >= retry_limit) {
         flb_plg_error(ins, "could not enqueue records into the ring buffer");
         destroy_chunk_raw(cr);
         return -1;
+    }
+
+    /* append chunk raw context to the ring buffer */
+    ret = flb_ring_buffer_write(ins->rb, (void *) &cr, sizeof(cr));
+    if (ret == -1) {
+        printf("[%s] failed buffer write, retries=%i\n",
+               flb_input_name(ins), retries); fflush(stdout);
+
+        /* sleep for 100000 microseconds (100 milliseconds) */
+        usleep(100000);
+        retries++;
+        goto retry;
     }
 
     return 0;
@@ -1669,19 +1683,24 @@ void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data)
     mk_list_foreach(head, &ctx->inputs) {
         ins = mk_list_entry(head, struct flb_input_instance, _head);
         cr = NULL;
-        ret = flb_ring_buffer_read(ins->rb, (void *) &cr, sizeof(cr));
-        if (ret == 0 && cr) {
-            if (cr->tag) {
-                tag_len = flb_sds_len(cr->tag);
-            }
-            else {
-                tag_len = 0;
-            }
 
-            input_chunk_append_raw(cr->ins, cr->records,
-                                   cr->tag, tag_len,
-                                   cr->buf_data, cr->buf_size);
-            destroy_chunk_raw(cr);
+        while ((ret = flb_ring_buffer_read(ins->rb,
+                                           (void *) &cr,
+                                           sizeof(cr))) == 0) {
+            if (cr) {
+                if (cr->tag) {
+                    tag_len = flb_sds_len(cr->tag);
+                }
+                else {
+                    tag_len = 0;
+                }
+
+                input_chunk_append_raw(cr->ins, cr->records,
+                                       cr->tag, tag_len,
+                                       cr->buf_data, cr->buf_size);
+                destroy_chunk_raw(cr);
+            }
+            cr = NULL;
         }
     }
 }
