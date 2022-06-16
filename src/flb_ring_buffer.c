@@ -86,7 +86,15 @@ void flb_ring_buffer_destroy(struct flb_ring_buffer *rb)
 int flb_ring_buffer_write(struct flb_ring_buffer *rb, void *ptr, size_t size)
 {
     size_t ret;
+    size_t av;
 
+    /* make sure there is enough space available */
+    av = lwrb_get_free(rb->ctx);
+    if (av < size) {
+        return -1;
+    }
+
+    /* write the content */
     ret = lwrb_write(rb->ctx, ptr, size);
     if (ret == 0) {
         return -1;
