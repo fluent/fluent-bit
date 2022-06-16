@@ -111,7 +111,7 @@ jobs:
           cp -fv $SOURCE_FILENAME_PREFIX* source-packages/
         shell: bash
         env:
-          SOURCE_FILENAME_PREFIX: source-${{ inputs-version }}
+          SOURCE_FILENAME_PREFIX: source-${{ inputs.version }}
 
       - name: Upload the source artifacts
         uses: actions/upload-artifact@v3
