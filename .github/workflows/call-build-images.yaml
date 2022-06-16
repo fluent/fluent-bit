@@ -274,6 +274,7 @@ jobs:
           load: false
           build-args: |
             FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
+            RELEASE_VERSION=${{ inputs.version }}
 
       - id: debug-meta
         uses: docker/metadata-action@v4
@@ -297,6 +298,7 @@ jobs:
           load: false
           build-args: |
             FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
+            RELEASE_VERSION=${{ inputs.version }}
 
   call-build-images-generate-schema:
     needs:
