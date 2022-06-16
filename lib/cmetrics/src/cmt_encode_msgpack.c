@@ -328,10 +328,9 @@ static int pack_metric(mpack_writer_t *writer, struct cmt_map *map, struct cmt_m
         mpack_start_map(writer, 3);
 
         mpack_write_cstr(writer, "buckets");
-        mpack_start_array(writer, histogram->buckets->count);
-
+        mpack_start_array(writer, histogram->buckets->count + 1);
         for (index = 0 ;
-             index < histogram->buckets->count ;
+             index <= histogram->buckets->count ;
              index++) {
             mpack_write_uint(writer, cmt_metric_hist_get_value(metric, index));
         }

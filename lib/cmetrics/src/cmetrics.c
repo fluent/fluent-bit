@@ -58,6 +58,7 @@ struct cmt *cmt_create()
         cmt_labels_destroy(cmt->static_labels);
 
         free(cmt);
+        return NULL;
     }
 
     cmt->external_metadata = cmt_kvlist_create();
@@ -67,6 +68,7 @@ struct cmt *cmt_create()
         cmt_labels_destroy(cmt->static_labels);
 
         free(cmt);
+        return NULL;
     }
 
     mk_list_init(&cmt->counters);

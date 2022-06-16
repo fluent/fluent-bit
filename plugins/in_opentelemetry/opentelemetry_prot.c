@@ -84,10 +84,10 @@ static int send_response(struct http_conn *conn, int http_status, char *message)
 }
 
 
-static int process_payload(struct flb_opentelemetry *ctx, struct http_conn *conn,
-                           flb_sds_t tag,
-                           struct mk_http_session *session,
-                           struct mk_http_request *request)
+static int process_payload_metrics(struct flb_opentelemetry *ctx, struct http_conn *conn,
+                                   flb_sds_t tag,
+                                   struct mk_http_session *session,
+                                   struct mk_http_request *request)
 {
     struct cmt *decoded_context;
     size_t      offset;
@@ -106,6 +106,30 @@ static int process_payload(struct flb_opentelemetry *ctx, struct http_conn *conn
         cmt_decode_opentelemetry_destroy(decoded_context);
     }
 
+    return 0;
+}
+
+static int process_payload_traces(struct flb_opentelemetry *ctx, struct http_conn *conn,
+                                  flb_sds_t tag,
+                                  struct mk_http_session *session,
+                                  struct mk_http_request *request)
+{
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_array(&mp_pck, 2);
+    flb_pack_time_now(&mp_pck);
+    msgpack_pack_map(&mp_pck, 1);
+    msgpack_pack_str_with_body(&mp_pck, "trace", 5);
+    msgpack_pack_str_with_body(&mp_pck, request->data.data, request->data.len);
+
+    ctx->ins->event_type = FLB_INPUT_LOGS;
+
+    flb_input_chunk_append_raw(ctx->ins, tag, flb_sds_len(tag), mp_sbuf.data, mp_sbuf.size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
     return 0;
 }
 
@@ -161,6 +185,12 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
         uri[request->uri.len] = '\0';
     }
 
+    if (strcmp(uri, "/metrics") != 0 && strcmp(uri, "/traces") != 0) {
+        send_response(conn, 400, "error: invalid endpoint\n");
+        mk_mem_free(uri);
+        return -1;
+    }
+
     /* Try to match a query string so we can remove it */
     qs = strchr(uri, '?');
     if (qs) {
@@ -192,8 +222,6 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
             }
         }
     }
-
-    mk_mem_free(uri);
 
     /* Check if we have a Host header: Hostname ; port */
     mk_http_point_header(&request->host, &session->parser, MK_HEADER_HOST);
@@ -227,7 +255,13 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
         return -1;
     }
 
-    ret = process_payload(ctx, conn, tag, session, request);
+    if (strcmp(uri, "/metrics") == 0) {
+        ret = process_payload_metrics(ctx, conn, tag, session, request);
+    }
+    else if (strcmp(uri, "/traces") == 0) {
+        ret = process_payload_traces(ctx, conn, tag, session, request);
+    }
+    mk_mem_free(uri);
     flb_sds_destroy(tag);
     send_response(conn, ctx->successful_response_code, NULL);
     return ret;
