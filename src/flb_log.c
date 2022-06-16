@@ -370,12 +370,18 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
         break;
     }
 
+    #ifdef FLB_LOG_NO_CONTROL_CHARS
+    header_color = "";
+    bold_color = "";
+    reset_color = "";
+    #else
     /* Only print colors to a terminal */
     if (!isatty(STDOUT_FILENO)) {
         header_color = "";
         bold_color = "";
         reset_color = "";
     }
+    #endif // FLB_LOG_NO_CONTROL_CHARS
 
     now = time(NULL);
     current = localtime_r(&now, &result);
