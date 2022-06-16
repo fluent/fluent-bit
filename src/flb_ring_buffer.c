@@ -55,7 +55,7 @@ struct flb_ring_buffer *flb_ring_buffer_create(uint64_t size)
     rb->ctx = lwrb;
 
     /* data buffer for backend library */
-    data_size = sizeof(uint8_t) * size;
+    data_size = 1 + (sizeof(uint8_t) * size);
     data_buf = flb_calloc(1, data_size);
     if (!data_buf) {
         flb_errno();
