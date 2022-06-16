@@ -53,10 +53,10 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # Must be run from root of repo
-WORKDIR /tmp/fluent-bit/
+WORKDIR /src/fluent-bit/
 COPY . ./
 
-WORKDIR /tmp/fluent-bit/build/
+WORKDIR /src/fluent-bit/build/
 RUN cmake -DFLB_RELEASE=On \
           -DFLB_TRACE=Off \
           -DFLB_JEMALLOC=On \
@@ -69,6 +69,7 @@ RUN cmake -DFLB_RELEASE=On \
           -DFLB_OUT_KAFKA=On \
           -DFLB_OUT_PGSQL=On \
           -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
+          -DFLB_LOG_NO_CONTROL_CHARS=On \
           ..
 
 RUN make -j "$(getconf _NPROCESSORS_ONLN)"
