@@ -44,7 +44,8 @@ static int set_dummy_timestamp(msgpack_packer *mp_pck, struct flb_dummy *ctx)
         ctx->base_timestamp = flb_malloc(sizeof(struct flb_time));
         flb_time_get(ctx->base_timestamp);
         ret = flb_time_append_to_msgpack(ctx->dummy_timestamp, mp_pck, 0);
-    } else {
+    }
+    else {
         flb_time_get(&t);
         flb_time_diff(&t, ctx->base_timestamp, &diff);
         flb_time_add(ctx->dummy_timestamp, &diff, &dummy_time);
@@ -78,7 +79,8 @@ static int gen_msg(struct flb_input_instance *ins, void *in_context, msgpack_sbu
             msgpack_pack_array(&mp_pck, 2);
             if (ctx->dummy_timestamp != NULL){
                 set_dummy_timestamp(&mp_pck, ctx);
-            } else {
+            }
+            else {
                 flb_pack_time_now(&mp_pck);
             }
             msgpack_pack_str_body(&mp_pck, pack + start, off - start);
@@ -106,7 +108,8 @@ static int in_dummy_collect(struct flb_input_instance *ins,
         gen_msg(ins, in_context, &mp_sbuf);
         flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
         msgpack_sbuffer_destroy(&mp_sbuf);
-    } else {
+    }
+    else {
         flb_input_chunk_append_raw(ins, NULL, 0, ctx->mp_sbuf.data, ctx->mp_sbuf.size);
     }
 
@@ -191,7 +194,8 @@ static int configure(struct flb_dummy *ctx,
     if (ret == 0) {
         ctx->dummy_message = flb_strdup(msg);
         ctx->dummy_message_len = strlen(msg);
-    } else {
+    }
+    else {
         flb_plg_warn(ctx->ins, "data is incomplete. Use default string.");
 
         ctx->dummy_message = flb_strdup(DEFAULT_DUMMY_MESSAGE);
@@ -248,8 +252,23 @@ static int in_dummy_init(struct flb_input_instance *in,
         config_destroy(ctx);
         return -1;
     }
+    ctx->coll_fd = ret;
 
     return 0;
+}
+
+static void in_dummy_pause(void *data, struct flb_config *config)
+{
+    struct flb_dummy *ctx = data;
+
+    flb_input_collector_pause(ctx->coll_fd, ctx->ins);
+}
+
+static void in_dummy_resume(void *data, struct flb_config *config)
+{
+    struct flb_dummy *ctx = data;
+
+    flb_input_collector_resume(ctx->coll_fd, ctx->ins);
 }
 
 static int in_dummy_exit(void *data, struct flb_config *config)
@@ -306,5 +325,7 @@ struct flb_input_plugin in_dummy_plugin = {
     .cb_collect   = in_dummy_collect,
     .cb_flush_buf = NULL,
     .config_map   = config_map,
+    .cb_pause     = in_dummy_pause,
+    .cb_resume    = in_dummy_resume,
     .cb_exit      = in_dummy_exit
 };
