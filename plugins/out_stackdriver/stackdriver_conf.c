@@ -32,6 +32,7 @@
 #include "gce_metadata.h"
 #include "stackdriver.h"
 #include "stackdriver_conf.h"
+#include "stackdriver_resource_types.h"
 
 static inline int key_cmp(const char *str, int len, const char *cmp) {
 
@@ -169,12 +170,15 @@ static int read_credentials_file(const char *cred_file, struct flb_stackdriver *
 }
 
 /*
- * parse_configuration_labels
- * - Parse labels set in configuration
- * - Returns the number of configuration labels
+ *   parse_key_value_list():
+ * - Parses an origin list of comma seperated string specifying key=value.
+ * - Appends the parsed key value pairs into the destination list.
+ * - Returns the length of the destination list.
  */
-
-static int parse_configuration_labels(struct flb_stackdriver *ctx)
+static int parse_key_value_list(struct flb_stackdriver *ctx,
+                                struct mk_list *origin,
+                                struct mk_list *dest,
+                                int shouldTrim)
 {
     int ret;
     char *p;
@@ -184,8 +188,8 @@ static int parse_configuration_labels(struct flb_stackdriver *ctx)
     struct flb_slist_entry *entry;
     msgpack_object_kv *kv = NULL;
 
-    if (ctx->labels) {
-        mk_list_foreach(head, ctx->labels) {
+    if (origin) {
+        mk_list_foreach(head, origin) {
             entry = mk_list_entry(head, struct flb_slist_entry, _head);
 
             p = strchr(entry->str, '=');
@@ -198,7 +202,11 @@ static int parse_configuration_labels(struct flb_stackdriver *ctx)
             key = flb_sds_create_size((p - entry->str) + 1);
             flb_sds_cat(key, entry->str, p - entry->str);
             val = flb_sds_create(p + 1);
-            if (!key) {
+            if (shouldTrim) {
+                flb_sds_trim(key);
+                flb_sds_trim(val);
+            }
+            if (!key || flb_sds_len(key) == 0) {
                 flb_plg_error(ctx->ins,
                               "invalid key value pair on '%s'",
                               entry->str);
@@ -212,7 +220,7 @@ static int parse_configuration_labels(struct flb_stackdriver *ctx)
                 return -1;
             }
 
-            ret = flb_kv_item_create(&ctx->config_labels, key, val);
+            ret = flb_kv_item_create(dest, key, val);
             flb_sds_destroy(key);
             flb_sds_destroy(val);
 
@@ -222,7 +230,29 @@ static int parse_configuration_labels(struct flb_stackdriver *ctx)
         }
     }
 
-    return mk_list_size(&ctx->config_labels);
+    return mk_list_size(dest);
+}
+
+/*
+ * parse_configuration_labels
+ * - Parse labels set in configuration
+ * - Returns the number of configuration labels
+ */
+static int parse_configuration_labels(struct flb_stackdriver *ctx)
+{
+    return parse_key_value_list(ctx, ctx->labels,
+        &ctx->config_labels, FLB_FALSE);
+}
+
+/*
+ *   parse_resource_labels():
+ * - Parses resource labels set in configuration.
+ * - Returns the number of resource label mappings.
+ */
+static int parse_resource_labels(struct flb_stackdriver *ctx)
+{
+    return parse_key_value_list(ctx, ctx->resource_labels,
+        &ctx->resource_labels_kvs, FLB_TRUE);
 }
 
 struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *ins,
@@ -256,6 +286,16 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     if (ret == -1) {
         flb_plg_error(ins, "unable to parse configuration labels");
         flb_kv_release(&ctx->config_labels);
+        flb_free(ctx);
+        return NULL;
+    }
+
+    /* resource labels */
+    flb_kv_init(&ctx->resource_labels_kvs);
+    ret = parse_resource_labels((void *)ctx);
+    if (ret == -1) {
+        flb_plg_error(ins, "unable to parse resource label list");
+        flb_kv_release(&ctx->resource_labels_kvs);
         flb_free(ctx);
         return NULL;
     }
@@ -414,68 +454,61 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         }
     }
 
-    if (flb_sds_cmp(ctx->resource, "k8s_container",
-                    flb_sds_len(ctx->resource)) == 0 ||
-        flb_sds_cmp(ctx->resource, "k8s_node",
-                    flb_sds_len(ctx->resource)) == 0 ||
-        flb_sds_cmp(ctx->resource, "k8s_pod",
-                    flb_sds_len(ctx->resource)) == 0) {
+    set_resource_type(ctx);
 
-        ctx->is_k8s_resource_type = FLB_TRUE;
+    if (resource_api_has_required_labels(ctx) == FLB_FALSE) {
 
-        if (!ctx->cluster_name || !ctx->cluster_location) {
-            flb_plg_error(ctx->ins, "missing k8s_cluster_name "
-                          "or k8s_cluster_location in configuration");
-            flb_stackdriver_conf_destroy(ctx);
-            return NULL;
-        }
-    }
-
-    if (flb_sds_cmp(ctx->resource, "generic_node",
-                    flb_sds_len(ctx->resource)) == 0 ||
-        flb_sds_cmp(ctx->resource, "generic_task",
-                    flb_sds_len(ctx->resource)) == 0) {
-
-        ctx->is_generic_resource_type = FLB_TRUE;
-
-        if (ctx->location == NULL) {
-            flb_plg_error(ctx->ins, "missing generic resource's location");
-        }
-
-        if (ctx->namespace_id == NULL) {
-            flb_plg_error(ctx->ins, "missing generic resource's namespace");
-        }
-
-        if (flb_sds_cmp(ctx->resource, "generic_node",
-                    flb_sds_len(ctx->resource)) == 0) {
-            if (ctx->node_id == NULL) {
-                flb_plg_error(ctx->ins, "missing generic_node's node_id");
-                flb_stackdriver_conf_destroy(ctx);
-                return NULL;
-            }
-        }
-        else {
-            if (ctx->job == NULL) {
-                flb_plg_error(ctx->ins, "missing generic_task's job");
-            }
-
-            if (ctx->task_id == NULL) {
-                flb_plg_error(ctx->ins, "missing generic_task's task_id");
-            }
-
-            if (!ctx->job || !ctx->task_id) {
+        if (ctx->resource_type == RESOURCE_TYPE_K8S) {
+            if (!ctx->cluster_name || !ctx->cluster_location) {
+                flb_plg_error(ctx->ins, "missing k8s_cluster_name "
+                            "or k8s_cluster_location in configuration");
                 flb_stackdriver_conf_destroy(ctx);
                 return NULL;
             }
         }
 
-        if (!ctx->location || !ctx->namespace_id) {
-            flb_stackdriver_conf_destroy(ctx);
-            return NULL;
+        else if (ctx->resource_type == RESOURCE_TYPE_GENERIC_NODE 
+            || ctx->resource_type == RESOURCE_TYPE_GENERIC_TASK) {
+
+            if (ctx->location == NULL) {
+                flb_plg_error(ctx->ins, "missing generic resource's location");
+            }
+
+            if (ctx->namespace_id == NULL) {
+                flb_plg_error(ctx->ins, "missing generic resource's namespace");
+            }
+
+            if (ctx->resource_type == RESOURCE_TYPE_GENERIC_NODE) {
+                if (ctx->node_id == NULL) {
+                    flb_plg_error(ctx->ins, "missing generic_node's node_id");
+                    flb_stackdriver_conf_destroy(ctx);
+                    return NULL;
+                }
+            }
+            else {
+                if (ctx->job == NULL) {
+                    flb_plg_error(ctx->ins, "missing generic_task's job");
+                }
+
+                if (ctx->task_id == NULL) {
+                    flb_plg_error(ctx->ins, "missing generic_task's task_id");
+                }
+
+                if (!ctx->job || !ctx->task_id) {
+                    flb_stackdriver_conf_destroy(ctx);
+                    return NULL;
+                }
+            }
+
+            if (!ctx->location || !ctx->namespace_id) {
+                flb_stackdriver_conf_destroy(ctx);
+                return NULL;
+            }
         }
     }
 
-    if (ctx->tag_prefix == NULL && ctx->is_k8s_resource_type == FLB_TRUE) {
+
+    if (ctx->tag_prefix == NULL && ctx->resource_type == RESOURCE_TYPE_K8S) {
         /* allocate the flb_sds_t to tag_prefix_k8s so we can safely deallocate it */
         ctx->tag_prefix_k8s = flb_sds_create(ctx->resource);
         ctx->tag_prefix_k8s = flb_sds_cat(ctx->tag_prefix_k8s, ".", 1);
@@ -583,7 +616,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
         flb_sds_destroy(ctx->metadata_server);
     }
     
-    if (ctx->is_k8s_resource_type){
+    if (ctx->resource_type == RESOURCE_TYPE_K8S){
         flb_sds_destroy(ctx->namespace_name);
         flb_sds_destroy(ctx->pod_name);
         flb_sds_destroy(ctx->container_name);
@@ -621,6 +654,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     }
 
     flb_kv_release(&ctx->config_labels);
+    flb_kv_release(&ctx->resource_labels_kvs);
     flb_free(ctx);
 
     return 0;
