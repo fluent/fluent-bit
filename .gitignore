@@ -38,3 +38,5 @@ workflow/
 .kitchen/
 
 .vagrant/
+# examples
+examples/wasi_serde_json/target/
