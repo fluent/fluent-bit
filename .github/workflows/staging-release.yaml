@@ -298,6 +298,8 @@ jobs:
           COSIGN_EXPERIMENTAL: "true"
 
   # This will require a sign off so can be done after packages are updated to confirm
+  # Until S3 bucket is set up as release will only test what is in the server from a prior release.
+  # TODO: https://github.com/fluent/fluent-bit/issues/5098
   staging-release-smoke-test:
     name: Run smoke tests on release artefacts
     permissions:
