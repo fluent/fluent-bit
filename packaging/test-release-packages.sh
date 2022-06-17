@@ -13,6 +13,7 @@ INSTALL_SCRIPT=${INSTALL_SCRIPT:-https://raw.githubusercontent.com/fluent/fluent
 
 APT_TARGETS=("ubuntu:18.04"
     "ubuntu:20.04"
+    "ubuntu:22.04"
     "debian:10"
     "debian:11")
 
@@ -23,7 +24,7 @@ YUM_TARGETS=("centos:7"
 for IMAGE in "${APT_TARGETS[@]}"
 do
     echo "Testing $IMAGE"
-    $CONTAINER_RUNTIME run --rm -it \
+    $CONTAINER_RUNTIME run --rm -t \
         -e FLUENT_BIT_PACKAGES_URL="${FLUENT_BIT_PACKAGES_URL:-https://packages.fluentbit.io}" \
         -e FLUENT_BIT_PACKAGES_KEY="${FLUENT_BIT_PACKAGES_KEY:-https://packages.fluentbit.io/fluentbit.key}" \
         "$IMAGE" \
