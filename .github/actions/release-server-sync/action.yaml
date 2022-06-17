@@ -64,13 +64,13 @@ runs:
     run: |
       ssh $USERNAME@$HOST mkdir -p /home/$USERNAME/apt
       rsync --include="*/" \
-        --include="*.rpm" \
-        --include="*.deb" \
-        --include="*.exe" \
-        --include="*.zip" \
+        --include="*.rpm" --include="*.deb" \
+        --include="*.zip" --include="*.exe" \
+        --include="*.tar.gz" \
+        --include="*.md5" --include="*.sha256" \
         --include="fluent-bit-schema*.json" \
-        --exclude="*" -amvz \
-        packaging/releases/ $USERNAME@$HOST:/home/$USERNAME/apt
+        --exclude="*" \
+        -amvz packaging/releases/ $USERNAME@$HOST:/home/$USERNAME/apt
     env:
       HOST: ${{ inputs.server_hostname }}
       USERNAME: ${{ inputs.server_username }}
