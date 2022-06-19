@@ -247,6 +247,27 @@ void flb_ra_destroy(struct flb_record_accessor *ra)
     flb_free(ra);
 }
 
+int flb_ra_subkey_num(struct flb_record_accessor *ra)
+{
+    struct mk_list *head;
+    struct flb_ra_parser *rp;
+    int ret = -1;
+    int tmp;
+
+    if (ra == NULL) {
+        return -1;
+    }
+    mk_list_foreach(head, &ra->list) {
+        rp = mk_list_entry(head, struct flb_ra_parser, _head);
+        tmp = flb_ra_parser_subkey_num(rp);
+        if (tmp > ret) {
+            ret = tmp;
+        }
+    }
+
+    return ret;
+}
+
 struct flb_record_accessor *flb_ra_create(char *str, int translate_env)
 {
     int ret;
