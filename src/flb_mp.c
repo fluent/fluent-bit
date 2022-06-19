@@ -350,6 +350,61 @@ void flb_mp_array_header_end(struct flb_mp_map_header *mh)
     flb_mp_set_array_header_size(ptr, mh->entries);
 }
 
+/* TODO: move to mk_list.h ? */
+static inline void list_add_before(struct mk_list *_new,
+                                   struct mk_list *next,
+                                   struct mk_list *head)
+{
+    struct mk_list *prev;
+
+    if (_new == NULL || next == NULL || head == NULL) {
+        return;
+    }
+
+    if ((head->prev == head && head->next == head) /*empty*/||
+        next == head) {
+        mk_list_add(_new, head);
+        return;
+    }
+
+    prev = next->prev;
+    _new->next = next;
+    _new->prev = prev;
+    prev->next = _new;
+    next->prev = _new;
+}
+
+static int insert_by_subkey_num(struct flb_record_accessor *ra, struct flb_mp_accessor *mpa)
+{
+    int subkey_num;
+    int num;
+    struct mk_list *h;
+    struct flb_record_accessor *val_ra;
+
+    /*
+     * sort flb_record_accessor by number of subkey
+     *
+     *  e.g.
+     *    $kubernetes
+     *    $kubernetes[2]['a']
+     *    $kubernetes[2]['annotations']['fluentbit.io/tag']
+     */
+    subkey_num = flb_ra_subkey_num(ra);
+    mk_list_foreach(h, &mpa->ra_list) {
+        val_ra = mk_list_entry(h, struct flb_record_accessor, _head);
+        num = flb_ra_subkey_num(val_ra);
+        if (num >=  subkey_num) {
+            list_add_before(&ra->_head, &val_ra->_head, &mpa->ra_list);
+            return 0;
+        }
+    }
+
+    /* add to tail of list */
+    mk_list_add(&ra->_head, &mpa->ra_list);
+    return 0;
+}
+
+
 /*
  * Create an 'mp accessor' context: this context allows to create a list of
  * record accessor patterns based on a 'slist' context, where every slist string
@@ -382,7 +437,13 @@ struct flb_mp_accessor *flb_mp_accessor_create(struct mk_list *slist_patterns)
             flb_mp_accessor_destroy(mpa);
             return NULL;
         }
-        mk_list_add(&ra->_head, &mpa->ra_list);
+
+        /* first time */
+        if (mk_list_size(&mpa->ra_list) == 0) {
+            mk_list_add(&ra->_head, &mpa->ra_list);
+            continue;
+        }
+        insert_by_subkey_num(ra, mpa);
     }
 
     if (mk_list_size(&mpa->ra_list) == 0) {
