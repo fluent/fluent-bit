@@ -1,0 +1,13 @@
+version: "3"
+
+services:
+  fluent-bit:
+    build:
+      context: ../..
+      dockerfile: dockerfiles/Dockerfile
+      args:
+        - FLB_TRACE=On
+    ports:
+      - "2020:2020"
+    volumes:
+      - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
