@@ -405,7 +405,7 @@ static void cb_traces(mk_request_t *request, void *data)
     int root_type = MSGPACK_OBJECT_ARRAY;
     msgpack_unpacked result;
     flb_sds_t error_msg = NULL;
-    int response = 404;
+    int response = 200;
     flb_sds_t input_name;
     msgpack_object_array *inputs = NULL;
     size_t off = 0;
@@ -466,20 +466,19 @@ static void cb_traces(mk_request_t *request, void *data)
         input_name = flb_sds_create_len(inputs->ptr[i].via.str.ptr, inputs->ptr[i].via.str.size);
         msgpack_pack_str_with_body(&mp_pck, input_name, flb_sds_len(input_name));
 
-        printf("\t\tPACK MAP: INPUT[%s]\n", input_name);
-
         if (inputs->ptr[i].type != MSGPACK_OBJECT_STR) {
-            printf("\t\t\tPACK MAP ERROR\n");
             msgpack_pack_map(&mp_pck, 1);
             msgpack_pack_str_with_body(&mp_pck, "status", strlen("status"));
             msgpack_pack_str_with_body(&mp_pck, "error", strlen("error"));
         } else {
-            printf("\t\t\tPACK MAP RESPONSE\n");
             if (request->method == MK_METHOD_POST || request->method == MK_METHOD_GET) {
-                if (msgpack_params_enable_trace((struct flb_hs *)data, &result, input_name) != 0) {
-                    msgpack_pack_map(&mp_pck, 1);
+                ret = msgpack_params_enable_trace((struct flb_hs *)data, &result, input_name);
+                if (ret != 0) {
+                    msgpack_pack_map(&mp_pck, 2);
                     msgpack_pack_str_with_body(&mp_pck, "status", strlen("status"));
-                    msgpack_pack_str_with_body(&mp_pck, "ok", strlen("ok"));
+                    msgpack_pack_str_with_body(&mp_pck, "error", strlen("error"));
+                    msgpack_pack_str_with_body(&mp_pck, "returncode", strlen("returncode"));
+                    msgpack_pack_int64(&mp_pck, ret);
                 } else {
                     msgpack_pack_map(&mp_pck, 1);
                     msgpack_pack_str_with_body(&mp_pck, "status", strlen("status"));
