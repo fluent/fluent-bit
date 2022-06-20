@@ -396,7 +396,6 @@ error:
 
 static void cb_traces(mk_request_t *request, void *data)
 {
-    printf("CANT TRACES TIME\n");
     flb_sds_t out_buf;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
@@ -458,10 +457,8 @@ static void cb_traces(mk_request_t *request, void *data)
         goto unpack_error;
     }
     
-    printf("PACK MAP: 2\n");
     msgpack_pack_map(&mp_pck, 2);
 
-    printf("\tPACK MAP: INPUTS[%d]\n", inputs->size);
     msgpack_pack_str_with_body(&mp_pck, "inputs", strlen("inputs"));
     msgpack_pack_map(&mp_pck, inputs->size);
 
@@ -545,10 +542,7 @@ unpack_error:
 /* Perform registration */
 int api_v1_trace(struct flb_hs *hs)
 {
-    printf("REGISTER TRACING\n");
-    if (mk_vhost_handler(hs->ctx, hs->vid, "/api/v1/trace/*", cb_trace, hs) == -1) {
-        printf("UNABLE TO REGISTER FOR TRACING\n");
-    }
-    mk_vhost_handler(hs->ctx, hs->vid, "/api/v1/trace", cb_traces, hs);
+    mk_vhost_handler(hs->ctx, hs->vid, "/api/v1/traces/", cb_traces, hs);
+    mk_vhost_handler(hs->ctx, hs->vid, "/api/v1/trace/*", cb_trace, hs);
     return 0;
 }
