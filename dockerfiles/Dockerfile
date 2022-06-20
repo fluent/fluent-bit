@@ -61,7 +61,6 @@ COPY . ./
 
 WORKDIR /tmp/fluent-bit/build/
 RUN cmake -DFLB_RELEASE=On \
-          -DFLB_TRACE=Off \
           -DFLB_JEMALLOC=On \
           -DFLB_TLS=On \
           -DFLB_SHARED_LIB=Off \
@@ -72,6 +71,7 @@ RUN cmake -DFLB_RELEASE=On \
           -DFLB_OUT_KAFKA=On \
           -DFLB_OUT_PGSQL=On \
           -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
+          -DFLB_LOG_NO_CONTROL_CHARS=On \
           -DFLB_TRACE="$FLB_TRACE" \
           ..
 
