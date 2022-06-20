@@ -13,6 +13,7 @@ INSTALL_SCRIPT=${INSTALL_SCRIPT:-https://raw.githubusercontent.com/fluent/fluent
 
 APT_TARGETS=("ubuntu:18.04"
     "ubuntu:20.04"
+    "ubuntu:22.04"
     "debian:10"
     "debian:11")
 
