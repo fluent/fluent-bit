@@ -61,7 +61,6 @@ COPY . ./
 
 WORKDIR /src/fluent-bit/build/
 RUN cmake -DFLB_RELEASE=On \
-          -DFLB_TRACE=Off \
           -DFLB_JEMALLOC=On \
           -DFLB_TLS=On \
           -DFLB_SHARED_LIB=Off \
