@@ -25,6 +25,9 @@ COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 ARG FLB_NIGHTLY_BUILD
 ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
 
+ARG FLB_TRACE=Off
+ENV FLB_TRACE=${FLB_TRACE}
+
 RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log
 
 ENV DEBIAN_FRONTEND noninteractive
@@ -69,6 +72,7 @@ RUN cmake -DFLB_RELEASE=On \
           -DFLB_OUT_KAFKA=On \
           -DFLB_OUT_PGSQL=On \
           -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
+          -DFLB_TRACE="$FLB_TRACE" \
           ..
 
 RUN make -j "$(getconf _NPROCESSORS_ONLN)"
