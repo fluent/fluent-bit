@@ -94,7 +94,6 @@ struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *c
     ret = flb_output_instance_init(output, config);
     if (ret == -1) {
         flb_error("cannot initialize trace emitter output");
-        flb_output_instance_destroy(output);
         return NULL;
     }
 
