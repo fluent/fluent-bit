@@ -34,7 +34,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        distro: [ amazonlinux2, centos7, centos8, debian10, debian11, ubuntu1804, ubuntu2004 ]
+        distro: [ amazonlinux2, centos7, centos8, debian10, debian11, ubuntu1804, ubuntu2004, ubuntu2204 ]
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
