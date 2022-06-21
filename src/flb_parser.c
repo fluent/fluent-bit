@@ -604,6 +604,14 @@ static int parser_conf_file(const char *cfg, struct flb_cf *cf,
     if (types_str) {
         flb_sds_destroy(types_str);
     }
+    if (types_len) {
+        for (int i=0; i<types_len; i++){
+	    if (types[i].key != NULL) {
+                flb_free(types[i].key);
+	    }
+        }
+        flb_free(types);
+    }
     if (decoders) {
         flb_parser_decoder_list_destroy(decoders);
     }
