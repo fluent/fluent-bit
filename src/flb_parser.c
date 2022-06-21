@@ -455,6 +455,7 @@ static flb_sds_t get_parser_key(struct flb_config *config,
 static int parser_conf_file(const char *cfg, struct flb_cf *cf,
                             struct flb_config *config)
 {
+    int i = 0;
     flb_sds_t name;
     flb_sds_t format;
     flb_sds_t regex;
@@ -605,7 +606,7 @@ static int parser_conf_file(const char *cfg, struct flb_cf *cf,
         flb_sds_destroy(types_str);
     }
     if (types_len) {
-        for (int i=0; i<types_len; i++){
+        for (i=0; i<types_len; i++){
 	    if (types[i].key != NULL) {
                 flb_free(types[i].key);
 	    }
