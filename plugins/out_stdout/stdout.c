@@ -173,11 +173,12 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
         while (msgpack_unpack_next(&result,
                                    event_chunk->data,
                                    event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS) {
-            printf("[%zd] %s: [", cnt++, event_chunk->tag);
-            flb_time_pop_from_msgpack(&tmp, &result, &p);
-            printf("%"PRIu32".%09lu, ", (uint32_t)tmp.tm.tv_sec, tmp.tm.tv_nsec);
-            msgpack_object_print(stdout, *p);
-            printf("]\n");
+            if (flb_time_pop_from_msgpack(&tmp, &result, &p) != -1 ) {
+                printf("[%zd] %s: [", cnt++, event_chunk->tag);
+                printf("%"PRIu32".%09lu, ", (uint32_t)tmp.tm.tv_sec, tmp.tm.tv_nsec);
+                msgpack_object_print(stdout, *p);
+                printf("]\n");
+	    }
         }
         msgpack_unpacked_destroy(&result);
         flb_free(buf);
