@@ -39,6 +39,16 @@ jobs:
   call-build-windows-package:
     runs-on: windows-latest
     environment: ${{ inputs.environment }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - name: "Windows 32bit"
+            arch: x86
+            vcpkg_triplet: x86-windows-static
+          - name: "Windows 64bit"
+            arch: x64
+            vcpkg_triplet: x64-windows-static
     permissions:
       contents: read
     steps:
@@ -61,7 +71,13 @@ jobs:
       - name: Set up Visual Studio shell
         uses: egor-tensin/vs-shell@v2
         with:
-          arch: x64
+          arch: ${{ matrix.config.arch }}
+
+      - name: Build openssl with vcpkg
+        if: ${{ matrix.config.arch == 'x86' }}
+        run: |
+          C:\vcpkg\vcpkg install --recurse openssl --triplet ${{ matrix.config.vcpkg_triplet }}
+        shell: cmd
 
       - name: Build Fluent Bit packages
         run: |
