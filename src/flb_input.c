@@ -1207,8 +1207,10 @@ int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config)
         flb_input_coro_resume(input_coro);
     }
     else {
-        collector->cb_collect(collector->instance, config,
-                              collector->instance->context);
+        if (collector->cb_collect(collector->instance, config,
+                              collector->instance->context) == -1) {
+	    return -1;
+	}
     }
 
     return 0;
