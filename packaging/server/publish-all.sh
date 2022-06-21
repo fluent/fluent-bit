@@ -144,3 +144,12 @@ if compgen -G "$SOURCE_DIR/windows/*$VERSION*" > /dev/null; then
 else
     echo "Missing Windows builds"
 fi
+
+# Source - we do want word splitting and ensure some files exist
+if compgen -G "$SOURCE_DIR/source/*$VERSION*" > /dev/null; then
+    echo "Copying source artefacts"
+    # shellcheck disable=SC2086
+    cp -vf "$SOURCE_DIR"/source/*$VERSION* /var/www/releases.fluentbit.io/releases/"$MAJOR_VERSION"/
+else
+    echo "Missing source artefacts"
+fi
