@@ -36,6 +36,10 @@ struct calyptia {
     flb_sds_t cloud_port;
     flb_sds_t machine_id;
 
+#ifdef FLB_TRACE
+    flb_sds_t pipeline_id;
+#endif // FLB_TRACE
+
     int cloud_tls;
     int cloud_tls_verify;
 
@@ -312,6 +316,10 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
         flb_output_set_property(ctx->o, "tls.verify", "false");
     }
 
+#ifdef FLB_TRACE
+    flb_output_set_property(ctx->o, "pipeline_id", ctx->pipeline_id);
+#endif // FLB_TRACE
+
     flb_router_connect(ctx->i, ctx->o);
     flb_plg_info(ins, "custom initialized!");
     return 0;
@@ -376,6 +384,14 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct calyptia, machine_id),
      "Custom machine_id to be used when registering agent"
     },
+
+#ifdef FLB_TRACE
+    {
+     FLB_CONFIG_MAP_STR, "pipeline_id", NULL,
+     0, FLB_TRUE, offsetof(struct calyptia, pipeline_id),
+     "Custom machine_id to be used when registering agent"
+    },
+#endif // FLB_TRACE
 
     /* EOF */
     {0}

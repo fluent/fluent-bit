@@ -42,6 +42,20 @@ void flb_trace_chunk_destroy(struct flb_trace_chunk *trace)
     flb_free(trace);
 }
 
+static struct flb_output_instance *find_calyptia_output_instance(struct flb_config *config)
+{
+    struct mk_list *head;
+    struct flb_output_instance *output;
+
+    mk_list_foreach(head, &config->outputs) {
+        output = mk_list_entry(head, struct flb_output_instance, _head);
+        if (strcmp(output->p->name, "calyptia") == 0) {
+            return output;
+        }
+    }
+    return NULL;
+}
+
 struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *config, const char *output_name, const char *trace_prefix, struct mk_list *props)
 {
     struct flb_input_instance *input;
@@ -70,36 +84,45 @@ struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *c
         flb_input_instance_destroy(input);
         return NULL;
     }
+
     /* Storage context */
     ret = flb_storage_input_create(config->cio, input);
     if (ret == -1) {
         return NULL;
     }
-    output = flb_output_new(config, output_name, NULL, 0);
-    if (output == NULL) {
-        flb_error("could not create trace output");
-        //flb_free(input);
-        return NULL;
-    }
-    // this might be unnecessary given the direct routing
-    //flb_output_set_property(output, "match", "*");
 
-    if (props != NULL) {
-        mk_list_foreach(head, props) {
-            prop = mk_list_entry(head, struct flb_kv, _head);
-            flb_output_set_property(output, prop->key, prop->val);
+    if (strcmp(output_name, "calyptia") == 0) {
+        output = find_calyptia_output_instance(config);
+        if (output == NULL) {
+            flb_input_instance_destroy(input);
+            return NULL;
         }
-    }
+    } else {
+        output = flb_output_new(config, output_name, NULL, 0);
+        if (output == NULL) {
+            flb_error("could not create trace output");
+            flb_input_instance_destroy(input);
+            return NULL;
+        }
+        
+        if (props != NULL) {
+            mk_list_foreach(head, props) {
+                prop = mk_list_entry(head, struct flb_kv, _head);
+                flb_output_set_property(output, prop->key, prop->val);
+            }
+        }
 
-    ret = flb_output_instance_init(output, config);
-    if (ret == -1) {
-        flb_error("cannot initialize trace emitter output");
-        return NULL;
+        ret = flb_output_instance_init(output, config);
+        if (ret == -1) {
+            flb_error("cannot initialize trace emitter output");
+            return NULL;
+        }
     }
 
     ret = flb_router_connect_direct(input, output);
     if (ret != 0) {
         flb_error("unable to route traces");
+        flb_input_instance_destroy(input);
         return NULL;
     }
 
