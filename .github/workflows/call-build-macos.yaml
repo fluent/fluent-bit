@@ -78,7 +78,7 @@ jobs:
       - name: Install dependencies
         run: |
           brew update
-          brew install bison flex libyaml-dev || true
+          brew install bison flex libyaml || true
       - name: Build Fluent Bit packages
         run: |
           export LIBRARY_PATH=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib:$LIBRARY_PATH
