@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_kv.h>
 #include <msgpack.h>
 
 #include <stdio.h>
@@ -68,7 +69,7 @@ static int in_exec_wasi_collect(struct flb_input_instance *ins,
         }
     }
 
-    wasm = flb_wasm_instantiate(config, ctx->wasi_path, ".", -1, fileno(stdoutp), -1);
+    wasm = flb_wasm_instantiate(config, ctx->wasi_path, ctx->accessible_dir_list, -1, fileno(stdoutp), -1);
     if (wasm == NULL) {
         flb_plg_debug(ctx->ins, "instantiate wasm [%s] failed", ctx->wasi_path);
         goto collect_end;
@@ -323,6 +324,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "wasi_path", NULL,
      0, FLB_TRUE, offsetof(struct flb_exec_wasi, wasi_path),
      "Set the path of WASM program to execute"
+    },
+    {
+     FLB_CONFIG_MAP_CLIST, "accessible_paths", ".",
+     0, FLB_TRUE, offsetof(struct flb_exec_wasi, accessible_dir_list),
+     "Specifying paths to be accessible from a WASM program."
+     "Default value is current working directory"
     },
     {
      FLB_CONFIG_MAP_STR, "parser", NULL,
