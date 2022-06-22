@@ -99,7 +99,7 @@ jobs:
           version: v3.8.1
 
       - name: Set up Kubectl
-        uses: azure/setup-kubectl@v2.1
+        uses: azure/setup-kubectl@v3.0
 
       - name: Run tests
         run:  |
