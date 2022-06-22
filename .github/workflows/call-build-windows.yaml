@@ -46,9 +46,11 @@ jobs:
           - name: "Windows 32bit"
             arch: x86
             vcpkg_triplet: x86-windows-static
+            vcpkg_cmake_opt: -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake
           - name: "Windows 64bit"
             arch: x64
             vcpkg_triplet: x64-windows-static
+            vcpkg_cmake_opt: ""
     permissions:
       contents: read
     steps:
@@ -81,7 +83,7 @@ jobs:
 
       - name: Build Fluent Bit packages
         run: |
-          cmake -G "NMake Makefiles" -DFLB_NIGHTLY_BUILD=${{ inputs.unstable }} ../
+          cmake -G "NMake Makefiles" -DFLB_NIGHTLY_BUILD=${{ inputs.unstable }} ${{ matrix.config.vcpkg_cmake_opt }} ../
           cmake --build .
           cpack
         working-directory: build
