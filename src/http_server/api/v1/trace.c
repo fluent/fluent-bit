@@ -161,6 +161,9 @@ static int msgpack_params_enable_trace(struct flb_hs *hs, msgpack_unpacked *resu
                     ret = -1;
                     goto parse_error;
                 }
+                if (props != NULL) {
+                    flb_free(props);
+                }
                 props = flb_calloc(1, sizeof(struct mk_list));
                 flb_kv_init(props);
                 for (x = 0; x < val->via.map.size; x++) {
