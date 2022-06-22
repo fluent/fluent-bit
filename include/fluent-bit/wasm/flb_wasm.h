@@ -39,7 +39,7 @@ struct flb_wasm {
 
 void flb_wasm_init(struct flb_config *config);
 struct flb_wasm *flb_wasm_instantiate(struct flb_config *config, const char *wasm_path,
-                                      const char *permit_access_path,
+                                      struct mk_list *acessible_dir_list,
                                       int stdinfd, int stdoutfd, int stderrfd);
 
 int flb_wasm_call_wasi_main(struct flb_wasm *fw);

@@ -35,6 +35,8 @@
 
 struct flb_exec_wasi {
     flb_sds_t wasi_path;
+    struct mk_list *accessible_dir_list; /* list of directories to be
+                                          * accesible from WASM */
     flb_sds_t parser_name;
     struct flb_parser  *parser;
     char *buf;

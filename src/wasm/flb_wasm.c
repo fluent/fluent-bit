@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_slist.h>
 #include <fluent-bit/wasm/flb_wasm.h>
 
 #ifdef FLB_SYSTEM_WINDOWS
@@ -68,7 +69,7 @@ error:
 }
 
 struct flb_wasm *flb_wasm_instantiate(struct flb_config *config, const char *wasm_path,
-                                      const char *permit_access_path,
+                                      struct mk_list *accessible_dir_list,
                                       int stdinfd, int stdoutfd, int stderrfd)
 {
     struct flb_wasm *fw;
@@ -76,7 +77,11 @@ struct flb_wasm *flb_wasm_instantiate(struct flb_config *config, const char *was
     int8_t *buffer = NULL;
     char error_buf[128];
 #if WASM_ENABLE_LIBC_WASI != 0
-    const char *wasi_dir_list[] = { permit_access_path };
+    struct mk_list *head;
+    struct flb_slist_entry *wasi_dir;
+    const size_t accessible_dir_list_size = mk_list_size(accessible_dir_list);
+    const char **wasi_dir_list = NULL;
+    size_t dir_index = 0;
 #endif
 
     wasm_module_t module = NULL;
@@ -90,6 +95,19 @@ struct flb_wasm *flb_wasm_instantiate(struct flb_config *config, const char *was
         flb_errno();
         return NULL;
     }
+
+#if WASM_ENABLE_LIBC_WASI != 0
+    wasi_dir_list = flb_malloc(sizeof(char *) * accessible_dir_list_size);
+    if (!wasi_dir_list) {
+        flb_errno();
+        return NULL;
+    }
+    mk_list_foreach(head, accessible_dir_list) {
+        wasi_dir = mk_list_entry(head, struct flb_slist_entry, _head);
+        wasi_dir_list[dir_index] = wasi_dir->str;
+        dir_index++;
+    }
+#endif
 
     fw->config = config;
 
@@ -116,7 +134,7 @@ struct flb_wasm *flb_wasm_instantiate(struct flb_config *config, const char *was
     }
 
 #if WASM_ENABLE_LIBC_WASI != 0
-    wasm_runtime_set_wasi_args_ex(module, wasi_dir_list, 1, NULL, 0,
+    wasm_runtime_set_wasi_args_ex(module, wasi_dir_list, accessible_dir_list_size, NULL, 0,
                                   NULL, 0, NULL, 0,
                                   (stdinfd != -1) ? stdinfd : STDIN_FILENO,
                                   (stdoutfd != -1) ? stdoutfd : STDOUT_FILENO,
@@ -143,9 +161,18 @@ struct flb_wasm *flb_wasm_instantiate(struct flb_config *config, const char *was
 
     mk_list_add(&fw->_head, &config->wasm_list);
 
+#if WASM_ENABLE_LIBC_WASI != 0
+    flb_free(wasi_dir_list);
+#endif
+
     return fw;
 
 error:
+#if WASM_ENABLE_LIBC_WASI != 0
+    if (wasi_dir_list != NULL) {
+        flb_free(wasi_dir_list);
+    }
+#endif
     if (exec_env) {
         wasm_runtime_destroy_exec_env(exec_env);
     }
