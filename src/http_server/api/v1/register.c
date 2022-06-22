@@ -32,7 +32,10 @@ int api_v1_registration(struct flb_hs *hs)
     api_v1_uptime(hs);
     api_v1_metrics(hs);
     api_v1_plugins(hs);
+
+#ifdef FLB_TRACE
     api_v1_trace(hs);
+#endif // FLB_TRACE
 
     if (hs->config->health_check == FLB_TRUE) {
         api_v1_health(hs);

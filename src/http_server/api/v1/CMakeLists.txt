@@ -6,8 +6,14 @@ set(src
   plugins.c
   register.c
   health.c
-  trace.c
   )
+
+if(FLB_TRACE)
+  set(src
+    ${src}
+    trace.c
+  )
+endif()
 
 include_directories(${MONKEY_INCLUDE_DIR})
 add_library(api-v1 STATIC ${src})
