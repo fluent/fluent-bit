@@ -11,3 +11,11 @@ services:
       - "2020:2020"
     volumes:
       - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+
+  enable-tracing:
+    image: ubuntu:20.04
+    command: /enable-tracing.sh
+    volumes:
+      - ./enable-tracing.sh:/enable-tracing.sh:ro
+    environment:
+      REMOTE_HOST: fluent-bit
