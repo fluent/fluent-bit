@@ -757,6 +757,9 @@ int flb_engine_start(struct flb_config *config)
     }
 
     while (1) {
+        // don't wake me up
+        usleep(5000000);
+
         mk_event_wait(evl); /* potentially conditional mk_event_wait or mk_event_wait_2 based on bucket queue capacity for one shot events */
         flb_event_priority_live_foreach(event, evl_bktq, evl, FLB_ENGINE_LOOP_MAX_ITER) {
             if (event->type == FLB_ENGINE_EV_CORE) {
