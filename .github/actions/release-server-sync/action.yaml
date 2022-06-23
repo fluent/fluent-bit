@@ -65,7 +65,7 @@ runs:
       ssh $USERNAME@$HOST mkdir -p /home/$USERNAME/apt
       rsync --include="*/" \
         --include="*.rpm" --include="*.deb" \
-        --include="*.zip" --include="*.exe" \
+        --include="*.zip" --include="*.exe" --include="*.msi" \
         --include="*.tar.gz" \
         --include="*.md5" --include="*.sha256" \
         --include="fluent-bit-schema*.json" \
