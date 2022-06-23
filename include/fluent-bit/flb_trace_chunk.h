@@ -63,6 +63,7 @@ struct flb_trace_chunk *flb_trace_chunk_new(struct flb_input_chunk *chunk);
 void flb_trace_chunk_destroy(struct flb_trace_chunk *);
 int flb_trace_chunk_input(struct flb_trace_chunk *trace, char *buf, int buf_size);
 int flb_trace_chunk_filter(struct flb_trace_chunk *trace, void *pfilter, char *buf, int buf_size);
+int flb_trace_chunk_output(struct flb_trace_chunk *trace, void *ofilter, int return_code);
 void flb_trace_chunk_free(struct flb_trace_chunk *trace);
 int flb_trace_chunk_context_set_limit(struct flb_trace_chunk_context *ctxt, int, int);
 int flb_trace_chunk_context_hit_limit(struct flb_trace_chunk_context *ctxt);

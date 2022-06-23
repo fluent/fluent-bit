@@ -40,6 +40,9 @@ struct flb_event_chunk {
     const void *data;       /* event content */
     size_t size;            /* size of event */
     size_t total_events;    /* total number of serialized events */
+#ifdef FLB_TRACE
+    void *trace;
+#endif // FLB_TRACE
 };
 
 struct flb_event_chunk *flb_event_chunk_create(int type,
@@ -51,5 +54,10 @@ int flb_event_chunk_update(struct flb_event_chunk *evc,
                            char *buf_data, size_t buf_size);
 
 void flb_event_chunk_destroy(struct flb_event_chunk *evc);
+
+#ifdef FLB_TRACE
+int flb_event_chunk_set_trace(struct flb_event_chunk *evc, struct flb_trace_chunk *trace);
+int flb_event_chunk_trace_output(struct flb_event_chunk *evc, void *output_instance, int return_code);
+#endif // FLB_TRACE
 
 #endif

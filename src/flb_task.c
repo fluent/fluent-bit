@@ -378,6 +378,10 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     task_ic = (struct flb_input_chunk *) ic;
     task_ic->task = task;
 
+#ifdef FLB_TRACE
+    flb_event_chunk_set_trace(evc, ic->trace);
+#endif
+
     /* Keep track of origins */
     task->ref_id = ref_id;
     task->i_ins  = i_ins;

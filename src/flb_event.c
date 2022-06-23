@@ -24,6 +24,10 @@
 #include <fluent-bit/flb_event.h>
 #include <fluent-bit/flb_sds.h>
 
+#ifdef FLB_TRACE
+#include <fluent-bit/flb_trace_chunk.h>
+#endif // FLB_TRACE
+
 struct flb_event_chunk *flb_event_chunk_create(int type,
                                                int total_events,
                                                char *tag_buf, int tag_len,
@@ -52,6 +56,22 @@ struct flb_event_chunk *flb_event_chunk_create(int type,
 
     return evc;
 }
+
+#ifdef FLB_TRACE
+int flb_event_chunk_set_trace(struct flb_event_chunk *evc, struct flb_trace_chunk *trace)
+{
+    evc->trace = (void *)trace;
+    return 0;
+}
+
+int flb_event_chunk_trace_output(struct flb_event_chunk *evc, void *ofilter, int ret)
+{
+    if (evc->trace) {
+        flb_trace_chunk_output(evc->trace, (struct flb_output_instance *)ofilter, ret);
+    }
+    return 0;
+}
+#endif
 
 /* Update the buffer reference */
 int flb_event_chunk_update(struct flb_event_chunk *evc,

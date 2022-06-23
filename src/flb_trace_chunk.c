@@ -321,3 +321,63 @@ tracer_error:
     flb_sds_destroy(tag);
     return rc;
 }
+
+int flb_trace_chunk_output(struct flb_trace_chunk *trace, void *ofilter, int return_code)
+{
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    int rc = -1;
+    struct flb_input_instance *input = (struct flb_input_instance *)trace->ic->in;
+    struct flb_output_instance *output = (struct flb_output_instance *)ofilter;
+    flb_sds_t tag = flb_sds_create("trace");
+    struct flb_time tm;
+    unsigned char b64enc[102400];
+    size_t bc64enclen;
+
+
+    if (trace == NULL) {
+        goto trace_error;
+    }
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_array(&mp_pck, 2);
+    flb_pack_time_now(&mp_pck);
+
+    msgpack_pack_map(&mp_pck, 5);
+
+    msgpack_pack_str_with_body(&mp_pck, "type", strlen("type"));
+    rc = msgpack_pack_int(&mp_pck, FLB_TRACE_CHUNK_TYPE_OUTPUT);
+    if (rc == -1) {
+        goto sbuffer_error;
+    }
+
+    flb_time_get(&tm);
+    msgpack_pack_str_with_body(&mp_pck, "time", strlen("time"));
+    msgpack_pack_double(&mp_pck, flb_time_to_double(&tm));
+
+    msgpack_pack_str_with_body(&mp_pck, "trace_id", strlen("trace_id"));
+    msgpack_pack_str_with_body(&mp_pck, trace->trace_id, strlen(trace->trace_id));
+
+    
+    msgpack_pack_str_with_body(&mp_pck, "output_instance", strlen("output_instance"));
+    rc = msgpack_pack_str_with_body(&mp_pck, output->name, strlen(output->name));
+    if (rc == -1) {
+        goto sbuffer_error;
+    }
+    
+    msgpack_pack_str_with_body(&mp_pck, "return_code", strlen("return_code"));
+    msgpack_pack_int64(&mp_pck, return_code);
+
+    in_emitter_transmit_record(tag, flb_sds_len(tag), mp_sbuf.data, mp_sbuf.size,
+                               trace->ctxt->input);
+    
+    rc = 0;
+
+sbuffer_error:
+    msgpack_sbuffer_destroy(&mp_sbuf);
+trace_error:
+    flb_sds_destroy(tag);
+    return rc;
+}

@@ -609,9 +609,7 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     struct flb_output_instance *o_ins;
     struct flb_out_thread_instance *th_ins = NULL;
 #ifdef FLB_TRACE
-    //struct flb_out_flush_params *params;
-    //msgpack_sbuffer mp_sbuf;
-    //msgpack_packer mp_pck;
+    struct flb_event_chunk *evc;
 #endif // FLB_TRACE
     
     
@@ -632,6 +630,10 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     set = FLB_TASK_SET(ret, task->id, o_ins->id);
     val = FLB_BITS_U64_SET(2 /* FLB_ENGINE_TASK */, set);
 
+#ifdef FLB_TRACE
+    evc = out_flush->task->event_chunk;
+    flb_event_chunk_trace_output(evc, o_ins, ret);
+#endif // FLB_TRACE
     /*
      * Set the target pipe channel: if this return code is running inside a
      * thread pool worker, use the specific worker pipe/event loop to handle
