@@ -80,7 +80,7 @@ jobs:
 
   unstable-build-images:
     needs: unstable-build-get-meta
-    uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@master
+    uses: ./.github/workflows/call-build-images.yaml
     with:
       version: ${{ needs.unstable-build-get-meta.outputs.branch }}
       ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
@@ -116,7 +116,7 @@ jobs:
     needs:
       - unstable-build-get-meta
       - unstable-build-generate-matrix
-    uses: fluent/fluent-bit/.github/workflows/call-build-linux-packages.yaml@master
+    uses: ./.github/workflows/call-build-linux-packages.yaml
     with:
       version: ${{ needs.unstable-build-get-meta.outputs.branch }}
       ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
@@ -129,7 +129,7 @@ jobs:
   unstable-build-windows-package:
     needs:
       - unstable-build-get-meta
-    uses: fluent/fluent-bit/.github/workflows/call-build-windows.yaml@master
+    uses: ./.github/workflows/call-build-windows.yaml
     with:
       version: ${{ needs.unstable-build-get-meta.outputs.branch }}
       ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
@@ -141,7 +141,7 @@ jobs:
   unstable-build-macos-package:
     needs:
       - unstable-build-get-meta
-    uses: fluent/fluent-bit/.github/workflows/call-build-macos.yaml@master
+    uses: ./.github/workflows/call-build-macos.yaml
     with:
       version: ${{ needs.unstable-build-get-meta.outputs.branch }}
       ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
