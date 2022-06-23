@@ -54,7 +54,7 @@ struct flb_tail_file {
     int tag_len;
     char *tag_buf;
 
-    /* multiline status */
+    /* OLD multiline */
     time_t mult_flush_timeout;  /* time when multiline started           */
     int mult_firstline;         /* bool: mult firstline found ?          */
     int mult_firstline_append;  /* bool: mult firstline appendable ?     */
@@ -67,17 +67,19 @@ struct flb_tail_file {
     msgpack_packer mult_pck;    /* temporary msgpack packer              */
     struct flb_time mult_time;  /* multiline time parsed from first line */
 
-    /* docker mode */
+    /* OLD docker mode */
     time_t dmode_flush_timeout; /* time when docker mode started         */
     flb_sds_t dmode_buf;        /* buffer for docker mode                */
     flb_sds_t dmode_lastline;   /* last incomplete line                  */
     bool dmode_complete;        /* buffer contains completed log         */
     bool dmode_firstline;       /* dmode mult firstline found ?          */
 
-    /* multiline engine: file stream_id */
+    /* multiline engine: file stream_id and local buffers */
     uint64_t ml_stream_id;
+    msgpack_sbuffer ml_sbuf;  /* temporary msgpack buffer              */
+    msgpack_packer ml_pck;    /* temporary msgpack packer              */
 
-    /* buffering */
+    /* content parsing, positions and buffer */
     size_t parsed;
     size_t buf_len;
     size_t buf_size;
