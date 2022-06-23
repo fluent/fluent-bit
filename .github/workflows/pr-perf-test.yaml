@@ -39,9 +39,16 @@ jobs:
           curl -L https://raw.githubusercontent.com/fluent/fluent-bit-ci/master/scripts/docker-compose-monitor.sh | bash
         shell: bash
         env:
-          TEST_DIRECTORY: ./examples/perf-test
+          TEST_DIRECTORY: ./examples/perf_test
           SERVICE_TO_MONITOR: fb-delta
           RUN_TIMEOUT_MINUTES: 30
+
+      - name: Upload plots
+        continue-on-error: true
+        uses: edunad/actions-image@v1.0.1
+        with:
+          path: './output/*.png'
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload any results
         if: always()
