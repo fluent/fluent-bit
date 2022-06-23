@@ -67,30 +67,29 @@ static bool apply_suffix (double *x, char suffix_char)
 
 void *time_ticker(void *args)
 {
-    struct ticker *t = args;
     struct flb_time ftm;
     long timestamp;
-    struct flb_filter_throttle_ctx *ctx = t->ctx;
+    struct flb_filter_throttle_ctx *ctx = args;
 
-    while (!t->done) {
+    while (1) {
         flb_time_get(&ftm);
         timestamp = flb_time_to_double(&ftm);
-        window_add(t->ctx->hash, timestamp, 0);
+        window_add(ctx->hash, timestamp, 0);
 
-        t->ctx->hash->current_timestamp = timestamp;
+        ctx->hash->current_timestamp = timestamp;
 
-        if (t->ctx->print_status) {
+        if (ctx->print_status) {
             flb_plg_info(ctx->ins,
                          "%ld: limit is %0.2f per %s with window size of %i, "
                          "current rate is: %i per interval",
-                         timestamp, t->ctx->max_rate, t->ctx->slide_interval,
-                         t->ctx->window_size,
-                         t->ctx->hash->total / t->ctx->hash->size);
+                         timestamp, ctx->max_rate, ctx->slide_interval,
+                         ctx->window_size,
+                         ctx->hash->total / ctx->hash->size);
         }
-        sleep(t->seconds);
-    }
 
-    return NULL;
+        /* sleep is a cancelable function */
+        sleep(ctx->ticker_data.seconds);
+    }
 }
 
 /* Given a msgpack record, do some filter action based on the defined rules */
@@ -153,8 +152,6 @@ static int cb_throttle_init(struct flb_filter_instance *f_ins,
                         void *data)
 {
     int ret;
-    pthread_t tid;
-    struct ticker *ticker_ctx;
     struct flb_filter_throttle_ctx *ctx;
 
     /* Create context */
@@ -172,22 +169,13 @@ static int cb_throttle_init(struct flb_filter_instance *f_ins,
         return -1;
     }
 
-    ticker_ctx = flb_malloc(sizeof(struct ticker));
-    if (!ticker_ctx) {
-        flb_errno();
-        flb_free(ctx);
-        return -1;
-    }
-
     /* Set our context */
     flb_filter_set_context(f_ins, ctx);
 
     ctx->hash = window_create(ctx->window_size);
 
-    ticker_ctx->ctx = ctx;
-    ticker_ctx->done = false;
-    ticker_ctx->seconds = parse_duration(ctx, ctx->slide_interval);
-    pthread_create(&tid, NULL, &time_ticker, ticker_ctx);
+    ctx->ticker_data.seconds = parse_duration(ctx, ctx->slide_interval);
+    pthread_create(&ctx->ticker_data.thr, NULL, &time_ticker, ctx);
     return 0;
 }
 
@@ -253,7 +241,24 @@ static int cb_throttle_filter(const void *data, size_t bytes,
 
 static int cb_throttle_exit(void *data, struct flb_config *config)
 {
+    void *thr_res;
     struct flb_filter_throttle_ctx *ctx = data;
+
+    int s = pthread_cancel(ctx->ticker_data.thr);
+    if (s != 0) {
+        flb_plg_error(ctx->ins, "Unable to cancel ticker. Leaking context to avoid memory corruption.");
+        return 1;
+    }
+
+    s = pthread_join(ctx->ticker_data.thr, &thr_res);
+    if (s != 0) {
+        flb_plg_error(ctx->ins, "Unable to join ticker. Leaking context to avoid memory corruption.");
+        return 1;
+    }
+
+    if (thr_res != PTHREAD_CANCELED) {
+        flb_plg_error(ctx->ins, "Thread joined but was not canceled which is impossible.");
+    }
 
     flb_free(ctx->hash->table);
     flb_free(ctx->hash);

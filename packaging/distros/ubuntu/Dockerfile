@@ -92,6 +92,32 @@ RUN apt-get -qq update && \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 libyaml-dev && \
     apt-get install -y -qq --reinstall lsb-base lsb-release
 
+# ubuntu/22.04 base image
+FROM ubuntu:22.04 as ubuntu-22.04-base
+ENV DEBIAN_FRONTEND noninteractive
+
+# hadolint ignore=DL3008,DL3015
+RUN apt-get -qq update && \
+    apt-get install -y -qq curl ca-certificates build-essential libsystemd-dev \
+    cmake make bash wget unzip nano vim valgrind dh-make flex bison \
+    libpq-dev postgresql-server-dev-all libpq5 \
+    libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libyaml-dev && \
+    apt-get install -y -qq --reinstall lsb-base lsb-release
+
+# ubuntu/22.04.arm64v8 base image
+FROM arm64v8/ubuntu:22.04 as ubuntu-22.04.arm64v8-base
+ENV DEBIAN_FRONTEND noninteractive
+
+COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
+
+# hadolint ignore=DL3008,DL3015
+RUN apt-get -qq update && \
+    apt-get install -y -qq curl ca-certificates build-essential libsystemd-dev \
+    cmake make bash wget unzip nano vim valgrind dh-make flex bison \
+    libpq-dev postgresql-server-dev-all libpq5 \
+    libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libyaml-dev && \
+    apt-get install -y -qq --reinstall lsb-base lsb-release
+
 # Common build for all distributions now
 # hadolint ignore=DL3006
 FROM $BASE_BUILDER as builder

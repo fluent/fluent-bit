@@ -42,7 +42,7 @@ jobs:
     runs-on: [ ubuntu-latest ]
     steps:
       - name: Install cosign
-        uses: sigstore/cosign-installer@main
+        uses: sigstore/cosign-installer@v2
 
       - name: Log in to the Container registry
         uses: docker/login-action@v2
@@ -190,7 +190,7 @@ jobs:
           version: v3.6.3
 
       - name: Set up Kubectl
-        uses: azure/setup-kubectl@v2.1
+        uses: azure/setup-kubectl@v3.0
 
       - name: Test the HTTP server is responding
         timeout-minutes: 5

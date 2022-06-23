@@ -376,12 +376,12 @@ static void cb_datadog_flush(struct flb_event_chunk *event_chunk,
         }
         else {
             if (client->resp.payload) {
-                flb_plg_info(ctx->ins, "%s%s, port=%i, HTTP status=%i payload=%s",
+                flb_plg_debug(ctx->ins, "%s%s, port=%i, HTTP status=%i payload=%s",
                              ctx->scheme, ctx->host, ctx->port,
                              client->resp.status, client->resp.payload);
             }
             else {
-                flb_plg_info(ctx->ins, "%s%s, port=%i, HTTP status=%i",
+                flb_plg_debug(ctx->ins, "%s%s, port=%i, HTTP status=%i",
                              ctx->scheme, ctx->host, ctx->port,
                              client->resp.status);
             }
