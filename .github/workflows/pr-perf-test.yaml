@@ -8,7 +8,6 @@ on:
 
 jobs:
 
-  # TODO: switch to dedicated runner workflow
   pr-perf-test-run:
     # We only need to test this once as the rest are chained from it.
     if: contains(github.event.pull_request.labels.*.name, 'ok-to-performance-test')
