@@ -29,15 +29,22 @@ struct flb_trace_chunk *flb_trace_chunk_new(struct flb_input_chunk *chunk)
         return NULL;
     }
 
+    trace->ctxt = f_ins->trace_ctxt;
+    trace->ctxt->chunks++;
+
     trace->ic = chunk;
     trace->trace_id = flb_sds_create("");
-    flb_sds_printf(&trace->trace_id, "%s%d", f_ins->trace_ctxt->trace_prefix,
-                   f_ins->trace_ctxt->trace_count++);
+    flb_sds_printf(&trace->trace_id, "%s%d", trace->ctxt->trace_prefix,
+                  trace->ctxt->trace_count++);
     return trace;
 }
 
 void flb_trace_chunk_destroy(struct flb_trace_chunk *trace)
 {
+    trace->ctxt->chunks--;
+    if (trace->ctxt->chunks == 0 && trace->ctxt->to_destroy) {
+        flb_trace_chunk_context_destroy(trace->ctxt);
+    }
     flb_sds_destroy(trace->trace_id);
     flb_free(trace);
 }
@@ -136,11 +143,59 @@ struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *c
     return ctx;
 }
 
+int flb_trace_chunk_context_set_limit(struct flb_trace_chunk_context *ctxt, int limit_type, int limit_arg)
+{
+    struct flb_time tm;
+
+
+    switch(limit_type) {
+    case FLB_TRACE_CHUNK_LIMIT_TIME:
+        flb_time_get(&tm);
+        ctxt->limit.type = FLB_TRACE_CHUNK_LIMIT_TIME;
+        ctxt->limit.seconds_started = tm.tm.tv_sec;
+        ctxt->limit.seconds = limit_arg;
+        return 0;
+    case FLB_TRACE_CHUNK_LIMIT_COUNT:
+        ctxt->limit.type = FLB_TRACE_CHUNK_LIMIT_COUNT;
+        ctxt->limit.count = limit_arg;
+        return 0;
+    defualt:
+        return -1;
+    }
+}
+
+int flb_trace_chunk_context_hit_limit(struct flb_trace_chunk_context *ctxt)
+{
+    struct flb_time tm;
+
+
+    switch(ctxt->limit.type) {
+    case FLB_TRACE_CHUNK_LIMIT_TIME:
+        flb_time_get(&tm);
+        if ((tm.tm.tv_sec - ctxt->limit.seconds_started) > ctxt->limit.seconds) {
+            return FLB_TRUE;
+        }
+        return FLB_FALSE;
+    case FLB_TRACE_CHUNK_LIMIT_COUNT:
+        if (ctxt->limit.count <= ctxt->trace_count) {
+            return FLB_TRUE;
+        }
+        return FLB_FALSE;
+    }
+    return FLB_FALSE;
+}
+
 void flb_trace_chunk_context_destroy(struct flb_trace_chunk_context *ctxt)
 {
     struct flb_output_instance *output = (struct flb_output_instance *)ctxt->output;
     struct flb_input_instance *input = (struct flb_input_instance *)ctxt->input;
-    
+
+
+    if (ctxt->chunks > 0) {
+        ctxt->to_destroy = 1;
+        return;
+    }
+
     /*
     flb_input_instance_exit(input, input->config);
     flb_input_instance_destroy(input);
@@ -194,7 +249,7 @@ int flb_trace_chunk_input(struct flb_trace_chunk *trace, char *buf, int buf_size
     msgpack_pack_str_with_body(&mp_pck, b64enc, bc64enclen);
 
     in_emitter_add_record(tag, flb_sds_len(tag), mp_sbuf.data, mp_sbuf.size,
-                          trace->ic->in->trace_ctxt->input);
+                          trace->ctxt->input);
 sbuffer_error:
     flb_sds_destroy(tag);
     msgpack_sbuffer_destroy(&mp_sbuf);
@@ -256,7 +311,7 @@ int flb_trace_chunk_filter(struct flb_trace_chunk *tracer, void *pfilter, char *
     msgpack_pack_str_with_body(&mp_pck, b64enc, bc64enclen);
 
     in_emitter_add_record(tag, flb_sds_len(tag), mp_sbuf.data, mp_sbuf.size,
-                          tracer->ic->in->trace_ctxt->input);
+                          tracer->ctxt->input);
     
     rc = 0;
 
