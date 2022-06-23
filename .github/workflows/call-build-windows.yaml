@@ -94,6 +94,7 @@ jobs:
           name: windows-packages
           path: |
             build/*-bit-*.exe
+            build/*-bit-*.msi
             build/*-bit-*.zip
           if-no-files-found: error
 
