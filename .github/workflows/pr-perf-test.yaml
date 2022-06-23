@@ -1,0 +1,65 @@
+name: Build and run performance tests for PR
+on:
+  pull_request:
+    branches:
+      - master
+    types:
+      - labeled
+
+jobs:
+
+  # TODO: switch to dedicated runner workflow
+  pr-perf-test-run:
+    # We only need to test this once as the rest are chained from it.
+    if: contains(github.event.pull_request.labels.*.name, 'ok-to-performance-test')
+    name: Run performance tests for PR
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt-get install -y jq
+
+          # Install docker-compose
+          # Later versions have an SSL issue on this OS for remote repository builds
+          sudo curl --fail --silent -L "https://github.com/docker/compose/releases/download/1.25.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod a+x /usr/local/bin/docker-compose
+
+          # Add promplot
+          curl --fail --silent -L https://github.com/qvl/promplot/releases/download/v0.17.0/promplot_0.17.0_linux_64bit.tar.gz| tar -xz
+          chmod a+x ./promplot
+          sudo mv -vf ./promplot  /usr/local/bin/promplot
+        shell: bash
+
+      - name: Run the tests on this runner
+        timeout-minutes: 45
+        run: |
+          curl -L https://raw.githubusercontent.com/fluent/fluent-bit-ci/master/scripts/docker-compose-monitor.sh | bash
+        shell: bash
+        env:
+          TEST_DIRECTORY: ./examples/perf-test
+          SERVICE_TO_MONITOR: fb-delta
+          RUN_TIMEOUT_MINUTES: 30
+
+      - name: Upload any results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: output
+          path: output/
+
+  pr-perf-test-complete:
+    name: PR - performance test complete
+    runs-on: ubuntu-latest
+    needs:
+      - pr-perf-test-run
+    steps:
+      # TODO: post results as well
+      - uses: actions-ecosystem/action-add-labels@v1
+        name: Label the PR
+        with:
+          labels: ci/performance-test-ok
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          number: ${{ github.event.pull_request.number }}

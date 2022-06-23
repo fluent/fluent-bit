@@ -11,6 +11,7 @@ on:
       - '.gitignore'
       - 'appveyor.yml'
       - '**.sh'
+      - 'examples/**'
 
 jobs:
   run-all-unit-tests:
