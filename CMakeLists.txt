@@ -4,7 +4,7 @@ project(fluent-bit)
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  1)
 set(FLB_VERSION_MINOR  9)
-set(FLB_VERSION_PATCH  5)
+set(FLB_VERSION_PATCH  6)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -117,6 +117,9 @@ option(FLB_PROXY_GO           "Enable Go plugins support"   Yes)
 
 # Built-in Custom Plugins
 option(FLB_CUSTOM_CALYPTIA    "Enable Calyptia Support"      Yes)
+
+# Config formats
+option(FLB_CONFIG_YAML        "Enable YAML config format"    Yes)
 
 # Built-in Plugins
 option(FLB_IN_CPU             "Enable CPU input plugin"             Yes)
@@ -301,6 +304,8 @@ endif()
 
 if (FLB_TESTS_OSSFUZZ)
   FLB_DEFINITION(FLB_HAVE_TESTS_OSSFUZZ)
+  # Disable for fuzz testing
+  set(FLB_CONFIG_YAML Off)
 endif()
 
 # Set Fluent Bit dependency libraries path
@@ -549,6 +554,11 @@ if(FLB_TRACE)
   FLB_DEFINITION(FLB_HAVE_TRACE)
 endif()
 
+# Disable colors and any other control characters in the output
+if (FLB_LOG_NO_CONTROL_CHARS)
+  FLB_DEFINITION(FLB_LOG_NO_CONTROL_CHARS)
+endif()
+
 if(FLB_HTTP_SERVER)
   FLB_OPTION(FLB_METRICS ON)
   FLB_DEFINITION(FLB_HAVE_METRICS)
@@ -658,14 +668,25 @@ if(FLB_HAVE_UNIX_SOCKET)
   FLB_DEFINITION(FLB_HAVE_UNIX_SOCKET)
 endif()
 
-# libyaml support
+# Configuration file YAML format support
+if(FLB_CONFIG_YAML)
+# Requies libyaml support
 check_c_source_compiles("
   #include <yaml.h>
   int main() {
     yaml_parser_t parser;
     return 0;
   }" FLB_HAVE_LIBYAML)
-if(FLB_HAVE_LIBYAML)
+
+  if(NOT FLB_HAVE_LIBYAML)
+    message(FATAL_ERROR
+      "YAML development dependencies required for YAML configuration format handling.\n"
+      "This is a build time dependency, you can either install the "
+      "dependencies or disable the feature setting the CMake option "
+      "-DFLB_CONFIG_YAML=Off ."
+      )
+  endif()
+
   FLB_DEFINITION(FLB_HAVE_LIBYAML)
 endif()
 

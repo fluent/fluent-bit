@@ -33,6 +33,11 @@
 #define THROTTLE_DEFAULT_INTERVAL  "1"
 #define THROTTLE_DEFAULT_STATUS "false"
 
+struct ticker {
+    pthread_t thr;
+    double seconds;
+};
+
 struct flb_filter_throttle_ctx {
     double    max_rate;
     unsigned int    window_size;
@@ -42,12 +47,9 @@ struct flb_filter_throttle_ctx {
     /* internal */
     struct throttle_window *hash;
     struct flb_filter_instance *ins;
+    struct ticker ticker_data;
 };
 
-struct ticker {
-    struct flb_filter_throttle_ctx *ctx;
-    bool done;
-    double seconds;
-};
+
 
 #endif

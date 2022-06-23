@@ -72,6 +72,72 @@ jobs:
           echo ::set-output name=BUILD_TYPE::$BUILD_TYPE
         shell: bash
 
+  call-build-capture-source:
+    # Capture source tarball and generate checksum for it
+    name: Extract any supporting metadata
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    needs:
+      - call-build-legacy-check
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+          path: source
+
+      - name: Checkout legacy packaging code
+        if: needs.call-build-legacy-check.outputs.build-type == '1.8'
+        uses: actions/checkout@v3
+        with:
+          repository: fluent/fluent-bit-packaging
+          path: packaging
+
+      - name: Create tarball and checksums
+        run: |
+          tar -czvf $SOURCE_FILENAME_PREFIX.tar.gz -C source --exclude-vcs .
+          md5sum $SOURCE_FILENAME_PREFIX.tar.gz > $SOURCE_FILENAME_PREFIX.tar.gz.md5
+          sha256sum $SOURCE_FILENAME_PREFIX.tar.gz > $SOURCE_FILENAME_PREFIX.tar.gz.sha256
+          if [[ -d packaging ]]; then
+            echo "Also adding 1.8 packaging code"
+            tar -czvf $SOURCE_FILENAME_PREFIX-packaging.tar.gz -C packaging --exclude-vcs .
+            md5sum $SOURCE_FILENAME_PREFIX-packaging.tar.gz > $SOURCE_FILENAME_PREFIX-packaging.tar.gz.md5
+            sha256sum $SOURCE_FILENAME_PREFIX-packaging.tar.gz > $SOURCE_FILENAME_PREFIX-packaging.tar.gz.sha256
+          fi
+          # Move to a directory to simplify upload/sync
+          mkdir -p source-packages
+          cp -fv $SOURCE_FILENAME_PREFIX* source-packages/
+        shell: bash
+        env:
+          SOURCE_FILENAME_PREFIX: source-${{ inputs.version }}
+
+      - name: Upload the source artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: source-${{ inputs.version }}
+          path: source-packages/*
+          if-no-files-found: error
+
+      # Required to support 1.8 style builds which will not have it
+      - name: Checkout code for action
+        if: inputs.environment == 'staging'
+        uses: actions/checkout@v3
+        with:
+          path: action-support
+
+      - name: Push tarballs to S3
+        # Only upload for staging
+        if: inputs.environment == 'staging'
+        uses: ./action-support/.github/actions/sync-to-bucket
+        with:
+          bucket: ${{ secrets.bucket }}
+          access_key_id: ${{ secrets.access_key_id }}
+          secret_access_key: ${{ secrets.secret_access_key }}
+          bucket-directory: "${{ inputs.version }}/source"
+          source-directory: "source-packages/"
+
   # We build both master/1.9 and 1.8 style packages in a single job as it is simpler to keep all the custom
   # code and workflow together. We need to run the dependent job after this as well.
   call-build-linux-packages:

@@ -67,7 +67,7 @@ struct flb_input_instance;
 
 struct flb_input_plugin {
     int flags;                /* plugin flags */
-    int event_type;           /* event type to be genarated: logs ?, metrics ? */
+    int event_type;           /* event type to be generated: logs ?, metrics ? */
 
     /* The Input name */
     char *name;
@@ -77,7 +77,7 @@ struct flb_input_plugin {
 
     struct flb_config_map *config_map;
 
-    /* Initalization */
+    /* Initialization */
     int (*cb_init)    (struct flb_input_instance *, struct flb_config *, void *);
 
     /* Pre run */
@@ -133,7 +133,7 @@ struct flb_input_instance {
     int event_type;                  /* FLB_INPUT_LOGS, FLB_INPUT_METRICS */
 
     /*
-     * The instance flags are derivated from the fixed plugin flags. This
+     * The instance flags are derived from the fixed plugin flags. This
      * is done to offer some flexibility where a plugin instance per
      * configuration would like to change some specific behavior.
      *
@@ -190,8 +190,8 @@ struct flb_input_instance {
     int storage_type;
 
     /*
-     * Buffers counter: it count the total of memory used by fixed and dynamic
-     * messgage pack buffers used by the input plugin instance.
+     * Buffers counter: it counts the total of memory used by fixed and dynamic
+     * message pack buffers used by the input plugin instance.
      */
     size_t mem_chunks_size;
     size_t mp_total_buf_size; /* FIXME: to be deprecated */
@@ -201,7 +201,7 @@ struct flb_input_instance {
      * cannot exceed more than mp_buf_limit (bytes unit).
      *
      * As a reference, if an input plugin exceeds the limit, the pause() callback
-     * will be triggered to notirfy the input instance it cannot longer append
+     * will be triggered to notify the input instance it cannot longer append
      * more data, on that moment Fluent Bit will avoid to add more records.
      *
      * When the buffer size goes down (because data was flushed), a resume()
@@ -246,7 +246,7 @@ struct flb_input_instance {
     struct mk_list chunks;               /* linked list of all chunks  */
 
     /*
-     * The following list helps to separate the chunks per it
+     * The following list helps to separate the chunks per its
      * status, it can be 'up' or 'down'.
      */
     struct mk_list chunks_up;            /* linked list of all chunks up */
@@ -279,7 +279,7 @@ struct flb_input_instance {
 
     /*
      * Indexes for generated chunks: simple hash tables that keeps the latest
-     * available chunks for writing data operations. This optimize the
+     * available chunks for writing data operations. This optimizes the
      * lookup for candidates chunks to write data.
      *
      * Starting from v1.8 we have separate hash tables for logs and metrics.
@@ -434,11 +434,11 @@ struct flb_input_coro *flb_input_coro_collect(struct flb_input_collector *coll,
  * as it will take care to signal the event loop letting know the flush
  * callback has done.
  *
- * The signal emmited indicate the 'Task' number that have finished plus
+ * The signal emitted indicate the 'Task' number that have finished plus
  * a return value. The return value is either FLB_OK, FLB_RETRY or FLB_ERROR.
  *
- * If the caller have requested a FLB_RETRY, it will be issued depending of the
- * number of retries, if it have exceed the 'retry_limit' option, a FLB_ERROR
+ * If the caller have requested an FLB_RETRY, it will be issued depending on the
+ * number of retries, if it has exceeded the 'retry_limit' option, an FLB_ERROR
  * will be returned instead.
  */
 static inline void flb_input_return(struct flb_coro *coro) {
@@ -451,7 +451,7 @@ static inline void flb_input_return(struct flb_coro *coro) {
     ins = input_coro->ins;
 
     /*
-     * Message the event loop by identifying the message comming from an input
+     * Message the event loop by identifying the message coming from an input
      * coroutine and passing the input plugin ID that triggered the event.
      */
     val = FLB_BITS_U64_SET(FLB_ENGINE_IN_CORO, ins->id);
