@@ -112,6 +112,8 @@ static int mem_calc(struct flb_in_mem_info *m_info)
     m_info->swap_free     = calc_kb(info.freeswap, info.mem_unit);
     m_info->swap_used     = m_info->swap_total - m_info->swap_free;
 
+    m_info->system_uptime = info.uptime;
+
     return 0;
 }
 
@@ -169,7 +171,7 @@ static int in_mem_collect(struct flb_input_instance *i_ins,
 {
     int ret;
     int len;
-    int entries = 6;/* (total,used,free) * (memory, swap) */
+    int entries = 7;/* (total,used,free) * (memory, swap) */
     struct proc_task *task = NULL;
     struct flb_in_mem_config *ctx = in_context;
     struct flb_in_mem_info info;
@@ -230,6 +232,9 @@ static int in_mem_collect(struct flb_input_instance *i_ins,
     msgpack_pack_str_body(&mp_pck, "Swap.free", 9);
     msgpack_pack_uint64(&mp_pck, info.swap_free);
 
+    msgpack_pack_str(&mp_pck, 13);
+    msgpack_pack_str_body(&mp_pck, "System.uptime", 13);
+    msgpack_pack_uint64(&mp_pck, info.system_uptime);
 
     if (task) {
         /* RSS bytes */

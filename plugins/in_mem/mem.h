@@ -35,6 +35,7 @@ struct flb_in_mem_info {
     uint64_t swap_total;
     uint64_t swap_used;
     uint64_t swap_free;
+    long system_uptime;
 };
 
 struct flb_in_mem_config {
