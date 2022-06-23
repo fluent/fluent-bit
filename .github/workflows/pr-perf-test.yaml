@@ -50,12 +50,13 @@ jobs:
           name: output
           path: output/
 
-  pr-integration-test-build-complete:
-    name: PR - integration build complete
+  pr-perf-test-complete:
+    name: PR - performance test complete
     runs-on: ubuntu-latest
     needs:
-      - pr-integration-test-build
+      - pr-perf-test-run
     steps:
+      # TODO: post results as well
       - uses: actions-ecosystem/action-add-labels@v1
         name: Label the PR
         with:
