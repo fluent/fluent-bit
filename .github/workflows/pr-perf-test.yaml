@@ -12,7 +12,7 @@ jobs:
   pr-perf-test-run:
     # We only need to test this once as the rest are chained from it.
     if: contains(github.event.pull_request.labels.*.name, 'ok-to-performance-test')
-    uses: fluent/fluent-bit-ci/.github/workflows/call-run-test.yaml@add_callable_test_workflow #TODO: change before merge
+    uses: fluent/fluent-bit-ci/.github/workflows/call-run-test.yaml@main
     with:
       vm-name: fb-perf-test-pr-${{ github.event.number }}
       git-branch: ${{ github.head_ref }}
