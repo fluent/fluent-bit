@@ -19,7 +19,7 @@ jobs:
       duration: 30
       service: fb-delta
     secrets:
-      service-account: ${{ secrets.GCP_SA }}
+      service-account: ${{ secrets.GCP_SA_KEY }}
 
   pr-perf-test-complete:
     name: PR - performance test complete
