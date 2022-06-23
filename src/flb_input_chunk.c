@@ -1468,6 +1468,10 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         if (ic->trace) {
             flb_trace_chunk_input(ic->trace, buf, buf_size);
         }
+        if (flb_trace_chunk_context_hit_limit(ic->in->trace_ctxt) == FLB_TRUE) {
+            flb_trace_chunk_context_destroy(ic->in->trace_ctxt);
+            ic->in->trace_ctxt = NULL;
+        }
     }
 #endif // FLB_TRACE
 

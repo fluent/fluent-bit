@@ -2,9 +2,12 @@
 
 #include <fluent-bit/flb_time.h>
 
-#define FLB_TRACE_CHUNK_TYPE_INPUT 1
+#define FLB_TRACE_CHUNK_TYPE_INPUT  1
 #define FLB_TRACE_CHUNK_TYPE_FILTER 2
 #define FLB_TRACE_CHUNK_TYPE_OUTPUT 3
+
+#define FLB_TRACE_CHUNK_LIMIT_TIME    1
+#define FLB_TRACE_CHUNK_LIMIT_COUNT   2
 
 struct flb_trace_chunk_input_record {
 	struct flb_time t;
@@ -21,12 +24,30 @@ struct flb_trace_chunk_filter_record {
 	size_t buf_size;
 };
 
+struct flb_trace_chunk_limit {
+	// set to one of:
+	//   FLB_TRACE_CHUNK_LIMIT_TIME
+	//   FLB_TRACE_CHUNK_LIMIT_COUNT
+	int type;
+
+	// limit is in seconds
+	int seconds;
+	// unix timestamp when time limit started
+	int seconds_started;
+
+	// limit is a count
+	int count;
+};
+
 struct flb_trace_chunk_context {
 	/* avoid cyclical include ... */
 	void *input;
 	void *output;
 	int trace_count;
+	struct flb_trace_chunk_limit limit;
 	flb_sds_t trace_prefix;
+	int to_destroy;
+	int chunks;
 };
 
 struct flb_trace_chunk {
@@ -43,3 +64,5 @@ void flb_trace_chunk_destroy(struct flb_trace_chunk *);
 int flb_trace_chunk_input(struct flb_trace_chunk *trace, char *buf, int buf_size);
 int flb_trace_chunk_filter(struct flb_trace_chunk *trace, void *pfilter, char *buf, int buf_size);
 void flb_trace_chunk_free(struct flb_trace_chunk *trace);
+int flb_trace_chunk_context_set_limit(struct flb_trace_chunk_context *ctxt, int, int);
+int flb_trace_chunk_context_hit_limit(struct flb_trace_chunk_context *ctxt);

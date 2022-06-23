@@ -221,6 +221,8 @@ static int http_enable_trace(mk_request_t *request, void *data, const char *inpu
     msgpack_object *key;
     msgpack_object *val;
     struct mk_list *props = NULL;
+    struct flb_trace_chunk_limit limit = { 0 };
+    struct flb_input_instance *input_instance;
     
 
     if (request->method == MK_METHOD_GET) {
@@ -308,6 +310,41 @@ static int http_enable_trace(mk_request_t *request, void *data, const char *inpu
                                             (char *)val->via.map.ptr[x].val.via.str.ptr, val->via.map.ptr[x].val.via.str.size);
                 }
             }
+            else if (strncmp(key->via.str.ptr, "limit", key->via.str.size) == 0) {
+                if (val->type != MSGPACK_OBJECT_MAP) {
+                    ret = 503;
+                    flb_error("limit must be a map of limit types");
+                    goto parse_error;
+                }
+                if (val->via.map.size != 1) {
+                    ret = 503;
+                    flb_error("limit must have a single limit type");
+                    goto parse_error;
+                }
+                if (val->via.map.ptr[0].key.type != MSGPACK_OBJECT_STR) {
+                    ret = 503;
+                    flb_error("limit type (key) must be a string");
+                    goto parse_error;
+                }
+                if (val->via.map.ptr[0].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
+                    ret = 503;
+                    flb_error("limit type must be an integer");
+                    goto parse_error;
+                }
+                if (strncmp(val->via.map.ptr[0].key.via.str.ptr, "seconds", val->via.map.ptr[0].key.via.str.size) == 0) {
+                    limit.type = FLB_TRACE_CHUNK_LIMIT_TIME;
+                    limit.seconds = val->via.map.ptr[0].val.via.u64;
+                }
+                else if (strncmp(val->via.map.ptr[0].key.via.str.ptr, "count", val->via.map.ptr[0].key.via.str.size) == 0) {
+                    limit.type = FLB_TRACE_CHUNK_LIMIT_COUNT;
+                    limit.count = val->via.map.ptr[0].val.via.u64;
+                }
+                else {
+                    ret = 503;
+                    flb_error("unknown limit type");
+                    goto parse_error;
+                }
+            }
         }
 
         if (output_name == NULL) {
@@ -318,6 +355,15 @@ static int http_enable_trace(mk_request_t *request, void *data, const char *inpu
         if (ret != 0) {
             flb_error("error when enabling tracing");
             goto parse_error;
+        }
+
+        if (limit.type != 0) {
+            input_instance = find_input(hs, input_name);
+            if (limit.type == FLB_TRACE_CHUNK_LIMIT_TIME) {
+                flb_trace_chunk_context_set_limit(input_instance->trace_ctxt, limit.type, limit.seconds);
+            } else if (limit.type == FLB_TRACE_CHUNK_LIMIT_COUNT) {
+                flb_trace_chunk_context_set_limit(input_instance->trace_ctxt, limit.type, limit.count);
+            }
         }
     }
 
