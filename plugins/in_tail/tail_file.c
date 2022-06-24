@@ -348,11 +348,13 @@ static int ml_stream_buffer_append(struct flb_tail_file *file, char *buf_data, s
 
 static int ml_stream_buffer_flush(struct flb_tail_config *ctx, struct flb_tail_file *file)
 {
-    flb_input_chunk_append_raw(ctx->ins,
-                               file->tag_buf,
-                               file->tag_len,
-                               file->ml_sbuf.data, file->ml_sbuf.size);
-    file->ml_sbuf.size = 0;
+    if (file->ml_sbuf.size > 0) {
+        flb_input_chunk_append_raw(ctx->ins,
+                                   file->tag_buf,
+                                   file->tag_len,
+                                   file->ml_sbuf.data, file->ml_sbuf.size);
+        file->ml_sbuf.size = 0;
+    }
     return 0;
 }
 
@@ -866,6 +868,11 @@ static int ml_flush_callback(struct flb_ml_parser *parser,
 
         ml_stream_buffer_append(file, mult_buf, mult_size);
         flb_free(mult_buf);
+    }
+
+
+    if (mst->forced_flush) {
+        ml_stream_buffer_flush(ctx, file);
     }
 
     return 0;
