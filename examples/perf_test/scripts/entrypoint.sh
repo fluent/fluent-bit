@@ -17,7 +17,8 @@ do
         /scripts/multi-line-log-generator.sh &
     else
         echo "Creating $OUTPUT_LOGFILE"
-        /run_log_generator.py --log-size-in-bytes "$LOG_SIZE" --log-rate "$LOG_RATE" --log-agent-input-type tail --tail-file-path "$OUTPUT_LOGFILE" &
+        # Far too much debug
+        /run_log_generator.py --log-size-in-bytes "$LOG_SIZE" --log-rate "$LOG_RATE" --log-agent-input-type tail --tail-file-path "$OUTPUT_LOGFILE" &> /dev/null &
     fi
 done
 
