@@ -1,6 +1,8 @@
 name: Build and run performance tests for PR
 on:
-  pull_request:
+  # We want to run on forks as we protect with a label.
+  # Without this we have no secrets to pass.
+  pull_request_target:
     branches:
       - master
     types:
@@ -35,7 +37,6 @@ jobs:
         with:
           path: './**/*.png'
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
 
       - uses: actions-ecosystem/action-add-labels@v1
         name: Label the PR
