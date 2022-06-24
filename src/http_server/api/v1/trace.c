@@ -233,7 +233,7 @@ static int http_enable_trace(mk_request_t *request, void *data, const char *inpu
                 msgpack_pack_str_with_body(mp_pck, "ok", strlen("ok"));
                 return 200;
         } else {
-            flb_error("unable to enable to tracing for %s", input_name);
+            flb_error("unable to enable tracing for %s", input_name);
             goto input_error;
         }
     }
