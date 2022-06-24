@@ -3,9 +3,15 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
 
   hadolint-pr:
+    permissions:
+      checks: write  # for reviewdog/action-hadolint to report issues using checks
+      contents: read  # for actions/checkout to fetch code
     runs-on: ubuntu-latest
     name: PR - Hadolint
     steps:

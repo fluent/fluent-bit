@@ -12,11 +12,16 @@ on:
     - cron: 44 13 * * 4
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   # Run Trivy on the latest container and update the security code scanning results tab.
   trivy-latest:
     # Matrix job that pulls the latest image for each supported architecture via the multi-arch latest manifest.
     # We then re-tag it locally to ensure that when Trivy runs it does not pull the latest for the wrong architecture.
+    permissions:
+      security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
     name: ${{ matrix.arch }} container scan
     runs-on: [ ubuntu-latest ]
     continue-on-error: true

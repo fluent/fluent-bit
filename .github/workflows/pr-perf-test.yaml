@@ -10,6 +10,8 @@ jobs:
 
   pr-perf-test-run:
     # We only need to test this once as the rest are chained from it.
+    permissions:
+      contents: none
     if: contains(github.event.pull_request.labels.*.name, 'ok-to-performance-test')
     uses: fluent/fluent-bit-ci/.github/workflows/call-run-test.yaml@main
     with:

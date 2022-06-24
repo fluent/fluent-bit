@@ -79,6 +79,8 @@ jobs:
         shell: bash
 
   unstable-build-images:
+    permissions:
+      contents: none
     needs: unstable-build-get-meta
     uses: ./.github/workflows/call-build-images.yaml
     with:
@@ -113,6 +115,8 @@ jobs:
           ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
 
   unstable-build-packages:
+    permissions:
+      contents: none
     needs:
       - unstable-build-get-meta
       - unstable-build-generate-matrix
@@ -127,6 +131,8 @@ jobs:
       token: ${{ secrets.GITHUB_TOKEN }}
 
   unstable-build-windows-package:
+    permissions:
+      contents: none
     needs:
       - unstable-build-get-meta
     uses: ./.github/workflows/call-build-windows.yaml
@@ -139,6 +145,8 @@ jobs:
       token: ${{ secrets.GITHUB_TOKEN }}
 
   unstable-build-macos-package:
+    permissions:
+      contents: none
     needs:
       - unstable-build-get-meta
     uses: ./.github/workflows/call-build-macos.yaml

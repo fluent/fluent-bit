@@ -11,8 +11,13 @@ on:
 
 concurrency: integration-test
 
+permissions:
+  contents: read
+
 jobs:
   staging-test-images:
+    permissions:
+      contents: none
     name: Container images staging tests
     # Workflow run always triggers on completion regardless of status
     # This prevents us from running if build fails.
@@ -30,6 +35,8 @@ jobs:
 
   # Called workflows cannot be nested
   staging-test-images-integration:
+    permissions:
+      contents: none
     name: run integration tests on GCP
     # Wait for other tests to succeed
     needs: staging-test-images
@@ -44,6 +51,8 @@ jobs:
       terraform_api_token: ${{ secrets.TF_API_TOKEN }}
 
   staging-test-packages:
+    permissions:
+      contents: none
     name: Binary packages staging test
     # Workflow run always triggers on completion regardless of status
     # This prevents us from running if build fails.
