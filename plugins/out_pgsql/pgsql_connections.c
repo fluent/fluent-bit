@@ -48,7 +48,9 @@ void pgsql_destroy_connections(struct flb_pgsql_config *ctx)
 void *pgsql_create_connection(struct flb_pgsql_config *ctx)
 {
     struct flb_pgsql_conn *conn;
+    size_t str_len;
     const char *escaped_schema = NULL;
+    const char *query = NULL;
     PGresult *res = NULL;
 
     conn = flb_calloc(1, sizeof(struct flb_pgsql_conn));
@@ -77,9 +79,9 @@ void *pgsql_create_connection(struct flb_pgsql_config *ctx)
 
     if (ctx->schema != NULL) {
         escaped_schema = PQescapeLiteral(conn->conn, ctx->schema, flb_sds_len(ctx->schema));
-        res = PQexecParams(conn->conn,
-                           "SET search_path = $1",1,
-                           NULL, escaped_schema, NULL, NULL, 1);
+        str_len = 22 + flb_sds_len(escaped_schema);
+        snprintf(query, str_len,"SET search_path = %s", escaped_schema);
+        res = PQexec(conn->conn, query);
         PQfreemem(escaped_schema);
         if (PQresultStatus(res) != PGRES_COMMAND_OK) {
             flb_plg_error(ctx->ins,
