@@ -231,6 +231,10 @@ struct flb_config {
     struct mk_list stream_processor_tasks;
 #endif
 
+#ifdef FLB_TRACE
+    int enable_trace;
+#endif
+
     /* Co-routines */
     unsigned int coro_stack_size;
 
@@ -299,6 +303,10 @@ enum conf_type {
 #define FLB_CONF_STR_HC_RETRIES_FAILURE_COUNT               "HC_Retry_Failure_Count"
 #define FLB_CONF_STR_HC_PERIOD                              "HC_Period"
 #endif /* !FLB_HAVE_HTTP_SERVER */
+
+#ifdef FLB_TRACE
+#define FLB_CONF_STR_ENABLE_TRACE      "Enable_Trace"
+#endif
 
 /* DNS */
 #define FLB_CONF_DNS_MODE              "dns.mode"

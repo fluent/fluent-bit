@@ -159,6 +159,12 @@ struct flb_service_config service_configs[] = {
      offsetof(struct flb_config, stream_processor_file)},
 #endif
 
+#ifdef FLB_TRACE
+    {FLB_CONF_STR_ENABLE_TRACE,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, enable_trace)},
+#endif
+
     {NULL, FLB_CONF_TYPE_OTHER, 0} /* end of array */
 };
 
@@ -219,6 +225,10 @@ struct flb_config *flb_config_init()
     config->hc_retry_failure_count       = HC_RETRY_FAILURE_COUNTS_DEFAULT;
     config->health_check_period          = HEALTH_CHECK_PERIOD;
 #endif
+
+#ifdef FLB_TRACE
+    config->enable_trace = FLB_TRUE;
+#endif // FLB_TRACE
 
     config->http_proxy = getenv("HTTP_PROXY");
     if (flb_str_emptyval(config->http_proxy) == FLB_TRUE) {

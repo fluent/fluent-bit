@@ -72,6 +72,9 @@ struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *c
     struct flb_kv *prop;
     int ret;
 
+    if (config->enable_trace == FLB_FALSE) {
+    	return NULL;
+    }
 
     input = (void *)flb_input_new(config, "emitter", NULL, FLB_FALSE);
     if (input == NULL) {
