@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_pthread.h>
 
 /* actions */
 #define THROTTLE_RET_KEEP  0
