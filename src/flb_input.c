@@ -1209,8 +1209,8 @@ int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config)
     else {
         if (collector->cb_collect(collector->instance, config,
                               collector->instance->context) == -1) {
-	    return -1;
-	}
+            return -1;
+        }
     }
 
     return 0;
