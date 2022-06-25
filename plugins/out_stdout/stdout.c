@@ -178,7 +178,7 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
                 printf("%"PRIu32".%09lu, ", (uint32_t)tmp.tm.tv_sec, tmp.tm.tv_nsec);
                 msgpack_object_print(stdout, *p);
                 printf("]\n");
-	    }
+            }
         }
         msgpack_unpacked_destroy(&result);
         flb_free(buf);
