@@ -666,24 +666,38 @@ endif()
 
 # Configuration file YAML format support
 if(FLB_CONFIG_YAML)
-# Requies libyaml support
-check_c_source_compiles("
-  #include <yaml.h>
-  int main() {
-    yaml_parser_t parser;
-    return 0;
-  }" FLB_HAVE_LIBYAML)
+  find_package(PkgConfig)
+  # libyaml's corresponding pkg-config file is yaml-0.1.pc.
+  # We should search it first.
+  pkg_check_modules(LIBYAML QUIET yaml-0.1)
 
-  if(NOT FLB_HAVE_LIBYAML)
-    message(FATAL_ERROR
-      "YAML development dependencies required for YAML configuration format handling.\n"
-      "This is a build time dependency, you can either install the "
-      "dependencies or disable the feature setting the CMake option "
-      "-DFLB_CONFIG_YAML=Off ."
-      )
+  if (LIBYAML_FOUND)
+    # For if(FLB_HAVE_LIBYAML) clause on CMakeList.txt.
+    set(FLB_HAVE_LIBYAML 1)
+    FLB_DEFINITION(FLB_HAVE_LIBYAML)
+    # For non-standard libyaml installation paths such as homebrew bottled libyaml.
+    include_directories(${LIBYAML_INCLUDEDIR})
+    link_directories(${LIBYAML_LIBRARY_DIRS})
+  else()
+    # Requies libyaml support
+    check_c_source_compiles("
+      #include <yaml.h>
+      int main() {
+        yaml_parser_t parser;
+        return 0;
+      }" FLB_HAVE_LIBYAML)
+
+    if(NOT FLB_HAVE_LIBYAML)
+      message(FATAL_ERROR
+        "YAML development dependencies required for YAML configuration format handling.\n"
+        "This is a build time dependency, you can either install the "
+        "dependencies or disable the feature setting the CMake option "
+        "-DFLB_CONFIG_YAML=Off ."
+        )
+    endif()
+
+    FLB_DEFINITION(FLB_HAVE_LIBYAML)
   endif()
-
-  FLB_DEFINITION(FLB_HAVE_LIBYAML)
 endif()
 
 # check attribute alloc_size
