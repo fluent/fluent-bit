@@ -30,7 +30,7 @@ static void test_basic()
 
 	elements = sizeof(checks) / sizeof(struct check);
 
-	rb = flb_ring_buffer_create(sizeof(struct check *) * elements);
+	rb = flb_ring_buffer_create(sizeof(struct check *) * elements, 0);
 	TEST_CHECK(rb != NULL);
 	if (!rb) {
 		exit(EXIT_FAILURE);

@@ -48,6 +48,7 @@
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_version.h>
+#include <fluent-bit/flb_ring_buffer.h>
 
 #ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics_exporter.h>
@@ -524,6 +525,14 @@ static int flb_engine_log_start(struct flb_config *config)
     return 0;
 }
 
+static void flb_engine_drain_ring_buffer_signal_channel(struct flb_ring_buffer *rb)
+{
+    static char signal_buffer[512];
+
+    flb_pipe_r(rb->signal_channels[0], signal_buffer, sizeof(signal_buffer));
+}
+
+
 #ifdef FLB_HAVE_IN_STORAGE_BACKLOG
 extern int sb_segregate_chunks(struct flb_config *config);
 #else
@@ -748,6 +757,15 @@ int flb_engine_start(struct flb_config *config)
     int rb_ms;
     char *rb_env;
 
+    uint64_t rb_ns;
+    int      rb_flush_flag;
+    uint64_t rb_elapsed_check_ts;
+    uint64_t rb_current_check_ts;
+    uint64_t rb_previous_check_ts;
+
+    rb_current_check_ts = 0;
+    rb_previous_check_ts = 0;
+
     rb_env = getenv("FLB_DEV_RB_MS");
     if (!rb_env) {
         rb_ms = 250;
@@ -756,15 +774,7 @@ int flb_engine_start(struct flb_config *config)
         rb_ms = atoi(rb_env);
     }
 
-    /* Input instance / Ring buffer collector */
-    ret = flb_sched_timer_cb_create(config->sched,
-                                    FLB_SCHED_TIMER_CB_PERM,
-                                    rb_ms, flb_input_chunk_ring_buffer_collector,
-                                    config, NULL);
-    if (ret == -1) {
-        flb_error("[engine] could not schedule permanent callback");
-        return -1;
-    }
+    rb_ns = rb_ms * 1000000;
 
     /* Signal that we have started */
     flb_engine_started(config);
@@ -778,6 +788,8 @@ int flb_engine_start(struct flb_config *config)
     }
 
     while (1) {
+        rb_flush_flag = FLB_FALSE;
+
         mk_event_wait(evl); /* potentially conditional mk_event_wait or mk_event_wait_2 based on bucket queue capacity for one shot events */
         flb_event_priority_live_foreach(event, evl_bktq, evl, FLB_ENGINE_LOOP_MAX_ITER) {
             if (event->type == FLB_ENGINE_EV_CORE) {
@@ -902,7 +914,27 @@ int flb_engine_start(struct flb_config *config)
                 ts = cmt_time_now();
                 handle_input_event(event->fd, ts, config);
             }
+            else if(event->type == FLB_ENGINE_EV_THREAD_INPUT) {
+                flb_engine_drain_ring_buffer_signal_channel((struct flb_ring_buffer *) event->data);
+
+                rb_flush_flag = FLB_TRUE;
+            }
         }
+
+        rb_current_check_ts = cmt_time_now();
+        rb_elapsed_check_ts = rb_current_check_ts - rb_previous_check_ts;
+
+        if (!rb_flush_flag) {
+            if (rb_elapsed_check_ts >= rb_ns) {
+                rb_flush_flag = FLB_TRUE;
+            }
+        }
+
+        if (rb_flush_flag) {
+            flb_input_chunk_ring_buffer_collector(config, NULL);
+        }
+
+        rb_previous_check_ts = rb_current_check_ts;
 
         /* Cleanup functions associated to events and timers */
         if (config->is_running == FLB_TRUE) {

@@ -1702,6 +1702,8 @@ void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data)
             }
             cr = NULL;
         }
+
+        ins->rb->flush_pending = FLB_FALSE;
     }
 }
 

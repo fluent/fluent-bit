@@ -327,5 +327,6 @@ struct flb_input_plugin in_dummy_plugin = {
     .config_map   = config_map,
     .cb_pause     = in_dummy_pause,
     .cb_resume    = in_dummy_resume,
-    .cb_exit      = in_dummy_exit
+    .cb_exit      = in_dummy_exit,
+    .flags        = FLB_INPUT_THREADED
 };

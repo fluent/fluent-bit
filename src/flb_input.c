@@ -46,8 +46,14 @@ struct flb_libco_in_params libco_in_param;
  * Ring buffer size: we make space for 512 entries that each input instance can
  * use to enqueue data. Note that this value is fixed and only affect input plugins
  * which runs in threaded mode (separate thread)
+ *
+ * Ring buffer window: the current window size is set to 5% which means that the
+ * ring buffer will emit a flush request whenever there are 51 records or more
+ * awaiting to be consumed.
  */
-#define FLB_INPUT_RING_BUFFER_SIZE  (sizeof(void *) * 1024)
+
+#define FLB_INPUT_RING_BUFFER_SIZE   (sizeof(void *) * 1024)
+#define FLB_INPUT_RING_BUFFER_WINDOW (5)
 
 
 static int check_protocol(const char *prot, const char *output)
@@ -261,7 +267,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         }
 
         /* allocate a ring buffer */
-        instance->rb = flb_ring_buffer_create(FLB_INPUT_RING_BUFFER_SIZE);
+        instance->rb = flb_ring_buffer_create(FLB_INPUT_RING_BUFFER_SIZE, FLB_INPUT_RING_BUFFER_WINDOW);
         if (!instance->rb) {
             flb_error("instance %s could not initialize ring buffer",
                       flb_input_name(instance));
@@ -762,6 +768,15 @@ int flb_input_instance_init(struct flb_input_instance *ins,
             ret = input_instance_channel_events_init(ins);
             if (ret != 0) {
                 flb_error("failed initialize channel events on input %s",
+                          ins->name);
+                flb_input_instance_destroy(ins);
+                return -1;
+            }
+
+            /* register the ring buffer */
+            ret = flb_ring_buffer_register(ins->rb, config->evl);
+            if (ret) {
+                flb_error("failed register ring buffer events on input %s",
                           ins->name);
                 flb_input_instance_destroy(ins);
                 return -1;
