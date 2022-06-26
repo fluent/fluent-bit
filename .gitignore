@@ -1,5 +1,6 @@
 .idea
 .vscode
+.clang-format
 .DS_Store
 *~
 _book/
