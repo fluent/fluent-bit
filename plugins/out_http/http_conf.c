@@ -131,6 +131,8 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
             ins,
             config,
             FLB_HTTP_AWS_CREDENTIAL_PREFIX,
+            "",
+            "",
             NULL,
             flb_aws_client_generator()
         );

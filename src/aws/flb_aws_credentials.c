@@ -45,6 +45,8 @@ static struct flb_aws_provider *standard_chain_create(struct flb_config
                                                       char *region,
                                                       char *sts_endpoint,
                                                       char *proxy,
+                                                      char *aws_config_file,
+                                                      char *aws_shared_credentials_file,
                                                       struct
                                                       flb_aws_client_generator
                                                       *generator,
@@ -272,6 +274,8 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
                                                             char *region,
                                                             char *sts_endpoint,
                                                             char *proxy,
+                                                            char *aws_config_file,
+                                                            char *aws_shared_credentials_file,
                                                             struct
                                                             flb_aws_client_generator
                                                             *generator,
@@ -291,7 +295,8 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
          */
         flb_debug("[aws_credentials] Using EKS_POD_EXECUTION_ROLE=%s", eks_pod_role);
         tmp_provider = standard_chain_create(config, tls, region, sts_endpoint,
-                                             proxy, generator, FLB_FALSE, profile);
+                                             proxy, aws_config_file,
+                                             aws_shared_credentials_file, generator, FLB_FALSE, profile);
 
         if (!tmp_provider) {
             return NULL;
@@ -322,7 +327,8 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
 
     /* standard case- not in EKS Fargate */
     provider = standard_chain_create(config, tls, region, sts_endpoint,
-                                     proxy, generator, FLB_TRUE, profile);
+                                     proxy, aws_config_file,
+                                     aws_shared_credentials_file, generator, FLB_TRUE, profile);
     return provider;
 }
 
@@ -332,6 +338,8 @@ struct flb_aws_provider *flb_managed_chain_provider_create(struct flb_output_ins
                                                            *config,
                                                            char *config_key_prefix,
                                                            char *proxy,
+                                                           char *aws_config_file,
+                                                           char *aws_shared_credentials_file,
                                                            struct
                                                            flb_aws_client_generator
                                                            *generator)
@@ -404,6 +412,8 @@ struct flb_aws_provider *flb_managed_chain_provider_create(struct flb_output_ins
                                                       cred_tls,
                                                       (char *) region,
                                                       (char *) sts_endpoint,
+                                                      aws_config_file,
+                                                      aws_shared_credentials_file,
                                                       NULL,
                                                       flb_aws_client_generator(),
                                                       profile);
@@ -520,6 +530,8 @@ static struct flb_aws_provider *standard_chain_create(struct flb_config
                                                       char *region,
                                                       char *sts_endpoint,
                                                       char *proxy,
+                                                      char *aws_config_file,
+                                                      char *aws_shared_credentials_file,
                                                       struct
                                                       flb_aws_client_generator
                                                       *generator,
@@ -562,7 +574,7 @@ static struct flb_aws_provider *standard_chain_create(struct flb_config
     mk_list_add(&sub_provider->_head, &implementation->sub_providers);
 
     flb_debug("[aws_credentials] creating profile %s provider", profile);
-    sub_provider = flb_profile_provider_create(profile);
+    sub_provider = flb_profile_provider_create(profile, aws_config_file, aws_shared_credentials_file);
     if (sub_provider) {
         /* Profile provider can fail if HOME env var is not set */;
         mk_list_add(&sub_provider->_head, &implementation->sub_providers);

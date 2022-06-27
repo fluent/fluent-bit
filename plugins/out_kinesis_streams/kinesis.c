@@ -171,6 +171,8 @@ static int cb_kinesis_init(struct flb_output_instance *ins,
                                                            ctx->cred_tls,
                                                            (char *) ctx->region,
                                                            ctx->sts_endpoint,
+                                                           "",
+                                                           "",
                                                            NULL,
                                                            flb_aws_client_generator(),
                                                            ctx->profile);
