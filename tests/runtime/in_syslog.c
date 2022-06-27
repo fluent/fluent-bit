@@ -203,6 +203,7 @@ static flb_sockfd_t connect_tcp(char *in_host, int in_port)
     return fd;
 }
 
+#ifdef FLB_HAVE_UNIX_SOCKET
 static flb_sockfd_t connect_tcp_unix(char *path)
 {
     flb_sockfd_t fd;
@@ -263,6 +264,7 @@ static flb_sockfd_t init_udp_unix(char *path, struct sockaddr_un *sun)
     }
     return fd;
 }
+#endif
 
 static int init_udp(char *in_host, int in_port, struct sockaddr_in *addr)
 {
