@@ -1,0 +1,5 @@
+pipeline:
+    filters:
+      - modify:
+          alias: f2
+          match: "*"

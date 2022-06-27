@@ -155,7 +155,7 @@ static int read_glob(struct flb_cf *cf, struct local_ctx *ctx, const char * path
         glb_path = path;
     }
 
-    ret_glb = glob(glb_path, GLOB_NOSORT, NULL, &glb);
+    ret_glb = glob(glb_path, NULL, NULL, &glb);
     if (ret_glb != 0) {
         switch(ret_glb){
         case GLOB_NOSPACE:

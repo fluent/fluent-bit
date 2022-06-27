@@ -8,6 +8,7 @@
 #include "flb_tests_internal.h"
 
 #define FLB_000 FLB_TESTS_DATA_PATH "/data/config_format/yaml/fluent-bit.yaml"
+#define FLB_GLOB FLB_TESTS_DATA_PATH "/data/config_format/yaml/fluent-bit-include-order.yaml"
 
 /* data/config_format/fluent-bit.yaml */
 void test_basic()
@@ -58,7 +59,40 @@ void test_basic()
 
 }
 
+/* data/config_format/fluent-bit-include-order.yaml*/
+void test_include_glob_order()
+{
+    struct mk_list *head;
+	struct flb_cf *cf;
+    struct flb_cf_section *filter;
+    char tmp[3];
+    char *alias;
+    int idx = 0;
+
+    cf = flb_cf_yaml_create(NULL, FLB_GLOB, NULL, 0);
+    TEST_CHECK(cf != NULL);
+
+    /* Total number of sections */
+    TEST_CHECK(mk_list_size(&cf->sections) == 6);
+
+    /* Check number of filters */
+    TEST_CHECK(mk_list_size(&cf->filters) == 3);
+
+    mk_list_foreach(head, &cf->filters) {
+        filter = mk_list_entry(head, struct flb_cf_section, _head_section);
+        sprintf(tmp, "f%i", ++idx);
+        alias = flb_cf_section_property_get(cf, filter, "alias");
+        TEST_CHECK(strcmp(tmp, alias) == 0);
+    }
+
+    printf("\n");
+    flb_cf_dump(cf);
+
+    flb_cf_destroy(cf);
+}
+
 TEST_LIST = {
     { "basic"    , test_basic},
+    { "test_include_glob_order"    , test_include_glob_order},
     { 0 }
 };
