@@ -1,0 +1,21 @@
+# For skipped checks that are required to merge we trigger a fake job that succeeds.
+# https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/defining-the-mergeability-of-pull-requests/troubleshooting-required-status-checks#handling-skipped-but-required-checks
+name: Run unit tests
+on:
+  pull_request:
+    paths:
+      - '.github/**'
+      - 'dockerfiles/**'
+      - 'docker_compose/**'
+      - 'packaging/**'
+      - '.gitignore'
+      - 'appveyor.yml'
+      - '**.sh'
+      - 'examples/**'
+
+jobs:
+  run-all-unit-tests:
+    runs-on: ubuntu-latest
+    name: Unit tests (matrix)
+    steps:
+      - run: echo "No unit tests required"

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -44,10 +43,7 @@ struct flb_plugin_proxy_def {
 /* Proxy context */
 struct flb_plugin_proxy {
     /* Fields populated once remote flb_cb_register() is called */
-    int type;                 /* defined by FLB_PROXY_[INPUT|OUTPUT]_PLUGIN  */
-    int proxy;                /* proxy type                                  */
-    char *name;               /* plugin short name                           */
-    char *description;        /* plugin description                          */
+    struct flb_plugin_proxy_def *def;
 
     /* Internal */
     struct flb_api *api;      /* API context to export functions             */

@@ -5,10 +5,8 @@
 | CI Workflow       | Status             |
 |-------------------|--------------------|
 | Unit Tests (master) | [![CI/Unit Tests](https://github.com/fluent/fluent-bit/actions/workflows/unit-tests.yaml/badge.svg?branch=master)](https://github.com/fluent/fluent-bit/actions/workflows/unit-tests.yaml) |
-| Integration Tests (master) | [![CI/Integration Tests](https://github.com/fluent/fluent-bit/actions/workflows/integration-run-master.yaml/badge.svg)](https://github.com/fluent/fluent-bit/actions/workflows/integration-run-master.yaml)|
-| Docker images (master) | [![CI/Docker Images](https://github.com/fluent/fluent-bit/actions/workflows/integration-build-master.yaml/badge.svg)](https://github.com/fluent/fluent-bit/actions/workflows/integration-build-master.yaml)|
-| Latest release build |  [![CI/Build](https://github.com/fluent/fluent-bit/actions/workflows/build-release.yaml/badge.svg)](https://github.com/fluent/fluent-bit/actions/workflows/build-release.yaml)|
-
+| Integration Tests (master) | [![CI/Integration Tests](https://github.com/fluent/fluent-bit/actions/workflows/master-integration-test.yaml/badge.svg)](https://github.com/fluent/fluent-bit/actions/workflows/master-integration-test.yaml)|
+| Latest release |  [![CI/Build](https://github.com/fluent/fluent-bit/actions/workflows/staging-release.yaml/badge.svg)](https://github.com/fluent/fluent-bit/actions/workflows/staging-release.yaml)|
 
 ## Project Description
 
@@ -155,6 +153,7 @@ Fluent Bit is fully supported on Windows environments, get started with [these i
 | [influxdb](https://docs.fluentbit.io/manual/pipeline/outputs/influxdb) | InfluxDB | Flush records to InfluxDB time series database. |
 | [kafka](https://docs.fluentbit.io/manual/pipeline/outputs/kafka) | Apache Kafka | Flush records to Apache Kafka |
 | [kafka-rest](https://docs.fluentbit.io/manual/pipeline/outputs/kafka-rest-proxy) | Kafka REST Proxy | Flush records to a Kafka REST Proxy server. |
+| [loki](https://docs.fluentbit.io/manual/pipeline/outputs/loki) | Loki | Flush records to Loki server. |
 | [nats](https://docs.fluentbit.io/manual/pipeline/outputs/nats) | NATS | Flush records to a NATS server. |
 | [null](https://docs.fluentbit.io/manual/pipeline/outputs/null) | NULL | Throw away events. |
 | [s3](https://docs.fluentbit.io/manual/pipeline/outputs/s3) | S3 | Flush records to s3 |
@@ -170,6 +169,7 @@ Fluent Bit is fully supported on Windows environments, get started with [these i
 
 If you are interested in contributing to Fluent bit with bug fixes, new features or coding in general, please refer to the code [CONTRIBUTING](CONTRIBUTING.md) guidelines. You can also refer the Beginners Guide to contributing to Fluent Bit [here.](DEVELOPER_GUIDE.md)
 
+![Visualization of the codebase](./codebase-structure.svg)
 ## Community & Contact
 
 Feel free to join us on our Slack channel, Mailing List or IRC:

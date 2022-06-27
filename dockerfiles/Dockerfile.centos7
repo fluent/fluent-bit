@@ -1,0 +1,26 @@
+# This container image is primarily used to test compilation works for CentOS 7, it is
+# not intended for production usage.
+# Based on https://github.com/fluent/fluent-bit-packaging/tree/master/distros/centos/7
+FROM centos:7
+
+RUN yum -y update && \
+    yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
+                   wget unzip systemd-devel wget flex bison \
+                   cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
+                   postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel && \
+    wget http://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm && \
+    rpm -ivh epel-release-latest-7.noarch.rpm && \
+    yum install -y cmake3
+
+COPY . /src/
+WORKDIR /src/build
+
+RUN cmake3 -DCMAKE_INSTALL_PREFIX=/opt/td-agent-bit/ -DCMAKE_INSTALL_SYSCONFDIR=/etc/ \
+           -DFLB_RELEASE=On -DFLB_TRACE=On -DFLB_TD=On \
+           -DFLB_TESTS_INTERNAL=On -DFLB_TESTS_RUNTIME=On \
+           -DFLB_SQLDB=On -DFLB_HTTP_SERVER=On \
+           -DFLB_OUT_KAFKA=On \
+           -DFLB_JEMALLOC=On \
+           -DFLB_OUT_PGSQL=On ../
+
+RUN make -j $(getconf _NPROCESSORS_ONLN)

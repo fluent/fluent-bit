@@ -121,7 +121,7 @@ struct flb_lib_out_cb cb;
 
 
 int LLVMFuzzerInitialize(int *argc, char ***argv) {
-
+    flb_malloc_p = 0;
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "0", "Grace", 
                     "0", "Log_Level", "debug", NULL);
@@ -134,7 +134,7 @@ int LLVMFuzzerInitialize(int *argc, char ***argv) {
     flb_input_set(ctx, in_ffd, (char *) "CC", NULL);
     flb_input_set(ctx, in_ffd, (char *) "A", NULL);
 
-    parser = flb_parser_create("timestamp", "regex", "^(?<time>.*)$", 
+    parser = flb_parser_create("timestamp", "regex", "^(?<time>.*)$", FLB_TRUE,
                                 "%s.%L", "time", NULL, MK_FALSE, 0,
                                NULL, 0, NULL, ctx->config);
     filter_ffd = flb_filter(ctx, (char *) "parser", NULL);

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -36,8 +35,8 @@
 struct flb_input_plugin in_thermal_plugin;
 
 /* Default collection time: every 1 second (0 nanoseconds) */
-#define DEFAULT_INTERVAL_SEC    1
-#define DEFAULT_INTERVAL_NSEC   0
+#define DEFAULT_INTERVAL_SEC    "1"
+#define DEFAULT_INTERVAL_NSEC   "0"
 
 #define IN_THERMAL_N_MAX          32
 #define IN_THERMAL_FILENAME_LEN   1024
@@ -145,7 +144,6 @@ static int in_thermal_init(struct flb_input_instance *in,
 {
     int ret;
     struct flb_in_thermal_config *ctx;
-    const char *pval = NULL;
     struct temp_info info[IN_THERMAL_N_MAX];
     (void) data;
 
@@ -157,43 +155,31 @@ static int in_thermal_init(struct flb_input_instance *in,
     }
     ctx->ins = in;
 
+    /* Load the config map */
+    ret = flb_input_config_map_set(in, (void *)ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        flb_plg_error(in, "unable to load configuration");
+        return -1;
+    }
+
     /* Collection time setting */
-    pval = flb_input_get_property("interval_sec", in);
-    if (pval != NULL && atoi(pval) >= 0) {
-        ctx->interval_sec = atoi(pval);
-    }
-    else {
-        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
-    }
-
-    pval = flb_input_get_property("interval_nsec", in);
-    if (pval != NULL && atoi(pval) >= 0) {
-        ctx->interval_nsec = atoi(pval);
-    }
-    else {
-        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
-    }
-
     if (ctx->interval_sec <= 0 && ctx->interval_nsec <= 0) {
         /* Illegal settings. Override them. */
-        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
-        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
+        ctx->interval_sec = atoi(DEFAULT_INTERVAL_SEC);
+        ctx->interval_nsec = atoi(DEFAULT_INTERVAL_NSEC);
     }
 
 #ifdef FLB_HAVE_REGEX
-    ctx->name_regex = NULL;
-    pval = flb_input_get_property("name_regex", in);
-    if (pval) {
-        ctx->name_regex = flb_regex_create(pval);
+    if (ctx->name_rgx && strcmp(ctx->name_rgx, "") != 0) {
+        ctx->name_regex = flb_regex_create(ctx->name_rgx);
         if (!ctx->name_regex) {
             flb_plg_error(ctx->ins, "invalid 'name_regex' config value");
         }
     }
 
-    ctx->type_regex = NULL;
-    pval = flb_input_get_property("type_regex", in);
-    if (pval) {
-        ctx->type_regex = flb_regex_create(pval);
+    if (ctx->type_rgx && strcmp(ctx->type_rgx, "") != 0) {
+        ctx->type_regex = flb_regex_create(ctx->type_rgx);
         if (!ctx->type_regex) {
             flb_plg_error(ctx->ins, "invalid 'type_regex' config value");
         }
@@ -310,6 +296,33 @@ static int in_thermal_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+      FLB_CONFIG_MAP_INT, "interval_sec", DEFAULT_INTERVAL_SEC,
+      0, FLB_TRUE, offsetof(struct flb_in_thermal_config, interval_sec),
+      "Set the collector interval"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "interval_nsec", DEFAULT_INTERVAL_NSEC,
+      0, FLB_TRUE, offsetof(struct flb_in_thermal_config, interval_nsec),
+      "Set the collector interval (nanoseconds)"
+    },
+#ifdef FLB_HAVE_REGEX
+    {
+      FLB_CONFIG_MAP_STR, "name_regex", NULL,
+      0, FLB_TRUE, offsetof(struct flb_in_thermal_config, name_rgx),
+      "Set thermal name regular expression filter"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "type_regex", NULL,
+      0, FLB_TRUE, offsetof(struct flb_in_thermal_config, type_rgx),
+      "Set thermal type regular expression filter"
+    },
+#endif /* FLB_HAVE_REGEX */
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_input_plugin in_thermal_plugin = {
     .name         = "thermal",
@@ -320,5 +333,6 @@ struct flb_input_plugin in_thermal_plugin = {
     .cb_flush_buf = NULL,
     .cb_pause     = in_thermal_pause,
     .cb_resume    = in_thermal_resume,
-    .cb_exit      = in_thermal_exit
+    .cb_exit      = in_thermal_exit,
+    .config_map   = config_map
 };

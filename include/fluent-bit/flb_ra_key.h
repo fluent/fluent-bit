@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,6 +23,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_regex.h>
+#include <fluent-bit/record_accessor/flb_ra_parser.h>
 #include <monkey/mk_core.h>
 #include <msgpack.h>
 
@@ -65,4 +65,9 @@ int flb_ra_key_strcmp(flb_sds_t ckey, msgpack_object map,
 int flb_ra_key_regex_match(flb_sds_t ckey, msgpack_object map,
                            struct mk_list *subkeys, struct flb_regex *regex,
                            struct flb_regex_search *result);
+int flb_ra_key_value_append(struct flb_ra_parser *rp, msgpack_object obj,
+                            msgpack_object *in_val, msgpack_packer *mp_pck);
+int flb_ra_key_value_update(struct flb_ra_parser *rp, msgpack_object obj,
+                            msgpack_object *in_key, msgpack_object *in_val,
+                            msgpack_packer *mp_pck);
 #endif

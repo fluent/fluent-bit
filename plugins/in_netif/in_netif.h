@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -27,8 +26,8 @@
 #include <fluent-bit/flb_input.h>
 #include <msgpack.h>
 
-#define DEFAULT_INTERVAL_SEC  1
-#define DEFAULT_INTERVAL_NSEC 0
+#define DEFAULT_INTERVAL_SEC  "1"
+#define DEFAULT_INTERVAL_NSEC "0"
 
 #define FLB_IN_NETIF_NAME "in_netif"
 
@@ -49,8 +48,12 @@ struct netif_entry {
 };
 
 struct flb_in_netif_config {
-    const char *interface;
-    int  interface_len;
+    int interval_sec;
+    int interval_nsec;
+
+    flb_sds_t interface;
+    int       interface_len;
+    int  test_at_init;
 
     int  verbose;
     int  first_snapshot;   /* a feild to indicate whethor or not this is the first collect */

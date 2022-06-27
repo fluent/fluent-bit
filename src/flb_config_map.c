@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -298,6 +297,13 @@ struct mk_list *flb_config_map_create(struct flb_config *config,
 
             /* Translate the value */
             env = flb_env_var_translate(config->env, m->def_value);
+            if (env == NULL) {
+                flb_errno();
+                flb_sds_destroy(new->name);
+                flb_free(new);
+                flb_config_map_destroy(list);
+                return NULL;
+            }
             new->def_value = env;
             flb_env_warn_unused(config->env, FLB_TRUE);
         }
@@ -476,6 +482,10 @@ int flb_config_map_properties_check(char *context_name,
                         found = FLB_FALSE;
                         break;
                     }
+                }
+                else if(m->type == FLB_CONFIG_MAP_DEPRECATED) {
+                    flb_warn("[config] %s: '%s' is deprecated",
+                             context_name, kv->key);
                 }
                 found = FLB_TRUE;
                 break;

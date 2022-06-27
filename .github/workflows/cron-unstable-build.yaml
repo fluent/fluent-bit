@@ -1,0 +1,223 @@
+---
+name: Unstable build
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: The branch to create an unstable release for/from.
+        type: string
+        default: master
+        required: true
+
+  # Run nightly build at this time, bit of trial and error but this seems good.
+  schedule:
+  - cron: "0 6 * * *"   # master build
+  # Not available currently so will fail until it is
+  # - cron: "0 12 * * *"  # 1.9 build
+  - cron: "0 18 * * *"  # 1.8 build
+  # A 1.8 build requires merging all the changes from master to handle packaging from local
+
+# We do not want a new unstable build to run whilst we are releasing the current unstable build.
+concurrency: unstable-build-release
+
+jobs:
+
+  # This job provides this metadata for the other jobs to use.
+  unstable-build-get-meta:
+    name: Get metadata to add to build
+    runs-on: ubuntu-latest
+    environment: unstable
+    outputs:
+      date: ${{ steps.date.outputs.date }}
+      branch: ${{ steps.branch.outputs.branch }}
+    permissions:
+      contents: none
+    steps:
+      # For cron builds, i.e. nightly, we provide date and time as extra parameter to distinguish them.
+      - name: Get current date
+        id: date
+        run: echo "::set-output name=date::$(date '+%Y-%m-%d-%H_%M_%S')"
+
+      - name: Debug event output
+        uses: hmarr/debug-action@v2
+
+      # Now we need to determine which branch to build
+      - name: Manual run - get branch
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "cron_branch=${{ github.event.inputs.branch }}" >> $GITHUB_ENV
+        shell: bash
+
+      - name: master run
+        if:  github.event_name == 'schedule' && github.event.schedule=='0 6 * * *'
+        run: |
+          echo "cron_branch=master" >> $GITHUB_ENV
+        shell: bash
+
+      - name: 1.9 run
+        if:  github.event_name == 'schedule' && github.event.schedule=='0 12 * * *'
+        run: |
+          echo "cron_branch=1.9" >> $GITHUB_ENV
+        shell: bash
+
+      - name: 1.8 run
+        if:  github.event_name == 'schedule' && github.event.schedule=='0 18 * * *'
+        run: |
+          echo "cron_branch=1.8" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Output the branch to use
+        id: branch
+        run: |
+          echo "$cron_branch"
+          if [[ -z "$cron_branch" ]]; then
+            echo "Unable to determine branch to use"
+            exit 1
+          fi
+          echo "::set-output name=branch::$cron_branch"
+        shell: bash
+
+  unstable-build-images:
+    needs: unstable-build-get-meta
+    uses: ./.github/workflows/call-build-images.yaml
+    with:
+      version: ${{ needs.unstable-build-get-meta.outputs.branch }}
+      ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
+      registry: ghcr.io
+      username: ${{ github.actor }}
+      image: ${{ github.repository }}/unstable
+      environment: unstable
+      unstable: ${{ needs.unstable-build-get-meta.outputs.date }}
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+
+  unstable-build-generate-matrix:
+    name: unstable build matrix
+    needs:
+      - unstable-build-get-meta
+    runs-on: ubuntu-latest
+    outputs:
+      build-matrix: ${{ steps.set-matrix.outputs.build-matrix }}
+    environment: unstable
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository, always latest for action
+        uses: actions/checkout@v3
+
+      # Set up the list of target to build so we can pass the JSON to the reusable job
+      - uses: ./.github/actions/generate-package-build-matrix
+        id: set-matrix
+        with:
+          ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
+
+  unstable-build-packages:
+    needs:
+      - unstable-build-get-meta
+      - unstable-build-generate-matrix
+    uses: ./.github/workflows/call-build-linux-packages.yaml
+    with:
+      version: ${{ needs.unstable-build-get-meta.outputs.branch }}
+      ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
+      build_matrix: ${{ needs.unstable-build-generate-matrix.outputs.build-matrix }}
+      environment: unstable
+      unstable: ${{ needs.unstable-build-get-meta.outputs.date }}
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+
+  unstable-build-windows-package:
+    needs:
+      - unstable-build-get-meta
+    uses: ./.github/workflows/call-build-windows.yaml
+    with:
+      version: ${{ needs.unstable-build-get-meta.outputs.branch }}
+      ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
+      environment: unstable
+      unstable: ${{ needs.unstable-build-get-meta.outputs.date }}
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+
+  unstable-build-macos-package:
+    needs:
+      - unstable-build-get-meta
+    uses: ./.github/workflows/call-build-macos.yaml
+    with:
+      version: ${{ needs.unstable-build-get-meta.outputs.branch }}
+      ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
+      environment: unstable
+      unstable: ${{ needs.unstable-build-get-meta.outputs.date }}
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+
+  # We already detain all artefacts as build output so just capture for an unstable release.
+  # We make all of these on a separate repo to prevent notification spam.
+  unstable-release:
+    runs-on: ubuntu-latest
+    needs:
+      - unstable-build-get-meta
+      - unstable-build-images
+      - unstable-build-packages
+      - unstable-build-windows-package
+      - unstable-build-macos-package
+    environment: unstable
+    permissions:
+      contents: read
+    steps:
+      # Required to make a release later
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Download all artefacts
+        continue-on-error: true
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts/
+
+      - name: Single packages tar
+        run: |
+          mkdir -p release-upload
+          # Optional JSON schema so ignore failure
+          mv -f artifacts/*.json release-upload/ || true
+          tar -czvf release-upload/packages-unstable-${{ needs.unstable-build-get-meta.outputs.branch }}.tar.gz -C artifacts/ .
+        shell: bash
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull containers as well (single arch only)
+        # May not be any/valid so ignore errors
+        continue-on-error: true
+        run: |
+          docker pull $IMAGE
+          docker save --output container-${{ needs.unstable-build-get-meta.outputs.branch }}.tar $IMAGE
+          docker pull $IMAGE-debug
+          docker save --output container-${{ needs.unstable-build-get-meta.outputs.branch }}-debug.tar $IMAGE-debug
+        shell: bash
+        working-directory: release-upload
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}/unstable:${{ needs.unstable-build-get-meta.outputs.branch }}
+
+      - name: Display structure of files to upload
+        run: ls -R
+        working-directory: release-upload
+        shell: bash
+
+      - name: Remove any existing release
+        continue-on-error: true
+        run: gh release delete unstable-${{ needs.unstable-build-get-meta.outputs.branch }} --yes --repo ${{ secrets.RELEASE_REPO }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        shell: bash
+
+      - name: Create Release
+        # Do not fail the job here
+        continue-on-error: true
+        run: gh release create unstable-${{ needs.unstable-build-get-meta.outputs.branch }} release-upload/*.* --repo ${{ secrets.RELEASE_REPO }} --generate-notes --prerelease --target ${{ needs.unstable-build-get-meta.outputs.branch }} --title "Nightly unstable ${{ needs.unstable-build-get-meta.outputs.branch }} build"
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        shell: bash

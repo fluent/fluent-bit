@@ -22,6 +22,7 @@
 #include <monkey/mk_scheduler.h>
 #include <monkey/mk_plugin.h>
 #include <monkey/mk_thread.h>
+#include <monkey/mk_tls.h>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -181,7 +182,7 @@ int mk_net_conn_write(struct mk_channel *channel,
     size_t total = 0;
     size_t send;
     socklen_t slen = sizeof(error);
-    struct mk_thread *th = pthread_getspecific(mk_thread_key);
+    struct mk_thread *th = MK_TLS_GET(mk_thread);
     struct mk_sched_worker *sched;
 
     sched = mk_sched_get_thread_conf();

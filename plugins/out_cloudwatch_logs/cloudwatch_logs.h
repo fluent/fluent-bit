@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -118,9 +117,13 @@ struct flb_cloudwatch {
     const char *role_arn;
     const char *log_key;
     const char *extra_user_agent;
+    const char *external_id;
     int custom_endpoint;
     /* Should the plugin create the log group */
     int create_group;
+
+    /* Should requests to AWS services be retried */
+    int retry_requests;
 
     /* If set to a number greater than zero, and newly create log group's retention policy is set to this many days. */
     int log_retention_days;

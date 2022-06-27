@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -27,7 +26,7 @@
 #include <fluent-bit/flb_avro.h>
 #endif
 
-#include "rdkafka.h"
+#include <fluent-bit/flb_kafka.h>
 
 #define FLB_KAFKA_FMT_JSON            0
 #define FLB_KAFKA_FMT_MSGP            1
@@ -35,10 +34,8 @@
 #ifdef FLB_HAVE_AVRO_ENCODER
 #define FLB_KAFKA_FMT_AVRO            3
 #endif
-#define FLB_KAFKA_BROKERS             "127.0.0.1"
-#define FLB_KAFKA_TOPIC               "fluent-bit"
 #define FLB_KAFKA_TS_KEY              "@timestamp"
-#define FLB_KAFKA_QUEUE_FULL_RETRIES  10
+#define FLB_KAFKA_QUEUE_FULL_RETRIES  "10"
 
 /* rdkafka log levels based on syslog(3) */
 #define FLB_KAFKA_LOG_EMERG   0
@@ -61,10 +58,11 @@ struct flb_kafka_topic {
     struct mk_list _head;
 };
 
-struct flb_kafka {
+struct flb_out_kafka {
+    struct flb_kafka kafka;
     /* Config Parameters */
     int format;
-    char *brokers;
+    flb_sds_t format_str;
 
     /* Optional topic key for routing */
     int topic_key_len;
@@ -73,6 +71,7 @@ struct flb_kafka {
     int timestamp_key_len;
     char *timestamp_key;
     int timestamp_format;
+    flb_sds_t timestamp_format_str;
 
     int message_key_len;
     char *message_key;
@@ -103,7 +102,6 @@ struct flb_kafka {
     int queue_full_retries;
 
     /* Internal */
-    rd_kafka_t *producer;
     rd_kafka_conf_t *conf;
 
     /* Plugin instance */
@@ -123,8 +121,8 @@ struct flb_kafka {
 
 };
 
-struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
-                                        struct flb_config *config);
-int flb_kafka_conf_destroy(struct flb_kafka *ctx);
+struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
+                                           struct flb_config *config);
+int flb_out_kafka_destroy(struct flb_out_kafka *ctx);
 
 #endif

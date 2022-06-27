@@ -20,6 +20,7 @@
 #ifndef CHUNKIO_H
 #define CHUNKIO_H
 
+#include <chunkio/cio_info.h>
 #include <monkey/mk_core/mk_list.h>
 
 #define CIO_FALSE   0
@@ -44,22 +45,34 @@
 #define CIO_FULL_SYNC       8         /* force sync to fs through MAP_SYNC */
 
 /* Return status */
-#define CIO_CORRUPTED      -3  /* Indicate that a chunk is corrupted */
-#define CIO_RETRY          -2  /* The operations needs to be retried */
-#define CIO_ERROR          -1  /* Generic error */
-#define CIO_OK              0  /* OK */
+#define CIO_CORRUPTED      -3         /* Indicate that a chunk is corrupted */
+#define CIO_RETRY          -2         /* The operations needs to be retried */
+#define CIO_ERROR          -1         /* Generic error */
+#define CIO_OK              0         /* OK */
+
 
 /* defaults */
 #define CIO_MAX_CHUNKS_UP  64   /* default limit for cio_ctx->max_chunks_up */
 
-struct cio_ctx {
+struct cio_options {
     int flags;
-    int page_size;
     char *root_path;
 
     /* logging */
     int log_level;
     void (*log_cb)(void *, int, const char *, int, const char *);
+
+    char *user;
+    char *group;
+    char *chmod;
+};
+
+struct cio_ctx {
+    int page_size;
+    struct cio_options options;
+
+    void *processed_user;
+    void *processed_group;
 
     /*
      * Internal counters
@@ -82,8 +95,8 @@ struct cio_ctx {
 #include <chunkio/cio_stream.h>
 #include <chunkio/cio_chunk.h>
 
-struct cio_ctx *cio_create(const char *root_path,
-                           void (*log_cb), int log_level, int flags);
+
+struct cio_ctx *cio_create(struct cio_options *options);
 void cio_destroy(struct cio_ctx *ctx);
 int cio_load(struct cio_ctx *ctx, char *chunk_extension);
 int cio_qsort(struct cio_ctx *ctx, int (*compar)(const void *, const void *));

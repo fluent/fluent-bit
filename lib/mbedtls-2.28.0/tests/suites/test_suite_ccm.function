@@ -1,0 +1,506 @@
+/* BEGIN_HEADER */
+#include "mbedtls/ccm.h"
+/* END_HEADER */
+
+/* BEGIN_DEPENDENCIES
+ * depends_on:MBEDTLS_CCM_C
+ * END_DEPENDENCIES
+ */
+
+/* BEGIN_CASE depends_on:MBEDTLS_SELF_TEST:MBEDTLS_AES_C */
+void mbedtls_ccm_self_test(  )
+{
+    TEST_ASSERT( mbedtls_ccm_self_test( 1 ) == 0 );
+}
+/* END_CASE */
+
+/* BEGIN_CASE */
+void mbedtls_ccm_setkey( int cipher_id, int key_size, int result )
+{
+    mbedtls_ccm_context ctx;
+    unsigned char key[32];
+    int ret;
+
+    mbedtls_ccm_init( &ctx );
+
+    memset( key, 0x2A, sizeof( key ) );
+    TEST_ASSERT( (unsigned) key_size <= 8 * sizeof( key ) );
+
+    ret = mbedtls_ccm_setkey( &ctx, cipher_id, key, key_size );
+    TEST_ASSERT( ret == result );
+
+exit:
+    mbedtls_ccm_free( &ctx );
+}
+/* END_CASE */
+
+/* BEGIN_CASE depends_on:MBEDTLS_AES_C */
+void ccm_lengths( int msg_len, int iv_len, int add_len, int tag_len, int res )
+{
+    mbedtls_ccm_context ctx;
+    unsigned char key[16];
+    unsigned char msg[10];
+    unsigned char iv[14];
+    unsigned char *add = NULL;
+    unsigned char out[10];
+    unsigned char tag[18];
+    int decrypt_ret;
+
+    mbedtls_ccm_init( &ctx );
+
+    ASSERT_ALLOC_WEAK( add, add_len );
+    memset( key, 0, sizeof( key ) );
+    memset( msg, 0, sizeof( msg ) );
+    memset( iv, 0, sizeof( iv ) );
+    memset( out, 0, sizeof( out ) );
+    memset( tag, 0, sizeof( tag ) );
+
+    TEST_ASSERT( mbedtls_ccm_setkey( &ctx, MBEDTLS_CIPHER_ID_AES,
+                                 key, 8 * sizeof( key ) ) == 0 );
+
+    TEST_ASSERT( mbedtls_ccm_encrypt_and_tag( &ctx, msg_len, iv, iv_len, add, add_len,
+                                      msg, out, tag, tag_len ) == res );
+
+    decrypt_ret = mbedtls_ccm_auth_decrypt( &ctx, msg_len, iv, iv_len, add, add_len,
+                                    msg, out, tag, tag_len );
+
+    if( res == 0 )
+        TEST_ASSERT( decrypt_ret == MBEDTLS_ERR_CCM_AUTH_FAILED );
+    else
+        TEST_ASSERT( decrypt_ret == res );
+
+exit:
+    mbedtls_free( add );
+    mbedtls_ccm_free( &ctx );
+}
+/* END_CASE */
+
+/* BEGIN_CASE depends_on:MBEDTLS_AES_C */
+void ccm_star_lengths( int msg_len, int iv_len, int add_len, int tag_len,
+                       int res )
+{
+    mbedtls_ccm_context ctx;
+    unsigned char key[16];
+    unsigned char msg[10];
+    unsigned char iv[14];
+    unsigned char add[10];
+    unsigned char out[10];
+    unsigned char tag[18];
+    int decrypt_ret;
+
+    mbedtls_ccm_init( &ctx );
+
+    memset( key, 0, sizeof( key ) );
+    memset( msg, 0, sizeof( msg ) );
+    memset( iv, 0, sizeof( iv ) );
+    memset( add, 0, sizeof( add ) );
+    memset( out, 0, sizeof( out ) );
+    memset( tag, 0, sizeof( tag ) );
+
+    TEST_ASSERT( mbedtls_ccm_setkey( &ctx, MBEDTLS_CIPHER_ID_AES,
+                                 key, 8 * sizeof( key ) ) == 0 );
+
+    TEST_ASSERT( mbedtls_ccm_star_encrypt_and_tag( &ctx, msg_len, iv, iv_len,
+                 add, add_len, msg, out, tag, tag_len ) == res );
+
+    decrypt_ret = mbedtls_ccm_star_auth_decrypt( &ctx, msg_len, iv, iv_len, add,
+                  add_len, msg, out, tag, tag_len );
+
+    if( res == 0 && tag_len != 0 )
+        TEST_ASSERT( decrypt_ret == MBEDTLS_ERR_CCM_AUTH_FAILED );
+    else
+        TEST_ASSERT( decrypt_ret == res );
+
+exit:
+    mbedtls_ccm_free( &ctx );
+}
+/* END_CASE */
+
+/* BEGIN_CASE */
+void mbedtls_ccm_encrypt_and_tag( int cipher_id, data_t * key,
+                                  data_t * msg, data_t * iv,
+                                  data_t * add, data_t * result )
+{
+    mbedtls_ccm_context ctx;
+    size_t tag_len;
+    uint8_t * msg_n_tag = (uint8_t *)malloc( result->len + 2 );
+
+    mbedtls_ccm_init( &ctx );
+
+    memset( msg_n_tag, 0, result->len + 2 );
+    memcpy( msg_n_tag, msg->x, msg->len );
+
+    tag_len = result->len - msg->len;
+
+    TEST_ASSERT( mbedtls_ccm_setkey( &ctx, cipher_id, key->x, key->len * 8 ) == 0 );
+
+    /* Test with input == output */
+    TEST_ASSERT( mbedtls_ccm_encrypt_and_tag( &ctx, msg->len, iv->x, iv->len, add->x, add->len,
+                 msg_n_tag, msg_n_tag, msg_n_tag + msg->len, tag_len ) == 0 );
+
+    TEST_ASSERT( memcmp( msg_n_tag, result->x, result->len ) == 0 );
+
+    /* Check we didn't write past the end */
+    TEST_ASSERT( msg_n_tag[result->len] == 0 && msg_n_tag[result->len + 1] == 0 );
+
+exit:
+    mbedtls_ccm_free( &ctx );
+    free( msg_n_tag );
+}
+/* END_CASE */
+
+/* BEGIN_CASE */
+void mbedtls_ccm_auth_decrypt( int cipher_id, data_t * key,
+                               data_t * msg, data_t * iv,
+                               data_t * add, int tag_len, int result,
+                               data_t * expected_msg )
+{
+    unsigned char tag[16];
+    mbedtls_ccm_context ctx;
+
+    mbedtls_ccm_init( &ctx );
+
+    memset( tag, 0x00, sizeof( tag ) );
+
+    msg->len -= tag_len;
+    memcpy( tag, msg->x + msg->len, tag_len );
+
+    TEST_ASSERT( mbedtls_ccm_setkey( &ctx, cipher_id, key->x, key->len * 8 ) == 0 );
+
+    /* Test with input == output */
+    TEST_ASSERT( mbedtls_ccm_auth_decrypt( &ctx, msg->len, iv->x, iv->len, add->x, add->len,
+                 msg->x, msg->x, msg->x + msg->len, tag_len ) == result );
+
+    if( result == 0 )
+    {
+        TEST_ASSERT( memcmp( msg->x, expected_msg->x, expected_msg->len ) == 0 );
+    }
+    else
+    {
+        size_t i;
+
+        for( i = 0; i < msg->len; i++ )
+            TEST_ASSERT( msg->x[i] == 0 );
+    }
+
+    /* Check we didn't write past the end (where the original tag is) */
+    TEST_ASSERT( memcmp( msg->x + msg->len, tag, tag_len ) == 0 );
+
+exit:
+    mbedtls_ccm_free( &ctx );
+}
+/* END_CASE */
+
+/* BEGIN_CASE */
+void mbedtls_ccm_star_encrypt_and_tag( int cipher_id,
+                            data_t *key, data_t *msg,
+                            data_t *source_address, data_t *frame_counter,
+                            int sec_level, data_t *add,
+                            data_t *expected_result, int output_ret )
+{
+    unsigned char iv[13];
+    unsigned char result[50];
+    mbedtls_ccm_context ctx;
+    size_t iv_len, tag_len;
+    int ret;
+
+    mbedtls_ccm_init( &ctx );
+
+    memset( result, 0x00, sizeof( result ) );
+
+    if( sec_level % 4 == 0)
+        tag_len = 0;
+    else
+        tag_len = 1 << ( sec_level % 4 + 1);
+
+    TEST_ASSERT( source_address->len == 8 );
+    TEST_ASSERT( frame_counter->len == 4 );
+    memcpy( iv, source_address->x, source_address->len );
+    memcpy( iv + source_address->len, frame_counter->x, frame_counter->len );
+    iv[source_address->len + frame_counter->len] = sec_level;
+    iv_len = sizeof( iv );
+
+    TEST_ASSERT( mbedtls_ccm_setkey( &ctx, cipher_id,
+                                     key->x, key->len * 8 ) == 0 );
+
+    ret = mbedtls_ccm_star_encrypt_and_tag( &ctx, msg->len, iv, iv_len,
+                                            add->x, add->len, msg->x,
+                                            result, result + msg->len, tag_len );
+
+    TEST_ASSERT( ret == output_ret );
+
+    TEST_ASSERT( memcmp( result,
+                         expected_result->x, expected_result->len ) == 0 );
+
+    /* Check we didn't write past the end */
+    TEST_ASSERT( result[expected_result->len] == 0 &&
+                 result[expected_result->len + 1] == 0 );
+
+exit:
+    mbedtls_ccm_free( &ctx );
+}
+/* END_CASE */
+
+/* BEGIN_CASE */
+void mbedtls_ccm_star_auth_decrypt( int cipher_id,
+                            data_t *key, data_t *msg,
+                            data_t *source_address, data_t *frame_counter,
+                            int sec_level, data_t *add,
+                            data_t *expected_result, int output_ret )
+{
+    unsigned char iv[13];
+    unsigned char result[50];
+    mbedtls_ccm_context ctx;
+    size_t iv_len, tag_len;
+    int ret;
+
+    mbedtls_ccm_init( &ctx );
+
+    memset( iv, 0x00, sizeof( iv ) );
+    memset( result, '+', sizeof( result ) );
+
+    if( sec_level % 4 == 0)
+        tag_len = 0;
+    else
+        tag_len = 1 << ( sec_level % 4 + 1);
+
+    TEST_ASSERT( source_address->len == 8 );
+    TEST_ASSERT( frame_counter->len == 4 );
+    memcpy( iv, source_address->x, source_address->len );
+    memcpy( iv + source_address->len, frame_counter->x, frame_counter->len );
+    iv[source_address->len + frame_counter->len] = sec_level;
+    iv_len = sizeof( iv );
+
+    TEST_ASSERT( mbedtls_ccm_setkey( &ctx, cipher_id, key->x, key->len * 8 ) == 0 );
+
+    ret = mbedtls_ccm_star_auth_decrypt( &ctx, msg->len - tag_len, iv, iv_len,
+                                         add->x, add->len, msg->x, result,
+                                         msg->x + msg->len - tag_len, tag_len );
+
+    TEST_ASSERT( ret == output_ret );
+
+    TEST_ASSERT( memcmp( result, expected_result->x,
+                                 expected_result->len ) == 0 );
+
+    /* Check we didn't write past the end (where the original tag is) */
+    TEST_ASSERT( ( msg->len + 2 ) <= sizeof( result ) );
+    TEST_EQUAL( result[msg->len], '+' );
+    TEST_EQUAL( result[msg->len + 1], '+' );
+
+exit:
+    mbedtls_ccm_free( &ctx );
+}
+/* END_CASE */
+
+/* BEGIN_CASE depends_on:MBEDTLS_CHECK_PARAMS:!MBEDTLS_PARAM_FAILED_ALT */
+void ccm_invalid_param( )
+{
+    struct mbedtls_ccm_context ctx;
+    unsigned char valid_buffer[] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06 };
+    mbedtls_cipher_id_t valid_cipher = MBEDTLS_CIPHER_ID_AES;
+    int valid_len = sizeof(valid_buffer);
+    int valid_bitlen = valid_len * 8;
+
+    mbedtls_ccm_init( &ctx );
+
+    /* mbedtls_ccm_init() */
+    TEST_INVALID_PARAM( mbedtls_ccm_init( NULL ) );
+
+    /* mbedtls_ccm_setkey() */
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_setkey( NULL, valid_cipher, valid_buffer, valid_bitlen ) );
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_setkey( &ctx, valid_cipher, NULL, valid_bitlen ) );
+
+    /* mbedtls_ccm_encrypt_and_tag() */
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_encrypt_and_tag( NULL, valid_len,
+                                     valid_buffer, valid_len,
+                                     valid_buffer, valid_len,
+                                     valid_buffer, valid_buffer,
+                                     valid_buffer, valid_len ) );
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_encrypt_and_tag( &ctx, valid_len,
+                                     NULL, valid_len,
+                                     valid_buffer, valid_len,
+                                     valid_buffer, valid_buffer,
+                                     valid_buffer, valid_len ) );
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_encrypt_and_tag( &ctx, valid_len,
+                                     valid_buffer, valid_len,
+                                     NULL, valid_len,
+                                     valid_buffer, valid_buffer,
+                                     valid_buffer, valid_len ) );
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_encrypt_and_tag( &ctx, valid_len,
+                                     valid_buffer, valid_len,
+                                     valid_buffer, valid_len,
+                                     NULL, valid_buffer,
+                                     valid_buffer, valid_len ) );
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_encrypt_and_tag( &ctx, valid_len,
+                                     valid_buffer, valid_len,
+                                     valid_buffer, valid_len,
+                                     valid_buffer, NULL,
+                                     valid_buffer, valid_len ) );
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_encrypt_and_tag( &ctx, valid_len,
+                                     valid_buffer, valid_len,
+                                     valid_buffer, valid_len,
+                                     valid_buffer, valid_buffer,
+                                     NULL, valid_len ) );
+
+    /* mbedtls_ccm_star_encrypt_and_tag() */
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_star_encrypt_and_tag( NULL, valid_len,
+                                          valid_buffer, valid_len,
+                                          valid_buffer, valid_len,
+                                          valid_buffer, valid_buffer,
+                                          valid_buffer, valid_len) );
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_star_encrypt_and_tag( &ctx, valid_len,
+                                          NULL, valid_len,
+                                          valid_buffer, valid_len,
+                                          valid_buffer, valid_buffer,
+                                          valid_buffer, valid_len ) );
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_star_encrypt_and_tag( &ctx, valid_len,
+                                          valid_buffer, valid_len,
+                                          NULL, valid_len,
+                                          valid_buffer, valid_buffer,
+                                          valid_buffer, valid_len ) );
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_star_encrypt_and_tag( &ctx, valid_len,
+                                          valid_buffer, valid_len,
+                                          valid_buffer, valid_len,
+                                          NULL, valid_buffer,
+                                          valid_buffer, valid_len ) );
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_star_encrypt_and_tag( &ctx, valid_len,
+                                          valid_buffer, valid_len,
+                                          valid_buffer, valid_len,
+                                          valid_buffer, NULL,
+                                          valid_buffer, valid_len ) );
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_star_encrypt_and_tag( &ctx, valid_len,
+                                          valid_buffer, valid_len,
+                                          valid_buffer, valid_len,
+                                          valid_buffer, valid_buffer,
+                                          NULL, valid_len ) );
+
+    /* mbedtls_ccm_auth_decrypt() */
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_auth_decrypt( NULL, valid_len,
+                                  valid_buffer, valid_len,
+                                  valid_buffer, valid_len,
+                                  valid_buffer, valid_buffer,
+                                  valid_buffer, valid_len ) );
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_auth_decrypt( &ctx, valid_len,
+                                  NULL, valid_len,
+                                  valid_buffer, valid_len,
+                                  valid_buffer, valid_buffer,
+                                  valid_buffer, valid_len ) );
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_auth_decrypt( &ctx, valid_len,
+                                  valid_buffer, valid_len,
+                                  NULL, valid_len,
+                                  valid_buffer, valid_buffer,
+                                  valid_buffer, valid_len ) );
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_auth_decrypt( &ctx, valid_len,
+                                  valid_buffer, valid_len,
+                                  valid_buffer, valid_len,
+                                  NULL, valid_buffer,
+                                  valid_buffer, valid_len ) );
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_auth_decrypt( &ctx, valid_len,
+                                  valid_buffer, valid_len,
+                                  valid_buffer, valid_len,
+                                  valid_buffer, NULL,
+                                  valid_buffer, valid_len ) );
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_auth_decrypt( &ctx, valid_len,
+                                  valid_buffer, valid_len,
+                                  valid_buffer, valid_len,
+                                  valid_buffer, valid_buffer,
+                                  NULL, valid_len ) );
+
+    /* mbedtls_ccm_star_auth_decrypt() */
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_star_auth_decrypt( NULL, valid_len,
+                                       valid_buffer, valid_len,
+                                       valid_buffer, valid_len,
+                                       valid_buffer, valid_buffer,
+                                       valid_buffer, valid_len ) );
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_star_auth_decrypt( &ctx, valid_len,
+                                       NULL, valid_len,
+                                       valid_buffer, valid_len,
+                                       valid_buffer, valid_buffer,
+                                       valid_buffer, valid_len ) );
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_star_auth_decrypt( &ctx, valid_len,
+                                       valid_buffer, valid_len,
+                                       NULL, valid_len,
+                                       valid_buffer, valid_buffer,
+                                       valid_buffer, valid_len ) );
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_star_auth_decrypt( &ctx, valid_len,
+                                       valid_buffer, valid_len,
+                                       valid_buffer, valid_len,
+                                       NULL, valid_buffer,
+                                       valid_buffer, valid_len ) );
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_star_auth_decrypt( &ctx, valid_len,
+                                       valid_buffer, valid_len,
+                                       valid_buffer, valid_len,
+                                       valid_buffer, NULL,
+                                       valid_buffer, valid_len ) );
+    TEST_INVALID_PARAM_RET(
+        MBEDTLS_ERR_CCM_BAD_INPUT,
+        mbedtls_ccm_star_auth_decrypt( &ctx, valid_len,
+                                       valid_buffer, valid_len,
+                                       valid_buffer, valid_len,
+                                       valid_buffer, valid_buffer,
+                                       NULL, valid_len ) );
+
+exit:
+    mbedtls_ccm_free( &ctx );
+    return;
+}
+/* END_CASE */
+
+/* BEGIN_CASE */
+void ccm_valid_param( )
+{
+    TEST_VALID_PARAM( mbedtls_ccm_free( NULL ) );
+exit:
+    return;
+}
+/* END_CASE */

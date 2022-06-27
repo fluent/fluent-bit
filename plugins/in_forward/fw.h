@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -33,8 +32,12 @@ struct flb_in_fw_config {
     char *listen;                   /* Listen interface            */
     char *tcp_port;                 /* TCP Port                    */
 
+    flb_sds_t tag_prefix;           /* tag prefix                  */
+
     /* Unix Socket (TCP only) */
     char *unix_path;                /* Unix path for socket        */
+    unsigned int unix_perm;         /* Permission for socket       */
+    flb_sds_t unix_perm_str;        /* Permission (config map)     */
 
     int coll_fd;
     struct mk_list connections;     /* List of active connections */

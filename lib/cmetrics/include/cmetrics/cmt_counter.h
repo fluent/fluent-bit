@@ -29,10 +29,11 @@ struct cmt_counter {
     struct mk_list _head;
     struct cmt *cmt;
     int    allow_reset;
+    int    aggregation_type;
 };
 
 struct cmt_counter *cmt_counter_create(struct cmt *cmt,
-                                       char *namespace, char *subsystem,
+                                       char *ns, char *subsystem,
                                        char *name, char *help,
                                        int label_count, char **label_keys);
 void cmt_counter_allow_reset(struct cmt_counter *counter);
@@ -46,3 +47,4 @@ int cmt_counter_set(struct cmt_counter *counter, uint64_t timestamp, double val,
 int cmt_counter_get_val(struct cmt_counter *counter,
                         int labels_count, char **label_vals, double *out_val);
 #endif
+

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -371,12 +370,18 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
         break;
     }
 
+    #ifdef FLB_LOG_NO_CONTROL_CHARS
+    header_color = "";
+    bold_color = "";
+    reset_color = "";
+    #else
     /* Only print colors to a terminal */
     if (!isatty(STDOUT_FILENO)) {
         header_color = "";
         bold_color = "";
         reset_color = "";
     }
+    #endif // FLB_LOG_NO_CONTROL_CHARS
 
     now = time(NULL);
     current = localtime_r(&now, &result);

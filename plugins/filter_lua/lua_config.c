@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -47,7 +46,7 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
     struct mk_list *split   = NULL;
     struct mk_list *head    = NULL;
     struct mk_list *tmp_list= NULL;
-    struct l2c_type  *l2c   = NULL;
+    struct flb_lua_l2c_type  *l2c   = NULL;
     struct flb_split_entry *sentry = NULL;
 
     /* Allocate context */
@@ -64,51 +63,58 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
         return NULL;
     }
 
-    mk_list_init(&lf->l2c_types);
+    mk_list_init(&lf->l2cc.l2c_types);
     lf->ins = ins;
     lf->script = NULL;
 
-    /* Config: script */
-    script = flb_filter_get_property("script", ins);
-    if (!script) {
-        flb_plg_error(lf->ins, "no script path defined");
-        flb_free(lf);
-        return NULL;
+    /* config: code */
+    tmp = flb_filter_get_property("code", ins);
+    if (tmp) {
+        lf->code = flb_sds_create(tmp);
     }
+    else {
+        /* Config: script */
+        script = flb_filter_get_property("script", ins);
+        if (!script) {
+            flb_plg_error(lf->ins, "no script path defined");
+            flb_free(lf);
+            return NULL;
+        }
 
-    /* Compose path */
-    ret = stat(script, &st);
-    if (ret == -1 && errno == ENOENT) {
-        if (script[0] == '/') {
+        /* Compose path */
+        ret = stat(script, &st);
+        if (ret == -1 && errno == ENOENT) {
+            if (script[0] == '/') {
+                flb_plg_error(lf->ins, "cannot access script '%s'", script);
+                flb_free(lf);
+                return NULL;
+            }
+
+            if (config->conf_path) {
+                snprintf(buf, sizeof(buf) - 1, "%s%s",
+                         config->conf_path, script);
+                script = buf;
+            }
+        }
+
+        /* Validate script path */
+        ret = access(script, R_OK);
+        if (ret == -1) {
             flb_plg_error(lf->ins, "cannot access script '%s'", script);
             flb_free(lf);
             return NULL;
         }
 
-        if (config->conf_path) {
-            snprintf(buf, sizeof(buf) - 1, "%s%s",
-                     config->conf_path, script);
-            script = buf;
+        lf->script = flb_sds_create(script);
+        if (!lf->script) {
+            flb_plg_error(lf->ins, "could not allocate string");
+            flb_free(lf);
+            return NULL;
         }
     }
 
-    /* Validate script path */
-    ret = access(script, R_OK);
-    if (ret == -1) {
-        flb_plg_error(lf->ins, "cannot access script '%s'", script);
-        flb_free(lf);
-        return NULL;
-    }
-
-    lf->script = flb_sds_create(script);
-    if (!lf->script) {
-        flb_plg_error(lf->ins, "could not allocate string");
-        flb_free(lf);
-        return NULL;
-    }
-
     if (!lf->call) {
-        flb_plg_error(lf->ins, "could not allocate call");
+        flb_plg_error(lf->ins, "function name defined by 'call' is not set");
         lua_config_destroy(lf);
         return NULL;
     }
@@ -120,41 +126,41 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
         return NULL;
     }
 
-    lf->l2c_types_num = 0;
+    lf->l2cc.l2c_types_num = 0;
     tmp = flb_filter_get_property("type_int_key", ins);
     if (tmp) {
-        split = flb_utils_split(tmp, ' ', L2C_TYPES_NUM_MAX);
+        split = flb_utils_split(tmp, ' ', FLB_LUA_L2C_TYPES_NUM_MAX);
         mk_list_foreach_safe(head, tmp_list, split) {
-            l2c = flb_malloc(sizeof(struct l2c_type));
+            l2c = flb_malloc(sizeof(struct flb_lua_l2c_type));
 
             sentry = mk_list_entry(head, struct flb_split_entry, _head);
 
             tmp_key = flb_strndup(sentry->value, sentry->len);
             l2c->key = flb_sds_create(tmp_key);
-            l2c->type = L2C_TYPE_INT;
+            l2c->type = FLB_LUA_L2C_TYPE_INT;
             flb_free(tmp_key);
 
-            mk_list_add(&l2c->_head, &lf->l2c_types);
-            lf->l2c_types_num++;
+            mk_list_add(&l2c->_head, &lf->l2cc.l2c_types);
+            lf->l2cc.l2c_types_num++;
         }
         flb_utils_split_free(split);
     }
 
     tmp = flb_filter_get_property("type_array_key", ins);
     if (tmp) {
-        split = flb_utils_split(tmp, ' ', L2C_TYPES_NUM_MAX);
+        split = flb_utils_split(tmp, ' ', FLB_LUA_L2C_TYPES_NUM_MAX);
         mk_list_foreach_safe(head, tmp_list, split) {
-            l2c = flb_malloc(sizeof(struct l2c_type));
+            l2c = flb_malloc(sizeof(struct flb_lua_l2c_type));
 
             sentry = mk_list_entry(head, struct flb_split_entry, _head);
 
             tmp_key = flb_strndup(sentry->value, sentry->len);
             l2c->key = flb_sds_create(tmp_key);
-            l2c->type = L2C_TYPE_ARRAY;
+            l2c->type = FLB_LUA_L2C_TYPE_ARRAY;
             flb_free(tmp_key);
 
-            mk_list_add(&l2c->_head, &lf->l2c_types);
-            lf->l2c_types_num++;
+            mk_list_add(&l2c->_head, &lf->l2cc.l2c_types);
+            lf->l2cc.l2c_types_num++;
         }
         flb_utils_split_free(split);
     }
@@ -166,21 +172,26 @@ void lua_config_destroy(struct lua_filter *lf)
 {
     struct mk_list  *tmp_list = NULL;
     struct mk_list  *head     = NULL;
-    struct l2c_type *l2c      = NULL;
+    struct flb_lua_l2c_type *l2c      = NULL;
 
     if (!lf) {
         return;
     }
 
+    if (lf->code) {
+        flb_sds_destroy(lf->code);
+    }
+
     if (lf->script) {
         flb_sds_destroy(lf->script);
     }
+
     if (lf->buffer) {
         flb_sds_destroy(lf->buffer);
     }
 
-    mk_list_foreach_safe(head, tmp_list, &lf->l2c_types) {
-        l2c = mk_list_entry(head, struct l2c_type, _head);
+    mk_list_foreach_safe(head, tmp_list, &lf->l2cc.l2c_types) {
+        l2c = mk_list_entry(head, struct flb_lua_l2c_type, _head);
         if (l2c) {
             if (l2c->key) {
                 flb_sds_destroy(l2c->key);
@@ -190,5 +201,6 @@ void lua_config_destroy(struct lua_filter *lf)
         }
     }
 
+    flb_sds_destroy(lf->packbuf);
     flb_free(lf);
 }

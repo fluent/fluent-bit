@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,32 +23,10 @@
 
 struct flb_td *td_config_init(struct flb_output_instance *ins)
 {
-    const char *tmp;
-    const char *api;
-    const char *db_name;
-    const char *db_table;
+    int ret;
     struct flb_td *ctx;
 
-    /* Validate TD section keys */
-    api = flb_output_get_property("API", ins);
-    db_name = flb_output_get_property("Database", ins);
-    db_table = flb_output_get_property("Table", ins);
-
-    if (!api) {
-        flb_plg_error(ins, "error reading API key value");
-        return NULL;
-    }
-
-    if (!db_name) {
-        flb_plg_error(ins, "error reading Database name");
-        return NULL;
-    }
-
-    if (!db_table) {
-        flb_plg_error(ins, "error reading Table name");
-        return NULL;
-    }
-
+    
     /* Allocate context */
     ctx = flb_calloc(1, sizeof(struct flb_td));
     if (!ctx) {
@@ -58,17 +35,38 @@ struct flb_td *td_config_init(struct flb_output_instance *ins)
     }
     ctx->ins      = ins;
     ctx->fd       = -1;
-    ctx->api      = api;
-    ctx->db_name  = db_name;
-    ctx->db_table = db_table;
+    
+    ret = flb_output_config_map_set(ins, (void *)ctx);
+    if (ret == -1) {
+        flb_plg_error(ins, "unable to load configuration");
+        flb_free(ctx);
+        return NULL;
+    }
+    
+    if (ctx->api == NULL) {
+        flb_plg_error(ins, "error reading API key value");
+        flb_free(ctx);
+        return NULL;
+    }
+
+    if (ctx->db_name == NULL) {
+        flb_plg_error(ins, "error reading Database name");
+        flb_free(ctx);
+        return NULL;
+    }
+
+    if (ctx->db_table == NULL) {
+        flb_plg_error(ins, "error reading Table name");
+        flb_free(ctx);
+        return NULL;
+    }
 
     /* Lookup desired region */
-    tmp = flb_output_get_property("region", ins);
-    if (tmp) {
-        if (strcasecmp(tmp, "us") == 0) {
+    if (ctx->region_str) {
+        if (strcasecmp(ctx->region_str, "us") == 0) {
             ctx->region = FLB_TD_REGION_US;
         }
-        else if (strcasecmp(tmp, "jp") == 0) {
+        else if (strcasecmp(ctx->region_str, "jp") == 0) {
             ctx->region = FLB_TD_REGION_JP;
         }
         else {

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -29,18 +28,21 @@
 
 #include <msgpack.h>
 
-#define DEFAULT_BUF_SIZE      4096
-#define DEFAULT_INTERVAL_SEC  1
-#define DEFAULT_INTERVAL_NSEC 0
+#define DEFAULT_BUF_SIZE      "4096"
+#define DEFAULT_INTERVAL_SEC  "1"
+#define DEFAULT_INTERVAL_NSEC "0"
 
 struct flb_exec {
-    const char  *cmd;
+    flb_sds_t cmd;
+    flb_sds_t parser_name;
     struct flb_parser  *parser;
     char *buf;
     size_t buf_size;
     struct flb_input_instance *ins;
     int oneshot;
     flb_pipefd_t ch_manager[2];
+    int interval_sec;
+    int interval_nsec;
 };
 
 #endif /* FLB_IN_EXEC_H */

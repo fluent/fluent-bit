@@ -25,7 +25,19 @@
 #include <monkey/mk_scheduler.h>
 #include <monkey/mk_plugin.h>
 #include <monkey/mk_clock.h>
+#include <monkey/mk_thread.h>
 #include <monkey/mk_mimetype.h>
+#include <monkey/mk_http_thread.h>
+
+pthread_once_t mk_server_tls_setup_once = PTHREAD_ONCE_INIT;
+
+static void mk_set_up_tls_keys()
+{
+    MK_INIT_INITIALIZE_TLS_UNIVERSAL();
+    MK_INIT_INITIALIZE_TLS();
+
+    mk_http_thread_initialize_tls();
+}
 
 void mk_server_info(struct mk_server *server)
 {
@@ -95,27 +107,14 @@ struct mk_server *mk_server_create()
         return NULL;
     }
 
-
     /* Library mode: channel manager */
-
-    /* This code causes a memory corruption because it interprets the mk_server structure 
-     * pointer as a mk_event structure pointer but the mk_server structure doesn't start
-     * with a mk_event member, however, so I added an event to that structure to fix the 
-     * issue, however, I could be wrong so some input on this would be great.
-     */
 
     memset(&server->lib_ch_event, 0, sizeof(struct mk_event));
 
     ret = mk_event_channel_create(server->lib_evl,
-        &server->lib_ch_manager[0],
-        &server->lib_ch_manager[1],
-        &server->lib_ch_event);
-/*
-    ret = mk_event_channel_create(server->lib_evl,
                                   &server->lib_ch_manager[0],
                                   &server->lib_ch_manager[1],
-                                  server);
-*/
+                                  &server->lib_ch_event);
 
     if (ret != 0) {
         mk_event_loop_destroy(server->lib_evl);
@@ -134,6 +133,9 @@ struct mk_server *mk_server_create()
     server->scheduler_mode = -1;
 
     mk_core_init();
+
+    /* Init thread keys */
+    pthread_once(&mk_server_tls_setup_once, mk_set_up_tls_keys);
 
     /* Init Kernel version data */
     kern_version = mk_kernel_version();
@@ -155,6 +157,8 @@ struct mk_server *mk_server_create()
 
     mk_mimetype_init(server);
 
+    pthread_mutex_init(&server->vhost_fdt_mutex, NULL);
+
     return server;
 }
 
@@ -169,6 +173,7 @@ int mk_server_setup(struct mk_server *server)
 
     mk_sched_init(server);
 
+
     /* Clock init that must happen before starting threads */
     mk_clock_sequential_init(server);
 
@@ -182,9 +187,6 @@ int mk_server_setup(struct mk_server *server)
         return -1;
     }
 
-    /* Init thread keys */
-    mk_thread_keys_init();
-
     /* Configuration sanity check */
     mk_config_sanity_check(server);
 
@@ -192,19 +194,10 @@ int mk_server_setup(struct mk_server *server)
     mk_plugin_core_process(server);
 
     /* Launch monkey http workers */
-    MK_TLS_INIT();
     mk_server_launch_workers(server);
 
     return 0;
 }
-
-
-void mk_thread_keys_init(void)
-{
-    /* Create thread keys */
-    pthread_key_create(&mk_utils_error_key, NULL);
-}
-
 
 void mk_exit_all(struct mk_server *server)
 {

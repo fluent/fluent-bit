@@ -47,6 +47,11 @@ if(MK_HAVE_LINUX_KQUEUE)
   target_link_libraries(monkey-core-static kqueue)
 endif()
 
+# FreeBSD backtrace
+if (CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
+  target_link_libraries(monkey-core-static execinfo)
+endif()
+
 if (CMAKE_SYSTEM_NAME MATCHES "SunOS")
   target_link_libraries(monkey-core-static socket nsl)
 endif()

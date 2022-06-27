@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -225,6 +224,7 @@ static int cb_tf_filter(const void *data, size_t bytes,
                         const char *tag, int tag_len,
                         void **out_buf, size_t *out_bytes,
                         struct flb_filter_instance *f_ins,
+                        struct flb_input_instance *i_ins,
                         void *filter_context,
                         struct flb_config *config)
 {
@@ -235,6 +235,7 @@ static int cb_tf_filter(const void *data, size_t bytes,
     (void) out_buf;
     (void) out_bytes;
     (void) f_ins;
+    (void) i_ins;
     int map_size;
 
     msgpack_object root;

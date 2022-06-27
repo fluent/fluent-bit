@@ -28,13 +28,9 @@
 
 #include <mk_core/mk_dirent.h>
 
-//#include <regex.h>
 #include <re.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-
-/* Initialize Virtual Host FDT mutex */
-pthread_mutex_t mk_vhost_fdt_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static int str_to_regex(char *str, regex_t *reg)
 {
@@ -84,7 +80,7 @@ int mk_vhost_fdt_worker_init(struct mk_server *server)
      * Under an initialization context we need to protect this critical
      * section
      */
-    pthread_mutex_lock(&mk_vhost_fdt_mutex);
+    pthread_mutex_lock(&server->vhost_fdt_mutex);
 
     /*
      * Initialize the thread FDT/Hosts list and create an entry per
@@ -116,7 +112,7 @@ int mk_vhost_fdt_worker_init(struct mk_server *server)
     }
 
     MK_TLS_SET(mk_tls_vhost_fdt, list);
-    pthread_mutex_unlock(&mk_vhost_fdt_mutex);
+    pthread_mutex_unlock(&server->vhost_fdt_mutex);
 
     return 0;
 }

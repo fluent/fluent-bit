@@ -1,17 +1,37 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.0)
 project(cmetrics C)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Include helpers
+include(cmake/macros.cmake)
+include(CheckCSourceCompiles)
+include(GNUInstallDirs)
 
 # Define macro to identify Windows system (without Cygwin)
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")
   set(CMT_SYSTEM_WINDOWS On)
   add_definitions(-DCMT_SYSTEM_WINDOWS)
+
+  # Disable unistd.h for flex/bison
+  CMT_DEFINITION(YY_NO_UNISTD_H)
+  message(STATUS "Specifying YY_NO_UNISTD_H")
+endif()
+
+# Define macro to identify macOS system
+if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
+  set(CMT_SYSTEM_MACOS On)
+  add_definitions(-DCMT_SYSTEM_MACOS)
+endif()
+
+if(NOT MSVC)
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 endif()
 
 # CMetrics Version
 set(CMT_VERSION_MAJOR  0)
-set(CMT_VERSION_MINOR  1)
-set(CMT_VERSION_PATCH  6)
+set(CMT_VERSION_MINOR  3)
+set(CMT_VERSION_PATCH  4)
 set(CMT_VERSION_STR "${CMT_VERSION_MAJOR}.${CMT_VERSION_MINOR}.${CMT_VERSION_PATCH}")
 
 # Define __FILENAME__ consistently across Operating Systems
@@ -20,11 +40,6 @@ if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows")
 else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__=__FILE__")
 endif()
-
-# Include helpers
-include(cmake/macros.cmake)
-include(CheckCSourceCompiles)
-include(GNUInstallDirs)
 
 # Configuration options
 option(CMT_DEV             "Enable development mode"                   No)
@@ -35,11 +50,14 @@ if(CMT_DEV)
   set(CMT_TESTS   Yes)
 endif()
 
+set(FLEX_BISON_GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR})
 # Include headers and dependency headers
 include_directories(
+  src
   include
   lib/monkey/include
   lib/xxHash-0.8.0/
+  ${FLEX_BISON_GENERATED_DIR}
   )
 
 # timespec_get() support
@@ -100,6 +118,20 @@ check_c_source_compiles("
      msgpack_sbuffer sbuf;
      return 0;
   }" CMT_HAVE_MSGPACK)
+
+# Flex and Bison: check if the variables has not been defined before by
+# a parent project to avoid conflicts.
+if(NOT FLEX_FOUND)
+  find_package(FLEX 2)
+endif()
+
+if(NOT BISON_FOUND)
+  find_package(BISON 3)
+endif()
+
+if(FLEX_FOUND AND BISON_FOUND)
+    set(CMT_BUILD_PROMETHEUS_DECODER 1)
+endif()
 
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/cmetrics/cmt_info.h.in"
@@ -195,6 +227,7 @@ endif()
 # Enable components
 set(CPACK_DEB_COMPONENT_INSTALL ON)
 set(CPACK_RPM_COMPONENT_INSTALL ON)
+set(CPACK_productbuild_COMPONENT_INSTALL ON)
 set(CPACK_COMPONENTS_ALL ${CPACK_COMPONENTS_ALL} binary library headers)
 set(CPACK_COMPONENTS_GROUPING "ONE_PER_GROUP")
 
@@ -246,6 +279,42 @@ set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 if(CPACK_GENERATOR MATCHES "ZIP")
   set(CPACK_MONOLITHIC_INSTALL 1)
   set(CPACK_PACKAGE_INSTALL_DIRECTORY "cmetrics")
+endif()
+
+# CPack: macOS w/ productbuild
+if(CMT_SYSTEM_MACOS)
+  # Determine the platform suffix
+  execute_process(
+    COMMAND uname -m
+    RESULT_VARIABLE UNAME_M_RESULT
+    OUTPUT_VARIABLE UNAME_ARCH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+  if (UNAME_M_RESULT EQUAL 0 AND UNAME_ARCH STREQUAL "arm64")
+    set(CMETRICS_PKG ${CMAKE_CURRENT_BINARY_DIR}/${CPACK_PACKAGE_NAME}-${CMT_VERSION_STR}-apple)
+  elseif(UNAME_M_RESULT EQUAL 0 AND UNAME_ARCH STREQUAL "x86_64")
+    set(CMETRICS_PKG ${CMAKE_CURRENT_BINARY_DIR}/${CPACK_PACKAGE_NAME}-${CMT_VERSION_STR}-intel)
+  else()
+    set(CMETRICS_PKG ${CMAKE_CURRENT_BINARY_DIR}/${CPACK_PACKAGE_NAME}-${CMT_VERSION_STR}-${UNAME_ARCH})
+  endif()
+
+  if (CPACK_GENERATOR MATCHES "productbuild")
+    set(CPACK_SET_DESTDIR "ON")
+    configure_file(cpack/macos/welcome.txt.cmakein ${CMAKE_CURRENT_BINARY_DIR}/welcome.txt)
+    configure_file(LICENSE ${CMAKE_CURRENT_BINARY_DIR}/LICENSE.txt)
+    find_program(CONVERTER textutil)
+    if (NOT CONVERTER)
+      message(FATAL_ERROR "textutil not found.")
+    endif()
+    if (CONVERTER)
+      execute_process(COMMAND ${CONVERTER} -convert html "${CMAKE_SOURCE_DIR}/README.md" -output "${CMAKE_BINARY_DIR}/README.html")
+    endif()
+    set(CPACK_PACKAGE_FILE_NAME "${CMETRICS_PKG}")
+    set(CPACK_RESOURCE_FILE_WELCOME ${CMAKE_CURRENT_BINARY_DIR}/welcome.txt)
+    set(CPACK_RESOURCE_FILE_LICENSE ${CMAKE_CURRENT_BINARY_DIR}/LICENSE.txt)
+    set(CPACK_RESOURCE_FILE_README ${CMAKE_CURRENT_BINARY_DIR}/README.html)
+    set(CPACK_PRODUCTBUILD_IDENTIFIER "com.calyptia.${CPACK_PACKAGE_NAME}")
+  endif()
 endif()
 
 include(CPack)

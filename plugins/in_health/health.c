@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -31,8 +30,8 @@
 #include <stdlib.h>
 #include <math.h>
 
-#define DEFAULT_INTERVAL_SEC  1
-#define DEFAULT_INTERVAL_NSEC 0
+#define DEFAULT_INTERVAL_SEC  "1"
+#define DEFAULT_INTERVAL_NSEC "0"
 
 /* Input configuration & context */
 struct flb_in_health_config {
@@ -80,7 +79,7 @@ static int in_health_collect(struct flb_input_instance *ins,
     }
 
     if (alive == FLB_TRUE && ctx->alert == FLB_TRUE) {
-        return 0;
+        FLB_INPUT_RETURN(0);
     }
 
     /* Initialize local msgpack buffer */
@@ -129,14 +128,13 @@ static int in_health_collect(struct flb_input_instance *ins,
     flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
-    return 0;
+    FLB_INPUT_RETURN(0);
 }
 
 static int in_health_init(struct flb_input_instance *in,
                           struct flb_config *config, void *data)
 {
     int ret;
-    const char *pval;
     struct flb_in_health_config *ctx;
     (void) data;
 
@@ -159,6 +157,15 @@ static int in_health_init(struct flb_input_instance *in,
     ctx->port     = -1;
     ctx->ins      = in;
 
+
+    /* Load the config map */
+    ret = flb_input_config_map_set(in, (void *)ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        flb_plg_error(in, "unable to load configuration");
+        return -1;
+    }
+
     ctx->u = flb_upstream_create(config, in->host.name, in->host.port,
                                  FLB_IO_TCP, NULL);
     if (!ctx->u) {
@@ -167,51 +174,19 @@ static int in_health_init(struct flb_input_instance *in,
         return -1;
     }
 
-    /* interval settings */
-    pval = flb_input_get_property("interval_sec", in);
-    if (pval != NULL && atoi(pval) >= 0) {
-        ctx->interval_sec = atoi(pval);
-    }
-    else {
-        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
-    }
-
-    pval = flb_input_get_property("interval_nsec", in);
-    if (pval != NULL && atoi(pval) >= 0) {
-        ctx->interval_nsec = atoi(pval);
-    }
-    else {
-        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
-    }
-
     if (ctx->interval_sec <= 0 && ctx->interval_nsec <= 0) {
         /* Illegal settings. Override them. */
-        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
-        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
+        ctx->interval_sec = atoi(DEFAULT_INTERVAL_SEC);
+        ctx->interval_nsec = atoi(DEFAULT_INTERVAL_NSEC);
     }
 
-    pval = flb_input_get_property("alert", in);
-    if (pval) {
-        if (strcasecmp(pval, "true") == 0 || strcasecmp(pval, "on") == 0) {
-            ctx->alert = FLB_TRUE;
-        }
+    if (ctx->add_host) {
+        ctx->len_host = strlen(in->host.name);
+        ctx->hostname = flb_strdup(in->host.name);
     }
 
-    pval = flb_input_get_property("add_host", in);
-    if (pval) {
-        if (strcasecmp(pval, "true") == 0 || strcasecmp(pval, "on") == 0) {
-            ctx->add_host = FLB_TRUE;
-            ctx->len_host = strlen(in->host.name);
-            ctx->hostname = flb_strdup(in->host.name);
-        }
-    }
-
-    pval = flb_input_get_property("add_port", in);
-    if (pval) {
-        if (strcasecmp(pval, "true") == 0 || strcasecmp(pval, "on") == 0) {
-            ctx->add_port = FLB_TRUE;
-            ctx->port = in->host.port;
-        }
+    if (ctx->add_port) {
+        ctx->port = in->host.port;
     }
 
     /* Set the context */
@@ -245,6 +220,36 @@ static int in_health_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+      FLB_CONFIG_MAP_BOOL, "alert", "false",
+      0, FLB_TRUE, offsetof(struct flb_in_health_config, alert),
+      "Only generate records when the port is down"
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "add_host", "false",
+      0, FLB_TRUE, offsetof(struct flb_in_health_config, add_host),
+      "Append hostname to each record"
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "add_port", "false",
+      0, FLB_TRUE, offsetof(struct flb_in_health_config, add_port),
+      "Append port to each record"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "interval_sec", DEFAULT_INTERVAL_SEC,
+      0, FLB_TRUE, offsetof(struct flb_in_health_config, interval_sec),
+      "Set the collector interval"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "interval_nsec", DEFAULT_INTERVAL_NSEC,
+      0, FLB_TRUE, offsetof(struct flb_in_health_config, interval_nsec),
+      "Set the collector interval (nanoseconds)"
+    },
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_input_plugin in_health_plugin = {
     .name         = "health",
@@ -254,5 +259,6 @@ struct flb_input_plugin in_health_plugin = {
     .cb_collect   = in_health_collect,
     .cb_flush_buf = NULL,
     .cb_exit      = in_health_exit,
-    .flags        = FLB_INPUT_NET
+    .config_map   = config_map,
+    .flags        = FLB_INPUT_NET|FLB_INPUT_CORO
 };

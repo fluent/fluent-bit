@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -28,6 +27,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_router.h>
+#include <fluent-bit/flb_config_format.h>
 #include <fluent-bit/stream_processor/flb_sp.h>
 #include <fluent-bit/stream_processor/flb_sp_key.h>
 #include <fluent-bit/stream_processor/flb_sp_stream.h>
@@ -61,13 +61,13 @@ static int sp_config_file(struct flb_config *config, struct flb_sp *sp,
     int ret;
     char *name;
     char *exec;
-    const char *cfg = NULL;
+    char *cfg = NULL;
     char tmp[PATH_MAX + 1];
     struct stat st;
-    struct mk_rconf *fconf;
-    struct mk_rconf_section *section;
     struct mk_list *head;
     struct flb_sp_task *task;
+    struct flb_cf *cf;
+    struct flb_cf_section *section;
 
 #ifndef FLB_HAVE_STATIC_CONF
     ret = stat(file, &st);
@@ -84,37 +84,37 @@ static int sp_config_file(struct flb_config *config, struct flb_sp *sp,
         }
     }
     else {
-        cfg = file;
+        cfg = (char *) file;
     }
 
-    fconf = mk_rconf_open(cfg);
+    cf = flb_cf_create_from_file(NULL, cfg);
 #else
-    fconf = flb_config_static_open(file);
+    cf = flb_config_static_open(file);
 #endif
 
-    if (!fconf) {
+    if (!cf) {
         return -1;
     }
 
-    /* Read all [STREAM_TASK] sections */
-    mk_list_foreach(head, &fconf->sections) {
-        section = mk_list_entry(head, struct mk_rconf_section, _head);
-        if (strcasecmp(section->name, "STREAM_TASK") != 0) {
+    /* Read all 'stream_task' sections */
+    mk_list_foreach(head, &cf->sections) {
+        section = mk_list_entry(head, struct flb_cf_section, _head);
+        if (strcasecmp(section->name, "stream_task") != 0) {
             continue;
         }
 
         name = NULL;
         exec = NULL;
 
-        /* Name */
-        name = mk_rconf_section_get_key(section, "Name", MK_RCONF_STR);
+        /* name */
+        name = flb_cf_section_property_get(cf, section, "name");
         if (!name) {
             flb_error("[sp] task 'name' not found in file '%s'", cfg);
             goto fconf_error;
         }
 
-        /* Exec */
-        exec = mk_rconf_section_get_key(section, "Exec", MK_RCONF_STR);
+        /* exec */
+        exec = flb_cf_section_property_get(cf, section, "exec");
         if (!exec) {
             flb_error("[sp] task '%s' don't have an 'exec' command", name);
             goto fconf_error;
@@ -125,18 +125,13 @@ static int sp_config_file(struct flb_config *config, struct flb_sp *sp,
         if (!task) {
             goto fconf_error;
         }
-
-        flb_free(name);
-        flb_free(exec);
     }
 
-    mk_rconf_free(fconf);
+    flb_cf_destroy(cf);
     return 0;
 
 fconf_error:
-    flb_free(name);
-    flb_free(exec);
-
+    flb_cf_destroy(cf);
     return -1;
 }
 
@@ -1104,9 +1099,9 @@ static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
 }
 
 
-static void package_results(const char *tag, int tag_len,
-                            char **out_buf, size_t *out_size,
-                            struct flb_sp_task *task)
+void package_results(const char *tag, int tag_len,
+                     char **out_buf, size_t *out_size,
+                     struct flb_sp_task *task)
 {
     int i;
     int len;
@@ -1378,10 +1373,10 @@ static struct aggregate_node * sp_process_aggregate_data(struct flb_sp_task *tas
  * Process data, task and it defined command involves the call of aggregation
  * functions (AVG, SUM, COUNT, MIN, MAX).
  */
-static int sp_process_data_aggr(const char *buf_data, size_t buf_size,
-                                const char *tag, int tag_len,
-                                struct flb_sp_task *task,
-                                struct flb_sp *sp)
+int sp_process_data_aggr(const char *buf_data, size_t buf_size,
+                         const char *tag, int tag_len,
+                         struct flb_sp_task *task,
+                         struct flb_sp *sp)
 {
     int i;
     int ok;
@@ -1553,11 +1548,11 @@ static int sp_process_data_aggr(const char *buf_data, size_t buf_size,
 /*
  * Data processing (no aggregation functions)
  */
-static int sp_process_data(const char *tag, int tag_len,
-                           const char *buf_data, size_t buf_size,
-                           char **out_buf, size_t *out_size,
-                           struct flb_sp_task *task,
-                           struct flb_sp *sp)
+int sp_process_data(const char *tag, int tag_len,
+                    const char *buf_data, size_t buf_size,
+                    char **out_buf, size_t *out_size,
+                    struct flb_sp_task *task,
+                    struct flb_sp *sp)
 {
     int i;
     int ok;
@@ -1798,8 +1793,8 @@ static int sp_process_data(const char *tag, int tag_len,
     return records;
 }
 
-static int sp_process_hopping_slot(const char *tag, int tag_len,
-                                   struct flb_sp_task *task)
+int sp_process_hopping_slot(const char *tag, int tag_len,
+                            struct flb_sp_task *task)
 {
     int i;
     int key_id;
@@ -1948,73 +1943,6 @@ static int sp_process_hopping_slot(const char *tag, int tag_len,
     }
 
     mk_list_add(&hs->_head, &task->window.hopping_slot);
-
-    return 0;
-}
-
-/*
- * Do data processing for internal unit tests, no engine required, set
- * results on out_data/out_size variables.
- */
-int flb_sp_test_do(struct flb_sp *sp, struct flb_sp_task *task,
-                   const char *tag, int tag_len,
-                   const char *buf_data, size_t buf_size,
-                   char **out_data, size_t *out_size)
-{
-    int ret;
-    int records;
-    struct flb_sp_cmd *cmd;
-
-    cmd = task->cmd;
-    if (cmd->source_type == FLB_SP_TAG) {
-        ret = flb_router_match(tag, tag_len, cmd->source_name, NULL);
-        if (ret == FLB_FALSE) {
-            *out_data = NULL;
-            *out_size = 0;
-            return 0;
-        }
-    }
-
-    if (task->aggregate_keys == FLB_TRUE) {
-        ret = sp_process_data_aggr(buf_data, buf_size,
-                                   tag, tag_len,
-                                   task, sp);
-        if (ret == -1) {
-            flb_error("[sp] error error processing records for '%s'",
-                      task->name);
-            return -1;
-        }
-
-        if (flb_sp_window_populate(task, buf_data, buf_size) == -1) {
-            flb_error("[sp] error populating window for '%s'",
-                      task->name);
-            return -1;
-        }
-
-        if (task->window.type == FLB_SP_WINDOW_DEFAULT) {
-            package_results(tag, tag_len, out_data, out_size, task);
-        }
-
-        records = task->window.records;
-    }
-    else {
-        ret = sp_process_data(tag, tag_len,
-                              buf_data, buf_size,
-                              out_data, out_size,
-                              task, sp);
-        if (ret == -1) {
-            flb_error("[sp] error processing records for '%s'",
-                      task->name);
-            return -1;
-        }
-        records = ret;
-    }
-
-    if (records == 0) {
-        *out_data = NULL;
-        *out_size = 0;
-        return 0;
-    }
 
     return 0;
 }
@@ -2217,33 +2145,4 @@ void flb_sp_destroy(struct flb_sp *sp)
     }
 
     flb_free(sp);
-}
-
-int flb_sp_test_fd_event(int fd, struct flb_sp_task *task, char **out_data,
-                         size_t *out_size)
-{
-    char *tag = NULL;
-    int tag_len = 0;
-
-    if (task->window.type != FLB_SP_WINDOW_DEFAULT) {
-        if (fd == task->window.fd) {
-            if (task->window.records > 0) {
-                /* find input tag from task source */
-                package_results(tag, tag_len, out_data, out_size, task);
-                if (task->stream) {
-                    flb_sp_stream_append_data(*out_data, *out_size, task->stream);
-                }
-                else {
-                    flb_pack_print(*out_data, *out_size);
-                }
-            }
-
-            flb_sp_window_prune(task);
-        }
-        else if (fd == task->window.fd_hop) {
-            sp_process_hopping_slot(tag, tag_len, task);
-        }
-    }
-
-    return 0;
 }

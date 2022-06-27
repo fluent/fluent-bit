@@ -1,0 +1,45 @@
+name: Build PR(s) and master branch.
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+    types: [opened, edited, synchronize]
+jobs:
+  build-windows:
+    name: Build sources on amd64 for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      max-parallel: 48
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-2019]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build on ${{ matrix.os }} with vs-2019
+        run: |
+          .\scripts\win_build.bat
+      - name: Run unit tests.
+        run: |
+          ctest --rerun-failed --output-on-failure -C Debug --test-dir .
+  build-unix:
+    name: Build sources on amd64 for ${{ matrix.os }} - ${{ matrix.compiler }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      max-parallel: 48
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        compiler: [ gcc, clang ]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
+        run: |
+          echo "CC = $CC, CXX = $CXX"
+          cmake -DCIO_TESTS=On .
+          make all
+          ctest --rerun-failed --output-on-failure -C Debug --test-dir .
+        env:
+          CC: ${{ matrix.compiler }}

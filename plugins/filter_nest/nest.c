@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -72,6 +71,11 @@ static int configure(struct filter_nest_ctx *ctx,
     ctx->remove_prefix = false;
     ctx->add_prefix = false;
 
+    if (flb_filter_config_map_set(f_ins, ctx) < 0) {
+        flb_plg_error(f_ins, "unable to load configuration");
+        return -1;
+    }
+
     mk_list_foreach(head, &f_ins->properties) {
         kv = mk_list_entry(head, struct flb_kv, _head);
 
@@ -99,6 +103,11 @@ static int configure(struct filter_nest_ctx *ctx,
             }
 
             wildcard->key = flb_strndup(kv->val, flb_sds_len(kv->val));
+            if (wildcard->key == NULL) {
+                flb_errno();
+                flb_free(wildcard);
+                return -1;
+            }
             wildcard->key_len = flb_sds_len(kv->val);
 
             if (wildcard->key[wildcard->key_len - 1] == '*') {
@@ -496,7 +505,7 @@ static inline int apply_nesting_rules(msgpack_packer *packer,
 
     size_t toplevel_items = (map.via.map.size - items_to_nest + 1);
 
-    flb_plg_debug(ctx->ins, "outer map size is %d, will be %lu, nested "
+    flb_plg_trace(ctx->ins, "outer map size is %d, will be %lu, nested "
                   "map size will be %lu",
                   map.via.map.size, toplevel_items, items_to_nest);
 
@@ -552,11 +561,13 @@ static int cb_nest_filter(const void *data, size_t bytes,
                           const char *tag, int tag_len,
                           void **out_buf, size_t * out_size,
                           struct flb_filter_instance *f_ins,
+                          struct flb_input_instance *i_ins,
                           void *context, struct flb_config *config)
 {
     msgpack_unpacked result;
     size_t off = 0;
     (void) f_ins;
+    (void) i_ins;
     (void) config;
 
     struct filter_nest_ctx *ctx = context;
@@ -627,11 +638,47 @@ static int cb_nest_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+   {
+    FLB_CONFIG_MAP_STR, "Operation", NULL,
+    0, FLB_FALSE, 0,
+    "Select the operation nest or lift"
+   },
+   {
+    FLB_CONFIG_MAP_STR, "Wildcard", NULL,
+    FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+    "Nest records which field matches the wildcard"
+   },
+   {
+    FLB_CONFIG_MAP_STR, "Nest_under", NULL,
+    0, FLB_FALSE, 0,
+    "Nest records matching the Wildcard under this key"
+   },
+   {
+    FLB_CONFIG_MAP_STR, "Nested_under", NULL,
+    0, FLB_FALSE, 0,
+    "Lift records nested under the Nested_under key"
+   },
+   {
+    FLB_CONFIG_MAP_STR, "Add_prefix", NULL,
+    0, FLB_FALSE, 0,
+    "Prefix affected keys with this string"
+   },
+   {
+    FLB_CONFIG_MAP_STR, "Remove_prefix", NULL,
+    0, FLB_FALSE, 0,
+    "Remove prefix from affected keys if it matches this string"
+   },
+   {0}
+};
+
 struct flb_filter_plugin filter_nest_plugin = {
     .name = "nest",
     .description = "nest events by specified field values",
     .cb_init = cb_nest_init,
     .cb_filter = cb_nest_filter,
     .cb_exit = cb_nest_exit,
+    .config_map = config_map,
     .flags = 0
 };

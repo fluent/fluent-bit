@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -54,6 +53,15 @@ struct flb_upstream_conn {
      * might want to express an 'ETIMEDOUT'
      */
     int net_error;
+
+    /* If this flag is set, then destroy_conn will ignore this connection, this
+     * helps mitigate issues caused by flb_upstream_conn_timeouts marking a connection
+     * to be dropped and the event loop manager function destroying that connection
+     * at the end of the cycle while the connection coroutine is still suspended which
+     * causes the outer functions to access invalid memory when handling the error amongst
+     * other things.
+     */
+    int busy_flag;
 
     /* Timestamps */
     time_t ts_assigned;

@@ -1,5 +1,5 @@
 # Let's have fun!
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.0)
 project(monkey C)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
 set(CMAKE_INCLUDE_DIRECTORIES_BEFORE ON)
@@ -176,15 +176,17 @@ if(MK_LINUX_TRACE)
 endif()
 
 # Use old Pthread TLS
-check_c_source_compiles("
-   __thread int a;
-   int main() {
-       __tls_get_addr(0);
-       return 0;
-   }" HAVE_C_TLS)
+if(NOT MK_PTHREAD_TLS)
+  check_c_source_compiles("
+     __thread int a;
+     int main() {
+         __tls_get_addr(0);
+         return 0;
+     }" HAVE_C_TLS)
 
-if(HAVE_C_TLS)
-  MK_DEFINITION(MK_HAVE_C_TLS)
+  if(HAVE_C_TLS)
+    MK_DEFINITION(MK_HAVE_C_TLS)
+  endif()
 endif()
 
 # Valgrind support
@@ -257,12 +259,12 @@ endif()
 
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/monkey/mk_info.h.in"
-  "${PROJECT_SOURCE_DIR}/include/monkey/mk_info.h"
+  "${PROJECT_BINARY_DIR}/include/monkey/mk_info.h"
   )
 
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/monkey/mk_env.h.in"
-  "${PROJECT_SOURCE_DIR}/include/monkey/mk_env.h"
+  "${PROJECT_BINARY_DIR}/include/monkey/mk_env.h"
   )
 
 
@@ -273,6 +275,7 @@ include_directories(deps/flb_libco)
 include_directories(deps/regex)
 include_directories(include)
 include_directories(include/monkey/)
+include_directories(${PROJECT_BINARY_DIR}/include/)
 
 if (CMAKE_SYSTEM_NAME MATCHES "Windows")
   include_directories(mk_core/deps/libevent/include)

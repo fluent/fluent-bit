@@ -52,6 +52,9 @@
 #define MK_EVENT_NONE            1    /* nothing */
 #define MK_EVENT_REGISTERED      2    /* event is registered into the ev loop */
 
+/* Priority bucket queue */
+#define MK_EVENT_PRIORITY_DEFAULT 6   /* default priority */
+
 /* Legacy definitions: temporal
  *  ----------------------------
  *
@@ -91,6 +94,8 @@ struct mk_event {
     /* function handler for custom type */
     int     (*handler)(void *data);
     struct mk_list _head;
+    struct mk_list _priority_head;
+    char    priority;  /* optional priority */
 };
 
 struct mk_event_loop {
@@ -129,12 +134,16 @@ void mk_event_loop_destroy(struct mk_event_loop *loop);
 int mk_event_add(struct mk_event_loop *loop, int fd,
                  int type, uint32_t mask, void *data);
 int mk_event_del(struct mk_event_loop *loop, struct mk_event *event);
+int mk_event_inject(struct mk_event_loop *loop, struct mk_event *event,
+                    int flags, int prevent_duplication);
 int mk_event_timeout_create(struct mk_event_loop *loop,
                             time_t sec, long nsec,void *data);
+int mk_event_timeout_disable(struct mk_event_loop *loop, void *data);
 int mk_event_timeout_destroy(struct mk_event_loop *loop, void *data);
 int mk_event_channel_create(struct mk_event_loop *loop,
                             int *r_fd, int *w_fd, void *data);
 int mk_event_wait(struct mk_event_loop *loop);
+int mk_event_wait_2(struct mk_event_loop *loop, int timeout);
 int mk_event_translate(struct mk_event_loop *loop);
 char *mk_event_backend();
 struct mk_event_fdt *mk_event_get_fdt();

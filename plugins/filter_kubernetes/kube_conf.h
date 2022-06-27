@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -83,6 +82,7 @@ struct flb_kube {
     int dummy_meta;
     int tls_debug;
     int tls_verify;
+    int kube_token_ttl;
     flb_sds_t meta_preload_cache_dir;
 
     /* Configuration proposed through Annotations (boolean) */
@@ -154,6 +154,7 @@ struct flb_kube {
     int dns_retries;
     int dns_wait_time;
 
+    int use_tag_for_meta;
     int use_kubelet;
     int kubelet_port;
 

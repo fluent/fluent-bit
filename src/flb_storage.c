@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -247,7 +246,7 @@ static void cb_storage_metrics_collect(struct flb_config *ctx, void *data)
     metrics_append_input(&mp_pck, ctx, data);
 
 #ifdef FLB_HAVE_HTTP_SERVER
-    if (ctx->http_server == FLB_TRUE) {
+    if (ctx->http_server == FLB_TRUE && ctx->storage_metrics == FLB_TRUE) {
         flb_hs_push_storage_metrics(ctx->http_ctx, mp_sbuf.data, mp_sbuf.size);
     }
 #endif
@@ -325,35 +324,34 @@ static int sort_chunk_cmp(const void *a_arg, const void *b_arg)
 
 static void print_storage_info(struct flb_config *ctx, struct cio_ctx *cio)
 {
+    char *type;
     char *sync;
     char *checksum;
     struct flb_input_instance *in;
 
-    flb_info("[storage] version=%s, initializing...", cio_version());
-
-    if (cio->root_path) {
-        flb_info("[storage] root path '%s'", cio->root_path);
+    if (cio->options.root_path) {
+        type = "memory+filesystem";
     }
     else {
-        flb_info("[storage] in-memory");
+        type = "memory-only";
     }
 
-    if (cio->flags & CIO_FULL_SYNC) {
+    if (cio->options.flags & CIO_FULL_SYNC) {
         sync = "full";
     }
     else {
         sync = "normal";
     }
 
-    if (cio->flags & CIO_CHECKSUM) {
+    if (cio->options.flags & CIO_CHECKSUM) {
         checksum = "enabled";
     }
     else {
         checksum = "disabled";
     }
 
-    flb_info("[storage] %s synchronization mode, checksum %s, max_chunks_up=%i",
-             sync, checksum, ctx->storage_max_chunks_up);
+    flb_info("[storage] version=%s, type=%s, sync=%s, checksum=%s, max_chunks_up=%i",
+             cio_version(), type, sync, checksum, ctx->storage_max_chunks_up);
 
     /* Storage input plugin */
     if (ctx->storage_input_plugin) {
@@ -392,7 +390,7 @@ int flb_storage_input_create(struct cio_ctx *cio,
         in->storage_type = CIO_STORE_MEM;
     }
 
-    if (in->storage_type == CIO_STORE_FS && cio->root_path == NULL) {
+    if (in->storage_type == CIO_STORE_FS && cio->options.root_path == NULL) {
         flb_error("[storage] instance '%s' requested filesystem storage "
                   "but no filesystem path was defined.",
                   flb_input_name(in));
@@ -482,6 +480,7 @@ int flb_storage_create(struct flb_config *ctx)
     int flags;
     struct flb_input_instance *in = NULL;
     struct cio_ctx *cio;
+    struct cio_options opts = {0};
 
     /* always use read/write mode */
     flags = CIO_OPEN;
@@ -505,8 +504,14 @@ int flb_storage_create(struct flb_config *ctx)
         flags |= CIO_CHECKSUM;
     }
 
+    /* chunkio options */
+    opts.root_path = ctx->storage_path;
+    opts.flags = flags;
+    opts.log_cb = log_cb;
+    opts.log_level = CIO_LOG_INFO;
+
     /* Create chunkio context */
-    cio = cio_create(ctx->storage_path, log_cb, CIO_LOG_DEBUG, flags);
+    cio = cio_create(&opts);
     if (!cio) {
         flb_error("[storage] error initializing storage engine");
         return -1;

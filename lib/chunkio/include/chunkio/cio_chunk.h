@@ -23,6 +23,8 @@
 #include <sys/types.h>
 #include <inttypes.h>
 
+#include <chunkio/chunkio_compat.h>
+
 struct cio_chunk {
     int lock;                 /* locked for write operations ? */
     char *name;               /* chunk name */
@@ -35,6 +37,9 @@ struct cio_chunk {
 
     struct cio_ctx *ctx;      /* library context      */
     struct cio_stream *st;    /* stream context       */
+
+    /* error handling */
+    int error_n;
 
     /*
      * The state head links to the stream->chunks_up or stream->chunks_down

@@ -1,0 +1,83 @@
+---
+name: Remove a published release [WARNING]
+
+# This is only expected to be invoked on-demand by a specific user.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        required: true
+        description: The version to remove from release.
+        type: string
+
+jobs:
+
+  remove-release-packages-s3:
+    name: S3 - remove release
+    runs-on: ubuntu-18.04 # no createrepo on Ubuntu 20.04
+    environment: release
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Setup runner
+      run: |
+        sudo apt-get install debsigs createrepo aptly rsync
+      shell: bash
+
+    - name: Import GPG key for signing
+      id: import_gpg
+      uses: crazy-max/ghaction-import-gpg@v5
+      with:
+        gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+        passphrase: ${{ secrets.GPG_PRIVATE_KEY_PASSPHRASE }}
+
+    - name: Sync packages from bucket on S3
+      run: |
+        mkdir -p packaging/releases
+        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}" packaging/releases/ --no-progress
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      shell: bash
+
+    - name: GPG set up keys for signing
+      run: |
+        gpg --export -a "${{ steps.import_gpg.outputs.name }}" > packaging/releases/fluentbit.key
+        rpm --import packaging/releases/fluentbit.key
+      shell: bash
+
+    - name: Remove versions and update repo info
+      run: |
+        packaging/remove-version.sh "$VERSION" packaging/releases/
+      env:
+        GPG_KEY: ${{ steps.import_gpg.outputs.name }}
+        AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_RELEASE }}
+      shell: bash
+
+    - name: Sync to release bucket on S3
+      run: |
+        aws s3 sync packaging/releases/ "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}" --delete --follow-symlinks --no-progress
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      shell: bash
+
+  # This removes the package from the set sync'd to the server but some manual work is required on the server
+  # to republish it without the packages.
+  remove-release-packages-server:
+    name: fluentbit.io - remove packages
+    needs: remove-release-packages-s3
+    runs-on: ubuntu-18.04 # failures with AWS client on latest
+    environment: release
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    - uses: ./.github/actions/release-server-sync
+      with:
+        bucket: ${{ secrets.AWS_S3_BUCKET_RELEASE }}
+        access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        server_hostname: ${{ secrets.FLUENTBITIO_HOST }}
+        server_username: ${{ secrets.FLUENTBITIO_USERNAME }}
+        server_key: ${{ secrets.FLUENTBITIO_SSHKEY }}

@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_slist.h>
+#include <fluent-bit/flb_kv.h>
 #include "flb_fuzz_header.h"
 
 /* A sample of configurations */
@@ -308,12 +309,18 @@ char conf_file[] = "# Parser: no_year\n"
 "    Time_Format %Y-%M-%S %H:%M:%S\n"
 "    Time_Keep   On\n"
 "    Decode_Field_As   json key001\n"
-"    Types A1:integer A2:string A3:bool A4:float A5:hex\n";
-
+"    Types A1:integer A2:string A3:bool A4:float A5:hex\n"
+"[MULTILINE_PARSER]\n"
+"    name          exception_test\n"
+"    type          regex\n"
+"    flush_timeout 1000\n"
+"    rule          \"start_state\"  \"/(Dec \\d+ \\d+\\:\\d+\\:\\d+)(.*)/\" \"cont\"\n"
+"    rule          \"cont\" \"/^\\s+at.*/\" \"cont\"\n";
 
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
+    flb_malloc_p = 0;
     /* Limit the size of the config files to 32KB. */
     if (size > 32768) {
         return 0;
@@ -342,7 +349,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
             struct flb_parser *parser = NULL;
             struct flb_time out_time;
             parser = mk_list_entry(head, struct flb_parser, _head);
-            flb_parser_do(parser, data, size, &out_buf,
+            flb_parser_do(parser, (const char*)data, size, (void **)&out_buf,
                           &out_size, &out_time);
             if (out_buf != NULL) {
                 free(out_buf);
@@ -383,7 +390,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
                 struct flb_time out_time;
                 
                 parser = mk_list_entry(head, struct flb_parser, _head);
-                flb_parser_do(parser, data, size, &out_buf,
+                flb_parser_do(parser, (const char*)data, size, (void **)&out_buf,
                               &out_size, &out_time);
                 if (out_buf != NULL) {
                     free(out_buf);
@@ -401,23 +408,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     }
 
     /* clean up the file */
-    unlink(filename);
-
-    /* finally try to parser a random file */
-    fp = fopen(filename, "wb");
-    if (!fp) {
-        return 0;
-    }
-    fwrite(data, size, 1, fp);
-    fclose(fp);
-
-    config = NULL;
-    config = flb_config_init();
-    flb_parser_conf_file(filename, config);
-    flb_parser_exit(config);
-    flb_config_exit(config);
-
-    /* Cleanup written config file */
     unlink(filename);
 
     return 0;

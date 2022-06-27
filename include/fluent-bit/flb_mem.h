@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -41,62 +40,61 @@
  * Here there is no error logging in case of failures, we defer that task to the
  * caller.
  */
-#ifdef __GNUC__
-  #if ((__GNUC__ * 100 + __GNUC__MINOR__) > 430)  /* gcc version > 4.3 */
-    #define ALLOCSZ_ATTR(x,...) __attribute__ ((alloc_size(x, ##__VA_ARGS__)))
-  #else
-    #define ALLOCSZ_ATTR(x,...)
-  #endif
+#ifdef FLB_HAVE_ATTRIBUTE_ALLOC_SIZE
+    #define FLB_ALLOCSZ_ATTR(x,...) __attribute__ ((alloc_size(x, ##__VA_ARGS__)))
 #else
-    #define ALLOCSZ_ATTR(x,...)
+    #define FLB_ALLOCSZ_ATTR(x,...)
 #endif
 
-static inline ALLOCSZ_ATTR(1)
+#ifdef FLB_HAVE_TESTS_OSSFUZZ
+/*
+ * Return 1 or 0 based on a probability.
+ */
+int flb_malloc_p;
+
+static inline int flb_fuzz_get_probability(int val) {
+  flb_malloc_p += 1;
+  flb_malloc_p = flb_malloc_p % 25000;
+  if (val > flb_malloc_p) {
+    return 1;
+  }
+  return 0;
+}
+#endif
+
+static inline FLB_ALLOCSZ_ATTR(1)
 void *flb_malloc(const size_t size) {
-    void *aux;
+
+#ifdef FLB_HAVE_TESTS_OSSFUZZ
+   // 1% chance of failure
+   if (flb_fuzz_get_probability(1)) {
+     return NULL;
+   }
+#endif
 
     if (size == 0) {
         return NULL;
     }
 
-    aux = malloc(size);
-    if (flb_unlikely(!aux && size)) {
-        return NULL;
-    }
-
-    return aux;
+    return malloc(size);
 }
 
-static inline ALLOCSZ_ATTR(1)
+static inline FLB_ALLOCSZ_ATTR(1, 2)
 void *flb_calloc(size_t n, const size_t size) {
-    void *buf;
-
     if (size == 0) {
         return NULL;
     }
 
-    buf = calloc(n, size);
-    if (flb_unlikely(!buf)) {
-        return NULL;
-    }
-
-    return buf;
+    return calloc(n, size);
 }
 
-static inline ALLOCSZ_ATTR(2)
+static inline FLB_ALLOCSZ_ATTR(2)
 void *flb_realloc(void *ptr, const size_t size)
 {
-    void *aux;
-
-    aux = realloc(ptr, size);
-    if (flb_unlikely(!aux && size)) {
-        return NULL;
-    }
-
-    return aux;
+    return realloc(ptr, size);
 }
 
-static inline ALLOCSZ_ATTR(2, 3)
+static inline FLB_ALLOCSZ_ATTR(3)
 void *flb_realloc_z(void *ptr, const size_t old_size, const size_t new_size)
 {
     void *tmp;
@@ -121,5 +119,7 @@ void *flb_realloc_z(void *ptr, const size_t old_size, const size_t new_size)
 static inline void flb_free(void *ptr) {
     free(ptr);
 }
+
+#undef FLB_ALLOCSZ_ATTR
 
 #endif

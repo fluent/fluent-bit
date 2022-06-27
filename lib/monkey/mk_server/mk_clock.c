@@ -119,6 +119,7 @@ void *mk_clock_worker_init(void *data)
 
     mk_utils_worker_rename("monkey: clock");
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 
     mk_clock_tid = pthread_self();
 

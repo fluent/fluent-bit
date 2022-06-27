@@ -129,6 +129,9 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
     }
 
     event->mask = events;
+    event->priority = MK_EVENT_PRIORITY_DEFAULT;
+    event->_priority_head.next = NULL;
+    event->_priority_head.prev = NULL;
     return 0;
 }
 
@@ -136,6 +139,10 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
 {
     int ret;
     struct kevent ke = {0, 0, 0, 0, 0, 0};
+
+    if ((event->status & MK_EVENT_REGISTERED) == 0) {
+        return 0;
+    }
 
     if (event->mask & MK_EVENT_READ) {
         EV_SET(&ke, event->fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
@@ -154,6 +161,14 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
             return ret;
         }
     }
+
+    /* Remove from priority queue */
+    if (event->_priority_head.next != NULL &&
+        event->_priority_head.prev != NULL) {
+        mk_list_del(&event->_priority_head);
+    }
+
+    MK_EVENT_NEW(event);
 
     return 0;
 }
@@ -178,8 +193,13 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
 
     event = data;
     event->fd = fd;
+    event->status = MK_EVENT_REGISTERED;
     event->type = MK_EVENT_NOTIFICATION;
     event->mask = MK_EVENT_EMPTY;
+
+    event->priority = MK_EVENT_PRIORITY_DEFAULT;
+    event->_priority_head.next = NULL;
+    event->_priority_head.prev = NULL;
 
 #ifdef NOTE_SECONDS
     /* FreeBSD or LINUX_KQUEUE defined */
@@ -219,6 +239,14 @@ static inline int _mk_event_timeout_destroy(struct mk_event_ctx *ctx, void *data
         return ret;
     }
 
+    /* Remove from priority queue */
+    if (event->_priority_head.next != NULL &&
+        event->_priority_head.prev != NULL) {
+        mk_list_del(&event->_priority_head);
+    }
+
+    MK_EVENT_NEW(event);
+
     return 0;
 }
 
@@ -254,11 +282,40 @@ static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
     return 0;
 }
 
-static inline int _mk_event_wait(struct mk_event_loop *loop)
+static inline int _mk_event_inject(struct mk_event_loop *loop,
+                                   struct mk_event *event,
+                                   int mask,
+                                   int prevent_duplication)
+{
+    size_t               index;
+    struct mk_event_ctx *ctx;
+
+    ctx = loop->data;
+
+    if (prevent_duplication) {
+        for (index = 0 ; index < loop->n_events ; index++) {
+            if (ctx->events[index].udata == event) {
+                return 0;
+            }
+        }
+    }
+
+    event->mask = mask;
+
+    ctx->events[loop->n_events].udata = event;
+
+    loop->n_events++;
+
+    return 0;
+}
+
+static inline int _mk_event_wait_2(struct mk_event_loop *loop, int timeout)
 {
     struct mk_event_ctx *ctx = loop->data;
 
-    loop->n_events = kevent(ctx->kfd, NULL, 0, ctx->events, ctx->queue_size, NULL);
+    struct timespec timev = {timeout / 1000, (timeout % 1000) * 1000000};
+    loop->n_events = kevent(ctx->kfd, NULL, 0, ctx->events, ctx->queue_size,
+                            (timeout != -1) ? &timev : NULL);
     return loop->n_events;
 }
 

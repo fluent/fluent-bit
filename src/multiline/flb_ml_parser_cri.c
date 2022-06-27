@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -23,9 +22,9 @@
 #include <fluent-bit/multiline/flb_ml_parser.h>
 
 #define FLB_ML_CRI_REGEX                                                \
-  "^(?<time>.+) (?<stream>stdout|stderr) (?<_p>F|P) (?<log>.*)$"
+  "^(?<time>.+?) (?<stream>stdout|stderr) (?<_p>F|P) (?<log>.*)$"
 #define FLB_ML_CRI_TIME                         \
-  "%Y-%m-%dT%H:%M:%S.%L%:z"
+  "%Y-%m-%dT%H:%M:%S.%L%z"
 
 /* Creates a parser for Docker */
 static struct flb_parser *cri_parser_create(struct flb_config *config)
@@ -35,6 +34,7 @@ static struct flb_parser *cri_parser_create(struct flb_config *config)
     p = flb_parser_create("_ml_cri",               /* parser name */
                           "regex",                 /* backend type */
                           FLB_ML_CRI_REGEX,        /* regex */
+                          FLB_FALSE,               /* skip_empty */
                           FLB_ML_CRI_TIME,         /* time format */
                           "time",                  /* time key */
                           NULL,                    /* time offset */
@@ -72,7 +72,7 @@ struct flb_ml_parser *flb_ml_parser_cri(struct flb_config *config)
                                NULL);                /* parser name */
 
     if (!mlp) {
-        flb_error("[multiline] could not create 'docker mode'");
+        flb_error("[multiline] could not create 'cri mode'");
         return NULL;
     }
 

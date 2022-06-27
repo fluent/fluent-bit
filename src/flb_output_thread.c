@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -20,6 +19,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_event_loop.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_output_plugin.h>
@@ -178,10 +178,10 @@ static void output_thread(void *data)
     struct flb_task *task;
     struct flb_upstream_conn *u_conn;
     struct flb_output_instance *ins;
-    struct flb_output_coro *out_coro;
+    struct flb_output_flush *out_flush;
     struct flb_out_thread_instance *th_ins = data;
-    struct flb_out_coro_params *params;
-    struct mk_list lookup_context_cleanup_queue;
+    struct flb_out_flush_params *params;
+    struct flb_net_dns dns_ctx;
 
     /* Register thread instance */
     flb_output_thread_instance_set(th_ins);
@@ -190,6 +190,9 @@ static void output_thread(void *data)
     thread_id = th_ins->th->id;
 
     flb_coro_thread_init();
+
+    flb_net_ctx_init(&dns_ctx);
+    flb_net_dns_ctx_set(&dns_ctx);
 
     /*
      * Expose the event loop to the I/O interfaces: since we are in a separate
@@ -238,14 +241,13 @@ static void output_thread(void *data)
     }
     event_local.type = FLB_ENGINE_EV_OUTPUT;
 
-    mk_list_init(&lookup_context_cleanup_queue);
-
     flb_plg_info(th_ins->ins, "worker #%i started", thread_id);
 
     /* Thread event loop */
     while (running) {
         mk_event_wait(th_ins->evl);
-        mk_event_foreach(event, th_ins->evl) {
+        flb_event_priority_live_foreach(event, th_ins->evl_bktq, th_ins->evl,
+                                      FLB_ENGINE_LOOP_MAX_ITER) {
             /*
              * FIXME
              * -----
@@ -275,7 +277,7 @@ static void output_thread(void *data)
                  * If the address receives 0xdeadbeef, means the thread must
                  * be terminated.
                  */
-                if ((uint64_t) task == 0xdeadbeef) {
+                if (task == (struct flb_task *) 0xdeadbeef) {
                     stopping = FLB_TRUE;
                     flb_plg_info(th_ins->ins, "thread worker #%i stopping...",
                                  thread_id);
@@ -283,32 +285,17 @@ static void output_thread(void *data)
                 }
 
                 /* Start the co-routine with the flush callback */
-                out_coro = flb_output_coro_create(task,
-                                                  task->i_ins,
-                                                  th_ins->ins,
-                                                  th_ins->config,
-                                                  task->buf, task->size,
-                                                  task->tag,
-                                                  task->tag_len);
-                if (!out_coro) {
+                out_flush = flb_output_flush_create(task,
+                                                    task->i_ins,
+                                                    th_ins->ins,
+                                                    th_ins->config);
+                if (!out_flush) {
                     continue;
                 }
-                flb_coro_resume(out_coro->coro);
+                flb_coro_resume(out_flush->coro);
             }
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);
-            }
-            else if (event->type == FLB_ENGINE_EV_DNS) {
-                struct flb_dns_lookup_context *lookup_context;
-                lookup_context = FLB_DNS_LOOKUP_CONTEXT_FOR_EVENT(event);
-
-                if (!lookup_context->finished) {
-                    event->handler(event);
-
-                    if (lookup_context->finished) {
-                        mk_list_add(&lookup_context->_head, &lookup_context_cleanup_queue);
-                    }
-                }
             }
             else if (event->type == FLB_ENGINE_EV_THREAD) {
                 /*
@@ -336,12 +323,14 @@ static void output_thread(void *data)
             }
         }
 
+        flb_net_dns_lookup_context_cleanup(&dns_ctx);
+
         /* Destroy upstream connections from the 'pending destroy list' */
         flb_upstream_conn_pending_destroy_list(&th_ins->upstreams);
-        flb_net_dns_lookup_context_cleanup(&lookup_context_cleanup_queue);
+        flb_sched_timer_cleanup(sched);
 
         /* Check if we should stop the event loop */
-        if (stopping == FLB_TRUE && mk_list_size(&th_ins->coros) == 0) {
+        if (stopping == FLB_TRUE && mk_list_size(&th_ins->flush_list) == 0) {
             /*
              * If there are no busy network connections (and no coroutines) its
              * safe to stop it.
@@ -365,13 +354,14 @@ static void output_thread(void *data)
     upstream_thread_destroy(th_ins);
     flb_upstream_conn_active_destroy_list(&th_ins->upstreams);
     flb_upstream_conn_pending_destroy_list(&th_ins->upstreams);
-    mk_event_loop_destroy(th_ins->evl);
 
     flb_sched_destroy(sched);
-    params = FLB_TLS_GET(out_coro_params);
+    params = FLB_TLS_GET(out_flush_params);
     if (params) {
         flb_free(params);
     }
+    mk_event_loop_destroy(th_ins->evl);
+    flb_bucket_queue_destroy(th_ins->evl_bktq);
 
     flb_plg_info(ins, "thread worker #%i stopped", thread_id);
 }
@@ -413,6 +403,7 @@ int flb_output_thread_pool_create(struct flb_config *config,
     struct flb_tp *tp;
     struct flb_tp_thread *th;
     struct mk_event_loop *evl;
+    struct flb_bucket_queue *evl_bktq;
     struct flb_out_thread_instance *th_ins;
 
     /* Create the thread pool context */
@@ -440,10 +431,10 @@ int flb_output_thread_pool_create(struct flb_config *config,
 
         th_ins->config = config;
         th_ins->ins = ins;
-        th_ins->coro_id = 0;
-        mk_list_init(&th_ins->coros);
-        mk_list_init(&th_ins->coros_destroy);
-        pthread_mutex_init(&th_ins->coro_mutex, NULL);
+        th_ins->flush_id = 0;
+        mk_list_init(&th_ins->flush_list);
+        mk_list_init(&th_ins->flush_list_destroy);
+        pthread_mutex_init(&th_ins->flush_mutex, NULL);
         mk_list_init(&th_ins->upstreams);
 
         upstream_thread_create(th_ins, ins);
@@ -455,7 +446,15 @@ int flb_output_thread_pool_create(struct flb_config *config,
             flb_free(th_ins);
             continue;
         }
+        evl_bktq = flb_bucket_queue_create(FLB_ENGINE_PRIORITY_COUNT);
+        if (!evl_bktq) {
+            flb_plg_error(ins, "could not create thread event loop bucket queue");
+            flb_free(evl);
+            flb_free(th_ins);
+            continue;
+        }
         th_ins->evl = evl;
+        th_ins->evl_bktq = evl_bktq;
 
         /*
          * Event loop setup between parent engine and this thread
@@ -473,11 +472,13 @@ int flb_output_thread_pool_create(struct flb_config *config,
         if (ret == -1) {
             flb_plg_error(th_ins->ins, "could not create thread channel");
             mk_event_loop_destroy(th_ins->evl);
+            flb_bucket_queue_destroy(th_ins->evl_bktq);
             flb_free(th_ins);
             continue;
         }
         /* Signal type to indicate a "flush" request */
         th_ins->event.type = FLB_ENGINE_EV_THREAD_OUTPUT;
+        th_ins->event.priority = FLB_ENGINE_PRIORITY_THREAD;
 
         /* Spawn the thread */
         th = flb_tp_thread_create(tp, output_thread, th_ins, config);
@@ -509,9 +510,9 @@ int flb_output_thread_pool_coros_size(struct flb_output_instance *ins)
 
         th_ins = th->params.data;
 
-        pthread_mutex_lock(&th_ins->coro_mutex);
-        n = mk_list_size(&th_ins->coros);
-        pthread_mutex_unlock(&th_ins->coro_mutex);
+        pthread_mutex_lock(&th_ins->flush_mutex);
+        n = mk_list_size(&th_ins->flush_list);
+        pthread_mutex_unlock(&th_ins->flush_mutex);
 
         size += n;
     }
@@ -522,7 +523,7 @@ int flb_output_thread_pool_coros_size(struct flb_output_instance *ins)
 void flb_output_thread_pool_destroy(struct flb_output_instance *ins)
 {
     int n;
-    uint64_t stop = 0xdeadbeef;
+    struct flb_task *stop = (struct flb_task *) 0xdeadbeef;
     struct flb_tp *tp = ins->tp;
     struct mk_list *head;
     struct flb_out_thread_instance *th_ins;

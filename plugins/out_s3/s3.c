@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -25,21 +24,22 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_aws_util.h>
+#include <fluent-bit/aws/flb_aws_compress.h>
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_base64.h>
 #include <stdlib.h>
 #include <sys/stat.h>
-#include <mbedtls/base64.h>
+
 #include <mbedtls/md5.h>
 #include <msgpack.h>
 
 #include "s3.h"
 #include "s3_store.h"
 
-#ifdef FLB_HAVE_ARROW
-#include "arrow/compress.h"
-#endif
+#define DEFAULT_S3_PORT 443
+#define DEFAULT_S3_INSECURE_PORT 80
 
 static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
                                     struct s3_file *chunk,
@@ -88,6 +88,13 @@ static struct flb_aws_header content_md5_header = {
     .val_len = 0,
 };
 
+static struct flb_aws_header storage_class_header = {
+    .key = "x-amz-storage-class",
+    .key_len = 19,
+    .val = "",
+    .val_len = 0,
+};
+
 static char *mock_error_response(char *error_env_var)
 {
     char *err_val = NULL;
@@ -120,7 +127,9 @@ int s3_plugin_under_test()
     return FLB_FALSE;
 }
 
-static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_header **headers, int *num_headers)
+int create_headers(struct flb_s3 *ctx, char *body_md5,
+                   struct flb_aws_header **headers, int *num_headers,
+                   int multipart_upload)
 {
     int n = 0;
     int headers_len = 0;
@@ -129,13 +138,16 @@ static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_hea
     if (ctx->content_type != NULL) {
         headers_len++;
     }
-    if (ctx->compression == COMPRESS_GZIP) {
+    if (ctx->compression == FLB_AWS_COMPRESS_GZIP && multipart_upload == FLB_FALSE) {
         headers_len++;
     }
     if (ctx->canned_acl != NULL) {
         headers_len++;
     }
-    if (body_md5 != NULL && strlen(body_md5)) {
+    if (body_md5 != NULL && strlen(body_md5) && multipart_upload == FLB_FALSE) {
+        headers_len++;
+    }
+    if (ctx->storage_class != NULL) {
         headers_len++;
     }
     if (headers_len == 0) {
@@ -143,7 +155,7 @@ static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_hea
         *headers = s3_headers;
         return 0;
     }
-    
+
     s3_headers = flb_malloc(sizeof(struct flb_aws_header) * headers_len);
     if (s3_headers == NULL) {
         flb_errno();
@@ -156,7 +168,7 @@ static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_hea
         s3_headers[n].val_len = strlen(ctx->content_type);
         n++;
     }
-    if (ctx->compression == COMPRESS_GZIP) {
+    if (ctx->compression == FLB_AWS_COMPRESS_GZIP && multipart_upload == FLB_FALSE) {
         s3_headers[n] = content_encoding_header;
         n++;
     }
@@ -166,12 +178,18 @@ static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_hea
         s3_headers[n].val_len = strlen(ctx->canned_acl);
         n++;
     }
-    if (body_md5 != NULL && strlen(body_md5)) {
+    if (body_md5 != NULL && strlen(body_md5) && multipart_upload == FLB_FALSE) {
         s3_headers[n] = content_md5_header;
         s3_headers[n].val = body_md5;
         s3_headers[n].val_len = strlen(body_md5);
+        n++;
     }
-    
+    if (ctx->storage_class != NULL) {
+        s3_headers[n] = storage_class_header;
+        s3_headers[n].val = ctx->storage_class;
+        s3_headers[n].val_len = strlen(ctx->storage_class);
+    }
+
     *num_headers = headers_len;
     *headers = s3_headers;
     return 0;
@@ -357,7 +375,7 @@ static int init_seq_index(void *context) {
     }
 
     /* Create directory path if it doesn't exist */
-    ret = mkdir(ctx->metadata_dir, 0600);
+    ret = mkdir(ctx->metadata_dir, 0700);
     if (ret < 0 && errno != EEXIST) {
         flb_plg_error(ctx->ins, "Failed to create metadata directory");
         return -1;
@@ -371,7 +389,7 @@ static int init_seq_index(void *context) {
             flb_plg_error(ctx->ins, "Failed to write to sequential index metadata file");
             return -1;
         }
-    } 
+    }
     else {
         ret = read_seq_index(ctx->seq_index_file, &ctx->seq_index);
         if (ret < 0) {
@@ -490,13 +508,16 @@ static int cb_s3_init(struct flb_output_instance *ins,
     int async_flags;
     int len;
     char *role_arn = NULL;
-    char *external_id = NULL;
     char *session_name;
     const char *tmp;
     struct flb_s3 *ctx = NULL;
     struct flb_aws_client_generator *generator;
     (void) config;
     (void) data;
+    char *ep;
+    struct flb_split_entry *tok;
+    struct mk_list *split;
+    int list_size;
 
     ctx = flb_calloc(1, sizeof(struct flb_s3));
     if (!ctx) {
@@ -657,12 +678,48 @@ static int cb_s3_init(struct flb_output_instance *ins,
 
     tmp = flb_output_get_property("endpoint", ins);
     if (tmp) {
-        ctx->endpoint = removeProtocol((char *) tmp, "https://");
-        ctx->free_endpoint = FLB_FALSE;
+        ctx->insecure = strncmp(tmp, "http://", 7) == 0 ? FLB_TRUE : FLB_FALSE;
+        if (ctx->insecure == FLB_TRUE) {
+          ep = removeProtocol((char *) tmp, "http://");
+        }
+        else {
+          ep = removeProtocol((char *) tmp, "https://");
+        }
+
+        split = flb_utils_split((const char *)ep, ':', 1);
+        if (!split) {
+          flb_errno();
+          return -1;
+        }
+        list_size = mk_list_size(split);
+        if (list_size > 2) {
+          flb_plg_error(ctx->ins, "Failed to split endpoint");
+          flb_utils_split_free(split);
+          return -1;
+        }
+
+        tok = mk_list_entry_first(split, struct flb_split_entry, _head);
+        ctx->endpoint = flb_strndup(tok->value, tok->len);
+        if (!ctx->endpoint) {
+            flb_errno();
+            flb_utils_split_free(split);
+            return -1;
+        }
+        ctx->free_endpoint = FLB_TRUE;
+        if (list_size == 2) {
+          tok = mk_list_entry_next(&tok->_head, struct flb_split_entry, _head, split);
+          ctx->port = atoi(tok->value);
+        }
+        else {
+          ctx->port = ctx->insecure == FLB_TRUE ? DEFAULT_S3_INSECURE_PORT : DEFAULT_S3_PORT;
+        }
+        flb_utils_split_free(split);
     }
     else {
         /* default endpoint for the given region */
         ctx->endpoint = flb_aws_endpoint("s3", ctx->region);
+        ctx->insecure = FLB_FALSE;
+        ctx->port = DEFAULT_S3_PORT;
         ctx->free_endpoint = FLB_TRUE;
         if (!ctx->endpoint) {
             flb_plg_error(ctx->ins,  "Could not construct S3 endpoint");
@@ -683,40 +740,41 @@ static int cb_s3_init(struct flb_output_instance *ins,
     tmp = flb_output_get_property("compression", ins);
     if (tmp) {
         if (ctx->use_put_object == FLB_FALSE) {
-            flb_plg_error(ctx->ins, 
+            flb_plg_error(ctx->ins,
                           "use_put_object must be enabled when compression is enabled");
             return -1;
         }
-        if (strcmp(tmp, "gzip") == 0) {
-            ctx->compression = COMPRESS_GZIP;
-        }
-#ifdef FLB_HAVE_ARROW
-        else if (strcmp(tmp, "arrow") == 0) {
-            ctx->compression = COMPRESS_ARROW;
-        }
-#endif
-        else {
+        ret = flb_aws_compression_get_type(tmp);
+        if (ret == -1) {
             flb_plg_error(ctx->ins, "unknown compression: %s", tmp);
             return -1;
         }
+        ctx->compression = ret;
     }
 
     tmp = flb_output_get_property("content_type", ins);
     if (tmp) {
         ctx->content_type = (char *) tmp;
     }
-    
-    ctx->client_tls = flb_tls_create(FLB_TRUE,
-                                     ins->tls_debug,
-                                     ins->tls_vhost,
-                                     ins->tls_ca_path,
-                                     ins->tls_ca_file,
-                                     ins->tls_crt_file,
-                                     ins->tls_key_file,
-                                     ins->tls_key_passwd);
-    if (!ctx->client_tls) {
-        flb_plg_error(ctx->ins, "Failed to create tls context");
-        return -1;
+
+    tmp = flb_output_get_property("storage_class", ins);
+    if (tmp) {
+        ctx->storage_class = (char *) tmp;
+    }
+
+    if (ctx->insecure == FLB_FALSE) {
+        ctx->client_tls = flb_tls_create(ins->tls_verify,
+                                         ins->tls_debug,
+                                         ins->tls_vhost,
+                                         ins->tls_ca_path,
+                                         ins->tls_ca_file,
+                                         ins->tls_crt_file,
+                                         ins->tls_key_file,
+                                         ins->tls_key_passwd);
+        if (!ctx->client_tls) {
+            flb_plg_error(ctx->ins, "Failed to create tls context");
+            return -1;
+        }
     }
 
     /* AWS provider needs a separate TLS instance */
@@ -750,10 +808,6 @@ static int cb_s3_init(struct flb_output_instance *ins,
         /* Use the STS Provider */
         ctx->base_provider = ctx->provider;
         role_arn = (char *) tmp;
-        tmp = flb_output_get_property("external_id", ins);
-        if (tmp) {
-            external_id = (char *) tmp;
-        }
 
         /* STS provider needs yet another separate TLS instance */
         ctx->sts_provider_tls = flb_tls_create(FLB_TRUE,
@@ -781,7 +835,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
         ctx->provider = flb_sts_provider_create(config,
                                                 ctx->sts_provider_tls,
                                                 ctx->base_provider,
-                                                external_id,
+                                                ctx->external_id,
                                                 role_arn,
                                                 session_name,
                                                 ctx->region,
@@ -819,17 +873,24 @@ static int cb_s3_init(struct flb_output_instance *ins,
     ctx->s3_client->provider = ctx->provider;
     ctx->s3_client->region = ctx->region;
     ctx->s3_client->service = "s3";
-    ctx->s3_client->port = 443;
+    ctx->s3_client->port = ctx->port;
     ctx->s3_client->flags = 0;
     ctx->s3_client->proxy = NULL;
     ctx->s3_client->s3_mode = S3_MODE_SIGNED_PAYLOAD;
+    ctx->s3_client->retry_requests = ctx->retry_requests;
 
-    ctx->s3_client->upstream = flb_upstream_create(config, ctx->endpoint, 443,
-                                                   FLB_IO_TLS, ctx->client_tls);
+    if (ctx->insecure == FLB_TRUE) {
+        ctx->s3_client->upstream = flb_upstream_create(config, ctx->endpoint, ctx->port,
+                                                       FLB_IO_TCP, NULL);
+    } else {
+        ctx->s3_client->upstream = flb_upstream_create(config, ctx->endpoint, ctx->port,
+                                                       FLB_IO_TLS, ctx->client_tls);
+    }
     if (!ctx->s3_client->upstream) {
         flb_plg_error(ctx->ins, "Connection initialization error");
         return -1;
     }
+
     flb_output_upstream_set(ctx->s3_client->upstream, ctx->ins);
 
     ctx->s3_client->host = ctx->endpoint;
@@ -1271,8 +1332,9 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
     flb_sds_destroy(s3_key);
     uri = tmp;
 
-    if (ctx->compression == COMPRESS_GZIP) {
-        ret = flb_gzip_compress(body, body_size, &compressed_body, &final_body_size);
+    if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
+        ret = flb_aws_compression_compress(ctx->compression, body, body_size,
+                                          &compressed_body, &final_body_size);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to compress data");
             flb_sds_destroy(uri);
@@ -1280,17 +1342,6 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
         }
         final_body = (char *) compressed_body;
     }
-#ifdef FLB_HAVE_ARROW
-    else if (ctx->compression == COMPRESS_ARROW) {
-        ret = out_s3_compress_arrow(body, body_size, &compressed_body, &final_body_size);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "Failed to compress data");
-            flb_sds_destroy(uri);
-            return -1;
-        }
-        final_body = compressed_body;
-    }
-#endif
     else {
         final_body = body;
         final_body_size = body_size;
@@ -1319,13 +1370,13 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
             return -1;
         }
     }
-    
+
     s3_client = ctx->s3_client;
     if (s3_plugin_under_test() == FLB_TRUE) {
         c = mock_s3_call("TEST_PUT_OBJECT_ERROR", "PutObject");
     }
     else {
-        ret = create_headers(ctx, final_body_md5, &headers, &num_headers);
+        ret = create_headers(ctx, final_body_md5, &headers, &num_headers, FLB_FALSE);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to create headers");
             flb_sds_destroy(uri);
@@ -1334,7 +1385,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
         c = s3_client->client_vtable->request(s3_client, FLB_HTTP_PUT,
                                               uri, final_body, final_body_size,
                                               headers, num_headers);
-        if (ctx->compression != COMPRESS_NONE) {
+        if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
              flb_free(compressed_body);
         }
         flb_free(headers);
@@ -1389,7 +1440,7 @@ int get_md5_base64(char *buf, size_t buf_size, char *md5_str, size_t md5_str_siz
         return ret;
     }
 
-    ret = mbedtls_base64_encode((unsigned char*) md5_str, md5_str_size, &olen, md5_bin,
+    ret = flb_base64_encode((unsigned char*) md5_str, md5_str_size, &olen, md5_bin,
                                 sizeof(md5_bin));
     if (ret != 0) {
         return ret;
@@ -1568,6 +1619,7 @@ static int send_upload_request(void *out_context, flb_sds_t chunk,
 
     /* Create buffer to upload to S3 */
     ret = construct_request_buffer(ctx, chunk, upload_file, &buffer, &buffer_size);
+    flb_sds_destroy(chunk);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Could not construct request buffer for %s",
                       upload_file->file_path);
@@ -1749,6 +1801,10 @@ static void cb_s3_upload(struct flb_config *config, void *data)
             continue;
         }
 
+        if (m_upload->upload_state == MULTIPART_UPLOAD_STATE_NOT_CREATED) {
+            continue;
+        }
+
         if (m_upload->upload_state == MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS) {
             complete = FLB_TRUE;
         }
@@ -1820,7 +1876,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     }
 
     msgpack_unpacked_init(&result);
-    while (!alloc_error && 
+    while (!alloc_error &&
            msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         /* Each array must have two entries: time and record */
         root = result.data;
@@ -1862,7 +1918,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
                 if (strncmp(ctx->log_key, key_str, key_str_size) == 0) {
                     found = FLB_TRUE;
 
-                    /* 
+                    /*
                      * Copy contents of value into buffer. Necessary to copy
                      * strings because flb_msgpack_to_json does not handle nested
                      * JSON gracefully and double escapes them.
@@ -1880,7 +1936,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
                         val_offset++;
                     }
                     else {
-                        ret = flb_msgpack_to_json(val_buf + val_offset, 
+                        ret = flb_msgpack_to_json(val_buf + val_offset,
                                                   msgpack_size - val_offset, &val);
                         if (ret < 0) {
                             break;
@@ -1903,7 +1959,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
 
     /* Throw error once per chunk if at least one log key was not found */
     if (log_key_missing == FLB_TRUE) {
-        flb_plg_error(ctx->ins, "Could not find log_key '%s' in %d records", 
+        flb_plg_error(ctx->ins, "Could not find log_key '%s' in %d records",
                       ctx->log_key, log_key_missing);
     }
 
@@ -2003,11 +2059,11 @@ static void flush_init(void *out_context)
     }
 }
 
-static void cb_s3_flush(const void *data, size_t bytes,
-                            const char *tag, int tag_len,
-                            struct flb_input_instance *i_ins,
-                            void *out_context,
-                            struct flb_config *config)
+static void cb_s3_flush(struct flb_event_chunk *event_chunk,
+                        struct flb_output_flush *out_flush,
+                        struct flb_input_instance *i_ins,
+                        void *out_context,
+                        struct flb_config *config)
 {
     int ret;
     int chunk_size;
@@ -2023,10 +2079,13 @@ static void cb_s3_flush(const void *data, size_t bytes,
 
     /* Process chunk */
     if (ctx->log_key) {
-        chunk = flb_pack_msgpack_extract_log_key(ctx, data, bytes);
+        chunk = flb_pack_msgpack_extract_log_key(ctx,
+                                                 event_chunk->data,
+                                                 event_chunk->size);
     }
     else {
-        chunk = flb_pack_msgpack_to_json_format(data, bytes,
+        chunk = flb_pack_msgpack_to_json_format(event_chunk->data,
+                                                event_chunk->size,
                                                 FLB_PACK_JSON_FORMAT_LINES,
                                                 ctx->json_date_format,
                                                 ctx->date_key);
@@ -2038,17 +2097,21 @@ static void cb_s3_flush(const void *data, size_t bytes,
     chunk_size = flb_sds_len(chunk);
 
     /* Get a file candidate matching the given 'tag' */
-    upload_file = s3_store_file_get(ctx, tag, tag_len);
+    upload_file = s3_store_file_get(ctx,
+                                    event_chunk->tag,
+                                    flb_sds_len(event_chunk->tag));
 
     /* Specific to unit tests, will not get called normally */
     if (s3_plugin_under_test() == FLB_TRUE) {
-        unit_test_flush(ctx, upload_file, tag, tag_len, chunk, chunk_size, m_upload_file);
+        unit_test_flush(ctx, upload_file,
+                        event_chunk->tag, flb_sds_len(event_chunk->tag),
+                        chunk, chunk_size, m_upload_file);
     }
 
     /* Discard upload_file if it has failed to upload MAX_UPLOAD_ERRORS times */
     if (upload_file != NULL && upload_file->failures >= MAX_UPLOAD_ERRORS) {
         flb_plg_warn(ctx->ins, "File with tag %s failed to send %d times, will not "
-                     "retry", tag, MAX_UPLOAD_ERRORS);
+                     "retry", event_chunk->tag, MAX_UPLOAD_ERRORS);
         s3_store_file_inactive(ctx, upload_file);
         upload_file = NULL;
     }
@@ -2057,15 +2120,17 @@ static void cb_s3_flush(const void *data, size_t bytes,
     if (upload_file != NULL && time(NULL) >
         (upload_file->create_time + ctx->upload_timeout)) {
         upload_timeout_check = FLB_TRUE;
-        flb_plg_info(ctx->ins, "upload_timeout reached for %s", tag);
+        flb_plg_info(ctx->ins, "upload_timeout reached for %s",
+                     event_chunk->tag);
     }
 
-    m_upload_file = get_upload(ctx, tag, tag_len);
+    m_upload_file = get_upload(ctx,
+                               event_chunk->tag, flb_sds_len(event_chunk->tag));
 
     if (m_upload_file != NULL && time(NULL) >
         (m_upload_file->init_time + ctx->upload_timeout)) {
         upload_timeout_check = FLB_TRUE;
-        flb_plg_info(ctx->ins, "upload_timeout reached for %s", tag);
+        flb_plg_info(ctx->ins, "upload_timeout reached for %s", event_chunk->tag);
     }
 
     /* If total_file_size has been reached, upload file */
@@ -2078,14 +2143,16 @@ static void cb_s3_flush(const void *data, size_t bytes,
     if (upload_timeout_check == FLB_TRUE || total_file_size_check == FLB_TRUE) {
         if (ctx->preserve_data_ordering == FLB_TRUE) {
             /* Buffer last chunk in file and lock file to prevent further changes */
-            ret = buffer_chunk(ctx, upload_file, chunk, chunk_size, tag, tag_len);
+            ret = buffer_chunk(ctx, upload_file, chunk, chunk_size,
+                               event_chunk->tag, flb_sds_len(event_chunk->tag));
             if (ret < 0) {
                 FLB_OUTPUT_RETURN(FLB_RETRY);
             }
             s3_store_file_lock(upload_file);
 
             /* Add chunk file to upload queue */
-            ret = add_to_queue(ctx, upload_file, m_upload_file, tag, tag_len);
+            ret = add_to_queue(ctx, upload_file, m_upload_file,
+                               event_chunk->tag, flb_sds_len(event_chunk->tag));
             if (ret < 0) {
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
@@ -2100,7 +2167,9 @@ static void cb_s3_flush(const void *data, size_t bytes,
         }
         else {
             /* Send upload directly without upload queue */
-            ret = send_upload_request(ctx, chunk, upload_file, m_upload_file, tag, tag_len);
+            ret = send_upload_request(ctx, chunk, upload_file, m_upload_file,
+                                      event_chunk->tag,
+                                      flb_sds_len(event_chunk->tag));
             if (ret < 0) {
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
@@ -2109,7 +2178,8 @@ static void cb_s3_flush(const void *data, size_t bytes,
     }
 
     /* Buffer current chunk in filesystem and wait for next chunk from engine */
-    ret = buffer_chunk(ctx, upload_file, chunk, chunk_size, tag, tag_len);
+    ret = buffer_chunk(ctx, upload_file, chunk, chunk_size,
+                       event_chunk->tag, flb_sds_len(event_chunk->tag));
     if (ret < 0) {
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
@@ -2144,6 +2214,10 @@ static int cb_s3_exit(void *data, struct flb_config *config)
         mk_list_foreach_safe(head, tmp, &ctx->uploads) {
             m_upload = mk_list_entry(head, struct multipart_upload, _head);
 
+            if (m_upload->upload_state == MULTIPART_UPLOAD_STATE_NOT_CREATED) {
+                continue;
+            }
+
             if (m_upload->bytes > 0) {
                 m_upload->upload_state = MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS;
                 mk_list_del(&m_upload->_head);
@@ -2171,7 +2245,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "json_date_format", NULL,
      0, FLB_FALSE, 0,
-    "Specifies the format of the date. Supported formats are double, iso8601 and epoch."
+    FBL_PACK_JSON_DATE_FORMAT_DESCRIPTION
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_key", "date",
@@ -2237,9 +2311,10 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "compression", NULL,
      0, FLB_FALSE, 0,
-    "Compression type for S3 objects. 'gzip' is currently the only supported value. "
-    "The Content-Encoding HTTP Header will be set to 'gzip'. "
-    "If Apache Arrow was enabled at compile time, you can set 'arrow' to this option."
+    "Compression type for S3 objects. 'gzip' and 'arrow' are the supported values. "
+    "'arrow' is only an available if Apache Arrow was enabled at compile time. "
+    "Defaults to no compression. "
+    "If 'gzip' is selected, the Content-Encoding HTTP Header will be set to 'gzip'."
     },
     {
      FLB_CONFIG_MAP_STR, "content_type", NULL,
@@ -2279,6 +2354,16 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_BOOL, "auto_retry_requests", "true",
+     0, FLB_TRUE, offsetof(struct flb_s3, retry_requests),
+     "Immediately retry failed requests to AWS services once. This option "
+     "does not affect the normal Fluent Bit retry mechanism with backoff. "
+     "Instead, it enables an immediate retry with no delay for networking "
+     "errors, which may help improve throughput when there are transient/random "
+     "networking issues."
+    },
+
+    {
      FLB_CONFIG_MAP_BOOL, "use_put_object", "false",
      0, FLB_TRUE, offsetof(struct flb_s3, use_put_object),
      "Use the S3 PutObject API, instead of the multipart upload API"
@@ -2307,11 +2392,25 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_STR, "external_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, external_id),
+     "Specify an external ID for the STS API, can be used with the role_arn parameter if your role "
+     "requires an external ID."
+    },
+
+    {
      FLB_CONFIG_MAP_BOOL, "static_file_path", "false",
      0, FLB_TRUE, offsetof(struct flb_s3, static_file_path),
      "Disables behavior where UUID string is automatically appended to end of S3 key name when "
      "$UUID is not provided in s3_key_format. $UUID, time formatters, $TAG, and other dynamic "
      "key formatters all work as expected while this feature is set to true."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "storage_class", NULL,
+     0, FLB_FALSE, 0,
+     "Specify the storage class for S3 objects. If this option is not specified, objects "
+     "will be stored with the default 'STANDARD' storage class."
     },
 
     /* EOF */
@@ -2325,6 +2424,7 @@ struct flb_output_plugin out_s3_plugin = {
     .cb_init      = cb_s3_init,
     .cb_flush     = cb_s3_flush,
     .cb_exit      = cb_s3_exit,
+    .workers      = 1,
     .flags        = FLB_OUTPUT_NET | FLB_IO_TLS,
     .config_map   = config_map
 };

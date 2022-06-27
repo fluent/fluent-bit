@@ -1,0 +1,87 @@
+---
+# Separate action to allow us to initiate manually and run regularly
+name: Trivy security analysis of latest containers
+
+# Run on every push to master, or weekly.
+# Allow users to trigger an asynchronous run anytime too.
+on:
+  push:
+    branches: [master]
+  schedule:
+    # 13:44 on Thursday
+    - cron: 44 13 * * 4
+  workflow_dispatch:
+
+jobs:
+  # Run Trivy on the latest container and update the security code scanning results tab.
+  trivy-latest:
+    # Matrix job that pulls the latest image for each supported architecture via the multi-arch latest manifest.
+    # We then re-tag it locally to ensure that when Trivy runs it does not pull the latest for the wrong architecture.
+    name: ${{ matrix.arch }} container scan
+    runs-on: [ ubuntu-latest ]
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      # Matrix of architectures to test along with their local tags for special character substitution
+      matrix:
+        # The architecture for the container runtime to pull.
+        arch: [ linux/amd64, linux/arm64, linux/arm/v7 ]
+        # In a few cases we need the arch without slashes so provide a descriptive extra field for that.
+        # We could also extract or modify this via a regex but this seemed simpler and easier to follow.
+        include:
+          - arch: linux/amd64
+            local_tag: x86_64
+          - arch: linux/arm64
+            local_tag: arm64
+          - arch: linux/arm/v7
+            local_tag: arm32
+    steps:
+      - name: Log in to the Container registry
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Pull the image for the architecture we're testing
+        run: |
+          docker pull --platform ${{ matrix.arch }} fluent/fluent-bit:latest
+
+      - name: Tag locally to ensure we do not pull wrong architecture
+        run: |
+          docker tag fluent/fluent-bit:latest local/fluent-bit:${{ matrix.local_tag }}
+
+      # Deliberately chosen master here to keep up-to-date.
+      - name: Run Trivy vulnerability scanner for any major issues
+        uses: aquasecurity/trivy-action@master
+        with:
+            image-ref: local/fluent-bit:${{ matrix.local_tag }}
+            # Filter out any that have no current fix.
+            ignore-unfixed: true
+            # Only include major issues.
+            severity: CRITICAL,HIGH
+            format: template
+            template: '@/contrib/sarif.tpl'
+            output: trivy-results-${{ matrix.local_tag }}.sarif
+
+      # Show all detected issues.
+      # Note this will show a lot more, including major un-fixed ones.
+      - name: Run Trivy vulnerability scanner for local output
+        uses: aquasecurity/trivy-action@master
+        with:
+            image-ref: local/fluent-bit:${{ matrix.local_tag }}
+            format: table
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+            sarif_file: trivy-results-${{ matrix.local_tag }}.sarif
+            category: ${{ matrix.arch }} container
+            wait-for-processing: true
+
+      # In case we need to analyse the uploaded files for some reason.
+      - name: Detain results for debug if needed
+        uses: actions/upload-artifact@v3
+        with:
+          name: trivy-results-${{ matrix.local_tag }}.sarif
+          path: trivy-results-${{ matrix.local_tag }}.sarif
+          if-no-files-found: error

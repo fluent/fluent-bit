@@ -30,6 +30,8 @@
 #include <valgrind/valgrind.h>
 #endif
 
+#include <monkey/mk_tls.h>
+
 struct mk_thread {
 
 #ifdef MK_HAVE_VALGRIND
@@ -52,12 +54,7 @@ struct mk_thread {
 #define MK_THREAD_STACK_SIZE      ((3 * PTHREAD_STACK_MIN) / 2)
 #define MK_THREAD_DATA(th)        (((char *) th) + sizeof(struct mk_thread))
 
-extern MK_EXPORT pthread_key_t mk_thread_key;
-
-static MK_INLINE void mk_thread_prepare()
-{
-    pthread_key_create(&mk_thread_key, NULL);
-}
+extern MK_EXPORT MK_TLS_DEFINE(struct mk_thread, mk_thread);
 
 static MK_INLINE void mk_thread_yield(struct mk_thread *th)
 {
@@ -84,7 +81,7 @@ static MK_INLINE void mk_thread_destroy(struct mk_thread *th)
 
 static MK_INLINE void mk_thread_resume(struct mk_thread *th)
 {
-    pthread_setspecific(mk_thread_key, (void *) th);
+    MK_TLS_SET(mk_thread, th);
 
     /*
      * In the past we used to have a flag to mark when a coroutine

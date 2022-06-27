@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -180,8 +179,8 @@ static int cb_td_init(struct flb_output_instance *ins, struct flb_config *config
     return 0;
 }
 
-static void cb_td_flush(const void *data, size_t bytes,
-                        const char *tag, int tag_len,
+static void cb_td_flush(struct flb_event_chunk *event_chunk,
+                        struct flb_output_flush *out_flush,
                         struct flb_input_instance *i_ins,
                         void *out_context,
                         struct flb_config *config)
@@ -195,11 +194,9 @@ static void cb_td_flush(const void *data, size_t bytes,
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
     (void) i_ins;
-    (void) tag;
-    (void) tag_len;
 
     /* Convert format */
-    pack = td_format(data, bytes, &bytes_out);
+    pack = td_format(event_chunk->data, event_chunk->size, &bytes_out);
     if (!pack) {
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
@@ -276,6 +273,31 @@ static int cb_td_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+      FLB_CONFIG_MAP_STR, "API", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_td, api),
+      "Set the API key"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "Database", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_td, db_name),
+      "Set the Database file"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "Table", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_td, db_table),
+      "Set the Database Table"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "Region", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_td, region_str),
+      "Set the Region: us or jp"
+    },
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_output_plugin out_td_plugin = {
     .name           = "td",
@@ -284,5 +306,6 @@ struct flb_output_plugin out_td_plugin = {
     .cb_pre_run     = NULL,
     .cb_flush       = cb_td_flush,
     .cb_exit        = cb_td_exit,
+    .config_map     = config_map,
     .flags          = FLB_IO_TLS,
 };

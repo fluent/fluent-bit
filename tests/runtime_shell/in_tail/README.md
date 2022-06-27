@@ -110,3 +110,17 @@ Test a link that gets a truncation and Fluent Bit properly use the new offset
 **Configuration File**
 
 ```conf/truncate_link.conf```
+
+### 6. Multiline Rotation
+
+**Unit**
+
+```test_multiline_rotation```
+
+**Description**
+
+Test a multiline rotation for issue 4190.
+
+**Configuration File**
+
+```conf/multiline_rotation.conf```

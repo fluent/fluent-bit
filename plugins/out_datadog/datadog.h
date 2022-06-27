@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -37,13 +36,17 @@
 #define FLB_DATADOG_REMAP_PROVIDER    "ecs"
 #define FLB_DATADOG_TAG_SEPERATOR     ","
 
+#define FLB_DATADOG_API_HDR             "DD-API-KEY"
+#define FLB_DATADOG_ORIGIN_HDR          "DD-EVP-ORIGIN"
+#define FLB_DATADOG_ORIGIN_VERSION_HDR  "DD-EVP-ORIGIN-VERSION"
+
 #define FLB_DATADOG_CONTENT_TYPE   "Content-Type"
 #define FLB_DATADOG_MIME_JSON      "application/json"
 
 struct flb_out_datadog {
 
     /* Proxy */
-    const char *proxy;
+    flb_sds_t proxy;
     char *proxy_host;
     int proxy_port;
 

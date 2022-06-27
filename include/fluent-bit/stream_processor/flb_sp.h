@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -34,6 +33,11 @@
 #define FLB_SP_NUM_F64       1
 #define FLB_SP_BOOLEAN       2
 #define FLB_SP_STRING        3
+
+struct sp_buffer {
+    char* buffer;
+    size_t size;
+};
 
 struct aggregate_num {
     int type;
@@ -159,12 +163,20 @@ void flb_sp_destroy(struct flb_sp *sp);
 int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
               const char *tag, int tag_len,
               const char *buf_data, size_t buf_size);
-int flb_sp_test_do(struct flb_sp *sp, struct flb_sp_task *task,
-                   const char *tag, int tag_len,
-                   const char *buf_data, size_t buf_size,
-                   char **out_data, size_t *out_size);
-int flb_sp_test_fd_event(int fd, struct flb_sp_task *task, char **out_data,
-                         size_t *out_size);
+int sp_process_data(const char *tag, int tag_len,
+                    const char *buf_data, size_t buf_size,
+                    char **out_buf, size_t *out_size,
+                    struct flb_sp_task *task,
+                    struct flb_sp *sp);
+int sp_process_data_aggr(const char *buf_data, size_t buf_size,
+                         const char *tag, int tag_len,
+                         struct flb_sp_task *task,
+                         struct flb_sp *sp);
+void package_results(const char *tag, int tag_len,
+                     char **out_buf, size_t *out_size,
+                     struct flb_sp_task *task);
+int sp_process_hopping_slot(const char *tag, int tag_len,
+                            struct flb_sp_task *task);
 
 int flb_sp_snapshot_create(struct flb_sp_task *task);
 struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, const char *name,

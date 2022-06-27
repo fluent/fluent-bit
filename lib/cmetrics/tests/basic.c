@@ -78,7 +78,6 @@ void test_basic()
     int ret;
     int error;
     size_t off = 0;
-    uint64_t ts;
     cmt_sds_t text1;
     cmt_sds_t text2;
     char *mp_buf;

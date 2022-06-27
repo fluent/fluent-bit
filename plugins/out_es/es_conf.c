@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -232,7 +231,6 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         snprintf(ctx->uri, sizeof(ctx->uri) - 1, "%s/_bulk", path);
     }
 
-
     if (ctx->id_key) {
         ctx->ra_id_key = flb_ra_create(ctx->id_key, FLB_FALSE);
         if (ctx->ra_id_key == NULL) {
@@ -241,6 +239,30 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         if (ctx->generate_id == FLB_TRUE) {
             flb_plg_warn(ins, "Generate_ID is ignored when ID_key is set");
             ctx->generate_id = FLB_FALSE;
+        }
+    }
+
+    if (ctx->write_operation) {
+        if (strcasecmp(ctx->write_operation, FLB_ES_WRITE_OP_INDEX) == 0) {
+            ctx->es_action = flb_strdup(FLB_ES_WRITE_OP_INDEX);
+        }
+        else if (strcasecmp(ctx->write_operation, FLB_ES_WRITE_OP_CREATE) == 0) {
+            ctx->es_action = flb_strdup(FLB_ES_WRITE_OP_CREATE);
+        }
+        else if (strcasecmp(ctx->write_operation, FLB_ES_WRITE_OP_UPDATE) == 0
+            || strcasecmp(ctx->write_operation, FLB_ES_WRITE_OP_UPSERT) == 0) {
+            ctx->es_action = flb_strdup(FLB_ES_WRITE_OP_UPDATE);
+        }
+        else {
+            flb_plg_error(ins, "wrong Write_Operation (should be one of index, create, update, upsert)");
+            flb_es_conf_destroy(ctx);
+            return NULL;
+        }
+        if (strcasecmp(ctx->es_action, FLB_ES_WRITE_OP_UPDATE) == 0
+            && !ctx->ra_id_key && ctx->generate_id == FLB_FALSE) {
+            flb_plg_error(ins, "Id_Key or Generate_Id must be set when Write_Operation update or upsert");
+            flb_es_conf_destroy(ctx);
+            return NULL;
         }
     }
 
@@ -401,6 +423,9 @@ int flb_es_conf_destroy(struct flb_elasticsearch *ctx)
     if (ctx->ra_id_key) {
         flb_ra_destroy(ctx->ra_id_key);
         ctx->ra_id_key = NULL;
+    }
+    if (ctx->es_action) {
+        flb_free(ctx->es_action);
     }
 
 #ifdef FLB_HAVE_AWS
