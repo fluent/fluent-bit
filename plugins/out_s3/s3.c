@@ -791,11 +791,24 @@ static int cb_s3_init(struct flb_output_instance *ins,
         return -1;
     }
 
+    tmp = flb_output_get_property("aws_config_file", ins);
+    if (tmp) {
+        ctx->aws_config_file = (char *) tmp;
+    }
+
+    tmp = flb_output_get_property("aws_shared_credentials_file", ins);
+    if (tmp) {
+        ctx->aws_shared_credentials_file = (char *) tmp;
+    }
+
+
     ctx->provider = flb_standard_chain_provider_create(config,
                                                        ctx->provider_tls,
                                                        ctx->region,
                                                        ctx->sts_endpoint,
                                                        NULL,
+                                                       ctx->aws_config_file,
+                                                       ctx->aws_shared_credentials_file,
                                                        flb_aws_client_generator());
 
     if (!ctx->provider) {
@@ -2242,6 +2255,16 @@ static int cb_s3_exit(void *data, struct flb_config *config)
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "aws_shared_credentials_file", "",
+     0, FLB_TRUE, offsetof(struct flb_s3, aws_shared_credentials_file),
+    "Path to the AWS shared credentials file."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "aws_config_file", "",
+     0, FLB_TRUE, offsetof(struct flb_s3, aws_config_file),
+    "Path to the AWS default configuration file."
+    },
     {
      FLB_CONFIG_MAP_STR, "json_date_format", NULL,
      0, FLB_FALSE, 0,

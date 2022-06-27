@@ -334,6 +334,8 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                                                                    ctx->aws_tls,
                                                                    ctx->aws_region,
                                                                    ctx->aws_sts_endpoint,
+                                                                   "",
+                                                                   "",
                                                                    NULL,
                                                                    flb_aws_client_generator());
             if (!ctx->aws_provider) {

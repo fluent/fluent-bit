@@ -64,7 +64,8 @@ static void test_credential_process_default(void)
     MUST_SETENV("AWS_CONFIG_FILE", AWS_TEST_DATA_PATH("shared_config.ini"));
     MUST_SETENV("PATH", AWS_TEST_DATA_PATH("credential_process"));
 
-    provider = flb_profile_provider_create();
+    provider = flb_profile_provider_create("", "");
+
     TEST_ASSERT(provider != NULL);
 
     /* These environment variables are used by the test credential_process. */
@@ -139,7 +140,8 @@ static void test_credential_process_no_expiration(void)
     MUST_SETENV("AWS_PROFILE", "nondefault");
     MUST_SETENV("PATH", AWS_TEST_DATA_PATH("credential_process"));
 
-    provider = flb_profile_provider_create();
+    provider = flb_profile_provider_create("", "");
+
     TEST_ASSERT(provider != NULL);
 
     /* These environment variables are used by the test credential_process. */
@@ -229,7 +231,8 @@ static void test_credential_process_expired_helper(char* expiration)
     MUST_SETENV("AWS_PROFILE", "nondefault");
     MUST_SETENV("PATH", AWS_TEST_DATA_PATH("credential_process"));
 
-    provider = flb_profile_provider_create();
+    provider = flb_profile_provider_create("", "");
+
     TEST_ASSERT(provider != NULL);
 
     /* These environment variable are used by the test credential_process. */
@@ -303,7 +306,8 @@ static void test_credential_process_failure(void)
     MUST_SETENV("AWS_CONFIG_FILE", AWS_TEST_DATA_PATH("shared_config.ini"));
     MUST_SETENV("PATH", AWS_TEST_DATA_PATH("credential_process"));
 
-    provider = flb_profile_provider_create();
+    provider = flb_profile_provider_create("", "");
+
     TEST_ASSERT(provider != NULL);
 
     /* These environment variables are used by the test credential_process. */

@@ -710,6 +710,8 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
                                                                ctx->aws_tls,
                                                                NULL,
                                                                NULL,
+                                                               "",
+                                                               "",
                                                                NULL,
                                                                flb_aws_client_generator());
 
