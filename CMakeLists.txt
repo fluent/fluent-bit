@@ -679,7 +679,7 @@ if(FLB_CONFIG_YAML)
     include_directories(${LIBYAML_INCLUDEDIR})
     link_directories(${LIBYAML_LIBRARY_DIRS})
   else()
-    # Requies libyaml support
+    # Requires libyaml support
     check_c_source_compiles("
       #include <yaml.h>
       int main() {
