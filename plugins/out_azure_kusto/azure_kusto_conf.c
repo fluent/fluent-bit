@@ -28,10 +28,6 @@
 #include <fluent-bit/flb_upstream_ha.h>
 #include <fluent-bit/flb_utils.h>
 
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
-
 #include "azure_kusto.h"
 #include "azure_kusto_conf.h"
 
