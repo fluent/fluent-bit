@@ -871,10 +871,13 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
         }
     }
     else {
-        io_flags = FLB_IO_TCP;
 
-        if (ctx->parsed_mode == FLB_SYSLOG_TLS) {
+        /* use TLS ? */
+        if (ins->use_tls == FLB_TRUE) {
             io_flags = FLB_IO_TLS;
+        }
+        else {
+            io_flags = FLB_IO_TCP;
         }
 
         if (ins->host.ipv6 == FLB_TRUE) {
@@ -893,8 +896,9 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
     /* Set the plugin context */
     flb_output_set_context(ins, ctx);
 
-    flb_plg_info(ctx->ins, "setup done for %s:%i",
-                 ins->host.name, ins->host.port);
+    flb_plg_info(ctx->ins, "setup done for %s:%i (TLS=%s)",
+                 ins->host.name, ins->host.port,
+                 ins->use_tls ? "on" : "off");
     return 0;
 }
 
@@ -987,7 +991,8 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "mode", "udp",
      0, FLB_TRUE, offsetof(struct flb_syslog, mode),
-     "Set the desired transport type, the available options are tcp, tls and udp."
+     "Set the desired transport type, the available options are tcp and udp. If you need to "
+     "use a TLS secure channel, choose 'tcp' mode here and enable the 'tls' option separately."
     },
 
     {
