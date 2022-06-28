@@ -42,6 +42,9 @@ struct flb_input_instance *find_input(struct flb_hs *hs, const char *name)
         if (strcmp(name, in->name) == 0) {
             return in;
         }
+        if (strcmp(name, in->alias) == 0) {
+            return in;
+        }
     }
     return NULL;
 }
