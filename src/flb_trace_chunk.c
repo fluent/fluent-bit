@@ -108,7 +108,7 @@ struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *c
             return NULL;
         }
     } else {
-        output = flb_output_new(config, output_name, NULL, 0);
+        output = flb_output_new(config, output_name, NULL, 1);
         if (output == NULL) {
             flb_error("could not create trace output");
             flb_input_instance_destroy(input);
