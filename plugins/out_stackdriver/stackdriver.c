@@ -2426,8 +2426,8 @@ static struct flb_config_map config_map[] = {
      "Set the path for the google service credentials file"
     },
     {
-     FLB_CONFIG_MAP_STR, "metadata_server", FLB_STD_METADATA_SERVER,
-     0, FLB_TRUE, offsetof(struct flb_stackdriver, metadata_server),
+     FLB_CONFIG_MAP_STR, "metadata_server", (char *)NULL,
+     0, FLB_FALSE, 0,
      "Set the metadata server"
     },
     {

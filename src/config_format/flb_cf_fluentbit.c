@@ -604,7 +604,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
         key_len = i;
 
         if (!key || i < 0) {
-            config_error(cfg_file, line, "undefined key");
+            config_error(cfg_file, line, "undefined key - check config is in valid classic format");
             goto error;
         }
 

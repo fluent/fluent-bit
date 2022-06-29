@@ -209,7 +209,7 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
         return -1;
     }
 
-    /* Maybe use the timestamp with the TZ specefied */
+    /* Maybe use the timestamp with the TZ specified */
     /* in the postgresql connection? */
     snprintf(query, str_len,
              "CREATE TABLE IF NOT EXISTS %s "

@@ -871,10 +871,13 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
         }
     }
     else {
-        io_flags = FLB_IO_TCP;
 
-        if (ctx->parsed_mode == FLB_SYSLOG_TLS) {
+        /* use TLS ? */
+        if (ins->use_tls == FLB_TRUE) {
             io_flags = FLB_IO_TLS;
+        }
+        else {
+            io_flags = FLB_IO_TCP;
         }
 
         if (ins->host.ipv6 == FLB_TRUE) {
@@ -893,8 +896,9 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
     /* Set the plugin context */
     flb_output_set_context(ins, ctx);
 
-    flb_plg_info(ctx->ins, "setup done for %s:%i",
-                 ins->host.name, ins->host.port);
+    flb_plg_info(ctx->ins, "setup done for %s:%i (TLS=%s)",
+                 ins->host.name, ins->host.port,
+                 ins->use_tls ? "on" : "off");
     return 0;
 }
 
@@ -919,12 +923,76 @@ static int cb_syslog_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+
+/* for testing */
+static int cb_syslog_format_test(struct flb_config *config,
+                                 struct flb_input_instance *ins,
+                                 void *plugin_context,
+                                 void *flush_ctx,
+                                 const char *tag, int tag_len,
+                                 const void *data, size_t bytes,
+                                 void **out_data, size_t *out_size)
+{
+    struct flb_syslog *ctx = plugin_context;
+    flb_sds_t tmp;
+    flb_sds_t s;
+    size_t off = 0;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object map;
+    msgpack_object *obj;
+    struct flb_time tm;
+
+    s = flb_sds_create_size(ctx->maxsize);
+    if (s == NULL) {
+        flb_error("flb_sds_create_size failed");
+        return -1;
+    }
+
+    msgpack_unpacked_init(&result);
+
+    if ( msgpack_unpack_next(&result, data, bytes, &off) != MSGPACK_UNPACK_SUCCESS) {
+        msgpack_unpacked_destroy(&result);
+        flb_error("msgpack_unpack_next failed");
+        return -1;
+    }
+    if (result.data.type != MSGPACK_OBJECT_ARRAY) {
+        msgpack_object_print(stdout, result.data);
+        msgpack_unpacked_destroy(&result);
+        flb_error("data is not array");
+        return -1;
+    }
+
+    root = result.data;
+    if (root.via.array.size != 2) {
+        msgpack_unpacked_destroy(&result);
+        flb_error("array size is not 2. size=%d", root.via.array.size);
+        return -1;
+    }
+    flb_time_pop_from_msgpack(&tm, &result, &obj);
+    map = root.via.array.ptr[1];
+    flb_sds_len_set(s, 0);
+    tmp = syslog_format(ctx, &map, &s, &tm);
+
+    msgpack_unpacked_destroy(&result);
+    if (tmp == NULL) {
+        flb_error("syslog_fromat returns NULL");
+        return -1;
+    }
+
+    *out_data = tmp;
+    *out_size = flb_sds_len(tmp);
+
+    return 0;
+}
+
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "mode", "udp",
      0, FLB_TRUE, offsetof(struct flb_syslog, mode),
-     "Set the desired transport type, the available options are tcp, tls and udp."
+     "Set the desired transport type, the available options are tcp and udp. If you need to "
+     "use a TLS secure channel, choose 'tcp' mode here and enable the 'tls' option separately."
     },
 
     {
@@ -1016,6 +1084,9 @@ struct flb_output_plugin out_syslog_plugin = {
 
     /* Configuration */
     .config_map     = config_map,
+
+    /* for testing */
+    .test_formatter.callback = cb_syslog_format_test,
 
     /* Plugin flags */
     .flags          = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,

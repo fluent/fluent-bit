@@ -30,6 +30,8 @@ jobs:
     name: Check staging release matches
     environment: release
     runs-on: ubuntu-latest
+    outputs:
+      major-version: ${{ steps.get_major_version.outputs.value }}
     steps:
     - name: Get the version on staging
       run: |
@@ -42,6 +44,19 @@ jobs:
       shell: bash
       env:
         AWS_URL: https://${{ secrets.AWS_S3_BUCKET_STAGING }}.s3.amazonaws.com
+        RELEASE_VERSION: ${{ github.event.inputs.version }}
+
+    # Get the major version, i.e. 1.9.3 --> 1.9, or just return the passed in version.
+    - name: Convert to major version format
+      id: get_major_version
+      run: |
+        MAJOR_VERSION="$RELEASE_VERSION"
+        if [[ $RELEASE_VERSION =~ ^[0-9]+\.[0-9]+ ]]; then
+          MAJOR_VERSION="${BASH_REMATCH[0]}"
+        fi
+        echo "::set-output name=value::$MAJOR_VERSION"
+      shell: bash
+      env:
         RELEASE_VERSION: ${{ github.event.inputs.version }}
 
   # 1. Take packages from the staging bucket
@@ -66,7 +81,7 @@ jobs:
 
     - name: Import GPG key for signing
       id: import_gpg
-      uses: crazy-max/ghaction-import-gpg@v4
+      uses: crazy-max/ghaction-import-gpg@v5
       with:
         gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
         passphrase: ${{ secrets.GPG_PRIVATE_KEY_PASSPHRASE }}
@@ -141,8 +156,10 @@ jobs:
   # Simple skopeo copy jobs to transfer image from staging to release registry with optional GPG key signing.
   # Unfortunately skopeo currently does not support Cosign: https://github.com/containers/skopeo/issues/1533
   staging-release-images:
+    name: Release ${{ matrix.tag }} container images
     runs-on: ubuntu-latest
-    needs: staging-release-version-check
+    needs:
+      - staging-release-version-check
     environment: release
     env:
       STAGING_IMAGE_NAME: ghcr.io/${{ github.repository }}/staging
@@ -150,7 +167,14 @@ jobs:
       fail-fast: false
       matrix:
         # All the explicit tags we want to release
-        tag: [ "${{ github.event.inputs.version }}", "latest", "${{ github.event.inputs.version }}-debug", "latest-debug" ]
+        tag: [
+          "${{ github.event.inputs.version }}",
+          "${{ needs.staging-release-version-check.outputs.major-version }}",
+          "latest",
+          "${{ github.event.inputs.version }}-debug",
+          "${{ needs.staging-release-version-check.outputs.major-version }}-debug",
+          "latest-debug"
+        ]
     steps:
       # Primarily because the skopeo errors are hard to parse and non-obvious
       - name: Check the image exists
@@ -211,16 +235,16 @@ jobs:
       GHCR_RELEASE_IMAGE_NAME: ghcr.io/${{ github.event.inputs.github-image || github.repository }}
     steps:
       - name: Install cosign
-        uses: sigstore/cosign-installer@main
+        uses: sigstore/cosign-installer@v2
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -272,3 +296,31 @@ jobs:
         shell: bash
         env:
           COSIGN_EXPERIMENTAL: "true"
+
+  # This will require a sign off so can be done after packages are updated to confirm
+  # Until S3 bucket is set up as release will only test what is in the server from a prior release.
+  # TODO: https://github.com/fluent/fluent-bit/issues/5098
+  staging-release-smoke-test:
+    name: Run smoke tests on release artefacts
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    environment: release
+    needs:
+      - staging-release-packages-server
+      - staging-release-images
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Test release packages
+        run: |
+          ./packaging/test-release-packages.sh
+        shell: bash
+
+      - name: Test containers
+        run: |
+          ./packaging/testing/smoke/container/container-smoke-test.sh
+        shell: bash
+        env:
+          IMAGE_TAG: ${{ github.event.inputs.version }}

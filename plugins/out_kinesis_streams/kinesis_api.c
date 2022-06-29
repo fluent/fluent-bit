@@ -437,7 +437,7 @@ static int send_log_events(struct flb_kinesis *ctx, struct flush *buf) {
         flb_plg_error(ctx->ins, "Could not complete PutRecords payload");
         return -1;
     }
-    flb_plg_debug(ctx->ins, "Sending %d records", i);
+    flb_plg_debug(ctx->ins, "kinesis:PutRecords: events=%d, payload=%d bytes", i, offset);
     ret = put_records(ctx, buf, (size_t) offset, i);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Failed to send log records");

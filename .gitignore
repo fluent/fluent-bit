@@ -1,4 +1,5 @@
 .idea
+.vscode
 .DS_Store
 *~
 _book/
@@ -17,6 +18,7 @@ lib/monkey/monkey.service
 lib/monkey/include/monkey/mk_core/mk_core_info.h
 src/tls/mbedtls.c
 
+packaging/.env
 packaging/packages
 packaging/distros/**/sources/
 packaging/releases

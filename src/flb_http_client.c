@@ -915,6 +915,30 @@ int flb_http_add_header(struct flb_http_client *c,
     return 0;
 }
 
+/*
+ * flb_http_get_header looks up a first value of request header.
+ * The return value should be destroyed after using.
+ * The return value is NULL, if the value is not found.
+ */
+flb_sds_t flb_http_get_header(struct flb_http_client *c,
+                              const char *key, size_t key_len)
+{
+    flb_sds_t ret_str;
+    struct flb_kv *kv;
+    struct mk_list *head = NULL;
+    struct mk_list *tmp  = NULL;
+
+    mk_list_foreach_safe(head, tmp, &c->headers) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        if (flb_sds_casecmp(kv->key, key, key_len) == 0) {
+            ret_str = flb_sds_create(kv->val);
+            return ret_str;
+        }
+    }
+
+    return NULL;
+}
+
 static int http_header_push(struct flb_http_client *c, struct flb_kv *header)
 {
     char *tmp;

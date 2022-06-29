@@ -10,8 +10,8 @@
 # docker buildx inspect --bootstrap
 # docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7" -f ./dockerfiles/Dockerfile.multiarch --build-arg FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v1.8.11.tar.gz ./dockerfiles/
 
-# Set this to the current release version
-ARG RELEASE_VERSION=1.9.1
+# Set this to the current release version: it gets done so as part of the release.
+ARG RELEASE_VERSION=1.9.5
 
 # For multi-arch builds - assumption is running on an AMD64 host
 FROM multiarch/qemu-user-static:x86_64-arm as qemu-arm32
@@ -53,10 +53,10 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # Must be run from root of repo
-WORKDIR /tmp/fluent-bit/
+WORKDIR /src/fluent-bit/
 COPY . ./
 
-WORKDIR /tmp/fluent-bit/build/
+WORKDIR /src/fluent-bit/build/
 RUN cmake -DFLB_RELEASE=On \
           -DFLB_TRACE=Off \
           -DFLB_JEMALLOC=On \
@@ -69,6 +69,7 @@ RUN cmake -DFLB_RELEASE=On \
           -DFLB_OUT_KAFKA=On \
           -DFLB_OUT_PGSQL=On \
           -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
+          -DFLB_LOG_NO_CONTROL_CHARS=On \
           ..
 
 RUN make -j "$(getconf _NPROCESSORS_ONLN)"
@@ -145,6 +146,7 @@ RUN find /dpkg/ -type d -empty -delete && \
 # hadolint ignore=DL3006
 FROM gcr.io/distroless/cc-debian11 as production
 ARG RELEASE_VERSION
+ENV FLUENT_BIT_VERSION=${RELEASE_VERSION}
 LABEL description="Fluent Bit multi-architecture container image" \
       vendor="Fluent Organization" \
       version="${RELEASE_VERSION}" \
@@ -175,6 +177,7 @@ CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
 
 FROM debian:bullseye-slim as debug
 ARG RELEASE_VERSION
+ENV FLUENT_BIT_VERSION=${RELEASE_VERSION}
 LABEL description="Fluent Bit multi-architecture debug container image" \
       vendor="Fluent Organization" \
       version="${RELEASE_VERSION}-debug" \

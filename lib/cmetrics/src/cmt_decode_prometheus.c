@@ -432,6 +432,7 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
     uint64_t *bucket_defaults = NULL;
     double sum;
     uint64_t count;
+    double count_dbl;
     struct mk_list *head;
     struct mk_list *tmp;
     struct cmt_decode_prometheus_context_sample *sample;
@@ -510,10 +511,17 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
                 }
                 if (parse_uint64(sample->value1, 
                             bucket_defaults + bucket_index)) {
-                    ret = report_error(context,
-                            CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
-                            "failed to parse bucket count");
-                    goto end;
+                    /* Count is supposed to be integer, but apparently
+                     * some tools can generate count in a floating format.
+                     * Try to parse as a double and then cast to uint64_t */
+                    if (parse_double(sample->value1, &count_dbl) || count_dbl < 0) {
+                        ret = report_error(context,
+                                CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
+                                "failed to parse count");
+                        goto end;
+                    } else {
+                        *(bucket_defaults + bucket_index) = (uint64_t)count_dbl;
+                    }
                 }
                 bucket_index++;
 
@@ -545,10 +553,17 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
                 break;
             case CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_COUNT:
                 if (parse_uint64(sample->value1, &count)) {
-                    ret = report_error(context,
-                            CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
-                            "failed to parse count");
-                    goto end;
+                    /* Count is supposed to be integer, but apparently
+                     * some tools can generate count in a floating format.
+                     * Try to parse as a double and then cast to uint64_t */
+                    if (parse_double(sample->value1, &count_dbl) || count_dbl < 0) {
+                        ret = report_error(context,
+                                CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
+                                "failed to parse count");
+                        goto end;
+                    } else {
+                        count = (uint64_t)count_dbl;
+                    }
                 }
                 bucket_defaults[bucket_index] = count;
 

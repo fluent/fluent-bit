@@ -166,7 +166,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
     /* Iterate current parsers and make sure the new one don't exists */
     mk_list_foreach(head, &config->parsers) {
         p = mk_list_entry(head, struct flb_parser, _head);
-        if (strcmp(p->name, name) == 0) {
+        if (p->name && strcmp(p->name, name) == 0) {
             flb_error("[parser] parser named '%s' already exists, skip.",
                       name);
             return NULL;
@@ -455,6 +455,7 @@ static flb_sds_t get_parser_key(struct flb_config *config,
 static int parser_conf_file(const char *cfg, struct flb_cf *cf,
                             struct flb_config *config)
 {
+    int i = 0;
     flb_sds_t name;
     flb_sds_t format;
     flb_sds_t regex;
@@ -603,6 +604,14 @@ static int parser_conf_file(const char *cfg, struct flb_cf *cf,
     }
     if (types_str) {
         flb_sds_destroy(types_str);
+    }
+    if (types_len) {
+        for (i=0; i<types_len; i++){
+            if (types[i].key != NULL) {
+                flb_free(types[i].key);
+            }
+        }
+        flb_free(types);
     }
     if (decoders) {
         flb_parser_decoder_list_destroy(decoders);

@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_socket.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #ifdef FLB_HAVE_UNIX_SOCKET
@@ -150,11 +151,11 @@ static void test_ctx_destroy(struct test_ctx *ctx)
 
 #define DEFAULT_HOST "127.0.0.1"
 #define DEFAULT_PORT 24224
-static int connect_tcp(char *in_host, int in_port)
+static flb_sockfd_t connect_tcp(char *in_host, int in_port)
 {
     int port = in_port;
     char *host = in_host;
-    int fd;
+    flb_sockfd_t fd;
     int ret;
     struct sockaddr_in addr;
 
@@ -179,7 +180,7 @@ static int connect_tcp(char *in_host, int in_port)
     ret = connect(fd, (const struct sockaddr *)&addr, sizeof(addr));
     if (!TEST_CHECK(ret >= 0)) {
         TEST_MSG("failed to connect. host=%s port=%d errno=%d", host, port, errno);
-        close(fd);
+        flb_socket_close(fd);
         return -1;
     }
     return fd;
@@ -189,7 +190,7 @@ void flb_test_forward()
 {
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
-    int fd;
+    flb_sockfd_t fd;
     int ret;
     int num;
     ssize_t w_size;
@@ -228,7 +229,7 @@ void flb_test_forward()
     flb_free(buf);
     if (!TEST_CHECK(w_size == size)) {
         TEST_MSG("failed to send, errno=%d", errno);
-        close(fd);
+        flb_socket_close(fd);
         exit(EXIT_FAILURE);
     }
 
@@ -240,7 +241,7 @@ void flb_test_forward()
         TEST_MSG("no outputs");
     }
 
-    close(fd);
+    flb_socket_close(fd);
     test_ctx_destroy(ctx);
 }
 
@@ -249,7 +250,7 @@ void flb_test_forward_port()
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
 
-    int fd;
+    flb_sockfd_t fd;
     int ret;
     int num;
     ssize_t w_size;
@@ -295,7 +296,7 @@ void flb_test_forward_port()
     flb_free(buf);
     if (!TEST_CHECK(w_size == size)) {
         TEST_MSG("failed to send, errno=%d", errno);
-        close(fd);
+        flb_socket_close(fd);
         exit(EXIT_FAILURE);
     }
 
@@ -307,7 +308,7 @@ void flb_test_forward_port()
         TEST_MSG("no outputs");
     }
 
-    close(fd);
+    flb_socket_close(fd);
     test_ctx_destroy(ctx);
 }
 
@@ -316,7 +317,7 @@ void flb_test_tag_prefix()
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     char *tag_prefix = "tag_";
-    int fd;
+    flb_sockfd_t fd;
     int ret;
     int num;
     ssize_t w_size;
@@ -360,7 +361,7 @@ void flb_test_tag_prefix()
     flb_free(buf);
     if (!TEST_CHECK(w_size == size)) {
         TEST_MSG("failed to send, errno=%d", errno);
-        close(fd);
+        flb_socket_close(fd);
         exit(EXIT_FAILURE);
     }
 
@@ -372,7 +373,7 @@ void flb_test_tag_prefix()
         TEST_MSG("no outputs");
     }
 
-    close(fd);
+    flb_socket_close(fd);
     test_ctx_destroy(ctx);
 }
 
@@ -382,7 +383,7 @@ void flb_test_unix_path()
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     struct sockaddr_un sun;
-    int fd;
+    flb_sockfd_t fd;
     int ret;
     int num;
     ssize_t w_size;
@@ -433,7 +434,7 @@ void flb_test_unix_path()
     ret = connect(fd, (const struct sockaddr *)&sun, sizeof(sun));
     if (!TEST_CHECK(ret >= 0)) {
         TEST_MSG("failed to connect, errno=%d", errno);
-        close(fd);
+        flb_socket_close(fd);
         unlink(unix_path);
         exit(EXIT_FAILURE);
     }
@@ -442,7 +443,7 @@ void flb_test_unix_path()
     flb_free(buf);
     if (!TEST_CHECK(w_size == size)) {
         TEST_MSG("failed to write to %s", unix_path);
-        close(fd);
+        flb_socket_close(fd);
         unlink(unix_path);
         exit(EXIT_FAILURE);
     }
@@ -455,7 +456,111 @@ void flb_test_unix_path()
         TEST_MSG("no outputs");
     }
 
-    close(fd);
+    flb_socket_close(fd);
+    test_ctx_destroy(ctx);
+}
+
+
+void flb_test_unix_perm()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct sockaddr_un sun;
+    flb_sockfd_t fd;
+    int ret;
+    int num;
+    ssize_t w_size;
+    char *unix_path = "in_forward_unix";
+    struct stat sb;
+
+    char *buf;
+    size_t size;
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "\"test\":\"msg\"";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "unix_path", unix_path,
+                        "unix_perm", "0600",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "test",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* waiting to create socket */
+    flb_time_msleep(200); 
+
+    memset(&sun, 0, sizeof(sun));
+    fd = socket(AF_LOCAL, SOCK_STREAM, 0);
+    if (!TEST_CHECK(fd >= 0)) {
+        TEST_MSG("failed to socket %s, errno=%d", unix_path, errno);
+        unlink(unix_path);
+        exit(EXIT_FAILURE);
+    }
+
+    sun.sun_family = AF_LOCAL;
+    strcpy(sun.sun_path, unix_path);
+    ret = connect(fd, (const struct sockaddr *)&sun, sizeof(sun));
+    if (!TEST_CHECK(ret >= 0)) {
+        TEST_MSG("failed to connect, errno=%d", errno);
+        flb_socket_close(fd);
+        unlink(unix_path);
+        exit(EXIT_FAILURE);
+    }
+    create_simple_json(&buf, &size);
+    w_size = send(fd, buf, size, 0);
+    flb_free(buf);
+    if (!TEST_CHECK(w_size == size)) {
+        TEST_MSG("failed to write to %s", unix_path);
+        flb_socket_close(fd);
+        unlink(unix_path);
+        exit(EXIT_FAILURE);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+
+
+    /* File permission */
+    ret = stat(unix_path, &sb);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("stat failed. errno=%d", errno);
+                test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    if (!TEST_CHECK((sb.st_mode & S_IRWXO) == 0)) {
+        TEST_MSG("Permssion(others) error. val=0x%x",sb.st_mode & S_IRWXO);
+    }
+    if (!TEST_CHECK((sb.st_mode & S_IRWXG) == 0)) {
+        TEST_MSG("Permssion(group) error. val=0x%x",sb.st_mode & S_IRWXG);
+    }
+    if (!TEST_CHECK((sb.st_mode & S_IRWXU) == (S_IRUSR | S_IWUSR))) {
+        TEST_MSG("Permssion(user) error. val=0x%x",sb.st_mode & S_IRWXU);
+    }
+
+    flb_socket_close(fd);
     test_ctx_destroy(ctx);
 }
 #endif /* FLB_HAVE_UNIX_SOCKET */
@@ -467,6 +572,7 @@ TEST_LIST = {
     {"tag_prefix", flb_test_tag_prefix},
 #ifdef FLB_HAVE_UNIX_SOCKET
     {"unix_path", flb_test_unix_path},
+    {"unix_perm", flb_test_unix_perm},
 #endif
     {NULL, NULL}
 };

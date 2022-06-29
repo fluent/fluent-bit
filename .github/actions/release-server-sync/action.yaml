@@ -63,7 +63,14 @@ runs:
   - name: Upload to build server
     run: |
       ssh $USERNAME@$HOST mkdir -p /home/$USERNAME/apt
-      rsync --include="*/" --include="*.rpm" --include="*.deb" --exclude="*" -amvz packaging/releases/ $USERNAME@$HOST:/home/$USERNAME/apt
+      rsync --include="*/" \
+        --include="*.rpm" --include="*.deb" \
+        --include="*.zip" --include="*.exe" --include="*.msi" \
+        --include="*.tar.gz" \
+        --include="*.md5" --include="*.sha256" \
+        --include="fluent-bit-schema*.json" \
+        --exclude="*" \
+        -amvz packaging/releases/ $USERNAME@$HOST:/home/$USERNAME/apt
     env:
       HOST: ${{ inputs.server_hostname }}
       USERNAME: ${{ inputs.server_username }}

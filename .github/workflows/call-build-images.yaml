@@ -114,30 +114,52 @@ jobs:
           ref: '1.8' # Fixed to this branch
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v1
+        uses: docker/setup-qemu-action@v2
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
+        uses: docker/setup-buildx-action@v2
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
           password: ${{ secrets.token }}
 
+      - id: debug-meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ inputs.registry }}/${{ inputs.image }}
+          tags: |
+            raw,${{ inputs.version }}-debug
+            raw,${{ needs.call-build-images-meta.outputs.major-version }}-debug
+
+      - name: Build the legacy x86_64 debug image
+        if: matrix.arch == 'amd64'
+        uses: docker/build-push-action@v3
+        with:
+          file: ./Dockerfile.x86_64.debug
+          context: .
+          tags: ${{ steps.debug-meta.outputs.tags }}
+          labels: ${{ steps.debug-meta.outputs.labels }}
+          platforms: linux/amd64
+          push: true
+          load: false
+          build-args: |
+            FLB_TARBALL=https://github.com/fluent/fluent-bit/tarball/${{ inputs.ref }}
+
       - name: Extract metadata from Github
         id: meta
-        uses: docker/metadata-action@v3
+        uses: docker/metadata-action@v4
         with:
           images: ${{ inputs.registry }}/${{ inputs.image }}
           tags: |
             raw,${{ matrix.suffix }}-${{ inputs.version }}
 
       - name: Build the legacy ${{ matrix.arch }} image
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v3
         with:
-          file: ./dockerfiles/Dockerfile.${{ matrix.suffix }}
+          file: ./Dockerfile.${{ matrix.suffix }}
           context: .
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -161,10 +183,10 @@ jobs:
       - call-build-legacy-images-matrix
     steps:
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
+        uses: docker/setup-buildx-action@v2
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
@@ -197,27 +219,6 @@ jobs:
           DOCKER_CLI_EXPERIMENTAL: enabled
         shell: bash
 
-      - id: debug-meta
-        uses: docker/metadata-action@v3
-        with:
-          images: ${{ inputs.registry }}/${{ inputs.image }}
-          tags: |
-            raw,${{ inputs.version }}-debug
-            raw,${{ needs.call-build-images-meta.outputs.major-version }}-debug
-
-      - name: Build the legacy x86_64 debug image
-        uses: docker/build-push-action@v2
-        with:
-          file: ./dockerfiles/Dockerfile.x86_64-debug
-          context: .
-          tags: ${{ steps.debug-meta.outputs.tags }}
-          labels: ${{ steps.debug-meta.outputs.labels }}
-          platforms: linux/amd64
-          push: true
-          load: false
-          build-args: |
-            FLB_TARBALL=https://github.com/fluent/fluent-bit/tarball/${{ inputs.ref }}
-
   # This is the intended approach to multi-arch image and all the other checks scanning,
   # signing, etc only trigger from this.
   # 1.8 images are legacy and were not scanned or signed previously so this keeps it simple.
@@ -238,13 +239,13 @@ jobs:
           ref: ${{ inputs.ref }}
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v1
+        uses: docker/setup-qemu-action@v2
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
+        uses: docker/setup-buildx-action@v2
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
@@ -252,7 +253,7 @@ jobs:
 
       - name: Extract metadata from Github
         id: meta
-        uses: docker/metadata-action@v3
+        uses: docker/metadata-action@v4
         with:
           images: ${{ inputs.registry }}/${{ inputs.image }}
           tags: |
@@ -261,7 +262,7 @@ jobs:
             raw,latest
 
       - name: Build the production images
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v3
         with:
           file: ./dockerfiles/Dockerfile
           context: .
@@ -273,9 +274,10 @@ jobs:
           load: false
           build-args: |
             FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
+            RELEASE_VERSION=${{ inputs.version }}
 
       - id: debug-meta
-        uses: docker/metadata-action@v3
+        uses: docker/metadata-action@v4
         with:
           images: ${{ inputs.registry }}/${{ inputs.image }}
           tags: |
@@ -284,7 +286,7 @@ jobs:
             raw,latest-debug
 
       - name: Build the debug multi-arch images
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v3
         with:
           file: ./dockerfiles/Dockerfile
           context: .
@@ -296,6 +298,7 @@ jobs:
           load: false
           build-args: |
             FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
+            RELEASE_VERSION=${{ inputs.version }}
 
   call-build-images-generate-schema:
     needs:
@@ -309,7 +312,7 @@ jobs:
       packages: read
     steps:
       - name: Log in to the Container registry
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
@@ -317,8 +320,8 @@ jobs:
 
       - name: Generate schema
         run: |
-          docker run --rm -t ${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }} -J > fluent-bit-schema.json
-          cat fluent-bit-schema.json | jq -M > fluent-bit-schema-pretty.json
+          docker run --rm -t ${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }} -J > fluent-bit-schema-${{ inputs.version }}.json
+          cat fluent-bit-schema-${{ inputs.version }}.json | jq -M > fluent-bit-schema-pretty-${{ inputs.version }}.json
         shell: bash
 
       - name: Upload the schema
@@ -341,7 +344,7 @@ jobs:
       packages: read
     steps:
       - name: Log in to the Container registry
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
@@ -380,7 +383,7 @@ jobs:
     environment: ${{ inputs.environment }}
     steps:
       - name: Install cosign
-        uses: sigstore/cosign-installer@main
+        uses: sigstore/cosign-installer@v2
 
       - name: Cosign keyless signing using Rektor public transparency log
         # This step uses the identity token to provision an ephemeral certificate
@@ -441,7 +444,7 @@ jobs:
           ref: ${{ inputs.ref }}
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
@@ -452,7 +455,7 @@ jobs:
           docker build -t ${{ inputs.registry }}/${{ inputs.image }}:windows-2019-${{ inputs.version }} --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc2019 -f ./dockerfiles/Dockerfile.windows .
           docker push ${{ inputs.registry }}/${{ inputs.image }}:windows-2019-${{ inputs.version }}
         # We cannot use this action as it requires privileged mode
-        # uses: docker/build-push-action@v2
+        # uses: docker/build-push-action@v3
         # with:
         #   file: ./dockerfiles/Dockerfile.windows
         #   context: .

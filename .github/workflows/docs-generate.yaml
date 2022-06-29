@@ -8,6 +8,7 @@ on:
     # Do not re-trigger when our own PRs are merged
     paths-ignore:
       - codebase-structure.svg
+      - .github/
 jobs:
   update_diagram:
     name: Update the codebase structure diagram

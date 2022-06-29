@@ -13,8 +13,8 @@ on:
   # Run nightly build at this time, bit of trial and error but this seems good.
   schedule:
   - cron: "0 6 * * *"   # master build
-  - cron: "0 12 * * *"  # 1.9 build
   # Not available currently so will fail until it is
+  # - cron: "0 12 * * *"  # 1.9 build
   - cron: "0 18 * * *"  # 1.8 build
   # A 1.8 build requires merging all the changes from master to handle packaging from local
 
@@ -80,7 +80,7 @@ jobs:
 
   unstable-build-images:
     needs: unstable-build-get-meta
-    uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@master
+    uses: ./.github/workflows/call-build-images.yaml
     with:
       version: ${{ needs.unstable-build-get-meta.outputs.branch }}
       ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
@@ -116,7 +116,7 @@ jobs:
     needs:
       - unstable-build-get-meta
       - unstable-build-generate-matrix
-    uses: fluent/fluent-bit/.github/workflows/call-build-linux-packages.yaml@master
+    uses: ./.github/workflows/call-build-linux-packages.yaml
     with:
       version: ${{ needs.unstable-build-get-meta.outputs.branch }}
       ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
@@ -129,7 +129,7 @@ jobs:
   unstable-build-windows-package:
     needs:
       - unstable-build-get-meta
-    uses: fluent/fluent-bit/.github/workflows/call-build-windows.yaml@master
+    uses: ./.github/workflows/call-build-windows.yaml
     with:
       version: ${{ needs.unstable-build-get-meta.outputs.branch }}
       ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
@@ -141,7 +141,7 @@ jobs:
   unstable-build-macos-package:
     needs:
       - unstable-build-get-meta
-    uses: fluent/fluent-bit/.github/workflows/call-build-macos.yaml@master
+    uses: ./.github/workflows/call-build-macos.yaml
     with:
       version: ${{ needs.unstable-build-get-meta.outputs.branch }}
       ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
@@ -183,7 +183,7 @@ jobs:
         shell: bash
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -215,6 +215,8 @@ jobs:
         shell: bash
 
       - name: Create Release
+        # Do not fail the job here
+        continue-on-error: true
         run: gh release create unstable-${{ needs.unstable-build-get-meta.outputs.branch }} release-upload/*.* --repo ${{ secrets.RELEASE_REPO }} --generate-notes --prerelease --target ${{ needs.unstable-build-get-meta.outputs.branch }} --title "Nightly unstable ${{ needs.unstable-build-get-meta.outputs.branch }} build"
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}

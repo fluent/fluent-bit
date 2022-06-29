@@ -60,8 +60,6 @@ static void in_dummy_thread_callback(int write_fd, void *data)
 static int in_dummy_thread_init(struct flb_input_instance *in,
                                 struct flb_config *config, void *data)
 {
-    const char *conf;
-    int val;
     int ret;
     struct flb_in_dummy_thread_config *ctx;
     (void) data;

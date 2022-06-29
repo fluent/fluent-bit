@@ -261,7 +261,9 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     }
 
     /* Lookup metadata server URL */
-    if (ctx->metadata_server == NULL) {
+    ctx->metadata_server = NULL;
+    tmp = flb_output_get_property("metadata_server", ins);
+    if (tmp == NULL) {
         tmp = getenv("METADATA_SERVER");
         if(tmp) {
             if (ctx->env == NULL) {
@@ -275,6 +277,12 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
             ctx->env->metadata_server = flb_sds_create(tmp);
             ctx->metadata_server = ctx->env->metadata_server;
         }
+        else {
+            ctx->metadata_server = flb_sds_create(FLB_STD_METADATA_SERVER);
+        }
+    }
+    else {
+        ctx->metadata_server = flb_sds_create(tmp);
     }
     flb_plg_info(ctx->ins, "metadata_server set to %s", ctx->metadata_server);
 
@@ -560,8 +568,19 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
         }
         if (ctx->env->metadata_server) {
             flb_sds_destroy(ctx->env->metadata_server);
+            /*
+             * If ctx->env is not NULL,
+             * ctx->metadata_server points ctx->env->metadata_server.
+             *
+             * We set ctx->metadata_server to NULL to prevent double free.
+             */
+            ctx->metadata_server = NULL;
         }
         flb_free(ctx->env);
+    }
+
+    if (ctx->metadata_server) {
+        flb_sds_destroy(ctx->metadata_server);
     }
     
     if (ctx->is_k8s_resource_type){
