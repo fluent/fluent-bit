@@ -35,25 +35,45 @@ jobs:
       - uses: actions/download-artifact@v3
 
       - name: Upload plots to CML
-        continue-on-error: true
         run: |
           for FILE in *.png; do
             echo "Handling $FILE"
             docker run --rm -t \
               -v $PWD:/output:rw \
               dvcorg/cml-py3:latest \
-              /bin/sh -c "cml-publish /output/$FILE $DEFAULT_SETTINGS --md --title=$FILE >> /output/report.md"
+              /bin/sh -c "cml-publish /output/$FILE --driver=github --repo=${{ github.repository }} --md --title=$FILE >> /output/report.md"
           done
-          cat report.md
-          docker run --rm -t \
-              -v $PWD/report.md:/report.md:ro \
-              -e GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
-              dvcorg/cml-py3:latest \
-              /bin/sh -c "cml-send-comment /report.md $DEFAULT_SETTINGS --commit-sha=${{ github.sha }}"
         shell: bash
         working-directory: output
+
+      - name: Dump markdown
+        id: report
+        run: |
+          cat report.md
+        shell: bash
+        working-directory: output
+
+      - uses: actions/github-script@v6
+        continue-on-error: true
         env:
-          DEFAULT_SETTINGS: "--driver=github --repo=${{ github.repository }}"
+          REPORT: "Plots\n${{ steps.report.outputs.stdout }}"
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const output = `#### Performance Test
+            Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            <details><summary>Show Perfomance Results</summary>
+            \`\`\`\n
+            ${process.env.REPORT}
+            \`\`\`
+            </details>
+            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
 
   pr-perf-test-complete:
     # Only runs on success
