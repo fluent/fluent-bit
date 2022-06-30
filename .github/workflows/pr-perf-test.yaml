@@ -36,6 +36,7 @@ jobs:
 
       - name: Upload plots to CML
         run: |
+          docker pull -q dvcorg/cml-py3:latest
           for FILE in *.png; do
             echo "Handling $FILE"
             docker run --rm -t \
@@ -46,26 +47,29 @@ jobs:
         shell: bash
         working-directory: output
 
-      - name: Dump markdown
+      - name: Dump markdown to variable
         id: report
         run: |
-          cat report.md
+          file_test_newlines=""
+          while read line
+          do
+            file_test_newlines+="  $line"
+          done < report.md
+          echo "::set-output name=report::$file_test_newlines"
         shell: bash
         working-directory: output
 
       - uses: actions/github-script@v6
-        continue-on-error: true
+        if: github.event_name == 'pull_request'
         env:
-          REPORT: "Plots\n${{ steps.report.outputs.stdout }}"
+          REPORT: "Plots\n${{ steps.report.outputs.report }}"
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const output = `#### Performance Test
             Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-            <details><summary>Show Perfomance Results</summary>
-            \`\`\`\n
+            <details><summary>Show Performance Results</summary>
             ${process.env.REPORT}
-            \`\`\`
             </details>
             *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
             github.rest.issues.createComment({
