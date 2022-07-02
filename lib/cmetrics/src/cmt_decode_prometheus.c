@@ -162,7 +162,7 @@ static int split_metric_name(struct cmt_decode_prometheus_context *context,
                 "memory allocation failed");
     }
     *subsystem = strchr(*ns, '_');
-    if (!subsystem) {
+    if (!(*subsystem)) {
         *name = *ns;
         *ns = "";
     }
