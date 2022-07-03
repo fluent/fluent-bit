@@ -37,10 +37,11 @@
 /* lwrb header */
 #include <lwrb/lwrb.h>
 
-struct flb_ring_buffer *flb_ring_buffer_create(uint64_t size, uint8_t window_size)
+static void flb_ring_buffer_unregister(struct flb_ring_buffer *rb);
+
+struct flb_ring_buffer *flb_ring_buffer_create(uint64_t size)
 {
     lwrb_t *lwrb;
-    int     result;
     void *  data_buf;
     size_t  data_size;
     struct flb_ring_buffer *rb;
@@ -72,37 +73,6 @@ struct flb_ring_buffer *flb_ring_buffer_create(uint64_t size, uint8_t window_siz
     }
     rb->data_buf = data_buf;
 
-    if (window_size > 0) {
-        rb->data_window = (int) floor((rb->data_size * window_size) / 100);
-
-        result = flb_pipe_create(rb->signal_channels);
-
-        if (result) {
-            flb_free(rb);
-            flb_free(lwrb);
-            flb_free(data_buf);
-            return NULL;
-        }
-
-        flb_pipe_set_nonblocking(rb->signal_channels[0]);
-        flb_pipe_set_nonblocking(rb->signal_channels[1]);
-
-        rb->signal_event = (void *) flb_calloc(1, sizeof(struct mk_event));
-
-        if (rb->signal_event == NULL) {
-            flb_pipe_destroy(rb->signal_channels);
-
-            flb_free(rb);
-            flb_free(lwrb);
-            flb_free(data_buf);
-            return NULL;
-        }
-    }
-    else {
-        rb->signal_channels[0] = -1;
-        rb->signal_channels[1] = -1;
-    }
-
     /* initialize lwrb */
     lwrb_init(rb->ctx, data_buf, data_size);
 
@@ -112,10 +82,6 @@ struct flb_ring_buffer *flb_ring_buffer_create(uint64_t size, uint8_t window_siz
 void flb_ring_buffer_destroy(struct flb_ring_buffer *rb)
 {
     flb_ring_buffer_unregister(rb);
-
-    if (rb->signal_channels[0] != -1) {
-        flb_pipe_destroy(rb->signal_channels);
-    }
 
     if (rb->data_buf) {
         flb_free(rb->data_buf);
@@ -128,9 +94,35 @@ void flb_ring_buffer_destroy(struct flb_ring_buffer *rb)
     flb_free(rb);
 }
 
-int flb_ring_buffer_register(struct flb_ring_buffer *rb, void *evl)
+int flb_ring_buffer_register(struct flb_ring_buffer *rb, void *evl, uint8_t window_size)
 {
     int result;
+
+    if (window_size == 0) {
+        return -1;
+    }
+    else if (window_size > 100) {
+        window_size = 100;
+    }
+
+    rb->data_window = (uint64_t) floor((rb->data_size * window_size) / 100);
+
+    result = flb_pipe_create(rb->signal_channels);
+
+    if (result) {
+        return -2;
+    }
+
+    flb_pipe_set_nonblocking(rb->signal_channels[0]);
+    flb_pipe_set_nonblocking(rb->signal_channels[1]);
+
+    rb->signal_event = (void *) flb_calloc(1, sizeof(struct mk_event));
+
+    if (rb->signal_event == NULL) {
+        flb_pipe_destroy(rb->signal_channels);
+
+        return -2;
+    }
 
     MK_EVENT_ZERO(rb->signal_event);
 
@@ -139,10 +131,16 @@ int flb_ring_buffer_register(struct flb_ring_buffer *rb, void *evl)
     result = mk_event_add(evl,
                           rb->signal_channels[0],
                           FLB_ENGINE_EV_THREAD_INPUT,
-                          MK_EVENT_READ, rb->signal_event);
+                          MK_EVENT_READ,
+                          rb->signal_event);
 
     if (result) {
-        return -1;
+        flb_pipe_destroy(rb->signal_channels);
+        flb_free(rb->signal_event);
+
+        rb->signal_event = NULL;
+
+        return -3;
     }
 
     rb->event_loop = evl;
@@ -150,11 +148,15 @@ int flb_ring_buffer_register(struct flb_ring_buffer *rb, void *evl)
     return 0;
 }
 
-void flb_ring_buffer_unregister(struct flb_ring_buffer *rb)
+static void flb_ring_buffer_unregister(struct flb_ring_buffer *rb)
 {
     if (rb->event_loop != NULL) {
         mk_event_del(rb->event_loop, rb->signal_event);
+        flb_pipe_destroy(rb->signal_channels);
+        flb_free(rb->signal_event);
 
+        rb->signal_event = NULL;
+        rb->data_window = 0;
         rb->event_loop = NULL;
     }
 }
@@ -178,9 +180,9 @@ int flb_ring_buffer_write(struct flb_ring_buffer *rb, void *ptr, size_t size)
     }
 
     if (!rb->flush_pending) {
-        used_size = rb->data_size - av - size;
+        used_size = rb->data_size - (av - size);
 
-        if (used_size > rb->data_window) {
+        if (used_size >= rb->data_window) {
             rb->flush_pending = FLB_TRUE;
 
             flb_pipe_write_all(rb->signal_channels[1], ".", 1);

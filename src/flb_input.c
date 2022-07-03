@@ -267,7 +267,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         }
 
         /* allocate a ring buffer */
-        instance->rb = flb_ring_buffer_create(FLB_INPUT_RING_BUFFER_SIZE, FLB_INPUT_RING_BUFFER_WINDOW);
+        instance->rb = flb_ring_buffer_create(FLB_INPUT_RING_BUFFER_SIZE);
         if (!instance->rb) {
             flb_error("instance %s could not initialize ring buffer",
                       flb_input_name(instance));
@@ -774,9 +774,9 @@ int flb_input_instance_init(struct flb_input_instance *ins,
             }
 
             /* register the ring buffer */
-            ret = flb_ring_buffer_register(ins->rb, config->evl);
+            ret = flb_ring_buffer_register(ins->rb, config->evl, FLB_INPUT_RING_BUFFER_WINDOW);
             if (ret) {
-                flb_error("failed register ring buffer events on input %s",
+                flb_error("failed while registering ring buffer events on input %s",
                           ins->name);
                 flb_input_instance_destroy(ins);
                 return -1;
