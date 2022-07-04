@@ -37,6 +37,8 @@ on:
         required: false
 jobs:
   call-test-images-cosign-verify:
+    permissions:
+      contents: none
     name: Cosign verification of container image
     environment: ${{ inputs.environment }}
     runs-on: [ ubuntu-latest ]
@@ -68,6 +70,8 @@ jobs:
           IMAGE_TAG: ${{ inputs.image-tag }}
 
   call-test-images-container-architecture:
+    permissions:
+      contents: none
     name: ${{ matrix.arch }} image architecture verification
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}

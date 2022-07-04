@@ -13,8 +13,13 @@ on:
       - '**.sh'
       - 'examples/**'
 
+permissions:
+  contents: read
+
 jobs:
   run-all-unit-tests:
+    permissions:
+      contents: none
     runs-on: ubuntu-latest
     name: Unit tests (matrix)
     steps:

@@ -65,6 +65,8 @@ jobs:
           flags: 'g'
 
   staging-build-images:
+    permissions:
+      contents: none
     needs: staging-build-get-meta
     uses: ./.github/workflows/call-build-images.yaml
     with:
@@ -80,6 +82,8 @@ jobs:
       cosign_private_key_password: ${{ secrets.COSIGN_PASSWORD }}
 
   staging-build-upload-schema-s3:
+    permissions:
+      contents: none
     needs:
       - staging-build-get-meta
       - staging-build-images
@@ -127,6 +131,8 @@ jobs:
           target: ${{ github.event.inputs.target || '' }}
 
   staging-build-packages:
+    permissions:
+      contents: none
     needs:
       - staging-build-get-meta
       - staging-build-generate-matrix
@@ -145,6 +151,8 @@ jobs:
       gpg_private_key_passphrase: ${{ secrets.GPG_PRIVATE_KEY_PASSPHRASE }}
 
   staging-build-windows-packages:
+    permissions:
+      contents: none
     needs:
       - staging-build-get-meta
     uses: ./.github/workflows/call-build-windows.yaml
@@ -159,6 +167,8 @@ jobs:
       secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
   staging-build-macos-packages:
+    permissions:
+      contents: none
     needs:
       - staging-build-get-meta
     uses: ./.github/workflows/call-build-macos.yaml

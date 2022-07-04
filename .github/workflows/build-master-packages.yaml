@@ -14,8 +14,13 @@ on:
         default: ""
 
 name: Build packages for master
+permissions:
+  contents: read
+
 jobs:
   master-build-generate-matrix:
+    permissions:
+      contents: none
     name: Staging build matrix
     runs-on: ubuntu-latest
     outputs:
@@ -41,6 +46,8 @@ jobs:
         shell: bash
 
   master-build-packages:
+    permissions:
+      contents: none
     needs: master-build-generate-matrix
     uses: fluent/fluent-bit/.github/workflows/call-build-linux-packages.yaml@master
     with:

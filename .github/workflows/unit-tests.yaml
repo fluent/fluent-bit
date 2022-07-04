@@ -22,6 +22,9 @@ on:
     types: [opened, reopened, synchronize]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   run-unit-tests-amd64:
     name: ${{ matrix.os }} - ${{ matrix.compiler }} - ${{ matrix.flb_option }} unit tests run on AMD64
@@ -92,6 +95,8 @@ jobs:
 
   # Required check looks at this so do not remove
   run-all-unit-tests:
+    permissions:
+      contents: none
     if: ${{ always() }}
     runs-on: ubuntu-latest
     name: Unit tests (matrix)

@@ -9,6 +9,9 @@ on:
       - 'cmake/*'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   # Sanity check for compilation using older compiler on CentOS 7
   pr-compile-centos-7:

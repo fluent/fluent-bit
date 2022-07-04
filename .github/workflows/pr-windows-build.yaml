@@ -16,8 +16,13 @@ on:
       - reopened
       - synchronize
 
+permissions:
+  contents: read
+
 jobs:
   pr-windows-build:
+    permissions:
+      contents: none
     uses: fluent/fluent-bit/.github/workflows/call-build-windows.yaml@master
     with:
       version: ${{ github.sha }}

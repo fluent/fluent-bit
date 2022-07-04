@@ -4,8 +4,13 @@ on:
     branches:
       - master
 
+permissions:
+  contents: read
+
 jobs:
   master-integration-test-build:
+    permissions:
+      contents: none
     name: Master - integration build
     uses: fluent/fluent-bit/.github/workflows/call-integration-image-build.yaml@master
     with:
@@ -19,6 +24,8 @@ jobs:
       token: ${{ secrets.GITHUB_TOKEN }}
 
   master-integration-test-run-integration:
+    permissions:
+      contents: none
     name: Master - integration test
     needs: master-integration-test-build
     uses: fluent/fluent-bit/.github/workflows/call-integration-test.yaml@master

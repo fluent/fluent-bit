@@ -27,6 +27,8 @@ concurrency: staging-build-release
 jobs:
 
   staging-release-version-check:
+    permissions:
+      contents: none
     name: Check staging release matches
     environment: release
     runs-on: ubuntu-latest

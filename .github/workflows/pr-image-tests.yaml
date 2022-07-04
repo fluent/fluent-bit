@@ -11,6 +11,9 @@ on:
 
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
     pr-image-tests-build-images:
       name: PR - Buildkit docker build test
