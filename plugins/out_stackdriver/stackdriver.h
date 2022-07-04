@@ -77,6 +77,7 @@
 #define STDERR "stderr"
 
 #define DEFAULT_TAG_REGEX "(?<pod_name>[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)_(?<namespace_name>[^_]+)_(?<container_name>.+)-(?<docker_id>[a-z0-9]{64})\\.log$"
+#define DEFAULT_TOKEN_LIFETIME "3600s"
 
 /* Metrics */
 #ifdef FLB_HAVE_METRICS
@@ -114,6 +115,11 @@ struct flb_stackdriver {
     flb_sds_t auth_uri;
     flb_sds_t token_uri;
     bool metadata_server_auth;
+    /* Delegation chain specific details */
+    flb_sds_t final_service_account_email;
+    flb_sds_t delegation_chain;
+    flb_sds_t token_lifetime;
+    bool use_delegates;
 
     /* metadata server (GCP specific, WIP) */
     flb_sds_t metadata_server;
@@ -185,6 +191,9 @@ struct flb_stackdriver {
 
     /* upstream context for metadata end-point */
     struct flb_upstream *metadata_u;
+
+    /* upstream context for iamcredentials end-point */
+    struct flb_upstream *iamcredentials_u;
 
 #ifdef FLB_HAVE_METRICS
     /* metrics */

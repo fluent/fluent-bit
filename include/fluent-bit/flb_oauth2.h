@@ -69,5 +69,7 @@ int flb_oauth2_token_expired(struct flb_oauth2 *ctx);
 
 int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
                         struct flb_oauth2 *ctx);
+int flb_oauth2_parse_delegated_json_response(const char *json_data, size_t json_size,
+                        struct flb_oauth2 *ctx);
 
 #endif
