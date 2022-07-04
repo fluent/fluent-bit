@@ -1,0 +1,6 @@
+*.log
+files
+librdkafka-dev
+librdkafka1-dbg
+librdkafka1
+tmp

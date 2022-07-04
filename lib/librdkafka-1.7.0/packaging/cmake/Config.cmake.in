@@ -1,0 +1,33 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+if(@WITH_ZLIB@)
+  find_dependency(ZLIB)
+endif()
+
+if(@WITH_ZSTD@)
+  find_library(ZSTD zstd)
+  if(NOT ZSTD)
+    message(ERROR "ZSTD library not found!")
+  else()
+    message(STATUS "Found ZSTD: " ${ZSTD})
+  endif()
+endif()
+
+if(@WITH_SSL@)
+  if(@WITH_BUNDLED_SSL@)
+    # TODO: custom SSL library should be installed
+  else()
+    find_dependency(OpenSSL)
+  endif()
+endif()
+
+if(@WITH_LZ4_EXT@)
+  find_dependency(LZ4)
+endif()
+
+find_dependency(Threads)
+
+include("${CMAKE_CURRENT_LIST_DIR}/@targets_export_name@.cmake")
+check_required_components("@PROJECT_NAME@")

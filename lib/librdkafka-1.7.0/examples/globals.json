@@ -1,0 +1,11 @@
+{"VerifiableConsumer":
+ {
+     "class": "kafkatest.services.verifiable_client.VerifiableClientApp",
+     "exec_cmd": "/vagrant/tests/c/kafkatest_verifiable_client --consumer --debug cgrp,topic,protocol,broker"
+ },
+ "VerifiableProducer":
+ {
+     "class": "kafkatest.services.verifiable_client.VerifiableClientApp",
+     "exec_cmd": "/vagrant/tests/c/kafkatest_verifiable_client --producer --debug topic,broker"
+ }
+}

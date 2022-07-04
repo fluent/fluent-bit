@@ -1,0 +1,27 @@
+# Copy this file to test.conf and set up according to your configuration.
+
+#
+# Test configuration
+#
+# For slow connections: multiply test timeouts by this much (float)
+#test.timeout.multiplier=3.5
+
+# Test topic names are constructed by:
+#  <prefix>_<suffix>, where default topic prefix is "rdkafkatest".
+# suffix is specified by the tests.
+#test.topic.prefix=bib
+
+# Make topic names random:
+#  <prefix>_<randomnumber>_<suffix>
+#test.topic.random=true
+
+# Write test results to sqlite3 database
+#test.sql.command=sqlite3 rdktests
+
+# Bootstrap broker(s)
+metadata.broker.list=localhost:9092
+
+# Debugging
+#debug=metadata,topic,msg,broker
+
+# Any other librdkafka configuration property.

@@ -422,6 +422,15 @@ add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
 # Miniz (zip)
 add_subdirectory(${FLB_PATH_LIB_MINIZ} EXCLUDE_FROM_ALL)
 
+# Build librdkafka
+FLB_OPTION(RDKAFKA_BUILD_STATIC    On)
+FLB_OPTION(RDKAFKA_BUILD_EXAMPLES Off)
+FLB_OPTION(RDKAFKA_BUILD_TESTS    Off)
+FLB_OPTION(ENABLE_LZ4_EXT         Off)
+
+# add_subdirectory(librdkafka-1.7.0 EXCLUDE_FROM_ALL)
+add_subdirectory(${FLB_PATH_LIB_RDKAFKA} EXCLUDE_FROM_ALL)
+
 # Avro
 if(FLB_AVRO_ENCODER)
   # jansson

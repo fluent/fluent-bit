@@ -1,0 +1,13 @@
+rdkafka_example
+rdkafka_performance
+rdkafka_example_cpp
+rdkafka_complex_consumer_example
+rdkafka_complex_consumer_example_cpp
+kafkatest_verifiable_client
+producer
+producer_cpp
+consumer
+idempotent_producer
+rdkafka_consume_batch
+transactions
+delete_records

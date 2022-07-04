@@ -1,0 +1,55 @@
+configurations {
+    Toolset { 
+        key : "PlatformToolset"; 
+        choices: { v120, v140 };  
+ 
+        // Explicitly Not including pivot variants:  "WindowsKernelModeDriver8.0", "WindowsApplicationForDrivers8.0", "WindowsUserModeDriver8.0" 
+
+        // We're normalizing out the concept of the v140 platform -- Overloading the $(PlatformToolset) variable for additional pivots was a dumb idea.
+        v140.condition = "( $(PlatformToolset.ToLower().IndexOf('v140')) > -1 Or '$(PlatformToolset.ToLower())' == 'windowskernelmodedriver8.0' Or '$(PlatformToolset.ToLower())' == 'windowsapplicationfordrivers8.0' Or '$(PlatformToolset.ToLower())' == 'windowsusermodedriver8.0' )";
+    };
+ };
+
+nuget {
+ nuspec {
+        id = librdkafka;
+	    // "@version" is replaced by the current Appveyor build number in the
+        // pre-deployment script.
+        version : @version;
+        title: "librdkafka";
+        authors: {Magnus Edenhill, edenhill};
+        owners: {Magnus Edenhill, edenhill};
+        licenseUrl: "https://github.com/edenhill/librdkafka/blob/master/LICENSES.txt";
+        projectUrl: "https://github.com/edenhill/librdkafka";
+        requireLicenseAcceptance: false;
+        summary: "The Apache Kafka C/C++ client library";
+		description:"The Apache Kafka C/C++ client library";
+        releaseNotes: "Release of librdkafka";
+        copyright: "Copyright 2016";
+        tags: { native, kafka, librdkafka, C, C++ };
+ };
+
+ files {
+	#defines {
+	  TOPDIR = ..\;
+    };
+	nestedInclude: {
+		#destination = ${d_include}librdkafka;
+		${TOPDIR}src\rdkafka.h, ${TOPDIR}src\rdkafka_mock.h, ${TOPDIR}src-cpp\rdkafkacpp.h
+	};
+	docs: { ${TOPDIR}README.md, ${TOPDIR}CONFIGURATION.md, ${TOPDIR}LICENSES.txt };
+
+        ("v120,v140", "Win32,x64", "Release,Debug") => {
+           [${0},${1},${2}] {
+		lib: { outdir\${0}\${1}\${2}\librdkafka*.lib };
+		symbols: { outdir\${0}\${1}\${2}\librdkafka*.pdb };
+		bin: { outdir\${0}\${1}\${2}\*.dll };
+           };
+	};
+
+ };
+
+ targets {
+	Defines += HAS_LIBRDKAFKA;
+ };
+};
