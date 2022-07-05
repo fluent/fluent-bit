@@ -182,7 +182,6 @@ static int parse_configuration_labels(struct flb_stackdriver *ctx)
     flb_sds_t val;
     struct mk_list *head;
     struct flb_slist_entry *entry;
-    msgpack_object_kv *kv = NULL;
 
     if (ctx->labels) {
         mk_list_foreach(head, ctx->labels) {

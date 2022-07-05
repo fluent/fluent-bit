@@ -946,9 +946,7 @@ static void pack_labels(struct flb_stackdriver *ctx,
                         msgpack_object *payload_labels_ptr)
 {
     int i;
-    int ret;
     int labels_size = 0;
-    char *val;
     struct mk_list *head;
     struct flb_kv *list_kv;
     msgpack_object_kv *obj_kv = NULL;
@@ -1486,7 +1484,6 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     const char *newtag;
     const char *new_log_name;
     msgpack_object *obj;
-    msgpack_object *labels_ptr;
     msgpack_unpacked result;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
