@@ -525,11 +525,11 @@ static int flb_engine_log_start(struct flb_config *config)
     return 0;
 }
 
-static void flb_engine_drain_ring_buffer_signal_channel(struct flb_ring_buffer *rb)
+static void flb_engine_drain_ring_buffer_signal_channel(flb_pipefd_t fd)
 {
     static char signal_buffer[512];
 
-    flb_pipe_r(rb->signal_channels[0], signal_buffer, sizeof(signal_buffer));
+    flb_pipe_r(fd, signal_buffer, sizeof(signal_buffer));
 }
 
 
@@ -914,7 +914,7 @@ int flb_engine_start(struct flb_config *config)
                 handle_input_event(event->fd, ts, config);
             }
             else if(event->type == FLB_ENGINE_EV_THREAD_INPUT) {
-                flb_engine_drain_ring_buffer_signal_channel((struct flb_ring_buffer *) event->data);
+                flb_engine_drain_ring_buffer_signal_channel(event->fd);
 
                 rb_flush_flag = FLB_TRUE;
             }
