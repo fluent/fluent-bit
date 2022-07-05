@@ -115,7 +115,7 @@ static void test_smart_flush()
         exit(EXIT_FAILURE);
     }
 
-    ret = flb_ring_buffer_register(rb, evl, window);
+    ret = flb_ring_buffer_add_event_loop(rb, evl, window);
     TEST_CHECK(ret == 0);
     if (ret) {
         exit(EXIT_FAILURE);
