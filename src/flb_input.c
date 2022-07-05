@@ -774,7 +774,7 @@ int flb_input_instance_init(struct flb_input_instance *ins,
             }
 
             /* register the ring buffer */
-            ret = flb_ring_buffer_register(ins->rb, config->evl, FLB_INPUT_RING_BUFFER_WINDOW);
+            ret = flb_ring_buffer_add_event_loop(ins->rb, config->evl, FLB_INPUT_RING_BUFFER_WINDOW);
             if (ret) {
                 flb_error("failed while registering ring buffer events on input %s",
                           ins->name);
