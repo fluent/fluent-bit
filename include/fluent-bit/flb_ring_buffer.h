@@ -36,7 +36,7 @@ struct flb_ring_buffer {
 struct flb_ring_buffer *flb_ring_buffer_create(uint64_t size);
 void flb_ring_buffer_destroy(struct flb_ring_buffer *rb);
 
-int flb_ring_buffer_register(struct flb_ring_buffer *rb, void *evl, uint8_t window_size);
+int flb_ring_buffer_add_event_loop(struct flb_ring_buffer *rb, void *evl, uint8_t window_size);
 
 int flb_ring_buffer_write(struct flb_ring_buffer *rb, void *ptr, size_t size);
 int flb_ring_buffer_read(struct flb_ring_buffer *rb, void *ptr, size_t size);

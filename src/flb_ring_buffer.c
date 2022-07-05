@@ -37,7 +37,7 @@
 /* lwrb header */
 #include <lwrb/lwrb.h>
 
-static void flb_ring_buffer_unregister(struct flb_ring_buffer *rb);
+static void flb_ring_buffer_remove_event_loop(struct flb_ring_buffer *rb);
 
 struct flb_ring_buffer *flb_ring_buffer_create(uint64_t size)
 {
@@ -81,7 +81,7 @@ struct flb_ring_buffer *flb_ring_buffer_create(uint64_t size)
 
 void flb_ring_buffer_destroy(struct flb_ring_buffer *rb)
 {
-    flb_ring_buffer_unregister(rb);
+    flb_ring_buffer_remove_event_loop(rb);
 
     if (rb->data_buf) {
         flb_free(rb->data_buf);
@@ -94,7 +94,7 @@ void flb_ring_buffer_destroy(struct flb_ring_buffer *rb)
     flb_free(rb);
 }
 
-int flb_ring_buffer_register(struct flb_ring_buffer *rb, void *evl, uint8_t window_size)
+int flb_ring_buffer_add_event_loop(struct flb_ring_buffer *rb, void *evl, uint8_t window_size)
 {
     int result;
 
@@ -126,8 +126,6 @@ int flb_ring_buffer_register(struct flb_ring_buffer *rb, void *evl, uint8_t wind
 
     MK_EVENT_ZERO(rb->signal_event);
 
-    ((struct mk_event *) rb->signal_event)->data = (void *) rb;
-
     result = mk_event_add(evl,
                           rb->signal_channels[0],
                           FLB_ENGINE_EV_THREAD_INPUT,
@@ -148,7 +146,7 @@ int flb_ring_buffer_register(struct flb_ring_buffer *rb, void *evl, uint8_t wind
     return 0;
 }
 
-static void flb_ring_buffer_unregister(struct flb_ring_buffer *rb)
+static void flb_ring_buffer_remove_event_loop(struct flb_ring_buffer *rb)
 {
     if (rb->event_loop != NULL) {
         mk_event_del(rb->event_loop, rb->signal_event);
