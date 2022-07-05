@@ -1,4 +1,4 @@
-%name-prefix="flb_sp_"  // replace with %define api.prefix {flb_sp_}
+%name-prefix "flb_sp_"  // replace with %define api.prefix {flb_sp_}
 %define api.pure full
 %define parse.error verbose
 %parse-param { struct flb_sp_cmd *cmd };
