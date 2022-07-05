@@ -82,7 +82,6 @@ static void test_smart_flush()
     struct mk_event *event;
     struct mk_event_loop *evl;
     struct flb_ring_buffer *rb;
-	struct flb_ring_buffer *erb;
     struct flb_bucket_queue *bktq;
 
 #ifdef _WIN32
@@ -141,9 +140,7 @@ static void test_smart_flush()
     flush_event_detected = FLB_FALSE;
     flb_event_priority_live_foreach(event, bktq, evl, 10) {
         if(event->type == FLB_ENGINE_EV_THREAD_INPUT) {
-            erb = (struct flb_ring_buffer *) event->data;
-
-            flb_pipe_r(erb->signal_channels[0], signal_buffer, sizeof(signal_buffer));
+            flb_pipe_r(event->fd, signal_buffer, sizeof(signal_buffer));
 
 		    flush_event_detected = FLB_TRUE;
         }
