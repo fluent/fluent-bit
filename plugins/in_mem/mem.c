@@ -171,7 +171,7 @@ static int in_mem_collect(struct flb_input_instance *i_ins,
 {
     int ret;
     int len;
-    int entries = 7;/* (total,used,free) * (memory, swap) */
+    int entries = 7;/* (total,used,free) * (memory, swap) + system uptime*/
     struct proc_task *task = NULL;
     struct flb_in_mem_config *ctx = in_context;
     struct flb_in_mem_info info;
