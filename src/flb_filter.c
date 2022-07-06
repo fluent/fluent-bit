@@ -142,6 +142,11 @@ void flb_filter_do(struct flb_input_chunk *ic,
                     /* reset data content length */
                     flb_input_chunk_write_at(ic, write_at, "", 0);
 
+#ifdef FLB_TRACE
+                    flb_trace_filter_write(f_ins, ic);
+#endif // FLB_TRACE
+
+
 #ifdef FLB_HAVE_METRICS
                     ic->total_records = pre_records;
 
@@ -194,6 +199,10 @@ void flb_filter_do(struct flb_input_chunk *ic,
                     flb_free(out_buf);
                     continue;
                 }
+
+#ifdef FLB_TRACE
+                flb_trace_filter_write(f_ins, ic);
+#endif // FLB_TRACE
 
                 /* Point back the 'data' pointer to the new address */
                 ret = cio_chunk_get_content(ic->chunk,
