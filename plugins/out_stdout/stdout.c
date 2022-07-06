@@ -138,6 +138,7 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
     (void) config;
     struct flb_time tmp;
     msgpack_object *p;
+    int i;
 
 #ifdef FLB_HAVE_METRICS
     /* Check if the event type is metrics, handle the payload differently */

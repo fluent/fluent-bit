@@ -47,6 +47,7 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_upstream_ha.h>
 #include <fluent-bit/flb_event.h>
+#include <fluent-bit/flb_trace.h>
 
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_counter.h>
@@ -608,7 +609,13 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     struct flb_output_flush *out_flush;
     struct flb_output_instance *o_ins;
     struct flb_out_thread_instance *th_ins = NULL;
-
+#ifdef FLB_TRACE
+    //struct flb_out_flush_params *params;
+    //msgpack_sbuffer mp_sbuf;
+    //msgpack_packer mp_pck;
+#endif // FLB_TRACE
+    
+    
     out_flush = (struct flb_output_flush *) co->data;
     o_ins = out_flush->o_ins;
     task = out_flush->task;
@@ -646,6 +653,14 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     if (n == -1) {
         flb_errno();
     }
+
+#ifdef FLB_TRACE
+    //params = (struct flb_out_flush_params *) FLB_TLS_GET(out_flush_params);
+    //flb_trace_load(&mp_pck, &mp_sbuf, params->event_chunk->data, params->event_chunk->size);
+    //flb_trace_output_write(&mp_pck, (void *)o_ins, ret);
+    //flb_trace_flush(mp_sbuf.data, mp_sbuf.size);
+    //msgpack_sbuffer_destroy(&mp_sbuf);
+#endif // FLB_TRACE
 
     /*
      * Prepare the co-routine to be destroyed: real-destroy happens in the
