@@ -81,6 +81,11 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     tmp = flb_output_get_property("log_group_name", ins);
     if (tmp) {
         ctx->log_group = tmp;
+        ctx->group_name = flb_sds_create(tmp);
+        if (!ctx->group_name) {
+            flb_plg_error(ctx->ins, "Could not create log group context property");
+            goto error;
+        }
     } else {
         flb_plg_error(ctx->ins, "'log_group_name' is a required field");
         goto error;
@@ -89,6 +94,11 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     tmp = flb_output_get_property("log_stream_name", ins);
     if (tmp) {
         ctx->log_stream_name = tmp;
+        ctx->stream_name = flb_sds_create(tmp);
+        if (!ctx->stream_name) {
+            flb_plg_error(ctx->ins, "Could not create log group context property");
+            goto error;
+        }
     }
 
     tmp = flb_output_get_property("log_stream_prefix", ins);
@@ -106,6 +116,24 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         flb_plg_error(ctx->ins, "Either 'log_stream_name' or 'log_stream_prefix'"
                       " is required");
         goto error;
+    }
+
+    tmp = flb_output_get_property("log_group_template", ins);
+    if (tmp) {
+        ctx->ra_group = flb_ra_create((char *) tmp, FLB_FALSE);
+        if (ctx->ra_group == NULL) {
+            flb_plg_error(ctx->ins, "Could not parse `log_group_template`");
+            goto error;
+        }
+    }
+
+    tmp = flb_output_get_property("log_stream_template", ins);
+    if (tmp) {
+        ctx->ra_stream = flb_ra_create((char *) tmp, FLB_FALSE);
+        if (ctx->ra_stream == NULL) {
+            flb_plg_error(ctx->ins, "Could not parse `log_stream_template`");
+            goto error;
+        }
     }
 
     tmp = flb_output_get_property("log_format", ins);
@@ -183,8 +211,6 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     if (tmp) {
         ctx->sts_endpoint = (char *) tmp;
     }
-
-    ctx->group_created = FLB_FALSE;
 
     /* init log streams */
     if (ctx->log_stream_name) {
@@ -383,19 +409,10 @@ static void cb_cloudwatch_flush(struct flb_event_chunk *event_chunk,
 {
     struct flb_cloudwatch *ctx = out_context;
     int event_count;
-    struct log_stream *stream = NULL;
     (void) i_ins;
     (void) config;
 
-    ctx->buf->put_events_calls = 0;
-
-    stream = get_log_stream(ctx,
-                            event_chunk->tag, flb_sds_len(event_chunk->tag));
-    if (!stream) {
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
-
-    event_count = process_and_send(ctx, i_ins->p->name, ctx->buf, stream,
+    event_count = process_and_send(ctx, i_ins->p->name, ctx->buf, event_chunk->tag,
                                    event_chunk->data, event_chunk->size);
     if (event_count < 0) {
         flb_plg_error(ctx->ins, "Failed to send events");
@@ -447,6 +464,22 @@ void flb_cloudwatch_ctx_destroy(struct flb_cloudwatch *ctx)
             flb_free(ctx->endpoint);
         }
 
+        if (ctx->ra_group) {
+            flb_ra_destroy(ctx->ra_group);
+        }
+
+        if (ctx->ra_stream) {
+            flb_ra_destroy(ctx->ra_stream);
+        }
+
+        if (ctx->group_name) {
+            flb_sds_destroy(ctx->group_name);
+        }
+
+        if (ctx->stream_name) {
+            flb_sds_destroy(ctx->stream_name);
+        }
+
         if (ctx->log_stream_name) {
             if (ctx->stream.name) {
                 flb_sds_destroy(ctx->stream.name);
@@ -482,6 +515,9 @@ void log_stream_destroy(struct log_stream *stream)
         if (stream->sequence_token) {
             flb_sds_destroy(stream->sequence_token);
         }
+        if (stream->group) {
+            flb_sds_destroy(stream->group);
+        }
         flb_free(stream);
     }
 }
@@ -511,6 +547,20 @@ static struct flb_config_map config_map[] = {
      0, FLB_FALSE, 0,
      "Prefix for CloudWatch Log Stream Name; the tag is appended to the prefix"
      " to form the stream name"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "log_group_template", NULL,
+     0, FLB_FALSE, 0,
+     "Template for CW Log Group name using record accessor syntax. "
+     "Plugin falls back to the log_group_name configured if needed."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "log_stream_template", NULL,
+     0, FLB_FALSE, 0,
+     "Template for CW Log Stream name using record accessor syntax. "
+     "Plugin falls back to the log_stream_name or log_stream_prefix configured if needed."
     },
 
     {
