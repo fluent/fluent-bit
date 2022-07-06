@@ -329,7 +329,7 @@ static struct flb_config_map config_map[] = {
       "Set the buffer size"
     },
     {
-      FLB_CONFIG_MAP_BOOL, "bool", "false",
+      FLB_CONFIG_MAP_BOOL, "oneshot", "false",
       0, FLB_TRUE, offsetof(struct flb_exec, oneshot),
       "execute the command only once"
     },
