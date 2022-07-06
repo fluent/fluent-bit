@@ -1606,6 +1606,13 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         flb_input_chunk_update_output_instances(ic, real_diff);
     }
 
+#ifdef FLB_TRACE
+    if (ic->trace) {
+        cio_chunk_get_content(ic, &buf, &buf_size);
+        flb_trace_chunk_pre_output(ic->trace, buf, buf_size);
+    }
+#endif // FLB_TRACE
+
     flb_input_chunk_protect(in);
     return 0;
 }

@@ -2,9 +2,14 @@
 
 #include <fluent-bit/flb_time.h>
 
-#define FLB_TRACE_CHUNK_TYPE_INPUT  1
-#define FLB_TRACE_CHUNK_TYPE_FILTER 2
-#define FLB_TRACE_CHUNK_TYPE_OUTPUT 3
+// A record has been received from input
+#define FLB_TRACE_CHUNK_TYPE_INPUT      1
+// A record has been filtered
+#define FLB_TRACE_CHUNK_TYPE_FILTER     2
+// A trace with the final record before output
+#define FLB_TRACE_CHUNK_TYPE_PRE_OUTPUT 3
+// A record has been output
+#define FLB_TRACE_CHUNK_TYPE_OUTPUT     4
 
 #define FLB_TRACE_CHUNK_LIMIT_TIME    1
 #define FLB_TRACE_CHUNK_LIMIT_COUNT   2
@@ -62,6 +67,7 @@ void flb_trace_chunk_context_destroy(struct flb_trace_chunk_context *ctxt);
 struct flb_trace_chunk *flb_trace_chunk_new(struct flb_input_chunk *chunk);
 void flb_trace_chunk_destroy(struct flb_trace_chunk *);
 int flb_trace_chunk_input(struct flb_trace_chunk *trace, char *buf, int buf_size);
+int flb_trace_chunk_pre_output(struct flb_trace_chunk *trace, char *buf, int buf_size);
 int flb_trace_chunk_filter(struct flb_trace_chunk *trace, void *pfilter, char *buf, int buf_size);
 void flb_trace_chunk_free(struct flb_trace_chunk *trace);
 int flb_trace_chunk_context_set_limit(struct flb_trace_chunk_context *ctxt, int, int);

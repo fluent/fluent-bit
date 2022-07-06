@@ -278,6 +278,66 @@ sbuffer_error:
     return rc;
 }
 
+int flb_trace_chunk_pre_output(struct flb_trace_chunk *trace, char *buf, int buf_size)
+{
+        msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_unpacked result;
+    
+    msgpack_object *record;
+    struct flb_time tm;
+    struct flb_input_instance *input = (struct flb_input_instance *)trace->ic->in;
+    int rc = -1;
+    int slen;
+    int off = 0;
+    flb_sds_t tag = flb_sds_create("trace");
+    unsigned char b64enc[102400];
+    size_t bc64enclen;
+
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_unpacked_init(&result);
+
+    
+    msgpack_pack_array(&mp_pck, 2);
+    flb_pack_time_now(&mp_pck);
+    msgpack_pack_map(&mp_pck, 5);
+
+    msgpack_pack_str_with_body(&mp_pck, "type", 4);
+    msgpack_pack_int(&mp_pck, FLB_TRACE_CHUNK_TYPE_PRE_OUTPUT);
+
+    msgpack_pack_str_with_body(&mp_pck, "trace_id", strlen("trace_id"));
+    msgpack_pack_str_with_body(&mp_pck, trace->trace_id, strlen(trace->trace_id));
+
+    msgpack_pack_str_with_body(&mp_pck, "input_instance", strlen("input_instance"));
+    msgpack_pack_str_with_body(&mp_pck, input->name, strlen(input->name));
+
+    msgpack_pack_str_with_body(&mp_pck, "record", strlen("record"));
+    rc = msgpack_unpack_next(&result, buf, buf_size, &off);
+    if (rc != MSGPACK_UNPACK_SUCCESS) {
+        flb_error("unable to unpack record");
+        goto sbuffer_error;
+    }
+    msgpack_pack_array(&mp_pck, 2);
+    flb_time_pop_from_msgpack(&tm, &result, &record);
+    flb_time_append_to_msgpack(&tm, &mp_pck, FLB_TIME_ETFMT_INT);
+    msgpack_pack_object(&mp_pck, *record);
+    
+    msgpack_pack_str_with_body(&mp_pck, "record_base64", strlen("record_base64"));
+    flb_base64_encode(b64enc, sizeof(b64enc)-1, &bc64enclen,
+                    (unsigned char *)buf, buf_size);
+    msgpack_pack_str_with_body(&mp_pck, b64enc, bc64enclen);
+
+    in_emitter_add_record(tag, flb_sds_len(tag), mp_sbuf.data, mp_sbuf.size,
+                          trace->ctxt->input);
+sbuffer_error:
+    flb_sds_destroy(tag);
+    msgpack_unpacked_destroy(&result);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+    return rc;
+}
+
 int flb_trace_chunk_filter(struct flb_trace_chunk *tracer, void *pfilter, char *buf, int buf_size)
 {
     msgpack_packer mp_pck;
