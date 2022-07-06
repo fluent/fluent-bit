@@ -97,17 +97,10 @@ In addition, metadata as defined in OCI image spec annotations, is leveraged in 
 ### Minimum set of build-args
 ```powershell
 docker build --no-cache `
-  --build-arg WINDOWS_VERSION=1809 --build-arg FLUENTBIT_VERSION=1.8.11 `
-  -t fluent/fluent-bit:1.8.11-nanoserver -f ./dockerfiles/Dockerfile.windows ./dockerfiles/
+  --build-arg WINDOWS_VERSION=ltsc2019 `
+  -t fluent/fluent-bit:master-windows -f ./dockerfiles/Dockerfile.windows .
 ```
-### Full set of build-args
-```powershell
-docker build --no-cache `
-  --build-arg WINDOWS_VERSION=1809 --build-arg FLUENTBIT_VERSION=1.8.11 `
-  --build-arg IMAGE_CREATE_DATE="$(Get-Date((Get-Date).ToUniversalTime()) -UFormat '%Y-%m-%dT%H:%M:%SZ')" `
-  --build-arg IMAGE_SOURCE_REVISION="$(git rev-parse HEAD)" `
-  -t fluent/fluent-bit:1.8.11-nanoserver -f ./dockerfiles/Dockerfile.windows ./dockerfiles/
-```
+
 ## Contact
 
 Feel free to join us on our Mailing List or IRC:
