@@ -422,6 +422,11 @@ static flb_sds_t ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf,
     struct flb_ra_value *v;
 
     /* Lookup key or subkey value */
+    if (rp->key == NULL) {
+      *found = FLB_FALSE;
+      return buf;
+    }
+
     v = flb_ra_key_to_value(rp->key->name, map, rp->key->subkeys);
     if (!v) {
         *found = FLB_FALSE;
