@@ -131,13 +131,14 @@ static int cb_check_json_str_list(void *record, size_t size, void *data)
 }
 
 static struct test_tail_ctx *test_tail_ctx_create(struct flb_lib_out_cb *data,
-                                                  char **paths, int path_num)
+                                                  char **paths, int path_num, int override)
 {
     int i_ffd;
     int o_ffd;
     int i;
     int j;
     int fd;
+    int o_flags;
     struct test_tail_ctx *ctx = NULL;
 
     if (!TEST_CHECK(data != NULL)){
@@ -173,6 +174,9 @@ static struct test_tail_ctx *test_tail_ctx_create(struct flb_lib_out_cb *data,
     o_ffd = flb_output(ctx->flb, (char *) "lib", (void *) data);
     ctx->o_ffd = o_ffd;
 
+    /* open() flags */
+    o_flags = O_RDWR | O_CREAT;
+
     if (paths != NULL) {
         ctx->fds = flb_malloc(sizeof(int) * path_num);
         ctx->filepaths = paths;
@@ -185,8 +189,14 @@ static struct test_tail_ctx *test_tail_ctx_create(struct flb_lib_out_cb *data,
         }
 
         for (i=0; i<path_num; i++) {
-            unlink(paths[i]);
-            fd = open(paths[i], O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP );
+            if (override) {
+                unlink(paths[i]);
+            }
+            else {
+                o_flags |= O_APPEND;
+            }
+
+            fd = open(paths[i], o_flags, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
             if (!TEST_CHECK(fd >= 0)) {
                 TEST_MSG("open failed. errno=%d path[%d]=%s", errno, i, paths[i]);
                 flb_destroy(ctx->flb);
@@ -211,7 +221,7 @@ static void test_tail_ctx_destroy(struct test_tail_ctx *ctx)
     TEST_CHECK(ctx != NULL);
 
     if (ctx->fds != NULL) {
-        for (i=0; i<ctx->fd_num; i++) {
+        for (i=0; i <ctx->fd_num; i++) {
             close(ctx->fds[i]);
             unlink(ctx->filepaths[i]);
         }
@@ -229,7 +239,7 @@ static ssize_t write_msg(struct test_tail_ctx *ctx, char *msg, size_t msg_len)
     int i;
     ssize_t w_byte;
 
-    for (i=0; i<ctx->fd_num; i++) {
+    for (i = 0; i <ctx->fd_num; i++) {
         flb_time_msleep(100);
         w_byte = write(ctx->fds[i], msg, msg_len);
         if (!TEST_CHECK(w_byte == msg_len)) {
@@ -242,6 +252,7 @@ static ssize_t write_msg(struct test_tail_ctx *ctx, char *msg, size_t msg_len)
             TEST_MSG("write failed ret=%ld", w_byte);
             return -1;
         }
+        fsync(ctx->fds[i]);
         flb_time_msleep(100);
     }
     return w_byte;
@@ -809,7 +820,7 @@ void flb_test_path_comma()
     cb_data.cb = cb_count_msgpack;
     cb_data.data = &unused;
 
-    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char*));
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char*), FLB_TRUE);
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -866,7 +877,7 @@ void flb_test_path_key()
     cb_data.cb = cb_check_json_str_list;
     cb_data.data = &expected;
 
-    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char*));
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char*), FLB_TRUE);
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -921,7 +932,7 @@ void flb_test_exclude_path()
     cb_data.cb = cb_count_msgpack;
     cb_data.data = &unused;
 
-    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char*));
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char*), FLB_TRUE);
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -984,7 +995,7 @@ void flb_test_offset_key()
     }
 
 
-    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char*));
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char *), FLB_TRUE);
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -1050,7 +1061,7 @@ void flb_test_skip_empty_lines()
     cb_data.cb = cb_check_json_str_list;
     cb_data.data = &expected;
 
-    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char*));
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char *), FLB_TRUE);
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -1115,7 +1126,7 @@ static int ignore_older(int expected, char *ignore_older)
     cb_data.cb = cb_count_msgpack;
     cb_data.data = &unused;
 
-    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char*));
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char *), FLB_TRUE);
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         return -1;
@@ -1216,7 +1227,7 @@ void flb_test_inotify_watcher_false()
     cb_data.cb = cb_check_json_str_list;
     cb_data.data = &expected;
 
-    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char*));
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char *), FLB_TRUE);
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -1277,7 +1288,7 @@ void flb_test_parser()
     cb_data.cb = cb_check_json_str_list;
     cb_data.data = &expected;
 
-    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char*));
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char *), FLB_TRUE);
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -1337,7 +1348,7 @@ void flb_test_tag_regex()
     cb_data.cb = cb_check_json_str_list;
     cb_data.data = &expected;
 
-    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char*));
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char *), FLB_TRUE);
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -1400,7 +1411,7 @@ void flb_test_db()
     cb_data.cb = cb_count_msgpack;
     cb_data.data = &unused;
 
-    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char*));
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char *), FLB_FALSE);
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -1451,8 +1462,7 @@ void flb_test_db()
     cb_data.cb = cb_count_msgpack;
     cb_data.data = &unused;
 
-
-    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char*));
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char *), FLB_FALSE);
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         unlink(db);
@@ -1462,6 +1472,7 @@ void flb_test_db()
     ret = flb_input_set(ctx->flb, ctx->o_ffd,
                         "path", file[0],
                         "db", db,
+                        "db.sync", "full",
                         NULL);
     TEST_CHECK(ret == 0);
 
@@ -1496,7 +1507,6 @@ void flb_test_db()
     }
 
     test_tail_ctx_destroy(ctx);
-
     unlink(db);
 }
 #endif /* FLB_HAVE_SQLDB */
