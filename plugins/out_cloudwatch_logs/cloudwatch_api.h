@@ -42,16 +42,16 @@
 
 void cw_flush_destroy(struct cw_flush *buf);
 
-int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin, struct cw_flush *buf,
-                     struct log_stream *stream,
+int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin, 
+                     struct cw_flush *buf, flb_sds_t tag,
                      const char *data, size_t bytes);
 int create_log_stream(struct flb_cloudwatch *ctx, struct log_stream *stream, int can_retry);
-struct log_stream *get_log_stream(struct flb_cloudwatch *ctx,
-                                  const char *tag, int tag_len);
+struct log_stream *get_log_stream(struct flb_cloudwatch *ctx, flb_sds_t tag,
+                                  const msgpack_object map);
 int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
                    struct log_stream *stream,
                    size_t payload_size);
-int create_log_group(struct flb_cloudwatch *ctx);
+int create_log_group(struct flb_cloudwatch *ctx, struct log_stream *stream);
 int compare_events(const void *a_arg, const void *b_arg);
 
 #endif
