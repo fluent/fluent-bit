@@ -1437,6 +1437,65 @@ void cb_add_root_key_val()
     flb_free(out_buf);
 }
 
+void cb_ra_translate_check()
+{
+    int len;
+    int ret;
+    int type;
+    size_t off = 0;
+    char *out_buf;
+    size_t out_size;
+    char *json;
+    char *fmt;
+    flb_sds_t str;
+    msgpack_unpacked result;
+    msgpack_object map;
+    struct flb_record_accessor *ra;
+    int check_translation = FLB_TRUE;
+
+    /* Sample JSON message */
+    json = "{\"root.with/symbols\": \"something\"}";
+
+    /* Convert to msgpack */
+    len = strlen(json);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type);
+    TEST_CHECK(ret == 0);
+    if (ret == -1) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Formatter */
+    fmt = flb_sds_create("$root");
+    if (!TEST_CHECK(fmt != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+
+    ra = flb_ra_create(fmt, FLB_FALSE);
+    TEST_CHECK(ra != NULL);
+    if (!ra) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Unpack msgpack object */
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, out_buf, out_size, &off);
+    map = result.data;
+
+    /* Do translation - with check enabled */
+    str = flb_ra_translate_check(ra, NULL, -1, map, NULL, check_translation);
+    /* since translation fails and check is enabled, it returns NULL */
+    TEST_CHECK(str == NULL);
+    if (str) {
+        exit(EXIT_FAILURE);
+    }
+
+    flb_sds_destroy(str);
+    flb_sds_destroy(fmt);
+    flb_ra_destroy(ra);
+    flb_free(out_buf);
+    msgpack_unpacked_destroy(&result);
+}
+
 TEST_LIST = {
     { "keys"            , cb_keys},
     { "dash_key"        , cb_dash_key},
@@ -1458,5 +1517,6 @@ TEST_LIST = {
     { "add_key_val", cb_add_key_val},
     { "add_root_key_val", cb_add_root_key_val},
     { "issue_4917"      , cb_issue_4917},
+    { "flb_ra_translate_check" , cb_ra_translate_check},
     { NULL }
 };
