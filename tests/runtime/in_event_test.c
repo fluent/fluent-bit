@@ -5,14 +5,10 @@
 
 void flb_test_input_event()
 {
-    int i;
     int ret;
-    int bytes;
-    char p[100];
     flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;
-    int filter_ffd;
 
     ctx = flb_create();
 
