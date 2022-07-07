@@ -30,8 +30,6 @@
 #define STATUS_OK        1
 #define STATUS_ERROR     0
 #define STATUS_PENDING  -1
-
-#define UNIT_TESTS_SIZE  5
 #define CALLBACK_TIME    2 /* 2 seconds */
 
 #define SERVER_PORT      "9092"
@@ -51,6 +49,8 @@ struct unit_test tests[] = {
     {3, 0, STATUS_PENDING, "plugin paused from engine"},
     {4, 0, STATUS_PENDING, "plugin resumed from engine"},
 };
+
+#define UNIT_TESTS_SIZE  (sizeof(tests) / sizeof(struct unit_test))
 
 struct event_test {
     flb_pipefd_t pipe[2];
@@ -120,7 +120,7 @@ static int cb_collector_time(struct flb_input_instance *ins,
     flb_input_collector_pause(ut->coll_id, ins);
 
     /*
-     * before to return, trigger test 2 (collector_event_fd) by writing a byte
+     * before to return, trigger test 1 (collector_fd_event) by writing a byte
      * to our local pipe.
      */
     val = 1;
@@ -147,7 +147,7 @@ static int cb_collector_fd(struct flb_input_instance *ins,
     bytes = read(ctx->pipe[0], &val, sizeof(val));
     if (bytes <= 0) {
         flb_errno();
-        set_unit_test_status(ctx, 0, STATUS_ERROR);
+        set_unit_test_status(ctx, 1, STATUS_ERROR);
         flb_engine_exit(config);
     }
     else {
@@ -190,8 +190,7 @@ static int cb_collector_server_socket(struct flb_input_instance *ins,
     flb_plg_info(ins, "test pause/resume in 5 seconds...");
     flb_input_test_pause_resume(ins, 5);
 
-    /* force an exit */
-    //flb_engine_exit(config);
+    /* return */
     FLB_INPUT_RETURN(0);
 }
 
@@ -233,7 +232,7 @@ static struct event_test *config_create(struct flb_input_instance *ins)
     ctx->tests = flb_malloc(size);
     if (!ctx->tests) {
         flb_errno();
-        free(ctx);
+        flb_free(ctx);
         return NULL;
     }
     memcpy(ctx->tests, &tests, size);
@@ -261,6 +260,7 @@ static int cb_event_test_init(struct flb_input_instance *ins,
     ret = flb_input_set_collector_time(ins, cb_collector_time,
                                        CALLBACK_TIME, 0, config);
     if (ret < 0) {
+        config_destroy(ctx);
         return -1;
     }
     ut = &ctx->tests[0];
@@ -270,6 +270,7 @@ static int cb_event_test_init(struct flb_input_instance *ins,
     ret = flb_pipe_create(ctx->pipe);
     if (ret == -1) {
         flb_errno();
+        config_destroy(ctx);
         return -1;
     }
     ret = flb_input_set_collector_event(ins,
@@ -277,6 +278,7 @@ static int cb_event_test_init(struct flb_input_instance *ins,
                                         ctx->pipe[0],
                                         config);
     if (ret < 0) {
+        config_destroy(ctx);
         return -1;
     }
     ut = &ctx->tests[1];
@@ -286,6 +288,7 @@ static int cb_event_test_init(struct flb_input_instance *ins,
     fd = flb_net_server(SERVER_PORT, SERVER_IFACE);
     if (fd < 0) {
         flb_errno();
+        config_destroy(ctx);
         return -1;
     }
     flb_net_socket_nonblocking(fd);
@@ -297,6 +300,7 @@ static int cb_event_test_init(struct flb_input_instance *ins,
                                          ctx->server_fd,
                                          config);
     if (ret == -1) {
+        config_destroy(ctx);
         return -1;
     }
     ut = &ctx->tests[2];
@@ -306,6 +310,7 @@ static int cb_event_test_init(struct flb_input_instance *ins,
     ret = flb_input_set_collector_time(ins, cb_collector_server_client,
                                        CALLBACK_TIME * 2, 0, config);
     if (ret < 0) {
+        config_destroy(ctx);
         return -1;
     }
     ctx->client_coll_id = ret;
@@ -314,6 +319,7 @@ static int cb_event_test_init(struct flb_input_instance *ins,
     upstream = flb_upstream_create(config, "127.0.0.1", atoi(SERVER_PORT),
                                    FLB_IO_TCP, NULL);
     if (!upstream) {
+        config_destroy(ctx);
         return -1;
     }
     ctx->upstream = upstream;
@@ -350,6 +356,7 @@ static void cb_event_test_resume(void *data, struct flb_config *config)
 static int in_event_test_exit(void *data, struct flb_config *config)
 {
     int i;
+    int failed = FLB_FALSE;
     struct event_test *ctx = data;
     struct unit_test *ut;
     (void) *config;
@@ -360,11 +367,17 @@ static int in_event_test_exit(void *data, struct flb_config *config)
         if (ut->status != STATUS_OK) {
             flb_plg_error(ctx->ins, "unit test #%i '%s' failed",
                           i, ut->desc);
+            failed = FLB_TRUE;
         }
         else {
             flb_plg_info(ctx->ins, "unit test #%i '%s' succeeded",
                          i, ut->desc);
         }
+    }
+
+    /* if one test failed, perform an abrupt exit with proper error */
+    if (failed) {
+        exit(EXIT_FAILURE);
     }
 
     config_destroy(ctx);
