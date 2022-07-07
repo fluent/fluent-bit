@@ -1468,7 +1468,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         }
         ic->trace = flb_trace_chunk_new(ic);
         if (ic->trace) {
-            flb_trace_chunk_input(ic->trace, buf, buf_size);
+            flb_trace_chunk_input(ic->trace);
         }
         if (flb_trace_chunk_context_hit_limit(ic->in->trace_ctxt) == FLB_TRUE) {
             flb_trace_chunk_context_destroy(ic->in->trace_ctxt);
@@ -1608,8 +1608,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
 
 #ifdef FLB_TRACE
     if (ic->trace) {
-        cio_chunk_get_content(ic, &buf, &buf_size);
-        flb_trace_chunk_pre_output(ic->trace, buf, buf_size);
+        flb_trace_chunk_pre_output(ic->trace);
     }
 #endif // FLB_TRACE
 
