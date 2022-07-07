@@ -162,7 +162,7 @@ int flb_trace_chunk_context_set_limit(struct flb_trace_chunk_context *ctxt, int 
         ctxt->limit.type = FLB_TRACE_CHUNK_LIMIT_COUNT;
         ctxt->limit.count = limit_arg;
         return 0;
-    defualt:
+    default:
         return -1;
     }
 }
@@ -190,8 +190,8 @@ int flb_trace_chunk_context_hit_limit(struct flb_trace_chunk_context *ctxt)
 
 void flb_trace_chunk_context_destroy(struct flb_trace_chunk_context *ctxt)
 {
-    struct flb_output_instance *output = (struct flb_output_instance *)ctxt->output;
-    struct flb_input_instance *input = (struct flb_input_instance *)ctxt->input;
+    //struct flb_output_instance *output = (struct flb_output_instance *)ctxt->output;
+    //struct flb_input_instance *input = (struct flb_input_instance *)ctxt->input;
 
 
     if (ctxt->chunks > 0) {
@@ -218,34 +218,36 @@ void flb_trace_chunk_context_destroy(struct flb_trace_chunk_context *ctxt)
     flb_free(ctxt);
 }
 
-int flb_trace_chunk_input(struct flb_trace_chunk *trace, char *buf, int buf_size)
+int flb_trace_chunk_input(struct flb_trace_chunk *trace)
 {
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
     msgpack_unpacked result;
-    
     msgpack_object *record;
+    char *buf;
+    size_t buf_size;
     struct flb_time tm;
     struct flb_time tm_end;
     struct flb_input_instance *input = (struct flb_input_instance *)trace->ic->in;
     int rc = -1;
-    int slen;
-    int off = 0;
+    size_t off = 0;
     flb_sds_t tag = flb_sds_create("trace");
-    unsigned char b64enc[102400];
-    size_t bc64enclen;
+    int records = 0;
 
 
+    // initiailize start time
+    flb_time_get(&tm);
     flb_time_get(&tm_end);
 
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
     msgpack_unpacked_init(&result);
 
+    cio_chunk_get_content(trace->ic->chunk, &buf, &buf_size);
     
     msgpack_pack_array(&mp_pck, 2);
     flb_pack_time_now(&mp_pck);
-    msgpack_pack_map(&mp_pck, 7);
+    msgpack_pack_map(&mp_pck, 6);
 
     msgpack_pack_str_with_body(&mp_pck, "type", 4);
     msgpack_pack_int(&mp_pck, FLB_TRACE_CHUNK_TYPE_INPUT);
@@ -256,29 +258,40 @@ int flb_trace_chunk_input(struct flb_trace_chunk *trace, char *buf, int buf_size
     msgpack_pack_str_with_body(&mp_pck, "input_instance", strlen("input_instance"));
     msgpack_pack_str_with_body(&mp_pck, input->name, strlen(input->name));
 
+    msgpack_pack_str_with_body(&mp_pck, "records", strlen("records"));
 
-    flb_time_pop_from_msgpack(&tm, &result, &record);
-    rc = msgpack_unpack_next(&result, buf, buf_size, &off);
-    if (rc != MSGPACK_UNPACK_SUCCESS) {
-        flb_error("unable to unpack record");
-        goto sbuffer_error;
-    }
+    do {
+        rc = msgpack_unpack_next(&result, buf, buf_size, &off);
+        if (rc != MSGPACK_UNPACK_SUCCESS) {
+            flb_error("unable to unpack record");
+            goto sbuffer_error;
+        }
+        records++;
+    } while (rc == MSGPACK_UNPACK_SUCCESS && off < buf_size);
+
+    msgpack_pack_array(&mp_pck, records);
+
+    off = 0;
+    do {
+        rc = msgpack_unpack_next(&result, buf, buf_size, &off);
+        if (rc != MSGPACK_UNPACK_SUCCESS) {
+            flb_error("unable to unpack record");
+            goto sbuffer_error;
+        }
+        flb_time_pop_from_msgpack(&tm, &result, &record);
+
+        msgpack_pack_map(&mp_pck, 2);
+        msgpack_pack_str_with_body(&mp_pck, "timestamp", strlen("timestamp"));
+        flb_time_append_to_msgpack(&tm, &mp_pck, FLB_TIME_ETFMT_INT);
+        msgpack_pack_str_with_body(&mp_pck, "record", strlen("record"));
+        msgpack_pack_object(&mp_pck, *record);
+
+    } while (rc == MSGPACK_UNPACK_SUCCESS && off < buf_size);
 
     msgpack_pack_str_with_body(&mp_pck, "start_time", strlen("start_time"));
     flb_time_append_to_msgpack(&tm, &mp_pck, FLB_TIME_ETFMT_INT);
     msgpack_pack_str_with_body(&mp_pck, "end_time", strlen("end_time"));
     flb_time_append_to_msgpack(&tm_end, &mp_pck, FLB_TIME_ETFMT_INT);
-
-    msgpack_pack_str_with_body(&mp_pck, "record", strlen("record"));
-    msgpack_pack_array(&mp_pck, 2);
-    flb_time_append_to_msgpack(&tm, &mp_pck, FLB_TIME_ETFMT_INT);
-    msgpack_pack_object(&mp_pck, *record);
-    
-    msgpack_pack_str_with_body(&mp_pck, "record_base64", strlen("record_base64"));
-    flb_base64_encode(b64enc, sizeof(b64enc)-1, &bc64enclen,
-                    (unsigned char *)buf, buf_size);
-    msgpack_pack_str_with_body(&mp_pck, b64enc, bc64enclen);
-
     in_emitter_add_record(tag, flb_sds_len(tag), mp_sbuf.data, mp_sbuf.size,
                           trace->ctxt->input);
 sbuffer_error:
@@ -288,34 +301,36 @@ sbuffer_error:
     return rc;
 }
 
-int flb_trace_chunk_pre_output(struct flb_trace_chunk *trace, char *buf, int buf_size)
+int flb_trace_chunk_pre_output(struct flb_trace_chunk *trace)
 {
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
     msgpack_unpacked result;
-    
     msgpack_object *record;
+    char *buf;
+    size_t buf_size;
     struct flb_time tm;
     struct flb_time tm_end;
     struct flb_input_instance *input = (struct flb_input_instance *)trace->ic->in;
     int rc = -1;
-    int slen;
-    int off = 0;
+    size_t off = 0;
     flb_sds_t tag = flb_sds_create("trace");
-    unsigned char b64enc[102400];
-    size_t bc64enclen;
+    int records = 0;
 
 
+    // initiailize start time
+    flb_time_get(&tm);
     flb_time_get(&tm_end);
 
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
     msgpack_unpacked_init(&result);
 
-    
+    cio_chunk_get_content(trace->ic->chunk, &buf, &buf_size);
+
     msgpack_pack_array(&mp_pck, 2);
     flb_pack_time_now(&mp_pck);
-    msgpack_pack_map(&mp_pck, 7);
+    msgpack_pack_map(&mp_pck, 6);
 
     msgpack_pack_str_with_body(&mp_pck, "type", 4);
     msgpack_pack_int(&mp_pck, FLB_TRACE_CHUNK_TYPE_PRE_OUTPUT);
@@ -326,29 +341,39 @@ int flb_trace_chunk_pre_output(struct flb_trace_chunk *trace, char *buf, int buf
     msgpack_pack_str_with_body(&mp_pck, "input_instance", strlen("input_instance"));
     msgpack_pack_str_with_body(&mp_pck, input->name, strlen(input->name));
 
+    msgpack_pack_str_with_body(&mp_pck, "records", strlen("records"));
 
-    flb_time_pop_from_msgpack(&tm, &result, &record);
-    rc = msgpack_unpack_next(&result, buf, buf_size, &off);
-    if (rc != MSGPACK_UNPACK_SUCCESS) {
-        flb_error("unable to unpack record");
-        goto sbuffer_error;
-    }
+    do {
+        rc = msgpack_unpack_next(&result, buf, buf_size, &off);
+        if (rc != MSGPACK_UNPACK_SUCCESS) {
+            flb_error("unable to unpack record");
+            goto sbuffer_error;
+        }
+        records++;
+    } while (rc == MSGPACK_UNPACK_SUCCESS && off < buf_size);
+
+    msgpack_pack_array(&mp_pck, records);
+    off = 0;
+    do {
+        rc = msgpack_unpack_next(&result, buf, buf_size, &off);
+        if (rc != MSGPACK_UNPACK_SUCCESS) {
+            flb_error("unable to unpack record");
+            goto sbuffer_error;
+        }
+        flb_time_pop_from_msgpack(&tm, &result, &record);
+
+        msgpack_pack_map(&mp_pck, 2);
+        msgpack_pack_str_with_body(&mp_pck, "timestamp", strlen("timestamp"));
+        flb_time_append_to_msgpack(&tm, &mp_pck, FLB_TIME_ETFMT_INT);
+        msgpack_pack_str_with_body(&mp_pck, "record", strlen("record"));
+        msgpack_pack_object(&mp_pck, *record);
+
+    } while (rc == MSGPACK_UNPACK_SUCCESS && off < buf_size);
 
     msgpack_pack_str_with_body(&mp_pck, "start_time", strlen("start_time"));
     flb_time_append_to_msgpack(&tm, &mp_pck, FLB_TIME_ETFMT_INT);
     msgpack_pack_str_with_body(&mp_pck, "end_time", strlen("end_time"));
     flb_time_append_to_msgpack(&tm_end, &mp_pck, FLB_TIME_ETFMT_INT);
-
-    msgpack_pack_str_with_body(&mp_pck, "record", strlen("record"));
-    msgpack_pack_array(&mp_pck, 2);
-    flb_time_append_to_msgpack(&tm, &mp_pck, FLB_TIME_ETFMT_INT);
-    msgpack_pack_object(&mp_pck, *record);
-    
-    msgpack_pack_str_with_body(&mp_pck, "record_base64", strlen("record_base64"));
-    flb_base64_encode(b64enc, sizeof(b64enc)-1, &bc64enclen,
-                    (unsigned char *)buf, buf_size);
-    msgpack_pack_str_with_body(&mp_pck, b64enc, bc64enclen);
-
     in_emitter_add_record(tag, flb_sds_len(tag), mp_sbuf.data, mp_sbuf.size,
                           trace->ctxt->input);
 sbuffer_error:
@@ -358,17 +383,18 @@ sbuffer_error:
     return rc;
 }
 
-int flb_trace_chunk_filter(struct flb_trace_chunk *tracer, void *pfilter, struct flb_time *tm_start, struct flb_time *tm_end, char *buf, int buf_size)
+int flb_trace_chunk_filter(struct flb_trace_chunk *tracer, void *pfilter, struct flb_time *tm_start, struct flb_time *tm_end, char *buf, size_t buf_size)
 {
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
+    msgpack_unpacked result;
+    msgpack_object *record;
     int rc = -1;
-    struct flb_input_instance *input = (struct flb_input_instance *)tracer->ic->in;
     struct flb_filter_instance *filter = (struct flb_filter_instance *)pfilter;
     flb_sds_t tag = flb_sds_create("trace");
     struct flb_time tm;
-    unsigned char b64enc[102400];
-    size_t bc64enclen;
+    size_t off;
+    int records = 0;
 
 
     if (tracer == NULL) {
@@ -380,7 +406,7 @@ int flb_trace_chunk_filter(struct flb_trace_chunk *tracer, void *pfilter, struct
 
     msgpack_pack_array(&mp_pck, 2);
     flb_pack_time_now(&mp_pck);
-    msgpack_pack_map(&mp_pck, 7);
+    msgpack_pack_map(&mp_pck, 6);
 
     msgpack_pack_str_with_body(&mp_pck, "type", strlen("type"));
     rc = msgpack_pack_int(&mp_pck, FLB_TRACE_CHUNK_TYPE_FILTER);
@@ -388,11 +414,12 @@ int flb_trace_chunk_filter(struct flb_trace_chunk *tracer, void *pfilter, struct
         goto sbuffer_error;
     }
 
-    //msgpack_pack_double(&mp_pck, flb_time_to_double(&tm));
     msgpack_pack_str_with_body(&mp_pck, "start_time", strlen("start_time"));
-    flb_time_append_to_msgpack(&tm, &mp_pck, FLB_TIME_ETFMT_INT);
+    //msgpack_pack_double(&mp_pck, flb_time_to_double(tm_start));
+    flb_time_append_to_msgpack(tm_start, &mp_pck, FLB_TIME_ETFMT_INT);
     msgpack_pack_str_with_body(&mp_pck, "end_time", strlen("end_time"));
-    flb_time_append_to_msgpack(&tm_end, &mp_pck, FLB_TIME_ETFMT_INT);
+    //msgpack_pack_double(&mp_pck, flb_time_to_double(tm_end));
+    flb_time_append_to_msgpack(tm_end, &mp_pck, FLB_TIME_ETFMT_INT);
 
     msgpack_pack_str_with_body(&mp_pck, "trace_id", strlen("trace_id"));
     msgpack_pack_str_with_body(&mp_pck, tracer->trace_id, strlen(tracer->trace_id));
@@ -404,15 +431,33 @@ int flb_trace_chunk_filter(struct flb_trace_chunk *tracer, void *pfilter, struct
         goto sbuffer_error;
     }
     
-    msgpack_pack_str_with_body(&mp_pck, "record_version", strlen("record_version"));
-    rc = msgpack_pack_int(&mp_pck, tracer->tracer_versions++);
-    if (rc == -1) {
-        goto sbuffer_error;
-    }
+    msgpack_pack_str_with_body(&mp_pck, "records", strlen("records"));
 
-    flb_base64_encode(b64enc, sizeof(b64enc)-1, &bc64enclen, (unsigned char *)buf, buf_size);
-    msgpack_pack_str_with_body(&mp_pck, "record", strlen("record"));
-    msgpack_pack_str_with_body(&mp_pck, b64enc, bc64enclen);
+    do {
+        rc = msgpack_unpack_next(&result, buf, buf_size, &off);
+        if (rc != MSGPACK_UNPACK_SUCCESS) {
+            flb_error("unable to unpack record");
+            goto sbuffer_error;
+        }
+        records++;
+    } while (rc == MSGPACK_UNPACK_SUCCESS && off < buf_size);
+
+    msgpack_pack_array(&mp_pck, records);
+    do {
+        rc = msgpack_unpack_next(&result, buf, buf_size, &off);
+        if (rc != MSGPACK_UNPACK_SUCCESS) {
+            flb_error("unable to unpack record");
+            goto sbuffer_error;
+        }
+        flb_time_pop_from_msgpack(&tm, &result, &record);
+
+        msgpack_pack_map(&mp_pck, 2);
+        msgpack_pack_str_with_body(&mp_pck, "timestamp", strlen("timestamp"));
+        flb_time_append_to_msgpack(&tm, &mp_pck, FLB_TIME_ETFMT_INT);
+        msgpack_pack_str_with_body(&mp_pck, "record", strlen("record"));
+        msgpack_pack_object(&mp_pck, *record);
+
+    } while (rc == MSGPACK_UNPACK_SUCCESS && off < buf_size);
 
     in_emitter_add_record(tag, flb_sds_len(tag), mp_sbuf.data, mp_sbuf.size,
                           tracer->ctxt->input);
