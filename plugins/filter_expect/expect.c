@@ -295,7 +295,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map)
                           "exception on rule #%i 'key_exists', key '%s' "
                           "not found. Record content:\n%s",
                           n, rule->value, json);
-            free(json);
+            flb_free(json);
             return FLB_FALSE;
         }
         else if (rule->type == FLB_EXP_KEY_NOT_EXISTS) {
@@ -308,7 +308,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map)
                           "exception on rule #%i 'key_not_exists', key '%s' "
                           "exists. Record content:\n%s",
                           n, rule->value, json);
-            free(json);
+            flb_free(json);
             flb_ra_key_value_destroy(val);
             return FLB_FALSE;
         }
@@ -319,7 +319,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map)
                               "exception on rule #%i 'key_val_is_null', "
                               "key '%s' not found. Record content:\n%s",
                               n, rule->value, json);
-                free(json);
+                flb_free(json);
                 return FLB_FALSE;
             }
             if (val->type != FLB_RA_NULL) {
@@ -330,7 +330,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map)
                               "Record content:\n%s",
                               n, rule->value,
                               ra_value_type_to_str(val), json);
-                free(json);
+                flb_free(json);
                 flb_ra_key_value_destroy(val);
                 return FLB_FALSE;
             }
@@ -343,7 +343,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map)
                               "exception on rule #%i 'key_val_is_not_null', "
                               "key '%s' not found. Record content:\n%s",
                               n, rule->value, json);
-                free(json);
+                flb_free(json);
                 return FLB_FALSE;
             }
             if (val->type == FLB_RA_NULL) {
@@ -354,7 +354,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map)
                               "Record content:\n%s",
                               n, rule->value,
                               ra_value_type_to_str(val), json);
-                free(json);
+                flb_free(json);
                 flb_ra_key_value_destroy(val);
                 return FLB_FALSE;
             }
@@ -367,7 +367,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map)
                               "exception on rule #%i 'key_val_is_null', "
                               "key '%s' not found. Record content:\n%s",
                               n, rule->value, json);
-                free(json);
+                flb_free(json);
                 return FLB_FALSE;
             }
 
@@ -380,7 +380,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map)
                                   "key value '%s' is different than "
                                   "expected: '%s'. Record content:\n%s",
                                   n, val->val.string, rule->expect, json);
-                    free(json);
+                    flb_free(json);
                     flb_ra_key_value_destroy(val);
                     return FLB_FALSE;
                 }
