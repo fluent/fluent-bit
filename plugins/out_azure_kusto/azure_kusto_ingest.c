@@ -17,6 +17,7 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_random.h>
@@ -63,15 +64,16 @@ static char *base64_encode(flb_sds_t s, size_t len, size_t *out_len)
 {
     char *b64;
     int ret;
+    size_t buffer_len = 4 * ceil(((double)len / 3) + 1);
 
-    *out_len = (4 * ceil(((double)len / 3) + 1));
-    b64 = flb_malloc(*out_len);
+    b64 = flb_malloc(buffer_len);
     if (!b64) {
         flb_errno();
         return NULL;
     }
-    ret = mbedtls_base64_encode((unsigned char *)b64, *out_len, out_len,
-                                (unsigned char *)s, len);
+
+    ret = flb_base64_encode((unsigned char *)b64, buffer_len, out_len, (unsigned char *)s,
+                            len);
     if (ret != 0) {
         flb_error("cannot encode string %s into base64", s);
         flb_free(b64);
