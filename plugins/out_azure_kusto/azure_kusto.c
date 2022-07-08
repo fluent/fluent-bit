@@ -278,16 +278,17 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
     /* output buffer */
     flb_sds_t out_buf;
 
+    /* Create array for all records */
+    records = flb_mp_count(data, bytes);
+    if (records <= 0) {
+        flb_plg_error(ctx->ins, "error counting msgpack entries");
+        return -1;
+    }
+
     /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    /* Create array for all records */
-    records = flb_mp_count(data, bytes);
-    if (records <= 0) {
-        msgpack_sbuffer_destroy(&mp_sbuf);
-        return -1;
-    }
     msgpack_pack_array(&mp_pck, records);
 
     off = 0;
@@ -351,19 +352,18 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
 
     /* Convert from msgpack to JSON */
     out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+
+    /* Cleanup */
     msgpack_sbuffer_destroy(&mp_sbuf);
+    msgpack_unpacked_destroy(&result);
 
     if (!out_buf) {
         flb_plg_error(ctx->ins, "error formatting JSON payload");
-        msgpack_unpacked_destroy(&result);
         return -1;
     }
 
     *out_data = out_buf;
     *out_size = flb_sds_len(out_buf);
-
-    /* Cleanup */
-    msgpack_unpacked_destroy(&result);
 
     return 0;
 }
