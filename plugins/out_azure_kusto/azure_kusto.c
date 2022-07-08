@@ -301,9 +301,12 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
         root = result.data;
         /* Each array must have two entries: time and record */
         if (root.type != MSGPACK_OBJECT_ARRAY) {
+            flb_plg_debug(ctx->ins, "unexpected msgpack object type: %d", root.type);
             continue;
         }
         if (root.via.array.size != 2) {
+            flb_plg_debug(ctx->ins, "unexpected msgpack array size: %d",
+                          root.via.array.size);
             continue;
         }
 
