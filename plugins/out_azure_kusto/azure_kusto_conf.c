@@ -50,14 +50,18 @@ static struct flb_upstream_node *flb_upstream_node_create_url(struct flb_azure_k
     ret = flb_utils_url_split(url, &prot, &host, &port, &uri);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "invalid URL: %s", url);
-        goto upstream_node_create_url_out;
+        return NULL;
     }
 
     /* find sas token in query */
     tmp = strchr(uri, '?');
     if (!tmp) {
         flb_plg_error(ctx->ins, "uri has no sas token query: %s", uri);
-        goto upstream_node_create_url_out;
+        flb_free(prot);
+        flb_free(host);
+        flb_free(port);
+        flb_free(uri);
+        return NULL;
     }
     uri_length = tmp - uri;
     sas_length = strnlen(tmp + 1, 256);
@@ -66,19 +70,33 @@ static struct flb_upstream_node *flb_upstream_node_create_url(struct flb_azure_k
     kv = flb_hash_create(FLB_HASH_EVICT_NONE, 2, 2);
     if (!kv) {
         flb_plg_error(ctx->ins, "error creating upstream node hash table");
-        goto upstream_node_create_url_out;
+        flb_free(prot);
+        flb_free(host);
+        flb_free(port);
+        flb_free(uri);
+        return NULL;
     }
 
     ret = flb_hash_add(kv, AZURE_KUSTO_RESOURCE_UPSTREAM_URI, 3, uri, uri_length);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error storing resource uri");
-        goto upstream_node_create_url_out;
+        flb_free(prot);
+        flb_free(host);
+        flb_free(port);
+        flb_free(uri);
+        flb_hash_destroy(kv);
+        return NULL;
     }
 
     ret = flb_hash_add(kv, AZURE_KUSTO_RESOURCE_UPSTREAM_SAS, 3, tmp + 1, sas_length);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error storing resource sas token");
-        goto upstream_node_create_url_out;
+        flb_free(prot);
+        flb_free(host);
+        flb_free(port);
+        flb_free(uri);
+        flb_hash_destroy(kv);
+        return NULL;
     }
 
     node = flb_upstream_node_create(NULL, host, port, FLB_TRUE, ctx->ins->tls->verify,
@@ -86,7 +104,12 @@ static struct flb_upstream_node *flb_upstream_node_create_url(struct flb_azure_k
                                     NULL, NULL, NULL, NULL, kv, config);
     if (!node) {
         flb_plg_error(ctx->ins, "error creating resource upstream node");
-        goto upstream_node_create_url_out;
+        flb_free(prot);
+        flb_free(host);
+        flb_free(port);
+        flb_free(uri);
+        flb_hash_destroy(kv);
+        return NULL;
     }
 
     flb_free(prot);
@@ -94,24 +117,6 @@ static struct flb_upstream_node *flb_upstream_node_create_url(struct flb_azure_k
     flb_free(port);
     flb_free(uri);
 
-    return node;
-
-upstream_node_create_url_out:
-    if (prot) {
-        flb_free(prot);
-    }
-    if (host) {
-        flb_free(host);
-    }
-    if (port) {
-        flb_free(port);
-    }
-    if (uri) {
-        flb_free(uri);
-    }
-    if (kv) {
-        flb_hash_destroy(kv);
-    }
     return node;
 }
 
