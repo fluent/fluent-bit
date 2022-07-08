@@ -43,19 +43,19 @@ static int azure_kusto_get_oauth2_token(struct flb_azure_kusto *ctx)
         return -1;
     }
 
-    ret = flb_oauth2_payload_append(ctx->o, "scope", 5, FLB_AZURE_KUSTO_SCOPE, -1);
+    ret = flb_oauth2_payload_append(ctx->o, "scope", 5, FLB_AZURE_KUSTO_SCOPE, 39);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error appending oauth2 params");
         return -1;
     }
 
-    ret = flb_oauth2_payload_append(ctx->o, "client_id", -1, ctx->client_id, -1);
+    ret = flb_oauth2_payload_append(ctx->o, "client_id", 9, ctx->client_id, -1);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error appending oauth2 params");
         return -1;
     }
 
-    ret = flb_oauth2_payload_append(ctx->o, "client_secret", -1, ctx->client_secret, -1);
+    ret = flb_oauth2_payload_append(ctx->o, "client_secret", 13, ctx->client_secret, -1);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error appending oauth2 params");
         return -1;
