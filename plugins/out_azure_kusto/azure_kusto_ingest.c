@@ -37,7 +37,7 @@ static char *generate_uuid()
     int i;
     uint64_t rand;
 
-    uuid = flb_malloc(36);
+    uuid = flb_malloc(37);
     if (!uuid) {
         flb_errno();
         return NULL;
@@ -54,6 +54,7 @@ static char *generate_uuid()
         }
         uuid[i] = chars[rand % 16];
     }
+    uuid[36] = '\0';
 
     return uuid;
 }
