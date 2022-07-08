@@ -41,7 +41,7 @@ static struct flb_upstream_node *flb_upstream_node_create_url(struct flb_azure_k
     char *port = NULL;
     char *uri = NULL;
     char *tmp;
-    struct flb_hash *kv;
+    struct flb_hash *kv = NULL;
     struct flb_upstream_node *node = NULL;
     int uri_length;
     int sas_length;
@@ -171,7 +171,7 @@ static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_confi
     int resource_type;
     struct flb_upstream_node *node;
     struct flb_upstream_ha *ha;
-    flb_sds_t resource_uri = flb_sds_create(NULL);
+    flb_sds_t resource_uri;
 
     /* Response is a json in the form of
      * {
@@ -192,17 +192,26 @@ static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_confi
      * }
      */
 
+    resource_uri = flb_sds_create(NULL);
+    if (!resource_uri) {
+        flb_plg_error(ctx->ins, "error allocating resource uri buffer");
+        return -1;
+    }
+
     jsmn_init(&parser);
     tokens = flb_calloc(1, sizeof(jsmntok_t) * tok_size);
     if (!tokens) {
         flb_plg_error(ctx->ins, "error allocating tokens");
-        goto load_storage_resources_error;
+        flb_sds_destroy(resource_uri);
+        return -1;
     }
 
     ret = jsmn_parse(&parser, response, flb_sds_len(response), tokens, tok_size);
     if (ret <= 0) {
         flb_plg_error(ctx->ins, "error parsing JSON response: %s", response);
-        goto load_storage_resources_error;
+        flb_sds_destroy(resource_uri);
+        flb_free(tokens);
+        return -1;
     }
 
     /* skip all tokens until we reach "Rows" */
@@ -291,13 +300,17 @@ static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_confi
 
         if (!ha) {
             flb_plg_error(ctx->ins, "error creating HA upstream");
-            goto load_storage_resources_error;
+            flb_sds_destroy(resource_uri);
+            flb_free(tokens);
+            return -1;
         }
 
         node = flb_upstream_node_create_url(ctx, config, resource_uri);
         if (!node) {
             flb_plg_error(ctx->ins, "error creating HA upstream node");
-            goto load_storage_resources_error;
+            flb_sds_destroy(resource_uri);
+            flb_free(tokens);
+            return -1;
         }
 
         flb_upstream_ha_node_add(ha, node);
@@ -305,7 +318,9 @@ static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_confi
 
     if (!queue_count || !blob_count) {
         flb_plg_error(ctx->ins, "error parsing resources: missing resources");
-        goto load_storage_resources_error;
+        flb_sds_destroy(resource_uri);
+        flb_free(tokens);
+        return -1;
     }
 
     flb_sds_destroy(resource_uri);
@@ -315,18 +330,6 @@ static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_confi
                   queue_count);
 
     return 0;
-
-load_storage_resources_error:
-
-    if (tokens) {
-        flb_free(tokens);
-    }
-
-    if (resource_uri) {
-        flb_sds_destroy(resource_uri);
-    }
-
-    return -1;
 }
 
 /**
@@ -408,7 +411,7 @@ int azure_kusto_load_ingestion_resources(struct flb_azure_kusto *ctx,
                                          struct flb_config *config)
 {
     int ret;
-    flb_sds_t response;
+    flb_sds_t response = NULL;
     flb_sds_t identity_token = NULL;
     struct flb_upstream_ha *blob_ha = NULL;
     struct flb_upstream_ha *queue_ha = NULL;
@@ -456,6 +459,7 @@ int azure_kusto_load_ingestion_resources(struct flb_azure_kusto *ctx,
     }
 
     flb_sds_destroy(response);
+    response = NULL;
 
     response = execute_ingest_csl_command(ctx, ".get kusto identity token");
     if (!response) {

@@ -133,7 +133,8 @@ flb_sds_t execute_ingest_csl_command(struct flb_azure_kusto *ctx, const char *cs
     token = get_azure_kusto_token(ctx);
     if (!token) {
         flb_plg_error(ctx->ins, "cannot retrieve oauth2 token");
-        goto execute_error;
+        flb_upstream_conn_release(u_conn);
+        return NULL;
     }
 
     /* Compose request body */
@@ -141,7 +142,9 @@ flb_sds_t execute_ingest_csl_command(struct flb_azure_kusto *ctx, const char *cs
         flb_sds_create_size(sizeof(FLB_AZURE_KUSTO_MGMT_BODY_TEMPLATE) - 2 + strlen(csl));
     if (!body) {
         flb_plg_error(ctx->ins, "cannot construct request body");
-        goto execute_error;
+        flb_upstream_conn_release(u_conn);
+        flb_sds_destroy(token);
+        return NULL;
     }
 
     body = flb_sds_printf(&body, FLB_AZURE_KUSTO_MGMT_BODY_TEMPLATE, csl);
@@ -151,7 +154,10 @@ flb_sds_t execute_ingest_csl_command(struct flb_azure_kusto *ctx, const char *cs
                         flb_sds_len(body), NULL, 0, NULL, 0);
     if (!c) {
         flb_plg_error(ctx->ins, "cannot create HTTP client context");
-        goto execute_error;
+        flb_upstream_conn_release(u_conn);
+        flb_sds_destroy(token);
+        flb_sds_destroy(body);
+        return NULL;
     }
 
     /* Add headers */
@@ -169,7 +175,11 @@ flb_sds_t execute_ingest_csl_command(struct flb_azure_kusto *ctx, const char *cs
 
     if (ret != 0) {
         flb_plg_error(ctx->ins, "cannot send HTTP request");
-        goto execute_error;
+        flb_upstream_conn_release(u_conn);
+        flb_sds_destroy(token);
+        flb_sds_destroy(body);
+        flb_http_client_destroy(c);
+        return NULL;
     }
 
     /* Validate return status and HTTP status if set */
@@ -180,7 +190,11 @@ flb_sds_t execute_ingest_csl_command(struct flb_azure_kusto *ctx, const char *cs
         else {
             flb_plg_debug(ctx->ins, "Request failed");
         }
-        goto execute_error;
+        flb_upstream_conn_release(u_conn);
+        flb_sds_destroy(token);
+        flb_sds_destroy(body);
+        flb_http_client_destroy(c);
+        return NULL;
     }
 
     ret = c->resp.payload_size;
@@ -193,25 +207,6 @@ flb_sds_t execute_ingest_csl_command(struct flb_azure_kusto *ctx, const char *cs
     flb_sds_destroy(body);
 
     return resp;
-
-execute_error:
-    if (c) {
-        flb_http_client_destroy(c);
-    }
-
-    if (u_conn) {
-        flb_upstream_conn_release(u_conn);
-    }
-
-    if (token) {
-        flb_sds_destroy(token);
-    }
-
-    if (body) {
-        flb_sds_destroy(body);
-    }
-
-    return NULL;
 }
 
 static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_config *config,
@@ -395,7 +390,7 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
     ret = azure_kusto_load_ingestion_resources(ctx, config);
     if (ret != 0) {
         flb_plg_error(ctx->ins, "cannot load ingestion resources");
-        goto flush_error;
+        FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     /* Reformat msgpack to JSON payload */
@@ -403,13 +398,14 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
                              event_chunk->size, (void **)&json, &json_size);
     if (ret != 0) {
         flb_plg_error(ctx->ins, "cannot reformat data into json");
-        goto flush_error;
+        FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     ret = azure_kusto_queued_ingestion(ctx, event_chunk->tag, tag_len, json, json_size);
     if (ret != 0) {
         flb_plg_error(ctx->ins, "cannot perform queued ingestion");
-        goto flush_error;
+        flb_sds_destroy(json);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     /* Cleanup */
@@ -417,12 +413,6 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
 
     /* Done */
     FLB_OUTPUT_RETURN(FLB_OK);
-
-flush_error:
-    if (json) {
-        flb_sds_destroy(json);
-    }
-    FLB_OUTPUT_RETURN(FLB_RETRY);
 }
 
 static int cb_azure_kusto_exit(void *data, struct flb_config *config)
