@@ -217,9 +217,7 @@ execute_error:
 static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_config *config,
                                void *data)
 {
-    char *token;
     int io_flags = FLB_IO_TLS;
-    int ret;
     struct flb_azure_kusto *ctx;
 
     /* Create config context */
@@ -259,22 +257,6 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
         return -1;
     }
     flb_output_upstream_set(ctx->u, ins);
-
-    /* Get or renew the OAuth2 token */
-    token = get_azure_kusto_token(ctx);
-
-    if (!token) {
-        flb_plg_warn(ctx->ins, "token retrieval failed");
-    }
-    else {
-        flb_sds_destroy(token);
-
-        /* load or refresh ingestion resources */
-        ret = azure_kusto_load_ingestion_resources(ctx, config);
-        if (ret != 0) {
-            flb_plg_warn(ctx->ins, "ingestion resources loading failed");
-        }
-    }
 
     return 0;
 }
