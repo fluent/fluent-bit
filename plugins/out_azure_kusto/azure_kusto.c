@@ -88,6 +88,10 @@ flb_sds_t get_azure_kusto_token(struct flb_azure_kusto *ctx)
     /* Copy string to prevent race conditions (get_oauth2 can free the string) */
     if (ret == 0) {
         output = flb_sds_create(ctx->o->token_type);
+        if (!output) {
+            flb_plg_error(ctx->ins, "error creating token");
+            return NULL;
+        }
         flb_sds_printf(&output, " %s", ctx->o->access_token);
     }
 
