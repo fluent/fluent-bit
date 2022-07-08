@@ -373,14 +373,14 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
                                  struct flb_input_instance *i_ins, void *out_context,
                                  struct flb_config *config)
 {
-    (void)i_ins;
-    (void)config;
     int ret;
     flb_sds_t json;
     size_t json_size;
     size_t tag_len;
-
     struct flb_azure_kusto *ctx = out_context;
+
+    (void)i_ins;
+    (void)config;
 
     flb_plg_trace(ctx->ins, "flushing bytes %zu", event_chunk->size);
 
