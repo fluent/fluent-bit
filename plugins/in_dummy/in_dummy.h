@@ -30,6 +30,7 @@ struct flb_dummy {
     int  samples;
     int  rate;
     int  samples_count;
+    int  copies;
     char *dummy_message;
     int  dummy_message_len;
     int  start_time_sec;
