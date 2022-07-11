@@ -457,7 +457,7 @@ static struct flb_config_map config_map[] = {
      "Set the ingestion mapping reference"},
     {FLB_CONFIG_MAP_STR, "log_key", FLB_AZURE_KUSTO_DEFAULT_LOG_KEY, 0, FLB_TRUE,
      offsetof(struct flb_azure_kusto, log_key), "The key name of event payload"},
-    {FLB_CONFIG_MAP_BOOL, "include_tag_key", "false", 0, FLB_TRUE,
+    {FLB_CONFIG_MAP_BOOL, "include_tag_key", "true", 0, FLB_TRUE,
      offsetof(struct flb_azure_kusto, include_tag_key),
      "If enabled, tag is appended to output. "
      "The key name is used 'tag_key' property."},
@@ -465,7 +465,7 @@ static struct flb_config_map config_map[] = {
      offsetof(struct flb_azure_kusto, tag_key),
      "The key name of tag. If 'include_tag_key' is false, "
      "This property is ignored"},
-    {FLB_CONFIG_MAP_BOOL, "include_time_key", "false", 0, FLB_TRUE,
+    {FLB_CONFIG_MAP_BOOL, "include_time_key", "true", 0, FLB_TRUE,
      offsetof(struct flb_azure_kusto, include_time_key),
      "If enabled, time is appended to output. "
      "The key name is used 'time_key' property."},
