@@ -1576,7 +1576,7 @@ char *flb_tail_file_name(struct flb_tail_file *file)
 
     for (file_index=0; file_index < file_count; file_index++) {
         if (file_entries[file_index].kf_fd == file->fd) {
-            strncpy(buf, file_entries[file_index].kf_path,PATH_MAX - 1);
+            strncpy(buf, file_entries[file_index].kf_path, PATH_MAX - 1);
             buf[PATH_MAX - 1] = 0;
             break;
         }
