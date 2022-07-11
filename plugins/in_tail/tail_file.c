@@ -1508,7 +1508,6 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     struct kinfo_file *file_entries;
     int file_count;
     int file_index;
-    int len;
 #endif
 
     buf = flb_malloc(PATH_MAX);
@@ -1576,9 +1575,9 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     }
 
     for (file_index=0; file_index < file_count; file_index++) {
-        if (file_entries[file_index]->kf_fd == file->fd) {
-            strncpy(buf, file_entries[file_index]->kf_path, sizeof(buf) - 1);
-            buf[sizeof(buf) - 1] = 0;
+        if (file_entries[file_index].kf_fd == file->fd) {
+            strncpy(buf, file_entries[file_index].kf_path,PATH_MAX - 1);
+            buf[PATH_MAX - 1] = 0;
             break;
         }
     }
