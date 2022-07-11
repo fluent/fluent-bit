@@ -1506,9 +1506,8 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     HANDLE h;
 #elif defined(FLB_SYSTEM_FREEBSD)
     struct kinfo_file *file_entries;
-    struct kinfo_file *info;
-    int count;
-    int idx;
+    int file_count;
+    int file_index;
     int len;
 #endif
 
@@ -1571,17 +1570,15 @@ char *flb_tail_file_name(struct flb_tail_file *file)
         memmove(buf, buf + 4, len + 1);
     }
 #elif defined(FLB_SYSTEM_FREEBSD)
-    if ((file_entries = kinfo_getfile(getpid(), &count)) == NULL) {
+    if ((file_entries = kinfo_getfile(getpid(), &file_count)) == NULL) {
         flb_free(buf);
         return NULL;
     }
 
-    for (idx=0; idx < count; idx++) {
-        info = &file_entries[idx];
-        if (info->kf_fd == file->fd) {
-            len = strlen(info->kf_path);
-            memcpy(buf, info->kf_path, len);
-            buf[len] = '\0';
+    for (file_index=0; file_index < file_count; file_index++) {
+        if (file_entries[file_index]->kf_fd == file->fd) {
+            strncpy(buf, file_entries[file_index]->kf_path, sizeof(buf) - 1);
+            buf[sizeof(buf) - 1] = 0;
             break;
         }
     }
