@@ -97,7 +97,7 @@ int flb_ml_type_lookup(char *str)
 
 void flb_ml_flush_parser_instance(struct flb_ml *ml,
                                   struct flb_ml_parser_ins *parser_i,
-                                  uint64_t stream_id)
+                                  uint64_t stream_id, int forced_flush)
 {
     struct mk_list *head;
     struct mk_list *head_group;
@@ -113,12 +113,12 @@ void flb_ml_flush_parser_instance(struct flb_ml *ml,
         /* Iterate stream groups */
         mk_list_foreach(head_group, &mst->groups) {
             group = mk_list_entry(head_group, struct flb_ml_stream_group, _head);
-            flb_ml_flush_stream_group(parser_i->ml_parser, mst, group);
+            flb_ml_flush_stream_group(parser_i->ml_parser, mst, group, forced_flush);
         }
     }
 }
 
-void flb_ml_flush_pending(struct flb_ml *ml, uint64_t now)
+void flb_ml_flush_pending(struct flb_ml *ml, uint64_t now, int forced_flush)
 {
     struct mk_list *head;
     struct flb_ml_parser_ins *parser_i;
@@ -133,7 +133,7 @@ void flb_ml_flush_pending(struct flb_ml *ml, uint64_t now)
     /* iterate group parser instances */
     mk_list_foreach(head, &group->parsers) {
         parser_i = mk_list_entry(head, struct flb_ml_parser_ins, _head);
-        flb_ml_flush_parser_instance(ml, parser_i, 0);
+        flb_ml_flush_parser_instance(ml, parser_i, 0, forced_flush);
     }
 }
 
@@ -142,7 +142,7 @@ void flb_ml_flush_pending_now(struct flb_ml *ml)
     uint64_t now;
 
     now = time_ms_now();
-    flb_ml_flush_pending(ml, now);
+    flb_ml_flush_pending(ml, now, FLB_TRUE);
 }
 
 static void cb_ml_flush_timer(struct flb_config *ctx, void *data)
@@ -159,7 +159,7 @@ static void cb_ml_flush_timer(struct flb_config *ctx, void *data)
      * Iterate over all streams and groups and for a flush for expired groups
      * which has not flushed in the last N milliseconds.
      */
-    flb_ml_flush_pending(ml, now);
+    flb_ml_flush_pending(ml, now, FLB_TRUE);
 }
 
 int flb_ml_register_context(struct flb_ml_stream_group *group,
@@ -232,7 +232,7 @@ static int package_content(struct flb_ml_stream *mst,
     }
     else {
         if (mst->last_stream_group != stream_group) {
-            flb_ml_flush_stream_group(parser, mst, mst->last_stream_group);
+            flb_ml_flush_stream_group(parser, mst, mst->last_stream_group, FLB_FALSE);
             mst->last_stream_group = stream_group;
         }
     }
@@ -296,7 +296,7 @@ static int package_content(struct flb_ml_stream *mst,
 
             /* on ENDSWITH mode, a rule match means flush the content */
             if (rule_match) {
-                flb_ml_flush_stream_group(parser, mst, stream_group);
+                flb_ml_flush_stream_group(parser, mst, stream_group, FLB_FALSE);
             }
             processed = FLB_TRUE;
         }
@@ -330,7 +330,7 @@ static int package_content(struct flb_ml_stream *mst,
 
         /* on ENDSWITH mode, a rule match means flush the content */
         if (rule_match) {
-            flb_ml_flush_stream_group(parser, mst, stream_group);
+            flb_ml_flush_stream_group(parser, mst, stream_group, FLB_FALSE);
         }
         processed = FLB_TRUE;
     }
@@ -343,12 +343,12 @@ static int package_content(struct flb_ml_stream *mst,
      * content.
      */
     if (!processed && type == FLB_ML_TYPE_TEXT) {
-        flb_ml_flush_stream_group(parser, mst, stream_group);
+        flb_ml_flush_stream_group(parser, mst, stream_group, FLB_FALSE);
 
         /* Concatenate value */
         flb_sds_cat_safe(&stream_group->buf, buf, size);
         breakline_prepare(parser_i, stream_group);
-        flb_ml_flush_stream_group(parser, mst, stream_group);
+        flb_ml_flush_stream_group(parser, mst, stream_group, FLB_FALSE);
     }
     else {
         return FLB_FALSE;
@@ -705,13 +705,16 @@ int flb_ml_append(struct flb_ml *ml, uint64_t stream_id,
             else {
                 flb_ml_flush_parser_instance(ml,
                                              lru_parser,
-                                             lru_parser->last_stream_id);
+                                             lru_parser->last_stream_id,
+                                             FLB_FALSE);
             }
         }
         else if (lru_parser && lru_parser->last_stream_id > 0) {
-            flb_ml_flush_parser_instance(ml,
-                                         lru_parser,
-                                         lru_parser->last_stream_id);
+            /*
+             * Clear last recently used parser to match new parser.
+             * Do not flush last_stream_id since it should continue to parsing.
+             */
+            lru_parser = NULL;
         }
     }
 
@@ -738,7 +741,7 @@ int flb_ml_append(struct flb_ml *ml, uint64_t stream_id,
 
     if (!processed) {
         if (lru_parser) {
-            flb_ml_flush_parser_instance(ml, lru_parser, stream_id);
+            flb_ml_flush_parser_instance(ml, lru_parser, stream_id, FLB_FALSE);
             parser_i = lru_parser;
         }
         else {
@@ -748,7 +751,7 @@ int flb_ml_append(struct flb_ml *ml, uint64_t stream_id,
                                            _head);
         }
 
-        flb_ml_flush_parser_instance(ml, parser_i, stream_id);
+        flb_ml_flush_parser_instance(ml, parser_i, stream_id, FLB_FALSE);
         mst = flb_ml_stream_get(parser_i, stream_id);
         if (!mst) {
             flb_error("[multiline] invalid stream_id %" PRIu64 ", could not "
@@ -759,7 +762,7 @@ int flb_ml_append(struct flb_ml *ml, uint64_t stream_id,
         /* Get stream group */
         st_group = flb_ml_stream_group_get(mst->parser, mst, NULL);
         flb_sds_cat_safe(&st_group->buf, buf, size);
-        flb_ml_flush_stream_group(parser_i->ml_parser, mst, st_group);
+        flb_ml_flush_stream_group(parser_i->ml_parser, mst, st_group, FLB_FALSE);
     }
 
     return 0;
@@ -815,13 +818,16 @@ int flb_ml_append_object(struct flb_ml *ml, uint64_t stream_id,
             else {
                 flb_ml_flush_parser_instance(ml,
                                              lru_parser,
-                                             lru_parser->last_stream_id);
+                                             lru_parser->last_stream_id,
+                                             FLB_FALSE);
             }
         }
         else if (lru_parser && lru_parser->last_stream_id > 0) {
-            flb_ml_flush_parser_instance(ml,
-                                         lru_parser,
-                                         lru_parser->last_stream_id);
+            /*
+             * Clear last recently used parser to match new parser.
+             * Do not flush last_stream_id since it should continue to parsing.
+             */
+            lru_parser = NULL;
         }
     }
 
@@ -848,7 +854,7 @@ int flb_ml_append_object(struct flb_ml *ml, uint64_t stream_id,
 
     if (!processed) {
         if (lru_parser) {
-            flb_ml_flush_parser_instance(ml, lru_parser, stream_id);
+            flb_ml_flush_parser_instance(ml, lru_parser, stream_id, FLB_FALSE);
             parser_i = lru_parser;
         }
         else {
@@ -858,7 +864,7 @@ int flb_ml_append_object(struct flb_ml *ml, uint64_t stream_id,
                                            _head);
         }
 
-        flb_ml_flush_parser_instance(ml, parser_i, stream_id);
+        flb_ml_flush_parser_instance(ml, parser_i, stream_id, FLB_FALSE);
         mst = flb_ml_stream_get(parser_i, stream_id);
         if (!mst) {
             flb_error("[multiline] invalid stream_id %" PRIu64 ", could not "
@@ -997,7 +1003,8 @@ int flb_ml_destroy(struct flb_ml *ml)
 
 int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
                               struct flb_ml_stream *mst,
-                              struct flb_ml_stream_group *group)
+                              struct flb_ml_stream_group *group,
+                              int forced_flush)
 {
     int i;
     int ret;
@@ -1107,7 +1114,22 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
     }
 
     if (mp_sbuf.size > 0) {
+        /*
+         * a 'forced_flush' means to alert the caller that the data 'must be flushed to it destination'. This flag is
+         * only enabled when the flush process has been triggered by the multiline timer, e.g:
+         *
+         * - the message is complete or incomplete and its time to dispatch it.
+         */
+        if (forced_flush) {
+            mst->forced_flush = FLB_TRUE;
+        }
+
+        /* invoke user callback */
         mst->cb_flush(ml_parser, mst, mst->cb_data, mp_sbuf.data, mp_sbuf.size);
+
+        if (forced_flush) {
+            mst->forced_flush = FLB_FALSE;
+        }
     }
 
     msgpack_sbuffer_destroy(&mp_sbuf);

@@ -184,7 +184,7 @@ static inline uint64_t calc_diff(struct netif_entry *entry)
 }
 
 #define LINE_LEN 256
-static read_proc_file_linux(struct flb_in_netif_config *ctx)
+static int read_proc_file_linux(struct flb_in_netif_config *ctx)
 {
     FILE *fp = NULL;
     char line[LINE_LEN] = {0};

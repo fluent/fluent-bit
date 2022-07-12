@@ -2,9 +2,9 @@ cmake_minimum_required(VERSION 3.0)
 project(fluent-bit)
 
 # Fluent Bit Version
-set(FLB_VERSION_MAJOR  1)
-set(FLB_VERSION_MINOR  9)
-set(FLB_VERSION_PATCH  6)
+set(FLB_VERSION_MAJOR  2)
+set(FLB_VERSION_MINOR  0)
+set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -134,6 +134,7 @@ option(FLB_IN_DISK            "Enable Disk input plugin"            Yes)
 option(FLB_IN_DOCKER          "Enable Docker input plugin"          Yes)
 option(FLB_IN_DOCKER_EVENTS   "Enable Docker events input plugin"   Yes)
 option(FLB_IN_EXEC            "Enable Exec input plugin"            Yes)
+option(FLB_IN_EVENT_TEST      "Enable Events test plugin"           Yes)
 option(FLB_IN_FLUENTBIT_METRICS "Enable Fluent Bit metrics  plugin" Yes)
 option(FLB_IN_FORWARD         "Enable Forward input plugin"         Yes)
 option(FLB_IN_HEALTH          "Enable Health input plugin"          Yes)
@@ -162,6 +163,7 @@ option(FLB_IN_WINEVTLOG       "Enable Windows EvtLog input plugin"   No)
 option(FLB_IN_COLLECTD        "Enable Collectd input plugin"        Yes)
 option(FLB_IN_PROMETHEUS_SCRAPE "Enable Promeheus Scrape input plugin" Yes)
 option(FLB_IN_STATSD          "Enable StatsD input plugin"          Yes)
+option(FLB_IN_EVENT_TEST      "Enable event test plugin"             No)
 option(FLB_IN_STORAGE_BACKLOG "Enable storage backlog input plugin" Yes)
 option(FLB_IN_EMITTER         "Enable emitter input plugin"         Yes)
 option(FLB_IN_NODE_EXPORTER_METRICS "Enable node exporter metrics input plugin" Yes)
@@ -290,6 +292,7 @@ if(FLB_DEV)
   set(FLB_DEBUG             On)
   set(FLB_TRACE             On)
   set(FLB_METRICS           On)
+  set(FLB_IN_EVENT_TEST     On)
   set(FLB_HTTP_SERVER       On)
   set(FLB_HTTP_CLIENT_DEBUG On)
   set(FLB_TESTS_INTERNAL    On)
@@ -428,6 +431,9 @@ add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
 # Miniz (zip)
 add_subdirectory(${FLB_PATH_LIB_MINIZ} EXCLUDE_FROM_ALL)
 
+# ring buffer library
+add_subdirectory(${FLB_PATH_LIB_RING_BUFFER} EXCLUDE_FROM_ALL)
+
 # Avro
 if(FLB_AVRO_ENCODER)
   # jansson
@@ -464,6 +470,10 @@ FLB_OPTION(CARES_SHARED      OFF)
 FLB_OPTION(CARES_INSTALL     OFF)
 FLB_OPTION(CARES_BUILD_TESTS OFF)
 FLB_OPTION(CARES_BUILD_TOOLS OFF)
+if (FLB_SYSTEM_MACOS)
+  # macOS SDK always has <arpa/nameser.h>.
+  FLB_DEFINITION(CARES_HAVE_ARPA_NAMESER_H)
+endif()
 add_subdirectory(${FLB_PATH_LIB_CARES})# EXCLUDE_FROM_ALL)
 
 # Chunk I/O

@@ -22,6 +22,9 @@
 #include "opentelemetry.h"
 #include "http_conn.h"
 
+/* default HTTP port for OTLP/HTTP is 4318 */
+#define OTLP_HTTP_PORT    4318
+
 struct flb_opentelemetry *opentelemetry_config_create(struct flb_input_instance *ins)
 {
     int ret;
@@ -43,8 +46,8 @@ struct flb_opentelemetry *opentelemetry_config_create(struct flb_input_instance 
         return NULL;
     }
 
-    /* Listen interface (if not set, defaults to 0.0.0.0:9880) */
-    flb_input_net_default_listener("0.0.0.0", 9880, ins);
+    /* Listen interface (if not set, defaults to 0.0.0.0:4318) */
+    flb_input_net_default_listener("0.0.0.0", OTLP_HTTP_PORT, ins);
 
     ctx->listen = flb_strdup(ins->host.listen);
     snprintf(port, sizeof(port) - 1, "%d", ins->host.port);

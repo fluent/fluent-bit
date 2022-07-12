@@ -57,6 +57,7 @@ runs:
     env:
       AWS_ACCESS_KEY_ID: ${{ inputs.access_key_id }}
       AWS_SECRET_ACCESS_KEY: ${{ inputs.secret_access_key }}
+      AWS_REGION: "us-east-1"
       BUCKET: ${{ inputs.bucket }}
     shell: bash
 

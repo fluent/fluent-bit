@@ -41,7 +41,8 @@
 #define MAX_FILE_SIZE         50000000000
 #define MAX_FILE_SIZE_STR     "50,000,000,000"
 
-#define MAX_FILE_SIZE_PUT_OBJECT         50000000
+/* Allowed max file size 1 GB for publishing to S3 */
+#define MAX_FILE_SIZE_PUT_OBJECT        1000000000 
 
 #define DEFAULT_UPLOAD_TIMEOUT 3600
 

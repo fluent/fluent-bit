@@ -360,8 +360,8 @@ static void print_storage_info(struct flb_config *ctx, struct cio_ctx *cio)
     }
 }
 
-static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
-                  char *str)
+static void log_cb(void *ctx, int level, const char *file, int line,
+                   const char *str)
 {
     if (level == CIO_LOG_ERROR) {
         flb_error("[storage] %s", str);
@@ -375,8 +375,6 @@ static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
     else if (level == CIO_LOG_DEBUG) {
         flb_debug("[storage] %s", str);
     }
-
-    return 0;
 }
 
 int flb_storage_input_create(struct cio_ctx *cio,
@@ -460,18 +458,6 @@ static int storage_contexts_create(struct flb_config *config)
     }
 
     return c;
-}
-
-static void storage_contexts_destroy(struct flb_config *config)
-{
-    struct mk_list *head;
-    struct flb_input_instance *in;
-
-    /* Iterate each input instance and destroy the context */
-    mk_list_foreach(head, &config->inputs) {
-        in = mk_list_entry(head, struct flb_input_instance, _head);
-        flb_storage_input_destroy(in);
-    }
 }
 
 int flb_storage_create(struct flb_config *ctx)
@@ -586,8 +572,5 @@ void flb_storage_destroy(struct flb_config *ctx)
     }
 
     cio_destroy(cio);
-
-    /* Delete references from input instances */
-    storage_contexts_destroy(ctx);
     ctx->cio = NULL;
 }

@@ -90,7 +90,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
         ctx->api_https = FLB_FALSE;
     }
     else if (ctx->use_kubelet) {
-        ctx->api_host = flb_strdup(FLB_KUBELET_HOST);
+        ctx->api_host = flb_strdup(ctx->kubelet_host);
         ctx->api_port = ctx->kubelet_port;
         ctx->api_https = FLB_TRUE;
 
