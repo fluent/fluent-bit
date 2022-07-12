@@ -1618,7 +1618,7 @@ char *flb_tail_file_name(struct flb_tail_file *file)
             break;
         }
     }
-    flb_free(file_entries);
+    free(file_entries);
 #endif
     return buf;
 }
