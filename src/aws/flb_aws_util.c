@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_jsmn.h>
+#include <fluent-bit/flb_env.h>
 
 #include <stdlib.h>
 #include <sys/types.h>
@@ -40,6 +41,10 @@
 #define S3_KEY_SIZE 1024
 #define RANDOM_STRING "$UUID"
 #define INDEX_STRING "$INDEX"
+#define AWS_USER_AGENT_NONE "none"
+#define AWS_USER_AGENT_ECS "ecs"
+#define AWS_USER_AGENT_K8S "k8s"
+#define AWS_ECS_METADATA_URI "ECS_CONTAINER_METADATA_URI_V4"
 #define FLB_MAX_AWS_RESP_BUFFER_SIZE 0 /* 0 means unlimited capacity as per requirement */
 
 struct flb_http_client *request_do(struct flb_aws_client *aws_client,
@@ -288,6 +293,9 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
     struct flb_http_client *c = NULL;
     flb_sds_t tmp;
     flb_sds_t user_agent_prefix;
+    flb_sds_t user_agent = NULL;
+    char *buf;
+    struct flb_env *env;
 
     u_conn = flb_upstream_conn_get(aws_client->upstream);
     if (!u_conn) {
@@ -322,8 +330,44 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
         flb_warn("[aws_http_client] failed to increase max response buffer size");
     } 
 
-    /* Add AWS Fluent Bit user agent */
+    /* Set AWS Fluent Bit user agent */
+    env = aws_client->upstream->config->env;
+    buf = (char *) flb_env_get(env, "FLB_AWS_USER_AGENT");
+    if (buf == NULL) {
+        if (getenv(AWS_ECS_METADATA_URI) != NULL) {
+            user_agent = flb_sds_create(AWS_USER_AGENT_ECS);
+            if (!user_agent) {
+                flb_errno();
+                goto error;
+            }
+        } 
+        else {
+            buf = (char *) flb_env_get(env, AWS_USER_AGENT_K8S);
+            if (buf && strcasecmp(buf, "enabled") == 0) {
+                user_agent = flb_sds_create(AWS_USER_AGENT_K8S);
+                if (!user_agent) {
+                    flb_errno();
+                    goto error;
+                }
+            }
+        } 
+
+        if (user_agent == NULL) {
+            user_agent = flb_sds_create(AWS_USER_AGENT_NONE);
+            if (!user_agent) {
+                flb_errno();
+                goto error;
+            }
+        }
+        
+        flb_env_set(env, "FLB_AWS_USER_AGENT", user_agent);
+    }
     if (aws_client->extra_user_agent == NULL) {
+        aws_client->extra_user_agent = (char *) flb_env_get(env, "FLB_AWS_USER_AGENT");
+    }
+    
+    /* Add AWS Fluent Bit user agent header */
+    if (strcasecmp(aws_client->extra_user_agent, AWS_USER_AGENT_NONE) == 0) {
         ret = flb_http_add_header(c, "User-Agent", 10,
                                   "aws-fluent-bit-plugin", 21);
     }
