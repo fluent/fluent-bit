@@ -964,6 +964,10 @@ static struct filter_avro_file_state *collect_lines_for_file(
         }
 
         next_state = get_file_state(ctx, reader);
+        if (!next_state) {
+            /* error getting file state */
+            return NULL;
+        }
 
         if (state && next_state != state) {
             /* different file, flush the collected records */
