@@ -160,7 +160,9 @@ void flb_filter_do(struct flb_input_chunk *ic,
                     /* reset data content length */
 
 #ifdef FLB_TRACE
-                    if (ic->trace) flb_trace_chunk_filter(ic->trace, &tm_start, &tm_finish, (void *)f_ins, "", 0);
+                    if (ic->trace) {
+                        flb_trace_chunk_filter(ic->trace, &tm_start, &tm_finish, (void *)f_ins, "", 0);
+                    }
 #endif // FLB_TRACE
 
 
@@ -218,7 +220,9 @@ void flb_filter_do(struct flb_input_chunk *ic,
                 }
 
 #ifdef FLB_TRACE
-                if (ic->trace) flb_trace_chunk_filter(ic->trace, (void *)f_ins, &tm_start, &tm_finish, out_buf, out_size);
+                if (ic->trace) {
+                    flb_trace_chunk_filter(ic->trace, (void *)f_ins, &tm_start, &tm_finish, out_buf, out_size);
+                }
 #endif // FLB_TRACE
 
                 /* Point back the 'data' pointer to the new address */
