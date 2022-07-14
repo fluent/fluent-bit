@@ -219,7 +219,7 @@ static int in_exec_init(struct flb_input_instance *in,
     int ret = -1;
 
     /* Allocate space for the configuration */
-    ctx = flb_malloc(sizeof(struct flb_exec));
+    ctx = flb_calloc(1, sizeof(struct flb_exec));
     if (!ctx) {
         return -1;
     }
