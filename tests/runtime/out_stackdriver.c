@@ -293,6 +293,59 @@ static int mp_kv_exists(char *json_data, size_t json_len, char *key_accessor)
     return ret;
 }
 
+/*
+ *   flb_test():
+ * - Runs a unit test using lib input mode and Stackdriver output.
+ * - Checks the result using the given callback with the payload as input.
+ * - Varargs are used as Stackdriver configuration parameters.
+ */
+static void flb_test(const char *payload,
+                     const char *tag,
+                     void (*out_callback) (void *, int, int, void *, size_t, void *),
+                     ...)
+{
+    int ret;
+    int size = strlen(payload);
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    va_list va;
+
+    /* Create context, flush every second */
+    ctx = flb_create();
+    ret = flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    ret = flb_input_set(ctx, in_ffd, "tag", tag, NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    va_start(va, out_callback);
+    ret = vflb_output_set(ctx, out_ffd, va);
+    va_end(va);
+    TEST_CHECK(ret == 0);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              out_callback,
+                              NULL, NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, payload, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 static void cb_check_monitored_resource(void *ctx, int ffd,
                                      int res_ret, void *res_data, size_t res_size,
                                      void *data)
@@ -2192,1036 +2245,238 @@ static void cb_check_timestamp_format_duo_fields_incorrect_type(void *ctx, int f
 
 void flb_test_monitored_resource_common()
 {
-    int ret;
-    int size = sizeof(MONITORED_RESOURCE_COMMON_CASE) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "resource", "monitored_resource",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_monitored_resource,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) MONITORED_RESOURCE_COMMON_CASE, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(MONITORED_RESOURCE_COMMON_CASE, "test", cb_check_monitored_resource,
+            "match", "test",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "resource", "monitored_resource",
+            NULL);
 }
 
 void flb_test_monitored_resource_priority_higher_than_local_resource_id()
 {
-    int ret;
-    int size = sizeof(MONITORED_RESOURCE_PRIORITY_HIGHER_THAN_LOCAL_RESOURCE_ID) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "resource", "k8s_container",
-                   "k8s_cluster_name", "test_cluster_name",
-                   "k8s_cluster_location", "test_cluster_location",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_monitored_resource_priority_higher_than_local_resource_id,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) MONITORED_RESOURCE_PRIORITY_HIGHER_THAN_LOCAL_RESOURCE_ID, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(MONITORED_RESOURCE_PRIORITY_HIGHER_THAN_LOCAL_RESOURCE_ID, "test",
+            cb_check_monitored_resource_priority_higher_than_local_resource_id,
+            "match", "test",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "resource", "k8s_container",
+            "k8s_cluster_name", "test_cluster_name",
+            "k8s_cluster_location", "test_cluster_location",
+            NULL);
 }
 
 void flb_test_monitored_resource_priority_higher_than_gce_instance()
 {
-    int ret;
-    int size = sizeof(MONITORED_RESOURCE_PRIORITY_HIGHER_THAN_GCE_INSTANCE) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_monitored_resource_priority_higher_than_gce_instance,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) MONITORED_RESOURCE_PRIORITY_HIGHER_THAN_GCE_INSTANCE, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(MONITORED_RESOURCE_PRIORITY_HIGHER_THAN_GCE_INSTANCE, "test",
+            cb_check_monitored_resource_priority_higher_than_gce_instance,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_resource_global()
 {
-    int ret;
-    int size = sizeof(JSON) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "resource", "global",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_global_resource,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) JSON, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(JSON, "test", cb_check_global_resource,
+            "match", "test",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "resource", "global",
+            NULL);
 }
 
 void flb_test_trace_no_autoformat()
 {
-    int ret;
-    int size = sizeof(TRACE_COMMON_CASE) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   "trace_key", "trace",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_trace_no_autoformat,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) TRACE_COMMON_CASE, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(TRACE_COMMON_CASE, "test", cb_check_trace_no_autoformat,
+            "match", "test",
+            "resource", "gce_instance",
+            "trace_key", "trace",
+            NULL);
 }
 
 void flb_test_trace_stackdriver_autoformat()
 {
-    int ret;
-    int size = sizeof(TRACE_COMMON_CASE) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   "trace_key", "trace",
-                   "autoformat_stackdriver_trace", "true",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_trace_stackdriver_autoformat,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) TRACE_COMMON_CASE, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(TRACE_COMMON_CASE, "test", cb_check_trace_stackdriver_autoformat,
+            "match", "test",
+            "resource", "gce_instance",
+            "trace_key", "trace",
+            "autoformat_stackdriver_trace", "true",
+            NULL);
 }
 
 void flb_test_set_metadata_server()
 {
-    int ret;
-    int size = sizeof(JSON) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   "metadata_server", "http://metadata.google.internal",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_gce_instance,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) JSON, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(JSON, "test", cb_check_gce_instance,
+            "match", "test",
+            "resource", "gce_instance",
+            "metadata_server", "http://metadata.google.internal",
+            NULL);
 }
 
 void flb_test_log_name_override()
 {
-    int ret;
-    int size = sizeof(LOG_NAME_OVERRIDE) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   "log_name_key", "custom_log_name_key",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_log_name_override,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) LOG_NAME_OVERRIDE, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(LOG_NAME_OVERRIDE, "test", cb_check_log_name_override,
+            "match", "test",
+            "resource", "gce_instance",
+            "log_name_key", "custom_log_name_key",
+            NULL);
 }
 
 void flb_test_log_name_no_override()
 {
-    int ret;
-    int size = sizeof(LOG_NAME_NO_OVERRIDE) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   "log_name_key", "custom_log_name_key",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_log_name_no_override,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) LOG_NAME_NO_OVERRIDE, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(LOG_NAME_NO_OVERRIDE, "test", cb_check_log_name_no_override,
+        "match", "test",
+        "resource", "gce_instance",
+        "log_name_key", "custom_log_name_key",
+        NULL);
 }
 
 void flb_test_resource_global_custom_prefix()
 {
     /* configuring tag_prefix for non-k8s resource type should have no effect at all */
-    int ret;
-    int size = sizeof(JSON) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "resource", "global",
-                   "tag_prefix", "custom_tag.",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_global_resource,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) JSON, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(JSON, "test", cb_check_global_resource,
+            "match", "test",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "resource", "global",
+            "tag_prefix", "custom_tag.",
+            NULL);
 }
 
 void flb_test_resource_generic_node_creds()
 {
-    int ret;
-    int size = sizeof(JSON) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "resource", "generic_node",
-                   "location", "fluent",
-                   "namespace", "test",
-                   "node_id", "333222111",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_generic_node_creds,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) JSON, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(JSON, "test", cb_check_generic_node_creds,
+            "match", "test",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "resource", "generic_node",
+            "location", "fluent",
+            "namespace", "test",
+            "node_id", "333222111",
+            NULL);
 }
 
 void flb_test_resource_generic_node_metadata()
 {
-    int ret;
-    int size = sizeof(JSON) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "generic_node",
-                   "location", "fluent",
-                   "namespace", "test",
-                   "node_id", "333222111",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_generic_node_metadata,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) JSON, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(JSON, "test", cb_check_generic_node_metadata,
+            "match", "test",
+            "resource", "generic_node",
+            "location", "fluent",
+            "namespace", "test",
+            "node_id", "333222111",
+            NULL);
 }
 
 void flb_test_resource_generic_task_creds()
 {
-    int ret;
-    int size = sizeof(JSON) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "resource", "generic_task",
-                   "location", "fluent",
-                   "namespace", "test",
-                   "job", "test-job",
-                   "task_id", "333222111",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_generic_task_creds,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) JSON, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(JSON, "test", cb_check_generic_task_creds,
+            "match", "test",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "resource", "generic_task",
+            "location", "fluent",
+            "namespace", "test",
+            "job", "test-job",
+            "task_id", "333222111",
+            NULL);
 }
 
 void flb_test_resource_generic_task_metadata()
 {
-    int ret;
-    int size = sizeof(JSON) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "generic_task",
-                   "location", "fluent",
-                   "namespace", "test",
-                   "job", "test-job",
-                   "task_id", "333222111",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_generic_task_metadata,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) JSON, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(JSON, "test", cb_check_generic_task_metadata,
+            "match", "test",
+            "resource", "generic_task",
+            "location", "fluent",
+            "namespace", "test",
+            "job", "test-job",
+            "task_id", "333222111",
+            NULL);
 }
 
 void flb_test_resource_gce_instance()
 {
-    int ret;
-    int size = sizeof(JSON) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_gce_instance,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) JSON, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(JSON, "test", cb_check_gce_instance,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_insert_id_common_case()
 {
-    int ret;
-    int size = sizeof(INSERTID_COMMON_CASE) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_insert_id_common_case,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) INSERTID_COMMON_CASE, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(INSERTID_COMMON_CASE, "test", cb_check_insert_id_common_case,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_empty_insert_id()
 {
-    int ret;
-    int size = sizeof(EMPTY_INSERTID) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_empty_insert_id,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) EMPTY_INSERTID, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(EMPTY_INSERTID, "test", cb_check_empty_insert_id,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_insert_id_incorrect_type()
 {
-    int ret;
-    int size = sizeof(INSERTID_INCORRECT_TYPE_INT) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_insert_id_incorrect_type,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) INSERTID_INCORRECT_TYPE_INT, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(INSERTID_INCORRECT_TYPE_INT, "test", cb_check_insert_id_incorrect_type,
+        "match", "test",
+        "resource", "gce_instance",
+        NULL);
 }
 
 void flb_test_operation_common()
 {
-    int ret;
-    int size = sizeof(OPERATION_COMMON_CASE) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_operation_common_case,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) OPERATION_COMMON_CASE, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(OPERATION_COMMON_CASE, "test", cb_check_operation_common_case,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_empty_operation()
 {
-    int ret;
-    int size = sizeof(EMPTY_OPERATION) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_empty_operation,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) EMPTY_OPERATION, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(EMPTY_OPERATION, "test", cb_check_empty_operation,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_operation_in_string()
 {
-    int ret;
-    int size = sizeof(OPERATION_IN_STRING) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_operation_in_string,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) OPERATION_IN_STRING, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(OPERATION_IN_STRING, "test", cb_check_operation_in_string,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_operation_partial_subfields()
 {
-    int ret;
-    int size = sizeof(PARTIAL_SUBFIELDS) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_operation_partial_subfields,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) PARTIAL_SUBFIELDS, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(PARTIAL_SUBFIELDS, "test", cb_check_operation_partial_subfields,
+        "match", "test",
+        "resource", "gce_instance",
+        NULL);
 }
 
 void flb_test_operation_incorrect_type_subfields()
 {
-    int ret;
-    int size = sizeof(SUBFIELDS_IN_INCORRECT_TYPE) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_operation_incorrect_type_subfields,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) SUBFIELDS_IN_INCORRECT_TYPE, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(SUBFIELDS_IN_INCORRECT_TYPE, "test",
+            cb_check_operation_incorrect_type_subfields,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_operation_extra_subfields()
 {
-    int ret;
-    int size = sizeof(EXTRA_SUBFIELDS_EXISTED) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_operation_extra_subfields,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) EXTRA_SUBFIELDS_EXISTED, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(EXTRA_SUBFIELDS_EXISTED, "test", cb_check_operation_extra_subfields,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_resource_k8s_container_common()
 {
-    int ret;
-    int size = sizeof(K8S_CONTAINER_COMMON) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "k8s_container",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "k8s_cluster_name", "test_cluster_name",
-                   "k8s_cluster_location", "test_cluster_location",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_k8s_container_resource,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_COMMON, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(K8S_CONTAINER_COMMON, "test", cb_check_k8s_container_resource,
+            "match", "test",
+            "resource", "k8s_container",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "k8s_cluster_name", "test_cluster_name",
+            "k8s_cluster_location", "test_cluster_location",
+            NULL);
 }
 
 void flb_test_resource_k8s_container_multi_tag_value()
@@ -3280,1666 +2535,427 @@ void flb_test_resource_k8s_container_multi_tag_value()
 
 void flb_test_resource_k8s_container_custom_tag_prefix()
 {
-    int ret;
-    int size = sizeof(K8S_CONTAINER_NO_LOCAL_RESOURCE_ID) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "kube_custom_tag.testnamespace.testpod.testctr", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "kube_custom_tag.*",
-                   "resource", "k8s_container",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "k8s_cluster_name", "test_cluster_name",
-                   "k8s_cluster_location", "test_cluster_location",
-                   "tag_prefix", "kube_custom_tag.",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_k8s_container_resource,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_NO_LOCAL_RESOURCE_ID, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(K8S_CONTAINER_NO_LOCAL_RESOURCE_ID,
+            "kube_custom_tag.testnamespace.testpod.testctr",
+            cb_check_k8s_container_resource,
+            "match", "kube_custom_tag.*",
+            "resource", "k8s_container",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "k8s_cluster_name", "test_cluster_name",
+            "k8s_cluster_location", "test_cluster_location",
+            "tag_prefix", "kube_custom_tag.",
+            NULL);
 }
 
 void flb_test_resource_k8s_container_custom_tag_prefix_with_dot()
 {
-    int ret;
-    int size = sizeof(K8S_CONTAINER_NO_LOCAL_RESOURCE_ID) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "kube.custom.tag.testnamespace.testpod.testctr", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "kube.custom.tag.*",
-                   "resource", "k8s_container",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "k8s_cluster_name", "test_cluster_name",
-                   "k8s_cluster_location", "test_cluster_location",
-                   "tag_prefix", "kube.custom.tag.",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_k8s_container_resource,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_NO_LOCAL_RESOURCE_ID, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(K8S_CONTAINER_NO_LOCAL_RESOURCE_ID,
+            "kube.custom.tag.testnamespace.testpod.testctr",
+            cb_check_k8s_container_resource,
+            "match", "kube.custom.tag.*",
+            "resource", "k8s_container",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "k8s_cluster_name", "test_cluster_name",
+            "k8s_cluster_location", "test_cluster_location",
+            "tag_prefix", "kube.custom.tag.",
+            NULL);
 }
 
 void flb_test_resource_k8s_container_default_tag_regex()
 {
-    int ret;
-    int size = sizeof(K8S_CONTAINER_NO_LOCAL_RESOURCE_ID) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag",
-                  "kube.var.log.containers.apache-logs-annotated_default_apache-aeeccc7a9f00f6e4e066aeff0434cf80621215071f1b20a51e8340aa7c35eac6.log", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "kube.custom.tag.*",
-                   "resource", "k8s_container",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "k8s_cluster_name", "test_cluster_name",
-                   "k8s_cluster_location", "test_cluster_location",
-                   "tag_prefix", "kube.var.log.containers.",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_k8s_container_resource_default_regex,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_NO_LOCAL_RESOURCE_ID, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(K8S_CONTAINER_NO_LOCAL_RESOURCE_ID,
+            "kube.var.log.containers.apache-logs-annotated_default_apache-aeeccc7a9f00f6e4e066aeff0434cf80621215071f1b20a51e8340aa7c35eac6.log",
+            cb_check_k8s_container_resource_default_regex,
+            "match", "kube.custom.tag.*",
+            "resource", "k8s_container",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "k8s_cluster_name", "test_cluster_name",
+            "k8s_cluster_location", "test_cluster_location",
+            "tag_prefix", "kube.var.log.containers.",
+            NULL);
 }
 
 void flb_test_resource_k8s_container_custom_k8s_regex()
 {
-    int ret;
-    int size = sizeof(K8S_CONTAINER_NO_LOCAL_RESOURCE_ID) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag",
-                  "k8s_container.testnamespace.testpod.testctr", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "k8s_container.*",
-                   "resource", "k8s_container",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "k8s_cluster_name", "test_cluster_name",
-                   "k8s_cluster_location", "test_cluster_location",
-                   "custom_k8s_regex", "^(?<namespace_name>[^_]+)\\.(?<pod_name>[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)\\.(?<container_name>.+)$",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_k8s_container_resource,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_NO_LOCAL_RESOURCE_ID, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(K8S_CONTAINER_NO_LOCAL_RESOURCE_ID,
+            "k8s_container.testnamespace.testpod.testctr",
+            cb_check_k8s_container_resource,
+            "match", "k8s_container.*",
+            "resource", "k8s_container",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "k8s_cluster_name", "test_cluster_name",
+            "k8s_cluster_location", "test_cluster_location",
+            "custom_k8s_regex", "^(?<namespace_name>[^_]+)\\.(?<pod_name>[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)\\.(?<container_name>.+)$",
+            NULL);
 }
 
 void flb_test_resource_k8s_container_custom_k8s_regex_custom_prefix()
 {
-    int ret;
-    int size = sizeof(K8S_CONTAINER_NO_LOCAL_RESOURCE_ID) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag",
-                  "kube.var.log.containers.testnamespace.testpod.testctr", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "kube.var.log.containers.*",
-                   "resource", "k8s_container",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "k8s_cluster_name", "test_cluster_name",
-                   "k8s_cluster_location", "test_cluster_location",
-                   "tag_prefix", "kube.var.log.containers.",
-                   "custom_k8s_regex", "^(?<namespace_name>[^_]+)\\.(?<pod_name>[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)\\.(?<container_name>.+)$",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_k8s_container_resource,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_NO_LOCAL_RESOURCE_ID, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(K8S_CONTAINER_NO_LOCAL_RESOURCE_ID,
+            "kube.var.log.containers.testnamespace.testpod.testctr",
+            cb_check_k8s_container_resource,
+            "match", "kube.var.log.containers.*",
+            "resource", "k8s_container",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "k8s_cluster_name", "test_cluster_name",
+            "k8s_cluster_location", "test_cluster_location",
+            "tag_prefix", "kube.var.log.containers.",
+            "custom_k8s_regex", "^(?<namespace_name>[^_]+)\\.(?<pod_name>[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)\\.(?<container_name>.+)$",
+            NULL);
 }
 
 void flb_test_resource_k8s_node_common()
 {
-    int ret;
-    int size = sizeof(K8S_NODE_COMMON) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "k8s_node",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "k8s_cluster_name", "test_cluster_name",
-                   "k8s_cluster_location", "test_cluster_location",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_k8s_node_resource,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) K8S_NODE_COMMON, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(K8S_NODE_COMMON, "test", cb_check_k8s_node_resource,
+            "match", "test",
+            "resource", "k8s_node",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "k8s_cluster_name", "test_cluster_name",
+            "k8s_cluster_location", "test_cluster_location",
+            NULL);
 }
 
 void flb_test_resource_k8s_pod_common()
 {
-    int ret;
-    int size = sizeof(K8S_POD_COMMON) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "k8s_pod",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "k8s_cluster_name", "test_cluster_name",
-                   "k8s_cluster_location", "test_cluster_location",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_k8s_pod_resource,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) K8S_POD_COMMON, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(K8S_POD_COMMON, "test", cb_check_k8s_pod_resource,
+            "match", "test",
+            "resource", "k8s_pod",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "k8s_cluster_name", "test_cluster_name",
+            "k8s_cluster_location", "test_cluster_location",
+            NULL);
 }
 
 void flb_test_default_labels()
 {
-    int ret;
-    int size = sizeof(DEFAULT_LABELS) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "global",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_default_labels,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) DEFAULT_LABELS, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(DEFAULT_LABELS, "test", cb_check_default_labels,
+            "match", "test",
+            "resource", "global",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            NULL);
 }
 
 void flb_test_custom_labels()
 {
-    int ret;
-    int size = sizeof(CUSTOM_LABELS) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "global",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "labels_key", "logging.googleapis.com/customlabels",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_custom_labels,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) CUSTOM_LABELS, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(CUSTOM_LABELS, "test", cb_check_custom_labels,
+            "match", "test",
+            "resource", "global",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "labels_key", "logging.googleapis.com/customlabels",
+            NULL);
 }
 
 void flb_test_config_labels_conflict()
 {
-    int ret;
-    int size = sizeof(DEFAULT_LABELS) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "global",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "labels", "testB=valC",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_config_labels_conflict,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) DEFAULT_LABELS, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(DEFAULT_LABELS, "test", cb_check_config_labels_conflict,
+            "match", "test",
+            "resource", "global",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "labels", "testB=valC",
+            NULL);
 }
 
 void flb_test_config_labels_no_conflict()
 {
-    int ret;
-    int size = sizeof(DEFAULT_LABELS) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "global",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "labels", "testC=valC",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_config_labels_no_conflict,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) DEFAULT_LABELS, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(DEFAULT_LABELS, "test", cb_check_config_labels_no_conflict,
+            "match", "test",
+            "resource", "global",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "labels", "testC=valC",
+            NULL);
 }
 
 void flb_test_default_labels_k8s_resource_type()
 {
-    int ret;
-    int size = sizeof(DEFAULT_LABELS_K8S_RESOURCE_TYPE) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "k8s_container",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "k8s_cluster_name", "test_cluster_name",
-                   "k8s_cluster_location", "test_cluster_location",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_default_labels_k8s_resource_type,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) DEFAULT_LABELS_K8S_RESOURCE_TYPE, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(DEFAULT_LABELS_K8S_RESOURCE_TYPE, "test",
+            cb_check_default_labels_k8s_resource_type,
+            "match", "test",
+            "resource", "k8s_container",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "k8s_cluster_name", "test_cluster_name",
+            "k8s_cluster_location", "test_cluster_location",
+            NULL);
 }
 
 void flb_test_resource_labels_one_field()
 {
-    int ret;
-    int size = sizeof(ONE_FIELD) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "resource_labels", "keyB=$keyA",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_resource_labels_one_field,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(ONE_FIELD, "test", cb_check_resource_labels_one_field,
+            "match", "test",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "resource_labels", "keyB=$keyA",
+            NULL);
 }
 
 void flb_test_resource_labels_plaintext()
 {
-    int ret;
-    int size = sizeof(ONE_FIELD) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "resource_labels", "keyB=plaintext",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_resource_labels_plaintext,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(ONE_FIELD, "test", cb_check_resource_labels_plaintext,
+            "match", "test",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "resource_labels", "keyB=plaintext",
+            NULL);
 }
 
 void flb_test_resource_labels_multiple_fields()
 {
-    int ret;
-    int size = sizeof(MULTIPLE_FIELDS) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "resource_labels", "keyD=$keyB,keyC=$keyA",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_multiple_fields_mapped,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) MULTIPLE_FIELDS, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(MULTIPLE_FIELDS, "test", cb_check_multiple_fields_mapped,
+            "match", "test",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "resource_labels", "keyD=$keyB,keyC=$keyA",
+            NULL);
 }
 
 void flb_test_resource_labels_nested_fields()
 {
-    int ret;
-    int size = sizeof(NESTED_FIELDS) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "resource_labels", "keyD=$toplevel['keyB'],keyC=$toplevel['keyA']",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_nested_fields_mapped,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) NESTED_FIELDS, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(NESTED_FIELDS, "test", cb_check_nested_fields_mapped,
+            "match", "test",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "resource_labels", "keyD=$toplevel['keyB'],keyC=$toplevel['keyA']",
+            NULL);
 }
 
 void flb_test_resource_labels_layered_nested_fields()
 {
-    int ret;
-    int size = sizeof(LAYERED_NESTED_FIELDS) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "resource_labels",
-                        "keyD=$toplevel['keyB'],keyC=$toplevel['midlevel']['keyA']",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_layered_nested_fields_mapped,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) LAYERED_NESTED_FIELDS, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(LAYERED_NESTED_FIELDS, "test", cb_check_layered_nested_fields_mapped,
+        "match", "test",
+        "google_service_credentials", SERVICE_CREDENTIALS,
+        "resource_labels", "keyD=$toplevel['keyB'],keyC=$toplevel['midlevel']['keyA']",
+        NULL);
 }
 
 void flb_test_resource_labels_original_does_not_exist()
 {
-    int ret;
-    int size = sizeof(ONE_FIELD) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "resource_labels", "keyC=$keyB",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_resource_labels_original_does_not_exist,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(ONE_FIELD, "test", cb_check_resource_labels_original_does_not_exist,
+            "match", "test",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "resource_labels", "keyC=$keyB",
+            NULL);
 }
 
 void flb_test_resource_labels_nested_original_does_not_exist()
 {
-    int ret;
-    int size = sizeof(ONE_FIELD) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "resource_labels", "keyC=$keyY['keyZ']",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_resource_labels_original_does_not_exist,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(ONE_FIELD, "test", cb_check_resource_labels_original_does_not_exist,
+            "match", "test",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "resource_labels", "keyC=$keyY['keyZ']",
+            NULL);
 }
 
 void flb_test_resource_labels_nested_original_partially_exists()
 {
-    int ret;
-    int size = sizeof(NESTED_FIELDS) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "resource_labels", "keyC=$toplevel['keyZ']",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_resource_labels_nested_original_partially_exists,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) NESTED_FIELDS, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(NESTED_FIELDS, "test",
+            cb_check_resource_labels_nested_original_partially_exists,
+            "match", "test",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "resource_labels", "keyC=$toplevel['keyZ']",
+            NULL);
 }
 
 void flb_test_resource_labels_one_field_with_spaces()
 {
-    int ret;
-    int size = sizeof(ONE_FIELD) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "resource_labels", "keyB = $keyA",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_resource_labels_one_field,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(ONE_FIELD, "test", cb_check_resource_labels_one_field,
+            "match", "test",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "resource_labels", "keyB = $keyA",
+            NULL);
 }
 
 void flb_test_resource_labels_multiple_fields_with_spaces()
 {
-    int ret;
-    int size = sizeof(MULTIPLE_FIELDS) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "resource_labels", "keyD = $keyB, keyC = $keyA",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_multiple_fields_mapped,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) MULTIPLE_FIELDS, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(MULTIPLE_FIELDS, "test", cb_check_multiple_fields_mapped,
+        "match", "test",
+        "google_service_credentials", SERVICE_CREDENTIALS,
+        "resource_labels", "keyD = $keyB, keyC = $keyA",
+        NULL);
 }
 
 void flb_test_resource_labels_empty_input()
 {
-    int ret;
-    int size = sizeof(ONE_FIELD) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "resource_labels", "",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_resource_labels_original_does_not_exist,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(ONE_FIELD, "test", cb_check_resource_labels_original_does_not_exist,
+            "match", "test",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "resource_labels", "",
+            NULL);
 }
 
 void flb_test_resource_labels_duplicate_assignment()
 {
-    int ret;
-    int size = sizeof(MULTIPLE_FIELDS) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "resource_labels", "keyC=$keyA,keyC=$keyB",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_resource_labels_duplicate_assignment,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) MULTIPLE_FIELDS, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(MULTIPLE_FIELDS, "test", cb_check_resource_labels_duplicate_assignment,
+            "match", "test",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "resource_labels", "keyC=$keyA,keyC=$keyB",
+            NULL);
 }
 
 void flb_test_resource_labels_project_id_not_overridden()
 {
-    int ret;
-    int size = sizeof(ONE_FIELD) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "resource_labels", "project_id=$keyA",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_resource_labels_project_id_not_overridden,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(ONE_FIELD, "test", cb_check_resource_labels_project_id_not_overridden,
+            "match", "test",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "resource_labels", "project_id=$keyA",
+            NULL);
 }
 
 void flb_test_resource_labels_has_priority() 
 {
-    int ret;
-    int size = sizeof(ONE_FIELD) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                "match", "test",
-                "resource", "k8s_container",
-                "google_service_credentials", SERVICE_CREDENTIALS,
-                "k8s_cluster_name", "test_cluster_name",
-                "k8s_cluster_location", "test_cluster_location",
-                "resource_labels",
-                    "cluster_name=name_from_labels,location=loc_from_labels",
-                NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_resource_labels_k8s,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(ONE_FIELD, "test", cb_check_resource_labels_k8s,
+            "match", "test",
+            "resource", "k8s_container",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "k8s_cluster_name", "test_cluster_name",
+            "k8s_cluster_location", "test_cluster_location",
+            "resource_labels", "cluster_name=name_from_labels,location=loc_from_labels",
+            NULL);
 }
 
 void flb_test_resource_labels_fallsback_when_required_not_specified() 
 {
-    int ret;
-    int size = sizeof(K8S_CONTAINER_COMMON) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                "match", "test",
-                "resource", "k8s_container",
-                "google_service_credentials", SERVICE_CREDENTIALS,
-                "k8s_cluster_name", "test_cluster_name",
-                "k8s_cluster_location", "test_cluster_location",
-                "resource_labels", "keyB=$keyA",
-                NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_k8s_container_resource,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_COMMON, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(K8S_CONTAINER_COMMON, "test", cb_check_k8s_container_resource,
+            "match", "test",
+            "resource", "k8s_container",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "k8s_cluster_name", "test_cluster_name",
+            "k8s_cluster_location", "test_cluster_location",
+            "resource_labels", "keyB=$keyA",
+            NULL);
 }
 
 void flb_test_resource_labels_fallsback_when_required_partially_specified() 
 {
-    int ret;
-    int size = sizeof(K8S_CONTAINER_COMMON) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                "match", "test",
-                "resource", "k8s_container",
-                "google_service_credentials", SERVICE_CREDENTIALS,
-                "k8s_cluster_name", "test_cluster_name",
-                "k8s_cluster_location", "test_cluster_location",
-                "resource_labels", "location=cluster_loc",
-                NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_k8s_container_resource,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_COMMON, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(K8S_CONTAINER_COMMON, "test", cb_check_k8s_container_resource,
+        "match", "test",
+        "resource", "k8s_container",
+        "google_service_credentials", SERVICE_CREDENTIALS,
+        "k8s_cluster_name", "test_cluster_name",
+        "k8s_cluster_location", "test_cluster_location",
+        "resource_labels", "location=cluster_loc",
+        NULL);
 }
 
 void flb_test_resource_labels_k8s_container() 
 {
-    int ret;
-    int size = sizeof(ONE_FIELD) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                "match", "test",
-                "resource", "k8s_container",
-                "google_service_credentials", SERVICE_CREDENTIALS,
-                "resource_labels",
-                    "cluster_name=name_from_labels,location=loc_from_labels",
-                NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_resource_labels_k8s,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(ONE_FIELD, "test", cb_check_resource_labels_k8s,
+            "match", "test",
+            "resource", "k8s_container",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "resource_labels", "cluster_name=name_from_labels,location=loc_from_labels",
+            NULL);
 }
 
 void flb_test_resource_labels_k8s_node() 
 {
-    int ret;
-    int size = sizeof(ONE_FIELD) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                "match", "test",
-                "resource", "k8s_node",
-                "google_service_credentials", SERVICE_CREDENTIALS,
-                "resource_labels",
-                    "cluster_name=name_from_labels,location=loc_from_labels",
-                NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_resource_labels_k8s,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(ONE_FIELD, "test", cb_check_resource_labels_k8s,
+            "match", "test",
+            "resource", "k8s_node",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "resource_labels", "cluster_name=name_from_labels,location=loc_from_labels",
+            NULL);
 }
 
 void flb_test_resource_labels_k8s_pod() 
 {
-    int ret;
-    int size = sizeof(ONE_FIELD) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                "match", "test",
-                "resource", "k8s_pod",
-                "google_service_credentials", SERVICE_CREDENTIALS,
-                "resource_labels",
-                    "cluster_name=name_from_labels,location=loc_from_labels",
-                NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_resource_labels_k8s,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(ONE_FIELD, "test", cb_check_resource_labels_k8s,
+            "match", "test",
+            "resource", "k8s_pod",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "resource_labels", "cluster_name=name_from_labels,location=loc_from_labels",
+            NULL);
 }
 
 void flb_test_resource_labels_generic_node() 
 {
-    int ret;
-    int size = sizeof(ONE_FIELD) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                "match", "test",
-                "google_service_credentials", SERVICE_CREDENTIALS,
-                "resource", "generic_node",
-                "resource_labels",
-                    "location=fluent,namespace=test,node_id=333222111",
-                NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_generic_node_creds,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(ONE_FIELD, "test", cb_check_generic_node_creds,
+            "match", "test",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "resource", "generic_node",
+            "resource_labels", "location=fluent,namespace=test,node_id=333222111",
+            NULL);
 }
 
 void flb_test_resource_labels_generic_task() 
 {
-    int ret;
-    int size = sizeof(ONE_FIELD) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                "match", "test",
-                "google_service_credentials", SERVICE_CREDENTIALS,
-                "resource", "generic_task",
-                "resource_labels",
-                    "location=fluent,namespace=test,job=test-job,task_id=333222111",
-                NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_generic_task_creds,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(ONE_FIELD, "test", cb_check_generic_task_creds,
+        "match", "test",
+        "google_service_credentials", SERVICE_CREDENTIALS,
+        "resource", "generic_task",
+        "resource_labels", "location=fluent,namespace=test,job=test-job,task_id=333222111",
+        NULL);
 }
 
 void flb_test_custom_labels_k8s_resource_type()
 {
-    int ret;
-    int size = sizeof(CUSTOM_LABELS_K8S_RESOURCE_TYPE) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "k8s_container",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "labels_key", "logging.googleapis.com/customlabels",
-                   "k8s_cluster_name", "test_cluster_name",
-                   "k8s_cluster_location", "test_cluster_location",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_custom_labels_k8s_resource_type,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) CUSTOM_LABELS_K8S_RESOURCE_TYPE, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(CUSTOM_LABELS_K8S_RESOURCE_TYPE, "test",
+            cb_check_custom_labels_k8s_resource_type,
+            "match", "test",
+            "resource", "k8s_container",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "labels_key", "logging.googleapis.com/customlabels",
+            "k8s_cluster_name", "test_cluster_name",
+            "k8s_cluster_location", "test_cluster_location",
+            NULL);
 }
 
 void flb_test_resource_k8s_container_no_local_resource_id()
 {
-    int ret;
-    int size = sizeof(K8S_CONTAINER_NO_LOCAL_RESOURCE_ID) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag",
-                  "k8s_container.testnamespace.testpod.testctr", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "k8s_container.*",
-                   "resource", "k8s_container",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "k8s_cluster_name", "test_cluster_name",
-                   "k8s_cluster_location", "test_cluster_location",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_k8s_container_resource,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_NO_LOCAL_RESOURCE_ID, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(K8S_CONTAINER_NO_LOCAL_RESOURCE_ID,
+            "k8s_container.testnamespace.testpod.testctr",
+            cb_check_k8s_container_resource,
+            "match", "k8s_container.*",
+            "resource", "k8s_container",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "k8s_cluster_name", "test_cluster_name",
+            "k8s_cluster_location", "test_cluster_location",
+            NULL);
 }
 
 void flb_test_resource_k8s_node_no_local_resource_id()
 {
-    int ret;
-    int size = sizeof(K8S_NODE_NO_LOCAL_RESOURCE_ID) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "k8s_node.testnode", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "k8s_node.*",
-                   "resource", "k8s_node",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "k8s_cluster_name", "test_cluster_name",
-                   "k8s_cluster_location", "test_cluster_location",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_k8s_node_resource,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) K8S_NODE_NO_LOCAL_RESOURCE_ID, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(K8S_NODE_NO_LOCAL_RESOURCE_ID,
+            "k8s_node.testnode",
+            cb_check_k8s_node_resource,
+            "match", "k8s_node.*",
+            "resource", "k8s_node",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "k8s_cluster_name", "test_cluster_name",
+            "k8s_cluster_location", "test_cluster_location",
+            NULL);
 }
 
 void flb_test_resource_k8s_node_custom_k8s_regex_with_dot()
 {
-    int ret;
-    int size = sizeof(K8S_NODE_LOCAL_RESOURCE_ID_WITH_DOT) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "k8s_node",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "k8s_cluster_name", "test_cluster_name",
-                   "k8s_cluster_location", "test_cluster_location",
-                   "custom_k8s_regex", "^(?<node_name>.*)$",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_k8s_node_custom_k8s_regex,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) K8S_NODE_LOCAL_RESOURCE_ID_WITH_DOT, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(K8S_NODE_LOCAL_RESOURCE_ID_WITH_DOT, "test",
+            cb_check_k8s_node_custom_k8s_regex,
+            "match", "test",
+            "resource", "k8s_node",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "k8s_cluster_name", "test_cluster_name",
+            "k8s_cluster_location", "test_cluster_location",
+            "custom_k8s_regex", "^(?<node_name>.*)$",
+            NULL);
 }
 
 void flb_test_resource_k8s_node_custom_k8s_regex_with_long_tag()
 {
-    int ret;
-    int size = sizeof(K8S_NODE_LOCAL_RESOURCE_ID_WITH_DOT) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "tagWithLongLen", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "tagWithLongLen",
-                   "resource", "k8s_node",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "k8s_cluster_name", "test_cluster_name",
-                   "k8s_cluster_location", "test_cluster_location",
-                   "custom_k8s_regex", "^(?<node_name>.*)$",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_k8s_node_custom_k8s_regex,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) K8S_NODE_LOCAL_RESOURCE_ID_WITH_DOT, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(K8S_NODE_LOCAL_RESOURCE_ID_WITH_DOT, "tagWithLongLen",
+            cb_check_k8s_node_custom_k8s_regex,
+            "match", "tagWithLongLen",
+            "resource", "k8s_node",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "k8s_cluster_name", "test_cluster_name",
+            "k8s_cluster_location", "test_cluster_location",
+            "custom_k8s_regex", "^(?<node_name>.*)$",
+            NULL);
 }
 
 void flb_test_resource_k8s_pod_no_local_resource_id()
 {
-    int ret;
-    int size = sizeof(K8S_POD_NO_LOCAL_RESOURCE_ID) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "k8s_pod.testnamespace.testpod", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "k8s_pod.*",
-                   "resource", "k8s_pod",
-                   "google_service_credentials", SERVICE_CREDENTIALS,
-                   "k8s_cluster_name", "test_cluster_name",
-                   "k8s_cluster_location", "test_cluster_location",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_k8s_pod_resource,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) K8S_POD_NO_LOCAL_RESOURCE_ID, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(K8S_POD_NO_LOCAL_RESOURCE_ID, "k8s_pod.testnamespace.testpod",
+            cb_check_k8s_pod_resource,
+            "match", "k8s_pod.*",
+            "resource", "k8s_pod",
+            "google_service_credentials", SERVICE_CREDENTIALS,
+            "k8s_cluster_name", "test_cluster_name",
+            "k8s_cluster_location", "test_cluster_location",
+            NULL);
 }
 
 void flb_test_multi_entries_severity()
@@ -4989,962 +3005,211 @@ void flb_test_multi_entries_severity()
 
 void flb_test_source_location_common_case()
 {
-    int ret;
-    int size = sizeof(SOURCELOCATION_COMMON_CASE) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_source_location_common_case,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) SOURCELOCATION_COMMON_CASE, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(SOURCELOCATION_COMMON_CASE, "test", cb_check_source_location_common_case,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_source_location_line_in_string()
 {
-    int ret;
-    int size = sizeof(SOURCELOCATION_COMMON_CASE_LINE_IN_STRING) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_source_location_common_case_line_in_string,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) SOURCELOCATION_COMMON_CASE_LINE_IN_STRING, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(SOURCELOCATION_COMMON_CASE_LINE_IN_STRING, "test",
+            cb_check_source_location_common_case_line_in_string,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_empty_source_location()
 {
-    int ret;
-    int size = sizeof(EMPTY_SOURCELOCATION) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_empty_source_location,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) EMPTY_SOURCELOCATION, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(EMPTY_SOURCELOCATION, "test", cb_check_empty_source_location,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_source_location_in_string()
 {
-    int ret;
-    int size = sizeof(SOURCELOCATION_IN_STRING) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_source_location_in_string,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) SOURCELOCATION_IN_STRING, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(SOURCELOCATION_IN_STRING, "test", cb_check_source_location_in_string,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_source_location_partial_subfields()
 {
-    int ret;
-    int size = sizeof(PARTIAL_SOURCELOCATION) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_source_location_partial_subfields,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) PARTIAL_SOURCELOCATION, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(PARTIAL_SOURCELOCATION, "test", cb_check_source_location_partial_subfields,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_source_location_incorrect_type_subfields()
 {
-    int ret;
-    int size = sizeof(SOURCELOCATION_SUBFIELDS_IN_INCORRECT_TYPE) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_source_location_incorrect_type_subfields,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) SOURCELOCATION_SUBFIELDS_IN_INCORRECT_TYPE, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(SOURCELOCATION_SUBFIELDS_IN_INCORRECT_TYPE, "test",
+            cb_check_source_location_incorrect_type_subfields,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_source_location_extra_subfields()
 {
-    int ret;
-    int size = sizeof(SOURCELOCATION_EXTRA_SUBFIELDS_EXISTED) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_source_location_extra_subfields,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) SOURCELOCATION_EXTRA_SUBFIELDS_EXISTED, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(SOURCELOCATION_EXTRA_SUBFIELDS_EXISTED, "test",
+            cb_check_source_location_extra_subfields,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_http_request_common_case()
 {
-    int ret;
-    int size = sizeof(HTTPREQUEST_COMMON_CASE) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_http_request_common_case,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_COMMON_CASE, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(HTTPREQUEST_COMMON_CASE, "test", cb_check_http_request_common_case,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_empty_http_request()
 {
-    int ret;
-    int size = sizeof(EMPTY_HTTPREQUEST) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_empty_http_request,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) EMPTY_HTTPREQUEST, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(EMPTY_HTTPREQUEST, "test", cb_check_empty_http_request,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_http_request_in_string()
 {
-    int ret;
-    int size = sizeof(HTTPREQUEST_IN_STRING) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_http_request_in_string,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_IN_STRING, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(HTTPREQUEST_IN_STRING, "test", cb_check_http_request_in_string,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_http_request_partial_subfields()
 {
-    int ret;
-    int size = sizeof(PARTIAL_HTTPREQUEST) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_http_request_partial_subfields,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) PARTIAL_HTTPREQUEST, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(PARTIAL_HTTPREQUEST, "test",
+            cb_check_http_request_partial_subfields,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_http_request_incorrect_type_subfields()
 {
-    int ret;
-    int size = sizeof(HTTPREQUEST_SUBFIELDS_IN_INCORRECT_TYPE) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_http_request_incorrect_type_subfields,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_SUBFIELDS_IN_INCORRECT_TYPE, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(HTTPREQUEST_SUBFIELDS_IN_INCORRECT_TYPE, "test",
+            cb_check_http_request_incorrect_type_subfields,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_http_request_extra_subfields()
 {
-    int ret;
-    int size = sizeof(HTTPREQUEST_EXTRA_SUBFIELDS_EXISTED) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_http_request_extra_subfields,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_EXTRA_SUBFIELDS_EXISTED, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(HTTPREQUEST_EXTRA_SUBFIELDS_EXISTED, "test",
+            cb_check_http_request_extra_subfields,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_http_request_latency_common_case()
 {
-    int ret;
-    int size = sizeof(HTTPREQUEST_LATENCY_COMMON_CASE) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_http_request_lantency_common_case,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_LATENCY_COMMON_CASE, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(HTTPREQUEST_LATENCY_COMMON_CASE, "test",
+            cb_check_http_request_lantency_common_case,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_http_request_latency_invalid_spaces()
 {
-    int ret;
-    int size = sizeof(HTTPREQUEST_LATENCY_INVALID_SPACES) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_http_request_latency_incorrect_format,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_LATENCY_INVALID_SPACES, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(HTTPREQUEST_LATENCY_INVALID_SPACES, "test",
+            cb_check_http_request_latency_incorrect_format,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_http_request_latency_invalid_string()
 {
-    int ret;
-    int size = sizeof(HTTPREQUEST_LATENCY_INVALID_STRING) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_http_request_latency_incorrect_format,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_LATENCY_INVALID_STRING, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(HTTPREQUEST_LATENCY_INVALID_STRING, "test",
+            cb_check_http_request_latency_incorrect_format,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_http_request_latency_invalid_end()
 {
-    int ret;
-    int size = sizeof(HTTPREQUEST_LATENCY_INVALID_END) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_http_request_latency_incorrect_format,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_LATENCY_INVALID_END, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(HTTPREQUEST_LATENCY_INVALID_END, "test",
+            cb_check_http_request_latency_incorrect_format,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_timestamp_format_object_common()
 {
-    int ret;
-    int size = sizeof(TIMESTAMP_FORMAT_OBJECT_COMMON_CASE) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_timestamp_format_object_common_case,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) TIMESTAMP_FORMAT_OBJECT_COMMON_CASE, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(TIMESTAMP_FORMAT_OBJECT_COMMON_CASE, "test",
+            cb_check_timestamp_format_object_common_case,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_timestamp_format_object_not_a_map()
 {
-    int ret;
-    int size = sizeof(TIMESTAMP_FORMAT_OBJECT_NOT_A_MAP) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_timestamp_format_object_not_a_map,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) TIMESTAMP_FORMAT_OBJECT_NOT_A_MAP, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(TIMESTAMP_FORMAT_OBJECT_NOT_A_MAP, "test",
+            cb_check_timestamp_format_object_not_a_map,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_timestamp_format_object_missing_subfield()
 {
-    int ret;
-    int size = sizeof(TIMESTAMP_FORMAT_OBJECT_MISSING_SUBFIELD) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_timestamp_format_object_missing_subfield,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) TIMESTAMP_FORMAT_OBJECT_MISSING_SUBFIELD, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(TIMESTAMP_FORMAT_OBJECT_MISSING_SUBFIELD, "test",
+            cb_check_timestamp_format_object_missing_subfield,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_timestamp_format_object_incorrect_subfields()
 {
-    int ret;
-    int size = sizeof(TIMESTAMP_FORMAT_OBJECT_INCORRECT_TYPE_SUBFIELDS) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_timestamp_format_object_incorrect_subfields,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) TIMESTAMP_FORMAT_OBJECT_INCORRECT_TYPE_SUBFIELDS, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(TIMESTAMP_FORMAT_OBJECT_INCORRECT_TYPE_SUBFIELDS, "test",
+            cb_check_timestamp_format_object_incorrect_subfields,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_timestamp_format_duo_fields_common_case()
 {
-    int ret;
-    int size = sizeof(TIMESTAMP_FORMAT_DUO_FIELDS_COMMON_CASE) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_timestamp_format_duo_fields_common_case,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) TIMESTAMP_FORMAT_DUO_FIELDS_COMMON_CASE, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(TIMESTAMP_FORMAT_DUO_FIELDS_COMMON_CASE, "test",
+            cb_check_timestamp_format_duo_fields_common_case,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_timestamp_format_duo_fields_missing_nanos()
 {
-    int ret;
-    int size = sizeof(TIMESTAMP_FORMAT_DUO_FIELDS_MISSING_NANOS) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_timestamp_format_duo_fields_missing_nanos,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) TIMESTAMP_FORMAT_DUO_FIELDS_MISSING_NANOS, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(TIMESTAMP_FORMAT_DUO_FIELDS_MISSING_NANOS, "test",
+            cb_check_timestamp_format_duo_fields_missing_nanos,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 void flb_test_timestamp_format_duo_fields_incorrect_type()
 {
-    int ret;
-    int size = sizeof(TIMESTAMP_FORMAT_DUO_FIELDS_INCORRECT_TYPE) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Stackdriver output */
-    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "resource", "gce_instance",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_timestamp_format_duo_fields_incorrect_type,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) TIMESTAMP_FORMAT_DUO_FIELDS_INCORRECT_TYPE, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    flb_test(TIMESTAMP_FORMAT_DUO_FIELDS_INCORRECT_TYPE, "test",
+            cb_check_timestamp_format_duo_fields_incorrect_type,
+            "match", "test",
+            "resource", "gce_instance",
+            NULL);
 }
 
 /* Test list */
