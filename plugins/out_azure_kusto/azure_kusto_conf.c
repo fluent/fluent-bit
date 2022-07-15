@@ -55,61 +55,50 @@ static struct flb_upstream_node *flb_upstream_node_create_url(struct flb_azure_k
 
     /* find sas token in query */
     tmp = strchr(uri, '?');
-    if (!tmp) {
+
+    if (tmp) {
+        uri_length = tmp - uri;
+        sas_length = strnlen(tmp + 1, 256);
+
+        /* kv that will hold base uri, and sas token */
+        kv = flb_hash_create(FLB_HASH_EVICT_NONE, 2, 2);
+
+        if (kv) {
+            ret = flb_hash_add(kv, AZURE_KUSTO_RESOURCE_UPSTREAM_URI, 3, uri, uri_length);
+
+            if (ret != -1) {
+                ret = flb_hash_add(kv, AZURE_KUSTO_RESOURCE_UPSTREAM_SAS, 3, tmp + 1,
+                                   sas_length);
+
+                if (ret != -1) {
+                    node = flb_upstream_node_create(
+                        NULL, host, port, FLB_TRUE, ctx->ins->tls->verify,
+                        ctx->ins->tls->debug, ctx->ins->tls->vhost, NULL, NULL, NULL,
+                        NULL, NULL, kv, config);
+
+                    if (!node) {
+                        flb_plg_error(ctx->ins, "error creating resource upstream node");
+                    }
+                }
+                else {
+                    flb_plg_error(ctx->ins, "error storing resource sas token");
+                }
+            }
+            else {
+                flb_plg_error(ctx->ins, "error storing resource uri");
+            }
+
+            /* avoid destorying if function is successful */
+            if (!node) {
+                flb_hash_destroy(kv);
+            }
+        }
+        else {
+            flb_plg_error(ctx->ins, "error creating upstream node hash table");
+        }
+    }
+    else {
         flb_plg_error(ctx->ins, "uri has no sas token query: %s", uri);
-        flb_free(prot);
-        flb_free(host);
-        flb_free(port);
-        flb_free(uri);
-        return NULL;
-    }
-    uri_length = tmp - uri;
-    sas_length = strnlen(tmp + 1, 256);
-
-    /* kv that will hold base uri, and sas token */
-    kv = flb_hash_create(FLB_HASH_EVICT_NONE, 2, 2);
-    if (!kv) {
-        flb_plg_error(ctx->ins, "error creating upstream node hash table");
-        flb_free(prot);
-        flb_free(host);
-        flb_free(port);
-        flb_free(uri);
-        return NULL;
-    }
-
-    ret = flb_hash_add(kv, AZURE_KUSTO_RESOURCE_UPSTREAM_URI, 3, uri, uri_length);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "error storing resource uri");
-        flb_free(prot);
-        flb_free(host);
-        flb_free(port);
-        flb_free(uri);
-        flb_hash_destroy(kv);
-        return NULL;
-    }
-
-    ret = flb_hash_add(kv, AZURE_KUSTO_RESOURCE_UPSTREAM_SAS, 3, tmp + 1, sas_length);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "error storing resource sas token");
-        flb_free(prot);
-        flb_free(host);
-        flb_free(port);
-        flb_free(uri);
-        flb_hash_destroy(kv);
-        return NULL;
-    }
-
-    node = flb_upstream_node_create(NULL, host, port, FLB_TRUE, ctx->ins->tls->verify,
-                                    ctx->ins->tls->debug, ctx->ins->tls->vhost, NULL,
-                                    NULL, NULL, NULL, NULL, kv, config);
-    if (!node) {
-        flb_plg_error(ctx->ins, "error creating resource upstream node");
-        flb_free(prot);
-        flb_free(host);
-        flb_free(port);
-        flb_free(uri);
-        flb_hash_destroy(kv);
-        return NULL;
     }
 
     flb_free(prot);
@@ -167,7 +156,7 @@ static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_confi
     jsmntok_t *t;
     jsmntok_t *tokens;
     int tok_size = 100;
-    int ret;
+    int ret = -1;
     int i;
     int blob_count = 0;
     int queue_count = 0;
@@ -205,136 +194,139 @@ static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_confi
 
     jsmn_init(&parser);
     tokens = flb_calloc(1, sizeof(jsmntok_t) * tok_size);
-    if (!tokens) {
+
+    if (tokens) {
+        ret = jsmn_parse(&parser, response, flb_sds_len(response), tokens, tok_size);
+
+        if (ret > 0) {
+            /* skip all tokens until we reach "Rows" */
+            for (i = 0; i < ret - 1; i++) {
+                t = &tokens[i];
+
+                if (t->type != JSMN_STRING) {
+                    continue;
+                }
+
+                token_str = response + t->start;
+                token_str_len = (t->end - t->start);
+
+                /**
+                 * if we found the Rows key, skipping this token and the next one (key and
+                 * wrapping array value)
+                 */
+                if (token_str_len == 4 && strncmp(token_str, "Rows", 4) == 0) {
+                    i += 2;
+                    break;
+                }
+            }
+
+            /* iterating rows, each row will have 3 tokens: the array holding the column
+             * values, the first value containing the resource type, and the second value
+             * containing the resource uri */
+            for (; i < ret; i++) {
+                t = &tokens[i];
+
+                /**
+                 * each token should be an array with 2 strings:
+                 * First will be the resource type (TempStorage,
+                 * SecuredReadyForAggregationQueue, etc...) Second will be the SAS URI
+                 */
+                if (t->type != JSMN_ARRAY) {
+                    break;
+                }
+
+                /* move to the next token, first item in the array - resource type */
+                i++;
+                t = &tokens[i];
+                if (t->type != JSMN_STRING) {
+                    break;
+                }
+
+                token_str = response + t->start;
+                token_str_len = (t->end - t->start);
+
+                flb_plg_debug(ctx->ins, "found resource of type: %.*s ",
+                              t->end - t->start, response + t->start);
+
+                if (token_str_len == 11 && strncmp(token_str, "TempStorage", 11) == 0) {
+                    resource_type = AZURE_KUSTO_RESOURCE_STORAGE;
+                }
+                else if (token_str_len == 31 &&
+                         strncmp(token_str, "SecuredReadyForAggregationQueue", 31) == 0) {
+                    resource_type = AZURE_KUSTO_RESOURCE_QUEUE;
+                }
+                /* we don't care about other resources so we just skip the next token and
+                   move on to the next pair */
+                else {
+                    i++;
+                    continue;
+                }
+
+                /* move to the next token, second item in the array - resource URI */
+                i++;
+                t = &tokens[i];
+
+                if (t->type != JSMN_STRING) {
+                    break;
+                }
+
+                token_str = response + t->start;
+                token_str_len = (t->end - t->start);
+
+                resource_uri = flb_sds_copy(resource_uri, token_str, token_str_len);
+                if (resource_type == AZURE_KUSTO_RESOURCE_QUEUE) {
+                    ha = queue_ha;
+                    queue_count++;
+                }
+                else {
+                    ha = blob_ha;
+                    blob_count++;
+                }
+
+                if (!ha) {
+                    flb_plg_error(ctx->ins, "error creating HA upstream");
+                    ret = -1;
+                    break;
+                }
+
+                node = flb_upstream_node_create_url(ctx, config, resource_uri);
+
+                if (!node) {
+                    flb_plg_error(ctx->ins, "error creating HA upstream node");
+                    ret = -1;
+                    break;
+                }
+
+                flb_upstream_ha_node_add(ha, node);
+            }
+
+            if (ret != -1) {
+                if (queue_count > 0 && blob_count > 0) {
+                    flb_plg_debug(ctx->ins,
+                                  "parsed %d blob resources and %d queue resources",
+                                  blob_count, queue_count);
+                    ret = 0;
+                }
+                else {
+                    flb_plg_error(ctx->ins, "error parsing resources: missing resources");
+                    ret = -1;
+                }
+            }
+        }
+        else {
+            flb_plg_error(ctx->ins, "error parsing JSON response: %s", response);
+            ret = -1;
+        }
+    }
+    else {
         flb_plg_error(ctx->ins, "error allocating tokens");
-        flb_sds_destroy(resource_uri);
-        return -1;
-    }
-
-    ret = jsmn_parse(&parser, response, flb_sds_len(response), tokens, tok_size);
-    if (ret <= 0) {
-        flb_plg_error(ctx->ins, "error parsing JSON response: %s", response);
-        flb_sds_destroy(resource_uri);
-        flb_free(tokens);
-        return -1;
-    }
-
-    /* skip all tokens until we reach "Rows" */
-    for (i = 0; i < ret - 1; i++) {
-        t = &tokens[i];
-
-        if (t->type != JSMN_STRING) {
-            continue;
-        }
-
-        token_str = response + t->start;
-        token_str_len = (t->end - t->start);
-
-        /**
-         * if we found the Rows key, skipping this token and the next one (key and
-         * wrapping array value)
-         */
-        if (token_str_len == 4 && strncmp(token_str, "Rows", 4) == 0) {
-            i += 2;
-            break;
-        }
-    }
-
-    /* iterating rows, each row will have 3 tokens: the array holding the column values,
-     * the first value containing the resource type, and the second value containing the
-     * resource uri */
-    for (; i < ret; i++) {
-        t = &tokens[i];
-
-        /**
-         * each token should be an array with 2 strings:
-         * First will be the resource type (TempStorage, SecuredReadyForAggregationQueue,
-         * etc...) Second will be the SAS URI
-         */
-        if (t->type != JSMN_ARRAY) {
-            break;
-        }
-
-        /* move to the next token, first item in the array - resource type */
-        i++;
-        t = &tokens[i];
-        if (t->type != JSMN_STRING) {
-            break;
-        }
-
-        token_str = response + t->start;
-        token_str_len = (t->end - t->start);
-
-        flb_plg_debug(ctx->ins, "found resource of type: %.*s ", t->end - t->start,
-                      response + t->start);
-
-        if (token_str_len == 11 && strncmp(token_str, "TempStorage", 11) == 0) {
-            resource_type = AZURE_KUSTO_RESOURCE_STORAGE;
-        }
-        else if (token_str_len == 31 &&
-                 strncmp(token_str, "SecuredReadyForAggregationQueue", 31) == 0) {
-            resource_type = AZURE_KUSTO_RESOURCE_QUEUE;
-        }
-        /* we don't care about other resources so we just skip the next token and move
-           on to the next pair */
-        else {
-            i++;
-            continue;
-        }
-
-        /* move to the next token, second item in the array - resource URI */
-        i++;
-        t = &tokens[i];
-
-        if (t->type != JSMN_STRING) {
-            break;
-        }
-
-        token_str = response + t->start;
-        token_str_len = (t->end - t->start);
-
-        resource_uri = flb_sds_copy(resource_uri, token_str, token_str_len);
-        if (resource_type == AZURE_KUSTO_RESOURCE_QUEUE) {
-            ha = queue_ha;
-            queue_count++;
-        }
-        else {
-            ha = blob_ha;
-            blob_count++;
-        }
-
-        if (!ha) {
-            flb_plg_error(ctx->ins, "error creating HA upstream");
-            flb_sds_destroy(resource_uri);
-            flb_free(tokens);
-            return -1;
-        }
-
-        node = flb_upstream_node_create_url(ctx, config, resource_uri);
-        if (!node) {
-            flb_plg_error(ctx->ins, "error creating HA upstream node");
-            flb_sds_destroy(resource_uri);
-            flb_free(tokens);
-            return -1;
-        }
-
-        flb_upstream_ha_node_add(ha, node);
-    }
-
-    if (!queue_count || !blob_count) {
-        flb_plg_error(ctx->ins, "error parsing resources: missing resources");
-        flb_sds_destroy(resource_uri);
-        flb_free(tokens);
-        return -1;
+        ret = -1;
     }
 
     flb_sds_destroy(resource_uri);
     flb_free(tokens);
 
-    flb_plg_debug(ctx->ins, "parsed %d blob resources and %d queue resources", blob_count,
-                  queue_count);
-
-    return 0;
+    return ret;
 }
 
 /**
@@ -347,7 +339,7 @@ static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_confi
 static flb_sds_t parse_ingestion_identity_token(struct flb_azure_kusto *ctx,
                                                 flb_sds_t response)
 {
-    flb_sds_t identity_token;
+    flb_sds_t identity_token = NULL;
     int tok_size = 19;
     jsmn_parser parser;
     jsmntok_t *t;
@@ -387,25 +379,31 @@ static flb_sds_t parse_ingestion_identity_token(struct flb_azure_kusto *ctx,
     }
 
     ret = jsmn_parse(&parser, response, flb_sds_len(response), tokens, tok_size);
-    if (ret <= 0) {
+    if (ret > 0) {
+        t = &tokens[tok_size - 1];
+
+        if (t->type == JSMN_STRING) {
+            t = &tokens[tok_size - 1];
+            token_str = response + t->start;
+            token_str_len = (t->end - t->start);
+
+            identity_token = flb_sds_create_len(token_str, token_str_len);
+
+            if (identity_token) {
+                flb_plg_debug(ctx->ins, "parsed kusto identity token: '%s'",
+                              identity_token);
+            }
+            else {
+                flb_plg_error(ctx->ins, "error parsing kusto identity token");
+            }
+        }
+        else {
+            flb_plg_error(ctx->ins, "unexpected JSON response: %s", response);
+        }
+    }
+    else {
         flb_plg_error(ctx->ins, "error parsing JSON response: %s", response);
-        flb_free(tokens);
-        return NULL;
     }
-
-    t = &tokens[tok_size - 1];
-    if (t->type != JSMN_STRING) {
-        flb_plg_error(ctx->ins, "unexpected JSON response: %s", response);
-        flb_free(tokens);
-        return NULL;
-    }
-
-    token_str = response + t->start;
-    token_str_len = (t->end - t->start);
-
-    identity_token = flb_sds_create_len(token_str, token_str_len);
-
-    flb_plg_debug(ctx->ins, "parsed kusto identity token: '%s'", identity_token);
 
     flb_free(tokens);
 
@@ -415,7 +413,7 @@ static flb_sds_t parse_ingestion_identity_token(struct flb_azure_kusto *ctx,
 int azure_kusto_load_ingestion_resources(struct flb_azure_kusto *ctx,
                                          struct flb_config *config)
 {
-    int ret;
+    int ret = -1;
     flb_sds_t response = NULL;
     flb_sds_t identity_token = NULL;
     struct flb_upstream_ha *blob_ha = NULL;
@@ -433,96 +431,114 @@ int azure_kusto_load_ingestion_resources(struct flb_azure_kusto *ctx,
     if (ctx->resources->blob_ha && ctx->resources->queue_ha &&
         ctx->resources->identity_token &&
         now - ctx->resources->load_time < FLB_AZURE_KUSTO_RESOURCES_LOAD_INTERVAL_SEC) {
-        if (pthread_mutex_unlock(&ctx->resources_mutex)) {
-            flb_plg_error(ctx->ins, "error unlocking mutex");
-            return -1;
-        }
-
         flb_plg_debug(ctx->ins, "resources are already loaded and are not stale");
-        return 0;
+        ret = 0;
     }
+    else {
+        flb_plg_info(ctx->ins, "loading kusto ingestion resourcs");
+        response = execute_ingest_csl_command(ctx, ".get ingestion resources");
 
-    flb_plg_info(ctx->ins, "loading kusto ingestion resourcs");
+        if (response) {
+            queue_ha = flb_upstream_ha_create("azure_kusto_queue_ha");
 
-    response = execute_ingest_csl_command(ctx, ".get ingestion resources");
-    if (!response) {
-        flb_plg_error(ctx->ins, "error getting ingestion storage resources");
-        goto load_resources_error;
+            if (queue_ha) {
+                blob_ha = flb_upstream_ha_create("azure_kusto_blob_ha");
+
+                if (blob_ha) {
+                    ret =
+                        parse_storage_resources(ctx, config, response, blob_ha, queue_ha);
+
+                    if (ret == 0) {
+                        flb_sds_destroy(response);
+                        response = NULL;
+
+                        response =
+                            execute_ingest_csl_command(ctx, ".get kusto identity token");
+
+                        if (response) {
+                            identity_token =
+                                parse_ingestion_identity_token(ctx, response);
+
+                            if (identity_token) {
+                                ret = flb_azure_kusto_resources_clear(ctx->resources);
+
+                                if (ret != -1) {
+                                    ctx->resources->blob_ha = blob_ha;
+                                    ctx->resources->queue_ha = queue_ha;
+                                    ctx->resources->identity_token = identity_token;
+                                    ctx->resources->load_time = now;
+
+                                    ret = 0;
+                                }
+                                else {
+                                    flb_plg_error(
+                                        ctx->ins,
+                                        "error destroying previous ingestion resources");
+                                }
+                            }
+                            else {
+                                flb_plg_error(ctx->ins,
+                                              "error parsing ingestion identity token");
+                                ret = -1;
+                            }
+                        }
+                        else {
+                            flb_plg_error(ctx->ins, "error getting kusto identity token");
+                            ret = -1;
+                        }
+                    }
+                    else {
+                        flb_plg_error(ctx->ins,
+                                      "error parsing ingestion storage resources");
+                        ret = -1;
+                    }
+
+                    if (ret == -1) {
+                        flb_upstream_ha_destroy(blob_ha);
+                    }
+                }
+                else {
+                    flb_plg_error(ctx->ins, "error creating storage resources upstreams");
+                    ret = -1;
+                }
+
+                if (ret == -1) {
+                    flb_upstream_ha_destroy(queue_ha);
+                }
+            }
+            else {
+                flb_plg_error(ctx->ins, "error creating storage resources upstreams");
+            }
+
+            if (response) {
+                flb_sds_destroy(response);
+            }
+        }
+        if (!response) {
+            flb_plg_error(ctx->ins, "error getting ingestion storage resources");
+        }
     }
-
-    queue_ha = flb_upstream_ha_create("azure_kusto_queue_ha");
-    blob_ha = flb_upstream_ha_create("azure_kusto_blob_ha");
-    if (!queue_ha || !blob_ha) {
-        flb_plg_error(ctx->ins, "error creating storage resources upstreams");
-        goto load_resources_error;
-    }
-
-    ret = parse_storage_resources(ctx, config, response, blob_ha, queue_ha);
-    if (ret != 0) {
-        flb_plg_error(ctx->ins, "error parsing ingestion storage resources");
-        goto load_resources_error;
-    }
-
-    flb_sds_destroy(response);
-    response = NULL;
-
-    response = execute_ingest_csl_command(ctx, ".get kusto identity token");
-    if (!response) {
-        flb_plg_error(ctx->ins, "error getting kusto identity token");
-        goto load_resources_error;
-    }
-
-    identity_token = parse_ingestion_identity_token(ctx, response);
-    if (!identity_token) {
-        flb_plg_error(ctx->ins, "error parsing ingestion identity token");
-        goto load_resources_error;
-    }
-
-    flb_sds_destroy(response);
-
-    /* free old resources and point to newly allocated */
-    flb_azure_kusto_resources_clear(ctx->resources);
-    ctx->resources->blob_ha = blob_ha;
-    ctx->resources->queue_ha = queue_ha;
-    ctx->resources->identity_token = identity_token;
-    ctx->resources->load_time = now;
 
     if (pthread_mutex_unlock(&ctx->resources_mutex)) {
         flb_plg_error(ctx->ins, "error unlocking mutex");
         return -1;
     }
 
-    return 0;
-
-load_resources_error:
-    pthread_mutex_unlock(&ctx->resources_mutex);
-
-    if (response) {
-        flb_sds_destroy(response);
-    }
-
-    if (blob_ha) {
-        flb_upstream_ha_destroy(blob_ha);
-    }
-
-    if (queue_ha) {
-        flb_upstream_ha_destroy(queue_ha);
-    }
-
-    if (identity_token) {
-        flb_sds_destroy(identity_token);
-    }
-
-    return -1;
+    return ret;
 }
 
 static int flb_azure_kusto_resources_destroy(struct flb_azure_kusto_resources *resources)
 {
+    int ret;
+
     if (!resources) {
         return -1;
     }
 
-    flb_azure_kusto_resources_clear(resources);
+    ret = flb_azure_kusto_resources_clear(resources);
+    if (ret != 0) {
+        return -1;
+    }
 
     flb_free(resources);
 

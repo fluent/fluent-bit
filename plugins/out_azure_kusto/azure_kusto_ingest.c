@@ -83,16 +83,52 @@ static char *base64_encode(flb_sds_t s, size_t len, size_t *out_len)
     return b64;
 }
 
-static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t blob_id,
-                                         flb_sds_t payload, size_t payload_size)
+static flb_sds_t azure_kusto_create_blob_uri(struct flb_azure_kusto *ctx,
+                                             struct flb_upstream_node *u_node,
+                                             flb_sds_t blob_id)
 {
     int ret;
+    flb_sds_t uri = NULL;
     char *blob_uri;
     size_t blob_uri_size;
     char *blob_sas;
     size_t blob_sas_size;
-    flb_sds_t uri;
-    flb_sds_t full_uri;
+
+    ret = flb_hash_get(u_node->ht, AZURE_KUSTO_RESOURCE_UPSTREAM_URI, 3,
+                       (void **)&blob_uri, &blob_uri_size);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "error getting blob uri");
+        return NULL;
+    }
+
+    ret = flb_hash_get(u_node->ht, AZURE_KUSTO_RESOURCE_UPSTREAM_SAS, 3,
+                       (void **)&blob_sas, &blob_sas_size);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "error getting blob sas token");
+        return NULL;
+    }
+
+    /* uri will be https://<blob_host>/<container_uri>/<blob_id>.multijson?<sas_token> */
+    uri = flb_sds_create_size(flb_sds_len(u_node->host) + blob_uri_size + blob_sas_size +
+                              flb_sds_len(blob_id) + 21);
+
+    if (uri) {
+        flb_sds_snprintf(&uri, flb_sds_alloc(uri), "https://%s%s/%s.multijson?%s",
+                         u_node->host, blob_uri, blob_id, blob_sas);
+        flb_plg_debug(ctx->ins, "created blob uri %s", uri);
+    }
+    else {
+        flb_plg_error(ctx->ins, "cannot create blob uri buffer");
+    }
+
+    return uri;
+}
+
+static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t blob_id,
+                                         flb_sds_t payload, size_t payload_size)
+{
+    int ret = -1;
+    flb_sds_t uri = NULL;
     struct flb_upstream_node *u_node;
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
@@ -112,171 +148,186 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
         return NULL;
     }
 
-    ret = flb_hash_get(u_node->ht, AZURE_KUSTO_RESOURCE_UPSTREAM_URI, 3,
-                       (void **)&blob_uri, &blob_uri_size);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "error getting blob uri");
-        return NULL;
-    }
-    ret = flb_hash_get(u_node->ht, AZURE_KUSTO_RESOURCE_UPSTREAM_SAS, 3,
-                       (void **)&blob_sas, &blob_sas_size);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "error getting blob sas token");
-        return NULL;
-    }
-
     u_conn = flb_upstream_conn_get(u_node->u);
-    if (!u_conn) {
-        flb_plg_error(ctx->ins, "error getting blob container upstream connection");
-        return NULL;
-    }
 
-    /* uri will be <container_uri>/<blob_id>.multijson?<sas_token> */
-    uri = flb_sds_create_size(blob_uri_size + blob_sas_size + flb_sds_len(blob_id) + 13);
-    if (!uri) {
-        flb_plg_error(ctx->ins, "error creating blob container uri buffer");
-        flb_upstream_conn_release(u_conn);
-        return NULL;
-    }
-    flb_sds_snprintf(&uri, flb_sds_alloc(uri), "%s/%s.multijson?%s", blob_uri, blob_id,
-                     blob_sas);
+    if (u_conn) {
+        uri = azure_kusto_create_blob_uri(ctx, u_node, blob_id);
 
-    flb_plg_debug(ctx->ins, "uploading payload to blob uri: %s", uri);
+        if (uri) {
+            flb_plg_debug(ctx->ins, "uploading payload to blob uri: %s", uri);
+            c = flb_http_client(u_conn, FLB_HTTP_PUT, uri, payload, payload_size, NULL, 0,
+                                NULL, 0);
 
-    c = flb_http_client(u_conn, FLB_HTTP_PUT, uri, payload, payload_size, NULL, 0, NULL,
-                        0);
-    if (!c) {
-        flb_plg_error(ctx->ins, "cannot create HTTP client context for blob container");
-        flb_upstream_conn_release(u_conn);
-        flb_sds_destroy(uri);
-        return NULL;
-    }
+            if (c) {
+                flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+                flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
+                flb_http_add_header(c, "x-ms-blob-type", 14, "BlockBlob", 9);
+                flb_http_add_header(c, "x-ms-date", 9, tmp, len);
+                flb_http_add_header(c, "x-ms-version", 12, "2019-12-12", 10);
 
-    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
-    flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
-    flb_http_add_header(c, "x-ms-blob-type", 14, "BlockBlob", 9);
-    flb_http_add_header(c, "x-ms-date", 9, tmp, len);
-    flb_http_add_header(c, "x-ms-version", 12, "2019-12-12", 10);
+                ret = flb_http_do(c, &resp_size);
+                flb_plg_debug(ctx->ins,
+                              "kusto blob upload request http_do=%i, HTTP Status: %i",
+                              ret, c->resp.status);
 
-    ret = flb_http_do(c, &resp_size);
-    flb_plg_debug(ctx->ins, "kusto blob upload request http_do=%i, HTTP Status: %i", ret,
-                  c->resp.status);
-    if (ret != 0) {
-        flb_plg_error(ctx->ins, "cannot send HTTP request");
-        flb_upstream_conn_release(u_conn);
-        flb_sds_destroy(uri);
-        flb_http_client_destroy(c);
-        return NULL;
-    }
+                if (ret == 0) {
+                    /* Validate return status and HTTP status if set */
+                    if (c->resp.status != 201) {
+                        ret = -1;
 
-    /* Validate return status and HTTP status if set */
-    if (c->resp.status != 201) {
-        if (c->resp.payload_size > 0) {
-            flb_plg_debug(ctx->ins, "Request failed and returned: \n%s", c->resp.payload);
+                        if (c->resp.payload_size > 0) {
+                            flb_plg_debug(ctx->ins, "Request failed and returned: \n%s",
+                                          c->resp.payload);
+                        }
+                        else {
+                            flb_plg_debug(ctx->ins, "Request failed");
+                        }
+                    }
+                }
+                else {
+                    flb_plg_error(ctx->ins, "cannot send HTTP request");
+                }
+
+                flb_http_client_destroy(c);
+            }
+            else {
+                flb_plg_error(ctx->ins,
+                              "cannot create HTTP client context for blob container");
+            }
+
+            if (ret != 0) {
+                flb_sds_destroy(uri);
+                uri = NULL;
+            }
         }
         else {
-            flb_plg_debug(ctx->ins, "Request failed");
+            flb_plg_error(ctx->ins, "error creating blob container uri buffer");
         }
+
         flb_upstream_conn_release(u_conn);
-        flb_sds_destroy(uri);
-        flb_http_client_destroy(c);
-        return NULL;
+    }
+    else {
+        flb_plg_error(ctx->ins, "error getting blob container upstream connection");
     }
 
-    /* generate full blob uri & return it */
-    full_uri = flb_sds_create_size(9 + flb_sds_len(u_node->host) + flb_sds_len(uri));
-    if (!full_uri) {
-        flb_plg_error(ctx->ins, "cannot create full blob uri buffer");
-        flb_upstream_conn_release(u_conn);
-        flb_sds_destroy(uri);
-        flb_http_client_destroy(c);
-        return NULL;
-    }
-    flb_sds_snprintf(&full_uri, flb_sds_alloc(full_uri), "https://%s%s", u_node->host,
-                     uri);
-
-    flb_plg_debug(ctx->ins, "created blob %s", full_uri);
-
-    flb_upstream_conn_release(u_conn);
-    flb_sds_destroy(uri);
-    flb_http_client_destroy(c);
-
-    return full_uri;
+    return uri;
 }
 
 static flb_sds_t create_ingestion_message(struct flb_azure_kusto *ctx, flb_sds_t blob_uri,
                                           size_t payload_size)
 {
-    flb_sds_t message;
+    flb_sds_t message = NULL;
+    int ret = 0;
     char *uuid;
     char *message_b64;
     size_t b64_len;
     size_t message_len;
 
     uuid = generate_uuid();
-    if (!uuid) {
+    if (uuid) {
+        message = flb_sds_create(NULL);
+
+        if (message) {
+            message_len =
+                flb_sds_snprintf(&message, 0,
+                                 "{\"Id\": \"%s\", \"BlobPath\": \"%s\", "
+                                 "\"RawDataSize\": %lu, \"DatabaseName\": "
+                                 "\"%s\", \"TableName\": \"%s\","
+                                 "\"AdditionalProperties\": { \"format\": \"multijson\", "
+                                 "\"authorizationContext\": "
+                                 "\"%s\", \"jsonMappingReference\": \"%s\" }}",
+                                 uuid, blob_uri, payload_size, ctx->database_name,
+                                 ctx->table_name, ctx->resources->identity_token,
+                                 ctx->ingestion_mapping_reference == NULL
+                                     ? ""
+                                     : ctx->ingestion_mapping_reference);
+
+            if (message_len != -1) {
+                flb_plg_debug(ctx->ins, "created ingestion message:\n%s", message);
+                message_b64 = base64_encode(message, message_len, &b64_len);
+
+                if (message_b64) {
+                    ret = flb_sds_snprintf(
+                        &message, flb_sds_alloc(message),
+                        "<QueueMessage><MessageText>%s</MessageText></QueueMessage>%c",
+                        message_b64, 0);
+
+                    if (ret == -1) {
+                        flb_plg_error(ctx->ins, "error creating ingestion queue message");
+                    }
+
+                    flb_free(message_b64);
+                }
+                else {
+                    flb_plg_error(ctx->ins, "error encoding ingestion message to base64");
+                }
+            }
+            else {
+                flb_plg_error(ctx->ins, "error creating ingestion message");
+                ret = -1;
+            }
+
+            if (ret == -1) {
+                flb_sds_destroy(message);
+                message = NULL;
+            }
+        }
+        else {
+            flb_plg_error(ctx->ins, "error creating ingestion message buffer");
+        }
+
+        flb_free(uuid);
+    }
+    else {
         flb_plg_error(ctx->ins, "error generating unique ingestion UUID");
-        return NULL;
     }
-
-    message = flb_sds_create(NULL);
-    if (!message) {
-        flb_plg_error(ctx->ins, "error creating ingestion message buffer");
-        flb_free(uuid);
-        return NULL;
-    }
-
-    message_len = flb_sds_snprintf(
-        &message, 0,
-        "{\"Id\": \"%s\", \"BlobPath\": \"%s\", \"RawDataSize\": %lu, \"DatabaseName\": "
-        "\"%s\", \"TableName\": \"%s\","
-        "\"AdditionalProperties\": { \"format\": \"multijson\", "
-        "\"authorizationContext\": "
-        "\"%s\", \"jsonMappingReference\": \"%s\" }}",
-        uuid, blob_uri, payload_size, ctx->database_name, ctx->table_name,
-        ctx->resources->identity_token,
-        ctx->ingestion_mapping_reference == NULL ? "" : ctx->ingestion_mapping_reference);
-    if (message_len == -1) {
-        flb_plg_error(ctx->ins, "error creating ingestion message");
-        flb_free(uuid);
-        flb_sds_destroy(message);
-        return NULL;
-    }
-
-    flb_plg_debug(ctx->ins, "created ingestion message:\n%s", message);
-
-    message_b64 = base64_encode(message, message_len, &b64_len);
-    if (!message_b64) {
-        flb_plg_error(ctx->ins, "error encoding ingestion message to base64");
-        flb_free(uuid);
-        flb_sds_destroy(message);
-        return NULL;
-    }
-
-    message_len = flb_sds_snprintf(
-        &message, flb_sds_alloc(message),
-        "<QueueMessage><MessageText>%s</MessageText></QueueMessage>%c", message_b64, 0);
-    if (message_len == -1) {
-        flb_plg_error(ctx->ins, "error creating ingestion queue message");
-        flb_free(uuid);
-        flb_sds_destroy(message);
-        return NULL;
-    }
-
-    flb_free(uuid);
-    flb_free(message_b64);
 
     return message;
+}
+
+static flb_sds_t azure_kusto_create_queue_uri(struct flb_azure_kusto *ctx,
+                                              struct flb_upstream_node *u_node)
+{
+    int ret;
+    flb_sds_t uri = NULL;
+    char *queue_uri;
+    size_t queue_uri_size;
+    char *queue_sas;
+    size_t queue_sas_size;
+
+    ret = flb_hash_get(u_node->ht, AZURE_KUSTO_RESOURCE_UPSTREAM_URI, 3,
+                       (void **)&queue_uri, &queue_uri_size);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "error getting queue uri");
+        return NULL;
+    }
+
+    ret = flb_hash_get(u_node->ht, AZURE_KUSTO_RESOURCE_UPSTREAM_SAS, 3,
+                       (void **)&queue_sas, &queue_sas_size);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "error getting queue sas token");
+        return NULL;
+    }
+
+    /* uri will be <container_uri>/messages?<sas_token> */
+    uri = flb_sds_create_size(queue_uri_size + queue_sas_size + 11);
+
+    if (uri) {
+        flb_sds_snprintf(&uri, flb_sds_alloc(uri), "%s/messages?%s", queue_uri,
+                         queue_sas);
+        flb_plg_debug(ctx->ins, "created queue uri %s", uri);
+    }
+    else {
+        flb_plg_error(ctx->ins, "cannot create queue uri buffer");
+    }
+
+    return uri;
 }
 
 static int azure_kusto_enqueue_ingestion(struct flb_azure_kusto *ctx, flb_sds_t blob_uri,
                                          size_t payload_size)
 {
-    int ret;
-    char *queue_uri;
-    size_t queue_uri_size;
-    char *queue_sas;
-    size_t queue_sas_size;
+    int ret = -1;
     struct flb_upstream_node *u_node;
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
@@ -298,145 +349,149 @@ static int azure_kusto_enqueue_ingestion(struct flb_azure_kusto *ctx, flb_sds_t 
         return -1;
     }
 
-    ret = flb_hash_get(u_node->ht, AZURE_KUSTO_RESOURCE_UPSTREAM_URI, 3,
-                       (void **)&queue_uri, &queue_uri_size);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "error getting queue uri");
-        return -1;
-    }
-    ret = flb_hash_get(u_node->ht, AZURE_KUSTO_RESOURCE_UPSTREAM_SAS, 3,
-                       (void **)&queue_sas, &queue_sas_size);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "error getting queue sas token");
-        return -1;
-    }
-
     u_conn = flb_upstream_conn_get(u_node->u);
-    if (!u_conn) {
-        flb_plg_error(ctx->ins, "error getting queue upstream connection");
-        return -1;
-    }
 
-    /* uri will be <container_uri>/messages?<sas_token> */
-    uri = flb_sds_create_size(queue_uri_size + queue_sas_size + 11);
-    if (!uri) {
-        flb_plg_error(ctx->ins, "error creating queue container uri buffer");
-        flb_upstream_conn_release(u_conn);
-        return -1;
-    }
-    flb_sds_snprintf(&uri, flb_sds_alloc(uri), "%s/messages?%s", queue_uri, queue_sas);
+    if (u_conn) {
+        uri = azure_kusto_create_queue_uri(ctx, u_node);
 
-    payload = create_ingestion_message(ctx, blob_uri, payload_size);
-    if (!payload) {
-        flb_plg_error(ctx->ins, "error creating payload buffer");
-        flb_upstream_conn_release(u_conn);
-        flb_sds_destroy(uri);
-        return -1;
-    }
+        if (uri) {
+            payload = create_ingestion_message(ctx, blob_uri, payload_size);
 
-    c = flb_http_client(u_conn, FLB_HTTP_POST, uri, payload, flb_sds_len(payload), NULL,
-                        0, NULL, 0);
-    if (!c) {
-        flb_plg_error(ctx->ins, "cannot create HTTP client context for blob container");
-        flb_upstream_conn_release(u_conn);
-        flb_sds_destroy(uri);
-        flb_sds_destroy(payload);
-        return -1;
-    }
+            if (payload) {
+                c = flb_http_client(u_conn, FLB_HTTP_POST, uri, payload,
+                                    flb_sds_len(payload), NULL, 0, NULL, 0);
 
-    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
-    flb_http_add_header(c, "Content-Type", 12, "application/atom+xml", 20);
-    flb_http_add_header(c, "x-ms-date", 9, tmp, len);
-    flb_http_add_header(c, "x-ms-version", 12, "2019-12-12", 10);
+                if (c) {
+                    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+                    flb_http_add_header(c, "Content-Type", 12, "application/atom+xml",
+                                        20);
+                    flb_http_add_header(c, "x-ms-date", 9, tmp, len);
+                    flb_http_add_header(c, "x-ms-version", 12, "2019-12-12", 10);
 
-    ret = flb_http_do(c, &resp_size);
-    flb_plg_debug(ctx->ins, "kusto queue request http_do=%i, HTTP Status: %i", ret,
-                  c->resp.status);
-    if (ret != 0) {
-        flb_plg_error(ctx->ins, "cannot send HTTP request");
-        flb_upstream_conn_release(u_conn);
-        flb_sds_destroy(uri);
-        flb_sds_destroy(payload);
-        flb_http_client_destroy(c);
-        return -1;
-    }
+                    ret = flb_http_do(c, &resp_size);
+                    flb_plg_debug(ctx->ins,
+                                  "kusto queue request http_do=%i, HTTP Status: %i", ret,
+                                  c->resp.status);
 
-    /* Validate return status and HTTP status if set */
-    if (c->resp.status != 201) {
-        if (c->resp.payload_size > 0) {
-            flb_plg_debug(ctx->ins, "Request failed and returned: \n%s", c->resp.payload);
+                    if (ret == 0) {
+                        /* Validate return status and HTTP status if set */
+                        if (c->resp.status != 201) {
+                            ret = -1;
+
+                            if (c->resp.payload_size > 0) {
+                                flb_plg_debug(ctx->ins,
+                                              "Request failed and returned: \n%s",
+                                              c->resp.payload);
+                            }
+                            else {
+                                flb_plg_debug(ctx->ins, "Request failed");
+                            }
+                        }
+                    }
+                    else {
+                        flb_plg_error(ctx->ins, "cannot send HTTP request");
+                    }
+
+                    flb_http_client_destroy(c);
+                }
+                else {
+                    flb_plg_error(ctx->ins,
+                                  "cannot create HTTP client context for queue");
+                }
+
+                flb_sds_destroy(payload);
+            }
+            else {
+                flb_plg_error(ctx->ins, "error creating payload buffer");
+            }
+
+            flb_sds_destroy(uri);
         }
         else {
-            flb_plg_debug(ctx->ins, "Request failed");
+            flb_plg_error(ctx->ins, "error creating queue uri buffer");
         }
+
         flb_upstream_conn_release(u_conn);
-        flb_sds_destroy(uri);
-        flb_sds_destroy(payload);
-        flb_http_client_destroy(c);
-        return -1;
+    }
+    else {
+        flb_plg_error(ctx->ins, "error getting queue upstream connection");
     }
 
-    flb_upstream_conn_release(u_conn);
-    flb_sds_destroy(uri);
-    flb_sds_destroy(payload);
-    flb_http_client_destroy(c);
-
-    return 0;
+    return ret;
 }
 
-int azure_kusto_queued_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
-                                 size_t tag_len, flb_sds_t payload, size_t payload_size)
+static flb_sds_t azure_kusto_create_blob_id(struct flb_azure_kusto *ctx, flb_sds_t tag,
+                                            size_t tag_len)
 {
-    int ret;
+    flb_sds_t blob_id = NULL;
     struct flb_time tm;
+    uint64_t ms;
     char *b64tag;
     size_t b64_len;
-    uint64_t ms;
-    flb_sds_t blob_id;
-    flb_sds_t blob_uri;
 
     flb_time_get(&tm);
     ms = ((tm.tm.tv_sec * 1000) + (tm.tm.tv_nsec / 1000000));
 
     b64tag = base64_encode(tag, tag_len, &b64_len);
-    /* remove trailing '=' */
-    while (b64_len && b64tag[b64_len - 1] == '=') {
-        b64tag[b64_len - 1] = '\0';
-        b64_len--;
+
+    if (b64tag) {
+        /* remove trailing '=' */
+        while (b64_len && b64tag[b64_len - 1] == '=') {
+            b64tag[b64_len - 1] = '\0';
+            b64_len--;
+        }
+
+        blob_id = flb_sds_create_size(flb_sds_len(ctx->database_name) +
+                                      flb_sds_len(ctx->table_name) + b64_len + 24);
+        if (blob_id) {
+            flb_sds_snprintf(&blob_id, flb_sds_alloc(blob_id), "flb__%s__%s__%s__%lu",
+                             ctx->database_name, ctx->table_name, b64tag, ms);
+        }
+        else {
+            flb_plg_error(ctx->ins, "cannot create blob id buffer");
+        }
+
+        flb_free(b64tag);
     }
+    else {
+        flb_plg_error(ctx->ins, "error encoding tag '%s' to base64", tag);
+    }
+
+    return blob_id;
+}
+
+int azure_kusto_queued_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
+                                 size_t tag_len, flb_sds_t payload, size_t payload_size)
+{
+    int ret = -1;
+    flb_sds_t blob_id;
+    flb_sds_t blob_uri;
 
     /* flb__<db>__<table>__<b64tag>__<timestamp> */
-    blob_id = flb_sds_create_size(flb_sds_len(ctx->database_name) +
-                                  flb_sds_len(ctx->table_name) + b64_len + 24);
-    if (!blob_id) {
-        flb_plg_error(ctx->ins, "cannot create blob id buffer");
-        flb_free(b64tag);
-        return -1;
-    }
-    flb_sds_snprintf(&blob_id, flb_sds_alloc(blob_id), "flb__%s__%s__%s__%lu",
-                     ctx->database_name, ctx->table_name, b64tag, ms);
+    blob_id = azure_kusto_create_blob_id(ctx, tag, tag_len);
 
-    blob_uri = azure_kusto_create_blob(ctx, blob_id, payload, payload_size);
-    if (!blob_uri) {
-        flb_plg_error(ctx->ins, "failed to create payload blob");
-        flb_free(b64tag);
+    if (blob_id) {
+        blob_uri = azure_kusto_create_blob(ctx, blob_id, payload, payload_size);
+
+        if (blob_uri) {
+            ret = azure_kusto_enqueue_ingestion(ctx, blob_uri, payload_size);
+
+            if (ret != 0) {
+                flb_plg_error(ctx->ins, "failed to enqueue ingestion blob to queue");
+                ret = -1;
+            }
+
+            flb_sds_destroy(blob_uri);
+        }
+        else {
+            flb_plg_error(ctx->ins, "failed to create payload blob uri");
+        }
+
         flb_sds_destroy(blob_id);
-        return -1;
+    }
+    else {
+        flb_plg_error(ctx->ins, "cannot create blob id");
     }
 
-    ret = azure_kusto_enqueue_ingestion(ctx, blob_uri, payload_size);
-    if (ret != 0) {
-        flb_plg_error(ctx->ins, "failed to enqueue ingestion blob to queue");
-        flb_free(b64tag);
-        flb_sds_destroy(blob_id);
-        flb_sds_destroy(blob_uri);
-        return -1;
-    }
-
-    /* Cleanup */
-    flb_free(b64tag);
-    flb_sds_destroy(blob_id);
-    flb_sds_destroy(blob_uri);
-
-    return 0;
+    return ret;
 }

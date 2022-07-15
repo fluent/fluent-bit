@@ -123,89 +123,84 @@ flb_sds_t execute_ingest_csl_command(struct flb_azure_kusto *ctx, const char *cs
     int ret;
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
-    flb_sds_t resp;
+    flb_sds_t resp = NULL;
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
-    if (!u_conn) {
-        return NULL;
-    }
 
-    /* Get or renew Token */
-    token = get_azure_kusto_token(ctx);
-    if (!token) {
-        flb_plg_error(ctx->ins, "cannot retrieve oauth2 token");
-        flb_upstream_conn_release(u_conn);
-        return NULL;
-    }
+    if (u_conn) {
+        token = get_azure_kusto_token(ctx);
 
-    /* Compose request body */
-    body =
-        flb_sds_create_size(sizeof(FLB_AZURE_KUSTO_MGMT_BODY_TEMPLATE) - 1 + strlen(csl));
-    if (!body) {
-        flb_plg_error(ctx->ins, "cannot construct request body");
-        flb_upstream_conn_release(u_conn);
-        flb_sds_destroy(token);
-        return NULL;
-    }
-    flb_sds_snprintf(&body, flb_sds_alloc(body), FLB_AZURE_KUSTO_MGMT_BODY_TEMPLATE, csl);
+        if (token) {
+            /* Compose request body */
+            body = flb_sds_create_size(sizeof(FLB_AZURE_KUSTO_MGMT_BODY_TEMPLATE) - 1 +
+                                       strlen(csl));
 
-    /* Compose HTTP Client request */
-    c = flb_http_client(u_conn, FLB_HTTP_POST, FLB_AZURE_KUSTO_MGMT_URI_PATH, body,
-                        flb_sds_len(body), NULL, 0, NULL, 0);
-    if (!c) {
-        flb_plg_error(ctx->ins, "cannot create HTTP client context");
-        flb_upstream_conn_release(u_conn);
-        flb_sds_destroy(token);
-        flb_sds_destroy(body);
-        return NULL;
-    }
+            if (body) {
+                flb_sds_snprintf(&body, flb_sds_alloc(body),
+                                 FLB_AZURE_KUSTO_MGMT_BODY_TEMPLATE, csl);
 
-    /* Add headers */
-    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
-    flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
-    flb_http_add_header(c, "Accept", 6, "application/json", 16);
-    flb_http_add_header(c, "Authorization", 13, token, flb_sds_len(token));
+                /* Compose HTTP Client request */
+                c = flb_http_client(u_conn, FLB_HTTP_POST, FLB_AZURE_KUSTO_MGMT_URI_PATH,
+                                    body, flb_sds_len(body), NULL, 0, NULL, 0);
 
-    flb_http_buffer_size(c, FLB_HTTP_DATA_SIZE_MAX * 10);
+                if (c) {
+                    /* Add headers */
+                    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+                    flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
+                    flb_http_add_header(c, "Accept", 6, "application/json", 16);
+                    flb_http_add_header(c, "Authorization", 13, token,
+                                        flb_sds_len(token));
+                    flb_http_buffer_size(c, FLB_HTTP_DATA_SIZE_MAX * 10);
 
-    /* Send HTTP request */
-    ret = flb_http_do(c, &b_sent);
-    flb_plg_debug(ctx->ins, "Kusto ingestion command request http_do=%i, HTTP Status: %i",
-                  ret, c->resp.status);
+                    /* Send HTTP request */
+                    ret = flb_http_do(c, &b_sent);
+                    flb_plg_debug(
+                        ctx->ins,
+                        "Kusto ingestion command request http_do=%i, HTTP Status: %i",
+                        ret, c->resp.status);
 
-    if (ret != 0) {
-        flb_plg_error(ctx->ins, "cannot send HTTP request");
-        flb_upstream_conn_release(u_conn);
-        flb_sds_destroy(token);
-        flb_sds_destroy(body);
-        flb_http_client_destroy(c);
-        return NULL;
-    }
+                    if (ret == 0) {
+                        if (c->resp.status == 200) {
+                            /* Copy payload response to the response param */
+                            resp =
+                                flb_sds_create_len(c->resp.payload, c->resp.payload_size);
+                        }
+                        else if (c->resp.payload_size > 0) {
+                            flb_plg_debug(ctx->ins, "Request failed and returned: \n%s",
+                                          c->resp.payload);
+                        }
+                        else {
+                            flb_plg_debug(ctx->ins, "Request failed");
+                        }
+                    }
+                    else {
+                        flb_plg_error(ctx->ins, "cannot send HTTP request");
+                    }
 
-    /* Validate return status and HTTP status if set */
-    if (c->resp.status != 200) {
-        if (c->resp.payload_size > 0) {
-            flb_plg_debug(ctx->ins, "Request failed and returned: \n%s", c->resp.payload);
+                    flb_http_client_destroy(c);
+                }
+                else {
+                    flb_plg_error(ctx->ins, "cannot create HTTP client context");
+                }
+
+                flb_sds_destroy(body);
+            }
+            else {
+                flb_plg_error(ctx->ins, "cannot construct request body");
+            }
+
+            flb_sds_destroy(token);
         }
         else {
-            flb_plg_debug(ctx->ins, "Request failed");
+            flb_plg_error(ctx->ins, "cannot retrieve oauth2 token");
         }
+
         flb_upstream_conn_release(u_conn);
-        flb_sds_destroy(token);
-        flb_sds_destroy(body);
-        flb_http_client_destroy(c);
-        return NULL;
     }
-
-    ret = c->resp.payload_size;
-    /* Copy payload response to the response param */
-    resp = flb_sds_create_len(c->resp.payload, c->resp.payload_size);
-
-    flb_http_client_destroy(c);
-    flb_upstream_conn_release(u_conn);
-    flb_sds_destroy(token);
-    flb_sds_destroy(body);
+    else {
+        flb_plg_error(ctx->ins, "cannot create upstream connection");
+    }
 
     return resp;
 }
@@ -230,8 +225,8 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
         io_flags |= FLB_IO_IPV6;
     }
 
-    /* Create mutex for acquiring oauth tokens  and getting ingestion resources (they are
-     * shared across flush coroutines)
+    /* Create mutex for acquiring oauth tokens  and getting ingestion resources (they
+     * are shared across flush coroutines)
      */
     pthread_mutex_init(&ctx->token_mutex, NULL);
     pthread_mutex_init(&ctx->resources_mutex, NULL);
