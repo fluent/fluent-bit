@@ -56,6 +56,7 @@ FLB_EXPORT int flb_input_set(flb_ctx_t *ctx, int ffd, ...);
 FLB_EXPORT int flb_input_property_check(flb_ctx_t *ctx, int ffd, char *key, char *val);
 FLB_EXPORT int flb_output_property_check(flb_ctx_t *ctx, int ffd, char *key, char *val);
 FLB_EXPORT int flb_filter_property_check(flb_ctx_t *ctx, int ffd, char *key, char *val);
+FLB_EXPORT int vflb_output_set(flb_ctx_t *ctx, int ffd, va_list va);
 FLB_EXPORT int flb_output_set(flb_ctx_t *ctx, int ffd, ...);
 FLB_EXPORT int flb_output_set_test(flb_ctx_t *ctx, int ffd, char *test_name,
                                    void (*out_callback) (void *, int, int,

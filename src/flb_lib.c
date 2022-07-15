@@ -419,13 +419,11 @@ int flb_filter_property_check(flb_ctx_t *ctx, int ffd, char *key, char *val)
     return r;
 }
 
-/* Set an output interface property */
-int flb_output_set(flb_ctx_t *ctx, int ffd, ...)
+int vflb_output_set(flb_ctx_t *ctx, int ffd, va_list va)
 {
     int ret;
     char *key;
     char *value;
-    va_list va;
     struct flb_output_instance *o_ins;
 
     o_ins = out_instance_get(ctx, ffd);
@@ -433,24 +431,33 @@ int flb_output_set(flb_ctx_t *ctx, int ffd, ...)
         return -1;
     }
 
-    va_start(va, ffd);
     while ((key = va_arg(va, char *))) {
         value = va_arg(va, char *);
         if (!value) {
             /* Wrong parameter */
-            va_end(va);
             return -1;
         }
 
         ret = flb_output_set_property(o_ins, key, value);
         if (ret != 0) {
-            va_end(va);
             return -1;
         }
     }
 
-    va_end(va);
     return 0;
+}
+
+/* Set an output interface property */
+int flb_output_set(flb_ctx_t *ctx, int ffd, ...)
+{
+    int res;
+    va_list va;
+    
+    va_start(va, ffd);
+    res = vflb_output_set(ctx, ffd, va);
+    va_end(va);
+
+    return res;
 }
 
 int flb_output_set_callback(flb_ctx_t *ctx, int ffd, char *name,
