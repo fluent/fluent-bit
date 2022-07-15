@@ -87,12 +87,14 @@ flb_sds_t get_azure_kusto_token(struct flb_azure_kusto *ctx)
 
     /* Copy string to prevent race conditions (get_oauth2 can free the string) */
     if (ret == 0) {
-        output = flb_sds_create(ctx->o->token_type);
+        output = flb_sds_create_size(flb_sds_len(ctx->o->token_type) +
+                                     flb_sds_len(ctx->o->access_token) + 2);
         if (!output) {
-            flb_plg_error(ctx->ins, "error creating token");
+            flb_plg_error(ctx->ins, "error creating token buffer");
             return NULL;
         }
-        flb_sds_printf(&output, " %s", ctx->o->access_token);
+        flb_sds_snprintf(&output, flb_sds_alloc(output), "%s %s", ctx->o->token_type,
+                         ctx->o->access_token);
     }
 
     if (pthread_mutex_unlock(&ctx->token_mutex)) {
@@ -139,15 +141,14 @@ flb_sds_t execute_ingest_csl_command(struct flb_azure_kusto *ctx, const char *cs
 
     /* Compose request body */
     body =
-        flb_sds_create_size(sizeof(FLB_AZURE_KUSTO_MGMT_BODY_TEMPLATE) - 2 + strlen(csl));
+        flb_sds_create_size(sizeof(FLB_AZURE_KUSTO_MGMT_BODY_TEMPLATE) - 1 + strlen(csl));
     if (!body) {
         flb_plg_error(ctx->ins, "cannot construct request body");
         flb_upstream_conn_release(u_conn);
         flb_sds_destroy(token);
         return NULL;
     }
-
-    body = flb_sds_printf(&body, FLB_AZURE_KUSTO_MGMT_BODY_TEMPLATE, csl);
+    flb_sds_snprintf(&body, flb_sds_alloc(body), FLB_AZURE_KUSTO_MGMT_BODY_TEMPLATE, csl);
 
     /* Compose HTTP Client request */
     c = flb_http_client(u_conn, FLB_HTTP_POST, FLB_AZURE_KUSTO_MGMT_URI_PATH, body,
