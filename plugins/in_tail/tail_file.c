@@ -21,6 +21,10 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <time.h>
+#ifdef FLB_SYSTEM_FREEBSD
+#include <sys/user.h>
+#include <libutil.h>
+#endif
 
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
@@ -1537,6 +1541,10 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     char path[PATH_MAX];
 #elif defined(FLB_SYSTEM_WINDOWS)
     HANDLE h;
+#elif defined(FLB_SYSTEM_FREEBSD)
+    struct kinfo_file *file_entries;
+    int file_count;
+    int file_index;
 #endif
 
     buf = flb_malloc(PATH_MAX);
@@ -1597,6 +1605,20 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     if (strstr(buf, "\\\\?\\")) {
         memmove(buf, buf + 4, len + 1);
     }
+#elif defined(FLB_SYSTEM_FREEBSD)
+    if ((file_entries = kinfo_getfile(getpid(), &file_count)) == NULL) {
+        flb_free(buf);
+        return NULL;
+    }
+
+    for (file_index=0; file_index < file_count; file_index++) {
+        if (file_entries[file_index].kf_fd == file->fd) {
+            strncpy(buf, file_entries[file_index].kf_path, PATH_MAX - 1);
+            buf[PATH_MAX - 1] = 0;
+            break;
+        }
+    }
+    free(file_entries);
 #endif
     return buf;
 }
