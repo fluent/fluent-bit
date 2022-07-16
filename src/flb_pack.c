@@ -828,11 +828,12 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
 {
     int i;
     int len;
+    int max_len;
     int ok = MSGPACK_UNPACK_SUCCESS;
     int records = 0;
     int map_size;
     size_t off = 0;
-    char time_formatted[32];
+    char time_formatted[38];
     size_t s;
     flb_sds_t out_tmp;
     flb_sds_t out_js;
@@ -923,13 +924,23 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
             case FLB_PACK_JSON_DATE_JAVA_SQL_TIMESTAMP:
             /* Format the time, use microsecond precision not nanoseconds */
                 gmtime_r(&tms.tm.tv_sec, &tm);
-                s = strftime(time_formatted, sizeof(time_formatted) - 1,
+                s = strftime(time_formatted, sizeof(time_formatted),
                              FLB_PACK_JSON_DATE_JAVA_SQL_TIMESTAMP_FMT, &tm);
 
+                max_len = sizeof(time_formatted) - s;
                 len = snprintf(time_formatted + s,
-                               sizeof(time_formatted) - 1 - s,
+                               max_len,
                                ".%06" PRIu64,
                                (uint64_t) tms.tm.tv_nsec / 1000);
+                if (len >= max_len) {
+                    if (json_format == FLB_PACK_JSON_FORMAT_LINES ||
+                        json_format == FLB_PACK_JSON_FORMAT_STREAM) {
+                        flb_sds_destroy(out_buf);
+                    }
+                    msgpack_sbuffer_destroy(&tmp_sbuf);
+                    msgpack_unpacked_destroy(&result);
+                    return NULL;
+                }
                 s += len;
                 msgpack_pack_str(&tmp_pck, s);
                 msgpack_pack_str_body(&tmp_pck, time_formatted, s);
