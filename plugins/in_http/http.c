@@ -124,6 +124,11 @@ static int in_http_exit(void *data, struct flb_config *config)
         return 0;
     }
 
+    if (ctx->server_fd >= 0) {
+        flb_socket_close(ctx->server_fd);
+        ctx->server_fd = -1;
+    }
+
     http_config_destroy(ctx);
     return 0;
 }
