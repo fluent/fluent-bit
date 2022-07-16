@@ -828,6 +828,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
 {
     int i;
     int len;
+    int max_len;
     int ok = MSGPACK_UNPACK_SUCCESS;
     int records = 0;
     int map_size;
@@ -926,11 +927,12 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
                 s = strftime(time_formatted, sizeof(time_formatted) - 1,
                              FLB_PACK_JSON_DATE_JAVA_SQL_TIMESTAMP_FMT, &tm);
 
+                max_len = sizeof(time_formatted) - 1 - s;
                 len = snprintf(time_formatted + s,
-                               sizeof(time_formatted) - 1 - s,
+                               max_len,
                                ".%06" PRIu64,
                                (uint64_t) tms.tm.tv_nsec / 1000);
-                s += len;
+                s += (len < max_len) ? len : max_len;
                 msgpack_pack_str(&tmp_pck, s);
                 msgpack_pack_str_body(&tmp_pck, time_formatted, s);
                 break;
