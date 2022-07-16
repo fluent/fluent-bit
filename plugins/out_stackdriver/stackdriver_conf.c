@@ -186,7 +186,6 @@ static int parse_key_value_list(struct flb_stackdriver *ctx,
     flb_sds_t val;
     struct mk_list *head;
     struct flb_slist_entry *entry;
-    msgpack_object_kv *kv = NULL;
 
     if (origin) {
         mk_list_foreach(head, origin) {
