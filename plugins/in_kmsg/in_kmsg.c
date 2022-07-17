@@ -132,6 +132,11 @@ static inline int process_line(const char *line,
     /* Priority */
     priority = FLB_KLOG_PRI(val);
 
+    if (priority > ctx->prio_level) {
+        /* Drop line */
+        return 0;
+    }
+
     /* Sequence */
     p = strchr(p, ',');
     if (!p) {
@@ -308,6 +313,7 @@ static int in_kmsg_init(struct flb_input_instance *ins,
         flb_free(ctx);
         return -1;
     }
+    flb_plg_debug(ctx->ins, "prio_level is %d", ctx->prio_level);
 
     /* Set our collector based on a file descriptor event */
     ret = flb_input_set_collector_event(ins,
@@ -339,6 +345,12 @@ static int in_kmsg_exit(void *data, struct flb_config *config)
 }
 
 static struct flb_config_map config_map[] = {
+    {
+      FLB_CONFIG_MAP_INT, "prio_level", "8",
+      0, FLB_TRUE, offsetof(struct flb_in_kmsg_config, prio_level),
+      "The log level to filter. The kernel log is dropped if its priority is more than prio_level. "
+      "Allowed values are 0-8. Default is 8."
+    },
     /* EOF */
     {0}
 };
