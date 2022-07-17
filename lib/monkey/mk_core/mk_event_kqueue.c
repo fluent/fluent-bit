@@ -245,6 +245,7 @@ static inline int _mk_event_timeout_destroy(struct mk_event_ctx *ctx, void *data
         mk_list_del(&event->_priority_head);
     }
 
+    close(event->fd);
     MK_EVENT_NEW(event);
 
     return 0;
