@@ -401,9 +401,8 @@ void flb_config_exit(struct flb_config *config)
 
     /* Event flush */
     if (config->evl) {
-        mk_event_del(config->evl, &config->event_flush);
+        mk_event_timeout_destroy(config->evl, &config->event_flush);
     }
-    mk_event_closesocket(config->flush_fd);
 
     /* Release scheduler */
     flb_sched_destroy(config->sched);
