@@ -744,6 +744,7 @@ int flb_input_thread_collect(struct flb_input_instance *ins,
 
     if (bytes_read == 0) {
         flb_plg_warn(ins, "end of file (read pipe closed by input thread)");
+        flb_input_collector_pause(it->coll_fd, ins);
         return 0;
     }
 
