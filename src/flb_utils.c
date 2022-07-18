@@ -1171,7 +1171,7 @@ int flb_utils_read_file(char *path, char **out_buf, size_t *out_size)
     ret = fstat(fd, &st);
     if (ret == -1) {
         flb_errno();
-        close(fd);
+        fclose(fp);
         return -1;
     }
 
