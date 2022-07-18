@@ -94,7 +94,7 @@ jobs:
           cluster_name: kind
 
       - name: Set up Helm
-        uses: azure/setup-helm@v3.0
+        uses: azure/setup-helm@v3.1
         with:
           version: v3.8.1
 
