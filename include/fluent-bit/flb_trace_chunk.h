@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_lib.h>
 
 // A record has been received from input
 #define FLB_TRACE_CHUNK_TYPE_INPUT      1
@@ -53,6 +54,7 @@ struct flb_trace_chunk_context {
 	flb_sds_t trace_prefix;
 	int to_destroy;
 	int chunks;
+	flb_ctx_t *flb;
 };
 
 struct flb_trace_chunk {

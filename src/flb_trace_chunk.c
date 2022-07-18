@@ -67,6 +67,7 @@ struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *c
 {
     struct flb_input_instance *input;
     struct flb_output_instance *output;
+    struct flb_output_instance *calyptia;
     struct flb_trace_chunk_context *ctx;
     struct mk_list *head;
     struct flb_kv *prop;
@@ -76,74 +77,78 @@ struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *c
         return NULL;
     }
 
-    input = (void *)flb_input_new(config, "emitter", NULL, FLB_FALSE);
+    ctx = flb_calloc(1, sizeof(struct flb_trace_chunk_context));
+    if (ctx == NULL) {
+        return NULL;
+    }
+
+    ctx->flb = flb_create();
+    if (ctx->flb == NULL) {
+        goto error_ctxt;
+    }
+
+    flb_service_set(ctx->flb, "flush", "1", "grace", "1", NULL);
+
+    input = (void *)flb_input_new(ctx->flb->config, "emitter", NULL, FLB_FALSE);
     if (input == NULL) {
         flb_error("could not load trace emitter");
-        return NULL;
+        goto error_flb;
     }
     input->event_type = FLB_EVENT_TYPE_LOG | FLB_EVENT_TYPE_HAS_TRACE;
     ret = flb_input_set_property(input, "alias", "trace-emitter");
     if (ret != 0) {
         flb_error("unable to set alias for trace emitter");
-        flb_input_instance_destroy(input);
-        return NULL;
-    }
-    ret = flb_input_instance_init(input, config);
-    if (ret == -1) {
-        flb_error("cannot initialize trace emitter");
-        flb_input_instance_destroy(input);
-        return NULL;
+        goto error_input;
     }
 
-    /* Storage context */
-    ret = flb_storage_input_create(config->cio, input);
-    if (ret == -1) {
-        return NULL;
+    output = flb_output_new(ctx->flb->config, output_name, NULL, 1);
+    if (output == NULL) {
+        flb_error("could not create trace output");
+        goto error_input;
     }
-
+    
     if (strcmp(output_name, "calyptia") == 0) {
-        output = find_calyptia_output_instance(config);
-        if (output == NULL) {
-            flb_input_instance_destroy(input);
-            return NULL;
+        calyptia = find_calyptia_output_instance(config);
+        if (calyptia == NULL) {
+            flb_error("unable to find calyptia output instance");
+            goto error_output;
         }
-    } else {
-        output = flb_output_new(config, output_name, NULL, 1);
-        if (output == NULL) {
-            flb_error("could not create trace output");
-            flb_input_instance_destroy(input);
-            return NULL;
-        }
-        
-        if (props != NULL) {
-            mk_list_foreach(head, props) {
-                prop = mk_list_entry(head, struct flb_kv, _head);
-                flb_output_set_property(output, prop->key, prop->val);
-            }
-        }
-
-        ret = flb_output_instance_init(output, config);
-        if (ret == -1) {
-            flb_error("cannot initialize trace emitter output");
-            return NULL;
+        mk_list_foreach(head, &calyptia->properties) {
+            prop = mk_list_entry(head, struct flb_kv, _head);
+            flb_output_set_property(output, prop->key, prop->val);
+        }        
+    } else if (props != NULL) {
+        mk_list_foreach(head, props) {
+            prop = mk_list_entry(head, struct flb_kv, _head);
+            flb_output_set_property(output, prop->key, prop->val);
         }
     }
 
     ret = flb_router_connect_direct(input, output);
     if (ret != 0) {
         flb_error("unable to route traces");
-        flb_input_instance_destroy(input);
-        return NULL;
+        goto error_output;
     }
 
     flb_router_connect(input, output);
 
-    ctx = flb_calloc(1, sizeof(struct flb_trace_chunk_context));
     ctx->output = (void *)output;
     ctx->input = (void *)input;
     ctx->trace_prefix = flb_sds_create(trace_prefix);
 
+    flb_start(ctx->flb);
+    
     return ctx;
+
+error_output:
+    flb_output_instance_destroy(output);
+error_input:
+    flb_input_instance_destroy(input);
+error_flb:
+    flb_destroy(ctx->flb);
+error_ctxt:
+    flb_free(ctx);
+    return NULL;
 }
 
 int flb_trace_chunk_context_set_limit(struct flb_trace_chunk_context *ctxt, int limit_type, int limit_arg)
@@ -190,31 +195,12 @@ int flb_trace_chunk_context_hit_limit(struct flb_trace_chunk_context *ctxt)
 
 void flb_trace_chunk_context_destroy(struct flb_trace_chunk_context *ctxt)
 {
-    //struct flb_output_instance *output = (struct flb_output_instance *)ctxt->output;
-    //struct flb_input_instance *input = (struct flb_input_instance *)ctxt->input;
-
-
     if (ctxt->chunks > 0) {
         ctxt->to_destroy = 1;
         return;
     }
-
-    /*
-    flb_input_instance_exit(input, input->config);
-    flb_input_instance_destroy(input);
-
-    // Stop any worker thread
-    if (flb_output_is_threaded(output) == FLB_TRUE) {
-        flb_output_thread_pool_destroy(output);
-    }
-    if (output->p->cb_exit != NULL)
-    {
-        output->p->cb_exit(output->context, output->config);
-    }
-    flb_output_instance_destroy(ctxt->output);
-    */
-
-    flb_sds_destroy(ctxt->trace_prefix);
+    flb_stop(ctxt->flb);
+    flb_destroy(ctxt->flb);
     flb_free(ctxt);
 }
 
