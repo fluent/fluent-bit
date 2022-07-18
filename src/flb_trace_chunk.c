@@ -379,7 +379,7 @@ int flb_trace_chunk_filter(struct flb_trace_chunk *tracer, void *pfilter, struct
     struct flb_filter_instance *filter = (struct flb_filter_instance *)pfilter;
     flb_sds_t tag = flb_sds_create("trace");
     struct flb_time tm;
-    size_t off;
+    size_t off = 0;
     int records = 0;
 
 
@@ -419,6 +419,7 @@ int flb_trace_chunk_filter(struct flb_trace_chunk *tracer, void *pfilter, struct
     
     msgpack_pack_str_with_body(&mp_pck, "records", strlen("records"));
 
+    msgpack_unpacked_init(&result);
     do {
         rc = msgpack_unpack_next(&result, buf, buf_size, &off);
         if (rc != MSGPACK_UNPACK_SUCCESS) {
@@ -429,6 +430,7 @@ int flb_trace_chunk_filter(struct flb_trace_chunk *tracer, void *pfilter, struct
     } while (rc == MSGPACK_UNPACK_SUCCESS && off < buf_size);
 
     msgpack_pack_array(&mp_pck, records);
+    off = 0;
     do {
         rc = msgpack_unpack_next(&result, buf, buf_size, &off);
         if (rc != MSGPACK_UNPACK_SUCCESS) {
