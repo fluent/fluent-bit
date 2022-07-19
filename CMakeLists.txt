@@ -1110,9 +1110,11 @@ endif()
 if(CPACK_GENERATOR MATCHES "WIX")
   set(CPACK_WIX_UPGRADE_GUID cb6825fd-37e6-4596-a55d-6d490d4fe178)
   configure_file(LICENSE "${CMAKE_CURRENT_BINARY_DIR}/LICENSE.txt")
+  configure_file(${CMAKE_SOURCE_DIR}/cpack/wix/WIX.template.in.cmakein
+    ${CMAKE_CURRENT_BINARY_DIR}/WIX.template.in)
   # Specify LICENSE file that has .txt extension
   set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_BINARY_DIR}/LICENSE.txt")
-  set(CPACK_WIX_TEMPLATE ${CMAKE_SOURCE_DIR}/cpack/wix/WIX.template.in)
+  set(CPACK_WIX_TEMPLATE ${CMAKE_CURRENT_BINARY_DIR}/WIX.template.in)
   set(CPACK_WIX_LIGHT_EXTENSIONS "WixUtilExtension")
 endif()
 
