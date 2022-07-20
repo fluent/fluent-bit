@@ -71,6 +71,7 @@ struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *c
     struct flb_trace_chunk_context *ctx;
     struct mk_list *head;
     struct flb_kv *prop;
+    struct cio_options opts = {0};
     int ret;
 
     if (config->enable_trace == FLB_FALSE) {
@@ -95,6 +96,14 @@ struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *c
         goto error_flb;
     }
     input->event_type = FLB_EVENT_TYPE_LOG | FLB_EVENT_TYPE_HAS_TRACE;
+
+    ctx->cio = cio_create(NULL);
+    if (ctx->cio == NULL) {
+    	flb_error("unable to create cio context");
+    	return NULL;
+    }
+    flb_storage_input_create(ctx->cio, input);
+
     ret = flb_input_set_property(input, "alias", "trace-emitter");
     if (ret != 0) {
         flb_error("unable to set alias for trace emitter");
@@ -143,6 +152,9 @@ struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *c
 error_output:
     flb_output_instance_destroy(output);
 error_input:
+    if (ctx->cio) {
+        cio_destroy(ctx->cio);
+    }
     flb_input_instance_destroy(input);
 error_flb:
     flb_destroy(ctx->flb);
@@ -201,6 +213,7 @@ void flb_trace_chunk_context_destroy(struct flb_trace_chunk_context *ctxt)
     }
     flb_stop(ctxt->flb);
     flb_destroy(ctxt->flb);
+    cio_destroy(ctxt->cio);
     flb_free(ctxt);
 }
 

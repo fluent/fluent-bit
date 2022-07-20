@@ -3,6 +3,8 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_lib.h>
 
+#include <chunkio/cio_chunk.h>
+
 // A record has been received from input
 #define FLB_TRACE_CHUNK_TYPE_INPUT      1
 // A record has been filtered
@@ -55,6 +57,7 @@ struct flb_trace_chunk_context {
 	int to_destroy;
 	int chunks;
 	flb_ctx_t *flb;
+	struct cio_ctx *cio;
 };
 
 struct flb_trace_chunk {
