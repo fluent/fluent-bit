@@ -424,7 +424,7 @@ int flb_trace_chunk_filter(struct flb_trace_chunk *tracer, void *pfilter, struct
         rc = msgpack_unpack_next(&result, buf, buf_size, &off);
         if (rc != MSGPACK_UNPACK_SUCCESS) {
             flb_error("unable to unpack record");
-            goto sbuffer_error;
+            goto unpack_error;
         }
         records++;
     } while (rc == MSGPACK_UNPACK_SUCCESS && off < buf_size);
@@ -435,7 +435,7 @@ int flb_trace_chunk_filter(struct flb_trace_chunk *tracer, void *pfilter, struct
         rc = msgpack_unpack_next(&result, buf, buf_size, &off);
         if (rc != MSGPACK_UNPACK_SUCCESS) {
             flb_error("unable to unpack record");
-            goto sbuffer_error;
+            goto unpack_error;
         }
         flb_time_pop_from_msgpack(&tm, &result, &record);
 
@@ -452,6 +452,8 @@ int flb_trace_chunk_filter(struct flb_trace_chunk *tracer, void *pfilter, struct
     
     rc = 0;
 
+unpack_error:
+    msgpack_unpacked_destroy(&result);
 sbuffer_error:
     msgpack_sbuffer_destroy(&mp_sbuf);
 tracer_error:
