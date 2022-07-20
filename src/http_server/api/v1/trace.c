@@ -52,7 +52,8 @@ struct flb_input_instance *find_input(struct flb_hs *hs, const char *name)
 static int enable_trace_input(struct flb_hs *hs, const char *name, const char *prefix, const char *output_name, struct mk_list *props)
 {
     struct flb_input_instance *in;
-    
+    struct flb_trace_chunk_context *ctxt;
+
 
     in = find_input(hs, name);
     if (in == NULL) {
@@ -60,7 +61,9 @@ static int enable_trace_input(struct flb_hs *hs, const char *name, const char *p
     }
 
     if (in->trace_ctxt != NULL) {
-        flb_trace_chunk_context_destroy(in->trace_ctxt);
+        ctxt = in->trace_ctxt;
+        in->trace_ctxt = NULL;
+        flb_trace_chunk_context_destroy(ctxt);
     }
     in->trace_ctxt = flb_trace_chunk_context_new(hs->config, output_name, prefix, props);
     return (in->trace_ctxt == NULL ? 503 : 0);
