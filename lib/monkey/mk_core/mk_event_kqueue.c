@@ -201,12 +201,14 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     event->_priority_head.next = NULL;
     event->_priority_head.prev = NULL;
 
-#ifdef NOTE_SECONDS
+#if defined(NOTE_SECONDS) && !defined(__APPLE__)
     /* FreeBSD or LINUX_KQUEUE defined */
     /* TODO : high resolution interval support. */
     EV_SET(&ke, fd, EVFILT_TIMER, EV_ADD, NOTE_SECONDS, sec, event);
 #else
     /* Other BSD have no NOTE_SECONDS & specify milliseconds */
+    /* Also, on macOS, NOTE_SECONDS has severe side effect that cause
+     * performance degradation. */
     EV_SET(&ke, fd, EVFILT_TIMER, EV_ADD, 0, (sec * 1000) + (nsec / 1000000) , event);
 #endif
     ret = kevent(ctx->kfd, &ke, 1, NULL, 0, NULL);
