@@ -643,7 +643,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "line_append", "false",
      0, FLB_TRUE, offsetof(struct flb_file_conf, line_append),
-     "Append new data to the end of log in same line. Default value is false"
+     "Append data to the existing line rather than start a new line. Default value is false, use embedded new line characters '\n' to create new lines if true otherwise all output will be on a single line."
     },
 
     /* EOF */
