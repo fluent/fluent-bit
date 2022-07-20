@@ -42,8 +42,7 @@ jobs:
           - gcc
           - clang
         exclude:
-          - os: ubuntu-18.04
-            flb_option: "-DFLB_COVERAGE=On"
+          - flb_option: "-DFLB_COVERAGE=On"
             compiler: clang
     permissions:
       contents: read
@@ -87,8 +86,6 @@ jobs:
           - "-DFLB_JEMALLOC=Off"
           - "-DFLB_SANITIZE_MEMORY=On"
           - "-DFLB_SANITIZE_THREAD=On"
-        compiler:
-          - gcc
     permissions:
       contents: read
     steps:
