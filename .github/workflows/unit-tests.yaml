@@ -95,7 +95,7 @@ jobs:
           repository: calyptia/fluent-bit-ci
           path: ci
 
-      - name: ${{ matrix.compiler }} - ${{ matrix.flb_option }}
+      - name: ${{ matrix.flb_option }}
         # Currently MacOS is unsupported so we do not want to fail on any errors here, the unit tests are for information
         # during review - they should pass still.
         continue-on-error: true
