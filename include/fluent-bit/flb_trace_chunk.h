@@ -48,16 +48,16 @@ struct flb_trace_chunk_limit {
 };
 
 struct flb_trace_chunk_context {
-	/* avoid cyclical include ... */
-	void *input;
-	void *output;
-	int trace_count;
-	struct flb_trace_chunk_limit limit;
-	flb_sds_t trace_prefix;
-	int to_destroy;
-	int chunks;
-	flb_ctx_t *flb;
-	struct cio_ctx *cio;
+    void *input;
+    void *output;
+    int trace_count;
+    struct flb_trace_chunk_limit limit;
+    flb_sds_t trace_prefix;
+    int to_destroy;
+    int chunks;
+    flb_ctx_t *flb;
+    struct cio_ctx *cio;
+    pthread_mutex_t *lock;
 };
 
 struct flb_trace_chunk {

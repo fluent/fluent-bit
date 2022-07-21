@@ -1462,19 +1462,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     }
 
 #ifdef FLB_TRACE
-    if (ic->in->trace_ctxt) {
-        if (ic->trace != NULL) {
-            flb_trace_chunk_destroy(ic->trace);
-        }
-        ic->trace = flb_trace_chunk_new(ic);
-        if (ic->trace) {
-            flb_trace_chunk_input(ic->trace);
-        }
-        if (flb_trace_chunk_context_hit_limit(ic->in->trace_ctxt) == FLB_TRUE) {
-            flb_trace_chunk_context_destroy(ic->in->trace_ctxt);
-            ic->in->trace_ctxt = NULL;
-        }
-    }
+    flb_trace_chunk_do_input(ic);
 #endif // FLB_TRACE
 
     /* Update 'input' metrics */
