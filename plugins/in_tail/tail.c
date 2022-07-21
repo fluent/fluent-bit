@@ -74,6 +74,10 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
 
+        if (file->watch_fd != -1) {
+            continue;
+        }
+
         /* Gather current file size */
         ret = fstat(file->fd, &st);
         if (ret == -1) {
