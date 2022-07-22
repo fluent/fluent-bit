@@ -218,8 +218,6 @@ struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *c
         goto error_output;
     }
 
-    flb_router_connect(input, output);
-
     ctx->output = (void *)output;
     ctx->input = (void *)input;
     ctx->trace_prefix = flb_sds_create(trace_prefix);
