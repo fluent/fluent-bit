@@ -57,7 +57,6 @@ struct flb_trace_chunk_context {
     int chunks;
     flb_ctx_t *flb;
     struct cio_ctx *cio;
-    pthread_mutex_t lock;
 };
 
 struct flb_trace_chunk {
@@ -67,13 +66,13 @@ struct flb_trace_chunk {
 	int tracer_versions;
 };
 
-struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *config, const char *output_name, const char *trace_prefix, struct mk_list *props);
-void flb_trace_chunk_context_destroy(struct flb_trace_chunk_context *ctxt);
+struct flb_trace_chunk_context *flb_trace_chunk_context_new(void *input, const char *output_name, const char *trace_prefix, struct mk_list *props);
+void flb_trace_chunk_context_destroy(void *input);
 struct flb_trace_chunk *flb_trace_chunk_new(struct flb_input_chunk *chunk);
 void flb_trace_chunk_destroy(struct flb_trace_chunk *);
 int flb_trace_chunk_input(struct flb_trace_chunk *trace);
 int flb_trace_chunk_pre_output(struct flb_trace_chunk *trace);
 int flb_trace_chunk_filter(struct flb_trace_chunk *trace, void *pfilter, struct flb_time *, struct flb_time *, char *buf, size_t buf_size);
 void flb_trace_chunk_free(struct flb_trace_chunk *trace);
-int flb_trace_chunk_context_set_limit(struct flb_trace_chunk_context *ctxt, int, int);
-int flb_trace_chunk_context_hit_limit(struct flb_trace_chunk_context *ctxt);
+int flb_trace_chunk_context_set_limit(void *input, int, int);
+int flb_trace_chunk_context_hit_limit(void *input);
