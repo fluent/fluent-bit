@@ -649,6 +649,23 @@ static char* replace_uri_tokens(const char* original_string, const char* current
     return result;
 }
 
+/*
+ * Linux has strtok_r as the concurrent safe version
+ * Windows has strtok_s
+ */
+char* strtok_concurrent(
+    char* str,
+    char* delimiters,
+    char** context
+)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    return strtok_s(str, delimiters, context);
+#else
+    return strtok_r(str, delimiters, context);
+#endif
+}
+
 /* Constructs S3 object key as per the format. */
 flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
                          char *tag_delimiter, uint64_t seq_index)
@@ -660,6 +677,8 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
     char *key;
     char *random_alphanumeric;
     char *seq_index_str;
+    /* concurrent safe strtok_r requires a tracking ptr */
+    char *strtok_saveptr;
     int len;
     flb_sds_t tmp = NULL;
     flb_sds_t buf = NULL;
@@ -705,7 +724,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
     tmp = NULL;
 
     /* Split the string on the delimiters */
-    tag_token = strtok(tmp_tag, tag_delimiter);
+    tag_token = strtok_concurrent(tmp_tag, tag_delimiter, &strtok_saveptr);
 
     /* Find all occurences of $TAG[*] and
      * replaces it with the right token from tag.
@@ -736,7 +755,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
         s3_key = tmp_key;
         tmp_key = NULL;
 
-        tag_token = strtok(NULL, tag_delimiter);
+        tag_token = strtok_concurrent(NULL, tag_delimiter, &strtok_saveptr);
         i++;
     }
 
