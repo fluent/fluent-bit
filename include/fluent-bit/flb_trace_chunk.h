@@ -57,7 +57,7 @@ struct flb_trace_chunk_context {
     int chunks;
     flb_ctx_t *flb;
     struct cio_ctx *cio;
-    pthread_mutex_t *lock;
+    pthread_mutex_t lock;
 };
 
 struct flb_trace_chunk {
