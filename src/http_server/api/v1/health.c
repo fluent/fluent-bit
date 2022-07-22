@@ -30,22 +30,11 @@
 
 #include "health.h"
 
-/*
- * in/out records sample at a certain timestamp.
- */
-struct flb_hs_throughput_sample {
-    uint64_t in_records;
-    uint64_t out_records;
-    uint64_t timestamp_seconds;
-};
+struct flb_hs_throughput_state throughput_check_state = {0};
 
-/* ring buffer + helper functions for storing samples */
-struct flb_hs_throughput_samples {
-    struct flb_hs_throughput_sample *items;
-    int size;
-    int count;
-    int insert;
-};
+struct flb_health_check_metrics_counter *metrics_counter;
+
+pthread_key_t hs_health_key;
 
 static struct flb_hs_throughput_sample *samples_add(
         struct flb_hs_throughput_samples *samples)
@@ -81,19 +70,6 @@ static struct flb_hs_throughput_sample *samples_get(
     return samples->items + real_index;
 }
 
-struct {
-    int enabled;
-    struct mk_list *input_plugins;
-    struct mk_list *output_plugins;
-    double out_in_ratio_threshold;
-
-    struct flb_hs_throughput_samples samples;
-    bool healthy;
-} throughput_check_state = {0};
-
-struct flb_health_check_metrics_counter *metrics_counter;
-
-pthread_key_t hs_health_key;
 
 static struct mk_list *hs_health_key_create()
 {
