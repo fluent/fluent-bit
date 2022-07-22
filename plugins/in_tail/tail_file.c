@@ -1041,6 +1041,13 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         goto error;
     }
 
+    /* Set the file position (database offset, head or tail) */
+    ret = set_file_position(ctx, file);
+    if (ret == -1) {
+        flb_tail_file_remove(file);
+        goto error;
+    }
+
     if (mode == FLB_TAIL_STATIC) {
         mk_list_add(&file->_head, &ctx->files_static);
         ctx->files_static_count++;
@@ -1059,17 +1066,10 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
             flb_plg_error(ctx->ins, "could not register file into fs_events");
             goto error;
         }
-    }
 
-    /* Set the file position (database offset, head or tail) */
-    ret = set_file_position(ctx, file);
-    if (ret == -1) {
-        flb_tail_file_remove(file);
-        goto error;
+        /* Remaining bytes to read */
+        file->pending_bytes = file->size - file->offset;
     }
-
-    /* Remaining bytes to read */
-    file->pending_bytes = file->size - file->offset;
 
 #ifdef FLB_HAVE_METRICS
     name = (char *) flb_input_name(ctx->ins);
