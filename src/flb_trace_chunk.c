@@ -19,6 +19,18 @@ int in_emitter_add_record(const char *tag, int tag_len,
                           const char *buf_data, size_t buf_size,
                           struct flb_input_instance *in);
 
+// To avoid double frees when enabling and disabling tracing as well
+// as avoiding race conditions when stopping fluent-bit while someone is
+// toggling tracing via the HTTP API this set of APIS with a mutex lock 
+// is used:
+//   * flb_trace_chunk_to_be_destroyed - query to see if the trace context
+//     is slated to be freed
+//   * flb_trace_chunk_set_destroy - set the trace context to be destroyed
+//     once all chunks are freed (executed in flb_trace_chunk_destroy).
+//   * flb_trace_chunk_has_chunks - see if there are still chunks using
+//     using the tracing context
+//   * flb_trace_chunk_add - increment the traces chunk count
+//   * flb_trace_chunk_sub - decrement the traces chunk count
 static inline int flb_trace_chunk_to_be_destroyed(struct flb_trace_chunk_context *ctxt)
 {
     int ret = FLB_FALSE;
