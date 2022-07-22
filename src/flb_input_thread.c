@@ -218,6 +218,9 @@ static struct flb_input_thread_instance *input_thread_instance_create(struct flb
     thi->init_status = 0;
     pthread_mutex_init(&thi->init_mutex, NULL);
 
+    /* init condition */
+    pthread_cond_init(&thi->init_condition, NULL);
+
     /* initialize lists */
     mk_list_init(&thi->input_coro_list);
     mk_list_init(&thi->input_coro_list_destroy);
