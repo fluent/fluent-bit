@@ -100,6 +100,7 @@ void flb_trace_chunk_destroy(struct flb_trace_chunk *trace)
 {    
     flb_trace_chunk_sub(trace->ctxt);
 
+    // check to see if we need to free the trace context.
     if (flb_trace_chunk_has_chunks(trace->ctxt) == FLB_FALSE && 
         flb_trace_chunk_to_be_destroyed(trace->ctxt) == FLB_TRUE) {
         flb_trace_chunk_context_destroy(trace->ctxt);
@@ -176,6 +177,8 @@ struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *c
     }
     input->event_type = FLB_EVENT_TYPE_LOG | FLB_EVENT_TYPE_HAS_TRACE;
 
+    // create our own chunk context so we do not interfere with the
+    // global chunk context.
     ctx->cio = cio_create(NULL);
     if (ctx->cio == NULL) {
     	flb_error("unable to create cio context");
@@ -195,6 +198,8 @@ struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *c
         goto error_input;
     }
     
+    // special handling for the calyptia plugin so we can copy the API
+    // key and other configuration properties.
     if (strcmp(output_name, "calyptia") == 0) {
         calyptia = find_calyptia_output_instance(config);
         if (calyptia == NULL) {
