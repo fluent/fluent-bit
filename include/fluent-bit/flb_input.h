@@ -156,6 +156,7 @@ struct flb_input_instance {
     int id;                              /* instance id                  */
 #ifdef FLB_TRACE
     struct flb_trace_chunk_context *trace_ctxt;
+    pthread_mutex_t trace_lock;
 #endif
     int log_level;                       /* log level for this plugin    */
     flb_pipefd_t channel[2];             /* pipe(2) channel              */

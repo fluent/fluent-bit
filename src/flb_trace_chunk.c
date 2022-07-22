@@ -35,9 +35,7 @@ static inline int flb_trace_chunk_to_be_destroyed(struct flb_trace_chunk_context
 {
     int ret = FLB_FALSE;
 
-    pthread_mutex_lock(&ctxt->lock);
     ret = (ctxt->to_destroy == FLB_TRUE);
-    pthread_mutex_unlock(&ctxt->lock);
     return ret;
 }
 
@@ -45,68 +43,23 @@ static inline int flb_trace_chunk_has_chunks(struct flb_trace_chunk_context *ctx
 {
     int ret = FLB_FALSE;
 
-    pthread_mutex_lock(&ctxt->lock);
     ret = (ctxt->to_destroy == FLB_TRUE);
-    pthread_mutex_unlock(&ctxt->lock);
     return ret;
 }
 
 static inline void flb_trace_chunk_add(struct flb_trace_chunk_context *ctxt)
 {
-    pthread_mutex_lock(&ctxt->lock);
     ctxt->chunks++;
-    pthread_mutex_unlock(&ctxt->lock);
 }
 
 static inline void flb_trace_chunk_sub(struct flb_trace_chunk_context *ctxt)
 {
-    pthread_mutex_lock(&ctxt->lock);
     ctxt->chunks--;
-    pthread_mutex_unlock(&ctxt->lock);
 }
 
 static inline void flb_trace_chunk_set_destroy(struct flb_trace_chunk_context *ctxt)
 {
-    pthread_mutex_lock(&ctxt->lock);
     ctxt->to_destroy = 1;
-    pthread_mutex_unlock(&ctxt->lock);
-}
-
-struct flb_trace_chunk *flb_trace_chunk_new(struct flb_input_chunk *chunk)
-{
-    struct flb_trace_chunk *trace;
-    struct flb_input_instance *f_ins = (struct flb_input_instance *)chunk->in;
-
-    if (flb_trace_chunk_to_be_destroyed(f_ins->trace_ctxt)) {
-        return NULL;
-    }
-
-    trace = flb_calloc(1, sizeof(struct flb_trace_chunk));
-    if (trace == NULL) {
-        return NULL;
-    }
-
-    trace->ctxt = f_ins->trace_ctxt;
-    flb_trace_chunk_add(trace->ctxt);
-
-    trace->ic = chunk;
-    trace->trace_id = flb_sds_create("");
-    flb_sds_printf(&trace->trace_id, "%s%d", trace->ctxt->trace_prefix,
-                  trace->ctxt->trace_count++);
-    return trace;
-}
-
-void flb_trace_chunk_destroy(struct flb_trace_chunk *trace)
-{    
-    flb_trace_chunk_sub(trace->ctxt);
-
-    // check to see if we need to free the trace context.
-    if (flb_trace_chunk_has_chunks(trace->ctxt) == FLB_FALSE && 
-        flb_trace_chunk_to_be_destroyed(trace->ctxt) == FLB_TRUE) {
-        flb_trace_chunk_context_destroy(trace->ctxt);
-    }
-    flb_sds_destroy(trace->trace_id);
-    flb_free(trace);
 }
 
 static struct flb_output_instance *find_calyptia_output_instance(struct flb_config *config)
@@ -140,8 +93,43 @@ static void log_cb(void *ctx, int level, const char *file, int line,
     }
 }
 
-struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *config, const char *output_name, const char *trace_prefix, struct mk_list *props)
+static void trace_chunk_context_destroy(void *input)
 {
+    struct flb_input_instance *in = (struct flb_input_instance *)input;
+    struct flb_trace_chunk_context *ctxt = in->trace_ctxt;
+
+    if (ctxt == NULL) {
+        return;
+    }
+
+    if (flb_trace_chunk_has_chunks(ctxt)) {
+        flb_trace_chunk_set_destroy(ctxt);
+        // maybe take out?
+        flb_input_pause(ctxt->input);
+        return;
+    }
+    
+    flb_sds_destroy(ctxt->trace_prefix);
+    flb_stop(ctxt->flb);
+    flb_destroy(ctxt->flb);
+    cio_destroy(ctxt->cio);
+    flb_free(ctxt);
+
+    in->trace_ctxt = NULL;
+}
+
+void flb_trace_chunk_context_destroy(void *input)
+{
+    struct flb_input_instance *in = (struct flb_input_instance *)input;
+    pthread_mutex_lock(&in->trace_lock);
+    trace_chunk_context_destroy(input);
+    pthread_mutex_unlock(&in->trace_lock);
+}
+
+struct flb_trace_chunk_context *flb_trace_chunk_context_new(void *trace_input, const char *output_name, const char *trace_prefix, struct mk_list *props)
+{
+    struct flb_input_instance *in = (struct flb_input_instance *)trace_input;
+    struct flb_config *config = in->config;
     pthread_mutexattr_t attr = {0};
     struct flb_input_instance *input;
     struct flb_output_instance *output;
@@ -156,12 +144,13 @@ struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *c
         return NULL;
     }
 
+    pthread_mutex_lock(&in->trace_lock);
+
     ctx = flb_calloc(1, sizeof(struct flb_trace_chunk_context));
     if (ctx == NULL) {
+        pthread_mutex_unlock(&in->trace_lock);
         return NULL;
     }
-
-    pthread_mutex_init(&ctx->lock, &attr);
 
     ctx->flb = flb_create();
     if (ctx->flb == NULL) {
@@ -182,7 +171,7 @@ struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *c
     ctx->cio = cio_create(NULL);
     if (ctx->cio == NULL) {
     	flb_error("unable to create cio context");
-    	return NULL;
+    	goto error_flb;
     }
     flb_storage_input_create(ctx->cio, input);
 
@@ -229,6 +218,8 @@ struct flb_trace_chunk_context *flb_trace_chunk_context_new(struct flb_config *c
 
     flb_start(ctx->flb);
     
+    in->trace_ctxt = ctx;
+    pthread_mutex_unlock(&in->trace_lock);
     return ctx;
 
 error_output:
@@ -242,13 +233,69 @@ error_flb:
     flb_destroy(ctx->flb);
 error_ctxt:
     flb_free(ctx);
+    pthread_mutex_unlock(&in->trace_lock);
     return NULL;
 }
 
-int flb_trace_chunk_context_set_limit(struct flb_trace_chunk_context *ctxt, int limit_type, int limit_arg)
+struct flb_trace_chunk *flb_trace_chunk_new(struct flb_input_chunk *chunk)
 {
+    struct flb_trace_chunk *trace;
+    struct flb_input_instance *f_ins = (struct flb_input_instance *)chunk->in;
+
+    pthread_mutex_lock(&f_ins->trace_lock);
+
+    if (flb_trace_chunk_to_be_destroyed(f_ins->trace_ctxt)) {
+        pthread_mutex_unlock(&f_ins->trace_lock);
+        return NULL;
+    }
+
+    trace = flb_calloc(1, sizeof(struct flb_trace_chunk));
+    if (trace == NULL) {
+        pthread_mutex_unlock(&f_ins->trace_lock);
+        return NULL;
+    }
+
+    trace->ctxt = f_ins->trace_ctxt;
+    flb_trace_chunk_add(trace->ctxt);
+
+    trace->ic = chunk;
+    trace->trace_id = flb_sds_create("");
+    flb_sds_printf(&trace->trace_id, "%s%d", trace->ctxt->trace_prefix,
+                  trace->ctxt->trace_count++);
+
+    pthread_mutex_unlock(&f_ins->trace_lock);
+    return trace;
+}
+
+void flb_trace_chunk_destroy(struct flb_trace_chunk *trace)
+{    
+    pthread_mutex_lock(&trace->ic->in->trace_lock);
+    flb_trace_chunk_sub(trace->ctxt);
+
+    // check to see if we need to free the trace context.
+    if (flb_trace_chunk_has_chunks(trace->ctxt) == FLB_FALSE && 
+        flb_trace_chunk_to_be_destroyed(trace->ctxt) == FLB_TRUE) {
+        trace_chunk_context_destroy(trace->ic->in);
+    }
+    pthread_mutex_unlock(&trace->ic->in->trace_lock);
+
+    flb_sds_destroy(trace->trace_id);
+    flb_free(trace);
+}
+
+int flb_trace_chunk_context_set_limit(void *input, int limit_type, int limit_arg)
+{
+    struct flb_input_instance *in = (struct flb_input_instance *)input;
+    struct flb_trace_chunk_context *ctxt;
     struct flb_time tm;
 
+    pthread_mutex_lock(&in->trace_lock);
+
+    ctxt = in->trace_ctxt;
+    if (ctxt == NULL) {
+        pthread_mutex_unlock(&in->trace_lock);
+        return -1;
+    }
 
     switch(limit_type) {
     case FLB_TRACE_CHUNK_LIMIT_TIME:
@@ -256,34 +303,52 @@ int flb_trace_chunk_context_set_limit(struct flb_trace_chunk_context *ctxt, int 
         ctxt->limit.type = FLB_TRACE_CHUNK_LIMIT_TIME;
         ctxt->limit.seconds_started = tm.tm.tv_sec;
         ctxt->limit.seconds = limit_arg;
+        
+        pthread_mutex_unlock(&in->trace_lock);
         return 0;
     case FLB_TRACE_CHUNK_LIMIT_COUNT:
         ctxt->limit.type = FLB_TRACE_CHUNK_LIMIT_COUNT;
         ctxt->limit.count = limit_arg;
+
+        pthread_mutex_unlock(&in->trace_lock);
         return 0;
-    default:
-        return -1;
     }
+
+    pthread_mutex_unlock(&in->trace_lock);
+    return -1;
 }
 
-int flb_trace_chunk_context_hit_limit(struct flb_trace_chunk_context *ctxt)
+int flb_trace_chunk_context_hit_limit(void *input)
 {
+    struct flb_input_instance *in = (struct flb_input_instance *)input;
     struct flb_time tm;
+    struct flb_trace_chunk_context *ctxt;
 
+    pthread_mutex_lock(&in->trace_lock);
+
+    ctxt = in->trace_ctxt;
+    if (ctxt == NULL) {
+        pthread_mutex_unlock(&in->trace_lock);
+        return FLB_FALSE;
+    }
 
     switch(ctxt->limit.type) {
     case FLB_TRACE_CHUNK_LIMIT_TIME:
         flb_time_get(&tm);
         if ((tm.tm.tv_sec - ctxt->limit.seconds_started) > ctxt->limit.seconds) {
+            pthread_mutex_unlock(&in->trace_lock);
             return FLB_TRUE;
         }
         return FLB_FALSE;
     case FLB_TRACE_CHUNK_LIMIT_COUNT:
         if (ctxt->limit.count <= ctxt->trace_count) {
+            pthread_mutex_unlock(&in->trace_lock);
             return FLB_TRUE;
         }
+        pthread_mutex_unlock(&in->trace_lock);
         return FLB_FALSE;
     }
+    pthread_mutex_unlock(&in->trace_lock);
     return FLB_FALSE;
 }
 
@@ -295,28 +360,12 @@ void flb_trace_chunk_do_input(struct flb_input_chunk *ic)
         }
         if (ic->trace) {
             flb_trace_chunk_input(ic->trace);
-            if (flb_trace_chunk_context_hit_limit(ic->trace->ctxt) == FLB_TRUE) {
-                flb_trace_chunk_context_destroy(ic->trace->ctxt);
+            if (flb_trace_chunk_context_hit_limit(ic->in) == FLB_TRUE) {
+                flb_trace_chunk_context_destroy(ic->in);
                 ic->in->trace_ctxt = NULL;
             }
         }
     }
-}
-
-void flb_trace_chunk_context_destroy(struct flb_trace_chunk_context *ctxt)
-{
-    flb_error("trace context is being destroyed");
-    if (flb_trace_chunk_has_chunks(ctxt)) {
-        flb_trace_chunk_set_destroy(ctxt);
-        // maybe take out?
-        flb_input_pause(ctxt->input);
-        return;
-    }
-    flb_sds_destroy(ctxt->trace_prefix);
-    flb_stop(ctxt->flb);
-    flb_destroy(ctxt->flb);
-    cio_destroy(ctxt->cio);
-    flb_free(ctxt);
 }
 
 int flb_trace_chunk_input(struct flb_trace_chunk *trace)

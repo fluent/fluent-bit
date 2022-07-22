@@ -602,10 +602,7 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
 
 
 #ifdef FLB_TRACE
-    if (ins->trace_ctxt != NULL)
-    {
-        flb_trace_chunk_context_destroy(ins->trace_ctxt);
-    }
+    flb_trace_chunk_context_destroy(ins);
 #endif // FLB_TRACE
 
     /* Remove metrics */
