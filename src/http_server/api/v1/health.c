@@ -24,10 +24,32 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_macros.h>
+#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_http_server.h>
 #include <msgpack.h>
 
 #include "health.h"
+
+/*
+ * in/out records sample at a certain timestamp.
+ */
+struct flb_hs_throughput_sample {
+    uint64_t in_records;
+    uint64_t out_records;
+    uint64_t timestamp_seconds;
+    struct mk_list _head;
+};
+
+struct {
+    int enabled;
+    struct mk_list *input_plugins;
+    struct mk_list *output_plugins;
+    double out_in_ratio_threshold;
+    int min_failures;
+
+    struct mk_list *sample_list;
+    bool healthy;
+} throughput_check_state = {0};
 
 struct flb_health_check_metrics_counter *metrics_counter;
 
@@ -88,6 +110,25 @@ static void counter_init(struct flb_hs *hs) {
 
 }
 
+static bool contains_str(struct mk_list *items, msgpack_object_str name)
+{
+    struct mk_list *head;
+    struct flb_split_entry *entry;
+
+    if (!items) {
+        return false;
+    }
+
+    mk_list_foreach(head, items) {
+        entry = mk_list_entry(head, struct flb_split_entry, _head);
+        if (!strncmp(name.ptr, entry->value, name.size)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 /*
 * tell what's the current status for health check
 * One default background is that the metrics received and saved into
@@ -113,7 +154,7 @@ static int is_healthy() {
     }
 
     if (mk_list_is_empty(metrics_list) == 0) {
-        return FLB_TRUE;
+        return FLB_TRUE && throughput_check_state.healthy;
     }
 
     /* Get the error metrics entry from the start time of current period */
@@ -141,12 +182,18 @@ static int is_healthy() {
         return FLB_FALSE;
     }
 
-    return FLB_TRUE;
+    return FLB_TRUE && throughput_check_state.healthy;
 }
 
 /* read the metrics from message queue and update the counter*/
-static void read_metrics(void *data, size_t size, int* error_count,
-                         int* retry_failure_count)
+static void read_metrics(void *data,
+                         size_t size,
+                         struct mk_list *input_plugins,
+                         struct mk_list *output_plugins,
+                         int* error_count,
+                         int* retry_failure_count,
+                         uint64_t *input_records,
+                         uint64_t *output_records)
 {
     int i;
     int j;
@@ -156,6 +203,8 @@ static void read_metrics(void *data, size_t size, int* error_count,
     size_t off = 0;
     int errors = 0;
     int retry_failure = 0;
+    uint64_t in_recs = 0;
+    uint64_t out_recs = 0;
 
     msgpack_unpacked_init(&result);
     msgpack_unpack_next(&result, data, size, &off);
@@ -168,16 +217,14 @@ static void read_metrics(void *data, size_t size, int* error_count,
         /* Keys: input, output */
         k = map.via.map.ptr[i].key;
         v = map.via.map.ptr[i].val;
-        if (k.via.str.size != sizeof("output") - 1 ||
-            strncmp(k.via.str.ptr, "output", k.via.str.size) != 0) {
 
-            continue;
-        }
         /* Iterate sub-map */
         for (j = 0; j < v.via.map.size; j++) {
+            msgpack_object sk;
             msgpack_object sv;
 
             /* Keys: plugin name , values: metrics */
+            sk = v.via.map.ptr[j].key;
             sv = v.via.map.ptr[j].val;
 
             for (m = 0; m < sv.via.map.size; m++) {
@@ -187,14 +234,23 @@ static void read_metrics(void *data, size_t size, int* error_count,
                 mk = sv.via.map.ptr[m].key;
                 mv = sv.via.map.ptr[m].val;
 
-                if (mk.via.str.size == sizeof("errors") - 1 &&
-                    strncmp(mk.via.str.ptr, "errors", mk.via.str.size) == 0) {
-                    errors += mv.via.u64;
+                if (!strncmp(k.via.str.ptr, "output", k.via.str.size)) {
+                    if (!strncmp(mk.via.str.ptr, "errors", mk.via.str.size)) {
+                        errors += mv.via.u64;
+                    }
+                    else if (!strncmp(mk.via.str.ptr, "retries_failed", mk.via.str.size)) {
+                        retry_failure += mv.via.u64;
+                    }
+                    else if (!strncmp(mk.via.str.ptr, "proc_records", mk.via.str.size) &&
+                              contains_str(output_plugins, sk.via.str)) {
+                        out_recs += mv.via.u64;
+                    }
                 }
-                else if (mk.via.str.size == sizeof("retries_failed") - 1 &&
-                    strncmp(mk.via.str.ptr, "retries_failed",
-                            mk.via.str.size) == 0) {
-                    retry_failure += mv.via.u64;
+
+                if (!strncmp(k.via.str.ptr, "input", k.via.str.size) &&
+                    !strncmp(mk.via.str.ptr, "records", mk.via.str.size) &&
+                    contains_str(input_plugins, sk.via.str)) {
+                    in_recs += mv.via.u64;
                 }
             }
         }
@@ -202,6 +258,8 @@ static void read_metrics(void *data, size_t size, int* error_count,
 
     *error_count = errors;
     *retry_failure_count = retry_failure;
+    *input_records = in_recs;
+    *output_records = out_recs;
     msgpack_unpacked_destroy(&result);
 }
 
@@ -245,6 +303,109 @@ static int cleanup_metrics()
     return c;
 }
 
+static int check_throughput_health(uint64_t in_records,
+                                   uint64_t out_records,
+                                   struct mk_list *sample_list,
+                                   int sample_count,
+                                   double out_in_ratio_threshold) {
+    struct flb_time tp;
+    uint64_t timestamp_seconds;
+    uint64_t in_rate;
+    uint64_t out_rate;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    double out_in_ratio;
+    struct flb_hs_throughput_sample *entry;
+    struct flb_hs_throughput_sample *prev;
+    struct flb_hs_throughput_sample *sample;
+    struct flb_hs_throughput_sample *last_sample = NULL;
+    int count;
+    bool healthy;
+    bool rv;
+
+    flb_time_get(&tp);
+    timestamp_seconds = flb_time_to_seconds(&tp);
+
+    if (mk_list_is_empty(sample_list) != 0) {
+        last_sample = mk_list_entry_last(sample_list,
+                                         struct flb_hs_throughput_sample,
+                                         _head);
+    }
+
+    if (!last_sample ||
+         in_records != last_sample->in_records ||
+         out_records != last_sample->out_records) {
+
+        sample = flb_malloc(sizeof(struct flb_hs_throughput_sample));
+
+        if (sample) {
+            sample->timestamp_seconds = timestamp_seconds;
+            sample->in_records = in_records;
+            sample->out_records = out_records;
+            mk_list_add(&sample->_head, sample_list);
+        } else {
+            flb_error("[api/v1/health/throughput]: failed to allocate sample");
+        }
+
+    } else {
+        /* don't collect another sample unless either in_records or out_records have
+         * changed since last check */
+        flb_debug("[api/v1/health/throughput]: no changes since last check");
+    }
+
+    flb_debug("[api/v1/health/throughput]: check samples start %d %f",
+              sample_count,
+              out_in_ratio_threshold);
+
+    healthy = false;
+    mk_list_foreach_safe_r(head, tmp, sample_list) {
+        entry = mk_list_entry(head, struct flb_hs_throughput_sample, _head);
+        if (entry == mk_list_entry_first(sample_list,
+                                         struct flb_hs_throughput_sample,
+                                         _head)) {
+            break;
+        }
+
+        prev = mk_list_entry(entry->_head.prev,
+                             struct flb_hs_throughput_sample,
+                             _head);
+        in_rate = (entry->in_records - prev->in_records) /
+            (entry->timestamp_seconds - prev->timestamp_seconds);
+        out_rate = (entry->out_records - prev->out_records) /
+            (entry->timestamp_seconds - prev->timestamp_seconds);
+        out_in_ratio = (double)out_rate / (double)in_rate;
+        healthy = healthy || out_in_ratio > out_in_ratio_threshold;
+
+        flb_debug("[api/v1/health/throughput]: out: %"PRIu64" in: %"PRIu64" ratio: %f\n",
+                  out_in_ratio,
+                  out_rate,
+                  in_rate);
+
+        if (healthy) {
+            break;
+        }
+    }
+
+    count = 0;
+    mk_list_foreach_safe_r(head, tmp, sample_list) {
+        entry = mk_list_entry(head, struct flb_hs_throughput_sample, _head);
+        if (count == sample_count) {
+            mk_list_del(&entry->_head);
+            flb_free(entry);
+        }
+        else {
+            count++;
+        }
+    }
+
+    rv = count < sample_count || healthy;
+    flb_debug("checking throughput samples stop, result: %s",
+              rv ? "healthy" :"unhealthy");
+
+    return rv;
+}
+
+
 /*
  * Callback invoked every time some metrics are received through a
  * message queue channel. This function runs in a Monkey HTTP thread
@@ -263,6 +424,8 @@ static void cb_mq_health(mk_mq_t *queue, void *data, size_t size)
     struct mk_list *metrics_list = NULL;
     int error_count = 0;
     int retry_failure_count = 0;
+    uint64_t input_records = 0;
+    uint64_t output_records = 0;
 
     metrics_list = pthread_getspecific(hs_health_key);
 
@@ -286,7 +449,24 @@ static void cb_mq_health(mk_mq_t *queue, void *data, size_t size)
 
     buf->users = 0;
 
-    read_metrics(data, size, &error_count, &retry_failure_count);
+    read_metrics(data,
+                 size,
+                 throughput_check_state.input_plugins,
+                 throughput_check_state.output_plugins,
+                 &error_count,
+                 &retry_failure_count,
+                 &input_records,
+                 &output_records);
+
+
+    if (throughput_check_state.enabled) {
+        throughput_check_state.healthy =
+            check_throughput_health(input_records,
+                                    output_records,
+                                    throughput_check_state.sample_list,
+                                    throughput_check_state.min_failures,
+                                    throughput_check_state.out_in_ratio_threshold);
+    }
 
     metrics_counter->error_counter = error_count;
     metrics_counter->retry_failure_counter = retry_failure_count;
@@ -314,9 +494,79 @@ static void cb_health(mk_request_t *request, void *data)
     }
 }
 
+static void configure_throughput_check(struct flb_config *config)
+{
+    bool enabled = config->hc_throughput;
+
+    throughput_check_state.enabled = false;
+    throughput_check_state.healthy = true;
+
+    if (!enabled) {
+        return;
+    }
+
+    if (!config->hc_throughput_input_plugins) {
+        flb_warn("[api/v1/health/throughput]: " FLB_CONF_STR_HC_THROUGHPUT_IN_PLUGINS " is required");
+        return;
+    }
+    if (!config->hc_throughput_output_plugins) {
+        flb_warn("[api/v1/health/throughput]: " FLB_CONF_STR_HC_THROUGHPUT_OUT_PLUGINS " is required");
+        return;
+    }
+    if (!config->hc_throughput_ratio_threshold) {
+        flb_warn("[api/v1/health/throughput]: " FLB_CONF_STR_HC_THROUGHPUT_RATIO_THRESHOLD " is required");
+        return;
+    }
+    if (!config->hc_throughput_min_failures) {
+        flb_warn("[api/v1/health/throughput]: " FLB_CONF_STR_HC_THROUGHPUT_MIN_FAILURES " is required");
+        return;
+    }
+
+    throughput_check_state.sample_list = flb_malloc(sizeof(struct mk_list));
+    if (!throughput_check_state.sample_list) {
+        flb_errno();
+        return;
+    }
+    mk_list_init(throughput_check_state.sample_list);
+
+    throughput_check_state.input_plugins =
+        flb_utils_split(config->hc_throughput_input_plugins, ',', 0);
+
+    if (!throughput_check_state.input_plugins) {
+        flb_free(throughput_check_state.sample_list);
+        flb_errno();
+        return;
+    }
+
+    throughput_check_state.output_plugins =
+        flb_utils_split(config->hc_throughput_output_plugins, ',', 0);
+
+    if (!throughput_check_state.output_plugins) {
+        flb_free(throughput_check_state.sample_list);
+        flb_free(throughput_check_state.input_plugins);
+        flb_errno();
+        return;
+    }
+
+    throughput_check_state.out_in_ratio_threshold = config->hc_throughput_ratio_threshold;
+    throughput_check_state.min_failures = config->hc_throughput_min_failures;
+    throughput_check_state.enabled = true;
+
+    flb_info("[api/v1/health/throughput]: configuration complete. "
+             "input plugins: %s | "
+             "output plugins: %s | "
+             "ratio threshold: %f | "
+             "min failures: %d",
+              config->hc_throughput_input_plugins,
+              config->hc_throughput_output_plugins,
+              config->hc_throughput_ratio_threshold,
+              config->hc_throughput_min_failures);
+}
+
 /* Perform registration */
 int api_v1_health(struct flb_hs *hs)
 {
+    configure_throughput_check(hs->config);
 
     pthread_key_create(&hs_health_key, hs_health_key_destroy);
 
