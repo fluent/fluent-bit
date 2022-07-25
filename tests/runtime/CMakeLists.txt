@@ -16,7 +16,19 @@ macro(FLB_RT_TEST BUILT src)
   endif()
 endmacro()
 
+# Macro to set definitions
+macro(FLB_RT_CORE_TEST BUILT src)
+    list(APPEND CHECK_PROGRAMS
+      ${src}
+      )
+endmacro()
+
+# Core
+FLB_RT_CORE_TEST(FLB_COROUTINE_TIMEOUT    "core-timeout.c")
+
 # Input Plugins
+FLB_RT_TEST(FLB_IN_EVENT_TEST   "in_event_test.c")
+
 if(FLB_OUT_LIB)
   # These plugins works only on Linux
   if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")

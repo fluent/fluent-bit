@@ -492,11 +492,28 @@ flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
                            char *tag, int tag_len,
                            msgpack_object map, struct flb_regex_search *result)
 {
-    int found;
+    return flb_ra_translate_check(ra, tag, tag_len, map, result, FLB_FALSE);
+}
+
+/*
+ * Translate a record accessor buffer, tag and records are optional
+ * parameters.
+ *
+ * For safety, the function returns a newly created string that needs
+ * to be destroyed by the caller.
+ * 
+ * Returns NULL if `check` is FLB_TRUE and any key lookup in the record failed
+ */
+flb_sds_t flb_ra_translate_check(struct flb_record_accessor *ra,
+                                 char *tag, int tag_len,
+                                 msgpack_object map, struct flb_regex_search *result,
+                                 int check)
+{
     flb_sds_t tmp = NULL;
     flb_sds_t buf;
     struct mk_list *head;
     struct flb_ra_parser *rp;
+    int found = FLB_FALSE;
 
     buf = flb_sds_create_size(ra->size_hint);
     if (!buf) {
@@ -511,6 +528,11 @@ flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
         }
         else if (rp->type == FLB_RA_PARSER_KEYMAP) {
             tmp = ra_translate_keymap(rp, buf, map, &found);
+            if (check == FLB_TRUE && found == FLB_FALSE) {
+                flb_warn("[record accessor] translation failed, root key=%s", rp->key->name);
+                flb_sds_destroy(buf);
+                return NULL;
+            }
         }
         else if (rp->type == FLB_RA_PARSER_REGEX_ID && result) {
             tmp = ra_translate_regex_id(rp, result, buf);
@@ -520,9 +542,6 @@ flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
         }
         else if (rp->type == FLB_RA_PARSER_TAG_PART && tag) {
             tmp = ra_translate_tag_part(rp, buf, tag, tag_len);
-        }
-        else {
-
         }
 
         //else if (rp->type == FLB_RA_PARSER_FUNC) {

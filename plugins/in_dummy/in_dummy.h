@@ -26,6 +26,7 @@
 #define DEFAULT_DUMMY_MESSAGE "{\"message\":\"dummy\"}"
 
 struct flb_dummy {
+    int coll_fd;
     int  samples;
     int  rate;
     int  samples_count;

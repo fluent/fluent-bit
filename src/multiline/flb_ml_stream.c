@@ -305,7 +305,7 @@ void flb_ml_stream_id_destroy_all(struct flb_ml *ml, uint64_t stream_id)
                 }
 
                 /* flush any pending data */
-                flb_ml_flush_parser_instance(ml, parser_i, stream_id);
+                flb_ml_flush_parser_instance(ml, parser_i, stream_id, FLB_TRUE);
 
                 /* destroy internal groups of the stream */
                 flb_ml_stream_destroy(mst);

@@ -38,17 +38,17 @@ docker buildx rm builder
 docker buildx create --name builder --use
 docker buildx inspect --bootstrap
 ```
-4. Build Fluent Bit from the root of the Git repo:
+4. Build Fluent Bit from the **root of the Git repo (not from this directory)**:
 ```
-docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7" --target=production .
+docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7" --target=production -f dockerfiles/Dockerfile .
 ```
 
 ## Build and test
 
 1. Checkout the branch you want, e.g. 1.8 for 1.8.X containers.
-2. Build the container image using the appropriate Dockerfile in this directory.
+2. Build Fluent Bit from the **root of the Git repo (not from this directory)**:
 ```
-$ docker build -t fluent/fluent-bit --target=production .
+$ docker build -t fluent/fluent-bit --target=production -f dockerfiles/Dockerfile .
 ```
 3. Test the container.
 ```

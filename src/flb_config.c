@@ -264,8 +264,10 @@ struct flb_config *flb_config_init()
         config->coro_stack_size = (unsigned int)getpagesize();
     }
 
+    /* collectors */
+    pthread_mutex_init(&config->collectors_mutex, NULL);
+
     /* Initialize linked lists */
-    mk_list_init(&config->collectors);
     mk_list_init(&config->custom_plugins);
     mk_list_init(&config->custom_plugins);
     mk_list_init(&config->in_plugins);
@@ -325,7 +327,6 @@ void flb_config_exit(struct flb_config *config)
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_cf *cf;
-    struct flb_input_collector *collector;
 
     if (config->log_file) {
         flb_free(config->log_file);
@@ -375,24 +376,6 @@ void flb_config_exit(struct flb_config *config)
         }
     }
 
-    /* Collectors */
-    mk_list_foreach_safe(head, tmp, &config->collectors) {
-        collector = mk_list_entry(head, struct flb_input_collector, _head);
-
-        if (collector->type == FLB_COLLECT_TIME) {
-            if (collector->fd_timer > 0) {
-                mk_event_timeout_destroy(config->evl, &collector->event);
-                mk_event_closesocket(collector->fd_timer);
-            }
-        }
-        else {
-            mk_event_del(config->evl, &collector->event);
-        }
-
-        mk_list_del(&collector->_head);
-        flb_free(collector);
-    }
-
     flb_env_destroy(config->env);
 
     /* Program name */
@@ -418,9 +401,8 @@ void flb_config_exit(struct flb_config *config)
 
     /* Event flush */
     if (config->evl) {
-        mk_event_del(config->evl, &config->event_flush);
+        mk_event_timeout_destroy(config->evl, &config->event_flush);
     }
-    mk_event_closesocket(config->flush_fd);
 
     /* Release scheduler */
     flb_sched_destroy(config->sched);
