@@ -20,7 +20,7 @@ ARG STAGING_VERSION
 ENV STAGING_VERSION=${STAGING_VERSION}
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN wget -qO - $STAGING_URL/fluentbit.key | apt-key add -
-RUN echo "deb $STAGING_URL/ubuntu/focal focal main" >> /etc/apt/sources.list
+RUN echo "deb $STAGING_URL/ubuntu/jammy jammy main" >> /etc/apt/sources.list
 # hadolint ignore=DL3008
 RUN apt-get update && apt-get install --no-install-recommends -y fluent-bit \
  && apt-get clean \
