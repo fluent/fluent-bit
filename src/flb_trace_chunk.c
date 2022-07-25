@@ -412,7 +412,7 @@ int flb_trace_chunk_input(struct flb_trace_chunk *trace)
     msgpack_pack_str_with_body(&mp_pck, "trace_id", strlen("trace_id"));
     msgpack_pack_str_with_body(&mp_pck, trace->trace_id, strlen(trace->trace_id));
 
-    msgpack_pack_str_with_body(&mp_pck, "input_instance", strlen("input_instance"));
+    msgpack_pack_str_with_body(&mp_pck, "plugin_instance", strlen("plugin_instance"));
     msgpack_pack_str_with_body(&mp_pck, input->name, strlen(input->name));
 
     msgpack_pack_str_with_body(&mp_pck, "records", strlen("records"));
@@ -495,7 +495,7 @@ int flb_trace_chunk_pre_output(struct flb_trace_chunk *trace)
     msgpack_pack_str_with_body(&mp_pck, "trace_id", strlen("trace_id"));
     msgpack_pack_str_with_body(&mp_pck, trace->trace_id, strlen(trace->trace_id));
 
-    msgpack_pack_str_with_body(&mp_pck, "input_instance", strlen("input_instance"));
+    msgpack_pack_str_with_body(&mp_pck, "plugin_instance", strlen("plugin_instance"));
     msgpack_pack_str_with_body(&mp_pck, input->name, strlen(input->name));
 
     msgpack_pack_str_with_body(&mp_pck, "records", strlen("records"));
@@ -582,7 +582,7 @@ int flb_trace_chunk_filter(struct flb_trace_chunk *tracer, void *pfilter, struct
     msgpack_pack_str_with_body(&mp_pck, tracer->trace_id, strlen(tracer->trace_id));
 
     
-    msgpack_pack_str_with_body(&mp_pck, "filter_instance", strlen("filter_instance"));
+    msgpack_pack_str_with_body(&mp_pck, "plugin_instance", strlen("plugin_instance"));
     rc = msgpack_pack_str_with_body(&mp_pck, filter->name, strlen(filter->name));
     if (rc == -1) {
         goto sbuffer_error;
