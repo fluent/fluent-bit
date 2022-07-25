@@ -45,17 +45,17 @@ jobs:
         config:
           - name: "Windows 32bit"
             arch: x86
-            win32openssl: https://slproweb.com/download/Win32OpenSSL-1_1_1q.msi
-            win32openssl_dir: "C:\\Program\ Files\\OpenSSL-Win32"
+            openssl_dir: C:\Program Files (x86)\OpenSSL-Win32
+            chocolatey_opt: --x86
           - name: "Windows 64bit"
             arch: x64
-            win32openssl: https://slproweb.com/download/Win64OpenSSL-1_1_1q.msi
-            win32openssl_dir: "C:\\Program\ Files\\OpenSSL-Win64"
+            openssl_dir: C:\Program Files\OpenSSL-Win64
+            chocolatey_opt: --x64
     permissions:
       contents: read
-    # Default environment variables can be overridden below
+    # Default environment variables can be overridden below. To prevent library pollution.
     env:
-        PATH: c:/Program Files/Git/cmd;c:/Windows/system32;C:/Windows/System32/WindowsPowerShell/v1.0;$ENV:WIX/bin;C:/Program Files/CMake/bin
+      PATH: C:\ProgramData\Chocolatey\bin;c:/Program Files/Git/cmd;c:/Windows/system32;C:/Windows/System32/WindowsPowerShell/v1.0;$ENV:WIX/bin;C:/Program Files/CMake/bin
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -73,11 +73,10 @@ jobs:
           WINFLEXBISON: https://github.com/lexxmark/winflexbison/releases/download/v2.5.22/win_flex_bison-2.5.22.zip
         shell: pwsh
 
-      - name: Install OpenSSL on Windows (slproweb)
-        run: |
-          curl.exe --output openssl.msi ${{ matrix.config.win32openssl }}
-          msiexec /i openssl.msi /quiet /qn /norestart
-        shell: pwsh
+      - name: Get dependencies w/ chocolatey
+        uses: crazy-max/ghaction-chocolatey@v2
+        with:
+          args: install ${{ matrix.config.chocolatey_opt }} openssl -y
 
       - name: Set up Visual Studio shell
         uses: egor-tensin/vs-shell@v2
@@ -86,7 +85,7 @@ jobs:
 
       - name: Build Fluent Bit packages
         run: |
-          cmake -G "NMake Makefiles" -DFLB_NIGHTLY_BUILD=${{ inputs.unstable }} -DOPENSSL_ROOT_DIR=${{ matrix.config.win32openssl_dir }} ../
+          cmake -G "NMake Makefiles" -DFLB_NIGHTLY_BUILD=${{ inputs.unstable }} -DOPENSSL_ROOT_DIR='${{ matrix.config.openssl_dir }}' ../
           cmake --build .
           cpack
         working-directory: build
