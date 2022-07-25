@@ -5,7 +5,7 @@ FROM dokken/ubuntu-22.04:latest as official-install
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # Use the one-line install
 RUN curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh
-RUN systemctl enable fluent-bit || systemctl enable td-agent-bit
+RUN systemctl enable fluent-bit
 
 COPY ./test.sh /test.sh
 RUN chmod a+x /test.sh
@@ -22,10 +22,10 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN wget -qO - $STAGING_URL/fluentbit.key | apt-key add -
 RUN echo "deb $STAGING_URL/ubuntu/focal focal main" >> /etc/apt/sources.list
 # hadolint ignore=DL3008
-RUN apt-get update && apt-get install --no-install-recommends -y td-agent-bit \
+RUN apt-get update && apt-get install --no-install-recommends -y fluent-bit \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/*
-RUN systemctl enable td-agent-bit
+RUN systemctl enable fluent-bit
 
 COPY ./test.sh /test.sh
 RUN chmod a+x /test.sh
