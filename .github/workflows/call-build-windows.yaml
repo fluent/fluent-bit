@@ -53,7 +53,7 @@ jobs:
             chocolatey_opt: --x64
     permissions:
       contents: read
-    # Default environment variables can be overridden below. To prevent library pollution.
+    # Default environment variables can be overridden below. To prevent library pollution - without this other random libraries may be found on the path leading to failures.
     env:
       PATH: C:\ProgramData\Chocolatey\bin;c:/Program Files/Git/cmd;c:/Windows/system32;C:/Windows/System32/WindowsPowerShell/v1.0;$ENV:WIX/bin;C:/Program Files/CMake/bin
     steps:
