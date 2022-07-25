@@ -404,7 +404,12 @@ int flb_trace_chunk_input(struct flb_trace_chunk *trace)
     
     msgpack_pack_array(&mp_pck, 2);
     flb_pack_time_now(&mp_pck);
-    msgpack_pack_map(&mp_pck, 6);
+    if (input->alias != NULL) {
+        msgpack_pack_map(&mp_pck, 7);
+    } 
+    else {
+        msgpack_pack_map(&mp_pck, 6);
+    }
 
     msgpack_pack_str_with_body(&mp_pck, "type", 4);
     msgpack_pack_int(&mp_pck, FLB_TRACE_CHUNK_TYPE_INPUT);
@@ -414,6 +419,11 @@ int flb_trace_chunk_input(struct flb_trace_chunk *trace)
 
     msgpack_pack_str_with_body(&mp_pck, "plugin_instance", strlen("plugin_instance"));
     msgpack_pack_str_with_body(&mp_pck, input->name, strlen(input->name));
+
+    if (input->alias != NULL) {
+        msgpack_pack_str_with_body(&mp_pck, "plugin_alias", strlen("plugin_alias"));
+        msgpack_pack_str_with_body(&mp_pck, input->alias, strlen(input->alias));
+    }
 
     msgpack_pack_str_with_body(&mp_pck, "records", strlen("records"));
 
@@ -487,7 +497,12 @@ int flb_trace_chunk_pre_output(struct flb_trace_chunk *trace)
 
     msgpack_pack_array(&mp_pck, 2);
     flb_pack_time_now(&mp_pck);
-    msgpack_pack_map(&mp_pck, 6);
+    if (input->alias != NULL) {
+        msgpack_pack_map(&mp_pck, 7);
+    } 
+    else {
+        msgpack_pack_map(&mp_pck, 6);
+    }
 
     msgpack_pack_str_with_body(&mp_pck, "type", 4);
     msgpack_pack_int(&mp_pck, FLB_TRACE_CHUNK_TYPE_PRE_OUTPUT);
@@ -497,6 +512,11 @@ int flb_trace_chunk_pre_output(struct flb_trace_chunk *trace)
 
     msgpack_pack_str_with_body(&mp_pck, "plugin_instance", strlen("plugin_instance"));
     msgpack_pack_str_with_body(&mp_pck, input->name, strlen(input->name));
+
+    if (input->alias != NULL) {
+        msgpack_pack_str_with_body(&mp_pck, "plugin_alias", strlen("plugin_alias"));
+        msgpack_pack_str_with_body(&mp_pck, input->alias, strlen(input->alias));
+    }
 
     msgpack_pack_str_with_body(&mp_pck, "records", strlen("records"));
 
@@ -563,7 +583,12 @@ int flb_trace_chunk_filter(struct flb_trace_chunk *tracer, void *pfilter, struct
 
     msgpack_pack_array(&mp_pck, 2);
     flb_pack_time_now(&mp_pck);
-    msgpack_pack_map(&mp_pck, 6);
+    if (filter->alias == NULL) {
+        msgpack_pack_map(&mp_pck, 6);
+    }
+    else {
+        msgpack_pack_map(&mp_pck, 7);	
+    }
 
     msgpack_pack_str_with_body(&mp_pck, "type", strlen("type"));
     rc = msgpack_pack_int(&mp_pck, FLB_TRACE_CHUNK_TYPE_FILTER);
@@ -588,6 +613,11 @@ int flb_trace_chunk_filter(struct flb_trace_chunk *tracer, void *pfilter, struct
         goto sbuffer_error;
     }
     
+    if (filter->alias != NULL) {
+        msgpack_pack_str_with_body(&mp_pck, "plugin_alias", strlen("plugin_alias"));
+        msgpack_pack_str_with_body(&mp_pck, filter->alias, strlen(filter->alias));
+    }
+
     msgpack_pack_str_with_body(&mp_pck, "records", strlen("records"));
 
     msgpack_unpacked_init(&result);
