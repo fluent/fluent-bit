@@ -48,6 +48,16 @@ createrepo -dvp "/var/www/apt.fluentbit.io/centos/8/aarch64"
 find "$SOURCE_DIR/centos/8/" -iname "*-bit-$VERSION-*x86_64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/centos/8/x86_64" \;
 createrepo -dvp "/var/www/apt.fluentbit.io/centos/8/x86_64"
 
+# Centos 9
+if [[ -d "$SOURCE_DIR/centos/9/" ]]; then
+    echo "Publishing Centos 9"
+    find "$SOURCE_DIR/centos/9/" -iname "*-bit-$VERSION-*aarch64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/centos/9/aarch64" \;
+    createrepo -dvp "/var/www/apt.fluentbit.io/centos/9/aarch64"
+
+    find "$SOURCE_DIR/centos/9/" -iname "*-bit-$VERSION-*x86_64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/centos/9/x86_64" \;
+    createrepo -dvp "/var/www/apt.fluentbit.io/centos/9/x86_64"
+fi
+
 # Debian 10 Buster
 echo "Publishing Debian 10 Buster"
 # Conflicts otherwise with existing
@@ -117,6 +127,18 @@ if ! aptly -config="$APTLY_CONFIG" publish switch -gpg-key="releases@fluentbit.i
     # Cleanup snapshot in case we want to retry later
     aptly -config="$APTLY_CONFIG" snapshot drop "fluent-bit-ubuntu-focal-${VERSION}"
     exit 1
+fi
+
+# Ubuntu 22.04 Jammy
+if [[ -d "$SOURCE_DIR/ubuntu/jammy/" ]]; then
+    echo "Publishing Ubuntu 22.04 Jammy"
+    find "$SOURCE_DIR/ubuntu/jammy/" -iname "*-bit_$VERSION*.deb" -exec aptly -config="$APTLY_CONFIG" repo add flb-ubuntu-jammy {} \;
+    aptly -config="$APTLY_CONFIG" snapshot create "fluent-bit-ubuntu-jammy-${VERSION}" from repo flb-ubuntu-jammy
+    if ! aptly -config="$APTLY_CONFIG" publish switch -gpg-key="releases@fluentbit.io" -gpg-key="releases@fluentbit.io" jammy filesystem:ubuntu/jammy: "fluent-bit-ubuntu-jammy-${VERSION}"; then
+        # Cleanup snapshot in case we want to retry later
+        aptly -config="$APTLY_CONFIG" snapshot drop "fluent-bit-ubuntu-jammy-${VERSION}"
+        exit 1
+    fi
 fi
 
 # Sign YUM repo meta-data
