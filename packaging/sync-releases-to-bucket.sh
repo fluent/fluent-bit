@@ -96,6 +96,7 @@ DEB_REPO_PATHS=( "debian/bullseye"
                     "ubuntu/xenial"
                     "ubuntu/bionic"
                     "ubuntu/focal"
+                    "ubuntu/jammy"
                     "raspbian/buster"
                     "raspbian/bullseye" )
 for DEB_REPO in "${DEB_REPO_PATHS[@]}"; do
