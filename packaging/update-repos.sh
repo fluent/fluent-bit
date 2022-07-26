@@ -15,7 +15,7 @@ if [[ "$DISABLE_SIGNING" != "true" ]]; then
     rpm -q gpg-pubkey --qf '%{name}-%{version}-%{release} --> %{summary}\n'
 fi
 
-RPM_REPO_PATHS=("amazonlinux/2" "centos/7" "centos/8")
+RPM_REPO_PATHS=("amazonlinux/2" "centos/7" "centos/8" "centos/9")
 
 for RPM_REPO in "${RPM_REPO_PATHS[@]}"; do
     echo "Updating $RPM_REPO"
@@ -53,6 +53,7 @@ DEB_REPO_PATHS=( "debian/bullseye"
                  "ubuntu/xenial"
                  "ubuntu/bionic"
                  "ubuntu/focal"
+                 "ubuntu/jammy"
                  "raspbian/buster"
                  "raspbian/bullseye" )
 
