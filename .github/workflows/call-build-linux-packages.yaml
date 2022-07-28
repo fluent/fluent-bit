@@ -171,7 +171,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      - uses: frabert/replace-string-action@master
+      - uses: frabert/replace-string-action@v2.1
         id: formatted_distro
         with:
           pattern: '(.*)\/(.*)$'
