@@ -24,6 +24,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_time.h>
 
 /* WASM Context */
 struct flb_wasm {
@@ -31,7 +32,8 @@ struct flb_wasm {
     wasm_module_inst_t module_inst;
     wasm_function_inst_t func;
     wasm_exec_env_t exec_env;
-    uint32_t wasm_buffer;
+    uint32_t tag_buffer;
+    uint32_t record_buffer;
     char *buffer;
     void *config;          /* Fluent Bit context      */
     struct mk_list _head;  /* Link to flb_config->wasm */
@@ -42,7 +44,12 @@ struct flb_wasm *flb_wasm_instantiate(struct flb_config *config, const char *was
                                       struct mk_list *acessible_dir_list,
                                       int stdinfd, int stdoutfd, int stderrfd);
 
+char *flb_wasm_call_function_format_json(struct flb_wasm *fw, const char *function_name,
+                                         const char* tag_data, size_t tag_len,
+                                         struct flb_time t,
+                                         const char* record_data, size_t record_len);
 int flb_wasm_call_wasi_main(struct flb_wasm *fw);
+void flb_wasm_buffer_free(struct flb_wasm *fw);
 void flb_wasm_destroy(struct flb_wasm *fw);
 int flb_wasm_destroy_all(struct flb_config *ctx);
 
