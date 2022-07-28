@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -110,6 +109,7 @@ static int record_append_custom_keys(struct flb_tail_file *file,
     int i;
     int ok = MSGPACK_UNPACK_SUCCESS;
     int len;
+    int records = 0;
     size_t off = 0;
     size_t total;
     msgpack_unpacked result;
@@ -180,12 +180,15 @@ static int record_append_custom_keys(struct flb_tail_file *file,
 
         /* finalize map */
         flb_mp_map_header_end(&mh);
+
+        /* counter */
+        records++;
     }
 
     *out_data = mp_sbuf.data;
     *out_size = mp_sbuf.size;
 
-    return 0;
+    return records;
 }
 
 static int unpack_and_pack(msgpack_packer *pck, msgpack_object *root,
@@ -337,6 +340,25 @@ int flb_tail_file_pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     return 0;
 }
 
+static int ml_stream_buffer_append(struct flb_tail_file *file, char *buf_data, size_t buf_size)
+{
+    msgpack_sbuffer_write(&file->ml_sbuf, buf_data, buf_size);
+    return 0;
+}
+
+static int ml_stream_buffer_flush(struct flb_tail_config *ctx, struct flb_tail_file *file)
+{
+    if (file->ml_sbuf.size > 0) {
+        flb_input_chunk_append_raw(ctx->ins,
+                                   file->tag_buf,
+                                   file->tag_len,
+                                   file->ml_sbuf.data, file->ml_sbuf.size);
+        file->ml_sbuf.size = 0;
+    }
+
+    return 0;
+}
+
 static int process_content(struct flb_tail_file *file, size_t *bytes)
 {
     size_t len;
@@ -459,7 +481,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
             ret = flb_parser_do(ctx->parser, line, line_len,
                                 &out_buf, &out_size, &out_time);
             if (ret >= 0) {
-                if (flb_time_to_double(&out_time) == 0.0) {
+                if (flb_time_to_nanosec(&out_time) == 0L) {
                     flb_time_get(&out_time);
                 }
 
@@ -530,18 +552,24 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         *bytes = processed_bytes;
 
         if (out_sbuf->size > 0) {
-            flb_input_chunk_append_raw(ctx->ins,
-                                       file->tag_buf,
-                                       file->tag_len,
-                                       out_sbuf->data,
-                                       out_sbuf->size);
+            flb_input_chunk_append_raw2(ctx->ins,
+                                        lines,
+                                        file->tag_buf,
+                                        file->tag_len,
+                                        out_sbuf->data,
+                                        out_sbuf->size);
         }
+
     }
     else if (file->skip_next) {
         *bytes = file->buf_len;
     }
     else {
         *bytes = processed_bytes;
+    }
+
+    if (ctx->ml_ctx) {
+        ml_stream_buffer_flush(ctx, file);
     }
 
     msgpack_sbuffer_destroy(out_sbuf);
@@ -819,7 +847,6 @@ static int set_file_position(struct flb_tail_config *ctx,
     return 0;
 }
 
-
 /* Multiline flush callback: invoked every time some content is complete */
 static int ml_flush_callback(struct flb_ml_parser *parser,
                              struct flb_ml_stream *mst,
@@ -831,10 +858,7 @@ static int ml_flush_callback(struct flb_ml_parser *parser,
     struct flb_tail_config *ctx = file->config;
 
     if (ctx->path_key == NULL && ctx->offset_key == NULL) {
-        flb_input_chunk_append_raw(ctx->ins,
-                                   file->tag_buf,
-                                   file->tag_len,
-                                   buf_data, buf_size);
+        ml_stream_buffer_append(file, buf_data, buf_size);
     }
     else {
         /* adjust the records in a new buffer */
@@ -843,12 +867,12 @@ static int ml_flush_callback(struct flb_ml_parser *parser,
                                   file->mult_sbuf.size,
                                   &mult_buf, &mult_size);
 
-        flb_input_chunk_append_raw(ctx->ins,
-                                   file->tag_buf,
-                                   file->tag_len,
-                                   mult_buf,
-                                   mult_size);
+        ml_stream_buffer_append(file, mult_buf, mult_size);
         flb_free(mult_buf);
+    }
+
+    if (mst->forced_flush) {
+        ml_stream_buffer_flush(ctx, file);
     }
 
     return 0;
@@ -955,6 +979,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     }
 
     /* multiline msgpack buffers */
+    file->mult_records = 0;
     msgpack_sbuffer_init(&file->mult_sbuf);
     msgpack_packer_init(&file->mult_pck, &file->mult_sbuf,
                         msgpack_sbuffer_write);
@@ -977,12 +1002,13 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
          * Create inode str to get stream_id.
          *
          * If stream_id is created by filename,
-         * it will be same after file rotation and it causes invalid destruction.
-         * https://github.com/fluent/fluent-bit/issues/4190
+         * it will be same after file rotation and it causes invalid destruction:
          *
+         *  - https://github.com/fluent/fluent-bit/issues/4190
          */
         inode_str = flb_sds_create_size(64);
         flb_sds_printf(&inode_str, "%"PRIu64, file->inode);
+
         /* Create a stream for this file */
         ret = flb_ml_stream_create(ctx->ml_ctx,
                                    inode_str, flb_sds_len(inode_str),
@@ -997,6 +1023,18 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         }
         file->ml_stream_id = stream_id;
         flb_sds_destroy(inode_str);
+
+        /*
+         * Multiline core file buffer: the multiline core functionality invokes a callback everytime a message is ready
+         * to be processed by the caller, this can be a multiline message or a message that is considered 'complete'. In
+         * the previous version of Tail, when it received a message this message was automatically ingested into the pipeline
+         * without any previous buffering which leads to performance degradation.
+         *
+         * The msgpack buffer 'ml_sbuf' keeps all ML provided records and it's flushed just when the file processor finish
+         * processing the "read() bytes".
+         */
+        msgpack_sbuffer_init(&file->ml_sbuf);
+        msgpack_packer_init(&file->ml_pck, &file->ml_sbuf, msgpack_sbuffer_write);
     }
 
     /* Local buffer */
@@ -1113,7 +1151,11 @@ void flb_tail_file_remove(struct flb_tail_file *file)
 
     /* remove the multiline.core stream */
     if (ctx->ml_ctx && file->ml_stream_id > 0) {
+        /* destroy ml stream */
         flb_ml_stream_id_destroy_all(ctx->ml_ctx, file->ml_stream_id);
+
+        /* destroy local msgpack buffer */
+        msgpack_sbuffer_destroy(&file->ml_sbuf);
     }
 
     if (file->rotated > 0) {
