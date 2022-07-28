@@ -75,7 +75,7 @@ jobs:
       # E.g. if we build version 1.9.2 we want to tag with 1.9.2 and 1.9.
       - name: Determine major version tag
         id: determine-major-version
-        uses: frabert/replace-string-action@v2.0
+        uses: frabert/replace-string-action@v2.1
         with:
           pattern: '^(\d+\.\d+).*$'
           string: ${{ inputs.version }}
