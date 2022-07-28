@@ -47,7 +47,7 @@ jobs:
           repository: fluent/fluent-bit-ci
           path: ci
 
-      - uses: hashicorp/setup-terraform@v1
+      - uses: hashicorp/setup-terraform@v2
         with:
           cli_config_credentials_hostname: 'app.terraform.io'
           cli_config_credentials_token: ${{ secrets.terraform_api_token }}
