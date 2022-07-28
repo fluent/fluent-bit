@@ -191,6 +191,45 @@ error:
     return NULL;
 }
 
+char *flb_wasm_call_function_format_json(struct flb_wasm *fw, const char *function_name,
+                                         const char* tag_data, size_t tag_len,
+                                         struct flb_time t,
+                                         const char* record_data, size_t record_len)
+{
+    const char *exception;
+    uint8_t *func_result;
+    wasm_function_inst_t func = NULL;
+    fw->tag_buffer = wasm_runtime_module_dup_data(fw->module_inst, tag_data, tag_len);
+    fw->record_buffer = wasm_runtime_module_dup_data(fw->module_inst, record_data, record_len);
+    uint32_t func_args[6] = {fw->tag_buffer, tag_len,
+                             t.tm.tv_sec, t.tm.tv_nsec,
+                             fw->record_buffer, record_len};
+    size_t args_size = sizeof(func_args) / sizeof(uint32_t);
+
+    if (!(func = wasm_runtime_lookup_function(fw->module_inst, function_name, NULL))) {
+        flb_error("The %s wasm function is not found.", function_name);
+        return NULL;
+    }
+
+    if (!wasm_runtime_call_wasm(fw->exec_env, func, args_size, func_args)) {
+        exception = wasm_runtime_get_exception(fw->module_inst);
+        flb_error("Got exception running wasm code: %s", exception);
+        wasm_runtime_clear_exception(fw->module_inst);
+        return NULL;
+    }
+
+    // The return value is stored in the first element of the function argument array.
+    // It's a WASM pointer to null-terminated c char string.
+    // WAMR allows us to map WASM pointers to native pointers.
+    if (!wasm_runtime_validate_app_str_addr(fw->module_inst, func_args[0])) {
+        flb_warn("[wasm] returned value is invalid");
+        return NULL;
+    }
+    func_result = wasm_runtime_addr_app_to_native(fw->module_inst, func_args[0]);
+
+    return (char *)flb_strdup(func_result);
+}
+
 int flb_wasm_call_wasi_main(struct flb_wasm *fw)
 {
     wasm_function_inst_t func = NULL;
@@ -203,15 +242,23 @@ int flb_wasm_call_wasi_main(struct flb_wasm *fw)
     return wasm_runtime_call_wasm(fw->exec_env, func, 0, NULL);
 }
 
+void flb_wasm_buffer_free(struct flb_wasm *fw)
+{
+    if (fw->tag_buffer) {
+        wasm_runtime_module_free(fw->module_inst, fw->tag_buffer);
+    }
+    if (fw->record_buffer) {
+        wasm_runtime_module_free(fw->module_inst, fw->record_buffer);
+    }
+}
+
 void flb_wasm_destroy(struct flb_wasm *fw)
 {
     if (fw->exec_env) {
         wasm_runtime_destroy_exec_env(fw->exec_env);
     }
     if (fw->module_inst) {
-        if (fw->wasm_buffer) {
-            wasm_runtime_module_free(fw->module_inst, fw->wasm_buffer);
-        }
+        flb_wasm_buffer_free(fw);
         wasm_runtime_deinstantiate(fw->module_inst);
     }
     if (fw->module) {
