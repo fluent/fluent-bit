@@ -43,7 +43,7 @@ jobs:
     name: PR - K8S integration test
     needs:
       - pr-integration-test-build
-    uses: fluent/fluent-bit-ci/.github/workflows/call-integration-test.yaml@master
+    uses: fluent/fluent-bit-ci/.github/workflows/call-integration-test.yaml@main
     with:
       image_name: ghcr.io/${{ github.repository }}/pr-${{ github.event.pull_request.number }}
       image_tag: ${{ github.sha }}
