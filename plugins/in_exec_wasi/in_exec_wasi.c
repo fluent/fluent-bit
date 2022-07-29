@@ -103,6 +103,7 @@ static int in_exec_wasi_collect(struct flb_input_instance *ins,
                 flb_time_append_to_msgpack(&out_time, &mp_pck, 0);
                 msgpack_sbuffer_write(&mp_sbuf, out_buf, out_size);
 
+                ctx->ins->event_type = FLB_INPUT_LOGS;
                 flb_input_chunk_append_raw(ins, NULL, 0,
                                            mp_sbuf.data, mp_sbuf.size);
                 msgpack_sbuffer_destroy(&mp_sbuf);
@@ -138,6 +139,7 @@ static int in_exec_wasi_collect(struct flb_input_instance *ins,
             msgpack_pack_str_body(&mp_pck,
                                   ctx->buf, str_len);
 
+            ctx->ins->event_type = FLB_INPUT_LOGS;
             flb_input_chunk_append_raw(ins, NULL, 0,
                                        mp_sbuf.data, mp_sbuf.size);
             msgpack_sbuffer_destroy(&mp_sbuf);
