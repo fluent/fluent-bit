@@ -229,6 +229,10 @@ void flb_aws_client_destroy(struct flb_aws_client *aws_client)
         if (aws_client->upstream) {
             flb_upstream_destroy(aws_client->upstream);
         }
+        if (aws_client->free_user_agent) {
+            /* if user agent was auto-set by code its an SDS string */
+            flb_sds_destroy(aws_client->extra_user_agent);
+        }
         flb_free(aws_client);
     }
 }
@@ -335,35 +339,31 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
     buf = (char *) flb_env_get(env, "FLB_AWS_USER_AGENT");
     if (buf == NULL) {
         if (getenv(AWS_ECS_METADATA_URI) != NULL) {
-            user_agent = flb_sds_create(AWS_USER_AGENT_ECS);
-            if (!user_agent) {
-                flb_errno();
-                goto error;
-            }
+            user_agent = AWS_USER_AGENT_ECS;
         } 
         else {
             buf = (char *) flb_env_get(env, AWS_USER_AGENT_K8S);
             if (buf && strcasecmp(buf, "enabled") == 0) {
-                user_agent = flb_sds_create(AWS_USER_AGENT_K8S);
-                if (!user_agent) {
-                    flb_errno();
-                    goto error;
-                }
+                user_agent = AWS_USER_AGENT_K8S;
             }
         } 
 
         if (user_agent == NULL) {
-            user_agent = flb_sds_create(AWS_USER_AGENT_NONE);
-            if (!user_agent) {
-                flb_errno();
-                goto error;
-            }
+            user_agent = AWS_USER_AGENT_NONE;
         }
         
         flb_env_set(env, "FLB_AWS_USER_AGENT", user_agent);
     }
     if (aws_client->extra_user_agent == NULL) {
-        aws_client->extra_user_agent = (char *) flb_env_get(env, "FLB_AWS_USER_AGENT");
+        buf = (char *) flb_env_get(env, "FLB_AWS_USER_AGENT");
+        tmp = flb_sds_create(buf);
+        if (!tmp) {
+            flb_errno();
+            goto error;
+        }
+        aws_client->extra_user_agent = tmp;
+        aws_client->free_user_agent = FLB_TRUE;
+        tmp = NULL;
     }
     
     /* Add AWS Fluent Bit user agent header */
