@@ -21,7 +21,7 @@ jobs:
   master-integration-test-run-integration:
     name: Master - integration test
     needs: master-integration-test-build
-    uses: fluent/fluent-bit-ci/.github/workflows/call-integration-test.yaml@main
+    uses: fluent/fluent-bit-ci/.github/workflows/call-run-integration-test.yaml@main
     with:
       image_name: ghcr.io/${{ github.repository }}/master
       image_tag: x86_64
