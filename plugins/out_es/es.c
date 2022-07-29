@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_aws_credentials.h>
+#include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
 #include <msgpack.h>
@@ -800,6 +801,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
     flb_sds_t signature = NULL;
+    int compressed = FLB_FALSE;
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
@@ -820,6 +822,29 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
 
     pack = (char *) out_buf;
     pack_size = out_size;
+
+    /* Should we compress the payload ? */
+    if (ctx->compress_gzip == FLB_TRUE) {
+        ret = flb_gzip_compress((void *) pack, pack_size,
+                                &out_buf, &out_size);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins,
+                          "cannot gzip payload, disabling compression");
+        }
+        else {
+            compressed = FLB_TRUE;
+        }
+
+        /*
+         * The payload buffer is different than pack, means we must be free it.
+         */
+        if (out_buf != pack) {
+            flb_free(pack);
+        }
+
+        pack = (char *) out_buf;
+        pack_size = out_size;
+    }
 
     /* Compose HTTP Client request */
     c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
@@ -851,6 +876,11 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
         flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
     }
 #endif
+
+    /* Content Encoding: gzip */
+    if (compressed == FLB_TRUE) {
+        flb_http_set_content_encoding_gzip(c);
+    }
 
     /* Map debug callbacks */
     flb_http_client_debug(c, ctx->ins->callback);
@@ -918,6 +948,11 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
  retry:
     flb_http_client_destroy(c);
     flb_free(pack);
+
+    if (out_buf != pack) {
+        flb_free(out_buf);
+    }
+
     flb_upstream_conn_release(u_conn);
     FLB_OUTPUT_RETURN(FLB_RETRY);
 }
@@ -958,6 +993,13 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "http_passwd", "",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, http_passwd),
      "Password for user defined in HTTP_User"
+    },
+
+    /* HTTP Compression */
+    {
+     FLB_CONFIG_MAP_STR, "compress", NULL,
+     0, FLB_FALSE, 0,
+     "Set payload compression mechanism. Option available is 'gzip'"
     },
 
     /* Cloud Authentication */
