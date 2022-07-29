@@ -56,6 +56,7 @@ jobs:
       azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
       azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      gcp-service-account-key: ${{ secrets.GCP_SA_KEY }}
 
   pr-integration-test-run-integration-post-label:
     name: PR - integration test complete
