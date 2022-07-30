@@ -194,9 +194,6 @@ int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
                 flb_input_chunk_append_raw(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
             }
             msgpack_sbuffer_destroy(&mp_sbuf);
-
-            break;
-    
         } 
         else if (result.data.type == MSGPACK_OBJECT_ARRAY) {
             obj = &result.data;
