@@ -24,7 +24,6 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_fstore.h>
-#include <mbedtls/sha256.h>
 
 /* End point */
 #define CALYPTIA_HOST            "cloud-api.calyptia.com"
