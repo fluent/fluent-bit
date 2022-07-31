@@ -40,9 +40,9 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_base64.h>
 
 
-#include <mbedtls/base64.h>
 
 void flb_http_client_debug(struct flb_http_client *c,
                            struct flb_callback *cb_ctx)
@@ -1104,7 +1104,7 @@ int flb_http_add_auth_header(struct flb_http_client *c,
     p[len_out] = '\0';
 
     memcpy(tmp, "Basic ", 6);
-    ret = mbedtls_base64_encode((unsigned char *) tmp + 6, sizeof(tmp) - 7, &b64_len,
+    ret = flb_base64_encode((unsigned char *) tmp + 6, sizeof(tmp) - 7, &b64_len,
                                 (unsigned char *) p, len_out);
     if (ret != 0) {
         flb_free(p);
