@@ -24,7 +24,6 @@
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_aws_credentials.h>
-#include <mbedtls/base64.h>
 
 #include "opensearch.h"
 #include "os_conf.h"
