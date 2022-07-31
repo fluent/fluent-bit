@@ -30,7 +30,6 @@
 #include <fluent-bit/flb_upstream_queue.h>
 
 #ifdef FLB_HAVE_TLS
-#include <mbedtls/net.h>
 #endif
 
 /*
