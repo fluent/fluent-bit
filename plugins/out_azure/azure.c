@@ -19,6 +19,9 @@
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_base64.h>
+#include <fluent-bit/flb_crypto.h>
+#include <fluent-bit/flb_hmac.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
@@ -26,7 +29,6 @@
 
 #include "azure.h"
 #include "azure_conf.h"
-#include <mbedtls/base64.h>
 
 static int cb_azure_init(struct flb_output_instance *ins,
                           struct flb_config *config, void *data)
@@ -162,7 +164,7 @@ static int build_headers(struct flb_http_client *c,
     flb_sds_t str_hash;
     struct tm tm = {0};
     unsigned char hmac_hash[32] = {0};
-    mbedtls_md_context_t mctx;
+    int result;
 
     /* Format Date */
     rfc1123date = flb_sds_create_size(32);
@@ -205,18 +207,23 @@ static int build_headers(struct flb_http_client *c,
     flb_sds_cat(str_hash, FLB_AZURE_RESOURCE, sizeof(FLB_AZURE_RESOURCE) - 1);
 
     /* Authorization signature */
-    mbedtls_md_init(&mctx);
-    mbedtls_md_setup(&mctx, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256) , 1);
-    mbedtls_md_hmac_starts(&mctx, (unsigned char *) ctx->dec_shared_key,
-                           flb_sds_len(ctx->dec_shared_key));
-    mbedtls_md_hmac_update(&mctx, (unsigned char *) str_hash,
-                           flb_sds_len(str_hash));
-    mbedtls_md_hmac_finish(&mctx, hmac_hash);
-    mbedtls_md_free(&mctx);
+    result = flb_hmac_simple(FLB_CRYPTO_SHA256,
+                             (unsigned char *) ctx->dec_shared_key,
+                             flb_sds_len(ctx->dec_shared_key),
+                             (unsigned char *) str_hash,
+                             flb_sds_len(str_hash),
+                             hmac_hash,
+                             sizeof(hmac_hash));
+
+    if (result != FLB_CRYPTO_SUCCESS) {
+        flb_sds_destroy(rfc1123date);
+        flb_sds_destroy(str_hash);
+        return -1;
+    }
 
     /* Encoded hash */
-    mbedtls_base64_encode((unsigned char *) &tmp, sizeof(tmp) - 1, &olen,
-                          hmac_hash, sizeof(hmac_hash));
+    result = flb_base64_encode((unsigned char *) &tmp, sizeof(tmp) - 1, &olen,
+                               hmac_hash, sizeof(hmac_hash));
     tmp[olen] = '\0';
 
     /* Append headers */
