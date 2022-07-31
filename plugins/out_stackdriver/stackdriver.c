@@ -25,6 +25,9 @@
 #include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_pthread.h>
+#include <fluent-bit/flb_crypto.h>
+#include <fluent-bit/flb_digest.h>
+#include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_kv.h>
 
 #include <msgpack.h>
@@ -37,8 +40,6 @@
 #include "stackdriver_http_request.h"
 #include "stackdriver_timestamp.h"
 #include "stackdriver_helper.h"
-#include <mbedtls/base64.h>
-#include <mbedtls/sha256.h>
 
 pthread_key_t oauth2_type;
 pthread_key_t oauth2_token;
@@ -117,10 +118,15 @@ int jwt_base64_url_encode(unsigned char *out_buf, size_t out_size,
 {
     int i;
     size_t len;
+    int    result;
+
 
     /* do normal base64 encoding */
-    mbedtls_base64_encode(out_buf, out_size - 1,
-                          &len, in_buf, in_size);
+    result = flb_base64_encode((unsigned char *) out_buf, out_size - 1,
+                               &len, in_buf, in_size);
+    if (result != 0) {
+        return -1;
+    }
 
     /* Replace '+' and '/' characters */
     for (i = 0; i < len && out_buf[i] != '='; i++) {
@@ -149,11 +155,9 @@ static int jwt_encode(char *payload, char *secret,
     char *sigd;
     char *headers = "{\"alg\": \"RS256\", \"typ\": \"JWT\"}";
     unsigned char sha256_buf[32] = {0};
-    mbedtls_sha256_context sha256_ctx;
-    mbedtls_rsa_context *rsa;
     flb_sds_t out;
-    mbedtls_pk_context pk_ctx;
     unsigned char sig[256] = {0};
+    size_t sig_len;
 
     buf_size = (strlen(payload) + strlen(secret)) * 2;
     buf = flb_malloc(buf_size);
@@ -164,8 +168,13 @@ static int jwt_encode(char *payload, char *secret,
 
     /* Encode header */
     len = strlen(headers);
-    mbedtls_base64_encode((unsigned char *) buf, buf_size - 1,
-                          &olen, (unsigned char *) headers, len);
+    ret = flb_base64_encode((unsigned char *) buf, buf_size - 1,
+                            &olen, (unsigned char *) headers, len);
+    if (ret != 0) {
+        flb_free(buf);
+
+        return ret;
+    }
 
     /* Create buffer to store JWT */
     out = flb_sds_create_size(2048);
@@ -188,44 +197,29 @@ static int jwt_encode(char *payload, char *secret,
     flb_sds_cat(out, buf, olen);
 
     /* do sha256() of base64(header).base64(payload) */
-    mbedtls_sha256_init(&sha256_ctx);
-    mbedtls_sha256_starts(&sha256_ctx, 0);
-    mbedtls_sha256_update(&sha256_ctx, (const unsigned char *) out,
-                          flb_sds_len(out));
-    mbedtls_sha256_finish(&sha256_ctx, sha256_buf);
+    ret = flb_digest_simple(FLB_CRYPTO_SHA256,
+                            (unsigned char *) out, flb_sds_len(out),
+                            sha256_buf, sizeof(sha256_buf));
 
-    /* In mbedTLS cert length must include the null byte */
-    len = strlen(secret) + 1;
-
-    /* Load Private Key */
-    mbedtls_pk_init(&pk_ctx);
-    ret = mbedtls_pk_parse_key(&pk_ctx,
-                               (unsigned char *) secret, len, NULL, 0);
-    if (ret != 0) {
-        flb_plg_error(ctx->ins, "error loading private key");
+    if (ret != FLB_CRYPTO_SUCCESS) {
+        flb_plg_error(ctx->ins, "error hashing token");
         flb_free(buf);
         flb_sds_destroy(out);
         return -1;
     }
 
-    /* Create RSA context */
-    rsa = mbedtls_pk_rsa(pk_ctx);
-    if (!rsa) {
+    len = strlen(secret);
+    sig_len = sizeof(sig);
+
+    ret = flb_crypto_sign_simple(FLB_CRYPTO_PRIVATE_KEY,
+                                 (unsigned char *) secret, len,
+                                 sha256_buf, sizeof(sha256_buf),
+                                 sig, &sig_len);
+
+    if (ret != FLB_CRYPTO_SUCCESS) {
         flb_plg_error(ctx->ins, "error creating RSA context");
         flb_free(buf);
         flb_sds_destroy(out);
-        mbedtls_pk_free(&pk_ctx);
-        return -1;
-    }
-
-    ret = mbedtls_rsa_pkcs1_sign(rsa, NULL, NULL,
-                                 MBEDTLS_RSA_PRIVATE, MBEDTLS_MD_SHA256,
-                                 0, (unsigned char *) sha256_buf, sig);
-    if (ret != 0) {
-        flb_plg_error(ctx->ins, "error signing SHA256");
-        flb_free(buf);
-        flb_sds_destroy(out);
-        mbedtls_pk_free(&pk_ctx);
         return -1;
     }
 
@@ -234,7 +228,6 @@ static int jwt_encode(char *payload, char *secret,
         flb_errno();
         flb_free(buf);
         flb_sds_destroy(out);
-        mbedtls_pk_free(&pk_ctx);
         return -1;
     }
 
@@ -248,7 +241,6 @@ static int jwt_encode(char *payload, char *secret,
 
     flb_free(buf);
     flb_free(sigd);
-    mbedtls_pk_free(&pk_ctx);
 
     return 0;
 }
@@ -946,9 +938,7 @@ static void pack_labels(struct flb_stackdriver *ctx,
                         msgpack_object *payload_labels_ptr)
 {
     int i;
-    int ret;
     int labels_size = 0;
-    char *val;
     struct mk_list *head;
     struct flb_kv *list_kv;
     msgpack_object_kv *obj_kv = NULL;
@@ -1486,7 +1476,6 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     const char *newtag;
     const char *new_log_name;
     msgpack_object *obj;
-    msgpack_object *labels_ptr;
     msgpack_unpacked result;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
@@ -2033,7 +2022,7 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             flb_sds_destroy(operation_producer);
             msgpack_unpacked_destroy(&result);
             msgpack_sbuffer_destroy(&mp_sbuf);
-            return -1;
+            return NULL;
         }
 
         /* Number of parsed labels */
