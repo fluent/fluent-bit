@@ -49,7 +49,9 @@ set(src
   flb_coro.c
   flb_time.c
   flb_sosreport.c
-  flb_sha512.c
+  flb_hmac.c
+  flb_digest.c
+  flb_crypto.c
   flb_random.c
   flb_plugin.c
   flb_gzip.c
@@ -115,11 +117,6 @@ endif()
 
 # Fluent Bit have TLS support
 if(FLB_TLS)
-  configure_file(
-    "${PROJECT_SOURCE_DIR}/src/tls/mbedtls.c.in"
-    "${PROJECT_SOURCE_DIR}/src/tls/mbedtls.c"
-    )
-
   # Register the TLS interface and functions
   set(src
     ${src}
@@ -332,7 +329,6 @@ set(FLB_DEPS
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}
-  mbedtls
   c-ares
   snappy-c
   lwrb
