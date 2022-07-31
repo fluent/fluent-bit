@@ -503,11 +503,9 @@ endif()
 if(FLB_TLS)
   FLB_DEFINITION(FLB_HAVE_TLS)
 
-  # Build mbedtls: yes, in this transition period we always enable it
   option(ENABLE_TESTING  OFF)
   option(ENABLE_PROGRAMS OFF)
   option(INSTALL_MBEDTLS_HEADERS OFF)
-  add_subdirectory(${FLB_PATH_LIB_MBEDTLS} EXCLUDE_FROM_ALL)
 
   # Link OpenSSL statically on Windows.
   if (FLB_SYSTEM_WINDOWS)
