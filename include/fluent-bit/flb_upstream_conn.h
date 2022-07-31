@@ -25,7 +25,6 @@
 #include <fluent-bit/flb_config.h>
 
 #ifdef FLB_HAVE_TLS
-#include <mbedtls/net.h>
 #endif
 
 /* Upstream TCP connection */
