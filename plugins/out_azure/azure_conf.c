@@ -18,8 +18,8 @@
  */
 
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_utils.h>
-#include <mbedtls/base64.h>
 
 #include "azure.h"
 #include "azure_conf.h"
@@ -72,7 +72,8 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
         flb_azure_conf_destroy(ctx);
         return NULL;
     }
-    ret = mbedtls_base64_decode((unsigned char *) ctx->dec_shared_key, size,
+
+    ret = flb_base64_decode((unsigned char *) ctx->dec_shared_key, size,
                                 &olen,
                                 (unsigned char *) ctx->shared_key,
                                 flb_sds_len(ctx->shared_key));
