@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_digest.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_version.h>
 #include <fluent-bit/flb_metrics.h>
@@ -124,7 +125,6 @@ static int get_machine_id(struct flb_calyptia *ctx, char **out_buf, size_t *out_
     flb_sds_t s_buf;
     size_t s;
     unsigned char sha256_buf[64] = {0};
-    mbedtls_sha256_context sha256_ctx;
 
     /* retrieve raw machine id */
     ret = flb_utils_get_machine_id(&buf, &s);
@@ -133,12 +133,17 @@ static int get_machine_id(struct flb_calyptia *ctx, char **out_buf, size_t *out_
         return -1;
     }
 
-    /* perform sha256 */
-    mbedtls_sha256_init(&sha256_ctx);
-    mbedtls_sha256_starts(&sha256_ctx, 0);
-    mbedtls_sha256_update(&sha256_ctx, (const unsigned char *) buf, s);
-    mbedtls_sha256_finish(&sha256_ctx, sha256_buf);
+    ret = flb_digest_simple(FLB_CRYPTO_SHA256,
+                            (unsigned char *) buf,
+                            s,
+                            sha256_buf,
+                            sizeof(sha256_buf));
+
     flb_free(buf);
+
+    if (ret != FLB_CRYPTO_SUCCESS) {
+        return -1;
+    }
 
     /* convert to hex */
     s_buf = sha256_to_hex(sha256_buf);
