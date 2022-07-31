@@ -23,7 +23,8 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_upstream_ha.h>
-#include <fluent-bit/flb_sha512.h>
+#include <fluent-bit/flb_digest.h>
+#include <fluent-bit/flb_crypto.h>
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_random.h>
 #include <fluent-bit/flb_gzip.h>
@@ -41,18 +42,6 @@
 
 #ifdef FLB_HAVE_TLS
 
-#define secure_forward_tls_error(ctx, ret)                  \
-    _secure_forward_tls_error(ctx, ret, __FILE__, __LINE__)
-
-void _secure_forward_tls_error(struct flb_forward *ctx,
-                               int ret, char *file, int line)
-{
-    char err_buf[72];
-
-    mbedtls_strerror(ret, err_buf, sizeof(err_buf));
-    flb_plg_error(ctx->ins, "flb_io_tls.c:%i %s", line, err_buf);
-}
-
 static int io_net_write(struct flb_upstream_conn *conn, int unused_fd,
                         const void* data, size_t len, size_t *out_len)
 {
@@ -68,23 +57,9 @@ static int io_net_read(struct flb_upstream_conn *conn, int unused_fd,
 static int secure_forward_init(struct flb_forward *ctx,
                                struct flb_forward_config *fc)
 {
-    int ret;
-
-    /* Initialize mbedTLS entropy contexts */
-    mbedtls_entropy_init(&fc->tls_entropy);
-    mbedtls_ctr_drbg_init(&fc->tls_ctr_drbg);
-
-    ret = mbedtls_ctr_drbg_seed(&fc->tls_ctr_drbg,
-                                mbedtls_entropy_func,
-                                &fc->tls_entropy,
-                                (const unsigned char *) SECURED_BY,
-                                sizeof(SECURED_BY) -1);
-    if (ret == -1) {
-        secure_forward_tls_error(ctx, ret);
-        return -1;
-    }
     return 0;
 }
+
 #endif
 
 static inline void print_msgpack_status(struct flb_forward *ctx,
@@ -188,23 +163,40 @@ static int secure_forward_hash_shared_key(struct flb_forward_config *fc,
                                           struct flb_forward_ping *ping,
                                           char *buf, int buflen)
 {
-    char *hostname = (char *) fc->self_hostname;
-    char *shared_key = (char *) fc->shared_key;
-    struct flb_sha512 sha512;
-    uint8_t hash[64];
+    size_t             length_entries[4];
+    unsigned char     *data_entries[4];
+    uint8_t            hash[64];
+    int                result;
 
     if (buflen < 128) {
         return -1;
     }
 
-    flb_sha512_init(&sha512);
-    flb_sha512_update(&sha512, fc->shared_key_salt, 16);
-    flb_sha512_update(&sha512, hostname, strlen(hostname));
-    flb_sha512_update(&sha512, ping->nonce, ping->nonce_len);
-    flb_sha512_update(&sha512, shared_key, strlen(shared_key));
-    flb_sha512_sum(&sha512, hash);
+    data_entries[0]   = (unsigned char *) fc->shared_key_salt;
+    length_entries[0] = 16;
+
+    data_entries[1]   = (unsigned char *) fc->self_hostname;
+    length_entries[1] = strlen(fc->self_hostname);
+
+    data_entries[2]   = (unsigned char *) ping->nonce;
+    length_entries[2] = ping->nonce_len;
+
+    data_entries[3]   = (unsigned char *) fc->shared_key;
+    length_entries[3] = strlen(fc->shared_key);
+
+    result = flb_digest_simple_batch(FLB_CRYPTO_SHA512,
+                                     4,
+                                     data_entries,
+                                     length_entries,
+                                     hash,
+                                     sizeof(hash));
+
+    if (result != FLB_CRYPTO_SUCCESS) {
+        return -1;
+    }
 
     flb_forward_format_bin_to_hex(hash, 64, buf);
+
     return 0;
 }
 
@@ -212,20 +204,37 @@ static int secure_forward_hash_password(struct flb_forward_config *fc,
                                         struct flb_forward_ping *ping,
                                         char *buf, int buflen)
 {
-    struct flb_sha512 sha512;
-    uint8_t hash[64];
+    size_t             length_entries[3];
+    unsigned char     *data_entries[3];
+    uint8_t            hash[64];
+    int                result;
 
     if (buflen < 128) {
         return -1;
     }
 
-    flb_sha512_init(&sha512);
-    flb_sha512_update(&sha512, ping->auth, ping->auth_len);
-    flb_sha512_update(&sha512, fc->username, strlen(fc->username));
-    flb_sha512_update(&sha512, fc->password, strlen(fc->password));
-    flb_sha512_sum(&sha512, hash);
+    data_entries[0]   = (unsigned char *) ping->auth;
+    length_entries[0] = ping->auth_len;
+
+    data_entries[1]   = (unsigned char *) fc->username;
+    length_entries[1] = strlen(fc->username);
+
+    data_entries[2]   = (unsigned char *) fc->password;
+    length_entries[2] = strlen(fc->password);
+
+    result = flb_digest_simple_batch(FLB_CRYPTO_SHA512,
+                                     3,
+                                     data_entries,
+                                     length_entries,
+                                     hash,
+                                     sizeof(hash));
+
+    if (result != FLB_CRYPTO_SUCCESS) {
+        return -1;
+    }
 
     flb_forward_format_bin_to_hex(hash, 64, buf);
+
     return 0;
 }
 
