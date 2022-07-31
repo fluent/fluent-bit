@@ -23,7 +23,7 @@
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_upstream.h>
-#include <fluent-bit/flb_sha512.h>
+#include <fluent-bit/flb_crypto.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_http_client.h>
