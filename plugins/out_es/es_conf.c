@@ -24,7 +24,7 @@
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_aws_credentials.h>
-#include <mbedtls/base64.h>
+#include <fluent-bit/flb_base64.h>
 
 #include "es.h"
 #include "es_conf.h"
@@ -58,7 +58,7 @@ static flb_sds_t extract_cloud_host(struct flb_elasticsearch *ctx,
     colon++;
 
     /* decode base64 */
-    ret = mbedtls_base64_decode((unsigned char *)buf, sizeof(buf), &len, (unsigned char *)colon, strlen(colon));
+    ret = flb_base64_decode((unsigned char *)buf, sizeof(buf), &len, (unsigned char *)colon, strlen(colon));
     if (ret) {
         flb_plg_error(ctx->ins, "cannot decode cloud_id");
         return NULL;
