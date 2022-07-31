@@ -26,12 +26,6 @@
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_upstream_conn.h>
 
-#ifdef FLB_HAVE_TLS
-#include <mbedtls/entropy.h>
-#include <mbedtls/error.h>
-#include <mbedtls/ctr_drbg.h>
-#endif
-
 /* Forward modes */
 #define MODE_MESSAGE               0
 #define MODE_FORWARD               1
@@ -70,10 +64,6 @@ struct flb_forward_config {
 
     /* mbedTLS specifics */
     unsigned char shared_key_salt[16];
-#ifdef FLB_HAVE_TLS
-    mbedtls_entropy_context tls_entropy;
-    mbedtls_ctr_drbg_context tls_ctr_drbg;
-#endif
 
 #ifdef FLB_HAVE_RECORD_ACCESSOR
     struct flb_record_accessor *ra_tag; /* Tag Record accessor */
