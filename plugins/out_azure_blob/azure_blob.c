@@ -24,8 +24,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_gzip.h>
-#include <mbedtls/sha256.h>
-#include <mbedtls/base64.h>
+#include <fluent-bit/flb_base64.h>
 
 #include <msgpack.h>
 

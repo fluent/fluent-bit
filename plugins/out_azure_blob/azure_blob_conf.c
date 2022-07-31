@@ -18,7 +18,7 @@
  */
 
 #include <fluent-bit/flb_output_plugin.h>
-#include <mbedtls/base64.h>
+#include <fluent-bit/flb_base64.h>
 
 #include "azure_blob.h"
 #include "azure_blob_conf.h"
@@ -42,10 +42,10 @@ static int set_shared_key(struct flb_azure_blob *ctx)
     }
 
     /* decode base64 */
-    ret = mbedtls_base64_decode(ctx->decoded_sk, s * 2,
-                                &o_len,
-                                (unsigned char *)ctx->shared_key,
-                                flb_sds_len(ctx->shared_key));
+    ret = flb_base64_decode(ctx->decoded_sk, s * 2,
+                            &o_len,
+                            (unsigned char *)ctx->shared_key,
+                            flb_sds_len(ctx->shared_key));
     if (ret != 0) {
         flb_plg_error(ctx->ins, "cannot decode shared_key");
         return -1;
