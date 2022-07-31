@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/aws/flb_aws_compress.h>
+#include <fluent-bit/flb_crypto.h>
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_gzip.h>
@@ -32,7 +33,6 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 
-#include <mbedtls/md5.h>
 #include <msgpack.h>
 
 #include "s3.h"
@@ -1435,13 +1435,16 @@ int get_md5_base64(char *buf, size_t buf_size, char *md5_str, size_t md5_str_siz
     size_t olen;
     int ret;
 
-    ret = mbedtls_md5_ret((unsigned char*) buf, buf_size, md5_bin);
-    if (ret != 0) {
-        return ret;
+    ret = flb_digest_simple(FLB_CRYPTO_MD5,
+                            (unsigned char *) buf, buf_size,
+                            md5_bin, sizeof(md5_bin));
+
+    if (ret != FLB_CRYPTO_SUCCESS) {
+        return -1;
     }
 
-    ret = flb_base64_encode((unsigned char*) md5_str, md5_str_size, &olen, md5_bin,
-                                sizeof(md5_bin));
+    ret = flb_base64_encode((unsigned char*) md5_str, md5_str_size,
+                            &olen, md5_bin, sizeof(md5_bin));
     if (ret != 0) {
         return ret;
     }
