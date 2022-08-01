@@ -79,11 +79,8 @@ static int disable_trace_input(struct flb_hs *hs, const char *name)
     }
 
     if (in->trace_ctxt != NULL) {
-        ctxt = in->trace_ctxt;
-        in->trace_ctxt = NULL;
         flb_trace_chunk_context_destroy(in);
     }
-    in->trace_ctxt = NULL;
     return 201;
 }
 
