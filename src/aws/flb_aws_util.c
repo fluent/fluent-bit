@@ -729,7 +729,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
     flb_sds_t s3_key = NULL;
     flb_sds_t tmp_key = NULL;
     flb_sds_t tmp_tag = NULL;
-    struct tm *gmt = NULL;
+    struct tm gmt = {0};
 
     if (strlen(format) > S3_KEY_SIZE){
         flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
@@ -873,7 +873,10 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
     tmp_key = NULL;
     flb_free(random_alphanumeric);
 
-    gmt = gmtime(&time);
+    if (!gmtime_r(&time, &gmt)) {
+        flb_error("[s3_key] Failed to create timestamp.");
+        goto error;
+    }
 
     flb_sds_destroy(tmp);
     tmp = NULL;
@@ -884,7 +887,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
         goto error;
     }
 
-    ret = strftime(key, S3_KEY_SIZE, s3_key, gmt);
+    ret = strftime(key, S3_KEY_SIZE, s3_key, &gmt);
     if(ret == 0){
         flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
     }
