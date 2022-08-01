@@ -128,7 +128,7 @@ void flb_trace_chunk_context_destroy(void *input)
     pthread_mutex_unlock(&in->trace_lock);
 }
 
-struct flb_trace_chunk_context *flb_trace_chunk_context_new(void *trace_input, const char *output_name, const char *trace_prefix, struct mk_list *props)
+struct flb_trace_chunk_context *flb_trace_chunk_context_new(void *trace_input, const char *output_name, const char *trace_prefix, void *data, struct mk_list *props)
 {
     struct flb_input_instance *in = (struct flb_input_instance *)trace_input;
     struct flb_config *config = in->config;
@@ -183,7 +183,7 @@ struct flb_trace_chunk_context *flb_trace_chunk_context_new(void *trace_input, c
         goto error_input;
     }
 
-    output = flb_output_new(ctx->flb->config, output_name, NULL, 1);
+    output = flb_output_new(ctx->flb->config, output_name, data, 1);
     if (output == NULL) {
         flb_error("could not create trace output");
         goto error_input;

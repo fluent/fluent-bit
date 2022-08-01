@@ -66,7 +66,7 @@ struct flb_trace_chunk {
 	int tracer_versions;
 };
 
-struct flb_trace_chunk_context *flb_trace_chunk_context_new(void *input, const char *output_name, const char *trace_prefix, struct mk_list *props);
+struct flb_trace_chunk_context *flb_trace_chunk_context_new(void *input, const char *output_name, const char *trace_prefix, void *data, struct mk_list *props);
 void flb_trace_chunk_context_destroy(void *input);
 struct flb_trace_chunk *flb_trace_chunk_new(struct flb_input_chunk *chunk);
 void flb_trace_chunk_destroy(struct flb_trace_chunk *);
