@@ -91,16 +91,18 @@ static void pipeline_config_add_properties(flb_sds_t *buf, struct mk_list *props
     mk_list_foreach(head, props) {
         kv = mk_list_entry(head, struct flb_kv, _head);
 
-        flb_sds_printf(buf, "    %s ", kv->key);
+        if (kv->key != NULL && kv->val != NULL) {
+            flb_sds_printf(buf, "    %s ", kv->key);
 
-        if (is_sensitive_property(kv->key)) {
-            flb_sds_printf(buf, "--redacted--");
-        }
-        else {
-            flb_sds_printf(buf, kv->val);
-        }
+            if (is_sensitive_property(kv->key)) {
+                flb_sds_printf(buf, "--redacted--");
+            }
+            else {
+                flb_sds_printf(buf, kv->val);
+            }
 
-        flb_sds_printf(buf, "\n");
+            flb_sds_printf(buf, "\n");
+        }
     }
 }
 
