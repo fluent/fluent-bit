@@ -20,6 +20,7 @@
 #include <fluent-bit.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_trace_chunk.h>
+#include <fluent-bit/flb_router.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <unistd.h>
