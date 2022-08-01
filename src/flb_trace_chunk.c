@@ -93,38 +93,35 @@ static void log_cb(void *ctx, int level, const char *file, int line,
     }
 }
 
-static void trace_chunk_context_destroy(void *input)
+static void trace_chunk_context_destroy(struct flb_trace_chunk_context *ctxt)
 {
-    struct flb_input_instance *in = (struct flb_input_instance *)input;
-    struct flb_trace_chunk_context *ctxt = in->trace_ctxt;
-
-    if (ctxt == NULL) {
-        return;
-    }
-
-    in->trace_ctxt = NULL;
-
     if (flb_trace_chunk_has_chunks(ctxt) == FLB_TRUE) {
         flb_trace_chunk_set_destroy(ctxt);
-        // maybe take out?
-        flb_input_pause(ctxt->input);
+        flb_input_pause_all(ctxt->flb->config);
         return;
     }
     
+    // pause all inputs, then destroy the input storage.
+    flb_input_pause_all(ctxt->flb->config);
+    // waiting for all tasks to end is key to safely stopping and destroying
+    // the fluent-bit pipeline.
+    while (flb_task_running_count(ctxt->flb->config) > 0) {
+        sleep(1);
+    }
     flb_sds_destroy(ctxt->trace_prefix);
     flb_stop(ctxt->flb);
     flb_destroy(ctxt->flb);
-    cio_destroy(ctxt->cio);
     flb_free(ctxt);
-
-    in->trace_ctxt = NULL;
 }
 
 void flb_trace_chunk_context_destroy(void *input)
 {
     struct flb_input_instance *in = (struct flb_input_instance *)input;
     pthread_mutex_lock(&in->trace_lock);
-    trace_chunk_context_destroy(input);
+    if (in->trace_ctxt != NULL) {
+        trace_chunk_context_destroy(in->trace_ctxt);
+        in->trace_ctxt = NULL;
+    }
     pthread_mutex_unlock(&in->trace_lock);
 }
 
@@ -167,15 +164,6 @@ struct flb_trace_chunk_context *flb_trace_chunk_context_new(void *trace_input, c
         goto error_flb;
     }
     input->event_type = FLB_EVENT_TYPE_LOG | FLB_EVENT_TYPE_HAS_TRACE;
-
-    // create our own chunk context so we do not interfere with the
-    // global chunk context.
-    ctx->cio = cio_create(NULL);
-    if (ctx->cio == NULL) {
-    	flb_error("unable to create cio context");
-    	goto error_flb;
-    }
-    flb_storage_input_create(ctx->cio, input);
 
     ret = flb_input_set_property(input, "alias", "trace-emitter");
     if (ret != 0) {
@@ -270,14 +258,17 @@ struct flb_trace_chunk *flb_trace_chunk_new(struct flb_input_chunk *chunk)
 }
 
 void flb_trace_chunk_destroy(struct flb_trace_chunk *trace)
-{    
+{
     pthread_mutex_lock(&trace->ic->in->trace_lock);
     flb_trace_chunk_sub(trace->ctxt);
 
     // check to see if we need to free the trace context.
     if (flb_trace_chunk_has_chunks(trace->ctxt) == FLB_FALSE &&
         flb_trace_chunk_to_be_destroyed(trace->ctxt) == FLB_TRUE) {
-        trace_chunk_context_destroy(trace->ic->in);
+        trace_chunk_context_destroy(trace->ctxt);
+    }
+    else if (flb_trace_chunk_has_chunks(trace->ctxt) == FLB_TRUE &&
+        flb_trace_chunk_to_be_destroyed(trace->ctxt) == FLB_TRUE) {
     }
     pthread_mutex_unlock(&trace->ic->in->trace_lock);
 

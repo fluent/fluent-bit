@@ -163,6 +163,10 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
     struct flb_input_plugin *plugin;
     struct flb_input_instance *instance = NULL;
 
+#ifdef FLB_TRACE
+    pthread_mutexattr_t attr = {0};
+#endif
+
     if (!input) {
         return NULL;
     }
@@ -288,6 +292,10 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
                 return NULL;
             }
         }
+
+#ifdef FLB_TRACE
+        pthread_mutex_init(&instance->trace_lock, &attr);
+#endif
 
         /* Plugin requires a co-routine context ? */
         if (plugin->flags & FLB_INPUT_CORO) {
