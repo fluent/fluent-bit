@@ -480,13 +480,13 @@ if(FLB_BINARY)
   endif()
 
   # Detect init system, install upstart, systemd or init.d script
-  if(IS_DIRECTORY /lib/systemd/system)
+  if(DEFINED SYSTEMD_UNITDIR)
     set(FLB_SYSTEMD_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.service")
     configure_file(
       "${PROJECT_SOURCE_DIR}/init/systemd.in"
       ${FLB_SYSTEMD_SCRIPT}
       )
-    install(FILES ${FLB_SYSTEMD_SCRIPT} COMPONENT binary DESTINATION /lib/systemd/system)
+    install(FILES ${FLB_SYSTEMD_SCRIPT} COMPONENT binary DESTINATION ${SYSTEMD_UNITDIR})
     install(DIRECTORY DESTINATION ${FLB_INSTALL_CONFDIR} COMPONENT binary)
   elseif(IS_DIRECTORY /usr/share/upstart)
     set(FLB_UPSTART_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.conf")
