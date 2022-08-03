@@ -68,6 +68,8 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
     struct flb_tail_config *ctx = in_context;
     struct flb_tail_file *file;
     struct stat st;
+    uint64_t pre;
+    uint64_t total_processed = 0;
 
     /* Iterate promoted event files with pending bytes */
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
@@ -94,7 +96,16 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
             break;
         }
 
+        /* get initial offset to calculate the number of processed bytes later */
+        pre = file->offset;
+
         ret = flb_tail_file_chunk(file);
+
+        /* Update the total number of bytes processed */
+        if (file->offset > pre) {
+            total_processed += (file->offset - pre);
+        }
+
         switch (ret) {
         case FLB_TAIL_ERROR:
             /* Could not longer read the file */
