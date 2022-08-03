@@ -68,26 +68,44 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
     struct flb_tail_config *ctx = in_context;
     struct flb_tail_file *file;
     struct stat st;
+    uint64_t pre;
+    uint64_t total_processed = 0;
 
     /* Iterate promoted event files with pending bytes */
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
 
-        /* Gather current file size */
-        ret = fstat(file->fd, &st);
-        if (ret == -1) {
-            flb_errno();
-            flb_tail_file_remove(file);
-            continue;
+        if (file->watch_fd == -1) {
+            /* Gather current file size */
+            ret = fstat(file->fd, &st);
+            if (ret == -1) {
+                flb_errno();
+                flb_tail_file_remove(file);
+                continue;
+            }
+            file->size = st.st_size;
+            file->pending_bytes = (file->size - file->offset);
         }
-        file->size = st.st_size;
-        file->pending_bytes = (file->size - file->offset);
 
         if (file->pending_bytes <= 0) {
             continue;
         }
 
+        if (ctx->event_batch_size > 0 &&
+            total_processed >= ctx->event_batch_size) {
+            break;
+        }
+
+        /* get initial offset to calculate the number of processed bytes later */
+        pre = file->offset;
+
         ret = flb_tail_file_chunk(file);
+
+        /* Update the total number of bytes processed */
+        if (file->offset > pre) {
+            total_processed += (file->offset - pre);
+        }
+
         switch (ret) {
         case FLB_TAIL_ERROR:
             /* Could not longer read the file */
@@ -617,6 +635,15 @@ static struct flb_config_map config_map[] = {
      "these files are called 'static' files. The configuration property "
      "in question set's the maximum number of bytes to process per iteration "
      "for the static files monitored."
+    },
+    {
+     FLB_CONFIG_MAP_SIZE, "event_batch_size", FLB_TAIL_EVENT_BATCH_SIZE,
+     0, FLB_TRUE, offsetof(struct flb_tail_config, event_batch_size),
+     "When Fluent Bit is processing files in event based mode the amount of"
+     "data available for consumption could be too much and cause the input plugin "
+     "to over extend and smother other plugins"
+     "The configuration property sets the maximum number of bytes to process per iteration "
+     "for the files monitored (in event mode)."
     },
     {
      FLB_CONFIG_MAP_BOOL, "skip_long_lines", "false",
