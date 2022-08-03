@@ -305,7 +305,7 @@ struct flush *new_flush_buffer()
     }
     buf->tmp_buf_size = PUT_RECORD_BATCH_PAYLOAD_SIZE;
 
-    buf->events = flb_malloc(sizeof(struct event) * MAX_EVENTS_PER_PUT);
+    buf->events = flb_malloc(sizeof(struct firehose_event) * MAX_EVENTS_PER_PUT);
     if (!buf->events) {
         flb_errno();
         flush_destroy(buf);
