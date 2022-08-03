@@ -75,7 +75,8 @@ if(FLB_WINDOWS_DEFAULTS)
   set(FLB_OUT_KAFKA_REST         No)
   set(FLB_OUT_CLOUDWATCH_LOGS   Yes)
   set(FLB_OUT_S3                Yes)
-  set(FLB_OUT_KINESIS_FIREHOSE   No)
+  set(FLB_OUT_KINESIS_FIREHOSE   Yes)
+  set(FLB_OUT_KINESIS_STREAMS   Yes)
 
   # FILTER plugins
   # ==============
@@ -91,6 +92,7 @@ if(FLB_WINDOWS_DEFAULTS)
   set(FLB_FILTER_RECORD_MODIFIER Yes)
   set(FLB_FILTER_REWRITE_TAG    Yes)
   set(FLB_FILTER_GEOIP2         Yes)
+  set(FLB_FILTER_AWS         Yes)
 endif()
 
 # Search bison and flex executables
