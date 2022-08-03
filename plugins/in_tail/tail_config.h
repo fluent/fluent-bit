@@ -57,6 +57,9 @@ struct flb_tail_config {
     /* Static files processor */
     size_t static_batch_size;
 
+    /* Event files processor */
+    size_t event_batch_size;
+
     /* Collectors */
     int coll_fd_static;
     int coll_fd_scan;
