@@ -2237,14 +2237,15 @@ static void update_http_metrics(struct flb_stackdriver *ctx,
 
     /* convert status to string format */
     snprintf(tmp, sizeof(tmp) - 1, "%i", http_status);
+    char *name = (char *) flb_output_name(ctx->ins);
 
     /* processed records total */
     cmt_counter_add(ctx->cmt_proc_records_total, ts, event_chunk->total_events,
-                    1, (char *[]) {tmp});
+                    2, (char *[]) {tmp, name});
 
     /* HTTP status */
     if (http_status != STACKDRIVER_NET_ERROR) {
-        cmt_counter_inc(ctx->cmt_requests_total, ts, 1, (char *[]) {tmp});
+        cmt_counter_inc(ctx->cmt_requests_total, ts, 2, (char *[]) {tmp, name});
     }
 }
 #endif

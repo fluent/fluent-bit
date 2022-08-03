@@ -505,21 +505,21 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
                                                  "stackdriver",
                                                  "requests_total",
                                                  "Total number of requests.",
-                                                  1, (char *[]) {"status"});
+                                                  2, (char *[]) {"status", "name"});
 
     ctx->cmt_proc_records_total = cmt_counter_create(ins->cmt,
                                                      "fluentbit",
                                                      "stackdriver",
                                                      "proc_records_total",
                                                      "Total number of processed records.",
-                                                     1, (char *[]) {"status"});
+                                                     2, (char *[]) {"status", "name"});
 
     ctx->cmt_retried_records_total = cmt_counter_create(ins->cmt,
                                                         "fluentbit",
                                                         "stackdriver",
                                                         "retried_records_total",
                                                         "Total number of retried records.",
-                                                        1, (char *[]) {"status"});
+                                                        2, (char *[]) {"status", "name"});
 
     /* OLD api */
     flb_metrics_add(FLB_STACKDRIVER_SUCCESSFUL_REQUESTS,
