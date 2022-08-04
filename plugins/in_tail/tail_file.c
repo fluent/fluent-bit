@@ -163,8 +163,8 @@ static int record_append_custom_keys(struct flb_tail_file *file,
             msgpack_pack_str_body(&mp_pck, file->config->path_key, len);
 
             /* val */
-            msgpack_pack_str(&mp_pck, file->name_len);
-            msgpack_pack_str_body(&mp_pck, file->name, file->name_len);
+            msgpack_pack_str(&mp_pck, file->orig_name_len);
+            msgpack_pack_str_body(&mp_pck, file->orig_name, file->orig_name_len);
         }
 
         /* offset_key */
@@ -982,6 +982,16 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         goto error;
     }
 
+    /* We keep a copy of the initial filename in orig_name. This is required
+     * for path_key to continue working after rotation. */
+    file->orig_name = flb_strdup(file->name);
+    if (!file->orig_name) {
+        flb_free(file->name);
+        flb_errno();
+        goto error;
+    }
+    file->orig_name_len = file->name_len;
+
     /* multiline msgpack buffers */
     file->mult_records = 0;
     msgpack_sbuffer_init(&file->mult_sbuf);
@@ -1196,6 +1206,7 @@ void flb_tail_file_remove(struct flb_tail_file *file)
 
     flb_free(file->buf_data);
     flb_free(file->name);
+    flb_free(file->orig_name);
     flb_free(file->real_name);
     flb_sds_destroy(file->hash_key);
 
