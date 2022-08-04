@@ -78,6 +78,11 @@ static int in_exec_wasi_collect(struct flb_input_instance *ins,
 
     ret = flb_wasm_call_wasi_main(ctx->wasm);
 
+    if (!ret) {
+        flb_plg_error(ctx->ins, "WASI main function is not found");
+        goto collect_end;
+    }
+
     if (ctx->parser) {
         rewind(stdoutp);
 
