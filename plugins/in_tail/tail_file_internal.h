@@ -47,7 +47,9 @@ struct flb_tail_file {
     int   is_link;
     char *name;                 /* target file name given by scan routine */
     char *real_name;            /* real file name in the file system */
+    char *orig_name;            /* original file name (before rotation) */
     size_t name_len;
+    size_t orig_name_len;
     time_t rotated;
     int64_t pending_bytes;
 
