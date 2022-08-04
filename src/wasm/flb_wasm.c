@@ -232,6 +232,7 @@ char *flb_wasm_call_function_format_json(struct flb_wasm *fw, const char *functi
 
 int flb_wasm_call_wasi_main(struct flb_wasm *fw)
 {
+#if WASM_ENABLE_LIBC_WASI != 0
     wasm_function_inst_t func = NULL;
 
     if (!(func = wasm_runtime_lookup_wasi_start_function(fw->module_inst))) {
@@ -240,6 +241,9 @@ int flb_wasm_call_wasi_main(struct flb_wasm *fw)
     }
 
     return wasm_runtime_call_wasm(fw->exec_env, func, 0, NULL);
+#else
+    return -1;
+#endif
 }
 
 void flb_wasm_buffer_free(struct flb_wasm *fw)
