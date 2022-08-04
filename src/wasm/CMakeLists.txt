@@ -8,6 +8,10 @@ endif ()
 
 set (CMAKE_C_STANDARD 99)
 
+if (FLB_SYSTEM_WINDOWS)
+  add_definitions(-DCOMPILING_WASM_RUNTIME_API=1)
+endif ()
+
 # WAMR features switch
 
 # Set WAMR_BUILD_TARGET, currently values supported:
