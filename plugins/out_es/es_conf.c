@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_aws_credentials.h>
 #include <mbedtls/base64.h>
+#include <stdlib.h>
 
 #include "es.h"
 #include "es_conf.h"
@@ -122,7 +123,10 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     char *aws_external_id = NULL;
     char *aws_session_name = NULL;
 #endif
+    char *colon;
     char *cloud_host = NULL;
+    int cloud_port = FLB_ES_DEFAULT_HTTPS_PORT;
+    int port;
     struct flb_uri *uri = ins->host.uri;
     struct flb_uri_field *f_index = NULL;
     struct flb_uri_field *f_type = NULL;
@@ -153,8 +157,23 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
             flb_es_conf_destroy(ctx);
             return NULL;
         }
+
+        colon = strchr(cloud_host, ':');
+        if (colon != NULL) {
+            char *endptr = NULL;
+
+            colon++;
+
+            port = (int)strtol((const char*)colon, &endptr, 10);
+            if (endptr == NULL) {
+                cloud_port = port;
+            }
+
+            cloud_host = strtok(cloud_host, ':');
+        }
+        
         ins->host.name = cloud_host;
-        ins->host.port = 443;
+        ins->host.port = cloud_port;
     }
 
     /* Set default network configuration */
