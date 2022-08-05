@@ -141,8 +141,8 @@ static int flb_proxy_input_cb_init(struct flb_input_instance *ins,
 #endif
     }
     else {
-        fprintf(stderr, "[proxy] unrecognized input proxy handler %i\n",
-                pc->proxy->def->proxy);
+        flb_error("[proxy] unrecognized input proxy handler %i",
+                  pc->proxy->def->proxy);
     }
 
     /* Set the context */
@@ -367,8 +367,8 @@ int flb_plugin_proxy_output_init(struct flb_plugin_proxy *proxy,
 #endif
     }
     else {
-        fprintf(stderr, "[proxy] unrecognized proxy handler %i\n",
-                proxy->def->proxy);
+        flb_error("[proxy] unrecognized proxy handler %i",
+                  proxy->def->proxy);
     }
 
     return ret;
@@ -383,8 +383,8 @@ struct flb_plugin_proxy *flb_plugin_proxy_create(const char *dso_path, int type,
     /* Load shared library */
     handle = dlopen(dso_path, RTLD_LAZY);
     if (!handle) {
-        fprintf(stderr, "[proxy] error opening plugin %s: '%s'\n",
-                dso_path, dlerror());
+        flb_error("[proxy] error opening plugin %s: '%s'",
+                  dso_path, dlerror());
         return NULL;
     }
 

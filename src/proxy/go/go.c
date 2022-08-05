@@ -77,7 +77,7 @@ int proxy_go_output_register(struct flb_plugin_proxy *proxy,
 
     plugin->cb_init  = flb_plugin_proxy_symbol(proxy, "FLBPluginInit");
     if (!plugin->cb_init) {
-        fprintf(stderr, "[go proxy]: could not load FLBPluginInit symbol\n");
+        flb_error("[go proxy]: could not load FLBPluginInit symbol");
         flb_free(plugin);
         return -1;
     }
@@ -187,7 +187,7 @@ int proxy_go_input_register(struct flb_plugin_proxy *proxy,
 
     plugin->cb_init  = flb_plugin_proxy_symbol(proxy, "FLBPluginInit");
     if (!plugin->cb_init) {
-        fprintf(stderr, "[go proxy]: could not load FLBPluginInit symbol\n");
+        flb_error("[go proxy]: could not load FLBPluginInit symbol");
         flb_free(plugin);
         return -1;
     }
