@@ -1,0 +1,16 @@
+includes:
+    - glob-order/include-*.yaml
+
+service:
+    flush:       ${flush_interval}
+    log_level:   debug
+    http_server: on
+
+pipeline:
+    inputs:
+        - dummy:
+            alias: dummy
+
+    outputs:
+        - stdout:
+            match: "*"
