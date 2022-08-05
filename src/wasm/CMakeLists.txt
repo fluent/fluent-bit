@@ -41,7 +41,11 @@ set (WAMR_BUILD_FAST_INTERP 1)
 set (WAMR_BUILD_AOT 1)
 set (WAMR_BUILD_JIT 0)
 set (WAMR_BUILD_LIBC_BUILTIN 1)
-if (NOT MSVC)
+if (MSVC)
+  # Currently, LIBC_UVWASI build is disabled.
+  # FIXME: Need to investigate how to build libuv and uvwasi without fetching repos.
+  set (WAMR_BUILD_LIBC_UVWASI 0)
+else ()
   set (WAMR_BUILD_LIBC_WASI 1)
 endif ()
 if (NOT MSVC)
@@ -78,4 +82,8 @@ set(src
   ${UNCOMMON_SHARED_SOURCE}) # link wasm-micro-runtime's uncommon object symbols (for bh_read_file_to_buffer)
 
 add_library(flb-wasm-static STATIC ${src})
-target_link_libraries(flb-wasm-static vmlib-static)
+if (WAMR_BUILD_LIBC_UVWASI)
+  target_link_libraries(flb-wasm-static vmlib-static ${UV_A_LIBS})
+else ()
+  target_link_libraries(flb-wasm-static vmlib-static)
+endif()
