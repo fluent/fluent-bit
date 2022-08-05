@@ -428,6 +428,7 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
     if (w) {
         int n = flb_pipe_write_all(w->log[1], &msg, sizeof(msg));
         if (n == -1) {
+            fprintf(stderr, "%s", (char *) msg.msg);
             perror("write");
         }
     }
