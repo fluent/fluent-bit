@@ -176,7 +176,6 @@ struct flb_config *flb_config_init()
         return NULL;
     }
 
-    MK_EVENT_ZERO(&config->ch_event);
     MK_EVENT_ZERO(&config->event_flush);
     MK_EVENT_ZERO(&config->event_shutdown);
 
@@ -347,11 +346,6 @@ void flb_config_exit(struct flb_config *config)
     if (config->kernel) {
         flb_free(config->kernel->s_version.data);
         flb_free(config->kernel);
-    }
-
-    /* release resources */
-    if (config->ch_event.fd) {
-        mk_event_closesocket(config->ch_event.fd);
     }
 
     /* Pipe */

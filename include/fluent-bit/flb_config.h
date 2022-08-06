@@ -40,8 +40,6 @@
 
 /* Main struct to hold the configuration of the runtime service */
 struct flb_config {
-    struct mk_event ch_event;
-
     int support_mode;         /* enterprise support mode ?      */
     int is_ingestion_active;  /* date ingestion active/allowed  */
     int is_shutting_down;     /* is the service shutting down ? */
