@@ -184,7 +184,7 @@ static int secure_forward_hash_shared_key(struct flb_forward_config *fc,
     data_entries[3]   = (unsigned char *) fc->shared_key;
     length_entries[3] = strlen(fc->shared_key);
 
-    result = flb_digest_simple_batch(FLB_CRYPTO_SHA512,
+    result = flb_digest_simple_batch(FLB_DIGEST_SHA512,
                                      4,
                                      data_entries,
                                      length_entries,
@@ -222,7 +222,7 @@ static int secure_forward_hash_password(struct flb_forward_config *fc,
     data_entries[2]   = (unsigned char *) fc->password;
     length_entries[2] = strlen(fc->password);
 
-    result = flb_digest_simple_batch(FLB_CRYPTO_SHA512,
+    result = flb_digest_simple_batch(FLB_DIGEST_SHA512,
                                      3,
                                      data_entries,
                                      length_entries,
