@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/aws/flb_aws_compress.h>
+#include <fluent-bit/flb_digest.h>
 #include <fluent-bit/flb_crypto.h>
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_scheduler.h>
@@ -1467,7 +1468,7 @@ int get_md5_base64(char *buf, size_t buf_size, char *md5_str, size_t md5_str_siz
     size_t olen;
     int ret;
 
-    ret = flb_digest_simple(FLB_CRYPTO_MD5,
+    ret = flb_digest_simple(FLB_DIGEST_MD5,
                             (unsigned char *) buf, buf_size,
                             md5_bin, sizeof(md5_bin));
 
