@@ -69,7 +69,7 @@ static int hmac_sha256_sign(unsigned char out[32],
 {
     int result;
 
-    result = flb_hmac_simple(FLB_CRYPTO_SHA256,
+    result = flb_hmac_simple(FLB_DIGEST_SHA256,
                              key, key_len,
                              msg, msg_len,
                              out, 32);
@@ -576,7 +576,6 @@ static flb_sds_t flb_signv4_canonical_request(struct flb_http_client *c,
     int len;
     int items;
     int result;
-    int post_params = FLB_FALSE;
     size_t size;
     char *val;
     struct flb_kv **arr;
@@ -719,7 +718,6 @@ static flb_sds_t flb_signv4_canonical_request(struct flb_http_client *c,
                 }
                 cr = tmp;
                 flb_sds_destroy(params);
-                post_params = FLB_TRUE;
             }
         }
     }
@@ -743,7 +741,7 @@ static flb_sds_t flb_signv4_canonical_request(struct flb_http_client *c,
     if (s3_mode == S3_MODE_UNSIGNED_PAYLOAD) {
         payload_hash = flb_sds_create("UNSIGNED-PAYLOAD");
     } else {
-        result = flb_digest_simple(FLB_CRYPTO_SHA256,
+        result = flb_digest_simple(FLB_DIGEST_SHA256,
                                    (unsigned char *) c->body_buf, c->body_len,
                                    sha256_buf, sizeof(sha256_buf));
 
@@ -965,7 +963,7 @@ static flb_sds_t flb_signv4_string_to_sign(struct flb_http_client *c,
     }
 
     /* Hash of Canonical Request */
-    result = flb_digest_simple(FLB_CRYPTO_SHA256,
+    result = flb_digest_simple(FLB_DIGEST_SHA256,
                                (unsigned char *) cr, flb_sds_len(cr),
                                sha256_buf, sizeof(sha256_buf));
 
