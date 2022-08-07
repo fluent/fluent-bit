@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_base64.h>
+#include <fluent-bit/flb_digest.h>
 #include <fluent-bit/flb_crypto.h>
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_kv.h>
@@ -130,7 +131,7 @@ static int bigquery_jwt_encode(struct flb_bigquery *ctx,
     out = flb_sds_cat(out, buf, olen);
 
     /* do sha256() of base64(header).base64(payload) */
-    ret = flb_digest_simple(FLB_CRYPTO_SHA256,
+    ret = flb_digest_simple(FLB_DIGEST_SHA256,
                             (unsigned char *) out, flb_sds_len(out),
                             sha256_buf, sizeof(sha256_buf));
 
@@ -145,6 +146,8 @@ static int bigquery_jwt_encode(struct flb_bigquery *ctx,
     len = strlen(secret) + 1;
 
     ret = flb_crypto_sign_simple(FLB_CRYPTO_PRIVATE_KEY,
+                                 FLB_CRYPTO_PADDING_PKCS1,
+                                 FLB_DIGEST_SHA256,
                                  (unsigned char *) secret, len,
                                  sha256_buf, sizeof(sha256_buf),
                                  sig, &sig_len);
