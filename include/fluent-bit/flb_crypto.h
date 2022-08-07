@@ -20,6 +20,7 @@
 
 #include <stdint.h>
 #include <openssl/err.h>
+#include <openssl/pem.h>
 #include <openssl/sha.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
