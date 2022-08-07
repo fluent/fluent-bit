@@ -21,6 +21,10 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <time.h>
+#ifdef FLB_SYSTEM_FREEBSD
+#include <sys/user.h>
+#include <libutil.h>
+#endif
 
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
@@ -159,8 +163,8 @@ static int record_append_custom_keys(struct flb_tail_file *file,
             msgpack_pack_str_body(&mp_pck, file->config->path_key, len);
 
             /* val */
-            msgpack_pack_str(&mp_pck, file->name_len);
-            msgpack_pack_str_body(&mp_pck, file->name, file->name_len);
+            msgpack_pack_str(&mp_pck, file->orig_name_len);
+            msgpack_pack_str_body(&mp_pck, file->orig_name, file->orig_name_len);
         }
 
         /* offset_key */
@@ -978,6 +982,16 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         goto error;
     }
 
+    /* We keep a copy of the initial filename in orig_name. This is required
+     * for path_key to continue working after rotation. */
+    file->orig_name = flb_strdup(file->name);
+    if (!file->orig_name) {
+        flb_free(file->name);
+        flb_errno();
+        goto error;
+    }
+    file->orig_name_len = file->name_len;
+
     /* multiline msgpack buffers */
     file->mult_records = 0;
     msgpack_sbuffer_init(&file->mult_sbuf);
@@ -1192,6 +1206,7 @@ void flb_tail_file_remove(struct flb_tail_file *file)
 
     flb_free(file->buf_data);
     flb_free(file->name);
+    flb_free(file->orig_name);
     flb_free(file->real_name);
     flb_sds_destroy(file->hash_key);
 
@@ -1537,6 +1552,10 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     char path[PATH_MAX];
 #elif defined(FLB_SYSTEM_WINDOWS)
     HANDLE h;
+#elif defined(FLB_SYSTEM_FREEBSD)
+    struct kinfo_file *file_entries;
+    int file_count;
+    int file_index;
 #endif
 
     buf = flb_malloc(PATH_MAX);
@@ -1597,6 +1616,20 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     if (strstr(buf, "\\\\?\\")) {
         memmove(buf, buf + 4, len + 1);
     }
+#elif defined(FLB_SYSTEM_FREEBSD)
+    if ((file_entries = kinfo_getfile(getpid(), &file_count)) == NULL) {
+        flb_free(buf);
+        return NULL;
+    }
+
+    for (file_index=0; file_index < file_count; file_index++) {
+        if (file_entries[file_index].kf_fd == file->fd) {
+            strncpy(buf, file_entries[file_index].kf_path, PATH_MAX - 1);
+            buf[PATH_MAX - 1] = 0;
+            break;
+        }
+    }
+    free(file_entries);
 #endif
     return buf;
 }

@@ -122,6 +122,9 @@ struct flb_elasticsearch {
 
     struct flb_record_accessor *ra_prefix_key;
 
+    /* Compression mode (gzip) */
+    int compress_gzip;
+
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
 

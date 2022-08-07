@@ -186,4 +186,7 @@ This program is under the terms of the [Apache License v2.0](http://www.apache.o
 
 ## Authors
 
-[Fluent Bit](http://fluentbit.io) is originally made and currently sponsored by [Treasure Data](http://treasuredata.com) among other [contributors](https://github.com/fluent/fluent-bit/graphs/contributors).
+[Fluent Bit](http://fluentbit.io) is sponsored and maintained by several companies of the Cloud Native community, including all the major cloud providers.
+
+You can see a list of contributors [here](https://github.com/fluent/fluent-bit/graphs/contributors).
+

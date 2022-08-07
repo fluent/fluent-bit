@@ -559,9 +559,14 @@ retry:
     return 0;
 }
 
-/*
- * Processes the msgpack object, sends the current batch if needed
- */
+ /*
+  * Processes the msgpack object, sends the current batch if needed
+  * -1 = failure, event not added
+  * 0 = success, event added
+  * 1 = event been skipped
+  * Returns 0 on success, -1 on general errors,
+  * and 1 if we found a empty event or a large event.
+  */
 int add_event(struct flb_cloudwatch *ctx, struct cw_flush *buf,
               struct log_stream *stream,
               const msgpack_object *obj, struct flb_time *tms)
@@ -593,7 +598,7 @@ retry_add_event:
         if (buf->event_index <= 0) {
             /* somehow the record was larger than our entire request buffer */
             flb_plg_warn(ctx->ins, "Discarding massive log record");
-            return 0; /* discard this record and return to caller */
+            return 1; /* discard this record and return to caller */
         }
         /* send logs and then retry the add */
         retry_add = FLB_TRUE;
@@ -604,7 +609,7 @@ retry_add_event:
          * discard this record and return to caller
          * only happens for empty records in this plugin
          */
-        return 0;
+        return 1;
     }
 
     event = &buf->events[buf->event_index];
@@ -800,8 +805,8 @@ int pack_emf_payload(struct flb_cloudwatch *ctx,
 }
 
 /*
- * Main routine- processes msgpack and sends in batches
- * return value is the number of events processed
+ * Main routine- processes msgpack and sends in batches which ignore the empty ones
+ * return value is the number of events processed and send.
  */
 int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin, 
                      struct cw_flush *buf, flb_sds_t tag,
@@ -911,9 +916,11 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
                 flb_plg_error(ctx->ins, "Could not find log_key '%s' in record",
                               ctx->log_key);
             }
-            else {
+
+            if (ret == 0) {
                 i++;
             }
+
             continue;
         }
 
@@ -985,7 +992,10 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
         if (ret < 0 ) {
             goto error;
         }
-        i++;
+
+        if (ret == 0) {
+            i++;
+        }
     }
     msgpack_unpacked_destroy(&result);
 

@@ -7,7 +7,7 @@ on:
     inputs:
       version:
         type: string
-        description: The version we want to release from staging.
+        description: The version we want to release from staging, ensure this is numeric without the v prefix for the tag.
         required: true
       docker-image:
         type: string

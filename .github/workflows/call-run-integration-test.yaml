@@ -1,0 +1,319 @@
+---
+name: Reusable workflow to run integration tests with specific images
+on:
+  workflow_call:
+    secrets:
+      opensearch_aws_access_id:
+        description: AWS access ID to use within the opensearch integration tests.
+        required: true
+      opensearch_aws_secret_key:
+        description: AWS secret key to use within the opensearch integration tests.
+        required: true
+      opensearch_admin_password:
+        description: Default admin password use within the opensearch integration tests.
+        required: true
+      terraform_api_token:
+        description: Default terraform API token to use when running integration tests.
+        required: true
+      gcp-service-account-key:
+        description: The GCP service account key to use.
+        required: true
+      azure-client-id:
+        description: The Azure client ID to use.
+        required: true
+      azure-client-secret:
+        description: The Azure client secret to use.
+        required: true
+      azure-subscription-id:
+        description: The Azure subscription to use.
+        required: true
+      azure-tenant-id:
+        description: The Azure tenant ID to use.
+        required: true
+    inputs:
+      image_name:
+        description: The image repository and name to use.
+        required: false
+        default: ghcr.io/fluent/fluent-bit/master
+        type: string
+      image_tag:
+        description: The image tag to use.
+        required: false
+        default: x86_64
+        type: string
+      ref:
+        description: The commit, tag or branch of the repository to checkout
+        type: string
+        required: false
+        default: main
+jobs:
+  call-run-terraform-setup:
+    name: Run Terraform set up
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    outputs:
+      aks-cluster-name: ${{ steps.aks-cluster-name.outputs.stdout }}
+      aks-cluster-resource-group: ${{ steps.aks-cluster-resource-group.outputs.stdout }}
+      aws-opensearch-endpoint: ${{ steps.aws-opensearch-endpoint.outputs.stdout }}
+      gke-cluster-name: ${{ steps.gke-cluster-name.outputs.stdout }}
+      gke-cluster-region: ${{ steps.gke-cluster-region.outputs.stdout }}
+    env:
+      # https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/guides/service_principal_client_secret
+      # Note these have to be set in the Terraform Cloud workspace as well
+      ARM_CLIENT_ID: ${{ secrets.azure-client-id }}
+      ARM_CLIENT_SECRET: ${{ secrets.azure-client-secret }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.azure-subscription-id }}
+      ARM_TENANT_ID: ${{ secrets.azure-tenant-id }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+          repository: fluent/fluent-bit-ci
+
+      - uses: hashicorp/setup-terraform@v2
+        with:
+          cli_config_credentials_hostname: 'app.terraform.io'
+          cli_config_credentials_token: ${{ secrets.terraform_api_token }}
+
+      - id: 'auth'
+        uses: 'google-github-actions/auth@v0'
+        with:
+          credentials_json: ${{ secrets.gcp-service-account-key }}
+
+      - name: 'Set up Cloud SDK'
+        uses: 'google-github-actions/setup-gcloud@v0'
+
+      - name: Replace terraform variables.
+        run: |
+          sed -i -e "s|\$OPENSEARCH_AWS_ACCESS_ID|${{ secrets.opensearch_aws_access_id }}|g" default.auto.tfvars
+          sed -i -e "s|\$OPENSEARCH_AWS_SECRET_KEY|${{ secrets.opensearch_aws_secret_key }}|g" default.auto.tfvars
+          sed -i -e "s|\$OPENSEARCH_ADMIN_PASSWORD|${{ secrets.opensearch_admin_password }}|g" default.auto.tfvars
+
+          sed -i -e "s|\$AZURE_CLIENT_ID|${{ secrets.azure-client-id }}|g" default.auto.tfvars
+          sed -i -e "s|\$AZURE_CLIENT_SECRET|${{ secrets.azure-client-secret }}|g" default.auto.tfvars
+          sed -i -e "s|\$AZURE_SUBSCRIPTION_ID|${{ secrets.azure-subscription-id }}|g" default.auto.tfvars
+          sed -i -e "s|\$AZURE_TENANT_ID|${{ secrets.azure-tenant-id }}|g" default.auto.tfvars
+
+          cat <<EOT >> default.auto.tfvars
+          gcp_sa_key    =  <<-EOF
+          ${{ secrets.gcp-service-account-key }}
+          EOF
+          EOT
+        working-directory: terraform/
+        shell: bash
+
+      - name: Terraform init
+        id: init
+        run: terraform init
+        working-directory: terraform/
+
+      - name: Terraform fmt
+        id: fmt
+        run: |
+          find . -name "*.tf" -exec terraform fmt -check {} \;
+        working-directory: terraform
+
+      - name: Terraform validate
+        id: validate
+        run: terraform validate -no-color
+        working-directory: terraform/
+
+      - name: Terraform Plan
+        if: github.event_name == 'pull_request'
+        id: plan
+        run: terraform plan -no-color
+        working-directory: terraform
+        continue-on-error: true
+
+      - uses: actions/github-script@v6
+        if: github.event_name == 'pull_request'
+        env:
+          PLAN: "terraform\n${{ steps.plan.outputs.stdout }}"
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const output = `#### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
+            #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
+            #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
+            #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
+            <details><summary>Show Plan</summary>
+            \`\`\`\n
+            ${process.env.PLAN}
+            \`\`\`
+            </details>
+            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
+
+      - name: Terraform Plan Status
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+      - name: Terraform Apply
+        if: github.event_name != 'pull_request'
+        id: apply
+        run: terraform apply -input=false -auto-approve
+        working-directory: terraform
+        env:
+          TF_LOG: TRACE
+
+      # We're using the terraform wrapper here so separate steps for each output variable
+      - id: aws-opensearch-endpoint
+        run: terraform output -no-color -raw aws-opensearch-endpoint
+        working-directory: terraform
+        shell: bash
+
+      - id: gke-cluster-name
+        run: terraform output -no-color -raw gke_kubernetes_cluster_name
+        working-directory: terraform
+        shell: bash
+
+      - id: gke-cluster-region
+        run: terraform output -no-color -raw gke_region
+        working-directory: terraform
+        shell: bash
+
+      - id: aks-cluster-name
+        run: terraform output -no-color -raw aks_cluster_name
+        working-directory: terraform
+        shell: bash
+
+      - id: aks-cluster-resource-group
+        run: terraform output -no-color -raw aks_resource_group
+        working-directory: terraform
+        shell: bash
+
+  call-run-integration-kind:
+    name: Run integration tests on KIND
+    needs:
+      - call-run-terraform-setup
+    # Can test for multiple K8S versions with KIND
+    strategy:
+      fail-fast: false
+      matrix:
+        k8s-release: [ 'v1.23.5', 'v1.22.7', 'v1.21.10' ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Test image exists and cache locally
+        run: docker pull ${{ inputs.image_name }}:${{ inputs.image_tag }}
+
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+          repository: fluent/fluent-bit-ci
+
+      - name: Setup BATS
+        uses: mig4/setup-bats@v1
+        with:
+          bats-version: 1.7.0
+
+      - name: Create k8s Kind Cluster
+        uses: helm/kind-action@v1.3.0
+        with:
+          node_image: kindest/node:${{ matrix.k8s-release }}
+          cluster_name: kind
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3.3
+        with:
+          version: v3.8.1
+
+      - name: Set up Kubectl
+        uses: azure/setup-kubectl@v3.0
+
+      - name: Run tests
+        run:  |
+          kind load docker-image ${{ inputs.image_name }}:${{ inputs.image_tag }}
+          ./run-tests.sh
+        shell: bash
+        env:
+          FLUENTBIT_IMAGE_REPOSITORY: ${{ inputs.image_name }}
+          FLUENTBIT_IMAGE_TAG: ${{ inputs.image_tag }}
+          HOSTED_OPENSEARCH_HOST: ${{ needs.call-run-terraform-setup.outputs.aws-opensearch-endpoint }}
+          HOSTED_OPENSEARCH_PORT: 443
+          HOSTED_OPENSEARCH_USERNAME: admin
+          HOSTED_OPENSEARCH_PASSWORD: ${{ secrets.opensearch_admin_password }}
+
+  call-run-integration-cloud:
+    name: Run integration tests on cloud providers
+    needs:
+      - call-run-terraform-setup
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        cloud:
+          - aks
+          - gke
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+          repository: fluent/fluent-bit-ci
+
+      - if: matrix.cloud == 'gke'
+        uses: 'google-github-actions/auth@v0'
+        with:
+          credentials_json: ${{ secrets.gcp-service-account-key }}
+
+      - if: matrix.cloud == 'gke'
+        uses: 'google-github-actions/setup-gcloud@v0'
+
+      - name: Setup BATS
+        uses: mig4/setup-bats@v1
+        with:
+          bats-version: 1.7.0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3.3
+        with:
+          version: v3.8.1
+
+      - name: Set up Kubectl
+        uses: azure/setup-kubectl@v3.0
+
+      - name: Get the GKE Kubeconfig
+        if: matrix.cloud == 'gke'
+        run: |
+          gcloud info
+          gcloud container clusters get-credentials "$GKE_CLUSTER_NAME" --region "$GKE_REGION"
+        shell: bash
+        env:
+          GKE_CLUSTER_NAME: ${{ needs.call-run-terraform-setup.outputs.gke-cluster-name }}
+          GKE_REGION: ${{ needs.call-run-terraform-setup.outputs.gke-cluster-region }}
+
+      - name: Get the AKS Kubeconfig
+        if: matrix.cloud == 'aks'
+        run: |
+          az login --username="$ARM_CLIENT_ID" --password="$ARM_CLIENT_SECRET" --tenant="$ARM_TENANT_ID" --service-principal
+          az aks get-credentials --name "$AKS_CLUSTER_NAME" --resource-group "$AKS_CLUSTER_RG" --admin
+        shell: bash
+        env:
+          AKS_CLUSTER_NAME: ${{ needs.call-run-terraform-setup.outputs.aks-cluster-name }}
+          AKS_CLUSTER_RG: ${{ needs.call-run-terraform-setup.outputs.aks-cluster-resource-group }}
+          ARM_CLIENT_ID: ${{ secrets.azure-client-id }}
+          ARM_CLIENT_SECRET: ${{ secrets.azure-client-secret }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.azure-subscription-id }}
+          ARM_TENANT_ID: ${{ secrets.azure-tenant-id }}
+
+      - name: Run tests
+        run:  |
+          ./run-tests.sh
+        shell: bash
+        env:
+          FLUENTBIT_IMAGE_REPOSITORY: ${{ inputs.image_name }}
+          FLUENTBIT_IMAGE_TAG: ${{ inputs.image_tag }}
+          HOSTED_OPENSEARCH_HOST: ${{ needs.call-run-terraform-setup.outputs.aws-opensearch-endpoint }}
+          HOSTED_OPENSEARCH_PORT: 443
+          HOSTED_OPENSEARCH_USERNAME: admin
+          HOSTED_OPENSEARCH_PASSWORD: ${{ secrets.opensearch_admin_password }}
