@@ -627,7 +627,7 @@ int flb_engine_start(struct flb_config *config)
     ret = mk_event_channel_create(config->evl,
                                   &config->ch_manager[0],
                                   &config->ch_manager[1],
-                                  config);
+                                  &config->ch_event);
     if (ret != 0) {
         flb_error("[engine] could not create manager channels");
         return -1;
