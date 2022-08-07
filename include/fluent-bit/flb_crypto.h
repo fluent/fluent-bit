@@ -28,12 +28,21 @@
 
 
 struct flb_crypto {
+    const EVP_MD *digest_algorithm;
     EVP_PKEY_CTX *backend_context;
     int           last_operation;
+    int           padding_type;
     size_t        block_size;
     unsigned long last_error;
     EVP_PKEY     *key;
 };
+
+int flb_crypto_init(struct flb_crypto *context,
+                    int padding_type,
+                    int digest_algorithm,
+                    int key_type,
+                    unsigned char *key,
+                    size_t key_length);
 
 int flb_crypto_cleanup(struct flb_crypto *context);
 
@@ -63,6 +72,8 @@ int flb_crypto_decrypt(struct flb_crypto *context,
                        size_t *output_length);
 
 int flb_crypto_sign_simple(int key_type,    
+                           int padding_type,
+                           int digest_algorithm,
                            unsigned char *key,
                            size_t key_length, 
                            unsigned char *input_buffer, 
@@ -70,14 +81,16 @@ int flb_crypto_sign_simple(int key_type,
                            unsigned char *output_buffer, 
                            size_t *output_length);
 
-int flb_crypto_encrypt_simple(unsigned char *key,
+int flb_crypto_encrypt_simple(int padding_type,
+                              unsigned char *key,
                               size_t key_length, 
                               unsigned char *input_buffer, 
                               size_t input_length,
                               unsigned char *output_buffer, 
                               size_t *output_length);
 
-int flb_crypto_decrypt_simple(unsigned char *key,
+int flb_crypto_decrypt_simple(int padding_type,
+                              unsigned char *key,
                               size_t key_length, 
                               unsigned char *input_buffer, 
                               size_t input_length,
