@@ -13,7 +13,7 @@ static size_t get_sample_digest_data(unsigned char ***buffer_list,
                                      char **precomputed_digest,
                                      int *precomputed_digest_type)
 {
-    static const int    digest_type = FLB_CRYPTO_SHA512;
+    static const int    digest_type = FLB_DIGEST_SHA512;
     static size_t       lengths[] = {0, 0, 0, 0};
     static const char  *buffers[] = {
                                         "This is one ",
@@ -57,7 +57,7 @@ static void test_digest_abcdef()
     uint8_t buf[64];
     char dhex[128];
 
-    flb_digest_init(&digest, FLB_CRYPTO_SHA512);
+    flb_digest_init(&digest, FLB_DIGEST_SHA512);
     flb_digest_update(&digest, (unsigned char *) "abc", 3);
     flb_digest_update(&digest, (unsigned char *) "def", 3);
     flb_digest_finalize(&digest, buf, sizeof(buf));
@@ -73,7 +73,7 @@ static void test_digest_offbyone()
     uint8_t buf[64];
     char dhex[128];
 
-    flb_digest_init(&digest, FLB_CRYPTO_SHA512);
+    flb_digest_init(&digest, FLB_DIGEST_SHA512);
     flb_digest_update(&digest, (unsigned char *) "0123456789abcdef0123456789abcdef", 32);
     flb_digest_update(&digest, (unsigned char *) "0123456789abcdef0123456789abcdef", 32);
     flb_digest_update(&digest, (unsigned char *) "0123456789abcdef0123456789abcdef", 32);
@@ -102,7 +102,7 @@ static void test_digest_standard()
                                           &ref_hex_digest, &ref_digest_type);
 
     TEST_CHECK(buffer_count > 0);
-    TEST_CHECK(ref_digest_type == FLB_CRYPTO_SHA512);
+    TEST_CHECK(ref_digest_type == FLB_DIGEST_SHA512);
 
     result = flb_digest_init(&digest, ref_digest_type);
     TEST_CHECK(result == FLB_CRYPTO_SUCCESS);
@@ -135,7 +135,7 @@ static void test_digest_simple_batch()
                                           &ref_hex_digest, &ref_digest_type);
 
     TEST_CHECK(buffer_count > 0);
-    TEST_CHECK(ref_digest_type == FLB_CRYPTO_SHA512);
+    TEST_CHECK(ref_digest_type == FLB_DIGEST_SHA512);
 
     result = flb_digest_simple_batch(ref_digest_type,
                                      buffer_count,

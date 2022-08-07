@@ -7,6 +7,7 @@ set(UNIT_TESTS_FILES
   pipe.c
   sds.c
   hmac.c
+  crypto.c
   digest.c
   slist.c
   router.c
