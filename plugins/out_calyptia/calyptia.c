@@ -133,7 +133,7 @@ static int get_machine_id(struct flb_calyptia *ctx, char **out_buf, size_t *out_
         return -1;
     }
 
-    ret = flb_digest_simple(FLB_CRYPTO_SHA256,
+    ret = flb_digest_simple(FLB_DIGEST_SHA256,
                             (unsigned char *) buf,
                             s,
                             sha256_buf,
