@@ -16,7 +16,11 @@
  */
 
 #include <fluent-bit/flb_hmac.h>
+
+#include <openssl/params.h>
+#include <openssl/evp.h>
 #include <openssl/bio.h>
+#include <string.h>
 
 static const char *flb_crypto_get_algorithm_name_by_id(int algorithm_id)
 {
