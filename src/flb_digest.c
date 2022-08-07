@@ -18,17 +18,17 @@
 #include <fluent-bit/flb_digest.h>
 #include <openssl/bio.h>
 
-static const EVP_MD *flb_crypto_get_algorithm_instance_by_id(int algorithm_id)
+static const EVP_MD *flb_crypto_get_digest_algorithm_instance_by_id(int algorithm_id)
 {
     const EVP_MD *algorithm;
 
-    if (algorithm_id == FLB_CRYPTO_SHA256) {
+    if (algorithm_id == FLB_DIGEST_SHA256) {
         algorithm = EVP_sha256();
     }
-    else if (algorithm_id == FLB_CRYPTO_SHA512) {
+    else if (algorithm_id == FLB_DIGEST_SHA512) {
         algorithm = EVP_sha512();
     }
-    else if (algorithm_id == FLB_CRYPTO_MD5) {
+    else if (algorithm_id == FLB_DIGEST_MD5) {
         algorithm = EVP_md5();
     }
     else {
@@ -47,7 +47,7 @@ int flb_digest_init(struct flb_digest *context, int hash_type)
         return FLB_CRYPTO_INVALID_ARGUMENT;
     }
 
-    digest_algorithm = flb_crypto_get_algorithm_instance_by_id(hash_type);
+    digest_algorithm = flb_crypto_get_digest_algorithm_instance_by_id(hash_type);
 
     if (digest_algorithm == NULL) {
         return FLB_CRYPTO_INVALID_ARGUMENT;

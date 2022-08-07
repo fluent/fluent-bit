@@ -22,13 +22,13 @@ static const char *flb_crypto_get_algorithm_name_by_id(int algorithm_id)
 {
     const char *algorithm_name;
 
-    if (algorithm_id == FLB_CRYPTO_SHA256) {
+    if (algorithm_id == FLB_DIGEST_SHA256) {
         algorithm_name = "SHA-256";
     }
-    else if (algorithm_id == FLB_CRYPTO_SHA512) {
+    else if (algorithm_id == FLB_DIGEST_SHA512) {
         algorithm_name = "SHA-512";
     }
-    else if (algorithm_id == FLB_CRYPTO_MD5) {
+    else if (algorithm_id == FLB_DIGEST_MD5) {
         algorithm_name = "MD5";
     }
     else {
@@ -88,7 +88,7 @@ int flb_hmac_init(struct flb_hmac *context,
     }
 
     hmac_parameters[0] = OSSL_PARAM_construct_utf8_string("digest",
-                                                          digest_algorithm_name,
+                                                          (char *) digest_algorithm_name,
                                                           0);
     hmac_parameters[1] = OSSL_PARAM_construct_end();
 
