@@ -197,7 +197,7 @@ static int jwt_encode(char *payload, char *secret,
     flb_sds_cat(out, buf, olen);
 
     /* do sha256() of base64(header).base64(payload) */
-    ret = flb_digest_simple(FLB_CRYPTO_SHA256,
+    ret = flb_digest_simple(FLB_DIGEST_SHA256,
                             (unsigned char *) out, flb_sds_len(out),
                             sha256_buf, sizeof(sha256_buf));
 
@@ -212,6 +212,8 @@ static int jwt_encode(char *payload, char *secret,
     sig_len = sizeof(sig);
 
     ret = flb_crypto_sign_simple(FLB_CRYPTO_PRIVATE_KEY,
+                                 FLB_CRYPTO_PADDING_PKCS1,
+                                 FLB_DIGEST_SHA256,
                                  (unsigned char *) secret, len,
                                  sha256_buf, sizeof(sha256_buf),
                                  sig, &sig_len);
