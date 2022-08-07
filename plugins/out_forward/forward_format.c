@@ -94,7 +94,7 @@ static int append_options(struct flb_forward *ctx,
          * for ack we calculate  sha512 of context, take 16 bytes,
          * make 32 byte hex string of it
          */
-        result = flb_digest_simple(FLB_CRYPTO_SHA512,
+        result = flb_digest_simple(FLB_DIGEST_SHA512,
                                    data, bytes,
                                    checksum, sizeof(checksum));
 
