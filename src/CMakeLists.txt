@@ -313,6 +313,11 @@ if(FLB_WASM)
   add_subdirectory(wasm)
 endif()
 
+# WAMRC compiler
+if(FLB_WAMRC)
+  add_subdirectory(wamrc)
+endif()
+
 # HTTP Server
 if(FLB_HTTP_SERVER)
   set(FLB_DEPS

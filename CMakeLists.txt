@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.0)
 project(fluent-bit
-  LANGUAGES C ASM)
+  LANGUAGES C ASM CXX)
 
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  2)
@@ -113,6 +113,7 @@ option(FLB_AWS_ERROR_REPORTER  "Build with aws error reporting support"      No)
 option(FLB_ARROW               "Build with Apache Arrow support"             No)
 option(FLB_WINDOWS_DEFAULTS    "Build with predefined Windows settings"     Yes)
 option(FLB_WASM                "Build with WASM runtime support"            Yes)
+option(FLB_WAMRC               "Build with WASM AOT compiler executable"    Yes)
 
 # Native Metrics Support (cmetrics)
 option(FLB_METRICS             "Enable metrics support"       Yes)
