@@ -11,13 +11,13 @@
 # docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7" -f ./dockerfiles/Dockerfile.multiarch --build-arg FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v1.8.11.tar.gz ./dockerfiles/
 
 # Set this to the current release version: it gets done so as part of the release.
-ARG RELEASE_VERSION=1.9.5
+ARG RELEASE_VERSION=1.9.6
 
 # For multi-arch builds - assumption is running on an AMD64 host
 FROM multiarch/qemu-user-static:x86_64-arm as qemu-arm32
 FROM multiarch/qemu-user-static:x86_64-aarch64 as qemu-arm64
 
-FROM debian:bullseye-slim as builder
+FROM debian:bullseye-slim as builder-base
 
 COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
@@ -56,6 +56,8 @@ RUN apt-get update && \
 WORKDIR /src/fluent-bit/
 COPY . ./
 
+# We split the builder setup out so people can target it or use as a base image without doing a full build.
+FROM builder-base as builder
 WORKDIR /src/fluent-bit/build/
 RUN cmake -DFLB_RELEASE=On \
           -DFLB_TRACE=Off \
