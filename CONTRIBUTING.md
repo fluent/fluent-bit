@@ -229,7 +229,11 @@ A particular set of changes might want to be applied to the current or previous 
 
 ## Unit Tests
 
-Fluent bit uses ctest for unit testing. These tests are separated by internal and runtime tests which are in the `tests/internal` and `tests/runtime` directories respecitively. To enable these tests they must be enabled using cmake.
+Fluent bit uses ctest for unit testing. 
+
+These tests are separated by internal and runtime tests which are in the `tests/internal` and `tests/runtime` directories respecitively. 
+
+To enable these tests they must be enabled using cmake.
 
 To enable the runtime tests:
 
@@ -245,7 +249,9 @@ $ cd build ; cmake .. -DFLB_TESTS_INTERNAL=On
 
 To enable both a combination of both `-DFLB_TESTS_RUNTIME` and `-DFLB_TESTS_INTERNAL` can be used.
 
-These tests will be compiled along with the main fluent bit binary. They can be run all at once by running `make test` or individually by running the relevant tests binary from the `build/bin` directory, ie:
+These tests will be compiled along with the main fluent bit binary.
+
+They can be run all at once by running `make test` or individually by running the relevant tests binary from the `build/bin` directory, ie:
 
 ```shell
 build$ ./bin/flb-it-core-timeout
