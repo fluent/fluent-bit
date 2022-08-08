@@ -545,19 +545,11 @@ cmake ...
 make
 ```
 
-Be aware of any permissions issues with the filesystem on the VM vs the host.
-You may prefer to build to an un-exposed filesystem:
-
-```shell
-vagrant up
-vagrant ssh
-mkdir -p /tmp/build
-cd /tmp/build
-cmake ... /vagrant
-make
-```
-
 It also acts as a reference for the tooling required to be installed on a local PC if you want to build things.
+
+The VM created by Vagrant uses `rsync` to synchronize the files with rather than directly mounting the local directory.
+The reason is to handle any permission issues and isolate the underlying host filesystem.
+Refer to the Vagrant documentation for syncing changes: <https://www.vagrantup.com/docs/cli/rsync-auto>
 
 To enable the unit tests run:
 
