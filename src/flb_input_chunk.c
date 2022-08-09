@@ -1760,6 +1760,10 @@ const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size)
     pre_size = flb_input_chunk_get_real_size(ic);
     if (cio_chunk_is_up(ic->chunk) == CIO_FALSE) {
         ret = cio_chunk_up(ic->chunk);
+	if (ret == CIO_CORRUPTED) {
+	    flb_input_chunk_destroy(ic, FLB_TRUE);
+	    return NULL;
+	}
         if (ret == -1) {
             return NULL;
         }
