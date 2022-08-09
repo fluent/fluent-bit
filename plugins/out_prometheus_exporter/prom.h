@@ -21,14 +21,14 @@
 #define FLB_PROMETHEUS_EXPORTER_H
 
 #include <fluent-bit/flb_output_plugin.h>
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_hash_table.h>
 
 /* Plugin context */
 struct prom_exporter {
     void *http;
 
     /* hash table for metrics reported */
-    struct flb_hash *ht_metrics;
+    struct flb_hash_table *ht_metrics;
 
     /* add timestamp to every metric */
     int add_timestamp;
