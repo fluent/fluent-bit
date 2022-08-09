@@ -35,7 +35,7 @@
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_kv.h>
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_ring_buffer.h>
 
@@ -190,16 +190,18 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         id =  instance_id(plugin, config);
 
         /* Index for log Chunks (hash table) */
-        instance->ht_log_chunks = flb_hash_create(FLB_HASH_EVICT_NONE, 512, 0);
+        instance->ht_log_chunks = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE,
+                                                        512, 0);
         if (!instance->ht_log_chunks) {
             flb_free(instance);
             return NULL;
         }
 
         /* Index for metric Chunks (hash table) */
-        instance->ht_metric_chunks = flb_hash_create(FLB_HASH_EVICT_NONE, 512, 0);
+        instance->ht_metric_chunks = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE,
+                                                           512, 0);
         if (!instance->ht_metric_chunks) {
-            flb_hash_destroy(instance->ht_log_chunks);
+            flb_hash_table_destroy(instance->ht_log_chunks);
             flb_free(instance);
             return NULL;
         }
@@ -218,8 +220,8 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         else {
             flb_error("[input] invalid plugin event type %i on '%s'",
                       plugin->event_type, instance->name);
-            flb_hash_destroy(instance->ht_log_chunks);
-            flb_hash_destroy(instance->ht_metric_chunks);
+            flb_hash_table_destroy(instance->ht_log_chunks);
+            flb_hash_table_destroy(instance->ht_metric_chunks);
             flb_free(instance);
             return NULL;
         }
@@ -616,11 +618,11 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
 
     /* hash table for chunks */
     if (ins->ht_log_chunks) {
-        flb_hash_destroy(ins->ht_log_chunks);
+        flb_hash_table_destroy(ins->ht_log_chunks);
     }
 
     if (ins->ht_metric_chunks) {
-        flb_hash_destroy(ins->ht_metric_chunks);
+        flb_hash_table_destroy(ins->ht_metric_chunks);
     }
 
     if (ins->ch_events[0] > 0) {
