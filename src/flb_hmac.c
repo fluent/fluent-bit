@@ -17,11 +17,15 @@
 
 #include <fluent-bit/flb_hmac.h>
 
+#ifndef FLB_CRYPTO_OPENSSL_LEGACY_MODE
 #include <openssl/params.h>
+#endif
+
 #include <openssl/evp.h>
 #include <openssl/bio.h>
 #include <string.h>
 
+#ifndef FLB_CRYPTO_OPENSSL_LEGACY_MODE
 static const char *flb_crypto_get_algorithm_name_by_id(int algorithm_id)
 {
     const char *algorithm_name;
@@ -50,6 +54,7 @@ int flb_hmac_init(struct flb_hmac *context,
     const char *digest_algorithm_name;
     OSSL_PARAM  hmac_parameters[2];
     int         result;
+
 
     if (context == NULL) {
         return FLB_CRYPTO_INVALID_ARGUMENT;
@@ -112,11 +117,84 @@ int flb_hmac_init(struct flb_hmac *context,
     return FLB_CRYPTO_SUCCESS;
 }
 
+#else
+
+static const EVP_MD *flb_crypto_get_digest_algorithm_instance_by_id(int algorithm_id)
+{
+    const EVP_MD *algorithm;
+
+    if (algorithm_id == FLB_DIGEST_SHA256) {
+        algorithm = EVP_sha256();
+    }
+    else if (algorithm_id == FLB_DIGEST_SHA512) {
+        algorithm = EVP_sha512();
+    }
+    else if (algorithm_id == FLB_DIGEST_MD5) {
+        algorithm = EVP_md5();
+    }
+    else {
+        algorithm = NULL;
+    }
+
+    return algorithm;
+}
+
+int flb_hmac_init(struct flb_hmac *context,
+                  int algorithm_id,
+                  unsigned char *key,
+                  size_t key_length)
+{
+    const EVP_MD *digest_algorithm_instance;
+    int           result;
+
+
+    if (context == NULL) {
+        return FLB_CRYPTO_INVALID_ARGUMENT;
+    }
+
+    if (key == NULL) {
+        return FLB_CRYPTO_INVALID_ARGUMENT;
+    }
+
+    if (key_length == 0) {
+        return FLB_CRYPTO_INVALID_ARGUMENT;
+    }
+
+    memset(context, 0, sizeof(struct flb_hmac));
+
+    digest_algorithm_instance = flb_crypto_get_digest_algorithm_instance_by_id(algorithm_id);
+
+    if (digest_algorithm_instance == NULL) {
+        return FLB_CRYPTO_INVALID_ARGUMENT;
+    }
+
+    context->backend_context = &context->backend_context_data;
+
+    HMAC_CTX_init(context->backend_context);
+
+    result = HMAC_Init_ex(context->backend_context,
+                          key, key_length,
+                          digest_algorithm_instance,
+                          NULL);
+
+    if (result != 1) {
+        context->last_error = ERR_get_error();
+
+        return FLB_CRYPTO_BACKEND_ERROR;
+    }
+
+    context->digest_size = EVP_MD_size(digest_algorithm_instance);
+
+    return FLB_CRYPTO_SUCCESS;
+}
+#endif
+
 int flb_hmac_finalize(struct flb_hmac *context,
                       unsigned char *signature_buffer,
                       size_t signature_buffer_size)
 {
     size_t signature_length;
+    int    error_detected;
     int    result;
 
     if (context->backend_context == NULL) {
@@ -131,12 +209,24 @@ int flb_hmac_finalize(struct flb_hmac *context,
         return FLB_CRYPTO_INVALID_ARGUMENT;
     }
 
+#ifndef FLB_CRYPTO_OPENSSL_LEGACY_MODE
     result = EVP_MAC_final(context->backend_context,
                            signature_buffer,
                            &signature_length,
                            signature_buffer_size);
 
-    if (result == 0) {
+    error_detected = (result == 0);
+#else
+    signature_length = 0;
+
+    result = HMAC_Final(context->backend_context,
+                        signature_buffer,
+                        (unsigned int *) &signature_length);
+
+    error_detected = (result != 1);
+#endif
+
+    if (error_detected) {
         context->last_error = ERR_get_error();
 
         return FLB_CRYPTO_BACKEND_ERROR;
@@ -151,6 +241,7 @@ int flb_hmac_update(struct flb_hmac *context,
                     unsigned char *data,
                     size_t data_length)
 {
+    int error_detected;
     int result;
 
     if (context->backend_context == NULL) {
@@ -161,11 +252,21 @@ int flb_hmac_update(struct flb_hmac *context,
         return FLB_CRYPTO_INVALID_ARGUMENT;
     }
 
+#ifndef FLB_CRYPTO_OPENSSL_LEGACY_MODE
     result = EVP_MAC_update(context->backend_context,
                             data,
                             data_length);
 
-    if (result == 0) {
+    error_detected = (result == 0);
+#else
+    result = HMAC_Update(context->backend_context,
+                         data,
+                         data_length);
+
+    error_detected = (result != 1);
+#endif
+
+    if (error_detected) {
         context->last_error = ERR_get_error();
 
         return FLB_CRYPTO_BACKEND_ERROR;
@@ -176,6 +277,7 @@ int flb_hmac_update(struct flb_hmac *context,
 
 int flb_hmac_cleanup(struct flb_hmac *context)
 {
+#ifndef FLB_CRYPTO_OPENSSL_LEGACY_MODE
     if (context->backend_context != NULL) {
         EVP_MAC_CTX_free(context->backend_context);
 
@@ -187,6 +289,13 @@ int flb_hmac_cleanup(struct flb_hmac *context)
 
         context->mac_algorithm = NULL;
     }
+#else
+    if (context->backend_context != NULL) {
+        HMAC_CTX_cleanup(context->backend_context);
+
+        context->backend_context = NULL;
+    }
+#endif
 
     return FLB_CRYPTO_SUCCESS;
 }
