@@ -21,7 +21,7 @@
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_upstream_node.h>
 
 /* Create a new Upstream Node context */
@@ -35,7 +35,7 @@ struct flb_upstream_node *flb_upstream_node_create(const char *name, const char 
                                                    const char *tls_crt_file,
                                                    const char *tls_key_file,
                                                    const char *tls_key_passwd,
-                                                   struct flb_hash *ht,
+                                                   struct flb_hash_table *ht,
                                                    struct flb_config *config)
 {
     int i_port;
@@ -175,7 +175,7 @@ const char *flb_upstream_node_get_property(const char *prop,
 
     len = strlen(prop);
 
-    ret = flb_hash_get(node->ht, prop, len, &value, &size);
+    ret = flb_hash_table_get(node->ht, prop, len, &value, &size);
     if (ret == -1) {
         return NULL;
     }
@@ -200,7 +200,7 @@ void flb_upstream_node_destroy(struct flb_upstream_node *node)
     }
 #endif
 
-    flb_hash_destroy(node->ht);
+    flb_hash_table_destroy(node->ht);
     if (node->u) {
         flb_upstream_destroy(node->u);
     }
