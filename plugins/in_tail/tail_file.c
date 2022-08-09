@@ -32,7 +32,7 @@
 #include <fluent-bit/flb_parser.h>
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_hash_table.h>
 #endif
 
 #include "tail.h"
@@ -590,13 +590,13 @@ static inline void drop_bytes(char *buf, size_t len, int pos, int bytes)
 static void cb_results(const char *name, const char *value,
                        size_t vlen, void *data)
 {
-    struct flb_hash *ht = data;
+    struct flb_hash_table *ht = data;
 
     if (vlen == 0) {
         return;
     }
 
-    flb_hash_add(ht, name, strlen(name), (void *) value, vlen);
+    flb_hash_table_add(ht, name, strlen(name), (void *) value, vlen);
 }
 #endif
 
@@ -616,7 +616,7 @@ static int tag_compose(char *tag, char *fname, char *out_buf, size_t *out_size,
 #ifdef FLB_HAVE_REGEX
     ssize_t n;
     struct flb_regex_search result;
-    struct flb_hash *ht;
+    struct flb_hash_table *ht;
     char *beg;
     char *end;
     int ret;
@@ -633,7 +633,8 @@ static int tag_compose(char *tag, char *fname, char *out_buf, size_t *out_size,
             return -1;
         }
         else {
-            ht = flb_hash_create(FLB_HASH_EVICT_NONE, FLB_HASH_TABLE_SIZE, FLB_HASH_TABLE_SIZE);
+            ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE,
+                                       FLB_HASH_TABLE_SIZE, FLB_HASH_TABLE_SIZE);
             flb_regex_parse(tag_regex, &result, cb_results, ht);
 
             for (p = tag, beg = p; (beg = strchr(p, '<')); p = end + 2) {
@@ -650,7 +651,7 @@ static int tag_compose(char *tag, char *fname, char *out_buf, size_t *out_size,
                     end--;
 
                     len = end - beg + 1;
-                    ret = flb_hash_get(ht, beg, len, (void *) &tmp, &tmp_s);
+                    ret = flb_hash_table_get(ht, beg, len, (void *) &tmp, &tmp_s);
                     if (ret != -1) {
                         memcpy(out_buf + buf_s, tmp, tmp_s);
                         buf_s += tmp_s;
@@ -664,13 +665,12 @@ static int tag_compose(char *tag, char *fname, char *out_buf, size_t *out_size,
                     flb_plg_error(ctx->ins,
                                   "missing closing angle bracket in tag %s "
                                   "at position %lu", tag, beg - tag);
-                    flb_hash_destroy(ht);
+                    flb_hash_table_destroy(ht);
                     return -1;
                 }
             }
 
-            flb_hash_destroy(ht);
-
+            flb_hash_table_destroy(ht);
             if (*p) {
                 len = strlen(p);
                 memcpy(out_buf + buf_s, p, len);
@@ -784,12 +784,12 @@ static inline int flb_tail_file_exists(struct stat *st,
     }
 
     /* static hash */
-    if (flb_hash_exists(ctx->static_hash, hash)) {
+    if (flb_hash_table_exists(ctx->static_hash, hash)) {
         return FLB_TRUE;
     }
 
     /* event hash */
-    if (flb_hash_exists(ctx->event_hash, hash)) {
+    if (flb_hash_table_exists(ctx->event_hash, hash)) {
         return FLB_TRUE;
     }
 
@@ -1096,14 +1096,14 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     if (mode == FLB_TAIL_STATIC) {
         mk_list_add(&file->_head, &ctx->files_static);
         ctx->files_static_count++;
-        flb_hash_add(ctx->static_hash, file->hash_key, flb_sds_len(file->hash_key),
-                     file, sizeof(file));
+        flb_hash_table_add(ctx->static_hash, file->hash_key, flb_sds_len(file->hash_key),
+                           file, sizeof(file));
         tail_signal_manager(file->config);
     }
     else if (mode == FLB_TAIL_EVENT) {
         mk_list_add(&file->_head, &ctx->files_event);
-        flb_hash_add(ctx->event_hash, file->hash_key, flb_sds_len(file->hash_key),
-                     file, sizeof(file));
+        flb_hash_table_add(ctx->event_hash, file->hash_key, flb_sds_len(file->hash_key),
+                           file, sizeof(file));
 
         /* Register this file into the fs_event monitoring */
         ret = flb_tail_fs_add(ctx, file);
@@ -1201,8 +1201,8 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     }
 
     /* remove any potential entry from the hash tables */
-    flb_hash_del(ctx->static_hash, file->hash_key);
-    flb_hash_del(ctx->event_hash, file->hash_key);
+    flb_hash_table_del(ctx->static_hash, file->hash_key);
+    flb_hash_table_del(ctx->event_hash, file->hash_key);
 
     flb_free(file->buf_data);
     flb_free(file->name);
@@ -1526,11 +1526,11 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
     /* List swap: change from 'static' to 'event' list */
     mk_list_del(&file->_head);
     ctx->files_static_count--;
-    flb_hash_del(ctx->static_hash, file->hash_key);
+    flb_hash_table_del(ctx->static_hash, file->hash_key);
 
     mk_list_add(&file->_head, &file->config->files_event);
-    flb_hash_add(ctx->event_hash, file->hash_key, flb_sds_len(file->hash_key),
-                 file, sizeof(file));
+    flb_hash_table_add(ctx->event_hash, file->hash_key, flb_sds_len(file->hash_key),
+                       file, sizeof(file));
 
     file->tail_mode = FLB_TAIL_EVENT;
 
