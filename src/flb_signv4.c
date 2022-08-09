@@ -27,7 +27,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_sds.h>
-#include <fluent-bit/flb_hash.h>
+// #include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_hmac.h>
 #include <fluent-bit/flb_digest.h>
