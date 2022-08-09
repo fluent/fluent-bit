@@ -147,8 +147,8 @@ struct flb_tail_config {
     struct cmt_counter *cmt_files_rotated;
 
     /* Hash: hash tables for quick acess to registered files */
-    struct flb_hash *static_hash;
-    struct flb_hash *event_hash;
+    struct flb_hash_table *static_hash;
+    struct flb_hash_table *event_hash;
 
     struct flb_config *config;
 };
