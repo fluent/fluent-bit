@@ -55,11 +55,10 @@
 #include <fluent-bit/flb_crypto_constants.h>
 
 struct flb_hmac {
-#ifndef FLB_CRYPTO_OPENSSL_LEGACY_MODE
+#if FLB_CRYPTO_OPENSSL_COMPAT_MODE >= 3
     EVP_MAC_CTX  *backend_context;
     EVP_MAC      *mac_algorithm;
 #else
-    HMAC_CTX      backend_context_data;
     HMAC_CTX     *backend_context;
 #endif
 
