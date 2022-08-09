@@ -21,7 +21,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_upstream_ha.h>
 #include <fluent-bit/flb_upstream_node.h>
@@ -134,7 +134,7 @@ static struct flb_upstream_node *create_node(int id,
     char *tls_key_passwd = NULL;
     struct mk_list *head;
     struct flb_kv *entry;
-    struct flb_hash *ht;
+    struct flb_hash_table *ht;
     const char *known_keys[] = {"name", "host", "port",
                                 "tls", "tls.vhost", "tls.verify", "tls.debug",
                                 "tls.ca_path", "tls.ca_file", "tls.crt_file",
@@ -206,7 +206,7 @@ static struct flb_upstream_node *create_node(int id,
      * Create hash table to store unknown key/values that might be used
      * by the caller plugin.
      */
-    ht = flb_hash_create(FLB_HASH_EVICT_NONE, 32, 256);
+    ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 32, 256);
     if (!ht) {
         flb_error("[upstream_ha] error creating hash table");
         return NULL;
@@ -241,7 +241,7 @@ static struct flb_upstream_node *create_node(int id,
         key[klen] = '\0';
 
         /* Add the key and value to the hash table */
-        ret = flb_hash_add(ht, key, klen, entry->val, vlen);
+        ret = flb_hash_table_add(ht, key, klen, entry->val, vlen);
         if (ret == -1) {
             flb_error("[upstream_ha] cannot add key %s to hash table",
                       entry->key);
