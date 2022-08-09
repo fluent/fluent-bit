@@ -33,7 +33,7 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_mp.h>
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_hash_table.h>
 
 #ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics.h>
@@ -306,8 +306,8 @@ struct flb_input_instance {
      *
      * Starting from v1.8 we have separate hash tables for logs and metrics.
      */
-    struct flb_hash *ht_log_chunks;
-    struct flb_hash *ht_metric_chunks;
+    struct flb_hash_table *ht_log_chunks;
+    struct flb_hash_table *ht_metric_chunks;
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
