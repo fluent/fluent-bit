@@ -175,6 +175,8 @@ int flb_hmac_init(struct flb_hmac *context,
     if (context->backend_context == NULL) {
         return FLB_CRYPTO_ALLOCATION_ERROR;
     }
+
+    HMAC_CTX_init(context->backend_context);
 #else
     context->backend_context = HMAC_CTX_new();
 
@@ -184,8 +186,6 @@ int flb_hmac_init(struct flb_hmac *context,
         return FLB_CRYPTO_BACKEND_ERROR;
     }
 #endif
-
-    HMAC_CTX_init(context->backend_context);
 
     result = HMAC_Init_ex(context->backend_context,
                           key, key_length,
@@ -306,11 +306,13 @@ int flb_hmac_cleanup(struct flb_hmac *context)
     }
 #else
     if (context->backend_context != NULL) {
+#if FLB_CRYPTO_OPENSSL_COMPAT_MODE == 0
         HMAC_CTX_cleanup(context->backend_context);
 
-#if FLB_CRYPTO_OPENSSL_COMPAT_MODE == 0
         flb_free(context->backend_context);
 #else
+        HMAC_CTX_reset(context->backend_context);
+
         HMAC_CTX_free(context->backend_context);
 #endif
 
