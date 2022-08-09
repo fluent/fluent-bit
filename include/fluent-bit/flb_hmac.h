@@ -54,10 +54,15 @@
 #include <openssl/engine.h>
 #include <fluent-bit/flb_crypto_constants.h>
 
-
 struct flb_hmac {
+#ifndef FLB_CRYPTO_OPENSSL_LEGACY_MODE
     EVP_MAC_CTX  *backend_context;
     EVP_MAC      *mac_algorithm;
+#else
+    HMAC_CTX      backend_context_data;
+    HMAC_CTX     *backend_context;
+#endif
+
     size_t        digest_size;
     unsigned long last_error;
 };

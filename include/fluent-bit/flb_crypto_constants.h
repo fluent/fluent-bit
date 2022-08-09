@@ -18,6 +18,12 @@
 #ifndef FLB_CRYPTO_CONSTANTS_H
 #define FLB_CRYPTO_CONSTANTS_H
 
+#include <openssl/opensslv.h>
+
+#if OPENSSL_VERSION_NUMBER < 0x30000000
+#define FLB_CRYPTO_OPENSSL_LEGACY_MODE
+#endif
+
 #define FLB_CRYPTO_SUCCESS            0
 #define FLB_CRYPTO_BACKEND_ERROR      1
 #define FLB_CRYPTO_INVALID_STATE      2
@@ -31,7 +37,6 @@
 #define FLB_CRYPTO_PADDING_PKCS1_OEAP 2
 #define FLB_CRYPTO_PADDING_PKCS1_X931 3
 #define FLB_CRYPTO_PADDING_PKCS1_PSS  4
-#define FLB_CRYPTO_PADDING_PKCS1_TLS  5
 
 #define FLB_DIGEST_NONE               0
 #define FLB_DIGEST_MD5                1
