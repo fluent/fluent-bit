@@ -23,7 +23,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input_plugin.h>
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_metrics.h>
 
 #include <monkey/mk_core/mk_list.h>
@@ -68,7 +68,7 @@ struct we_perflib_counter {
 struct we_perflib_instance {
     char                     *name;
     struct we_perflib_object *parent;
-    struct flb_hash          *counters;
+    struct flb_hash_table    *counters;
     struct mk_list            _head;
 };
 
@@ -79,20 +79,20 @@ struct we_perflib_object {
     int64_t           hundred_ns_time;
     size_t            counter_count;
     size_t            instance_count;
-    struct flb_hash  *instances;
+    struct flb_hash_table *instances;
     struct mk_list    counter_definitions;
 };
 
 
 struct we_perflib_context {
-    struct flb_hash *counter_indexes;
+    struct flb_hash_table *counter_indexes;
 };
 
 struct we_cpu_counters {
     struct we_perflib_metric_source *metric_sources;
     struct we_perflib_metric_spec   *metric_specs;
     int                              operational;
-    struct flb_hash                 *metrics;
+    struct flb_hash_table           *metrics;
     char                            *query;
 };
 
