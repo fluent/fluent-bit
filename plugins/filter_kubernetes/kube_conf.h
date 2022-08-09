@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_regex.h>
+#include <fluent-bit/flb_hash_table.h>
 
 /*
  * Since this filter might get a high number of request per second,
@@ -161,7 +162,7 @@ struct flb_kube {
     struct flb_tls *tls;
 
     struct flb_config *config;
-    struct flb_hash *hash_table;
+    struct flb_hash_table *hash_table;
     struct flb_upstream *upstream;
     struct flb_filter_instance *ins;
 };

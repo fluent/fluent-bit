@@ -20,7 +20,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_compat.h>
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_upstream.h>
@@ -1547,9 +1547,9 @@ int flb_kube_meta_get(struct flb_kube *ctx,
     }
 
     /* Check if we have some data associated to the cache key */
-    ret = flb_hash_get(ctx->hash_table,
-                       meta->cache_key, meta->cache_key_len,
-                       (void *) &hash_meta_buf, &hash_meta_size);
+    ret = flb_hash_table_get(ctx->hash_table,
+                             meta->cache_key, meta->cache_key_len,
+                             (void *) &hash_meta_buf, &hash_meta_size);
     if (ret == -1) {
         /* Retrieve API server meta and merge with local meta */
         ret = get_and_merge_meta(ctx, meta,
@@ -1560,9 +1560,9 @@ int flb_kube_meta_get(struct flb_kube *ctx,
             return 0;
         }
 
-        id = flb_hash_add(ctx->hash_table,
-                          meta->cache_key, meta->cache_key_len,
-                          tmp_hash_meta_buf, hash_meta_size);
+        id = flb_hash_table_add(ctx->hash_table,
+                                meta->cache_key, meta->cache_key_len,
+                                tmp_hash_meta_buf, hash_meta_size);
         if (id >= 0) {
             /*
              * Release the original buffer created on extract_meta() as a new
@@ -1570,8 +1570,8 @@ int flb_kube_meta_get(struct flb_kube *ctx,
              * the outgoing buffer and size.
              */
             flb_free(tmp_hash_meta_buf);
-            flb_hash_get_by_id(ctx->hash_table, id, meta->cache_key,
-                               &hash_meta_buf, &hash_meta_size);
+            flb_hash_table_get_by_id(ctx->hash_table, id, meta->cache_key,
+                                     &hash_meta_buf, &hash_meta_size);
         }
     }
 
