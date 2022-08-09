@@ -17,6 +17,7 @@
 
 #include <fluent-bit/flb_crypto.h>
 #include <openssl/bio.h>
+#include <string.h>
 
 static int flb_crypto_get_rsa_padding_type_by_id(int padding_type_id)
 {
@@ -33,9 +34,6 @@ static int flb_crypto_get_rsa_padding_type_by_id(int padding_type_id)
     }
     else if (padding_type_id == FLB_CRYPTO_PADDING_PKCS1_PSS) {
         result = RSA_PKCS1_PSS_PADDING;
-    }
-    else if (padding_type_id == FLB_CRYPTO_PADDING_PKCS1_TLS) {
-        result = RSA_PKCS1_WITH_TLS_PADDING;
     }
     else {
         result = FLB_CRYPTO_PADDING_NONE;
@@ -88,16 +86,18 @@ static int flb_crypto_import_pem_key(int key_type,
     if (io_provider != NULL) {
         if (ingested_key != NULL) {
             if (key_type == FLB_CRYPTO_PRIVATE_KEY) {
-                *ingested_key = PEM_read_bio_PrivateKey_ex(io_provider,
-                                                           NULL, NULL,
-                                                           NULL, NULL,
-                                                           NULL);
+                *ingested_key = PEM_read_bio_PrivateKey(io_provider,
+                                                        NULL, NULL,
+                                                        NULL);
             }
             else if (key_type == FLB_CRYPTO_PUBLIC_KEY) {
-                *ingested_key = PEM_read_bio_PUBKEY_ex(io_provider,
-                                                       NULL, NULL,
-                                                       NULL, NULL,
-                                                       NULL);
+                *ingested_key = PEM_read_bio_PUBKEY(io_provider,
+                                                    NULL, NULL,
+                                                    NULL);
+
+                // printf("\n\nFAILURE? %p\n\n", *ingested_key);
+                // printf("ERROR : %s\n", ERR_error_string(ERR_get_error(), NULL));
+                // exit(0);
             }
 
             if (*ingested_key != NULL) {
