@@ -94,7 +94,7 @@ void set_resource_type(struct flb_stackdriver *ctx)
 int resource_api_has_required_labels(struct flb_stackdriver *ctx)
 {
     struct mk_list *head;
-    struct flb_hash *ht;
+    struct flb_hash_table *ht;
     struct flb_kv *label_kv;
     char** required_labels;
     int i;
@@ -113,31 +113,31 @@ int resource_api_has_required_labels(struct flb_stackdriver *ctx)
         return FLB_FALSE;
     }
 
-    ht = flb_hash_create(FLB_HASH_EVICT_NONE, MAX_REQUIRED_LABEL_ENTRIES, 0);
+    ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, MAX_REQUIRED_LABEL_ENTRIES, 0);
     mk_list_foreach(head, &ctx->resource_labels_kvs) {
         label_kv = mk_list_entry(head, struct flb_kv, _head);
         for (i = 0; i < MAX_REQUIRED_LABEL_ENTRIES; i++) {
             if (required_labels[i] != NULL && flb_sds_cmp(label_kv->key,
                 required_labels[i], strlen(required_labels[i])) == 0) {
-                flb_hash_add(ht, required_labels[i], strlen(required_labels[i]), 
-                    NULL, 0);
+                flb_hash_table_add(ht, required_labels[i], strlen(required_labels[i]),
+                                   NULL, 0);
             }
         }
     }
 
     for (i = 0; i < MAX_REQUIRED_LABEL_ENTRIES; i++) {
         if (required_labels[i] != NULL) {
-            found = flb_hash_get(ht, required_labels[i], strlen(required_labels[i]),
-                &tmp_buf, &tmp_size);
+            found = flb_hash_table_get(ht, required_labels[i], strlen(required_labels[i]),
+                                       &tmp_buf, &tmp_size);
             if (found == -1) {
                 flb_plg_warn(ctx->ins, "labels set in resource_labels will not be applied" 
                   ", as the required resource label [%s] is missing", required_labels[i]);
                 ctx->should_skip_resource_labels_api = FLB_TRUE;
-                flb_hash_destroy(ht);
+                flb_hash_table_destroy(ht);
                 return FLB_FALSE;
             }
         }
     }
-    flb_hash_destroy(ht);
+    flb_hash_table_destroy(ht);
     return FLB_TRUE;
 }
