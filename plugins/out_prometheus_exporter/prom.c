@@ -97,7 +97,7 @@ static int cb_prom_init(struct flb_output_instance *ins,
     }
 
     /* Hash table for metrics */
-    ctx->ht_metrics = flb_hash_create(FLB_HASH_EVICT_NONE, 32, 0);
+    ctx->ht_metrics = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 32, 0);
     if (!ctx->ht_metrics) {
         flb_plg_error(ctx->ins, "could not initialize hash table for metrics");
         return -1;
@@ -134,8 +134,8 @@ static int hash_store(struct prom_exporter *ctx, struct flb_input_instance *ins,
     len = strlen(ins->name);
 
     /* store/override the content into the hash table */
-    ret = flb_hash_add(ctx->ht_metrics, ins->name, len,
-                       buf, cmt_sds_len(buf));
+    ret = flb_hash_table_add(ctx->ht_metrics, ins->name, len,
+                             buf, cmt_sds_len(buf));
     if (ret < 0) {
         return -1;
     }
@@ -149,7 +149,7 @@ static flb_sds_t hash_format_metrics(struct prom_exporter *ctx)
     flb_sds_t buf;
 
     struct mk_list *head;
-    struct flb_hash_entry *entry;
+    struct flb_hash_table_entry *entry;
 
 
     buf = flb_sds_create_size(size);
@@ -159,7 +159,7 @@ static flb_sds_t hash_format_metrics(struct prom_exporter *ctx)
 
     /* Take every hash entry and compose one buffer with the whole content */
     mk_list_foreach(head, &ctx->ht_metrics->entries) {
-        entry = mk_list_entry(head, struct flb_hash_entry, _head_parent);
+        entry = mk_list_entry(head, struct flb_hash_table_entry, _head_parent);
         flb_sds_cat_safe(&buf, entry->val, entry->val_size);
     }
 
@@ -256,7 +256,7 @@ static int cb_prom_exit(void *data, struct flb_config *config)
     }
 
     if (ctx->ht_metrics) {
-        flb_hash_destroy(ctx->ht_metrics);
+        flb_hash_table_destroy(ctx->ht_metrics);
     }
 
     flb_kv_release(&ctx->kv_labels);
