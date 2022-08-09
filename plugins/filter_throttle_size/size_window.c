@@ -182,8 +182,8 @@ struct throttle_size_table *create_throttle_size_table(size_t size)
         return NULL;
     }
     table->windows =
-        flb_hash_create(FLB_HASH_EVICT_NONE, size,
-                        FLB_SIZE_WINDOW_HASH_MAX_ENTRIES);
+        flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, size,
+                              FLB_SIZE_WINDOW_HASH_MAX_ENTRIES);
     if (!table->windows) {
         flb_errno();
         flb_free(table);
@@ -202,13 +202,13 @@ void destroy_throttle_size_table(struct throttle_size_table *ht)
     int i;
     struct mk_list *tmp;
     struct mk_list *head;
-    struct flb_hash_entry *entry;
-    struct flb_hash_table *table;
+    struct flb_hash_table_entry *entry;
+    struct flb_hash_table_chain *table;
 
     for (i = 0; i < ht->windows->size; i++) {
         table = &ht->windows->table[i];
         mk_list_foreach_safe(head, tmp, &table->chains) {
-            entry = mk_list_entry(head, struct flb_hash_entry, _head);
+            entry = mk_list_entry(head, struct flb_hash_table_entry, _head);
             free_stw_content((struct throttle_size_window *) entry->val);
             mk_list_del(&entry->_head);
             mk_list_del(&entry->_head_parent);
