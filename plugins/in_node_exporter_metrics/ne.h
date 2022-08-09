@@ -27,7 +27,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_regex.h>
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_metrics.h>
 
 struct flb_ne {
@@ -64,7 +64,7 @@ struct flb_ne {
     struct cmt_counter *cpu_guest_seconds;
 
     /* meminfo hash table */
-    struct flb_hash *meminfo_ht;
+    struct flb_hash_table *meminfo_ht;
 
     /* diskstats: abbreviation 'dt' */
     void *dt_metrics;
@@ -82,11 +82,11 @@ struct flb_ne {
     struct cmt_gauge   *st_procs_blocked;
 
     /* vmstat_linux */
-    struct flb_hash *vml_ht;
+    struct flb_hash_table *vml_ht;
     struct flb_regex *vml_regex_fields;
 
     /* netdev */
-    struct flb_hash *netdev_ht;
+    struct flb_hash_table *netdev_ht;
 
     /* time */
     struct cmt_gauge *time;
