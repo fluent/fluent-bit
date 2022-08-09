@@ -12,7 +12,7 @@ set(src
   flb_env.c
   flb_file.c
   flb_uri.c
-  flb_hash.c
+  flb_hash_table.c
   flb_help.c
   flb_pack.c
   flb_pack_gelf.c
