@@ -16,8 +16,9 @@
  */
 
 #include <fluent-bit/flb_hmac.h>
+#include <fluent-bit/flb_mem.h>
 
-#ifndef FLB_CRYPTO_OPENSSL_LEGACY_MODE
+#if FLB_CRYPTO_OPENSSL_COMPAT_MODE >= 3
 #include <openssl/params.h>
 #endif
 
@@ -25,7 +26,7 @@
 #include <openssl/bio.h>
 #include <string.h>
 
-#ifndef FLB_CRYPTO_OPENSSL_LEGACY_MODE
+#if FLB_CRYPTO_OPENSSL_COMPAT_MODE >= 3
 static const char *flb_crypto_get_algorithm_name_by_id(int algorithm_id)
 {
     const char *algorithm_name;
@@ -168,7 +169,21 @@ int flb_hmac_init(struct flb_hmac *context,
         return FLB_CRYPTO_INVALID_ARGUMENT;
     }
 
-    context->backend_context = &context->backend_context_data;
+#if FLB_CRYPTO_OPENSSL_COMPAT_MODE == 0
+    context->backend_context = flb_calloc(1, sizeof(HMAC_CTX));
+
+    if (context->backend_context == NULL) {
+        return FLB_CRYPTO_ALLOCATION_ERROR;
+    }
+#else
+    context->backend_context = HMAC_CTX_new();
+
+    if (context->backend_context == NULL) {
+        context->last_error = ERR_get_error();
+
+        return FLB_CRYPTO_BACKEND_ERROR;
+    }
+#endif
 
     HMAC_CTX_init(context->backend_context);
 
@@ -209,7 +224,7 @@ int flb_hmac_finalize(struct flb_hmac *context,
         return FLB_CRYPTO_INVALID_ARGUMENT;
     }
 
-#ifndef FLB_CRYPTO_OPENSSL_LEGACY_MODE
+#if FLB_CRYPTO_OPENSSL_COMPAT_MODE >= 3
     result = EVP_MAC_final(context->backend_context,
                            signature_buffer,
                            &signature_length,
@@ -252,7 +267,7 @@ int flb_hmac_update(struct flb_hmac *context,
         return FLB_CRYPTO_INVALID_ARGUMENT;
     }
 
-#ifndef FLB_CRYPTO_OPENSSL_LEGACY_MODE
+#if FLB_CRYPTO_OPENSSL_COMPAT_MODE >= 3
     result = EVP_MAC_update(context->backend_context,
                             data,
                             data_length);
@@ -277,7 +292,7 @@ int flb_hmac_update(struct flb_hmac *context,
 
 int flb_hmac_cleanup(struct flb_hmac *context)
 {
-#ifndef FLB_CRYPTO_OPENSSL_LEGACY_MODE
+#if FLB_CRYPTO_OPENSSL_COMPAT_MODE >= 3
     if (context->backend_context != NULL) {
         EVP_MAC_CTX_free(context->backend_context);
 
@@ -292,6 +307,12 @@ int flb_hmac_cleanup(struct flb_hmac *context)
 #else
     if (context->backend_context != NULL) {
         HMAC_CTX_cleanup(context->backend_context);
+
+#if FLB_CRYPTO_OPENSSL_COMPAT_MODE == 0
+        flb_free(context->backend_context);
+#else
+        HMAC_CTX_free(context->backend_context);
+#endif
 
         context->backend_context = NULL;
     }
