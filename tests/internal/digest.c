@@ -61,6 +61,7 @@ static void test_digest_abcdef()
     flb_digest_update(&digest, (unsigned char *) "abc", 3);
     flb_digest_update(&digest, (unsigned char *) "def", 3);
     flb_digest_finalize(&digest, buf, sizeof(buf));
+    flb_digest_cleanup(&digest);
 
     hexlify(buf, dhex);
 
@@ -79,10 +80,12 @@ static void test_digest_offbyone()
     flb_digest_update(&digest, (unsigned char *) "0123456789abcdef0123456789abcdef", 32);
     flb_digest_update(&digest, (unsigned char *) "0123456789abcdef0123456789abcde",  31);
     flb_digest_finalize(&digest, buf, sizeof(buf));
+    flb_digest_cleanup(&digest);
 
     hexlify(buf, dhex);
 
     TEST_CHECK(memcmp(dhex, SHA512_OFFBYONE, 128) == 0);
+
 }
 
 static void test_digest_standard()
@@ -118,6 +121,8 @@ static void test_digest_standard()
     hexlify(raw_digest, hex_digest);
 
     TEST_CHECK(memcmp(hex_digest, ref_hex_digest, 128) == 0);
+
+    flb_digest_cleanup(&digest);
 }
 
 static void test_digest_simple_batch()
