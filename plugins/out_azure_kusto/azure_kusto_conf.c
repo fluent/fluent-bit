@@ -41,7 +41,7 @@ static struct flb_upstream_node *flb_upstream_node_create_url(struct flb_azure_k
     char *port = NULL;
     char *uri = NULL;
     char *tmp;
-    struct flb_hash *kv = NULL;
+    struct flb_hash_table *kv = NULL;
     struct flb_upstream_node *node = NULL;
     int uri_length;
     int sas_length;
@@ -61,13 +61,13 @@ static struct flb_upstream_node *flb_upstream_node_create_url(struct flb_azure_k
         sas_length = strnlen(tmp + 1, 256);
 
         /* kv that will hold base uri, and sas token */
-        kv = flb_hash_create(FLB_HASH_EVICT_NONE, 2, 2);
+        kv = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 2, 2);
 
         if (kv) {
-            ret = flb_hash_add(kv, AZURE_KUSTO_RESOURCE_UPSTREAM_URI, 3, uri, uri_length);
+            ret = flb_hash_table_add(kv, AZURE_KUSTO_RESOURCE_UPSTREAM_URI, 3, uri, uri_length);
 
             if (ret != -1) {
-                ret = flb_hash_add(kv, AZURE_KUSTO_RESOURCE_UPSTREAM_SAS, 3, tmp + 1,
+                ret = flb_hash_table_add(kv, AZURE_KUSTO_RESOURCE_UPSTREAM_SAS, 3, tmp + 1,
                                    sas_length);
 
                 if (ret != -1) {
@@ -90,7 +90,7 @@ static struct flb_upstream_node *flb_upstream_node_create_url(struct flb_azure_k
 
             /* avoid destorying if function is successful */
             if (!node) {
-                flb_hash_destroy(kv);
+                flb_hash_table_destroy(kv);
             }
         }
         else {

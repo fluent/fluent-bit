@@ -94,14 +94,14 @@ static flb_sds_t azure_kusto_create_blob_uri(struct flb_azure_kusto *ctx,
     char *blob_sas;
     size_t blob_sas_size;
 
-    ret = flb_hash_get(u_node->ht, AZURE_KUSTO_RESOURCE_UPSTREAM_URI, 3,
+    ret = flb_hash_table_get(u_node->ht, AZURE_KUSTO_RESOURCE_UPSTREAM_URI, 3,
                        (void **)&blob_uri, &blob_uri_size);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error getting blob uri");
         return NULL;
     }
 
-    ret = flb_hash_get(u_node->ht, AZURE_KUSTO_RESOURCE_UPSTREAM_SAS, 3,
+    ret = flb_hash_table_get(u_node->ht, AZURE_KUSTO_RESOURCE_UPSTREAM_SAS, 3,
                        (void **)&blob_sas, &blob_sas_size);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error getting blob sas token");
@@ -295,14 +295,14 @@ static flb_sds_t azure_kusto_create_queue_uri(struct flb_azure_kusto *ctx,
     char *queue_sas;
     size_t queue_sas_size;
 
-    ret = flb_hash_get(u_node->ht, AZURE_KUSTO_RESOURCE_UPSTREAM_URI, 3,
+    ret = flb_hash_table_get(u_node->ht, AZURE_KUSTO_RESOURCE_UPSTREAM_URI, 3,
                        (void **)&queue_uri, &queue_uri_size);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error getting queue uri");
         return NULL;
     }
 
-    ret = flb_hash_get(u_node->ht, AZURE_KUSTO_RESOURCE_UPSTREAM_SAS, 3,
+    ret = flb_hash_table_get(u_node->ht, AZURE_KUSTO_RESOURCE_UPSTREAM_SAS, 3,
                        (void **)&queue_sas, &queue_sas_size);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error getting queue sas token");
