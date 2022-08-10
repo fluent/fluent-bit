@@ -207,7 +207,7 @@ static int build_headers(struct flb_http_client *c,
     flb_sds_cat(str_hash, FLB_AZURE_RESOURCE, sizeof(FLB_AZURE_RESOURCE) - 1);
 
     /* Authorization signature */
-    result = flb_hmac_simple(FLB_DIGEST_SHA256,
+    result = flb_hmac_simple(FLB_HASH_SHA256,
                              (unsigned char *) ctx->dec_shared_key,
                              flb_sds_len(ctx->dec_shared_key),
                              (unsigned char *) str_hash,
