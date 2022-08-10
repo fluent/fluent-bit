@@ -81,7 +81,7 @@ int flb_hash_simple_batch(int hash_type,
                           size_t digest_buffer_size);
 
 int flb_hash_simple(int hash_type,
-          `          unsigned char *data, 
+                    unsigned char *data, 
                     size_t data_length,
                     unsigned char *digest_buffer, 
                     size_t digest_buffer_size);
