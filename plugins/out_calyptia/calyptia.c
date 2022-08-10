@@ -22,7 +22,7 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_utils.h>
-#include <fluent-bit/flb_digest.h>
+#include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_version.h>
 #include <fluent-bit/flb_metrics.h>
@@ -133,11 +133,11 @@ static int get_machine_id(struct flb_calyptia *ctx, char **out_buf, size_t *out_
         return -1;
     }
 
-    ret = flb_digest_simple(FLB_DIGEST_SHA256,
-                            (unsigned char *) buf,
-                            s,
-                            sha256_buf,
-                            sizeof(sha256_buf));
+    ret = flb_hash_simple(FLB_HASH_SHA256,
+                          (unsigned char *) buf,
+                          s,
+                          sha256_buf,
+                          sizeof(sha256_buf));
 
     flb_free(buf);
 
