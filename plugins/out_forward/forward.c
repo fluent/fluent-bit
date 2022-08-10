@@ -23,7 +23,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_upstream_ha.h>
-#include <fluent-bit/flb_digest.h>
+#include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_crypto.h>
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_random.h>
@@ -184,12 +184,12 @@ static int secure_forward_hash_shared_key(struct flb_forward_config *fc,
     data_entries[3]   = (unsigned char *) fc->shared_key;
     length_entries[3] = strlen(fc->shared_key);
 
-    result = flb_digest_simple_batch(FLB_DIGEST_SHA512,
-                                     4,
-                                     data_entries,
-                                     length_entries,
-                                     hash,
-                                     sizeof(hash));
+    result = flb_hash_simple_batch(FLB_HASH_SHA512,
+                                   4,
+                                   data_entries,
+                                   length_entries,
+                                   hash,
+                                   sizeof(hash));
 
     if (result != FLB_CRYPTO_SUCCESS) {
         return -1;
@@ -222,12 +222,12 @@ static int secure_forward_hash_password(struct flb_forward_config *fc,
     data_entries[2]   = (unsigned char *) fc->password;
     length_entries[2] = strlen(fc->password);
 
-    result = flb_digest_simple_batch(FLB_DIGEST_SHA512,
-                                     3,
-                                     data_entries,
-                                     length_entries,
-                                     hash,
-                                     sizeof(hash));
+    result = flb_hash_simple_batch(FLB_HASH_SHA512,
+                                   3,
+                                   data_entries,
+                                   length_entries,
+                                   hash,
+                                   sizeof(hash));
 
     if (result != FLB_CRYPTO_SUCCESS) {
         return -1;
