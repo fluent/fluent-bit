@@ -50,7 +50,7 @@ set(src
   flb_time.c
   flb_sosreport.c
   flb_hmac.c
-  flb_digest.c
+  flb_hash.c
   flb_crypto.c
   flb_random.c
   flb_plugin.c
