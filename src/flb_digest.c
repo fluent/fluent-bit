@@ -164,9 +164,12 @@ int  flb_digest_simple_batch(int hash_type,
         for (entry_index = 0 ;
              entry_index < entry_count && result == FLB_CRYPTO_SUCCESS;
              entry_index++) {
-            result = flb_digest_update(&digest_context,
-                                       data_entries[entry_index],
-                                       length_entries[entry_index]);
+            if (data_entries[entry_index] != NULL &&
+                length_entries[entry_index] > 0) {
+                result = flb_digest_update(&digest_context,
+                                           data_entries[entry_index],
+                                           length_entries[entry_index]);
+            }
         }
 
         if (result == FLB_CRYPTO_SUCCESS) {
