@@ -19,7 +19,7 @@ static size_t get_sample_data(unsigned char ***buffer_list,
                                         "to the simple batched digest processor function"
                                     };
     static const char  *signature = "a68b8b3e480e00e0e61b4c097a29e64a261dc2548c608677c2827ea1e5b65d77";
-    static const int    mac_type = FLB_DIGEST_SHA256;
+    static const int    mac_type = FLB_HASH_SHA256;
     size_t              index;
     static const char  *key = "Long live the bird thing!";
 
@@ -70,7 +70,7 @@ static void test_hmac_standard()
                                    &ref_signature_type);
 
     TEST_CHECK(buffer_count > 0);
-    TEST_CHECK(ref_signature_type == FLB_DIGEST_SHA256);
+    TEST_CHECK(ref_signature_type == FLB_HASH_SHA256);
 
     result = flb_hmac_init(&hmac,
                            ref_signature_type,
@@ -112,7 +112,7 @@ static void test_hmac_simple_batch()
                                    &ref_signature_type);
 
     TEST_CHECK(buffer_count > 0);
-    TEST_CHECK(ref_signature_type == FLB_DIGEST_SHA256);
+    TEST_CHECK(ref_signature_type == FLB_HASH_SHA256);
 
     result = flb_hmac_simple_batch(ref_signature_type,
                                    (unsigned char *) ref_key,
