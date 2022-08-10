@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -119,6 +118,9 @@ struct flb_ml_stream {
     void *cb_data;
 
     struct flb_ml_stream_group *last_stream_group;
+
+    /* runtime flags */
+    int forced_flush;
 
     /* reference to parent instance */
     struct flb_ml_parser_ins *parser;
@@ -283,13 +285,15 @@ void flb_ml_flush_pending_now(struct flb_ml *ml);
 
 void flb_ml_flush_parser_instance(struct flb_ml *ml,
                                   struct flb_ml_parser_ins *parser_i,
-                                  uint64_t stream_id);
+                                  uint64_t stream_id,
+                                  int forced_flush);
 
 int flb_ml_auto_flush_init(struct flb_ml *ml);
 
 int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
                               struct flb_ml_stream *mst,
-                              struct flb_ml_stream_group *group);
+                              struct flb_ml_stream_group *group,
+                              int forced_flush);
 
 /* Multiline streams */
 int flb_ml_stream_create(struct flb_ml *ml,
