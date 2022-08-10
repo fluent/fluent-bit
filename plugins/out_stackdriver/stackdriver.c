@@ -26,7 +26,7 @@
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_pthread.h>
 #include <fluent-bit/flb_crypto.h>
-#include <fluent-bit/flb_digest.h>
+#include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_ra_key.h>
@@ -200,9 +200,9 @@ static int jwt_encode(char *payload, char *secret,
     flb_sds_cat(out, buf, olen);
 
     /* do sha256() of base64(header).base64(payload) */
-    ret = flb_digest_simple(FLB_DIGEST_SHA256,
-                            (unsigned char *) out, flb_sds_len(out),
-                            sha256_buf, sizeof(sha256_buf));
+    ret = flb_hash_simple(FLB_HASH_SHA256,
+                          (unsigned char *) out, flb_sds_len(out),
+                          sha256_buf, sizeof(sha256_buf));
 
     if (ret != FLB_CRYPTO_SUCCESS) {
         flb_plg_error(ctx->ins, "error hashing token");
@@ -216,7 +216,7 @@ static int jwt_encode(char *payload, char *secret,
 
     ret = flb_crypto_sign_simple(FLB_CRYPTO_PRIVATE_KEY,
                                  FLB_CRYPTO_PADDING_PKCS1,
-                                 FLB_DIGEST_SHA256,
+                                 FLB_HASH_SHA256,
                                  (unsigned char *) secret, len,
                                  sha256_buf, sizeof(sha256_buf),
                                  sig, &sig_len);
