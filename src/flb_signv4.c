@@ -574,6 +574,7 @@ static flb_sds_t flb_signv4_canonical_request(struct flb_http_client *c,
     int i;
     int len;
     int items;
+    int post_params = FLB_FALSE;
     int result;
     size_t size;
     char *val;
@@ -717,6 +718,7 @@ static flb_sds_t flb_signv4_canonical_request(struct flb_http_client *c,
                 }
                 cr = tmp;
                 flb_sds_destroy(params);
+                post_params = FLB_TRUE;
             }
         }
     }
@@ -740,9 +742,16 @@ static flb_sds_t flb_signv4_canonical_request(struct flb_http_client *c,
     if (s3_mode == S3_MODE_UNSIGNED_PAYLOAD) {
         payload_hash = flb_sds_create("UNSIGNED-PAYLOAD");
     } else {
-        result = flb_digest_simple(FLB_DIGEST_SHA256,
-                                   (unsigned char *) c->body_buf, c->body_len,
-                                   sha256_buf, sizeof(sha256_buf));
+        if (c->body_len > 0 && post_params == FLB_FALSE) {
+            result = flb_digest_simple(FLB_DIGEST_SHA256,
+                                       (unsigned char *) c->body_buf, c->body_len,
+                                       sha256_buf, sizeof(sha256_buf));
+        }
+        else {
+            result = flb_digest_simple(FLB_DIGEST_SHA256,
+                                       (unsigned char *) NULL, 0,
+                                       sha256_buf, sizeof(sha256_buf));
+        }
 
         if (result != FLB_CRYPTO_SUCCESS) {
             flb_error("[signv4] error hashing payload");
