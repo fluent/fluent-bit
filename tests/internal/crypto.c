@@ -1,7 +1,7 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_digest.h>
+#include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_crypto.h>
 
 #include "flb_tests_internal.h"
@@ -42,7 +42,7 @@
 #define SIGNATURE_INPUT         INPUT_DATA
 #define SIGNATURE_INPUT_LENGTH  INPUT_DATA_LENGTH
 
-#define SIGNATURE_DIGEST_TYPE   FLB_DIGEST_SHA256
+#define SIGNATURE_DIGEST_TYPE   FLB_HASH_SHA256
 #define SIGNATURE_PADDING_TYPE  FLB_CRYPTO_PADDING_PKCS1
 #define SIGNATURE_OUTPUT        ((unsigned char []) {                                                     \
                                   0x73, 0x03, 0x78, 0x0b, 0x61, 0x2a, 0x3b, 0x94, 0x5e, 0x26, 0x77, 0x65, \
@@ -161,11 +161,11 @@ static void test_rsa_simple_sign()
     unsigned char digest_buffer[32];
     int           result;
 
-    result = flb_digest_simple(SIGNATURE_DIGEST_TYPE,
-                               SIGNATURE_INPUT,
-                               SIGNATURE_INPUT_LENGTH,
-                               digest_buffer,
-                               sizeof(digest_buffer));
+    result = flb_hash_simple(SIGNATURE_DIGEST_TYPE,
+                             SIGNATURE_INPUT,
+                             SIGNATURE_INPUT_LENGTH,
+                             digest_buffer,
+                             sizeof(digest_buffer));
 
     TEST_CHECK(result == FLB_CRYPTO_SUCCESS);
 
