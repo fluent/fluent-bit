@@ -8,7 +8,7 @@ set(UNIT_TESTS_FILES
   sds.c
   hmac.c
   crypto.c
-  digest.c
+  hash.c
   slist.c
   router.c
   network.c
