@@ -32,7 +32,7 @@ static int hmac_sha256_sign(unsigned char out[32],
                             unsigned char *key, size_t key_len,
                             unsigned char *msg, size_t msg_len)
 {
-    return flb_hmac_simple(FLB_DIGEST_SHA256,
+    return flb_hmac_simple(FLB_HASH_SHA256,
                            key, key_len,
                            msg, msg_len,
                            out, 32);
