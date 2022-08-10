@@ -29,7 +29,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_hmac.h>
-#include <fluent-bit/flb_digest.h>
+#include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_aws_credentials.h>
@@ -68,7 +68,7 @@ static int hmac_sha256_sign(unsigned char out[32],
 {
     int result;
 
-    result = flb_hmac_simple(FLB_DIGEST_SHA256,
+    result = flb_hmac_simple(FLB_HASH_SHA256,
                              key, key_len,
                              msg, msg_len,
                              out, 32);
@@ -743,14 +743,14 @@ static flb_sds_t flb_signv4_canonical_request(struct flb_http_client *c,
         payload_hash = flb_sds_create("UNSIGNED-PAYLOAD");
     } else {
         if (c->body_len > 0 && post_params == FLB_FALSE) {
-            result = flb_digest_simple(FLB_DIGEST_SHA256,
-                                       (unsigned char *) c->body_buf, c->body_len,
-                                       sha256_buf, sizeof(sha256_buf));
+            result = flb_hash_simple(FLB_HASH_SHA256,
+                                     (unsigned char *) c->body_buf, c->body_len,
+                                     sha256_buf, sizeof(sha256_buf));
         }
         else {
-            result = flb_digest_simple(FLB_DIGEST_SHA256,
-                                       (unsigned char *) NULL, 0,
-                                       sha256_buf, sizeof(sha256_buf));
+            result = flb_hash_simple(FLB_HASH_SHA256,
+                                     (unsigned char *) NULL, 0,
+                                     sha256_buf, sizeof(sha256_buf));
         }
 
         if (result != FLB_CRYPTO_SUCCESS) {
@@ -971,9 +971,9 @@ static flb_sds_t flb_signv4_string_to_sign(struct flb_http_client *c,
     }
 
     /* Hash of Canonical Request */
-    result = flb_digest_simple(FLB_DIGEST_SHA256,
-                               (unsigned char *) cr, flb_sds_len(cr),
-                               sha256_buf, sizeof(sha256_buf));
+    result = flb_hash_simple(FLB_HASH_SHA256,
+                             (unsigned char *) cr, flb_sds_len(cr),
+                             sha256_buf, sizeof(sha256_buf));
 
     if (result != FLB_CRYPTO_SUCCESS) {
         flb_error("[signv4] error hashing canonical request");
