@@ -19,7 +19,7 @@
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_time.h>
-#include <fluent-bit/flb_digest.h>
+#include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_crypto.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include "forward.h"
@@ -94,9 +94,9 @@ static int append_options(struct flb_forward *ctx,
          * for ack we calculate  sha512 of context, take 16 bytes,
          * make 32 byte hex string of it
          */
-        result = flb_digest_simple(FLB_DIGEST_SHA512,
-                                   data, bytes,
-                                   checksum, sizeof(checksum));
+        result = flb_hash_simple(FLB_HASH_SHA512,
+                                 data, bytes,
+                                 checksum, sizeof(checksum));
 
         if (result != FLB_CRYPTO_SUCCESS) {
             return -1;
