@@ -46,13 +46,13 @@ static const EVP_MD *flb_crypto_get_digest_algorithm_instance_by_id(int algorith
 {
     const EVP_MD *algorithm;
 
-    if (algorithm_id == FLB_DIGEST_SHA256) {
+    if (algorithm_id == FLB_HASH_SHA256) {
         algorithm = EVP_sha256();
     }
-    else if (algorithm_id == FLB_DIGEST_SHA512) {
+    else if (algorithm_id == FLB_HASH_SHA512) {
         algorithm = EVP_sha512();
     }
-    else if (algorithm_id == FLB_DIGEST_MD5) {
+    else if (algorithm_id == FLB_HASH_MD5) {
         algorithm = EVP_md5();
     }
     else {
@@ -355,7 +355,7 @@ int flb_crypto_encrypt_simple(int padding_type,
 
     result = flb_crypto_init(&context,
                              padding_type,
-                             FLB_DIGEST_NONE,
+                             FLB_HASH_NONE,
                              FLB_CRYPTO_PUBLIC_KEY,
                              key,
                              key_length);
@@ -385,7 +385,7 @@ int flb_crypto_decrypt_simple(int padding_type,
 
     result = flb_crypto_init(&context,
                              padding_type,
-                             FLB_DIGEST_NONE,
+                             FLB_HASH_NONE,
                              FLB_CRYPTO_PRIVATE_KEY,
                              key,
                              key_length);

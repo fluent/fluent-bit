@@ -15,34 +15,6 @@
  *  limitations under the License.
  */
 
-/*
- * A wrapper for the OpenSSL SHA512 functions if OpenSSL is available.
- * Otherwise, the functions in this header file provide
- * the following public domain sha512 hash implementation.
- *
- * This is based on the musl libc SHA512 implementation. Follow the
- * link for the original source code.
- * https://git.musl-libc.org/cgit/musl/tree/src/crypt/crypt_sha512.c?h=v1.1.22
- *
- * Here is how to use it:
- *
- * #include <fluent-bit/flb_crypto.h>
- *
- * void main(void)
- * {
- *     char buf[64];
- *
- *     result = flb_digest_simple(FLB_CRYPTO_SHA256,
- *                                (unsigned char *) "aiueo", 5,
- *                                buf, sizeof(buf));
- *
- *     if (result != FLB_CRYPTO_SUCCESS) {
- *         printf("error\n");
- *         return NULL;
- *     }
- * }
- */
-
 #ifndef FLB_HMAC_H
 #define FLB_HMAC_H
 
