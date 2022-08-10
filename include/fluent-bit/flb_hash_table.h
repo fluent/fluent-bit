@@ -17,8 +17,8 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_HASH_H
-#define FLB_HASH_H
+#ifndef FLB_HASH_TABLE_H
+#define FLB_HASH_TABLE_H
 
 #include <fluent-bit/flb_info.h>
 #include <monkey/mk_core.h>
