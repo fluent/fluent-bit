@@ -31,13 +31,13 @@ static const char *flb_crypto_get_algorithm_name_by_id(int algorithm_id)
 {
     const char *algorithm_name;
 
-    if (algorithm_id == FLB_DIGEST_SHA256) {
+    if (algorithm_id == FLB_HASH_SHA256) {
         algorithm_name = "SHA-256";
     }
-    else if (algorithm_id == FLB_DIGEST_SHA512) {
+    else if (algorithm_id == FLB_HASH_SHA512) {
         algorithm_name = "SHA-512";
     }
-    else if (algorithm_id == FLB_DIGEST_MD5) {
+    else if (algorithm_id == FLB_HASH_MD5) {
         algorithm_name = "MD5";
     }
     else {
@@ -124,13 +124,13 @@ static const EVP_MD *flb_crypto_get_digest_algorithm_instance_by_id(int algorith
 {
     const EVP_MD *algorithm;
 
-    if (algorithm_id == FLB_DIGEST_SHA256) {
+    if (algorithm_id == FLB_HASH_SHA256) {
         algorithm = EVP_sha256();
     }
-    else if (algorithm_id == FLB_DIGEST_SHA512) {
+    else if (algorithm_id == FLB_HASH_SHA512) {
         algorithm = EVP_sha512();
     }
-    else if (algorithm_id == FLB_DIGEST_MD5) {
+    else if (algorithm_id == FLB_HASH_MD5) {
         algorithm = EVP_md5();
     }
     else {

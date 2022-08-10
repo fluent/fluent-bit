@@ -43,10 +43,10 @@
 #define FLB_CRYPTO_PADDING_PKCS1_X931 3
 #define FLB_CRYPTO_PADDING_PKCS1_PSS  4
 
-#define FLB_DIGEST_NONE               0
-#define FLB_DIGEST_MD5                1
-#define FLB_DIGEST_SHA256             2
-#define FLB_DIGEST_SHA512             3
+#define FLB_HASH_NONE                 0
+#define FLB_HASH_MD5                  1
+#define FLB_HASH_SHA256               2
+#define FLB_HASH_SHA512               3
 
 #define FLB_CRYPTO_OPERATION_NONE     0
 #define FLB_CRYPTO_OPERATION_SIGN     1
