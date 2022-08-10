@@ -89,6 +89,8 @@ static void test_hmac_standard()
     hexlify(raw_signature, hex_signature);
 
     TEST_CHECK(memcmp(hex_signature, ref_hex_signature, 64) == 0);
+
+    flb_hmac_cleanup(&hmac);
 }
 
 
