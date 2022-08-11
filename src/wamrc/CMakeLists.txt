@@ -92,79 +92,83 @@ if (NOT WAMR_BUILD_WITH_SYSTEM_LLVM)
   endif ()
 endif ()
 
-find_package(LLVM REQUIRED CONFIG)
-include_directories(${LLVM_INCLUDE_DIRS})
-add_definitions(${LLVM_DEFINITIONS})
+find_package(LLVM CONFIG)
+if (LLVM_FOUND)
+  include_directories(${LLVM_INCLUDE_DIRS})
+  add_definitions(${LLVM_DEFINITIONS})
 
-message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
-message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
+  message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
+  message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 
-set (WAMR_ROOT_DIR ../../${FLB_PATH_LIB_WASM_MICRO_RUNTIME})
-set (SHARED_DIR ${WAMR_ROOT_DIR}/core/shared)
-set (IWASM_DIR ${WAMR_ROOT_DIR}/core/iwasm)
-set (APP_FRAMEWORK_DIR ${WAMER_ROOT_DIR}/core/app-framework)
+  set (WAMR_ROOT_DIR ../../${FLB_PATH_LIB_WASM_MICRO_RUNTIME})
+  set (SHARED_DIR ${WAMR_ROOT_DIR}/core/shared)
+  set (IWASM_DIR ${WAMR_ROOT_DIR}/core/iwasm)
+  set (APP_FRAMEWORK_DIR ${WAMER_ROOT_DIR}/core/app-framework)
 
-include_directories (${SHARED_DIR}/include
-  ${IWASM_DIR}/include)
+  include_directories (${SHARED_DIR}/include
+    ${IWASM_DIR}/include)
 
-enable_language (ASM)
+  enable_language (ASM)
 
-include (${SHARED_DIR}/platform/${WAMR_BUILD_PLATFORM}/shared_platform.cmake)
-include (${SHARED_DIR}/mem-alloc/mem_alloc.cmake)
-include (${SHARED_DIR}/utils/shared_utils.cmake)
-include (${SHARED_DIR}/utils/uncommon/shared_uncommon.cmake)
-include (${IWASM_DIR}/libraries/thread-mgr/thread_mgr.cmake)
-include (${IWASM_DIR}/libraries/libc-builtin/libc_builtin.cmake)
-if (NOT MINGW)
-  if (NOT MSVC)
-    include (${IWASM_DIR}/libraries/libc-wasi/libc_wasi.cmake)
-  else()
-    include (${IWASM_DIR}/libraries/libc-uvwasi/libc_uvwasi.cmake)
+  include (${SHARED_DIR}/platform/${WAMR_BUILD_PLATFORM}/shared_platform.cmake)
+  include (${SHARED_DIR}/mem-alloc/mem_alloc.cmake)
+  include (${SHARED_DIR}/utils/shared_utils.cmake)
+  include (${SHARED_DIR}/utils/uncommon/shared_uncommon.cmake)
+  include (${IWASM_DIR}/libraries/thread-mgr/thread_mgr.cmake)
+  include (${IWASM_DIR}/libraries/libc-builtin/libc_builtin.cmake)
+  if (NOT MINGW)
+    if (NOT MSVC)
+      include (${IWASM_DIR}/libraries/libc-wasi/libc_wasi.cmake)
+    else()
+      include (${IWASM_DIR}/libraries/libc-uvwasi/libc_uvwasi.cmake)
+    endif()
   endif()
-endif()
-include (${IWASM_DIR}/libraries/lib-pthread/lib_pthread.cmake)
-include (${IWASM_DIR}/common/iwasm_common.cmake)
-include (${IWASM_DIR}/interpreter/iwasm_interp.cmake)
-include (${IWASM_DIR}/aot/iwasm_aot.cmake)
-include (${IWASM_DIR}/compilation/iwasm_compl.cmake)
+  include (${IWASM_DIR}/libraries/lib-pthread/lib_pthread.cmake)
+  include (${IWASM_DIR}/common/iwasm_common.cmake)
+  include (${IWASM_DIR}/interpreter/iwasm_interp.cmake)
+  include (${IWASM_DIR}/aot/iwasm_aot.cmake)
+  include (${IWASM_DIR}/compilation/iwasm_compl.cmake)
 
-add_library (vmlib-wamrc-static STATIC
-  ${PLATFORM_SHARED_SOURCE}
-  ${MEM_ALLOC_SHARED_SOURCE}
-  ${UTILS_SHARED_SOURCE}
-  ${UNCOMMON_SHARED_SOURCE}
-  ${THREAD_MGR_SOURCE}
-  ${LIBC_BUILTIN_SOURCE}
-  ${LIBC_WASI_SOURCE}
-  ${LIB_PTHREAD_SOURCE}
-  ${IWASM_COMMON_SOURCE}
-  ${IWASM_INTERP_SOURCE}
-  ${IWASM_AOT_SOURCE})
-add_library (aotclib-static STATIC ${IWASM_COMPL_SOURCE})
-add_executable (flb-wamrc-bin ${WAMR_ROOT_DIR}/wamr-compiler/main.c)
-if (NOT MSVC)
-  target_link_libraries (flb-wamrc-bin aotclib-static vmlib-wamrc-static LLVMDemangle ${LLVM_AVAILABLE_LIBS} ${lib_ubsan}
-    -lm -lpthread ${lib_lldb} ${UV_A_LIBS})
-  if (MINGW)
-    target_link_libraries (flb-wamrc-bin -lssp -lWs2_32)
+  add_library (vmlib-wamrc-static STATIC
+    ${PLATFORM_SHARED_SOURCE}
+    ${MEM_ALLOC_SHARED_SOURCE}
+    ${UTILS_SHARED_SOURCE}
+    ${UNCOMMON_SHARED_SOURCE}
+    ${THREAD_MGR_SOURCE}
+    ${LIBC_BUILTIN_SOURCE}
+    ${LIBC_WASI_SOURCE}
+    ${LIB_PTHREAD_SOURCE}
+    ${IWASM_COMMON_SOURCE}
+    ${IWASM_INTERP_SOURCE}
+    ${IWASM_AOT_SOURCE})
+  add_library (aotclib-static STATIC ${IWASM_COMPL_SOURCE})
+  add_executable (flb-wamrc-bin ${WAMR_ROOT_DIR}/wamr-compiler/main.c)
+  if (NOT MSVC)
+    target_link_libraries (flb-wamrc-bin aotclib-static vmlib-wamrc-static LLVMDemangle ${LLVM_AVAILABLE_LIBS} ${lib_ubsan}
+      -lm -lpthread ${lib_lldb} ${UV_A_LIBS})
+    if (MINGW)
+      target_link_libraries (flb-wamrc-bin -lssp -lWs2_32)
+    else()
+      target_link_libraries (flb-wamrc-bin -ldl)
+    endif()
   else()
-    target_link_libraries (flb-wamrc-bin -ldl)
+    target_link_libraries (flb-wamrc-bin aotclib-static vmlib-wamrc-static  ${lib_lldb} ${LLVM_AVAILABLE_LIBS} ${lib_ubsan}
+      ${UV_A_LIBS})
+  endif()
+
+  set_target_properties(flb-wamrc-bin
+    PROPERTIES
+    OUTPUT_NAME flb-wamrc
+    ENABLE_EXPORTS ON)
+  install(TARGETS flb-wamrc-bin RUNTIME DESTINATION ${FLB_INSTALL_BINDIR} COMPONENT binary)
+
+  # Include PDB file (if available)
+  if (MSVC)
+    target_link_options(flb-wamrc-bin
+      PUBLIC /pdb:$<TARGET_PDB_FILE:flb-wamrc-bin>)
+    install(FILES $<TARGET_PDB_FILE:flb-wamrc-bin>
+      DESTINATION "${FLB_INSTALL_BINDIR}")
   endif()
 else()
-  target_link_libraries (flb-wamrc-bin aotclib-static vmlib-wamrc-static  ${lib_lldb} ${LLVM_AVAILABLE_LIBS} ${lib_ubsan}
-    ${UV_A_LIBS})
-endif()
-
-set_target_properties(flb-wamrc-bin
-  PROPERTIES
-  OUTPUT_NAME flb-wamrc
-  ENABLE_EXPORTS ON)
-install(TARGETS flb-wamrc-bin RUNTIME DESTINATION ${FLB_INSTALL_BINDIR} COMPONENT binary)
-
-# Include PDB file (if available)
-if (MSVC)
-  target_link_options(flb-wamrc-bin
-    PUBLIC /pdb:$<TARGET_PDB_FILE:flb-wamrc-bin>)
-  install(FILES $<TARGET_PDB_FILE:flb-wamrc-bin>
-    DESTINATION "${FLB_INSTALL_BINDIR}")
-endif()
+  message(STATUS "LLVM is not found. WAMRC won't be built.")
+endif ()
