@@ -16,6 +16,7 @@ if(FLB_WINDOWS_DEFAULTS)
   set(FLB_METRICS               Yes)
   set(FLB_CONFIG_YAML           No)
   set(FLB_WASM                  No)
+  set(FLB_WAMRC                 No)
 
   # INPUT plugins
   # =============
