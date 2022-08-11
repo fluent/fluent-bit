@@ -84,10 +84,10 @@ if(FLB_IN_LIB)
   endif()
 
   FLB_RT_TEST(FLB_OUT_CLOUDWATCH_LOGS   "out_cloudwatch.c")
-    # These plugins works only on Linux
+  FLB_RT_TEST(FLB_OUT_KINESIS_FIREHOSE  "out_firehose.c")
+  FLB_RT_TEST(FLB_OUT_KINESIS_STREAMS   "out_kinesis.c")
+    # These plugins work only on Linux
   if(NOT FLB_SYSTEM_WINDOWS)
-    FLB_RT_TEST(FLB_OUT_KINESIS_FIREHOSE  "out_firehose.c")
-    FLB_RT_TEST(FLB_OUT_KINESIS_STREAMS   "out_kinesis.c")
     FLB_RT_TEST(FLB_OUT_FILE              "out_file.c")
   endif()
   FLB_RT_TEST(FLB_OUT_S3                "out_s3.c")
