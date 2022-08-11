@@ -26,7 +26,7 @@
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_uri.h>
-#include <fluent-bit/flb_sha512.h>
+#include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_regex.h>
 #include "flb_fuzz_header.h"
 
@@ -197,14 +197,15 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     }
 
     /* Fuzzing the sha routines */
-    struct flb_sha512 sha512;
+    struct flb_hash sha512;
     uint8_t buf[64];
-    flb_sha512_init(&sha512);
-    flb_sha512_update(&sha512, null_terminated, 32);
-    flb_sha512_update(&sha512, null_terminated+32, 32);
-    flb_sha512_update(&sha512, null_terminated+64, 32);
-    flb_sha512_sum(&sha512, buf);
 
+    flb_hash_init(&sha512, FLB_HASH_SHA512);
+    flb_hash_update(&sha512, (unsigned char *) null_terminated, 32);
+    flb_hash_update(&sha512, (unsigned char *) null_terminated+32, 32);
+    flb_hash_update(&sha512, (unsigned char *) null_terminated+64, 32);
+    flb_hash_finalize(&sha512, buf, sizeof(buf));
+    flb_hash_cleanup(&sha512);
 
     /* regex */
     char *pregex = "^(?<INT>[^ ]+) (?<FLOAT>[^ ]+) (?<BOOL>[^ ]+) (?<STRING>.+)$";
