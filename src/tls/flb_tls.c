@@ -20,11 +20,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_time.h>
 
-#ifdef FLB_HAVE_OPENSSL
 #include "openssl.c"
-#else
-#include "mbedtls.c"
-#endif
 
 /* Config map for Upstream networking setup */
 struct flb_config_map tls_configmap[] = {
@@ -144,11 +140,7 @@ struct flb_tls *flb_tls_create(int verify,
     }
     tls->ctx = backend;
 
-#ifdef FLB_HAVE_OPENSSL
     tls->api = &tls_openssl;
-#else
-    tls->api = &tls_mbedtls;
-#endif
 
     return tls;
 }
