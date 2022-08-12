@@ -414,7 +414,7 @@ void flb_test_input_chunk_fs_chunks_size_real()
     TEST_CHECK(evl != NULL);
     cfg->evl = evl;
 
-    flb_log_create(cfg, FLB_LOG_STDERR, FLB_LOG_DEBUG, NULL);
+    flb_log_create(cfg, FLB_LOG_STDERR, FLB_LOG_DEBUG, 20, 0, NULL);
 
     i_ins = flb_input_new(cfg, "dummy", NULL, FLB_TRUE);
     i_ins->storage_type = CIO_STORE_FS;

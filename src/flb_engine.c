@@ -519,7 +519,19 @@ static int flb_engine_log_start(struct flb_config *config)
         type = FLB_LOG_STDERR;
     }
 
-    if (flb_log_create(config, type, level, config->log_file) == NULL) {
+    if (config->log_file_sz_mb == 0) {
+        config->log_file_sz_mb = FLB_LOGFILE_DEFAULT_SIZE;
+    }
+    
+    if (config->log_file_sz_mb > FLB_LOGFILE_MAX_SIZE) {
+        config->log_file_sz_mb = FLB_LOGFILE_MAX_SIZE;
+    }
+
+    if (config->log_file_history > FLB_LOGFILE_MAX_HISTORY) {
+        config->log_file_history = FLB_LOGFILE_MAX_HISTORY;
+    }
+
+    if (flb_log_create(config, type, level, config->log_file_sz_mb, config->log_file_history, config->log_file) == NULL) {
         return -1;
     }
 
