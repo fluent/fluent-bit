@@ -656,8 +656,6 @@ char *flb_sts_session_name() {
     char *session_name = NULL;
     int ret;
 
-    #pragma message ("MBEDTLS REPLACEMENT : FILL THE GAP (generate unique session name)")
-
     ret = flb_random_bytes(random_data, SESSION_NAME_RANDOM_BYTE_LEN);
 
     if (ret != 0) {
