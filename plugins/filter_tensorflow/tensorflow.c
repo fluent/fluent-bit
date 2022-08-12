@@ -26,7 +26,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_config_map.h>
 
-#include <mbedtls/base64.h>
+#include <fluent-bit/flb_base64.h>
 
 #include "tensorflow/lite/c/c_api.h"
 
@@ -350,7 +350,7 @@ static int cb_tf_filter(const void *data, size_t bytes,
                 }
             }
             else if (value.type == MSGPACK_OBJECT_STR) {
-                if(mbedtls_base64_decode(ctx->input, ctx->input_byte_size, &b64_out_len, (const unsigned char *) value.via.str.ptr, value.via.str.size) != 0) {
+                if(flb_base64_encode(ctx->input, ctx->input_byte_size, &b64_out_len, (const unsigned char *) value.via.str.ptr, value.via.str.size) != 0) {
                   flb_error("[tensorflow] can't base64 decode the field!");
                   break;
                 }
