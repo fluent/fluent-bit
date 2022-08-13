@@ -82,6 +82,30 @@ static inline void mk_list_add_after(struct mk_list *_new,
     next->prev = _new;
 }
 
+static inline void mk_list_add_before(struct mk_list *_new,
+                                      struct mk_list *next,
+                                      struct mk_list *head)
+{
+    struct mk_list *prev;
+
+    if (_new == NULL || next == NULL || head == NULL) {
+        return;
+    }
+
+    if ((head->prev == head && head->next == head) /*empty*/||
+        next == head) {
+        mk_list_add(_new, head);
+        return;
+    }
+
+    prev = next->prev;
+    _new->next = next;
+    _new->prev = prev;
+    prev->next = _new;
+    next->prev = _new;
+}
+
+
 static inline void __mk_list_del(struct mk_list *prev, struct mk_list *next)
 {
     prev->next = next;
@@ -136,6 +160,30 @@ static inline void mk_list_cat(struct mk_list *list, struct mk_list *head)
     list->next->prev = last;
     list->prev->next = head;
     head->prev = list->prev;
+}
+
+static inline void mk_list_append(struct mk_list *_new, struct mk_list *head)
+{
+    if (mk_list_is_empty(head)) {
+        __mk_list_add(_new, head->prev, head);
+    }
+    else {
+        mk_list_add_after(_new,
+                          head->prev,
+                          head);
+    }
+}
+
+static inline void mk_list_prepend(struct mk_list *_new, struct mk_list *head)
+{
+    if (mk_list_is_empty(head)) {
+        __mk_list_add(_new, head->prev, head);
+    }
+    else {
+        mk_list_add_before(_new,
+                           head->next,
+                           head);
+    }
 }
 
 #define mk_list_foreach(curr, head) for( curr = (head)->next; curr != (head); curr = curr->next )
