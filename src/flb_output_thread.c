@@ -182,6 +182,7 @@ static void output_thread(void *data)
     struct flb_out_thread_instance *th_ins = data;
     struct flb_out_flush_params *params;
     struct flb_net_dns dns_ctx;
+    struct flb_coroutine_scheduler coro_sched;
 
     /* Register thread instance */
     flb_output_thread_instance_set(th_ins);
@@ -202,6 +203,10 @@ static void output_thread(void *data)
      * of the scope of this thread.
      */
     flb_engine_evl_set(th_ins->evl);
+
+    flb_coroutine_scheduler_init(&coro_sched, -1);
+    flb_coroutine_scheduler_set(&coro_sched);
+    flb_coroutine_scheduler_add_event_loop(&coro_sched, th_ins->evl);
 
     /* Set the upstream queue */
     flb_upstream_list_set(&th_ins->upstreams);
@@ -319,10 +324,15 @@ static void output_thread(void *data)
                  */
                 handle_output_event(th_ins->config, ins->ch_events[1], event->fd);
             }
+            else if(event->type == FLB_ENGINE_EV_CORO_SCHEDULER) {
+                flb_coroutine_scheduler_consume_continuation_signal(NULL);
+            }
             else {
                 flb_plg_warn(ins, "unhandled event type => %i\n", event->type);
             }
         }
+
+        flb_coroutine_scheduler_resume_enqueued_coroutines();
 
         flb_net_dns_lookup_context_cleanup(&dns_ctx);
 
