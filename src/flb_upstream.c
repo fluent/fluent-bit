@@ -28,6 +28,7 @@
 #include <fluent-bit/tls/flb_tls.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_thread_storage.h>
+#include <fluent-bit/flb_coroutine_scheduler.h>
 
 FLB_TLS_DEFINE(struct mk_list, flb_upstream_list_key);
 
@@ -842,11 +843,7 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
             }
 
             if (drop == FLB_TRUE) {
-                if (u_conn->event.status != MK_EVENT_NONE) {
-                    mk_event_inject(u_conn->evl, &u_conn->event,
-                                    MK_EVENT_READ | MK_EVENT_WRITE,
-                                    FLB_TRUE);
-                }
+                flb_coro_enqueue(u_conn->coro);
                 u_conn->net_error = ETIMEDOUT;
                 prepare_destroy_conn(u_conn);
             }
