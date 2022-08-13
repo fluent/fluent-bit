@@ -47,6 +47,7 @@ set(src
   flb_router.c
   flb_worker.c
   flb_coro.c
+  flb_coroutine_scheduler.c
   flb_time.c
   flb_sosreport.c
   flb_hmac.c
