@@ -33,6 +33,7 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_coroutine_scheduler.h>
 
 #include <monkey/mk_core.h>
 
@@ -49,7 +50,6 @@ extern "C" {
 #endif
 
 struct flb_coro {
-
 #ifdef FLB_HAVE_VALGRIND
     unsigned int valgrind_stack_id;
 #endif
@@ -59,6 +59,10 @@ struct flb_coro {
     cothread_t callee;
 
     void *data;
+
+    int state;
+    uint64_t yield_cycle;
+    struct mk_list _head;
 };
 
 #ifdef FLB_CORO_STACK_SIZE
@@ -69,8 +73,25 @@ struct flb_coro {
 
 #define FLB_CORO_DATA(coro)      (((char *) coro) + sizeof(struct flb_coro))
 
+static FLB_INLINE int flb_coro_enqueue(struct flb_coro *coro)
+{
+    return flb_coroutine_scheduler_set_coroutine_state(coro, 
+                                                       FLB_COROUTINE_STATUS_QUEUED);
+}
+
+static FLB_INLINE void flb_coro_collab_yield(struct flb_coro *coro, int ended)
+{
+    flb_coroutine_scheduler_set_coroutine_state(coro, 
+                                                FLB_COROUTINE_STATUS_COLLABORATIVELY_YIELDED);
+
+    co_switch(coro->caller);
+}
+
 static FLB_INLINE void flb_coro_yield(struct flb_coro *coro, int ended)
 {
+    flb_coroutine_scheduler_set_coroutine_state(coro, 
+                                                FLB_COROUTINE_STATUS_PAUSED);
+
     co_switch(coro->caller);
 }
 
@@ -82,6 +103,9 @@ static FLB_INLINE void flb_coro_destroy(struct flb_coro *coro)
 #ifdef FLB_HAVE_VALGRIND
     VALGRIND_STACK_DEREGISTER(coro->valgrind_stack_id);
 #endif
+
+    flb_coroutine_scheduler_set_coroutine_state(coro, 
+                                                FLB_COROUTINE_STATUS_UNINITIALIZED);
 
     if (coro->callee != NULL) {
         co_delete(coro->callee);
@@ -102,6 +126,10 @@ static FLB_INLINE void flb_coro_resume(struct flb_coro *coro)
 {
     flb_coro_set(coro);
     coro->caller = co_active();
+
+    flb_coroutine_scheduler_set_coroutine_state(coro, 
+                                                FLB_COROUTINE_STATUS_RUNNING);
+
     co_switch(coro->callee);
 }
 
@@ -116,6 +144,10 @@ static FLB_INLINE struct flb_coro *flb_coro_create(void *data)
         return NULL;
     }
     coro->data = data;
+
+    flb_coroutine_scheduler_set_coroutine_state(coro, 
+                                                FLB_COROUTINE_STATUS_PAUSED);
+
     return coro;
 }
 
