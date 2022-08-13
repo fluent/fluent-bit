@@ -49,6 +49,7 @@
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_version.h>
 #include <fluent-bit/flb_ring_buffer.h>
+#include <fluent-bit/flb_coroutine_scheduler.h>
 
 #ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics_exporter.h>
@@ -555,6 +556,7 @@ int flb_engine_start(struct flb_config *config)
     struct flb_bucket_queue *evl_bktq;
     struct flb_sched *sched;
     struct flb_net_dns dns_ctx;
+    struct flb_coroutine_scheduler coro_sched;
 
     /* Initialize the networking layer */
     flb_net_lib_init();
@@ -570,6 +572,10 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
     config->evl = evl;
+
+    flb_coroutine_scheduler_init(&coro_sched, -1);
+    flb_coroutine_scheduler_set(&coro_sched);
+    flb_coroutine_scheduler_add_event_loop(&coro_sched, config->evl);
 
     /* Create the bucket queue (FLB_ENGINE_PRIORITY_COUNT priorities) */
     evl_bktq = flb_bucket_queue_create(FLB_ENGINE_PRIORITY_COUNT);
@@ -925,11 +931,16 @@ int flb_engine_start(struct flb_config *config)
 
                 rb_flush_flag = FLB_TRUE;
             }
+            else if(event->type == FLB_ENGINE_EV_CORO_SCHEDULER) {
+                flb_coroutine_scheduler_consume_continuation_signal(NULL);
+            }
         }
 
         if (rb_flush_flag) {
             flb_input_chunk_ring_buffer_collector(config, NULL);
         }
+
+        flb_coroutine_scheduler_resume_enqueued_coroutines();
 
         /* Cleanup functions associated to events and timers */
         if (config->is_running == FLB_TRUE) {
