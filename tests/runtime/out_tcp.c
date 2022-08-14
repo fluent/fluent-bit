@@ -769,6 +769,121 @@ void flb_test_json_date_format_java_sql_timestamp()
     test_ctx_destroy(ctx);
 }
 
+#define WAIT_STOP (5+1) /* pause in flb_engine_stop and buffer period */
+
+static void cb_check_basic(void *ctx, int ffd,
+                           int res_ret, void *res_data, size_t res_size,
+                           void *data)
+{
+    char *p;
+    flb_sds_t out_js = res_data;
+    char *index_line = "{\\\"key1\\\":\\\"123\\\"}";
+
+    p = strstr(out_js, index_line);
+    if (!TEST_CHECK(p != NULL)) {
+      TEST_MSG("Given:%s", out_js);
+    }
+
+    flb_sds_destroy(out_js);
+}
+
+
+
+void flb_test_tcp_exit_workers(void)
+{
+    int i;
+    int ret;
+    int bytes;
+    char *p = (char *) JSON_SMALL;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    ctx = flb_create();
+
+    /* Grace -1 to do a clean shutdown */
+    flb_service_set(ctx, "Flush", "1", "Grace", "-1", "Log_Level", "error", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "dummy", NULL);
+    flb_input_set(ctx, in_ffd,
+                  "tag", "test",
+                  "samples", "1",
+                  "dummy", "{\"key1\": 123, \"key2\": {\"s1\": \"fluent\"}}",
+                  NULL);
+
+
+    /* TCP output */
+    out_ffd = flb_output(ctx, (char *) "tcp", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_basic,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Stop right away */
+    flb_stop(ctx);
+
+    sleep(WAIT_STOP);
+    
+    flb_destroy(ctx);
+}
+
+void flb_test_tcp_exit_no_workers(void)
+{
+    int i;
+    int ret;
+    int bytes;
+    char *p = (char *) JSON_SMALL;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    ctx = flb_create();
+
+    /* Grace -1 to do a clean shutdown */
+    flb_service_set(ctx, "Flush", "1", "Grace", "-1", "Log_Level", "error", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "dummy", NULL);
+    flb_input_set(ctx, in_ffd,
+                  "tag", "test",
+                  "samples", "1",
+                  "dummy", "{\"key1\": 123, \"key2\": {\"s1\": \"fluent\"}}",
+                  NULL);
+
+
+    /* TCP output */
+    out_ffd = flb_output(ctx, (char *) "tcp", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "workers", "0",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_basic,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Stop right away */
+    flb_stop(ctx);
+
+    sleep(WAIT_STOP);
+    
+    flb_destroy(ctx);    
+}
+
 /* Test list */
 TEST_LIST = {
     {"format_msgpack" , flb_test_format_msgpack},
@@ -780,5 +895,7 @@ TEST_LIST = {
     {"json_date_format_epoch" , flb_test_json_date_format_epoch},
     {"json_date_format_iso8601" , flb_test_json_date_format_iso8601},
     {"json_date_format_java_sql_timestamp" , flb_test_json_date_format_java_sql_timestamp},
+    {"tcp_exit_workers",            flb_test_tcp_exit_workers},
+    {"tcp_exit_no_workers",         flb_test_tcp_exit_no_workers},
     {NULL, NULL}
 };
