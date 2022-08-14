@@ -164,7 +164,7 @@ static inline void mk_list_cat(struct mk_list *list, struct mk_list *head)
 
 static inline void mk_list_append(struct mk_list *_new, struct mk_list *head)
 {
-    if (mk_list_is_empty(head)) {
+    if (mk_list_is_empty(head) == 0) {
         __mk_list_add(_new, head->prev, head);
     }
     else {
@@ -176,7 +176,7 @@ static inline void mk_list_append(struct mk_list *_new, struct mk_list *head)
 
 static inline void mk_list_prepend(struct mk_list *_new, struct mk_list *head)
 {
-    if (mk_list_is_empty(head)) {
+    if (mk_list_is_empty(head) == 0) {
         __mk_list_add(_new, head->prev, head);
     }
     else {
