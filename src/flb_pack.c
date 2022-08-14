@@ -323,11 +323,13 @@ int flb_pack_state_init(struct flb_pack_state *s)
 void flb_pack_state_reset(struct flb_pack_state *s)
 {
     flb_free(s->tokens);
+    s->tokens = NULL;
     s->tokens_size  = 0;
     s->tokens_count = 0;
     s->last_byte    = 0;
     s->buf_size     = 0;
     flb_free(s->buf_data);
+    s->buf_data = NULL;
 }
 
 
