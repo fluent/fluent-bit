@@ -242,6 +242,9 @@ struct flb_config {
     /* Upstream contexts created by plugins */
     struct mk_list upstreams;
 
+    /* Downstream contexts created by plugins */
+    struct mk_list downstreams;
+
     /*
      * Input table-id: table to keep a reference of thread-IDs used by the
      * input plugins.

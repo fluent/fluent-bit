@@ -106,7 +106,7 @@ int flb_io_net_connect(struct flb_upstream_conn *u_conn,
 #ifdef FLB_HAVE_TLS
     /* Check if TLS was enabled, if so perform the handshake */
     if (u->flags & FLB_IO_TLS) {
-        ret = flb_tls_session_create(u->tls, u_conn, coro);
+        ret = flb_tls_client_session_create(u->tls, u_conn, coro);
         if (ret != 0) {
             return -1;
         }
@@ -418,10 +418,10 @@ int flb_io_net_write(struct flb_upstream_conn *u_conn, const void *data,
 #ifdef FLB_HAVE_TLS
     else if (u->flags & FLB_IO_TLS) {
         if (u->flags & FLB_IO_ASYNC) {
-            ret = flb_tls_net_write_async(coro, u_conn, data, len, out_len);
+            ret = flb_tls_net_write_async(coro, u_conn->tls_session, data, len, out_len);
         }
         else {
-            ret = flb_tls_net_write(u_conn, data, len, out_len);
+            ret = flb_tls_net_write(u_conn->tls_session, data, len, out_len);
         }
     }
 #endif
@@ -462,10 +462,10 @@ ssize_t flb_io_net_read(struct flb_upstream_conn *u_conn, void *buf, size_t len)
 #ifdef FLB_HAVE_TLS
     else if (u->flags & FLB_IO_TLS) {
         if (u->flags & FLB_IO_ASYNC) {
-            ret = flb_tls_net_read_async(coro, u_conn, buf, len);
+            ret = flb_tls_net_read_async(coro, u_conn->tls_session, buf, len);
         }
         else {
-            ret = flb_tls_net_read(u_conn, buf, len);
+            ret = flb_tls_net_read(u_conn->tls_session, buf, len);
         }
     }
 #endif

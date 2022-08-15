@@ -321,7 +321,7 @@ static void *tls_context_create(int verify, int debug,
 }
 
 static void *tls_session_create(struct flb_tls *tls,
-                                struct flb_upstream_conn *u_conn)
+                                int fd)
 {
     struct tls_session *session;
     struct tls_context *ctx = tls->ctx;
@@ -344,8 +344,8 @@ static void *tls_session_create(struct flb_tls *tls,
         return NULL;
     }
     session->ssl = ssl;
-    session->fd = u_conn->fd;
-    SSL_set_fd(ssl, u_conn->fd);
+    session->fd = fd;
+    SSL_set_fd(ssl, fd);
 
     /*
      * TLS Debug Levels:
@@ -388,21 +388,33 @@ static int tls_session_destroy(void *session)
     return 0;
 }
 
-static int tls_net_read(struct flb_upstream_conn *u_conn,
+static int tls_net_read(struct flb_tls_session *session,
                         void *buf, size_t len)
 {
     int ret;
     char err_buf[256];
-    struct tls_session *session = (struct tls_session *) u_conn->tls_session;
     struct tls_context *ctx;
+    struct tls_session *backend_session;
 
-    ctx = session->parent;
+    if (session->ptr == NULL) {
+        flb_error("[tls] error: uninitialized backend session");
+
+        return -1;
+    }
+
+    backend_session = (struct tls_session *) session->ptr;
+
+    ctx = backend_session->parent;
+
     pthread_mutex_lock(&ctx->mutex);
 
     ERR_clear_error();
-    ret = SSL_read(session->ssl, buf, len);
+
+    ret = SSL_read(backend_session->ssl, buf, len);
+
     if (ret <= 0) {
-        ret = SSL_get_error(session->ssl, ret);
+        ret = SSL_get_error(backend_session->ssl, ret);
+
         if (ret == SSL_ERROR_WANT_READ) {
             ret = FLB_TLS_WANT_READ;
         }
@@ -422,24 +434,35 @@ static int tls_net_read(struct flb_upstream_conn *u_conn,
     return ret;
 }
 
-static int tls_net_write(struct flb_upstream_conn *u_conn,
+static int tls_net_write(struct flb_tls_session *session,
                          const void *data, size_t len)
 {
     int ret;
     char err_buf[256];
     size_t total = 0;
-    struct tls_session *session = (struct tls_session *) u_conn->tls_session;
     struct tls_context *ctx;
+    struct tls_session *backend_session;
 
-    ctx = session->parent;
+    if (session->ptr == NULL) {
+        flb_error("[tls] error: uninitialized backend session");
+
+        return -1;
+    }
+
+    backend_session = (struct tls_session *) session->ptr;
+    ctx = backend_session->parent;
+
     pthread_mutex_lock(&ctx->mutex);
 
     ERR_clear_error();
-    ret = SSL_write(session->ssl,
+
+    ret = SSL_write(backend_session->ssl,
                     (unsigned char *) data + total,
                     len - total);
+
     if (ret <= 0) {
-        ret = SSL_get_error(session->ssl, ret);
+        ret = SSL_get_error(backend_session->ssl, ret);
+
         if (ret == SSL_ERROR_WANT_WRITE) {
             ret = FLB_TLS_WANT_WRITE;
         }
@@ -449,6 +472,7 @@ static int tls_net_write(struct flb_upstream_conn *u_conn,
         else {
             ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
             flb_error("[tls] error: %s", err_buf);
+
             ret = -1;
         }
     }
@@ -459,7 +483,7 @@ static int tls_net_write(struct flb_upstream_conn *u_conn,
     return ret;
 }
 
-static int tls_net_handshake(struct flb_tls *tls, void *ptr_session)
+static int tls_net_client_handshake(struct flb_tls *tls, void *ptr_session)
 {
     int ret = 0;
     char err_buf[256];
@@ -507,14 +531,74 @@ static int tls_net_handshake(struct flb_tls *tls, void *ptr_session)
     return 0;
 }
 
+static int tls_net_server_handshake(struct flb_tls *tls, void *ptr_session)
+{
+    char                err_buf[256];
+    struct tls_session *session;
+    struct tls_context *ctx;
+    int                 ret;
+
+    ret = 0;
+
+    session = ptr_session;
+    ctx = session->parent;
+
+    pthread_mutex_lock(&ctx->mutex);
+
+    if (tls->vhost) {
+        SSL_set_tlsext_host_name(session->ssl, tls->vhost);
+    }
+
+    ERR_clear_error();
+    ret = SSL_accept(session->ssl);
+    if (ret != 1) {
+        ret = SSL_get_error(session->ssl, ret);
+        if (ret != SSL_ERROR_WANT_READ &&
+            ret != SSL_ERROR_WANT_WRITE) {
+            ret = SSL_get_error(session->ssl, ret);
+
+            // The SSL_ERROR_SYSCALL with errno value of 0 indicates unexpected
+            //  EOF from the peer. This is fixed in OpenSSL 3.0.
+            if (ret == 0) {
+                flb_error("[tls] error: unexpected EOF");
+            } else {
+                ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
+                flb_error("[tls] error: %s", err_buf);
+            }
+
+            pthread_mutex_unlock(&ctx->mutex);
+
+            return -1;
+        }
+
+        if (ret == SSL_ERROR_WANT_WRITE) {
+            pthread_mutex_unlock(&ctx->mutex);
+
+            return FLB_TLS_WANT_WRITE;
+        }
+        else if (ret == SSL_ERROR_WANT_READ) {
+            pthread_mutex_unlock(&ctx->mutex);
+
+            return FLB_TLS_WANT_READ;
+        }
+    }
+
+    pthread_mutex_unlock(&ctx->mutex);
+
+    flb_trace("[tls] connection and handshake OK");
+
+    return 0;
+}
+
 /* OpenSSL backend registration */
 static struct flb_tls_backend tls_openssl = {
-    .name            = "openssl",
-    .context_create  = tls_context_create,
-    .context_destroy = tls_context_destroy,
-    .session_create  = tls_session_create,
-    .session_destroy = tls_session_destroy,
-    .net_read        = tls_net_read,
-    .net_write       = tls_net_write,
-    .net_handshake   = tls_net_handshake
+    .name                 = "openssl",
+    .context_create       = tls_context_create,
+    .context_destroy      = tls_context_destroy,
+    .session_create       = tls_session_create,
+    .session_destroy      = tls_session_destroy,
+    .net_read             = tls_net_read,
+    .net_write            = tls_net_write,
+    .net_client_handshake = tls_net_client_handshake,
+    .net_server_handshake = tls_net_server_handshake
 };

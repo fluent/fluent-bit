@@ -483,10 +483,11 @@ static int destroy_conn(struct flb_upstream_conn *u_conn)
     }
 
 #ifdef FLB_HAVE_TLS
-    if (u_conn->tls_session) {
-        flb_tls_session_destroy(u_conn->tls, u_conn);
+    if (u_conn->tls_session != NULL) {
+        flb_tls_session_destroy(u_conn->tls_session);
     }
 #endif
+
     mk_list_del(&u_conn->_head);
     flb_free(u_conn);
 

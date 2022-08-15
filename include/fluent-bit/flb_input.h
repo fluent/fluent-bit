@@ -313,6 +313,23 @@ struct flb_input_instance {
     struct flb_hash_table *ht_log_chunks;
     struct flb_hash_table *ht_metric_chunks;
 
+    /* TLS settings */
+    int use_tls;                         /* bool, try to use TLS for I/O */
+    int tls_verify;                      /* Verify certs (default: true) */
+    int tls_debug;                       /* mbedtls debug level          */
+    char *tls_vhost;                     /* Virtual hostname for SNI     */
+    char *tls_ca_path;                   /* Path to certificates         */
+    char *tls_ca_file;                   /* CA root cert                 */
+    char *tls_crt_file;                  /* Certificate                  */
+    char *tls_key_file;                  /* Cert Key                     */
+    char *tls_key_passwd;                /* Cert Key Password            */
+
+#ifdef FLB_HAVE_TLS
+    struct flb_tls *tls;
+#else
+    void *tls;
+#endif
+
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
 };

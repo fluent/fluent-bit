@@ -34,8 +34,14 @@ static int in_tcp_collect(struct flb_input_instance *in,
                           struct flb_config *config, void *in_context)
 {
     int fd;
+    int ret;
     struct flb_in_tcp_config *ctx = in_context;
     struct tcp_conn *conn;
+    struct flb_coro *coro;
+
+
+printf("\nXXXX %s\n\n", in->tls_vhost);
+
 
     /* Accept the new connection */
     fd = flb_net_accept(ctx->server_fd);
@@ -49,6 +55,18 @@ static int in_tcp_collect(struct flb_input_instance *in,
     if (!conn) {
         return -1;
     }
+
+#ifdef FLB_HAVE_TLS
+    /* Check if TLS was enabled, if so perform the handshake */
+    if (in->use_tls) {
+        coro = flb_coro_get();
+        ret = flb_tls_server_session_create(in->tls, &conn->d_conn, coro);
+        if (ret != 0) {
+            return -1;
+        }
+    }
+#endif
+
     return 0;
 }
 
@@ -152,5 +170,5 @@ struct flb_input_plugin in_tcp_plugin = {
     .cb_flush_buf = NULL,
     .cb_exit      = in_tcp_exit,
     .config_map   = config_map,
-    .flags        = FLB_INPUT_NET,
+    .flags        = FLB_INPUT_NET | FLB_IO_TLS,
 };

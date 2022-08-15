@@ -159,6 +159,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
 {
     int id;
     int ret;
+    int flags = 0;
     struct mk_list *head;
     struct flb_input_plugin *plugin;
     struct flb_input_instance *instance = NULL;
@@ -502,6 +503,54 @@ int flb_input_set_property(struct flb_input_instance *ins,
         ins->host.ipv6 = flb_utils_bool(tmp);
         flb_sds_destroy(tmp);
     }
+#ifdef FLB_HAVE_TLS
+    else if (prop_key_check("tls", k, len) == 0 && tmp) {
+        if (strcasecmp(tmp, "true") == 0 || strcasecmp(tmp, "on") == 0) {
+            if ((ins->flags & FLB_IO_TLS) == 0) {
+                flb_error("[config] %s don't support TLS", ins->name);
+                flb_sds_destroy(tmp);
+                return -1;
+            }
+
+            ins->use_tls = FLB_TRUE;
+        }
+        else {
+            ins->use_tls = FLB_FALSE;
+        }
+        flb_sds_destroy(tmp);
+    }
+    else if (prop_key_check("tls.verify", k, len) == 0 && tmp) {
+        if (strcasecmp(tmp, "true") == 0 || strcasecmp(tmp, "on") == 0) {
+            ins->tls_verify = FLB_TRUE;
+        }
+        else {
+            ins->tls_verify = FLB_FALSE;
+        }
+        flb_sds_destroy(tmp);
+    }
+    else if (prop_key_check("tls.debug", k, len) == 0 && tmp) {
+        ins->tls_debug = atoi(tmp);
+        flb_sds_destroy(tmp);
+    }
+    else if (prop_key_check("tls.vhost", k, len) == 0) {
+        ins->tls_vhost = tmp;
+    }
+    else if (prop_key_check("tls.ca_path", k, len) == 0) {
+        ins->tls_ca_path = tmp;
+    }
+    else if (prop_key_check("tls.ca_file", k, len) == 0) {
+        ins->tls_ca_file = tmp;
+    }
+    else if (prop_key_check("tls.crt_file", k, len) == 0) {
+        ins->tls_crt_file = tmp;
+    }
+    else if (prop_key_check("tls.key_file", k, len) == 0) {
+        ins->tls_key_file = tmp;
+    }
+    else if (prop_key_check("tls.key_passwd", k, len) == 0) {
+        ins->tls_key_passwd = tmp;
+    }
+#endif
     else if (prop_key_check("storage.type", k, len) == 0 && tmp) {
         /* Set the storage type */
         if (strcasecmp(tmp, "filesystem") == 0) {
