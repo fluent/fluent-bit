@@ -21,6 +21,7 @@
 #define FLB_IN_TCP_CONN_H
 
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_downstream_conn.h>
 
 #define FLB_IN_TCP_CHUNK "32768"
 
@@ -36,7 +37,7 @@ struct tcp_conn_stream {
 
 /* Respresents a connection */
 struct tcp_conn {
-    struct mk_event event;            /* Built-in event data for mk_events */
+//    struct mk_event event;            /* Built-in event data for mk_events */
     int fd;                           /* Socket file descriptor            */
     int status;                       /* Connection status                 */
 
@@ -49,6 +50,8 @@ struct tcp_conn {
     struct flb_input_instance *ins;   /* Parent plugin instance            */
     struct flb_in_tcp_config *ctx;    /* Plugin configuration context      */
     struct flb_pack_state pack_state; /* Internal JSON parser              */
+    struct flb_downstream_conn d_conn;
+
 
     struct mk_list _head;
 };

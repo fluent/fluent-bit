@@ -171,7 +171,7 @@ int tcp_conn_event(void *data)
     struct tcp_conn *conn = data;
     struct flb_in_tcp_config *ctx = conn->ctx;
 
-    event = &conn->event;
+    event = &conn->d_conn.event;
     if (event->mask & MK_EVENT_READ) {
         available = (conn->buf_size - conn->buf_len) - 1;
         if (available < 1) {
@@ -282,8 +282,16 @@ struct tcp_conn *tcp_conn_add(int fd, struct flb_in_tcp_config *ctx)
         return NULL;
     }
 
+    conn->d_conn.fd = fd;
+    conn->d_conn.port = strtoul(ctx->tcp_port, NULL, 10);
+    conn->d_conn.host = ctx->listen;
+    conn->d_conn.evl = ctx->evl;
+    conn->d_conn.tls = ctx->ins->tls;
+    conn->d_conn.linked_object = (void *) conn;
+
     /* Set data for the event-loop */
-    event = &conn->event;
+    event = &conn->d_conn.event;
+
     MK_EVENT_NEW(event);
     event->fd           = fd;
     event->type         = FLB_ENGINE_EV_CUSTOM;
@@ -338,7 +346,7 @@ int tcp_conn_del(struct tcp_conn *conn)
         flb_pack_state_reset(&conn->pack_state);
     }
     /* Unregister the file descriptior from the event-loop */
-    mk_event_del(ctx->evl, &conn->event);
+    mk_event_del(ctx->evl, &conn->d_conn.event);
 
     /* Release resources */
     mk_list_del(&conn->_head);
