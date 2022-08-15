@@ -5,6 +5,8 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_config_format.h>
+#include <fluent-bit/flb_sds.h>
+#include <sys/stat.h>
 
 #include "flb_tests_internal.h"
 
@@ -148,7 +150,6 @@ void missing_value()
     };
 
     initialization_crutch();
-
     unlink(ERROR_LOG);
 
     fp = freopen(ERROR_LOG, "w+", stderr);

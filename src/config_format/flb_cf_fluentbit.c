@@ -603,8 +603,12 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
         key = buf + indent_len;
         key_len = i;
 
-        if (!key || i < 0) {
+        if (!key) {
             config_error(cfg_file, line, "undefined key - check config is in valid classic format");
+            goto error;
+        }
+        else if(i < 0) {
+            config_error(cfg_file, line, "undefined value - check config is in valid classic format");
             goto error;
         }
 
