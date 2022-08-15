@@ -83,9 +83,8 @@ jobs:
 
       - name: Build Fluent Bit packages
         run: |
-          export OPENSSL_ROOT_DIR=$(brew --prefix openssl)
           export LIBRARY_PATH=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib:$LIBRARY_PATH
-          cmake -DCPACK_GENERATOR=productbuild -DFLB_NIGHTLY_BUILD=${{ inputs.unstable }} ../
+          cmake -DCPACK_GENERATOR=productbuild -DFLB_NIGHTLY_BUILD=${{ inputs.unstable }} ../ -DOPENSSL_ROOT_DIR=$(brew --prefix openssl)
           cmake --build .
           cpack -G productbuild
         working-directory: build
