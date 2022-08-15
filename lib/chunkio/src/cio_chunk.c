@@ -503,7 +503,9 @@ static inline void chunk_state_sync(struct cio_chunk *ch)
         return;
     }
 
-    mk_list_del(&ch->_state_head);
+    if (!mk_list_is_set(&ch->_state_head)) {
+        mk_list_del(&ch->_state_head);
+    }
     st = ch->st;
     if (cio_chunk_is_up(ch) == CIO_TRUE) {
         mk_list_add(&ch->_state_head, &st->chunks_up);
