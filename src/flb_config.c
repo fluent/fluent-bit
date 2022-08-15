@@ -289,6 +289,7 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->proxies);
     mk_list_init(&config->workers);
     mk_list_init(&config->upstreams);
+    mk_list_init(&config->downstreams);
     mk_list_init(&config->cmetrics);
     mk_list_init(&config->cf_parsers_list);
 
