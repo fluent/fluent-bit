@@ -120,11 +120,32 @@ struct flb_in_tcp_config *tcp_config_init(struct flb_input_instance *ins)
         ctx->buffer_size  = (atoi(ctx->buffer_size_str) * 1024);
     }
 
+    if (ins->use_tls) {
+        ins->tls = flb_tls_create(ins->tls_verify,
+                                  ins->tls_debug,
+                                  ins->tls_vhost,
+                                  ins->tls_ca_path,
+                                  ins->tls_ca_file,
+                                  ins->tls_crt_file,
+                                  ins->tls_key_file,
+                                  ins->tls_key_passwd);
+
+        if (ins->tls == NULL) {
+            tcp_config_destroy(ctx);
+
+            return NULL;
+        }
+    }
+
     return ctx;
 }
 
 int tcp_config_destroy(struct flb_in_tcp_config *ctx)
 {
+    if (ctx->ins->tls != NULL) {
+        flb_tls_destroy(ctx->ins->tls);
+    }
+
     flb_sds_destroy(ctx->separator);
     flb_free(ctx->tcp_port);
     if (ctx->server_fd > 0) {

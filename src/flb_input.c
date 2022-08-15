@@ -155,6 +155,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
 {
     int id;
     int ret;
+    int flags = 0;
     struct mk_list *head;
     struct flb_input_plugin *plugin;
     struct flb_input_instance *instance = NULL;
@@ -286,6 +287,33 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
                 return NULL;
             }
         }
+
+        /* Parent plugin flags */
+        flags = instance->flags;
+        if (flags & FLB_IO_TCP) {
+            instance->use_tls = FLB_FALSE;
+        }
+        else if (flags & FLB_IO_TLS) {
+            instance->use_tls = FLB_TRUE;
+        }
+        else if (flags & FLB_IO_OPT_TLS) {
+            /* TLS must be enabled manually in the config */
+            instance->use_tls = FLB_FALSE;
+            instance->flags |= FLB_IO_TLS;
+        }
+
+#ifdef FLB_HAVE_TLS
+        instance->tls                   = NULL;
+        instance->tls_debug             = -1;
+        instance->tls_verify            = FLB_TRUE;
+        instance->tls_vhost             = NULL;
+        instance->tls_ca_path           = NULL;
+        instance->tls_ca_file           = NULL;
+        instance->tls_crt_file          = NULL;
+        instance->tls_key_file          = NULL;
+        instance->tls_key_passwd        = NULL;
+#endif
+
 
         /* Plugin requires a co-routine context ? */
         if (plugin->flags & FLB_INPUT_CORO) {
@@ -488,6 +516,54 @@ int flb_input_set_property(struct flb_input_instance *ins,
         ins->host.ipv6 = flb_utils_bool(tmp);
         flb_sds_destroy(tmp);
     }
+#ifdef FLB_HAVE_TLS
+    else if (prop_key_check("tls", k, len) == 0 && tmp) {
+        if (strcasecmp(tmp, "true") == 0 || strcasecmp(tmp, "on") == 0) {
+            if ((ins->flags & FLB_IO_TLS) == 0) {
+                flb_error("[config] %s don't support TLS", ins->name);
+                flb_sds_destroy(tmp);
+                return -1;
+            }
+
+            ins->use_tls = FLB_TRUE;
+        }
+        else {
+            ins->use_tls = FLB_FALSE;
+        }
+        flb_sds_destroy(tmp);
+    }
+    else if (prop_key_check("tls.verify", k, len) == 0 && tmp) {
+        if (strcasecmp(tmp, "true") == 0 || strcasecmp(tmp, "on") == 0) {
+            ins->tls_verify = FLB_TRUE;
+        }
+        else {
+            ins->tls_verify = FLB_FALSE;
+        }
+        flb_sds_destroy(tmp);
+    }
+    else if (prop_key_check("tls.debug", k, len) == 0 && tmp) {
+        ins->tls_debug = atoi(tmp);
+        flb_sds_destroy(tmp);
+    }
+    else if (prop_key_check("tls.vhost", k, len) == 0) {
+        ins->tls_vhost = tmp;
+    }
+    else if (prop_key_check("tls.ca_path", k, len) == 0) {
+        ins->tls_ca_path = tmp;
+    }
+    else if (prop_key_check("tls.ca_file", k, len) == 0) {
+        ins->tls_ca_file = tmp;
+    }
+    else if (prop_key_check("tls.crt_file", k, len) == 0) {
+        ins->tls_crt_file = tmp;
+    }
+    else if (prop_key_check("tls.key_file", k, len) == 0) {
+        ins->tls_key_file = tmp;
+    }
+    else if (prop_key_check("tls.key_passwd", k, len) == 0) {
+        ins->tls_key_passwd = tmp;
+    }
+#endif
     else if (prop_key_check("storage.type", k, len) == 0 && tmp) {
         /* Set the storage type */
         if (strcasecmp(tmp, "filesystem") == 0) {

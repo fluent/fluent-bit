@@ -24,6 +24,9 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_upstream.h>
+#include <fluent-bit/flb_downstream.h>
+#include <fluent-bit/flb_upstream_conn.h>
+#include <fluent-bit/flb_downstream_conn.h>
 #include <stddef.h>
 
 #define FLB_TLS_CLIENT   "Fluent Bit"
@@ -37,11 +40,18 @@
 #define FLB_TLS_CERT             2
 #define FLB_TLS_PRIV_KEY         4
 
+#define FLB_TLS_UNKNOWN_CONNECTION    0
+#define FLB_TLS_UPSTREAM_CONNECTION   1
+#define FLB_TLS_DOWNSTREAM_CONNECTION 2
+
 struct flb_tls;
 
 struct flb_tls_session {
     /* opaque data type for backend session context */
-    void *ptr;
+    void           *ptr;
+    struct flb_tls *tls;
+    void           *connection;
+    int             connection_type;
 };
 
 /*
@@ -62,14 +72,15 @@ struct flb_tls_backend {
     void (*context_destroy) (void *);
 
     /* Session management */
-    void *(*session_create) (struct flb_tls *, struct flb_upstream_conn *);
+    void *(*session_create) (struct flb_tls *, int);
     int (*session_destroy) (void *);
 
     /* I/O */
-    int (*net_read) (struct flb_upstream_conn *, void *, size_t);
-    int (*net_write) (struct flb_upstream_conn *, const void *data,
+    int (*net_read) (struct flb_tls_session *, void *, size_t);
+    int (*net_write) (struct flb_tls_session *, const void *data,
                       size_t len);
-    int (*net_handshake) (struct flb_tls *, void *);
+    int (*net_client_handshake) (struct flb_tls *, void *);
+    int (*net_server_handshake) (struct flb_tls *, void *);
 };
 
 /* Main TLS context */
@@ -87,21 +98,35 @@ int flb_tls_init();
 
 struct flb_tls *flb_tls_create();
 int flb_tls_destroy(struct flb_tls *tls);
-
-int flb_tls_session_create(struct flb_tls *tls,
-                           struct flb_upstream_conn *u_conn,
-                           struct flb_coro *th);
-int flb_tls_session_destroy(struct flb_tls *tls, struct flb_upstream_conn *u_conn);
-
 int flb_tls_load_system_certificates(struct flb_tls *tls);
-int flb_tls_net_read(struct flb_upstream_conn *u_conn, void *buf, size_t len);
-int flb_tls_net_read_async(struct flb_coro *th, struct flb_upstream_conn *u_conn,
-                           void *buf, size_t len);
-int flb_tls_net_write(struct flb_upstream_conn *u_conn,
-                      const void *data, size_t len, size_t *out_len);
-int flb_tls_net_write_async(struct flb_coro *th, struct flb_upstream_conn *u_conn,
-                            const void *data, size_t len, size_t *out_len);
+
 struct mk_list *flb_tls_get_config_map(struct flb_config *config);
+
+int flb_tls_session_destroy(struct flb_tls_session *session);
+
+int flb_tls_client_session_create(struct flb_tls *tls,
+                                  struct flb_upstream_conn *u_conn,
+                                  struct flb_coro *th);
+
+int flb_tls_server_session_create(struct flb_tls *tls,
+                                  struct flb_downstream_conn *connection,
+                                  struct flb_coro *th);
+
+int flb_tls_net_read(struct flb_tls_session *session, 
+                     void *buf, 
+                     size_t len);
+
+int flb_tls_net_read_async(struct flb_coro *th, 
+                           struct flb_tls_session *session,
+                           void *buf, size_t len);
+
+int flb_tls_net_write(struct flb_tls_session *session,
+                      const void *data, size_t len, size_t *out_len);
+
+int flb_tls_net_write_async(struct flb_coro *th, 
+                            struct flb_tls_session *session,
+                            const void *data, size_t len, size_t *out_len);
+
 
 #endif
 #endif

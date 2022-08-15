@@ -117,6 +117,7 @@ void flb_init_env()
     flb_tls_init();
     flb_coro_init();
     flb_upstream_init();
+    flb_downstream_init();
     flb_output_prepare();
 
     /* libraries */
