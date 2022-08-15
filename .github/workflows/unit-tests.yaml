@@ -102,7 +102,7 @@ jobs:
         run: |
           echo "CC = $CC, CXX = $CXX, FLB_OPT = $FLB_OPT"
           brew update
-          brew install bison flex || true
+          brew install bison flex openssl || true
           ci/scripts/run-unit-tests.sh
         env:
           CC: gcc
