@@ -507,7 +507,6 @@ static int cb_s3_init(struct flb_output_instance *ins,
     int ret;
     flb_sds_t tmp_sds;
     int async_flags;
-    int len;
     char *role_arn = NULL;
     char *session_name;
     const char *tmp;
@@ -541,6 +540,15 @@ static int cb_s3_init(struct flb_output_instance *ins,
         return -1;
     }
 
+    /* the check against -1 is works here because size_t is unsigned
+     * and (int) -1 == unsigned max value
+     * Fluent Bit uses -1 (which becomes max value) to indicate undefined
+     */
+    if (ctx->ins->total_limit_size != -1) {
+        flb_plg_warn(ctx->ins, "Please use 'store_dir_limit_size' with s3 output instead of 'storage.total_limit_size'. "
+                     "S3 has its own buffer files located in the store_dir.");
+    }
+
     /* Date key */
     ctx->date_key = ctx->json_date_key;
     tmp = flb_output_get_property("json_date_key", ins);
@@ -569,15 +577,6 @@ static int cb_s3_init(struct flb_output_instance *ins,
     if (!tmp) {
         flb_plg_error(ctx->ins, "'bucket' is a required parameter");
         return -1;
-    }
-
-    tmp = flb_output_get_property("chunk_buffer_dir", ins);
-    if (tmp) {
-        len = strlen(tmp);
-        if (tmp[len - 1] == '/' || tmp[len - 1] == '\\') {
-            flb_plg_error(ctx->ins, "'chunk_buffer_dir' can not end in a / or \\");
-            return -1;
-        }
     }
 
     /*
@@ -2368,6 +2367,15 @@ static struct flb_config_map config_map[] = {
      "Directory to locally buffer data before sending. Plugin uses the S3 Multipart "
      "upload API to send data in chunks of 5 MB at a time- only a small amount of"
      " data will be locally buffered at any given point in time."
+    },
+
+    {
+     FLB_CONFIG_MAP_SIZE, "store_dir_limit_size", (char *) NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, store_dir_limit_size),
+     "S3 plugin has its own buffering system with files in the `store_dir`. "
+     "Use the `store_dir_limit_size` to limit the amount of data S3 buffers in "
+     "the `store_dir` to limit disk usage. If the limit is reached, "
+     "data will be discarded. Default is 0 which means unlimited."
     },
 
     {
