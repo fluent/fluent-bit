@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_version.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_kv.h>
 
 #include <monkey/monkey.h>
 #include <monkey/mk_core.h>
@@ -155,7 +156,42 @@ static flb_sds_t tag_key(struct flb_http *ctx, msgpack_object *map)
     return NULL;
 }
 
-int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
+static int pack_headers(msgpack_packer *pck, msgpack_object *obj,
+                        struct mk_list *matched_headers, int matched_headers_num)
+{
+    int map_size;
+    int i;
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_kv *kv;
+
+    if (obj == NULL || pck == NULL || matched_headers == NULL) {
+        return -1;
+    }
+
+    if (obj->type != MSGPACK_OBJECT_MAP) {
+            return -1;
+    }
+    map_size = obj->via.map.size;
+    msgpack_pack_map(pck, map_size + matched_headers_num);
+    for (i=0; i<map_size; i++) {
+        msgpack_pack_object(pck, obj->via.map.ptr[i].key);
+        msgpack_pack_object(pck, obj->via.map.ptr[i].val);
+    }
+    /* append headers */
+    mk_list_foreach_safe(head, tmp, matched_headers) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        msgpack_pack_str(pck, flb_sds_len(kv->key));
+        msgpack_pack_str_body(pck, kv->key, flb_sds_len(kv->key));
+        msgpack_pack_str(pck, flb_sds_len(kv->val));
+        msgpack_pack_str_body(pck, kv->val, flb_sds_len(kv->val));
+    }
+
+    return 0;
+}
+
+static int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size,
+                        struct mk_list *matched_headers, int matched_headers_num)
 {
     size_t off = 0;
     msgpack_sbuffer mp_sbuf;
@@ -184,7 +220,16 @@ int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
             /* Pack record with timestamp */
             msgpack_pack_array(&mp_pck, 2);
             flb_time_append_to_msgpack(&tm, &mp_pck, 0);
-            msgpack_pack_object(&mp_pck, result.data);
+            if (matched_headers_num == 0) {
+                msgpack_pack_object(&mp_pck, result.data);
+            }
+            else {
+                if (pack_headers(&mp_pck, &result.data, matched_headers, matched_headers_num) < 0) {
+                    flb_plg_error(ctx->ins, "Failed to append headers.");
+                    /* Use original data */
+                    msgpack_pack_object(&mp_pck, result.data);
+                }
+            }
 
             /* Ingest record into the engine */
             if (tag_from_record) {
@@ -218,7 +263,16 @@ int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
                 /* Pack record with timestamp */
                 msgpack_pack_array(&mp_pck, 2);
                 flb_time_append_to_msgpack(&tm, &mp_pck, 0);
-                msgpack_pack_object(&mp_pck, record); 
+                if (matched_headers_num == 0) {
+                    msgpack_pack_object(&mp_pck, result.data);
+                }
+                else {
+                    if (pack_headers(&mp_pck, &result.data, matched_headers, matched_headers_num) < 0) {
+                        flb_plg_error(ctx->ins, "Failed to append headers.");
+                        /* Use original data */
+                        msgpack_pack_object(&mp_pck, result.data);
+                    }
+                }
 
                 /* Ingest record into the engine */
                 if (tag_from_record) {
@@ -254,7 +308,9 @@ int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
 }
 
 static ssize_t parse_payload_json(struct flb_http *ctx, flb_sds_t tag,
-                                  char *payload, size_t size)
+                                  char *payload, size_t size,
+                                  struct mk_list *matched_headers,
+                                  int matched_headers_num)
 {
     int ret;
     int out_size;
@@ -283,10 +339,58 @@ static ssize_t parse_payload_json(struct flb_http *ctx, flb_sds_t tag,
     }
 
     /* Process the packaged JSON and return the last byte used */
-    process_pack(ctx, tag, pack, out_size);
+    process_pack(ctx, tag, pack, out_size,
+                 matched_headers, matched_headers_num);
     flb_free(pack);
 
     return 0;
+}
+
+static int check_header_key_condition(struct flb_http *ctx, flb_sds_t key)
+{
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct header_key_condition *cond = NULL;
+
+    mk_list_foreach_safe(head, tmp, &ctx->add_headers) {
+        cond = mk_list_entry(head, struct header_key_condition, _head);
+        if (flb_regex_match(cond->regex, (unsigned char*)key, flb_sds_len(key)) > 0) {
+            return FLB_TRUE;
+        }
+    }
+    return FLB_FALSE;
+}
+
+static void lookup_headers(struct flb_http *ctx, struct mk_list *header_list,
+                           struct mk_list *headers_append, int *headers_append_num)
+{
+    struct mk_http_header *header;
+    struct mk_list *list_head;
+    struct mk_list *list_tmp;
+    flb_sds_t key;
+    int ret = 0;
+
+    mk_list_foreach_safe(list_head, list_tmp, header_list) {
+        header = mk_list_entry(list_head, struct mk_http_header, _head);
+        /*
+        flb_error("key=%.*s val=%.*s", header->key.len, header->key.data,
+                  header->val.len, header->val.data);
+        */
+        key = flb_sds_create_len(header->key.data, header->key.len);
+        if (key == NULL) {
+            flb_errno();
+            continue;
+        }
+        ret = check_header_key_condition(ctx, key);
+        flb_sds_destroy(key);
+        if (ret == FLB_TRUE) {
+            flb_kv_item_create_len(headers_append,
+                                   header->key.data, header->key.len,
+                                   header->val.data, header->val.len);
+            *headers_append_num = *headers_append_num + 1;
+            continue;
+        }
+    }
 }
 
 static int process_payload(struct flb_http *ctx, struct http_conn *conn,
@@ -296,6 +400,8 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
 {
     int type = -1;
     struct mk_http_header *header;
+    struct mk_list matched_headers;
+    int matched_headers_num = 0;
 
     header = &session->parser.headers[MK_HEADER_CONTENT_TYPE];
     if (header->key.data == NULL) {
@@ -318,9 +424,16 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
         return -1;
     }
 
-    if (type == HTTP_CONTENT_JSON) {
-        parse_payload_json(ctx, tag, request->data.data, request->data.len);
+    flb_kv_init(&matched_headers);
+    if (ctx->add_headers_num > 0) {
+        lookup_headers(ctx, &session->parser.header_list, &matched_headers, &matched_headers_num);
     }
+
+    if (type == HTTP_CONTENT_JSON) {
+        parse_payload_json(ctx, tag, request->data.data, request->data.len,
+                           &matched_headers, matched_headers_num);
+    }
+    flb_kv_release(&matched_headers);
 
     return 0;
 }

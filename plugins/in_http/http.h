@@ -24,6 +24,8 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_regex.h>
 
 #include <monkey/monkey.h>
 
@@ -45,8 +47,17 @@ struct flb_http {
     struct mk_list connections;        /* linked list of connections */
     struct mk_event_loop *evl;         /* Event loop context */
 
+    struct mk_list *add_headers_map;    /* config_map to append header value */
+    struct mk_list add_headers;
+    int add_headers_num;
+
     struct mk_server *server;
     struct flb_input_instance *ins;
+};
+
+struct header_key_condition {
+    struct flb_regex *regex;
+    struct mk_list _head;
 };
 
 
