@@ -189,6 +189,11 @@ void flb_upstream_node_destroy(struct flb_upstream_node *node)
     flb_sds_destroy(node->host);
     flb_sds_destroy(node->port);
 
+    flb_hash_table_destroy(node->ht);
+    if (node->u) {
+        flb_upstream_destroy(node->u);
+    }
+
 #ifdef FLB_HAVE_TLS
     flb_sds_destroy(node->tls_ca_path);
     flb_sds_destroy(node->tls_ca_file);
@@ -199,11 +204,6 @@ void flb_upstream_node_destroy(struct flb_upstream_node *node)
         flb_tls_destroy(node->tls);
     }
 #endif
-
-    flb_hash_table_destroy(node->ht);
-    if (node->u) {
-        flb_upstream_destroy(node->u);
-    }
 
     /* note: node link must be handled by the caller before this call */
     flb_free(node);
