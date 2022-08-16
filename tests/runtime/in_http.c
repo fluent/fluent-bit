@@ -98,6 +98,40 @@ static int cb_check_result_json(void *record, size_t size, void *data)
     return 0;
 }
 
+struct str_list {
+    size_t size;
+    char **lists;
+};
+
+/* Callback to check expected results */
+static int cb_check_json_str_list(void *record, size_t size, void *data)
+{
+    char *p;
+    char *result;
+    int num = get_output_num();
+    size_t i;
+    struct str_list *l = (struct str_list*)data;
+
+    if (!TEST_CHECK(l != NULL)) {
+        TEST_MSG("Data is NULL");
+        flb_free(record);
+        return 0;
+    }
+    set_output_num(num+1);
+
+    result = (char *) record;
+
+    for (i=0; i<l->size; i++) {
+        p = strstr(result, l->lists[i]);
+        if(!TEST_CHECK(p != NULL)) {
+            TEST_MSG("Expected to find: '%s' in result '%s'",
+                     l->lists[i], result);
+        }
+    }
+    flb_free(record);
+    return 0;
+}
+
 struct http_client_ctx* http_client_ctx_create()
 {
     struct http_client_ctx *ret_ctx = NULL;
@@ -434,11 +468,182 @@ void flb_test_http_tag_key()
     test_ctx_destroy(ctx);
 }
 
+void flb_test_http_add_request_header()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+    int ret;
+    int num;
+    size_t b_sent;
+    char *header_key = "aaa_bb";
+    char *header_value = "value";
+
+    char *buf = "{\"test\":\"msg\"}";
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "\"value\"";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "add_request_header", "aaa",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ctx->httpc = http_client_ctx_create();
+    TEST_CHECK(ctx->httpc != NULL);
+
+    c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/", buf, strlen(buf),
+                        "127.0.0.1", 9880, NULL, 0);
+    ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE, strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
+                              JSON_CONTENT_TYPE, strlen(JSON_CONTENT_TYPE));
+
+    ret = flb_http_add_header(c, header_key, strlen(header_key),
+                              header_value, strlen(header_value));
+    TEST_CHECK(ret == 0);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("http_client failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_http_do(c, &b_sent);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("ret error. ret=%d\n", ret);
+    }
+    else if (!TEST_CHECK(b_sent > 0)){
+        TEST_MSG("b_sent size error. b_sent = %lu\n", b_sent);
+    }
+    else if (!TEST_CHECK(c->resp.status == 201)) {
+        TEST_MSG("http response code error. expect: 201, got: %d\n", c->resp.status);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(ctx->httpc->u_conn);
+    test_ctx_destroy(ctx);
+}
+
+void flb_test_http_add_request_header_multi()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+    int ret;
+    int num;
+    size_t b_sent;
+    char *header_key1 = "aaa_bb";
+    char *header_value1 = "value1";
+    char *header_key2 = "bb_aaa_bb";
+    char *header_value2 = "value2";
+
+    char *buf = "{\"test\":\"msg\"}";
+
+    char *expected_strs[] = {"\"test\":\"msg\"", "\"aaa_bb\":\"value1\"", "\"bb_aaa_bb\":\"value2\""};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_json_str_list;
+    cb_data.data = &expected;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "add_request_header", "aaa",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ctx->httpc = http_client_ctx_create();
+    TEST_CHECK(ctx->httpc != NULL);
+
+    c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/", buf, strlen(buf),
+                        "127.0.0.1", 9880, NULL, 0);
+    ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE, strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
+                              JSON_CONTENT_TYPE, strlen(JSON_CONTENT_TYPE));
+
+    ret = flb_http_add_header(c, header_key1, strlen(header_key1),
+                              header_value1, strlen(header_value1));
+    TEST_CHECK(ret == 0);
+    ret = flb_http_add_header(c, header_key2, strlen(header_key2),
+                              header_value2, strlen(header_value2));
+    TEST_CHECK(ret == 0);
+
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("http_client failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_http_do(c, &b_sent);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("ret error. ret=%d\n", ret);
+    }
+    else if (!TEST_CHECK(b_sent > 0)){
+        TEST_MSG("b_sent size error. b_sent = %lu\n", b_sent);
+    }
+    else if (!TEST_CHECK(c->resp.status == 201)) {
+        TEST_MSG("http response code error. expect: 201, got: %d\n", c->resp.status);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(ctx->httpc->u_conn);
+    test_ctx_destroy(ctx);
+}
+
 TEST_LIST = {
     {"http", flb_test_http},
     {"successful_response_code_200", flb_test_http_successful_response_code_200},
     {"successful_response_code_204", flb_test_http_successful_response_code_204},
     {"tag_key", flb_test_http_tag_key},
+    {"add_request_header", flb_test_http_add_request_header},
+    {"add_request_header_multi", flb_test_http_add_request_header_multi},
     {NULL, NULL}
 };
 
