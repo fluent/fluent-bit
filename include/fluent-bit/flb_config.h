@@ -50,6 +50,7 @@ struct flb_config {
     int grace;                /* Maximum grace time on shutdown */
     int grace_count;          /* Count of grace shutdown tries  */
     flb_pipefd_t flush_fd;    /* Timer FD associated to flush   */
+    int convert_nan_to_null;  /* convert null to nan ?          */
 
     int daemon;               /* Run as a daemon ?              */
     flb_pipefd_t shutdown_fd; /* Shutdown FD, 5 seconds         */
@@ -288,6 +289,7 @@ enum conf_type {
 #define FLB_CONF_STR_PARSERS_FILE "Parsers_File"
 #define FLB_CONF_STR_PLUGINS_FILE "Plugins_File"
 #define FLB_CONF_STR_STREAMS_FILE "Streams_File"
+#define FLB_CONF_STR_CONV_NAN     "json.convert_nan_to_null"
 
 /* FLB_HAVE_HTTP_SERVER */
 #ifdef FLB_HAVE_HTTP_SERVER

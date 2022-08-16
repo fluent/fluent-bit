@@ -36,9 +36,19 @@
 #include <cmetrics/cmt_encode_text.h>
 
 #include <msgpack.h>
+#include <math.h>
 #include <jsmn/jsmn.h>
 
 #define try_to_write_str  flb_utils_write_str
+
+static int convert_nan_to_null = FLB_FALSE;
+
+static int flb_pack_set_null_as_nan(int b) {
+    if (b == FLB_TRUE || b == FLB_FALSE) {
+        convert_nan_to_null = b;
+    }
+    return convert_nan_to_null;
+}
 
 int flb_json_tokenise(const char *js, size_t len,
                       struct flb_pack_state *state)
@@ -576,6 +586,9 @@ static int msgpack2json(char *buf, int *off, size_t left,
             char temp[512] = {0};
             if (o->via.f64 == (double)(long long int)o->via.f64) {
                 i = snprintf(temp, sizeof(temp)-1, "%.1f", o->via.f64);
+            }
+            else if (convert_nan_to_null && isnan(o->via.f64) ) {
+                i = snprintf(temp, sizeof(temp)-1, "null");
             }
             else {
                 i = snprintf(temp, sizeof(temp)-1, "%.16g", o->via.f64);
@@ -1176,4 +1189,16 @@ int flb_msgpack_expand_map(char *map_data, size_t map_size,
     msgpack_sbuffer_destroy(&sbuf);
 
     return 0;
+}
+
+int flb_pack_init(struct flb_config *config)
+{
+    int ret;
+
+    if (config == NULL) {
+        return -1;
+    }
+    ret = flb_pack_set_null_as_nan(config->convert_nan_to_null);
+
+    return ret;
 }
