@@ -34,8 +34,6 @@ int my_stdout_json(void *record, size_t size, void *data)
 
 int my_stdout_msgpack(void *record, size_t size, void *data)
 {
-    msgpack_object obj = *(msgpack_object*) record;
-
     printf("[%s]",__FUNCTION__);
 
     msgpack_unpacked result;
@@ -85,7 +83,7 @@ int main()
     struct flb_lib_out_cb callback_json;
     struct flb_lib_out_cb callback_msgpack;
     int in_ffd;
-    int out_ffd;
+    int out_ffd, out_ffd_msgpack;
 
     /* Initialize library */
     ctx = flb_create();
@@ -108,8 +106,8 @@ int main()
     /* Msgpack format */
     callback_msgpack.cb = my_stdout_msgpack;
     callback_msgpack.data = NULL;
-    out_ffd = flb_output(ctx, "lib", &callback_msgpack);
-    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+    out_ffd_msgpack = flb_output(ctx, "lib", &callback_msgpack);
+    flb_output_set(ctx, out_ffd_msgpack, "match", "test", NULL);
 
     /* Start the background worker */
     flb_start(ctx);
