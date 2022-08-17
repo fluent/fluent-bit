@@ -25,7 +25,6 @@
 #include <fluent-bit/flb_utils.h>
 
 #include <math.h>
-#include <mbedtls/base64.h>
 #include <msgpack.h>
 
 #include "azure_kusto_ingest.h"
