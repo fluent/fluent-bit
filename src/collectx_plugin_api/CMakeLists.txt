@@ -8,5 +8,6 @@ find_package (Threads)
 add_library(collectx_plugin_api SHARED ${src})
 target_link_libraries(collectx_plugin_api fluent-bit-shared)
 target_link_libraries(collectx_plugin_api ${CMAKE_THREAD_LIBS_INIT})
+set_target_properties(collectx_plugin_api PROPERTIES INSTALL_RPATH "/opt/mellanox/collectx/lib:$ORIGIN")
 
 install(TARGETS collectx_plugin_api LIBRARY DESTINATION ${FLB_INSTALL_LIBDIR})

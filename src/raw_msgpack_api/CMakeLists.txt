@@ -25,5 +25,6 @@ find_package (Threads)
 add_library(raw_msgpack_api SHARED ${src})
 target_link_libraries(raw_msgpack_api fluent-bit-shared)
 target_link_libraries(raw_msgpack_api ${CMAKE_THREAD_LIBS_INIT})
+set_target_properties(raw_msgpack_api PROPERTIES INSTALL_RPATH "/opt/mellanox/collectx/lib:$ORIGIN")
 
 install(TARGETS raw_msgpack_api LIBRARY DESTINATION ${FLB_INSTALL_LIBDIR})
