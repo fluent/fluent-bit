@@ -199,8 +199,11 @@ char *flb_wasm_call_function_format_json(struct flb_wasm *fw, const char *functi
     const char *exception;
     uint8_t *func_result;
     wasm_function_inst_t func = NULL;
-    fw->tag_buffer = wasm_runtime_module_dup_data(fw->module_inst, tag_data, tag_len);
-    fw->record_buffer = wasm_runtime_module_dup_data(fw->module_inst, record_data, record_len);
+    /* We should pass the length that is null terminator included into
+     * WASM runtime. This is why we add +1 for tag_len and record_len.
+     */
+    fw->tag_buffer = wasm_runtime_module_dup_data(fw->module_inst, tag_data, tag_len+1);
+    fw->record_buffer = wasm_runtime_module_dup_data(fw->module_inst, record_data, record_len+1);
     uint32_t func_args[6] = {fw->tag_buffer, tag_len,
                              t.tm.tv_sec, t.tm.tv_nsec,
                              fw->record_buffer, record_len};
