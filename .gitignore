@@ -40,3 +40,5 @@ workflow/
 .vagrant/
 # examples
 examples/wasi_serde_json/target/
+# WASM test data
+tests/runtime/wasm/go/*.wasm
