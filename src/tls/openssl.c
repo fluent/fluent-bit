@@ -68,8 +68,6 @@ static int tls_init(void)
     OPENSSL_add_all_algorithms_noconf();
     SSL_load_error_strings();
     SSL_library_init();
-#else
-    SSL_load_error_strings();
 #endif
     return 0;
 }
