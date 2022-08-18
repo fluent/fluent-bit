@@ -62,51 +62,110 @@
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_http_client.h>
 
-int flb_io_net_connect(struct flb_upstream_conn *u_conn,
+int flb_io_net_accept(struct flb_connection *connection,
+                       struct flb_coro *coro)
+{
+    int ret;
+
+    if (connection->fd != FLB_INVALID_SOCKET) {
+        flb_socket_close(connection->fd);
+
+        connection->fd = FLB_INVALID_SOCKET;
+        connection->event.fd = FLB_INVALID_SOCKET;
+    }
+
+    flb_connection_set_connection_timeout(connection);
+
+    /* Accept the new connection */
+    connection->fd = flb_net_accept(connection->downstream->server_fd);
+
+    if (connection->fd == -1) {
+        connection->fd = FLB_INVALID_SOCKET;
+
+        return -1;
+    }
+
+#ifdef FLB_HAVE_TLS
+    /* Check if TLS was enabled, if so perform the handshake */
+    if (connection->downstream->flags & FLB_IO_TLS) {
+        ret = flb_tls_session_create(connection->downstream->tls,
+                                     connection,
+                                     coro);
+
+        if (ret != 0) {
+            flb_connection_reset_connection_timeout(connection);
+
+            return -1;
+        }
+    }
+#endif
+
+    flb_connection_reset_connection_timeout(connection);
+
+    flb_trace("[io] connection OK");
+
+    return 0;
+}
+
+int flb_io_net_connect(struct flb_connection *connection,
                        struct flb_coro *coro)
 {
     int ret;
     int async = FLB_FALSE;
     flb_sockfd_t fd = -1;
-    struct flb_upstream *u = u_conn->u;
+    // struct flb_upstream *u = u_conn->u;
 
-    if (u_conn->fd > 0) {
-        flb_socket_close(u_conn->fd);
-        u_conn->fd = -1;
-        u_conn->event.fd = -1;
+    if (connection->fd > 0) {
+        flb_socket_close(connection->fd);
+
+        connection->fd = -1;
+        connection->event.fd = -1;
     }
 
     /* Check which connection mode must be done */
     if (coro) {
-        async = flb_upstream_is_async(u);
+        async = flb_upstream_is_async(connection->upstream);
     }
     else {
         async = FLB_FALSE;
     }
 
     /* Perform TCP connection */
-    fd = flb_net_tcp_connect(u->tcp_host, u->tcp_port, u->net.source_address,
-                             u->net.connect_timeout, async, coro, u_conn);
+    fd = flb_net_tcp_connect(connection->upstream->tcp_host,
+                             connection->upstream->tcp_port,
+                             connection->upstream->net.source_address,
+                             connection->upstream->net.connect_timeout,
+                             async, coro, connection);
     if (fd == -1) {
         return -1;
     }
 
-    if (u->proxied_host) {
-        ret = flb_http_client_proxy_connect(u_conn);
+    if (connection->upstream->proxied_host) {
+        ret = flb_http_client_proxy_connect(connection);
+
         if (ret == -1) {
             flb_debug("[http_client] flb_http_client_proxy_connect connection #%i failed to %s:%i.",
-                      u_conn->fd, u->tcp_host, u->tcp_port);
+                      connection->fd,
+                      connection->upstream->tcp_host,
+                      connection->upstream->tcp_port);
+
           flb_socket_close(fd);
+
           return -1;
         }
         flb_debug("[http_client] flb_http_client_proxy_connect connection #%i connected to %s:%i.",
-                  u_conn->fd, u->tcp_host, u->tcp_port);
+                  connection->fd,
+                  connection->upstream->tcp_host,
+                  connection->upstream->tcp_port);
     }
 
 #ifdef FLB_HAVE_TLS
     /* Check if TLS was enabled, if so perform the handshake */
-    if (u->flags & FLB_IO_TLS) {
-        ret = flb_tls_client_session_create(u->tls, u_conn, coro);
+    if (connection->upstream->flags & FLB_IO_TLS) {
+        ret = flb_tls_client_session_create(connection->upstream->tls,
+                                            connection,
+                                            coro);
+
         if (ret != 0) {
             return -1;
         }
@@ -118,21 +177,25 @@ int flb_io_net_connect(struct flb_upstream_conn *u_conn,
 }
 
 static int fd_io_write(int fd, const void *data, size_t len, size_t *out_len);
-static int net_io_write(struct flb_upstream_conn *u_conn,
+static int net_io_write(struct flb_connection *connection,
                         const void *data, size_t len, size_t *out_len)
 {
     int ret;
-    struct flb_coro *coro;
 
-    if (u_conn->fd <= 0) {
-        coro = flb_coro_get();
-        ret = flb_io_net_connect(u_conn, coro);
+    if (connection->fd <= 0) {
+        if (connection->type != FLB_UPSTREAM_CONNECTION) {
+            return -1;
+        }
+
+        ret = flb_io_net_connect((struct flb_connection *) connection,
+                                 flb_coro_get());
+
         if (ret == -1) {
             return -1;
         }
     }
 
-    return fd_io_write(u_conn->fd, data, len, out_len);
+    return fd_io_write(connection->fd, data, len, out_len);
 }
 
 static int fd_io_write(int fd, const void *data, size_t len, size_t *out_len)
@@ -176,7 +239,7 @@ static int fd_io_write(int fd, const void *data, size_t len, size_t *out_len)
  * the event loop each time when we require to do some work.
  */
 static FLB_INLINE int net_io_write_async(struct flb_coro *co,
-                                         struct flb_upstream_conn *u_conn,
+                                         struct flb_connection *connection,
                                          const void *data, size_t len, size_t *out_len)
 {
     int ret = 0;
@@ -186,7 +249,7 @@ static FLB_INLINE int net_io_write_async(struct flb_coro *co,
     size_t total = 0;
     size_t to_send;
     char so_error_buf[256];
-    struct flb_upstream *u = u_conn->u;
+    // struct flb_upstream *u = u_conn->u;
 
  retry:
     error = 0;
@@ -197,26 +260,29 @@ static FLB_INLINE int net_io_write_async(struct flb_coro *co,
     else {
         to_send = (len - total);
     }
-    bytes = send(u_conn->fd, (char *) data + total, to_send, 0);
+    bytes = send(connection->fd, (char *) data + total, to_send, 0);
 
 #ifdef FLB_HAVE_TRACE
     if (bytes > 0) {
         flb_trace("[io coro=%p] [fd %i] write_async(2)=%d (%lu/%lu)",
-                  co, u_conn->fd, bytes, total + bytes, len);
+                  co, connection->fd, bytes, total + bytes, len);
     }
     else {
         flb_trace("[io coro=%p] [fd %i] write_async(2)=%d (%lu/%lu)",
-                  co, u_conn->fd, bytes, total, len);
+                  co, connection->fd, bytes, total, len);
     }
 #endif
 
     if (bytes == -1) {
         if (FLB_WOULDBLOCK()) {
-            ret = mk_event_add(u_conn->evl,
-                               u_conn->fd,
+            ret = mk_event_add(connection->evl,
+                               connection->fd,
                                FLB_ENGINE_EV_THREAD,
-                               MK_EVENT_WRITE, &u_conn->event);
-            u_conn->event.priority = FLB_ENGINE_PRIORITY_SEND_RECV;
+                               MK_EVENT_WRITE,
+                               &connection->event);
+
+            connection->event.priority = FLB_ENGINE_PRIORITY_SEND_RECV;
+
             if (ret == -1) {
                 /*
                  * If we failed here there no much that we can do, just
@@ -225,7 +291,7 @@ static FLB_INLINE int net_io_write_async(struct flb_coro *co,
                 return -1;
             }
 
-            u_conn->coro = co;
+            connection->coroutine = co;
 
             /*
              * Return the control to the parent caller, we need to wait for
@@ -236,31 +302,37 @@ static FLB_INLINE int net_io_write_async(struct flb_coro *co,
             /* We want this field to hold NULL at all times unless we are explicitly
              * waiting to be resumed.
              */
-            u_conn->coro = NULL;
+            connection->coroutine = NULL;
 
             /* Save events mask since mk_event_del() will reset it */
-            mask = u_conn->event.mask;
+            mask = connection->event.mask;
 
             /* We got a notification, remove the event registered */
-            ret = mk_event_del(u_conn->evl, &u_conn->event);
+            ret = mk_event_del(connection->evl, &connection->event);
+
             if (ret == -1) {
                 return -1;
             }
 
             /* Check the connection status */
             if (mask & MK_EVENT_WRITE) {
-                error = flb_socket_error(u_conn->fd);
+                error = flb_socket_error(connection->fd);
+
                 if (error != 0) {
                     /* Connection is broken, not much to do here */
                     strerror_r(error, so_error_buf, sizeof(so_error_buf) - 1);
+
                     flb_error("[io fd=%i] error sending data to: %s:%i (%s)",
-                              u_conn->fd,
-                              u->tcp_host, u->tcp_port, so_error_buf);
+                              connection->fd,
+                              connection->remote_host,
+                              connection->remote_port,
+                              so_error_buf);
 
                     return -1;
                 }
 
-                MK_EVENT_NEW(&u_conn->event);
+                MK_EVENT_NEW(&connection->event);
+
                 goto retry;
             }
             else {
@@ -276,12 +348,15 @@ static FLB_INLINE int net_io_write_async(struct flb_coro *co,
     /* Update counters */
     total += bytes;
     if (total < len) {
-        if ((u_conn->event.mask & MK_EVENT_WRITE) == 0) {
-            ret = mk_event_add(u_conn->evl,
-                               u_conn->fd,
+        if ((connection->event.mask & MK_EVENT_WRITE) == 0) {
+            ret = mk_event_add(connection->evl,
+                               connection->fd,
                                FLB_ENGINE_EV_THREAD,
-                               MK_EVENT_WRITE, &u_conn->event);
-            u_conn->event.priority = FLB_ENGINE_PRIORITY_SEND_RECV;
+                               MK_EVENT_WRITE,
+                               &connection->event);
+
+            connection->event.priority = FLB_ENGINE_PRIORITY_SEND_RECV;
+
             if (ret == -1) {
                 /*
                  * If we failed here there no much that we can do, just
@@ -291,44 +366,50 @@ static FLB_INLINE int net_io_write_async(struct flb_coro *co,
             }
         }
 
-        u_conn->coro = co;
+        connection->coroutine = co;
 
         flb_coro_yield(co, MK_FALSE);
 
         /* We want this field to hold NULL at all times unless we are explicitly
          * waiting to be resumed.
          */
-        u_conn->coro = NULL;
+        connection->coroutine = NULL;
 
         goto retry;
     }
 
-    if (u_conn->event.status & MK_EVENT_REGISTERED) {
+    if (connection->event.status & MK_EVENT_REGISTERED) {
         /* We got a notification, remove the event registered */
-        ret = mk_event_del(u_conn->evl, &u_conn->event);
+        ret = mk_event_del(connection->evl, &connection->event);
+
         assert(ret == 0);
     }
 
     *out_len = total;
+
     return bytes;
 }
 
 static ssize_t fd_io_read(int fd, void *buf, size_t len);
-static ssize_t net_io_read(struct flb_upstream_conn *u_conn,
+static ssize_t net_io_read(struct flb_connection *connection,
                            void *buf, size_t len)
 {
     int ret;
 
-    ret = fd_io_read(u_conn->fd, buf, len);
+    ret = fd_io_read(connection->fd, buf, len);
+
     if (ret == -1) {
         ret = FLB_WOULDBLOCK();
         if (ret) {
             /* timeout caused error */
             flb_warn("[net] sync io_read #%i timeout after %i seconds from: "
                     "%s:%i",
-                    u_conn->fd, u_conn->u->net.io_timeout,
-                    u_conn->u->tcp_host, u_conn->u->tcp_port);
+                    connection->fd,
+                    connection->net->io_timeout,
+                    connection->remote_host,
+                    connection->remote_port);
         }
+
         return -1;
     }
 
@@ -348,20 +429,22 @@ static ssize_t fd_io_read(int fd, void *buf, size_t len)
 }
 
 static FLB_INLINE ssize_t net_io_read_async(struct flb_coro *co,
-                                            struct flb_upstream_conn *u_conn,
+                                            struct flb_connection *connection,
                                             void *buf, size_t len)
 {
     int ret;
 
  retry_read:
-    ret = recv(u_conn->fd, buf, len, 0);
+    ret = recv(connection->fd, buf, len, 0);
     if (ret == -1) {
         if (FLB_WOULDBLOCK()) {
-            ret = mk_event_add(u_conn->evl,
-                               u_conn->fd,
+            ret = mk_event_add(connection->evl,
+                               connection->fd,
                                FLB_ENGINE_EV_THREAD,
-                               MK_EVENT_READ, &u_conn->event);
-            u_conn->event.priority = FLB_ENGINE_PRIORITY_SEND_RECV;
+                               MK_EVENT_READ,
+                               &connection->event);
+
+            connection->event.priority = FLB_ENGINE_PRIORITY_SEND_RECV;
             if (ret == -1) {
                 /*
                  * If we failed here there no much that we can do, just
@@ -370,14 +453,14 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_coro *co,
                 return -1;
             }
 
-            u_conn->coro = co;
+            connection->coroutine = co;
 
             flb_coro_yield(co, MK_FALSE);
 
             /* We want this field to hold NULL at all times unless we are explicitly
              * waiting to be resumed.
              */
-            u_conn->coro = NULL;
+            connection->coroutine = NULL;
 
             goto retry_read;
         }
@@ -398,42 +481,48 @@ int flb_io_fd_write(int fd, const void *data, size_t len, size_t *out_len)
 }
 
 /* Write data to an upstream connection/server */
-int flb_io_net_write(struct flb_upstream_conn *u_conn, const void *data,
+int flb_io_net_write(struct flb_connection *connection, const void *data,
                      size_t len, size_t *out_len)
 {
-    int ret = -1;
-    struct flb_upstream *u = u_conn->u;
-    struct flb_coro *coro = flb_coro_get();
+    int              flags;
+    struct flb_coro *coro;
+    int              ret;
+
+    ret  = -1;
+    coro = flb_coro_get();
+    flags = flb_connection_get_flags(connection);
 
     flb_trace("[io coro=%p] [net_write] trying %zd bytes", coro, len);
 
-    if (!u_conn->tls_session) {
-        if (u->flags & FLB_IO_ASYNC) {
-            ret = net_io_write_async(coro, u_conn, data, len, out_len);
+    if (connection->tls_session == NULL) {
+        if (flags & FLB_IO_ASYNC) {
+            ret = net_io_write_async(coro, connection, data, len, out_len);
         }
         else {
-            ret = net_io_write(u_conn, data, len, out_len);
+            ret = net_io_write(connection, data, len, out_len);
         }
     }
 #ifdef FLB_HAVE_TLS
-    else if (u->flags & FLB_IO_TLS) {
-        if (u->flags & FLB_IO_ASYNC) {
-            ret = flb_tls_net_write_async(coro, u_conn->tls_session, data, len, out_len);
+    else if (flags & FLB_IO_TLS) {
+        if (flags & FLB_IO_ASYNC) {
+            ret = flb_tls_net_write_async(coro, connection->tls_session, data, len, out_len);
         }
         else {
-            ret = flb_tls_net_write(u_conn->tls_session, data, len, out_len);
+            ret = flb_tls_net_write(connection->tls_session, data, len, out_len);
         }
     }
 #endif
 
-    if (ret == -1 && u_conn->fd > 0) {
-        flb_socket_close(u_conn->fd);
-        u_conn->fd = -1;
-        u_conn->event.fd = -1;
+    if (ret == -1 && connection->fd > 0) {
+        flb_socket_close(connection->fd);
+
+        connection->fd = -1;
+        connection->event.fd = -1;
     }
 
     flb_trace("[io coro=%p] [net_write] ret=%i total=%lu/%lu",
               coro, ret, *out_len, len);
+
     return ret;
 }
 
@@ -443,33 +532,39 @@ ssize_t flb_io_fd_read(int fd, void *buf, size_t len)
     return fd_io_read(fd, buf, len);
 }
 
-ssize_t flb_io_net_read(struct flb_upstream_conn *u_conn, void *buf, size_t len)
+ssize_t flb_io_net_read(struct flb_connection *connection, void *buf, size_t len)
 {
-    int ret = -1;
-    struct flb_upstream *u = u_conn->u;
-    struct flb_coro *coro = flb_coro_get();
+    int ret;
+    int flags;
+    struct flb_coro *coro;
+
+    ret = -1;
+    coro = flb_coro_get();
 
     flb_trace("[io coro=%p] [net_read] try up to %zd bytes", coro, len);
 
-    if (!u_conn->tls_session) {
-        if (u->flags & FLB_IO_ASYNC) {
-            ret = net_io_read_async(coro, u_conn, buf, len);
+    flags = flb_connection_get_flags(connection);
+
+    if (!connection->tls_session) {
+        if (flags & FLB_IO_ASYNC) {
+            ret = net_io_read_async(coro, connection, buf, len);
         }
         else {
-            ret = net_io_read(u_conn, buf, len);
+            ret = net_io_read(connection, buf, len);
         }
     }
 #ifdef FLB_HAVE_TLS
-    else if (u->flags & FLB_IO_TLS) {
-        if (u->flags & FLB_IO_ASYNC) {
-            ret = flb_tls_net_read_async(coro, u_conn->tls_session, buf, len);
+    else if (flags & FLB_IO_TLS) {
+        if (flags & FLB_IO_ASYNC) {
+            ret = flb_tls_net_read_async(coro, connection->tls_session, buf, len);
         }
         else {
-            ret = flb_tls_net_read(u_conn->tls_session, buf, len);
+            ret = flb_tls_net_read(connection->tls_session, buf, len);
         }
     }
 #endif
 
     flb_trace("[io coro=%p] [net_read] ret=%i", coro, ret);
+
     return ret;
 }

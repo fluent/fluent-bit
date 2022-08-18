@@ -62,7 +62,9 @@ int flb_http_strip_port_from_host(struct flb_http_client *c)
     struct mk_list *head;
     struct flb_kv *kv;
     char *out_host;
-    struct flb_upstream *u = c->u_conn->u;
+    struct flb_upstream *u;
+
+    u = c->u_conn->upstream;
 
     if (!c->host) {
         if (!u->proxied_host) {
@@ -557,7 +559,7 @@ static int add_host_and_content_length(struct flb_http_client *c)
     char *out_host;
     int out_port;
     size_t size;
-    struct flb_upstream *u = c->u_conn->u;
+    struct flb_upstream *u = c->u_conn->upstream;
 
     if (!c->host) {
         if (u->proxied_host) {
@@ -624,7 +626,7 @@ static int add_host_and_content_length(struct flb_http_client *c)
     return 0;
 }
 
-struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
+struct flb_http_client *flb_http_client(struct flb_connection *u_conn,
                                         int method, const char *uri,
                                         const char *body, size_t body_len,
                                         const char *host, int port,
@@ -734,7 +736,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     }
 
     /* Is Upstream connection using keepalive mode ? */
-    if (u_conn->u->flags & FLB_IO_TCP_KA) {
+    if (u_conn->upstream->flags & FLB_IO_TCP_KA) {
         c->flags |= FLB_HTTP_KA;
     }
 
@@ -1028,7 +1030,7 @@ static void http_headers_destroy(struct flb_http_client *c)
 int flb_http_set_keepalive(struct flb_http_client *c)
 {
     /* check if 'keepalive' mode is enabled in the Upstream connection */
-    if (c->u_conn->u->net.keepalive == FLB_FALSE) {
+    if (c->u_conn->upstream->net.keepalive == FLB_FALSE) {
         return -1;
     }
 
@@ -1247,8 +1249,10 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
             ret = process_data(c);
             if (ret == FLB_HTTP_ERROR) {
                 flb_warn("[http_client] malformed HTTP response from %s:%i on "
-                         "connection #%i", c->u_conn->u->tcp_host,
-                         c->u_conn->u->tcp_port, c->u_conn->fd);
+                         "connection #%i",
+                         c->u_conn->upstream->tcp_host,
+                         c->u_conn->upstream->tcp_port,
+                         c->u_conn->fd);
                 return -1;
             }
             else if (ret == FLB_HTTP_OK) {
@@ -1260,7 +1264,8 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
         }
         else {
             flb_error("[http_client] broken connection to %s:%i ?",
-                      c->u_conn->u->tcp_host, c->u_conn->u->tcp_port);
+                      c->u_conn->upstream->tcp_host,
+                      c->u_conn->upstream->tcp_port);
             return -1;
         }
     }
@@ -1277,7 +1282,8 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
             /* Do not recycle the connection (no more keepalive) */
             flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
             flb_debug("[http_client] server %s:%i will close connection #%i",
-                      c->u_conn->u->tcp_host, c->u_conn->u->tcp_port,
+                      c->u_conn->upstream->tcp_host,
+                      c->u_conn->upstream->tcp_port,
                       c->u_conn->fd);
         }
     }
@@ -1298,9 +1304,9 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
  * http proxy.
  * More: https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods/CONNECT
  */
-int flb_http_client_proxy_connect(struct flb_upstream_conn *u_conn)
+int flb_http_client_proxy_connect(struct flb_connection *u_conn)
 {
-    struct flb_upstream *u = u_conn->u;
+    struct flb_upstream *u = u_conn->upstream;
     struct flb_http_client *c;
     size_t b_sent;
     int ret = -1;

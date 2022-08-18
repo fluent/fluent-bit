@@ -30,6 +30,8 @@ set(UNIT_TESTS_FILES
   bucket_queue.c
   flb_event_loop.c
   ring_buffer.c
+  upstream.c
+  downstream.c
   )
 
 # Config format
@@ -130,6 +132,8 @@ if(FLB_LUAJIT)
 endif()
 
 set(UNIT_TESTS_DATA
+  data/tls/certificate.pem
+  data/tls/private_key.pem
   data/pack/json_single_map_001.json
   data/pack/json_single_map_002.json
   data/parser/json.conf
