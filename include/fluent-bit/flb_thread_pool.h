@@ -65,6 +65,7 @@ int flb_tp_thread_start(struct flb_tp *tp, struct flb_tp_thread *th);
 int flb_tp_thread_start_id(struct flb_tp *tp, int id);
 int flb_tp_thread_start_all(struct flb_tp *tp);
 int flb_tp_thread_stop();
+int flb_tp_thread_stop_all(struct flb_tp *tp);
 int flb_tp_thread_destroy();
 
 #endif

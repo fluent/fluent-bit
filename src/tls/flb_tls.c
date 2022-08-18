@@ -86,169 +86,6 @@ struct mk_list *flb_tls_get_config_map(struct flb_config *config)
     return config_map;
 }
 
-static inline unsigned short int flb_tls_get_remote_port(struct flb_tls_session *session)
-{
-    struct flb_upstream_conn   *u_conn;
-    struct flb_downstream_conn *d_conn;
-
-    if (session->connection_type == FLB_TLS_UPSTREAM_CONNECTION) {
-        u_conn = (struct flb_upstream_conn *) session->connection;
-
-        return u_conn->u->tcp_port;
-    }
-    else if (session->connection_type == FLB_TLS_UPSTREAM_CONNECTION) {
-        d_conn = (struct flb_downstream_conn *) session->connection;
-
-        return d_conn->port;
-    }
-
-    return 0;
-}
-
-static inline char *flb_tls_get_remote_host(struct flb_tls_session *session)
-{
-    struct flb_upstream_conn   *u_conn;
-    struct flb_downstream_conn *d_conn;
-
-    if (session->connection_type == FLB_TLS_UPSTREAM_CONNECTION) {
-        u_conn = (struct flb_upstream_conn *) session->connection;
-
-        return u_conn->u->tcp_host;
-    }
-    else if (session->connection_type == FLB_TLS_UPSTREAM_CONNECTION) {
-        d_conn = (struct flb_downstream_conn *) session->connection;
-
-        return d_conn->host;
-    }
-
-    return NULL;
-}
-
-static inline int flb_tls_get_stream_connect_timeout(struct flb_tls_session *session)
-{
-    struct flb_upstream_conn   *u_conn;
-    struct flb_downstream_conn *d_conn;
-
-    if (session->connection_type == FLB_TLS_UPSTREAM_CONNECTION) {
-        u_conn = (struct flb_upstream_conn *) session->connection;
-
-        return u_conn->u->net.connect_timeout;
-    }
-    else if (session->connection_type == FLB_TLS_UPSTREAM_CONNECTION) {
-        d_conn = (struct flb_downstream_conn *) session->connection;
-
-        return d_conn->stream->net.connect_timeout;
-    }
-
-    return 0;
-}
-
-static inline int flb_tls_get_connection_connect_timeout(struct flb_tls_session *session)
-{
-    struct flb_upstream_conn   *u_conn;
-    struct flb_downstream_conn *d_conn;
-
-    if (session->connection_type == FLB_TLS_UPSTREAM_CONNECTION) {
-        u_conn = (struct flb_upstream_conn *) session->connection;
-
-        return u_conn->ts_connect_timeout;
-    }
-    else if (session->connection_type == FLB_TLS_UPSTREAM_CONNECTION) {
-        d_conn = (struct flb_downstream_conn *) session->connection;
-
-        return d_conn->ts_connect_timeout;
-    }
-
-    return 0;
-}
-
-static inline flb_sockfd_t flb_tls_get_connection_socket(struct flb_tls_session *session)
-{
-    struct flb_upstream_conn   *u_conn;
-    struct flb_downstream_conn *d_conn;
-
-    if (session->connection_type == FLB_TLS_UPSTREAM_CONNECTION) {
-        u_conn = (struct flb_upstream_conn *) session->connection;
-
-        return u_conn->fd;
-    }
-    else if (session->connection_type == FLB_TLS_UPSTREAM_CONNECTION) {
-        d_conn = (struct flb_downstream_conn *) session->connection;
-
-        return d_conn->fd;
-    }
-
-    return (flb_sockfd_t) -1;
-}
-
-static inline struct mk_event *flb_tls_get_event(struct flb_tls_session *session)
-{
-    struct flb_upstream_conn   *u_conn;
-    struct flb_downstream_conn *d_conn;
-
-    if (session->connection_type == FLB_TLS_UPSTREAM_CONNECTION) {
-        u_conn = (struct flb_upstream_conn *) session->connection;
-
-        return &u_conn->event;
-    }
-    else if (session->connection_type == FLB_TLS_UPSTREAM_CONNECTION) {
-        d_conn = (struct flb_downstream_conn *) session->connection;
-
-        return &d_conn->event;
-    }
-
-    return NULL;
-}
-
-static inline struct mk_event_loop *flb_tls_get_event_loop(struct flb_tls_session *session)
-{
-    struct flb_upstream_conn   *u_conn;
-    struct flb_downstream_conn *d_conn;
-
-    if (session->connection_type == FLB_TLS_UPSTREAM_CONNECTION) {
-        u_conn = (struct flb_upstream_conn *) session->connection;
-
-        return u_conn->evl;
-    }
-    else if (session->connection_type == FLB_TLS_UPSTREAM_CONNECTION) {
-        d_conn = (struct flb_downstream_conn *) session->connection;
-
-        return d_conn->evl;
-    }
-
-    return NULL;
-}
-
-static inline void flb_tls_set_connection_coroutine(struct flb_tls_session *session,
-                                                    struct flb_coro *coroutine)
-{
-    struct flb_upstream_conn   *u_conn;
-    struct flb_downstream_conn *d_conn;
-
-    if (session->connection_type == FLB_TLS_UPSTREAM_CONNECTION) {
-        u_conn = (struct flb_upstream_conn *) session->connection;
-
-        u_conn->coro = coroutine;
-    }
-    else if (session->connection_type == FLB_TLS_UPSTREAM_CONNECTION) {
-        d_conn = (struct flb_downstream_conn *) session->connection;
-
-        d_conn->coro = coroutine;
-    }
-}
-
-static inline void flb_tls_set_connection_priority(struct flb_tls_session *session,
-                                                   int priority)
-{
-    struct mk_event *event;
-
-    event = flb_tls_get_event(session);
-
-    if (event != NULL) {
-        event->priority = priority;
-    }
-}
-
 static inline int io_tls_event_switch(struct flb_tls_session *session,
                                       int mask)
 {
@@ -256,8 +93,8 @@ static inline int io_tls_event_switch(struct flb_tls_session *session,
     struct mk_event      *event;
     int                   ret;
 
-    event = flb_tls_get_event(session);
-    event_loop = flb_tls_get_event_loop(session);
+    event = &session->connection->event;
+    event_loop = session->connection->evl;
 
     if ((event->mask & mask) == 0) {
         ret = mk_event_add(event_loop,
@@ -277,17 +114,30 @@ static inline int io_tls_event_switch(struct flb_tls_session *session,
     return 0;
 }
 
+int flb_tls_load_system_certificates(struct flb_tls *tls)
+{
+    return load_system_certificates(tls->ctx);
+}
+
 struct flb_tls *flb_tls_create(int verify,
                                int debug,
+                               int mode,
                                const char *vhost,
                                const char *ca_path,
-                               const char *ca_file, const char *crt_file,
-                               const char *key_file, const char *key_passwd)
+                               const char *ca_file,
+                               const char *crt_file,
+                               const char *key_file,
+                               const char *key_passwd)
 {
     void *backend;
     struct flb_tls *tls;
 
-    backend = tls_context_create(verify, debug, vhost, ca_path, ca_file,
+    /* Assuming the TLS role based on the connection direction is wrong
+     * but it's something we'll accept for the moment.
+     */
+
+    backend = tls_context_create(verify, debug, mode,
+                                 vhost, ca_path, ca_file,
                                  crt_file, key_file, key_passwd);
     if (!backend) {
         flb_error("[tls] could not create TLS backend");
@@ -303,8 +153,9 @@ struct flb_tls *flb_tls_create(int verify,
 
     tls->verify = verify;
     tls->debug = debug;
+    tls->mode = mode;
 
-    if (vhost) {
+    if (vhost != NULL) {
         tls->vhost = flb_strdup(vhost);
     }
     tls->ctx = backend;
@@ -324,24 +175,43 @@ int flb_tls_destroy(struct flb_tls *tls)
     if (tls->ctx) {
         tls->api->context_destroy(tls->ctx);
     }
-    if (tls->vhost) {
+
+    if (tls->vhost != NULL) {
         flb_free(tls->vhost);
     }
+
     flb_free(tls);
+
     return 0;
 }
 
 int flb_tls_net_read(struct flb_tls_session *session, void *buf, size_t len)
 {
+    time_t          timeout_timestamp;
+    time_t          current_timestamp;
     struct flb_tls *tls;
     int             ret;
 
     tls = session->tls;
 
+    if (session->connection->net->io_timeout > 0) {
+        timeout_timestamp = time(NULL) + session->connection->net->io_timeout;
+    }
+    else {
+        timeout_timestamp = 0;
+    }
+
  retry_read:
     ret = tls->api->net_read(session, buf, len);
 
+    current_timestamp = time(NULL);
+
     if (ret == FLB_TLS_WANT_READ) {
+        if (timeout_timestamp > 0 &&
+            timeout_timestamp <= current_timestamp) {
+            return ret;
+        }
+
         goto retry_read;
     }
     else if (ret == FLB_TLS_WANT_WRITE) {
@@ -370,7 +240,7 @@ int flb_tls_net_read_async(struct flb_coro *co,
     ret = tls->api->net_read(session, buf, len);
 
     if (ret == FLB_TLS_WANT_READ) {
-        flb_tls_set_connection_coroutine(session, co);
+        session->connection->coroutine = co;
 
         io_tls_event_switch(session, MK_EVENT_READ);
         flb_coro_yield(co, FLB_FALSE);
@@ -378,7 +248,7 @@ int flb_tls_net_read_async(struct flb_coro *co,
         goto retry_read;
     }
     else if (ret == FLB_TLS_WANT_WRITE) {
-        flb_tls_set_connection_coroutine(session, co);
+        session->connection->coroutine = co;
 
         io_tls_event_switch(session, MK_EVENT_WRITE);
         flb_coro_yield(co, FLB_FALSE);
@@ -390,7 +260,7 @@ int flb_tls_net_read_async(struct flb_coro *co,
         /* We want this field to hold NULL at all times unless we are explicitly
          * waiting to be resumed.
          */
-        flb_tls_set_connection_coroutine(session, NULL);
+        session->connection->coroutine = NULL;
 
         if (ret < 0) {
             return -1;
@@ -452,7 +322,7 @@ int flb_tls_net_write_async(struct flb_coro *co,
     tls = session->tls;
 
 retry_write:
-    flb_tls_set_connection_coroutine(session, co);
+    session->connection->coroutine = co;
 
     ret = tls->api->net_write(session,
                               (unsigned char *) data + total,
@@ -477,7 +347,7 @@ retry_write:
          * waiting to be resumed.
          */
 
-        flb_tls_set_connection_coroutine(session, NULL);
+        session->connection->coroutine = NULL;
 
         return -1;
     }
@@ -497,159 +367,56 @@ retry_write:
      * waiting to be resumed.
      */
 
-    flb_tls_set_connection_coroutine(session, NULL);
+    session->connection->coroutine = NULL;
 
     *out_len = total;
 
-    mk_event_del(flb_tls_get_event_loop(session),
-                 flb_tls_get_event(session));
+    mk_event_del(session->connection->evl, &session->connection->event);
 
     return 0;
 }
 
-
-/* Create a TLS session (+handshake) */
 int flb_tls_client_session_create(struct flb_tls *tls,
-                                  struct flb_upstream_conn *u_conn,
+                                  struct flb_connection *u_conn,
                                   struct flb_coro *co)
 {
-    struct flb_tls_session *session;
-    int                     flag;
-    int                     ret;
-    struct flb_upstream     *u;
+    return flb_tls_session_create(tls, u_conn, co);
+}
 
-    u = u_conn->u;
-
-    session = flb_calloc(1, sizeof(struct flb_tls_session));
-
-    if (session == NULL) {
-        return -1;
-    }
-
-    /* Create TLS session */
-    session->ptr = tls->api->session_create(tls, u_conn->fd);
-    if (session->ptr == NULL) {
-        flb_error("[tls] could not create TLS session for %s:%i",
-                  u->tcp_host, u->tcp_port);
-
-        flb_tls_session_destroy(session);
-
-        return -1;
-    }
-
-    session->connection = (void *) u_conn;
-    session->connection_type = FLB_TLS_UPSTREAM_CONNECTION;
-
-    /* Configure virtual host */
-    if (!u->tls->vhost) {
-        u->tls->vhost = flb_strdup(u->tcp_host);
-        if (u->proxied_host) {
-            u->tls->vhost = flb_strdup(u->proxied_host);
-        }
-    }
-
-    /* Reference TLS context and session */
-    u_conn->tls = tls;
-    u_conn->tls_session = session;
-
- retry_handshake:
-    ret = tls->api->net_client_handshake(tls, session->ptr);
-    if (ret != 0) {
-        if (ret != FLB_TLS_WANT_READ && ret != FLB_TLS_WANT_WRITE) {
-            goto error;
-        }
-
-        flag = 0;
-        if (ret == FLB_TLS_WANT_WRITE) {
-            flag = MK_EVENT_WRITE;
-        }
-        else if (ret == FLB_TLS_WANT_READ) {
-            flag = MK_EVENT_READ;
-        }
-
-        /*
-         * If there are no coroutine thread context (th == NULL) it means this
-         * TLS handshake is happening from a blocking code. Just sleep a bit
-         * and retry.
-         *
-         * In the other case for an async socket 'th' is NOT NULL so the code
-         * is under a coroutine context and it can yield.
-         */
-        if (!co) {
-            flb_trace("[io_tls] handshake connection #%i in process to %s:%i",
-                      u_conn->fd, u->tcp_host, u->tcp_port);
-
-            /* Connect timeout */
-            if (u->net.connect_timeout > 0 &&
-                u_conn->ts_connect_timeout > 0 &&
-                u_conn->ts_connect_timeout <= time(NULL)) {
-                flb_error("[io_tls] handshake connection #%i to %s:%i timed out after "
-                          "%i seconds",
-                          u_conn->fd,
-                          u->tcp_host, u->tcp_port, u->net.connect_timeout);
-                goto error;
-            }
-
-            flb_time_msleep(500);
-
-            goto retry_handshake;
-        }
-
-        /*
-         * FIXME: if we need multiple reads we are invoking the same
-         * system call multiple times.
-         */
-        ret = mk_event_add(u_conn->evl,
-                           u_conn->event.fd,
-                           FLB_ENGINE_EV_THREAD,
-                           flag, &u_conn->event);
-
-        u_conn->event.priority = FLB_ENGINE_PRIORITY_CONNECT;
-
-        if (ret == -1) {
-            goto error;
-        }
-
-        u_conn->coro = co;
-
-        flb_coro_yield(co, FLB_FALSE);
-
-        /* We want this field to hold NULL at all times unless we are explicitly
-         * waiting to be resumed.
-         */
-        u_conn->coro = NULL;
-
-        goto retry_handshake;
-    }
-
-    if (u_conn->event.status & MK_EVENT_REGISTERED) {
-        mk_event_del(u_conn->evl, &u_conn->event);
-    }
-    return 0;
-
- error:
-    if (u_conn->event.status & MK_EVENT_REGISTERED) {
-        mk_event_del(u_conn->evl, &u_conn->event);
-    }
-
-    flb_tls_session_destroy(session);
-
-    return -1;
+int flb_tls_server_session_create(struct flb_tls *tls,
+                                  struct flb_connection *connection,
+                                  struct flb_coro *co)
+{
+    return flb_tls_session_create(tls, connection, co);
 }
 
 /* Create a TLS session (server) */
-int flb_tls_server_session_create(struct flb_tls *tls,
-                                  struct flb_downstream_conn *connection,
-                                  struct flb_coro *co)
+int flb_tls_session_create(struct flb_tls *tls,
+                           struct flb_base_conn *connection,
+                           struct flb_coro *co)
 {
     struct flb_tls_session *session;
     int                     result;
+    char                   *vhost;
     int                     flag;
 
     session = flb_calloc(1, sizeof(struct flb_tls_session));
 
     if (session == NULL) {
         return -1;
+    }
+
+    vhost = NULL;
+
+    if (connection->type == FLB_UPSTREAM_CONNECTION) {
+        if (connection->upstream->proxied_host != NULL) {
+            vhost = connection->upstream->proxied_host;
+        }
+        else {
+            if (tls->vhost == NULL) {
+                vhost = connection->upstream->tcp_host;
+            }
+        }
     }
 
     /* Create TLS session */
@@ -657,28 +424,20 @@ int flb_tls_server_session_create(struct flb_tls *tls,
 
     if (session == NULL) {
         flb_error("[tls] could not create TLS session for %s:%i",
-                  connection->host, connection->port);
+                  connection->remote_host, connection->remote_port);
 
         return -1;
     }
 
     session->tls = tls;
-    session->connection = (void *) connection;
-    session->connection_type = FLB_TLS_DOWNSTREAM_CONNECTION;
+    session->connection = connection;
 
-    /* Configure virtual host */
-    if (connection->tls->vhost == NULL) {
-        connection->tls->vhost = flb_strdup(connection->host);
-    }
-
-    /* Reference TLS context and session */
-    connection->tls = tls;
     connection->tls_session = session;
 
     result = 0;
 
  retry_handshake:
-    result = tls->api->net_server_handshake(tls, session->ptr);
+    result = tls->api->net_handshake(tls, vhost, session->ptr);
 
     if (result != 0) {
         if (result != FLB_TLS_WANT_READ && result != FLB_TLS_WANT_WRITE) {
@@ -706,20 +465,20 @@ int flb_tls_server_session_create(struct flb_tls *tls,
          */
         if (co == NULL) {
             flb_trace("[io_tls] server handshake connection #%i in process to %s:%i",
-                      flb_tls_get_connection_socket(session),
-                      flb_tls_get_remote_host(session),
-                      flb_tls_get_remote_port(session));
+                      connection->fd,
+                      connection->remote_host,
+                      connection->remote_port);
 
             /* Connect timeout */
-            if (flb_tls_get_stream_connect_timeout(session) > 0 &&
-                flb_tls_get_connection_connect_timeout(session) > 0 &&
-                flb_tls_get_connection_connect_timeout(session) <= time(NULL)) {
+            if (connection->net->connect_timeout > 0 &&
+                connection->ts_connect_timeout > 0 &&
+                connection->ts_connect_timeout <= time(NULL)) {
                 flb_error("[io_tls] handshake connection #%i to %s:%i timed out after "
                           "%i seconds",
-                          flb_tls_get_connection_socket(session),
-                          flb_tls_get_remote_host(session),
-                          flb_tls_get_remote_port(session),
-                          flb_tls_get_stream_connect_timeout(session));
+                          connection->fd,
+                          connection->remote_host,
+                          connection->remote_port,
+                          connection->net->connect_timeout);
 
                 result = -1;
 
@@ -736,19 +495,19 @@ int flb_tls_server_session_create(struct flb_tls *tls,
          * system call multiple times.
          */
 
-        result = mk_event_add(flb_tls_get_event_loop(session),
-                              flb_tls_get_connection_socket(session),
+        result = mk_event_add(connection->evl,
+                              connection->fd,
                               FLB_ENGINE_EV_THREAD,
                               flag,
-                              flb_tls_get_event(session));
+                              &connection->event);
 
-        flb_tls_set_connection_priority(session, FLB_ENGINE_PRIORITY_CONNECT);
+        connection->event.priority = FLB_ENGINE_PRIORITY_CONNECT;
 
         if (result == -1) {
             goto cleanup;
         }
 
-        flb_tls_set_connection_coroutine(session, co);
+        connection->coroutine = co;
 
         flb_coro_yield(co, FLB_FALSE);
 
@@ -756,15 +515,14 @@ int flb_tls_server_session_create(struct flb_tls *tls,
          * waiting to be resumed.
          */
 
-        flb_tls_set_connection_coroutine(session, NULL);
+        connection->coroutine = NULL;
 
         goto retry_handshake;
     }
 
 cleanup:
     if (connection->event.status & MK_EVENT_REGISTERED) {
-        mk_event_del(flb_tls_get_event_loop(session),
-                     flb_tls_get_event(session));
+        mk_event_del(connection->evl, &connection->event);
     }
 
     if (result != 0) {
@@ -776,22 +534,9 @@ cleanup:
 
 int flb_tls_session_destroy(struct flb_tls_session *session)
 {
-    struct flb_upstream_conn   *u_conn;
-    struct flb_downstream_conn *d_conn;
-    int                         ret;
+    int ret;
 
-    if (session->connection_type == FLB_TLS_UPSTREAM_CONNECTION) {
-        u_conn = (struct flb_upstream_conn *) session->connection;
-
-        u_conn->tls = NULL;
-        u_conn->tls_session = NULL;
-    }
-    else if (session->connection_type == FLB_TLS_UPSTREAM_CONNECTION) {
-        d_conn = (struct flb_downstream_conn *) session->connection;
-
-        d_conn->tls = NULL;
-        d_conn->tls_session = NULL;
-    }
+    session->connection->tls_session = NULL;
 
     if (session->ptr != NULL) {
         ret = session->tls->api->session_destroy(session->ptr);

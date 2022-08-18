@@ -127,6 +127,7 @@ struct flb_upstream_node *flb_upstream_node_create(const char *name, const char 
     if (tls == FLB_TRUE) {
         node->tls = flb_tls_create(tls_verify,
                                    tls_debug,
+                                   FLB_TLS_CLIENT_MODE,
                                    tls_vhost,
                                    tls_ca_path,
                                    tls_ca_file,

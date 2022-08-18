@@ -289,7 +289,7 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
 {
     size_t b_sent;
     int ret;
-    struct flb_upstream_conn *u_conn = NULL;
+    struct flb_connection *u_conn = NULL;
     flb_sds_t signature = NULL;
     int i;
     int normalize_uri;

@@ -384,18 +384,19 @@ static void input_thread(void *data)
                 event->handler(event);
             }
             else if (event->type == FLB_ENGINE_EV_THREAD) {
-                struct flb_upstream_conn *u_conn;
-                struct flb_coro *co;
+                struct flb_base_conn *connection;
 
                 /*
                  * Check if we have some co-routine associated to this event,
                  * if so, resume the co-routine
                  */
-                u_conn = (struct flb_upstream_conn *) event;
-                co = u_conn->coro;
-                if (co) {
-                    flb_trace("[engine] resuming coroutine=%p", co);
-                    flb_coro_resume(co);
+                connection = (struct flb_base_conn *) event;
+
+                if (connection->coroutine != NULL) {
+                    flb_trace("[engine] resuming coroutine=%p",
+                              connection->coroutine);
+
+                    flb_coro_resume(connection->coroutine);
                 }
             }
             else if (event->type == FLB_ENGINE_EV_INPUT) {
