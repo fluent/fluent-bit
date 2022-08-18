@@ -1160,7 +1160,7 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
     size_t b_sent;
     flb_sds_t payload = NULL;
     struct flb_loki *ctx = out_context;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
 
     /* Format the data to the expected Newrelic Payload */

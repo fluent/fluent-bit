@@ -197,7 +197,7 @@ static int cb_collector_server_socket(struct flb_input_instance *ins,
 static int cb_collector_server_client(struct flb_input_instance *ins,
                                       struct flb_config *config, void *in_context)
 {
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct event_test *ctx = (struct event_test *) in_context;
 
     /* get the upstream connection (localhost) */

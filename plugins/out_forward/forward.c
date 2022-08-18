@@ -42,13 +42,13 @@
 
 #ifdef FLB_HAVE_TLS
 
-static int io_net_write(struct flb_upstream_conn *conn, int unused_fd,
+static int io_net_write(struct flb_connection *conn, int unused_fd,
                         const void* data, size_t len, size_t *out_len)
 {
     return flb_io_net_write(conn, data, len, out_len);
 }
 
-static int io_net_read(struct flb_upstream_conn *conn, int unused_fd,
+static int io_net_read(struct flb_connection *conn, int unused_fd,
                        void* buf, size_t len)
 {
     return flb_io_net_read(conn, buf, len);
@@ -83,7 +83,7 @@ static inline void print_msgpack_status(struct flb_forward *ctx,
 
 /* Read a secure forward msgpack message */
 static int secure_forward_read(struct flb_forward *ctx,
-                               struct flb_upstream_conn *u_conn,
+                               struct flb_connection *u_conn,
                                struct flb_forward_config *fc,
                                char *buf, size_t size, size_t *out_len)
 {
@@ -238,7 +238,7 @@ static int secure_forward_hash_password(struct flb_forward_config *fc,
     return 0;
 }
 
-static int secure_forward_ping(struct flb_upstream_conn *u_conn,
+static int secure_forward_ping(struct flb_connection *u_conn,
                                msgpack_object map,
                                struct flb_forward_config *fc,
                                struct flb_forward *ctx)
@@ -371,7 +371,7 @@ static int secure_forward_pong(struct flb_forward *ctx, char *buf, int buf_size)
     return -1;
 }
 
-static int secure_forward_handshake(struct flb_upstream_conn *u_conn,
+static int secure_forward_handshake(struct flb_connection *u_conn,
                                     struct flb_forward_config *fc,
                                     struct flb_forward *ctx)
 {
@@ -452,7 +452,7 @@ static int secure_forward_handshake(struct flb_upstream_conn *u_conn,
 
 static int forward_read_ack(struct flb_forward *ctx,
                             struct flb_forward_config *fc,
-                            struct flb_upstream_conn *u_conn,
+                            struct flb_connection *u_conn,
                             char *chunk, int chunk_len)
 {
     int ret;
@@ -820,13 +820,13 @@ static int forward_unix_create(struct flb_forward_config *config,
     return 0;
 }
 
-static int io_unix_write(struct flb_upstream_conn *unused, int fd, const void* data,
+static int io_unix_write(struct flb_connection *unused, int fd, const void* data,
                          size_t len, size_t *out_len)
 {
     return flb_io_fd_write(fd, data, len, out_len);
 }
 
-static int io_unix_read(struct flb_upstream_conn *unused, int fd, void* buf,size_t len)
+static int io_unix_read(struct flb_connection *unused, int fd, void* buf,size_t len)
 {
     return flb_io_fd_read(fd, buf, len);
 }
@@ -983,7 +983,7 @@ struct flb_forward_config *flb_forward_target(struct flb_forward *ctx,
 
 static int flush_message_mode(struct flb_forward *ctx,
                               struct flb_forward_config *fc,
-                              struct flb_upstream_conn *u_conn,
+                              struct flb_connection *u_conn,
                               char *buf, size_t size)
 {
     int ret;
@@ -1059,7 +1059,7 @@ static int flush_message_mode(struct flb_forward *ctx,
  */
 static int flush_forward_mode(struct flb_forward *ctx,
                               struct flb_forward_config *fc,
-                              struct flb_upstream_conn *u_conn,
+                              struct flb_connection *u_conn,
                               const char *tag, int tag_len,
                               const void *data, size_t bytes,
                               char *opts_buf, size_t opts_size)
@@ -1178,7 +1178,7 @@ static int flush_forward_mode(struct flb_forward *ctx,
  */
 static int flush_forward_compat_mode(struct flb_forward *ctx,
                                      struct flb_forward_config *fc,
-                                     struct flb_upstream_conn *u_conn,
+                                     struct flb_connection *u_conn,
                                      const char *tag, int tag_len,
                                      const void *data, size_t bytes)
 {
@@ -1245,7 +1245,7 @@ static void cb_forward_flush(struct flb_event_chunk *event_chunk,
     size_t out_size = 0;
     struct flb_forward *ctx = out_context;
     struct flb_forward_config *fc = NULL;
-    struct flb_upstream_conn *u_conn = NULL;
+    struct flb_connection *u_conn = NULL;
     struct flb_upstream_node *node = NULL;
     struct flb_forward_flush *flush_ctx;
     (void) i_ins;

@@ -163,7 +163,7 @@ static void cb_slack_flush(struct flb_event_chunk *event_chunk,
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     struct flb_http_client *c;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_slack *ctx = out_context;
 
     size = event_chunk->size * 4;

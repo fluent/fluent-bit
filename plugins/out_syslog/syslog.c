@@ -761,7 +761,7 @@ static void cb_syslog_flush(struct flb_event_chunk *event_chunk,
     msgpack_object map;
     msgpack_object *obj;
     struct flb_time tm;
-    struct flb_upstream_conn *u_conn = NULL;
+    struct flb_connection *u_conn = NULL;
     int ret;
 
     if (ctx->parsed_mode != FLB_SYSLOG_UDP) {

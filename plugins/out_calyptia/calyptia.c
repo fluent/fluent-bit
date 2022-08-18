@@ -593,7 +593,7 @@ static int api_agent_create(struct flb_config *config, struct flb_calyptia *ctx)
     char uri[1024];
     flb_sds_t meta;
     struct flb_upstream *u;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
 
     /* Meta */
@@ -836,7 +836,7 @@ static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
     size_t off = 0;
     size_t out_size = 0;
     char *out_buf = NULL;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
     struct flb_calyptia *ctx = out_context;
     struct cmt *cmt;

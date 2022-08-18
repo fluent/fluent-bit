@@ -481,7 +481,7 @@ static void cb_influxdb_flush(struct flb_event_chunk *event_chunk,
     char *pack;
     char tmp[128];
     struct mk_list *head;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
     struct flb_config_map_val *mv;
     struct flb_slist_entry *key = NULL;

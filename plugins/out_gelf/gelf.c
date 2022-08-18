@@ -245,7 +245,7 @@ static void cb_gelf_flush(struct flb_event_chunk *event_chunk,
     msgpack_object map;
     msgpack_object *obj;
     struct flb_time tm;
-    struct flb_upstream_conn *u_conn = NULL;
+    struct flb_connection *u_conn = NULL;
     struct flb_out_gelf_config *ctx = out_context;
 
     if (ctx->mode != FLB_GELF_UDP) {
