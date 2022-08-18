@@ -5,6 +5,8 @@
 #include <fluent-bit/flb_parser.h>
 #include "flb_tests_runtime.h"
 
+#define FLUSH_INTERVAL "1.0"
+
 pthread_mutex_t result_mutex = PTHREAD_MUTEX_INITIALIZER;
 char *output = NULL;
 
@@ -35,6 +37,38 @@ int callback_test(void* data, size_t size, void* cb_data)
     return 0;
 }
 
+void wait_with_timeout(uint32_t timeout_ms, char **out_result)
+{
+    struct flb_time start_time;
+    struct flb_time end_time;
+    struct flb_time diff_time;
+    uint64_t elapsed_time_flb = 0;
+    char *output = NULL;
+
+    flb_time_get(&start_time);
+
+    while (true) {
+        output = get_output();
+
+        if (output != NULL) {
+            *out_result = output;
+            break;
+        }
+
+        flb_time_msleep(100);
+        flb_time_get(&end_time);
+        flb_time_diff(&end_time, &start_time, &diff_time);
+        elapsed_time_flb = flb_time_to_nanosec(&diff_time) / 1000000;
+
+        if (elapsed_time_flb > timeout_ms) {
+            flb_warn("[timeout] elapsed_time: %ld", elapsed_time_flb);
+            // Reached timeout.
+            break;
+        }
+    }
+}
+
+
 void flb_test_filter_parser_extract_fields()
 {
     int ret;
@@ -53,7 +87,7 @@ void flb_test_filter_parser_extract_fields()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", "1", "Grace" "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace" "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -98,8 +132,7 @@ void flb_test_filter_parser_extract_fields()
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
 
-    flb_time_msleep(1500); /* waiting flush */
-    output = get_output(); /* 1sec passed, data should be flushed */
+    wait_with_timeout(2000, &output); /* waiting flush and ensuring data flush */
     TEST_CHECK_(output != NULL, "Expected output to not be NULL");
     if (output != NULL) {
         /* check timestamp */
@@ -139,7 +172,7 @@ void flb_test_filter_parser_reserve_data_off()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace", "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -183,8 +216,7 @@ void flb_test_filter_parser_reserve_data_off()
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
 
-    flb_time_msleep(1500); /* waiting flush */
-    output = get_output(); /* 1sec passed, data should be flushed */
+    wait_with_timeout(2000, &output); /* waiting flush and ensuring data flush */
     TEST_CHECK_(output != NULL, "Expected output to not be NULL");
     if (output != NULL) {
         /* check extra data was not preserved */
@@ -215,7 +247,7 @@ void flb_test_filter_parser_handle_time_key()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace", "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -260,8 +292,7 @@ void flb_test_filter_parser_handle_time_key()
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
 
-    flb_time_msleep(1500); /* waiting flush */
-    output = get_output(); /* 1sec passed, data should be flushed */
+    wait_with_timeout(2000, &output); /* waiting flush and ensuring data flush */
     TEST_CHECK_(output != NULL, "Expected output to not be NULL");
     if (output != NULL) {
         /* check the timestamp field was updated correctly */
@@ -292,7 +323,7 @@ void flb_test_filter_parser_handle_time_key_with_fractional_timestamp()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace", "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -337,8 +368,7 @@ void flb_test_filter_parser_handle_time_key_with_fractional_timestamp()
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
 
-    flb_time_msleep(1500); /* waiting flush */
-    output = get_output(); /* 1sec passed, data should be flushed */
+    wait_with_timeout(2000, &output); /* waiting flush and ensuring data flush */
     TEST_CHECK_(output != NULL, "Expected output to not be NULL");
     if (output != NULL) {
         /* check the timestamp field was updated correctly */
@@ -373,7 +403,7 @@ void flb_test_filter_parser_ignore_malformed_time()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace", "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -419,8 +449,7 @@ void flb_test_filter_parser_ignore_malformed_time()
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
 
-    flb_time_msleep(1500); /* waiting flush */
-    output = get_output(); /* 1sec passed, data should be flushed */
+    wait_with_timeout(2000, &output); /* waiting flush and ensuring data flush */
     TEST_CHECK_(output != NULL, "Expected output to not be NULL");
     if (output != NULL) {
         /* check the timestamp field was ignored and we received everything else */
@@ -451,7 +480,7 @@ void flb_test_filter_parser_preserve_original_field()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace", "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -496,8 +525,7 @@ void flb_test_filter_parser_preserve_original_field()
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
 
-    flb_time_msleep(1500); /* waiting flush */
-    output = get_output(); /* 1sec passed, data should be flushed */
+    wait_with_timeout(2000, &output); /* waiting flush and ensuring data flush */
     TEST_CHECK_(output != NULL, "Expected output to not be NULL");
     if (output != NULL) {
         /* check original field is preserved */
@@ -535,7 +563,7 @@ void flb_test_filter_parser_first_matched_when_mutilple_parser()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", "1", "Grace" "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace" "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -587,8 +615,7 @@ void flb_test_filter_parser_first_matched_when_mutilple_parser()
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
 
-    flb_time_msleep(1500); /* waiting flush */
-    output = get_output(); /* 1sec passed, data should be flushed */
+    wait_with_timeout(2000, &output); /* waiting flush and ensuring data flush */
     TEST_CHECK_(output != NULL, "Expected output to not be NULL");
     if (output != NULL) {
         /* check extra data was not preserved */
@@ -621,7 +648,7 @@ void flb_test_filter_parser_skip_empty_values_false()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", "1", "Grace" "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace" "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -664,8 +691,7 @@ void flb_test_filter_parser_skip_empty_values_false()
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
 
-    sleep(1); /* waiting flush */
-    output = get_output(); /* 1sec passed, data should be flushed */
+    wait_with_timeout(1500, &output); /* waiting flush and ensuring data flush */
     TEST_CHECK_(output != NULL, "Expected output to not be NULL");
     if (output != NULL) {
         /* check extra data was not preserved */
