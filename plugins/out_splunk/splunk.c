@@ -517,7 +517,7 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
     size_t buf_size;
     char *endpoint;
     struct flb_splunk *ctx = out_context;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
     void *payload_buf;
     size_t payload_size;

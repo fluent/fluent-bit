@@ -605,7 +605,7 @@ static int api_agent_create(struct flb_config *config, struct flb_calyptia *ctx)
     char uri[1024];
     flb_sds_t meta;
     struct flb_upstream *u;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
 
     /* Meta */

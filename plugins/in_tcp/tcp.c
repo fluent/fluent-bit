@@ -33,39 +33,51 @@
 static int in_tcp_collect(struct flb_input_instance *in,
                           struct flb_config *config, void *in_context)
 {
-    int fd;
-    int ret;
-    struct flb_in_tcp_config *ctx = in_context;
-    struct tcp_conn *conn;
-    struct flb_coro *coro;
+    struct flb_connection      *connection;
+    struct flb_coro            *coroutine;
+    struct tcp_conn            *conn;
+    struct flb_in_tcp_config   *ctx;
+    int                         ret;
 
+    ctx = in_context;
 
-printf("\nXXXX %s\n\n", in->tls_vhost);
+    coroutine = flb_coro_get();
+    connection = flb_downstream_conn_get(ctx->downstream);
 
+    if (connection == NULL) {
+        flb_plg_error(ctx->ins, "could not accept new connection");
+
+        return -1;
+    }
+
+    ret = flb_io_net_accept(connection, coroutine);
+
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "could not accept new connection");
+
+        flb_downstream_conn_release(connection);
+
+        return -1;
+    }
 
     /* Accept the new connection */
-    fd = flb_net_accept(ctx->server_fd);
-    if (fd == -1) {
+    // fd = flb_net_accept(ctx->server_fd);
+    // if (fd == -1) {
+    //     flb_plg_error(ctx->ins, "could not accept new connection");
+    //     return -1;
+    // }
+
+    flb_plg_trace(ctx->ins, "new TCP connection arrived FD=%i", connection->fd);
+
+    conn = tcp_conn_add(connection, ctx);
+
+    if (conn == NULL) {
         flb_plg_error(ctx->ins, "could not accept new connection");
+
+        flb_downstream_conn_release(connection);
+
         return -1;
     }
-
-    flb_plg_trace(ctx->ins, "new TCP connection arrived FD=%i", fd);
-    conn = tcp_conn_add(fd, ctx);
-    if (!conn) {
-        return -1;
-    }
-
-#ifdef FLB_HAVE_TLS
-    /* Check if TLS was enabled, if so perform the handshake */
-    if (in->use_tls) {
-        coro = flb_coro_get();
-        ret = flb_tls_server_session_create(in->tls, &conn->d_conn, coro);
-        if (ret != 0) {
-            return -1;
-        }
-    }
-#endif
 
     return 0;
 }
@@ -89,25 +101,43 @@ static int in_tcp_init(struct flb_input_instance *in,
     /* Set the context */
     flb_input_set_context(in, ctx);
 
-    /* Create TCP server */
-    ctx->server_fd = flb_net_server(ctx->tcp_port, ctx->listen);
-    if (ctx->server_fd > 0) {
-        flb_plg_info(ctx->ins, "listening on %s:%s", ctx->listen, ctx->tcp_port);
-    }
-    else {
-        flb_plg_error(ctx->ins, "could not bind address %s:%s. Aborting",
+    ctx->downstream = flb_downstream_create(config,
+                                            ctx->listen,
+                                            ctx->tcp_port,
+                                            in->flags,
+                                            in->tls);
+
+    if (ctx->downstream == NULL) {
+        flb_plg_error(ctx->ins,
+                      "could not initialize downstream on %s:%s. Aborting",
                       ctx->listen, ctx->tcp_port);
+
         tcp_config_destroy(ctx);
+
         return -1;
     }
-    flb_net_socket_nonblocking(ctx->server_fd);
+
+    MK_EVENT_ZERO(&ctx->downstream->event);
+
+    /* Create TCP server */
+    // ctx->server_fd = flb_net_server(ctx->tcp_port, ctx->listen);
+    // if (ctx->server_fd > 0) {
+    //     flb_plg_info(ctx->ins, "listening on %s:%s", ctx->listen, ctx->tcp_port);
+    // }
+    // else {
+    //     flb_plg_error(ctx->ins, "could not bind address %s:%s. Aborting",
+    //                   ctx->listen, ctx->tcp_port);
+    //     tcp_config_destroy(ctx);
+    //     return -1;
+    // }
+    // flb_net_socket_nonblocking(ctx->server_fd);
 
     ctx->evl = config->evl;
 
     /* Collect upon data available on the standard input */
     ret = flb_input_set_collector_socket(in,
                                          in_tcp_collect,
-                                         ctx->server_fd,
+                                         ctx->downstream->server_fd,
                                          config);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "Could not set collector for IN_TCP input plugin");

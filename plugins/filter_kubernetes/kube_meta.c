@@ -367,7 +367,7 @@ static int get_meta_info_from_request(struct flb_kube *ctx,
                                       char* uri)
 {
     struct flb_http_client *c;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     int ret;
     size_t b_sent;
     int packed;
@@ -1467,6 +1467,7 @@ static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config
         }
         ctx->tls = flb_tls_create(ctx->tls_verify,
                                   ctx->tls_debug,
+                                  FLB_TLS_CLIENT_MODE,
                                   ctx->tls_vhost,
                                   ctx->tls_ca_path,
                                   ctx->tls_ca_file,

@@ -79,7 +79,7 @@ static int send_blob(struct flb_config *config,
     void *payload_buf;
     size_t payload_size;
     struct flb_http_client *c;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
 
     if (ctx->btype == AZURE_BLOB_APPENDBLOB) {
         uri = azb_append_blob_uri(ctx, tag);
@@ -224,7 +224,7 @@ static int create_blob(struct flb_azure_blob *ctx, char *name)
     size_t b_sent;
     flb_sds_t uri = NULL;
     struct flb_http_client *c;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
 
     uri = azb_uri_create_blob(ctx, name);
     if (!uri) {
@@ -294,7 +294,7 @@ static int create_container(struct flb_azure_blob *ctx, char *name)
     size_t b_sent;
     flb_sds_t uri;
     struct flb_http_client *c;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
@@ -373,7 +373,7 @@ static int ensure_container(struct flb_azure_blob *ctx)
     size_t b_sent;
     flb_sds_t uri;
     struct flb_http_client *c;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
 
     uri = azb_uri_ensure_or_create_container(ctx);
     if (!uri) {

@@ -68,7 +68,7 @@ static int collect_metrics(struct prom_scrape *ctx)
     char errbuf[1024];
     size_t b_sent;
     struct flb_http_client *c;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct cmt *cmt = NULL;
     struct cmt_decode_prometheus_parse_opts opts = {0};
 

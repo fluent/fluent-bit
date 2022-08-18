@@ -299,7 +299,7 @@ static void cb_datadog_flush(struct flb_event_chunk *event_chunk,
                              struct flb_config *config)
 {
     struct flb_out_datadog *ctx = out_context;
-    struct flb_upstream_conn *upstream_conn;
+    struct flb_connection *upstream_conn;
     struct flb_http_client *client;
     void *out_buf;
     size_t out_size;
