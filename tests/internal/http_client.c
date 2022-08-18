@@ -9,9 +9,9 @@
 #include "flb_tests_internal.h"
 
 struct test_ctx {
-    struct flb_upstream      *u;
-    struct flb_upstream_conn *u_conn;
-    struct flb_config        *config;
+    struct flb_upstream   *u;
+    struct flb_connection *u_conn;
+    struct flb_config     *config;
 };
 
 struct test_ctx* test_ctx_create()
@@ -42,16 +42,17 @@ struct test_ctx* test_ctx_create()
         return NULL;
     }
 
-    ret_ctx->u_conn = flb_malloc(sizeof(struct flb_upstream_conn));
+    ret_ctx->u_conn = flb_malloc(sizeof(struct flb_connection));
     if(!TEST_CHECK(ret_ctx->u_conn != NULL)) {
         flb_errno();
-        TEST_MSG("flb_malloc(flb_upstream_conn) failed");
+        TEST_MSG("flb_malloc(flb_connection) failed");
         flb_upstream_destroy(ret_ctx->u);
         flb_config_exit(ret_ctx->config);
         flb_free(ret_ctx);
         return NULL;
     }
-    ret_ctx->u_conn->u = ret_ctx->u;
+
+    ret_ctx->u_conn->upstream = ret_ctx->u;
 
     return ret_ctx;
 }
