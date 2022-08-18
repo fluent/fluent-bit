@@ -91,6 +91,7 @@ static int cb_nightfall_init(struct flb_filter_instance *f_ins,
 
     ctx->tls = flb_tls_create(ctx->tls_verify,
                               ctx->tls_debug,
+                              FLB_TLS_CLIENT_MODE,
                               ctx->tls_vhost,
                               ctx->tls_ca_path,
                               NULL,

@@ -308,7 +308,7 @@ static void cb_sw_flush(struct flb_event_chunk *event_chunk,
     int flush_ret = -1;
     int tmp_ret = -1;
     struct flb_output_sw *ctx = out_context;
-    struct flb_upstream_conn *conn = NULL;
+    struct flb_connection *conn = NULL;
     struct flb_http_client *client = NULL;
     void* buf = NULL;
     size_t buf_len;

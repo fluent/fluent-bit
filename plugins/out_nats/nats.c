@@ -165,7 +165,7 @@ static void cb_nats_flush(struct flb_event_chunk *event_chunk,
     char *request;
     int req_len;
     struct flb_out_nats_config *ctx = out_context;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
 
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {

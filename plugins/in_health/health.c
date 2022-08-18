@@ -65,7 +65,7 @@ static int in_health_collect(struct flb_input_instance *ins,
     int map_num = 1;
     uint8_t alive;
     struct flb_in_health_config *ctx = in_context;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
 
