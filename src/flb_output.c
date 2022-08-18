@@ -977,6 +977,7 @@ int flb_output_init_all(struct flb_config *config)
         if (ins->use_tls == FLB_TRUE) {
             ins->tls = flb_tls_create(ins->tls_verify,
                                       ins->tls_debug,
+                                      FLB_TLS_CLIENT_MODE,
                                       ins->tls_vhost,
                                       ins->tls_ca_path,
                                       ins->tls_ca_file,

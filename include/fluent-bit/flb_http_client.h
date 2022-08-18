@@ -102,7 +102,7 @@ struct flb_http_debug {
 /* Set a request type */
 struct flb_http_client {
     /* Upstream connection */
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
 
     /* Request data */
     int method;
@@ -139,7 +139,7 @@ struct flb_http_client {
 void flb_http_client_debug(struct flb_http_client *c,
                            struct flb_callback *cb_ctx);
 
-struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
+struct flb_http_client *flb_http_client(struct flb_connection *u_conn,
                                         int method, const char *uri,
                                         const char *body, size_t body_len,
                                         const char *host, int port,
@@ -160,7 +160,7 @@ int flb_http_set_callback_context(struct flb_http_client *c,
                                   struct flb_callback *cb_ctx);
 
 int flb_http_do(struct flb_http_client *c, size_t *bytes);
-int flb_http_client_proxy_connect(struct flb_upstream_conn *u_conn);
+int flb_http_client_proxy_connect(struct flb_connection *u_conn);
 void flb_http_client_destroy(struct flb_http_client *c);
 int flb_http_buffer_size(struct flb_http_client *c, size_t size);
 size_t flb_http_buffer_available(struct flb_http_client *c);

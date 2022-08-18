@@ -382,7 +382,7 @@ static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrl
 static int net_connect_async(int fd,
                              const struct sockaddr *addr, socklen_t addrlen,
                              char *host, int port, int connect_timeout,
-                             void *async_ctx, struct flb_upstream_conn *u_conn)
+                             void *async_ctx, struct flb_connection *u_conn)
 {
     int ret;
     int err;
@@ -391,7 +391,9 @@ static int net_connect_async(int fd,
     uint32_t mask;
     char so_error_buf[256];
     char *str;
-    struct flb_upstream *u = u_conn->u;
+    struct flb_upstream *u;
+
+    u = u_conn->upstream;
 
     /* connect(2) */
     ret = connect(fd, addr, addrlen);
@@ -439,11 +441,15 @@ static int net_connect_async(int fd,
 
     /* Register the connection socket into the main event loop */
     MK_EVENT_ZERO(&u_conn->event);
+
     ret = mk_event_add(u_conn->evl,
                        fd,
                        FLB_ENGINE_EV_THREAD,
-                       MK_EVENT_WRITE, &u_conn->event);
+                       MK_EVENT_WRITE,
+                       &u_conn->event);
+
     u_conn->event.priority = FLB_ENGINE_PRIORITY_CONNECT;
+
     if (ret == -1) {
         /*
          * If we failed here there no much that we can do, just
@@ -452,7 +458,7 @@ static int net_connect_async(int fd,
         return -1;
     }
 
-    u_conn->coro = async_ctx;
+    u_conn->coroutine = async_ctx;
 
     /*
      * Return the control to the parent caller, we need to wait for
@@ -463,7 +469,7 @@ static int net_connect_async(int fd,
     /* We want this field to hold NULL at all times unless we are explicitly
      * waiting to be resumed.
      */
-    u_conn->coro = NULL;
+    u_conn->coroutine = NULL;
 
     /* Save the mask before the event handler do a reset */
     mask = u_conn->event.mask;
@@ -1173,7 +1179,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
                                  char *source_addr, int connect_timeout,
                                  int is_async,
                                  void *async_ctx,
-                                 struct flb_upstream_conn *u_conn)
+                                 struct flb_connection *u_conn)
 {
     int ret;
     int use_async_dns;
@@ -1201,8 +1207,8 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
 
     use_async_dns = is_async;
 
-    if (u_conn->u->net.dns_resolver != NULL) {
-        resolver_initial = toupper(u_conn->u->net.dns_resolver[0]);
+    if (u_conn->net->dns_resolver != NULL) {
+        resolver_initial = toupper(u_conn->net->dns_resolver[0]);
 
         if (resolver_initial == FLB_DNS_LEGACY) {
             use_async_dns = FLB_FALSE;
@@ -1212,7 +1218,8 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     /* retrieve DNS info */
     if (use_async_dns) {
         ret = flb_net_getaddrinfo(host, _port, &hints, &res,
-                                  u_conn->u->net.dns_mode, connect_timeout);
+                                  u_conn->net->dns_mode,
+                                  connect_timeout);
     }
     else {
         ret = getaddrinfo(host, _port, &hints, &res);
@@ -1246,7 +1253,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
 
     sorted_res = res;
 
-    if (u_conn->u->net.dns_prefer_ipv4) {
+    if (u_conn->net->dns_prefer_ipv4) {
         sorted_res = flb_net_sort_addrinfo_list(res, AF_INET);
 
         if (sorted_res == NULL) {
@@ -1289,6 +1296,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         /* Bind a specific network interface ? */
         if (source_addr != NULL) {
             ret = flb_net_bind_address(fd, source_addr);
+
             if (ret == -1) {
                 flb_warn("[net] falling back to random interface");
             }
@@ -1301,7 +1309,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         flb_net_socket_tcp_nodelay(fd);
 
         /* Set receive timeout */
-        flb_net_socket_set_rcvtimeout(fd, u_conn->u->net.io_timeout);
+        flb_net_socket_set_rcvtimeout(fd, u_conn->net->io_timeout);
 
         if (u_conn) {
             u_conn->fd = fd;
@@ -1340,6 +1348,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
             /* If the connection failed, just abort and report the problem */
             flb_debug("[net] socket #%i could not connect to %s:%s",
                       fd, address, _port);
+
             if (u_conn) {
                 u_conn->fd = -1;
                 u_conn->event.fd = -1;
@@ -1602,6 +1611,8 @@ flb_sockfd_t flb_net_accept(flb_sockfd_t server_fd)
     flb_sockfd_t remote_fd;
     struct sockaddr sock_addr;
     socklen_t socket_size = sizeof(struct sockaddr);
+
+    // return accept(server_fd, &sock_addr, &socket_size);
 
 #ifdef FLB_HAVE_ACCEPT4
     remote_fd = accept4(server_fd, &sock_addr, &socket_size,
