@@ -123,6 +123,7 @@ struct flb_in_tcp_config *tcp_config_init(struct flb_input_instance *ins)
     if (ins->use_tls) {
         ins->tls = flb_tls_create(ins->tls_verify,
                                   ins->tls_debug,
+                                  FLB_TLS_SERVER_MODE,
                                   ins->tls_vhost,
                                   ins->tls_ca_path,
                                   ins->tls_ca_file,

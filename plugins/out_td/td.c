@@ -191,7 +191,7 @@ static void cb_td_flush(struct flb_event_chunk *event_chunk,
     size_t b_sent;
     char *body = NULL;
     struct flb_td *ctx = out_context;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
     (void) i_ins;
 

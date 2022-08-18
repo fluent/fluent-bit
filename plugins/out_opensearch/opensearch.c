@@ -817,7 +817,7 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
     size_t out_size;
     size_t b_sent;
     struct flb_opensearch *ctx = out_context;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
     flb_sds_t signature = NULL;
 

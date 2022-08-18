@@ -315,9 +315,9 @@ static flb_sds_t uri_encode(const char *uri, size_t len)
 /* https://cloud.google.com/iam/docs/using-workload-identity-federation */
 static int bigquery_exchange_aws_creds_for_google_oauth(struct flb_bigquery *ctx)
 {
-    struct flb_upstream_conn *aws_sts_conn;
-    struct flb_upstream_conn *google_sts_conn = NULL;
-    struct flb_upstream_conn *google_gen_access_token_conn = NULL;
+    struct flb_connection *aws_sts_conn;
+    struct flb_connection *google_sts_conn = NULL;
+    struct flb_connection *google_gen_access_token_conn = NULL;
     struct flb_http_client *aws_sts_c = NULL;
     struct flb_http_client *google_sts_c = NULL;
     struct flb_http_client *google_gen_access_token_c = NULL;
@@ -686,6 +686,7 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
         /* Configure AWS IMDS */
         ctx->aws_tls = flb_tls_create(FLB_TRUE,
                                       ins->tls_debug,
+                                      FLB_TLS_CLIENT_MODE,
                                       ins->tls_vhost,
                                       ins->tls_ca_path,
                                       ins->tls_ca_file,
@@ -723,6 +724,7 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
         /* Configure AWS STS */
         ctx->aws_sts_tls = flb_tls_create(FLB_TRUE,
                                           ins->tls_debug,
+                                          FLB_TLS_CLIENT_MODE,
                                           ins->tls_vhost,
                                           ins->tls_ca_path,
                                           ins->tls_ca_file,
@@ -753,6 +755,7 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
         /* Configure Google STS */
         ctx->google_sts_tls = flb_tls_create(FLB_TRUE,
                                              ins->tls_debug,
+                                             FLB_TLS_CLIENT_MODE,
                                              ins->tls_vhost,
                                              ins->tls_ca_path,
                                              ins->tls_ca_file,
@@ -780,6 +783,7 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
         /* Configure Google IAM */
         ctx->google_iam_tls = flb_tls_create(FLB_TRUE,
                                              ins->tls_debug,
+                                             FLB_TLS_CLIENT_MODE,
                                              ins->tls_vhost,
                                              ins->tls_ca_path,
                                              ins->tls_ca_file,
@@ -959,7 +963,7 @@ static void cb_bigquery_flush(struct flb_event_chunk *event_chunk,
     flb_sds_t payload_buf;
     size_t payload_size;
     struct flb_bigquery *ctx = out_context;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
 
     flb_plg_trace(ctx->ins, "flushing bytes %zu", event_chunk->size);

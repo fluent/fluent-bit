@@ -188,7 +188,7 @@ static int get_ec2_token(struct flb_filter_aws *ctx)
 {
     int ret;
     size_t b_sent;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *client;
 
     u_conn = flb_upstream_conn_get(ctx->ec2_upstream);
@@ -255,7 +255,7 @@ static int get_metadata_by_key(struct flb_filter_aws *ctx, char *metadata_path,
     size_t b_sent;
     flb_sds_t tmp;
     struct flb_http_client *client;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
 
     u_conn = flb_upstream_conn_get(ctx->ec2_upstream);
     if (!u_conn) {

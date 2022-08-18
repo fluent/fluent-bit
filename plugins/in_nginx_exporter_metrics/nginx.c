@@ -109,7 +109,7 @@ static int nginx_collect_stub_status(struct flb_input_instance *ins,
                          struct flb_config *config, void *in_context)
 {
     struct nginx_ctx *ctx = (struct nginx_ctx *)in_context;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *client;
     struct nginx_status status;
     flb_sds_t data;
@@ -359,7 +359,7 @@ static ssize_t parse_payload_json(struct nginx_ctx *nginx, void *ctx, uint64_t t
 static int nginx_collect_plus_connections(struct flb_input_instance *ins,
                          struct flb_config *config, struct nginx_ctx *ctx, uint64_t ts)
 {
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *client;
     char url[1024];
     size_t b_sent;
@@ -423,7 +423,7 @@ conn_error:
 static int nginx_collect_plus_ssl(struct flb_input_instance *ins,
                          struct flb_config *config, struct nginx_ctx *ctx, uint64_t ts)
 {
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *client;
     char url[1024];
     size_t b_sent;
@@ -486,7 +486,7 @@ conn_error:
 static int nginx_collect_plus_http_requests(struct flb_input_instance *ins,
                          struct flb_config *config, struct nginx_ctx *ctx, uint64_t ts)
 {
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *client;
     char url[1024];
     size_t b_sent;
@@ -1007,7 +1007,7 @@ static ssize_t parse_payload_json_table(struct nginx_ctx *ctx, int64_t ts,
 static int nginx_collect_plus_server_zones(struct flb_input_instance *ins,
                          struct flb_config *config, struct nginx_ctx *ctx, uint64_t ts)
 {
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *client;
     char url[1024];
     size_t b_sent;
@@ -1070,7 +1070,7 @@ conn_error:
 static int nginx_collect_plus_location_zones(struct flb_input_instance *ins,
                          struct flb_config *config, struct nginx_ctx *ctx, uint64_t ts)
 {
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *client;
     char url[1024];
     size_t b_sent;
@@ -1133,7 +1133,7 @@ conn_error:
 static int nginx_collect_plus_upstreams(struct flb_input_instance *ins,
                          struct flb_config *config, struct nginx_ctx *ctx, uint64_t ts)
 {
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *client;
     char url[1024];
     size_t b_sent;
@@ -1196,7 +1196,7 @@ conn_error:
 static int nginx_collect_plus_stream_server_zones(struct flb_input_instance *ins,
                          struct flb_config *config, struct nginx_ctx *ctx, uint64_t ts)
 {
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *client;
     char url[1024];
     size_t b_sent;
@@ -1260,7 +1260,7 @@ static int nginx_collect_plus_stream_upstreams(struct flb_input_instance *ins,
                                                struct flb_config *config,
                                                struct nginx_ctx *ctx, uint64_t ts)
 {
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *client;
     char url[1024];
     size_t b_sent;
@@ -1323,7 +1323,7 @@ static int nginx_plus_get_version(struct flb_input_instance *ins,
                                   struct flb_config *config,
                                   struct nginx_ctx *ctx)
 {
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *client;
     char url[1024];
     size_t b_sent;

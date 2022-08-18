@@ -271,7 +271,7 @@ static void cb_azure_flush(struct flb_event_chunk *event_chunk,
     char *buf_data;
     size_t buf_size;
     struct flb_azure *ctx = out_context;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
     flb_sds_t payload;
     (void) i_ins;

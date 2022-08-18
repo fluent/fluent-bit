@@ -2358,7 +2358,7 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     flb_sds_t payload_buf;
     size_t payload_size;
     struct flb_stackdriver *ctx = out_context;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
 #ifdef FLB_HAVE_METRICS
     char *name = (char *) flb_output_name(ctx->ins);
