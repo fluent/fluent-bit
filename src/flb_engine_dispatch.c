@@ -125,6 +125,7 @@ static int tasks_start(struct flb_input_instance *in,
 {
     int hits = 0;
     int retry = 0;
+    int circuits = 0;
     struct mk_list *tmp;
     struct mk_list *head;
     struct mk_list *r_head;
@@ -170,6 +171,14 @@ static int tasks_start(struct flb_input_instance *in,
                 continue;
             }
 
+            /* skip task flush for target output if circuit breaker in open state */
+            if (out->use_circuit_breaker == FLB_TRUE) {
+                if (flb_circuit_breaker_allow_request(out->circuit_breaker) == FLB_FALSE) {
+                    circuits++;
+                    continue;
+                }
+            }
+
             /*
              * If the plugin don't allow multiplexing Tasks, check if it's
              * running something.
@@ -206,6 +215,10 @@ static int tasks_start(struct flb_input_instance *in,
         }
 
         hits = 0;
+    }
+
+    if (circuits > 0) {
+        flb_warn("[task] %i tasks were skipped flushing due to circuit breaker is OPEN", circuits);
     }
 
     return 0;

@@ -824,7 +824,7 @@ if(FLB_BACKTRACE)
     BUILD_COMMAND $(MAKE)
     INSTALL_COMMAND $(MAKE) DESTDIR= install
     )
-  add_library(libbacktrace STATIC IMPORTED GLOBAL)
+  add_library(libbacktrace STATIC IMPORTED GLOBAL plugins/out_circuit_breaker/circuit_breaker.c include/fluent-bit/flb_circuit_breaker.h)
   set_target_properties(libbacktrace PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/lib/libbacktrace.a")
   add_dependencies(libbacktrace backtrace)
   include_directories("${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/include/")
