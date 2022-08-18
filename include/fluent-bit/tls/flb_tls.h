@@ -44,14 +44,17 @@
 #define FLB_TLS_UPSTREAM_CONNECTION   1
 #define FLB_TLS_DOWNSTREAM_CONNECTION 2
 
+#define FLB_TLS_CLIENT_MODE 0
+#define FLB_TLS_SERVER_MODE 1
+
 struct flb_tls;
+struct flb_base_conn;
 
 struct flb_tls_session {
     /* opaque data type for backend session context */
-    void           *ptr;
-    struct flb_tls *tls;
-    void           *connection;
-    int             connection_type;
+    void                 *ptr;
+    struct flb_tls       *tls;
+    struct flb_base_conn *connection;
 };
 
 /*
@@ -63,7 +66,7 @@ struct flb_tls_backend {
     char *name;
 
     /* create backend context */
-    void *(*context_create) (int, int,
+    void *(*context_create) (int, int, int,
                              const char *, const char *,
                              const char *, const char *,
                              const char *, const char *);
@@ -79,15 +82,15 @@ struct flb_tls_backend {
     int (*net_read) (struct flb_tls_session *, void *, size_t);
     int (*net_write) (struct flb_tls_session *, const void *data,
                       size_t len);
-    int (*net_client_handshake) (struct flb_tls *, void *);
-    int (*net_server_handshake) (struct flb_tls *, void *);
+    int (*net_handshake) (struct flb_tls *, char *, void *);
 };
 
 /* Main TLS context */
 struct flb_tls {
     int verify;                       /* FLB_TRUE | FLB_FALSE      */
-    int debug;                        /* mbedtls debug level       */
+    int debug;                        /* Debug level               */
     char *vhost;                      /* Virtual hostname for SNI  */
+    int mode;                         /* Client or Server          */
 
     /* Bakend library for TLS */
     void *ctx;                        /* TLS context created */
@@ -96,7 +99,14 @@ struct flb_tls {
 
 int flb_tls_init();
 
-struct flb_tls *flb_tls_create();
+struct flb_tls *flb_tls_create(int verify,
+                               int debug,
+                               int mode,
+                               const char *vhost,
+                               const char *ca_path,
+                               const char *ca_file, const char *crt_file,
+                               const char *key_file, const char *key_passwd);
+
 int flb_tls_destroy(struct flb_tls *tls);
 int flb_tls_load_system_certificates(struct flb_tls *tls);
 
@@ -104,12 +114,12 @@ struct mk_list *flb_tls_get_config_map(struct flb_config *config);
 
 int flb_tls_session_destroy(struct flb_tls_session *session);
 
-int flb_tls_client_session_create(struct flb_tls *tls,
-                                  struct flb_upstream_conn *u_conn,
-                                  struct flb_coro *th);
+int flb_tls_session_create(struct flb_tls *tls,
+                           struct flb_base_conn *connection,
+                           struct flb_coro *co);
 
-int flb_tls_server_session_create(struct flb_tls *tls,
-                                  struct flb_downstream_conn *connection,
+int flb_tls_client_session_create(struct flb_tls *tls,
+                                  struct flb_connection *u_conn,
                                   struct flb_coro *th);
 
 int flb_tls_net_read(struct flb_tls_session *session, 

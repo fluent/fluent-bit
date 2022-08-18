@@ -45,9 +45,12 @@
 
 /* Downstream handler */
 struct flb_downstream {
+    struct mk_event event;
     int flags;
-    int port;
+    unsigned short int port;
     char *host;
+
+    flb_sockfd_t server_fd;
 
     /* Networking setup for timeouts and network interfaces */
     struct flb_net_setup net;
@@ -60,6 +63,7 @@ struct flb_downstream {
 #ifdef FLB_HAVE_TLS
     struct flb_tls *tls;
 #endif
+    int dynamically_allocated;
 
     struct mk_list busy_queue;
     struct mk_list destroy_queue;
@@ -75,15 +79,23 @@ static inline int flb_downstream_is_shutting_down(struct flb_downstream *downstr
 }
 
 void flb_downstream_init();
-struct flb_downstream *flb_downstream_create(struct flb_config *config,
-                                             const char *host, int port, int flags,
-                                             struct flb_tls *tls);
 
-int flb_downstream_destroy(struct flb_downstream *downstream);
+int flb_downstream_setup(struct flb_downstream *stream,
+                         struct flb_config *config,
+                         const char *host, const char *port,
+                         int flags, struct flb_tls *tls);
+
+struct flb_downstream *flb_downstream_create(struct flb_config *config,
+                                             const char *host, const char *port,
+                                             int flags, struct flb_tls *tls);
+
+void flb_downstream_destroy(struct flb_downstream *downstream);
 
 int flb_downstream_set_property(struct flb_config *config,
                               struct flb_net_setup *net, char *k, char *v);
+
 int flb_downstream_is_async(struct flb_downstream *downstream);
+
 struct mk_list *flb_downstream_get_config_map(struct flb_config *config);
 
 #endif

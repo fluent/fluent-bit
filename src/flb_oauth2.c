@@ -214,6 +214,7 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
     /* Create TLS context */
     ctx->tls = flb_tls_create(FLB_TRUE,  /* verify */
                               -1,        /* debug */
+                              FLB_TLS_CLIENT_MODE,
                               NULL,      /* vhost */
                               NULL,      /* ca_path */
                               NULL,      /* ca_file */
@@ -330,7 +331,7 @@ char *flb_oauth2_token_get(struct flb_oauth2 *ctx)
     int ret;
     size_t b_sent;
     time_t now;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
 
     now = time(NULL);

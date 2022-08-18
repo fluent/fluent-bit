@@ -135,7 +135,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
                                  char *source_addr, int connect_timeout,
                                  int is_async,
                                  void *async_ctx,
-                                 struct flb_upstream_conn *u_conn);
+                                 struct flb_connection *u_conn);
 
 flb_sockfd_t flb_net_udp_connect(const char *host, unsigned long port,
                                  char *source_addr);

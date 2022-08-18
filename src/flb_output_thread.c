@@ -176,7 +176,7 @@ static void output_thread(void *data)
     struct mk_event *event;
     struct flb_sched *sched;
     struct flb_task *task;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_output_instance *ins;
     struct flb_output_flush *out_flush;
     struct flb_out_thread_instance *th_ins = data;
@@ -302,10 +302,11 @@ static void output_thread(void *data)
                  * Check if we have some co-routine associated to this event,
                  * if so, resume the co-routine
                  */
-                u_conn = (struct flb_upstream_conn *) event;
-                if (u_conn->coro) {
-                    flb_trace("[engine] resuming coroutine=%p", u_conn->coro);
-                    flb_coro_resume(u_conn->coro);
+                u_conn = (struct flb_connection *) event;
+
+                if (u_conn->coroutine) {
+                    flb_trace("[engine] resuming coroutine=%p", u_conn->coroutine);
+                    flb_coro_resume(u_conn->coroutine);
                 }
             }
             else if (event->type == FLB_ENGINE_EV_OUTPUT) {

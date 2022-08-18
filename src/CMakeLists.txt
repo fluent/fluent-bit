@@ -41,6 +41,7 @@ set(src
   flb_scheduler.c
   flb_io.c
   flb_storage.c
+  flb_connection.c
   flb_downstream.c
   flb_upstream.c
   flb_upstream_ha.c
