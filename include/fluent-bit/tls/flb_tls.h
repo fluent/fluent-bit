@@ -23,10 +23,8 @@
 #ifdef FLB_HAVE_TLS
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_upstream.h>
-#include <fluent-bit/flb_downstream.h>
-#include <fluent-bit/flb_upstream_conn.h>
-#include <fluent-bit/flb_downstream_conn.h>
+#include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_coro.h>
 #include <stddef.h>
 
 #define FLB_TLS_CLIENT   "Fluent Bit"
@@ -48,13 +46,13 @@
 #define FLB_TLS_SERVER_MODE 1
 
 struct flb_tls;
-struct flb_base_conn;
+struct flb_connection;
 
 struct flb_tls_session {
     /* opaque data type for backend session context */
-    void                 *ptr;
-    struct flb_tls       *tls;
-    struct flb_base_conn *connection;
+    void                  *ptr;
+    struct flb_tls        *tls;
+    struct flb_connection *connection;
 };
 
 /*
@@ -115,12 +113,8 @@ struct mk_list *flb_tls_get_config_map(struct flb_config *config);
 int flb_tls_session_destroy(struct flb_tls_session *session);
 
 int flb_tls_session_create(struct flb_tls *tls,
-                           struct flb_base_conn *connection,
+                           struct flb_connection *connection,
                            struct flb_coro *co);
-
-int flb_tls_client_session_create(struct flb_tls *tls,
-                                  struct flb_connection *u_conn,
-                                  struct flb_coro *th);
 
 int flb_tls_net_read(struct flb_tls_session *session, 
                      void *buf, 
