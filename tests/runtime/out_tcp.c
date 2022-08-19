@@ -26,6 +26,14 @@
 #include <msgpack.h>
 #include "flb_tests_runtime.h"
 
+#define DEFAULT_IO_TIMEOUT 10
+#define DEFAULT_HOST       "127.0.0.1"
+#define DEFAULT_PORT       "5170"
+
+#define TLS_CERTIFICATE_HOSTNAME "leo.vcap.me"
+#define TLS_CERTIFICATE_FILENAME FLB_TESTS_DATA_PATH "/data/tls/certificate.pem"
+#define TLS_PRIVATE_KEY_FILENAME FLB_TESTS_DATA_PATH "/data/tls/private_key.pem"
+
 struct test_ctx {
     flb_ctx_t *flb;    /* Fluent Bit library context */
     int i_ffd;         /* Input fd  */
@@ -262,6 +270,107 @@ static void test_ctx_destroy(struct test_ctx *ctx)
 
     sleep(1);
     flb_stop(ctx->flb);
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+}
+
+void flb_test_tcp_with_tls()
+{
+    struct flb_connection *client_connection;
+    size_t                 out_buf_size;
+    char                   in_buf[256];
+    struct flb_downstream *downstream;
+    struct flb_lib_out_cb  cb_data;
+    const char            *out_buf;
+    unsigned short int     port;
+    struct test_ctx       *ctx;
+    int                    ret;
+    struct flb_tls        *tls;
+
+    port = strtoul(DEFAULT_PORT, NULL, 10);
+
+    out_buf = "[1, {\"msg\":\"hello world\"}]";
+    out_buf_size = strlen(out_buf);
+
+    memset(in_buf, 0, sizeof(in_buf));
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match",        "*",
+                         "format",       "json",
+                         "host",         DEFAULT_HOST,
+                         "port",         DEFAULT_PORT,
+                         "tls",          "on",
+                         "tls.verify",   "no",
+                         "tls.vhost",    TLS_CERTIFICATE_HOSTNAME,
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_tls_init();
+    TEST_CHECK(ret == 0);
+
+    tls = flb_tls_create(FLB_FALSE,
+                         FLB_TRUE,
+                         FLB_TLS_SERVER_MODE,
+                         TLS_CERTIFICATE_HOSTNAME,
+                         NULL,
+                         NULL,
+                         TLS_CERTIFICATE_FILENAME,
+                         TLS_PRIVATE_KEY_FILENAME,
+                         NULL);
+
+    TEST_CHECK(tls != NULL);
+
+    if (tls != NULL) {
+        /* Ingest data sample */
+        ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) out_buf, out_buf_size);
+        TEST_CHECK(ret >= 0);
+
+        downstream = flb_downstream_create(ctx->flb->config,
+                                           DEFAULT_HOST,
+                                           port,
+                                           FLB_IO_TCP | FLB_IO_TLS,
+                                           tls);
+
+        TEST_CHECK(downstream != NULL);
+
+        if (downstream != NULL) {
+            downstream->flags &= ~FLB_IO_ASYNC;
+
+            downstream->net.io_timeout = DEFAULT_IO_TIMEOUT;
+
+            flb_net_socket_blocking(downstream->server_fd);
+
+            client_connection = flb_downstream_conn_get(downstream);
+
+            TEST_CHECK(client_connection != NULL);
+
+            ret = flb_io_net_read(client_connection,
+                                  (void *) in_buf,
+                                  sizeof(in_buf));
+
+            TEST_CHECK(ret > 0);
+
+            if (ret > 0) {
+                TEST_CHECK(strstr(in_buf, "hello world") != NULL);
+            }
+        }
+    }
+
+    sleep(1);
+
+    flb_stop(ctx->flb);
+    flb_downstream_destroy(downstream);
+    flb_tls_destroy(tls);
     flb_destroy(ctx->flb);
     flb_free(ctx);
 }
@@ -771,6 +880,7 @@ void flb_test_json_date_format_java_sql_timestamp()
 
 /* Test list */
 TEST_LIST = {
+    {"tcp_with_tls", flb_test_tcp_with_tls},
     {"format_msgpack" , flb_test_format_msgpack},
     {"format_json" , flb_test_format_json},
     {"format_json_stream" , flb_test_format_json_stream},
