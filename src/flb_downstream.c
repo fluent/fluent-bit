@@ -253,8 +253,7 @@ struct flb_connection *flb_downstream_conn_get(struct flb_downstream *stream)
                         FLB_DOWNSTREAM_CONNECTION,
                         (void *) stream,
                         flb_engine_evl_get(),
-                        flb_coro_get(),
-                        (void *) connection);
+                        flb_coro_get());
 
     connection->busy_flag = FLB_TRUE;
 
