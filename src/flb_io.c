@@ -54,6 +54,7 @@
 #include <fluent-bit/tls/flb_tls.h>
 #include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_upstream.h>
+#include <fluent-bit/flb_downstream.h>
 
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_macros.h>
@@ -164,12 +165,14 @@ int flb_io_net_connect(struct flb_connection *connection,
 #ifdef FLB_HAVE_TLS
     /* Check if TLS was enabled, if so perform the handshake */
     if (connection->upstream->flags & FLB_IO_TLS) {
-        ret = flb_tls_client_session_create(connection->upstream->tls,
-                                            connection,
-                                            coro);
+        if (connection->downstream->tls != NULL) {
+            ret = flb_tls_session_create(connection->upstream->tls,
+                                         connection,
+                                         coro);
 
-        if (ret != 0) {
-            return -1;
+            if (ret != 0) {
+                return -1;
+            }
         }
     }
 #endif
