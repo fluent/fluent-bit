@@ -88,14 +88,16 @@ int flb_io_net_accept(struct flb_connection *connection,
 #ifdef FLB_HAVE_TLS
     /* Check if TLS was enabled, if so perform the handshake */
     if (connection->downstream->flags & FLB_IO_TLS) {
-        ret = flb_tls_session_create(connection->downstream->tls,
-                                     connection,
-                                     coro);
+        if (connection->downstream->tls != NULL) {
+            ret = flb_tls_session_create(connection->downstream->tls,
+                                         connection,
+                                         coro);
 
-        if (ret != 0) {
-            flb_connection_reset_connection_timeout(connection);
+            if (ret != 0) {
+                flb_connection_reset_connection_timeout(connection);
 
-            return -1;
+                return -1;
+            }
         }
     }
 #endif
