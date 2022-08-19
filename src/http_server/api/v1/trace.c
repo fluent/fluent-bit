@@ -126,6 +126,9 @@ static int msgpack_params_enable_trace(struct flb_hs *hs, msgpack_unpacked *resu
     msgpack_object *key;
     msgpack_object *val;
     struct mk_list *props = NULL;
+    msgpack_object_kv *param;
+    msgpack_object_str *param_key;
+    msgpack_object_str *param_val;
 
 
     if (result->data.type == MSGPACK_OBJECT_MAP) {    
@@ -169,17 +172,20 @@ static int msgpack_params_enable_trace(struct flb_hs *hs, msgpack_unpacked *resu
                 props = flb_calloc(1, sizeof(struct mk_list));
                 flb_kv_init(props);
                 for (x = 0; x < val->via.map.size; x++) {
-                    if (val->via.map.ptr[x].val.type != MSGPACK_OBJECT_STR) {
+                    param = &val->via.map.ptr[x];
+                    if (param->val.type != MSGPACK_OBJECT_STR) {
                         ret = -1;
                         goto parse_error;
                     }
-                    if (val->via.map.ptr[x].key.type != MSGPACK_OBJECT_STR) {
+                    if (param->key.type != MSGPACK_OBJECT_STR) {
                         ret = -1;
                         goto parse_error;
                     }
+                    param_key = &param->key.via.str;
+                    param_val = &param->val.via.str;
                     flb_kv_item_create_len(props,
-                                            (char *)val->via.map.ptr[x].key.via.str.ptr, val->via.map.ptr[x].key.via.str.size,
-                                            (char *)val->via.map.ptr[x].val.via.str.ptr, val->via.map.ptr[x].val.via.str.size);
+                                          (char *)param_key->ptr, param_key->size,
+                                          (char *)param_val->ptr, param_val->size);
                 }
             }
         }

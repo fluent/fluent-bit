@@ -145,7 +145,10 @@ void flb_chunk_trace_context_destroy(void *input)
     pthread_mutex_unlock(&in->chunk_trace_lock);
 }
 
-struct flb_chunk_trace_context *flb_chunk_trace_context_new(void *trace_input, const char *output_name, const char *trace_prefix, void *data, struct mk_list *props)
+struct flb_chunk_trace_context *flb_chunk_trace_context_new(void *trace_input,
+                                                            const char *output_name,
+                                                            const char *trace_prefix,
+                                                            void *data, struct mk_list *props)
 {
     struct flb_input_instance *in = (struct flb_input_instance *)trace_input;
     struct flb_config *config = in->config;
