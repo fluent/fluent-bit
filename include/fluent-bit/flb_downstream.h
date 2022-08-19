@@ -94,6 +94,8 @@ void flb_downstream_destroy(struct flb_downstream *downstream);
 int flb_downstream_set_property(struct flb_config *config,
                               struct flb_net_setup *net, char *k, char *v);
 
+int flb_downstream_conn_pending_destroy_list(struct mk_list *list);
+
 int flb_downstream_is_async(struct flb_downstream *downstream);
 
 struct mk_list *flb_downstream_get_config_map(struct flb_config *config);
