@@ -384,13 +384,13 @@ static void input_thread(void *data)
                 event->handler(event);
             }
             else if (event->type == FLB_ENGINE_EV_THREAD) {
-                struct flb_base_conn *connection;
+                struct flb_connection *connection;
 
                 /*
                  * Check if we have some co-routine associated to this event,
                  * if so, resume the co-routine
                  */
-                connection = (struct flb_base_conn *) event;
+                connection = (struct flb_connection *) event;
 
                 if (connection->coroutine != NULL) {
                     flb_trace("[engine] resuming coroutine=%p",
