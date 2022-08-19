@@ -39,9 +39,9 @@
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_ring_buffer.h>
 
-#ifdef FLB_TRACE
-#include <fluent-bit/flb_trace_chunk.h>
-#endif // FLB_TRACE
+#ifdef FLB_CHUNK_TRACE
+#include <fluent-bit/flb_chunk_trace.h>
+#endif // FLB_CHUNK_TRACE
 
 struct flb_libco_in_params libco_in_param;
 
@@ -294,7 +294,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         }
 
 #ifdef FLB_TRACE
-        pthread_mutex_init(&instance->trace_lock, &attr);
+        pthread_mutex_init(&instance->chunk_trace_lock, &attr);
 #endif
 
         /* Plugin requires a co-routine context ? */
@@ -607,9 +607,9 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
     flb_kv_release(&ins->properties);
 
 
-#ifdef FLB_TRACE
-    flb_trace_chunk_context_destroy(ins);
-#endif // FLB_TRACE
+#ifdef FLB_CHUNK_TRACE
+    flb_chunk_trace_context_destroy(ins);
+#endif // FLB_CHUNK_TRACE
 
     /* Remove metrics */
 #ifdef FLB_HAVE_METRICS

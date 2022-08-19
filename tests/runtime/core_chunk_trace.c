@@ -19,7 +19,7 @@
 
 #include <fluent-bit.h>
 #include <fluent-bit/flb_time.h>
-#include <fluent-bit/flb_trace_chunk.h>
+#include <fluent-bit/flb_chunk_trace.h>
 #include <fluent-bit/flb_router.h>
 #include <pthread.h>
 #include <stdlib.h>
@@ -92,7 +92,7 @@ void do_test_records_trace(void (*records_cb)(struct callback_records *))
 
     flb_router_connect_direct(input, output);
 
-    TEST_CHECK(flb_trace_chunk_context_new(input, "lib", "test.", (void *)&cb, NULL) != NULL);
+    TEST_CHECK(flb_chunk_trace_context_new(input, "lib", "test.", (void *)&cb, NULL) != NULL);
     
     /* Start test */
     TEST_CHECK(flb_start(ctx) == 0);

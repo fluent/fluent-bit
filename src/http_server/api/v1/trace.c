@@ -25,7 +25,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_lib.h>
-#include <fluent-bit/flb_trace_chunk.h>
+#include <fluent-bit/flb_chunk_trace.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_utils.h>
 #include <msgpack.h>
@@ -52,7 +52,6 @@ struct flb_input_instance *find_input(struct flb_hs *hs, const char *name)
 static int enable_trace_input(struct flb_hs *hs, const char *name, const char *prefix, const char *output_name, struct mk_list *props)
 {
     struct flb_input_instance *in;
-    struct flb_trace_chunk_context *ctxt;
 
 
     in = find_input(hs, name);
@@ -60,17 +59,16 @@ static int enable_trace_input(struct flb_hs *hs, const char *name, const char *p
         return 404;
     }
 
-    if (in->trace_ctxt != NULL) {
-        flb_trace_chunk_context_destroy(in);
+    if (in->chunk_trace_ctxt != NULL) {
+        flb_chunk_trace_context_destroy(in);
     }
-    flb_trace_chunk_context_new(in, output_name, prefix, NULL, props);
-    return (in->trace_ctxt == NULL ? 503 : 0);
+    flb_chunk_trace_context_new(in, output_name, prefix, NULL, props);
+    return (in->chunk_trace_ctxt == NULL ? 503 : 0);
 }
 
 static int disable_trace_input(struct flb_hs *hs, const char *name)
 {
     struct flb_input_instance *in;
-    struct flb_trace_chunk_context *ctxt;
     
 
     in = find_input(hs, name);
@@ -78,8 +76,8 @@ static int disable_trace_input(struct flb_hs *hs, const char *name)
         return 404;
     }
 
-    if (in->trace_ctxt != NULL) {
-        flb_trace_chunk_context_destroy(in);
+    if (in->chunk_trace_ctxt != NULL) {
+        flb_chunk_trace_context_destroy(in);
     }
     return 201;
 }
@@ -225,7 +223,7 @@ static int http_enable_trace(mk_request_t *request, void *data, const char *inpu
     msgpack_object *key;
     msgpack_object *val;
     struct mk_list *props = NULL;
-    struct flb_trace_chunk_limit limit = { 0 };
+    struct flb_chunk_trace_limit limit = { 0 };
     struct flb_input_instance *input_instance;
     
 
@@ -336,11 +334,11 @@ static int http_enable_trace(mk_request_t *request, void *data, const char *inpu
                     goto parse_error;
                 }
                 if (strncmp(val->via.map.ptr[0].key.via.str.ptr, "seconds", val->via.map.ptr[0].key.via.str.size) == 0) {
-                    limit.type = FLB_TRACE_CHUNK_LIMIT_TIME;
+                    limit.type = FLB_CHUNK_TRACE_LIMIT_TIME;
                     limit.seconds = val->via.map.ptr[0].val.via.u64;
                 }
                 else if (strncmp(val->via.map.ptr[0].key.via.str.ptr, "count", val->via.map.ptr[0].key.via.str.size) == 0) {
-                    limit.type = FLB_TRACE_CHUNK_LIMIT_COUNT;
+                    limit.type = FLB_CHUNK_TRACE_LIMIT_COUNT;
                     limit.count = val->via.map.ptr[0].val.via.u64;
                 }
                 else {
@@ -363,10 +361,10 @@ static int http_enable_trace(mk_request_t *request, void *data, const char *inpu
 
         if (limit.type != 0) {
             input_instance = find_input(hs, input_name);
-            if (limit.type == FLB_TRACE_CHUNK_LIMIT_TIME) {
-                flb_trace_chunk_context_set_limit(input_instance->trace_ctxt, limit.type, limit.seconds);
-            } else if (limit.type == FLB_TRACE_CHUNK_LIMIT_COUNT) {
-                flb_trace_chunk_context_set_limit(input_instance->trace_ctxt, limit.type, limit.count);
+            if (limit.type == FLB_CHUNK_TRACE_LIMIT_TIME) {
+                flb_chunk_trace_context_set_limit(input_instance->chunk_trace_ctxt, limit.type, limit.seconds);
+            } else if (limit.type == FLB_CHUNK_TRACE_LIMIT_COUNT) {
+                flb_chunk_trace_context_set_limit(input_instance->chunk_trace_ctxt, limit.type, limit.count);
             }
         }
     }
