@@ -84,8 +84,8 @@ static inline void flb_chunk_trace_set_destroy(struct flb_chunk_trace_context *c
 
 static struct flb_output_instance *find_calyptia_output_instance(struct flb_config *config)
 {
-    struct mk_list *head;
-    struct flb_output_instance *output;
+    struct mk_list *head = NULL;
+    struct flb_output_instance *output = NULL;
 
     mk_list_foreach(head, &config->outputs) {
         output = mk_list_entry(head, struct flb_output_instance, _head);
@@ -149,12 +149,12 @@ struct flb_chunk_trace_context *flb_chunk_trace_context_new(void *trace_input, c
 {
     struct flb_input_instance *in = (struct flb_input_instance *)trace_input;
     struct flb_config *config = in->config;
-    struct flb_input_instance *input;
-    struct flb_output_instance *output;
-    struct flb_output_instance *calyptia;
-    struct flb_chunk_trace_context *ctx;
-    struct mk_list *head;
-    struct flb_kv *prop;
+    struct flb_input_instance *input = NULL;
+    struct flb_output_instance *output = NULL;
+    struct flb_output_instance *calyptia = NULL;
+    struct flb_chunk_trace_context *ctx = NULL;
+    struct mk_list *head = NULL;
+    struct flb_kv *prop = NULL;
     int ret;
 
     if (config->enable_chunk_trace == FLB_FALSE) {
@@ -247,7 +247,7 @@ error_ctxt:
 
 struct flb_chunk_trace *flb_chunk_trace_new(struct flb_input_chunk *chunk)
 {
-    struct flb_chunk_trace *trace;
+    struct flb_chunk_trace *trace = NULL;
     struct flb_input_instance *f_ins = (struct flb_input_instance *)chunk->in;
 
     pthread_mutex_lock(&f_ins->chunk_trace_lock);
@@ -297,7 +297,7 @@ void flb_chunk_trace_destroy(struct flb_chunk_trace *trace)
 int flb_chunk_trace_context_set_limit(void *input, int limit_type, int limit_arg)
 {
     struct flb_input_instance *in = (struct flb_input_instance *)input;
-    struct flb_chunk_trace_context *ctxt;
+    struct flb_chunk_trace_context *ctxt = NULL;
     struct flb_time tm;
 
     pthread_mutex_lock(&in->chunk_trace_lock);
@@ -333,7 +333,7 @@ int flb_chunk_trace_context_hit_limit(void *input)
 {
     struct flb_input_instance *in = (struct flb_input_instance *)input;
     struct flb_time tm;
-    struct flb_chunk_trace_context *ctxt;
+    struct flb_chunk_trace_context *ctxt = NULL;
 
     pthread_mutex_lock(&in->chunk_trace_lock);
 
@@ -389,8 +389,8 @@ int flb_chunk_trace_input(struct flb_chunk_trace *trace)
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
     msgpack_unpacked result;
-    msgpack_object *record;
-    char *buf;
+    msgpack_object *record = NULL;
+    char *buf = NULL;
     size_t buf_size;
     struct flb_time tm;
     struct flb_time tm_end;
@@ -482,8 +482,8 @@ int flb_chunk_trace_pre_output(struct flb_chunk_trace *trace)
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
     msgpack_unpacked result;
-    msgpack_object *record;
-    char *buf;
+    msgpack_object *record = NULL;
+    char *buf = NULL;
     size_t buf_size;
     struct flb_time tm;
     struct flb_time tm_end;
@@ -574,7 +574,7 @@ int flb_chunk_trace_filter(struct flb_chunk_trace *tracer, void *pfilter, struct
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
     msgpack_unpacked result;
-    msgpack_object *record;
+    msgpack_object *record = NULL;
     int rc = -1;
     struct flb_filter_instance *filter = (struct flb_filter_instance *)pfilter;
     flb_sds_t tag = flb_sds_create("trace");
