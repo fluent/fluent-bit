@@ -939,6 +939,7 @@ int flb_engine_start(struct flb_config *config)
             flb_net_dns_lookup_context_cleanup(&dns_ctx);
             flb_sched_timer_cleanup(config->sched);
             flb_upstream_conn_pending_destroy_list(&config->upstreams);
+            flb_downstream_conn_pending_destroy_list(&config->downstreams);
 
             /*
             * depend on main thread to clean up expired message
