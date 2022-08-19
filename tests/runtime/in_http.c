@@ -140,7 +140,7 @@ struct http_client_ctx* http_client_ctx_create()
     ret_ctx->u_conn = flb_upstream_conn_get(ret_ctx->u);
     TEST_CHECK(ret_ctx->u_conn != NULL);
 
-    ret_ctx->u_conn->u = ret_ctx->u;
+    ret_ctx->u_conn->upstream = ret_ctx->u;
 
     return ret_ctx;
 }
