@@ -12,22 +12,25 @@ void flb_connection_init(struct flb_connection *connection,
 {
     assert(connection != NULL);
 
-    connection->fd          = socket;
-    connection->type        = type;
-    connection->stream      = stream;
-    connection->net_error   = -1;
-    connection->evl         = event_loop;
-    connection->coroutine   = coroutine;
-    connection->attrs       = type_specific_attributes;
-    connection->tls_session = NULL;
+    connection->fd                     = socket;
+    connection->type                   = type;
+    connection->stream                 = stream;
+    connection->net_error              = -1;
+    connection->evl                    = event_loop;
+    connection->coroutine              = coroutine;
+    connection->attrs                  = type_specific_attributes;
+    connection->tls_session            = NULL;
 
-    connection->remote_host = (char *) "remote host unset";
-    connection->remote_port = 0;
+    connection->raw_remote_host_family = 0;
+    connection->raw_remote_host[0]     = '\0';
 
-    connection->ka_count = 0;
-    connection->ts_created = time(NULL);
-    connection->ts_assigned = time(NULL);
-    connection->ts_available = 0;
+    connection->remote_host[0]         = '\0';
+    connection->remote_port            = 0;
+
+    connection->ka_count               = 0;
+    connection->ts_created             = time(NULL);
+    connection->ts_assigned            = time(NULL);
+    connection->ts_available           = 0;
 
     if (type == FLB_UPSTREAM_CONNECTION) {
         connection->net = &connection->upstream->net;
@@ -41,6 +44,21 @@ void flb_connection_init(struct flb_connection *connection,
     MK_EVENT_ZERO(&connection->event);
 
     flb_connection_reset_connection_timeout(connection);
+}
+
+int flb_connection_get_remote_address(struct flb_connection *connection)
+{
+    size_t dummy_size_receptacle;
+
+    return flb_net_socket_peer_info(connection->fd,
+                                    &connection->remote_port,
+                                    connection->raw_remote_host,
+                                    sizeof(connection->raw_remote_host),
+                                    &dummy_size_receptacle,
+                                    connection->remote_host,
+                                    sizeof(connection->remote_host),
+                                    &dummy_size_receptacle,
+                                    &connection->raw_remote_host_family);
 }
 
 int flb_connection_get_flags(struct flb_connection *connection)
