@@ -288,7 +288,19 @@ struct flb_connection *flb_downstream_conn_get(struct flb_downstream *stream)
 
     flb_connection_reset_connection_timeout(connection);
 
-        connection->busy_flag = FLB_FALSE;
+    connection->busy_flag = FLB_FALSE;
+
+    result = flb_connection_get_remote_address(connection);
+
+    if (result != 0) {
+        flb_debug("[downstream] connection #%i failed to "
+                  "get peer information",
+                  connection->fd);
+
+        prepare_destroy_conn_safe(connection);
+
+        return NULL;
+    }
 
     return connection;
 }
@@ -296,8 +308,8 @@ struct flb_connection *flb_downstream_conn_get(struct flb_downstream *stream)
 void flb_downstream_destroy(struct flb_downstream *stream)
 {
     struct flb_connection *connection;
-    struct mk_list             *head;
-    struct mk_list             *tmp;
+    struct mk_list        *head;
+    struct mk_list        *tmp;
 
     if (stream != NULL) {
         mk_list_foreach_safe(head, tmp, &stream->busy_queue) {
