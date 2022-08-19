@@ -1662,36 +1662,247 @@ int flb_net_address_to_str(int family, const struct sockaddr *addr,
     return 0;
 }
 
-int flb_net_socket_ip_str(flb_sockfd_t fd, char **buf, int size, unsigned long *len)
+#ifdef FLB_COMPILE_UNUSED_FUNCTIONS
+static int net_socket_get_local_address(flb_sockfd_t fd,
+                                        struct sockaddr_storage *address)
 {
-    int ret;
-    struct sockaddr_storage addr;
-    socklen_t s_len = sizeof(addr);
+    socklen_t buffer_size;
+    int       result;
 
-    ret = getpeername(fd, (struct sockaddr *) &addr, &s_len);
-    if (ret == -1) {
+    buffer_size = sizeof(struct sockaddr_storage);
+
+    result = getsockname(fd, (struct sockaddr *) &address, &buffer_size);
+
+    if (result == -1) {
         return -1;
     }
 
+    return 0;
+}
+#endif
+
+static int net_socket_get_peer_address(flb_sockfd_t fd,
+                                       struct sockaddr_storage *address)
+{
+    socklen_t buffer_size;
+    int       result;
+
+    buffer_size = sizeof(struct sockaddr_storage);
+
+    result = getpeername(fd, (struct sockaddr *) address, &buffer_size);
+
+    if (result == -1) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static unsigned short int net_address_port(struct sockaddr_storage *address)
+{
+    if (address->ss_family == AF_INET) {
+        return ((struct sockaddr_in *) address)->sin_port;
+    }
+    else if (address->ss_family == AF_INET6) {
+        return ((struct sockaddr_in6 *) address)->sin6_port;
+    }
+    else {
+        return 0;
+    }
+}
+
+static int net_address_ip_raw(struct sockaddr_storage *address,
+                              char *output_buffer,
+                              int output_buffer_size,
+                              size_t *output_data_size)
+{
+    char   *address_data;
+    size_t  address_size;
+
     errno = 0;
 
-    if (addr.ss_family == AF_INET) {
-        if ((inet_ntop(AF_INET, &((struct sockaddr_in *)&addr)->sin_addr,
-                      *buf, size)) == NULL) {
-            flb_error("socket_ip_str: Can't get the IP text form (%i)",
-                      errno);
-            return -1;
-        }
+    if (address->ss_family == AF_INET) {
+        address_data = ((char *) &((struct sockaddr_in *) address)->sin_addr);
+        address_size = sizeof(struct in_addr);
     }
-    else if (addr.ss_family == AF_INET6) {
-        if ((inet_ntop(AF_INET6, &((struct sockaddr_in6 *)&addr)->sin6_addr,
-                       *buf, size)) == NULL) {
-            flb_error("socket_ip_str: Can't get the IP text form (%i)",
-                      errno);
-            return -1;
+    else if (address->ss_family == AF_INET6) {
+        address_data = ((char *) &((struct sockaddr_in6 *) address)->sin6_addr);
+        address_size = sizeof(struct in6_addr);
+    }
+    else {
+        flb_error("socket_ip_raw: unsupported address type (%i)",
+                  address->ss_family);
+
+        return -1;
+    }
+
+    if (output_buffer_size < address_size) {
+        flb_error("socket_ip_raw: insufficient buffer size (%i < %zu)",
+                  output_buffer_size, address_size);
+
+        return -1;
+    }
+
+    memcpy(output_buffer, address_data, address_size);
+
+    if (output_data_size != NULL) {
+        *output_data_size = address_size;
+    }
+
+    return 0;
+}
+
+static int net_address_ip_str(struct sockaddr_storage *address,
+                              char *output_buffer,
+                              int output_buffer_size,
+                              size_t *output_data_size)
+{
+    void *address_data;
+
+    errno = 0;
+
+    if (address->ss_family == AF_INET) {
+        address_data = (void *) &((struct sockaddr_in *) address)->sin_addr;
+    }
+    else if (address->ss_family == AF_INET6) {
+        address_data = (void *) &((struct sockaddr_in6 *) address)->sin6_addr;
+    }
+    else {
+        flb_error("socket_ip_raw: unsupported address type (%i)",
+                  address->ss_family);
+
+        return -1;
+    }
+
+    if ((inet_ntop(address->ss_family,
+                   address_data,
+                   output_buffer,
+                   output_buffer_size)) == NULL) {
+        flb_error("socket_ip_str: Can't get the IP text form (%i)", errno);
+
+        return -1;
+    }
+
+    *output_data_size = strlen(output_buffer);
+
+    return 0;
+}
+
+int flb_net_socket_ip_peer_str(flb_sockfd_t fd,
+                               char *output_buffer,
+                               int output_buffer_size,
+                               size_t *output_data_size,
+                               int *output_address_family)
+{
+    struct sockaddr_storage address;
+    int                     result;
+
+    result = net_socket_get_peer_address(fd, &address);
+
+    if (result != 0) {
+        return -1;
+    }
+
+    result = net_address_ip_str(&address,
+                                output_buffer,
+                                output_buffer_size,
+                                output_data_size);
+
+    if (result == 0) {
+        if (output_address_family != NULL) {
+            *output_address_family = address.ss_family;
         }
     }
 
-    *len = strlen(*buf);
+    return result;
+}
+
+int flb_net_socket_peer_ip_raw(flb_sockfd_t fd,
+                               char *output_buffer,
+                               int output_buffer_size,
+                               size_t *output_data_size,
+                               int *output_address_family)
+{
+    struct sockaddr_storage address;
+    int                     result;
+
+    result = net_socket_get_peer_address(fd, &address);
+
+    if (result != 0) {
+        return -1;
+    }
+
+    result = net_address_ip_raw(&address,
+                                output_buffer,
+                                output_buffer_size,
+                                output_data_size);
+
+    if (result == 0) {
+        if (output_address_family != NULL) {
+            *output_address_family = address.ss_family;
+        }
+    }
+
+    return result;
+}
+
+int flb_net_socket_peer_port(flb_sockfd_t fd,
+                             unsigned short int *output_buffer)
+{
+    struct sockaddr_storage address;
+    int                     result;
+
+    result = net_socket_get_peer_address(fd, &address);
+
+    if (result != 0) {
+        return -1;
+    }
+
+    *output_buffer = net_address_port(&address);
+
     return 0;
+}
+
+int flb_net_socket_peer_info(flb_sockfd_t fd,
+                             unsigned short int *port_output_buffer,
+                             char *raw_output_buffer,
+                             int raw_output_buffer_size,
+                             size_t *raw_output_data_size,
+                             char *str_output_buffer,
+                             int str_output_buffer_size,
+                             size_t *str_output_data_size,
+                             int *output_address_family)
+{
+    struct sockaddr_storage address;
+    int                     result;
+
+    result = net_socket_get_peer_address(fd, &address);
+
+    if (result != 0) {
+        return -1;
+    }
+
+    result = net_address_ip_raw(&address,
+                                raw_output_buffer,
+                                raw_output_buffer_size,
+                                raw_output_data_size);
+
+    if (result == 0) {
+        result = net_address_ip_str(&address,
+                                    str_output_buffer,
+                                    str_output_buffer_size,
+                                    str_output_data_size);
+    }
+
+    if (result == 0) {
+        if (output_address_family != NULL) {
+            *output_address_family = address.ss_family;
+        }
+
+        if (port_output_buffer != NULL) {
+            *port_output_buffer = net_address_port(&address);
+        }
+    }
+
+    return result;
 }

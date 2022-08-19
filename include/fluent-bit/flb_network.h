@@ -148,8 +148,33 @@ int flb_net_bind(flb_sockfd_t fd, const struct sockaddr *addr,
 int flb_net_bind_udp(flb_sockfd_t fd, const struct sockaddr *addr,
                  socklen_t addrlen);
 flb_sockfd_t flb_net_accept(flb_sockfd_t server_fd);
+
 int flb_net_address_to_str(int family, const struct sockaddr *addr,
                            char *output_buffer, size_t output_buffer_size);
-int flb_net_socket_ip_str(flb_sockfd_t fd, char **buf, int size, unsigned long *len);
+
+int flb_net_socket_peer_ip_str(flb_sockfd_t fd,
+                               char *output_buffer,
+                               int output_buffer_size,
+                               size_t *output_data_size,
+                               int *output_address_family);
+
+int flb_net_socket_peer_ip_raw(flb_sockfd_t fd,
+                               char *output_buffer,
+                               int output_buffer_size,
+                               size_t *output_data_size,
+                               int *output_address_family);
+
+int flb_net_socket_peer_port(flb_sockfd_t fd,
+                             unsigned short int *output_buffer);
+
+int flb_net_socket_peer_info(flb_sockfd_t fd,
+                             unsigned short int *port_output_buffer,
+                             char *raw_output_buffer,
+                             int raw_output_buffer_size,
+                             size_t *raw_output_data_size,
+                             char *str_output_buffer,
+                             int str_output_buffer_size,
+                             size_t *str_output_data_size,
+                             int *output_address_family);
 
 #endif
