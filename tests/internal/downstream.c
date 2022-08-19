@@ -185,6 +185,11 @@ static void perform_basic_sync_test(char *host,
     struct flb_tls *tls;
     int             ret;
 
+#ifdef _WIN32
+    WSADATA wsa_data;
+    WSAStartup(0x0201, &wsa_data);
+#endif
+
     memset(&context, 0, sizeof(struct test_case_context));
 
     context.client_start_flag = FLB_FALSE;
