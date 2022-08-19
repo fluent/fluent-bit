@@ -169,11 +169,13 @@ struct flb_chunk_trace_context *flb_chunk_trace_context_new(void *trace_input,
     ctx = flb_calloc(1, sizeof(struct flb_chunk_trace_context));
     if (ctx == NULL) {
         pthread_mutex_unlock(&in->chunk_trace_lock);
+        flb_errno();
         return NULL;
     }
 
     ctx->flb = flb_create();
     if (ctx->flb == NULL) {
+        flb_errno();
         goto error_ctxt;
     }
 
@@ -264,6 +266,7 @@ struct flb_chunk_trace *flb_chunk_trace_new(struct flb_input_chunk *chunk)
     trace = flb_calloc(1, sizeof(struct flb_chunk_trace));
     if (trace == NULL) {
         pthread_mutex_unlock(&f_ins->chunk_trace_lock);
+        flb_errno();
         return NULL;
     }
 
