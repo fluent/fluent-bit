@@ -169,10 +169,10 @@ int tcp_conn_event(void *data)
     char *tmp;
     struct mk_event *event;
     struct tcp_conn *conn;
-    struct flb_base_conn *connection;
+    struct flb_connection *connection;
     struct flb_in_tcp_config *ctx;
 
-    connection = (struct flb_base_conn *) data;
+    connection = (struct flb_connection *) data;
 
     conn = connection->user_data;
 
@@ -364,7 +364,6 @@ int tcp_conn_del(struct tcp_conn *conn)
 
     /* Release resources */
     mk_list_del(&conn->_head);
-    // flb_socket_close(conn->fd);
 
     flb_free(conn->buf_data);
     flb_free(conn);
