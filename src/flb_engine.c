@@ -49,6 +49,8 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_version.h>
+#include <fluent-bit/flb_upstream.h>
+#include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_ring_buffer.h>
 
 #ifdef FLB_HAVE_METRICS
@@ -895,14 +897,14 @@ int flb_engine_start(struct flb_config *config)
                 event->handler(event);
             }
             else if (event->type == FLB_ENGINE_EV_THREAD) {
-                struct flb_base_conn *connection;
+                struct flb_connection *connection;
 
                 /*
                  * Check if we have some co-routine associated to this event,
                  * if so, resume the co-routine
                  */
 
-                connection = (struct flb_base_conn *) event;
+                connection = (struct flb_connection *) event;
 
                 if (connection->coroutine) {
                     flb_trace("[engine] resuming coroutine=%p", connection->coroutine);
