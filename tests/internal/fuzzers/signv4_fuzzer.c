@@ -44,7 +44,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     /* Create the necessary http context */
     struct flb_upstream *http_u;
-    struct flb_upstream_conn *http_u_conn = NULL;
+    struct flb_connection *http_u_conn = NULL;
     struct flb_http_client *http_c;
     struct flb_config *http_config;
 
@@ -58,12 +58,12 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     }
 
     http_u = flb_upstream_create(http_config, "127.0.0.1", 8001, 0, NULL);
-    http_u_conn = flb_malloc(sizeof(struct flb_upstream_conn));
+    http_u_conn = flb_malloc(sizeof(struct flb_connection));
     if (http_u_conn == NULL) {
         flb_free(config);
         return 0;
     }
-    http_u_conn->u = http_u;
+    http_u_conn->upstream = http_u;
 
     http_c = flb_http_client(http_u_conn, method, uri, 
                  null_terminated, size, "127.0.0.1", 8001, NULL, 0);
