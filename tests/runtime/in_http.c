@@ -31,7 +31,7 @@
 
 struct http_client_ctx {
     struct flb_upstream      *u;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection    *u_conn;
     struct flb_config        *config;
     struct mk_event_loop     *evl;
 };
