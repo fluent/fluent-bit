@@ -238,6 +238,7 @@ static int destroy_conn(struct flb_connection *connection)
 struct flb_connection *flb_downstream_conn_get(struct flb_downstream *stream)
 {
     struct flb_connection *connection;
+    int                    result;
 
     connection = flb_calloc(1, sizeof(struct flb_connection));
 
@@ -267,6 +268,27 @@ struct flb_connection *flb_downstream_conn_get(struct flb_downstream *stream)
     if (stream->thread_safe == FLB_TRUE) {
         pthread_mutex_unlock(&stream->mutex_lists);
     }
+
+    flb_connection_set_connection_timeout(connection);
+
+    result = flb_io_net_accept(connection, flb_coro_get());
+
+    if (result != 0) {
+        flb_connection_reset_connection_timeout(connection);
+
+        flb_debug("[downstream] connection #%i failed",
+                  connection->fd);
+
+        prepare_destroy_conn_safe(connection);
+
+        connection->busy_flag = FLB_FALSE;
+
+        return NULL;
+    }
+
+    flb_connection_reset_connection_timeout(connection);
+
+        connection->busy_flag = FLB_FALSE;
 
     return connection;
 }
@@ -321,8 +343,8 @@ int flb_downstream_conn_timeouts(struct mk_list *list)
 int flb_downstream_conn_pending_destroy(struct flb_downstream *stream)
 {
     struct flb_connection *connection;
-    struct mk_list             *head;
-    struct mk_list             *tmp;
+    struct mk_list        *head;
+    struct mk_list        *tmp;
 
     if (stream->thread_safe == FLB_TRUE) {
         pthread_mutex_lock(&stream->mutex_lists);
@@ -336,6 +358,21 @@ int flb_downstream_conn_pending_destroy(struct flb_downstream *stream)
 
     if (stream->thread_safe == FLB_TRUE) {
         pthread_mutex_unlock(&stream->mutex_lists);
+    }
+
+    return 0;
+}
+
+int flb_downstream_conn_pending_destroy_list(struct mk_list *list)
+{
+    struct flb_downstream *stream;
+    struct mk_list        *head;
+
+    /* Iterate all downstream contexts */
+    mk_list_foreach(head, list) {
+         stream = mk_list_entry(head, struct flb_downstream, _head);
+
+        flb_downstream_conn_pending_destroy(stream);
     }
 
     return 0;
