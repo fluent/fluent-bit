@@ -25,8 +25,8 @@ COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 ARG FLB_NIGHTLY_BUILD
 ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
 
-ARG FLB_TRACE=Off
-ENV FLB_TRACE=${FLB_TRACE}
+ARG FLB_CHUNK_TRACE=Off
+ENV FLB_CHUNK_TRACE=${FLB_CHUNK_TRACE}
 
 RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log
 
@@ -74,7 +74,7 @@ RUN cmake -DFLB_RELEASE=On \
           -DFLB_OUT_PGSQL=On \
           -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
           -DFLB_LOG_NO_CONTROL_CHARS=On \
-          -DFLB_TRACE="$FLB_TRACE" \
+          -DFLB_CHUNK_TRACE="$FLB_CHUNK_TRACE" \
           ..
 
 RUN make -j "$(getconf _NPROCESSORS_ONLN)"

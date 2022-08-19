@@ -26,7 +26,7 @@ endmacro()
 # Core
 FLB_RT_CORE_TEST(FLB_COROUTINE_TIMEOUT    "core-timeout.c")
 
-FLB_RT_TEST(FLB_TRACE "core_trace.c")
+FLB_RT_TEST(FLB_CHUNK_TRACE "core_chunk_trace.c")
 
 # Input Plugins
 FLB_RT_TEST(FLB_IN_EVENT_TEST   "in_event_test.c")

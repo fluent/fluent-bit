@@ -229,10 +229,10 @@ if(FLB_STATIC_CONF)
     )
 endif()
 
-if(FLB_TRACE)
+if(FLB_CHUNK_TRACE)
   set(src
     ${src}
-    "flb_trace_chunk.c"
+    "flb_chunk_trace.c"
     )
 endif()
 

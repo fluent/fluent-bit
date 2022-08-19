@@ -28,9 +28,9 @@
 #include <fluent-bit/flb_metrics.h>
 #include <chunkio/chunkio.h>
 
-#ifdef FLB_TRACE
-#include <fluent-bit/flb_trace_chunk.h>
-#endif // FLB_TRACE
+#ifdef FLB_CHUNK_TRACE
+#include <fluent-bit/flb_chunk_trace.h>
+#endif // FLB_CHUNK_TRACE
 
 static inline int instance_id(struct flb_config *config)
 {
@@ -161,7 +161,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
                     flb_input_chunk_write_at(ic, write_at, "", 0);
 #ifdef FLB_TRACE
                     if (ic->trace) {
-                        flb_trace_chunk_filter(ic->trace, &tm_start, &tm_finish, (void *)f_ins, "", 0);
+                        flb_chunk_trace_filter(ic->trace, &tm_start, &tm_finish, (void *)f_ins, "", 0);
                     }
 #endif // FLB_TRACE
 
@@ -221,7 +221,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
 
 #ifdef FLB_TRACE
                 if (ic->trace) {
-                    flb_trace_chunk_filter(ic->trace, (void *)f_ins, &tm_start, &tm_finish, out_buf, out_size);
+                    flb_chunk_trace_filter(ic->trace, (void *)f_ins, &tm_start, &tm_finish, out_buf, out_size);
                 }
 #endif // FLB_TRACE
 

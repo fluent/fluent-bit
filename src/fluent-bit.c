@@ -1108,9 +1108,9 @@ int flb_main(int argc, char **argv)
         case 'S':
             config->support_mode = FLB_TRUE;
             break;
-#ifdef FLB_TRACE
+#ifdef FLB_CHUNK_TRACE
         case 'Z':
-            config->enable_trace = FLB_FALSE;
+            config->enable_chunk_trace = FLB_FALSE;
             break;
 #endif
         default:
