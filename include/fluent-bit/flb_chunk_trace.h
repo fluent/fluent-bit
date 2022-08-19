@@ -18,33 +18,33 @@
 #define FLB_CHUNK_TRACE_LIMIT_COUNT   2
 
 struct flb_chunk_trace_input_record {
-	struct flb_time t;
-	void *input;
-	char *buf;
-	size_t buf_size;
+    struct flb_time t;
+    void *input;
+    char *buf;
+    size_t buf_size;
 };
 
 struct flb_chunk_trace_filter_record {
-	struct flb_time t;
-	int trace_version;
-	void *filter;
-	char *buf;
-	size_t buf_size;
+    struct flb_time t;
+    int trace_version;
+    void *filter;
+    char *buf;
+    size_t buf_size;
 };
 
 struct flb_chunk_trace_limit {
-	// set to one of:
-	//   FLB_CHUNK_TRACE_LIMIT_TIME
-	//   FLB_CHUNK_TRACE_LIMIT_COUNT
-	int type;
+    // set to one of:
+    //   FLB_CHUNK_TRACE_LIMIT_TIME
+    //   FLB_CHUNK_TRACE_LIMIT_COUNT
+    int type;
 
-	// limit is in seconds
-	int seconds;
-	// unix timestamp when time limit started
-	int seconds_started;
+    // limit is in seconds
+    int seconds;
+    // unix timestamp when time limit started
+    int seconds_started;
 
-	// limit is a count
-	int count;
+    // limit is a count
+    int count;
 };
 
 struct flb_chunk_trace_context {
@@ -60,10 +60,10 @@ struct flb_chunk_trace_context {
 };
 
 struct flb_chunk_trace {
-	struct flb_input_chunk *ic;
-	struct flb_chunk_trace_context *ctxt;
-	flb_sds_t trace_id;
-	int tracer_versions;
+    struct flb_input_chunk *ic;
+    struct flb_chunk_trace_context *ctxt;
+    flb_sds_t trace_id;
+    int tracer_versions;
 };
 
 struct flb_chunk_trace_context *flb_chunk_trace_context_new(void *input, const char *output_name, const char *trace_prefix, void *data, struct mk_list *props);
