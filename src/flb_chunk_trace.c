@@ -3,6 +3,7 @@
 #include <msgpack.h>
 #include <chunkio/chunkio.h>
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
