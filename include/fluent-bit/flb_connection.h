@@ -28,6 +28,8 @@
 #define FLB_UPSTREAM_CONNECTION   1
 #define FLB_DOWNSTREAM_CONNECTION 2
 
+#define FLB_MAX_IPV6_ADDRESS_LENGTH 40
+
 struct flb_net_setup;
 struct flb_upstream;
 struct flb_downstream;
@@ -45,7 +47,11 @@ struct flb_connection {
 
     /* Socket */
     flb_sockfd_t fd;
-    char *remote_host;
+
+    int raw_remote_host_family;
+    char raw_remote_host[16];
+
+    char remote_host[FLB_MAX_IPV6_ADDRESS_LENGTH];
     unsigned short int remote_port;
 
     /* Net setup shortcut */
@@ -128,6 +134,8 @@ void flb_connection_init(struct flb_connection *connection,
                          struct mk_event_loop *event_loop,
                          struct flb_coro *coroutine,
                          void *type_specific_attributes);
+
+int flb_connection_get_remote_address(struct flb_connection *connection);
 
 int flb_connection_get_flags(struct flb_connection *connection);
 void flb_connection_set_connection_timeout(struct flb_connection *connection);
