@@ -144,9 +144,7 @@ int flb_tp_thread_start_id(struct flb_tp *tp, int id)
     struct mk_list *head;
     struct flb_tp_thread *th = NULL;
 
-    printf("TRANSVERSING : %p\n", &tp->list_threads);
     mk_list_foreach(head, &tp->list_threads) {
-        printf("TRANSVERSING ENTRY : %d\n", i);
         if (i == id) {
             th = mk_list_entry(head, struct flb_tp_thread, _head);
             break;
