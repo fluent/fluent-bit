@@ -34,10 +34,6 @@ struct flb_net_setup;
 struct flb_upstream;
 struct flb_downstream;
 struct flb_tls_session;
-struct flb_upstream_conn;
-struct flb_downstream_conn;
-
-#define flb_base_conn flb_connection
 
 /* Base network connection */
 struct flb_connection {
@@ -119,12 +115,6 @@ struct flb_connection {
 
     /* Each TCP connections using TLS needs a session */
     struct flb_tls_session *tls_session;
-
-    union {
-        void *attrs;
-        struct flb_upstream_conn *u_attrs;
-        struct flb_downstream_conn *d_attrs;
-    };
 };
 
 void flb_connection_init(struct flb_connection *connection,
@@ -132,8 +122,7 @@ void flb_connection_init(struct flb_connection *connection,
                          int type,
                          void *stream,
                          struct mk_event_loop *event_loop,
-                         struct flb_coro *coroutine,
-                         void *type_specific_attributes);
+                         struct flb_coro *coroutine);
 
 int flb_connection_get_remote_address(struct flb_connection *connection);
 
