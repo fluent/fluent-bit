@@ -650,6 +650,30 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
         flb_sds_destroy(ins->host.listen);
     }
 
+    if (ins->tls_vhost) {
+        flb_sds_destroy(ins->tls_vhost);
+    }
+
+    if (ins->tls_ca_path) {
+        flb_sds_destroy(ins->tls_ca_path);
+    }
+
+    if (ins->tls_ca_file) {
+        flb_sds_destroy(ins->tls_ca_file);
+    }
+
+    if (ins->tls_crt_file) {
+        flb_sds_destroy(ins->tls_crt_file);
+    }
+
+    if (ins->tls_key_file) {
+        flb_sds_destroy(ins->tls_key_file);
+    }
+
+    if (ins->tls_key_passwd) {
+        flb_sds_destroy(ins->tls_key_passwd);
+    }
+
     /* release the tag if any */
     flb_sds_destroy(ins->tag);
 
