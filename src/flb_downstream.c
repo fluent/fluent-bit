@@ -67,12 +67,12 @@ void flb_downstream_init()
 
 int flb_downstream_setup(struct flb_downstream *stream,
                          struct flb_config *config,
-                         const char *host, const char *port,
+                         const char *host, unsigned short int port,
                          int flags, struct flb_tls *tls)
 {
-    unsigned short int port_number;
+    char port_string[8];
 
-    port_number = (unsigned short int) strtoul(port, NULL, 10);
+    snprintf(port_string, sizeof(port_string), "%u", port);
 
     mk_list_init(&stream->busy_queue);
     mk_list_init(&stream->destroy_queue);
@@ -85,7 +85,7 @@ int flb_downstream_setup(struct flb_downstream *stream,
 
     /* Set upstream to the http_proxy if it is specified. */
     stream->host = flb_strdup(host);
-    stream->port = port_number;
+    stream->port = port;
 
     if (stream->host == NULL) {
         return -1;
@@ -98,14 +98,14 @@ int flb_downstream_setup(struct flb_downstream *stream,
     stream->tls = tls;
 
     /* Create TCP server */
-    stream->server_fd = flb_net_server(port, host);
+    stream->server_fd = flb_net_server(port_string, host);
 
     if (stream->server_fd > 0) {
-        flb_debug("[downstream] listening on %s:%s", host, port);
+        flb_debug("[downstream] listening on %s:%s", host, port_string);
     }
     else {
         flb_error("[downstream] could not bind address %s:%s. Aborting",
-                  host, port);
+                  host, port_string);
 
         return -2;
     }
@@ -119,7 +119,7 @@ int flb_downstream_setup(struct flb_downstream *stream,
 
 /* Creates a new downstream context */
 struct flb_downstream *flb_downstream_create(struct flb_config *config,
-                                             const char *host, const char *port,
+                                             const char *host, unsigned short int port,
                                              int flags, struct flb_tls *tls)
 {
     struct flb_downstream *stream;
