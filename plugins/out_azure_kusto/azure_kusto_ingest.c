@@ -129,7 +129,7 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
     int ret = -1;
     flb_sds_t uri = NULL;
     struct flb_upstream_node *u_node;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
     size_t resp_size;
     time_t now;
@@ -328,7 +328,7 @@ static int azure_kusto_enqueue_ingestion(struct flb_azure_kusto *ctx, flb_sds_t 
 {
     int ret = -1;
     struct flb_upstream_node *u_node;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
     flb_sds_t uri;
     flb_sds_t payload;
