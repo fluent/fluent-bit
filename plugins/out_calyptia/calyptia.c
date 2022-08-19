@@ -934,13 +934,18 @@ static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
         out_buf = (char *)json;
         out_size = flb_sds_len(json);
 
-        flb_sds_printf(&ctx->metrics_endpoint, CALYPTIA_ENDPOINT_METRICS,
-                       ctx->agent_id);
+        if (flb_sds_printf(&ctx->metrics_endpoint, CALYPTIA_ENDPOINT_METRICS,
+                       ctx->agent_id) == NULL) {
+            flb_upstream_conn_release(u_conn);
+            flb_sds_destroy(json);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
         c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->trace_endpoint,
                             out_buf, out_size, NULL, 0, NULL, 0);
         if (!c) {
             flb_upstream_conn_release(u_conn);
             flb_sds_destroy(json);
+            flb_sds_destroy(&ctx->metrics_endpoint);
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
         
