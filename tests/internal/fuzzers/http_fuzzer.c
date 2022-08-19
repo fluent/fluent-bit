@@ -16,7 +16,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
     flb_malloc_p = 0;
     struct flb_upstream *u;
-    struct flb_upstream_conn *u_conn = NULL;
+    struct flb_connection *u_conn = NULL;
     struct flb_http_client *c;
     struct flb_config *config;
     char *uri = NULL;
@@ -31,10 +31,10 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     }
 
     u = flb_upstream_create(config, "127.0.0.1", 8001, 0, NULL);
-    u_conn = flb_malloc(sizeof(struct flb_upstream_conn));
+    u_conn = flb_malloc(sizeof(struct flb_connection));
     if (u_conn == NULL)
         return 0;
-    u_conn->u = u;
+    u_conn->upstream = u;
 
     char *proxy = NULL;
     if (GET_MOD_EQ(2,1)) {
