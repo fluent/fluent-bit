@@ -570,6 +570,18 @@ static struct flb_connection *create_conn(struct flb_upstream *u)
     /* Invalidate timeout for connection */
     conn->busy_flag = FLB_FALSE;
 
+    ret = flb_connection_get_remote_address(conn);
+
+    if (ret != 0) {
+        flb_debug("[upstream] connection #%i failed to "
+                  "get peer information",
+                  conn->fd);
+
+        prepare_destroy_conn_safe(conn);
+
+        return NULL;
+    }
+
     return conn;
 }
 
