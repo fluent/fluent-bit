@@ -299,9 +299,6 @@ static void perform_basic_sync_test(char *host,
                 context.ss_client_connection = flb_downstream_conn_get(context.downstream);
                 TEST_CHECK(context.ss_client_connection != NULL);
 
-                ret = flb_io_net_accept(context.ss_client_connection, NULL);
-                TEST_CHECK(ret == 0);
-
                 if (ret == 0) {
                     MK_EVENT_NEW(&context.ss_client_connection->event);
 
