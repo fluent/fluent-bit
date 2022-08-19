@@ -25,7 +25,12 @@
 #include "flb_tests_runtime.h"
 
 #define DPATH_WASM       FLB_TESTS_DATA_PATH "/data/wasm"
-#define FLUSH_INTERVAL "0.9"
+#define FLUSH_INTERVAL "1.0"
+#ifdef _WIN32
+    #define TIME_EPSILON_MS 30
+#else
+    #define TIME_EPSILON_MS 10
+#endif
 
 pthread_mutex_t result_mutex = PTHREAD_MUTEX_INITIALIZER;
 char *output = NULL;
@@ -97,6 +102,38 @@ int callback_test(void* data, size_t size, void* cb_data)
     return 0;
 }
 
+void wait_with_timeout(uint32_t timeout_ms, char **out_result)
+{
+    struct flb_time start_time;
+    struct flb_time end_time;
+    struct flb_time diff_time;
+    uint64_t elapsed_time_flb = 0;
+    char *output = NULL;
+
+    flb_time_get(&start_time);
+
+    while (true) {
+        output = get_output();
+
+        if (output != NULL) {
+            *out_result = output;
+            break;
+        }
+
+        flb_time_msleep(100);
+        flb_time_get(&end_time);
+        flb_time_diff(&end_time, &start_time, &diff_time);
+        elapsed_time_flb = flb_time_to_nanosec(&diff_time) / 1000000;
+
+        if (elapsed_time_flb > timeout_ms - TIME_EPSILON_MS) {
+            flb_warn("[timeout] elapsed_time: %ld", elapsed_time_flb);
+            // Reached timeout.
+            break;
+        }
+    }
+}
+
+
 void flb_test_append_tag(void)
 {
     int ret;
@@ -143,8 +180,7 @@ void flb_test_append_tag(void)
     TEST_CHECK(ret==0);
 
     flb_lib_push(ctx, in_ffd, input, strlen(input));
-    sleep(1);
-    output = get_output();
+    wait_with_timeout(2000, &output);
     result = strstr(output, "\"tag\":\"test.wasm\"");
     TEST_CHECK(result != NULL);
 
@@ -240,8 +276,7 @@ void flb_test_numerics_records(void)
     TEST_CHECK(ret==0);
 
     flb_lib_push(ctx, in_ffd, input, strlen(input));
-    sleep(1);
-    output = get_output();
+    wait_with_timeout(2000, &output);
 
     /* check if float (for int keys)*/
     result = strstr(output, "\"wasm_int1\":10.");
@@ -332,8 +367,8 @@ void flb_test_array_contains_null(void)
     TEST_CHECK(ret==0);
 
     flb_lib_push(ctx, in_ffd, input, strlen(input));
-    sleep(1);
-    output = get_output();
+    wait_with_timeout(2000, &output);
+
     result = strstr(output, "[1,null,\"world\"]");
     if(!TEST_CHECK(result != NULL)) {
         TEST_MSG("output:%s\n", output);
@@ -395,7 +430,7 @@ void flb_test_drop_all_records(void)
     TEST_CHECK(ret==0);
 
     flb_lib_push(ctx, in_ffd, input, strlen(input));
-    flb_time_msleep(1500); /* waiting flush */
+    wait_with_timeout(2000, &output); /* waiting flush */
 
     ret = get_output_num();
     if (!TEST_CHECK(ret == 0)) {
