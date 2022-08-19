@@ -210,7 +210,8 @@ struct flb_chunk_trace_context *flb_chunk_trace_context_new(void *trace_input,
             prop = mk_list_entry(head, struct flb_kv, _head);
             flb_output_set_property(output, prop->key, prop->val);
         }        
-    } else if (props != NULL) {
+    }
+    else if (props != NULL) {
         mk_list_foreach(head, props) {
             prop = mk_list_entry(head, struct flb_kv, _head);
             flb_output_set_property(output, prop->key, prop->val);

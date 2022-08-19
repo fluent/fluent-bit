@@ -240,7 +240,8 @@ static int http_enable_trace(mk_request_t *request, void *data, const char *inpu
                 msgpack_pack_str_with_body(mp_pck, "status", strlen("status"));
                 msgpack_pack_str_with_body(mp_pck, "ok", strlen("ok"));
                 return 200;
-        } else {
+        }
+        else {
             flb_error("unable to enable tracing for %s", input_name);
             goto input_error;
         }
@@ -369,7 +370,8 @@ static int http_enable_trace(mk_request_t *request, void *data, const char *inpu
             input_instance = find_input(hs, input_name);
             if (limit.type == FLB_CHUNK_TRACE_LIMIT_TIME) {
                 flb_chunk_trace_context_set_limit(input_instance->chunk_trace_ctxt, limit.type, limit.seconds);
-            } else if (limit.type == FLB_CHUNK_TRACE_LIMIT_COUNT) {
+            }
+            else if (limit.type == FLB_CHUNK_TRACE_LIMIT_COUNT) {
                 flb_chunk_trace_context_set_limit(input_instance->chunk_trace_ctxt, limit.type, limit.count);
             }
         }
@@ -417,7 +419,8 @@ static void cb_trace(mk_request_t *request, void *data)
 
     if (request->method == MK_METHOD_POST || request->method == MK_METHOD_GET) {
         response = http_enable_trace(request, data, input_name, &mp_pck);
-    } else if (request->method == MK_METHOD_DELETE) {
+    }
+    else if (request->method == MK_METHOD_DELETE) {
         response = http_disable_trace(request, data, input_name, &mp_pck);
     }
 error:
@@ -425,7 +428,8 @@ error:
         msgpack_pack_map(&mp_pck, 1);
         msgpack_pack_str_with_body(&mp_pck, "status", strlen("status"));
         msgpack_pack_str_with_body(&mp_pck, "not found", strlen("not found"));
-    } else if (response == 503) {
+    }
+    else if (response == 503) {
         msgpack_pack_map(&mp_pck, 1);
         msgpack_pack_str_with_body(&mp_pck, "status", strlen("status"));
         msgpack_pack_str_with_body(&mp_pck, "error", strlen("error"));
@@ -527,7 +531,8 @@ static void cb_traces(mk_request_t *request, void *data)
             msgpack_pack_map(&mp_pck, 1);
             msgpack_pack_str_with_body(&mp_pck, "status", strlen("status"));
             msgpack_pack_str_with_body(&mp_pck, "error", strlen("error"));
-        } else {
+        }
+        else {
             if (request->method == MK_METHOD_POST || request->method == MK_METHOD_GET) {
                 ret = msgpack_params_enable_trace((struct flb_hs *)data, &result, input_name);
                 if (ret != 0) {
@@ -536,14 +541,17 @@ static void cb_traces(mk_request_t *request, void *data)
                     msgpack_pack_str_with_body(&mp_pck, "error", strlen("error"));
                     msgpack_pack_str_with_body(&mp_pck, "returncode", strlen("returncode"));
                     msgpack_pack_int64(&mp_pck, ret);
-                } else {
+                }
+                else {
                     msgpack_pack_map(&mp_pck, 1);
                     msgpack_pack_str_with_body(&mp_pck, "status", strlen("status"));
                     msgpack_pack_str_with_body(&mp_pck, "ok", strlen("ok"));
                 }
-            } else if (request->method == MK_METHOD_DELETE) {
+            }
+            else if (request->method == MK_METHOD_DELETE) {
                 disable_trace_input((struct flb_hs *)data, input_name);
-            } else {
+            }
+            else {
                 msgpack_pack_map(&mp_pck, 2);
                 msgpack_pack_str_with_body(&mp_pck, "status", strlen("status"));
                 msgpack_pack_str_with_body(&mp_pck, "error", strlen("error"));
@@ -563,7 +571,8 @@ unpack_error:
         msgpack_pack_map(&mp_pck, 1);
         msgpack_pack_str_with_body(&mp_pck, "status", strlen("status"));
         msgpack_pack_str_with_body(&mp_pck, "not found", strlen("not found"));
-    } else if (response == 503) {
+    }
+    else if (response == 503) {
         msgpack_pack_map(&mp_pck, 2);
         msgpack_pack_str_with_body(&mp_pck, "status", strlen("status"));
         msgpack_pack_str_with_body(&mp_pck, "error", strlen("error"));
@@ -571,10 +580,12 @@ unpack_error:
         if (error_msg) {
             msgpack_pack_str_with_body(&mp_pck, error_msg, flb_sds_len(error_msg));
             flb_sds_destroy(error_msg);
-        } else {
+        }
+        else {
             msgpack_pack_str_with_body(&mp_pck, "unknown error", strlen("unknown error"));
         }
-    } else {
+    }
+    else {
         msgpack_pack_map(&mp_pck, 1);
         msgpack_pack_str_with_body(&mp_pck, "status", strlen("status"));
         msgpack_pack_str_with_body(&mp_pck, "ok", strlen("ok"));
