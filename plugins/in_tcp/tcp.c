@@ -36,7 +36,6 @@ static int in_tcp_collect(struct flb_input_instance *in,
     struct flb_connection    *connection;
     struct tcp_conn          *conn;
     struct flb_in_tcp_config *ctx;
-    int                       ret;
 
     ctx = in_context;
 
@@ -67,6 +66,7 @@ static int in_tcp_collect(struct flb_input_instance *in,
 static int in_tcp_init(struct flb_input_instance *in,
                       struct flb_config *config, void *data)
 {
+    unsigned short int        port;
     int                       ret;
     struct flb_in_tcp_config *ctx;
 
@@ -83,9 +83,11 @@ static int in_tcp_init(struct flb_input_instance *in,
     /* Set the context */
     flb_input_set_context(in, ctx);
 
+    port = (unsigned short int) strtoul(ctx->tcp_port, NULL, 10);
+
     ctx->downstream = flb_downstream_create(config,
                                             ctx->listen,
-                                            ctx->tcp_port,
+                                            port,
                                             in->flags,
                                             in->tls);
 
