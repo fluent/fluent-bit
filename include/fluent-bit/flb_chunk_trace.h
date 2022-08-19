@@ -5,13 +5,13 @@
 
 #include <chunkio/cio_chunk.h>
 
-// A record has been received from input
+/* A record has been received from input */
 #define FLB_CHUNK_TRACE_TYPE_INPUT      1
-// A record has been filtered
+/* A record has been filtered */
 #define FLB_CHUNK_TRACE_TYPE_FILTER     2
-// A trace with the final record before output
+/* A trace with the final record before output */
 #define FLB_CHUNK_TRACE_TYPE_PRE_OUTPUT 3
-// A record has been output
+/* A record has been output */
 #define FLB_CHUNK_TRACE_TYPE_OUTPUT     4
 
 #define FLB_CHUNK_TRACE_LIMIT_TIME    1
@@ -33,17 +33,17 @@ struct flb_chunk_trace_filter_record {
 };
 
 struct flb_chunk_trace_limit {
-    // set to one of:
-    //   FLB_CHUNK_TRACE_LIMIT_TIME
-    //   FLB_CHUNK_TRACE_LIMIT_COUNT
+    /* set to one of: */
+    /*   FLB_CHUNK_TRACE_LIMIT_TIME */
+    /*   FLB_CHUNK_TRACE_LIMIT_COUNT */
     int type;
 
-    // limit is in seconds
+    /* limit is in seconds */
     int seconds;
-    // unix timestamp when time limit started
+    /* unix timestamp when time limit started */
     int seconds_started;
 
-    // limit is a count
+    /* limit is a count */
     int count;
 };
 
