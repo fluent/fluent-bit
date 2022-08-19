@@ -7,8 +7,7 @@ void flb_connection_init(struct flb_connection *connection,
                          int type,
                          void *stream,
                          struct mk_event_loop *event_loop,
-                         struct flb_coro *coroutine,
-                         void *type_specific_attributes)
+                         struct flb_coro *coroutine)
 {
     assert(connection != NULL);
 
@@ -18,7 +17,6 @@ void flb_connection_init(struct flb_connection *connection,
     connection->net_error              = -1;
     connection->evl                    = event_loop;
     connection->coroutine              = coroutine;
-    connection->attrs                  = type_specific_attributes;
     connection->tls_session            = NULL;
 
     connection->raw_remote_host_family = 0;
