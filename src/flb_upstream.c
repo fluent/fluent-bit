@@ -520,8 +520,7 @@ static struct flb_connection *create_conn(struct flb_upstream *u)
                         FLB_UPSTREAM_CONNECTION,
                         (void *) u,
                         flb_engine_evl_get(),
-                        flb_coro_get(),
-                        (void *) conn);
+                        flb_coro_get());
 
     conn->busy_flag = FLB_TRUE;
 
