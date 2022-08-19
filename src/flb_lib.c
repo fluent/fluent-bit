@@ -31,6 +31,8 @@
 #include <fluent-bit/flb_callback.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_metrics.h>
+#include <fluent-bit/flb_upstream.h>
+#include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/tls/flb_tls.h>
 
 #include <signal.h>
