@@ -50,15 +50,15 @@ static int in_tcp_collect(struct flb_input_instance *in,
         return -1;
     }
 
-    ret = flb_io_net_accept(connection, coroutine);
+    // ret = flb_io_net_accept(connection, coroutine);
 
-    if (ret != 0) {
-        flb_plg_error(ctx->ins, "could not accept new connection");
+    // if (ret != 0) {
+    //     flb_plg_error(ctx->ins, "could not accept new connection");
 
-        flb_downstream_conn_release(connection);
+    //     flb_downstream_conn_release(connection);
 
-        return -1;
-    }
+    //     return -1;
+    // }
 
     /* Accept the new connection */
     // fd = flb_net_accept(ctx->server_fd);
@@ -158,8 +158,11 @@ static int in_tcp_exit(void *data, struct flb_config *config)
 
     mk_list_foreach_safe(head, tmp, &ctx->connections) {
         conn = mk_list_entry(head, struct tcp_conn, _head);
+
         tcp_conn_del(conn);
     }
+
+    flb_downstream_destroy(ctx->downstream);
 
     tcp_config_destroy(ctx);
     return 0;
