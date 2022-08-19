@@ -117,6 +117,11 @@ static void perform_basic_async_http_test(char *host,
 {
     int ret;
 
+#ifdef _WIN32
+    WSADATA wsa_data;
+    WSAStartup(0x0201, &wsa_data);
+#endif
+
     memset(&context, 0, sizeof(struct test_case_context));
 
     context.flags = FLB_IO_TCP;
@@ -247,6 +252,11 @@ static void perform_basic_sync_http_test(char *host,
                                          int tls_flag)
 {
     int ret;
+
+#ifdef _WIN32
+    WSADATA wsa_data;
+    WSAStartup(0x0201, &wsa_data);
+#endif
 
     memset(&context, 0, sizeof(struct test_case_context));
 
