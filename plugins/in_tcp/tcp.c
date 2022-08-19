@@ -33,15 +33,13 @@
 static int in_tcp_collect(struct flb_input_instance *in,
                           struct flb_config *config, void *in_context)
 {
-    struct flb_connection      *connection;
-    struct flb_coro            *coroutine;
-    struct tcp_conn            *conn;
-    struct flb_in_tcp_config   *ctx;
-    int                         ret;
+    struct flb_connection    *connection;
+    struct tcp_conn          *conn;
+    struct flb_in_tcp_config *ctx;
+    int                       ret;
 
     ctx = in_context;
 
-    coroutine = flb_coro_get();
     connection = flb_downstream_conn_get(ctx->downstream);
 
     if (connection == NULL) {
@@ -49,23 +47,6 @@ static int in_tcp_collect(struct flb_input_instance *in,
 
         return -1;
     }
-
-    // ret = flb_io_net_accept(connection, coroutine);
-
-    // if (ret != 0) {
-    //     flb_plg_error(ctx->ins, "could not accept new connection");
-
-    //     flb_downstream_conn_release(connection);
-
-    //     return -1;
-    // }
-
-    /* Accept the new connection */
-    // fd = flb_net_accept(ctx->server_fd);
-    // if (fd == -1) {
-    //     flb_plg_error(ctx->ins, "could not accept new connection");
-    //     return -1;
-    // }
 
     flb_plg_trace(ctx->ins, "new TCP connection arrived FD=%i", connection->fd);
 
@@ -86,8 +67,9 @@ static int in_tcp_collect(struct flb_input_instance *in,
 static int in_tcp_init(struct flb_input_instance *in,
                       struct flb_config *config, void *data)
 {
-    int ret;
+    int                       ret;
     struct flb_in_tcp_config *ctx;
+
     (void) data;
 
     /* Allocate space for the configuration */
@@ -119,19 +101,6 @@ static int in_tcp_init(struct flb_input_instance *in,
 
     MK_EVENT_ZERO(&ctx->downstream->event);
 
-    /* Create TCP server */
-    // ctx->server_fd = flb_net_server(ctx->tcp_port, ctx->listen);
-    // if (ctx->server_fd > 0) {
-    //     flb_plg_info(ctx->ins, "listening on %s:%s", ctx->listen, ctx->tcp_port);
-    // }
-    // else {
-    //     flb_plg_error(ctx->ins, "could not bind address %s:%s. Aborting",
-    //                   ctx->listen, ctx->tcp_port);
-    //     tcp_config_destroy(ctx);
-    //     return -1;
-    // }
-    // flb_net_socket_nonblocking(ctx->server_fd);
-
     ctx->evl = config->evl;
 
     /* Collect upon data available on the standard input */
@@ -142,6 +111,7 @@ static int in_tcp_init(struct flb_input_instance *in,
     if (ret == -1) {
         flb_plg_error(ctx->ins, "Could not set collector for IN_TCP input plugin");
         tcp_config_destroy(ctx);
+
         return -1;
     }
 
@@ -152,9 +122,12 @@ static int in_tcp_exit(void *data, struct flb_config *config)
 {
     struct mk_list *tmp;
     struct mk_list *head;
-    (void) *config;
-    struct flb_in_tcp_config *ctx = data;
+    struct flb_in_tcp_config *ctx;
     struct tcp_conn *conn;
+
+    (void) *config;
+
+    ctx = data;
 
     mk_list_foreach_safe(head, tmp, &ctx->connections) {
         conn = mk_list_entry(head, struct tcp_conn, _head);
@@ -165,6 +138,7 @@ static int in_tcp_exit(void *data, struct flb_config *config)
     flb_downstream_destroy(ctx->downstream);
 
     tcp_config_destroy(ctx);
+
     return 0;
 }
 
