@@ -392,7 +392,7 @@ int flb_tls_server_session_create(struct flb_tls *tls,
 
 /* Create a TLS session (server) */
 int flb_tls_session_create(struct flb_tls *tls,
-                           struct flb_base_conn *connection,
+                           struct flb_connection *connection,
                            struct flb_coro *co)
 {
     struct flb_tls_session *session;
