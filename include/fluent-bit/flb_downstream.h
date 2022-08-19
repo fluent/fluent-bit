@@ -82,11 +82,11 @@ void flb_downstream_init();
 
 int flb_downstream_setup(struct flb_downstream *stream,
                          struct flb_config *config,
-                         const char *host, const char *port,
+                         const char *host, unsigned short int port,
                          int flags, struct flb_tls *tls);
 
 struct flb_downstream *flb_downstream_create(struct flb_config *config,
-                                             const char *host, const char *port,
+                                             const char *host, unsigned short int port,
                                              int flags, struct flb_tls *tls);
 
 void flb_downstream_destroy(struct flb_downstream *downstream);
