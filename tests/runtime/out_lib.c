@@ -240,9 +240,25 @@ static int cb_count_msgpack(void *record, size_t size, void *data)
     while (msgpack_unpack_next(&result, record, size, &off) == MSGPACK_UNPACK_SUCCESS) {
         pthread_mutex_lock(&result_mutex);
         num_output++;
+        /*
+           msgpack_object_print(stdout, result.data);
+        */
         pthread_mutex_unlock(&result_mutex);
     }
     msgpack_unpacked_destroy(&result);
+
+    flb_free(record);
+    return 0;
+}
+
+static int cb_count(void *record, size_t size, void *data)
+{
+    if (!TEST_CHECK(data != NULL)) {
+        TEST_MSG("data is NULL");
+    }
+    pthread_mutex_lock(&result_mutex);
+    num_output++;
+    pthread_mutex_unlock(&result_mutex);
 
     flb_free(record);
     return 0;
@@ -440,8 +456,105 @@ static void test_max_records(void)
 
     test_ctx_destroy(ctx);
 }
+#ifdef FLB_HAVE_METRICS
+static void test_metrics_msgpack(void)
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    int ret;
+    int num;
+    int unused;
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+    /* Input */
+    ctx->i_ffd = flb_input(ctx->flb, (char *) "fluentbit_metrics", NULL);
+    TEST_CHECK(ctx->i_ffd >= 0);
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "scrape_interval", "1",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "msgpack",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+
+    test_ctx_destroy(ctx);
+}
+
+static void test_metrics_json(void)
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    int ret;
+    int num;
+    int unused;
+
+    clear_output_num();
+
+    cb_data.cb = cb_count;
+    cb_data.data = &unused;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+    /* Input */
+    ctx->i_ffd = flb_input(ctx->flb, (char *) "fluentbit_metrics", NULL);
+    TEST_CHECK(ctx->i_ffd >= 0);
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "scrape_interval", "1",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+
+    test_ctx_destroy(ctx);
+}
+#endif
 
 TEST_LIST = {
+#ifdef FLB_HAVE_METRICS
+    {"metrics_msgpack", test_metrics_msgpack},
+    {"metrics_json", test_metrics_json},
+#endif
     {"format_json", test_format_json},
     {"format_msgpack", test_format_msgpack},
     {"max_records", test_max_records},
