@@ -97,9 +97,9 @@ struct flb_tls {
 
 int flb_tls_init();
 
-struct flb_tls *flb_tls_create(int verify,
+struct flb_tls *flb_tls_create(int mode,
+                               int verify,
                                int debug,
-                               int mode,
                                const char *vhost,
                                const char *ca_path,
                                const char *ca_file, const char *crt_file,
