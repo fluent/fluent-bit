@@ -232,9 +232,9 @@ struct flb_config {
     struct mk_list stream_processor_tasks;
 #endif
 
-#ifdef FLB_CHUNK_TRACE
+#ifdef FLB_HAVE_CHUNK_TRACE
     int enable_chunk_trace;
-#endif
+#endif /* FLB_HAVE_CHUNK_TRACE */
 
     /* Co-routines */
     unsigned int coro_stack_size;
@@ -306,9 +306,9 @@ enum conf_type {
 #define FLB_CONF_STR_HC_PERIOD                              "HC_Period"
 #endif /* !FLB_HAVE_HTTP_SERVER */
 
-#ifdef FLB_CHUNK_TRACE
+#ifdef FLB_HAVE_CHUNK_TRACE
 #define FLB_CONF_STR_ENABLE_CHUNK_TRACE      "Enable_Chunk_Trace"
-#endif
+#endif /* FLB_HAVE_CHUNK_TRACE */
 
 /* DNS */
 #define FLB_CONF_DNS_MODE              "dns.mode"

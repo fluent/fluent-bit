@@ -40,9 +40,9 @@
 #include <monkey/mk_core.h>
 
 
-#ifdef FLB_CHUNK_TRACE
+#ifdef FLB_HAVE_CHUNK_TRACE
 #include <fluent-bit/flb_chunk_trace.h>
-#endif // FLB_CHUNK_TRACE
+#endif /* FLB_HAVE_CHUNK_TRACE */
 
 
 #define BLOCK_UNTIL_KEYPRESS() {char temp_keypress_buffer; read(0, &temp_keypress_buffer, 1);}
@@ -1103,11 +1103,11 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
         }
     }
 
-#ifdef FLB_CHUNK_TRACE
+#ifdef FLB_HAVE_CHUNK_TRACE
     if (ic->trace != NULL) {
         flb_chunk_trace_destroy(ic->trace);
     }
-#endif // FLB_CHUNK_TRACE
+#endif /* FLB_HAVE_CHUNK_TRACE */
 
     cio_chunk_close(ic->chunk, del);
     mk_list_del(&ic->_head);
@@ -1461,9 +1461,9 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         return -1;
     }
 
-#ifdef FLB_CHUNK_TRACE
+#ifdef FLB_HAVE_CHUNK_TRACE
     flb_chunk_trace_do_input(ic);
-#endif // FLB_CHUNK_TRACE
+#endif /* FLB_HAVE_CHUNK_TRACE */
 
     /* Update 'input' metrics */
 #ifdef FLB_HAVE_METRICS
@@ -1594,11 +1594,11 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         flb_input_chunk_update_output_instances(ic, real_diff);
     }
 
-#ifdef FLB_CHUNK_TRACE
+#ifdef FLB_HAVE_CHUNK_TRACE
     if (ic->trace) {
         flb_chunk_trace_pre_output(ic->trace);
     }
-#endif // FLB_CHUNK_TRACE
+#endif /* FLB_HAVE_CHUNK_TRACE */
 
     flb_input_chunk_protect(in);
     return 0;

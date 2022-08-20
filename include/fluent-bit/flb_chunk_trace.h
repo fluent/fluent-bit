@@ -17,7 +17,8 @@
  *  limitations under the License.
  */
 
-#pragma once
+#ifndef FLB_CHUNK_TRACE_H
+#define FLB_CHUNK_TRACE_H
 
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_lib.h>
@@ -96,3 +97,5 @@ int flb_chunk_trace_filter(struct flb_chunk_trace *trace, void *pfilter, struct 
 void flb_chunk_trace_free(struct flb_chunk_trace *trace);
 int flb_chunk_trace_context_set_limit(void *input, int, int);
 int flb_chunk_trace_context_hit_limit(void *input);
+
+#endif // FLB_CHUNK_TRACE_H
