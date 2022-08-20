@@ -684,9 +684,9 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
 
     if (ctx->has_identity_federation) {
         /* Configure AWS IMDS */
-        ctx->aws_tls = flb_tls_create(FLB_TRUE,
+        ctx->aws_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                      FLB_TRUE,
                                       ins->tls_debug,
-                                      FLB_TLS_CLIENT_MODE,
                                       ins->tls_vhost,
                                       ins->tls_ca_path,
                                       ins->tls_ca_file,
@@ -722,9 +722,9 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
         ctx->aws_provider->provider_vtable->upstream_set(ctx->aws_provider, ctx->ins);
 
         /* Configure AWS STS */
-        ctx->aws_sts_tls = flb_tls_create(FLB_TRUE,
+        ctx->aws_sts_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                          FLB_TRUE,
                                           ins->tls_debug,
-                                          FLB_TLS_CLIENT_MODE,
                                           ins->tls_vhost,
                                           ins->tls_ca_path,
                                           ins->tls_ca_file,
@@ -753,9 +753,9 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
         ctx->aws_sts_upstream->net.keepalive = FLB_FALSE;
 
         /* Configure Google STS */
-        ctx->google_sts_tls = flb_tls_create(FLB_TRUE,
+        ctx->google_sts_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                             FLB_TRUE,
                                              ins->tls_debug,
-                                             FLB_TLS_CLIENT_MODE,
                                              ins->tls_vhost,
                                              ins->tls_ca_path,
                                              ins->tls_ca_file,
@@ -781,9 +781,9 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
         }
 
         /* Configure Google IAM */
-        ctx->google_iam_tls = flb_tls_create(FLB_TRUE,
+        ctx->google_iam_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                             FLB_TRUE,
                                              ins->tls_debug,
-                                             FLB_TLS_CLIENT_MODE,
                                              ins->tls_vhost,
                                              ins->tls_ca_path,
                                              ins->tls_ca_file,

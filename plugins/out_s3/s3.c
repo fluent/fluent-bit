@@ -770,9 +770,9 @@ static int cb_s3_init(struct flb_output_instance *ins,
     }
 
     if (ctx->insecure == FLB_FALSE) {
-        ctx->client_tls = flb_tls_create(ins->tls_verify,
+        ctx->client_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                         ins->tls_verify,
                                          ins->tls_debug,
-                                         FLB_TLS_CLIENT_MODE,
                                          ins->tls_vhost,
                                          ins->tls_ca_path,
                                          ins->tls_ca_file,
@@ -786,9 +786,9 @@ static int cb_s3_init(struct flb_output_instance *ins,
     }
 
     /* AWS provider needs a separate TLS instance */
-    ctx->provider_tls = flb_tls_create(FLB_TRUE,
+    ctx->provider_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                       FLB_TRUE,
                                        ins->tls_debug,
-                                       FLB_TLS_CLIENT_MODE,
                                        ins->tls_vhost,
                                        ins->tls_ca_path,
                                        ins->tls_ca_file,
@@ -819,9 +819,9 @@ static int cb_s3_init(struct flb_output_instance *ins,
         role_arn = (char *) tmp;
 
         /* STS provider needs yet another separate TLS instance */
-        ctx->sts_provider_tls = flb_tls_create(FLB_TRUE,
+        ctx->sts_provider_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                               FLB_TRUE,
                                                ins->tls_debug,
-                                               FLB_TLS_CLIENT_MODE,
                                                ins->tls_vhost,
                                                ins->tls_ca_path,
                                                ins->tls_ca_file,

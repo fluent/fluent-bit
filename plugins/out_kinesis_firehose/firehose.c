@@ -149,9 +149,9 @@ static int cb_firehose_init(struct flb_output_instance *ins,
     }
 
     /* one tls instance for provider, one for cw client */
-    ctx->cred_tls = flb_tls_create(FLB_TRUE,
+    ctx->cred_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                   FLB_TRUE,
                                    ins->tls_debug,
-                                   FLB_TLS_CLIENT_MODE,
                                    ins->tls_vhost,
                                    ins->tls_ca_path,
                                    ins->tls_ca_file,
@@ -164,9 +164,9 @@ static int cb_firehose_init(struct flb_output_instance *ins,
         goto error;
     }
 
-    ctx->client_tls = flb_tls_create(FLB_TRUE,
+    ctx->client_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                     FLB_TRUE,
                                      ins->tls_debug,
-                                     FLB_TLS_CLIENT_MODE,
                                      ins->tls_vhost,
                                      ins->tls_ca_path,
                                      ins->tls_ca_file,
@@ -199,9 +199,9 @@ static int cb_firehose_init(struct flb_output_instance *ins,
         }
 
         /* STS provider needs yet another separate TLS instance */
-        ctx->sts_tls = flb_tls_create(FLB_TRUE,
+        ctx->sts_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                      FLB_TRUE,
                                       ins->tls_debug,
-                                      FLB_TLS_CLIENT_MODE,
                                       ins->tls_vhost,
                                       ins->tls_ca_path,
                                       ins->tls_ca_file,
