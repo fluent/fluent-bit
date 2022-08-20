@@ -50,9 +50,9 @@
 #define FLB_INPUT_CHUNK_TYPE_LOG      0
 #define FLB_INPUT_CHUNK_TYPE_METRIC   1
 
-#ifdef FLB_CHUNK_TRACE
+#ifdef FLB_HAVE_CHUNK_TRACE
 #define FLB_INPUT_CHUNK_HAS_TRACE     1 << 31
-#endif // FLB_CHUNK_TRACE
+#endif /* FLB_HAVE_CHUNK_TRACE */
 
 /* Max length for Tag */
 #define FLB_INPUT_CHUNK_TAG_MAX        (65535 - FLB_INPUT_CHUNK_META_HEADER)
@@ -72,9 +72,9 @@ struct flb_input_chunk {
     msgpack_packer mp_pck;          /* msgpack packer */
     struct flb_input_instance *in;  /* reference to parent input instance */
     struct flb_task *task;          /* reference to the outgoing task */
-#ifdef FLB_CHUNK_TRACE
+#ifdef FLB_HAVE_CHUNK_TRACE
     struct flb_chunk_trace *trace;
-#endif
+#endif /* FLB_HAVE_CHUNK_TRACE */
     uint64_t routes_mask
         [FLB_ROUTES_MASK_ELEMENTS]; /* track the output plugins the chunk routes to */
     struct mk_list _head;

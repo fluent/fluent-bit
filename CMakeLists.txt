@@ -305,7 +305,7 @@ if(FLB_TRACE)
 endif()
 
 if(FLB_CHUNK_TRACE)
-  add_definitions(-DFLB_CHUNK_TRACE=1)
+  add_definitions(-DFLB_HAVE_CHUNK_TRACE=1)
 endif()
 
 # SSL/TLS: add encryption support

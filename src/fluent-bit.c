@@ -926,7 +926,7 @@ int flb_main(int argc, char **argv)
         { "http_listen",     required_argument, NULL, 'L' },
         { "http_port",       required_argument, NULL, 'P' },
 #endif
-#ifdef FLB_TRACE
+#ifdef FLB_HAVE_CHUNK_TRACE
         { "disable-trace",   no_argument      , NULL, 'Z' },
 #endif
         { NULL, 0, NULL, 0 }
@@ -1108,11 +1108,11 @@ int flb_main(int argc, char **argv)
         case 'S':
             config->support_mode = FLB_TRUE;
             break;
-#ifdef FLB_CHUNK_TRACE
+#ifdef FLB_HAVE_CHUNK_TRACE
         case 'Z':
             config->enable_chunk_trace = FLB_FALSE;
             break;
-#endif
+#endif /* FLB_HAVE_CHUNK_TRACE */
         default:
             flb_help(EXIT_FAILURE, config);
         }

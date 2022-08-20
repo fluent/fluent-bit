@@ -154,10 +154,10 @@ struct flb_input_instance {
     int flags;
 
     int id;                              /* instance id                  */
-#ifdef FLB_CHUNK_TRACE
+#ifdef FLB_HAVE_CHUNK_TRACE
     struct flb_chunk_trace_context *chunk_trace_ctxt;
     pthread_mutex_t chunk_trace_lock;
-#endif
+#endif /* FLB_HAVE_CHUNK_TRACE */
     int log_level;                       /* log level for this plugin    */
     flb_pipefd_t channel[2];             /* pipe(2) channel              */
     int runs_in_coroutine;               /* instance runs in coroutine ? */

@@ -8,7 +8,7 @@ set(src
   health.c
   )
 
-if(FLB_TRACE)
+if(FLB_CHUNK_TRACE)
   set(src
     ${src}
     trace.c
