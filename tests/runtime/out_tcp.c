@@ -320,9 +320,9 @@ void flb_test_tcp_with_tls()
     ret = flb_tls_init();
     TEST_CHECK(ret == 0);
 
-    tls = flb_tls_create(FLB_FALSE,
+    tls = flb_tls_create(FLB_TLS_SERVER_MODE,
+                         FLB_FALSE,
                          FLB_TRUE,
-                         FLB_TLS_SERVER_MODE,
                          TLS_CERTIFICATE_HOSTNAME,
                          NULL,
                          NULL,
