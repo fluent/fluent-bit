@@ -119,9 +119,9 @@ int flb_tls_load_system_certificates(struct flb_tls *tls)
     return load_system_certificates(tls->ctx);
 }
 
-struct flb_tls *flb_tls_create(int verify,
+struct flb_tls *flb_tls_create(int mode,
+                               int verify,
                                int debug,
-                               int mode,
                                const char *vhost,
                                const char *ca_path,
                                const char *ca_file,
