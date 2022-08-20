@@ -39,18 +39,20 @@ int in_emitter_add_record(const char *tag, int tag_len,
                           const char *buf_data, size_t buf_size,
                           struct flb_input_instance *in);
 
-// To avoid double frees when enabling and disabling tracing as well
-// as avoiding race conditions when stopping fluent-bit while someone is
-// toggling tracing via the HTTP API this set of APIS with a mutex lock 
-// is used:
-//   * flb_chunk_trace_to_be_destroyed - query to see if the trace context
-//     is slated to be freed
-//   * flb_chunk_trace_set_destroy - set the trace context to be destroyed
-//     once all chunks are freed (executed in flb_chunk_trace_destroy).
-//   * flb_chunk_trace_has_chunks - see if there are still chunks using
-//     using the tracing context
-//   * flb_chunk_trace_add - increment the traces chunk count
-//   * flb_chunk_trace_sub - decrement the traces chunk count
+/****************************************************************************/
+/* To avoid double frees when enabling and disabling tracing as well        */
+/* as avoiding race conditions when stopping fluent-bit while someone is    */
+/* toggling tracing via the HTTP API this set of APIS with a mutex lock     */
+/* is used:                                                                 */
+/*   * flb_chunk_trace_to_be_destroyed - query to see if the trace context  */
+/*     is slated to be freed                                                */
+/*   * flb_chunk_trace_set_destroy - set the trace context to be destroyed  */
+/*     once all chunks are freed (executed in flb_chunk_trace_destroy).     */
+/*   * flb_chunk_trace_has_chunks - see if there are still chunks using     */
+/*     using the tracing context                                            */
+/*   * flb_chunk_trace_add - increment the traces chunk count               */
+/*   * flb_chunk_trace_sub - decrement the traces chunk count               */
+/****************************************************************************/
 static inline int flb_chunk_trace_to_be_destroyed(struct flb_chunk_trace_context *ctxt)
 {
     int ret = FLB_FALSE;
