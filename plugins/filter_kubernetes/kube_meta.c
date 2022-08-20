@@ -1398,9 +1398,9 @@ static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config
         if (!ctx->tls_ca_path && !ctx->tls_ca_file) {
             ctx->tls_ca_file  = flb_strdup(FLB_KUBE_CA);
         }
-        ctx->tls = flb_tls_create(ctx->tls_verify,
+        ctx->tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                  ctx->tls_verify,
                                   ctx->tls_debug,
-                                  FLB_TLS_CLIENT_MODE,
                                   ctx->tls_vhost,
                                   ctx->tls_ca_path,
                                   ctx->tls_ca_file,
