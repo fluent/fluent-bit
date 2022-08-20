@@ -812,11 +812,11 @@ static int cb_calyptia_init(struct flb_output_instance *ins,
     flb_sds_printf(&ctx->metrics_endpoint, CALYPTIA_ENDPOINT_METRICS,
                    ctx->agent_id);
 
-#ifdef FLB_CHUNK_TRACE
+#ifdef FLB_HAVE_CHUNK_TRACE
     ctx->trace_endpoint = flb_sds_create_size(256);
     flb_sds_printf(&ctx->trace_endpoint, CALYPTIA_ENDPOINT_TRACE, 
                    ctx->pipeline_id);
-#endif // FLB_CHUNK_TRACE
+#endif /* FLB_HAVE_CHUNK_TRACE */
     return 0;
 }
 
@@ -849,9 +849,9 @@ static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
     size_t off = 0;
     size_t out_size = 0;
     char *out_buf = NULL;
-#ifdef FLB_CHUNK_TRACE
+#ifdef FLB_HAVE_CHUNK_TRACE
     flb_sds_t json;
-#endif
+#endif /* FLB_HAVE_CHUNK_TRACE */
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
     struct flb_calyptia *ctx = out_context;
@@ -960,7 +960,7 @@ static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
         }
         flb_sds_destroy(json);
     }
-#endif // FLB_CHUNK_TRACE
+#endif /* FLB_HAVE_CHUNK_TRACE */
 
     flb_upstream_conn_release(u_conn);
     flb_http_client_destroy(c);
@@ -999,11 +999,11 @@ static int cb_calyptia_exit(void *data, struct flb_config *config)
         flb_sds_destroy(ctx->metrics_endpoint);
     }
 
-#ifdef FLB_CHUNK_TRACE
+#ifdef FLB_HAVE_CHUNK_TRACE
     if (ctx->trace_endpoint) {
         flb_sds_destroy(ctx->trace_endpoint);
     }
-#endif // FLB_CHUNK_TRACE
+#endif /* FLB_HAVE_CHUNK_TRACE */
 
     if (ctx->fs) {
         flb_fstore_destroy(ctx->fs);
