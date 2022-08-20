@@ -123,10 +123,10 @@ static void trace_chunk_context_destroy(struct flb_chunk_trace_context *ctxt)
         return;
     }
     
-    // pause all inputs, then destroy the input storage.
+    /* pause all inputs, then destroy the input storage. */
     flb_input_pause_all(ctxt->flb->config);
-    // waiting for all tasks to end is key to safely stopping and destroying
-    // the fluent-bit pipeline.
+    /* waiting for all tasks to end is key to safely stopping and destroying */
+    /* the fluent-bit pipeline. */
     while (flb_task_running_count(ctxt->flb->config) > 0) {
         sleep(1);
     }
@@ -202,8 +202,8 @@ struct flb_chunk_trace_context *flb_chunk_trace_context_new(void *trace_input,
         goto error_input;
     }
     
-    // special handling for the calyptia plugin so we can copy the API
-    // key and other configuration properties.
+    /* special handling for the calyptia plugin so we can copy the API */
+    /* key and other configuration properties. */
     if (strcmp(output_name, "calyptia") == 0) {
         calyptia = find_calyptia_output_instance(config);
         if (calyptia == NULL) {
@@ -295,7 +295,7 @@ void flb_chunk_trace_destroy(struct flb_chunk_trace *trace)
     pthread_mutex_lock(&trace->ic->in->chunk_trace_lock);
     flb_chunk_trace_sub(trace->ctxt);
 
-    // check to see if we need to free the trace context.
+    /* check to see if we need to free the trace context. */
     if (flb_chunk_trace_has_chunks(trace->ctxt) == FLB_FALSE &&
         flb_chunk_trace_to_be_destroyed(trace->ctxt) == FLB_TRUE) {
         trace_chunk_context_destroy(trace->ctxt);
@@ -416,7 +416,7 @@ int flb_chunk_trace_input(struct flb_chunk_trace *trace)
     int records = 0;
 
 
-    // initiailize start time
+    /* initiailize start time */
     flb_time_get(&tm);
     flb_time_get(&tm_end);
 
@@ -509,7 +509,7 @@ int flb_chunk_trace_pre_output(struct flb_chunk_trace *trace)
     int records = 0;
 
 
-    // initiailize start time
+    /* initiailize start time */
     flb_time_get(&tm);
     flb_time_get(&tm_end);
 
