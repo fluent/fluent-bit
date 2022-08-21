@@ -20,3 +20,15 @@ if (HOMEBREW_FLEX EQUAL 0 AND EXISTS "${HOMEBREW_FLEX_PREFIX}")
   message(STATUS "Using flex keg installed by Homebrew at ${HOMEBREW_FLEX_PREFIX}")
   set(FLEX_EXECUTABLE "${HOMEBREW_FLEX_PREFIX}/bin/flex")
 endif()
+
+# Also, searching homebrewed OpenSSL automatically.
+execute_process(
+  COMMAND brew --prefix openssl
+  RESULT_VARIABLE HOMEBREW_OPENSSL
+  OUTPUT_VARIABLE HOMEBREW_OPENSSL_PREFIX
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+if (HOMEBREW_OPENSSL EQUAL 0 AND EXISTS "${HOMEBREW_OPENSSL_PREFIX}")
+  message(STATUS "Using openssl keg installed by Homebrew at ${HOMEBREW_OPENSSL_PREFIX}")
+  set(OPENSSL_ROOT_DIR "${HOMEBREW_OPENSSL_PREFIX}")
+endif()
