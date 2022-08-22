@@ -272,6 +272,9 @@ struct flb_chunk_trace *flb_chunk_trace_new(struct flb_input_chunk *chunk)
         return NULL;
     }
 
+    trace->ctxt = f_ins->chunk_trace_ctxt;
+    flb_chunk_trace_add(trace->ctxt);
+
     trace->trace_id = flb_sds_create("");
     if (flb_sds_printf(&trace->trace_id, "%s%d", trace->ctxt->trace_prefix,
                   trace->ctxt->trace_count++) == NULL) {
@@ -280,9 +283,6 @@ struct flb_chunk_trace *flb_chunk_trace_new(struct flb_input_chunk *chunk)
         flb_free(trace);
         return NULL;
     }
-
-    trace->ctxt = f_ins->chunk_trace_ctxt;
-    flb_chunk_trace_add(trace->ctxt);
 
     trace->ic = chunk;
 
