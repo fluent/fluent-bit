@@ -33,30 +33,48 @@
 /* Config map for Downstream networking setup */
 struct flb_config_map downstream_net[] = {
     {
-     FLB_CONFIG_MAP_TIME, "net.connect_timeout", "10s",
-     0, FLB_TRUE, offsetof(struct flb_net_setup, connect_timeout),
-     "Set maximum time allowed to establish a connection, this time "
+     FLB_CONFIG_MAP_TIME, "net.io_timeout", "0s",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, io_timeout),
+     "Set maximum time a connection can stay idle"
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "net.accept_timeout", "10s",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, accept_timeout),
+     "Set maximum time allowed to establish an incoming connection, this time "
      "includes the TLS handshake"
     },
 
     {
-     FLB_CONFIG_MAP_BOOL, "net.connect_timeout_log_error", "true",
-     0, FLB_TRUE, offsetof(struct flb_net_setup, connect_timeout_log_error),
-     "On connection timeout, specify if it should log an error. When disabled, "
-     "the timeout is logged as a debug message"
+     FLB_CONFIG_MAP_BOOL, "net.accept_timeout_log_error", "true",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, accept_timeout_log_error),
+     "On client accept timeout, specify if it should log an error. When "
+     "disabled, the timeout is logged as a debug message"
     },
 
     /* EOF */
     {0}
 };
 
+/* Enable thread-safe mode for downstream connection */
+void flb_downstream_thread_safe(struct flb_downstream *stream)
+{
+    stream->thread_safe = FLB_TRUE;
+
+    pthread_mutex_init(&stream->mutex_lists, NULL);
+
+    /*
+     * Upon upstream creation, automatically the downstream is linked into
+     * the main Fluent Bit context (struct flb_config *)->downstreams. We
+     * have to avoid any access to this context outside of the worker
+     * thread.
+     */
+    mk_list_del(&stream->_head);
+}
+
 struct mk_list *flb_downstream_get_config_map(struct flb_config *config)
 {
-    struct mk_list *config_map;
-
-    config_map = flb_config_map_create(config, downstream_net);
-
-    return config_map;
+    return flb_config_map_create(config, downstream_net);
 }
 
 /* Initialize any downstream environment context */
@@ -68,7 +86,8 @@ void flb_downstream_init()
 int flb_downstream_setup(struct flb_downstream *stream,
                          struct flb_config *config,
                          const char *host, unsigned short int port,
-                         int flags, struct flb_tls *tls)
+                         int flags, struct flb_tls *tls,
+                         struct flb_net_setup *net_setup)
 {
     char port_string[8];
 
@@ -81,7 +100,12 @@ int flb_downstream_setup(struct flb_downstream *stream,
     stream->config = config;
 
     /* Set default networking setup values */
-    flb_net_setup_init(&stream->net);
+    if (net_setup == NULL) {
+        flb_net_setup_init(&stream->net);
+    }
+    else {
+        memcpy(&stream->net, net_setup, sizeof(struct flb_net_setup));
+    }
 
     /* Set upstream to the http_proxy if it is specified. */
     stream->host = flb_strdup(host);
@@ -120,7 +144,8 @@ int flb_downstream_setup(struct flb_downstream *stream,
 /* Creates a new downstream context */
 struct flb_downstream *flb_downstream_create(struct flb_config *config,
                                              const char *host, unsigned short int port,
-                                             int flags, struct flb_tls *tls)
+                                             int flags, struct flb_tls *tls,
+                                             struct flb_net_setup *net_setup)
 {
     struct flb_downstream *stream;
     int                    result;
@@ -133,7 +158,8 @@ struct flb_downstream *flb_downstream_create(struct flb_config *config,
     else {
         result = flb_downstream_setup(stream, config,
                                       host,  port,
-                                      flags, tls);
+                                      flags, tls,
+                                      net_setup);
 
         if (result != 0) {
             flb_downstream_destroy(stream);
@@ -257,18 +283,18 @@ struct flb_connection *flb_downstream_conn_get(struct flb_downstream *stream)
 
     connection->busy_flag = FLB_TRUE;
 
-    if (stream->thread_safe == FLB_TRUE) {
+    if (stream->thread_safe) {
         pthread_mutex_lock(&stream->mutex_lists);
     }
 
     /* Link new connection to the busy queue */
     mk_list_add(&connection->_head, &stream->busy_queue);
 
-    if (stream->thread_safe == FLB_TRUE) {
+    if (stream->thread_safe) {
         pthread_mutex_unlock(&stream->mutex_lists);
     }
 
-    flb_connection_set_connection_timeout(connection);
+    flb_connection_reset_connection_timeout(connection);
 
     result = flb_io_net_accept(connection, flb_coro_get());
 
@@ -285,21 +311,11 @@ struct flb_connection *flb_downstream_conn_get(struct flb_downstream *stream)
         return NULL;
     }
 
-    flb_connection_reset_connection_timeout(connection);
+    flb_connection_unset_connection_timeout(connection);
 
     connection->busy_flag = FLB_FALSE;
 
-    result = flb_connection_get_remote_address(connection);
-
-    if (result != 0) {
-        flb_debug("[downstream] connection #%i failed to "
-                  "get peer information",
-                  connection->fd);
-
-        prepare_destroy_conn_safe(connection);
-
-        return NULL;
-    }
+    flb_connection_reset_io_timeout(connection);
 
     return connection;
 }
@@ -348,6 +364,85 @@ int flb_downstream_conn_release(struct flb_connection *connection)
 
 int flb_downstream_conn_timeouts(struct mk_list *list)
 {
+    struct flb_connection *connection;
+    const char            *reason;
+    struct flb_downstream *stream;
+    struct mk_list        *s_head;
+    struct mk_list        *head;
+    int                    drop;
+    struct mk_list        *tmp;
+    time_t                 now;
+
+    now = time(NULL);
+
+    /* Iterate all downstream contexts */
+    mk_list_foreach(head, list) {
+        stream = mk_list_entry(head, struct flb_downstream, _head);
+
+        if (stream->thread_safe) {
+            pthread_mutex_lock(&stream->mutex_lists);
+        }
+
+        /* Iterate every busy connection */
+        mk_list_foreach_safe(s_head, tmp, &stream->busy_queue) {
+            connection = mk_list_entry(s_head, struct flb_connection, _head);
+
+            drop = FLB_FALSE;
+
+            /* Connect timeouts */
+            if (connection->net->connect_timeout > 0 &&
+                connection->ts_connect_timeout > 0 &&
+                connection->ts_connect_timeout <= now) {
+                drop = FLB_TRUE;
+                reason = "connection timeout";
+            }
+            else if (connection->net->io_timeout > 0 &&
+                     connection->ts_io_timeout > 0 &&
+                     connection->ts_io_timeout <= now) {
+                drop = FLB_TRUE;
+                reason = "IO timeout";
+            }
+
+            if (drop) {
+                if (!flb_downstream_is_shutting_down(stream)) {
+                    if (connection->net->connect_timeout_log_error) {
+                        flb_error("[downstream] connection #%i to %s:%u timed "
+                                  "out after %i seconds (%s)",
+                                  connection->fd,
+                                  connection->remote_host,
+                                  connection->remote_port,
+                                  connection->net->accept_timeout,
+                                  reason);
+                    }
+                    else {
+                        flb_debug("[downstream] connection #%i to %s:%u timed "
+                                  "out after %i seconds (%s)",
+                                  connection->fd,
+                                  connection->remote_host,
+                                  connection->remote_port,
+                                  connection->net->accept_timeout,
+                                  reason);
+                    }
+                }
+
+                if (connection->event.status != MK_EVENT_NONE) {
+                    mk_event_inject(connection->evl,
+                                    &connection->event,
+                                    MK_EVENT_READ | MK_EVENT_WRITE,
+                                    FLB_TRUE);
+                }
+
+                connection->net_error = ETIMEDOUT;
+
+                prepare_destroy_conn(connection);
+            }
+        }
+
+        if (stream->thread_safe) {
+            pthread_mutex_unlock(&stream->mutex_lists);
+        }
+    }
+
     return 0;
 }
 
@@ -357,7 +452,7 @@ int flb_downstream_conn_pending_destroy(struct flb_downstream *stream)
     struct mk_list        *head;
     struct mk_list        *tmp;
 
-    if (stream->thread_safe == FLB_TRUE) {
+    if (stream->thread_safe) {
         pthread_mutex_lock(&stream->mutex_lists);
     }
 
@@ -367,7 +462,7 @@ int flb_downstream_conn_pending_destroy(struct flb_downstream *stream)
         destroy_conn(connection);
     }
 
-    if (stream->thread_safe == FLB_TRUE) {
+    if (stream->thread_safe) {
         pthread_mutex_unlock(&stream->mutex_lists);
     }
 
