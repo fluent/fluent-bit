@@ -58,8 +58,6 @@ struct flb_downstream {
     int thread_safe;
     pthread_mutex_t mutex_lists;
 
-    void *parent_downstream;
-
 #ifdef FLB_HAVE_TLS
     struct flb_tls *tls;
 #endif
@@ -83,11 +81,13 @@ void flb_downstream_init();
 int flb_downstream_setup(struct flb_downstream *stream,
                          struct flb_config *config,
                          const char *host, unsigned short int port,
-                         int flags, struct flb_tls *tls);
+                         int flags, struct flb_tls *tls,
+                         struct flb_net_setup *net_setup);
 
 struct flb_downstream *flb_downstream_create(struct flb_config *config,
                                              const char *host, unsigned short int port,
-                                             int flags, struct flb_tls *tls);
+                                             int flags, struct flb_tls *tls,
+                                             struct flb_net_setup *net_setup);
 
 void flb_downstream_destroy(struct flb_downstream *downstream);
 
@@ -97,6 +97,8 @@ int flb_downstream_set_property(struct flb_config *config,
 int flb_downstream_conn_pending_destroy_list(struct mk_list *list);
 
 int flb_downstream_is_async(struct flb_downstream *downstream);
+
+void flb_downstream_thread_safe(struct flb_downstream *stream);
 
 struct mk_list *flb_downstream_get_config_map(struct flb_config *config);
 
