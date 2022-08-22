@@ -41,7 +41,8 @@ void flb_connection_init(struct flb_connection *connection,
 
     MK_EVENT_ZERO(&connection->event);
 
-    flb_connection_reset_connection_timeout(connection);
+    flb_connection_unset_connection_timeout(connection);
+    flb_connection_unset_io_timeout(connection);
 }
 
 int flb_connection_get_remote_address(struct flb_connection *connection)
@@ -76,26 +77,59 @@ int flb_connection_get_flags(struct flb_connection *connection)
     return result;
 }
 
-void flb_connection_set_connection_timeout(struct flb_connection *connection)
+void flb_connection_reset_connection_timeout(struct flb_connection *connection)
 {
     time_t current_time;
     time_t timeout_time;
 
     assert(connection != NULL);
 
-    if (connection->net->connect_timeout > 0) {
-        current_time = time(NULL);
-        timeout_time = current_time + connection->net->connect_timeout;
+    if (connection->type == FLB_UPSTREAM_CONNECTION) {
+        if (connection->net->connect_timeout > 0) {
+            current_time = time(NULL);
+            timeout_time = current_time + connection->net->connect_timeout;
 
-        connection->ts_connect_start = current_time;
-        connection->ts_connect_timeout = timeout_time;
+            connection->ts_connect_start = current_time;
+            connection->ts_connect_timeout = timeout_time;
+        }
+    }
+    else if(connection->type == FLB_DOWNSTREAM_CONNECTION) {
+        if (connection->net->accept_timeout > 0) {
+            current_time = time(NULL);
+            timeout_time = current_time + connection->net->accept_timeout;
+
+            connection->ts_connect_start = current_time;
+            connection->ts_connect_timeout = timeout_time;
+        }
     }
 }
 
-void flb_connection_reset_connection_timeout(struct flb_connection *connection)
+void flb_connection_unset_connection_timeout(struct flb_connection *connection)
 {
     assert(connection != NULL);
 
     connection->ts_connect_start = -1;
     connection->ts_connect_timeout = -1;
+}
+
+void flb_connection_reset_io_timeout(struct flb_connection *connection)
+{
+    time_t current_time;
+    time_t timeout_time;
+
+    assert(connection != NULL);
+
+    if (connection->net->io_timeout > 0) {
+        current_time = time(NULL);
+        timeout_time = current_time + connection->net->io_timeout;
+
+        connection->ts_io_timeout = timeout_time;
+    }
+}
+
+void flb_connection_unset_io_timeout(struct flb_connection *connection)
+{
+    assert(connection != NULL);
+
+    connection->ts_io_timeout = -1;
 }
