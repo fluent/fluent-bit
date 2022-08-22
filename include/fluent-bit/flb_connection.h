@@ -85,6 +85,9 @@ struct flb_connection {
     time_t ts_created;
     time_t ts_available;  /* sets the 'start' available time */
 
+    /* IO activity tracker used to enforce net.io_timeout */
+    time_t ts_io_timeout;
+
     /* Connect */
     time_t ts_connect_start;
     time_t ts_connect_timeout;
@@ -127,7 +130,10 @@ void flb_connection_init(struct flb_connection *connection,
 int flb_connection_get_remote_address(struct flb_connection *connection);
 
 int flb_connection_get_flags(struct flb_connection *connection);
-void flb_connection_set_connection_timeout(struct flb_connection *connection);
 void flb_connection_reset_connection_timeout(struct flb_connection *connection);
+void flb_connection_unset_connection_timeout(struct flb_connection *connection);
+
+void flb_connection_reset_io_timeout(struct flb_connection *connection);
+void flb_connection_unset_io_timeout(struct flb_connection *connection);
 
 #endif
