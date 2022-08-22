@@ -92,10 +92,11 @@ static int datadog_format(struct flb_config *config,
 {
     int i;
     int ind;
-    int byte_cnt;
+    int byte_cnt = 64;
     int remap_cnt;
+    int ret;
     /* for msgpack global structs */
-    int array_size = 0;
+    size_t array_size = 0;
     size_t off = 0;
     msgpack_unpacked result;
     msgpack_sbuffer mp_sbuf;
@@ -110,13 +111,23 @@ static int datadog_format(struct flb_config *config,
     msgpack_object k;
     msgpack_object v;
     struct flb_out_datadog *ctx = plugin_context;
+    struct flb_event_chunk *event_chunk;
 
     /* output buffer */
     flb_sds_t out_buf;
     flb_sds_t remapped_tags = NULL;
+    flb_sds_t tmp = NULL;
 
-    /* Count number of records */
-    array_size = flb_mp_count(data, bytes);
+    /* in normal flush callback we have the event_chunk set as flush context
+     * so we don't need to calculate the event len.
+     * But in test mode the formatter won't get the event_chunk as flush_ctx
+     */ 
+    if (flush_ctx != NULL) {
+        event_chunk = flush_ctx; 
+        array_size = event_chunk->total_events;
+    } else {
+        array_size = flb_mp_count(data, bytes);
+    }
 
     /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -161,6 +172,22 @@ static int datadog_format(struct flb_config *config,
 
             if (!remapped_tags) {
                 remapped_tags = flb_sds_create_size(byte_cnt);
+                if (!remapped_tags) {
+                    flb_errno();
+                    msgpack_sbuffer_destroy(&mp_sbuf);
+                    msgpack_unpacked_destroy(&result);
+                    return -1;
+                }
+            } else if (flb_sds_len(remapped_tags) < byte_cnt) {
+                tmp = flb_sds_increase(remapped_tags, flb_sds_len(remapped_tags) - byte_cnt);
+                if (!tmp) {
+                    flb_errno();
+                    flb_sds_destroy(remapped_tags);
+                    msgpack_sbuffer_destroy(&mp_sbuf);
+                    msgpack_unpacked_destroy(&result);
+                    return -1;
+                }
+                remapped_tags = tmp;
             }
 
             /*
@@ -227,8 +254,11 @@ static int datadog_format(struct flb_config *config,
              * (so they won't be packed as attr)
              */
             if (ctx->remap && (ind = dd_attr_need_remapping(k, v)) >=0 ) {
-                remapping[ind].remap_to_tag(remapping[ind].remap_tag_name, v,
-                                            remapped_tags);
+                ret = remapping[ind].remap_to_tag(remapping[ind].remap_tag_name, v,
+                                                  &remapped_tags);
+                if (ret < 0) {
+                    flb_plg_error(ctx->ins, "Failed to remap tag: %s, skipping", remapping[ind].remap_tag_name);
+                }
                 continue;
             }
 
@@ -250,9 +280,25 @@ static int datadog_format(struct flb_config *config,
         /* here we concatenate ctx->dd_tags and remapped_tags, depending on their presence */
         if (remap_cnt) {
             if (ctx->dd_tags != NULL) {
-                flb_sds_cat(remapped_tags, FLB_DATADOG_TAG_SEPERATOR,
-                            strlen(FLB_DATADOG_TAG_SEPERATOR));
+                tmp = flb_sds_cat(remapped_tags, FLB_DATADOG_TAG_SEPERATOR,
+                                  strlen(FLB_DATADOG_TAG_SEPERATOR));
+                if (!tmp) {
+                    flb_errno();
+                    flb_sds_destroy(remapped_tags);
+                    msgpack_sbuffer_destroy(&mp_sbuf);
+                    msgpack_unpacked_destroy(&result);
+                    return -1;
+                }
+                remapped_tags = tmp;
                 flb_sds_cat(remapped_tags, ctx->dd_tags, strlen(ctx->dd_tags));
+                if (!tmp) {
+                    flb_errno();
+                    flb_sds_destroy(remapped_tags);
+                    msgpack_sbuffer_destroy(&mp_sbuf);
+                    msgpack_unpacked_destroy(&result);
+                    return -1;
+                }
+                remapped_tags = tmp;
             }
             dd_msgpack_pack_key_value_str(&mp_pck,
                                           FLB_DATADOG_DD_TAGS_KEY,
@@ -319,7 +365,7 @@ static void cb_datadog_flush(struct flb_event_chunk *event_chunk,
 
     /* Convert input data into a Datadog JSON payload */
     ret = datadog_format(config, i_ins,
-                         ctx, NULL,
+                         ctx, event_chunk,
                          event_chunk->tag, flb_sds_len(event_chunk->tag),
                          event_chunk->data, event_chunk->size,
                          &out_buf, &out_size);
