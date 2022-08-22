@@ -129,8 +129,11 @@ static void cb_engine_sched_timer(struct flb_config *ctx, void *data)
 {
     (void) data;
 
-    /* Upstream connections timeouts handling */
+    /* Upstream timeout handling */
     flb_upstream_conn_timeouts(&ctx->upstreams);
+
+    /* Downstream timeout handling */
+    flb_downstream_conn_timeouts(&ctx->downstreams);
 }
 
 static inline int handle_input_event(flb_pipefd_t fd, uint64_t ts,
