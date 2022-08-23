@@ -89,7 +89,8 @@ static int in_tcp_init(struct flb_input_instance *in,
                                             ctx->listen,
                                             port,
                                             in->flags,
-                                            in->tls);
+                                            in->tls,
+                                            &in->net_setup);
 
     if (ctx->downstream == NULL) {
         flb_plg_error(ctx->ins,
