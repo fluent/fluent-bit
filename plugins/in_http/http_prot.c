@@ -32,7 +32,8 @@
 
 static int send_response(struct http_conn *conn, int http_status, char *message)
 {
-    int len;
+    size_t    sent;
+    int       len;
     flb_sds_t out;
 
     out = flb_sds_create_size(256);
@@ -77,8 +78,14 @@ static int send_response(struct http_conn *conn, int http_status, char *message)
                        len, message);
     }
 
-    write(conn->fd, out, flb_sds_len(out));
+    /* We should check this operations result */
+    flb_io_net_write(conn->connection,
+                     (void *) out,
+                     flb_sds_len(out),
+                     &sent);
+
     flb_sds_destroy(out);
+
     return 0;
 }
 
