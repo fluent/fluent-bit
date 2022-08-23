@@ -75,13 +75,21 @@ int flb_io_net_accept(struct flb_connection *connection,
         connection->event.fd = FLB_INVALID_SOCKET;
     }
 
-    flb_connection_set_connection_timeout(connection);
-
     /* Accept the new connection */
     connection->fd = flb_net_accept(connection->downstream->server_fd);
 
     if (connection->fd == -1) {
         connection->fd = FLB_INVALID_SOCKET;
+
+        return -1;
+    }
+
+    ret = flb_connection_get_remote_address(connection);
+
+    if (ret != 0) {
+        flb_debug("[io] connection #%i failed to "
+                  "get peer information",
+                  connection->fd);
 
         return -1;
     }
@@ -95,15 +103,11 @@ int flb_io_net_accept(struct flb_connection *connection,
                                          coro);
 
             if (ret != 0) {
-                flb_connection_reset_connection_timeout(connection);
-
                 return -1;
             }
         }
     }
 #endif
-
-    flb_connection_reset_connection_timeout(connection);
 
     flb_trace("[io] connection OK");
 
@@ -140,6 +144,16 @@ int flb_io_net_connect(struct flb_connection *connection,
                              connection->upstream->net.connect_timeout,
                              async, coro, connection);
     if (fd == -1) {
+        return -1;
+    }
+
+    ret = flb_connection_get_remote_address(connection);
+
+    if (ret != 0) {
+        flb_debug("[io] connection #%i failed to "
+                  "get peer information",
+                  connection->fd);
+
         return -1;
     }
 
@@ -211,6 +225,7 @@ static int fd_io_write(int fd, const void *data, size_t len, size_t *out_len)
 
     while (total < len) {
         ret = send(fd, (char *) data + total, len - total, 0);
+
         if (ret == -1) {
             if (FLB_WOULDBLOCK()) {
                 /*
@@ -221,17 +236,27 @@ static int fd_io_write(int fd, const void *data, size_t len, size_t *out_len)
                 tries++;
 
                 if (tries == 30) {
+                    /* Since we're aborting after 30 failures we want the
+                     * caller to know how much data we were able to send
+                     */
+
+                    *out_len = total;
+
                     return -1;
                 }
+
                 continue;
             }
+
             return -1;
         }
+
         tries = 0;
         total += ret;
     }
 
     *out_len = total;
+
     return total;
 }
 
@@ -254,9 +279,8 @@ static FLB_INLINE int net_io_write_async(struct flb_coro *co,
     size_t total = 0;
     size_t to_send;
     char so_error_buf[256];
-    // struct flb_upstream *u = u_conn->u;
 
- retry:
+retry:
     error = 0;
 
     if (len - total > 524288) {
@@ -265,6 +289,7 @@ static FLB_INLINE int net_io_write_async(struct flb_coro *co,
     else {
         to_send = (len - total);
     }
+
     bytes = send(connection->fd, (char *) data + total, to_send, 0);
 
 #ifdef FLB_HAVE_TRACE
@@ -293,6 +318,8 @@ static FLB_INLINE int net_io_write_async(struct flb_coro *co,
                  * If we failed here there no much that we can do, just
                  * let the caller we failed
                  */
+                *out_len = total;
+
                 return -1;
             }
 
@@ -316,6 +343,8 @@ static FLB_INLINE int net_io_write_async(struct flb_coro *co,
             ret = mk_event_del(connection->evl, &connection->event);
 
             if (ret == -1) {
+                *out_len = total;
+
                 return -1;
             }
 
@@ -333,6 +362,8 @@ static FLB_INLINE int net_io_write_async(struct flb_coro *co,
                               connection->remote_port,
                               so_error_buf);
 
+                    *out_len = total;
+
                     return -1;
                 }
 
@@ -341,11 +372,15 @@ static FLB_INLINE int net_io_write_async(struct flb_coro *co,
                 goto retry;
             }
             else {
+                *out_len = total;
+
                 return -1;
             }
 
         }
         else {
+            *out_len = total;
+
             return -1;
         }
     }
@@ -367,6 +402,8 @@ static FLB_INLINE int net_io_write_async(struct flb_coro *co,
                  * If we failed here there no much that we can do, just
                  * let the caller we failed
                  */
+                *out_len = total;
+
                 return -1;
             }
         }
@@ -426,6 +463,7 @@ static ssize_t fd_io_read(int fd, void *buf, size_t len)
     int ret;
 
     ret = recv(fd, buf, len, 0);
+
     if (ret == -1) {
         return -1;
     }
@@ -441,6 +479,7 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_coro *co,
 
  retry_read:
     ret = recv(connection->fd, buf, len, 0);
+
     if (ret == -1) {
         if (FLB_WOULDBLOCK()) {
             ret = mk_event_add(connection->evl,
@@ -450,6 +489,7 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_coro *co,
                                &connection->event);
 
             connection->event.priority = FLB_ENGINE_PRIORITY_SEND_RECV;
+
             if (ret == -1) {
                 /*
                  * If we failed here there no much that we can do, just
@@ -525,6 +565,10 @@ int flb_io_net_write(struct flb_connection *connection, const void *data,
         connection->event.fd = -1;
     }
 
+    if (ret > 0) {
+        flb_connection_reset_io_timeout(connection);
+    }
+
     flb_trace("[io coro=%p] [net_write] ret=%i total=%lu/%lu",
               coro, ret, *out_len, len);
 
@@ -568,6 +612,10 @@ ssize_t flb_io_net_read(struct flb_connection *connection, void *buf, size_t len
         }
     }
 #endif
+
+    if (ret > 0) {
+        flb_connection_reset_io_timeout(connection);
+    }
 
     flb_trace("[io coro=%p] [net_read] ret=%i", coro, ret);
 
