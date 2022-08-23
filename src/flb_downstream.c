@@ -115,10 +115,8 @@ int flb_downstream_setup(struct flb_downstream *stream,
         return -1;
     }
 
-    stream->flags  = flags;
-    stream->flags |= FLB_IO_ASYNC;
-
     stream->thread_safe = FLB_FALSE;
+    stream->flags = flags;
     stream->tls = tls;
 
     /* Create TCP server */
@@ -134,7 +132,9 @@ int flb_downstream_setup(struct flb_downstream *stream,
         return -2;
     }
 
-    flb_net_socket_nonblocking(stream->server_fd);
+    if (stream->flags & FLB_IO_ASYNC) {
+        flb_net_socket_nonblocking(stream->server_fd);
+    }
 
     mk_list_add(&stream->_head, &config->downstreams);
 
