@@ -37,8 +37,6 @@ struct tcp_conn_stream {
 
 /* Respresents a connection */
 struct tcp_conn {
-//    struct mk_event event;            /* Built-in event data for mk_events */
-    int fd;                           /* Socket file descriptor            */
     int status;                       /* Connection status                 */
 
     /* Buffer */
@@ -51,7 +49,6 @@ struct tcp_conn {
     struct flb_in_tcp_config *ctx;    /* Plugin configuration context      */
     struct flb_pack_state pack_state; /* Internal JSON parser              */
     struct flb_connection *connection;
-
 
     struct mk_list _head;
 };
