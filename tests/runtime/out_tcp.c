@@ -341,7 +341,8 @@ void flb_test_tcp_with_tls()
                                            DEFAULT_HOST,
                                            port,
                                            FLB_IO_TCP | FLB_IO_TLS,
-                                           tls);
+                                           tls,
+                                           NULL);
 
         TEST_CHECK(downstream != NULL);
 
