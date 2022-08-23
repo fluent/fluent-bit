@@ -124,9 +124,11 @@ static void flb_help(int rc, struct flb_config *config)
     print_opt("-T, --sp-task=SQL", "define a stream processor task");
 #endif
     print_opt("-v, --verbose", "increase logging verbosity (default: info)");
-#ifdef FLB_HAVE_TRACE
+#ifdef FLB_TRACE
     print_opt("-vv", "trace mode (available)");
-    print_opt("-Z, --disable-trace", "disable tracing completely");
+#endif
+#ifdef FLB_HAVE_CHUNK_TRACE
+    print_opt("-Z, --enable-chunk-trace", "enable chunk tracing. activating it requires using the HTTP Server API.");
 #endif
     print_opt("-w, --workdir", "set the working directory");
 #ifdef FLB_HAVE_HTTP_SERVER
@@ -927,7 +929,7 @@ int flb_main(int argc, char **argv)
         { "http_port",       required_argument, NULL, 'P' },
 #endif
 #ifdef FLB_HAVE_CHUNK_TRACE
-        { "disable-trace",   no_argument      , NULL, 'Z' },
+        { "enable-chunk-trace",    no_argument, NULL, 'Z' },
 #endif
         { NULL, 0, NULL, 0 }
     };
@@ -1110,7 +1112,7 @@ int flb_main(int argc, char **argv)
             break;
 #ifdef FLB_HAVE_CHUNK_TRACE
         case 'Z':
-            config->enable_chunk_trace = FLB_FALSE;
+            config->enable_chunk_trace = FLB_TRUE;
             break;
 #endif /* FLB_HAVE_CHUNK_TRACE */
         default:

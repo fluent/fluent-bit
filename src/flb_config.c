@@ -226,10 +226,6 @@ struct flb_config *flb_config_init()
     config->health_check_period          = HEALTH_CHECK_PERIOD;
 #endif
 
-#ifdef FLB_HAVE_CHUNK_TRACE
-    config->enable_chunk_trace = FLB_TRUE;
-#endif /* FLB_HAVE_CHUNK_TRACE */
-
     config->http_proxy = getenv("HTTP_PROXY");
     if (flb_str_emptyval(config->http_proxy) == FLB_TRUE) {
         config->http_proxy = getenv("http_proxy");
