@@ -157,5 +157,5 @@ struct flb_input_plugin in_mqtt_plugin = {
     .cb_flush_buf = NULL,
     .cb_exit      = in_mqtt_exit,
     .config_map   = config_map,
-    .flags        = FLB_INPUT_NET,
+    .flags        = FLB_INPUT_NET | FLB_IO_OPT_TLS,
 };
