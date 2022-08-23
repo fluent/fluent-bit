@@ -64,6 +64,12 @@ struct flb_config_map upstream_net[] = {
     },
 
     {
+     FLB_CONFIG_MAP_TIME, "net.io_timeout", "0s",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, io_timeout),
+     "Set maximum time a connection can stay idle while assigned"
+    },
+
+    {
      FLB_CONFIG_MAP_TIME, "net.connect_timeout", "10s",
      0, FLB_TRUE, offsetof(struct flb_net_setup, connect_timeout),
      "Set maximum time allowed to establish a connection, this time "
@@ -500,16 +506,15 @@ static int destroy_conn(struct flb_connection *u_conn)
 
 static struct flb_connection *create_conn(struct flb_upstream *u)
 {
-    int ret;
-    // time_t now;
-    // struct mk_event_loop *evl;
-    struct flb_coro *coro = flb_coro_get();
-    struct flb_connection *conn;
+    struct flb_coro           *coro;
+    struct flb_connection     *conn;
+    int                        ret;
     struct flb_upstream_queue *uq;
 
-    // now = time(NULL);
+    coro = flb_coro_get();
 
     conn = flb_calloc(1, sizeof(struct flb_connection));
+
     if (!conn) {
         flb_errno();
         return NULL;
@@ -543,12 +548,12 @@ static struct flb_connection *create_conn(struct flb_upstream *u)
         pthread_mutex_unlock(&u->mutex_lists);
     }
 
-    flb_connection_set_connection_timeout(conn);
+    flb_connection_reset_connection_timeout(conn);
 
     /* Start connection */
     ret = flb_io_net_connect(conn, coro);
     if (ret == -1) {
-        flb_connection_reset_connection_timeout(conn);
+        flb_connection_unset_connection_timeout(conn);
 
         flb_debug("[upstream] connection #%i failed to %s:%i",
                   conn->fd, u->tcp_host, u->tcp_port);
@@ -559,7 +564,7 @@ static struct flb_connection *create_conn(struct flb_upstream *u)
         return NULL;
     }
 
-    flb_connection_reset_connection_timeout(conn);
+    flb_connection_unset_connection_timeout(conn);
 
     if (u->flags & FLB_IO_TCP_KA) {
         flb_debug("[upstream] KA connection #%i to %s:%i is connected",
@@ -568,18 +573,6 @@ static struct flb_connection *create_conn(struct flb_upstream *u)
 
     /* Invalidate timeout for connection */
     conn->busy_flag = FLB_FALSE;
-
-    ret = flb_connection_get_remote_address(conn);
-
-    if (ret != 0) {
-        flb_debug("[upstream] connection #%i failed to "
-                  "get peer information",
-                  conn->fd);
-
-        prepare_destroy_conn_safe(conn);
-
-        return NULL;
-    }
 
     return conn;
 }
@@ -636,7 +629,7 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
     int err;
     struct mk_list *tmp;
     struct mk_list *head;
-    struct flb_connection *conn = NULL;
+    struct flb_connection *conn;
     struct flb_upstream_queue *uq;
 
     uq = flb_upstream_queue_get(u);
@@ -652,64 +645,68 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
               u->net.keepalive ? "enabled": "disabled",
               u->net.keepalive_idle_timeout);
 
-    /* On non Keepalive mode, always create a new TCP connection */
-    if (u->net.keepalive == FLB_FALSE) {
-        return create_conn(u);
-    }
+    conn = NULL;
 
     /*
      * If we are in keepalive mode, iterate list of available connections,
      * take a little of time to do some cleanup and assign a connection. If no
      * entries exists, just create a new one.
      */
-    mk_list_foreach_safe(head, tmp, &uq->av_queue) {
-        conn = mk_list_entry(head, struct flb_connection, _head);
+    if (u->net.keepalive) {
+        mk_list_foreach_safe(head, tmp, &uq->av_queue) {
+            conn = mk_list_entry(head, struct flb_connection, _head);
 
-        if (u->thread_safe == FLB_TRUE) {
-            pthread_mutex_lock(&u->mutex_lists);
-        }
+            if (u->thread_safe == FLB_TRUE) {
+                pthread_mutex_lock(&u->mutex_lists);
+            }
 
-        /* This connection works, let's move it to the busy queue */
-        mk_list_del(&conn->_head);
-        mk_list_add(&conn->_head, &uq->busy_queue);
+            /* This connection works, let's move it to the busy queue */
+            mk_list_del(&conn->_head);
+            mk_list_add(&conn->_head, &uq->busy_queue);
 
-        if (u->thread_safe == FLB_TRUE) {
-            pthread_mutex_unlock(&u->mutex_lists);
-        }
+            if (u->thread_safe == FLB_TRUE) {
+                pthread_mutex_unlock(&u->mutex_lists);
+            }
 
-        /* Reset errno */
-        conn->net_error = -1;
+            /* Reset errno */
+            conn->net_error = -1;
 
-        err = flb_socket_error(conn->fd);
-        if (!FLB_EINPROGRESS(err) && err != 0) {
-            flb_debug("[upstream] KA connection #%i is in a failed state "
-                      "to: %s:%i, cleaning up",
+            err = flb_socket_error(conn->fd);
+            if (!FLB_EINPROGRESS(err) && err != 0) {
+                flb_debug("[upstream] KA connection #%i is in a failed state "
+                          "to: %s:%i, cleaning up",
+                          conn->fd, u->tcp_host, u->tcp_port);
+                prepare_destroy_conn_safe(conn);
+                conn = NULL;
+                continue;
+            }
+
+            /* Connect timeout */
+            conn->ts_assigned = time(NULL);
+            flb_debug("[upstream] KA connection #%i to %s:%i has been assigned (recycled)",
                       conn->fd, u->tcp_host, u->tcp_port);
-            prepare_destroy_conn_safe(conn);
-            conn = NULL;
-            continue;
-        }
+            /*
+             * Note: since we are in a keepalive connection, the socket is already being
+             * monitored for possible disconnections while idle. Upon re-use by the caller
+             * when it try to send some data, the I/O interface (flb_io.c) will put the
+             * proper event mask and reuse, there is no need to remove the socket from
+             * the event loop and re-add it again.
+             *
+             * So just return the connection context.
+             */
 
-        /* Connect timeout */
-        conn->ts_assigned = time(NULL);
-        flb_debug("[upstream] KA connection #%i to %s:%i has been assigned (recycled)",
-                  conn->fd, u->tcp_host, u->tcp_port);
-        /*
-         * Note: since we are in a keepalive connection, the socket is already being
-         * monitored for possible disconnections while idle. Upon re-use by the caller
-         * when it try to send some data, the I/O interface (flb_io.c) will put the
-         * proper event mask and reuse, there is no need to remove the socket from
-         * the event loop and re-add it again.
-         *
-         * So just return the connection context.
-         */
-        return conn;
+            break;
+        }
     }
 
-    /* No keepalive connection available, create a new one */
-    if (!conn) {
+    /* There are keepalive connections available or
+     * keepalive is disable so we need to create a new one
+     */
+    if (conn == NULL) {
         conn = create_conn(u);
     }
+
+    flb_connection_reset_io_timeout(conn);
 
     return conn;
 }
@@ -805,6 +802,7 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
 {
     time_t now;
     int drop;
+    const char *reason;
     struct mk_list *head;
     struct mk_list *u_head;
     struct mk_list *tmp;
@@ -834,24 +832,37 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
                 u_conn->ts_connect_timeout > 0 &&
                 u_conn->ts_connect_timeout <= now) {
                 drop = FLB_TRUE;
-
-                if (!flb_upstream_is_shutting_down(u)) {
-                    if (u->net.connect_timeout_log_error) {
-                        flb_error("[upstream] connection #%i to %s:%i timed out after "
-                                  "%i seconds",
-                                  u_conn->fd,
-                                  u->tcp_host, u->tcp_port, u->net.connect_timeout);
-                    }
-                    else {
-                        flb_debug("[upstream] connection #%i to %s:%i timed out after "
-                                  "%i seconds",
-                                  u_conn->fd,
-                                  u->tcp_host, u->tcp_port, u->net.connect_timeout);
-                    }
-                }
+                reason = "connection timeout";
+            }
+            else if (u_conn->net->io_timeout > 0 &&
+                     u_conn->ts_io_timeout > 0 &&
+                     u_conn->ts_io_timeout <= now) {
+                drop = FLB_TRUE;
+                reason = "IO timeout";
             }
 
-            if (drop == FLB_TRUE) {
+            if (drop) {
+                if (!flb_upstream_is_shutting_down(u)) {
+                    if (u->net.connect_timeout_log_error) {
+                        flb_error("[upstream] connection #%i to %s:%i timed "
+                                  "out after %i seconds (%s)",
+                                  u_conn->fd,
+                                  u_conn->remote_host,
+                                  u_conn->remote_port,
+                                  u_conn->net->connect_timeout,
+                                  reason);
+                    }
+                    else {
+                        flb_debug("[upstream] connection #%i to %s:%i timed "
+                                  "out after %i seconds (%s)",
+                                  u_conn->fd,
+                                  u_conn->remote_host,
+                                  u_conn->remote_port,
+                                  u_conn->net->connect_timeout,
+                                  reason);
+                    }
+                }
+
                 if (u_conn->event.status != MK_EVENT_NONE) {
                     mk_event_inject(u_conn->evl,
                                     &u_conn->event,
