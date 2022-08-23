@@ -330,17 +330,20 @@ void flb_test_tcp_with_tls()
 
     TEST_CHECK(client_connection != NULL);
 
-    ret = flb_io_net_write(client_connection,
-                           (void *) buf,
-                            size,
-                            &sent);
+    if (client_connection != NULL) {
+        ret = flb_io_net_write(client_connection,
+                               (void *) buf,
+                                size,
+                                &sent);
 
-    TEST_CHECK(ret == 0);
+        TEST_CHECK(ret > 0);
 
-    /* waiting to flush */
-    flb_time_msleep(1500);
+        /* waiting to flush */
+        flb_time_msleep(1500);
+    }
 
     num = get_output_num();
+
     if (!TEST_CHECK(num > 0))  {
         TEST_MSG("no outputs");
     }
