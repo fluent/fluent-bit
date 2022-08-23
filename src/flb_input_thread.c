@@ -27,12 +27,27 @@
 #include <fluent-bit/flb_event_loop.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_scheduler.h>
+#include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_input_thread.h>
 
 static int input_thread_instance_set_status(struct flb_input_instance *ins, uint32_t status);
 static int input_thread_instance_get_status(struct flb_input_instance *ins);
+
+/* Cleanup function that runs every 1.5 second */
+static void cb_thread_sched_timer(struct flb_config *ctx, void *data)
+{
+    struct flb_input_instance *ins;
+
+    (void) ctx;
+
+    /* Downstream timeout handling */
+    ins = (struct flb_input_instance *) data;
+
+    flb_upstream_conn_timeouts(&ins->upstreams);
+    flb_downstream_conn_timeouts(&ins->downstreams);
+}
 
 static void *worker(void *arg)
 {
@@ -299,6 +314,18 @@ static void input_thread(void *data)
     }
     flb_sched_ctx_set(sched);
 
+    /*
+     * Sched a permanent callback triggered every 1.5 second to let other
+     * components of this thread run tasks at that interval.
+     */
+    ret = flb_sched_timer_cb_create(sched,
+                                    FLB_SCHED_TIMER_CB_PERM,
+                                    1500, cb_thread_sched_timer, ins, NULL);
+    if (ret == -1) {
+        flb_error("could not schedule input thread permanent callback");
+        return;
+    }
+
     flb_coro_thread_init();
 
     flb_net_ctx_init(&dns_ctx);
@@ -411,6 +438,12 @@ static void input_thread(void *data)
         }
 
         flb_net_dns_lookup_context_cleanup(&dns_ctx);
+
+        /* Destroy upstream connections from the 'pending destroy list' */
+        flb_upstream_conn_pending_destroy_list(&ins->upstreams);
+
+        /* Destroy downstream connections from the 'pending destroy list' */
+        flb_downstream_conn_pending_destroy_list(&ins->downstreams);
         flb_sched_timer_cleanup(sched);
 
         /* Check if the instance must exit */
