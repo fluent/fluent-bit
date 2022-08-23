@@ -849,6 +849,7 @@ static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
     size_t off = 0;
     size_t out_size = 0;
     char *out_buf = NULL;
+/* used to create records for reporting traces to the cloud. */
 #ifdef FLB_HAVE_CHUNK_TRACE
     flb_sds_t json;
 #endif /* FLB_HAVE_CHUNK_TRACE */
