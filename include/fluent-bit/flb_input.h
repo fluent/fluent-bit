@@ -295,6 +295,9 @@ struct flb_input_instance {
     /* List of upstreams */
     struct mk_list upstreams;
 
+    /* List of downstreams */
+    struct mk_list downstreams;
+
     /*
      * CMetrics
      * --------
@@ -329,6 +332,11 @@ struct flb_input_instance {
 #else
     void *tls;
 #endif
+
+    /* General network options like timeouts and keepalive */
+    struct flb_net_setup net_setup;
+    struct mk_list *net_config_map;
+    struct mk_list net_properties;
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
@@ -538,7 +546,27 @@ static inline int flb_input_buf_paused(struct flb_input_instance *i)
 static inline int flb_input_config_map_set(struct flb_input_instance *ins,
                                            void *context)
 {
-    return flb_config_map_set(&ins->properties, ins->config_map, context);
+    int ret;
+
+    /* Process normal properties */
+    if (ins->config_map) {
+        ret = flb_config_map_set(&ins->properties, ins->config_map, context);
+
+        if (ret == -1) {
+            return -1;
+        }
+    }
+
+    /* Net properties */
+    if (ins->net_config_map) {
+        ret = flb_config_map_set(&ins->net_properties, ins->net_config_map,
+                                 &ins->net_setup);
+        if (ret == -1) {
+            return -1;
+        }
+    }
+
+    return ret;
 }
 
 int flb_input_register_all(struct flb_config *config);
@@ -618,5 +646,7 @@ int flb_input_log_check(struct flb_input_instance *ins, int l);
 
 struct mk_event_loop *flb_input_event_loop_get(struct flb_input_instance *ins);
 int flb_input_upstream_set(struct flb_upstream *u, struct flb_input_instance *ins);
+int flb_input_downstream_set(struct flb_downstream *stream,
+                             struct flb_input_instance *ins);
 
 #endif

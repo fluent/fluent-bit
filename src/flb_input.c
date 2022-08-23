@@ -34,6 +34,7 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_storage.h>
+#include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_scheduler.h>
@@ -283,10 +284,12 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         mk_list_init(&instance->collectors);
         mk_list_init(&instance->input_coro_list);
         mk_list_init(&instance->input_coro_list_destroy);
+        mk_list_init(&instance->downstreams);
         mk_list_init(&instance->upstreams);
 
         /* Initialize properties list */
         flb_kv_init(&instance->properties);
+        flb_kv_init(&instance->net_properties);
 
         /* Plugin use networking */
         if (plugin->flags & FLB_INPUT_NET) {
@@ -503,6 +506,17 @@ int flb_input_set_property(struct flb_input_instance *ins,
         ins->host.ipv6 = flb_utils_bool(tmp);
         flb_sds_destroy(tmp);
     }
+    else if (strncasecmp("net.", k, 4) == 0 && tmp) {
+        kv = flb_kv_item_create(&ins->net_properties, (char *) k, NULL);
+        if (!kv) {
+            if (tmp) {
+                flb_sds_destroy(tmp);
+            }
+            return -1;
+        }
+        kv->val = tmp;
+    }
+
 #ifdef FLB_HAVE_TLS
     else if (prop_key_check("tls", k, len) == 0 && tmp) {
         if (strcasecmp(tmp, "true") == 0 || strcasecmp(tmp, "on") == 0) {
@@ -682,6 +696,7 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
 
     /* release properties */
     flb_kv_release(&ins->properties);
+    flb_kv_release(&ins->net_properties);
 
 
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -706,6 +721,10 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
     /* destroy config map */
     if (ins->config_map) {
         flb_config_map_destroy(ins->config_map);
+    }
+
+    if (ins->net_config_map) {
+        flb_config_map_destroy(ins->net_config_map);
     }
 
     /* hash table for chunks */
@@ -865,6 +884,33 @@ int flb_input_instance_init(struct flb_input_instance *ins,
         /* Validate incoming properties against config map */
         ret = flb_config_map_properties_check(ins->p->name,
                                               &ins->properties, ins->config_map);
+        if (ret == -1) {
+            if (config->program_name) {
+                flb_helper("try the command: %s -i %s -h\n",
+                           config->program_name, ins->p->name);
+            }
+            flb_input_instance_destroy(ins);
+            return -1;
+        }
+    }
+    /* Init network defaults */
+    flb_net_setup_init(&ins->net_setup);
+
+    /* Get Downstream net_setup configmap */
+    ins->net_config_map = flb_downstream_get_config_map(config);
+    if (!ins->net_config_map) {
+        flb_input_instance_destroy(ins);
+        return -1;
+    }
+
+    /*
+     * Validate 'net.*' properties: if the plugin use the Downstream interface,
+     * it might receive some networking settings.
+     */
+    if (mk_list_size(&ins->net_properties) > 0) {
+        ret = flb_config_map_properties_check(ins->p->name,
+                                              &ins->net_properties,
+                                              ins->net_config_map);
         if (ret == -1) {
             if (config->program_name) {
                 flb_helper("try the command: %s -i %s -h\n",
@@ -1648,6 +1694,53 @@ int flb_input_upstream_set(struct flb_upstream *u, struct flb_input_instance *in
         flb_upstream_thread_safe(u);
         mk_list_add(&u->_head, &ins->upstreams);
     }
+
+    /* Set networking options 'net.*' received through instance properties */
+    memcpy(&u->net, &ins->net_setup, sizeof(struct flb_net_setup));
+
+    return 0;
+}
+
+int flb_input_downstream_set(struct flb_downstream *stream,
+                             struct flb_input_instance *ins)
+{
+    int flags = 0;
+
+    if (stream == NULL) {
+        return -1;
+    }
+
+    /* TLS */
+#ifdef FLB_HAVE_TLS
+    if (ins->use_tls == FLB_TRUE) {
+        flags |= FLB_IO_TLS;
+    }
+    else {
+        flags |= FLB_IO_TCP;
+    }
+#else
+    flags |= FLB_IO_TCP;
+#endif
+
+    /* IPv6 */
+    if (ins->host.ipv6 == FLB_TRUE) {
+        flags |= FLB_IO_IPV6;
+    }
+
+    /* Set flags */
+    stream->flags |= flags;
+
+    /*
+     * If the input plugin will run in multiple threads, enable
+     * the thread safe mode for the Downstream context.
+     */
+    if (flb_input_is_threaded(ins)) {
+        flb_downstream_thread_safe(stream);
+        mk_list_add(&stream->_head, &ins->downstreams);
+    }
+
+    /* Set networking options 'net.*' received through instance properties */
+    memcpy(&stream->net, &ins->net_setup, sizeof(struct flb_net_setup));
 
     return 0;
 }
