@@ -392,7 +392,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "pipeline_id", NULL,
      0, FLB_TRUE, offsetof(struct calyptia, pipeline_id),
-     "Custom machine_id to be used when registering agent"
+     "Pipeline ID for reporting to calyptia cloud."
     },
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
