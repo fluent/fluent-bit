@@ -66,6 +66,7 @@
 int flb_io_net_accept(struct flb_connection *connection,
                        struct flb_coro *coro)
 {
+    int flags;
     int ret;
 
     if (connection->fd != FLB_INVALID_SOCKET) {
@@ -82,6 +83,15 @@ int flb_io_net_accept(struct flb_connection *connection,
         connection->fd = FLB_INVALID_SOCKET;
 
         return -1;
+    }
+
+    /* Since flb_net_accept implicitly makes the client socket non blocking
+     * we have to restore it to blocking mode if FLB_IO_ASYNC is not specified
+     */
+    flags = flb_connection_get_flags(connection);
+
+    if (~flags & FLB_IO_ASYNC) {
+        flb_net_socket_blocking(connection->fd);
     }
 
     ret = flb_connection_get_remote_address(connection);
