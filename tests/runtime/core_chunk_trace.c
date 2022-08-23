@@ -142,7 +142,7 @@ void flb_test_trace()
 
 /* Test list */
 TEST_LIST = {
-#ifdef FLB_TRACE
+#ifdef FLB_HAVE_CHUNK_TRACE
     {"trace",    flb_test_trace},
 #endif
     {NULL, NULL}
