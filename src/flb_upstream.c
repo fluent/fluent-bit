@@ -672,6 +672,7 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
             conn->net_error = -1;
 
             err = flb_socket_error(conn->fd);
+
             if (!FLB_EINPROGRESS(err) && err != 0) {
                 flb_debug("[upstream] KA connection #%i is in a failed state "
                           "to: %s:%i, cleaning up",
@@ -706,7 +707,9 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
         conn = create_conn(u);
     }
 
-    flb_connection_reset_io_timeout(conn);
+    if (conn != NULL) {
+        flb_connection_reset_io_timeout(conn);
+    }
 
     return conn;
 }
