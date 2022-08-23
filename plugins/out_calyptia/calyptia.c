@@ -356,7 +356,7 @@ static int calyptia_http_do(struct flb_calyptia *ctx, struct flb_http_client *c,
                             sizeof(CALYPTIA_H_AGENT_TOKEN) - 1,
                             ctx->agent_token, flb_sds_len(ctx->agent_token));
     }
-#ifdef FLB_CHUNK_TRACE
+#ifdef FLB_HAVE_CHUNK_TRACE
     else if (type == CALYPTIA_ACTION_TRACE)  {
         flb_http_add_header(c,
                             CALYPTIA_H_CTYPE, sizeof(CALYPTIA_H_CTYPE) - 1,
@@ -921,7 +921,7 @@ static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
         }
     }
     
-#ifdef FLB_CHUNK_TRACE
+#ifdef FLB_HAVE_CHUNK_TRACE
     if (event_chunk->type == (FLB_EVENT_TYPE_LOG | FLB_EVENT_TYPE_HAS_TRACE)) {
         json = flb_pack_msgpack_to_json_format(event_chunk->data,
                                                event_chunk->size,
@@ -1053,7 +1053,7 @@ static struct flb_config_map config_map[] = {
      "Label to append to the generated metric."
     },
 
-#ifdef FLB_CHUNK_TRACE
+#ifdef FLB_HAVE_CHUNK_TRACE
     {
      FLB_CONFIG_MAP_STR, "pipeline_id", NULL,
      0, FLB_TRUE, offsetof(struct flb_calyptia, pipeline_id),
