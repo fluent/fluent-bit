@@ -295,6 +295,8 @@ retry_write:
         goto retry_write;
     }
     else if (ret < 0) {
+        *out_len = total;
+
         return -1;
     }
 
@@ -307,11 +309,11 @@ retry_write:
 
     *out_len = total;
 
-    return 0;
+    return ret;
 }
 
 int flb_tls_net_write_async(struct flb_coro *co,
-                           struct flb_tls_session *session,
+                            struct flb_tls_session *session,
                             const void *data, size_t len, size_t *out_len)
 {
     size_t          total;
@@ -348,6 +350,7 @@ retry_write:
          */
 
         session->connection->coroutine = NULL;
+        *out_len = total;
 
         return -1;
     }
@@ -373,7 +376,7 @@ retry_write:
 
     mk_event_del(session->connection->evl, &session->connection->event);
 
-    return 0;
+    return total;
 }
 
 int flb_tls_client_session_create(struct flb_tls *tls,
