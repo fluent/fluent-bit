@@ -405,8 +405,8 @@ int flb_downstream_conn_timeouts(struct mk_list *list)
 
             if (drop) {
                 if (!flb_downstream_is_shutting_down(stream)) {
-                    if (connection->net->connect_timeout_log_error) {
-                        flb_error("[downstream] connection #%i to %s:%u timed "
+                    if (connection->net->accept_timeout_log_error) {
+                        flb_error("[downstream] connection #%i from %s:%u timed "
                                   "out after %i seconds (%s)",
                                   connection->fd,
                                   connection->remote_host,
@@ -415,7 +415,7 @@ int flb_downstream_conn_timeouts(struct mk_list *list)
                                   reason);
                     }
                     else {
-                        flb_debug("[downstream] connection #%i to %s:%u timed "
+                        flb_debug("[downstream] connection #%i from %s:%u timed "
                                   "out after %i seconds (%s)",
                                   connection->fd,
                                   connection->remote_host,
