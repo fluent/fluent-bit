@@ -317,7 +317,6 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->tls_key_passwd        = NULL;
 #endif
 
-
         /* Plugin requires a co-routine context ? */
         if (plugin->flags & FLB_INPUT_CORO) {
             instance->runs_in_coroutine = FLB_TRUE;
@@ -677,6 +676,18 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
         flb_sds_destroy(ins->host.listen);
     }
 
+#ifdef FLB_HAVE_TLS
+    if (ins->use_tls) {
+        if (ins->tls != NULL) {
+            flb_tls_destroy(ins->tls);
+        }
+    }
+
+    if (ins->tls_config_map) {
+        flb_config_map_destroy(ins->tls_config_map);
+    }
+#endif
+
     if (ins->tls_vhost) {
         flb_sds_destroy(ins->tls_vhost);
     }
@@ -901,6 +912,48 @@ int flb_input_instance_init(struct flb_input_instance *ins,
             return -1;
         }
     }
+
+#ifdef FLB_HAVE_TLS
+    if (ins->use_tls == FLB_TRUE) {
+        ins->tls = flb_tls_create(FLB_TLS_SERVER_MODE,
+                                  ins->tls_verify,
+                                  ins->tls_debug,
+                                  ins->tls_vhost,
+                                  ins->tls_ca_path,
+                                  ins->tls_ca_file,
+                                  ins->tls_crt_file,
+                                  ins->tls_key_file,
+                                  ins->tls_key_passwd);
+        if (ins->tls == NULL) {
+            flb_error("[input %s] error initializing TLS context",
+                      ins->name);
+            flb_input_instance_destroy(ins);
+
+            return -1;
+        }
+    }
+
+    struct flb_config_map *m;
+
+    /* TLS config map (just for 'help' formatting purposes) */
+    ins->tls_config_map = flb_tls_get_config_map(config);
+
+    if (ins->tls_config_map == NULL) {
+        flb_input_instance_destroy(ins);
+
+        return -1;
+    }
+
+    /* Override first configmap value based on it plugin flag */
+    m = mk_list_entry_first(ins->tls_config_map, struct flb_config_map, _head);
+    if (p->flags & FLB_IO_TLS) {
+        m->value.val.boolean = FLB_TRUE;
+    }
+    else {
+        m->value.val.boolean = FLB_FALSE;
+    }
+#endif
+
     /* Init network defaults */
     flb_net_setup_init(&ins->net_setup);
 

@@ -323,6 +323,8 @@ struct flb_input_instance {
     char *tls_key_file;                  /* Cert Key                     */
     char *tls_key_passwd;                /* Cert Key Password            */
 
+    struct mk_list *tls_config_map;
+
 #ifdef FLB_HAVE_TLS
     struct flb_tls *tls;
 #else
