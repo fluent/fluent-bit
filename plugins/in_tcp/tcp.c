@@ -102,8 +102,6 @@ static int in_tcp_init(struct flb_input_instance *in,
         return -1;
     }
 
-    MK_EVENT_ZERO(&ctx->downstream->event);
-
     ctx->evl = config->evl;
 
     /* Collect upon data available on the standard input */
