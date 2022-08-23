@@ -29,7 +29,6 @@
 #include <msgpack.h>
 
 struct flb_in_tcp_config {
-    int server_fd;                     /* TCP server file descriptor  */
     flb_sds_t format_name;             /* Data format name */
     int format;                        /* Data format */
     size_t buffer_size;                /* Buffer size for each reader */
