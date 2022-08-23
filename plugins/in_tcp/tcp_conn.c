@@ -357,10 +357,10 @@ int tcp_conn_del(struct tcp_conn *conn)
         flb_pack_state_reset(&conn->pack_state);
     }
 
+    /* The downstream unregisters the file descriptor from the event-loop
+     * so there's nothing to be done by the plugin
+     */
     flb_downstream_conn_release(conn->connection);
-
-    /* Unregister the file descriptior from the event-loop */
-    // mk_event_del(ctx->evl, &conn->d_conn.event);
 
     /* Release resources */
     mk_list_del(&conn->_head);
