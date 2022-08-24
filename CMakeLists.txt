@@ -23,6 +23,12 @@ if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
   add_definitions(-DFLB_SYSTEM_MACOS)
 endif()
 
+# Define macro to identify Linux system
+if(CMAKE_SYSTEM_NAME MATCHES "Linux")
+  set(FLB_SYSTEM_LINUX On)
+  add_definitions(-DFLB_SYSTEM_LINUX)
+endif()
+
 # Update CFLAGS
 if (MSVC)
   add_definitions(-D_CRT_SECURE_NO_WARNINGS)
@@ -536,7 +542,23 @@ endif()
 
 # WASM
 if(FLB_WASM)
-  FLB_DEFINITION(FLB_HAVE_WASM)
+  if (FLB_SYSTEM_LINUX)
+    check_c_source_compiles("
+       #include <stdatomic.h>
+       int main() {
+          _Atomic int a;
+          return 0;
+       }" FLB_HAVE_STDATOMIC_H)
+    check_include_files(stdatomic.h FLB_HAVE_STDATOMIC_H)
+    if (FLB_HAVE_STDATOMIC_H)
+      FLB_DEFINITION(FLB_HAVE_WASM)
+    else ()
+      message(STATUS "This platform is too old to support FLB_WASM feature. Now disabled.")
+      set(FLB_WASM OFF)
+    endif ()
+  else ()
+    FLB_DEFINITION(FLB_HAVE_WASM)
+  endif ()
 endif()
 
 # AWS
