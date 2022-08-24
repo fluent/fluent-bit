@@ -88,8 +88,15 @@ set(src
   ${UNCOMMON_SHARED_SOURCE}) # link wasm-micro-runtime's uncommon object symbols (for bh_read_file_to_buffer)
 
 add_library(flb-wasm-static STATIC ${src})
+
+if (FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+  set(${JEMALLOC_LIBS} libjemalloc)
+  add_dependencies(flb-wasm-static libjemalloc)
+  include_directories("${CMAKE_BINARY_DIR}/include/")
+endif ()
+
 if (WAMR_BUILD_LIBC_UVWASI)
   target_link_libraries(flb-wasm-static vmlib-static ${UV_A_LIBS})
 else ()
-  target_link_libraries(flb-wasm-static vmlib-static)
+  target_link_libraries(flb-wasm-static vmlib-static ${JEMALLOC_LIBS})
 endif()
