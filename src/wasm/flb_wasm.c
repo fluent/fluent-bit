@@ -38,7 +38,6 @@
 
 void flb_wasm_init(struct flb_config *config)
 {
-    wasm_runtime_init();
     mk_list_init(&config->wasm_list);
 }
 
