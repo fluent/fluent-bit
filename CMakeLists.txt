@@ -113,7 +113,7 @@ option(FLB_AWS_ERROR_REPORTER  "Build with aws error reporting support"      No)
 option(FLB_ARROW               "Build with Apache Arrow support"             No)
 option(FLB_WINDOWS_DEFAULTS    "Build with predefined Windows settings"     Yes)
 option(FLB_WASM                "Build with WASM runtime support"            Yes)
-option(FLB_WAMRC               "Build with WASM AOT compiler executable"    Yes)
+option(FLB_WAMRC               "Build with WASM AOT compiler executable"    No)
 
 # Native Metrics Support (cmetrics)
 option(FLB_METRICS             "Enable metrics support"       Yes)
