@@ -310,7 +310,9 @@ REGISTER_FILTER_PLUGIN("filter_stdout")
 REGISTER_FILTER_PLUGIN("filter_geoip2")
 
 REGISTER_FILTER_PLUGIN("filter_nightfall")
-REGISTER_FILTER_PLUGIN("filter_wasm")
+if (FLB_WASM)
+  REGISTER_FILTER_PLUGIN("filter_wasm")
+endif ()
 
 # Register external input and output plugins
 if(EXT_IN_PLUGINS)
