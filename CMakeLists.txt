@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.0)
-project(fluent-bit
-  LANGUAGES C ASM CXX)
+project(fluent-bit)
 
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  2)
@@ -551,12 +550,14 @@ if(FLB_WASM)
        }" FLB_HAVE_STDATOMIC_H)
     check_include_files(stdatomic.h FLB_HAVE_STDATOMIC_H)
     if (FLB_HAVE_STDATOMIC_H)
+      enable_language (ASM)
       FLB_DEFINITION(FLB_HAVE_WASM)
     else ()
       message(STATUS "This platform is too old to support FLB_WASM feature. Now disabled.")
       set(FLB_WASM OFF)
     endif ()
   else ()
+    enable_language (ASM)
     FLB_DEFINITION(FLB_HAVE_WASM)
   endif ()
 endif()

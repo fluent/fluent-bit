@@ -1,4 +1,6 @@
 string (TOLOWER ${CMAKE_HOST_SYSTEM_NAME} WAMR_BUILD_PLATFORM)
+enable_language (CXX)
+
 if (FLB_SYSTEM_WINDOWS)
   enable_language(ASM_MASM)
 endif()
