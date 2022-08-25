@@ -28,7 +28,38 @@
 #define FLB_UPSTREAM_CONNECTION   1
 #define FLB_DOWNSTREAM_CONNECTION 2
 
-#define FLB_MAX_IPV6_ADDRESS_LENGTH 40
+/* FLB_CONNECTION_MAX_PORT_LENGTH is the maximum length of
+ * an unsigned 16 bit integer
+ */
+
+#define FLB_CONNECTION_MAX_PORT_LENGTH  5
+
+/* FLB_CONNECTION_MAX_LABEL_LENGTH is the maximum length of
+ * any of the following variants plus an optional colon if
+ * the spec includes a port number :
+ *
+ * udp://
+ * tcp://
+ * unix://
+ */
+
+#define FLB_CONNECTION_TYPE_UNSET       0
+#define FLB_CONNECTION_TYPE_TCP         1
+#define FLB_CONNECTION_TYPE_UDP         2
+#define FLB_CONNECTION_TYPE_UNIX_STREAM 3
+#define FLB_CONNECTION_TYPE_UNIX_DGRAM  4
+
+#define FLB_CONNECTION_MAX_LABEL_LENGTH 7
+
+#define FLB_CONNECTION_MAX_IPV4_ADDRESS_LENGTH 15
+#define FLB_CONNECTION_MAX_IPV6_ADDRESS_LENGTH 39
+#define FLB_CONNECTION_MAX_UNIX_ADDRESS_LENGTH (11 + 4 + 1)
+#define FLB_CONNECTION_MAX_ADDRESS_LENGTH      FLB_CONNECTION_MAX_IPV6_ADDRESS_LENGTH
+
+#define FLB_CONNECTION_MAX_USER_FRIENDLY_ADDRESS_LENGTH \
+            (FLB_CONNECTION_MAX_ADDRESS_LENGTH + \
+             FLB_CONNECTION_MAX_PORT_LENGTH    + \
+             FLB_CONNECTION_MAX_LABEL_LENGTH)
 
 struct flb_net_setup;
 struct flb_upstream;
@@ -44,11 +75,12 @@ struct flb_connection {
     /* Socket */
     flb_sockfd_t fd;
 
-    int raw_remote_host_family;
-    char raw_remote_host[16];
+    struct sockaddr_storage raw_remote_host;
 
-    char remote_host[FLB_MAX_IPV6_ADDRESS_LENGTH];
+    char remote_host[FLB_CONNECTION_MAX_ADDRESS_LENGTH + 1];
     unsigned short int remote_port;
+
+    char user_friendly_remote_host[FLB_CONNECTION_MAX_USER_FRIENDLY_ADDRESS_LENGTH + 1];
 
     /* Net setup shortcut */
     struct flb_net_setup *net;
@@ -108,6 +140,8 @@ struct flb_connection {
     /* Connection type : FLB_UPSTREAM_CONNECTION or FLB_DOWNSTREAM_CONNECTION */
     int type;
 
+    int dynamically_allocated;
+
     /*
      * Link to list head on the stream, if the connection is busy,
      * it's linked to 'busy_queue', otherwise it resides in 'av_queue'
@@ -120,14 +154,22 @@ struct flb_connection {
     struct flb_tls_session *tls_session;
 };
 
-void flb_connection_init(struct flb_connection *connection,
+int flb_connection_setup(struct flb_connection *connection,
                          flb_sockfd_t socket,
                          int type,
                          void *stream,
                          struct mk_event_loop *event_loop,
                          struct flb_coro *coroutine);
 
-int flb_connection_get_remote_address(struct flb_connection *connection);
+struct flb_connection *flb_connection_create(flb_sockfd_t socket,
+                                             int type,
+                                             void *stream,
+                                             struct mk_event_loop *event_loop,
+                                             struct flb_coro *coroutine);
+
+void flb_connection_destroy(struct flb_connection *connection);
+
+char *flb_connection_get_remote_address(struct flb_connection *connection);
 
 int flb_connection_get_flags(struct flb_connection *connection);
 void flb_connection_reset_connection_timeout(struct flb_connection *connection);
