@@ -19,6 +19,7 @@
 
 #include <stdlib.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_input_plugin.h>
 
 #include "fw.h"
@@ -69,12 +70,17 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
 
 int fw_config_destroy(struct flb_in_fw_config *config)
 {
+    if (config->downstream != NULL) {
+        flb_downstream_destroy(config->downstream);
+    }
+
     if (config->unix_path) {
         unlink(config->unix_path);
     }
     else {
         flb_free(config->tcp_port);
     }
+
     flb_free(config);
 
     return 0;
