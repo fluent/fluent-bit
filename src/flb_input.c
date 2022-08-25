@@ -1461,6 +1461,20 @@ int flb_input_collector_running(int coll_id, struct flb_input_instance *in)
     return coll->running;
 }
 
+struct mk_event *flb_input_collector_get_event(int coll_id,
+                                               struct flb_input_instance *ins)
+{
+    struct flb_input_collector *collector;
+
+    collector = get_collector(coll_id, ins);
+
+    if (collector == NULL) {
+        return NULL;
+    }
+
+    return &collector->event;
+}
+
 /*
  * TEST: this is a test function that can be used by input plugins to check the
  * 'pause' and 'resume' callback operations.
