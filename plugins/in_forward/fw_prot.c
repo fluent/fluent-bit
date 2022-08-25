@@ -82,6 +82,8 @@ static int is_gzip_compressed(msgpack_object options)
 static int send_ack(struct flb_input_instance *in, struct fw_conn *conn,
                     msgpack_object chunk)
 {
+    int result;
+    size_t sent;
     ssize_t bytes;
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
@@ -94,17 +96,23 @@ static int send_ack(struct flb_input_instance *in, struct fw_conn *conn,
     msgpack_pack_str_body(&mp_pck, "ack", 3);
     msgpack_pack_object(&mp_pck, chunk);
 
-    bytes = send(conn->fd, mp_sbuf.data, mp_sbuf.size, 0);
+
+    bytes = flb_io_net_write(conn->connection,
+                             (void *) mp_sbuf.data,
+                             mp_sbuf.size,
+                             &sent);
+
     if (bytes == -1) {
-        flb_errno();
         flb_plg_error(in, "cannot send ACK response: %.*s",
                       chunk.via.str.size, chunk.via.str.ptr);
-        msgpack_sbuffer_destroy(&mp_sbuf);
-        return -1;
+
+        result = -1;
+    }
+    else {
+        result = 0;
     }
 
-    msgpack_sbuffer_destroy(&mp_sbuf);
-    return 0;
+    return result;
 
 }
 

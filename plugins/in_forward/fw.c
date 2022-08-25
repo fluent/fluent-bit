@@ -19,6 +19,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_network.h>
 #include <msgpack.h>
@@ -34,48 +35,80 @@
 #include "fw_config.h"
 
 #ifdef FLB_HAVE_UNIX_SOCKET
-static int fw_unix_create(struct flb_in_fw_config *ctx)
+static int remove_existing_socket_file(char *socket_path)
 {
-    flb_sockfd_t fd = -1;
-    unsigned long len;
-    size_t address_length;
-    struct sockaddr_un address;
+    struct stat file_data;
+    int         result;
 
-    fd = flb_net_socket_create(AF_UNIX, FLB_TRUE);
-    if (fd == -1) {
+    result = stat(socket_path, &file_data);
+
+    if (result == -1) {
+        if (errno == ENOENT) {
+            return 0;
+        }
+
+        flb_errno();
+
         return -1;
     }
 
-    ctx->server_fd = fd;
+    if (S_ISSOCK(file_data.st_mode) == 0) {
+        return -2;
+    }
 
-    /* Prepare the unix socket path */
-    unlink(ctx->unix_path);
-    len = strlen(ctx->unix_path);
+    result = unlink(socket_path);
 
-    address.sun_family = AF_UNIX;
-    sprintf(address.sun_path, "%s", ctx->unix_path);
-    address_length = sizeof(address.sun_family) + len + 1;
-    if (bind(fd, (struct sockaddr *) &address, address_length) != 0) {
-        flb_errno();
-        close(fd);
+    if (result != 0) {
+        return -3;
+    }
+
+    return 0;
+}
+
+static int fw_unix_create(struct flb_in_fw_config *ctx)
+{
+    int ret;
+
+    ret = remove_existing_socket_file(ctx->unix_path);
+
+    if (ret != 0) {
+        if (ret == -2) {
+            flb_plg_error(ctx->ins,
+                          "%s exists and it is not a unix socket. Aborting",
+                          ctx->unix_path);
+        }
+        else {
+            flb_plg_error(ctx->ins,
+                          "could not remove existing unix socket %s. Aborting",
+                          ctx->unix_path);
+        }
+
+        return -1;
+    }
+
+    ctx->downstream = flb_downstream_create(FLB_DOWNSTREAM_TYPE_UNIX_STREAM,
+                                            ctx->ins->flags,
+                                            ctx->unix_path,
+                                            0,
+                                            ctx->ins->tls,
+                                            ctx->ins->config,
+                                            &ctx->ins->net_setup);
+
+    if (ctx->downstream == NULL) {
         return -1;
     }
 
     if (ctx->unix_perm_str) {
-        if (chmod(address.sun_path, ctx->unix_perm)) {
+        if (chmod(ctx->unix_path, ctx->unix_perm)) {
             flb_errno();
+
             flb_plg_error(ctx->ins, "cannot set permission on '%s' to %04o",
-                      address.sun_path, ctx->unix_perm);
-            close(fd);
+                          ctx->unix_path, ctx->unix_perm);
+
             return -1;
         }
     }
 
-    if (listen(fd, 5) != 0) {
-        flb_errno();
-        close(fd);
-        return -1;
-    }
     return 0;
 }
 #endif
@@ -88,27 +121,34 @@ static int fw_unix_create(struct flb_in_fw_config *ctx)
 static int in_fw_collect(struct flb_input_instance *ins,
                          struct flb_config *config, void *in_context)
 {
-    int fd;
-    struct fw_conn *conn;
-    struct flb_in_fw_config *ctx = in_context;
+    struct flb_connection   *connection;
+    struct fw_conn          *conn;
+    struct flb_in_fw_config *ctx;
 
-    /* Accept the new connection */
-    fd = flb_net_accept(ctx->server_fd);
-    if (fd == -1) {
-        flb_plg_error(ins, "could not accept new connection");
+    ctx = in_context;
+
+    connection = flb_downstream_conn_get(ctx->downstream);
+
+    if (connection == NULL) {
+        flb_plg_error(ctx->ins, "could not accept new connection");
+
         return -1;
     }
 
-    if (config->is_ingestion_active == FLB_FALSE) {
-        mk_event_closesocket(fd);
+    if (!config->is_ingestion_active) {
+        flb_downstream_conn_release(connection);
+
         return -1;
     }
 
-    flb_plg_trace(ins, "new TCP connection arrived FD=%i", fd);
-    conn = fw_conn_add(fd, ctx);
+    flb_plg_trace(ins, "new TCP connection arrived FD=%i", connection->fd);
+
+    conn = fw_conn_add(connection, ctx);
+
     if (!conn) {
         return -1;
     }
+
     return 0;
 }
 
@@ -116,8 +156,10 @@ static int in_fw_collect(struct flb_input_instance *ins,
 static int in_fw_init(struct flb_input_instance *ins,
                       struct flb_config *config, void *data)
 {
-    int ret;
+    unsigned short int       port;
+    int                      ret;
     struct flb_in_fw_config *ctx;
+
     (void) data;
 
     /* Allocate space for the configuration */
@@ -150,33 +192,55 @@ static int in_fw_init(struct flb_input_instance *ins,
 #endif
     }
     else {
-        /* Create TCP server */
-        ctx->server_fd = flb_net_server(ctx->tcp_port, ctx->listen);
-        if (ctx->server_fd > 0) {
+        port = (unsigned short int) strtoul(ctx->tcp_port, NULL, 10);
+
+        ctx->downstream = flb_downstream_create(FLB_DOWNSTREAM_TYPE_TCP,
+                                                ctx->ins->flags,
+                                                ctx->listen,
+                                                port,
+                                                ctx->ins->tls,
+                                                config,
+                                                &ctx->ins->net_setup);
+
+        if (ctx->downstream == NULL) {
+            flb_plg_error(ctx->ins,
+                          "could not initialize downstream on unix://%s. Aborting",
+                          ctx->listen);
+
+            fw_config_destroy(ctx);
+
+            return -1;
+        }
+
+        if (ctx->downstream != NULL) {
             flb_plg_info(ctx->ins, "listening on %s:%s",
                          ctx->listen, ctx->tcp_port);
         }
         else {
             flb_plg_error(ctx->ins, "could not bind address %s:%s. Aborting",
                           ctx->listen, ctx->tcp_port);
+
             fw_config_destroy(ctx);
+
             return -1;
         }
     }
-    flb_net_socket_nonblocking(ctx->server_fd);
+
+    flb_net_socket_nonblocking(ctx->downstream->server_fd);
 
     ctx->evl = config->evl;
 
     /* Collect upon data available on the standard input */
     ret = flb_input_set_collector_socket(ins,
                                          in_fw_collect,
-                                         ctx->server_fd,
+                                         ctx->downstream->server_fd,
                                          config);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not set server socket collector");
         fw_config_destroy(ctx);
         return -1;
     }
+
     ctx->coll_fd = ret;
 
     return 0;
@@ -195,9 +259,7 @@ static void in_fw_pause(void *data, struct flb_config *config)
      * refactored shortly.
      */
     if (config->is_ingestion_active == FLB_FALSE) {
-        mk_event_closesocket(ctx->server_fd);
         fw_conn_del_all(ctx);
-
     }
 }
 
@@ -227,11 +289,11 @@ static struct flb_config_map config_map[] = {
     0, FLB_TRUE, offsetof(struct flb_in_fw_config, unix_path),
     "The path to unix socket to receive a Forward message."
    },
-    {
-     FLB_CONFIG_MAP_STR, "unix_perm", (char *)NULL,
-     0, FLB_TRUE, offsetof(struct flb_in_fw_config, unix_perm_str),
-     "Set the permissions for the UNIX socket"
-    },
+   {
+    FLB_CONFIG_MAP_STR, "unix_perm", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_in_fw_config, unix_perm_str),
+    "Set the permissions for the UNIX socket"
+   },
    {
     FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", FLB_IN_FW_CHUNK_SIZE,
     0, FLB_TRUE, offsetof(struct flb_in_fw_config, buffer_chunk_size),
