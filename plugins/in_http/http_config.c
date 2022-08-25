@@ -66,6 +66,10 @@ int http_config_destroy(struct flb_http *ctx)
     /* release all connections */
     http_conn_release_all(ctx);
 
+    if (ctx->downstream != NULL) {
+        flb_downstream_destroy(ctx->downstream);
+    }
+
     if (ctx->server) {
         flb_free(ctx->server);
     }
