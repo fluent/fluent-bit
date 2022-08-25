@@ -426,8 +426,8 @@ int flb_tls_session_create(struct flb_tls *tls,
     session->ptr = tls->api->session_create(tls, connection->fd);
 
     if (session == NULL) {
-        flb_error("[tls] could not create TLS session for %s:%i",
-                  connection->remote_host, connection->remote_port);
+        flb_error("[tls] could not create TLS session for %s",
+                  flb_connection_get_remote_address(connection));
 
         return -1;
     }
@@ -467,20 +467,18 @@ int flb_tls_session_create(struct flb_tls *tls,
          * is under a coroutine context and it can yield.
          */
         if (co == NULL) {
-            flb_trace("[io_tls] server handshake connection #%i in process to %s:%i",
+            flb_trace("[io_tls] server handshake connection #%i in process to %s",
                       connection->fd,
-                      connection->remote_host,
-                      connection->remote_port);
+                      flb_connection_get_remote_address(connection));
 
             /* Connect timeout */
             if (connection->net->connect_timeout > 0 &&
                 connection->ts_connect_timeout > 0 &&
                 connection->ts_connect_timeout <= time(NULL)) {
-                flb_error("[io_tls] handshake connection #%i to %s:%i timed out after "
+                flb_error("[io_tls] handshake connection #%i to %s timed out after "
                           "%i seconds",
                           connection->fd,
-                          connection->remote_host,
-                          connection->remote_port,
+                          flb_connection_get_remote_address(connection),
                           connection->net->connect_timeout);
 
                 result = -1;
