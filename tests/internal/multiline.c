@@ -1287,6 +1287,90 @@ static void test_issue_4034()
     flb_config_exit(config);
 }
 
+static void test_issue_5504()
+{
+    uint64_t last_flush;
+    struct flb_config *config;
+    struct flb_ml *ml;
+    struct flb_ml_parser_ins *mlp_i;
+    struct mk_event_loop *evl;
+    struct flb_sched *sched;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_sched_timer *timer;
+    void (*cb)(struct flb_config *, void *);
+    int timeout = 500;
+
+#ifdef _WIN32
+    WSADATA wsa_data;
+    WSAStartup(0x0201, &wsa_data);
+#endif
+
+    /* Initialize environment */
+    config = flb_config_init();
+    ml = flb_ml_create(config, "5504-test");
+    TEST_CHECK(ml != NULL);
+    
+    /* Create the event loop */
+    evl = config->evl;
+    config->evl = mk_event_loop_create(32);
+    TEST_CHECK(config->evl != NULL);
+
+    /* Initialize the scheduler */
+    sched = config->sched;
+    config->sched = flb_sched_create(config, config->evl);
+    TEST_CHECK(config->sched != NULL);
+
+    /* Generate an instance of any multiline parser */
+    mlp_i = flb_ml_parser_instance_create(ml, "cri");
+    TEST_CHECK(mlp_i != NULL);
+
+    flb_ml_parser_instance_set(mlp_i, "key_content", "log");
+
+    /* Set the flush timeout */
+    ml->flush_ms = timeout;
+
+    /* Initialize the auto flush */
+    flb_ml_auto_flush_init(ml);
+
+    /* Store the initial last_flush time */
+    last_flush = ml->last_flush;
+
+    /* Find the cb_ml_flush_timer callback from the timers */
+    mk_list_foreach_safe(head, tmp, &((struct flb_sched *)config->sched)->timers) {
+        timer = mk_list_entry(head, struct flb_sched_timer, _head);
+        if (timer->type == FLB_SCHED_TIMER_CB_PERM) {
+            cb = timer->cb;
+        }
+    }
+    TEST_CHECK(cb != NULL);
+
+    /* Trigger the callback without delay */ 
+    cb(config, ml);
+    /* This should not update the last_flush since it is before the timeout */
+    TEST_CHECK(ml->last_flush == last_flush);
+
+    /* Sleep just enough time to pass the timeout */
+    flb_time_msleep(timeout + 1);
+
+    /* Retrigger the callback */
+    cb(config, ml);
+    /* Ensure this time the last_flush has been updated */
+    TEST_CHECK(ml->last_flush > last_flush);
+
+    /* Cleanup */
+    flb_sched_destroy(config->sched);
+    config->sched = sched;
+    mk_event_loop_destroy(config->evl);
+    config->evl = evl;
+    flb_ml_destroy(ml);
+    flb_config_exit(config);
+
+#ifdef _WIN32
+    WSACleanup();
+#endif
+}
+
 TEST_LIST = {
     /* Normal features tests */
     { "parser_docker",  test_parser_docker},
@@ -1302,5 +1386,6 @@ TEST_LIST = {
     { "issue_3817_1"  , test_issue_3817_1},
     { "issue_4034"    , test_issue_4034},
     { "issue_4949"    , test_issue_4949},
+    { "issue_5504"    , test_issue_5504},
     { 0 }
 };
