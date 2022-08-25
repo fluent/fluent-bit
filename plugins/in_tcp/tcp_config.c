@@ -124,6 +124,10 @@ struct flb_in_tcp_config *tcp_config_init(struct flb_input_instance *ins)
 
 int tcp_config_destroy(struct flb_in_tcp_config *ctx)
 {
+    if (ctx->downstream != NULL) {
+        flb_downstream_destroy(ctx->downstream);
+    }
+
     flb_sds_destroy(ctx->separator);
     flb_free(ctx->tcp_port);
     flb_free(ctx);
