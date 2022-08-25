@@ -113,6 +113,12 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
         ctx->buffer_max_size = ctx->buffer_chunk_size;
     }
 
+    tmp = flb_input_get_property("source_hostname_key", ins);
+    ctx->host_key = tmp ? flb_strdup(tmp) : NULL;
+
+    tmp = flb_input_get_property("source_address_key", ins);
+    ctx->addr_key = tmp ? flb_strdup(tmp) : NULL;
+
     /* Parser */
     if (ctx->parser_name) {
         ctx->parser = flb_parser_get(ctx->parser_name, config);
