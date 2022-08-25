@@ -38,13 +38,16 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
     struct flb_syslog *ctx;
 
     ctx = flb_calloc(1, sizeof(struct flb_syslog));
-    if (!ctx) {
+
+    if (ctx == NULL) {
         flb_errno();
+
         return NULL;
     }
+
     ctx->evl = config->evl;
     ctx->ins = ins;
-    ctx->buffer_data = NULL;
+
     mk_list_init(&ctx->connections);
 
     ret = flb_input_config_map_set(ins, (void *)ctx);
@@ -137,11 +140,8 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
 
 int syslog_conf_destroy(struct flb_syslog *ctx)
 {
-    if (ctx->buffer_data) {
-        flb_free(ctx->buffer_data);
-        ctx->buffer_data = NULL;
-    }
     syslog_server_destroy(ctx);
+
     flb_free(ctx);
 
     return 0;

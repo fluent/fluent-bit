@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_network.h>
+#include <fluent-bit/flb_downstream.h>
 
 #include "syslog.h"
 #include "syslog_conf.h"
@@ -30,16 +31,43 @@
 /* Callback invoked every time an event is triggered for a connection */
 int syslog_conn_event(void *data)
 {
+    struct flb_connection *connection;
+    struct syslog_conn    *conn;
+    struct flb_syslog     *ctx;
+
+    connection = (struct flb_connection *) data;
+
+    conn = connection->user_data;
+
+    ctx = conn->ctx;
+
+    if (ctx->dgram_mode_flag) {
+        return syslog_dgram_conn_event(data);
+    }
+
+    return syslog_stream_conn_event(data);
+}
+
+int syslog_stream_conn_event(void *data)
+{
     int ret;
     int bytes;
     int available;
     size_t size;
     char *tmp;
     struct mk_event *event;
-    struct syslog_conn *conn = data;
-    struct flb_syslog *ctx = conn->ctx;
+    struct syslog_conn *conn;
+    struct flb_syslog *ctx;
+    struct flb_connection *connection;
 
-    event = &conn->event;
+    connection = (struct flb_connection *) data;
+
+    conn = connection->user_data;
+
+    ctx = conn->ctx;
+
+    event = &connection->event;
+
     if (event->mask & MK_EVENT_READ) {
         available = (conn->buf_size - conn->buf_len) - 1;
         if (available < 1) {
@@ -65,8 +93,10 @@ int syslog_conn_event(void *data)
             available = (conn->buf_size - conn->buf_len) - 1;
         }
 
-        bytes = read(conn->fd,
-                     conn->buf_data + conn->buf_len, available);
+        bytes = flb_io_net_read(connection,
+                                (void *) &conn->buf_data[conn->buf_len],
+                                available);
+
         if (bytes > 0) {
             flb_plg_trace(ctx->ins, "read()=%i pre_len=%zu now_len=%zu",
                           bytes, conn->buf_len, conn->buf_len + bytes);
@@ -93,27 +123,60 @@ int syslog_conn_event(void *data)
     return 0;
 }
 
+int syslog_dgram_conn_event(void *data)
+{
+    struct flb_connection *connection;
+    int                    bytes;
+    struct syslog_conn    *conn;
+    struct flb_syslog     *ctx;
+
+    connection = (struct flb_connection *) data;
+
+    conn = connection->user_data;
+
+    ctx = conn->ctx;
+
+    bytes = flb_io_net_read(connection,
+                            (void *) &conn->buf_data[conn->buf_len],
+                            conn->buf_size - 1);
+
+    if (bytes > 0) {
+        conn->buf_data[bytes] = '\0';
+        conn->buf_len = bytes;
+
+        syslog_prot_process_udp(conn->buf_data, conn->buf_len, ctx);
+    }
+    else {
+        flb_errno();
+    }
+
+    conn->buf_len = 0;
+
+    return 0;
+}
+
 /* Create a new mqtt request instance */
-struct syslog_conn *syslog_conn_add(int fd, struct flb_syslog *ctx)
+struct syslog_conn *syslog_conn_add(struct flb_connection *connection,
+                                    struct flb_syslog *ctx)
 {
     int ret;
     struct syslog_conn *conn;
-    struct mk_event *event;
 
     conn = flb_malloc(sizeof(struct syslog_conn));
     if (!conn) {
         return NULL;
     }
 
+    conn->connection = connection;
+
     /* Set data for the event-loop */
-    event = &conn->event;
-    MK_EVENT_NEW(event);
-    event->fd           = fd;
-    event->type         = FLB_ENGINE_EV_CUSTOM;
-    event->handler      = syslog_conn_event;
+    MK_EVENT_NEW(&connection->event);
+
+    connection->user_data     = conn;
+    connection->event.type    = FLB_ENGINE_EV_CUSTOM;
+    connection->event.handler = syslog_conn_event;
 
     /* Connection info */
-    conn->fd      = fd;
     conn->ctx     = ctx;
     conn->ins     = ctx->ins;
     conn->buf_len = 0;
@@ -123,20 +186,30 @@ struct syslog_conn *syslog_conn_add(int fd, struct flb_syslog *ctx)
     conn->buf_data = flb_malloc(ctx->buffer_chunk_size);
     if (!conn->buf_data) {
         flb_errno();
-        close(fd);
+
         flb_free(conn);
+
         return NULL;
     }
     conn->buf_size = ctx->buffer_chunk_size;
 
-    /* Register instance into the event loop */
-    ret = mk_event_add(ctx->evl, fd, FLB_ENGINE_EV_CUSTOM, MK_EVENT_READ, conn);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "could not register new connection");
-        close(fd);
-        flb_free(conn->buf_data);
-        flb_free(conn);
-        return NULL;
+    /* Register instance into the event loop if we're in
+     * stream mode (UDP events are received through the collector)
+     */
+    if (!ctx->dgram_mode_flag) {
+        ret = mk_event_add(ctx->evl,
+                           connection->fd,
+                           FLB_ENGINE_EV_CUSTOM,
+                           MK_EVENT_READ,
+                           &connection->event);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "could not register new connection");
+
+            flb_free(conn->buf_data);
+            flb_free(conn);
+
+            return NULL;
+        }
     }
 
     mk_list_add(&conn->_head, &ctx->connections);
@@ -146,12 +219,14 @@ struct syslog_conn *syslog_conn_add(int fd, struct flb_syslog *ctx)
 
 int syslog_conn_del(struct syslog_conn *conn)
 {
-    /* Unregister the file descriptior from the event-loop */
-    mk_event_del(conn->ctx->evl, &conn->event);
+    /* The downstream unregisters the file descriptor from the event-loop
+     * so there's nothing to be done by the plugin
+     */
+    flb_downstream_conn_release(conn->connection);
 
     /* Release resources */
     mk_list_del(&conn->_head);
-    close(conn->fd);
+
     flb_free(conn->buf_data);
     flb_free(conn);
 
