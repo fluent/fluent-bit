@@ -28,9 +28,6 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_io.h>
 
-#ifdef FLB_HAVE_TLS
-#endif
-
 /*
  * Downstream creation FLAGS set by Fluent Bit sub-components
  * ========================================================
@@ -43,14 +40,23 @@
  * ---
  */
 
+#define FLB_DOWNSTREAM_TYPE_TCP         0
+#define FLB_DOWNSTREAM_TYPE_UDP         1
+#define FLB_DOWNSTREAM_TYPE_UNIX_STREAM 2
+#define FLB_DOWNSTREAM_TYPE_UNIX_DGRAM  3
+
+struct flb_connection;
+
 /* Downstream handler */
 struct flb_downstream {
     struct mk_event event;
     int flags;
     unsigned short int port;
     char *host;
+    int type;
 
     flb_sockfd_t server_fd;
+    struct flb_connection *dgram_connection;
 
     /* Networking setup for timeouts and network interfaces */
     struct flb_net_setup net;
@@ -79,14 +85,18 @@ static inline int flb_downstream_is_shutting_down(struct flb_downstream *downstr
 void flb_downstream_init();
 
 int flb_downstream_setup(struct flb_downstream *stream,
+                         int type, int flags,
+                         const char *host,
+                         unsigned short int port,
+                         struct flb_tls *tls,
                          struct flb_config *config,
-                         const char *host, unsigned short int port,
-                         int flags, struct flb_tls *tls,
                          struct flb_net_setup *net_setup);
 
-struct flb_downstream *flb_downstream_create(struct flb_config *config,
-                                             const char *host, unsigned short int port,
-                                             int flags, struct flb_tls *tls,
+struct flb_downstream *flb_downstream_create(int type, int flags,
+                                             const char *host,
+                                             unsigned short int port,
+                                             struct flb_tls *tls,
+                                             struct flb_config *config,
                                              struct flb_net_setup *net_setup);
 
 void flb_downstream_destroy(struct flb_downstream *downstream);
