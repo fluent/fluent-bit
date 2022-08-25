@@ -52,11 +52,12 @@ static int in_mqtt_init(struct flb_input_instance *in,
     /* Create downstream */
     port = (unsigned short int) strtoul(ctx->tcp_port, NULL, 10);
 
-    ctx->downstream = flb_downstream_create(config,
+    ctx->downstream = flb_downstream_create(FLB_DOWNSTREAM_TYPE_TCP,
+                                            in->flags,
                                             ctx->listen,
                                             port,
-                                            in->flags,
                                             in->tls,
+                                            config,
                                             &in->net_setup);
 
     if (ctx->downstream == NULL) {
@@ -132,8 +133,6 @@ static int in_mqtt_exit(void *data, struct flb_config *config)
     }
 
     mqtt_conn_destroy_all(ctx);
-
-    flb_downstream_destroy(ctx->downstream);
 
     mqtt_config_free(ctx);
 
