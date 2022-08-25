@@ -84,9 +84,11 @@ void flb_downstream_init()
 }
 
 int flb_downstream_setup(struct flb_downstream *stream,
+                         int type, int flags,
+                         const char *host,
+                         unsigned short int port,
+                         struct flb_tls *tls,
                          struct flb_config *config,
-                         const char *host, unsigned short int port,
-                         int flags, struct flb_tls *tls,
                          struct flb_net_setup *net_setup)
 {
     char port_string[8];
@@ -98,6 +100,7 @@ int flb_downstream_setup(struct flb_downstream *stream,
 
     stream->server_fd = FLB_INVALID_SOCKET;
     stream->config = config;
+    stream->type = type;
 
     /* Set default networking setup values */
     if (net_setup == NULL) {
@@ -119,10 +122,24 @@ int flb_downstream_setup(struct flb_downstream *stream,
     stream->flags = flags;
     stream->tls = tls;
 
-    /* Create TCP server */
-    stream->server_fd = flb_net_server(port_string, host);
+    if (type == FLB_DOWNSTREAM_TYPE_TCP) {
+        stream->server_fd = flb_net_server(port_string, host);
+    }
+    else if (type == FLB_DOWNSTREAM_TYPE_UDP) {
+        stream->server_fd = flb_net_server_udp(port_string, host);
+    }
+    else if (type == FLB_DOWNSTREAM_TYPE_UNIX_STREAM) {
+        stream->server_fd = flb_net_server_unix(host,
+                                                FLB_TRUE,
+                                                FLB_NETWORK_DEFAULT_BACKLOG_SIZE);
+    }
+    else if (type == FLB_DOWNSTREAM_TYPE_UNIX_DGRAM) {
+        stream->server_fd = flb_net_server_unix(host,
+                                                FLB_FALSE,
+                                                FLB_NETWORK_DEFAULT_BACKLOG_SIZE);
+    }
 
-    if (stream->server_fd > 0) {
+    if (stream->server_fd != -1) {
         flb_debug("[downstream] listening on %s:%s", host, port_string);
     }
     else {
@@ -132,19 +149,17 @@ int flb_downstream_setup(struct flb_downstream *stream,
         return -2;
     }
 
-    if (stream->flags & FLB_IO_ASYNC) {
-        flb_net_socket_nonblocking(stream->server_fd);
-    }
-
     mk_list_add(&stream->_head, &config->downstreams);
 
     return 0;
 }
 
 /* Creates a new downstream context */
-struct flb_downstream *flb_downstream_create(struct flb_config *config,
-                                             const char *host, unsigned short int port,
-                                             int flags, struct flb_tls *tls,
+struct flb_downstream *flb_downstream_create(int type, int flags,
+                                             const char *host,
+                                             unsigned short int port,
+                                             struct flb_tls *tls,
+                                             struct flb_config *config,
                                              struct flb_net_setup *net_setup)
 {
     struct flb_downstream *stream;
@@ -156,9 +171,11 @@ struct flb_downstream *flb_downstream_create(struct flb_config *config,
         flb_errno();
     }
     else {
-        result = flb_downstream_setup(stream, config,
-                                      host,  port,
-                                      flags, tls,
+        result = flb_downstream_setup(stream,
+                                      type, flags,
+                                      host, port,
+                                      tls,
+                                      config,
                                       net_setup);
 
         if (result != 0) {
@@ -185,8 +202,8 @@ static int prepare_destroy_conn(struct flb_connection *connection)
 
     stream = connection->downstream;
 
-    flb_trace("[downstream] destroy connection #%i to %s:%i",
-              connection->fd, connection->remote_host, connection->remote_port);
+    flb_trace("[downstream] destroy connection #%i to %s",
+              connection->fd, connection->user_friendly_remote_host);
 
     if (stream->flags & FLB_IO_ASYNC) {
         mk_event_del(connection->evl, &connection->event);
@@ -256,30 +273,38 @@ static int destroy_conn(struct flb_connection *connection)
 
     mk_list_del(&connection->_head);
 
-    flb_free(connection);
+    flb_connection_destroy(connection);
 
     return 0;
 }
 
 struct flb_connection *flb_downstream_conn_get(struct flb_downstream *stream)
 {
+    flb_sockfd_t           connection_fd;
     struct flb_connection *connection;
     int                    result;
 
-    connection = flb_calloc(1, sizeof(struct flb_connection));
+    if (stream->type == FLB_DOWNSTREAM_TYPE_UDP ||
+        stream->type == FLB_DOWNSTREAM_TYPE_UNIX_DGRAM ) {
+        if (stream->dgram_connection != NULL) {
+            return stream->dgram_connection;
+        }
 
-    if (connection == NULL) {
-        flb_errno();
-
-        return NULL;
+        connection_fd = stream->server_fd;
+    }
+    else {
+        connection_fd = FLB_INVALID_SOCKET;
     }
 
-    flb_connection_init(connection,
-                        FLB_INVALID_SOCKET,
-                        FLB_DOWNSTREAM_CONNECTION,
-                        (void *) stream,
-                        flb_engine_evl_get(),
-                        flb_coro_get());
+    connection = flb_connection_create(connection_fd,
+                                       FLB_DOWNSTREAM_CONNECTION,
+                                       (void *) stream,
+                                       flb_engine_evl_get(),
+                                       flb_coro_get());
+
+    if (connection == NULL) {
+        return NULL;
+    }
 
     connection->busy_flag = FLB_TRUE;
 
@@ -294,28 +319,38 @@ struct flb_connection *flb_downstream_conn_get(struct flb_downstream *stream)
         pthread_mutex_unlock(&stream->mutex_lists);
     }
 
-    flb_connection_reset_connection_timeout(connection);
-
-    result = flb_io_net_accept(connection, flb_coro_get());
-
-    if (result != 0) {
+    if (stream->type != FLB_DOWNSTREAM_TYPE_UDP &&
+        stream->type != FLB_DOWNSTREAM_TYPE_UNIX_DGRAM ) {
         flb_connection_reset_connection_timeout(connection);
 
-        flb_debug("[downstream] connection #%i failed",
-                  connection->fd);
+        result = flb_io_net_accept(connection, flb_coro_get());
 
-        prepare_destroy_conn_safe(connection);
+        if (result != 0) {
+            flb_connection_reset_connection_timeout(connection);
 
-        connection->busy_flag = FLB_FALSE;
+            flb_debug("[downstream] connection #%i failed",
+                      connection->fd);
 
-        return NULL;
+            prepare_destroy_conn_safe(connection);
+
+            connection->busy_flag = FLB_FALSE;
+
+            return NULL;
+        }
+
+        flb_connection_unset_connection_timeout(connection);
     }
-
-    flb_connection_unset_connection_timeout(connection);
 
     connection->busy_flag = FLB_FALSE;
 
     flb_connection_reset_io_timeout(connection);
+
+    if (stream->type == FLB_DOWNSTREAM_TYPE_UDP ||
+        stream->type == FLB_DOWNSTREAM_TYPE_UNIX_DGRAM) {
+        if (stream->dgram_connection == NULL) {
+            stream->dgram_connection = connection;
+        }
+    }
 
     return connection;
 }
@@ -337,6 +372,18 @@ void flb_downstream_destroy(struct flb_downstream *stream)
             connection = mk_list_entry(head, struct flb_connection, _head);
 
             destroy_conn(connection);
+        }
+
+        /* If the simulated UDP connection reference is set then
+         * it means that connection was already cleaned up by the
+         * preceding code which means server_fd holds a socket
+         * reference that has already been closed and we need to
+         * honor that.
+         */
+
+        if (stream->dgram_connection != NULL) {
+            stream->dgram_connection = NULL;
+            stream->server_fd = FLB_INVALID_SOCKET;
         }
 
         if (stream->host != NULL) {
@@ -364,6 +411,7 @@ int flb_downstream_conn_release(struct flb_connection *connection)
 
 int flb_downstream_conn_timeouts(struct mk_list *list)
 {
+    int                    elapsed_time;
     struct flb_connection *connection;
     const char            *reason;
     struct flb_downstream *stream;
@@ -378,6 +426,10 @@ int flb_downstream_conn_timeouts(struct mk_list *list)
     /* Iterate all downstream contexts */
     mk_list_foreach(head, list) {
         stream = mk_list_entry(head, struct flb_downstream, _head);
+
+        if (stream->type == FLB_DOWNSTREAM_TYPE_UDP) {
+            continue;
+        }
 
         if (stream->thread_safe) {
             pthread_mutex_lock(&stream->mutex_lists);
@@ -395,32 +447,32 @@ int flb_downstream_conn_timeouts(struct mk_list *list)
                 connection->ts_connect_timeout <= now) {
                 drop = FLB_TRUE;
                 reason = "connection timeout";
+                elapsed_time = connection->net->accept_timeout;
             }
             else if (connection->net->io_timeout > 0 &&
                      connection->ts_io_timeout > 0 &&
                      connection->ts_io_timeout <= now) {
                 drop = FLB_TRUE;
                 reason = "IO timeout";
+                elapsed_time = connection->net->io_timeout;
             }
 
             if (drop) {
                 if (!flb_downstream_is_shutting_down(stream)) {
                     if (connection->net->accept_timeout_log_error) {
-                        flb_error("[downstream] connection #%i from %s:%u timed "
+                        flb_error("[downstream] connection #%i from %s timed "
                                   "out after %i seconds (%s)",
                                   connection->fd,
-                                  connection->remote_host,
-                                  connection->remote_port,
-                                  connection->net->accept_timeout,
+                                  connection->user_friendly_remote_host,
+                                  elapsed_time,
                                   reason);
                     }
                     else {
-                        flb_debug("[downstream] connection #%i from %s:%u timed "
+                        flb_debug("[downstream] connection #%i from %s timed "
                                   "out after %i seconds (%s)",
                                   connection->fd,
-                                  connection->remote_host,
-                                  connection->remote_port,
-                                  connection->net->accept_timeout,
+                                  connection->user_friendly_remote_host,
+                                  elapsed_time,
                                   reason);
                     }
                 }
