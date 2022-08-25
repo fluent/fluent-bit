@@ -110,6 +110,8 @@ void flb_net_setup_init(struct flb_net_setup *net)
     net->connect_timeout = 10;
     net->io_timeout = 0; /* Infinite time */
     net->source_address = NULL;
+    net->backoff_init = 0;
+    net->backoff_max = 0;
 }
 
 int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const char *address)
