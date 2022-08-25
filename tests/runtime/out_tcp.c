@@ -337,11 +337,12 @@ void flb_test_tcp_with_tls()
         ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) out_buf, out_buf_size);
         TEST_CHECK(ret >= 0);
 
-        downstream = flb_downstream_create(ctx->flb->config,
+        downstream = flb_downstream_create(FLB_DOWNSTREAM_TYPE_TCP,
+                                           FLB_IO_TCP | FLB_IO_TLS,
                                            DEFAULT_HOST,
                                            port,
-                                           FLB_IO_TCP | FLB_IO_TLS,
                                            tls,
+                                           ctx->flb->config,
                                            NULL);
 
         TEST_CHECK(downstream != NULL);
