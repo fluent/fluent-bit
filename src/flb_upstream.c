@@ -499,7 +499,7 @@ static int destroy_conn(struct flb_connection *u_conn)
 
     mk_list_del(&u_conn->_head);
 
-    flb_free(u_conn);
+    flb_connection_destroy(u_conn);
 
     return 0;
 }
@@ -513,19 +513,14 @@ static struct flb_connection *create_conn(struct flb_upstream *u)
 
     coro = flb_coro_get();
 
-    conn = flb_calloc(1, sizeof(struct flb_connection));
-
-    if (!conn) {
-        flb_errno();
+    conn = flb_connection_create(FLB_INVALID_SOCKET,
+                                 FLB_UPSTREAM_CONNECTION,
+                                 (void *) u,
+                                 flb_engine_evl_get(),
+                                 flb_coro_get());
+    if (conn == NULL) {
         return NULL;
     }
-
-    flb_connection_init(conn,
-                        FLB_INVALID_SOCKET,
-                        FLB_UPSTREAM_CONNECTION,
-                        (void *) u,
-                        flb_engine_evl_get(),
-                        flb_coro_get());
 
     conn->busy_flag = FLB_TRUE;
 
@@ -812,6 +807,7 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
     struct flb_upstream *u;
     struct flb_connection *u_conn;
     struct flb_upstream_queue *uq;
+    int elapsed_time;
 
     now = time(NULL);
 
@@ -831,37 +827,37 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
             drop = FLB_FALSE;
 
             /* Connect timeouts */
-            if (u->net.connect_timeout > 0 &&
+            if (u_conn->net->connect_timeout > 0 &&
                 u_conn->ts_connect_timeout > 0 &&
                 u_conn->ts_connect_timeout <= now) {
                 drop = FLB_TRUE;
                 reason = "connection timeout";
+                elapsed_time = u_conn->net->connect_timeout;
             }
             else if (u_conn->net->io_timeout > 0 &&
                      u_conn->ts_io_timeout > 0 &&
                      u_conn->ts_io_timeout <= now) {
                 drop = FLB_TRUE;
                 reason = "IO timeout";
+                elapsed_time = u_conn->net->io_timeout;
             }
 
             if (drop) {
                 if (!flb_upstream_is_shutting_down(u)) {
                     if (u->net.connect_timeout_log_error) {
-                        flb_error("[upstream] connection #%i to %s:%i timed "
+                        flb_error("[upstream] connection #%i to %s timed "
                                   "out after %i seconds (%s)",
                                   u_conn->fd,
-                                  u_conn->remote_host,
-                                  u_conn->remote_port,
-                                  u_conn->net->connect_timeout,
+                                  flb_connection_get_remote_address(u_conn),
+                                  elapsed_time,
                                   reason);
                     }
                     else {
-                        flb_debug("[upstream] connection #%i to %s:%i timed "
+                        flb_debug("[upstream] connection #%i to %s timed "
                                   "out after %i seconds (%s)",
                                   u_conn->fd,
-                                  u_conn->remote_host,
-                                  u_conn->remote_port,
-                                  u_conn->net->connect_timeout,
+                                  flb_connection_get_remote_address(u_conn),
+                                  elapsed_time,
                                   reason);
                     }
                 }
