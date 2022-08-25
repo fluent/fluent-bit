@@ -193,6 +193,7 @@ static void flb_test_multiline_buffered_two_output_record()
                          "multiline.key_content", "log",
                          "multiline.parser", "go",
                          "buffer", "on",
+                         "flush_ms", "1500",
                          "debug_flush", "on",
                          NULL);
     TEST_CHECK(ret == 0);
@@ -236,7 +237,7 @@ static void flb_test_multiline_buffered_two_output_record()
     TEST_CHECK(bytes == len);
 
     /* check number of outputted records */
-    sleep(2);
+    sleep(3);
     TEST_CHECK(expected.actual_records == expected.expected_records);
     filter_test_destroy(ctx);
 }

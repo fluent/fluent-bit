@@ -748,7 +748,7 @@ void flb_test_in_tail_multiline_json_and_regex()
     ctx = flb_create();
 
     TEST_CHECK(flb_service_set(ctx, "Flush", "0.5",
-                                    "Grace", "1",
+                                    "Grace", "5",
                                     NULL) == 0);
 
     ret = flb_service_set(ctx,
