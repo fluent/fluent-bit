@@ -66,7 +66,6 @@
 int flb_io_net_accept(struct flb_connection *connection,
                        struct flb_coro *coro)
 {
-    int flags;
     int ret;
 
     if (connection->fd != FLB_INVALID_SOCKET) {
@@ -81,25 +80,6 @@ int flb_io_net_accept(struct flb_connection *connection,
 
     if (connection->fd == -1) {
         connection->fd = FLB_INVALID_SOCKET;
-
-        return -1;
-    }
-
-    /* Since flb_net_accept implicitly makes the client socket non blocking
-     * we have to restore it to blocking mode if FLB_IO_ASYNC is not specified
-     */
-    flags = flb_connection_get_flags(connection);
-
-    if (~flags & FLB_IO_ASYNC) {
-        flb_net_socket_blocking(connection->fd);
-    }
-
-    ret = flb_connection_get_remote_address(connection);
-
-    if (ret != 0) {
-        flb_debug("[io] connection #%i failed to "
-                  "get peer information",
-                  connection->fd);
 
         return -1;
     }
@@ -157,16 +137,6 @@ int flb_io_net_connect(struct flb_connection *connection,
         return -1;
     }
 
-    ret = flb_connection_get_remote_address(connection);
-
-    if (ret != 0) {
-        flb_debug("[io] connection #%i failed to "
-                  "get peer information",
-                  connection->fd);
-
-        return -1;
-    }
-
     if (connection->upstream->proxied_host) {
         ret = flb_http_client_proxy_connect(connection);
 
@@ -205,11 +175,13 @@ int flb_io_net_connect(struct flb_connection *connection,
     return 0;
 }
 
-static int fd_io_write(int fd, const void *data, size_t len, size_t *out_len);
+static int fd_io_write(int fd, struct sockaddr_storage *address,
+                       const void *data, size_t len, size_t *out_len);
 static int net_io_write(struct flb_connection *connection,
                         const void *data, size_t len, size_t *out_len)
 {
-    int ret;
+    struct sockaddr_storage *address;
+    int                      ret;
 
     if (connection->fd <= 0) {
         if (connection->type != FLB_UPSTREAM_CONNECTION) {
@@ -224,17 +196,34 @@ static int net_io_write(struct flb_connection *connection,
         }
     }
 
-    return fd_io_write(connection->fd, data, len, out_len);
+    address = NULL;
+
+    if (connection->type == FLB_DOWNSTREAM_CONNECTION) {
+        if (connection->downstream->type == FLB_DOWNSTREAM_TYPE_UDP ||
+            connection->downstream->type == FLB_DOWNSTREAM_TYPE_UNIX_DGRAM) {
+            address = &connection->raw_remote_host;
+        }
+    }
+
+    return fd_io_write(connection->fd, address, data, len, out_len);
 }
 
-static int fd_io_write(int fd, const void *data, size_t len, size_t *out_len)
+static int fd_io_write(int fd, struct sockaddr_storage *address,
+                       const void *data, size_t len, size_t *out_len)
 {
     int ret;
     int tries = 0;
     size_t total = 0;
 
     while (total < len) {
-        ret = send(fd, (char *) data + total, len - total, 0);
+        if (address != NULL) {
+            ret = sendto(fd, (char *) data + total, len - total, 0,
+                         (struct sockaddr *) address,
+                         flb_network_address_size(address));
+        }
+        else {
+            ret = send(fd, (char *) data + total, len - total, 0);
+        }
 
         if (ret == -1) {
             if (FLB_WOULDBLOCK()) {
@@ -366,10 +355,9 @@ retry:
                     /* Connection is broken, not much to do here */
                     strerror_r(error, so_error_buf, sizeof(so_error_buf) - 1);
 
-                    flb_error("[io fd=%i] error sending data to: %s:%i (%s)",
+                    flb_error("[io fd=%i] error sending data to: %s (%s)",
                               connection->fd,
-                              connection->remote_host,
-                              connection->remote_port,
+                              flb_connection_get_remote_address(connection),
                               so_error_buf);
 
                     *out_len = total;
@@ -442,24 +430,33 @@ retry:
     return bytes;
 }
 
-static ssize_t fd_io_read(int fd, void *buf, size_t len);
+static ssize_t fd_io_read(int fd, struct sockaddr_storage *address,
+                          void *buf, size_t len);
 static ssize_t net_io_read(struct flb_connection *connection,
                            void *buf, size_t len)
 {
-    int ret;
+    struct sockaddr_storage *address;
+    int                      ret;
 
-    ret = fd_io_read(connection->fd, buf, len);
+    address = NULL;
+
+    if (connection->type == FLB_DOWNSTREAM_CONNECTION) {
+        if (connection->downstream->type == FLB_DOWNSTREAM_TYPE_UDP ||
+            connection->downstream->type == FLB_DOWNSTREAM_TYPE_UNIX_DGRAM) {
+            address = &connection->raw_remote_host;
+        }
+    }
+
+    ret = fd_io_read(connection->fd, address, buf, len);
 
     if (ret == -1) {
         ret = FLB_WOULDBLOCK();
         if (ret) {
             /* timeout caused error */
-            flb_warn("[net] sync io_read #%i timeout after %i seconds from: "
-                    "%s:%i",
-                    connection->fd,
-                    connection->net->io_timeout,
-                    connection->remote_host,
-                    connection->remote_port);
+            flb_warn("[net] sync io_read #%i timeout after %i seconds from: %s",
+                     connection->fd,
+                     connection->net->io_timeout,
+                     flb_connection_get_remote_address(connection));
         }
 
         return -1;
@@ -468,11 +465,21 @@ static ssize_t net_io_read(struct flb_connection *connection,
     return ret;
 }
 
-static ssize_t fd_io_read(int fd, void *buf, size_t len)
+static ssize_t fd_io_read(int fd, struct sockaddr_storage *address,
+                          void *buf, size_t len)
 {
-    int ret;
+    socklen_t address_size;
+    int       ret;
 
-    ret = recv(fd, buf, len, 0);
+    if (address != NULL) {
+        address_size = sizeof(struct sockaddr_storage);
+        ret = recvfrom(fd, buf, len, 0,
+                       (struct sockaddr *) address,
+                       &address_size);
+    }
+    else {
+        ret = recv(fd, buf, len, 0);
+    }
 
     if (ret == -1) {
         return -1;
@@ -532,7 +539,7 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_coro *co,
 int flb_io_fd_write(int fd, const void *data, size_t len, size_t *out_len)
 {
     /* TODO: support async mode */
-    return fd_io_write(fd, data, len, out_len);
+    return fd_io_write(fd, NULL, data, len, out_len);
 }
 
 /* Write data to an upstream connection/server */
@@ -568,13 +575,6 @@ int flb_io_net_write(struct flb_connection *connection, const void *data,
     }
 #endif
 
-    if (ret == -1 && connection->fd > 0) {
-        flb_socket_close(connection->fd);
-
-        connection->fd = -1;
-        connection->event.fd = -1;
-    }
-
     if (ret > 0) {
         flb_connection_reset_io_timeout(connection);
     }
@@ -588,7 +588,7 @@ int flb_io_net_write(struct flb_connection *connection, const void *data,
 ssize_t flb_io_fd_read(int fd, void *buf, size_t len)
 {
     /* TODO: support async mode */
-    return fd_io_read(fd, buf, len);
+    return fd_io_read(fd, NULL, buf, len);
 }
 
 ssize_t flb_io_net_read(struct flb_connection *connection, void *buf, size_t len)
