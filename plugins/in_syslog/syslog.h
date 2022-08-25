@@ -32,6 +32,8 @@
 /* 32KB chunk size */
 #define FLB_SYSLOG_CHUNK   "32768"
 
+struct syslog_conn;
+
 /* Context / Config*/
 struct flb_syslog {
     /* Listening mode: unix udp, unix tcp or normal tcp */
@@ -49,9 +51,9 @@ struct flb_syslog {
     unsigned int unix_perm;
 
     /* UDP buffer, data length and buffer size */
-    char *buffer_data;
-    size_t buffer_len;
-    size_t buffer_size;
+        // char *buffer_data;
+        // size_t buffer_len;
+        // size_t buffer_size;
 
     /* Buffers setup */
     size_t buffer_max_size;
@@ -60,6 +62,11 @@ struct flb_syslog {
     /* Configuration */
     flb_sds_t parser_name;
     struct flb_parser *parser;
+
+    int dgram_mode_flag;
+    struct mk_event *collector_event;
+    struct flb_downstream *downstream;
+    struct syslog_conn *dummy_conn;
 
     /* List for connections and event loop */
     struct mk_list connections;
