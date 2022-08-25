@@ -88,11 +88,12 @@ static int in_opentelemetry_init(struct flb_input_instance *ins,
 
     port = (unsigned short int) strtoul(ctx->tcp_port, NULL, 10);
 
-    ctx->downstream = flb_downstream_create(config,
+    ctx->downstream = flb_downstream_create(FLB_DOWNSTREAM_TYPE_TCP,
+                                            ins->flags,
                                             ctx->listen,
                                             port,
-                                            ins->flags,
                                             ins->tls,
+                                            config,
                                             &ins->net_setup);
 
     if (ctx->downstream == NULL) {
@@ -140,8 +141,6 @@ static int in_opentelemetry_exit(void *data, struct flb_config *config)
     ctx = data;
 
     if (ctx != NULL) {
-        flb_downstream_destroy(ctx->downstream);
-
         opentelemetry_config_destroy(ctx);
     }
 
