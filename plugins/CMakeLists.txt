@@ -282,6 +282,7 @@ REGISTER_FILTER_PLUGIN("filter_type_converter")
 
 if(FLB_REGEX)
   REGISTER_FILTER_PLUGIN("filter_kubernetes")
+  REGISTER_FILTER_PLUGIN("filter_go")
   REGISTER_FILTER_PLUGIN("filter_modify")
   REGISTER_FILTER_PLUGIN("filter_multiline")
   REGISTER_FILTER_PLUGIN("filter_nest")
