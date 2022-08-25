@@ -594,6 +594,8 @@ int flb_input_collector_resume(int coll_id, struct flb_input_instance *ins);
 int flb_input_collector_delete(int coll_id, struct flb_input_instance *ins);
 int flb_input_collector_destroy(struct flb_input_collector *coll);
 int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config);
+struct mk_event *flb_input_collector_get_event(int coll_id,
+                                               struct flb_input_instance *ins);
 int flb_input_set_collector_time(struct flb_input_instance *ins,
                                  int (*cb_collect) (struct flb_input_instance *,
                                                     struct flb_config *, void *),
