@@ -143,11 +143,11 @@ static int in_unix_socket_init(struct flb_input_instance *in,
         return -1;
     }
 
-    mode = FLB_DOWNSTREAM_TYPE_UNIX_STREAM;
+    mode = FLB_TRANSPORT_UNIX_STREAM;
 
     if (ctx->socket_mode != NULL &&
         strcasecmp(ctx->socket_mode, "DGRAM") == 0) {
-        mode = FLB_DOWNSTREAM_TYPE_UNIX_DGRAM;
+        mode = FLB_TRANSPORT_UNIX_DGRAM;
         ctx->dgram_mode_flag = FLB_TRUE;
         tls = NULL;
     }
