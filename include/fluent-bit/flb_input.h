@@ -646,7 +646,7 @@ int flb_input_log_check(struct flb_input_instance *ins, int l);
 
 struct mk_event_loop *flb_input_event_loop_get(struct flb_input_instance *ins);
 int flb_input_upstream_set(struct flb_upstream *u, struct flb_input_instance *ins);
-int flb_input_downstream_set(struct flb_downstream *stream,
+int flb_input_downstream_set(struct flb_stream *stream,
                              struct flb_input_instance *ins);
 
 #endif
