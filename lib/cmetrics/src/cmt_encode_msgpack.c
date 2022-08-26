@@ -169,8 +169,8 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
     struct mk_list       *head;
     struct cmt_map_label *label;
     size_t                index;
-    struct cmt_summary   *summary;
-    struct cmt_histogram *histogram;
+    struct cmt_summary   *summary = NULL;
+    struct cmt_histogram *histogram = NULL;
     ptrdiff_t             label_index;
     struct cmt_label     *static_label;
     size_t                meta_field_count;

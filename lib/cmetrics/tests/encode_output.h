@@ -17,19 +17,12 @@
  *  limitations under the License.
  */
 
-#ifndef CMT_TESTS_H
-#define CMT_TESTS_H
+#ifndef CMT_TESTS_ENCODE_OUTPUT_H
+#define CMT_TESTS_ENCODE_OUTPUT_H
 
-#include "lib/acutest/acutest.h"
+#include <cmetrics/cmetrics.h>
 
-#define MSGPACK_STABILITY_TEST_ITERATION_COUNT   1000
-#define MSGPACK_PARTIAL_PROCESSING_ELEMENT_COUNT 20
-
-#include "tests/cmt_tests_config.h"
-#include "encode_output.h"
-
-#include <cmetrics/cmt_sds.h>
-
-cmt_sds_t read_file(const char *path);
+int cmt_test_encode_all(struct cmt *cmt);
 
 #endif
+

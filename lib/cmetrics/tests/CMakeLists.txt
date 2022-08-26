@@ -35,6 +35,7 @@ foreach(source_file ${UNIT_TESTS_FILES})
     ${source_file_we}
     ${source_file}
     util.c
+    encode_output.c
     )
 
   target_link_libraries(${source_file_we} cmetrics-static)

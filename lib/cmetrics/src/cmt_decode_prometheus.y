@@ -40,7 +40,7 @@ start:
   | START_LABELS labels
   | START_SAMPLES samples
   | metrics {
-    if (finish_metric(context)) {
+    if (finish_metric(context, true)) {
         YYABORT;
     }
   }
@@ -54,6 +54,7 @@ metrics:
 metric:
     header samples
   | samples
+  | header
 ;
 
 header:
