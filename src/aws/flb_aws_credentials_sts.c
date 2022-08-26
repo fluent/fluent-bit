@@ -200,7 +200,7 @@ void sync_fn_sts(struct flb_aws_provider *provider) {
 
     flb_debug("[aws_credentials] Sync called on the STS provider");
     /* Remove async flag */
-    implementation->sts_client->upstream->flags &= ~(FLB_IO_ASYNC);
+    flb_stream_disable_async_mode(&implementation->sts_client->upstream->base);
 
     /* we also need to call sync on the base_provider */
     base_provider->provider_vtable->sync(base_provider);
@@ -212,7 +212,7 @@ void async_fn_sts(struct flb_aws_provider *provider) {
 
     flb_debug("[aws_credentials] Async called on the STS provider");
     /* Add async flag */
-    implementation->sts_client->upstream->flags |= FLB_IO_ASYNC;
+    flb_stream_enable_async_mode(&implementation->sts_client->upstream->base);
 
     /* we also need to call async on the base_provider */
     base_provider->provider_vtable->async(base_provider);
@@ -342,7 +342,7 @@ struct flb_aws_provider *flb_sts_provider_create(struct flb_config *config,
         goto error;
     }
 
-    upstream->net.connect_timeout = FLB_AWS_CREDENTIAL_NET_TIMEOUT;
+    upstream->base.net.connect_timeout = FLB_AWS_CREDENTIAL_NET_TIMEOUT;
 
     implementation->sts_client->upstream = upstream;
     implementation->sts_client->host = implementation->endpoint;
@@ -491,14 +491,14 @@ void sync_fn_eks(struct flb_aws_provider *provider) {
     struct flb_aws_provider_eks *implementation = provider->implementation;
     flb_debug("[aws_credentials] Sync called on the EKS provider");
     /* remove async flag */
-    implementation->sts_client->upstream->flags &= ~(FLB_IO_ASYNC);
+    flb_stream_disable_async_mode(&implementation->sts_client->upstream->base);
 }
 
 void async_fn_eks(struct flb_aws_provider *provider) {
     struct flb_aws_provider_eks *implementation = provider->implementation;
     flb_debug("[aws_credentials] Async called on the EKS provider");
     /* add async flag */
-    implementation->sts_client->upstream->flags |= FLB_IO_ASYNC;
+    flb_stream_enable_async_mode(&implementation->sts_client->upstream->base);
 }
 
 void upstream_set_fn_eks(struct flb_aws_provider *provider,
@@ -637,7 +637,7 @@ struct flb_aws_provider *flb_eks_provider_create(struct flb_config *config,
         goto error;
     }
 
-    upstream->net.connect_timeout = FLB_AWS_CREDENTIAL_NET_TIMEOUT;
+    upstream->base.net.connect_timeout = FLB_AWS_CREDENTIAL_NET_TIMEOUT;
 
     implementation->sts_client->upstream = upstream;
     implementation->sts_client->host = implementation->endpoint;
