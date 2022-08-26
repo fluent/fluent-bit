@@ -322,9 +322,9 @@ void flb_test_tcp_with_tls()
 
     TEST_CHECK(upstream != NULL);
 
-    upstream->flags &= ~FLB_IO_ASYNC;
+    flb_stream_disable_async_mode(&upstream->base);
 
-    upstream->net.io_timeout = DEFAULT_IO_TIMEOUT;
+    upstream->base.net.io_timeout = DEFAULT_IO_TIMEOUT;
 
     client_connection = flb_upstream_conn_get(upstream);
 
