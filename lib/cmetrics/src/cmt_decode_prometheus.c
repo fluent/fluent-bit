@@ -17,8 +17,6 @@
  *  limitations under the License.
  */
 
-#include "cmetrics/cmt_histogram.h"
-#include "cmetrics/cmt_summary.h"
 #include <ctype.h>
 #include <errno.h>
 #include <math.h>
@@ -28,6 +26,8 @@
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_untyped.h>
+#include <cmetrics/cmt_histogram.h>
+#include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_sds.h>
 #include <cmetrics/cmt_decode_prometheus.h>
@@ -37,7 +37,8 @@
 #include <stdio.h>
 #include <string.h>
 
-static void reset_context(struct cmt_decode_prometheus_context *context)
+static void reset_context(struct cmt_decode_prometheus_context *context,
+                          bool reset_summary)
 {
     int i;
     struct cmt_decode_prometheus_context_sample *sample;
@@ -58,8 +59,8 @@ static void reset_context(struct cmt_decode_prometheus_context *context)
 
     if (context->metric.ns) {
         if (strcmp(context->metric.ns, "")) {
-            // when namespace is empty, "name" contains a pointer to the
-            // allocated string
+            /* when namespace is empty, "name" contains a pointer to the
+             * allocated string */
             free(context->metric.ns);
         }
         else {
@@ -69,6 +70,9 @@ static void reset_context(struct cmt_decode_prometheus_context *context)
 
     cmt_sds_destroy(context->strbuf);
     context->strbuf = NULL;
+    if (reset_summary) {
+        context->current.summary = NULL;
+    }
     cmt_sds_destroy(context->metric.name_orig);
     cmt_sds_destroy(context->metric.docstring);
     memset(&context->metric,
@@ -122,7 +126,7 @@ int cmt_decode_prometheus_create(
         if (context.errcode) {
             result = context.errcode;
         }
-        reset_context(&context);
+        reset_context(&context, true);
     }
 
     cmt_decode_prometheus__delete_buffer(buf, scanner);
@@ -154,7 +158,7 @@ static int split_metric_name(struct cmt_decode_prometheus_context *context,
         cmt_sds_t metric_name, char **ns,
         char **subsystem, char **name)
 {
-    // split the name
+    /* split the name */
     *ns = strdup(metric_name);
     if (!*ns) {
         return report_error(context,
@@ -167,7 +171,7 @@ static int split_metric_name(struct cmt_decode_prometheus_context *context,
         *ns = "";
     }
     else {
-        **subsystem = 0;  // split
+        **subsystem = 0;  /* split */
         (*subsystem)++;
         *name = strchr(*subsystem, '_');
         if (!(*name)) {
@@ -182,12 +186,13 @@ static int split_metric_name(struct cmt_decode_prometheus_context *context,
     return 0;
 }
 
-// Use this helper function to return a stub value for docstring when it is not
-// available. This is necessary for now because the metric constructors require
-// a docstring, even though it is not required by prometheus spec.
+/* Use this helper function to return a stub value for docstring when it is not
+ * available. This is necessary for now because the metric constructors require
+ * a docstring, even though it is not required by prometheus spec. */
 static char *get_docstring(struct cmt_decode_prometheus_context *context)
 {
-    return context->metric.docstring ? context->metric.docstring : "(no information)";
+    return context->metric.docstring && strlen(context->metric.docstring) ?
+        context->metric.docstring : " ";
 }
 
 static int parse_uint64(const char *in, uint64_t *out)
@@ -201,8 +206,8 @@ static int parse_uint64(const char *in, uint64_t *out)
         return -1;
     }
 
-    // Even though prometheus text format supports negative numbers, cmetrics
-    // doesn't, so we truncate to 0
+    /* Even though prometheus text format supports negative numbers, cmetrics
+     * doesn't, so we truncate to 0 */
     if (val < 0) {
         val = 0;
     }
@@ -266,7 +271,7 @@ static int parse_value_timestamp(
     }
 
     if (!strlen(sample->value2)) {
-        // No timestamp was specified, use default value
+        /* No timestamp was specified, use default value */
         *timestamp = context->opts.default_timestamp;
         return 0;
     }
@@ -277,8 +282,8 @@ static int parse_value_timestamp(
                 "timestamp", sample->value2);
     }
 
-    // prometheus text format timestamps are in milliseconds, while cmetrics is in
-    // nanoseconds, so multiply by 10e5
+    /* prometheus text format timestamps are in milliseconds, while cmetrics is in
+     * nanoseconds, so multiply by 10e5 */
     *timestamp = *timestamp * 10e5;
 
     return 0;
@@ -444,10 +449,10 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
     int label_i;
     uint64_t timestamp;
 
-    // bucket_count = sample count - 3:
-    // - "Inf" bucket
-    // - sum
-    // - count
+    /* bucket_count = sample count - 3:
+     * - "Inf" bucket
+     * - sum
+     * - count */
     bucket_count = mk_list_size(&context->metric.samples) - 3;
     timestamp = 0;
 
@@ -499,7 +504,7 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
         switch (sample->type) {
             case CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_BUCKET:
                 if (bucket_index == bucket_count) {
-                    // probably last bucket, which has "Inf"
+                    /* probably last bucket, which has "Inf" */
                     break;
                 }
                 if (parse_double(sample->label_values[le_label_index],
@@ -580,7 +585,7 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
     }
 
     if (!timestamp) {
-        // No timestamp was specified, use default value
+        /* No timestamp was specified, use default value */
         timestamp = context->opts.default_timestamp;
     }
 
@@ -592,20 +597,25 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
         goto end;
     }
 
-    h = cmt_histogram_create(context->cmt,
-            context->metric.ns,
-            context->metric.subsystem,
-            context->metric.name,
-            get_docstring(context),
-            cmt_buckets,
-            label_i,
-            label_i ? labels_without_le : NULL);
-
+    h = context->current.histogram;
     if (!h) {
-        ret = report_error(context,
-                CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
-                "cmt_histogram_create failed");
-        goto end;
+        h = cmt_histogram_create(context->cmt,
+                                 context->metric.ns,
+                                 context->metric.subsystem,
+                                 context->metric.name,
+                                 get_docstring(context),
+                                 cmt_buckets,
+                                 label_i,
+                                 label_i ? labels_without_le : NULL);
+
+        if (!h) {
+            ret = report_error(context,
+                    CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
+                    "cmt_histogram_create failed");
+            goto end;
+        }
+
+        context->current.histogram = h;
     }
 
     if (cmt_histogram_set_default(h, 0, bucket_defaults, sum, count,
@@ -643,6 +653,8 @@ static int add_metric_summary(struct cmt_decode_prometheus_context *context)
     double *quantiles = NULL;
     double *quantile_defaults = NULL;
     double sum;
+    double count_dbl;
+    size_t label_count;
     uint64_t count;
     struct mk_list *head;
     struct mk_list *tmp;
@@ -654,9 +666,9 @@ static int add_metric_summary(struct cmt_decode_prometheus_context *context)
     int label_i;
     uint64_t timestamp;
 
-    // quantile_count = sample count - 2:
-    // - sum
-    // - count
+    /* quantile_count = sample count - 2:
+     * - sum
+     * - count */
     quantile_count = mk_list_size(&context->metric.samples) - 2;
     timestamp = 0;
 
@@ -675,14 +687,22 @@ static int add_metric_summary(struct cmt_decode_prometheus_context *context)
         goto end;
     }
 
-    labels_without_quantile = calloc(context->metric.label_count - 1, sizeof(*labels_without_quantile));
+    label_count = 0;
+    for (i = 0; i < context->metric.label_count; i++) {
+        if (strcmp(context->metric.labels[i], "quantile")) {
+            /* quantile is not a label */
+            label_count++;
+        }
+    }
+
+    labels_without_quantile = calloc(label_count, sizeof(*labels_without_quantile));
     if (!labels_without_quantile) {
         ret = report_error(context,
                 CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
                 "failed to allocate labels_without_quantile");
         goto end;
     }
-    values_without_quantile = calloc(context->metric.label_count - 1, sizeof(*labels_without_quantile));
+    values_without_quantile = calloc(label_count, sizeof(*labels_without_quantile));
     if (!values_without_quantile) {
         ret = report_error(context,
                 CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
@@ -751,12 +771,20 @@ static int add_metric_summary(struct cmt_decode_prometheus_context *context)
                 }
 
                 break;
+
             case CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_COUNT:
                 if (parse_uint64(sample->value1, &count)) {
-                    ret = report_error(context,
-                            CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
-                            "failed to parse summary count");
-                    goto end;
+                    /* Count is supposed to be integer, but apparently
+                     * some tools can generate count in a floating format.
+                     * Try to parse as a double and then cast to uint64_t */
+                    if (parse_double(sample->value1, &count_dbl) || count_dbl < 0) {
+                        ret = report_error(context,
+                                CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
+                                "failed to parse count");
+                        goto end;
+                    } else {
+                        count = (uint64_t)count_dbl;
+                    }
                 }
 
                 if (!timestamp) {
@@ -772,25 +800,30 @@ static int add_metric_summary(struct cmt_decode_prometheus_context *context)
     }
 
     if (!timestamp) {
-        // No timestamp was specified, use default value
+        /* No timestamp was specified, use default value */
         timestamp = context->opts.default_timestamp;
     }
 
-    s = cmt_summary_create(context->cmt,
-            context->metric.ns,
-            context->metric.subsystem,
-            context->metric.name,
-            get_docstring(context),
-            quantile_count,
-            quantiles,
-            label_i,
-            label_i ? labels_without_quantile : NULL);
-
+    s = context->current.summary;
     if (!s) {
-        ret = report_error(context,
-                CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
-                "cmt_summary_create failed");
-        goto end;
+        s = cmt_summary_create(context->cmt,
+                               context->metric.ns,
+                               context->metric.subsystem,
+                               context->metric.name,
+                               get_docstring(context),
+                               quantile_count,
+                               quantiles,
+                               label_i,
+                               label_i ? labels_without_quantile : NULL);
+
+        if (!s) {
+            ret = report_error(context,
+                    CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
+                    "cmt_summary_create failed");
+            goto end;
+        }
+
+        context->current.summary = s;
     }
 
     if (cmt_summary_set_default(s, timestamp, quantile_defaults, sum, count,
@@ -819,9 +852,14 @@ end:
     return ret;
 }
 
-static int finish_metric(struct cmt_decode_prometheus_context *context)
+static int finish_metric(struct cmt_decode_prometheus_context *context,
+                         bool reset_summary)
 {
-    int rv;
+    int rv = 0;
+
+    if (mk_list_is_empty(&context->metric.samples) == 0) {
+        goto end;
+    }
 
     switch (context->metric.type) {
         case COUNTER:
@@ -841,50 +879,122 @@ static int finish_metric(struct cmt_decode_prometheus_context *context)
             break;
     }
 
-    reset_context(context);
-
+end:
+    reset_context(context, reset_summary);
     return rv;
+}
+
+/* special case for summary */
+static int finish_duplicate_histogram_summary_sum_count(
+        struct cmt_decode_prometheus_context *context,
+        cmt_sds_t metric_name,
+        int type)
+{
+    int rv;
+    int current_metric_type;
+    cmt_sds_t current_metric_docstring;
+
+    current_metric_type = context->metric.type;
+    current_metric_docstring = cmt_sds_create(context->metric.docstring);
+
+    rv = finish_metric(context, false);
+    if (rv) {
+        cmt_sds_destroy(current_metric_docstring);
+        return rv;
+    }
+
+    if (type == CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_COUNT) {
+        metric_name[cmt_sds_len(metric_name) - 6] = 0;
+    } else {
+        metric_name[cmt_sds_len(metric_name) - 4] = 0;
+    }
+
+    context->metric.type = current_metric_type;
+    context->metric.docstring = current_metric_docstring;
+    context->metric.current_sample_type = type;
+
+    return CMT_DECODE_PROMETHEUS_DUPLICATE_SUM_COUNT;
 }
 
 static int parse_histogram_summary_name(
         struct cmt_decode_prometheus_context *context,
         cmt_sds_t metric_name)
 {
+    bool sum_found;
+    bool count_found;
+    struct mk_list *head;
+    struct mk_list *tmp;
     size_t current_name_len;
     size_t parsed_name_len;
+    struct cmt_decode_prometheus_context_sample *sample;
 
     current_name_len = strlen(metric_name);
     parsed_name_len = strlen(context->metric.name_orig);
     if (current_name_len < parsed_name_len) {
-        // current name length cannot be less than the length already parsed. That means
-        // another metric has started
-        return finish_metric(context);
+        /* current name length cannot be less than the length already parsed. That means
+         * another metric has started */
+        return finish_metric(context, true);
     }
 
     if (strncmp(context->metric.name_orig, metric_name, parsed_name_len)) {
-        // the name prefix must be the same or we are starting a new metric
-        return finish_metric(context);
+        /* the name prefix must be the same or we are starting a new metric */
+        return finish_metric(context, true);
     }
     else if (parsed_name_len == current_name_len) {
-        // parsing HELP after TYPE
+        /* parsing HELP after TYPE */
         return 0;
     }
 
-    // invalid histogram/summary suffix, treat it as a different metric
+    sum_found = false;
+    count_found = false;
+
+    mk_list_foreach_safe(head, tmp, &context->metric.samples) {
+        sample = mk_list_entry(head, struct cmt_decode_prometheus_context_sample, _head);
+
+        switch (sample->type) {
+            case CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_SUM:
+                sum_found = true;
+                break;
+            case CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_COUNT:
+                count_found = true;
+                break;
+            default:
+                break;
+        }
+    }
+
+    /* invalid histogram/summary suffix, treat it as a different metric */
     if (!strcmp(metric_name + parsed_name_len, "_bucket")) {
         context->metric.current_sample_type = CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_BUCKET;
     }
     else if (!strcmp(metric_name + parsed_name_len, "_sum")) {
+        if (sum_found) {
+            /* already found a `_sum` for this metric, so this must necessarily be a new
+             * one */
+            return finish_duplicate_histogram_summary_sum_count(
+                    context,
+                    metric_name,
+                    CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_SUM);
+        }
         context->metric.current_sample_type = CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_SUM;
     }
     else if (!strcmp(metric_name + parsed_name_len, "_count")) {
+        if (count_found) {
+            /* already found a `_count` for this metric, so this must necessarily be a new
+             * one */
+            return finish_duplicate_histogram_summary_sum_count(
+                    context,
+                    metric_name,
+                    CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_COUNT);
+        }
         context->metric.current_sample_type = CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_COUNT;
-    } else {
-        // invalid histogram/summary suffix, treat it as a different metric
-        return finish_metric(context);
+    }
+    else {
+        /* invalid histogram/summary suffix, treat it as a different metric */
+        return finish_metric(context, true);
     }
 
-    // still in the same metric
+    /* still in the same metric */
     return 0;
 }
 
@@ -900,24 +1010,24 @@ static int parse_metric_name(
                     context->metric.type == SUMMARY) {
                 ret = parse_histogram_summary_name(context, metric_name);
                 if (!ret) {
-                    // bucket/sum/count parsed
+                    /* bucket/sum/count parsed */
                     cmt_sds_destroy(metric_name);
                     return ret;
                 }
             }
             else {
-                // new metric name means the current metric is finished
-                ret = finish_metric(context);
+                /* new metric name means the current metric is finished */
+                ret = finish_metric(context, true);
             }
         }
         else {
-            // same metric with name already allocated, destroy and return
+            /* same metric with name already allocated, destroy and return */
             cmt_sds_destroy(metric_name);
             return ret;
         }
     }
 
-    if (!ret) {
+    if (!ret || ret == CMT_DECODE_PROMETHEUS_DUPLICATE_SUM_COUNT) {
         context->metric.name_orig = metric_name;
         ret = split_metric_name(context, metric_name,
                 &(context->metric.ns),
@@ -946,17 +1056,17 @@ static int parse_label(
                 "maximum number of labels exceeded");
     }
 
-    // check if the label is already registered
+    /* check if the label is already registered */
     for (i = 0; i < context->metric.label_count; i++) {
         if (!strcmp(name, context->metric.labels[i])) {
-            // found, free the name memory and use the existing one
+            /* found, free the name memory and use the existing one */
             cmt_sds_destroy(name);
             name = context->metric.labels[i];
             break;
         }
     }
     if (i == context->metric.label_count) {
-        // didn't found the label, add it now
+        /* didn't found the label, add it now */
         context->metric.labels[i] = name;
         context->metric.label_count++;
     }
@@ -998,7 +1108,7 @@ static int parse_sample(
     return 0;
 }
 
-// called automatically by the generated parser code on error
+/* called automatically by the generated parser code on error */
 static int cmt_decode_prometheus_error(void *yyscanner,
                                        struct cmt_decode_prometheus_context *context,
                                        const char *msg)

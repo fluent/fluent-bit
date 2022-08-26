@@ -105,8 +105,12 @@ static void metric_banner(cmt_sds_t *buf, struct cmt_map *map,
     cmt_sds_cat_safe(buf, "# HELP ", 7);
     cmt_sds_cat_safe(buf, opts->fqname, cmt_sds_len(opts->fqname));
 
-    cmt_sds_cat_safe(buf, " ", 1);
-    metric_escape(buf, opts->description, false);
+    if (cmt_sds_len(opts->description) > 1 || opts->description[0] != ' ') {
+        /* only append description if it is not empty. the parser uses a single whitespace
+         * string to signal that no HELP was provided */
+        cmt_sds_cat_safe(buf, " ", 1);
+        metric_escape(buf, opts->description, false);
+    }
     cmt_sds_cat_safe(buf, "\n", 1);
 
     /* TYPE */
@@ -474,7 +478,7 @@ static void format_metrics(struct cmt *cmt, cmt_sds_t *buf, struct cmt_map *map,
             /* Histogram needs to format the buckets, one line per bucket */
             format_histogram_bucket(cmt, buf, map, metric, add_timestamp);
         }
-        else if (map->type == CMT_HISTOGRAM) {
+        else if (map->type == CMT_SUMMARY) {
             format_summary_quantiles(cmt, buf, map, metric, add_timestamp);
         }
         else {

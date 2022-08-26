@@ -167,6 +167,7 @@ void test_opentelemetry()
             }
         }
 
+        cmt_encode_opentelemetry_destroy(opentelemetry_context);
         cmt_encode_prometheus_destroy(reference_prometheus_context);
     }
 
