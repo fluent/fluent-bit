@@ -52,7 +52,7 @@ static int in_mqtt_init(struct flb_input_instance *in,
     /* Create downstream */
     port = (unsigned short int) strtoul(ctx->tcp_port, NULL, 10);
 
-    ctx->downstream = flb_downstream_create(FLB_DOWNSTREAM_TYPE_TCP,
+    ctx->downstream = flb_downstream_create(FLB_TRANSPORT_TCP,
                                             in->flags,
                                             ctx->listen,
                                             port,
@@ -69,8 +69,6 @@ static int in_mqtt_init(struct flb_input_instance *in,
 
         return -1;
     }
-
-    MK_EVENT_ZERO(&ctx->downstream->event);
 
     ctx->evl = config->evl;
 
