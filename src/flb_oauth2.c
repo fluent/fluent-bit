@@ -235,7 +235,7 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
     }
 
     /* Remove Upstream Async flag */
-    ctx->u->flags &= ~(FLB_IO_ASYNC);
+    flb_stream_disable_async_mode(&ctx->u->base);
 
     free_temporary_buffers();
     return ctx;
@@ -345,12 +345,12 @@ char *flb_oauth2_token_get(struct flb_oauth2 *ctx)
     /* Get Token and store it in the context */
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
-        ctx->u->flags |= FLB_IO_IPV6;
+        flb_stream_enable_flags(&ctx->u->base, FLB_IO_IPV6);
         u_conn = flb_upstream_conn_get(ctx->u);
         if (!u_conn) {
             flb_error("[oauth2] could not get an upstream connection to %s:%i",
                       ctx->u->tcp_host, ctx->u->tcp_port);
-            ctx->u->flags &= ~FLB_IO_IPV6;
+            flb_stream_disable_flags(&ctx->u->base, FLB_IO_IPV6);
             return NULL;
         }
     }
