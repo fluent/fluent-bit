@@ -67,7 +67,7 @@ void mk_http_request_init(struct mk_http_session *session,
 
     request->port = 0;
     request->status = MK_TRUE;
-    request->uri.data = NULL;
+    request->uri.data = "";
     request->method = MK_METHOD_UNKNOWN;
     request->protocol = MK_HTTP_PROTOCOL_UNKNOWN;
     request->connection.len = -1;
