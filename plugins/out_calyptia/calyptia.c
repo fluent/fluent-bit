@@ -616,7 +616,7 @@ static int api_agent_create(struct flb_config *config, struct flb_calyptia *ctx)
     }
 
     /* Make it synchronous */
-    u->flags &= ~(FLB_IO_ASYNC);
+    flb_stream_disable_async_mode(&u->base);
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(u);
