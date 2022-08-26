@@ -736,7 +736,7 @@ struct flb_http_client *flb_http_client(struct flb_connection *u_conn,
     }
 
     /* Is Upstream connection using keepalive mode ? */
-    if (u_conn->upstream->flags & FLB_IO_TCP_KA) {
+    if (flb_stream_get_flag_status(&u_conn->upstream->base, FLB_IO_TCP_KA)) {
         c->flags |= FLB_HTTP_KA;
     }
 
@@ -1030,7 +1030,7 @@ static void http_headers_destroy(struct flb_http_client *c)
 int flb_http_set_keepalive(struct flb_http_client *c)
 {
     /* check if 'keepalive' mode is enabled in the Upstream connection */
-    if (c->u_conn->upstream->net.keepalive == FLB_FALSE) {
+    if (flb_stream_is_keepalive(c->u_conn->stream)) {
         return -1;
     }
 
