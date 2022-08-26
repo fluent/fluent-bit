@@ -28,9 +28,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_upstream_queue.h>
-
-#ifdef FLB_HAVE_TLS
-#endif
+#include <fluent-bit/flb_stream.h>
 
 /*
  * Upstream creation FLAGS set by Fluent Bit sub-components
@@ -47,47 +45,35 @@
 
 /* Upstream handler */
 struct flb_upstream {
-    int flags;
-    int tcp_port;
-    char *tcp_host;
-    int proxied_port;
-    char *proxied_host;
-    char *proxy_username;
-    char *proxy_password;
+    struct flb_stream          base;
 
-    /* Networking setup for timeouts and network interfaces */
-    struct flb_net_setup net;
+    char                      *tcp_host;
+    int                        tcp_port;
+
+    char                      *proxied_host;
+    int                        proxied_port;
+    char                      *proxy_username;
+    char                      *proxy_password;
 
     /*
      * If an upstream context has been created in HA mode, this flag is
      * set to True and the field 'ha_ctx' will reference a HA upstream
      * context.
      */
-    int ha_mode;
-    void *ha_ctx;
+    int                        ha_mode;
+    void                      *ha_ctx;
 
     /*
      * If the connections will be in separate threads, this flag is
      * enabled and all lists management are protected through mutexes.
      */
-    int thread_safe;
-    pthread_mutex_t mutex_lists;
-
-    void *parent_upstream;
+    void                     *parent_upstream;
     struct flb_upstream_queue queue;
-
-#ifdef FLB_HAVE_TLS
-    struct flb_tls *tls;
-#endif
-
-    struct flb_config *config;
-    struct mk_list _head;
 };
-
 
 static inline int flb_upstream_is_shutting_down(struct flb_upstream *u)
 {
-    return u->config->is_shutting_down;
+    return flb_stream_is_shutting_down(&u->base);
 }
 
 void flb_upstream_queue_init(struct flb_upstream_queue *uq);
