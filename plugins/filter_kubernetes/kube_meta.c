@@ -1425,7 +1425,7 @@ static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config
     }
 
     /* Remove async flag from upstream */
-    ctx->upstream->flags &= ~(FLB_IO_ASYNC);
+    flb_stream_disable_async_mode(&ctx->upstream->base);
 
     return 0;
 }
