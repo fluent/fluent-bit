@@ -22,7 +22,6 @@
 
 #include <stdbool.h>
 
-#include "monkey/mk_core/mk_list.h"
 #include <cmetrics/cmetrics.h>
 #include <stdint.h>
 
@@ -34,6 +33,8 @@
 #define CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR           50
 #define CMT_DECODE_PROMETHEUS_PARSE_VALUE_FAILED         60
 #define CMT_DECODE_PROMETHEUS_PARSE_TIMESTAMP_FAILED     70
+
+#define CMT_DECODE_PROMETHEUS_DUPLICATE_SUM_COUNT        10000
 
 #define CMT_DECODE_PROMETHEUS_MAX_LABEL_COUNT 128
 
@@ -74,6 +75,10 @@ struct cmt_decode_prometheus_parse_opts {
 };
 
 struct cmt_decode_prometheus_context {
+    union {
+        struct cmt_summary *summary;
+        struct cmt_histogram *histogram;
+    } current;
     struct cmt *cmt;
     struct cmt_decode_prometheus_parse_opts opts;
     int errcode;

@@ -303,7 +303,7 @@ static void format_metric(struct cmt *cmt, cmt_sds_t *buf, struct cmt_map *map,
 }
 
 static void format_metrics(struct cmt *cmt,
-                           cmt_sds_t *buf, struct cmt_map *map, int add_timestamp)
+                           cmt_sds_t *buf, struct cmt_map *map)
 {
     struct mk_list *head;
     struct cmt_metric *metric;
@@ -320,7 +320,7 @@ static void format_metrics(struct cmt *cmt,
 }
 
 /* Format all the registered metrics in Prometheus Text format */
-cmt_sds_t cmt_encode_influx_create(struct cmt *cmt, int add_timestamp, ...)
+cmt_sds_t cmt_encode_influx_create(struct cmt *cmt)
 {
     cmt_sds_t buf;
     struct mk_list *head;
@@ -339,31 +339,31 @@ cmt_sds_t cmt_encode_influx_create(struct cmt *cmt, int add_timestamp, ...)
     /* Counters */
     mk_list_foreach(head, &cmt->counters) {
         counter = mk_list_entry(head, struct cmt_counter, _head);
-        format_metrics(cmt, &buf, counter->map, add_timestamp);
+        format_metrics(cmt, &buf, counter->map);
     }
 
     /* Gauges */
     mk_list_foreach(head, &cmt->gauges) {
         gauge = mk_list_entry(head, struct cmt_gauge, _head);
-        format_metrics(cmt, &buf, gauge->map, add_timestamp);
+        format_metrics(cmt, &buf, gauge->map);
     }
 
     /* Summaries */
     mk_list_foreach(head, &cmt->summaries) {
         summary = mk_list_entry(head, struct cmt_summary, _head);
-        format_metrics(cmt, &buf, summary->map, add_timestamp);
+        format_metrics(cmt, &buf, summary->map);
     }
 
     /* Histograms */
     mk_list_foreach(head, &cmt->histograms) {
         histogram = mk_list_entry(head, struct cmt_histogram, _head);
-        format_metrics(cmt, &buf, histogram->map, add_timestamp);
+        format_metrics(cmt, &buf, histogram->map);
     }
 
     /* Untyped */
     mk_list_foreach(head, &cmt->untypeds) {
         untyped = mk_list_entry(head, struct cmt_untyped, _head);
-        format_metrics(cmt, &buf, untyped->map, add_timestamp);
+        format_metrics(cmt, &buf, untyped->map);
     }
 
     return buf;

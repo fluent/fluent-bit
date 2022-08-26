@@ -49,7 +49,7 @@ static struct cmt_variant *clone_variant(Opentelemetry__Proto__Common__V1__AnyVa
 {
     struct cmt_kvlist  *new_child_kvlist;
     struct cmt_array   *new_child_array;
-    struct cmt_variant *result_instance;
+    struct cmt_variant *result_instance = NULL;
     int                 result;
 
     if (source->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE) {
@@ -111,7 +111,7 @@ static struct cmt_variant *clone_variant(Opentelemetry__Proto__Common__V1__AnyVa
         }
     }
     else if (source->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_BYTES_VALUE) {
-        result_instance = cmt_variant_create_from_bytes(source->bytes_value.data, source->bytes_value.len);
+        result_instance = cmt_variant_create_from_bytes((char *) source->bytes_value.data, source->bytes_value.len);
     }
 
     return result_instance;
@@ -449,7 +449,7 @@ static int decode_data_point_labels(struct cmt *cmt,
             }
             else if (attribute->value->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_BYTES_VALUE) {
                 result = append_new_metric_label_value(metric,
-                                                       attribute->value->bytes_value.data,
+                                                       (char *) attribute->value->bytes_value.data,
                                                        attribute->value->bytes_value.len);
             }
             else if (attribute->value->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_BOOL_VALUE) {
@@ -458,7 +458,7 @@ static int decode_data_point_labels(struct cmt *cmt,
                 result = append_new_metric_label_value(metric, dummy_label_value, 0);
             }
             else if (attribute->value->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_INT_VALUE) {
-                snprintf(dummy_label_value, sizeof(dummy_label_value) - 1, PRIi64, attribute->value->int_value);
+                snprintf(dummy_label_value, sizeof(dummy_label_value) - 1, "%" PRIi64, attribute->value->int_value);
 
                 result = append_new_metric_label_value(metric, dummy_label_value, 0);
             }
@@ -542,7 +542,7 @@ static int decode_numerical_data_point(struct cmt *cmt,
             value = data_point->as_double;
         }
 
-        cmt_metric_set(sample, data_point->time_unix_nano, data_point->as_double);
+        cmt_metric_set(sample, data_point->time_unix_nano, value);
     }
 
     return result;
@@ -1099,7 +1099,8 @@ int cmt_decode_opentelemetry_create(struct cmt **out_cmt, char *in_buf, size_t i
         return result;
     }
 
-    service_request = opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__unpack(NULL, in_size - *offset, &in_buf[*offset]);
+    service_request = opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__unpack(NULL, in_size - *offset, 
+                                                                                                           (unsigned char *) &in_buf[*offset]);
 
     if (service_request != NULL) {
         result = decode_service_request(cmt, service_request);
