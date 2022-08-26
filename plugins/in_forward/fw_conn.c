@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_network.h>
+#include <fluent-bit/flb_downstream.h>
 
 #include "fw.h"
 #include "fw_prot.h"
