@@ -85,7 +85,7 @@ static int in_tcp_init(struct flb_input_instance *in,
 
     port = (unsigned short int) strtoul(ctx->tcp_port, NULL, 10);
 
-    ctx->downstream = flb_downstream_create(FLB_DOWNSTREAM_TYPE_TCP,
+    ctx->downstream = flb_downstream_create(FLB_TRANSPORT_TCP,
                                             in->flags,
                                             ctx->listen,
                                             port,
