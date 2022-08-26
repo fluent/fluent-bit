@@ -750,7 +750,7 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
             return -1;
         }
 
-        ctx->aws_sts_upstream->net.keepalive = FLB_FALSE;
+        ctx->aws_sts_upstream->base.net.keepalive = FLB_FALSE;
 
         /* Configure Google STS */
         ctx->google_sts_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
@@ -809,9 +809,9 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
         }
 
         /* Remove async flag from upstream */
-        ctx->aws_sts_upstream->flags    &= ~(FLB_IO_ASYNC);
-        ctx->google_sts_upstream->flags &= ~(FLB_IO_ASYNC);
-        ctx->google_iam_upstream->flags &= ~(FLB_IO_ASYNC);
+        flb_stream_disable_async_mode(&ctx->aws_sts_upstream->base);
+        flb_stream_disable_async_mode(&ctx->google_sts_upstream->base);
+        flb_stream_disable_async_mode(&ctx->google_iam_upstream->base);
     }
 
     /* Create oauth2 context */
