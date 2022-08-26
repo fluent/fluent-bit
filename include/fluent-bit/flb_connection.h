@@ -133,7 +133,6 @@ struct flb_connection {
 
     /* Connection type : FLB_UPSTREAM_CONNECTION or FLB_DOWNSTREAM_CONNECTION */
     int type;
-    int transport;
 
     int dynamically_allocated;
 
