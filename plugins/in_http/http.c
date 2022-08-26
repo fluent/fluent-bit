@@ -92,7 +92,7 @@ static int in_http_init(struct flb_input_instance *ins,
 
     port = (unsigned short int) strtoul(ctx->tcp_port, NULL, 10);
 
-    ctx->downstream = flb_downstream_create(FLB_DOWNSTREAM_TYPE_TCP,
+    ctx->downstream = flb_downstream_create(FLB_TRANSPORT_TCP,
                                             ins->flags,
                                             ctx->listen,
                                             port,
