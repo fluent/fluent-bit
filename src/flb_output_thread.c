@@ -116,7 +116,7 @@ static int upstream_thread_create(struct flb_out_thread_instance *th_ins,
     struct flb_upstream *th_u;
 
     mk_list_foreach(head, &ins->upstreams) {
-        u = mk_list_entry(head, struct flb_upstream, _head);
+        u = mk_list_entry(head, struct flb_upstream, base._head);
 
         th_u = flb_calloc(1, sizeof(struct flb_upstream));
         if (!th_u) {
@@ -125,7 +125,7 @@ static int upstream_thread_create(struct flb_out_thread_instance *th_ins,
         }
         th_u->parent_upstream = u;
         flb_upstream_queue_init(&th_u->queue);
-        mk_list_add(&th_u->_head, &th_ins->upstreams);
+        mk_list_add(&th_u->base._head, &th_ins->upstreams);
     }
 
     return 0;
@@ -138,7 +138,7 @@ int count_upstream_busy_connections(struct flb_out_thread_instance *th_ins)
     struct flb_upstream *u;
 
     mk_list_foreach(head, &th_ins->upstreams) {
-        u = mk_list_entry(head, struct flb_upstream, _head);
+        u = mk_list_entry(head, struct flb_upstream, base._head);
         c += mk_list_size(&u->queue.busy_queue);
     }
 
@@ -152,7 +152,7 @@ static void upstream_thread_destroy(struct flb_out_thread_instance *th_ins)
     struct flb_upstream *th_u;
 
     mk_list_foreach_safe(head, tmp, &th_ins->upstreams) {
-        th_u = mk_list_entry(head, struct flb_upstream, _head);
+        th_u = mk_list_entry(head, struct flb_upstream, base._head);
         flb_upstream_destroy(th_u);
     }
 }
