@@ -1150,19 +1150,21 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
     }
 
     /* Set flags */
-    u->flags |= flags;
+    flb_stream_enable_flags(&u->base, flags);
 
     /*
      * If the output plugin flush callbacks will run in multiple threads, enable
      * the thread safe mode for the Upstream context.
      */
     if (ins->tp_workers > 0) {
-        flb_upstream_thread_safe(u);
-        mk_list_add(&u->_head, &ins->upstreams);
+        flb_stream_enable_thread_safety(&u->base);
+
+        mk_list_add(&u->base._head, &ins->upstreams);
     }
 
     /* Set networking options 'net.*' received through instance properties */
-    memcpy(&u->net, &ins->net_setup, sizeof(struct flb_net_setup));
+    memcpy(&u->base.net, &ins->net_setup, sizeof(struct flb_net_setup));
+
     return 0;
 }
 
