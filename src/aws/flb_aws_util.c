@@ -335,7 +335,7 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
     } 
 
     /* Set AWS Fluent Bit user agent */
-    env = aws_client->upstream->config->env;
+    env = aws_client->upstream->base.config->env;
     buf = (char *) flb_env_get(env, "FLB_AWS_USER_AGENT");
     if (buf == NULL) {
         if (getenv(AWS_ECS_METADATA_URI) != NULL) {

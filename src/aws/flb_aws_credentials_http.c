@@ -170,7 +170,7 @@ void sync_fn_http(struct flb_aws_provider *provider) {
 
     flb_debug("[aws_credentials] Sync called on the http provider");
     /* remove async flag */
-    implementation->client->upstream->flags &= ~(FLB_IO_ASYNC);
+    flb_stream_disable_async_mode(&implementation->client->upstream->base);
 }
 
 void async_fn_http(struct flb_aws_provider *provider) {
@@ -178,7 +178,7 @@ void async_fn_http(struct flb_aws_provider *provider) {
 
     flb_debug("[aws_credentials] Async called on the http provider");
     /* add async flag */
-    implementation->client->upstream->flags |= FLB_IO_ASYNC;
+    flb_stream_enable_async_mode(&implementation->client->upstream->base);
 }
 
 void upstream_set_fn_http(struct flb_aws_provider *provider,
@@ -273,7 +273,7 @@ struct flb_aws_provider *flb_http_provider_create(struct flb_config *config,
         return NULL;
     }
 
-    upstream->net.connect_timeout = FLB_AWS_CREDENTIAL_NET_TIMEOUT;
+    upstream->base.net.connect_timeout = FLB_AWS_CREDENTIAL_NET_TIMEOUT;
 
     implementation->client = generator->create();
     if (!implementation->client) {
