@@ -21,6 +21,8 @@
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_sds.h>
+#include <fluent-bit/tls/flb_tls.h>
 #include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_upstream_node.h>
 
