@@ -27,72 +27,39 @@
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_io.h>
-
-/*
- * Downstream creation FLAGS set by Fluent Bit sub-components
- * ========================================================
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
- *
- * --- flb_io.h ---
- *   #define  FLB_IO_TCP      1
- *   #define  FLB_IO_TLS      2
- *   #define  FLB_IO_ASYNC    8
- * ---
- */
-
-#define FLB_DOWNSTREAM_TYPE_TCP         0
-#define FLB_DOWNSTREAM_TYPE_UDP         1
-#define FLB_DOWNSTREAM_TYPE_UNIX_STREAM 2
-#define FLB_DOWNSTREAM_TYPE_UNIX_DGRAM  3
+#include <fluent-bit/flb_stream.h>
 
 struct flb_connection;
 
 /* Downstream handler */
 struct flb_downstream {
-    struct mk_event event;
-    int flags;
-    unsigned short int port;
-    char *host;
-    int type;
+    struct flb_stream      base;
 
-    flb_sockfd_t server_fd;
+    char                  *host;
+    unsigned short int     port;
+    flb_sockfd_t           server_fd;
     struct flb_connection *dgram_connection;
 
-    /* Networking setup for timeouts and network interfaces */
-    struct flb_net_setup net;
-
-    int thread_safe;
-    pthread_mutex_t mutex_lists;
-
-#ifdef FLB_HAVE_TLS
-    struct flb_tls *tls;
-#endif
-    int dynamically_allocated;
-
-    struct mk_list busy_queue;
-    struct mk_list destroy_queue;
-
-    struct flb_config *config;
-    struct mk_list _head;
+    struct mk_list         busy_queue;
+    struct mk_list         destroy_queue;
 };
-
 
 static inline int flb_downstream_is_shutting_down(struct flb_downstream *downstream)
 {
-    return downstream->config->is_shutting_down;
+    return flb_stream_is_shutting_down(&downstream->base);
 }
 
 void flb_downstream_init();
 
 int flb_downstream_setup(struct flb_downstream *stream,
-                         int type, int flags,
+                         int transport, int flags,
                          const char *host,
                          unsigned short int port,
                          struct flb_tls *tls,
                          struct flb_config *config,
                          struct flb_net_setup *net_setup);
 
-struct flb_downstream *flb_downstream_create(int type, int flags,
+struct flb_downstream *flb_downstream_create(int transport, int flags,
                                              const char *host,
                                              unsigned short int port,
                                              struct flb_tls *tls,
@@ -104,7 +71,13 @@ void flb_downstream_destroy(struct flb_downstream *downstream);
 int flb_downstream_set_property(struct flb_config *config,
                               struct flb_net_setup *net, char *k, char *v);
 
+struct flb_connection *flb_downstream_conn_get(struct flb_downstream *stream);
+
+int flb_downstream_conn_release(struct flb_connection *connection);
+
 int flb_downstream_conn_pending_destroy_list(struct mk_list *list);
+
+int flb_downstream_conn_timeouts(struct mk_list *list);
 
 int flb_downstream_is_async(struct flb_downstream *downstream);
 
