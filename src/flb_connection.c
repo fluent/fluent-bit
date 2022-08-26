@@ -1,3 +1,5 @@
+#include <assert.h>
+
 #include <fluent-bit/flb_connection.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_downstream.h>
@@ -23,12 +25,7 @@ int flb_connection_setup(struct flb_connection *connection,
     connection->ts_created              = time(NULL);
     connection->ts_assigned             = time(NULL);
 
-    if (type == FLB_UPSTREAM_CONNECTION) {
-        connection->net = &connection->upstream->net;
-    }
-    else if (type == FLB_DOWNSTREAM_CONNECTION) {
-        connection->net = &connection->downstream->net;
-    }
+    connection->net = &connection->stream->net;
 
     assert(connection->net != NULL);
 
@@ -88,49 +85,29 @@ static void compose_user_friendly_remote_host(struct flb_connection *connection)
 {
     int connection_type;
 
-    connection_type = FLB_CONNECTION_TYPE_UNSET;
+    connection_type = connection->stream->transport;
 
-    if (connection->type == FLB_UPSTREAM_CONNECTION) {
-        connection_type = FLB_CONNECTION_TYPE_TCP;
-    }
-    else if (connection->type == FLB_DOWNSTREAM_CONNECTION) {
-        switch (connection->downstream->type) {
-            case FLB_DOWNSTREAM_TYPE_TCP:
-                connection_type = FLB_CONNECTION_TYPE_TCP;
-                break;
-            case FLB_DOWNSTREAM_TYPE_UDP:
-                connection_type = FLB_CONNECTION_TYPE_UDP;
-                break;
-            case FLB_DOWNSTREAM_TYPE_UNIX_STREAM:
-                connection_type = FLB_CONNECTION_TYPE_UNIX_STREAM;
-                break;
-            case FLB_DOWNSTREAM_TYPE_UNIX_DGRAM:
-                connection_type = FLB_CONNECTION_TYPE_UNIX_DGRAM;
-                break;
-        }
-    }
-
-    if (connection_type == FLB_CONNECTION_TYPE_TCP) {
+    if (connection_type == FLB_TRANSPORT_TCP) {
         snprintf(connection->user_friendly_remote_host,
                  sizeof(connection->user_friendly_remote_host),
                  "tcp://%s:%u",
                  connection->remote_host,
                  connection->remote_port);
     }
-    else if (connection_type == FLB_CONNECTION_TYPE_UDP) {
+    else if (connection_type == FLB_TRANSPORT_UDP) {
         snprintf(connection->user_friendly_remote_host,
                  sizeof(connection->user_friendly_remote_host),
                  "udp://%s:%u",
                  connection->remote_host,
                  connection->remote_port);
     }
-    else if (connection_type == FLB_CONNECTION_TYPE_UNIX_STREAM) {
+    else if (connection_type == FLB_TRANSPORT_UNIX_STREAM) {
         snprintf(connection->user_friendly_remote_host,
                  sizeof(connection->user_friendly_remote_host),
                  "unix://%s",
                  connection->remote_host);
     }
-    else if (connection_type == FLB_CONNECTION_TYPE_UNIX_DGRAM) {
+    else if (connection_type == FLB_TRANSPORT_UNIX_DGRAM) {
         snprintf(connection->user_friendly_remote_host,
                  sizeof(connection->user_friendly_remote_host),
                  "unix://%s",
@@ -143,28 +120,33 @@ char *flb_connection_get_remote_address(struct flb_connection *connection)
     int    address_refresh_required;
     size_t dummy_size_receptacle;
     int    refresh_required;
+    int    stream_type;
+    int    transport;
     int    result;
+
+    stream_type = connection->stream->type;
+    transport = connection->stream->transport;
 
     address_refresh_required = FLB_FALSE;
     refresh_required = FLB_FALSE;
 
-    if (connection->type == FLB_DOWNSTREAM_CONNECTION) {
-        if (connection->downstream->type == FLB_DOWNSTREAM_TYPE_UDP) {
+    if (stream_type == FLB_DOWNSTREAM) {
+        if (transport == FLB_TRANSPORT_UDP) {
             if (connection->raw_remote_host.ss_family != AF_UNSPEC) {
                 refresh_required = FLB_TRUE;
             }
         }
-        else if (connection->downstream->type == FLB_DOWNSTREAM_TYPE_TCP ||
-                 connection->downstream->type == FLB_DOWNSTREAM_TYPE_UNIX_STREAM) {
+        else if (transport == FLB_TRANSPORT_TCP ||
+                 transport == FLB_TRANSPORT_UNIX_STREAM) {
             if (connection->raw_remote_host.ss_family == AF_UNSPEC) {
                 address_refresh_required = FLB_TRUE;
                 refresh_required = FLB_TRUE;
             }
         }
     }
-    else if (connection->type == FLB_UPSTREAM_CONNECTION) {
-        if (connection->downstream->type == FLB_DOWNSTREAM_TYPE_TCP ||
-            connection->downstream->type == FLB_DOWNSTREAM_TYPE_UNIX_STREAM) {
+    else if (stream_type == FLB_UPSTREAM) {
+        if (transport == FLB_TRANSPORT_TCP ||
+            transport == FLB_TRANSPORT_UNIX_STREAM) {
             if (connection->raw_remote_host.ss_family == AF_UNSPEC) {
                 address_refresh_required = FLB_TRUE;
                 refresh_required = FLB_TRUE;
@@ -195,19 +177,7 @@ char *flb_connection_get_remote_address(struct flb_connection *connection)
 
 int flb_connection_get_flags(struct flb_connection *connection)
 {
-    int result;
-
-    if (connection->type == FLB_UPSTREAM_CONNECTION) {
-        result = connection->upstream->flags;
-    }
-    else if (connection->type == FLB_DOWNSTREAM_CONNECTION) {
-        result = connection->downstream->flags;
-    }
-    else {
-        result = -1;
-    }
-
-    return result;
+    return flb_stream_get_flags(connection->stream);
 }
 
 void flb_connection_reset_connection_timeout(struct flb_connection *connection)

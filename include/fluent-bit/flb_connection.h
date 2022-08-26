@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_config.h>
+// #include <fluent-bit/flb_stream.h>
 
 #define FLB_UNKNOWN_CONNECTION    0
 #define FLB_UPSTREAM_CONNECTION   1
@@ -32,7 +33,7 @@
  * an unsigned 16 bit integer
  */
 
-#define FLB_CONNECTION_MAX_PORT_LENGTH  5
+#define FLB_CONNECTION_MAX_PORT_LENGTH 5
 
 /* FLB_CONNECTION_MAX_LABEL_LENGTH is the maximum length of
  * any of the following variants plus an optional colon if
@@ -42,13 +43,6 @@
  * tcp://
  * unix://
  */
-
-#define FLB_CONNECTION_TYPE_UNSET       0
-#define FLB_CONNECTION_TYPE_TCP         1
-#define FLB_CONNECTION_TYPE_UDP         2
-#define FLB_CONNECTION_TYPE_UNIX_STREAM 3
-#define FLB_CONNECTION_TYPE_UNIX_DGRAM  4
-
 #define FLB_CONNECTION_MAX_LABEL_LENGTH 7
 
 #define FLB_CONNECTION_MAX_IPV4_ADDRESS_LENGTH 15
@@ -129,7 +123,7 @@ struct flb_connection {
 
     /* Parent stream */
     union {
-        void *stream;
+        struct flb_stream *stream;
         struct flb_upstream *upstream;
         struct flb_downstream *downstream;
     };
@@ -139,6 +133,7 @@ struct flb_connection {
 
     /* Connection type : FLB_UPSTREAM_CONNECTION or FLB_DOWNSTREAM_CONNECTION */
     int type;
+    int transport;
 
     int dynamically_allocated;
 
