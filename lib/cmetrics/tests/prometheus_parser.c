@@ -25,6 +25,7 @@
 
 #include "cmetrics/cmt_counter.h"
 #include "cmetrics/cmt_sds.h"
+#include "cmetrics/cmt_summary.h"
 #include "cmt_decode_prometheus_parser.h"
 #include "cmt_tests.h"
 #include "lib/acutest/acutest.h"
@@ -242,7 +243,7 @@ void test_escape_sequences()
 {
     cmt_sds_t result;
     const char expected[] = (
-        "# HELP msdos_file_access_time_seconds (no information)\n"
+        "# HELP msdos_file_access_time_seconds\n"
         "# TYPE msdos_file_access_time_seconds untyped\n"
         "msdos_file_access_time_seconds{path=\"C:\\\\DIR\\\\FILE.TXT\",error=\"Cannot find file:\\n\\\"FILE.TXT\\\"\"} 1458255915 0\n"
         );
@@ -265,7 +266,7 @@ void test_metric_without_labels()
     cmt_sds_t result;
 
     const char expected[] =
-        "# HELP metric_without_timestamp_and_labels (no information)\n"
+        "# HELP metric_without_timestamp_and_labels\n"
         "# TYPE metric_without_timestamp_and_labels untyped\n"
         "metric_without_timestamp_and_labels 12.470000000000001 0\n"
         ;
@@ -351,25 +352,25 @@ void test_prometheus_spec_example()
         "rpc_duration_seconds{quantile=\"0.5\"} 4773 0\n"
         "rpc_duration_seconds{quantile=\"0.9\"} 9001 0\n"
         "rpc_duration_seconds{quantile=\"0.99\"} 76656 0\n"
-        "# HELP msdos_file_access_time_seconds (no information)\n"
+        "# HELP msdos_file_access_time_seconds\n"
         "# TYPE msdos_file_access_time_seconds untyped\n"
         "msdos_file_access_time_seconds{path=\"C:\\\\DIR\\\\FILE.TXT\",error=\"Cannot find file:\\n\\\"FILE.TXT\\\"\"} 1458255915 0\n"
-        "# HELP metric_without_timestamp_and_labels (no information)\n"
+        "# HELP metric_without_timestamp_and_labels\n"
         "# TYPE metric_without_timestamp_and_labels untyped\n"
         "metric_without_timestamp_and_labels 12.470000000000001 0\n"
-        "# HELP something_weird (no information)\n"
+        "# HELP something_weird\n"
         "# TYPE something_weird untyped\n"
         "something_weird{problem=\"division by zero\"} inf 0\n"
-        "# HELP http_request_duration_seconds_sum (no information)\n"
+        "# HELP http_request_duration_seconds_sum\n"
         "# TYPE http_request_duration_seconds_sum untyped\n"
         "http_request_duration_seconds_sum 53423 0\n"
-        "# HELP http_request_duration_seconds_count (no information)\n"
+        "# HELP http_request_duration_seconds_count\n"
         "# TYPE http_request_duration_seconds_count untyped\n"
         "http_request_duration_seconds_count 144320 0\n"
-        "# HELP rpc_duration_seconds_sum (no information)\n"
+        "# HELP rpc_duration_seconds_sum\n"
         "# TYPE rpc_duration_seconds_sum untyped\n"
         "rpc_duration_seconds_sum 17560473 0\n"
-        "# HELP rpc_duration_seconds_count (no information)\n"
+        "# HELP rpc_duration_seconds_count\n"
         "# TYPE rpc_duration_seconds_count untyped\n"
         "rpc_duration_seconds_count 2693 0\n"
         ;
@@ -400,13 +401,6 @@ void test_bison_parsing_error()
     TEST_CHECK(status == CMT_DECODE_PROMETHEUS_SYNTAX_ERROR);
     // TEST_CHECK(strcmp(errbuf,
     //             "syntax error, unexpected end of file") == 0);
-
-    status = cmt_decode_prometheus_create(&cmt,
-            "# TYPE metric_name counter", 0, &opts);
-    TEST_CHECK(status == CMT_DECODE_PROMETHEUS_SYNTAX_ERROR);
-    // TEST_CHECK(strcmp(errbuf,
-    //             "syntax error, unexpected end of file, "
-    //             "expecting IDENTIFIER") == 0);
 
     status = cmt_decode_prometheus_create(&cmt,
             "# HELP metric_name some docstring\n"
@@ -599,7 +593,7 @@ void test_in_size()
     TEST_CHECK(status == 0);
     result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
     TEST_CHECK(strcmp(result,
-                "# HELP metric_name (no information)\n"
+                "# HELP metric_name\n"
                 "# TYPE metric_name untyped\n"
                 "metric_name{key=\"1\"} 1 0\n") == 0);
     cmt_sds_destroy(result);
@@ -798,6 +792,229 @@ void test_issue_fluent_bit_5541()
     cmt_decode_prometheus_destroy(cmt);
 }
 
+// reproduces https://github.com/fluent/fluent-bit/issues/5894
+void test_issue_fluent_bit_5894()
+{
+    char errbuf[256];
+    int status;
+    cmt_sds_t result;
+    struct cmt *cmt;
+    struct cmt_decode_prometheus_parse_opts opts;
+    memset(&opts, 0, sizeof(opts));
+    opts.errbuf = errbuf;
+    opts.errbuf_size = sizeof(errbuf);
+    cmt_sds_t in_buf = read_file(CMT_TESTS_DATA_PATH "/issue_fluent_bit_5894.txt");
+    size_t in_size = cmt_sds_len(in_buf);
+
+    const char expected[] =
+        "# HELP hikaricp_connections_timeout_total Connection timeout total count\n"
+        "# TYPE hikaricp_connections_timeout_total counter\n"
+        "hikaricp_connections_timeout_total{pool=\"mcadb\"} 0 0\n"
+        "# HELP rabbitmq_consumed_total\n"
+        "# TYPE rabbitmq_consumed_total counter\n"
+        "rabbitmq_consumed_total{name=\"rabbit\"} 0 0\n"
+        "# HELP rabbitmq_failed_to_publish_total\n"
+        "# TYPE rabbitmq_failed_to_publish_total counter\n"
+        "rabbitmq_failed_to_publish_total{name=\"rabbit\"} 0 0\n"
+        "# HELP rabbitmq_acknowledged_published_total\n"
+        "# TYPE rabbitmq_acknowledged_published_total counter\n"
+        "rabbitmq_acknowledged_published_total{name=\"rabbit\"} 0 0\n"
+        "# HELP tomcat_sessions_rejected_sessions_total\n"
+        "# TYPE tomcat_sessions_rejected_sessions_total counter\n"
+        "tomcat_sessions_rejected_sessions_total 0 0\n"
+
+        "# HELP process_start_time_seconds Start time of the process since unix epoch.\n"
+        "# TYPE process_start_time_seconds gauge\n"
+        "process_start_time_seconds 1660594096.832 0\n"
+        "# HELP spring_kafka_listener_seconds_max Kafka Listener Timer\n"
+        "# TYPE spring_kafka_listener_seconds_max gauge\n"
+        "spring_kafka_listener_seconds_max{exception=\"ListenerExecutionFailedException\",name=\"org.springframework.kafka.KafkaListenerEndpointContainer#0-0\",result=\"failure\"} 0 0\n"
+        "spring_kafka_listener_seconds_max{exception=\"none\",name=\"org.springframework.kafka.KafkaListenerEndpointContainer#0-0\",result=\"success\"} 0 0\n"
+        "# HELP process_files_max_files The maximum file descriptor count\n"
+        "# TYPE process_files_max_files gauge\n"
+        "process_files_max_files 1048576 0\n"
+        "# HELP hikaricp_connections_pending Pending threads\n"
+        "# TYPE hikaricp_connections_pending gauge\n"
+        "hikaricp_connections_pending{pool=\"mcadb\"} 0 0\n"
+        "# HELP jvm_memory_committed_bytes The amount of memory in bytes that is committed for the Java virtual machine to use\n"
+        "# TYPE jvm_memory_committed_bytes gauge\n"
+        "jvm_memory_committed_bytes{area=\"nonheap\",id=\"CodeHeap 'profiled nmethods'\"} 16056320 0\n"
+        "jvm_memory_committed_bytes{area=\"heap\",id=\"G1 Survivor Space\"} 20971520 0\n"
+        "jvm_memory_committed_bytes{area=\"heap\",id=\"G1 Old Gen\"} 232783872 0\n"
+        "jvm_memory_committed_bytes{area=\"nonheap\",id=\"Metaspace\"} 103374848 0\n"
+        "jvm_memory_committed_bytes{area=\"nonheap\",id=\"CodeHeap 'non-nmethods'\"} 4390912 0\n"
+        "jvm_memory_committed_bytes{area=\"heap\",id=\"G1 Eden Space\"} 373293056 0\n"
+        "jvm_memory_committed_bytes{area=\"nonheap\",id=\"Compressed Class Space\"} 13500416 0\n"
+        "jvm_memory_committed_bytes{area=\"nonheap\",id=\"CodeHeap 'non-profiled nmethods'\"} 4521984 0\n"
+        "# HELP process_files_open_files The open file descriptor count\n"
+        "# TYPE process_files_open_files gauge\n"
+        "process_files_open_files 290 0\n"
+        "# HELP kafka_consumer_sync_time_max_seconds The max time taken for a group sync.\n"
+        "# TYPE kafka_consumer_sync_time_max_seconds gauge\n"
+        "kafka_consumer_sync_time_max_seconds{client_id=\"consumer-1\"} nan 0\n"
+        "# HELP kafka_consumer_fetch_latency_avg_seconds The average time taken for a fetch request.\n"
+        "# TYPE kafka_consumer_fetch_latency_avg_seconds gauge\n"
+        "kafka_consumer_fetch_latency_avg_seconds{client_id=\"consumer-1\"} nan 0\n"
+        "# HELP rabbitmq_channels\n"
+        "# TYPE rabbitmq_channels gauge\n"
+        "rabbitmq_channels{name=\"rabbit\"} 0 0\n"
+        "# HELP kafka_consumer_sync_rate_syncs The number of group syncs per second. Group synchronization is the second and last phase of the rebalance protocol. A large value indicates group instability.\n"
+        "# TYPE kafka_consumer_sync_rate_syncs gauge\n"
+        "kafka_consumer_sync_rate_syncs{client_id=\"consumer-1\"} 0 0\n"
+        "# HELP jvm_classes_loaded_classes The number of classes that are currently loaded in the Java virtual machine\n"
+        "# TYPE jvm_classes_loaded_classes gauge\n"
+        "jvm_classes_loaded_classes 17220 0\n"
+        "# HELP jdbc_connections_min\n"
+        "# TYPE jdbc_connections_min gauge\n"
+        "jdbc_connections_min{name=\"dataSource\"} 10 0\n"
+        "# HELP kafka_consumer_fetch_throttle_time_avg_seconds The average throttle time. When quotas are enabled, the broker may delay fetch requests in order to throttle a consumer which has exceeded its limit. This metric indicates how throttling time has been added to fetch requests on average.\n"
+        "# TYPE kafka_consumer_fetch_throttle_time_avg_seconds gauge\n"
+        "kafka_consumer_fetch_throttle_time_avg_seconds{client_id=\"consumer-1\"} nan 0\n"
+        "# HELP tomcat_sessions_active_max_sessions\n"
+        "# TYPE tomcat_sessions_active_max_sessions gauge\n"
+        "tomcat_sessions_active_max_sessions 0 0\n"
+        "# HELP process_cpu_usage The \"recent cpu usage\" for the Java Virtual Machine process\n"
+        "# TYPE process_cpu_usage gauge\n"
+        "process_cpu_usage 0.00070793903055696016 0\n"
+        "# HELP jvm_buffer_total_capacity_bytes An estimate of the total capacity of the buffers in this pool\n"
+        "# TYPE jvm_buffer_total_capacity_bytes gauge\n"
+        "jvm_buffer_total_capacity_bytes{id=\"mapped\"} 0 0\n"
+        "jvm_buffer_total_capacity_bytes{id=\"direct\"} 81920 0\n"
+        "# HELP kafka_consumer_fetch_throttle_time_max_seconds The maximum throttle time.\n"
+        "# TYPE kafka_consumer_fetch_throttle_time_max_seconds gauge\n"
+        "kafka_consumer_fetch_throttle_time_max_seconds{client_id=\"consumer-1\"} nan 0\n"
+        "# HELP system_load_average_1m The sum of the number of runnable entities queued to available processors and the number of runnable entities running on the available processors averaged over a period of time\n"
+        "# TYPE system_load_average_1m gauge\n"
+        "system_load_average_1m 0.52000000000000002 0\n"
+        "# HELP kafka_consumer_join_time_avg_seconds The average time taken for a group rejoin. This value can get as high as the configured session timeout for the consumer, but should usually be lower.\n"
+        "# TYPE kafka_consumer_join_time_avg_seconds gauge\n"
+        "kafka_consumer_join_time_avg_seconds{client_id=\"consumer-1\"} nan 0\n"
+        "# HELP jdbc_connections_max\n"
+        "# TYPE jdbc_connections_max gauge\n"
+        "jdbc_connections_max{name=\"dataSource\"} 10 0\n"
+        "# HELP kafka_consumer_assigned_partitions The number of partitions currently assigned to this consumer.\n"
+        "# TYPE kafka_consumer_assigned_partitions gauge\n"
+        "kafka_consumer_assigned_partitions{client_id=\"consumer-1\"} 0 0\n"
+        "# HELP kafka_consumer_heartbeat_response_time_max_seconds The max time taken to receive a response to a heartbeat request.\n"
+        "# TYPE kafka_consumer_heartbeat_response_time_max_seconds gauge\n"
+        "kafka_consumer_heartbeat_response_time_max_seconds{client_id=\"consumer-1\"} nan 0\n"
+        "# HELP jvm_threads_daemon_threads The current number of live daemon threads\n"
+        "# TYPE jvm_threads_daemon_threads gauge\n"
+        "jvm_threads_daemon_threads 20 0\n"
+        "# HELP system_cpu_count The number of processors available to the Java virtual machine\n"
+        "# TYPE system_cpu_count gauge\n"
+        "system_cpu_count 16 0\n"
+        "# HELP jvm_buffer_count_buffers An estimate of the number of buffers in the pool\n"
+        "# TYPE jvm_buffer_count_buffers gauge\n"
+        "jvm_buffer_count_buffers{id=\"mapped\"} 0 0\n"
+        "jvm_buffer_count_buffers{id=\"direct\"} 10 0\n"
+        "# HELP kafka_consumer_io_wait_time_avg_seconds The average length of time the I/O thread spent waiting for a socket to be ready for reads or writes.\n"
+        "# TYPE kafka_consumer_io_wait_time_avg_seconds gauge\n"
+        "kafka_consumer_io_wait_time_avg_seconds{client_id=\"consumer-1\"} 0.047184790159065626 0\n"
+        "# HELP jvm_memory_max_bytes The maximum amount of memory in bytes that can be used for memory management\n"
+        "# TYPE jvm_memory_max_bytes gauge\n"
+        "jvm_memory_max_bytes{area=\"nonheap\",id=\"CodeHeap 'profiled nmethods'\"} 122028032 0\n"
+        "jvm_memory_max_bytes{area=\"heap\",id=\"G1 Survivor Space\"} -1 0\n"
+        "jvm_memory_max_bytes{area=\"heap\",id=\"G1 Old Gen\"} 8331984896 0\n"
+        "jvm_memory_max_bytes{area=\"nonheap\",id=\"Metaspace\"} -1 0\n"
+        "jvm_memory_max_bytes{area=\"nonheap\",id=\"CodeHeap 'non-nmethods'\"} 7598080 0\n"
+        "jvm_memory_max_bytes{area=\"heap\",id=\"G1 Eden Space\"} -1 0\n"
+        "jvm_memory_max_bytes{area=\"nonheap\",id=\"Compressed Class Space\"} 1073741824 0\n"
+        "jvm_memory_max_bytes{area=\"nonheap\",id=\"CodeHeap 'non-profiled nmethods'\"} 122032128 0\n"
+        "# HELP jvm_gc_pause_seconds_max Time spent in GC pause\n"
+        "# TYPE jvm_gc_pause_seconds_max gauge\n"
+        "jvm_gc_pause_seconds_max{action=\"end of minor GC\",cause=\"Metadata GC Threshold\"} 0.02 0\n"
+        "jvm_gc_pause_seconds_max{action=\"end of minor GC\",cause=\"G1 Evacuation Pause\"} 0 0\n"
+        "# HELP kafka_consumer_connection_count_connections The current number of active connections.\n"
+        "# TYPE kafka_consumer_connection_count_connections gauge\n"
+        "kafka_consumer_connection_count_connections{client_id=\"consumer-1\"} 0 0\n"
+        "# HELP jdbc_connections_active\n"
+        "# TYPE jdbc_connections_active gauge\n"
+        "jdbc_connections_active{name=\"dataSource\"} 0 0\n"
+
+        "# HELP spring_kafka_listener_seconds Kafka Listener Timer\n"
+        "# TYPE spring_kafka_listener_seconds summary\n"
+        "spring_kafka_listener_seconds_sum{exception=\"ListenerExecutionFailedException\",name=\"org.springframework.kafka.KafkaListenerEndpointContainer#0-0\",result=\"failure\"} 0 0\n"
+        "spring_kafka_listener_seconds_count{exception=\"ListenerExecutionFailedException\",name=\"org.springframework.kafka.KafkaListenerEndpointContainer#0-0\",result=\"failure\"} 0 0\n"
+        "spring_kafka_listener_seconds_sum{exception=\"none\",name=\"org.springframework.kafka.KafkaListenerEndpointContainer#0-0\",result=\"success\"} 0 0\n"
+        "spring_kafka_listener_seconds_count{exception=\"none\",name=\"org.springframework.kafka.KafkaListenerEndpointContainer#0-0\",result=\"success\"} 0 0\n"
+        "# HELP hikaricp_connections_usage_seconds Connection usage time\n"
+        "# TYPE hikaricp_connections_usage_seconds summary\n"
+        "hikaricp_connections_usage_seconds_sum{pool=\"mcadb\"} 0 0\n"
+        "hikaricp_connections_usage_seconds_count{pool=\"mcadb\"} 0 0\n"
+        "# HELP jvm_gc_pause_seconds Time spent in GC pause\n"
+        "# TYPE jvm_gc_pause_seconds summary\n"
+        "jvm_gc_pause_seconds_sum{action=\"end of minor GC\",cause=\"Metadata GC Threshold\"} 0.031 0\n"
+        "jvm_gc_pause_seconds_count{action=\"end of minor GC\",cause=\"Metadata GC Threshold\"} 2 0\n"
+        "jvm_gc_pause_seconds_sum{action=\"end of minor GC\",cause=\"G1 Evacuation Pause\"} 0.016 0\n"
+        "jvm_gc_pause_seconds_count{action=\"end of minor GC\",cause=\"G1 Evacuation Pause\"} 1 0\n"
+        ;
+
+    status = cmt_decode_prometheus_create(&cmt, in_buf, in_size, &opts);
+    TEST_CHECK(status == 0);
+    if (status) {
+        fprintf(stderr, "PARSE ERROR:\n======\n%s\n======\n", errbuf);
+    } else {
+        result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
+        status = strcmp(result, expected);
+        TEST_CHECK(status == 0);
+        if (status) {
+            fprintf(stderr, "EXPECTED:\n======\n%s\n======\nRESULT:\n======\n%s\n======\n", expected, result);
+        }
+    }
+
+    cmt_sds_destroy(in_buf);
+    cmt_sds_destroy(result);
+    cmt_decode_prometheus_destroy(cmt);
+}
+
+void test_empty_metrics()
+{
+    int status;
+    cmt_sds_t result;
+    struct cmt *cmt;
+    struct cmt_decode_prometheus_parse_opts opts;
+    memset(&opts, 0, sizeof(opts));
+    const char in_buf[] =
+        "# HELP kube_cronjob_annotations Kubernetes annotations converted to Prometheus labels.\n"
+        "# TYPE kube_cronjob_annotations gauge\n"
+        "# HELP kube_cronjob_labels Kubernetes labels converted to Prometheus labels.\n"
+        "# TYPE kube_cronjob_labels gauge\n"
+        "# HELP kube_cronjob_info Info about cronjob.\n"
+        "# TYPE kube_cronjob_info gauge\n"
+        "# HELP kube_cronjob_created Unix creation timestamp\n"
+        "# TYPE kube_cronjob_created gauge\n"
+        "# HELP kube_cronjob_status_active Active holds pointers to currently running jobs.\n"
+        "# TYPE kube_cronjob_status_active gauge\n"
+        "# HELP kube_cronjob_status_last_schedule_time LastScheduleTime keeps information of when was the last time the job was successfully scheduled.\n"
+        "# TYPE kube_cronjob_status_last_schedule_time gauge\n"
+        "# HELP kube_cronjob_status_last_successful_time LastSuccessfulTime keeps information of when was the last time the job was completed successfully.\n"
+        "# TYPE kube_cronjob_status_last_successful_time gauge\n"
+        "# HELP kube_cronjob_spec_suspend Suspend flag tells the controller to suspend subsequent executions.\n"
+        "# TYPE kube_cronjob_spec_suspend gauge\n"
+        "# HELP kube_cronjob_spec_starting_deadline_seconds Deadline in seconds for starting the job if it misses scheduled time for any reason.\n"
+        "# TYPE kube_cronjob_spec_starting_deadline_seconds gauge\n"
+        "# HELP kube_cronjob_next_schedule_time Next time the cronjob should be scheduled. The time after lastScheduleTime, or after the cron job's creation time if it's never been scheduled. Use this to determine if the job is delayed.\n"
+        "# TYPE kube_cronjob_next_schedule_time gauge\n"
+        "# HELP kube_cronjob_metadata_resource_version Resource version representing a specific version of the cronjob.\n"
+        "# TYPE kube_cronjob_metadata_resource_version gauge\n"
+        "# HELP kube_cronjob_spec_successful_job_history_limit Successful job history limit tells the controller how many completed jobs should be preserved.\n"
+        "# TYPE kube_cronjob_spec_successful_job_history_limit gauge\n"
+        "# HELP kube_cronjob_spec_failed_job_history_limit Failed job history limit tells the controller how many failed jobs should be preserved.\n"
+        "# TYPE kube_cronjob_spec_failed_job_history_limit gauge\n"
+        ;
+
+    const char expected[] = "";
+
+    cmt_initialize();
+    status = cmt_decode_prometheus_create(&cmt, in_buf, 0, &opts);
+    TEST_CHECK(status == 0);
+    result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
+    TEST_CHECK(strcmp(result, expected) == 0);
+    cmt_sds_destroy(result);
+    cmt_decode_prometheus_destroy(cmt);
+}
+
 TEST_LIST = {
     {"header_help", test_header_help},
     {"header_type", test_header_type},
@@ -823,5 +1040,7 @@ TEST_LIST = {
     {"summary", test_summary},
     {"null_labels", test_null_labels},
     {"issue_fluent_bit_5541", test_issue_fluent_bit_5541},
+    {"issue_fluent_bit_5894", test_issue_fluent_bit_5894},
+    {"empty_metrics", test_empty_metrics},
     { 0 }
 };

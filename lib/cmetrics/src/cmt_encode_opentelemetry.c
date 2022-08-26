@@ -1549,7 +1549,7 @@ int append_sample_to_metric(struct cmt_opentelemetry_context *context,
     struct cmt_label                                   *static_label;
     struct cmt_map_label                               *label_value;
     struct cmt_map_label                               *label_name;
-    void                                               *data_point;
+    void                                               *data_point = NULL;
     Opentelemetry__Proto__Common__V1__KeyValue         *attribute;
     struct cmt_histogram                               *histogram;
     struct cmt_summary                                 *summary;
@@ -1576,10 +1576,6 @@ int append_sample_to_metric(struct cmt_opentelemetry_context *context,
     }
     else if (map->type == CMT_SUMMARY) {
         summary = (struct cmt_summary *) map->parent;
-
-        if (sample->sum_quantiles_set == CMT_FALSE) {
-            return CMT_ENCODE_OPENTELEMETRY_SUCCESS;
-        }
 
         data_point = initialize_summary_data_point(0,
                                                    cmt_metric_get_timestamp(sample),

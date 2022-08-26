@@ -66,11 +66,6 @@ struct cmt_summary *cmt_summary_create(struct cmt *cmt,
         return NULL;
     }
 
-    if (quantiles_count <= 0) {
-        cmt_log_error(cmt, "quantiles_count cannot be zero");
-        return NULL;
-    }
-
     s = calloc(1, sizeof(struct cmt_summary));
     if (!s) {
         cmt_errno();
@@ -96,18 +91,21 @@ struct cmt_summary *cmt_summary_create(struct cmt *cmt,
     }
 
     /* create quantiles buffer */
-    s->quantiles_count = quantiles_count;
-    s->quantiles = calloc(1, sizeof(double) * quantiles_count);
-    if (!s->quantiles_count) {
-        cmt_errno();
-        cmt_summary_destroy(s);
-        return NULL;
+    if (quantiles_count > 0) {
+        s->quantiles_count = quantiles_count;
+        s->quantiles = calloc(1, sizeof(double) * quantiles_count);
+        if (!s->quantiles_count) {
+            cmt_errno();
+            cmt_summary_destroy(s);
+            return NULL;
+        }
+
+        /* set quantile */
+        for (i = 0; i < quantiles_count; i++) {
+            s->quantiles[i] = quantiles[i];
+        }
     }
 
-    /* set quantile */
-    for (i = 0; i < quantiles_count; i++) {
-        s->quantiles[i] = quantiles[i];
-    }
     return s;
 }
 
@@ -280,7 +278,8 @@ int cmt_summary_set_default(struct cmt_summary *summary,
         return -1;
     }
 
-    if (!metric->sum_quantiles) {
+
+    if (!metric->sum_quantiles && summary->quantiles_count) {
         metric->sum_quantiles = calloc(1, sizeof(uint64_t) * summary->quantiles_count);
         if (!metric->sum_quantiles) {
             cmt_errno();
