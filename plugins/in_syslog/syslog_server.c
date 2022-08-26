@@ -71,13 +71,13 @@ static int syslog_server_unix_create(struct flb_syslog *ctx)
     struct flb_tls *tls;
 
     if (ctx->mode == FLB_SYSLOG_UNIX_TCP) {
-        mode = FLB_DOWNSTREAM_TYPE_UNIX_STREAM;
+        mode = FLB_TRANSPORT_UNIX_STREAM;
         tls = ctx->ins->tls;
     }
     else if (ctx->mode == FLB_SYSLOG_UNIX_UDP) {
         ctx->dgram_mode_flag = FLB_TRUE;
 
-        mode = FLB_DOWNSTREAM_TYPE_UNIX_DGRAM;
+        mode = FLB_TRANSPORT_UNIX_DGRAM;
         tls = NULL;
     }
     else {
@@ -133,13 +133,13 @@ static int syslog_server_net_create(struct flb_syslog *ctx)
     port = (unsigned short int) strtoul(ctx->port, NULL, 10);
 
     if (ctx->mode == FLB_SYSLOG_TCP) {
-        mode = FLB_DOWNSTREAM_TYPE_TCP;
+        mode = FLB_TRANSPORT_TCP;
         tls = ctx->ins->tls;
     }
     else if (ctx->mode == FLB_SYSLOG_UDP) {
         ctx->dgram_mode_flag = FLB_TRUE;
 
-        mode = FLB_DOWNSTREAM_TYPE_UDP;
+        mode = FLB_TRANSPORT_UDP;
         tls = NULL;
     }
     else {
