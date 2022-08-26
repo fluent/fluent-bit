@@ -19,6 +19,7 @@
 
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_downstream.h>
 
 #include "opentelemetry.h"
 #include "http_conn.h"
