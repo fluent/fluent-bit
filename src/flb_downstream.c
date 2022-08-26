@@ -21,13 +21,15 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_kv.h>
-#include <fluent-bit/flb_slist.h>
+#include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_slist.h>
+#include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_engine.h>
+#include <fluent-bit/tls/flb_tls.h>
 #include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_connection.h>
-#include <fluent-bit/flb_io.h>
-#include <fluent-bit/tls/flb_tls.h>
-#include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_thread_storage.h>
 
 /* Config map for Downstream networking setup */
@@ -59,17 +61,7 @@ struct flb_config_map downstream_net[] = {
 /* Enable thread-safe mode for downstream connection */
 void flb_downstream_thread_safe(struct flb_downstream *stream)
 {
-    stream->thread_safe = FLB_TRUE;
-
-    pthread_mutex_init(&stream->mutex_lists, NULL);
-
-    /*
-     * Upon upstream creation, automatically the downstream is linked into
-     * the main Fluent Bit context (struct flb_config *)->downstreams. We
-     * have to avoid any access to this context outside of the worker
-     * thread.
-     */
-    mk_list_del(&stream->_head);
+    flb_stream_enable_thread_safety(&stream->base);
 }
 
 struct mk_list *flb_downstream_get_config_map(struct flb_config *config)
@@ -84,7 +76,7 @@ void flb_downstream_init()
 }
 
 int flb_downstream_setup(struct flb_downstream *stream,
-                         int type, int flags,
+                         int transport, int flags,
                          const char *host,
                          unsigned short int port,
                          struct flb_tls *tls,
@@ -93,24 +85,15 @@ int flb_downstream_setup(struct flb_downstream *stream,
 {
     char port_string[8];
 
-    snprintf(port_string, sizeof(port_string), "%u", port);
-
-    mk_list_init(&stream->busy_queue);
-    mk_list_init(&stream->destroy_queue);
+    flb_stream_setup(&stream->base,
+                     FLB_DOWNSTREAM,
+                     transport,
+                     flags,
+                     tls,
+                     config,
+                     net_setup);
 
     stream->server_fd = FLB_INVALID_SOCKET;
-    stream->config = config;
-    stream->type = type;
-
-    /* Set default networking setup values */
-    if (net_setup == NULL) {
-        flb_net_setup_init(&stream->net);
-    }
-    else {
-        memcpy(&stream->net, net_setup, sizeof(struct flb_net_setup));
-    }
-
-    /* Set upstream to the http_proxy if it is specified. */
     stream->host = flb_strdup(host);
     stream->port = port;
 
@@ -118,22 +101,23 @@ int flb_downstream_setup(struct flb_downstream *stream,
         return -1;
     }
 
-    stream->thread_safe = FLB_FALSE;
-    stream->flags = flags;
-    stream->tls = tls;
+    mk_list_init(&stream->busy_queue);
+    mk_list_init(&stream->destroy_queue);
 
-    if (type == FLB_DOWNSTREAM_TYPE_TCP) {
+    snprintf(port_string, sizeof(port_string), "%u", port);
+
+    if (transport == FLB_TRANSPORT_TCP) {
         stream->server_fd = flb_net_server(port_string, host);
     }
-    else if (type == FLB_DOWNSTREAM_TYPE_UDP) {
+    else if (transport == FLB_TRANSPORT_UDP) {
         stream->server_fd = flb_net_server_udp(port_string, host);
     }
-    else if (type == FLB_DOWNSTREAM_TYPE_UNIX_STREAM) {
+    else if (transport == FLB_TRANSPORT_UNIX_STREAM) {
         stream->server_fd = flb_net_server_unix(host,
                                                 FLB_TRUE,
                                                 FLB_NETWORK_DEFAULT_BACKLOG_SIZE);
     }
-    else if (type == FLB_DOWNSTREAM_TYPE_UNIX_DGRAM) {
+    else if (transport == FLB_TRANSPORT_UNIX_DGRAM) {
         stream->server_fd = flb_net_server_unix(host,
                                                 FLB_FALSE,
                                                 FLB_NETWORK_DEFAULT_BACKLOG_SIZE);
@@ -149,13 +133,13 @@ int flb_downstream_setup(struct flb_downstream *stream,
         return -2;
     }
 
-    mk_list_add(&stream->_head, &config->downstreams);
+    mk_list_add(&stream->base._head, &config->downstreams);
 
     return 0;
 }
 
 /* Creates a new downstream context */
-struct flb_downstream *flb_downstream_create(int type, int flags,
+struct flb_downstream *flb_downstream_create(int transport, int flags,
                                              const char *host,
                                              unsigned short int port,
                                              struct flb_tls *tls,
@@ -172,7 +156,7 @@ struct flb_downstream *flb_downstream_create(int type, int flags,
     }
     else {
         result = flb_downstream_setup(stream,
-                                      type, flags,
+                                      transport, flags,
                                       host, port,
                                       tls,
                                       config,
@@ -184,7 +168,7 @@ struct flb_downstream *flb_downstream_create(int type, int flags,
             stream = NULL;
         }
         else {
-            stream->dynamically_allocated = FLB_TRUE;
+            stream->base.dynamically_allocated = FLB_TRUE;
         }
     }
 
@@ -198,12 +182,12 @@ struct flb_downstream *flb_downstream_create(int type, int flags,
  */
 static int prepare_destroy_conn(struct flb_connection *connection)
 {
-    struct flb_downstream *stream;
+    struct flb_stream *stream;
 
-    stream = connection->downstream;
+    stream = connection->stream;
 
     flb_trace("[downstream] destroy connection #%i to %s",
-              connection->fd, connection->user_friendly_remote_host);
+              connection->fd, flb_connection_get_remote_address(connection));
 
     if (stream->flags & FLB_IO_ASYNC) {
         mk_event_del(connection->evl, &connection->event);
@@ -224,7 +208,7 @@ static int prepare_destroy_conn(struct flb_connection *connection)
     mk_list_del(&connection->_head);
 
     /* Add node to destroy queue */
-    mk_list_add(&connection->_head, &stream->destroy_queue);
+    mk_list_add(&connection->_head, &connection->downstream->destroy_queue);
 
     /*
      * note: the connection context is destroyed by the engine once all events
@@ -236,26 +220,17 @@ static int prepare_destroy_conn(struct flb_connection *connection)
 /* 'safe' version of prepare_destroy_conn. It set locks if necessary */
 static inline int prepare_destroy_conn_safe(struct flb_connection *connection)
 {
-    struct flb_downstream *stream;
-    int                    locked;
-    int                    result;
+    int result;
 
-    locked = FLB_FALSE;
-    stream = connection->downstream;
+    /* This used to not wait for the lock in thread safe mode but it makes
+     * no sense so I'm changing it (08/28/22) leo
+     */
 
-    if (stream->thread_safe) {
-        result = pthread_mutex_trylock(&stream->mutex_lists);
-
-        if (result == 0) {
-            locked = FLB_TRUE;
-        }
-    }
+    flb_stream_acquire_lock(connection->stream, FLB_TRUE);
 
     result = prepare_destroy_conn(connection);
 
-    if (locked) {
-        pthread_mutex_unlock(&stream->mutex_lists);
-    }
+    flb_stream_release_lock(connection->stream);
 
     return result;
 }
@@ -282,10 +257,13 @@ struct flb_connection *flb_downstream_conn_get(struct flb_downstream *stream)
 {
     flb_sockfd_t           connection_fd;
     struct flb_connection *connection;
+    int                    transport;
     int                    result;
 
-    if (stream->type == FLB_DOWNSTREAM_TYPE_UDP ||
-        stream->type == FLB_DOWNSTREAM_TYPE_UNIX_DGRAM ) {
+    transport = stream->base.transport;
+
+    if (transport == FLB_TRANSPORT_UDP ||
+        transport == FLB_TRANSPORT_UNIX_DGRAM ) {
         if (stream->dgram_connection != NULL) {
             return stream->dgram_connection;
         }
@@ -308,19 +286,15 @@ struct flb_connection *flb_downstream_conn_get(struct flb_downstream *stream)
 
     connection->busy_flag = FLB_TRUE;
 
-    if (stream->thread_safe) {
-        pthread_mutex_lock(&stream->mutex_lists);
-    }
+    flb_stream_acquire_lock(&stream->base, FLB_TRUE);
 
     /* Link new connection to the busy queue */
     mk_list_add(&connection->_head, &stream->busy_queue);
 
-    if (stream->thread_safe) {
-        pthread_mutex_unlock(&stream->mutex_lists);
-    }
+    flb_stream_release_lock(&stream->base);
 
-    if (stream->type != FLB_DOWNSTREAM_TYPE_UDP &&
-        stream->type != FLB_DOWNSTREAM_TYPE_UNIX_DGRAM ) {
+    if (transport != FLB_TRANSPORT_UDP &&
+        transport != FLB_TRANSPORT_UNIX_DGRAM ) {
         flb_connection_reset_connection_timeout(connection);
 
         result = flb_io_net_accept(connection, flb_coro_get());
@@ -345,8 +319,8 @@ struct flb_connection *flb_downstream_conn_get(struct flb_downstream *stream)
 
     flb_connection_reset_io_timeout(connection);
 
-    if (stream->type == FLB_DOWNSTREAM_TYPE_UDP ||
-        stream->type == FLB_DOWNSTREAM_TYPE_UNIX_DGRAM) {
+    if (transport == FLB_TRANSPORT_UDP ||
+        transport == FLB_TRANSPORT_UNIX_DGRAM) {
         if (stream->dgram_connection == NULL) {
             stream->dgram_connection = connection;
         }
@@ -394,11 +368,11 @@ void flb_downstream_destroy(struct flb_downstream *stream)
             flb_socket_close(stream->server_fd);
         }
 
-        if (!mk_list_entry_orphan(&stream->_head)) {
-            mk_list_del(&stream->_head);
+        if (mk_list_entry_orphan(&stream->base._head) == 0) {
+            mk_list_del(&stream->base._head);
         }
 
-        if (stream->dynamically_allocated) {
+        if (stream->base.dynamically_allocated) {
             flb_free(stream);
         }
     }
@@ -425,15 +399,13 @@ int flb_downstream_conn_timeouts(struct mk_list *list)
 
     /* Iterate all downstream contexts */
     mk_list_foreach(head, list) {
-        stream = mk_list_entry(head, struct flb_downstream, _head);
+        stream = mk_list_entry(head, struct flb_downstream, base._head);
 
-        if (stream->type == FLB_DOWNSTREAM_TYPE_UDP) {
+        if (stream->base.transport == FLB_TRANSPORT_UDP) {
             continue;
         }
 
-        if (stream->thread_safe) {
-            pthread_mutex_lock(&stream->mutex_lists);
-        }
+        flb_stream_acquire_lock(&stream->base, FLB_TRUE);
 
         /* Iterate every busy connection */
         mk_list_foreach_safe(s_head, tmp, &stream->busy_queue) {
@@ -490,9 +462,7 @@ int flb_downstream_conn_timeouts(struct mk_list *list)
             }
         }
 
-        if (stream->thread_safe) {
-            pthread_mutex_unlock(&stream->mutex_lists);
-        }
+        flb_stream_release_lock(&stream->base);
     }
 
     return 0;
@@ -504,9 +474,7 @@ int flb_downstream_conn_pending_destroy(struct flb_downstream *stream)
     struct mk_list        *head;
     struct mk_list        *tmp;
 
-    if (stream->thread_safe) {
-        pthread_mutex_lock(&stream->mutex_lists);
-    }
+    flb_stream_acquire_lock(&stream->base, FLB_TRUE);
 
     mk_list_foreach_safe(head, tmp, &stream->destroy_queue) {
         connection = mk_list_entry(head, struct flb_connection, _head);
@@ -514,9 +482,7 @@ int flb_downstream_conn_pending_destroy(struct flb_downstream *stream)
         destroy_conn(connection);
     }
 
-    if (stream->thread_safe) {
-        pthread_mutex_unlock(&stream->mutex_lists);
-    }
+    flb_stream_release_lock(&stream->base);
 
     return 0;
 }
@@ -528,7 +494,7 @@ int flb_downstream_conn_pending_destroy_list(struct mk_list *list)
 
     /* Iterate all downstream contexts */
     mk_list_foreach(head, list) {
-         stream = mk_list_entry(head, struct flb_downstream, _head);
+         stream = mk_list_entry(head, struct flb_downstream, base._head);
 
         flb_downstream_conn_pending_destroy(stream);
     }
@@ -538,9 +504,5 @@ int flb_downstream_conn_pending_destroy_list(struct mk_list *list)
 
 int flb_downstream_is_async(struct flb_downstream *stream)
 {
-    if (stream->flags & FLB_IO_ASYNC) {
-        return FLB_TRUE;
-    }
-
-    return FLB_FALSE;
+    return flb_stream_is_async(&stream->base);
 }
