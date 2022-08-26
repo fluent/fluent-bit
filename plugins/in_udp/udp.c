@@ -70,7 +70,7 @@ static int in_udp_init(struct flb_input_instance *in,
 
     port = (unsigned short int) strtoul(ctx->port, NULL, 10);
 
-    ctx->downstream = flb_downstream_create(FLB_DOWNSTREAM_TYPE_UDP,
+    ctx->downstream = flb_downstream_create(FLB_TRANSPORT_UDP,
                                             in->flags,
                                             ctx->listen,
                                             port,
