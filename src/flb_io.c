@@ -86,15 +86,14 @@ int flb_io_net_accept(struct flb_connection *connection,
 
 #ifdef FLB_HAVE_TLS
     /* Check if TLS was enabled, if so perform the handshake */
-    if (connection->downstream->flags & FLB_IO_TLS) {
-        if (connection->downstream->tls != NULL) {
-            ret = flb_tls_session_create(connection->downstream->tls,
-                                         connection,
-                                         coro);
+    if (flb_stream_is_secure(connection->stream) &&
+        connection->stream->tls_context != NULL) {
+        ret = flb_tls_session_create(connection->stream->tls_context,
+                                     connection,
+                                     coro);
 
-            if (ret != 0) {
-                return -1;
-            }
+        if (ret != 0) {
+            return -1;
         }
     }
 #endif
@@ -130,8 +129,8 @@ int flb_io_net_connect(struct flb_connection *connection,
     /* Perform TCP connection */
     fd = flb_net_tcp_connect(connection->upstream->tcp_host,
                              connection->upstream->tcp_port,
-                             connection->upstream->net.source_address,
-                             connection->upstream->net.connect_timeout,
+                             connection->stream->net.source_address,
+                             connection->stream->net.connect_timeout,
                              async, coro, connection);
     if (fd == -1) {
         return -1;
@@ -158,20 +157,20 @@ int flb_io_net_connect(struct flb_connection *connection,
 
 #ifdef FLB_HAVE_TLS
     /* Check if TLS was enabled, if so perform the handshake */
-    if (connection->upstream->flags & FLB_IO_TLS) {
-        if (connection->downstream->tls != NULL) {
-            ret = flb_tls_session_create(connection->upstream->tls,
-                                         connection,
-                                         coro);
+    if (flb_stream_is_secure(connection->stream) &&
+        connection->stream->tls_context != NULL) {
+        ret = flb_tls_session_create(connection->stream->tls_context,
+                                     connection,
+                                     coro);
 
-            if (ret != 0) {
-                return -1;
-            }
+        if (ret != 0) {
+            return -1;
         }
     }
 #endif
 
     flb_trace("[io] connection OK");
+
     return 0;
 }
 
@@ -199,8 +198,8 @@ static int net_io_write(struct flb_connection *connection,
     address = NULL;
 
     if (connection->type == FLB_DOWNSTREAM_CONNECTION) {
-        if (connection->downstream->type == FLB_DOWNSTREAM_TYPE_UDP ||
-            connection->downstream->type == FLB_DOWNSTREAM_TYPE_UNIX_DGRAM) {
+        if (connection->stream->transport == FLB_TRANSPORT_UDP ||
+            connection->stream->transport == FLB_TRANSPORT_UNIX_DGRAM) {
             address = &connection->raw_remote_host;
         }
     }
@@ -441,8 +440,8 @@ static ssize_t net_io_read(struct flb_connection *connection,
     address = NULL;
 
     if (connection->type == FLB_DOWNSTREAM_CONNECTION) {
-        if (connection->downstream->type == FLB_DOWNSTREAM_TYPE_UDP ||
-            connection->downstream->type == FLB_DOWNSTREAM_TYPE_UNIX_DGRAM) {
+        if (connection->stream->transport == FLB_TRANSPORT_UDP ||
+            connection->stream->transport == FLB_TRANSPORT_UNIX_DGRAM) {
             address = &connection->raw_remote_host;
         }
     }
