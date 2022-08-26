@@ -1183,7 +1183,7 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     flb_output_upstream_set(ctx->u, ins);
 
     /* Metadata Upstream Sync flags */
-    ctx->metadata_u->flags &= ~FLB_IO_ASYNC;
+    flb_stream_disable_async_mode(&ctx->metadata_u->base);
 
     if (ins->test_mode == FLB_FALSE) {
         /* Retrieve oauth2 token */
