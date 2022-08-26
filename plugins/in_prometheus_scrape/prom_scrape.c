@@ -18,7 +18,9 @@
  */
 
 #include <fluent-bit/flb_input_plugin.h>
+#include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_upstream.h>
+
 #include <cmetrics/cmt_decode_prometheus.h>
 
 #include "prom_scrape.h"
