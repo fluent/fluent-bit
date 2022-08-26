@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_upstream.h>
+#include <fluent-bit/flb_callback.h>
 
 /* Buffer size */
 #define FLB_HTTP_BUF_SIZE        2048
