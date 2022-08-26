@@ -1767,16 +1767,16 @@ int flb_input_upstream_set(struct flb_upstream *u, struct flb_input_instance *in
      */
     if (flb_input_is_threaded(ins)) {
         flb_upstream_thread_safe(u);
-        mk_list_add(&u->_head, &ins->upstreams);
+        mk_list_add(&u->base._head, &ins->upstreams);
     }
 
     /* Set networking options 'net.*' received through instance properties */
-    memcpy(&u->net, &ins->net_setup, sizeof(struct flb_net_setup));
+    memcpy(&u->base.net, &ins->net_setup, sizeof(struct flb_net_setup));
 
     return 0;
 }
 
-int flb_input_downstream_set(struct flb_downstream *stream,
+int flb_input_downstream_set(struct flb_stream *stream,
                              struct flb_input_instance *ins)
 {
     int flags = 0;
@@ -1803,14 +1803,15 @@ int flb_input_downstream_set(struct flb_downstream *stream,
     }
 
     /* Set flags */
-    stream->flags |= flags;
+    flb_stream_enable_flags(stream, flags);
 
     /*
      * If the input plugin will run in multiple threads, enable
      * the thread safe mode for the Downstream context.
      */
     if (flb_input_is_threaded(ins)) {
-        flb_downstream_thread_safe(stream);
+        flb_stream_enable_thread_safety(stream);
+
         mk_list_add(&stream->_head, &ins->downstreams);
     }
 
