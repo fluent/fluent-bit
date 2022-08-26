@@ -86,7 +86,7 @@ static int fw_unix_create(struct flb_in_fw_config *ctx)
         return -1;
     }
 
-    ctx->downstream = flb_downstream_create(FLB_DOWNSTREAM_TYPE_UNIX_STREAM,
+    ctx->downstream = flb_downstream_create(FLB_TRANSPORT_UNIX_STREAM,
                                             ctx->ins->flags,
                                             ctx->unix_path,
                                             0,
@@ -194,7 +194,7 @@ static int in_fw_init(struct flb_input_instance *ins,
     else {
         port = (unsigned short int) strtoul(ctx->tcp_port, NULL, 10);
 
-        ctx->downstream = flb_downstream_create(FLB_DOWNSTREAM_TYPE_TCP,
+        ctx->downstream = flb_downstream_create(FLB_TRANSPORT_TCP,
                                                 ctx->ins->flags,
                                                 ctx->listen,
                                                 port,
