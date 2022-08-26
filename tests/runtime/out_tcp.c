@@ -21,6 +21,7 @@
 #include <fluent-bit.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_stream.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_downstream.h>
 #include <string.h>
@@ -278,6 +279,7 @@ static void test_ctx_destroy(struct test_ctx *ctx)
 
 void flb_test_tcp_with_tls()
 {
+    struct flb_net_setup   downstream_net_setup;
     struct flb_connection *client_connection;
     size_t                 out_buf_size;
     char                   in_buf[256];
@@ -337,20 +339,22 @@ void flb_test_tcp_with_tls()
         ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) out_buf, out_buf_size);
         TEST_CHECK(ret >= 0);
 
-        downstream = flb_downstream_create(FLB_DOWNSTREAM_TYPE_TCP,
+        flb_net_setup_init(&downstream_net_setup);
+
+        downstream_net_setup.io_timeout = DEFAULT_IO_TIMEOUT;
+
+        downstream = flb_downstream_create(FLB_TRANSPORT_TCP,
                                            FLB_IO_TCP | FLB_IO_TLS,
                                            DEFAULT_HOST,
                                            port,
                                            tls,
                                            ctx->flb->config,
-                                           NULL);
+                                           &downstream_net_setup);
 
         TEST_CHECK(downstream != NULL);
 
         if (downstream != NULL) {
-            downstream->flags &= ~FLB_IO_ASYNC;
-
-            downstream->net.io_timeout = DEFAULT_IO_TIMEOUT;
+            flb_stream_disable_async_mode(&downstream->base);
 
             flb_net_socket_blocking(downstream->server_fd);
 
