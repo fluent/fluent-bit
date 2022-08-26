@@ -59,9 +59,6 @@ static int enable_trace_input(struct flb_hs *hs, const char *name, const char *p
         return 404;
     }
 
-    if (in->chunk_trace_ctxt != NULL) {
-        flb_chunk_trace_context_destroy(in);
-    }
     flb_chunk_trace_context_new(in, output_name, prefix, NULL, props);
     return (in->chunk_trace_ctxt == NULL ? 503 : 0);
 }
