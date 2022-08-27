@@ -34,7 +34,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     u = flb_upstream_create(config, "127.0.0.1", 8001, 0, NULL);
 
     u_conn = flb_connection_create(-1,
-                                   FLB_CONNECTION_TYPE_TCP,
+                                   FLB_TRANSPORT_TCP,
                                    (void *) u,
                                    NULL,
                                    NULL);
