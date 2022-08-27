@@ -70,6 +70,14 @@ bin/fluent-bit -i cpu -o stdout -f 1
 
 If you are interested into more details, please refer to the [Build & Install](https://docs.fluentbit.io/manual/installation/sources/build-and-install) section.
 
+#### Requirements
+
+- CMake >= 3.0
+- Flex
+- Bison
+- YAML headers
+- OpenSSL headers
+
 #### Linux Packages
 
 We provide packages for most common Linux distributions:
