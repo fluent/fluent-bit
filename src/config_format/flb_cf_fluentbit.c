@@ -721,7 +721,6 @@ struct flb_cf *flb_cf_fluentbit_create(struct flb_cf *cf,
                                        char *file_path, char *buf, size_t size)
 {
     int ret;
-    int created = FLB_FALSE;
     struct local_ctx ctx;
 
     if (!cf) {
@@ -729,12 +728,11 @@ struct flb_cf *flb_cf_fluentbit_create(struct flb_cf *cf,
         if (!cf) {
             return NULL;
         }
-        created = FLB_TRUE;
     }
 
     ret = local_init(&ctx, file_path);
     if (ret != 0) {
-        if (cf && created) {
+        if (cf) {
             flb_cf_destroy(cf);
         }
         return NULL;
@@ -744,7 +742,7 @@ struct flb_cf *flb_cf_fluentbit_create(struct flb_cf *cf,
 
     local_exit(&ctx);
 
-    if (ret == -1 && created) {
+    if (ret == -1) {
         flb_cf_destroy(cf);
         return NULL;
     }
