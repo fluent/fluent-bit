@@ -12,6 +12,7 @@
 
 #define FLB_000 FLB_TESTS_DATA_PATH "/data/config_format/classic/fluent-bit.conf"
 #define FLB_001 FLB_TESTS_DATA_PATH "/data/config_format/classic/issue_5880.conf"
+#define FLB_002 FLB_TESTS_DATA_PATH "/data/config_format/classic/indent_level_error.conf"
 
 #define ERROR_LOG "fluentbit_conf_error.log"
 
@@ -175,8 +176,56 @@ void missing_value()
     unlink(ERROR_LOG);
 }
 
+void indent_level_error()
+{
+	struct flb_cf *cf;
+    FILE *fp = NULL;
+    char *expected_strs[] = {"invalid", "indent", "level"};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+    unlink(ERROR_LOG);
+
+    fp = freopen(ERROR_LOG, "w+", stderr);
+    if (!TEST_CHECK(fp != NULL)) {
+        TEST_MSG("freopen failed. errno=%d path=%s", errno, ERROR_LOG);
+        exit(EXIT_FAILURE);
+    }
+
+    cf = flb_cf_create();
+    if (!TEST_CHECK(cf != NULL)) {
+        TEST_MSG("flb_cf_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    cf = flb_cf_fluentbit_create(cf, FLB_002, NULL, 0);
+    TEST_CHECK(cf == NULL);
+    fflush(fp);
+    fclose(fp);
+
+    fp = fopen(ERROR_LOG, "r");
+    if (!TEST_CHECK(fp != NULL)) {
+        TEST_MSG("fopen failed. errno=%d path=%s", errno, ERROR_LOG);
+        if (cf != NULL) {
+            flb_cf_destroy(cf);
+        }
+        unlink(ERROR_LOG);
+        exit(EXIT_FAILURE);
+    }
+
+    check_str_list(&expected, fp);
+    if (cf != NULL) {
+        flb_cf_destroy(cf);
+    }
+    fclose(fp);
+    unlink(ERROR_LOG);
+}
+
 TEST_LIST = {
     { "basic"    , test_basic},
     { "missing_value_issue5880" , missing_value},
+    { "indent_level_error" , indent_level_error},
     { 0 }
 };
