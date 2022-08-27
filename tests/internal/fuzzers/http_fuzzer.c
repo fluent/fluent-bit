@@ -5,6 +5,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_socket.h>
+#include <fluent-bit/flb_stream.h>
 #include <fluent-bit/flb_connection.h>
 #include <fluent-bit/flb_http_client.h>
 
