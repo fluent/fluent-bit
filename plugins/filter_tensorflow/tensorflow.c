@@ -88,7 +88,7 @@ void build_interpreter(struct flb_tensorflow *ctx, char* model_path)
     ctx->interpreter = TfLiteInterpreterCreate(ctx->model, ctx->interpreter_options);
     TfLiteInterpreterAllocateTensors(ctx->interpreter);
 
-    flb_info("TensorFlow Lite interpreter created!");
+    flb_plg_info(ctx->ins, "TensorFlow Lite interpreter created!");
     print_model_io(ctx);
 }
 
