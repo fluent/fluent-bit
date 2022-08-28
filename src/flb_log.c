@@ -323,8 +323,11 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
     return log;
 }
 
-void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
+int flb_log_construct(struct log_message *msg, int *ret_len,
+                     int type, const char *file, int line, const char *fmt, va_list *args)
 {
+    int body_size;
+    int ret;
     int len;
     int total;
     time_t now;
@@ -334,10 +337,6 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
     const char *reset_color = ANSI_RESET;
     struct tm result;
     struct tm *current;
-    struct log_message msg = {0};
-    va_list args;
-
-    va_start(args, fmt);
 
     switch (type) {
     case FLB_LOG_HELP:
@@ -387,11 +386,10 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
     current = localtime_r(&now, &result);
 
     if (current == NULL) {
-        va_end(args);
-        return;
+        return -1;
     }
 
-    len = snprintf(msg.msg, sizeof(msg.msg) - 1,
+    len = snprintf(msg->msg, sizeof(msg->msg) - 1,
                    "%s[%s%i/%02i/%02i %02i:%02i:%02i%s]%s [%s%5s%s] ",
                    /*      time     */                    /* type */
 
@@ -408,21 +406,72 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
                    /* type format */
                    header_color, header_title, reset_color);
 
-    total = vsnprintf(msg.msg + len,
-                      (sizeof(msg.msg) - 2) - len,
-                      fmt, args);
+    body_size = (sizeof(msg->msg) - 2) - len;
+    total = vsnprintf(msg->msg + len,
+                      body_size,
+                      fmt, *args);
     if (total < 0) {
-        va_end(args);
-        return;
+        return -1;
+    }
+    ret = total; /* ret means a buffer size need to save log body */
+
+    total = strlen(msg->msg + len) + len;
+    msg->msg[total++] = '\n';
+    msg->msg[total]   = '\0';
+    msg->size = total;
+
+    *ret_len = len;
+
+    if (ret >= body_size) {
+        /* log is truncated */
+        return ret - body_size;
     }
 
-    total = strlen(msg.msg + len) + len;
-    msg.msg[total++] = '\n';
-    msg.msg[total]   = '\0';
-    msg.size = total;
+    return 0;
+}
+
+/**
+ * flb_log_is_truncated tries to construct log and returns that the log is truncated.
+ *
+ * @param same as flb_log_print
+ * @return 0: log is not truncated. -1: some error occurs.
+ *         positive number: truncated log size.
+ *
+ */
+int flb_log_is_truncated(int type, const char *file, int line, const char *fmt, ...)
+{
+    int ret;
+    int len;
+    struct log_message msg = {0};
+    va_list args;
+
+    va_start(args, fmt);
+    ret = flb_log_construct(&msg, &len, type, file, line, fmt, &args);
     va_end(args);
 
+    if (ret < 0) {
+        return -1;
+    }
+
+    return ret;
+}
+
+void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
+{
+    int len;
+    int ret;
+    struct log_message msg = {0};
+    va_list args;
+
     struct flb_worker *w;
+
+    va_start(args, fmt);
+    ret = flb_log_construct(&msg, &len, type, file, line, fmt, &args);
+    va_end(args);
+
+    if (ret < 0) {
+        return;
+    }
 
     w = flb_worker_get();
     if (w) {
