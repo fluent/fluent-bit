@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -45,7 +44,8 @@ static int set_dummy_timestamp(msgpack_packer *mp_pck, struct flb_dummy *ctx)
         ctx->base_timestamp = flb_malloc(sizeof(struct flb_time));
         flb_time_get(ctx->base_timestamp);
         ret = flb_time_append_to_msgpack(ctx->dummy_timestamp, mp_pck, 0);
-    } else {
+    }
+    else {
         flb_time_get(&t);
         flb_time_diff(&t, ctx->base_timestamp, &diff);
         flb_time_add(ctx->dummy_timestamp, &diff, &dummy_time);
@@ -55,9 +55,7 @@ static int set_dummy_timestamp(msgpack_packer *mp_pck, struct flb_dummy *ctx)
     return ret;
 }
 
-/* cb_collect callback */
-static int in_dummy_collect(struct flb_input_instance *ins,
-                            struct flb_config *config, void *in_context)
+static int gen_msg(struct flb_input_instance *ins, void *in_context, msgpack_sbuffer *mp_sbuf)
 {
     size_t off = 0;
     size_t start = 0;
@@ -65,20 +63,15 @@ static int in_dummy_collect(struct flb_input_instance *ins,
     int pack_size;
     msgpack_unpacked result;
     msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
     struct flb_dummy *ctx = in_context;
-
-    if (ctx->samples > 0 && (ctx->samples_count >= ctx->samples)) {
-        return -1;
-    }
 
     pack = ctx->ref_msgpack;
     pack_size = ctx->ref_msgpack_size;
     msgpack_unpacked_init(&result);
 
     /* Initialize local msgpack buffer */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_sbuffer_init(mp_sbuf);
+    msgpack_packer_init(&mp_pck, mp_sbuf, msgpack_sbuffer_write);
 
     while (msgpack_unpack_next(&result, pack, pack_size, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type == MSGPACK_OBJECT_MAP) {
@@ -86,7 +79,8 @@ static int in_dummy_collect(struct flb_input_instance *ins,
             msgpack_pack_array(&mp_pck, 2);
             if (ctx->dummy_timestamp != NULL){
                 set_dummy_timestamp(&mp_pck, ctx);
-            } else {
+            }
+            else {
                 flb_pack_time_now(&mp_pck);
             }
             msgpack_pack_str_body(&mp_pck, pack + start, off - start);
@@ -95,8 +89,29 @@ static int in_dummy_collect(struct flb_input_instance *ins,
     }
     msgpack_unpacked_destroy(&result);
 
-    flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    return 0;
+}
+
+/* cb_collect callback */
+static int in_dummy_collect(struct flb_input_instance *ins,
+                            struct flb_config *config, void *in_context)
+{
+    struct flb_dummy *ctx = in_context;
+    msgpack_sbuffer mp_sbuf;
+
+    if (ctx->samples > 0 && (ctx->samples_count >= ctx->samples)) {
+        return -1;
+    }
+
+    if (ctx->fixed_timestamp == FLB_FALSE) {
+        msgpack_sbuffer_init(&mp_sbuf);
+        gen_msg(ins, in_context, &mp_sbuf);
+        flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+        msgpack_sbuffer_destroy(&mp_sbuf);
+    }
+    else {
+        flb_input_chunk_append_raw(ins, NULL, 0, ctx->mp_sbuf.data, ctx->mp_sbuf.size);
+    }
 
     if (ctx->samples > 0) {
         ctx->samples_count++;
@@ -108,7 +123,12 @@ static int config_destroy(struct flb_dummy *ctx)
 {
     flb_free(ctx->dummy_timestamp);
     flb_free(ctx->base_timestamp);
-    flb_free(ctx->dummy_message);
+    if (ctx->fixed_timestamp == FLB_TRUE) {
+        msgpack_sbuffer_destroy(&ctx->mp_sbuf);
+    }
+    if (ctx->dummy_message) {
+        flb_free(ctx->dummy_message);
+    }
     flb_free(ctx->ref_msgpack);
     flb_free(ctx);
     return 0;
@@ -119,12 +139,14 @@ static int configure(struct flb_dummy *ctx,
                      struct flb_input_instance *in,
                      struct timespec *tm)
 {
-    const char *str = NULL;
     struct flb_time dummy_time;
+    const char *msg;
     int dummy_time_enabled = FLB_FALSE;
     int root_type;
     int  ret = -1;
-    long val  = 0;
+
+    ctx->dummy_message = NULL;
+    ctx->dummy_message_len = 0;
 
     ctx->ref_msgpack = NULL;
 
@@ -133,24 +155,13 @@ static int configure(struct flb_dummy *ctx,
         return -1;
     }
 
-    /* the message */
-    str = flb_input_get_property("dummy", in);
-    if (str != NULL) {
-        ctx->dummy_message = flb_strdup(str);
-    }
-    else {
-        ctx->dummy_message = flb_strdup(DEFAULT_DUMMY_MESSAGE);
-    }
-    ctx->dummy_message_len = strlen(ctx->dummy_message);
-
     /* interval settings */
     tm->tv_sec  = 1;
     tm->tv_nsec = 0;
 
-    str = flb_input_get_property("rate", in);
-    if (str != NULL && (val = atoi(str)) > 1) {
+    if (ctx->rate > 1) {
         tm->tv_sec = 0;
-        tm->tv_nsec = 1000000000 / val;
+        tm->tv_nsec = 1000000000 / ctx->rate;
     }
 
     /* dummy timestamp */
@@ -158,15 +169,14 @@ static int configure(struct flb_dummy *ctx,
     ctx->base_timestamp = NULL;
     flb_time_zero(&dummy_time);
 
-    str = flb_input_get_property("start_time_sec", in);
-    if (str != NULL && (val = atoi(str)) >= 0) {
+    if (ctx->start_time_sec >= 0 || ctx->start_time_nsec >= 0) {
         dummy_time_enabled = FLB_TRUE;
-        dummy_time.tm.tv_sec = val;
-    }
-    str = flb_input_get_property("start_time_nsec", in);
-    if (str != NULL && (val = atoi(str)) >= 0) {
-        dummy_time_enabled = FLB_TRUE;
-        dummy_time.tm.tv_nsec = val;
+        if (ctx->start_time_sec >= 0) {
+            dummy_time.tm.tv_sec = ctx->start_time_sec;
+        }
+        if (ctx->start_time_nsec >= 0) {
+            dummy_time.tm.tv_nsec = ctx->start_time_nsec;
+        }
     }
 
     if (dummy_time_enabled) {
@@ -174,13 +184,20 @@ static int configure(struct flb_dummy *ctx,
         flb_time_copy(ctx->dummy_timestamp, &dummy_time);
     }
 
-    ret = flb_pack_json(ctx->dummy_message,
-                  ctx->dummy_message_len,
-                        &ctx->ref_msgpack, &ctx->ref_msgpack_size, &root_type);
-    if (ret != 0) {
+    /* handle it explicitly since we need to validate it is valid JSON */
+    msg = flb_input_get_property("dummy", in);
+    if (msg == NULL) {
+        msg = DEFAULT_DUMMY_MESSAGE;
+    }
+    ret = flb_pack_json(msg, strlen(msg), &ctx->ref_msgpack,
+                        &ctx->ref_msgpack_size, &root_type);
+    if (ret == 0) {
+        ctx->dummy_message = flb_strdup(msg);
+        ctx->dummy_message_len = strlen(msg);
+    }
+    else {
         flb_plg_warn(ctx->ins, "data is incomplete. Use default string.");
 
-        flb_free(ctx->dummy_message);
         ctx->dummy_message = flb_strdup(DEFAULT_DUMMY_MESSAGE);
         ctx->dummy_message_len = strlen(ctx->dummy_message);
 
@@ -192,6 +209,10 @@ static int configure(struct flb_dummy *ctx,
             flb_plg_error(ctx->ins, "unexpected error");
             return -1;
         }
+    }
+
+    if (ctx->fixed_timestamp == FLB_TRUE) {
+        gen_msg(in, ctx, &ctx->mp_sbuf);
     }
 
     return 0;
@@ -231,8 +252,23 @@ static int in_dummy_init(struct flb_input_instance *in,
         config_destroy(ctx);
         return -1;
     }
+    ctx->coll_fd = ret;
 
     return 0;
+}
+
+static void in_dummy_pause(void *data, struct flb_config *config)
+{
+    struct flb_dummy *ctx = data;
+
+    flb_input_collector_pause(ctx->coll_fd, ctx->ins);
+}
+
+static void in_dummy_resume(void *data, struct flb_config *config)
+{
+    struct flb_dummy *ctx = data;
+
+    flb_input_collector_resume(ctx->coll_fd, ctx->ins);
 }
 
 static int in_dummy_exit(void *data, struct flb_config *config)
@@ -244,7 +280,6 @@ static int in_dummy_exit(void *data, struct flb_config *config)
 
     return 0;
 }
-
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
@@ -260,18 +295,23 @@ static struct flb_config_map config_map[] = {
    },
    {
     FLB_CONFIG_MAP_INT, "rate", "1",
-    0, FLB_FALSE, 0,
+    0, FLB_TRUE, offsetof(struct flb_dummy, rate),
     "set a number of events per second."
    },
    {
-    FLB_CONFIG_MAP_INT, "start_time_sec", "1",
-    0, FLB_FALSE, 0,
+    FLB_CONFIG_MAP_INT, "start_time_sec", "-1",
+    0, FLB_TRUE, offsetof(struct flb_dummy, start_time_sec),
     "set a dummy base timestamp in seconds."
    },
    {
-    FLB_CONFIG_MAP_INT, "start_time_nsec", "0",
-    0, FLB_FALSE, 0,
+    FLB_CONFIG_MAP_INT, "start_time_nsec", "-1",
+    0, FLB_TRUE, offsetof(struct flb_dummy, start_time_nsec),
     "set a dummy base timestamp in nanoseconds."
+   },
+   {
+    FLB_CONFIG_MAP_BOOL, "fixed_timestamp", "off",
+    0, FLB_TRUE, offsetof(struct flb_dummy, fixed_timestamp),
+    "used a fixed timestamp, allows the message to pre-generated once."
    },
    {0}
 };
@@ -285,5 +325,7 @@ struct flb_input_plugin in_dummy_plugin = {
     .cb_collect   = in_dummy_collect,
     .cb_flush_buf = NULL,
     .config_map   = config_map,
+    .cb_pause     = in_dummy_pause,
+    .cb_resume    = in_dummy_resume,
     .cb_exit      = in_dummy_exit
 };

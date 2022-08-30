@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -37,6 +36,8 @@
 #define FLB_SCHED_TIMER_CB_ONESHOT  3  /* one-shot callback timer  */
 #define FLB_SCHED_TIMER_CB_PERM     4  /* permanent callback timer */
 
+struct flb_sched;
+
 /*
  * A sched timer struct belongs to an event triggered by the scheduler. This
  * is a generic type and keeps two fields as a reference for further
@@ -50,6 +51,7 @@ struct flb_sched_timer {
     int active;
     int type;
     void *data;
+    struct flb_sched *sched;
 
     /*
      * Custom timer specific data:
@@ -134,7 +136,7 @@ int flb_sched_request_invalidate(struct flb_config *config, void *data);
 
 int flb_sched_timer_cb_create(struct flb_sched *sched, int type, int ms,
                               void (*cb)(struct flb_config *, void *),
-                              void *data);
+                              void *data, struct flb_sched_timer **out_timer);
 int flb_sched_timer_cb_disable(struct flb_sched_timer *timer);
 int flb_sched_timer_cb_destroy(struct flb_sched_timer *timer);
 void flb_sched_timer_invalidate(struct flb_sched_timer *timer);

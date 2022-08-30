@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,7 +23,7 @@
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_upstream.h>
-#include <fluent-bit/flb_sha512.h>
+#include <fluent-bit/flb_crypto.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_http_client.h>
@@ -189,8 +188,8 @@ static int cb_ws_exit(void *data, struct flb_config *config)
     return 0;
 }
 
-static void cb_ws_flush(const void *data, size_t bytes,
-                        const char *tag, int tag_len,
+static void cb_ws_flush(struct flb_event_chunk *event_chunk,
+                        struct flb_output_flush *out_flush,
                         struct flb_input_instance *i_ins,
                         void *out_context,
                         struct flb_config *config)
@@ -237,7 +236,8 @@ static void cb_ws_flush(const void *data, size_t bytes,
 
     /* Data format process*/
     if (ctx->out_format != FLB_PACK_JSON_FORMAT_NONE) {
-        json = flb_pack_msgpack_to_json_format(data, bytes,
+        json = flb_pack_msgpack_to_json_format(event_chunk->data,
+                                               event_chunk->size,
                                                ctx->out_format,
                                                ctx->json_date_format,
                                                ctx->json_date_key);
@@ -251,7 +251,9 @@ static void cb_ws_flush(const void *data, size_t bytes,
 
     /* Write message header */
     if (ctx->out_format == FLB_PACK_JSON_FORMAT_NONE) {
-        ret = flb_ws_sendDataFrameHeader(u_conn, ctx, data, bytes);
+        ret = flb_ws_sendDataFrameHeader(u_conn, ctx,
+                                         event_chunk->data,
+                                         event_chunk->size);
     }
     else {
         ret = flb_ws_sendDataFrameHeader(u_conn, ctx, json, flb_sds_len(json));
@@ -269,7 +271,10 @@ static void cb_ws_flush(const void *data, size_t bytes,
 
     /* Write message body*/
     if (ctx->out_format == FLB_PACK_JSON_FORMAT_NONE) {
-        ret = flb_io_net_write(u_conn, data, bytes, &bytes_sent);
+        ret = flb_io_net_write(u_conn,
+                               event_chunk->data,
+                               event_chunk->size,
+                               &bytes_sent);
     }
     else {
         ret = flb_io_net_write(u_conn, json, flb_sds_len(json), &bytes_sent);
@@ -299,6 +304,16 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "format", NULL,
      0, FLB_FALSE, 0,
      "Set desired payload format: json, json_stream, json_lines, gelf or msgpack"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "json_date_format", "double",
+     0, FLB_FALSE, 0,
+     "Specify the format of the date"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "json_date_key", "date",
+     0, FLB_TRUE, offsetof(struct flb_out_ws, json_date_key),
+     "Specify the name of the date field in output"
     },
     /* EOF */
     {0}

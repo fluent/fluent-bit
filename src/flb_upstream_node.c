@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,7 +21,7 @@
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_upstream_node.h>
 
 /* Create a new Upstream Node context */
@@ -36,7 +35,7 @@ struct flb_upstream_node *flb_upstream_node_create(const char *name, const char 
                                                    const char *tls_crt_file,
                                                    const char *tls_key_file,
                                                    const char *tls_key_passwd,
-                                                   struct flb_hash *ht,
+                                                   struct flb_hash_table *ht,
                                                    struct flb_config *config)
 {
     int i_port;
@@ -176,7 +175,7 @@ const char *flb_upstream_node_get_property(const char *prop,
 
     len = strlen(prop);
 
-    ret = flb_hash_get(node->ht, prop, len, &value, &size);
+    ret = flb_hash_table_get(node->ht, prop, len, &value, &size);
     if (ret == -1) {
         return NULL;
     }
@@ -190,6 +189,11 @@ void flb_upstream_node_destroy(struct flb_upstream_node *node)
     flb_sds_destroy(node->host);
     flb_sds_destroy(node->port);
 
+    flb_hash_table_destroy(node->ht);
+    if (node->u) {
+        flb_upstream_destroy(node->u);
+    }
+
 #ifdef FLB_HAVE_TLS
     flb_sds_destroy(node->tls_ca_path);
     flb_sds_destroy(node->tls_ca_file);
@@ -200,11 +204,6 @@ void flb_upstream_node_destroy(struct flb_upstream_node *node)
         flb_tls_destroy(node->tls);
     }
 #endif
-
-    flb_hash_destroy(node->ht);
-    if (node->u) {
-        flb_upstream_destroy(node->u);
-    }
 
     /* note: node link must be handled by the caller before this call */
     flb_free(node);

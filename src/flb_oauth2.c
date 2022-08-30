@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -115,6 +114,14 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
         }
         else if (key_cmp(key, key_len, "expires_in") == 0) {
             ctx->expires_in = atol(val);
+
+            /*
+             * Our internal expiration time must be lower that the one set
+             * by the remote end-point, so we can use valid cached values
+             * if a token renewal is in place. So we decrease the expire
+             * interval -10%.
+             */
+            ctx->expires_in -= (ctx->expires_in * 0.10);
         }
     }
 
@@ -390,6 +397,7 @@ char *flb_oauth2_token_get(struct flb_oauth2 *ctx)
             flb_info("[oauth2] access token from '%s:%s' retrieved",
                      ctx->host, ctx->port);
             flb_http_client_destroy(c);
+            flb_upstream_conn_release(u_conn);
             ctx->issued = time(NULL);
             ctx->expires = ctx->issued + ctx->expires_in;
             return ctx->access_token;
@@ -397,6 +405,8 @@ char *flb_oauth2_token_get(struct flb_oauth2 *ctx)
     }
 
     flb_http_client_destroy(c);
+    flb_upstream_conn_release(u_conn);
+
     return NULL;
 }
 

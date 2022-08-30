@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,6 +25,14 @@
 
 struct flb_api {
     const char *(*output_get_property) (const char *, struct flb_output_instance *);
+    const char *(*input_get_property) (const char *, struct flb_input_instance *);
+
+    void *(*output_get_cmt_instance) (struct flb_output_instance *);
+    void *(*input_get_cmt_instance) (struct flb_input_instance *);
+
+    void (*log_print) (int, const char*, int, const char*, ...);
+    int (*input_log_check) (struct flb_input_instance *, int);
+    int (*output_log_check) (struct flb_output_instance *, int);
 };
 
 #ifdef FLB_CORE

@@ -20,7 +20,7 @@
 #include <cmetrics/cmt_info.h>
 
 /* MacOS */
-#ifdef FLB_HAVE_CLOCK_GET_TIME
+#ifdef CMT_HAVE_CLOCK_GET_TIME
 #include <mach/clock.h>
 #include <mach/mach.h>
 #endif
@@ -30,7 +30,6 @@
 
 uint64_t cmt_time_now()
 {
-    uint64_t ts;
     struct timespec tm = {0};
 
 #if defined CMT_HAVE_TIMESPEC_GET
@@ -42,12 +41,24 @@ uint64_t cmt_time_now()
     mach_timespec_t mts;
     host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &cclock);
     clock_get_time(cclock, &mts);
-    tm->tv_sec = mts.tv_sec;
-    tm->tv_nsec = mts.tv_nsec;
+    tm.tv_sec = mts.tv_sec;
+    tm.tv_nsec = mts.tv_nsec;
     mach_port_deallocate(mach_task_self(), cclock);
 #else /* __STDC_VERSION__ */
     clock_gettime(CLOCK_REALTIME, &tm);
 #endif
 
     return (((uint64_t) tm.tv_sec * 1000000000L) + tm.tv_nsec);
+}
+
+void cmt_time_from_ns(struct timespec *tm, uint64_t ns)
+{
+    if (ns < 1000000000L) {
+        tm->tv_sec = 0;
+        tm->tv_nsec = ns;
+    }
+    else {
+        tm->tv_sec = ns / 1000000000L;
+        tm->tv_nsec = ns - (tm->tv_sec * 1000000000L);
+    }
 }

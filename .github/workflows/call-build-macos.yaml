@@ -1,0 +1,132 @@
+---
+name: Reusable workflow to build MacOS packages optionally into S3 bucket
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The version of Fluent Bit to create.
+        type: string
+        required: true
+      ref:
+        description: The commit, tag or branch of Fluent Bit to checkout for building that creates the version above.
+        type: string
+        required: true
+      environment:
+        description: The Github environment to run this workflow on.
+        type: string
+        required: false
+      unstable:
+        description: Optionally add metadata to build to indicate an unstable build, set to the contents you want to add.
+        type: string
+        required: false
+        default: ''
+    secrets:
+      token:
+        description: The Github token or similar to authenticate with.
+        required: true
+      bucket:
+        description: The name of the S3 (US-East) bucket to push packages into.
+        required: false
+      access_key_id:
+        description: The S3 access key id for the bucket.
+        required: false
+      secret_access_key:
+        description: The S3 secret access key for the bucket.
+        required: false
+
+jobs:
+  call-build-macos-legacy-check:
+    # Requires https://github.com/fluent/fluent-bit/pull/5247 so will not build for previous branches
+    name: Extract any supporting metadata
+    outputs:
+      build-type: ${{ steps.determine-build-type.outputs.BUILD_TYPE }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Determine build type
+        id: determine-build-type
+        run: |
+          BUILD_TYPE="legacy"
+          if [[ -f "conf/fluent-bit-macos.conf" ]]; then
+            BUILD_TYPE="modern"
+          fi
+          echo "Detected type: $BUILD_TYPE"
+          echo ::set-output name=BUILD_TYPE::$BUILD_TYPE
+        shell: bash
+
+  call-build-macos-package:
+    if: needs.call-build-macos-legacy-check.outputs.build-type == 'modern'
+    runs-on: macos-latest
+    environment: ${{ inputs.environment }}
+    needs:
+      - call-build-macos-legacy-check
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Install dependencies
+        run: |
+          brew update
+          brew install bison flex libyaml openssl || true
+
+      - name: Build Fluent Bit packages
+        run: |
+          export LIBRARY_PATH=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib:$LIBRARY_PATH
+          cmake -DCPACK_GENERATOR=productbuild -DFLB_NIGHTLY_BUILD=${{ inputs.unstable }} ../ -DOPENSSL_ROOT_DIR=$(brew --prefix openssl)
+          cmake --build .
+          cpack -G productbuild
+        working-directory: build
+
+      - name: Upload build packages
+        uses: actions/upload-artifact@v3
+        with:
+          name: macos-packages
+          path: |
+            build/fluent-bit-*-apple*
+            build/fluent-bit-*-intel*
+          if-no-files-found: error
+
+  call-build-macos-s3-upload:
+    name: Handle upload to S3
+    # The environment must be used that has access to any secrets required, even if passed in.
+    # If passed in but not in the environment here you end up with an empty secret.
+    environment: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    needs:
+      - call-build-macos-package
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Download all artefacts
+        continue-on-error: true
+        uses: actions/download-artifact@v3
+        with:
+          name: macos-packages
+          path: artifacts/
+
+      - name: Push MacOS packages to S3
+        if: inputs.environment == 'staging'
+        uses: ./.github/actions/sync-to-bucket
+        with:
+          bucket: ${{ secrets.bucket }}
+          access_key_id: ${{ secrets.access_key_id }}
+          secret_access_key: ${{ secrets.secret_access_key }}
+          bucket-directory: "${{ inputs.version }}/macos/"
+          source-directory: "artifacts/"

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -20,9 +19,11 @@
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_base64.h>
+#include <fluent-bit/flb_crypto.h>
+#include <fluent-bit/flb_hmac.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_kv.h>
-#include <mbedtls/base64.h>
 
 #include "azure_blob.h"
 #include "azure_blob_uri.h"
@@ -31,23 +32,10 @@ static int hmac_sha256_sign(unsigned char out[32],
                             unsigned char *key, size_t key_len,
                             unsigned char *msg, size_t msg_len)
 {
-    mbedtls_md_context_t ctx;
-    mbedtls_md_type_t md_type = MBEDTLS_MD_SHA256;
-
-    mbedtls_md_init(&ctx);
-    mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(md_type), 1);
-
-    /* Start with the key */
-    mbedtls_md_hmac_starts(&ctx, key, key_len);
-
-    /* Update message */
-    mbedtls_md_hmac_update(&ctx, msg, msg_len);
-
-    /* Write digest to output buffer */
-    mbedtls_md_hmac_finish(&ctx, out);
-    mbedtls_md_free(&ctx);
-
-    return 0;
+    return flb_hmac_simple(FLB_HASH_SHA256,
+                           key, key_len,
+                           msg, msg_len,
+                           out, 32);
 }
 
 static flb_sds_t canonical_headers(struct flb_http_client *c)
@@ -288,8 +276,8 @@ flb_sds_t azb_http_canonical_request(struct flb_azure_blob *ctx,
         return NULL;
     }
 
-    ret = mbedtls_base64_encode((unsigned char *) b64, size, &o_len,
-                                signature, sizeof(signature));
+    ret = flb_base64_encode((unsigned char *) b64, size, &o_len,
+                            signature, sizeof(signature));
     if (ret != 0) {
         flb_sds_destroy(b64);
         return NULL;

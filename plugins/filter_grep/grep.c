@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -114,6 +113,13 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
         /* Get remaining content (regular expression) */
         sentry = mk_list_entry_last(split, struct flb_split_entry, _head);
         rule->regex_pattern = flb_strndup(sentry->value, sentry->len);
+        if (rule->regex_pattern == NULL) {
+            flb_errno();
+            delete_rules(ctx);
+            flb_free(rule);
+            flb_utils_split_free(split);
+            return -1;
+        }
 
         /* Release split */
         flb_utils_split_free(split);
@@ -187,6 +193,12 @@ static int cb_grep_init(struct flb_filter_instance *f_ins,
         flb_errno();
         return -1;
     }
+    if (flb_filter_config_map_set(f_ins, ctx) < 0) {
+        flb_errno();
+        flb_plg_error(f_ins, "configuration error");
+        flb_free(ctx);
+        return -1;
+    }
     mk_list_init(&ctx->rules);
     ctx->ins = f_ins;
 
@@ -206,6 +218,7 @@ static int cb_grep_filter(const void *data, size_t bytes,
                           const char *tag, int tag_len,
                           void **out_buf, size_t *out_size,
                           struct flb_filter_instance *f_ins,
+                          struct flb_input_instance *i_ins,
                           void *context,
                           struct flb_config *config)
 {
@@ -217,6 +230,7 @@ static int cb_grep_filter(const void *data, size_t bytes,
     msgpack_object root;
     size_t off = 0;
     (void) f_ins;
+    (void) i_ins;
     (void) config;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
@@ -276,11 +290,26 @@ static int cb_grep_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "regex", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Keep records in which the content of KEY matches the regular expression."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "exclude", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Exclude records in which the content of KEY matches the regular expression."
+    },
+    {0}
+};
+
 struct flb_filter_plugin filter_grep_plugin = {
     .name         = "grep",
     .description  = "grep events by specified field values",
     .cb_init      = cb_grep_init,
     .cb_filter    = cb_grep_filter,
     .cb_exit      = cb_grep_exit,
+    .config_map   = config_map,
     .flags        = 0
 };

@@ -1,0 +1,73 @@
+name: Build and run integration tests for PR
+on:
+  # We need write token for upload to GHCR and we are protecting with labels too.
+  pull_request_target:
+    branches:
+      - master
+    types:
+      - labeled
+      - opened
+      - reopened
+      - synchronize
+
+jobs:
+  pr-integration-test-build:
+    name: PR - integration build
+    # We only need to test this once as the rest are chained from it.
+    if: contains(github.event.pull_request.labels.*.name, 'ok-to-test')
+    uses: ./.github/workflows/call-integration-image-build.yaml
+    with:
+      ref: ${{ github.event.pull_request.head.sha }}
+      registry: ghcr.io
+      username: ${{ github.actor }}
+      image: ${{ github.repository }}/pr-${{ github.event.number }}
+      image-tag: ${{ github.sha }}
+      environment: integration
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+
+  pr-integration-test-build-complete:
+    name: PR - integration build complete
+    runs-on: ubuntu-latest
+    needs:
+      - pr-integration-test-build
+    steps:
+      - uses: actions-ecosystem/action-add-labels@v1
+        name: Label the PR
+        with:
+          labels: ci/integration-docker-ok
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          number: ${{ github.event.pull_request.number }}
+
+  pr-integration-test-run-integration:
+    name: PR - K8S integration test
+    needs:
+      - pr-integration-test-build
+    uses: ./.github/workflows/call-run-integration-test.yaml
+    with:
+      image_name: ghcr.io/${{ github.repository }}/pr-${{ github.event.pull_request.number }}
+      image_tag: ${{ github.sha }}
+    secrets:
+      opensearch_aws_access_id: ${{ secrets.OPENSEARCH_AWS_ACCESS_ID }}
+      opensearch_aws_secret_key: ${{ secrets.OPENSEARCH_AWS_SECRET_KEY }}
+      opensearch_admin_password: ${{ secrets.OPENSEARCH_ADMIN_PASSWORD }}
+      terraform_api_token: ${{ secrets.TF_API_TOKEN }}
+      azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+      azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      gcp-service-account-key: ${{ secrets.GCP_SA_KEY }}
+
+  pr-integration-test-run-integration-post-label:
+    name: PR - integration test complete
+    runs-on: ubuntu-latest
+    needs:
+      - pr-integration-test-run-integration
+    steps:
+      - uses: actions-ecosystem/action-add-labels@v1
+        name: Label the PR
+        with:
+          labels: ci/integration-test-ok
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          number: ${{ github.event.pull_request.number }}
+          repo: fluent/fluent-bit

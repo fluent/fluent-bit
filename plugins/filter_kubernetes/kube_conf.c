@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,10 +23,10 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_filter.h>
-#include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_hash_table.h>
 
 #ifndef FLB_HAVE_TLS
 #error "Fluent Bit was built without TLS support"
@@ -44,6 +43,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
     const char *url;
     const char *tmp;
     const char *p;
+    const char *cmd;
     struct flb_kube *ctx;
 
     ctx = flb_calloc(1, sizeof(struct flb_kube));
@@ -61,6 +61,16 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
         return NULL;
     }
 
+    /* K8s Token Command */
+    cmd = flb_filter_get_property("kube_token_command", ins);
+    if (cmd) {
+        ctx->kube_token_command = cmd;
+    }
+    else {
+        ctx->kube_token_command = NULL;
+    }
+    ctx->kube_token_create = 0;  
+
     /* Merge Parser */
     tmp = flb_filter_get_property("merge_parser", ins);
     if (tmp) {
@@ -76,8 +86,11 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
     /* Get Kubernetes API server */
     url = flb_filter_get_property("kube_url", ins);
 
-    if (ctx->use_kubelet) {
-        ctx->api_host = flb_strdup(FLB_KUBELET_HOST);
+    if (ctx->use_tag_for_meta) {
+        ctx->api_https = FLB_FALSE;
+    }
+    else if (ctx->use_kubelet) {
+        ctx->api_host = flb_strdup(ctx->kubelet_host);
         ctx->api_port = ctx->kubelet_port;
         ctx->api_https = FLB_TRUE;
 
@@ -128,9 +141,18 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
              ctx->api_https ? "https" : "http",
              ctx->api_host, ctx->api_port);
 
-    ctx->hash_table = flb_hash_create(FLB_HASH_EVICT_RANDOM,
-                                      FLB_HASH_TABLE_SIZE,
-                                      FLB_HASH_TABLE_SIZE);
+    if (ctx->kube_meta_cache_ttl > 0) {
+        ctx->hash_table = flb_hash_table_create_with_ttl(ctx->kube_meta_cache_ttl,
+                                                         FLB_HASH_TABLE_EVICT_OLDER,
+                                                         FLB_HASH_TABLE_SIZE,
+                                                         FLB_HASH_TABLE_SIZE);
+    }
+    else {
+        ctx->hash_table = flb_hash_table_create(FLB_HASH_TABLE_EVICT_RANDOM,
+                                                FLB_HASH_TABLE_SIZE,
+                                                FLB_HASH_TABLE_SIZE);
+    }
+    
     if (!ctx->hash_table) {
         flb_kube_conf_destroy(ctx);
         return NULL;
@@ -164,8 +186,10 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
         }
     }
 
-    flb_plg_info(ctx->ins, "https=%i host=%s port=%i",
-                 ctx->api_https, ctx->api_host, ctx->api_port);
+    if (!ctx->use_tag_for_meta) {
+        flb_plg_info(ctx->ins, "https=%i host=%s port=%i",
+                     ctx->api_https, ctx->api_host, ctx->api_port);
+    }
     return ctx;
 }
 
@@ -176,7 +200,7 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
     }
 
     if (ctx->hash_table) {
-        flb_hash_destroy(ctx->hash_table);
+        flb_hash_table_destroy(ctx->hash_table);
     }
 
     if (ctx->merge_log == FLB_TRUE) {

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit Demo
  *  ===============
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -31,6 +30,7 @@
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_callback.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/tls/flb_tls.h>
 
 #include <signal.h>
@@ -38,6 +38,12 @@
 
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
+#endif
+
+#ifdef FLB_HAVE_AWS_ERROR_REPORTER
+#include <fluent-bit/aws/flb_aws_error_reporter.h>
+
+struct flb_aws_error_reporter *error_reporter;
 #endif
 
 /* thread initializator */
@@ -112,6 +118,9 @@ void flb_init_env()
     flb_coro_init();
     flb_upstream_init();
     flb_output_prepare();
+
+    /* libraries */
+    cmt_initialize();
 }
 
 flb_ctx_t *flb_create()
@@ -189,6 +198,12 @@ flb_ctx_t *flb_create()
         return NULL;
     }
 
+    #ifdef FLB_HAVE_AWS_ERROR_REPORTER
+    if (is_error_reporting_enabled()) {
+        error_reporter = flb_aws_error_reporter_create();
+    }
+    #endif
+
     return ctx;
 }
 
@@ -214,6 +229,12 @@ void flb_destroy(flb_ctx_t *ctx)
         }
         flb_config_exit(ctx->config);
     }
+
+    #ifdef FLB_HAVE_AWS_ERROR_REPORTER
+    if (is_error_reporting_enabled()) {
+        flb_aws_error_reporter_destroy(error_reporter);
+    }
+    #endif
 
     flb_free(ctx);
     ctx = NULL;
@@ -242,7 +263,7 @@ int flb_output(flb_ctx_t *ctx, const char *output, struct flb_lib_out_cb *cb)
 {
     struct flb_output_instance *o_ins;
 
-    o_ins = flb_output_new(ctx->config, output, cb);
+    o_ins = flb_output_new(ctx->config, output, cb, FLB_TRUE);
     if (!o_ins) {
         return -1;
     }
@@ -607,6 +628,7 @@ static void flb_lib_worker(void *data)
         flb_engine_failed(config);
         flb_engine_shutdown(config);
     }
+    config->exit_status_code = ret;
     ctx->status = FLB_LIB_NONE;
 }
 
@@ -645,6 +667,10 @@ int flb_start(flb_ctx_t *ctx)
         fd = event->fd;
         bytes = flb_pipe_r(fd, &val, sizeof(uint64_t));
         if (bytes <= 0) {
+#if defined(FLB_SYSTEM_MACOS)
+            pthread_cancel(tid);
+#endif
+            pthread_join(tid, NULL);
             ctx->status = FLB_LIB_ERROR;
             return -1;
         }
@@ -656,6 +682,10 @@ int flb_start(flb_ctx_t *ctx)
         }
         else if (val == FLB_ENGINE_FAILED) {
             flb_error("[lib] backend failed");
+#if defined(FLB_SYSTEM_MACOS)
+            pthread_cancel(tid);
+#endif
+            pthread_join(tid, NULL);
             ctx->status = FLB_LIB_ERROR;
             return -1;
         }
@@ -678,7 +708,18 @@ int flb_stop(flb_ctx_t *ctx)
     int ret;
     pthread_t tid;
 
+    tid = ctx->config->worker;
+
     if (ctx->status == FLB_LIB_NONE || ctx->status == FLB_LIB_ERROR) {
+        /*
+         * There is a chance the worker thread is still active while
+         * the service exited for some reason (plugin action). Always
+         * wait and double check that the child thread is not running.
+         */
+#if defined(FLB_SYSTEM_MACOS)
+        pthread_cancel(tid);
+#endif
+        pthread_join(tid, NULL);
         return 0;
     }
 
@@ -692,9 +733,14 @@ int flb_stop(flb_ctx_t *ctx)
 
     flb_debug("[lib] sending STOP signal to the engine");
 
-    tid = ctx->config->worker;
     flb_engine_exit(ctx->config);
+#if defined(FLB_SYSTEM_MACOS)
+    pthread_cancel(tid);
+#endif
     ret = pthread_join(tid, NULL);
+    if (ret != 0) {
+        flb_errno();
+    }
     flb_debug("[lib] Fluent Bit engine stopped");
 
     return ret;

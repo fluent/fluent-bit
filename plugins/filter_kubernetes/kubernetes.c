@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -132,7 +131,7 @@ static int merge_log_handler(msgpack_object o,
         ret = flb_parser_do(parser, ctx->unesc_buf, ctx->unesc_buf_len,
                             out_buf, out_size, log_time);
         if (ret >= 0) {
-            if (flb_time_to_double(log_time) == 0.0) {
+            if (flb_time_to_nanosec(log_time) == 0L) {
                 flb_time_get(log_time);
             }
             return MERGE_PARSED;
@@ -143,7 +142,7 @@ static int merge_log_handler(msgpack_object o,
                             ctx->unesc_buf, ctx->unesc_buf_len,
                             out_buf, out_size, log_time);
         if (ret >= 0) {
-            if (flb_time_to_double(log_time) == 0.0) {
+            if (flb_time_to_nanosec(log_time) == 0L) {
                 flb_time_get(log_time);
             }
             return MERGE_PARSED;
@@ -273,7 +272,7 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
 
     /* Append record timestamp */
     if (merge_status == MERGE_PARSED) {
-        if (flb_time_to_double(&log_time) == 0.0) {
+        if (flb_time_to_nanosec(&log_time) == 0L) {
             flb_time_append_to_msgpack(time_lookup, pck, 0);
         }
         else {
@@ -437,6 +436,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
                           const char *tag, int tag_len,
                           void **out_buf, size_t *out_bytes,
                           struct flb_filter_instance *f_ins,
+                          struct flb_input_instance *i_ins,
                           void *filter_context,
                           struct flb_config *config)
 {
@@ -458,6 +458,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
     struct flb_kube_props props = {0};
     struct flb_time time_lookup;
     (void) f_ins;
+    (void) i_ins;
     (void) config;
 
     if (ctx->use_journal == FLB_FALSE || ctx->dummy_meta == FLB_TRUE) {
@@ -521,6 +522,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
                     /* Skip this record */
                     if (ctx->use_journal == FLB_TRUE) {
                         flb_kube_meta_release(&meta);
+                        flb_kube_prop_destroy(&props);
                     }
                     continue;
                 }
@@ -532,6 +534,11 @@ static int cb_kube_filter(const void *data, size_t bytes,
         case FLB_KUBE_PROP_STREAM_STDERR:
             {
                 if (props.stderr_exclude == FLB_TRUE) {
+                    /* Skip this record */
+                    if (ctx->use_journal == FLB_TRUE) {
+                        flb_kube_meta_release(&meta);
+                        flb_kube_prop_destroy(&props);
+                    }
                     continue;
                 }
                 if (props.stderr_parser != NULL) {
@@ -729,6 +736,13 @@ static struct flb_config_map config_map[] = {
      "Kubernetes authorization token file"
     },
 
+    /* Kubernetes Token command */
+    {
+     FLB_CONFIG_MAP_STR, "kube_token_command", NULL,
+     0, FLB_FALSE, 0,
+     "command to get Kubernetes authorization token"
+    },
+
     /* Include Kubernetes Labels in the final record ? */
     {
      FLB_CONFIG_MAP_BOOL, "labels", "true",
@@ -816,6 +830,13 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_kube, cache_use_docker_id),
      "fetch K8s meta when docker_id is changed"
     },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "use_tag_for_meta", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, use_tag_for_meta),
+     "use tag associated to retrieve metadata instead of kube-server"
+    },
+
     /*
      * Enable the feature for using kubelet to get pods information
      */
@@ -825,6 +846,15 @@ static struct flb_config_map config_map[] = {
      "use kubelet to get metadata instead of kube-server"
     },
     /*
+     * The kubelet host for /pods endpoint, default is 127.0.0.1
+     * Will only check when "use_kubelet" config is set to true
+     */
+    {
+     FLB_CONFIG_MAP_STR, "kubelet_host", "127.0.0.1",
+     0, FLB_TRUE, offsetof(struct flb_kube, kubelet_host),
+     "kubelet host to connect with when using kubelet"
+    },
+    /*
      * The kubelet port for /pods endpoint, default is 10250
      * Will only check when "use_kubelet" config is set to true
      */
@@ -832,6 +862,24 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_INT, "kubelet_port", "10250",
      0, FLB_TRUE, offsetof(struct flb_kube, kubelet_port),
      "kubelet port to connect with when using kubelet"
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "kube_token_ttl", "10m",
+     0, FLB_TRUE, offsetof(struct flb_kube, kube_token_ttl),
+     "kubernetes token ttl, until it is reread from the token file. Default: 10m"
+    },
+    /*
+     * Set TTL for K8s cached metadata 
+     */
+    {
+     FLB_CONFIG_MAP_TIME, "kube_meta_cache_ttl", "0",
+     0, FLB_TRUE, offsetof(struct flb_kube, kube_meta_cache_ttl),
+     "configurable TTL for K8s cached metadata. " 
+     "By default, it is set to 0 which means TTL for cache entries is disabled and " 
+     "cache entries are evicted at random when capacity is reached. " 
+     "In order to enable this option, you should set the number to a time interval. " 
+     "For example, set this value to 60 or 60s and cache entries " 
+     "which have been created more than 60s will be evicted"
     },
     /* EOF */
     {0}

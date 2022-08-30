@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,7 +21,7 @@
 #define FLB_CALLBACK_H
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_sds.h>
 
 struct flb_callback_entry {
@@ -33,7 +32,7 @@ struct flb_callback_entry {
 
 struct flb_callback {
     flb_sds_t name;             /* Context name */
-    struct flb_hash *ht;        /* Hash table */
+    struct flb_hash_table *ht;  /* Hash table */
     struct mk_list entries;     /* List for callback entries */
     struct flb_config *config;  /* Fluent Bit context */
 };

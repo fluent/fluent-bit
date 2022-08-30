@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -21,11 +20,8 @@
 #ifndef FLB_ML_MODE_H
 #define FLB_ML_MODE_H
 
-/* Docker container mode */
-struct flb_ml *flb_ml_mode_docker(struct flb_config *config, int flush_ms);
-
-/* CRI container mode */
-struct flb_ml *flb_ml_mode_cri(struct flb_config *config, int flush_ms);
+struct flb_ml *flb_ml_mode_create(struct flb_config *config, char *mode,
+                                  int flush_ms, char *key);
 
 /* Python language mode */
 struct flb_ml *flb_ml_mode_python(struct flb_config *config,

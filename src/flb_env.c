@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -19,7 +18,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_str.h>
@@ -70,7 +69,7 @@ static int env_preset(struct flb_env *env)
 struct flb_env *flb_env_create()
 {
     struct flb_env *env;
-    struct flb_hash *ht;
+    struct flb_hash_table *ht;
 
     env = flb_malloc(sizeof(struct flb_env));
     if (!env) {
@@ -79,7 +78,7 @@ struct flb_env *flb_env_create()
     }
 
     /* Create the hash-table */
-    ht = flb_hash_create(FLB_HASH_EVICT_NONE, FLB_ENV_SIZE, -1);
+    ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, FLB_ENV_SIZE, -1);
     if (!ht) {
         flb_free(env);
         return NULL;
@@ -94,7 +93,7 @@ struct flb_env *flb_env_create()
 
 void flb_env_destroy(struct flb_env *env)
 {
-    flb_hash_destroy(env->ht);
+    flb_hash_table_destroy(env->ht);
     flb_free(env);
 }
 
@@ -111,14 +110,14 @@ int flb_env_set(struct flb_env *env, const char *key, const char *val)
     vlen = strlen(val);
 
     /* Check if the key is already set */
-    id = flb_hash_get(env->ht, key, klen, &out_buf, &out_size);
+    id = flb_hash_table_get(env->ht, key, klen, &out_buf, &out_size);
     if (id >= 0) {
         /* Remove the old entry */
-        flb_hash_del(env->ht, key);
+        flb_hash_table_del(env->ht, key);
     }
 
     /* Register the new key */
-    id = flb_hash_add(env->ht, key, klen, (void *) val, vlen);
+    id = flb_hash_table_add(env->ht, key, klen, (void *) val, vlen);
     return id;
 }
 
@@ -136,7 +135,7 @@ const char *flb_env_get(struct flb_env *env, const char *key)
     len = strlen(key);
 
     /* Try to get the value from the hash table */
-    ret = flb_hash_get(env->ht, key, len, &out_buf, &out_size);
+    ret = flb_hash_table_get(env->ht, key, len, &out_buf, &out_size);
     if (ret >= 0) {
         return (char *) out_buf;
     }

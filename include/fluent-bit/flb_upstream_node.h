@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -23,7 +22,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_upstream.h>
 #include <monkey/mk_core.h>
 
@@ -51,7 +50,7 @@ struct flb_upstream_node {
 #endif
 
     /* Hash table to store custom config key/values for plugins */
-    struct flb_hash *ht;
+    struct flb_hash_table *ht;
 
     /* Upstream context */
     struct flb_upstream *u;
@@ -73,7 +72,7 @@ struct flb_upstream_node *flb_upstream_node_create(const char *name, const char 
                                                    const char *tls_crt_file,
                                                    const char *tls_key_file,
                                                    const char *tls_key_passwd,
-                                                   struct flb_hash *ht,
+                                                   struct flb_hash_table *ht,
                                                    struct flb_config *config);
 const char *flb_upstream_node_get_property(const char *prop,
                                            struct flb_upstream_node *node);

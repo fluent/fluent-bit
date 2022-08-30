@@ -3,7 +3,6 @@
 /*  Fluent Bit
  *  ==========
  *  Copyright (C) 2019-2020 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -21,11 +20,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_time.h>
 
-#ifdef FLB_HAVE_OPENSSL
 #include "openssl.c"
-#else
-#include "mbedtls.c"
-#endif
 
 /* Config map for Upstream networking setup */
 struct flb_config_map tls_configmap[] = {
@@ -103,6 +98,7 @@ static inline int io_tls_event_switch(struct flb_upstream_conn *u_conn,
                            event->fd,
                            FLB_ENGINE_EV_THREAD,
                            mask, &u_conn->event);
+        u_conn->event.priority = FLB_ENGINE_PRIORITY_CONNECT;
         if (ret == -1) {
             flb_error("[io_tls] error changing mask to %i", mask);
             return -1;
@@ -144,11 +140,7 @@ struct flb_tls *flb_tls_create(int verify,
     }
     tls->ctx = backend;
 
-#ifdef FLB_HAVE_OPENSSL
     tls->api = &tls_openssl;
-#else
-    tls->api = &tls_mbedtls;
-#endif
 
     return tls;
 }
@@ -180,6 +172,9 @@ int flb_tls_net_read(struct flb_upstream_conn *u_conn, void *buf, size_t len)
     if (ret == FLB_TLS_WANT_READ) {
         goto retry_read;
     }
+    else if (ret == FLB_TLS_WANT_WRITE) {
+        goto retry_read;
+    }
     else if (ret < 0) {
         return -1;
     }
@@ -200,15 +195,33 @@ int flb_tls_net_read_async(struct flb_coro *co, struct flb_upstream_conn *u_conn
     ret = tls->api->net_read(u_conn, buf, len);
     if (ret == FLB_TLS_WANT_READ) {
         u_conn->coro = co;
+
         io_tls_event_switch(u_conn, MK_EVENT_READ);
         flb_coro_yield(co, FLB_FALSE);
+
         goto retry_read;
     }
-    else if (ret < 0) {
-        return -1;
+    else if (ret == FLB_TLS_WANT_WRITE) {
+        u_conn->coro = co;
+
+        io_tls_event_switch(u_conn, MK_EVENT_WRITE);
+        flb_coro_yield(co, FLB_FALSE);
+        
+        goto retry_read;
     }
-    else if (ret == 0) {
-        return -1;
+    else
+    {
+        /* We want this field to hold NULL at all times unless we are explicitly
+         * waiting to be resumed.
+         */
+        u_conn->coro = NULL;
+
+        if (ret < 0) {
+            return -1;
+        }
+        else if (ret == 0) {
+            return -1;
+        }
     }
 
     return ret;
@@ -251,22 +264,30 @@ int flb_tls_net_write_async(struct flb_coro *co, struct flb_upstream_conn *u_con
     size_t total = 0;
     struct flb_tls *tls = u_conn->tls;
 
+ retry_write:
     u_conn->coro = co;
 
- retry_write:
     ret = tls->api->net_write(u_conn, (unsigned char *) data + total,
                               len - total);
     if (ret == FLB_TLS_WANT_WRITE) {
         io_tls_event_switch(u_conn, MK_EVENT_WRITE);
         flb_coro_yield(co, FLB_FALSE);
+
         goto retry_write;
     }
     else if (ret == FLB_TLS_WANT_READ) {
         io_tls_event_switch(u_conn, MK_EVENT_READ);
         flb_coro_yield(co, FLB_FALSE);
+
         goto retry_write;
     }
     else if (ret < 0) {
+        /* We want this field to hold NULL at all times unless we are explicitly
+         * waiting to be resumed.
+         */
+
+        u_conn->coro = NULL;
+
         return -1;
     }
 
@@ -275,8 +296,15 @@ int flb_tls_net_write_async(struct flb_coro *co, struct flb_upstream_conn *u_con
     if (total < len) {
         io_tls_event_switch(u_conn, MK_EVENT_WRITE);
         flb_coro_yield(co, FLB_FALSE);
+
         goto retry_write;
     }
+
+    /* We want this field to hold NULL at all times unless we are explicitly
+     * waiting to be resumed.
+     */
+
+    u_conn->coro = NULL;
 
     *out_len = total;
     mk_event_del(u_conn->evl, &u_conn->event);
@@ -364,11 +392,20 @@ int flb_tls_session_create(struct flb_tls *tls,
                            u_conn->event.fd,
                            FLB_ENGINE_EV_THREAD,
                            flag, &u_conn->event);
+        u_conn->event.priority = FLB_ENGINE_PRIORITY_CONNECT;
         if (ret == -1) {
             goto error;
         }
 
+        u_conn->coro = co;
+
         flb_coro_yield(co, FLB_FALSE);
+
+        /* We want this field to hold NULL at all times unless we are explicitly
+         * waiting to be resumed.
+         */
+        u_conn->coro = NULL;
+
         goto retry_handshake;
     }
 

@@ -45,7 +45,7 @@
 #define MK_HTTP_PARSER_UPGRADE_H2    1
 #define MK_HTTP_PARSER_UPGRADE_H2C   2
 
-#define MK_HEADER_EXTRA_SIZE         8
+#define MK_HEADER_EXTRA_SIZE        50
 
 /* Request levels
  * ==============

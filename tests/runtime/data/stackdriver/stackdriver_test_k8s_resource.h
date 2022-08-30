@@ -47,6 +47,19 @@
 	"\"END_KEY\": \"JSON_END\""		\
 	"}]"
 
+#define K8S_NODE_LOCAL_RESOURCE_ID_WITH_DOT	"["		\
+	"1591649196,"			\
+	"{"				\
+    "\"message\": \"K8S_NODE_LOCAL_RESOURCE_ID_WITH_DOT\","		\
+    "\"logging.googleapis.com/local_resource_id\": \"k8s_node.testnode.withdot.dot\","		\
+	"\"PRIORITY\": 6,"		\
+	"\"SYSLOG_FACILITY\": 3,"		\
+	"\"_CAP_EFFECTIVE\": \"3fffffffff\","		\
+	"\"_PID\": 1387,"		\
+	"\"_SYSTEMD_UNIT\": \"docker.service\","		\
+	"\"END_KEY\": \"JSON_END\""		\
+	"}]"
+
 /* k8s_pod */
 #define K8S_POD_COMMON	"["		\
 	"1591649196,"			\

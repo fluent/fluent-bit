@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_jsmn.h>
+#include <fluent-bit/flb_env.h>
 
 #include <stdlib.h>
 #include <sys/types.h>
@@ -39,6 +40,12 @@
 #define MAX_TAG_PARTS 10
 #define S3_KEY_SIZE 1024
 #define RANDOM_STRING "$UUID"
+#define INDEX_STRING "$INDEX"
+#define AWS_USER_AGENT_NONE "none"
+#define AWS_USER_AGENT_ECS "ecs"
+#define AWS_USER_AGENT_K8S "k8s"
+#define AWS_ECS_METADATA_URI "ECS_CONTAINER_METADATA_URI_V4"
+#define FLB_MAX_AWS_RESP_BUFFER_SIZE 0 /* 0 means unlimited capacity as per requirement */
 
 struct flb_http_client *request_do(struct flb_aws_client *aws_client,
                                    int method, const char *uri,
@@ -155,10 +162,15 @@ struct flb_http_client *flb_aws_client_request(struct flb_aws_client *aws_client
 {
     struct flb_http_client *c = NULL;
 
-    //TODO: Need to think more about the retry strategy.
-
     c = request_do(aws_client, method, uri, body, body_len,
                    dynamic_headers, dynamic_headers_len);
+
+    // Auto retry if request fails
+    if (c == NULL && aws_client->retry_requests) {
+        flb_debug("[aws_client] auto-retrying");
+        c = request_do(aws_client, method, uri, body, body_len,
+                       dynamic_headers, dynamic_headers_len);
+    }
 
     /*
      * 400 or 403 could indicate an issue with credentials- so we check for auth
@@ -195,6 +207,7 @@ struct flb_aws_client *flb_aws_client_create()
         return NULL;
     }
     client->client_vtable = &client_vtable;
+    client->retry_requests = FLB_FALSE;
     client->debug_only = FLB_FALSE;
     return client;
 }
@@ -215,6 +228,10 @@ void flb_aws_client_destroy(struct flb_aws_client *aws_client)
     if (aws_client) {
         if (aws_client->upstream) {
             flb_upstream_destroy(aws_client->upstream);
+        }
+        if (aws_client->free_user_agent) {
+            /* if user agent was auto-set by code its an SDS string */
+            flb_sds_destroy(aws_client->extra_user_agent);
         }
         flb_free(aws_client);
     }
@@ -280,6 +297,9 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
     struct flb_http_client *c = NULL;
     flb_sds_t tmp;
     flb_sds_t user_agent_prefix;
+    flb_sds_t user_agent = NULL;
+    char *buf;
+    struct flb_env *env;
 
     u_conn = flb_upstream_conn_get(aws_client->upstream);
     if (!u_conn) {
@@ -308,8 +328,46 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
         goto error;
     }
 
-    /* Add AWS Fluent Bit user agent */
+    /* Increase the maximum HTTP response buffer size to fit large responses from AWS services */
+    ret = flb_http_buffer_size(c, FLB_MAX_AWS_RESP_BUFFER_SIZE);
+    if (ret != 0) {
+        flb_warn("[aws_http_client] failed to increase max response buffer size");
+    } 
+
+    /* Set AWS Fluent Bit user agent */
+    env = aws_client->upstream->config->env;
+    buf = (char *) flb_env_get(env, "FLB_AWS_USER_AGENT");
+    if (buf == NULL) {
+        if (getenv(AWS_ECS_METADATA_URI) != NULL) {
+            user_agent = AWS_USER_AGENT_ECS;
+        } 
+        else {
+            buf = (char *) flb_env_get(env, AWS_USER_AGENT_K8S);
+            if (buf && strcasecmp(buf, "enabled") == 0) {
+                user_agent = AWS_USER_AGENT_K8S;
+            }
+        } 
+
+        if (user_agent == NULL) {
+            user_agent = AWS_USER_AGENT_NONE;
+        }
+        
+        flb_env_set(env, "FLB_AWS_USER_AGENT", user_agent);
+    }
     if (aws_client->extra_user_agent == NULL) {
+        buf = (char *) flb_env_get(env, "FLB_AWS_USER_AGENT");
+        tmp = flb_sds_create(buf);
+        if (!tmp) {
+            flb_errno();
+            goto error;
+        }
+        aws_client->extra_user_agent = tmp;
+        aws_client->free_user_agent = FLB_TRUE;
+        tmp = NULL;
+    }
+    
+    /* Add AWS Fluent Bit user agent header */
+    if (strcasecmp(aws_client->extra_user_agent, AWS_USER_AGENT_NONE) == 0) {
         ret = flb_http_add_header(c, "User-Agent", 10,
                                   "aws-fluent-bit-plugin", 21);
     }
@@ -597,53 +655,6 @@ flb_sds_t flb_json_get_val(char *response, size_t response_len, char *key)
     return error_type;
 }
 
-int flb_imds_request(struct flb_aws_client *client, char *metadata_path,
-                     flb_sds_t *metadata, size_t *metadata_len)
-{
-    struct flb_http_client *c = NULL;
-    flb_sds_t ec2_metadata;
-
-    flb_debug("[imds] Using instance metadata V1");
-    c = client->client_vtable->request(client, FLB_HTTP_GET,
-                                       metadata_path, NULL, 0,
-                                       NULL, 0);
-
-    if (!c) {
-        return -1;
-    }
-
-    if (c->resp.status != 200) {
-        if (c->resp.payload_size > 0) {
-            flb_debug("[ecs_imds] IMDS metadata response\n%s",
-                      c->resp.payload);
-        }
-
-        flb_http_client_destroy(c);
-        return -1;
-    }
-
-    if (c->resp.payload_size > 0) {
-        ec2_metadata = flb_sds_create_len(c->resp.payload,
-                                          c->resp.payload_size);
-
-        if (!ec2_metadata) {
-            flb_errno();
-            flb_http_client_destroy(c);
-            return -1;
-        }
-        *metadata = ec2_metadata;
-        *metadata_len = c->resp.payload_size;
-
-        flb_http_client_destroy(c);
-        return 0;
-    }
-
-    flb_debug("[ecs_imds] IMDS metadata response was empty");
-    flb_http_client_destroy(c);
-    return -1;
-
-}
-
 /* Generic replace function for strings. */
 static char* replace_uri_tokens(const char* original_string, const char* current_word,
                          const char* new_word)
@@ -682,21 +693,43 @@ static char* replace_uri_tokens(const char* original_string, const char* current
     return result;
 }
 
+/*
+ * Linux has strtok_r as the concurrent safe version
+ * Windows has strtok_s
+ */
+char* strtok_concurrent(
+    char* str,
+    char* delimiters,
+    char** context
+)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    return strtok_s(str, delimiters, context);
+#else
+    return strtok_r(str, delimiters, context);
+#endif
+}
+
 /* Constructs S3 object key as per the format. */
-flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag, char *tag_delimiter)
+flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
+                         char *tag_delimiter, uint64_t seq_index)
 {
     int i = 0;
     int ret = 0;
+    int seq_index_len;
     char *tag_token = NULL;
     char *key;
     char *random_alphanumeric;
+    char *seq_index_str;
+    /* concurrent safe strtok_r requires a tracking ptr */
+    char *strtok_saveptr;
     int len;
     flb_sds_t tmp = NULL;
     flb_sds_t buf = NULL;
     flb_sds_t s3_key = NULL;
     flb_sds_t tmp_key = NULL;
     flb_sds_t tmp_tag = NULL;
-    struct tm *gmt = NULL;
+    struct tm gmt = {0};
 
     if (strlen(format) > S3_KEY_SIZE){
         flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
@@ -735,7 +768,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag, char 
     tmp = NULL;
 
     /* Split the string on the delimiters */
-    tag_token = strtok(tmp_tag, tag_delimiter);
+    tag_token = strtok_concurrent(tmp_tag, tag_delimiter, &strtok_saveptr);
 
     /* Find all occurences of $TAG[*] and
      * replaces it with the right token from tag.
@@ -766,7 +799,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag, char 
         s3_key = tmp_key;
         tmp_key = NULL;
 
-        tag_token = strtok(NULL, tag_delimiter);
+        tag_token = strtok_concurrent(NULL, tag_delimiter, &strtok_saveptr);
         i++;
     }
 
@@ -796,6 +829,28 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag, char 
     s3_key = tmp_key;
     tmp_key = NULL;
 
+    /* Find all occurences of $INDEX and replace with the appropriate index. */
+    if (strstr((char *) format, INDEX_STRING)) {
+        seq_index_len = snprintf(NULL, 0, "%"PRIu64, seq_index);
+        seq_index_str = flb_malloc(seq_index_len + 1);
+        if (seq_index_str == NULL) {
+            goto error;
+        }
+
+        sprintf(seq_index_str, "%"PRIu64, seq_index);
+        seq_index_str[seq_index_len] = '\0';
+        tmp_key = replace_uri_tokens(s3_key, INDEX_STRING, seq_index_str);
+
+        if (strlen(tmp_key) > S3_KEY_SIZE) {
+            flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
+        }
+
+        flb_sds_destroy(s3_key);
+        s3_key = tmp_key;
+        tmp_key = NULL;
+        flb_free(seq_index_str);
+    }
+
     /* Find all occurences of $UUID and replace with a random string. */
     random_alphanumeric = flb_sts_session_name();
     if (!random_alphanumeric) {
@@ -818,7 +873,10 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag, char 
     tmp_key = NULL;
     flb_free(random_alphanumeric);
 
-    gmt = gmtime(&time);
+    if (!gmtime_r(&time, &gmt)) {
+        flb_error("[s3_key] Failed to create timestamp.");
+        goto error;
+    }
 
     flb_sds_destroy(tmp);
     tmp = NULL;
@@ -829,7 +887,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag, char 
         goto error;
     }
 
-    ret = strftime(key, S3_KEY_SIZE, s3_key, gmt);
+    ret = strftime(key, S3_KEY_SIZE, s3_key, &gmt);
     if(ret == 0){
         flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
     }

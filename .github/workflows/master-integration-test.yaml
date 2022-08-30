@@ -1,0 +1,37 @@
+name: Build master container images and run integration tests
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  master-integration-test-build:
+    name: Master - integration build
+    uses: ./.github/workflows/call-integration-image-build.yaml
+    with:
+      ref: ${{ github.sha }}
+      registry: ghcr.io
+      username: ${{ github.actor }}
+      image: ${{ github.repository }}/master
+      image-tag: x86_64
+      environment: integration
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+
+  master-integration-test-run-integration:
+    name: Master - integration test
+    needs: master-integration-test-build
+    uses: ./.github/workflows/call-run-integration-test.yaml
+    with:
+      image_name: ghcr.io/${{ github.repository }}/master
+      image_tag: x86_64
+    secrets:
+      opensearch_aws_access_id: ${{ secrets.OPENSEARCH_AWS_ACCESS_ID }}
+      opensearch_aws_secret_key: ${{ secrets.OPENSEARCH_AWS_SECRET_KEY }}
+      opensearch_admin_password: ${{ secrets.OPENSEARCH_ADMIN_PASSWORD }}
+      terraform_api_token: ${{ secrets.TF_API_TOKEN }}
+      azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+      azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      gcp-service-account-key: ${{ secrets.GCP_SA_KEY }}

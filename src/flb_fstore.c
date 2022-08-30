@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,8 +24,8 @@
 #include <fluent-bit/flb_sds.h>
 #include <chunkio/chunkio.h>
 
-static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
-                  char *str)
+static void log_cb(void *ctx, int level, const char *file, int line,
+                   const char *str)
 {
     if (level == CIO_LOG_ERROR) {
         flb_error("[fstore] %s", str);
@@ -39,8 +39,6 @@ static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
     else if (level == CIO_LOG_DEBUG) {
         flb_debug("[fstore] %s", str);
     }
-
-    return 0;
 }
 
 /*
@@ -76,12 +74,32 @@ int flb_fstore_file_meta_set(struct flb_fstore *fs,
                              void *meta, size_t size)
 {
     int ret;
+    int set_down = FLB_FALSE;
+
+    /* Check if the chunk is up */
+    if (cio_chunk_is_up(fsf->chunk) == CIO_FALSE) {
+        ret = cio_chunk_up_force(fsf->chunk);
+        if (ret != CIO_OK) {
+            flb_error("[fstore] error loading up file chunk");
+            return -1;
+        }
+        set_down = FLB_TRUE;
+    }
 
     ret = cio_meta_write(fsf->chunk, meta, size);
     if (ret == -1) {
         flb_error("[fstore] could not write metadata to file: %s:%s",
                   fsf->stream->name, fsf->chunk->name);
+
+        if (set_down == FLB_TRUE) {
+            cio_chunk_down(fsf->chunk);
+        }
+
         return -1;
+    }
+
+    if (set_down == FLB_TRUE) {
+        cio_chunk_down(fsf->chunk);
     }
 
     return meta_set(fsf, meta, size);
@@ -169,6 +187,28 @@ struct flb_fstore_file *flb_fstore_file_create(struct flb_fstore *fs,
     return fsf;
 }
 
+/* Lookup file on stream by using it name */
+struct flb_fstore_file *flb_fstore_file_get(struct flb_fstore *fs,
+                                            struct flb_fstore_stream *fs_stream,
+                                            char *name, size_t size)
+{
+    struct mk_list *head;
+    struct flb_fstore_file *fsf;
+
+    mk_list_foreach(head, &fs_stream->files) {
+        fsf = mk_list_entry(head, struct flb_fstore_file, _head);
+        if (flb_sds_len(fsf->name) != size) {
+            continue;
+        }
+
+        if (strncmp(fsf->name, name, size) == 0) {
+            return fsf;
+        }
+    }
+
+    return NULL;
+}
+
 /*
  * Set a file to inactive mode. Inactive means just to remove the reference
  * from the list.
@@ -232,11 +272,31 @@ int flb_fstore_file_content_copy(struct flb_fstore *fs,
 int flb_fstore_file_append(struct flb_fstore_file *fsf, void *data, size_t size)
 {
     int ret;
+    int set_down = FLB_FALSE;
+
+    /* Check if the chunk is up */
+    if (cio_chunk_is_up(fsf->chunk) == CIO_FALSE) {
+        ret = cio_chunk_up_force(fsf->chunk);
+        if (ret != CIO_OK) {
+            flb_error("[fstore] error loading up file chunk");
+            return -1;
+        }
+        set_down = FLB_TRUE;
+    }
 
     ret = cio_chunk_write(fsf->chunk, data, size);
     if (ret != CIO_OK) {
         flb_error("[fstore] could not write data to file %s", fsf->name);
+
+        if (set_down == FLB_TRUE) {
+            cio_chunk_down(fsf->chunk);
+        }
+
         return -1;
+    }
+
+    if (set_down == FLB_TRUE) {
+        cio_chunk_down(fsf->chunk);
     }
 
     return 0;
@@ -395,11 +455,16 @@ struct flb_fstore *flb_fstore_create(char *path, int store_type)
     int flags;
     struct cio_ctx *cio;
     struct flb_fstore *fs;
-
+    struct cio_options opts = {0};
     flags = CIO_OPEN;
 
     /* Create Chunk I/O context */
-    cio = cio_create(path, log_cb, CIO_LOG_DEBUG, flags);
+    opts.root_path = path;
+    opts.log_cb = log_cb;
+    opts.flags = flags;
+    opts.log_level = CIO_LOG_INFO;
+
+    cio = cio_create(&opts);
     if (!cio) {
         flb_error("[fstore] error initializing on path '%s'", path);
         return NULL;
@@ -420,7 +485,7 @@ struct flb_fstore *flb_fstore_create(char *path, int store_type)
         return NULL;
     }
     fs->cio = cio;
-    fs->root_path = cio->root_path;
+    fs->root_path = cio->options.root_path;
     fs->store_type = store_type;
     mk_list_init(&fs->streams);
 

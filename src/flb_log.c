@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -33,6 +32,12 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_mem.h>
+
+#ifdef FLB_HAVE_AWS_ERROR_REPORTER
+#include <fluent-bit/aws/flb_aws_error_reporter.h>
+
+extern struct flb_aws_error_reporter *error_reporter;
+#endif
 
 FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
 
@@ -365,12 +370,18 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
         break;
     }
 
+    #ifdef FLB_LOG_NO_CONTROL_CHARS
+    header_color = "";
+    bold_color = "";
+    reset_color = "";
+    #else
     /* Only print colors to a terminal */
     if (!isatty(STDOUT_FILENO)) {
         header_color = "";
         bold_color = "";
         reset_color = "";
     }
+    #endif // FLB_LOG_NO_CONTROL_CHARS
 
     now = time(NULL);
     current = localtime_r(&now, &result);
@@ -417,12 +428,23 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
     if (w) {
         int n = flb_pipe_write_all(w->log[1], &msg, sizeof(msg));
         if (n == -1) {
+            fprintf(stderr, "%s", (char *) msg.msg);
             perror("write");
         }
     }
     else {
         fprintf(stderr, "%s", (char *) msg.msg);
     }
+
+    #ifdef FLB_HAVE_AWS_ERROR_REPORTER
+    if (is_error_reporting_enabled()) {
+        if (type == FLB_LOG_ERROR) {
+            flb_aws_error_reporter_write(error_reporter, msg.msg + len);
+        }
+
+        flb_aws_error_reporter_clean(error_reporter);
+    }
+    #endif
 }
 
 int flb_errno_print(int errnum, const char *file, int line)

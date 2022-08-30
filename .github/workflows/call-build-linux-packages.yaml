@@ -1,0 +1,330 @@
+---
+name: Reusable workflow to build binary packages into S3 bucket
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The version of Fluent Bit to create.
+        type: string
+        required: true
+      ref:
+        description: The commit, tag or branch of Fluent Bit to checkout for building that creates the version above.
+        type: string
+        required: true
+      build_matrix:
+        description: The build targets to produce as a JSON matrix.
+        type: string
+        required: true
+      environment:
+        description: The Github environment to run this workflow on.
+        type: string
+        required: false
+      unstable:
+        description: Optionally add metadata to build to indicate an unstable build, set to the contents you want to add.
+        type: string
+        required: false
+        default: ''
+    secrets:
+      token:
+        description: The Github token or similar to authenticate with.
+        required: true
+      bucket:
+        description: The name of the S3 (US-East) bucket to push packages into.
+        required: false
+      access_key_id:
+        description: The S3 access key id for the bucket.
+        required: false
+      secret_access_key:
+        description: The S3 secret access key for the bucket.
+        required: false
+      gpg_private_key:
+        description: The GPG key to use for signing the packages.
+        required: false
+      gpg_private_key_passphrase:
+        description: The GPG key passphrase to use for signing the packages.
+        required: false
+
+jobs:
+  call-build-legacy-check:
+    # Determine if this is a 1.8 type of build which is different
+    name: Extract any supporting metadata
+    outputs:
+      build-type: ${{ steps.determine-build-type.outputs.BUILD_TYPE }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Determine build type
+        id: determine-build-type
+        run: |
+          BUILD_TYPE="1.8"
+          if [[ -f "dockerfiles/Dockerfile" ]]; then
+            BUILD_TYPE="modern"
+          fi
+          echo "Detected type: $BUILD_TYPE"
+          echo ::set-output name=BUILD_TYPE::$BUILD_TYPE
+        shell: bash
+
+  call-build-capture-source:
+    # Capture source tarball and generate checksum for it
+    name: Extract any supporting metadata
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    needs:
+      - call-build-legacy-check
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+          path: source
+
+      - name: Checkout legacy packaging code
+        if: needs.call-build-legacy-check.outputs.build-type == '1.8'
+        uses: actions/checkout@v3
+        with:
+          repository: fluent/fluent-bit-packaging
+          path: packaging
+
+      - name: Create tarball and checksums
+        run: |
+          tar -czvf $SOURCE_FILENAME_PREFIX.tar.gz -C source --exclude-vcs .
+          md5sum $SOURCE_FILENAME_PREFIX.tar.gz > $SOURCE_FILENAME_PREFIX.tar.gz.md5
+          sha256sum $SOURCE_FILENAME_PREFIX.tar.gz > $SOURCE_FILENAME_PREFIX.tar.gz.sha256
+          if [[ -d packaging ]]; then
+            echo "Also adding 1.8 packaging code"
+            tar -czvf $SOURCE_FILENAME_PREFIX-packaging.tar.gz -C packaging --exclude-vcs .
+            md5sum $SOURCE_FILENAME_PREFIX-packaging.tar.gz > $SOURCE_FILENAME_PREFIX-packaging.tar.gz.md5
+            sha256sum $SOURCE_FILENAME_PREFIX-packaging.tar.gz > $SOURCE_FILENAME_PREFIX-packaging.tar.gz.sha256
+          fi
+          # Move to a directory to simplify upload/sync
+          mkdir -p source-packages
+          cp -fv $SOURCE_FILENAME_PREFIX* source-packages/
+        shell: bash
+        env:
+          SOURCE_FILENAME_PREFIX: source-${{ inputs.version }}
+
+      - name: Upload the source artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: source-${{ inputs.version }}
+          path: source-packages/*
+          if-no-files-found: error
+
+      # Required to support 1.8 style builds which will not have it
+      - name: Checkout code for action
+        if: inputs.environment == 'staging'
+        uses: actions/checkout@v3
+        with:
+          path: action-support
+
+      - name: Push tarballs to S3
+        # Only upload for staging
+        if: inputs.environment == 'staging'
+        uses: ./action-support/.github/actions/sync-to-bucket
+        with:
+          bucket: ${{ secrets.bucket }}
+          access_key_id: ${{ secrets.access_key_id }}
+          secret_access_key: ${{ secrets.secret_access_key }}
+          bucket-directory: "${{ inputs.version }}/source"
+          source-directory: "source-packages/"
+
+  # We build both master/1.9 and 1.8 style packages in a single job as it is simpler to keep all the custom
+  # code and workflow together. We need to run the dependent job after this as well.
+  call-build-linux-packages:
+    name: ${{ matrix.distro }} package build and stage to S3
+    environment: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    needs:
+      - call-build-legacy-check
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(inputs.build_matrix) }}
+    steps:
+      - name: Checkout code
+        if: needs.call-build-legacy-check.outputs.build-type != '1.8'
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Checkout legacy packaging code
+        if: needs.call-build-legacy-check.outputs.build-type == '1.8'
+        uses: actions/checkout@v3
+        with:
+          repository: fluent/fluent-bit-packaging
+          path: packaging
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - uses: frabert/replace-string-action@v2.2
+        id: formatted_distro
+        with:
+          pattern: '(.*)\/(.*)$'
+          string: "${{ matrix.distro }}"
+          replace-with: '$1-$2'
+          flags: 'g'
+
+      - name: fluent-bit - ${{ matrix.distro }} artifacts
+        if: needs.call-build-legacy-check.outputs.build-type != '1.8'
+        run: |
+          ./build.sh
+        env:
+          FLB_DISTRO: ${{ matrix.distro }}
+          # Align with 1.8 output
+          FLB_OUT_DIR: ${{ inputs.version }}/staging
+          FLB_TD: "Off"
+          FLB_NIGHTLY_BUILD: ${{ inputs.unstable }}
+          CMAKE_INSTALL_PREFIX: /opt/fluent-bit/
+        working-directory: packaging
+
+      - name: td-agent-bit - ${{ matrix.distro }} artifacts
+        if: needs.call-build-legacy-check.outputs.build-type != '1.8'
+        run: |
+          ./build.sh
+        env:
+          FLB_DISTRO: ${{ matrix.distro }}
+          # Align with 1.8 output
+          FLB_OUT_DIR: ${{ inputs.version }}/staging
+          FLB_TD: "On"
+          FLB_NIGHTLY_BUILD: ${{ inputs.unstable }}
+          CMAKE_INSTALL_PREFIX: /opt/td-agent-bit/
+        working-directory: packaging
+
+      - name: Legacy td-agent-bit - ${{ matrix.distro }} artifacts
+        if: needs.call-build-legacy-check.outputs.build-type == '1.8'
+        run: |
+          ./build.sh -v $FLB_VERSION -b $FLB_BRANCH -d $FLB_DISTRO
+        env:
+          FLB_VERSION: ${{ inputs.ref }}
+          FLB_BRANCH: ${{ inputs.ref }}
+          FLB_DISTRO: ${{ matrix.distro }}
+          FLB_OUT_DIR: staging
+        working-directory: packaging
+
+      - name: Upload the ${{ matrix.distro }} artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: packages-${{ inputs.version }}-${{ steps.formatted_distro.outputs.replaced }}
+          path: packaging/packages/
+          if-no-files-found: error
+
+      - name: Retrieve target info for repo creation
+        id: get-target-info
+        # Remove any .arm648 suffix
+        # For ubuntu map to codename using the disto-info list (CSV)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y distro-info
+          TARGET=${DISTRO%*.arm64v8}
+          if [[ "$TARGET" == "ubuntu/"* ]]; then
+              UBUNTU_CODENAME=$(cut -d ',' -f 1,3 < "/usr/share/distro-info/ubuntu.csv"|grep "${TARGET##*/}"|cut -d ',' -f 2)
+              if [[ -n "$UBUNTU_CODENAME" ]]; then
+                  TARGET="ubuntu/$UBUNTU_CODENAME"
+              else
+                  echo "Unable to extract codename for $DISTRO"
+                  exit 1
+              fi
+          fi
+          echo "$TARGET"
+          echo ::set-output name=target::$TARGET
+        env:
+          DISTRO: ${{ matrix.distro }}
+        shell: bash
+
+      - name: Verify output target
+        # Only upload for staging
+        # Make sure not to do a --delete on sync as it will remove the other architecture
+        run: |
+          if [ -z "${{ steps.get-target-info.outputs.target }}" ]; then
+            echo "Invalid (empty) target defined"
+            exit 1
+          fi
+        shell: bash
+
+      # Required to support 1.8 style builds which will not have it
+      - name: Checkout code for action
+        if: inputs.environment == 'staging'
+        uses: actions/checkout@v3
+        with:
+          path: action-support
+
+      - name: Push packages to S3
+        # Only upload for staging
+        if: inputs.environment == 'staging'
+        uses: ./action-support/.github/actions/sync-to-bucket
+        with:
+          bucket: ${{ secrets.bucket }}
+          access_key_id: ${{ secrets.access_key_id }}
+          secret_access_key: ${{ secrets.secret_access_key }}
+          bucket-directory: "${{ inputs.version }}/${{ steps.get-target-info.outputs.target }}/"
+          source-directory: "packaging/packages/${{ matrix.distro }}/${{ inputs.version }}/staging/"
+
+
+  call-build-linux-packages-repo:
+    name: Create repo metadata in S3
+    # Only upload for staging
+    if: inputs.environment == 'staging'
+    # Need to use 18.04 as 20.04 has no createrepo available
+    runs-on: ubuntu-18.04
+    environment: ${{ inputs.environment }}
+    needs:
+      - call-build-linux-packages
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y createrepo aptly
+
+      - name: Checkout code for repo metadata construction - always latest
+        uses: actions/checkout@v3
+
+      - name: Import GPG key for signing
+        id: import_gpg
+        uses: crazy-max/ghaction-import-gpg@v5
+        with:
+          gpg_private_key: ${{ secrets.gpg_private_key }}
+          passphrase: ${{ secrets.gpg_private_key_passphrase }}
+
+      - name: Create repositories on staging now
+        # We sync down what we have for the release directories.
+        # Create the repo metadata then upload to the root of the bucket.
+        # This will wipe out any versioned directories in the process.
+        run: |
+          rm -rf ./latest/
+          mkdir -p ./latest/
+          if [ -n "${AWS_S3_ENDPOINT}" ]; then
+            ENDPOINT="--endpoint-url ${AWS_S3_ENDPOINT}"
+          fi
+          aws s3 sync "s3://$AWS_S3_BUCKET/${{ inputs.version }}" ./latest/ --no-progress ${ENDPOINT}
+
+          gpg --export -a "${{ steps.import_gpg.outputs.name }}" > ./latest/fluentbit.key
+          rpm --import ./latest/fluentbit.key
+
+          ./update-repos.sh "./latest/"
+          echo "${{ inputs.version }}" > "./latest/latest-version.txt"
+          aws s3 sync "./latest/" "s3://$AWS_S3_BUCKET" --delete --follow-symlinks --no-progress ${ENDPOINT}
+        env:
+          GPG_KEY: ${{ steps.import_gpg.outputs.name }}
+          AWS_REGION: "us-east-1"
+          AWS_ACCESS_KEY_ID: ${{ secrets.access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.secret_access_key }}
+          AWS_S3_BUCKET: ${{ secrets.bucket }}
+          # To use with Minio locally (or update to whatever endpoint you want)
+          # AWS_S3_ENDPOINT: http://localhost:9000
+        shell: bash
+        working-directory: packaging

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -30,6 +29,7 @@
 /* Upload data to S3 in 5MB chunks */
 #define MIN_CHUNKED_UPLOAD_SIZE 5242880
 #define MAX_CHUNKED_UPLOAD_SIZE 50000000
+#define MAX_CHUNKED_UPLOAD_COMPRESS_SIZE 5000000000
 
 #define UPLOAD_TIMER_MAX_WAIT 60000
 #define UPLOAD_TIMER_MIN_WAIT 6000
@@ -42,7 +42,8 @@
 #define MAX_FILE_SIZE         50000000000
 #define MAX_FILE_SIZE_STR     "50,000,000,000"
 
-#define MAX_FILE_SIZE_PUT_OBJECT         50000000
+/* Allowed max file size 1 GB for publishing to S3 */
+#define MAX_FILE_SIZE_PUT_OBJECT        1000000000 
 
 #define DEFAULT_UPLOAD_TIMEOUT 3600
 
@@ -56,6 +57,18 @@
  * I can't think of a reason why a chunk could become unsendable.
  */
 #define MAX_UPLOAD_ERRORS 5
+
+struct upload_queue {
+    struct s3_file *upload_file;
+    struct multipart_upload *m_upload_file;
+    char *tag;
+    int tag_len;
+
+    int retry_counter;
+    time_t upload_time;
+
+    struct mk_list _head;
+};
 
 struct multipart_upload {
     flb_sds_t s3_key;
@@ -95,11 +108,18 @@ struct flb_s3 {
     char *endpoint;
     char *sts_endpoint;
     char *canned_acl;
-    char *compression;
     char *content_type;
+    char *storage_class;
+    char *log_key;
+    char *external_id;
     int free_endpoint;
+    int retry_requests;
     int use_put_object;
     int send_content_md5;
+    int static_file_path;
+    int compression;
+    int port;
+    int insecure;
 
     struct flb_aws_provider *provider;
     struct flb_aws_provider *base_provider;
@@ -120,6 +140,7 @@ struct flb_s3 {
     struct flb_fstore *fs;
     struct flb_fstore_stream *stream_active;  /* default active stream */
     struct flb_fstore_stream *stream_upload;  /* multipart upload stream */
+    struct flb_fstore_stream *stream_metadata; /* s3 metadata stream */
 
     /*
      * used to track that unset buffers were found on startup that have not
@@ -131,13 +152,23 @@ struct flb_s3 {
 
     struct mk_list uploads;
 
+    int preserve_data_ordering;
+    int upload_queue_success;
+    struct mk_list upload_queue;
+
     size_t file_size;
     size_t upload_chunk_size;
     time_t upload_timeout;
+    time_t retry_time;
 
     int timer_created;
     int timer_ms;
     int key_fmt_has_uuid;
+
+    uint64_t seq_index;
+    int key_fmt_has_seq_index;
+    flb_sds_t metadata_dir;
+    flb_sds_t seq_index_file;
 
     struct flb_output_instance *ins;
 };
@@ -159,5 +190,9 @@ struct flb_http_client *mock_s3_call(char *error_env_var, char *api);
 int s3_plugin_under_test();
 
 int get_md5_base64(char *buf, size_t buf_size, char *md5_str, size_t md5_str_size);
+
+int create_headers(struct flb_s3 *ctx, char *body_md5,
+                   struct flb_aws_header **headers, int *num_headers,
+                   int multipart_upload);
 
 #endif

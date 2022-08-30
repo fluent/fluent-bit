@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -33,20 +32,23 @@ static void rule_error(struct flb_ml *ml)
 }
 
 /* Java mode */
-struct flb_ml *flb_ml_mode_java(struct flb_config *config, int flush_ms,
-                                char *key)
+struct flb_ml *flb_ml_parser_java(struct flb_config *config, int flush_ms,
+                                  char *key)
 {
     int ret;
     struct flb_ml *ml;
 
-    ml = flb_ml_create(config,          /* Fluent Bit context */
-                       FLB_ML_REGEX,    /* type      */
-                       NULL,            /* match_str */
-                       FLB_FALSE,       /* negate    */
-                       flush_ms,        /* flush_ms  */
-                       key,             /* key_content */
-                       NULL,            /* key_pattern */
-                       NULL);           /* parser */
+    ml = flb_ml_parser_create(config,          /* Fluent Bit context */
+                              "java",          /* name      */
+                              FLB_ML_REGEX,    /* type      */
+                              NULL,            /* match_str */
+                              FLB_FALSE,       /* negate    */
+                              flush_ms,        /* flush_ms  */
+                              key,             /* key_content */
+                              NULL,            /* key_group   */
+                              NULL,            /* key_pattern */
+                              NULL,            /* parser ctx  */
+                              NULL);           /* parser name */
 
     if (!ml) {
         flb_error("[multiline] could not create 'python mode'");

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -21,7 +20,7 @@
 #ifndef FLB_SIZE_WINDOW_H
 #define FLB_SIZE_WINDOW_H
 
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_hash_table.h>
 
 #define FLB_SIZE_WINDOW_HASH_MAX_ENTRIES 100000
 
@@ -44,7 +43,7 @@ struct throttle_size_window
 
 struct throttle_size_table
 {
-    struct flb_hash *windows;
+    struct flb_hash_table *windows;
     void *lock;
 };
 
@@ -113,8 +112,8 @@ inline static struct throttle_size_window *find_throttle_size_window(struct
 {
     char *window = NULL;
     size_t out_size;
-    if (flb_hash_get(table->windows, name, name_length, (const char **)&window, &out_size) >=
-        0) {
+    if (flb_hash_table_get(table->windows, name, name_length,
+                           (const char **)&window, &out_size) >= 0) {
         if (out_size < sizeof(struct throttle_size_window)) {
             flb_error("Malformed data in size window hashtable");
             return NULL;
@@ -129,8 +128,8 @@ inline static void add_throttle_size_window(struct throttle_size_table
                                             struct throttle_size_window
                                             *window)
 {
-    flb_hash_add(table->windows, window->name, strlen(window->name),
-                 (char *) window, sizeof(struct throttle_size_window));
+    flb_hash_table_add(table->windows, window->name, strlen(window->name),
+                       (char *) window, sizeof(struct throttle_size_window));
 }
 
 void destroy_throttle_size_table(struct throttle_size_table *table);

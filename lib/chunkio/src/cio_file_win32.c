@@ -294,7 +294,7 @@ static char *create_path(struct cio_chunk *ch)
     size_t len;
     int ret;
 
-    len = strlen(ch->ctx->root_path) + strlen(ch->st->name) + strlen(ch->name);
+    len = strlen(ch->ctx->options.root_path) + strlen(ch->st->name) + strlen(ch->name);
     len += 3;
 
     path = calloc(1, len);
@@ -304,7 +304,7 @@ static char *create_path(struct cio_chunk *ch)
     }
 
     ret = sprintf_s(path, len, "%s\\%s\\%s",
-                    ch->ctx->root_path, ch->st->name, ch->name);
+                    ch->ctx->options.root_path, ch->st->name, ch->name);
     if (ret < 0) {
         cio_errno();
         free(path);
@@ -327,6 +327,33 @@ static int is_valid_file_name(const char *name)
         }
     }
     return 1;
+}
+
+/*
+ * Fetch the file size regardless of if we opened this file or not.
+ */
+size_t cio_file_real_size(struct cio_file *cf)
+{
+    int ret;
+#ifdef _WIN64
+    struct _stat64 st;
+#else
+    struct _stat32 st;
+#endif
+
+    /* Store the current real size */
+#ifdef _WIN64
+    ret = _stat64(cf->path, &st);
+#else
+    ret = _stat32(cf->path, &st);
+#endif
+
+    if (ret != 0) {
+        cio_errno();
+        return 0;
+    }
+
+    return st.st_size;
 }
 
 /*
@@ -381,7 +408,7 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
         return NULL;
     }
 
-    if (ch->ctx->flags & CIO_CHECKSUM) {
+    if (ch->ctx->options.flags & CIO_CHECKSUM) {
         if (verify_checksum(ch)) {
             win32_chunk_error(ch, "[cio file] cannot verify checksum");
             cio_file_close(ch, CIO_FALSE);
@@ -794,6 +821,163 @@ int cio_file_up(struct cio_chunk *ch)
     return cio_file_up_force(ch);
 }
 
+static SID *perform_sid_lookup(char *account_name, SID_NAME_USE *result_sid_type)
+{
+    DWORD        referenced_domain_name_length;
+    char         referenced_domain_name[256];
+    SID         *reallocated_sid_buffer;
+    DWORD        sid_buffer_size;
+    size_t       retry_index;
+    SID         *sid_buffer;
+    SID_NAME_USE sid_type;
+    int          result;
+
+    referenced_domain_name_length = 256;
+    sid_buffer_size = 256;
+
+    sid_buffer = calloc(1, sid_buffer_size);
+
+    if (sid_buffer == NULL) {
+        cio_winapi_error();
+
+        return NULL;
+    }
+
+    result = 0;
+
+    for (retry_index = 0 ; retry_index < 5 && !result ; retry_index++) {
+        result = LookupAccountNameA(NULL,
+                                    account_name,
+                                    sid_buffer,
+                                    &sid_buffer_size,
+                                    referenced_domain_name,
+                                    &referenced_domain_name_length,
+                                    &sid_type);
+
+        if (!result) {
+            if (GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
+                sid_buffer_size *= 2;
+
+                reallocated_sid_buffer = realloc(sid_buffer, sid_buffer_size);
+
+                if (reallocated_sid_buffer == NULL) {
+                    cio_winapi_error();
+                    free(sid_buffer);
+
+                    return NULL;
+                }
+            }
+            else {
+                cio_winapi_error();
+                free(sid_buffer);
+
+                return NULL;
+            }
+        }
+    }
+
+    if (result_sid_type != NULL) {
+        *result_sid_type = sid_type;
+    }
+
+    return sid_buffer;
+}
+
+static int cio_file_lookup_entity(char *name,
+                                  void **result,
+                                  SID_NAME_USE desired_sid_type)
+{
+    SID_NAME_USE result_sid_type;
+
+    *result = (void **) perform_sid_lookup(name, &result_sid_type);
+
+    if (*result == NULL) {
+        return CIO_ERROR;
+    }
+
+    if (desired_sid_type != result_sid_type) {
+        free(*result);
+        *result = NULL;
+
+        return CIO_ERROR;
+    }
+
+    return CIO_OK;
+}
+
+int cio_file_lookup_user(char *user, void **result)
+{
+    return cio_file_lookup_entity(user, result, SidTypeUser);
+}
+
+int cio_file_lookup_group(char *group, void **result)
+{
+    return cio_file_lookup_entity(group, result, SidTypeGroup);
+}
+
+static DWORD cio_file_win_chown(char *path, SID *user, SID *group)
+{
+    int result;
+
+    /* Ownership here does not work in the same way it works in unixes
+     * so specifying both a user and group will end up with the group
+     * overriding the user if possible which can cause some misunderstandings.
+     */
+
+    result = ERROR_SUCCESS;
+
+    if (user != NULL) {
+        result = SetNamedSecurityInfoA(path, SE_FILE_OBJECT,
+                                       OWNER_SECURITY_INFORMATION,
+                                       user, NULL, NULL, NULL);
+    }
+
+    if (group != NULL && result == ERROR_SUCCESS) {
+        result = SetNamedSecurityInfoA(path, SE_FILE_OBJECT,
+                                       GROUP_SECURITY_INFORMATION,
+                                       group, NULL, NULL, NULL);
+    }
+
+    return result;
+}
+
+static int apply_file_ownership_and_acl_settings(struct cio_ctx *ctx, char *path)
+{
+    char *connector;
+    int   result;
+    char *group;
+    char *user;
+
+    if (ctx->processed_user != NULL) {
+        result = cio_file_win_chown(path, ctx->processed_user, ctx->processed_group);
+
+        if (result != CIO_OK) {
+            cio_errno();
+
+            user = ctx->options.user;
+            group = ctx->options.group;
+            connector = "with group";
+
+            if (user == NULL) {
+                user = "";
+                connector = "";
+            }
+
+            if (group == NULL) {
+                group = "";
+                connector = "";
+            }
+
+            cio_log_error(ctx, "cannot change ownership of %s to %s %s %s",
+                          path, user, connector, group);
+
+            return CIO_ERROR;
+        }
+    }
+
+    return CIO_OK;
+}
+
 int cio_file_up_force(struct cio_chunk *ch)
 {
     struct cio_file *cf = (struct cio_file *) ch->backend;
@@ -801,6 +985,7 @@ int cio_file_up_force(struct cio_chunk *ch)
     int dwCreationDisposition = 0;
     int meta_size;
     int64_t size;
+    int ret;
 
     if (cio_file_is_up(ch, cf)) {
         win32_chunk_error(ch, "[cio file] chunk is already up");
@@ -827,6 +1012,14 @@ int cio_file_up_force(struct cio_chunk *ch)
     if (cf->h == INVALID_HANDLE_VALUE) {
         cio_winapi_error();
         win32_chunk_error(ch, "[cio file] cannot open");
+        return -1;
+    }
+
+    ret = apply_file_ownership_and_acl_settings(ch->ctx, cf->path);
+    if (ret == CIO_ERROR) {
+        CloseHandle(cf->h);
+        cf->h = INVALID_HANDLE_VALUE;
+
         return -1;
     }
 

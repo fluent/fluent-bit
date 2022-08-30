@@ -22,31 +22,35 @@
 
 /* Initialize an 'opts' context with given values */
 int cmt_opts_init(struct cmt_opts *opts,
-                  char *namespace, char *subsystem, char *name,
+                  char *ns, char *subsystem, char *name,
                   char *description)
 {
+    int len;
     cmt_sds_t tmp;
 
     if (!name) {
         return -1;
     }
 
-    if (namespace) {
-        opts->namespace = cmt_sds_create(namespace);
-        if (!opts->namespace) {
+    if (ns) {
+        opts->ns = cmt_sds_create(ns);
+        if (!opts->ns) {
             return -1;
         }
 
-        opts->fqname = cmt_sds_create(namespace);
+        opts->fqname = cmt_sds_create(ns);
         if (!opts->fqname) {
             return -1;
         }
 
-        tmp = cmt_sds_cat(opts->fqname, "_", 1);
-        if (!tmp) {
-            return -1;
+        if (strlen(ns) > 0) {
+            tmp = cmt_sds_cat(opts->fqname, "_", 1);
+            if (!tmp) {
+                return -1;
+            }
+
+            opts->fqname = tmp;
         }
-        opts->fqname = tmp;
     }
 
     if (subsystem) {
@@ -55,18 +59,23 @@ int cmt_opts_init(struct cmt_opts *opts,
             return -1;
         }
 
-        tmp = cmt_sds_cat(opts->fqname,
-                          opts->subsystem, cmt_sds_len(opts->subsystem));
-        if (!tmp) {
-            return -1;
-        }
-        opts->fqname = tmp;
+        if (strlen(opts->subsystem) > 0) {
+            tmp = cmt_sds_cat(opts->fqname,
+                              opts->subsystem, cmt_sds_len(opts->subsystem));
+            if (!tmp) {
+                return -1;
+                }
+            opts->fqname = tmp;
 
-        tmp = cmt_sds_cat(opts->fqname, "_", 1);
-        if (!tmp) {
-            return -1;
+            len = cmt_sds_len(opts->fqname);
+            if (opts->fqname[len - 1] != '_') {
+                tmp = cmt_sds_cat(opts->fqname, "_", 1);
+                if (!tmp) {
+                    return -1;
+                }
+                opts->fqname = tmp;
+            }
         }
-        opts->fqname = tmp;
     }
 
     opts->name = cmt_sds_create(name);
@@ -87,8 +96,8 @@ int cmt_opts_init(struct cmt_opts *opts,
 
 void cmt_opts_exit(struct cmt_opts *opts)
 {
-    if (opts->namespace) {
-        cmt_sds_destroy(opts->namespace);
+    if (opts->ns) {
+        cmt_sds_destroy(opts->ns);
     }
 
     if (opts->subsystem) {

@@ -6,11 +6,13 @@ set(src
   flb_mp.c
   flb_kv.c
   flb_api.c
+  flb_csv.c
   flb_lib.c
   flb_log.c
   flb_env.c
+  flb_file.c
   flb_uri.c
-  flb_hash.c
+  flb_hash_table.c
   flb_help.c
   flb_pack.c
   flb_pack_gelf.c
@@ -18,8 +20,11 @@ set(src
   flb_pipe.c
   flb_meta.c
   flb_kernel.c
+  flb_custom.c
   flb_input.c
   flb_input_chunk.c
+  flb_input_metric.c
+  flb_input_thread.c
   flb_filter.c
   flb_output.c
   flb_output_thread.c
@@ -44,17 +49,37 @@ set(src
   flb_coro.c
   flb_time.c
   flb_sosreport.c
-  flb_sha512.c
+  flb_hmac.c
+  flb_hash.c
+  flb_crypto.c
   flb_random.c
   flb_plugin.c
   flb_gzip.c
+  flb_snappy.c
   flb_http_client.c
   flb_callback.c
   flb_strptime.c
   flb_fstore.c
   flb_thread_pool.c
   flb_routes_mask.c
+  flb_typecast.c
+  flb_event.c
+  flb_base64.c
+  flb_ring_buffer.c
   )
+
+# Config format
+set(src
+  ${src}
+  config_format/flb_config_format.c
+  config_format/flb_cf_fluentbit.c
+)
+if(FLB_HAVE_LIBYAML)
+  set(src
+    ${src}
+    config_format/flb_cf_yaml.c
+    )
+endif()
 
 # Multiline subsystem
 add_subdirectory(multiline)
@@ -134,22 +159,25 @@ if(FLB_HTTP_CLIENT_DEBUG)
      )
 endif()
 
-if(FLB_AWS)
+if (FLB_AWS_ERROR_REPORTER)
   set(src
     ${src}
-    "aws/flb_aws_util.c"
-    "aws/flb_aws_credentials.c"
-    "aws/flb_aws_credentials_sts.c"
-    "aws/flb_aws_credentials_ec2.c"
-    "aws/flb_aws_credentials_http.c"
-    "aws/flb_aws_credentials_profile.c"
+    "aws/flb_aws_error_reporter.c"
     )
 endif()
 
 if(FLB_LUAJIT)
   set(src
     ${src}
+    "flb_lua.c"
     "flb_luajit.c"
+    )
+endif()
+
+if(FLB_IN_KAFKA OR FLB_OUT_KAFKA)
+  set(src
+    ${src}
+    "flb_kafka.c"
     )
 endif()
 
@@ -253,6 +281,11 @@ if(FLB_STREAM_PROCESSOR)
   add_subdirectory(stream_processor)
 endif()
 
+# AWS specific
+if(FLB_AWS)
+  add_subdirectory(aws)
+endif()
+
 # HTTP Server
 if(FLB_HTTP_SERVER)
   add_subdirectory(http_server)
@@ -292,10 +325,13 @@ set(FLB_DEPS
   chunkio-static
   miniz
   xxhash
+  cmetrics-static
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}
-  mbedtls
+  c-ares
+  snappy-c
+  lwrb
   )
 
 if(OPENSSL_FOUND)
@@ -305,12 +341,28 @@ if(OPENSSL_FOUND)
     )
 endif()
 
+# libyaml
+if(FLB_HAVE_LIBYAML)
+set(FLB_DEPS
+  ${FLB_DEPS}
+  yaml
+  )
+endif()
+
 # UTF8 Encoding
 if(FLB_UTF8_ENCODER)
 set(FLB_DEPS
   ${FLB_DEPS}
   tutf8e
   )
+endif()
+
+# AWS specific
+if(FLB_AWS)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    flb-aws
+    )
 endif()
 
 # Record Accessor
@@ -327,6 +379,12 @@ if(FLB_STREAM_PROCESSOR)
     ${FLB_DEPS}
     flb-sp
     )
+endif()
+
+if (MSVC)
+set(flb_rc_files
+  ${CMAKE_CURRENT_BINARY_DIR}/version.rc
+  )
 endif()
 
 # Shared Library
@@ -377,7 +435,7 @@ endif()
 if(FLB_BINARY)
   find_package (Threads)
   if (FLB_SYSTEM_WINDOWS)
-    add_executable(fluent-bit-bin fluent-bit.c flb_dump.c win32/winsvc.c)
+    add_executable(fluent-bit-bin fluent-bit.c flb_dump.c win32/winsvc.c ${flb_rc_files})
   else()
     add_executable(fluent-bit-bin fluent-bit.c flb_dump.c)
   endif()
@@ -438,11 +496,25 @@ if(FLB_BINARY)
     # FIXME: should we support Sysv init script ?
   endif()
 
-  install(FILES
-    "${PROJECT_SOURCE_DIR}/conf/fluent-bit.conf"
-    DESTINATION ${FLB_INSTALL_CONFDIR}
-    COMPONENT binary
-    RENAME "${FLB_OUT_NAME}.conf")
+  if(FLB_SYSTEM_WINDOWS)
+    install(FILES
+      "${PROJECT_SOURCE_DIR}/conf/fluent-bit-win32.conf"
+      DESTINATION ${FLB_INSTALL_CONFDIR}
+      COMPONENT binary
+      RENAME "${FLB_OUT_NAME}.conf")
+  elseif(FLB_SYSTEM_MACOS)
+    install(FILES
+      "${PROJECT_SOURCE_DIR}/conf/fluent-bit-macos.conf"
+      DESTINATION ${FLB_INSTALL_CONFDIR}
+      COMPONENT binary
+      RENAME "${FLB_OUT_NAME}.conf")
+  else()
+    install(FILES
+      "${PROJECT_SOURCE_DIR}/conf/fluent-bit.conf"
+      DESTINATION ${FLB_INSTALL_CONFDIR}
+      COMPONENT binary
+      RENAME "${FLB_OUT_NAME}.conf")
+  endif()
 
   install(FILES
     "${PROJECT_SOURCE_DIR}/conf/parsers.conf"

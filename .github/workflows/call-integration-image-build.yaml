@@ -1,0 +1,142 @@
+name: Reusable workflow for integration testing
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: The SHA, commit or branch to checkout and build.
+        required: true
+        type: string
+      registry:
+        description: The registry to push container images to.
+        type: string
+        required: true
+      username:
+        description: The username for the registry.
+        type: string
+        required: true
+      image:
+        description: The name of the container image to push to the registry.
+        type: string
+        required: true
+      image-tag:
+        description: The tag of the image to for testing.
+        type: string
+        required: true
+      environment:
+        description: The Github environment to run this workflow on.
+        type: string
+        required: false
+    secrets:
+      token:
+        description: The Github token or similar to authenticate with for the registry.
+        required: true
+jobs:
+  call-integration-image-build-container:
+    name: Integration test container image build
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ inputs.username }}
+          password: ${{ secrets.token }}
+
+      - name: Extract metadata from Github
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ inputs.registry }}/${{ inputs.image }}
+          tags: |
+            raw,${{ inputs.image-tag }}
+
+      - name: Build the AMD64 image
+        uses: docker/build-push-action@v3
+        with:
+          file: ./dockerfiles/Dockerfile
+          context: .
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64
+          target: production
+          push: true
+          load: false
+
+      - name: Upload the image just in case as an artefact
+        run: |
+          docker pull $IMAGE
+          docker save --output /tmp/pr-image.tar $IMAGE
+        env:
+          IMAGE: ${{ steps.meta.outputs.tags }}
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: pr-${{ github.event.pull_request.number }}-image
+          path: /tmp/pr-image.tar
+          if-no-files-found: error
+
+      - name: Extract metadata from Github
+        id: meta-debug
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ inputs.registry }}/${{ inputs.image }}
+          tags: |
+            raw,${{ inputs.image-tag }}-debug
+
+      - name: Build the AMD64 debug image
+        uses: docker/build-push-action@v3
+        with:
+          file: ./dockerfiles/Dockerfile
+          context: .
+          tags: ${{ steps.meta-debug.outputs.tags }}
+          labels: ${{ steps.meta-debug.outputs.labels }}
+          target: debug
+          platforms: linux/amd64
+          push: true
+          load: false
+
+  call-integration-image-build-smoke-test:
+    name: Integration test image is valid
+    needs: call-integration-image-build-container
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ inputs.username }}
+          password: ${{ secrets.token }}
+
+      - name: Test the HTTP server is responding
+        timeout-minutes: 5
+        run: |
+          packaging/testing/smoke/container/container-smoke-test.sh
+        shell: bash
+        env:
+          CONTAINER_NAME: local-smoke-${{ inputs.image-tag }}
+          CONTAINER_ARCH: linux/amd64
+          REGISTRY: ${{ inputs.registry }}
+          IMAGE_NAME: ${{ inputs.image }}
+          IMAGE_TAG: ${{ inputs.image-tag }}

@@ -26,11 +26,12 @@
 struct cmt_gauge {
     struct cmt_opts opts;  /* Metric options */
     struct cmt_map *map;
+    struct cmt     *cmt;
     struct mk_list _head;  /* Link to list struct cmt->gauges */
 };
 
 struct cmt_gauge *cmt_gauge_create(struct cmt *cmt,
-                                   char *namespace, char *subsystem, char *name,
+                                   char *ns, char *subsystem, char *name,
                                    char *help, int label_count, char **label_keys);
 int cmt_gauge_destroy(struct cmt_gauge *gauge);
 

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -20,6 +20,12 @@
 #ifndef FLB_VERSION_H
 #define FLB_VERSION_H
 
+#include <fluent-bit/flb_info.h>
+#include <monkey/mk_core.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+
 /* Helpers to convert/format version string */
 #define STR_HELPER(s)      #s
 #define STR(s)             STR_HELPER(s)
@@ -32,5 +38,53 @@
                              FLB_VERSION_MINOR * 100   \
                              FLB_VERSION_PATCH)
 #define FLB_VERSION_STR     "@FLB_VERSION_STR@"
+#define FLB_GIT_HASH        "@FLB_GIT_HASH@"
+
+static inline void flb_version()
+{
+#ifdef FLB_NIGHTLY_BUILD
+    printf("Fluent Bit v%s | NIGHTLY_BUILD=%s - DO NOT USE IN PRODUCTION!\n",
+           FLB_VERSION_STR, STR(FLB_NIGHTLY_BUILD));
+#else
+    printf("Fluent Bit v%s\n", FLB_VERSION_STR);
+#endif
+    printf("Git commit: %s\n", FLB_GIT_HASH);
+
+    exit(EXIT_SUCCESS);
+}
+
+static inline void flb_version_banner()
+{
+    const char *copyright_color = ANSI_BOLD ANSI_YELLOW;
+    const char *bold_color = ANSI_BOLD;
+    const char *reset_color = ANSI_RESET;
+
+    #ifdef FLB_LOG_NO_CONTROL_CHARS
+    copyright_color = "";
+    bold_color = "";
+    reset_color = "";
+    #else
+    /* Only print colors to a terminal */
+    if (!isatty(STDOUT_FILENO)) {
+        copyright_color = "";
+        bold_color = "";
+        reset_color = "";
+    }
+    #endif // FLB_LOG_NO_CONTROL_CHARS
+
+#ifdef FLB_NIGHTLY_BUILD
+    fprintf(stderr,
+            "%sFluent Bit v%s | NIGHTLY_BUILD=%s - DO NOT USE IN PRODUCTION!"
+            "%s\n", bold_color, FLB_VERSION_STR, STR(FLB_NIGHTLY_BUILD), reset_color);
+#else
+    fprintf(stderr,
+            "%sFluent Bit v%s%s\n", bold_color, FLB_VERSION_STR, reset_color);
+#endif
+    fprintf(stderr, "* %sCopyright (C) 2015-2022 The Fluent Bit Authors%s\n",
+            copyright_color, reset_color);
+    fprintf(stderr, "* Fluent Bit is a CNCF sub-project under the "
+            "umbrella of Fluentd\n");
+    fprintf(stderr, "* https://fluentbit.io\n\n");
+}
 
 #endif

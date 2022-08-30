@@ -1,0 +1,31 @@
+name: 'Pull requests compile checks'
+on:
+  pull_request:
+    # Only trigger if there is a code change or a CMake change that (could) affect code
+    paths:
+      - '**.c'
+      - '**.h'
+      - 'CMakeLists.txt'
+      - 'cmake/*'
+  workflow_dispatch:
+
+jobs:
+  # Sanity check for compilation using older compiler on CentOS 7
+  pr-compile-centos-7:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - name: Checkout Fluent Bit code
+      uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Attempt to build current source for CentOS 7
+      uses: docker/build-push-action@v3
+      with:
+        context: .
+        file: ./dockerfiles/Dockerfile.centos7
+        # No need to use after this so discard completely
+        push: false
+        load: false

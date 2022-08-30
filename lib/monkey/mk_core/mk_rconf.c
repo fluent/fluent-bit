@@ -169,6 +169,31 @@ static int mk_rconf_meta_add(struct mk_rconf *conf, char *buf, int len)
     return 0;
 }
 
+static int check_indent(const char *line, const char *indent)
+{
+    while (*line == *indent && *indent) {
+        line++;
+        indent++;
+    }
+
+    if (*indent != '\0') {
+        if (isblank(*line)) {
+            mk_err("[config] Inconsistent use of tab and space");
+        }
+        else {
+            mk_err("[config] Indentation level is too low");
+        }
+        return -1;
+    }
+
+    if (isblank(*line)) {
+        mk_err("[config] Extra indentation level found");
+        return -1;
+    }
+
+    return 0;
+}
+
 /* To call this function from mk_rconf_read */
 static int mk_rconf_read_glob(struct mk_rconf *conf, const char * path);
 
@@ -232,7 +257,7 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
     /* looking for configuration directives */
     while (fgets(buf, MK_RCONF_KV_SIZE, f)) {
         len = strlen(buf);
-        if (buf[len - 1] == '\n') {
+        if (len > 0 && buf[len - 1] == '\n') {
             buf[--len] = 0;
             if (len && buf[len - 1] == '\r') {
                 buf[--len] = 0;
@@ -337,15 +362,16 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
         }
 
         /* Validate indentation level */
-        if (strncmp(buf, indent, indent_len) != 0 ||
-            isblank(buf[indent_len]) != 0) {
+        if (check_indent(buf, indent) < 0) {
             mk_config_error(path, line, "Invalid indentation level");
-            mk_mem_free(key);
-            mk_mem_free(val);
             return -1;
         }
 
         if (buf[indent_len] == '#' || indent_len == len) {
+            continue;
+        }
+
+        if (len - indent_len >= 3 && strncmp(buf + indent_len, "---", 3) == 0) {
             continue;
         }
 
@@ -433,7 +459,7 @@ static int mk_rconf_read_glob(struct mk_rconf *conf, const char * path)
     size_t i;
     int ret_glb = -1;
 
-    if (conf->root_path) {
+    if (conf->root_path && path[0] != '/') {
         snprintf(tmp, PATH_MAX, "%s/%s", conf->root_path, path);
         glb_path = tmp;
     }
@@ -445,16 +471,16 @@ static int mk_rconf_read_glob(struct mk_rconf *conf, const char * path)
     if (ret_glb != 0) {
         switch(ret_glb){
         case GLOB_NOSPACE:
-            mk_warn("[%s] glob: no space", __FUNCTION__);
+            mk_warn("[%s] glob: [%s] no space", __FUNCTION__, glb_path);
             break;
         case GLOB_NOMATCH:
-            mk_warn("[%s] glob: no match", __FUNCTION__);
+            mk_warn("[%s] glob: [%s] no match", __FUNCTION__, glb_path);
             break;
         case GLOB_ABORTED:
-            mk_warn("[%s] glob: aborted", __FUNCTION__);
+            mk_warn("[%s] glob: [%s] aborted", __FUNCTION__, glb_path);
             break;
         default:
-            mk_warn("[%s] glob: other error", __FUNCTION__);
+            mk_warn("[%s] glob: [%s] other error", __FUNCTION__, glb_path);
         }
         return ret;
     }

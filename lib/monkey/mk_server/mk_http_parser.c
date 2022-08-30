@@ -78,6 +78,21 @@ struct row_entry mk_headers_table[] = {
     { 10, "user-agent"          }
 };
 
+static inline void reverse_char_lookup(char *buf, char c, int len, struct mk_http_parser *p)
+{
+    int x = 0;
+    int y = 0;
+
+    x = p->i;
+    do {
+        if (buf[x - y] == c) {
+            p->i = x - y;
+            return;
+        }
+        y++;
+    } while (y < len);
+}
+
 static inline void char_lookup(char *buf, char c, int len, struct mk_http_parser *p)
 {
     int x = 0;
@@ -461,7 +476,12 @@ int mk_http_parser(struct mk_http_request *req, struct mk_http_parser *p,
                 }
                 break;
             case MK_ST_REQ_QUERY_STRING:                /* Query string */
-                char_lookup(buffer, ' ', len, p);
+                char_lookup(buffer, '\n', len, p);
+
+                if (buffer[p->i] == '\n') {
+                    reverse_char_lookup(buffer, ' ', p->i, p);
+                }
+
                 if (buffer[p->i] == ' ') {
                     mark_end();
                     request_set(&req->query_string, p, buffer);

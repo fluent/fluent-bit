@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -76,7 +75,7 @@ struct flb_sqldb *flb_tail_db_open(const char *path,
         }
     }
 
-   if (ctx->db_journal_mode >= 0) {
+    if (ctx->db_journal_mode) {
         snprintf(tmp, sizeof(tmp) - 1, SQL_PRAGMA_JOURNAL_MODE,
                  ctx->db_journal_mode);
         ret = flb_sqldb_query(db, tmp, NULL, NULL);

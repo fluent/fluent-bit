@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -423,6 +422,11 @@ static flb_sds_t ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf,
     struct flb_ra_value *v;
 
     /* Lookup key or subkey value */
+    if (rp->key == NULL) {
+      *found = FLB_FALSE;
+      return buf;
+    }
+
     v = flb_ra_key_to_value(rp->key->name, map, rp->key->subkeys);
     if (!v) {
         *found = FLB_FALSE;
@@ -488,11 +492,28 @@ flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
                            char *tag, int tag_len,
                            msgpack_object map, struct flb_regex_search *result)
 {
-    int found;
+    return flb_ra_translate_check(ra, tag, tag_len, map, result, FLB_FALSE);
+}
+
+/*
+ * Translate a record accessor buffer, tag and records are optional
+ * parameters.
+ *
+ * For safety, the function returns a newly created string that needs
+ * to be destroyed by the caller.
+ * 
+ * Returns NULL if `check` is FLB_TRUE and any key lookup in the record failed
+ */
+flb_sds_t flb_ra_translate_check(struct flb_record_accessor *ra,
+                                 char *tag, int tag_len,
+                                 msgpack_object map, struct flb_regex_search *result,
+                                 int check)
+{
     flb_sds_t tmp = NULL;
     flb_sds_t buf;
     struct mk_list *head;
     struct flb_ra_parser *rp;
+    int found = FLB_FALSE;
 
     buf = flb_sds_create_size(ra->size_hint);
     if (!buf) {
@@ -507,6 +528,11 @@ flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
         }
         else if (rp->type == FLB_RA_PARSER_KEYMAP) {
             tmp = ra_translate_keymap(rp, buf, map, &found);
+            if (check == FLB_TRUE && found == FLB_FALSE) {
+                flb_warn("[record accessor] translation failed, root key=%s", rp->key->name);
+                flb_sds_destroy(buf);
+                return NULL;
+            }
         }
         else if (rp->type == FLB_RA_PARSER_REGEX_ID && result) {
             tmp = ra_translate_regex_id(rp, result, buf);
@@ -516,9 +542,6 @@ flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
         }
         else if (rp->type == FLB_RA_PARSER_TAG_PART && tag) {
             tmp = ra_translate_tag_part(rp, buf, tag, tag_len);
-        }
-        else {
-
         }
 
         //else if (rp->type == FLB_RA_PARSER_FUNC) {
@@ -596,8 +619,26 @@ int flb_ra_regex_match(struct flb_record_accessor *ra, msgpack_object map,
     struct flb_ra_parser *rp;
 
     rp = mk_list_entry_first(&ra->list, struct flb_ra_parser, _head);
+    if (rp == NULL || rp->key == NULL) {
+        return -1;
+    }
     return flb_ra_key_regex_match(rp->key->name, map, rp->key->subkeys,
                                   regex, result);
+}
+
+
+static struct flb_ra_parser* get_ra_parser(struct flb_record_accessor *ra)
+{
+    struct flb_ra_parser *rp = NULL;
+
+    if (mk_list_size(&ra->list) == 0) {
+        return NULL;
+    }
+    rp = mk_list_entry_first(&ra->list, struct flb_ra_parser, _head);
+    if (!rp->key) {
+        return NULL;
+    }
+    return rp;
 }
 
 /*
@@ -613,12 +654,8 @@ int flb_ra_get_kv_pair(struct flb_record_accessor *ra, msgpack_object map,
 {
     struct flb_ra_parser *rp;
 
-    if (mk_list_size(&ra->list) == 0) {
-        return -1;
-    }
-
-    rp = mk_list_entry_first(&ra->list, struct flb_ra_parser, _head);
-    if (!rp->key) {
+    rp = get_ra_parser(ra);
+    if (rp == NULL) {
         return FLB_FALSE;
     }
 
@@ -631,14 +668,133 @@ struct flb_ra_value *flb_ra_get_value_object(struct flb_record_accessor *ra,
 {
     struct flb_ra_parser *rp;
 
-    if (mk_list_size(&ra->list) == 0) {
-        return NULL;
-    }
-
-    rp = mk_list_entry_first(&ra->list, struct flb_ra_parser, _head);
-    if (!rp->key) {
+    rp = get_ra_parser(ra);
+    if (rp == NULL) {
         return NULL;
     }
 
     return flb_ra_key_to_value(rp->key->name, map, rp->key->subkeys);
+}
+
+/**
+ *  Update key and/or value of the map using record accessor.
+ *
+ *  @param ra   the record accessor to specify key/value pair
+ *  @param map  the original map.
+ *  @param in_key   the pointer to overwrite key. If NULL, key will not be updated.
+ *  @param in_val   the pointer to overwrite val. If NULL, val will not be updated.
+ *  @param out_map  the updated map. If the API fails, out_map will be NULL.
+ *
+ *  @return result of the API. 0:success, -1:fail
+ */
+
+int flb_ra_update_kv_pair(struct flb_record_accessor *ra, msgpack_object map,
+                          void **out_map, size_t *out_size,
+                          msgpack_object *in_key, msgpack_object *in_val)
+{
+    struct flb_ra_parser *rp;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    int ret;
+
+    msgpack_object *s_key;
+    msgpack_object *o_key;
+    msgpack_object *o_val;
+
+    if (in_key == NULL && in_val == NULL) {
+        /* no key and value. nothing to do */
+        flb_error("%s: no inputs", __FUNCTION__);
+        return -1;
+    }
+    else if (ra == NULL || out_map == NULL || out_size == NULL) {
+        /* invalid input */
+        flb_error("%s: invalid input", __FUNCTION__);
+        return -1;
+    }
+    else if ( flb_ra_get_kv_pair(ra, map, &s_key, &o_key, &o_val) != 0) {
+        /* key and value are not found */
+        flb_error("%s: no value", __FUNCTION__);
+        return -1;
+    }
+
+    rp = get_ra_parser(ra);
+    if (rp == NULL) {
+        return -1;
+    }
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    ret = flb_ra_key_value_update(rp, map, in_key, in_val, &mp_pck);
+    if (ret < 0) {
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        return -1;
+    }
+    *out_map  = mp_sbuf.data;
+    *out_size = mp_sbuf.size;
+
+    return 0;
+}
+
+/**
+ *  Add key and/or value of the map using record accessor.
+ *  If key already exists, the API fails.
+ *
+ *  @param ra   the record accessor to specify key.
+ *  @param map  the original map.
+ *  @param in_val   the pointer to add val.
+ *  @param out_map  the updated map. If the API fails, out_map will be NULL.
+ *
+ *  @return result of the API. 0:success, -1:fail
+ */
+
+int flb_ra_append_kv_pair(struct flb_record_accessor *ra, msgpack_object map,
+                          void **out_map, size_t *out_size,
+                          msgpack_object *in_val)
+{
+    struct flb_ra_parser *rp;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    int ret;
+
+    msgpack_object *s_key = NULL;
+    msgpack_object *o_key = NULL;
+    msgpack_object *o_val = NULL;
+
+    if (in_val == NULL) {
+        /* no key and value. nothing to do */
+        flb_error("%s: no value", __FUNCTION__);
+        return -1;
+    }
+    else if (ra == NULL || out_map == NULL|| out_size == NULL) {
+        /* invalid input */
+        flb_error("%s: invalid input", __FUNCTION__);
+        return -1;
+    }
+
+    flb_ra_get_kv_pair(ra, map, &s_key, &o_key, &o_val);
+    if (o_key != NULL && o_val != NULL) {
+        /* key and value already exist */
+        flb_error("%s: already exist", __FUNCTION__);
+        return -1;
+    }
+
+    rp = get_ra_parser(ra);
+    if (rp == NULL || rp->key == NULL) {
+        return -1;
+    }
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    ret = flb_ra_key_value_append(rp, map, in_val, &mp_pck);
+    if (ret < 0) {
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        return -1;
+    }
+
+    *out_map  = mp_sbuf.data;
+    *out_size = mp_sbuf.size;
+
+    return 0;
 }

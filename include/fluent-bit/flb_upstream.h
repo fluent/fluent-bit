@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -31,13 +30,12 @@
 #include <fluent-bit/flb_upstream_queue.h>
 
 #ifdef FLB_HAVE_TLS
-#include <mbedtls/net.h>
 #endif
 
 /*
  * Upstream creation FLAGS set by Fluent Bit sub-components
  * ========================================================
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  * --- flb_io.h ---
  *   #define  FLB_IO_TCP      1
@@ -82,8 +80,15 @@ struct flb_upstream {
     struct flb_tls *tls;
 #endif
 
+    struct flb_config *config;
     struct mk_list _head;
 };
+
+
+static inline int flb_upstream_is_shutting_down(struct flb_upstream *u)
+{
+    return u->config->is_shutting_down;
+}
 
 void flb_upstream_queue_init(struct flb_upstream_queue *uq);
 struct flb_upstream_queue *flb_upstream_queue_get(struct flb_upstream *u);
@@ -105,6 +110,6 @@ int flb_upstream_set_property(struct flb_config *config,
 int flb_upstream_is_async(struct flb_upstream *u);
 void flb_upstream_thread_safe(struct flb_upstream *u);
 struct mk_list *flb_upstream_get_config_map(struct flb_config *config);
-int flb_should_proxy_for_host(const char *host, const char *proxy, const char *no_proxy);
+int flb_upstream_needs_proxy(const char *host, const char *proxy, const char *no_proxy);
 
 #endif

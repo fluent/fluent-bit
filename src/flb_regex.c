@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -125,6 +124,7 @@ ssize_t flb_regex_do(struct flb_regex *r, const char *str, size_t slen,
 
     region = onig_region_new();
     if (!region) {
+        flb_errno();
         result->region = NULL;
         return -1;
     }

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -28,7 +27,7 @@
 
 struct flb_env {
     int warn_unused;        /* warn about unused environment variable */
-    struct flb_hash *ht;
+    struct flb_hash_table *ht;
 };
 
 static inline void flb_env_warn_unused(struct flb_env *env, int warn)

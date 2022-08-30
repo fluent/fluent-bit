@@ -5,6 +5,9 @@
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/multiline/flb_ml.h>
+#include <fluent-bit/multiline/flb_ml_rule.h>
+#include <fluent-bit/multiline/flb_ml_parser.h>
+
 #include "flb_tests_internal.h"
 
 struct record_check {
@@ -17,41 +20,106 @@ struct expected_result {
     struct record_check *out_records;
 };
 
+/* Docker */
 struct record_check docker_input[] = {
   {"{\"log\": \"aa\\n\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01231z\"}"},
+  {"{\"log\": \"aa\\n\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01231z\"}"},
   {"{\"log\": \"bb\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01232z\"}"},
-  {"{\"log\": \"cc\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01233z\"}"},
-  {"{\"log\": \"dd\\n\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01234z\"}"},
-  {"{\"log\": \"ee\\n\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01235z\"}"},
-  {"{\"log\": \"ff\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01236z\"}"},
-  {"{\"log\": \"gg\\n\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01237z\"}"},
+  {"{\"log\": \"cc\n\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01233z\"}"},
+  {"{\"log\": \"dd\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01233z\"}"},
+  {"single line to force pending flush of the previous line"},
+  {"{\"log\": \"ee\\n\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01234z\"}"},
 };
 
 struct record_check docker_output[] = {
   {"aa\n"},
-  {"bbccdd\n"},
+  {"aa\n"},
+  {"bbcc\n"},
+  {"dd"},
+  {"single line to force pending flush of the previous line"},
   {"ee\n"},
-  {"ffgg\n"}
 };
 
+/* CRI */
 struct record_check cri_input[] = {
-  {"2019-05-07T18:57:50.904275087+00:00 stdout P 1. some "},
+  {"2019-05-07T18:57:50.904275087+00:00 stdout P 1a. some "},
   {"2019-05-07T18:57:51.904275088+00:00 stdout P multiline "},
   {"2019-05-07T18:57:52.904275089+00:00 stdout F log"},
-  {"2019-05-07T18:57:53.904275090+00:00 stdout P 2. another "},
+  {"2019-05-07T18:57:50.904275087+00:00 stderr P 1b. some "},
+  {"2019-05-07T18:57:51.904275088+00:00 stderr P multiline "},
+  {"2019-05-07T18:57:52.904275089+00:00 stderr F log"},
+  {"2019-05-07T18:57:53.904275090+00:00 stdout P 2a. another "},
   {"2019-05-07T18:57:54.904275091+00:00 stdout P multiline "},
   {"2019-05-07T18:57:55.904275092+00:00 stdout F log"},
-  {"2019-05-07T18:57:56.904275093+00:00 stdout F 3. non multiline 1"},
-  {"2019-05-07T18:57:57.904275094+00:00 stdout F 4. non multiline 2"}
+  {"2019-05-07T18:57:53.904275090+00:00 stderr P 2b. another "},
+  {"2019-05-07T18:57:54.904275091+00:00 stderr P multiline "},
+  {"2019-05-07T18:57:55.904275092+00:00 stderr F log"},
+  {"2019-05-07T18:57:56.904275093+00:00 stdout F 3a. non multiline 1"},
+  {"2019-05-07T18:57:57.904275094+00:00 stdout F 4a. non multiline 2"},
+  {"2019-05-07T18:57:56.904275093+00:00 stderr F 3b. non multiline 1"},
+  {"2019-05-07T18:57:57.904275094+00:00 stderr F 4b. non multiline 2"}
 };
 
 struct record_check cri_output[] = {
-  {"1. some multiline log"},
-  {"2. another multiline log"},
-  {"3. non multiline 1"},
-  {"4. non multiline 2"}
+  {"1a. some multiline log"},
+  {"1b. some multiline log"},
+  {"2a. another multiline log"},
+  {"2b. another multiline log"},
+  {"3a. non multiline 1"},
+  {"4a. non multiline 2"},
+  {"3b. non multiline 1"},
+  {"4b. non multiline 2"}
 };
 
+/* ENDSWITH */
+struct record_check endswith_input[] = {
+  {"1a. some multiline log \\"},
+  {"1b. some multiline log"},
+  {"2a. another multiline log\\"},
+  {"2b. another multiline log"},
+  {"3a. non multiline 1"},
+  {"4a. non multiline 2"}
+};
+
+struct record_check endswith_output[] = {
+  {"1a. some multiline log \\\n1b. some multiline log\n"},
+  {"2a. another multiline log\\\n2b. another multiline log\n"},
+  {"3a. non multiline 1\n"},
+  {"4a. non multiline 2\n"}
+};
+
+/* Mixed lines of Docker and CRI logs in different streams (stdout/stderr) */
+struct record_check container_mix_input[] = {
+  {"{\"log\": \"a1\\n\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01231z\"}"},
+  {"{\"log\": \"a2\\n\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01231z\"}"},
+  {"{\"log\": \"bb\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01232z\"}"},
+  {"{\"log\": \"cc\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01233z\"}"},
+  {"{\"log\": \"dd\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01232z\"}"},
+  {"{\"log\": \"ee\n\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01233z\"}"},
+  {"2019-05-07T18:57:52.904275089+00:00 stdout F single full"},
+  {"2019-05-07T18:57:50.904275087+00:00 stdout P 1a. some "},
+  {"2019-05-07T18:57:51.904275088+00:00 stdout P multiline "},
+  {"2019-05-07T18:57:52.904275089+00:00 stdout F log"},
+  {"2019-05-07T18:57:50.904275087+00:00 stderr P 1b. some "},
+  {"2019-05-07T18:57:51.904275088+00:00 stderr P multiline "},
+  {"2019-05-07T18:57:52.904275089+00:00 stderr F log"},
+  {"{\"log\": \"dd-out\\n\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01234z\"}"},
+  {"{\"log\": \"dd-err\\n\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01234z\"}"},
+};
+
+struct record_check container_mix_output[] = {
+  {"a1\n"},
+  {"a2\n"},
+  {"bbcc"},
+  {"ddee\n"},
+  {"single full"},
+  {"1a. some multiline log"},
+  {"1b. some multiline log"},
+  {"dd-out\n"},
+  {"dd-err\n"},
+};
+
+/* Java stacktrace detection */
 struct record_check java_input[] = {
   {"Exception in thread \"main\" java.lang.IllegalStateException: ..null property\n"},
   {"     at com.example.myproject.Author.getBookIds(xx.java:38)\n"},
@@ -59,8 +127,8 @@ struct record_check java_input[] = {
   {"Caused by: java.lang.NullPointerException\n"},
   {"     at com.example.myproject.Book.getId(Book.java:22)\n"},
   {"     at com.example.myproject.Author.getBookIds(Author.java:35)\n"},
-  {"     ... 1 more"},
-  {"single line"}
+  {"     ... 1 more\n"},
+  {"single line\n"}
 };
 
 struct record_check java_output[] = {
@@ -71,13 +139,14 @@ struct record_check java_output[] = {
     "Caused by: java.lang.NullPointerException\n"
     "     at com.example.myproject.Book.getId(Book.java:22)\n"
     "     at com.example.myproject.Author.getBookIds(Author.java:35)\n"
-    "     ... 1 more"
+    "     ... 1 more\n"
   },
   {
-    "single line"
+    "single line\n"
   }
 };
 
+/* Python stacktrace detection */
 struct record_check python_input[] = {
   {"Traceback (most recent call last):\n"},
   {"  File \"/base/data/home/runtimes/python27/python27_lib/versions/third_party/webapp2-2.5.2/webapp2.py\", line 1535, in __call__\n"},
@@ -104,6 +173,7 @@ struct record_check python_output[] = {
   {"hello world, not multiline\n"}
 };
 
+/* Custom example for Elasticsearch stacktrace */
 struct record_check elastic_input[] = {
   {"[some weird test] IndexNotFoundException[no such index]\n"},
   {"    at org.elasticsearch.cluster.metadata.IndexNameExpressionResolver....\n"},
@@ -124,6 +194,7 @@ struct record_check elastic_output[] = {
   }
 };
 
+/* Go */
 struct record_check go_input[] = {
     {"panic: my panic\n"},
     {"\n"},
@@ -233,16 +304,51 @@ struct record_check go_output[] = {
         "created by runtime.gcenable\n"
         "	/usr/local/go/src/runtime/mgc.go:216 +0x58\n"
     },
-    {"one more line, no multiline"}
+    {"one more line, no multiline\n"}
+};
+
+/*
+ * Issue 3817 (case: 1)
+ * --------------------
+ * Source CRI messages (need first CRI multiline parsing) + a custom multiline
+ * parser.
+ *
+ *   - https://github.com/fluent/fluent-bit/issues/3817
+ *
+ * The 'case 1' represents the problems of identifying two consecutive multiline
+ * messages within the same stream.
+ */
+struct record_check issue_3817_1_input[] = {
+    {"2021-05-17T17:35:01.184675702Z stdout F [DEBUG] 1 start multiline - "},
+    {"2021-05-17T17:35:01.184747208Z stdout F 1 cont A"},
+    {"2021-05-17T17:35:01.184675702Z stdout F [DEBUG] 2 start multiline - "},
+    {"2021-05-17T17:35:01.184747208Z stdout F 2 cont B"},
+    {"another isolated line"}
+};
+
+struct record_check issue_3817_1_output[] = {
+    {
+      "[DEBUG] 1 start multiline - \n"
+      "1 cont A"
+    },
+
+    {
+      "[DEBUG] 2 start multiline - \n"
+      "2 cont B"
+    },
+
+    {
+      "another isolated line"
+    }
 };
 
 /*
  * Flush callback is invoked every time a multiline stream has completed a multiline
  * message or a message is not multiline.
  */
-static int flush_callback(struct flb_ml *ml,
+static int flush_callback(struct flb_ml_parser *parser,
                           struct flb_ml_stream *mst,
-                          void *data, void *buf_data, size_t buf_size)
+                          void *data, char *buf_data, size_t buf_size)
 {
     int i;
     int ret;
@@ -267,12 +373,13 @@ static int flush_callback(struct flb_ml *ml,
 
     /* Validate content */
     msgpack_unpacked_init(&result);
-
     off = 0;
     ret = msgpack_unpack_next(&result, buf_data, buf_size, &off);
     TEST_CHECK(ret == MSGPACK_UNPACK_SUCCESS);
 
     flb_time_pop_from_msgpack(&tm, &result, &map);
+
+    TEST_CHECK(flb_time_to_nanosec(&tm) != 0L);
 
     exp = &res->out_records[res->current_record];
     len = strlen(res->key);
@@ -295,6 +402,11 @@ static int flush_callback(struct flb_ml *ml,
     TEST_CHECK(val.via.str.size == len);
     if (val.via.str.size != len) {
         printf("expected length: %i, received: %i\n", len, val.via.str.size);
+        printf("== received ==\n");
+        msgpack_object_print(stdout, val);
+        printf("\n\n");
+        printf("== expected ==\n%s\n", exp->buf);
+        exit(1);
     }
     TEST_CHECK(memcmp(val.via.str.ptr, exp->buf, len) == 0);
     res->current_record++;
@@ -303,36 +415,42 @@ static int flush_callback(struct flb_ml *ml,
     return 0;
 }
 
-static void test_mode_docker()
+static void test_parser_docker()
 {
     int i;
     int len;
+    int ret;
     int entries;
+    uint64_t stream_id;
     struct record_check *r;
     struct flb_config *config;
     struct flb_time tm;
     struct flb_ml *ml;
-    struct flb_ml_stream *mst;
+    struct flb_ml_parser_ins *mlp_i;
     struct expected_result res = {0};
 
     /* Expected results context */
     res.key = "log";
     res.out_records = docker_output;
 
-    /*
-     * Retrieve a docker parser. We test the multiline mode in two separate ways:
-     *
-     * 1. packed JSON as Fluent Bit msgpack format
-     * 2. raw text with a parser context
-     */
+    /* Initialize environment */
     config = flb_config_init();
 
     /* Create docker multiline mode */
-    ml = flb_ml_mode_docker(config, 1000);
+    ml = flb_ml_create(config, "test-docker");
     TEST_CHECK(ml != NULL);
 
-    mst = flb_ml_stream_create(ml, "docker", flush_callback, (void *) &res);
-    TEST_CHECK(mst != NULL);
+    /* Load instances of the parsers for current 'ml' context */
+    mlp_i = flb_ml_parser_instance_create(ml, "cri");
+    TEST_CHECK(mlp_i != NULL);
+
+    /* Generate an instance of multiline docker parser */
+    mlp_i = flb_ml_parser_instance_create(ml, "docker");
+    TEST_CHECK(mlp_i != NULL);
+
+    ret = flb_ml_stream_create(ml, "docker", -1, flush_callback, (void *) &res,
+                               &stream_id);
+    TEST_CHECK(ret == 0);
 
     entries = sizeof(docker_input) / sizeof(struct record_check);
     for (i = 0; i < entries; i++) {
@@ -342,7 +460,7 @@ static void test_mode_docker()
         flb_time_get(&tm);
 
         /* Package as msgpack */
-        flb_ml_append(ml, mst, FLB_ML_TYPE_TEXT, &tm, r->buf, len);
+        flb_ml_append(ml, stream_id, FLB_ML_TYPE_TEXT, &tm, r->buf, len);
     }
 
     if (ml) {
@@ -352,36 +470,42 @@ static void test_mode_docker()
     flb_config_exit(config);
 }
 
-static void test_mode_cri()
+static void test_parser_cri()
 {
     int i;
     int len;
+    int ret;
     int entries;
+    uint64_t stream_id;
     struct record_check *r;
     struct flb_config *config;
     struct flb_time tm;
     struct flb_ml *ml;
-    struct flb_ml_stream *mst;
+    struct flb_ml_parser_ins *mlp_i;
     struct expected_result res = {0};
 
     /* Expected results context */
     res.key = "log";
     res.out_records = cri_output;
 
-    /*
-     * Retrieve a docker parser. We test the multiline mode in two separate ways:
-     *
-     * 1. packed JSON as Fluent Bit msgpack format
-     * 2. raw text with a parser context
-     */
+    /* Initialize environment */
     config = flb_config_init();
 
     /* Create docker multiline mode */
-    ml = flb_ml_mode_cri(config, 1000);
+    ml = flb_ml_create(config, "cri-test");
     TEST_CHECK(ml != NULL);
 
-    mst = flb_ml_stream_create(ml, "cri", flush_callback, (void *) &res);
-    TEST_CHECK(mst != NULL);
+    /* Generate an instance of multiline docker parser */
+    mlp_i = flb_ml_parser_instance_create(ml, "docker");
+    TEST_CHECK(mlp_i != NULL);
+
+    /* Load instances of the parsers for current 'ml' context */
+    mlp_i = flb_ml_parser_instance_create(ml, "cri");
+    TEST_CHECK(mlp_i != NULL);
+
+    ret = flb_ml_stream_create(ml, "cri", -1, flush_callback, (void *) &res,
+                               &stream_id);
+    TEST_CHECK(ret == 0);
 
     entries = sizeof(cri_input) / sizeof(struct record_check);
     for (i = 0; i < entries; i++) {
@@ -390,7 +514,7 @@ static void test_mode_cri()
         flb_time_get(&tm);
 
         /* Package as msgpack */
-        flb_ml_append(ml, mst, FLB_ML_TYPE_TEXT, &tm, r->buf, len);
+        flb_ml_append(ml, stream_id, FLB_ML_TYPE_TEXT, &tm, r->buf, len);
     }
 
     if (ml) {
@@ -400,31 +524,105 @@ static void test_mode_cri()
     flb_config_exit(config);
 }
 
-static void test_mode_java()
+static void test_container_mix()
 {
     int i;
     int len;
+    int ret;
     int entries;
+    uint64_t stream_id;
     struct record_check *r;
     struct flb_config *config;
     struct flb_time tm;
     struct flb_ml *ml;
-    struct flb_ml_stream *mst;
+    struct flb_ml_parser_ins *mlp_i;
     struct expected_result res = {0};
+
+    /* Expected results context */
+    res.key = "log";
+    res.out_records = container_mix_output;
+
+    /* Initialize environment */
+    config = flb_config_init();
+
+    /* Create docker multiline mode */
+    ml = flb_ml_create(config, "container-mix-test");
+    TEST_CHECK(ml != NULL);
+
+    /* Generate an instance of multiline docker parser */
+    mlp_i = flb_ml_parser_instance_create(ml, "docker");
+    TEST_CHECK(mlp_i != NULL);
+
+    /* Load instances of the parsers for current 'ml' context */
+    mlp_i = flb_ml_parser_instance_create(ml, "cri");
+    TEST_CHECK(mlp_i != NULL);
+
+    ret = flb_ml_stream_create(ml, "container-mix", -1, flush_callback, (void *) &res,
+                               &stream_id);
+    TEST_CHECK(ret == 0);
+
+    entries = sizeof(container_mix_input) / sizeof(struct record_check);
+    for (i = 0; i < entries; i++) {
+        r = &container_mix_input[i];
+        len = strlen(r->buf);
+        flb_time_get(&tm);
+
+        /* Package as msgpack */
+        flb_ml_append(ml, stream_id, FLB_ML_TYPE_TEXT, &tm, r->buf, len);
+    }
+
+    if (ml) {
+        flb_ml_destroy(ml);
+    }
+
+    flb_config_exit(config);
+}
+
+static void test_parser_java()
+{
+    int i;
+    int len;
+    int ret;
+    int entries;
+    uint64_t stream_id;
+    struct record_check *r;
+    struct flb_config *config;
+    struct flb_time tm;
+    struct flb_ml *ml;
+    struct flb_ml_parser_ins *mlp_i;
+    struct expected_result res = {0};
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
 
     /* Expected results context */
     res.key = "log";
     res.out_records = java_output;
 
+    /* Initialize environment */
     config = flb_config_init();
 
     /* Create docker multiline mode */
-    ml = flb_ml_mode_java(config, 1000, NULL);
+    ml = flb_ml_create(config, "java-test");
     TEST_CHECK(ml != NULL);
 
-    mst = flb_ml_stream_create(ml, "java", flush_callback, (void *) &res);
-    TEST_CHECK(mst != NULL);
+    /* Generate an instance of multiline java parser */
+    mlp_i = flb_ml_parser_instance_create(ml, "java");
+    TEST_CHECK(mlp_i != NULL);
 
+    flb_ml_parser_instance_set(mlp_i, "key_content", "log");
+
+    ret = flb_ml_stream_create(ml, "java", -1, flush_callback, (void *) &res,
+                               &stream_id);
+    TEST_CHECK(ret == 0);
+
+    /* initialize buffers */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    size_t off = 0;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object *map;
 
     entries = sizeof(java_input) / sizeof(struct record_check);
     for (i = 0; i < entries; i++) {
@@ -433,70 +631,11 @@ static void test_mode_java()
 
         /* Package as msgpack */
         flb_time_get(&tm);
-        flb_ml_append(ml, mst, FLB_ML_TYPE_TEXT, &tm, r->buf, len);
-    }
 
-    if (ml) {
-        flb_ml_destroy(ml);
-    }
-
-    flb_config_exit(config);
-}
-
-static void test_mode_python()
-{
-    int i;
-    int len;
-    int ret;
-    int entries;
-    size_t off = 0;
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_unpacked result;
-    msgpack_object root;
-    msgpack_object *map;
-    struct record_check *r;
-    struct flb_config *config;
-    struct flb_time tm;
-    struct flb_ml *ml;
-    struct flb_ml_stream *mst;
-    struct expected_result res = {0};
-
-    /* Expected results context */
-    res.key = "log";
-    res.out_records = python_output;
-
-    /* initialize buffers */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
-    /*
-     * Retrieve a docker parser. We test the multiline mode in two separate ways:
-     *
-     * 1. packed JSON as Fluent Bit msgpack format
-     * 2. raw text with a parser context
-     */
-    config = flb_config_init();
-
-    /* Create docker multiline mode */
-    ml = flb_ml_mode_python(config, 1000, "log");
-    TEST_CHECK(ml != NULL);
-
-    mst = flb_ml_stream_create(ml, "python", flush_callback, (void *) &res);
-    TEST_CHECK(mst != NULL);
-
-    flb_time_get(&tm);
-
-    printf("\n");
-    entries = sizeof(python_input) / sizeof(struct record_check);
-    for (i = 0; i < entries; i++) {
-        r = &python_input[i];
-        len = strlen(r->buf);
-
+        /* initialize buffers */
         msgpack_sbuffer_init(&mp_sbuf);
         msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-        /* Package raw text as a msgpack record */
         msgpack_pack_array(&mp_pck, 2);
         flb_time_append_to_msgpack(&tm, &mp_pck, 0);
 
@@ -510,13 +649,15 @@ static void test_mode_python()
         msgpack_unpacked_init(&result);
         off = 0;
         ret = msgpack_unpack_next(&result, mp_sbuf.data, mp_sbuf.size, &off);
-        TEST_CHECK(ret == MSGPACK_UNPACK_SUCCESS);
+
+        flb_pack_print(mp_sbuf.data, mp_sbuf.size);
 
         root = result.data;
         map = &root.via.array.ptr[1];
 
         /* Package as msgpack */
-        flb_ml_append_object(ml, mst, &tm, map);
+        ret = flb_ml_append_object(ml, stream_id, &tm, map);
+
         msgpack_unpacked_destroy(&result);
         msgpack_sbuffer_destroy(&mp_sbuf);
     }
@@ -528,13 +669,140 @@ static void test_mode_python()
     flb_config_exit(config);
 }
 
-static void test_mode_elastic()
+static void test_parser_python()
+{
+    int i;
+    int len;
+    int ret;
+    int entries;
+    uint64_t stream_id;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    struct record_check *r;
+    struct flb_config *config;
+    struct flb_time tm;
+    struct flb_ml *ml;
+    struct flb_ml_parser_ins *mlp_i;
+    struct expected_result res = {0};
+
+    /* Expected results context */
+    res.key = "log";
+    res.out_records = python_output;
+
+    /* initialize buffers */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    /* Initialize environment */
+    config = flb_config_init();
+
+    /* Create docker multiline mode */
+    ml = flb_ml_create(config, "python-test");
+    TEST_CHECK(ml != NULL);
+
+    /* Generate an instance of multiline python parser */
+    mlp_i = flb_ml_parser_instance_create(ml, "python");
+    TEST_CHECK(mlp_i != NULL);
+
+    ret = flb_ml_stream_create(ml, "python", -1, flush_callback, (void *) &res,
+                               &stream_id);
+    TEST_CHECK(ret == 0);
+
+    flb_time_get(&tm);
+
+    printf("\n");
+    entries = sizeof(python_input) / sizeof(struct record_check);
+    for (i = 0; i < entries; i++) {
+        r = &python_input[i];
+        len = strlen(r->buf);
+
+        /* Package as msgpack */
+        flb_time_get(&tm);
+        flb_ml_append(ml, stream_id, FLB_ML_TYPE_TEXT, &tm, r->buf, len);
+    }
+
+    if (ml) {
+        flb_ml_destroy(ml);
+    }
+
+    flb_config_exit(config);
+}
+
+static void test_issue_4949()
+{
+    int i;
+    int len;
+    int ret;
+    int entries;
+    uint64_t stream_id;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    struct record_check *r;
+    struct flb_config *config;
+    struct flb_time tm;
+    struct flb_ml *ml;
+    struct flb_ml_parser_ins *mlp_i;
+    struct expected_result res = {0};
+
+    /* Expected results context */
+    res.key = "log";
+    res.out_records = python_output;
+
+    /* initialize buffers */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    /* Initialize environment */
+    config = flb_config_init();
+
+    /* Create docker multiline mode */
+    ml = flb_ml_create(config, "python-test");
+    TEST_CHECK(ml != NULL);
+
+    /* Generate an instance of multiline python parser */
+    mlp_i = flb_ml_parser_instance_create(ml, "python");
+    TEST_CHECK(mlp_i != NULL);
+
+    ret = flb_ml_stream_create(ml, "python", -1, flush_callback, (void *) &res,
+                               &stream_id);
+    TEST_CHECK(ret == 0);
+
+    /* Generate an instance of multiline java parser */
+    mlp_i = flb_ml_parser_instance_create(ml, "java");
+    TEST_CHECK(mlp_i != NULL);
+
+    ret = flb_ml_stream_create(ml, "java", -1, flush_callback, (void *) &res,
+                               &stream_id);
+    TEST_CHECK(ret == 0);
+
+    flb_time_get(&tm);
+
+    printf("\n");
+    entries = sizeof(python_input) / sizeof(struct record_check);
+    for (i = 0; i < entries; i++) {
+        r = &python_input[i];
+        len = strlen(r->buf);
+
+        /* Package as msgpack */
+        flb_time_get(&tm);
+        flb_ml_append(ml, stream_id, FLB_ML_TYPE_TEXT, &tm, r->buf, len);
+    }
+
+    if (ml) {
+        flb_ml_destroy(ml);
+    }
+
+    flb_config_exit(config);
+}
+
+static void test_parser_elastic()
 {
     int i;
     int len;
     int ret;
     int entries;
     size_t off = 0;
+    uint64_t stream_id;
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
     msgpack_unpacked result;
@@ -544,44 +812,51 @@ static void test_mode_elastic()
     struct flb_config *config;
     struct flb_time tm;
     struct flb_ml *ml;
-    struct flb_ml_stream *mst;
+    struct flb_ml_parser *mlp;
+    struct flb_ml_parser_ins *mlp_i;
     struct expected_result res = {0};
 
     /* Expected results context */
     res.key = "log";
     res.out_records = elastic_output;
 
-    /*
-     * Retrieve a docker parser. We test the multiline mode in two separate ways:
-     *
-     * 1. packed JSON as Fluent Bit msgpack format
-     * 2. raw text with a parser context
-     */
+    /* Initialize environment */
     config = flb_config_init();
 
-    ml = flb_ml_create(config,
-                       FLB_ML_REGEX,         /* type      */
-                       NULL,                 /* match_str */
-                       FLB_FALSE,            /* negate    */
-                       1000,                 /* flush_ms  */
-                       "log",                /* key_content */
-                       NULL,                 /* key_pattern */
-                       NULL);                /* parser */
+    ml = flb_ml_create(config, "test-elastic");
+    TEST_CHECK(ml != NULL);
 
-    ret = flb_ml_rule_create(ml, "start_state", "/^\\[/", "elastic_cont", NULL);
+    mlp = flb_ml_parser_create(config,
+                               "elastic",            /* name      */
+                               FLB_ML_REGEX,         /* type      */
+                               NULL,                 /* match_str */
+                               FLB_FALSE,            /* negate    */
+                               1000,                 /* flush_ms  */
+                               "log",                /* key_content */
+                               NULL,                 /* key_pattern */
+                               NULL,                 /* key_group */
+                               NULL,                 /* parser ctx */
+                               NULL);                /* parser name */
+    TEST_CHECK(mlp != NULL);
+
+    mlp_i = flb_ml_parser_instance_create(ml, "elastic");
+    TEST_CHECK(mlp_i != NULL);
+
+    ret = flb_ml_rule_create(mlp, "start_state", "/^\\[/", "elastic_cont", NULL);
     if (ret != 0) {
         fprintf(stderr, "error creating rule 1");
     }
 
-    ret = flb_ml_rule_create(ml, "elastic_cont", "/^\\s+/", "elastic_cont", NULL);
+    ret = flb_ml_rule_create(mlp, "elastic_cont", "/^\\s+/", "elastic_cont", NULL);
     if (ret != 0) {
         fprintf(stderr, "error creating rule 2");
     }
 
-    mst = flb_ml_stream_create(ml, "elastic", flush_callback, (void *) &res);
-    TEST_CHECK(mst != NULL);
+    ret = flb_ml_stream_create(ml, "elastic", -1, flush_callback, (void *) &res,
+                               &stream_id);
+    TEST_CHECK(ret == 0);
 
-    ret = flb_ml_init(ml);
+    ret = flb_ml_parser_init(mlp);
     if (ret != 0) {
         fprintf(stderr, "error initializing multiline\n");
         flb_ml_destroy(ml);
@@ -620,7 +895,8 @@ static void test_mode_elastic()
         map = &root.via.array.ptr[1];
 
         /* Package as msgpack */
-        ret = flb_ml_append_object(ml, mst, &tm, map);
+        ret = flb_ml_append_object(ml, stream_id, &tm, map);
+
         msgpack_unpacked_destroy(&result);
         msgpack_sbuffer_destroy(&mp_sbuf);
     }
@@ -632,39 +908,60 @@ static void test_mode_elastic()
     flb_config_exit(config);
 }
 
-static void test_mode_go()
+static void test_endswith()
 {
     int i;
     int len;
+    int ret;
     int entries;
+    uint64_t stream_id = 0;
     struct record_check *r;
     struct flb_config *config;
     struct flb_time tm;
     struct flb_ml *ml;
-    struct flb_ml_stream *mst;
+    struct flb_ml_parser *mlp;
+    struct flb_ml_parser_ins *mlp_i;
     struct expected_result res = {0};
 
     /* Expected results context */
     res.key = "log";
-    res.out_records = go_output;
+    res.out_records = endswith_output;
 
+    /* Initialize environment */
     config = flb_config_init();
 
     /* Create docker multiline mode */
-    ml = flb_ml_mode_go(config, 1000, NULL);
+    ml = flb_ml_create(config, "raw-endswith");
     TEST_CHECK(ml != NULL);
 
-    mst = flb_ml_stream_create(ml, "go", flush_callback, (void *) &res);
-    TEST_CHECK(mst != NULL);
+    mlp = flb_ml_parser_create(config,
+                               "endswith",           /* name      */
+                               FLB_ML_ENDSWITH,      /* type      */
+                               "\\",                 /* match_str */
+                               FLB_TRUE,             /* negate    */
+                               1000,                 /* flush_ms  */
+                               NULL,                 /* key_content */
+                               NULL,                 /* key_pattern */
+                               NULL,                 /* key_group */
+                               NULL,                 /* parser ctx */
+                               NULL);                /* parser name */
+    TEST_CHECK(mlp != NULL);
 
-    entries = sizeof(go_input) / sizeof(struct record_check);
+    /* Generate an instance of 'endswith' custom parser parser */
+    mlp_i = flb_ml_parser_instance_create(ml, "endswith");
+    TEST_CHECK(mlp_i != NULL);
+
+    ret = flb_ml_stream_create(ml, "test", -1, flush_callback, (void *) &res, &stream_id);
+    TEST_CHECK(ret == 0);
+
+    entries = sizeof(endswith_input) / sizeof(struct record_check);
     for (i = 0; i < entries; i++) {
-        r = &go_input[i];
+        r = &endswith_input[i];
         len = strlen(r->buf);
 
         /* Package as msgpack */
         flb_time_get(&tm);
-        flb_ml_append(ml, mst, FLB_ML_TYPE_TEXT, &tm, r->buf, len);
+        flb_ml_append(ml, stream_id, FLB_ML_TYPE_TEXT, &tm, r->buf, len);
     }
 
     if (ml) {
@@ -674,12 +971,421 @@ static void test_mode_go()
     flb_config_exit(config);
 }
 
+static void test_parser_go()
+{
+    int i;
+    int len;
+    int ret;
+    int entries;
+    uint64_t stream_id = 0;
+    struct record_check *r;
+    struct flb_config *config;
+    struct flb_time tm;
+    struct flb_ml *ml;
+    struct flb_ml_parser_ins *mlp_i;
+    struct expected_result res = {0};
+
+    /* Expected results context */
+    res.key = "log";
+    res.out_records = go_output;
+
+    /* Initialize environment */
+    config = flb_config_init();
+
+    /* Create docker multiline mode */
+    ml = flb_ml_create(config, "go-test");
+    TEST_CHECK(ml != NULL);
+
+    /* Generate an instance of multiline java parser */
+    mlp_i = flb_ml_parser_instance_create(ml, "go");
+    TEST_CHECK(mlp_i != NULL);
+
+    ret = flb_ml_stream_create(ml, "go", -1, flush_callback, (void *) &res, &stream_id);
+    TEST_CHECK(ret == 0);
+
+    entries = sizeof(go_input) / sizeof(struct record_check);
+    for (i = 0; i < entries; i++) {
+        r = &go_input[i];
+        len = strlen(r->buf);
+
+        /* Package as msgpack */
+        flb_time_get(&tm);
+        flb_ml_append(ml, stream_id, FLB_ML_TYPE_TEXT, &tm, r->buf, len);
+    }
+
+    if (ml) {
+        flb_ml_destroy(ml);
+    }
+
+    flb_config_exit(config);
+}
+
+static int flush_callback_to_buf(struct flb_ml_parser *parser,
+                                 struct flb_ml_stream *mst,
+                                 void *data, char *buf_data, size_t buf_size)
+{
+    msgpack_sbuffer *mp_sbuf = data;
+    msgpack_sbuffer_write(mp_sbuf, buf_data, buf_size);
+
+    return 0;
+}
+
+static void run_test(struct flb_config *config, char *test_name,
+                     struct record_check *in, int in_len,
+                     struct record_check *out, int out_len,
+                     char *parser1, char *parser2)
+
+{
+    int i;
+    int ret;
+    int len;
+    size_t off = 0;
+    uint64_t stream1 = 0;
+    uint64_t stream2 = 0;
+    struct flb_ml *ml;
+    struct flb_ml_parser_ins *p1 = NULL;
+    struct record_check *r;
+    msgpack_sbuffer mp_sbuf1;
+    msgpack_packer mp_pck1;
+    msgpack_sbuffer mp_sbuf2;
+    msgpack_packer mp_pck2;
+    msgpack_object *map;
+    struct flb_time tm;
+    struct expected_result res = {0};
+    msgpack_unpacked result;
+
+    /* init buffers */
+    msgpack_sbuffer_init(&mp_sbuf1);
+    msgpack_packer_init(&mp_pck1, &mp_sbuf1, msgpack_sbuffer_write);
+    msgpack_sbuffer_init(&mp_sbuf2);
+    msgpack_packer_init(&mp_pck2, &mp_sbuf2, msgpack_sbuffer_write);
+
+    /* Create docker multiline mode */
+    ml = flb_ml_create(config, test_name);
+    TEST_CHECK(ml != NULL);
+
+    if (!parser1) {
+        fprintf(stderr, "run_test(): parser1 is NULL\n");
+        exit(1);
+    }
+
+    /* Parser 1 */
+    p1 = flb_ml_parser_instance_create(ml, parser1);
+    TEST_CHECK(p1 != NULL);
+
+
+    /* Stream 1: use parser name (test_name) to generate the stream id */
+    ret = flb_ml_stream_create(ml, test_name, -1,
+                               flush_callback_to_buf,
+                               (void *) &mp_sbuf1, &stream1);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest input records into parser 1 */
+    for (i = 0; i < in_len; i++) {
+        r = &in[i];
+        len = strlen(r->buf);
+
+        flb_time_get(&tm);
+
+        /* Package as msgpack */
+        flb_ml_append(ml, stream1, FLB_ML_TYPE_TEXT, &tm, r->buf, len);
+    }
+
+    flb_ml_destroy(ml);
+    ml = flb_ml_create(config, test_name);
+
+    flb_ml_parser_instance_create(ml, parser2);
+
+    /*
+     * After flb_ml_append above(), mp_sbuf1 has been populated with the
+     * output results as structured messages. Now this data needs to be
+     * passed to the next parser.
+     */
+
+    /* Expected results context */
+    res.key = "log";
+    res.out_records = out;
+
+    /* Stream 2 */
+    ret = flb_ml_stream_create(ml, "filter_multiline", -1,
+                               flush_callback,
+                               (void *) &res, &stream2);
+
+    /* Ingest input records into parser 2 */
+    off = 0;
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, mp_sbuf1.data, mp_sbuf1.size, &off)) {
+        flb_time_pop_from_msgpack(&tm, &result, &map);
+
+        /* Package as msgpack */
+        ret = flb_ml_append_object(ml, stream2, &tm, map);
+    }
+    flb_ml_flush_pending_now(ml);
+
+    msgpack_unpacked_destroy(&result);
+    msgpack_sbuffer_destroy(&mp_sbuf1);
+    flb_ml_destroy(ml);
+}
+
+void test_issue_3817_1()
+{
+    int ret;
+    int in_len  = sizeof(issue_3817_1_input) / sizeof(struct record_check);
+    int out_len = sizeof(issue_3817_1_output) / sizeof(struct record_check);
+    struct flb_config *config;
+    struct flb_ml_parser *mlp;
+
+    /*
+     * Parser definition for a file:
+     *
+     * [MULTILINE_PARSER]
+     *     name           parser_3817
+     *     type           regex
+     *     key_content    log
+     *     #
+     *     # Regex rules for multiline parsing
+     *     # ---------------------------------
+     *     #
+     *     # rules |   state name  | regex pattern       | next state
+     *     # ------|---------------|------------------------------------
+     *     rule      "start_state"   "/- $/"                "cont"
+     *     rule      "cont"          "/^([1-9].*$/"         "cont"
+     *
+     */
+
+    /* Initialize environment */
+    config = flb_config_init();
+
+    /* Register custom parser */
+    mlp = flb_ml_parser_create(config,
+                               "parser_3817",        /* name      */
+                               FLB_ML_REGEX,         /* type      */
+                               NULL,                 /* match_str */
+                               FLB_FALSE,            /* negate    */
+                               1000,                 /* flush_ms  */
+                               "log",                /* key_content */
+                               NULL,                 /* key_pattern */
+                               NULL,                 /* key_group */
+                               NULL,                 /* parser ctx */
+                               NULL);                /* parser name */
+    TEST_CHECK(mlp != NULL);
+
+    /* rule: start_state */
+    ret = flb_ml_rule_create(mlp, "start_state", "/- $/", "cont", NULL);
+    if (ret != 0) {
+        fprintf(stderr, "error creating rule 1");
+    }
+
+    /* rule: cont */
+    ret = flb_ml_rule_create(mlp, "cont", "/^([1-9]).*$/", "cont", NULL);
+    if (ret != 0) {
+        fprintf(stderr, "error creating rule 2");
+    }
+
+    /* initiaze the parser configuration */
+    ret = flb_ml_parser_init(mlp);
+    TEST_CHECK(ret == 0);
+
+    /* Run the test */
+    run_test(config, "issue_3817_1",
+             issue_3817_1_input, in_len,
+             issue_3817_1_output, out_len,
+             "cri", "parser_3817");
+
+    flb_config_exit(config);
+}
+
+static void test_issue_4034()
+{
+    int i;
+    int len;
+    int ret;
+    int entries;
+    uint64_t stream_id;
+    struct record_check *r;
+    struct flb_config *config;
+    struct flb_time tm;
+    struct flb_ml *ml;
+    struct flb_ml_parser_ins *mlp_i;
+    struct expected_result res = {0};
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+
+    /* Expected results context */
+    res.key = "log";
+    res.out_records = cri_output;
+
+    /* Initialize environment */
+    config = flb_config_init();
+
+    /* Create cri multiline mode */
+    ml = flb_ml_create(config, "cri-test");
+    TEST_CHECK(ml != NULL);
+
+    /* Generate an instance of multiline cri parser */
+    mlp_i = flb_ml_parser_instance_create(ml, "cri");
+    TEST_CHECK(mlp_i != NULL);
+
+    flb_ml_parser_instance_set(mlp_i, "key_content", "log");
+
+    ret = flb_ml_stream_create(ml, "cri", -1, flush_callback, (void *) &res,
+                               &stream_id);
+    TEST_CHECK(ret == 0);
+
+    /* initialize buffers */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    size_t off = 0;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object *map;
+
+    entries = sizeof(cri_input) / sizeof(struct record_check);
+    for (i = 0; i < entries; i++) {
+        r = &cri_input[i];
+        len = strlen(r->buf);
+
+        /* Package as msgpack */
+        flb_time_get(&tm);
+
+        /* initialize buffers */
+        msgpack_sbuffer_init(&mp_sbuf);
+        msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+        msgpack_pack_array(&mp_pck, 2);
+        flb_time_append_to_msgpack(&tm, &mp_pck, 0);
+
+        msgpack_pack_map(&mp_pck, 1);
+        msgpack_pack_str(&mp_pck, 3);
+        msgpack_pack_str_body(&mp_pck, "log", 3);
+        msgpack_pack_str(&mp_pck, len);
+        msgpack_pack_str_body(&mp_pck, r->buf, len);
+
+        /* Unpack and lookup the content map */
+        msgpack_unpacked_init(&result);
+        off = 0;
+        ret = msgpack_unpack_next(&result, mp_sbuf.data, mp_sbuf.size, &off);
+
+        flb_pack_print(mp_sbuf.data, mp_sbuf.size);
+
+        root = result.data;
+        map = &root.via.array.ptr[1];
+
+        /* Package as msgpack */
+        ret = flb_ml_append_object(ml, stream_id, &tm, map);
+
+        msgpack_unpacked_destroy(&result);
+        msgpack_sbuffer_destroy(&mp_sbuf);
+    }
+    flb_ml_flush_pending_now(ml);
+
+    if (ml) {
+        flb_ml_destroy(ml);
+    }
+
+    flb_config_exit(config);
+}
+
+static void test_issue_5504()
+{
+    uint64_t last_flush;
+    struct flb_config *config;
+    struct flb_ml *ml;
+    struct flb_ml_parser_ins *mlp_i;
+    struct mk_event_loop *evl;
+    struct flb_sched *sched;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_sched_timer *timer;
+    void (*cb)(struct flb_config *, void *);
+    int timeout = 500;
+
+#ifdef _WIN32
+    WSADATA wsa_data;
+    WSAStartup(0x0201, &wsa_data);
+#endif
+
+    /* Initialize environment */
+    config = flb_config_init();
+    ml = flb_ml_create(config, "5504-test");
+    TEST_CHECK(ml != NULL);
+    
+    /* Create the event loop */
+    evl = config->evl;
+    config->evl = mk_event_loop_create(32);
+    TEST_CHECK(config->evl != NULL);
+
+    /* Initialize the scheduler */
+    sched = config->sched;
+    config->sched = flb_sched_create(config, config->evl);
+    TEST_CHECK(config->sched != NULL);
+
+    /* Generate an instance of any multiline parser */
+    mlp_i = flb_ml_parser_instance_create(ml, "cri");
+    TEST_CHECK(mlp_i != NULL);
+
+    flb_ml_parser_instance_set(mlp_i, "key_content", "log");
+
+    /* Set the flush timeout */
+    ml->flush_ms = timeout;
+
+    /* Initialize the auto flush */
+    flb_ml_auto_flush_init(ml);
+
+    /* Store the initial last_flush time */
+    last_flush = ml->last_flush;
+
+    /* Find the cb_ml_flush_timer callback from the timers */
+    mk_list_foreach_safe(head, tmp, &((struct flb_sched *)config->sched)->timers) {
+        timer = mk_list_entry(head, struct flb_sched_timer, _head);
+        if (timer->type == FLB_SCHED_TIMER_CB_PERM) {
+            cb = timer->cb;
+        }
+    }
+    TEST_CHECK(cb != NULL);
+
+    /* Trigger the callback without delay */ 
+    cb(config, ml);
+    /* This should not update the last_flush since it is before the timeout */
+    TEST_CHECK(ml->last_flush == last_flush);
+
+    /* Sleep just enough time to pass the timeout */
+    flb_time_msleep(timeout + 1);
+
+    /* Retrigger the callback */
+    cb(config, ml);
+    /* Ensure this time the last_flush has been updated */
+    TEST_CHECK(ml->last_flush > last_flush);
+
+    /* Cleanup */
+    flb_sched_destroy(config->sched);
+    config->sched = sched;
+    mk_event_loop_destroy(config->evl);
+    config->evl = evl;
+    flb_ml_destroy(ml);
+    flb_config_exit(config);
+
+#ifdef _WIN32
+    WSACleanup();
+#endif
+}
+
 TEST_LIST = {
-    { "mode_docker",  test_mode_docker},
-    { "mode_cri",     test_mode_cri},
-    { "mode_java",    test_mode_java},
-    { "mode_python",  test_mode_python},
-    { "mode_elastic", test_mode_elastic},
-    { "mode_go",      test_mode_go},
+    /* Normal features tests */
+    { "parser_docker",  test_parser_docker},
+    { "parser_cri",     test_parser_cri},
+    { "parser_java",    test_parser_java},
+    { "parser_python",  test_parser_python},
+    { "parser_elastic", test_parser_elastic},
+    { "parser_go",      test_parser_go},
+    { "container_mix",  test_container_mix},
+    { "endswith",       test_endswith},
+
+    /* Issues reported on Github */
+    { "issue_3817_1"  , test_issue_3817_1},
+    { "issue_4034"    , test_issue_4034},
+    { "issue_4949"    , test_issue_4949},
+    { "issue_5504"    , test_issue_5504},
     { 0 }
 };

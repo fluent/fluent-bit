@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -51,6 +50,20 @@ static int send_response(struct http_conn *conn, int http_status, char *message)
     if (http_status == 201) {
         flb_sds_printf(&out,
                        "HTTP/1.1 201 Created \r\n"
+                       "Server: Fluent Bit v%s\r\n"
+                       "Content-Length: 0\r\n\r\n",
+                       FLB_VERSION_STR);
+    }
+    else if (http_status == 200) {
+        flb_sds_printf(&out,
+                       "HTTP/1.1 200 OK\r\n"
+                       "Server: Fluent Bit v%s\r\n"
+                       "Content-Length: 0\r\n\r\n",
+                       FLB_VERSION_STR);
+    }
+    else if (http_status == 204) {
+        flb_sds_printf(&out,
+                       "HTTP/1.1 204 No Content\r\n"
                        "Server: Fluent Bit v%s\r\n"
                        "Content-Length: 0\r\n\r\n",
                        FLB_VERSION_STR);
@@ -181,9 +194,6 @@ int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
                 flb_input_chunk_append_raw(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
             }
             msgpack_sbuffer_destroy(&mp_sbuf);
-
-            break;
-    
         } 
         else if (result.data.type == MSGPACK_OBJECT_ARRAY) {
             obj = &result.data;
@@ -428,6 +438,17 @@ int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
 
     ret = process_payload(ctx, conn, tag, session, request);
     flb_sds_destroy(tag);
-    send_response(conn, 201, NULL);
+    send_response(conn, ctx->successful_response_code, NULL);
     return ret;
+}
+
+/*
+ * Handle an incoming request which has resulted in an http parser error.
+ */
+int http_prot_handle_error(struct flb_http *ctx, struct http_conn *conn,
+                           struct mk_http_session *session,
+                           struct mk_http_request *request)
+{
+    send_response(conn, 400, "error: invalid request\n");
+    return -1;
 }

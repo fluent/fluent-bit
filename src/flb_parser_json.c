@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -141,8 +140,13 @@ int flb_parser_json_do(struct flb_parser *parser,
 
         /* Ensure the pointer we are about to read is not NULL */
         if (k->via.str.ptr == NULL) {
-            flb_free(mp_buf);
-            flb_free(tmp_out_buf);
+            if (mp_buf == tmp_out_buf) {
+                flb_free(mp_buf);
+            }
+            else {
+                flb_free(mp_buf);
+                flb_free(tmp_out_buf);
+            }
             *out_buf = NULL;
             msgpack_unpacked_destroy(&result);
             return -1;

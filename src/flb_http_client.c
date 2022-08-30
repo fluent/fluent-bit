@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -41,9 +40,9 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_base64.h>
 
 
-#include <mbedtls/base64.h>
 
 void flb_http_client_debug(struct flb_http_client *c,
                            struct flb_callback *cb_ctx)
@@ -66,7 +65,11 @@ int flb_http_strip_port_from_host(struct flb_http_client *c)
     struct flb_upstream *u = c->u_conn->u;
 
     if (!c->host) {
-        out_host = u->tcp_host;
+        if (!u->proxied_host) {
+            out_host = u->tcp_host;
+        } else {
+            out_host = u->proxied_host;
+        }
     } else {
         out_host = (char *) c->host;
     }
@@ -659,6 +662,9 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     case FLB_HTTP_CONNECT:
         str_method = "CONNECT";
         break;
+    case FLB_HTTP_PATCH:
+        str_method = "PATCH";
+        break;
     };
 
     buf = flb_calloc(1, FLB_HTTP_BUF_SIZE);
@@ -909,6 +915,30 @@ int flb_http_add_header(struct flb_http_client *c,
     return 0;
 }
 
+/*
+ * flb_http_get_header looks up a first value of request header.
+ * The return value should be destroyed after using.
+ * The return value is NULL, if the value is not found.
+ */
+flb_sds_t flb_http_get_header(struct flb_http_client *c,
+                              const char *key, size_t key_len)
+{
+    flb_sds_t ret_str;
+    struct flb_kv *kv;
+    struct mk_list *head = NULL;
+    struct mk_list *tmp  = NULL;
+
+    mk_list_foreach_safe(head, tmp, &c->headers) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        if (flb_sds_casecmp(kv->key, key, key_len) == 0) {
+            ret_str = flb_sds_create(kv->val);
+            return ret_str;
+        }
+    }
+
+    return NULL;
+}
+
 static int http_header_push(struct flb_http_client *c, struct flb_kv *header)
 {
     char *tmp;
@@ -1074,7 +1104,7 @@ int flb_http_add_auth_header(struct flb_http_client *c,
     p[len_out] = '\0';
 
     memcpy(tmp, "Basic ", 6);
-    ret = mbedtls_base64_encode((unsigned char *) tmp + 6, sizeof(tmp) - 7, &b64_len,
+    ret = flb_base64_encode((unsigned char *) tmp + 6, sizeof(tmp) - 7, &b64_len,
                                 (unsigned char *) p, len_out);
     if (ret != 0) {
         flb_free(p);
@@ -1128,6 +1158,7 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
         new_size = c->header_size + 2;
         tmp = flb_realloc(c->header_buf, new_size);
         if (!tmp) {
+            flb_errno();
             return -1;
         }
         c->header_buf  = tmp;
@@ -1148,7 +1179,6 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
     }
 #endif
 
-    flb_debug("[http_client] header=%s", c->header_buf);
     /* Write the header */
     ret = flb_io_net_write(c->u_conn,
                            c->header_buf, c->header_len,
@@ -1216,6 +1246,9 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
 
             ret = process_data(c);
             if (ret == FLB_HTTP_ERROR) {
+                flb_warn("[http_client] malformed HTTP response from %s:%i on "
+                         "connection #%i", c->u_conn->u->tcp_host,
+                         c->u_conn->u->tcp_port, c->u_conn->fd);
                 return -1;
             }
             else if (ret == FLB_HTTP_OK) {

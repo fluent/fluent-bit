@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,13 +23,74 @@
 #include "splunk.h"
 #include "splunk_conf.h"
 
+static int event_fields_create(struct flb_splunk *ctx)
+{
+    int i = 0;
+    struct mk_list *head;
+    struct flb_slist_entry *kname;
+    struct flb_slist_entry *pattern;
+    struct flb_config_map_val *mv;
+    struct flb_splunk_field *f;
+
+    if (!ctx->event_fields) {
+        return 0;
+    }
+
+    flb_config_map_foreach(head, mv, ctx->event_fields) {
+        kname = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+        pattern = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
+
+        f = flb_malloc(sizeof(struct flb_splunk_field));
+        if (!f) {
+            flb_errno();
+            return -1;
+        }
+
+        f->key_name = flb_sds_create(kname->str);
+        if (!f->key_name) {
+            flb_free(f);
+            return -1;
+        }
+
+        f->ra = flb_ra_create(pattern->str, FLB_TRUE);
+        if (!f->ra) {
+            flb_plg_error(ctx->ins,
+                          "could not process event_field number #%i with "
+                          "pattern '%s'",
+                          i, pattern);
+            flb_sds_destroy(f->key_name);
+            flb_free(f);
+            return -1;
+        }
+
+        mk_list_add(&f->_head, &ctx->fields);
+    }
+
+    return 0;
+}
+
+static void event_fields_destroy(struct flb_splunk *ctx)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_splunk_field *f;
+
+    mk_list_foreach_safe(head, tmp, &ctx->fields) {
+        f = mk_list_entry(head, struct flb_splunk_field, _head);
+        flb_sds_destroy(f->key_name);
+        flb_ra_destroy(f->ra);
+        mk_list_del(&f->_head);
+        flb_free(f);
+    }
+}
+
 struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
                                           struct flb_config *config)
 {
     int ret;
     int io_flags = 0;
+    size_t size;
     flb_sds_t t;
-    char buf[256];
     const char *tmp;
     struct flb_upstream *upstream;
     struct flb_splunk *ctx;
@@ -41,6 +101,7 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
     ctx->ins = ins;
+    mk_list_init(&ctx->fields);
 
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
@@ -78,6 +139,23 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
     /* Set manual Index and Type */
     ctx->u = upstream;
 
+    tmp = flb_output_get_property("http_buffer_size", ins);
+    if (!tmp) {
+        ctx->buffer_size = 0;
+    }
+    else {
+        size = flb_utils_size_to_bytes(tmp);
+        if (size == -1) {
+            flb_plg_error(ctx->ins, "invalid 'buffer_size' value");
+            flb_splunk_conf_destroy(ctx);
+            return NULL;
+        }
+        if (size < 4 *1024) {
+            size = 4 * 1024;
+        }
+        ctx->buffer_size = size;
+    }
+
     /* Compress (gzip) */
     tmp = flb_output_get_property("compress", ins);
     ctx->compress_gzip = FLB_FALSE;
@@ -91,7 +169,7 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
     if (ctx->event_key) {
         if (ctx->event_key[0] != '$') {
             flb_plg_error(ctx->ins,
-                          "invalid single_value_key pattern, it must start with '$'");
+                          "invalid event_key pattern, it must start with '$'");
             flb_splunk_conf_destroy(ctx);
             return NULL;
         }
@@ -105,8 +183,65 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
         }
     }
 
+    /* Event host */
+    if (ctx->event_host) {
+        ctx->ra_event_host = flb_ra_create(ctx->event_host, FLB_TRUE);
+        if (!ctx->ra_event_host) {
+            flb_plg_error(ctx->ins,
+                          "cannot create record accessor for event_key pattern: '%s'",
+                          ctx->event_host);
+            flb_splunk_conf_destroy(ctx);
+            return NULL;
+        }
+    }
+
+    /* Event source */
+    if (ctx->event_source) {
+        ctx->ra_event_source = flb_ra_create(ctx->event_source, FLB_TRUE);
+        if (!ctx->ra_event_source) {
+            flb_plg_error(ctx->ins,
+                          "cannot create record accessor for event_source pattern: '%s'",
+                          ctx->event_host);
+            flb_splunk_conf_destroy(ctx);
+            return NULL;
+        }
+    }
+
+    /* Event source (key lookup) */
+    if (ctx->event_sourcetype_key) {
+        ctx->ra_event_sourcetype_key = flb_ra_create(ctx->event_sourcetype_key, FLB_TRUE);
+        if (!ctx->ra_event_sourcetype_key) {
+            flb_plg_error(ctx->ins,
+                          "cannot create record accessor for "
+                          "event_sourcetype_key pattern: '%s'",
+                          ctx->event_host);
+            flb_splunk_conf_destroy(ctx);
+            return NULL;
+        }
+    }
+
+    /* Event index (key lookup) */
+    if (ctx->event_index_key) {
+        ctx->ra_event_index_key = flb_ra_create(ctx->event_index_key, FLB_TRUE);
+        if (!ctx->ra_event_index_key) {
+            flb_plg_error(ctx->ins,
+                          "cannot create record accessor for "
+                          "event_index_key pattern: '%s'",
+                          ctx->event_host);
+            flb_splunk_conf_destroy(ctx);
+            return NULL;
+        }
+    }
+
+    /* Event fields */
+    ret = event_fields_create(ctx);
+    if (ret == -1) {
+        flb_splunk_conf_destroy(ctx);
+        return NULL;
+    }
+
     /* No http_user is set, fallback to splunk_token, if splunk_token is unset, fail. */
-    if(!ctx->http_user) {
+    if (!ctx->http_user) {
         /* Splunk Auth Token */
         tmp = flb_output_get_property("splunk_token", ins);
         if(!tmp) {
@@ -124,6 +259,11 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
             flb_splunk_conf_destroy(ctx);
             return NULL;
         }
+    }
+
+    /* channel */
+    if (ctx->channel != NULL) {
+        ctx->channel_len = flb_sds_len(ctx->channel);
     }
 
     /* Set instance flags into upstream */
@@ -148,6 +288,24 @@ int flb_splunk_conf_destroy(struct flb_splunk *ctx)
     if (ctx->ra_event_key) {
         flb_ra_destroy(ctx->ra_event_key);
     }
+
+    if (ctx->ra_event_host) {
+        flb_ra_destroy(ctx->ra_event_host);
+    }
+
+    if (ctx->ra_event_source) {
+        flb_ra_destroy(ctx->ra_event_source);
+    }
+
+    if (ctx->ra_event_sourcetype_key) {
+        flb_ra_destroy(ctx->ra_event_sourcetype_key);
+    }
+
+    if (ctx->ra_event_index_key) {
+        flb_ra_destroy(ctx->ra_event_index_key);
+    }
+
+    event_fields_destroy(ctx);
 
     flb_free(ctx);
 

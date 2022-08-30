@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -19,9 +18,9 @@
  */
 
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_sds.h>
-#include <mbedtls/base64.h>
 
 #include <math.h>
 
@@ -132,8 +131,8 @@ char *azb_block_blob_id(uint64_t *ms)
     }
 
     /* base64 encode block id */
-    ret = mbedtls_base64_encode((unsigned char *) b64, size, &o_len,
-                                (unsigned char *) tmp, len);
+    ret = flb_base64_encode((unsigned char *) b64, size, &o_len,
+                            (unsigned char *) tmp, len);
     if (ret != 0) {
         flb_free(b64);
         return NULL;
@@ -211,11 +210,13 @@ int azb_block_blob_commit(struct flb_azure_blob *ctx, char *blockid, char *tag,
     if (c->resp.status == 201) {
         flb_plg_info(ctx->ins, "blob id %s committed successfully", blockid);
         flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
         return FLB_OK;
     }
     else if (c->resp.status == 404) {
         flb_plg_info(ctx->ins, "blob not found: %s", c->uri);
         flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
         return FLB_RETRY;
     }
     else if (c->resp.payload_size > 0) {
@@ -223,6 +224,7 @@ int azb_block_blob_commit(struct flb_azure_blob *ctx, char *blockid, char *tag,
                       blockid, c->resp.payload);
         if (strstr(c->resp.payload, "must be 0 for Create Append")) {
             flb_http_client_destroy(c);
+            flb_upstream_conn_release(u_conn);
             return FLB_RETRY;
         }
     }
@@ -230,6 +232,7 @@ int azb_block_blob_commit(struct flb_azure_blob *ctx, char *blockid, char *tag,
         flb_plg_error(ctx->ins, "cannot append content to blob");
     }
     flb_http_client_destroy(c);
+    flb_upstream_conn_release(u_conn);
 
     return FLB_OK;
 }

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -23,11 +23,12 @@
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/flb_jsmn.h>
+#include <fluent-bit/flb_output_plugin.h>
 
 #include <stdlib.h>
 #include <time.h>
 
-#define FIVE_MINUTES   600
+#define FIVE_MINUTES   300
 #define TWELVE_HOURS   43200
 
 /* Credentials Environment Variables */
@@ -323,6 +324,186 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
     return provider;
 }
 
+struct flb_aws_provider *flb_managed_chain_provider_create(struct flb_output_instance
+                                                           *ins,
+                                                           struct flb_config
+                                                           *config,
+                                                           char *config_key_prefix,
+                                                           char *proxy,
+                                                           struct
+                                                           flb_aws_client_generator
+                                                           *generator)
+{
+    flb_sds_t config_key_region;
+    flb_sds_t config_key_sts_endpoint;
+    flb_sds_t config_key_role_arn;
+    flb_sds_t config_key_external_id;
+    const char *region = NULL;
+    const char *sts_endpoint = NULL;
+    const char *role_arn = NULL;
+    const char *external_id = NULL;
+    char *session_name = NULL;
+    int key_prefix_len;
+    int key_max_len;
+
+    /* Provider managed dependencies */
+    struct flb_aws_provider *aws_provider = NULL;
+    struct flb_aws_provider *base_aws_provider = NULL;
+    struct flb_tls *cred_tls = NULL;
+    struct flb_tls *sts_tls = NULL;
+
+    /* Config keys */
+    key_prefix_len = strlen(config_key_prefix);
+    key_max_len = key_prefix_len + 12; /* max length of
+                                              "region", "sts_endpoint", "role_arn",
+                                              "external_id" */
+    
+    /* Evaluate full config keys */
+    config_key_region = flb_sds_create_len(config_key_prefix, key_max_len);
+    strcpy(config_key_region + key_prefix_len, "region");
+    config_key_sts_endpoint = flb_sds_create_len(config_key_prefix, key_max_len);
+    strcpy(config_key_sts_endpoint + key_prefix_len, "sts_endpoint");
+    config_key_role_arn = flb_sds_create_len(config_key_prefix, key_max_len);
+    strcpy(config_key_role_arn + key_prefix_len, "role_arn");
+    config_key_external_id = flb_sds_create_len(config_key_prefix, key_max_len);
+    strcpy(config_key_external_id + key_prefix_len, "external_id");
+
+    /* AWS provider needs a separate TLS instance */
+    cred_tls = flb_tls_create(FLB_TRUE,
+                              ins->tls_debug,
+                              ins->tls_vhost,
+                              ins->tls_ca_path,
+                              ins->tls_ca_file,
+                              ins->tls_crt_file,
+                              ins->tls_key_file,
+                              ins->tls_key_passwd);
+    if (!cred_tls) {
+        flb_plg_error(ins, "Failed to create TLS instance for AWS Provider");
+        flb_errno();
+        goto error;
+    }
+
+    region = flb_output_get_property(config_key_region, ins);
+    if (!region) {
+        flb_plg_error(ins, "aws_auth enabled but %s not set", config_key_region);
+        goto error;
+    }
+
+    /* Use null sts_endpoint if none provided */
+    sts_endpoint = flb_output_get_property(config_key_sts_endpoint, ins);
+
+    aws_provider = flb_standard_chain_provider_create(config,
+                                                      cred_tls,
+                                                      (char *) region,
+                                                      (char *) sts_endpoint,
+                                                      NULL,
+                                                      flb_aws_client_generator());
+    if (!aws_provider) {
+        flb_plg_error(ins, "Failed to create AWS Credential Provider");
+        goto error;
+    }
+
+    role_arn = flb_output_get_property(config_key_role_arn, ins);
+    if (role_arn) {
+        /* Use the STS Provider */
+        base_aws_provider = aws_provider;
+        external_id = flb_output_get_property(config_key_external_id, ins);
+
+        session_name = flb_sts_session_name();
+        if (!session_name) {
+            flb_plg_error(ins, "Failed to generate aws iam role "
+                        "session name");
+            goto error;
+        }
+
+        /* STS provider needs yet another separate TLS instance */
+        sts_tls = flb_tls_create(FLB_TRUE,
+                                 ins->tls_debug,
+                                 ins->tls_vhost,
+                                 ins->tls_ca_path,
+                                 ins->tls_ca_file,
+                                 ins->tls_crt_file,
+                                 ins->tls_key_file,
+                                 ins->tls_key_passwd);
+        if (!sts_tls) {
+            flb_plg_error(ins, "Failed to create TLS instance for AWS STS Credential "
+                          "Provider");
+            flb_errno();
+            goto error;
+        }
+
+        aws_provider = flb_sts_provider_create(config,
+                                               sts_tls,
+                                               base_aws_provider,
+                                               (char *) external_id,
+                                               (char *) role_arn,
+                                               session_name,
+                                               (char *) region,
+                                               (char *) sts_endpoint,
+                                               NULL,
+                                               flb_aws_client_generator());
+        if (!aws_provider) {
+            flb_plg_error(ins, "Failed to create AWS STS Credential "
+                        "Provider");
+            goto error;
+        }
+    }
+
+    /* initialize credentials in sync mode */
+    aws_provider->provider_vtable->sync(aws_provider);
+    aws_provider->provider_vtable->init(aws_provider);
+    
+    /* set back to async */
+    aws_provider->provider_vtable->async(aws_provider);
+    
+    /* store dependencies in aws_provider for managed cleanup */
+    aws_provider->base_aws_provider = base_aws_provider;
+    aws_provider->cred_tls = cred_tls;
+    aws_provider->sts_tls = sts_tls;
+
+    goto cleanup;
+
+error:
+    if (aws_provider) {
+        /* disconnect dependencies */
+        aws_provider->base_aws_provider = NULL;
+        aws_provider->cred_tls = NULL;
+        aws_provider->sts_tls = NULL;
+        /* destroy */
+        flb_aws_provider_destroy(aws_provider);
+    }
+    /* free dependencies */
+    if (base_aws_provider) {
+        flb_aws_provider_destroy(base_aws_provider);
+    }
+    if (cred_tls) {
+        flb_tls_destroy(cred_tls);
+    }
+    if (sts_tls) {
+        flb_tls_destroy(sts_tls);
+    }
+    aws_provider = NULL;
+
+cleanup:
+    if (config_key_region) {
+        flb_sds_destroy(config_key_region);
+    }
+    if (config_key_sts_endpoint) {
+        flb_sds_destroy(config_key_sts_endpoint);
+    }
+    if (config_key_role_arn) {
+        flb_sds_destroy(config_key_role_arn);
+    }
+    if (config_key_external_id) {
+        flb_sds_destroy(config_key_external_id);
+    }
+    if (session_name) {
+        flb_free(session_name);
+    }
+
+    return aws_provider;
+}
+
 static struct flb_aws_provider *standard_chain_create(struct flb_config
                                                       *config,
                                                       struct flb_tls *tls,
@@ -573,6 +754,17 @@ void flb_aws_provider_destroy(struct flb_aws_provider *provider)
     if (provider) {
         if (provider->implementation) {
             provider->provider_vtable->destroy(provider);
+        }
+
+        /* free managed dependencies */
+        if (provider->base_aws_provider) {
+            flb_aws_provider_destroy(provider->base_aws_provider);
+        }
+        if (provider->cred_tls) {
+            flb_tls_destroy(provider->cred_tls);
+        }
+        if (provider->sts_tls) {
+            flb_tls_destroy(provider->sts_tls);
         }
 
         flb_free(provider);

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -34,9 +33,6 @@ struct flb_in_tcp_config *tcp_config_init(struct flb_input_instance *ins)
     int len;
     char port[16];
     char *out;
-    const char *tmp;
-    const char *buffer_size;
-    const char *chunk_size;
     struct flb_in_tcp_config *ctx;
 
     /* Allocate plugin context */
@@ -47,34 +43,41 @@ struct flb_in_tcp_config *tcp_config_init(struct flb_input_instance *ins)
     }
     ctx->ins = ins;
     ctx->format = FLB_TCP_FMT_JSON;
+    ctx->server_fd = -1;
+
+    /* Load the config map */
+    ret = flb_input_config_map_set(ins, (void *)ctx);
+    if (ret == -1) {
+        flb_plg_error(ins, "unable to load configuration");
+        flb_free(ctx);
+        return NULL;
+    }
 
     /* Data format (expected payload) */
-    tmp = flb_input_get_property("format", ins);
-    if (tmp) {
-        if (strcasecmp(tmp, "json") == 0) {
+    if (ctx->format_name) {
+        if (strcasecmp(ctx->format_name, "json") == 0) {
             ctx->format = FLB_TCP_FMT_JSON;
         }
-        else if (strcasecmp(tmp, "none") == 0) {
+        else if (strcasecmp(ctx->format_name, "none") == 0) {
             ctx->format = FLB_TCP_FMT_NONE;
         }
         else {
-            flb_plg_error(ctx->ins, "unrecognized format value '%s'", tmp);
+            flb_plg_error(ctx->ins, "unrecognized format value '%s'", ctx->format_name);
             flb_free(ctx);
             return NULL;
         }
     }
 
     /* String separator used to split records when using 'format none' */
-    tmp = flb_input_get_property("separator", ins);
-    if (tmp) {
-        len = strlen(tmp);
+    if (ctx->raw_separator) {
+        len = strlen(ctx->raw_separator);
         out = flb_malloc(len + 1);
         if (!out) {
             flb_errno();
             flb_free(ctx);
             return NULL;
         }
-        ret = flb_unescape_string(tmp, len, &out);
+        ret = flb_unescape_string(ctx->raw_separator, len, &out);
         if (ret <= 0) {
             flb_plg_error(ctx->ins, "invalid separator");
             flb_free(out);
@@ -101,23 +104,20 @@ struct flb_in_tcp_config *tcp_config_init(struct flb_input_instance *ins)
     ctx->tcp_port = flb_strdup(port);
 
     /* Chunk size */
-    chunk_size = flb_input_get_property("chunk_size", ins);
-    if (!chunk_size) {
-        ctx->chunk_size = FLB_IN_TCP_CHUNK; /* 32KB */
-    }
-    else {
+    if (ctx->chunk_size_str) {
         /* Convert KB unit to Bytes */
-        ctx->chunk_size  = (atoi(chunk_size) * 1024);
+        ctx->chunk_size  = (atoi(ctx->chunk_size_str) * 1024);
+    } else {
+        ctx->chunk_size  = atoi(FLB_IN_TCP_CHUNK);
     }
 
     /* Buffer size */
-    buffer_size = flb_input_get_property("buffer_size", ins);
-    if (!buffer_size) {
+    if (!ctx->buffer_size_str) {
         ctx->buffer_size = ctx->chunk_size;
     }
     else {
         /* Convert KB unit to Bytes */
-        ctx->buffer_size  = (atoi(buffer_size) * 1024);
+        ctx->buffer_size  = (atoi(ctx->buffer_size_str) * 1024);
     }
 
     return ctx;
@@ -127,6 +127,9 @@ int tcp_config_destroy(struct flb_in_tcp_config *ctx)
 {
     flb_sds_destroy(ctx->separator);
     flb_free(ctx->tcp_port);
+    if (ctx->server_fd > 0) {
+        flb_socket_close(ctx->server_fd);
+    }
     flb_free(ctx);
 
     return 0;

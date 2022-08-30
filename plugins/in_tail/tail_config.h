@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,9 +25,15 @@
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_sqldb.h>
+#include <fluent-bit/flb_metrics.h>
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
 #endif
+#ifdef FLB_HAVE_PARSER
+#include <fluent-bit/multiline/flb_ml.h>
+#endif
+
+#include <xxhash.h>
 
 /* Metrics */
 #ifdef FLB_HAVE_METRICS
@@ -47,6 +52,12 @@ struct flb_tail_config {
     /* Buffer Config */
     size_t buf_chunk_size;     /* allocation chunks        */
     size_t buf_max_size;       /* max size of a buffer     */
+
+    /* Static files processor */
+    size_t static_batch_size;
+
+    /* Event files processor */
+    size_t event_batch_size;
 
     /* Collectors */
     int coll_fd_static;
@@ -78,7 +89,9 @@ struct flb_tail_config {
     flb_sds_t path_key;        /* key name of file path        */
     flb_sds_t key;             /* key for unstructured record  */
     int   skip_long_lines;     /* skip long lines              */
+    int   skip_empty_lines;    /* skip empty lines (off)       */
     int   exit_on_eof;         /* exit fluent-bit on EOF, test */
+
 #ifdef FLB_HAVE_INOTIFY
     int   inotify_watcher;     /* enable/disable inotify monitor */
 #endif
@@ -89,7 +102,7 @@ struct flb_tail_config {
     struct flb_sqldb *db;
     int db_sync;
     int db_locking;
-    struct flb_sqldb *db_journal_mode;
+    flb_sds_t db_journal_mode;
     sqlite3_stmt *stmt_get_file;
     sqlite3_stmt *stmt_insert_file;
     sqlite3_stmt *stmt_delete_file;
@@ -111,7 +124,11 @@ struct flb_tail_config {
     int docker_mode_flush;     /* Docker mode flush/wait */
     struct flb_parser *docker_mode_parser; /* Parser for separate multiline logs */
 
-    /* Lists head for files consumed statically (read) and by events (inotify) */
+    /* Multiline core engine */
+    struct flb_ml *ml_ctx;
+    struct mk_list *multiline_parsers;
+
+    uint64_t files_static_count;   /* number of items in the static file list */
     struct mk_list files_static;
     struct mk_list files_event;
 
@@ -123,6 +140,17 @@ struct flb_tail_config {
 
     /* Plugin input instance */
     struct flb_input_instance *ins;
+
+    /* Metrics */
+    struct cmt_counter *cmt_files_opened;
+    struct cmt_counter *cmt_files_closed;
+    struct cmt_counter *cmt_files_rotated;
+
+    /* Hash: hash tables for quick acess to registered files */
+    struct flb_hash_table *static_hash;
+    struct flb_hash_table *event_hash;
+
+    struct flb_config *config;
 };
 
 struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,

@@ -23,19 +23,22 @@
 #include <cmetrics/cmetrics.h>
 
 struct cmt_opts {
-    cmt_sds_t namespace;
-    cmt_sds_t subsystem;
-    cmt_sds_t name;
+    cmt_sds_t ns;            /* namespace */
+    cmt_sds_t subsystem;     /* subsystem */
+    cmt_sds_t name;          /* metric name */
 
     /* Help string: what's the metric about */
     cmt_sds_t description;
 
     /* Formatted full qualified name: namespace_subsystem_name */
     cmt_sds_t fqname;
+
+    /* Resource index is only used by opentelemtry */
+    int resource_index;
 };
 
 int cmt_opts_init(struct cmt_opts *opts,
-                  char *namespace, char *subsystem, char *name, char *help);
+                  char *ns, char *subsystem, char *name, char *help);
 void cmt_opts_exit(struct cmt_opts *opts);
 
 #endif

@@ -1,0 +1,64 @@
+/* Center aligned text */
+.center {
+  text-align: center;
+}
+
+/* Paragraph with main links on index page */
+.index-links {
+  text-align: center;
+  margin-top: 10px;
+}
+.index-links a {
+  display: inline-block;
+  border: 1px solid #0E4263;
+  padding: 5px 20px;
+  margin: 2px 5px;
+  background: #2980B9;
+  border-radius: 4px;
+  color: #FFFFFF;
+}
+.index-links a:hover, .index-links a:active {
+  background: #0E4263;
+}
+
+/* Table header p w/0 margin */
+.index-links a table thead th {
+  vertical-align: middle;
+}
+
+table thead th p {
+  margin: 0;
+}
+
+.table-nowrap td {
+  white-space: normal !important;
+}
+
+/* Breathe output changes */
+.breathe-sectiondef.container {
+  background: #f9f9f9;
+  padding: 10px;
+  margin-bottom: 10px;
+  border: 1px solid #efefef;
+}
+.breathe-sectiondef.container .breathe-sectiondef-title {
+  background: #2980b9;
+  color: #FFFFFF;
+  padding: 4px;
+  margin: -10px -10px 0 -10px;
+}
+.breathe-sectiondef.container .function,
+.breathe-sectiondef.container .member,
+.breathe-sectiondef.container .class,
+.breathe-sectiondef.container .type {
+  border-bottom: 1px solid #efefef;
+}
+.breathe-sectiondef.container .function:last-child,
+.breathe-sectiondef.container .member:last-child,
+.breathe-sectiondef.container .class:last-child,
+.breathe-sectiondef.container .type:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+/*# sourceMappingURL=common.css.map */

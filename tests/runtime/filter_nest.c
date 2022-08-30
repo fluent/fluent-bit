@@ -1,6 +1,7 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include <fluent-bit.h>
+#include <fluent-bit/flb_time.h>
 #include "flb_tests_runtime.h"
 
 pthread_mutex_t result_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -147,7 +148,7 @@ void flb_test_filter_nest_multi_nest(void)
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
 
-    sleep(1); /* waiting flush */
+    flb_time_msleep(1500); /* waiting flush */
     count = get_output_num();
 
     TEST_CHECK_(count == expected, "Expected number of events %d, got %d", expected, count );
@@ -220,7 +221,7 @@ void flb_test_filter_nest_multi_lift(void)
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
 
-    sleep(1); /* waiting flush */
+    flb_time_msleep(1500); /* waiting flush */
     count = get_output_num();
 
     TEST_CHECK_(count == expected, "Expected number of events %d, got %d", expected, count );
@@ -285,7 +286,7 @@ void flb_test_filter_nest_single(void)
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
 
-    sleep(1); /* waiting flush */
+    flb_time_msleep(1500); /* waiting flush */
     output = get_output();
 
     TEST_CHECK_(output != NULL, "Expected output to not be NULL");

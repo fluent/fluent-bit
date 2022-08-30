@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -34,7 +33,7 @@ struct flb_callback *flb_callback_create(char *name)
         return NULL;
     }
 
-    ctx->ht = flb_hash_create(FLB_HASH_EVICT_NONE, 16, 0);
+    ctx->ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 16, 0);
     if (!ctx->ht) {
         flb_error("[callback] error allocating hash table");
         flb_free(ctx);
@@ -65,8 +64,8 @@ int flb_callback_set(struct flb_callback *ctx, char *name,
     entry->cb = cb;
 
     len = strlen(name);
-    ret = flb_hash_add(ctx->ht, name, len,
-                       (char *) &entry, sizeof(struct flb_callback_entry *));
+    ret = flb_hash_table_add(ctx->ht, name, len,
+                             (char *) &entry, sizeof(struct flb_callback_entry *));
     if (ret == -1) {
         flb_sds_destroy(entry->name);
         flb_free(entry);
@@ -85,7 +84,7 @@ int flb_callback_exists(struct flb_callback *ctx, char *name)
     void *cb_addr;
 
     len = strlen(name);
-    ret = flb_hash_get(ctx->ht, name, len, &cb_addr, &out_size);
+    ret = flb_hash_table_get(ctx->ht, name, len, &cb_addr, &out_size);
     if (ret == -1) {
         return FLB_FALSE;
     }
@@ -106,7 +105,7 @@ int flb_callback_do(struct flb_callback *ctx, char *name, void *p1, void *p2)
     }
 
     len = strlen(name);
-    ret = flb_hash_get(ctx->ht, name, len, &cb_addr, &out_size);
+    ret = flb_hash_table_get(ctx->ht, name, len, &cb_addr, &out_size);
     if (ret == -1) {
         return -1;
     }
@@ -122,7 +121,7 @@ void flb_callback_destroy(struct flb_callback *ctx)
     struct mk_list *head;
     struct flb_callback_entry *entry;
 
-    flb_hash_destroy(ctx->ht);
+    flb_hash_table_destroy(ctx->ht);
 
     mk_list_foreach_safe(head, tmp, &ctx->entries) {
         entry = mk_list_entry(head, struct flb_callback_entry, _head);

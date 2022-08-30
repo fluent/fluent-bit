@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,10 +22,9 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_aws_util.h>
+#include <fluent-bit/flb_random.h>
 #include <fluent-bit/flb_jsmn.h>
 
-#include <mbedtls/ctr_drbg.h>
-#include "mbedtls/entropy.h"
 #include <stdlib.h>
 #include <time.h>
 #include <string.h>
@@ -115,7 +114,7 @@ struct flb_aws_credentials *get_credentials_fn_sts(struct flb_aws_provider
          * another co-routine is performing the refresh.
          */
         flb_warn("[aws_credentials] No cached credentials are available and "
-                 "a credential refresh is already in progress. The current"
+                 "a credential refresh is already in progress. The current "
                  "co-routine will retry.");
 
         return NULL;
@@ -653,67 +652,30 @@ error:
 
 /* Generates string which can serve as a unique session name */
 char *flb_sts_session_name() {
-    mbedtls_ctr_drbg_context ctr_drbg;
-    mbedtls_entropy_context entropy;
-    char *personalization = NULL;
-    time_t now;
-    unsigned char *random_data = NULL;
+    unsigned char *random_data[SESSION_NAME_RANDOM_BYTE_LEN];
     char *session_name = NULL;
     int ret;
 
-    personalization = flb_malloc(sizeof(char) * 27);
-    if (!personalization) {
-        goto error;
-    }
+    ret = flb_random_bytes(random_data, SESSION_NAME_RANDOM_BYTE_LEN);
 
-    now = time(NULL);
-    ctime_r(&now, personalization);
-
-    mbedtls_entropy_init(&entropy);
-    mbedtls_ctr_drbg_init(&ctr_drbg);
-
-    ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
-                                (const unsigned char *) personalization,
-                                strlen(personalization));
     if (ret != 0) {
-        goto error;
-    }
+        flb_errno();
 
-    random_data = flb_malloc(sizeof(unsigned char) *
-                             SESSION_NAME_RANDOM_BYTE_LEN);
-    if (!random_data) {
-        goto error;
-    }
-
-    ret = mbedtls_ctr_drbg_random(&ctr_drbg, random_data,
-                                  SESSION_NAME_RANDOM_BYTE_LEN);
-    if (ret != 0) {
-        goto error;
+        return NULL;
     }
 
     session_name = flb_malloc(sizeof(char) *
                               (SESSION_NAME_RANDOM_BYTE_LEN + 1));
     if (!session_name) {
-        goto error;
+        flb_errno();
+
+        return NULL;
     }
 
     bytes_to_string(random_data, session_name, SESSION_NAME_RANDOM_BYTE_LEN);
     session_name[SESSION_NAME_RANDOM_BYTE_LEN] = '\0';
 
-    flb_free(random_data);
-    flb_free(personalization);
-
     return session_name;
-
-error:
-    flb_errno();
-    if (personalization) {
-        flb_free(personalization);
-    }
-    if (random_data) {
-        flb_free(random_data);
-    }
-    return NULL;
 }
 
 /* converts random bytes to a string we can safely put in a URL */

@@ -11,9 +11,11 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size){
     struct flb_config *fuzz_config;
     struct flb_parser *fuzz_parser;
 
+    flb_malloc_p = 0;
+
     /* logfmt parser */
     fuzz_config = flb_config_init();
-    fuzz_parser = flb_parser_create("fuzzer", "logfmt", NULL,
+    fuzz_parser = flb_parser_create("fuzzer", "logfmt", NULL, FLB_TRUE,
                                     NULL, NULL, NULL, MK_FALSE,
                                     MK_TRUE, NULL, 0, NULL, fuzz_config);
     flb_parser_do(fuzz_parser, (char*)data, size,

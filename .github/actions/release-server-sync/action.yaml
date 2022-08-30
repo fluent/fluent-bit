@@ -1,0 +1,97 @@
+name: Composite action to sync release to server
+description: Carry out all the tasks to sync from a bucket to the release server.
+
+inputs:
+  bucket:
+    description: The name of the S3 (US-East) bucket to sync packages from.
+    required: true
+  access_key_id:
+    description: The S3 access key id for the bucket.
+    required: true
+  secret_access_key:
+    description: The S3 secret access key for the bucket.
+    required: true
+  server_hostname:
+    description: The server hostname to sync to.
+    required: true
+  server_username:
+    description: The username to authenticate with on the server.
+    required: true
+  server_key:
+    description: The SSH key to use for authentication.
+    required: true
+  server_aptly_config:
+    description: The Aptly config file to use for all repositories.
+    required: false
+    default: "/etc/aptly.conf"
+  ref:
+    description: The Git commit, branch or tag to checkout for the packaging code.
+    required: false
+    default: "master"
+
+runs:
+  using: "composite"
+  steps:
+  - name: Setup runner
+    run: |
+      sudo apt-get install rsync
+    shell: bash
+
+  - name: Hashed known hosts value
+    id: known_hosts
+    run: |
+      OUTPUT=$(ssh-keyscan -H ${{ inputs.server_hostname }})
+      echo ::set-output name=OUTPUT::$OUTPUT
+    shell: bash
+
+  - name: Install SSH Key
+    uses: shimataro/ssh-key-action@v2
+    with:
+      key: ${{ inputs.server_key }}
+      known_hosts: ${{ steps.known_hosts.outputs.OUTPUT }}
+
+  - name: Sync packages from release bucket on S3
+    run: |
+      mkdir -p packaging/releases
+      aws s3 sync "s3://$BUCKET" packaging/releases/ --no-progress
+    env:
+      AWS_ACCESS_KEY_ID: ${{ inputs.access_key_id }}
+      AWS_SECRET_ACCESS_KEY: ${{ inputs.secret_access_key }}
+      AWS_REGION: "us-east-1"
+      BUCKET: ${{ inputs.bucket }}
+    shell: bash
+
+  - name: Upload to build server
+    run: |
+      ssh $USERNAME@$HOST mkdir -p /home/$USERNAME/apt
+      rsync --include="*/" \
+        --include="*.rpm" --include="*.deb" \
+        --include="*.zip" --include="*.exe" --include="*.msi" \
+        --include="*.tar.gz" \
+        --include="*.md5" --include="*.sha256" \
+        --include="fluent-bit-schema*.json" \
+        --exclude="*" \
+        -amvz packaging/releases/ $USERNAME@$HOST:/home/$USERNAME/apt
+    env:
+      HOST: ${{ inputs.server_hostname }}
+      USERNAME: ${{ inputs.server_username }}
+    shell: bash
+
+  - name: Checkout code
+    uses: actions/checkout@v3
+    with:
+      ref: ${{ inputs.ref }}
+
+  # Automate the final step here to get the packages "live"
+  - name: Publish on build server
+    run: |
+      ssh $USERNAME@$HOST mkdir -p /home/$USERNAME/publish-support
+      rsync -amvz packaging/server/ $USERNAME@$HOST:/home/$USERNAME/publish-support
+      # TODO: need user access for gpg keys and output directories, currently doing it manually
+      # ssh $USERNAME@$HOST APTLY_CONFIG="$APTLY_CONFIG" /bin/bash /home/$USERNAME/publish-support/publish-all.sh "$VERSION"
+    env:
+      VERSION: ${{ inputs.version }}
+      HOST: ${{ inputs.server_hostname }}
+      USERNAME: ${{ inputs.server_username }}
+      APTLY_CONFIG: ${{ inputs.server_aptly_config || '/etc/aptly.conf' }}
+    shell: bash

@@ -119,5 +119,5 @@ struct mk_vhost_handler *mk_vhost_handler_match(char *match,
                                                 void (*cb)(struct mk_http_request *,
                                                            void *),
                                                 void *data);
-
+int mk_vhost_destroy(struct mk_vhost *vh);
 #endif

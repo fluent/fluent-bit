@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -343,8 +342,8 @@ static int cb_newrelic_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static void cb_newrelic_flush(const void *data, size_t bytes,
-                              const char *tag, int tag_len,
+static void cb_newrelic_flush(struct flb_event_chunk *event_chunk,
+                              struct flb_output_flush *out_flush,
                               struct flb_input_instance *i_ins,
                               void *out_context,
                               struct flb_config *config)
@@ -361,7 +360,8 @@ static void cb_newrelic_flush(const void *data, size_t bytes,
     struct flb_http_client *c;
 
     /* Format the data to the expected Newrelic Payload */
-    payload = newrelic_compose_payload(ctx, data, bytes);
+    payload = newrelic_compose_payload(ctx,
+                                       event_chunk->data, event_chunk->size);
     if (!payload) {
         flb_plg_error(ctx->ins, "cannot compose request payload");
         FLB_OUTPUT_RETURN(FLB_RETRY);

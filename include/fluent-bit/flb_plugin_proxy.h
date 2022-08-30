@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,6 +23,7 @@
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_input_thread.h>
 
 /* Plugin Types */
 #define FLB_PROXY_INPUT_PLUGIN     1
@@ -44,10 +44,7 @@ struct flb_plugin_proxy_def {
 /* Proxy context */
 struct flb_plugin_proxy {
     /* Fields populated once remote flb_cb_register() is called */
-    int type;                 /* defined by FLB_PROXY_[INPUT|OUTPUT]_PLUGIN  */
-    int proxy;                /* proxy type                                  */
-    char *name;               /* plugin short name                           */
-    char *description;        /* plugin description                          */
+    struct flb_plugin_proxy_def *def;
 
     /* Internal */
     struct flb_api *api;      /* API context to export functions             */
@@ -65,12 +62,18 @@ struct flb_plugin_proxy_context {
     struct flb_plugin_proxy *proxy;
 };
 
+struct flb_plugin_input_proxy_context {
+    int coll_fd;
+    /* A proxy ptr is needed to store the proxy type/lang (OUTPUT/GOLANG) */
+    struct flb_plugin_proxy *proxy;
+};
+
 void *flb_plugin_proxy_symbol(struct flb_plugin_proxy *proxy,
                               const char *symbol);
 
-int flb_plugin_proxy_init(struct flb_plugin_proxy *proxy,
-                          struct flb_output_instance *o_ins,
-                          struct flb_config *config);
+int flb_plugin_proxy_output_init(struct flb_plugin_proxy *proxy,
+                                 struct flb_output_instance *o_ins,
+                                 struct flb_config *config);
 
 int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,
                               struct flb_config *config);

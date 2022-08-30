@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -91,6 +90,14 @@ static int in_http_init(struct flb_input_instance *ins,
         return -1;
     }
 
+    if (ctx->successful_response_code != 200 &&
+        ctx->successful_response_code != 201 &&
+        ctx->successful_response_code != 204) {
+        flb_plg_error(ctx->ins, "%d is not supported response code. Use default 201",
+                      ctx->successful_response_code);
+        ctx->successful_response_code = 201;
+    }
+
     /* Set the socket non-blocking */
     flb_net_socket_nonblocking(ctx->server_fd);
 
@@ -117,6 +124,11 @@ static int in_http_exit(void *data, struct flb_config *config)
         return 0;
     }
 
+    if (ctx->server_fd >= 0) {
+        flb_socket_close(ctx->server_fd);
+        ctx->server_fd = -1;
+    }
+
     http_config_destroy(ctx);
     return 0;
 }
@@ -140,6 +152,12 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_http, tag_key),
      ""
     },
+    {
+     FLB_CONFIG_MAP_INT, "successful_response_code", "201",
+     0, FLB_TRUE, offsetof(struct flb_http, successful_response_code),
+     "Set successful response code. 200, 201 and 204 are supported."
+    },
+
 
     /* EOF */
     {0}

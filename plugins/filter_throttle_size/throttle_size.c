@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -82,7 +81,7 @@ inline static void add_new_pane_to_each(struct throttle_size_table *ht,
                                         double timestamp)
 {
     struct mk_list *head;
-    struct flb_hash_entry *entry;
+    struct flb_hash_table_entry *entry;
     struct throttle_size_window *current_window;
     struct flb_time ftm;
 
@@ -92,7 +91,7 @@ inline static void add_new_pane_to_each(struct throttle_size_table *ht,
     }
 
     mk_list_foreach(head, &ht->windows->entries) {
-        entry = mk_list_entry(head, struct flb_hash_entry, _head_parent);
+        entry = mk_list_entry(head, struct flb_hash_table_entry, _head_parent);
         current_window = (struct throttle_size_window *) (entry->val);
         add_new_pane(current_window, timestamp);
         flb_debug
@@ -110,8 +109,8 @@ inline static void delete_older_than_n_seconds(struct throttle_size_table *ht,
     int i;
     struct mk_list *tmp;
     struct mk_list *head;
-    struct flb_hash_entry *entry;
-    struct flb_hash_table *table;
+    struct flb_hash_table_entry *entry;
+    struct flb_hash_table_chain *table;
     struct throttle_size_window *current_window;
     struct flb_time ftm;
     long time_treshold;
@@ -125,7 +124,7 @@ inline static void delete_older_than_n_seconds(struct throttle_size_table *ht,
     for (i = 0; i < ht->windows->size; i++) {
         table = &ht->windows->table[i];
         mk_list_foreach_safe(head, tmp, &table->chains) {
-            entry = mk_list_entry(head, struct flb_hash_entry, _head);
+            entry = mk_list_entry(head, struct flb_hash_table_entry, _head);
             current_window = (struct throttle_size_window *) entry->val;
 
             if (time_treshold > current_window->timestamp) {
@@ -150,11 +149,11 @@ inline static void delete_older_than_n_seconds(struct throttle_size_table *ht,
 inline static void print_all(struct throttle_size_table *ht)
 {
     struct mk_list *head;
-    struct flb_hash_entry *entry;
+    struct flb_hash_table_entry *entry;
     struct throttle_size_window *current_window;
 
     mk_list_foreach(head, &ht->windows->entries) {
-        entry = mk_list_entry(head, struct flb_hash_entry, _head_parent);
+        entry = mk_list_entry(head, struct flb_hash_table_entry, _head_parent);
         current_window = (struct throttle_size_window *) entry->val;
         printf("[%s] Name %s\n", PLUGIN_NAME, current_window->name);
         printf("[%s] Timestamp %ld\n", PLUGIN_NAME,
@@ -659,6 +658,7 @@ static int cb_throttle_size_filter(const void *data, size_t bytes,
                                    const char *tag, int tag_len,
                                    void **out_buf, size_t * out_size,
                                    struct flb_filter_instance *ins,
+                                   struct flb_input_instance *i_ins,
                                    void *context, struct flb_config *config)
 {
     int ret;
@@ -669,6 +669,7 @@ static int cb_throttle_size_filter(const void *data, size_t bytes,
     msgpack_object map;
     size_t off = 0;
     (void) ins;
+    (void) i_ins;
     (void) config;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -35,6 +34,7 @@
 #define FLB_HTTP_PUT         2
 #define FLB_HTTP_HEAD        3
 #define FLB_HTTP_CONNECT     4
+#define FLB_HTTP_PATCH       5
 
 /* HTTP Flags */
 #define FLB_HTTP_10          1
@@ -148,6 +148,8 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
 int flb_http_add_header(struct flb_http_client *c,
                         const char *key, size_t key_len,
                         const char *val, size_t val_len);
+flb_sds_t flb_http_get_header(struct flb_http_client *c,
+                              const char *key, size_t key_len);
 int flb_http_basic_auth(struct flb_http_client *c,
                         const char *user, const char *passwd);
 int flb_http_proxy_auth(struct flb_http_client *c,

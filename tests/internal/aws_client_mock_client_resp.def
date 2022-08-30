@@ -1,0 +1,34 @@
+/* XMacro Definition for Mock AWS Client http_client Response */
+
+/* Converters: CONVERT_<C_INT> */
+#define EVAL1(...) __VA_ARGS__
+#define CONVERT_T_INT(str)          (int) (uintptr_t) str
+#define CONVERT_T_SIZE_T(str)       (size_t) str
+#define CONVERT_T_LONG(str)         (long) str
+#define CONVERT_T_CHAR_STAR(str)    str
+
+EVAL1(EXPAND_CLIENT_RESPONSE_PARAMETER(status,                STATUS,                 T_INT))          /* HTTP response status          */
+EVAL1(EXPAND_CLIENT_RESPONSE_PARAMETER(content_length,        CONTENT_LENGTH,         T_INT))          /* Content length set by headers */
+EVAL1(EXPAND_CLIENT_RESPONSE_PARAMETER(chunked_encoding,      CHUNKED_ENCODEING,      T_INT))          /* Chunked transfer encoding ?   */
+EVAL1(EXPAND_CLIENT_RESPONSE_PARAMETER(connection_close,      CONNECTION_CLOSE,       T_INT))          /* connection: close ?           */
+EVAL1(EXPAND_CLIENT_RESPONSE_PARAMETER(chunked_cur_size,      CHUNKED_CUR_SIZE,       T_LONG))
+EVAL1(EXPAND_CLIENT_RESPONSE_PARAMETER(chunked_exp_size,      CHUNKED_EXP_SIZE,       T_LONG))         /* expected chunked size         */
+EVAL1(EXPAND_CLIENT_RESPONSE_PARAMETER(chunk_processed_end,   CHUNK_PROCESSED_END,    T_CHAR_STAR))    /* Position to mark last chunk   */
+EVAL1(EXPAND_CLIENT_RESPONSE_PARAMETER(headers_end,           HEADERS_END,            T_CHAR_STAR))    /* Headers end (\r\n\r\n)        */
+
+/* Payload: body response: reference to 'data' */
+EVAL1(EXPAND_CLIENT_RESPONSE_PARAMETER(payload,               PAYLOAD,                T_CHAR_STAR))
+EVAL1(EXPAND_CLIENT_RESPONSE_PARAMETER(payload_size,          PAYLOAD_SIZE,           T_SIZE_T))
+
+/* Buffer to store server response */
+EVAL1(EXPAND_CLIENT_RESPONSE_PARAMETER(data,                  DATA,                   T_CHAR_STAR))
+EVAL1(EXPAND_CLIENT_RESPONSE_PARAMETER(data_len,              DATA_LEN,               T_SIZE_T))
+EVAL1(EXPAND_CLIENT_RESPONSE_PARAMETER(data_size,             DATA_SIZE,              T_SIZE_T))
+EVAL1(EXPAND_CLIENT_RESPONSE_PARAMETER(data_size_max,         DATA_SIZE_MAX,          T_SIZE_T))
+
+#undef CONVERT_T_INT
+#undef CONVERT_T_SIZE
+#undef CONVERT_T_LONG
+#undef CONVERT_T_CHAR_STAR
+
+#undef EVAL1

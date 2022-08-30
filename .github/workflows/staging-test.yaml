@@ -1,0 +1,61 @@
+---
+name: Test staging
+# The intention is this workflow is triggered either manually or
+# after build has completed.
+on:
+  workflow_run:
+    workflows: ['Deploy to staging']
+    types:
+      - completed
+  workflow_dispatch:
+
+concurrency: integration-test
+
+jobs:
+  staging-test-images:
+    name: Container images staging tests
+    # Workflow run always triggers on completion regardless of status
+    # This prevents us from running if build fails.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    uses: ./.github/workflows/call-test-images.yaml
+    with:
+      registry: ghcr.io
+      username: ${{ github.actor }}
+      image: ${{ github.repository }}/staging
+      image-tag: latest
+      environment: staging
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+      cosign_key: ${{ secrets.COSIGN_PUBLIC_KEY }}
+
+  # Called workflows cannot be nested
+  staging-test-images-integration:
+    name: run integration tests on GCP
+    # Wait for other tests to succeed
+    needs: staging-test-images
+    uses: ./.github/workflows/call-run-integration-test.yaml
+    with:
+      image_name: ghcr.io/${{ github.repository }}/staging
+      image_tag: latest
+    secrets:
+      opensearch_aws_access_id: ${{ secrets.OPENSEARCH_AWS_ACCESS_ID }}
+      opensearch_aws_secret_key: ${{ secrets.OPENSEARCH_AWS_SECRET_KEY }}
+      opensearch_admin_password: ${{ secrets.OPENSEARCH_ADMIN_PASSWORD }}
+      terraform_api_token: ${{ secrets.TF_API_TOKEN }}
+      azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+      azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      gcp-service-account-key: ${{ secrets.GCP_SA_KEY }}
+
+  staging-test-packages:
+    name: Binary packages staging test
+    # Workflow run always triggers on completion regardless of status
+    # This prevents us from running if build fails.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    uses: ./.github/workflows/call-test-packages.yaml
+    with:
+      environment: staging
+    secrets:
+      bucket: ${{ secrets.AWS_S3_BUCKET_STAGING }}
+      token: ${{ secrets.GITHUB_TOKEN }}

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -258,6 +257,12 @@ int flb_gzip_uncompress(void *in_data, size_t in_len,
     /* Get decompressed length */
     dlen = read_le32(&p[in_len - 4]);
 
+    /* Limit decompressed length to 100MB */
+    if (dlen > 100000000) {
+        flb_error("[gzip] maximum decompression size is 100MB");
+        return -1;
+    }
+
     /* Get CRC32 checksum of original data */
     crc = read_le32(&p[in_len - 8]);
 
@@ -277,6 +282,7 @@ int flb_gzip_uncompress(void *in_data, size_t in_len,
 
     /* Ensure size is above 0 */
     if (((p + in_len) - start - 8) <= 0) {
+        flb_free(out_buf);
         return -1;
     }
 

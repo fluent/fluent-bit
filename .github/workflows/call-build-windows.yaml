@@ -1,0 +1,144 @@
+---
+name: Reusable workflow to build Windows packages optionally into S3 bucket
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The version of Fluent Bit to create.
+        type: string
+        required: true
+      ref:
+        description: The commit, tag or branch of Fluent Bit to checkout for building that creates the version above.
+        type: string
+        required: true
+      environment:
+        description: The Github environment to run this workflow on.
+        type: string
+        required: false
+      unstable:
+        description: Optionally add metadata to build to indicate an unstable build, set to the contents you want to add.
+        type: string
+        required: false
+        default: ''
+    secrets:
+      token:
+        description: The Github token or similar to authenticate with.
+        required: true
+      bucket:
+        description: The name of the S3 (US-East) bucket to push packages into.
+        required: false
+      access_key_id:
+        description: The S3 access key id for the bucket.
+        required: false
+      secret_access_key:
+        description: The S3 secret access key for the bucket.
+        required: false
+
+jobs:
+  call-build-windows-package:
+    runs-on: windows-latest
+    environment: ${{ inputs.environment }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - name: "Windows 32bit"
+            arch: x86
+            openssl_dir: C:\Program Files (x86)\OpenSSL-Win32
+            chocolatey_opt: --x86
+          - name: "Windows 64bit"
+            arch: x64
+            openssl_dir: C:\Program Files\OpenSSL-Win64
+            chocolatey_opt: --x64
+    permissions:
+      contents: read
+    # Default environment variables can be overridden below. To prevent library pollution - without this other random libraries may be found on the path leading to failures.
+    env:
+      PATH: C:\ProgramData\Chocolatey\bin;c:/Program Files/Git/cmd;c:/Windows/system32;C:/Windows/System32/WindowsPowerShell/v1.0;$ENV:WIX/bin;C:/Program Files/CMake/bin
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Get dependencies
+        run: |
+          Invoke-WebRequest -O winflexbison.zip $env:WINFLEXBISON
+          Expand-Archive winflexbison.zip -Destination C:\WinFlexBison
+          Copy-Item -Path C:\WinFlexBison/win_bison.exe C:\WinFlexBison/bison.exe
+          Copy-Item -Path C:\WinFlexBison/win_flex.exe C:\WinFlexBison/flex.exe
+          echo "C:\WinFlexBison" | Out-File -FilePath $env:GITHUB_PATH -Append
+        env:
+          WINFLEXBISON: https://github.com/lexxmark/winflexbison/releases/download/v2.5.22/win_flex_bison-2.5.22.zip
+        shell: pwsh
+
+      - name: Get dependencies w/ chocolatey
+        uses: crazy-max/ghaction-chocolatey@v2
+        with:
+          args: install ${{ matrix.config.chocolatey_opt }} openssl -y
+
+      - name: Set up Visual Studio shell
+        uses: egor-tensin/vs-shell@v2
+        with:
+          arch: ${{ matrix.config.arch }}
+
+      - name: Build Fluent Bit packages
+        run: |
+          cmake -G "NMake Makefiles" -DFLB_NIGHTLY_BUILD=${{ inputs.unstable }} -DOPENSSL_ROOT_DIR='${{ matrix.config.openssl_dir }}' ../
+          cmake --build .
+          cpack
+        working-directory: build
+
+      - name: Upload build packages
+        uses: actions/upload-artifact@v3
+        with:
+          name: windows-packages
+          path: |
+            build/*-bit-*.exe
+            build/*-bit-*.msi
+            build/*-bit-*.zip
+          if-no-files-found: error
+
+  call-build-windows-s3-upload:
+    name: Handle upload to S3
+    # The environment must be used that has access to any secrets required, even if passed in.
+    # If passed in but not in the environment here you end up with an empty secret.
+    environment: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    needs:
+      - call-build-windows-package
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          # Need latest for checksum packaging script
+          ref: master
+
+      - name: Download all artefacts
+        continue-on-error: true
+        uses: actions/download-artifact@v3
+        with:
+          name: windows-packages
+          path: artifacts/
+
+      - name: Set up Windows checksums
+        run: |
+          packaging/windows-checksums.sh
+          ls -lR artifacts/
+        shell: bash
+        env:
+          SOURCE_DIR: artifacts
+
+      - name: Push Windows packages to S3
+        # Only upload for staging
+        if: inputs.environment == 'staging'
+        uses: ./.github/actions/sync-to-bucket
+        with:
+          bucket: ${{ secrets.bucket }}
+          access_key_id: ${{ secrets.access_key_id }}
+          secret_access_key: ${{ secrets.secret_access_key }}
+          bucket-directory: "${{ inputs.version }}/windows/"
+          source-directory: "artifacts/"

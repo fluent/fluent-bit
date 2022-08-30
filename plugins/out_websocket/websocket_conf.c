@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -54,7 +53,7 @@ struct flb_out_ws *flb_ws_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
 
-    //flb_output_net_default("127.0.0.1", 8080, ins);
+    flb_output_net_default("127.0.0.1", 80, ins);
 
     /* Check if SSL/TLS is enabled */
 #ifdef FLB_HAVE_TLS
@@ -68,7 +67,7 @@ struct flb_out_ws *flb_ws_conf_create(struct flb_output_instance *ins,
     io_flags = FLB_IO_TCP;
 #endif
 
-    upstream = flb_upstream_create(config, ins->host.name, ins->host.port, io_flags, (void *)&ins->tls);
+    upstream = flb_upstream_create(config, ins->host.name, ins->host.port, io_flags, ins->tls);
     if (!upstream) {
         flb_free(ctx);
         return NULL;
@@ -98,15 +97,6 @@ struct flb_out_ws *flb_ws_conf_create(struct flb_output_instance *ins,
         else {
             ctx->json_date_format = ret;
         }
-    }
-
-    /* Date key for JSON output */
-    tmp = flb_output_get_property("json_date_key", ins);
-    if (tmp) {
-        ctx->json_date_key = flb_sds_create(tmp);
-    }
-    else {
-        ctx->json_date_key = flb_sds_create("date");
     }
 
     if (ins->host.uri) {
@@ -164,9 +154,6 @@ void flb_ws_conf_destroy(struct flb_out_ws *ctx)
         flb_upstream_destroy(ctx->u);
     }
 
-    if (ctx->json_date_key) {
-        flb_sds_destroy(ctx->json_date_key);
-    }
     flb_free(ctx->uri);
     flb_free(ctx);
 }

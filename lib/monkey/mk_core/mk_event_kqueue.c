@@ -129,6 +129,9 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
     }
 
     event->mask = events;
+    event->priority = MK_EVENT_PRIORITY_DEFAULT;
+    event->_priority_head.next = NULL;
+    event->_priority_head.prev = NULL;
     return 0;
 }
 
@@ -136,6 +139,10 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
 {
     int ret;
     struct kevent ke = {0, 0, 0, 0, 0, 0};
+
+    if ((event->status & MK_EVENT_REGISTERED) == 0) {
+        return 0;
+    }
 
     if (event->mask & MK_EVENT_READ) {
         EV_SET(&ke, event->fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
@@ -154,6 +161,14 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
             return ret;
         }
     }
+
+    /* Remove from priority queue */
+    if (event->_priority_head.next != NULL &&
+        event->_priority_head.prev != NULL) {
+        mk_list_del(&event->_priority_head);
+    }
+
+    MK_EVENT_NEW(event);
 
     return 0;
 }
@@ -178,15 +193,22 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
 
     event = data;
     event->fd = fd;
+    event->status = MK_EVENT_REGISTERED;
     event->type = MK_EVENT_NOTIFICATION;
     event->mask = MK_EVENT_EMPTY;
 
-#ifdef NOTE_SECONDS
+    event->priority = MK_EVENT_PRIORITY_DEFAULT;
+    event->_priority_head.next = NULL;
+    event->_priority_head.prev = NULL;
+
+#if defined(NOTE_SECONDS) && !defined(__APPLE__)
     /* FreeBSD or LINUX_KQUEUE defined */
     /* TODO : high resolution interval support. */
     EV_SET(&ke, fd, EVFILT_TIMER, EV_ADD, NOTE_SECONDS, sec, event);
 #else
     /* Other BSD have no NOTE_SECONDS & specify milliseconds */
+    /* Also, on macOS, NOTE_SECONDS has severe side effect that cause
+     * performance degradation. */
     EV_SET(&ke, fd, EVFILT_TIMER, EV_ADD, 0, (sec * 1000) + (nsec / 1000000) , event);
 #endif
     ret = kevent(ctx->kfd, &ke, 1, NULL, 0, NULL);
@@ -218,6 +240,15 @@ static inline int _mk_event_timeout_destroy(struct mk_event_ctx *ctx, void *data
         mk_libc_error("kevent");
         return ret;
     }
+
+    /* Remove from priority queue */
+    if (event->_priority_head.next != NULL &&
+        event->_priority_head.prev != NULL) {
+        mk_list_del(&event->_priority_head);
+    }
+
+    close(event->fd);
+    MK_EVENT_NEW(event);
 
     return 0;
 }
@@ -254,11 +285,40 @@ static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
     return 0;
 }
 
-static inline int _mk_event_wait(struct mk_event_loop *loop)
+static inline int _mk_event_inject(struct mk_event_loop *loop,
+                                   struct mk_event *event,
+                                   int mask,
+                                   int prevent_duplication)
+{
+    size_t               index;
+    struct mk_event_ctx *ctx;
+
+    ctx = loop->data;
+
+    if (prevent_duplication) {
+        for (index = 0 ; index < loop->n_events ; index++) {
+            if (ctx->events[index].udata == event) {
+                return 0;
+            }
+        }
+    }
+
+    event->mask = mask;
+
+    ctx->events[loop->n_events].udata = event;
+
+    loop->n_events++;
+
+    return 0;
+}
+
+static inline int _mk_event_wait_2(struct mk_event_loop *loop, int timeout)
 {
     struct mk_event_ctx *ctx = loop->data;
 
-    loop->n_events = kevent(ctx->kfd, NULL, 0, ctx->events, ctx->queue_size, NULL);
+    struct timespec timev = {timeout / 1000, (timeout % 1000) * 1000000};
+    loop->n_events = kevent(ctx->kfd, NULL, 0, ctx->events, ctx->queue_size,
+                            (timeout != -1) ? &timev : NULL);
     return loop->n_events;
 }
 

@@ -10,12 +10,19 @@
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
+    /* Limit size to 32KB */
+    if (size > 32768) {
+        return 0;
+    }
+
     char *outbuf = NULL;
     size_t outsize;
     int type;
     int len;
     size_t off = 0;
     msgpack_object map;
+
+    flb_malloc_p = 0;
 
     if (size < 100) {
        return 0;
@@ -57,6 +64,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     if (!str) {
         flb_ra_destroy(ra);
         flb_sds_destroy(ra_str);
+        msgpack_unpacked_destroy(&result);
 
         /* General cleanup */
         flb_free(null_terminated);
@@ -72,6 +80,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     flb_sds_destroy(str);
     flb_ra_destroy(ra);
     flb_sds_destroy(ra_str);
+    msgpack_unpacked_destroy(&result);
 
     /* General cleanup */
     flb_free(null_terminated);

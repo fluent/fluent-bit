@@ -33,11 +33,11 @@ void cio_log_print(void *ctx, int level, const char *file, int line,
     va_list args;
     struct cio_ctx *cio = ctx;
 
-    if (!cio->log_cb) {
+    if (!cio->options.log_cb) {
        return;
     }
 
-    if (level > cio->log_level) {
+    if (level > cio->options.log_level) {
         return;
     }
 
@@ -49,7 +49,7 @@ void cio_log_print(void *ctx, int level, const char *file, int line,
     }
     va_end(args);
 
-    cio->log_cb(ctx, level, file, line, buf);
+    cio->options.log_cb(ctx, level, file, line, buf);
 }
 
 int cio_errno_print(int errnum, const char *file, int line)

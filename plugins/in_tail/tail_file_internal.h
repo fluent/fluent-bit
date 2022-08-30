@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,6 +25,10 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
 
+#ifdef FLB_HAVE_PARSER
+#include <fluent-bit/multiline/flb_ml.h>
+#endif
+
 #include "tail.h"
 #include "tail_config.h"
 
@@ -37,12 +40,15 @@ struct flb_tail_file {
     int64_t size;
     int64_t offset;
     int64_t last_line;
+    uint64_t  dev_id;
     uint64_t  inode;
     uint64_t  link_inode;
     int   is_link;
     char *name;                 /* target file name given by scan routine */
     char *real_name;            /* real file name in the file system */
+    char *orig_name;            /* original file name (before rotation) */
     size_t name_len;
+    size_t orig_name_len;
     time_t rotated;
     int64_t pending_bytes;
 
@@ -50,28 +56,42 @@ struct flb_tail_file {
     int tag_len;
     char *tag_buf;
 
-    /* multiline status */
+    /* OLD multiline */
     time_t mult_flush_timeout;  /* time when multiline started           */
     int mult_firstline;         /* bool: mult firstline found ?          */
     int mult_firstline_append;  /* bool: mult firstline appendable ?     */
     int mult_skipping;          /* skipping because ignode_older than ?  */
     int mult_keys;              /* total number of buffered keys         */
-    msgpack_sbuffer mult_sbuf;  /* temporary msgpack buffer               */
-    msgpack_packer mult_pck;    /* temporary msgpack packer               */
+
+
+    int mult_records;           /* multiline records counter mult_sbuf   */
+    msgpack_sbuffer mult_sbuf;  /* temporary msgpack buffer              */
+    msgpack_packer mult_pck;    /* temporary msgpack packer              */
     struct flb_time mult_time;  /* multiline time parsed from first line */
 
-    /* docker mode */
+    /* OLD docker mode */
     time_t dmode_flush_timeout; /* time when docker mode started         */
     flb_sds_t dmode_buf;        /* buffer for docker mode                */
     flb_sds_t dmode_lastline;   /* last incomplete line                  */
     bool dmode_complete;        /* buffer contains completed log         */
     bool dmode_firstline;       /* dmode mult firstline found ?          */
 
-    /* buffering */
+    /* multiline engine: file stream_id and local buffers */
+    uint64_t ml_stream_id;
+    msgpack_sbuffer ml_sbuf;  /* temporary msgpack buffer              */
+    msgpack_packer ml_pck;    /* temporary msgpack packer              */
+
+    /* content parsing, positions and buffer */
     size_t parsed;
     size_t buf_len;
     size_t buf_size;
     char *buf_data;
+
+    /*
+     * This value represent the number of bytes procesed by process_content()
+     * in the last iteration.
+     */
+    size_t last_processed_bytes;
 
     /*
      * Long-lines handling: this flag is enabled when a previous line was
@@ -90,6 +110,9 @@ struct flb_tail_file {
 
     /* database reference */
     uint64_t db_id;
+
+    uint64_t hash_bits;
+    flb_sds_t hash_key;
 
     /* reference */
     int tail_mode;

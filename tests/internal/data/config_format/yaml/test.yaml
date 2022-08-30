@@ -1,0 +1,31 @@
+env:
+    flush_interval: 1
+    my_api_key: abcdefghijk
+
+#includes:
+    #- dummy_pipeline.yaml
+    #- opensearch_pipeline.yaml
+
+service:
+    flush_interval: ${flush_interval}
+    log_level: info
+
+#customs:
+#    calyptia:
+#        api_key: ${my_api_key}
+
+pipeline:
+    inputs:
+        tail:
+            path: ./test.log
+            parser: json
+            read_from_head: true
+
+    filters:
+        record_modifier:
+            match: "*"
+            record: powered_by calyptia
+
+    outputs:
+        stdout:
+            match: "*"

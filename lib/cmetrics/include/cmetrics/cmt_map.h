@@ -17,8 +17,8 @@
  *  limitations under the License.
  */
 
-#ifndef CMT_LABELS_H
-#define CMT_LABELS_H
+#ifndef CMT_MAP_H
+#define CMT_MAP_H
 
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_opts.h>
@@ -32,6 +32,7 @@ struct cmt_map_label {
 struct cmt_map {
     int type;                   /* Metric type */
     struct cmt_opts *opts;      /* Reference to parent 'opts' */
+    cmt_sds_t unit;             /* Metric unit */
 
     /* A map without label keys, uses direct access to the static metric ctx */
     int metric_static_set;      /* is the static metric set ? */
@@ -41,16 +42,20 @@ struct cmt_map {
     struct mk_list metrics;     /* List of metrics */
     int label_count;            /* Number of labels */
     struct mk_list label_keys;  /* Linked list of labels */
+    void *parent;
 };
 
 struct cmt_map *cmt_map_create(int type, struct cmt_opts *opts,
-                               int count, char **labels);
+                               int count, char **labels, void *parent);
 void cmt_map_destroy(struct cmt_map *map);
 
 struct cmt_metric *cmt_map_metric_get(struct cmt_opts *opts, struct cmt_map *map,
-                                      int labels_count, char **labels_val);
+                                      int labels_count, char **labels_val,
+                                      int write_op);
 int cmt_map_metric_get_val(struct cmt_opts *opts, struct cmt_map *map,
                            int labels_count, char **labels_val,
                            double *out_val);
+
+void destroy_label_list(struct mk_list *label_list);
 
 #endif

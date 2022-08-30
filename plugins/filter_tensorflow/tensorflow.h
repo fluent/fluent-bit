@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -29,7 +28,7 @@ struct flb_tensorflow {
     TfLiteType input_tensor_type;
     TfLiteType output_tensor_type;
 
-    // IO buffer
+    /* IO buffer */
     void* input;
     void* output;
     int input_size;
@@ -37,7 +36,7 @@ struct flb_tensorflow {
     int output_size;
     int output_byte_size;
 
-    // feature scaling/normalization
+    /* feature scaling/normalization */
     bool include_input_fields;
     float* normalization_value;
 

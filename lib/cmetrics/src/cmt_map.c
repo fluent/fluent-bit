@@ -23,8 +23,10 @@
 #include <cmetrics/cmt_log.h>
 #include <cmetrics/cmt_hash.h>
 #include <cmetrics/cmt_metric.h>
+#include <cmetrics/cmt_compat.h>
 
-struct cmt_map *cmt_map_create(int type, struct cmt_opts *opts, int count, char **labels)
+struct cmt_map *cmt_map_create(int type, struct cmt_opts *opts, int count, char **labels,
+                               void *parent)
 {
     int i;
     char *name;
@@ -42,6 +44,7 @@ struct cmt_map *cmt_map_create(int type, struct cmt_opts *opts, int count, char 
     }
     map->type = type;
     map->opts = opts;
+    map->parent = parent;
     map->label_count = count;
     mk_list_init(&map->label_keys);
     mk_list_init(&map->metrics);
@@ -102,7 +105,7 @@ static struct cmt_metric *map_metric_create(uint64_t hash,
     struct cmt_metric *metric;
     struct cmt_map_label *label;
 
-    metric = malloc(sizeof(struct cmt_metric));
+    metric = calloc(1, sizeof(struct cmt_metric));
     if (!metric) {
         cmt_errno();
         return NULL;
@@ -148,19 +151,26 @@ static void map_metric_destroy(struct cmt_metric *metric)
         free(label);
     }
 
+    if (metric->hist_buckets) {
+        free(metric->hist_buckets);
+    }
+    if (metric->sum_quantiles) {
+        free(metric->sum_quantiles);
+    }
+
     mk_list_del(&metric->_head);
     free(metric);
 }
 
 struct cmt_metric *cmt_map_metric_get(struct cmt_opts *opts, struct cmt_map *map,
-                                      int labels_count, char **labels_val)
+                                      int labels_count, char **labels_val,
+                                      int write_op)
 {
     int i;
     int len;
-    int found = 0;
     char *ptr;
     uint64_t hash;
-    XXH64_state_t state;
+    XXH3_state_t state;
     struct cmt_metric *metric = NULL;
 
     /* Enforce zero or exact labels */
@@ -168,29 +178,56 @@ struct cmt_metric *cmt_map_metric_get(struct cmt_opts *opts, struct cmt_map *map
         return NULL;
     }
 
-    if (labels_count == 0 && labels_val == NULL) {
-        hash = 0;
-        metric = &map->metric;
-        map->metric_static_set = 1;
-    }
-    else {
-        XXH64_reset(&state, 0);
-        XXH64_update(&state, opts->fqname, cmt_sds_len(opts->fqname));
-        for (i = 0; i < labels_count; i++) {
-            ptr = labels_val[i];
-            if (!ptr) {
-                return NULL;
+    /*
+     * If the caller wants the no-labeled metric (metric_static_set) make sure
+     * it was already pre-defined.
+     */
+    if (labels_count == 0) {
+        /*
+         * if an upcoming 'write operation' will be performed for a default
+         * static metric, just initialize it and return it.
+         */
+        if (map->metric_static_set) {
+            metric = &map->metric;
+        }
+        else if (write_op) {
+            metric = &map->metric;
+            if (!map->metric_static_set) {
+                map->metric_static_set = 1;
             }
-            len = strlen(ptr);
-            XXH64_update(&state, ptr, len);
         }
 
-        hash = XXH64_digest(&state);
-        metric = metric_hash_lookup(map, hash);
+        /* return the proper context or NULL */
+        return metric;
     }
+
+    /* Lookup the metric */
+    XXH3_64bits_reset(&state);
+    XXH3_64bits_update(&state, opts->fqname, cmt_sds_len(opts->fqname));
+    for (i = 0; i < labels_count; i++) {
+        ptr = labels_val[i];
+        if (!ptr) {
+            XXH3_64bits_update(&state, "_NULL_", 6);
+        }
+        else {
+            len = strlen(ptr);
+            XXH3_64bits_update(&state, ptr, len);
+        }
+    }
+
+    hash = XXH3_64bits_digest(&state);
+    metric = metric_hash_lookup(map, hash);
 
     if (metric) {
         return metric;
+    }
+
+    /*
+     * If the metric was not found and the caller will not write a value, just
+     * return NULL.
+     */
+    if (!write_op) {
+        return NULL;
     }
 
     /* If the metric has not been found, just create it */
@@ -202,7 +239,6 @@ struct cmt_metric *cmt_map_metric_get(struct cmt_opts *opts, struct cmt_map *map
     return metric;
 }
 
-
 int cmt_map_metric_get_val(struct cmt_opts *opts, struct cmt_map *map,
                            int labels_count, char **labels_val,
                            double *out_val)
@@ -210,7 +246,7 @@ int cmt_map_metric_get_val(struct cmt_opts *opts, struct cmt_map *map,
     double val = 0;
     struct cmt_metric *metric;
 
-    metric = cmt_map_metric_get(opts, map, labels_count, labels_val);
+    metric = cmt_map_metric_get(opts, map, labels_count, labels_val, CMT_FALSE);
     if (!metric) {
         return -1;
     }
@@ -219,7 +255,6 @@ int cmt_map_metric_get_val(struct cmt_opts *opts, struct cmt_map *map,
     *out_val = val;
     return 0;
 }
-
 
 void cmt_map_destroy(struct cmt_map *map)
 {
@@ -240,5 +275,46 @@ void cmt_map_destroy(struct cmt_map *map)
         map_metric_destroy(metric);
     }
 
+    /* histogram and quantile allocation for static metric */
+    if (map->metric_static_set) {
+        metric = &map->metric;
+
+        if (map->type == CMT_HISTOGRAM) {
+            if (metric->hist_buckets) {
+                free(metric->hist_buckets);
+            }
+        }
+        else if (map->type == CMT_SUMMARY) {
+            if (metric->sum_quantiles) {
+                free(metric->sum_quantiles);
+            }
+        }
+    }
+
     free(map);
 }
+
+/* I don't know if we should leave this or promote the label type so it has its own
+ * header and source files with their own constructor / destructor and an agnostic name.
+ * That last bit comes from the fact that we are using the cmt_map_label type both in the
+ * dimension definition list held by the map structure and the dimension value list held
+ * by the metric structure.
+ */
+
+void destroy_label_list(struct mk_list *label_list)
+{
+    struct mk_list       *tmp;
+    struct mk_list       *head;
+    struct cmt_map_label *label;
+
+    mk_list_foreach_safe(head, tmp, label_list) {
+        label = mk_list_entry(head, struct cmt_map_label, _head);
+
+        cmt_sds_destroy(label->name);
+
+        mk_list_del(&label->_head);
+
+        free(label);
+    }
+}
+

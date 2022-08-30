@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -39,6 +38,10 @@ void flb_ra_dump(struct flb_record_accessor *ra);
 flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
                            char *tag, int tag_len,
                            msgpack_object map, struct flb_regex_search *result);
+flb_sds_t flb_ra_translate_check(struct flb_record_accessor *ra,
+                                 char *tag, int tag_len,
+                                 msgpack_object map, struct flb_regex_search *result,
+                                 int check);
 int flb_ra_is_static(struct flb_record_accessor *ra);
 int flb_ra_strcmp(struct flb_record_accessor *ra, msgpack_object map,
                   char *str, int len);
@@ -52,5 +55,9 @@ int flb_ra_get_kv_pair(struct flb_record_accessor *ra, msgpack_object map,
 
 struct flb_ra_value *flb_ra_get_value_object(struct flb_record_accessor *ra,
                                              msgpack_object map);
-
+int flb_ra_append_kv_pair(struct flb_record_accessor *ra, msgpack_object map,
+                          void **out_map, size_t *out_size, msgpack_object *in_val);
+int flb_ra_update_kv_pair(struct flb_record_accessor *ra, msgpack_object map,
+                          void **out_map, size_t *out_size,
+                          msgpack_object *in_key, msgpack_object *in_val);
 #endif

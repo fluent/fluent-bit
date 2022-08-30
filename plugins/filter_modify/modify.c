@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -28,6 +27,9 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_regex.h>
+#include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_ra_key.h>
 #include <msgpack.h>
 
 #include "modify.h"
@@ -37,7 +39,7 @@
 
 static void condition_free(struct modify_condition *condition)
 {
-    flb_free(condition->a);
+    flb_sds_destroy(condition->a);
     flb_free(condition->b);
     flb_free(condition->raw_k);
     flb_free(condition->raw_v);
@@ -47,6 +49,10 @@ static void condition_free(struct modify_condition *condition)
     }
     if (condition->b_is_regex) {
         flb_regex_destroy(condition->b_regex);
+    }
+    if (condition->ra_a) {
+        flb_ra_destroy(condition->ra_a);
+        condition->ra_a = NULL;
     }
     flb_free(condition);
 }
@@ -114,6 +120,12 @@ static int setup(struct filter_modify_ctx *ctx,
     //   - Malloc Rule
     //   - Switch list size
 
+    if (flb_filter_config_map_set(f_ins, ctx) < 0) {
+        flb_errno();
+        flb_plg_error(f_ins, "configuration error");
+        return -1;
+    }
+
     mk_list_foreach(head, &f_ins->properties) {
         kv = mk_list_entry(head, struct flb_kv, _head);
 
@@ -147,8 +159,27 @@ static int setup(struct filter_modify_ctx *ctx,
 
             condition->a_is_regex = false;
             condition->b_is_regex = false;
+            condition->ra_a = NULL;
             condition->raw_k = flb_strndup(kv->key, flb_sds_len(kv->key));
+            if (condition->raw_k == NULL) {
+                flb_errno();
+                flb_plg_error(ctx->ins, "Unable to allocate memory for "
+                              "condition->raw_k");
+                teardown(ctx);
+                condition_free(condition);
+                flb_utils_split_free(split);
+                return -1;
+            }
             condition->raw_v = flb_strndup(kv->val, flb_sds_len(kv->val));
+            if (condition->raw_v == NULL) {
+                flb_errno();
+                flb_plg_error(ctx->ins, "Unable to allocate memory for "
+                              "condition->raw_v");
+                teardown(ctx);
+                condition_free(condition);
+                flb_utils_split_free(split);
+                return -1;
+            }
 
             sentry =
                 mk_list_entry_first(split, struct flb_split_entry, _head);
@@ -210,13 +241,22 @@ static int setup(struct filter_modify_ctx *ctx,
             sentry =
                 mk_list_entry_next(&sentry->_head, struct flb_split_entry,
                                    _head, split);
-            condition->a = flb_strndup(sentry->value, sentry->len);
+            condition->a = flb_sds_create_len(sentry->value, sentry->len);
             condition->a_len = sentry->len;
-
+            condition->ra_a = flb_ra_create(condition->a, FLB_FALSE);
             if (list_size == 3) {
                 sentry =
                     mk_list_entry_last(split, struct flb_split_entry, _head);
                 condition->b = flb_strndup(sentry->value, sentry->len);
+                if (condition->b == NULL) {
+                    flb_errno();
+                    flb_plg_error(ctx->ins, "Unable to allocate memory for "
+                                  "condition->b");
+                    teardown(ctx);
+                    condition_free(condition);
+                    flb_utils_split_free(split);
+                    return -1;
+                }
                 condition->b_len = sentry->len;
             }
             else {
@@ -283,15 +323,53 @@ static int setup(struct filter_modify_ctx *ctx,
             rule->key_is_regex = false;
             rule->val_is_regex = false;
             rule->raw_k = flb_strndup(kv->key, flb_sds_len(kv->key));
+            if (rule->raw_k == NULL) {
+                flb_errno();
+                flb_plg_error(ctx->ins, "Unable to allocate memory for rule->raw_k");
+                teardown(ctx);
+                flb_free(rule);
+                flb_utils_split_free(split);
+                return -1;
+            }
             rule->raw_v = flb_strndup(kv->val, flb_sds_len(kv->val));
+            if (rule->raw_v == NULL) {
+                flb_errno();
+                flb_plg_error(ctx->ins, "Unable to allocate memory for rule->raw_v");
+                teardown(ctx);
+                flb_free(rule->raw_k);
+                flb_free(rule);
+                flb_utils_split_free(split);
+                return -1;
+            }
 
             sentry =
                 mk_list_entry_first(split, struct flb_split_entry, _head);
             rule->key = flb_strndup(sentry->value, sentry->len);
+            if (rule->key == NULL) {
+                flb_errno();
+                flb_plg_error(ctx->ins, "Unable to allocate memory for rule->key");
+                teardown(ctx);
+                flb_free(rule->raw_v);
+                flb_free(rule->raw_k);
+                flb_free(rule);
+                flb_utils_split_free(split);
+                return -1;
+            }
             rule->key_len = sentry->len;
 
             sentry = mk_list_entry_last(split, struct flb_split_entry, _head);
             rule->val = flb_strndup(sentry->value, sentry->len);
+            if (rule->val == NULL) {
+                flb_errno();
+                flb_plg_error(ctx->ins, "Unable to allocate memory for rule->val");
+                teardown(ctx);
+                flb_free(rule->key);
+                flb_free(rule->raw_v);
+                flb_free(rule->raw_k);
+                flb_free(rule);
+                flb_utils_split_free(split);
+                return -1;
+            }
             rule->val_len = sentry->len;
 
             flb_utils_split_free(split);
@@ -608,8 +686,15 @@ static inline bool evaluate_condition_KEY_EXISTS(msgpack_object * map,
                                                  struct modify_condition
                                                  *condition)
 {
-    return (map_count_keys_matching_str(map, condition->a, condition->a_len) >
-            0);
+    msgpack_object *skey = NULL;
+    msgpack_object *okey = NULL;
+    msgpack_object *oval = NULL;
+
+    flb_ra_get_kv_pair(condition->ra_a, *map, &skey, &okey, &oval);
+    if (skey == NULL || okey == NULL || oval == NULL) {
+        return false;
+    }
+    return true;
 }
 
 static inline bool evaluate_condition_KEY_DOES_NOT_EXIST(msgpack_object * map,
@@ -641,22 +726,21 @@ static inline bool evaluate_condition_KEY_VALUE_EQUALS(struct filter_modify_ctx 
                                                        modify_condition
                                                        *condition)
 {
-    int i;
-    bool match = false;
-    msgpack_object_kv *kv;
+    msgpack_object *skey = NULL;
+    msgpack_object *okey = NULL;
+    msgpack_object *oval = NULL;
+    bool ret = false;
 
-    for (i = 0; i < map->via.map.size; i++) {
-        kv = &map->via.map.ptr[i];
-        if (kv_key_matches_str(kv, condition->a, condition->a_len)) {
-            if (kv_val_matches_str(kv, condition->b, condition->b_len)) {
-                flb_plg_debug(ctx->ins, "Match for condition KEY_VALUE_EQUALS %s",
-                              condition->b);
-                match = true;
-                break;
-            }
-        }
+    flb_ra_get_kv_pair(condition->ra_a, *map, &skey, &okey, &oval);
+    if (skey == NULL || okey == NULL || oval == NULL) {
+        return false;
     }
-    return match;
+    ret = helper_msgpack_object_matches_str(oval, condition->b, condition->b_len);
+    if (ret) {
+        flb_plg_debug(ctx->ins, "Match for condition KEY_VALUE_EQUALS %s",
+                      condition->b);
+    }
+    return ret;
 }
 
 static inline
@@ -667,6 +751,9 @@ bool evaluate_condition_KEY_VALUE_DOES_NOT_EQUAL(struct filter_modify_ctx *ctx,
                                                  modify_condition
                                                  *condition)
 {
+    if (!evaluate_condition_KEY_EXISTS(map, condition)) {
+        return false;
+    }
     return !evaluate_condition_KEY_VALUE_EQUALS(ctx, map, condition);
 }
 
@@ -676,22 +763,21 @@ static inline bool evaluate_condition_KEY_VALUE_MATCHES(struct filter_modify_ctx
                                                         modify_condition
                                                         *condition)
 {
-    int i;
-    bool match = false;
-    msgpack_object_kv *kv;
+    msgpack_object *skey = NULL;
+    msgpack_object *okey = NULL;
+    msgpack_object *oval = NULL;
+    bool ret = false;
 
-    for (i = 0; i < map->via.map.size; i++) {
-        kv = &map->via.map.ptr[i];
-        if (kv_key_matches_str(kv, condition->a, condition->a_len)) {
-            if (kv_val_matches_regex(kv, condition->b_regex)) {
-                flb_plg_debug(ctx->ins, "Match for condition KEY_VALUE_MATCHES "
-                              "%s", condition->b);
-                match = true;
-                break;
-            }
-        }
+    flb_ra_get_kv_pair(condition->ra_a, *map, &skey, &okey, &oval);
+    if (skey == NULL || okey == NULL || oval == NULL) {
+        return false;
     }
-    return match;
+    ret = helper_msgpack_object_matches_regex(oval, condition->b_regex);
+    if (ret) {
+        flb_plg_debug(ctx->ins, "Match for condition KEY_VALUE_MATCHES "
+                      "%s", condition->b);
+    }
+    return ret;
 }
 
 static inline
@@ -702,6 +788,9 @@ bool evaluate_condition_KEY_VALUE_DOES_NOT_MATCH(struct filter_modify_ctx *ctx,
                                                  modify_condition
                                                  *condition)
 {
+    if (!evaluate_condition_KEY_EXISTS(map, condition)) {
+        return false;
+    }
     return !evaluate_condition_KEY_VALUE_MATCHES(ctx, map, condition);
 }
 
@@ -1218,7 +1307,7 @@ static inline int apply_modifying_rules(msgpack_packer *packer,
         // * * Record array item 1/2
         msgpack_pack_object(packer, ts);
 
-        flb_plg_debug(ctx->ins, "Input map size %d elements, output map size "
+        flb_plg_trace(ctx->ins, "Input map size %d elements, output map size "
                       "%d elements", records_in, map.via.map.size);
 
         // * * Record array item 2/2
@@ -1264,11 +1353,13 @@ static int cb_modify_filter(const void *data, size_t bytes,
                             const char *tag, int tag_len,
                             void **out_buf, size_t * out_size,
                             struct flb_filter_instance *f_ins,
+                            struct flb_input_instance *i_ins,
                             void *context, struct flb_config *config)
 {
     msgpack_unpacked result;
     size_t off = 0;
     (void) f_ins;
+    (void) i_ins;
     (void) config;
 
     struct filter_modify_ctx *ctx = context;
@@ -1328,11 +1419,74 @@ static int cb_modify_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "Set", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Add a key/value pair with key KEY and value VALUE. "
+     "If KEY already exists, this field is overwritten."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Add", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Add a key/value pair with key KEY and value VALUE if KEY does not exist"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Remove", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Remove a key/value pair with key KEY if it exists"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Remove_wildcard", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Remove all key/value pairs with key matching wildcard KEY"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Remove_regex", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Remove all key/value pairs with key matching regexp KEY"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Rename", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Rename a key/value pair with key KEY to RENAMED_KEY "
+     "if KEY exists AND RENAMED_KEY does not exist"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Hard_Rename", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Rename a key/value pair with key KEY to RENAMED_KEY if KEY exists. "
+     "If RENAMED_KEY already exists, this field is overwritten"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Copy", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Copy a key/value pair with key KEY to COPIED_KEY "
+     "if KEY exists AND COPIED_KEY does not exist"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Hard_copy", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Copy a key/value pair with key KEY to COPIED_KEY if KEY exists. "
+     "If COPIED_KEY already exists, this field is overwritten"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Condition", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Set the condition to modify. Key_exists, Key_does_not_exist, A_key_matches, "
+     "No_key_matches, Key_value_equals, Key_value_does_not_equal, Key_value_matches, "
+     "Key_value_does_not_match, Matching_keys_have_matching_values "
+     "and Matching_keys_do_not_have_matching_values are supported."
+    },
+    {0}
+};
+
 struct flb_filter_plugin filter_modify_plugin = {
     .name = "modify",
     .description = "modify records by applying rules",
     .cb_init = cb_modify_init,
     .cb_filter = cb_modify_filter,
     .cb_exit = cb_modify_exit,
+    .config_map = config_map,
     .flags = 0
 };

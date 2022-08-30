@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,7 +25,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_filter.h>
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_filter_plugin.h>
@@ -41,78 +40,80 @@ static int configure(struct geoip2_ctx *ctx,
     struct mk_list *head = NULL;
     struct mk_list *split;
     int status;
-    struct geoip2_lookup_key *key;
     struct geoip2_record *record;
     struct flb_split_entry *sentry;
+    struct flb_config_map_val *record_key;
+    int ret;
 
     ctx->mmdb = flb_malloc(sizeof(MMDB_s));
     ctx->lookup_keys_num = 0;
     ctx->records_num = 0;
 
-    /* Iterate all filter properties */
-    mk_list_foreach(head, &f_ins->properties) {
-        kv = mk_list_entry(head, struct flb_kv, _head);
+    ret = flb_filter_config_map_set(f_ins, (void *)ctx);
+    if (ret == -1) {
+        flb_plg_error(f_ins, "unable to load configuration");
+        flb_free(ctx->mmdb);
+        return -1;
+    }
 
-        if (strcasecmp(kv->key, "database") == 0) {
-            status = MMDB_open(kv->val, MMDB_MODE_MMAP, ctx->mmdb);
-            if (status != MMDB_SUCCESS) {
-                flb_plg_error(ctx->ins, "Cannot open geoip2 database: %s: %s",
-                              kv->val, MMDB_strerror(status));
-                flb_free(ctx->mmdb);
-                return -1;
-            }
+    if (ctx->database) {
+        status = MMDB_open(ctx->database, MMDB_MODE_MMAP, ctx->mmdb);
+        if (status != MMDB_SUCCESS) {
+            flb_plg_error(f_ins, "Cannot open geoip2 database: %s: %s",
+                          ctx->database, MMDB_strerror(status));
+            flb_free(ctx->mmdb);
+            return -1;
         }
-        else if (strcasecmp(kv->key, "lookup_key") == 0) {
-            key = flb_malloc(sizeof(struct geoip2_lookup_key));
-            if (!key) {
-                flb_errno();
-                continue;
-            }
-            key->key = flb_strndup(kv->val, flb_sds_len(kv->val));
-            key->key_len = flb_sds_len(kv->val);
-            mk_list_add(&key->_head, &ctx->lookup_keys);
-            ctx->lookup_keys_num++;
+    } else {
+        flb_plg_error(f_ins, "no geoip2 database has been loaded");
+        flb_free(ctx->mmdb);
+        return -1;
+    }
+    
+    mk_list_foreach(head, ctx->lookup_keys) {
+        ctx->lookup_keys_num++;
+    }
+    
+    flb_config_map_foreach(head, record_key, ctx->record_keys) {
+        record = flb_malloc(sizeof(struct geoip2_record));
+        if (!record) {
+            flb_errno();
+            continue;
         }
-        else if (strcasecmp(kv->key, "record") == 0) {
-            record = flb_malloc(sizeof(struct geoip2_record));
-            if (!record) {
-                flb_errno();
-                continue;
-            }
-            split = flb_utils_split(kv->val, ' ', 2);
-            if (mk_list_size(split) != 3) {
-                flb_plg_error(ctx->ins, "invalid record parameter: '%s'", kv->val);
-                flb_plg_error(ctx->ins, "expects 'KEY LOOKUP_KEY VALUE'");
-                flb_free(record);
-                flb_utils_split_free(split);
-                continue;
-            }
-            /* Get first value (field) */
-            sentry = mk_list_entry_first(split, struct flb_split_entry, _head);
-            record->key = flb_strndup(sentry->value, sentry->len);
-            record->key_len = sentry->len;
-
-            sentry = mk_list_entry_next(&sentry->_head, struct flb_split_entry,
-                                        _head, split);
-            record->lookup_key = flb_strndup(sentry->value, sentry->len);
-            record->lookup_key_len = sentry->len;
-
-            sentry = mk_list_entry_last(split, struct flb_split_entry, _head);
-            record->val = flb_strndup(sentry->value, sentry->len);
-            record->val_len = sentry->len;
-
+        split = flb_utils_split(record_key->val.str, ' ', 2);
+        if (mk_list_size(split) != 3) {
+            flb_plg_error(f_ins, "invalid record parameter: '%s'", kv->val);
+            flb_plg_error(f_ins, "expects 'KEY LOOKUP_KEY VALUE'");
+            flb_free(record);
             flb_utils_split_free(split);
-            mk_list_add(&record->_head, &ctx->records);
-            ctx->records_num++;
+            continue;
         }
+
+        /* Get first value (field) */
+        sentry = mk_list_entry_first(split, struct flb_split_entry, _head);
+        record->key = flb_strndup(sentry->value, sentry->len);
+        record->key_len = sentry->len;
+
+        sentry = mk_list_entry_next(&sentry->_head, struct flb_split_entry,
+                                    _head, split);
+        record->lookup_key = flb_strndup(sentry->value, sentry->len);
+        record->lookup_key_len = sentry->len;
+
+        sentry = mk_list_entry_last(split, struct flb_split_entry, _head);
+        record->val = flb_strndup(sentry->value, sentry->len);
+        record->val_len = sentry->len;
+
+        flb_utils_split_free(split);
+        mk_list_add(&record->_head, &ctx->records);
+        ctx->records_num++;
     }
 
     if (ctx->lookup_keys_num <= 0) {
-        flb_plg_error(ctx->ins, "lookup_key is required at least one");
+        flb_plg_error(f_ins, "at least one lookup_key is required");
         return -1;
     }
     if (ctx->records_num <= 0) {
-        flb_plg_error(ctx->ins, "record is required at least one");
+        flb_plg_error(f_ins, "at least one record is required");
         return -1;
     }
     return 0;
@@ -122,15 +123,8 @@ static int delete_list(struct geoip2_ctx *ctx)
 {
     struct mk_list *tmp;
     struct mk_list *head;
-    struct geoip2_lookup_key *key;
     struct geoip2_record *record;
 
-    mk_list_foreach_safe(head, tmp, &ctx->lookup_keys) {
-        key = mk_list_entry(head, struct geoip2_lookup_key, _head);
-        flb_free(key->key);
-        mk_list_del(&key->_head);
-        flb_free(key);
-    }
     mk_list_foreach_safe(head, tmp, &ctx->records) {
         record = mk_list_entry(head, struct geoip2_record, _head);
         flb_free(record->lookup_key);
@@ -142,16 +136,20 @@ static int delete_list(struct geoip2_ctx *ctx)
     return 0;
 }
 
-static struct flb_hash *prepare_lookup_keys(msgpack_object *map,
-                                            struct geoip2_ctx *ctx)
+static struct flb_hash_table *prepare_lookup_keys(msgpack_object *map,
+                                                 struct geoip2_ctx *ctx)
 {
     msgpack_object_kv *kv;
     msgpack_object *key;
     msgpack_object *val;
     struct mk_list *head;
-    struct mk_list *tmp;
-    struct geoip2_lookup_key *lookup_key;
-    struct flb_hash *ht = flb_hash_create(FLB_HASH_EVICT_NONE, ctx->lookup_keys_num, -1);
+    struct flb_config_map_val *lookup_key;
+    struct flb_hash_table *ht;
+
+    ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, ctx->lookup_keys_num, -1);
+    if (!ht) {
+        return NULL;
+    }
 
     kv = map->via.map.ptr;
     for (int i = 0; i < map->via.map.size; i++) {
@@ -163,11 +161,12 @@ static struct flb_hash *prepare_lookup_keys(msgpack_object *map,
         if (val->type != MSGPACK_OBJECT_STR) {
             continue;
         }
-        mk_list_foreach_safe(head, tmp, &ctx->lookup_keys) {
-            lookup_key = mk_list_entry(head, struct geoip2_lookup_key, _head);
-            if (strncasecmp(key->via.str.ptr, lookup_key->key, lookup_key->key_len) == 0) {
-                flb_hash_add(ht, lookup_key->key, lookup_key->key_len,
-                             (void *) val->via.str.ptr, val->via.str.size);
+        
+        flb_config_map_foreach(head, lookup_key, ctx->lookup_keys) {
+            if (strncasecmp(key->via.str.ptr, lookup_key->val.str, 
+                flb_sds_len(lookup_key->val.str)) == 0) {
+                flb_hash_table_add(ht, lookup_key->val.str, flb_sds_len(lookup_key->val.str),
+                                   (void *) val->via.str.ptr, val->via.str.size);
             }
         }
     }
@@ -193,7 +192,7 @@ static MMDB_lookup_result_s mmdb_lookup(struct geoip2_ctx *ctx, const char *ip)
 }
 
 static void add_geoip_fields(msgpack_object *map,
-                             struct flb_hash *lookup_keys,
+                             struct flb_hash_table *lookup_keys,
                              struct geoip2_ctx *ctx,
                              msgpack_packer *packer)
 {
@@ -223,8 +222,8 @@ static void add_geoip_fields(msgpack_object *map,
         msgpack_pack_str(packer, record->key_len);
         msgpack_pack_str_body(packer, record->key, record->key_len);
 
-        ret = flb_hash_get(lookup_keys, record->lookup_key, record->lookup_key_len,
-                           (void *) &ip, &ip_size);
+        ret = flb_hash_table_get(lookup_keys, record->lookup_key, record->lookup_key_len,
+                                 (void *) &ip, &ip_size);
         if (ret == -1) {
             msgpack_pack_nil(packer);
             continue;
@@ -351,12 +350,11 @@ static int cb_geoip2_init(struct flb_filter_instance *f_ins,
 {
     struct geoip2_ctx *ctx = NULL;
     /* Create context */
-    ctx = flb_malloc(sizeof(struct geoip2_ctx));
+    ctx = flb_calloc(1, sizeof(struct geoip2_ctx));
     if (!ctx) {
         flb_errno();
         return -1;
     }
-    mk_list_init(&ctx->lookup_keys);
     mk_list_init(&ctx->records);
 
 
@@ -375,9 +373,11 @@ static int cb_geoip2_filter(const void *data, size_t bytes,
                             const char *tag, int tag_len,
                             void **out_buf, size_t *out_size,
                             struct flb_filter_instance *f_ins,
+                            struct flb_input_instance *i_ins,
                             void *context,
                             struct flb_config *config)
 {
+    (void) i_ins;
     struct geoip2_ctx *ctx = context;
     size_t off = 0;
     int map_num = 0;
@@ -387,7 +387,7 @@ static int cb_geoip2_filter(const void *data, size_t bytes,
     msgpack_unpacked unpacked;
     msgpack_object *obj;
     msgpack_object_kv *kv;
-    struct flb_hash *lookup_keys_hash;
+    struct flb_hash_table *lookup_keys_hash;
 
     /* Create temporal msgpack buffer */
     msgpack_sbuffer_init(&sbuffer);
@@ -421,7 +421,7 @@ static int cb_geoip2_filter(const void *data, size_t bytes,
 
         lookup_keys_hash = prepare_lookup_keys(obj, ctx);
         add_geoip_fields(obj, lookup_keys_hash, ctx, &packer);
-        flb_hash_destroy(lookup_keys_hash);
+        flb_hash_table_destroy(lookup_keys_hash);
     }
     msgpack_unpacked_destroy(&unpacked);
 
@@ -445,11 +445,32 @@ static int cb_geoip2_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "database", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct geoip2_ctx, database),
+     "Set the geoip2 database path"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "lookup_key", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct geoip2_ctx, lookup_keys),
+     "Add a lookup_key"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "record", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct geoip2_ctx, record_keys),
+     "Add a record to the output base on geoip2"
+    },
+    /* EOF */
+    {0}
+};
+
 struct flb_filter_plugin filter_geoip2_plugin = {
-    .name = "geoip2",
+    .name        = "geoip2",
     .description = "add geoip information to records",
-    .cb_init = cb_geoip2_init,
-    .cb_filter = cb_geoip2_filter,
-    .cb_exit = cb_geoip2_exit,
-    .flags = 0,
+    .cb_init     = cb_geoip2_init,
+    .cb_filter   = cb_geoip2_filter,
+    .cb_exit     = cb_geoip2_exit,
+    .config_map  = config_map,
+    .flags       = 0,
 };

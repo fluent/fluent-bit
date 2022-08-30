@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -178,13 +177,15 @@ int flb_unescape_string_utf8(const char *in_buf, int sz, char *out_buf)
                     esc_in = u8_read_escape_sequence(next, size, &ch) + 1;
                 }
                 else {
-                    ch = (uint32_t) *in_buf;
+                    /* because char is unsigned char by default on arm, so we need to do a explicit conversion */
+                    ch = (uint32_t) (signed char) *in_buf;
                     esc_in = 1;
                 }
             }
         }
         else {
-            ch = (uint32_t) *in_buf;
+            /* explicit convert char to signed char */
+            ch = (uint32_t) (signed char) *in_buf;
             esc_in = 1;
         }
 

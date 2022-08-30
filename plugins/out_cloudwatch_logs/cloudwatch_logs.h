@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -27,6 +26,9 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/flb_signv4.h>
+
+#include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/record_accessor/flb_ra_parser.h>
 
 /* buffers used for each flush */
 struct cw_flush {
@@ -53,16 +55,8 @@ struct cw_flush {
     char *event_buf;
     size_t event_buf_size;
 
-    /*
-     * According to the docs:
-     * PutLogEvents: 5 requests per second per log stream.
-     * Additional requests are throttled. This quota can't be changed.
-     * This plugin fast. A single flush might make more than 5 calls,
-     * Then fail, then retry, then be too fast again, on and on.
-     * I have seen this happen.
-     * So we throttle ourselves if more than 5 calls are made per flush
-     */
-    int put_events_calls;
+    /* current log stream that we are sending records too */
+    struct log_stream *current_stream;
 };
 
 struct cw_event {
@@ -75,6 +69,7 @@ struct cw_event {
 
 struct log_stream {
     flb_sds_t name;
+    flb_sds_t group;
     flb_sds_t sequence_token;
     /*
      * log streams in CloudWatch do not expire; but our internal representations
@@ -118,18 +113,26 @@ struct flb_cloudwatch {
     const char *role_arn;
     const char *log_key;
     const char *extra_user_agent;
+    const char *external_id;
     int custom_endpoint;
     /* Should the plugin create the log group */
     int create_group;
 
+    flb_sds_t group_name;
+    flb_sds_t stream_name;
+
+    /* Should requests to AWS services be retried */
+    int retry_requests;
+
     /* If set to a number greater than zero, and newly create log group's retention policy is set to this many days. */
     int log_retention_days;
 
-    /* has the log group successfully been created */
-    int group_created;
-
     /* must be freed on shutdown if custom_endpoint is not set */
     char *endpoint;
+
+    /* templates */
+    struct flb_record_accessor *ra_group;
+    struct flb_record_accessor *ra_stream;
 
     /* if we're writing to a static log stream, we'll use this */
     struct log_stream stream;

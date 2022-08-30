@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -31,7 +30,6 @@
 #include <fluent-bit/flb_parser.h>
 
 /* Types available */
-#define FLB_ML_COUNT     0    /* concatenate N consecutive records  */
 #define FLB_ML_REGEX     1    /* pattern is a regular expression    */
 #define FLB_ML_ENDSWITH  2    /* record key/content ends with 'abc' */
 #define FLB_ML_EQ        3    /* record key/content equaks 'abc'    */
@@ -42,14 +40,20 @@
 #define FLB_ML_RULE_STATE_END   2
 
 /* Payload types */
-#define FLB_ML_TYPE_TEXT        0   /* raw text */
-#define FLB_ML_TYPE_RECORD      1   /* Fluent Bit msgpack record */
-#define FLB_ML_TYPE_MAP         2   /* msgpack object/map (k/v pairs) */
+#define FLB_ML_TYPE_TEXT        0    /* raw text */
+#define FLB_ML_TYPE_RECORD      1    /* Fluent Bit msgpack record */
+#define FLB_ML_TYPE_MAP         2    /* msgpack object/map (k/v pairs) */
+
+#define FLB_ML_FLUSH_TIMEOUT    4000 /* Flush timeout default (milliseconds) */
 
 /* Default multiline buffer size: 4Kb */
-#define FLB_ML_BUF_SIZE  1024*4
+#define FLB_ML_BUF_SIZE         1024*4
+
+/* Maximum number of groups per stream */
+#define FLB_ML_MAX_GROUPS       6
 
 struct flb_ml;
+struct flb_ml_parser;
 struct flb_ml_stream;
 
 struct flb_ml_rule {
@@ -77,8 +81,10 @@ struct flb_ml_rule {
     struct mk_list _head;
 };
 
-struct flb_ml_stream {
-    flb_sds_t name;           /* Name of the stream, mostly for debugging purposes */
+struct flb_ml_stream_group {
+    flb_sds_t name;           /* group name, unique identifier */
+
+    uint64_t last_flush;      /* last flush/check time */
 
     int counter_lines;        /* counter for the number of lines */
 
@@ -95,20 +101,40 @@ struct flb_ml_stream {
     msgpack_packer mp_pck;    /* temporary msgpack packer              */
     struct flb_time mp_time;  /* multiline time parsed from first line */
 
+    struct mk_list _head;
+};
+
+struct flb_ml_stream {
+    uint64_t id;
+    flb_sds_t name;           /* name of the stream, mostly for debugging purposes */
+    struct mk_list groups;    /* groups inside a stream */
+
     /* Flush callback and opaque data type */
-    int (*cb_flush) (struct flb_ml *,
+    int (*cb_flush) (struct flb_ml_parser *,
                      struct flb_ml_stream *,
                      void *cb_data,
-                     void *buf_data,
+                     char *buf_data,
                      size_t buf_size);
     void *cb_data;
+
+    struct flb_ml_stream_group *last_stream_group;
+
+    /* runtime flags */
+    int forced_flush;
+
+    /* reference to parent instance */
+    struct flb_ml_parser_ins *parser;
 
     struct mk_list _head;
 };
 
-struct flb_ml {
-    int type;                 /* type: COUNT, REGEX, ENDSWITH or EQ */
+/* Multiline Parser definition (no running state, just definition) */
+struct flb_ml_parser {
+    int type;                 /* type: REGEX, ENDSWITH or EQ */
     int negate;               /* negate start pattern ? */
+    int flush_ms;             /* default flush timeout in milliseconds */
+
+    flb_sds_t name;
 
     /*
      * If 'multiline type' is ENDSWITH or EQ, a 'match_str' string is passed
@@ -134,27 +160,21 @@ struct flb_ml {
      */
     flb_sds_t key_pattern;
 
-    /* Flush interval */
-    int flush_ms;
-
-    /* flush callback */
-    int (*cb_flush)(struct flb_ml *,           /* multiline context */
-                    struct flb_ml_stream *,    /* stream context */
-                    void *,                    /* opaque data */
-                    char *,                    /* text buffer */
-                    size_t);                   /* buffer length */
-
-    void *cb_data;                             /* opaque data */
+    /*
+     * Optional: define a 'key' name that specify a specific group of logs.
+     * As an example, consider containerized logs coming from Docker or CRI
+     * where the logs must be group by stream 'stdout' and 'stderr'. On that
+     * case key_group = 'stream'.
+     *
+     * If the origin stream will not have groups, this can be null and the
+     * multiline context creator will only use a default group for everything
+     * under the same stream.
+     */
+    flb_sds_t key_group;
 
     /* internal */
-    struct flb_parser *parser;
-
-    /*
-     * Every multiline context has N streams, a stream represent a source
-     * of data. To avoid having 'multiple' context of 'multiline' we use
-     * streams.
-     */
-    struct mk_list streams;
+    struct flb_parser *parser;                 /* parser context */
+    flb_sds_t parser_name;                     /* parser name for delayed init */
 
     /*
      * If multiline type is REGEX, it needs a set of pre-defined rules to deal
@@ -164,51 +184,148 @@ struct flb_ml {
 
     /* Fluent Bit parent context */
     struct flb_config *config;
+
+    /* Link node to struct flb_ml_group_parser->parsers */
+    struct mk_list _head;
 };
 
-struct flb_ml *flb_ml_create(struct flb_config *ctx,
-                             int type, char *match_str, int negate,
-                             int flush_ms,
-                             char *key_content,
-                             char *key_pattern,
-                             struct flb_parser *parser);
+/* Multiline parser instance with running state */
+struct flb_ml_parser_ins {
+    struct flb_ml_parser *ml_parser;           /* multiline parser */
 
+    /* flush callback */
+    int (*cb_flush)(struct flb_ml_parser *,    /* multiline context */
+                    struct flb_ml_stream *,    /* stream context */
+                    void *,                    /* opaque data */
+                    char *,                    /* text buffer */
+                    size_t);                   /* buffer length */
+
+    void *cb_data;                             /* opaque data */
+
+
+    /*
+     * Duplicate original parser definition properties for this instance. There
+     * are cases where the caller wants an instance of a certain multiline
+     * parser but with a custom value for key_content, key_pattern or key_group.
+     */
+    flb_sds_t key_content;
+    flb_sds_t key_pattern;
+    flb_sds_t key_group;
+
+    /*
+     * last stream_id and last_stream_group: keeping a reference of the last
+     * insertion path is important to determinate when should we flush our
+     * stream/stream_group buffer.
+     */
+    uint64_t last_stream_id;
+    struct flb_ml_stream_group *last_stream_group;
+
+    /*
+     * Every multiline parser context has N streams, a stream represent a source
+     * of data.
+     */
+    struct mk_list streams;
+
+    /* Link to struct flb_ml_group->parsers */
+    struct mk_list _head;
+};
+
+struct flb_ml_group {
+    int id;                        /* group id (auto assigned) */
+    struct mk_list parsers;        /* list head for parser instances */
+
+    /* keep context of the previous match */
+    struct flb_ml_parser_ins *lru_parser;
+
+    /*
+     * Flush callback for parsers instances on this group
+     * --------------------------------------------------
+     */
+    int flush_ms;                              /* flush interval */
+
+    /* flush callback */
+    int (*cb_flush)(struct flb_ml_parser *,     /* multiline context */
+                    struct flb_ml_stream *,    /* stream context */
+                    void *,                    /* opaque data */
+                    char *,                    /* text buffer */
+                    size_t);                   /* buffer length */
+
+    void *cb_data;                             /* opaque data */
+
+    /* Parent multiline context */
+    struct flb_ml *ml;
+
+    struct mk_list _head;          /* link to struct flb_ml->groups list */
+};
+
+struct flb_ml {
+    flb_sds_t name;                /* name of this multiline setup */
+    int flush_ms;                  /* max flush interval found in groups/parsers */
+    time_t last_flush;             /* last flush time (involving groups) */
+    struct mk_list groups;         /* list head for flb_ml_group(s) */
+    struct flb_config *config;     /* Fluent Bit context */
+};
+
+struct flb_ml *flb_ml_create(struct flb_config *ctx, char *name);
 int flb_ml_destroy(struct flb_ml *ml);
 
-int flb_ml_register_context(struct flb_ml *ml, struct flb_ml_stream *mst,
+int flb_ml_register_context(struct flb_ml_stream_group *group,
                             struct flb_time *tm, msgpack_object *map);
 
-int flb_ml_append(struct flb_ml *ml, struct flb_ml_stream *mst,
+int flb_ml_append(struct flb_ml *ml, uint64_t stream_id,
                   int type,
                   struct flb_time *tm, void *buf, size_t size);
-int flb_ml_append_object(struct flb_ml *ml,
-                         struct flb_ml_stream *mst,
+
+int flb_ml_append_object(struct flb_ml *ml, uint64_t stream_id,
                          struct flb_time *tm, msgpack_object *obj);
 
-int flb_ml_flush(struct flb_ml *ml, struct flb_ml_stream *mst);
+int flb_ml_parsers_init(struct flb_config *ctx);
+
+void flb_ml_flush_pending_now(struct flb_ml *ml);
+
+void flb_ml_flush_parser_instance(struct flb_ml *ml,
+                                  struct flb_ml_parser_ins *parser_i,
+                                  uint64_t stream_id,
+                                  int forced_flush);
+
+int flb_ml_auto_flush_init(struct flb_ml *ml);
+
+int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
+                              struct flb_ml_stream *mst,
+                              struct flb_ml_stream_group *group,
+                              int forced_flush);
 
 /* Multiline streams */
-struct flb_ml_stream *flb_ml_stream_create(struct flb_ml *ml,
-                                           char *name,
-                                           int (*cb_flush) (struct flb_ml *,
-                                                            struct flb_ml_stream *,
-                                                            void *cb_data,
-                                                            void *buf_data,
-                                                            size_t buf_size),
-                                           void *cb_data);
+int flb_ml_stream_create(struct flb_ml *ml,
+                         char *name,
+                         int name_len,
+                         int (*cb_flush) (struct flb_ml_parser *,
+                                          struct flb_ml_stream *,
+                                          void *cb_data,
+                                          char *buf_data,
+                                          size_t buf_size),
+                         void *cb_data,
+                         uint64_t *stream_id);
 
 int flb_ml_stream_destroy(struct flb_ml_stream *mst);
 
-/* Regex Rules */
-int flb_ml_rule_create(struct flb_ml *ml,
-                       flb_sds_t from_states,
-                       char *regex_pattern,
-                       flb_sds_t to_state,
-                       char *end_pattern);
-void flb_ml_rule_destroy(struct flb_ml_rule *rule);
-void flb_ml_rule_destroy_all(struct flb_ml *ml);
+void flb_ml_stream_id_destroy_all(struct flb_ml *ml, uint64_t stream_id);
 
-int flb_ml_init(struct flb_ml *ml);
+struct flb_ml_stream *flb_ml_stream_get(struct flb_ml_parser_ins *parser,
+                                        uint64_t stream_id);
+
+struct flb_ml_stream_group *flb_ml_stream_group_get(struct flb_ml_parser_ins *ins,
+                                                    struct flb_ml_stream *mst,
+                                                    msgpack_object *group_name);
+
+int flb_ml_init(struct flb_config *config);
+int flb_ml_exit(struct flb_config *config);
+
+int flb_ml_type_lookup(char *str);
+
+int flb_ml_flush_stdout(struct flb_ml_parser *parser,
+                        struct flb_ml_stream *mst,
+                        void *data, char *buf_data, size_t buf_size);
 
 #include "flb_ml_mode.h"
 

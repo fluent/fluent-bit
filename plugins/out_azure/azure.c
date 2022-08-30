@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -20,6 +19,9 @@
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_base64.h>
+#include <fluent-bit/flb_crypto.h>
+#include <fluent-bit/flb_hmac.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
@@ -27,7 +29,6 @@
 
 #include "azure.h"
 #include "azure_conf.h"
-#include <mbedtls/base64.h>
 
 static int cb_azure_init(struct flb_output_instance *ins,
                           struct flb_config *config, void *data)
@@ -65,6 +66,10 @@ static int azure_format(const void *in_buf, size_t in_bytes,
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
     flb_sds_t record;
+    char time_formatted[32];
+    size_t s;
+    struct tm tms;
+    int len;
 
     /* Count number of items */
     array_size = flb_mp_count(in_buf, in_bytes);
@@ -81,7 +86,6 @@ static int azure_format(const void *in_buf, size_t in_bytes,
 
         /* Get timestamp */
         flb_time_pop_from_msgpack(&tm, &result, &obj);
-        t = flb_time_to_double(&tm);
 
         /* Create temporary msgpack buffer */
         msgpack_sbuffer_init(&tmp_sbuf);
@@ -95,9 +99,27 @@ static int azure_format(const void *in_buf, size_t in_bytes,
         /* Append the time key */
         msgpack_pack_str(&mp_pck, flb_sds_len(ctx->time_key));
         msgpack_pack_str_body(&mp_pck,
-                              ctx->time_key,
-                              flb_sds_len(ctx->time_key));
-        msgpack_pack_double(&mp_pck, t);
+                            ctx->time_key,
+                            flb_sds_len(ctx->time_key));
+
+        if (ctx->time_generated == FLB_TRUE) {
+            /* Append the time value as ISO 8601 */
+            gmtime_r(&tm.tm.tv_sec, &tms);
+            s = strftime(time_formatted, sizeof(time_formatted) - 1,
+                            FLB_PACK_JSON_DATE_ISO8601_FMT, &tms);
+
+            len = snprintf(time_formatted + s,
+                            sizeof(time_formatted) - 1 - s,
+                            ".%03" PRIu64 "Z",
+                            (uint64_t) tm.tm.tv_nsec / 1000000);
+            s += len;
+            msgpack_pack_str(&mp_pck, s);
+            msgpack_pack_str_body(&mp_pck, time_formatted, s);
+        } else {
+            /* Append the time value as millis.nanos */
+            t = flb_time_to_double(&tm);
+            msgpack_pack_double(&mp_pck, t);
+        }
 
         /* Append original map k/v */
         for (i = 0; i < map_size; i++) {
@@ -142,7 +164,7 @@ static int build_headers(struct flb_http_client *c,
     flb_sds_t str_hash;
     struct tm tm = {0};
     unsigned char hmac_hash[32] = {0};
-    mbedtls_md_context_t mctx;
+    int result;
 
     /* Format Date */
     rfc1123date = flb_sds_create_size(32);
@@ -185,18 +207,23 @@ static int build_headers(struct flb_http_client *c,
     flb_sds_cat(str_hash, FLB_AZURE_RESOURCE, sizeof(FLB_AZURE_RESOURCE) - 1);
 
     /* Authorization signature */
-    mbedtls_md_init(&mctx);
-    mbedtls_md_setup(&mctx, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256) , 1);
-    mbedtls_md_hmac_starts(&mctx, (unsigned char *) ctx->dec_shared_key,
-                           flb_sds_len(ctx->dec_shared_key));
-    mbedtls_md_hmac_update(&mctx, (unsigned char *) str_hash,
-                           flb_sds_len(str_hash));
-    mbedtls_md_hmac_finish(&mctx, hmac_hash);
-    mbedtls_md_free(&mctx);
+    result = flb_hmac_simple(FLB_HASH_SHA256,
+                             (unsigned char *) ctx->dec_shared_key,
+                             flb_sds_len(ctx->dec_shared_key),
+                             (unsigned char *) str_hash,
+                             flb_sds_len(str_hash),
+                             hmac_hash,
+                             sizeof(hmac_hash));
+
+    if (result != FLB_CRYPTO_SUCCESS) {
+        flb_sds_destroy(rfc1123date);
+        flb_sds_destroy(str_hash);
+        return -1;
+    }
 
     /* Encoded hash */
-    mbedtls_base64_encode((unsigned char *) &tmp, sizeof(tmp) - 1, &olen,
-                          hmac_hash, sizeof(hmac_hash));
+    result = flb_base64_encode((unsigned char *) &tmp, sizeof(tmp) - 1, &olen,
+                               hmac_hash, sizeof(hmac_hash));
     tmp[olen] = '\0';
 
     /* Append headers */
@@ -206,6 +233,10 @@ static int build_headers(struct flb_http_client *c,
     flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
     flb_http_add_header(c, "x-ms-date", 9, rfc1123date,
                         flb_sds_len(rfc1123date));
+    if (ctx->time_generated == FLB_TRUE) {
+        /* Use time value as time-generated within azure */
+        flb_http_add_header(c, "time-generated-field", 20, ctx->time_key, flb_sds_len(ctx->time_key));
+    }
 
     size = 32 + flb_sds_len(ctx->customer_id) + olen;
     auth = flb_malloc(size);
@@ -229,8 +260,8 @@ static int build_headers(struct flb_http_client *c,
     return 0;
 }
 
-static void cb_azure_flush(const void *data, size_t bytes,
-                           const char *tag, int tag_len,
+static void cb_azure_flush(struct flb_event_chunk *event_chunk,
+                           struct flb_output_flush *out_flush,
                            struct flb_input_instance *i_ins,
                            void *out_context,
                            struct flb_config *config)
@@ -253,7 +284,8 @@ static void cb_azure_flush(const void *data, size_t bytes,
     }
 
     /* Convert binary logs into a JSON payload */
-    ret = azure_format(data, bytes, &buf_data, &buf_size, ctx);
+    ret = azure_format(event_chunk->data, event_chunk->size,
+                       &buf_data, &buf_size, ctx);
     if (ret == -1) {
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -319,12 +351,53 @@ static int cb_azure_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "customer_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure, customer_id),
+     "Customer ID or WorkspaceID string."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "shared_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure, shared_key),
+     "The primary or the secondary Connected Sources client authentication key."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "log_type", FLB_AZURE_LOG_TYPE,
+     0, FLB_TRUE, offsetof(struct flb_azure, log_type),
+    "The name of the event type."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "time_key", FLB_AZURE_TIME_KEY,
+     0, FLB_TRUE, offsetof(struct flb_azure, time_key),
+    "Optional parameter to specify the key name where the timestamp will be stored."
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "time_generated", "false",
+     0, FLB_TRUE, offsetof(struct flb_azure, time_generated),
+     "If enabled, the HTTP request header 'time-generated-field' will be included "
+     "so Azure can override the timestamp with the key specified by 'time_key' "
+     "option."
+    },
+
+    /* EOF */
+    {0}
+};
+
 struct flb_output_plugin out_azure_plugin = {
     .name         = "azure",
     .description  = "Send events to Azure HTTP Event Collector",
     .cb_init      = cb_azure_init,
     .cb_flush     = cb_azure_flush,
     .cb_exit      = cb_azure_exit,
+
+    /* Configuration */
+    .config_map     = config_map,
 
     /* Plugin flags */
     .flags          = FLB_OUTPUT_NET | FLB_IO_TLS,

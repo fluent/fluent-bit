@@ -22,9 +22,8 @@
 #include <cmetrics/cmt_math.h>
 #include <cmetrics/cmt_atomic.h>
 
-
-static inline int cmt_metric_exchange(struct cmt_metric *metric, uint64_t timestamp, 
-                                      double new_value, double old_value)
+static inline int metric_exchange(struct cmt_metric *metric, uint64_t timestamp,
+                                  double new_value, double old_value)
 {
     uint64_t tmp_new;
     uint64_t tmp_old;
@@ -33,7 +32,7 @@ static inline int cmt_metric_exchange(struct cmt_metric *metric, uint64_t timest
     tmp_new = cmt_math_d64_to_uint64(new_value);
     tmp_old = cmt_math_d64_to_uint64(old_value);
 
-    result = cmt_atomic_compare_exchange(&metric->val, tmp_old, tmp_new); 
+    result = cmt_atomic_compare_exchange(&metric->val, tmp_old, tmp_new);
 
     if(0 == result) {
         return 0;
@@ -48,14 +47,13 @@ static inline void add(struct cmt_metric *metric, uint64_t timestamp, double val
 {
     double   old;
     double   new;
-    uint64_t tmp;
     int      result;
 
     do {
         old = cmt_metric_get_value(metric);
         new = old + val;
 
-        result = cmt_metric_exchange(metric, timestamp, new, old);
+        result = metric_exchange(metric, timestamp, new, old);
     }
     while(0 == result);
 }
@@ -69,6 +67,39 @@ void cmt_metric_set(struct cmt_metric *metric, uint64_t timestamp, double val)
     cmt_atomic_store(&metric->val, tmp);
     cmt_atomic_store(&metric->timestamp, timestamp);
 }
+
+static inline int metric_hist_exchange(struct cmt_metric *metric,
+                                       uint64_t timestamp,
+                                       int bucket_id,
+                                       uint64_t new, uint64_t old)
+{
+    int result;
+
+    result = cmt_atomic_compare_exchange(&metric->hist_buckets[bucket_id],
+                                         old, new);
+    if (result == 0) {
+        return 0;
+    }
+
+    cmt_atomic_store(&metric->timestamp, timestamp);
+    return 1;
+}
+
+void cmt_metric_hist_bucket_inc(struct cmt_metric *metric, uint64_t timestamp,
+                                int bucket_id)
+{
+    int result;
+    uint64_t old;
+    uint64_t new;
+
+    do {
+        old = cmt_atomic_load(&metric->hist_buckets[bucket_id]);
+        new = old + 1;
+        result = metric_hist_exchange(metric, timestamp, bucket_id, new, old);
+    }
+    while (result == 0);
+}
+
 
 void cmt_metric_inc(struct cmt_metric *metric, uint64_t timestamp)
 {

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -235,6 +234,7 @@ static int cb_statsd_init(struct flb_input_instance *ins,
     struct flb_statsd *ctx;
     char *listen;
     int port;
+    int ret;
 
     ctx = flb_calloc(1, sizeof(struct flb_statsd));
     if (!ctx) {
@@ -247,6 +247,13 @@ static int cb_statsd_init(struct flb_input_instance *ins,
     if (!ctx->buf) {
         flb_errno();
         flb_free(ctx);
+        return -1;
+    }
+
+    /* Load the config map */
+    ret = flb_input_config_map_set(ins, (void *)ctx);
+    if (ret == -1) {
+        flb_plg_error(ins, "unable to load configuration");
         return -1;
     }
 
@@ -318,6 +325,11 @@ static int cb_statsd_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    /* EOF */
+    {0}    
+};
+
 /* Plugin reference */
 struct flb_input_plugin in_statsd_plugin = {
     .name         = "statsd",
@@ -330,5 +342,6 @@ struct flb_input_plugin in_statsd_plugin = {
     .cb_pause     = cb_statsd_pause,
     .cb_resume    = cb_statsd_resume,
     .cb_exit      = cb_statsd_exit,
+    .config_map   = config_map,
     .flags        = 0
 };

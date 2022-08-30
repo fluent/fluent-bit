@@ -36,6 +36,7 @@
 #include "data/stackdriver/stackdriver_test_labels.h"
 #include "data/stackdriver/stackdriver_test_trace.h"
 #include "data/stackdriver/stackdriver_test_log_name.h"
+#include "data/stackdriver/stackdriver_test_resource_labels.h"
 #include "data/stackdriver/stackdriver_test_insert_id.h"
 #include "data/stackdriver/stackdriver_test_source_location.h"
 #include "data/stackdriver/stackdriver_test_http_request.h"
@@ -822,6 +823,44 @@ static void cb_check_k8s_node_resource(void *ctx, int ffd,
     flb_sds_destroy(res_data);
 }
 
+static void cb_check_k8s_node_custom_k8s_regex(void *ctx, int ffd,
+                                           int res_ret, void *res_data, size_t res_size,
+                                           void *data)
+{
+    int ret;
+
+    /* resource type */
+    ret = mp_kv_cmp(res_data, res_size, "$resource['type']", "k8s_node");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* project id */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['project_id']", "fluent-bit");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* location */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['location']", "test_cluster_location");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* cluster name */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['cluster_name']", "test_cluster_name");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* node name */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['node_name']", "testnode.withdot.dot");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check `local_resource_id` has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size,
+                       "$entries[0]['jsonPayload']['logging.googleapis.com/local_resource_id']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
 static void cb_check_k8s_pod_resource(void *ctx, int ffd,
                                       int res_ret, void *res_data, size_t res_size,
                                       void *data)
@@ -1117,6 +1156,65 @@ static void cb_check_custom_labels(void *ctx, int ffd,
     flb_sds_destroy(res_data);
 }
 
+static void cb_check_config_labels_no_conflict(void *ctx, int ffd,
+                                   int res_ret, void *res_data, size_t res_size,
+                                   void *data)
+{
+    int ret;
+
+    /* check 'labels' field has been added to root-level of log entry */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check fields inside 'labels' field */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']['testA']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check field inside 'labels' field */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']['testB']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check field inside 'labels' field */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']['testC']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check `labels_key` has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/labels']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_config_labels_conflict(void *ctx, int ffd,
+                                   int res_ret, void *res_data, size_t res_size,
+                                   void *data)
+{
+    int ret;
+
+    /* check 'labels' field has been added to root-level of log entry */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check fields inside 'labels' field */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']['testA']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check field inside 'labels' field */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']['testB']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check static 'labels' override value */
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['labels']['testB']", "valC");
+    TEST_CHECK(ret == FLB_TRUE);
+
+
+    /* check `labels_key` has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/labels']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
 static void cb_check_default_labels_k8s_resource_type(void *ctx, int ffd,
                                                       int res_ret, void *res_data, size_t res_size,
                                                       void *data)
@@ -1177,6 +1275,188 @@ static void cb_check_default_labels_k8s_resource_type(void *ctx, int ffd,
     /* check `labels_key` has been removed from jsonPayload */
     ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/labels']");
     TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_resource_labels_one_field(void *ctx, int ffd,
+                                int res_ret, void *res_data, size_t res_size, void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['jsonPayload']['keyA']", "valA");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$resource['labels']['keyB']", "valA");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$resource['labels']['project_id']", "fluent-bit");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_resource_labels_plaintext(void *ctx, int ffd,
+                                int res_ret, void *res_data, size_t res_size, void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['jsonPayload']['keyA']", "valA");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$resource['labels']['keyB']", "plaintext");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$resource['labels']['project_id']", "fluent-bit");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_resource_labels_k8s(void *ctx, int ffd,
+                                int res_ret, void *res_data, size_t res_size, void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$resource['labels']['project_id']", "fluent-bit");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+        "$resource['labels']['cluster_name']", "name_from_labels");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+        "$resource['labels']['location']", "loc_from_labels");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_nested_fields_mapped(void *ctx, int ffd,
+                                int res_ret, void *res_data, size_t res_size, void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size,
+        "$entries[0]['jsonPayload']['toplevel']['keyB']", "valB");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$resource['labels']['keyD']", "valB");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+        "$entries[0]['jsonPayload']['toplevel']['keyA']", "valA");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$resource['labels']['keyC']", "valA");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_layered_nested_fields_mapped(void *ctx, int ffd,
+                                int res_ret, void *res_data, size_t res_size, void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size,
+        "$entries[0]['jsonPayload']['toplevel']['keyB']", "valB");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$resource['labels']['keyD']", "valB");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+        "$entries[0]['jsonPayload']['toplevel']['midlevel']['keyA']", "valA");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$resource['labels']['keyC']", "valA");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_resource_labels_original_does_not_exist(void *ctx, int ffd,
+                                int res_ret, void *res_data, size_t res_size, void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['jsonPayload']['keyA']", "valA");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_exists(res_data, res_size, "$resource['labels']['keyC']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_resource_labels_nested_original_partially_exists(void *ctx, int ffd,
+                                int res_ret, void *res_data, size_t res_size, void *data)
+{
+    int ret;
+
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['toplevel']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+        "$entries[0]['jsonPayload']['toplevel']['keyA']", "valA");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+        "$entries[0]['jsonPayload']['toplevel']['keyB']", "valB");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_exists(res_data, res_size, "$resource['labels']['keyC']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_multiple_fields_mapped(void *ctx, int ffd, int res_ret, 
+                                            void *res_data, size_t res_size, void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['jsonPayload']['keyA']", "valA");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['jsonPayload']['keyB']", "valB");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$resource['labels']['keyC']", "valA");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$resource['labels']['keyD']", "valB");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_resource_labels_duplicate_assignment(void *ctx, int ffd, int res_ret,
+                                            void *res_data, size_t res_size, void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['jsonPayload']['keyA']", "valA");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['jsonPayload']['keyB']", "valB");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$resource['labels']['keyC']", "valB");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    flb_sds_destroy(res_data);
+}
+
+
+static void cb_check_resource_labels_project_id_not_overridden(void *ctx, int ffd,
+                                int res_ret, void *res_data, size_t res_size, void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$resource['labels']['project_id']", "fluent-bit");
+    TEST_CHECK(ret == FLB_TRUE);
 
     flb_sds_destroy(res_data);
 }
@@ -1263,7 +1543,7 @@ static void cb_check_multi_entries_severity(void *ctx, int ffd,
 
     ret = mp_kv_cmp(res_data, res_size, "$entries[2]['severity']", "DEBUG");
     TEST_CHECK(ret == FLB_TRUE);
-
+    
     // verifies that severity is removed from jsonPayload
     ret = mp_kv_exists(res_data, res_size, "$entries[2]['jsonPayload']['severity']");
     TEST_CHECK(ret == FLB_FALSE);
@@ -2153,6 +2433,47 @@ void flb_test_trace_stackdriver_autoformat()
 
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) TRACE_COMMON_CASE, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_set_metadata_server()
+{
+    int ret;
+    int size = sizeof(JSON) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   "metadata_server", "http://metadata.google.internal",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_gce_instance,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) JSON, size);
 
     sleep(2);
     flb_stop(ctx);
@@ -3090,6 +3411,97 @@ void flb_test_resource_k8s_container_default_tag_regex()
     flb_destroy(ctx);
 }
 
+void flb_test_resource_k8s_container_custom_k8s_regex()
+{
+    int ret;
+    int size = sizeof(K8S_CONTAINER_NO_LOCAL_RESOURCE_ID) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag",
+                  "k8s_container.testnamespace.testpod.testctr", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "k8s_container.*",
+                   "resource", "k8s_container",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "k8s_cluster_name", "test_cluster_name",
+                   "k8s_cluster_location", "test_cluster_location",
+                   "custom_k8s_regex", "^(?<namespace_name>[^_]+)\\.(?<pod_name>[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)\\.(?<container_name>.+)$",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_k8s_container_resource,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_NO_LOCAL_RESOURCE_ID, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_k8s_container_custom_k8s_regex_custom_prefix()
+{
+    int ret;
+    int size = sizeof(K8S_CONTAINER_NO_LOCAL_RESOURCE_ID) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag",
+                  "kube.var.log.containers.testnamespace.testpod.testctr", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "kube.var.log.containers.*",
+                   "resource", "k8s_container",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "k8s_cluster_name", "test_cluster_name",
+                   "k8s_cluster_location", "test_cluster_location",
+                   "tag_prefix", "kube.var.log.containers.",
+                   "custom_k8s_regex", "^(?<namespace_name>[^_]+)\\.(?<pod_name>[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)\\.(?<container_name>.+)$",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_k8s_container_resource,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_NO_LOCAL_RESOURCE_ID, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 void flb_test_resource_k8s_node_common()
 {
     int ret;
@@ -3259,6 +3671,90 @@ void flb_test_custom_labels()
     flb_destroy(ctx);
 }
 
+void flb_test_config_labels_conflict()
+{
+    int ret;
+    int size = sizeof(DEFAULT_LABELS) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "global",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "labels", "testB=valC",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_config_labels_conflict,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) DEFAULT_LABELS, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_config_labels_no_conflict()
+{
+    int ret;
+    int size = sizeof(DEFAULT_LABELS) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "global",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "labels", "testC=valC",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_config_labels_no_conflict,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) DEFAULT_LABELS, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 void flb_test_default_labels_k8s_resource_type()
 {
     int ret;
@@ -3296,6 +3792,888 @@ void flb_test_default_labels_k8s_resource_type()
 
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) DEFAULT_LABELS_K8S_RESOURCE_TYPE, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_labels_one_field()
+{
+    int ret;
+    int size = sizeof(ONE_FIELD) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "resource_labels", "keyB=$keyA",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_resource_labels_one_field,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_labels_plaintext()
+{
+    int ret;
+    int size = sizeof(ONE_FIELD) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "resource_labels", "keyB=plaintext",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_resource_labels_plaintext,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_labels_multiple_fields()
+{
+    int ret;
+    int size = sizeof(MULTIPLE_FIELDS) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "resource_labels", "keyD=$keyB,keyC=$keyA",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_multiple_fields_mapped,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) MULTIPLE_FIELDS, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_labels_nested_fields()
+{
+    int ret;
+    int size = sizeof(NESTED_FIELDS) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "resource_labels", "keyD=$toplevel['keyB'],keyC=$toplevel['keyA']",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_nested_fields_mapped,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) NESTED_FIELDS, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_labels_layered_nested_fields()
+{
+    int ret;
+    int size = sizeof(LAYERED_NESTED_FIELDS) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "resource_labels",
+                        "keyD=$toplevel['keyB'],keyC=$toplevel['midlevel']['keyA']",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_layered_nested_fields_mapped,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) LAYERED_NESTED_FIELDS, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_labels_original_does_not_exist()
+{
+    int ret;
+    int size = sizeof(ONE_FIELD) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "resource_labels", "keyC=$keyB",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_resource_labels_original_does_not_exist,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_labels_nested_original_does_not_exist()
+{
+    int ret;
+    int size = sizeof(ONE_FIELD) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "resource_labels", "keyC=$keyY['keyZ']",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_resource_labels_original_does_not_exist,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_labels_nested_original_partially_exists()
+{
+    int ret;
+    int size = sizeof(NESTED_FIELDS) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "resource_labels", "keyC=$toplevel['keyZ']",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_resource_labels_nested_original_partially_exists,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) NESTED_FIELDS, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_labels_one_field_with_spaces()
+{
+    int ret;
+    int size = sizeof(ONE_FIELD) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "resource_labels", "keyB = $keyA",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_resource_labels_one_field,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_labels_multiple_fields_with_spaces()
+{
+    int ret;
+    int size = sizeof(MULTIPLE_FIELDS) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "resource_labels", "keyD = $keyB, keyC = $keyA",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_multiple_fields_mapped,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) MULTIPLE_FIELDS, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_labels_empty_input()
+{
+    int ret;
+    int size = sizeof(ONE_FIELD) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "resource_labels", "",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_resource_labels_original_does_not_exist,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_labels_duplicate_assignment()
+{
+    int ret;
+    int size = sizeof(MULTIPLE_FIELDS) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "resource_labels", "keyC=$keyA,keyC=$keyB",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_resource_labels_duplicate_assignment,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) MULTIPLE_FIELDS, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_labels_project_id_not_overridden()
+{
+    int ret;
+    int size = sizeof(ONE_FIELD) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "resource_labels", "project_id=$keyA",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_resource_labels_project_id_not_overridden,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_labels_has_priority() 
+{
+    int ret;
+    int size = sizeof(ONE_FIELD) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                "match", "test",
+                "resource", "k8s_container",
+                "google_service_credentials", SERVICE_CREDENTIALS,
+                "k8s_cluster_name", "test_cluster_name",
+                "k8s_cluster_location", "test_cluster_location",
+                "resource_labels",
+                    "cluster_name=name_from_labels,location=loc_from_labels",
+                NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_resource_labels_k8s,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_labels_fallsback_when_required_not_specified() 
+{
+    int ret;
+    int size = sizeof(K8S_CONTAINER_COMMON) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                "match", "test",
+                "resource", "k8s_container",
+                "google_service_credentials", SERVICE_CREDENTIALS,
+                "k8s_cluster_name", "test_cluster_name",
+                "k8s_cluster_location", "test_cluster_location",
+                "resource_labels", "keyB=$keyA",
+                NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_k8s_container_resource,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_COMMON, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_labels_fallsback_when_required_partially_specified() 
+{
+    int ret;
+    int size = sizeof(K8S_CONTAINER_COMMON) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                "match", "test",
+                "resource", "k8s_container",
+                "google_service_credentials", SERVICE_CREDENTIALS,
+                "k8s_cluster_name", "test_cluster_name",
+                "k8s_cluster_location", "test_cluster_location",
+                "resource_labels", "location=cluster_loc",
+                NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_k8s_container_resource,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_COMMON, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_labels_k8s_container() 
+{
+    int ret;
+    int size = sizeof(ONE_FIELD) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                "match", "test",
+                "resource", "k8s_container",
+                "google_service_credentials", SERVICE_CREDENTIALS,
+                "resource_labels",
+                    "cluster_name=name_from_labels,location=loc_from_labels",
+                NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_resource_labels_k8s,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_labels_k8s_node() 
+{
+    int ret;
+    int size = sizeof(ONE_FIELD) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                "match", "test",
+                "resource", "k8s_node",
+                "google_service_credentials", SERVICE_CREDENTIALS,
+                "resource_labels",
+                    "cluster_name=name_from_labels,location=loc_from_labels",
+                NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_resource_labels_k8s,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_labels_k8s_pod() 
+{
+    int ret;
+    int size = sizeof(ONE_FIELD) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                "match", "test",
+                "resource", "k8s_pod",
+                "google_service_credentials", SERVICE_CREDENTIALS,
+                "resource_labels",
+                    "cluster_name=name_from_labels,location=loc_from_labels",
+                NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_resource_labels_k8s,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_labels_generic_node() 
+{
+    int ret;
+    int size = sizeof(ONE_FIELD) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                "match", "test",
+                "google_service_credentials", SERVICE_CREDENTIALS,
+                "resource", "generic_node",
+                "resource_labels",
+                    "location=fluent,namespace=test,node_id=333222111",
+                NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_generic_node_creds,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_labels_generic_task() 
+{
+    int ret;
+    int size = sizeof(ONE_FIELD) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                "match", "test",
+                "google_service_credentials", SERVICE_CREDENTIALS,
+                "resource", "generic_task",
+                "resource_labels",
+                    "location=fluent,namespace=test,job=test-job,task_id=333222111",
+                NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_generic_task_creds,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
 
     sleep(2);
     flb_stop(ctx);
@@ -3427,6 +4805,94 @@ void flb_test_resource_k8s_node_no_local_resource_id()
 
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) K8S_NODE_NO_LOCAL_RESOURCE_ID, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_k8s_node_custom_k8s_regex_with_dot()
+{
+    int ret;
+    int size = sizeof(K8S_NODE_LOCAL_RESOURCE_ID_WITH_DOT) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "k8s_node",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "k8s_cluster_name", "test_cluster_name",
+                   "k8s_cluster_location", "test_cluster_location",
+                   "custom_k8s_regex", "^(?<node_name>.*)$",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_k8s_node_custom_k8s_regex,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) K8S_NODE_LOCAL_RESOURCE_ID_WITH_DOT, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_k8s_node_custom_k8s_regex_with_long_tag()
+{
+    int ret;
+    int size = sizeof(K8S_NODE_LOCAL_RESOURCE_ID_WITH_DOT) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "tagWithLongLen", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "tagWithLongLen",
+                   "resource", "k8s_node",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "k8s_cluster_name", "test_cluster_name",
+                   "k8s_cluster_location", "test_cluster_location",
+                   "custom_k8s_regex", "^(?<node_name>.*)$",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_k8s_node_custom_k8s_regex,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) K8S_NODE_LOCAL_RESOURCE_ID_WITH_DOT, size);
 
     sleep(2);
     flb_stop(ctx);
@@ -4498,6 +5964,9 @@ TEST_LIST = {
     {"trace_no_autoformat", flb_test_trace_no_autoformat},
     {"trace_stackdriver_autoformat", flb_test_trace_stackdriver_autoformat},
 
+    /* test metadata server */
+    {"set_metadata_server", flb_test_set_metadata_server},
+
     /* test log name */
     {"log_name_override", flb_test_log_name_override},
     {"log_name_no_override", flb_test_log_name_no_override},
@@ -4536,14 +6005,43 @@ TEST_LIST = {
     {"resource_k8s_container_custom_tag_prefix", flb_test_resource_k8s_container_custom_tag_prefix },
     {"resource_k8s_container_custom_tag_prefix_with_dot", flb_test_resource_k8s_container_custom_tag_prefix_with_dot },
     {"resource_k8s_container_default_tag_regex", flb_test_resource_k8s_container_default_tag_regex },
+    {"resource_k8s_container_custom_k8s_regex", flb_test_resource_k8s_container_custom_k8s_regex },
+    {"resource_k8s_container_custom_k8s_regex_custom_prefix", flb_test_resource_k8s_container_custom_k8s_regex_custom_prefix },
     {"resource_k8s_node_common", flb_test_resource_k8s_node_common },
     {"resource_k8s_node_no_local_resource_id", flb_test_resource_k8s_node_no_local_resource_id },
+    {"resource_k8s_node_custom_k8s_regex_with_dot", flb_test_resource_k8s_node_custom_k8s_regex_with_dot },
+    {"resource_k8s_node_custom_k8s_regex_with_long_tag", flb_test_resource_k8s_node_custom_k8s_regex_with_long_tag },
     {"resource_k8s_pod_common", flb_test_resource_k8s_pod_common },
     {"resource_k8s_pod_no_local_resource_id", flb_test_resource_k8s_pod_no_local_resource_id },
     {"default_labels", flb_test_default_labels },
     {"custom_labels", flb_test_custom_labels },
+    {"config_labels_conflict", flb_test_config_labels_conflict },
+    {"config_labels_no_conflict", flb_test_config_labels_no_conflict },
     {"default_labels_k8s_resource_type", flb_test_default_labels_k8s_resource_type },
     {"custom_labels_k8s_resource_type", flb_test_custom_labels_k8s_resource_type },
+
+    /* test resource labels api */
+    {"resource_labels_one_field", flb_test_resource_labels_one_field },
+    {"resource_labels_plaintext", flb_test_resource_labels_plaintext },
+    {"resource_labels_multiple_fields", flb_test_resource_labels_multiple_fields },
+    {"resource_labels_nested_fields", flb_test_resource_labels_nested_fields },
+    {"resource_labels_layered_nested_fields", flb_test_resource_labels_layered_nested_fields },
+    {"resource_labels_original_does_not_exist", flb_test_resource_labels_original_does_not_exist },
+    {"resource_labels_nested_original_does_not_exist", flb_test_resource_labels_nested_original_does_not_exist },
+    {"resource_labels_nested_original_partially_exists", flb_test_resource_labels_nested_original_partially_exists },
+    {"resource_labels_one_field_with_spaces", flb_test_resource_labels_one_field_with_spaces },
+    {"resource_labels_multiple_fields_with_spaces", flb_test_resource_labels_multiple_fields_with_spaces },
+    {"resource_labels_empty_input", flb_test_resource_labels_empty_input },
+    {"resource_labels_duplicate_assignment", flb_test_resource_labels_duplicate_assignment },
+    {"resource_labels_project_id_not_overridden", flb_test_resource_labels_project_id_not_overridden },
+    {"resource_labels_has_priority", flb_test_resource_labels_has_priority },
+    {"resource_labels_fallsback_when_required_not_specified", flb_test_resource_labels_fallsback_when_required_not_specified },
+    {"resource_labels_fallsback_when_required_partially_specified", flb_test_resource_labels_fallsback_when_required_partially_specified },
+    {"resource_labels_k8s_container", flb_test_resource_labels_k8s_container },
+    {"resource_labels_k8s_node", flb_test_resource_labels_k8s_node },
+    {"resource_labels_k8s_pod", flb_test_resource_labels_k8s_pod },
+    {"resource_labels_generic_node", flb_test_resource_labels_generic_node },
+    {"resource_labels_generic_task", flb_test_resource_labels_generic_task },
 
     /* test httpRequest */
     {"httpRequest_common_case", flb_test_http_request_common_case},

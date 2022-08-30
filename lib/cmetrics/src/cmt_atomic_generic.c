@@ -30,39 +30,20 @@ static int      atomic_operation_system_initialized = 0;
  *       as well as pthread_mutex_lock (determine if we want to apply some sort of retry
  *       limit there as well)
  *
- * TODO 2: Find out how are catastrophic errors handled in cmetrics and apply the same 
- *         method here
  */
-
-#ifdef CMT_ATOMIC_HAVE_AUTO_INITIALIZE
-
-__attribute__((constructor))
-static void cmt_atomic_constructor(void)
-{
-    int result;
-
-    result = cmt_atomic_initialize();
-
-    if (0 != result) {
-        /* TODO : Determine if we want to enable automatic initialization for this case
-         *        or not, the things to keep in mind are that this could fail in 
-         *        catastrophic situations (OOM on startup?) and we need to handle that 
-         */
-        printf("CMT ATOMIC : Unrecoverable error initializing atomic operation lock\n");
-        exit(1);
-    } 
-}
-
-#endif
 
 inline int cmt_atomic_initialize()
 {
     int result;
 
-    result = pthread_mutex_init(&atomic_operation_lock, NULL);
+    if (0 == atomic_operation_system_initialized) {
+        result = pthread_mutex_init(&atomic_operation_lock, NULL);
 
-    if (0 != result) {
-        return 1;
+        if (0 != result) {
+            return 1;
+        }
+
+        atomic_operation_system_initialized = 1;
     }
 
     return 0;
@@ -89,8 +70,7 @@ inline int cmt_atomic_compare_exchange(uint64_t *storage,
 
         result = 1;
     }
-    else
-    {
+    else {
         result = 0;
     }
 
@@ -108,10 +88,11 @@ inline void cmt_atomic_store(uint64_t *storage, uint64_t new_value)
         exit(1);
     }
 
-    do {
-        result = pthread_mutex_lock(&atomic_operation_lock);
+    result = pthread_mutex_lock(&atomic_operation_lock);
+
+    if (result != 0) {
+        /* We should notify the user somehow */
     }
-    while (result != 0);
 
     *storage = new_value;
 
@@ -128,10 +109,11 @@ inline uint64_t cmt_atomic_load(uint64_t *storage)
         exit(1);
     }
 
-    do {
-        result = pthread_mutex_lock(&atomic_operation_lock);
+    result = pthread_mutex_lock(&atomic_operation_lock);
+
+    if (result != 0) {
+        /* We should notify the user somehow */
     }
-    while (result != 0);
 
     retval = *storage;
 

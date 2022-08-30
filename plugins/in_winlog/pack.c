@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -33,6 +32,9 @@
 #define FMT_EVTLOG L"SYSTEM\\CurrentControlSet\\Services\\EventLog\\%S\\%s"
 #define FMT_EVTALT L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WINEVT\\Publishers\\%s"
 
+/* 127 is the max number of function params */
+#define PARAM_MAXNUM 127
+
 #define SRCNAME(evt) ((wchar_t *) ((char *) (evt) + sizeof(EVENTLOGRECORD)))
 #define BINDATA(evt) ((unsigned char *) (evt) + (evt)->DataOffset)
 
@@ -42,13 +44,17 @@ static void pack_nullstr(msgpack_packer *mp_pck)
     msgpack_pack_str_body(mp_pck, "", 0);
 }
 
-static int pack_wstr(msgpack_packer *mp_pck, wchar_t *wstr)
+static int pack_wstr(msgpack_packer *mp_pck, wchar_t *wstr, int use_ansi)
 {
     int size;
     char *buf;
+    UINT codePage = CP_UTF8;
+    if (use_ansi) {
+        codePage = CP_ACP;
+    }
 
     /* Compute the buffer size first */
-    size = WideCharToMultiByte(CP_UTF8, 0, wstr, -1, NULL, 0, NULL, NULL);
+    size = WideCharToMultiByte(codePage, 0, wstr, -1, NULL, 0, NULL, NULL);
     if (size == 0) {
         return -1;
     }
@@ -59,8 +65,8 @@ static int pack_wstr(msgpack_packer *mp_pck, wchar_t *wstr)
         return -1;
     }
 
-    /* Convert UTF-16 into UTF-8 */
-    size = WideCharToMultiByte(CP_UTF8, 0, wstr, -1, buf, size, NULL, NULL);
+    /* Convert UTF-16 into UTF-8/System code Page encoding */
+    size = WideCharToMultiByte(codePage, 0, wstr, -1, buf, size, NULL, NULL);
     if (size == 0) {
         flb_free(buf);
         return -1;
@@ -266,7 +272,7 @@ static int pack_message(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     }
 
     if (evt->NumStrings) {
-        args = flb_malloc(sizeof(DWORD_PTR) * evt->NumStrings);
+        args = flb_calloc(PARAM_MAXNUM, sizeof(DWORD_PTR));
         if (args == NULL) {
             flb_errno();
             flb_free(paths);
@@ -299,7 +305,7 @@ static int pack_message(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
                              0,            /* nSize */
                              (va_list *) args);
         if (ret > 0) {
-            ret = pack_wstr(mp_pck, msg);
+            ret = pack_wstr(mp_pck, msg, ctx->use_ansi);
             LocalFree(msg);
             FreeLibrary(hfile);
             flb_free(paths);
@@ -315,7 +321,7 @@ static int pack_message(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     return -1;
 }
 
-static void pack_strings(msgpack_packer *mp_pck, PEVENTLOGRECORD evt)
+static void pack_strings(msgpack_packer *mp_pck, PEVENTLOGRECORD evt, int use_ansi)
 {
     int i;
     int len;
@@ -324,7 +330,7 @@ static void pack_strings(msgpack_packer *mp_pck, PEVENTLOGRECORD evt)
     msgpack_pack_array(mp_pck, evt->NumStrings);
 
     for (i = 0; i < evt->NumStrings; i++) {
-        if (pack_wstr(mp_pck, wstr)) {
+        if (pack_wstr(mp_pck, wstr, use_ansi)) {
             pack_nullstr(mp_pck);
         }
         wstr += wcslen(wstr) + 1;
@@ -402,7 +408,7 @@ void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     /* Source Name */
     msgpack_pack_str(mp_pck, 10);
     msgpack_pack_str_body(mp_pck, "SourceName", 10);
-    if (pack_wstr(mp_pck, source_name)) {
+    if (pack_wstr(mp_pck, source_name, ctx->use_ansi)) {
         flb_plg_error(ctx->ins, "invalid SourceName '%ls'", source_name);
         pack_nullstr(mp_pck);
     }
@@ -410,7 +416,7 @@ void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     /* Computer Name */
     msgpack_pack_str(mp_pck, 12);
     msgpack_pack_str_body(mp_pck, "ComputerName", 12);
-    if (pack_wstr(mp_pck, computer_name)) {
+    if (pack_wstr(mp_pck, computer_name, ctx->use_ansi)) {
         flb_plg_error(ctx->ins, "invalid ComputerName '%ls'", computer_name);
         pack_nullstr(mp_pck);
     }
@@ -440,6 +446,6 @@ void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     if (ctx->string_inserts) {
         msgpack_pack_str(mp_pck, 13);
         msgpack_pack_str_body(mp_pck, "StringInserts", 13);
-        pack_strings(mp_pck, evt);
+        pack_strings(mp_pck, evt, ctx->use_ansi);
     }
 }

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -274,7 +273,7 @@ static int in_de_collect(struct flb_input_instance *ins,
             parser_ret = flb_parser_do(ctx->parser, ctx->buf, str_len - 1,
                                        &out_buf, &out_size, &out_time);
             if (parser_ret >= 0) {
-                if (flb_time_to_double(&out_time) == 0.0) {
+                if (flb_time_to_nanosec(&out_time) == 0L) {
                     flb_time_get(&out_time);
                 }
 

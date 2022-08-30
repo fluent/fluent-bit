@@ -5,6 +5,7 @@ set(src
   storage.c
   plugins.c
   register.c
+  health.c
   )
 
 include_directories(${MONKEY_INCLUDE_DIR})

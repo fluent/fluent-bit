@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -25,16 +24,59 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_version.h>
+#include <fluent-bit/flb_time.h>
 #include "metrics.h"
 
 #include <fluent-bit/flb_http_server.h>
 #include <msgpack.h>
 
-#define PROMETHEUS_HEADER "text/plain; version=0.0.4"
-
 #define null_check(x) do { if (!x) { goto error; } else {sds = x;} } while (0)
 
 pthread_key_t hs_metrics_key;
+
+static struct mk_list *hs_metrics_key_create()
+{
+    struct mk_list *metrics_list = NULL;
+
+    metrics_list = flb_malloc(sizeof(struct mk_list));
+    if (metrics_list == NULL) {
+        flb_errno();
+        return NULL;
+    }
+    mk_list_init(metrics_list);
+    pthread_setspecific(hs_metrics_key, metrics_list);
+
+    return metrics_list;
+}
+
+static void hs_metrics_key_destroy(void *data)
+{
+    struct mk_list *metrics_list = (struct mk_list*)data;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_hs_buf *entry;
+
+    if (metrics_list == NULL) {
+        return;
+    }
+    mk_list_foreach_safe(head, tmp, metrics_list) {
+        entry = mk_list_entry(head, struct flb_hs_buf, _head);
+        if (entry != NULL) {
+            if (entry->raw_data != NULL) {
+                flb_free(entry->raw_data);
+                entry->raw_data = NULL;
+            }
+            if (entry->data) {
+                flb_sds_destroy(entry->data);
+                entry->data = NULL;
+            }
+            mk_list_del(&entry->_head);
+            flb_free(entry);
+        }
+    }
+
+    flb_free(metrics_list);
+}
 
 /* Return the newest metrics buffer */
 static struct flb_hs_buf *metrics_get_latest()
@@ -104,13 +146,10 @@ static void cb_mq_metrics(mk_mq_t *queue, void *data, size_t size)
 
     metrics_list = pthread_getspecific(hs_metrics_key);
     if (!metrics_list) {
-        metrics_list = flb_malloc(sizeof(struct mk_list));
-        if (!metrics_list) {
-            flb_errno();
+        metrics_list = hs_metrics_key_create();
+        if (metrics_list == NULL) {
             return;
         }
-        mk_list_init(metrics_list);
-        pthread_setspecific(hs_metrics_key, metrics_list);
     }
 
     /* Convert msgpack to JSON */
@@ -209,6 +248,12 @@ flb_sds_t metrics_help_txt(char *metric_name, flb_sds_t *metric_helptxt)
     else if (strstr(metric_name, "output_proc_bytes")) {
         return flb_sds_cat(*metric_helptxt, " Number of processed output bytes.\n", 35);
     }
+    else if (strstr(metric_name, "output_dropped_records")) {
+        return flb_sds_cat(*metric_helptxt, " Number of dropped records.\n", 28);
+    }
+    else if (strstr(metric_name, "output_retried_records")) {
+        return flb_sds_cat(*metric_helptxt, " Number of retried records.\n", 28);
+    }
     else {
         return (flb_sds_cat(*metric_helptxt, " Fluentbit metrics.\n", 20));
     }
@@ -223,6 +268,7 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     int len;
     int time_len;
     int start_time_len;
+    uint64_t uptime;
     size_t index;
     size_t num_metrics = 0;
     long now;
@@ -239,7 +285,7 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     char time_str[64];
     char start_time_str[64];
     char* *metrics_arr;
-    struct timeval tp;
+    struct flb_time tp;
     struct flb_hs *hs = data;
     struct flb_config *config = hs->config;
 
@@ -272,12 +318,6 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
         return;
     }
     metric_helptxt_head = FLB_SDS_HEADER(metric_helptxt);
-
-    /* current time */
-    gettimeofday(&tp, NULL);
-    now = tp.tv_sec * 1000 + tp.tv_usec / 1000;
-    time_len = snprintf(time_str, sizeof(time_str) - 1, "%lu", now);
-    start_time_len = snprintf(start_time_str, sizeof(start_time_str) - 1, "%lu", config->init_time);
 
     /*
      * fluentbit_input_records[name="cpu0", hostname="${HOSTNAME}"] NUM TIMESTAMP
@@ -312,6 +352,10 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
         msgpack_unpacked_destroy(&result);
         return;
     }
+
+    flb_time_get(&tp);
+    now = flb_time_to_nanosec(&tp) / 1000000; /* in milliseconds */
+    time_len = snprintf(time_str, sizeof(time_str) - 1, "%lu", now);
 
     for (i = 0; i < map.via.map.size; i++) {
         msgpack_object k;
@@ -410,11 +454,34 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
             null_check(tmp_sds);
         }
     }
+
+    /* Attach uptime */
+    uptime = time(NULL) - config->init_time;
+    len = snprintf(time_str, sizeof(time_str) - 1, "%lu", uptime);
+
+    tmp_sds = flb_sds_cat(sds,
+                          "# HELP fluentbit_uptime Number of seconds that Fluent Bit has "
+                          "been running.\n", 76);
+    null_check(tmp_sds);
+    tmp_sds = flb_sds_cat(sds, "# TYPE fluentbit_uptime counter\n", 32);
+    null_check(tmp_sds);
+
+    tmp_sds = flb_sds_cat(sds, "fluentbit_uptime ", 17);
+    null_check(tmp_sds);
+    tmp_sds = flb_sds_cat(sds, time_str, len);
+    null_check(tmp_sds);
+    tmp_sds = flb_sds_cat(sds, "\n", 1);
+    null_check(tmp_sds);
+
     /* Attach process_start_time_seconds metric. */
+    start_time_len = snprintf(start_time_str, sizeof(start_time_str) - 1,
+                              "%lu", config->init_time);
+
     tmp_sds = flb_sds_cat(sds, "# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.\n", 89);
     null_check(tmp_sds);
     tmp_sds = flb_sds_cat(sds, "# TYPE process_start_time_seconds gauge\n", 40);
     null_check(tmp_sds);
+
     tmp_sds = flb_sds_cat(sds, "process_start_time_seconds ", 27);
     null_check(tmp_sds);
     tmp_sds = flb_sds_cat(sds, start_time_str, start_time_len);
@@ -445,9 +512,7 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     buf->users--;
 
     mk_http_status(request, 200);
-    mk_http_header(request,
-                   "Content-Type", 12,
-                   PROMETHEUS_HEADER, sizeof(PROMETHEUS_HEADER) - 1);
+    flb_hs_add_content_type_to_req(request, FLB_HS_CONTENT_TYPE_PROMETHEUS);
     mk_http_send(request, sds, flb_sds_len(sds), NULL);
     for (i = 0; i < num_metrics; i++) {
       flb_sds_destroy(metrics_arr[i]);
@@ -488,6 +553,7 @@ static void cb_metrics(mk_request_t *request, void *data)
     buf->users++;
 
     mk_http_status(request, 200);
+    flb_hs_add_content_type_to_req(request, FLB_HS_CONTENT_TYPE_JSON);
     mk_http_send(request, buf->data, flb_sds_len(buf->data), NULL);
     mk_http_done(request);
 
@@ -498,7 +564,7 @@ static void cb_metrics(mk_request_t *request, void *data)
 int api_v1_metrics(struct flb_hs *hs)
 {
 
-    pthread_key_create(&hs_metrics_key, NULL);
+    pthread_key_create(&hs_metrics_key, hs_metrics_key_destroy);
 
     /* Create a message queue */
     hs->qid_metrics = mk_mq_create(hs->ctx, "/metrics",

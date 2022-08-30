@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -131,6 +131,13 @@ struct flb_aws_provider {
 
     /* Standard credentials chain is a list of providers */
     struct mk_list _head;
+
+    /* Provider managed dependencies; to delete on destroy */
+    struct flb_aws_provider *base_aws_provider;
+    struct flb_tls *cred_tls;   /* tls instances can't be re-used; aws provider requires
+                                   a separate one */
+    struct flb_tls *sts_tls;    /* one for the standard chain provider, one for sts
+                                   assume role */
 };
 
 /*
@@ -155,6 +162,43 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
                                                             struct
                                                             flb_aws_client_generator
                                                             *generator);
+
+/* Provide base configuration options for managed chain */
+#define FLB_AWS_CREDENTIAL_BASE_CONFIG_MAP(prefix)                                    \
+    {                                                                                 \
+     FLB_CONFIG_MAP_STR, prefix "region", NULL,                                       \
+     0, FLB_FALSE, 0,                                                                 \
+     "AWS region of your service"                                                     \
+    },                                                                                \
+    {                                                                                 \
+     FLB_CONFIG_MAP_STR, prefix "sts_endpoint", NULL,                                 \
+     0, FLB_FALSE, 0,                                                                 \
+     "Custom endpoint for the AWS STS API, used with the `" prefix "role_arn` option" \
+    },                                                                                \
+    {                                                                                 \
+     FLB_CONFIG_MAP_STR, prefix "role_arn", NULL,                                     \
+     0, FLB_FALSE, 0,                                                                 \
+     "ARN of an IAM role to assume (ex. for cross account access)"                    \
+    },                                                                                \
+    {                                                                                 \
+     FLB_CONFIG_MAP_STR, prefix "external_id", NULL,                                  \
+     0, FLB_FALSE, 0,                                                                 \
+     "Specify an external ID for the STS API, can be used with the `" prefix          \
+     "role_arn` parameter if your role requires an external ID."                      \
+    }
+    
+/*
+ * Managed chain provider; Creates and manages removal of dependancies for an instance
+ */
+struct flb_aws_provider *flb_managed_chain_provider_create(struct flb_output_instance
+                                                           *ins,
+                                                           struct flb_config
+                                                           *config,
+                                                           char *config_key_prefix,
+                                                           char *proxy,
+                                                           struct
+                                                           flb_aws_client_generator
+                                                           *generator);
 
 /*
  * A provider that uses OIDC tokens provided by kubernetes to obtain
@@ -250,6 +294,39 @@ char *flb_sts_session_name();
 struct flb_aws_credentials *flb_parse_http_credentials(char *response,
                                                        size_t response_len,
                                                        time_t *expiration);
+
+struct flb_aws_credentials *flb_parse_json_credentials(char *response,
+                                                       size_t response_len,
+                                                       char *session_token_field,
+                                                       time_t *expiration);
+
+#ifdef FLB_HAVE_AWS_CREDENTIAL_PROCESS
+
+/*
+ * Parses the input string, which is assumed to be the credential_process
+ * from the config file, into a sequence of tokens.
+ * Returns the array of tokens on success, and NULL on failure.
+ * The array of tokens will be terminated by NULL for use with `execvp`.
+ * The caller is responsible for calling `flb_free` on the return value.
+ * Note that this function modifies the input string.
+ */
+char** parse_credential_process(char* input);
+
+/*
+ * Executes the given credential_process, which is assumed to have come
+ * from the config file, and parses its result into *creds and *expiration.
+ * Returns 0 on success and < 0 on failure.
+ *
+ * If it succeeds, *creds and *expiration will be set appropriately, and the
+ * caller is responsible for calling `flb_aws_credentials_destroy(*creds)`.
+ * If the credentials do not expire, then *expiration will be 0.
+ *
+ * If it fails, then *creds will be NULL.
+ */
+int exec_credential_process(char* process, struct flb_aws_credentials** creds,
+                            time_t* expiration);
+
+#endif /* FLB_HAVE_AWS_CREDENTIAL_PROCESS */
 
 /*
  * Fluent Bit is single-threaded but asynchonous. Only one co-routine will
