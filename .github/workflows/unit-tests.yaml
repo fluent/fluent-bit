@@ -25,7 +25,7 @@ on:
 jobs:
   run-ubuntu-unit-tests:
     runs-on: ubuntu-18.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -78,7 +78,7 @@ jobs:
     needs:
       - run-ubuntu-unit-tests
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
