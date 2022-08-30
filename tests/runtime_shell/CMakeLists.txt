@@ -6,6 +6,7 @@ configure_file(
 set(UNIT_TESTS_SH
   in_dummy_expect.sh
   in_tail_expect.sh
+  in_http_tls_expect.sh
   in_dummy_thread_expect.sh
   in_syslog_tcp_tls_expect.sh
   in_syslog_tcp_plaintext_expect.sh
