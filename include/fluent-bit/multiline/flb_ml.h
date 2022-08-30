@@ -261,7 +261,7 @@ struct flb_ml_group {
 struct flb_ml {
     flb_sds_t name;                /* name of this multiline setup */
     int flush_ms;                  /* max flush interval found in groups/parsers */
-    time_t last_flush;             /* last flush time (involving groups) */
+    uint64_t last_flush;           /* last flush time (involving groups) */
     struct mk_list groups;         /* list head for flb_ml_group(s) */
     struct flb_config *config;     /* Fluent Bit context */
 };
