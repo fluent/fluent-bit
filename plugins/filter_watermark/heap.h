@@ -19,13 +19,15 @@
  */
 
 struct c_heap_t {
-  pthread_mutex_t lock;
-  int (*compare)(void *, void *);
-  int (*deconstructor)(void *);
+    pthread_mutex_t lock;
+    int (*compare)(void *, void *);
+    int (*deconstructor)(void *);
 
-  void **array;
-  size_t array_len;  /* # entries used */
-  size_t array_size; /* # entries allocated */
+    void **array;
+    /* # entries used */
+    size_t array_len;  
+    /* # entries allocated */
+    size_t array_size; 
 };
 
 //typedef struct c_heap_s c_heap_t;
@@ -35,4 +37,3 @@ void c_heap_destroy(struct c_heap_t *h);
 int c_heap_insert(struct c_heap_t *h, void *ptr);
 void *c_heap_get_root(struct c_heap_t *h);
 void *c_heap_read_root(struct c_heap_t *h);
-

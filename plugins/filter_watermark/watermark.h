@@ -2,8 +2,7 @@
 
 /*  Fluent Bit Throttling
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -34,23 +33,16 @@ struct flb_filter_watermark_record {
     size_t bytes;
 };
 
-
 struct flb_filter_watermark_ctx {
     int watermark;
-    
     time_t win_right_edge;
     time_t win_left_edge;
-
     int init_flag;
     int window_size;
-
     struct c_heap_t *h;
     flb_sds_t time_field;
-            
     struct flb_filter_watermark_record * record_pointer_cache_out_array[CACHE_SIZE_DEFAULT_VALUE];
     int record_count;
     struct flb_filter_instance *ins;
 };
-
-
 #endif
