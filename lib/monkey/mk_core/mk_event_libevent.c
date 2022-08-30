@@ -368,7 +368,7 @@ static inline int _mk_event_inject(struct mk_event_loop *loop,
     if (prevent_duplication) {
         for (index = 0 ; index < loop->n_events ; index++) {
             if (ctx->fired[index].data == event) {
-                return 0;
+                return 1;
             }
         }
     }
