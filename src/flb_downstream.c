@@ -155,6 +155,8 @@ struct flb_downstream *flb_downstream_create(int transport, int flags,
         flb_errno();
     }
     else {
+        stream->base.dynamically_allocated = FLB_TRUE;
+
         result = flb_downstream_setup(stream,
                                       transport, flags,
                                       host, port,
@@ -166,9 +168,6 @@ struct flb_downstream *flb_downstream_create(int transport, int flags,
             flb_downstream_destroy(stream);
 
             stream = NULL;
-        }
-        else {
-            stream->base.dynamically_allocated = FLB_TRUE;
         }
     }
 
