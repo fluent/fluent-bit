@@ -73,16 +73,16 @@ static int nginx_parse_stub_status(flb_sds_t buf, struct nginx_status *status)
         goto error;
     }
 
-    rc = sscanf(lines[0], "Active connections: %lu \n", &status->active);
+    rc = sscanf(lines[0], "Active connections: %" PRIu64 " \n", &status->active);
     if (rc != 1) {
         goto error;
     }
-    rc = sscanf(lines[2], " %lu %lu %lu \n",
+    rc = sscanf(lines[2], " %" PRIu64 " %" PRIu64 " %" PRIu64 " \n",
            &status->accepts, &status->handled, &status->requests);
     if (rc != 3) {
         goto error;
     }
-    rc = sscanf(lines[3], "Reading: %lu Writing: %lu Waiting: %lu \n",
+    rc = sscanf(lines[3], "Reading: %" PRIu64 " Writing: %" PRIu64 " Waiting: %" PRIu64 " \n",
             &status->reading, &status->writing, &status->waiting);
     if (rc != 3) {
         goto error;
