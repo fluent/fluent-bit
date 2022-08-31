@@ -124,6 +124,12 @@ struct flb_in_tcp_config *tcp_config_init(struct flb_input_instance *ins)
 
 int tcp_config_destroy(struct flb_in_tcp_config *ctx)
 {
+    if (ctx->collector_id != -1) {
+        flb_input_collector_delete(ctx->collector_id, ctx->ins);
+
+        ctx->collector_id = -1;
+    }
+
     if (ctx->downstream != NULL) {
         flb_downstream_destroy(ctx->downstream);
     }

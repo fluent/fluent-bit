@@ -70,6 +70,12 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
 
 int fw_config_destroy(struct flb_in_fw_config *config)
 {
+    if (config->coll_fd != -1) {
+        flb_input_collector_delete(config->coll_fd, config->ins);
+
+        config->coll_fd = -1;
+    }
+
     if (config->downstream != NULL) {
         flb_downstream_destroy(config->downstream);
     }

@@ -117,6 +117,7 @@ static int in_unix_socket_init(struct flb_input_instance *in,
         return -1;
     }
 
+    ctx->collector_id = -1;
     ctx->ins = in;
 
     mk_list_init(&ctx->connections);
@@ -229,6 +230,7 @@ static int in_unix_socket_init(struct flb_input_instance *in,
         return -1;
     }
 
+    ctx->collector_id = ret;
     ctx->collector_event = flb_input_collector_get_event(ret, in);
 
     if (ret == -1) {
