@@ -123,6 +123,12 @@ struct flb_in_unix_socket_config *unix_socket_config_init(struct flb_input_insta
 
 int unix_socket_config_destroy(struct flb_in_unix_socket_config *ctx)
 {
+    if (ctx->collector_id != -1) {
+        flb_input_collector_delete(ctx->collector_id, ctx->ins);
+
+        ctx->collector_id = -1;
+    }
+
     if (ctx->downstream != NULL) {
         flb_downstream_destroy(ctx->downstream);
     }

@@ -66,6 +66,12 @@ int http_config_destroy(struct flb_http *ctx)
     /* release all connections */
     http_conn_release_all(ctx);
 
+    if (ctx->collector_id != -1) {
+        flb_input_collector_delete(ctx->collector_id, ctx->ins);
+
+        ctx->collector_id = -1;
+    }
+
     if (ctx->downstream != NULL) {
         flb_downstream_destroy(ctx->downstream);
     }

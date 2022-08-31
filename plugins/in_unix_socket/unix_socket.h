@@ -43,6 +43,7 @@ struct flb_in_unix_socket_config {
     int socket_acl;                    /* Unix socket ACL             */
     flb_sds_t raw_separator;           /* Unescaped string delimiterr */
     flb_sds_t separator;               /* String delimiter            */
+    int collector_id;                  /* Listener collector id       */
     struct flb_downstream *downstream; /* Client manager              */
     struct unix_socket_conn *dummy_conn;/* Datagram dummy connection   */
     struct mk_list connections;        /* List of active connections  */

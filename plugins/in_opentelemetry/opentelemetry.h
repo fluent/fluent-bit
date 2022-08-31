@@ -38,6 +38,7 @@ struct flb_opentelemetry {
     size_t buffer_max_size;            /* Maximum buffer size */
     size_t buffer_chunk_size;          /* Chunk allocation size */
 
+    int collector_id;                  /* Listener collector id       */
     struct flb_downstream *downstream; /* Client manager */
     struct mk_list connections;        /* linked list of connections */
     struct mk_event_loop *evl;         /* Event loop context */

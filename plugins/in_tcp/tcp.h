@@ -39,6 +39,7 @@ struct flb_in_tcp_config {
     char *tcp_port;                    /* TCP Port                    */
     flb_sds_t raw_separator;           /* Unescaped string delimiterr */
     flb_sds_t separator;               /* String delimiter            */
+    int collector_id;                  /* Listener collector id       */
     struct flb_downstream *downstream; /* Client manager */
     struct mk_list connections;        /* List of active connections  */
     struct mk_event_loop *evl;         /* Event loop file descriptor  */
