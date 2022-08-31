@@ -1783,9 +1783,11 @@ static int net_address_unix_socket_peer_pid_raw(flb_sockfd_t fd,
                                                 int output_buffer_size,
                                                 size_t *output_data_size)
 {
+#ifndef FLB_SYSTEM_MACOS    
     unsigned int peer_credentials_size;
-    size_t       required_buffer_size;
     struct ucred peer_credentials;
+#endif
+    size_t       required_buffer_size;
     int          result;
 
     if (address->ss_family != AF_UNIX) {
@@ -1799,6 +1801,7 @@ static int net_address_unix_socket_peer_pid_raw(flb_sockfd_t fd,
         return -1;
     }
 
+#ifndef FLB_SYSTEM_MACOS    
     peer_credentials_size = sizeof(struct ucred);
 
     result = getsockopt(fd,
@@ -1813,6 +1816,11 @@ static int net_address_unix_socket_peer_pid_raw(flb_sockfd_t fd,
                                      "%ld",
                                      (long) peer_credentials.pid);
     }
+#else
+    *output_data_size = snprintf(output_buffer,
+                                 output_buffer_size,
+                                 "unavailable");
+#endif
 
     return result;
 }
