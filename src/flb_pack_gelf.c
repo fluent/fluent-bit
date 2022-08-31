@@ -19,6 +19,23 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_unescape.h>
+
+#include <ctype.h>
+
+static char gelf_valid_key_char[256] = {
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1,
+    0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+};
 
 static flb_sds_t flb_msgpack_gelf_key(flb_sds_t *s, int in_array,
                                       const char *prefix_key, int prefix_key_len,
@@ -27,18 +44,6 @@ static flb_sds_t flb_msgpack_gelf_key(flb_sds_t *s, int in_array,
 {
     int i;
     flb_sds_t tmp;
-    static char valid_char[256] = {
-       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0,
-       1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1,
-       1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1,
-       0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-       1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
     int start_len, end_len;
 
     if (in_array == FLB_FALSE) {
@@ -60,7 +65,7 @@ static flb_sds_t flb_msgpack_gelf_key(flb_sds_t *s, int in_array,
 
         end_len = flb_sds_len(*s);
         for(i=start_len; i < end_len; i++) {
-            if (!valid_char[(unsigned char)(*s)[i]]) {
+            if (!gelf_valid_key_char[(unsigned char)(*s)[i]]) {
                 (*s)[i] = '_';
             }
         }
@@ -85,7 +90,7 @@ static flb_sds_t flb_msgpack_gelf_key(flb_sds_t *s, int in_array,
 
         end_len = flb_sds_len(*s);
         for(i=start_len; i < end_len; i++) {
-            if (!valid_char[(unsigned char)(*s)[i]]) {
+            if (!gelf_valid_key_char[(unsigned char)(*s)[i]]) {
                 (*s)[i] = '_';
             }
         }
@@ -823,4 +828,394 @@ flb_sds_t flb_msgpack_raw_to_gelf(char *buf, size_t buf_size,
     msgpack_unpacked_destroy(&result);
 
     return s;
+}
+
+static inline int flb_gelf_pack_string_token(struct flb_pack_state *state,
+                                             const char *str, int len,
+                                             msgpack_packer *pck)
+{
+    int s;
+    int out_len;
+    char *tmp;
+    char *out_buf;
+
+    if (state->buf_size < len + 1) {
+        s = len + 1;
+        tmp = flb_realloc(state->buf_data, s);
+        if (!tmp) {
+            flb_errno();
+            return -1;
+        }
+        else {
+            state->buf_data = tmp;
+            state->buf_size = s;
+        }
+    }
+    out_buf = state->buf_data;
+
+    /* Always decode any UTF-8 or special characters */
+    out_len = flb_unescape_string_utf8(str, len, out_buf);
+
+    /* Pack decoded text */
+    msgpack_pack_str(pck, out_len);
+    msgpack_pack_str_body(pck, out_buf, out_len);
+
+    return out_len;
+}
+
+static inline int flb_gelf_is_integer(const char *buf, int len)
+{
+    const char *end = buf + len;
+    const char *p = buf;
+
+    while (p < end) {
+        if (!isdigit(*p)) {
+            return 0;
+        }
+        p++;
+    }
+
+    return 1;
+}
+
+int flb_gelf_to_msgpack(const char *js, size_t len, struct flb_time *tm,
+                        char **buffer, size_t *size, bool strict)
+{
+    int i, n;
+    int ret = -1;
+    int pairs;
+    size_t key_len, value_len;
+    const char *key_str, *value_str;
+    msgpack_packer pck;
+    msgpack_sbuffer sbuf;
+    jsmntok_t *tokens;
+    jsmntok_t *key;
+    jsmntok_t *value;
+    struct flb_pack_state state;
+    bool found_version = false;
+    bool found_host = false;
+    bool found_short_message = false;
+
+    ret = flb_pack_state_init(&state);
+    if (ret != 0) {
+        return -1;
+    }
+
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
+
+    ret = flb_json_tokenise(js, len, &state);
+    if (ret != 0) {
+        flb_error("[flb_gelf_to_msgpack] error parsing message");
+        ret = -1;
+        goto flb_pack_gelf_end;
+    }
+
+    if (state.tokens_count == 0) {
+        flb_error("[flb_gelf_to_msgpack] message is empty");
+        ret = -1;
+        goto flb_pack_gelf_end;
+    }
+
+    if (state.tokens[0].type != JSMN_OBJECT) {
+        flb_error("[flb_gelf_to_msgpack] message is not an json object");
+        ret = -1;
+        goto flb_pack_gelf_end;
+    }
+
+    if (state.tokens[0].size == 0) {
+        flb_error("[flb_gelf_to_msgpack] message has an empty json object");
+        ret = -1;
+        goto flb_pack_gelf_end;
+    }
+
+    if ((state.tokens_count - 1) != (state.tokens[0].size * 2)) {
+        flb_error("[flb_gelf_to_msgpack] parsed message "
+                  "has an incorrect number of tokens");
+        ret = -1;
+        goto flb_pack_gelf_end;
+    }
+
+    tokens = state.tokens;
+    pairs = state.tokens[0].size;
+
+    for (i = 0; i < tokens->size; i++) {
+        key = &tokens[i*2+1];
+
+        if ((key->start == -1) || (key->end == -1) ||
+            ((key->start == 0) && (key->end == 0))) {
+            break;
+        }
+        key_len = key->end - key->start;
+        key_str = js + key->start;
+
+        value = &tokens[i*2+2];
+        if ((value->start == -1) || (value->end == -1) ||
+            ((value->start == 0) && (value->end == 0))) {
+            break;
+        }
+        value_len = value->end - value->start;
+        value_str = js + value->start;
+
+        if ((key_len == strlen("version")) &&
+            (!strncmp(key_str, "version", key_len))) {
+            pairs--;
+        }
+        else if ((key_len == strlen("timestamp")) &&
+                 (!strncmp(key_str, "timestamp", key_len))) {
+            pairs--;
+        }
+        else if ((key_len == 1) && (key_str[0] == '_')) {
+            pairs--;
+        }
+    }
+
+    if (pairs <= 0) {
+        flb_error("[flb_gelf_to_msgpack] message is empty");
+        ret = -1;
+        goto flb_pack_gelf_end;
+    }
+
+    msgpack_pack_map(&pck, pairs);
+
+    for (i = 0; i < state.tokens[0].size; i++) {
+        key = &tokens[i*2+1];
+
+        if ((key->start == -1) || (key->end == -1) ||
+            ((key->start == 0) && (key->end == 0))) {
+            break;
+        }
+
+        key_len = key->end - key->start;
+        key_str = js + key->start;
+
+        if (key->type != JSMN_STRING) {
+           flb_error("[flb_gelf_to_msgpack] key \"%.*s\" must be a string",
+                     key_len, key_str);
+            ret = -1;
+            goto flb_pack_gelf_end;
+        }
+
+        if (key->size == 0) {
+           flb_error("[flb_gelf_to_msgpack] key is empty");
+            ret = -1;
+            goto flb_pack_gelf_end;
+        }
+
+        if (key_len <= 0) {
+           flb_error("[flb_gelf_to_msgpack] key is empty");
+            ret = -1;
+            goto flb_pack_gelf_end;
+        }
+
+        value = &tokens[i*2+2];
+        if ((value->start == -1) || (value->end == -1) ||
+            ((value->start == 0) && (value->end == 0))) {
+            break;
+        }
+
+        value_len = value->end - value->start;
+        value_str = js + value->start;
+
+        if ((key_len == strlen("version")) &&
+            (!strncmp(key_str, "version", key_len))) {
+            if (strict) {
+                if (value->type != JSMN_STRING) {
+                    flb_error("[flb_gelf_to_msgpack] version value "
+                              "must be a string");
+                    ret = -1;
+                    goto flb_pack_gelf_end;
+                }
+                if (!((value_len == 3) &&
+                      !strncmp(value_str, "1.1", value_len))) {
+                    flb_error("[flb_gelf_to_msgpack] version value "
+                               "must be \"1.1\"");
+                    ret = -1;
+                    goto flb_pack_gelf_end;
+                }
+            }
+            found_version = true;
+            continue;
+        }
+        else if ((key_len == strlen("host")) &&
+                 (!strncmp(key_str, "host", key_len))) {
+            if (value->type != JSMN_STRING) {
+                flb_error("[flb_gelf_to_msgpack] host value must be a string");
+                ret = -1;
+                goto flb_pack_gelf_end;
+            }
+            found_host = true;
+        }
+        else if ((key_len == strlen("short_message")) &&
+                 (!strncmp(key_str, "short_message", key_len))) {
+            if (strict) {
+                 if (value->type != JSMN_STRING) {
+                     flb_error("[flb_gelf_to_msgpack] short_message value "
+                               "must be a string");
+                     ret = -1;
+                     goto flb_pack_gelf_end;
+                 }
+            }
+            found_short_message = true;
+        }
+        else if ((key_len == strlen("full_message")) &&
+                 (!strncmp(key_str, "full_message", key_len))) {
+            if (strict) {
+                 if (value->type != JSMN_STRING) {
+                     flb_error("[flb_gelf_to_msgpack] full_message value "
+                               "must be a string");
+                     ret = -1;
+                     goto flb_pack_gelf_end;
+                 }
+            }
+        }
+        else if ((key_len == strlen("timestamp")) &&
+                 (!strncmp(key_str, "timestamp", key_len))) {
+            if (strict) {
+                if ((value->type != JSMN_PRIMITIVE) || (*value_str == 'f') ||
+                    (*value_str == 't') || (*value_str == 'n')) {
+                    flb_error("[flb_gelf_to_msgpack] timestamp value "
+                              "must be a number");
+                    ret = -1;
+                    goto flb_pack_gelf_end;
+                }
+            }
+            flb_time_from_double(tm, atof(value_str));
+            continue;
+        }
+        else if ((key_len == strlen("level")) &&
+                 (!strncmp(key_str, "level", key_len))) {
+            if (strict) {
+                if (value->type != JSMN_PRIMITIVE) {
+                    flb_error("[flb_gelf_to_msgpack] level value "
+                              "must be a number");
+                    ret = -1;
+                    goto flb_pack_gelf_end;
+                }
+            }
+        }
+        else if ((key_len == strlen("facility")) &&
+                 (!strncmp(key_str, "facility", key_len))) {
+            if (strict) {
+                if (value->type != JSMN_STRING) {
+                    flb_error("[flb_gelf_to_msgpack] facility value "
+                              "must be a string");
+                    ret = -1;
+                    goto flb_pack_gelf_end;
+                }
+            }
+        }
+        else if ((key_len == strlen("line")) &&
+                 (!strncmp(key_str, "line", key_len))) {
+            if (strict) {
+                if (value->type != JSMN_PRIMITIVE) {
+                    flb_error("[flb_gelf_to_msgpack] line value must be a string");
+                    ret = -1;
+                    goto flb_pack_gelf_end;
+                }
+            }
+        }
+        else if ((key_len == strlen("file")) &&
+                 (!strncmp(key_str, "file", key_len))) {
+            if (strict) {
+                 if (value->type != JSMN_STRING) {
+                     flb_error("[flb_gelf_to_msgpack] file value must be a string");
+                     ret = -1;
+                     goto flb_pack_gelf_end;
+                 }
+            }
+        }
+        else {
+            if (key_str[0] != '_') {
+                if (strict) {
+                    flb_error("[flb_gelf_to_msgpack] key \"%.*s\" it's not "
+                              "prefix with an underscore \"_\"", key_len, key_str);
+                    ret = -1;
+                    goto flb_pack_gelf_end;
+                }
+            }
+            else {
+                key_str++;
+                key_len--;
+            }
+
+            if (key_len == 0) {
+                continue;
+            }
+
+            if (strict) {
+                for(n=0; n < key_len; n++) {
+                    if (!gelf_valid_key_char[(unsigned char)(key_str[n])]) {
+                        flb_error("[flb_gelf_to_msgpack] key \"%.*s\" has "
+                                  "invalid characters", key_len, key_str);
+                        ret = -1;
+                        goto flb_pack_gelf_end;
+                    }
+                }
+            }
+        }
+
+        msgpack_pack_str(&pck, key_len);
+        msgpack_pack_str_body(&pck, key_str, key_len);
+
+        if (value->type == JSMN_STRING) {
+            flb_gelf_pack_string_token(&state, value_str, value_len, &pck);
+        }
+        else if (value->type == JSMN_PRIMITIVE) {
+            if (*value_str == 'f')  {
+                msgpack_pack_false(&pck);
+            }
+            else if (*value_str == 't') {
+                msgpack_pack_true(&pck);
+            }
+            else if (*value_str == 'n') {
+                msgpack_pack_nil(&pck);
+            }
+            else {
+                char *tmp_str;
+                tmp_str = flb_strndup(value_str, value_len);
+                if (flb_gelf_is_integer(value_str, value_len)) {
+                    msgpack_pack_int64(&pck, atoll(tmp_str));
+                }
+                else {
+                    msgpack_pack_double(&pck, atof(tmp_str));
+                }
+                flb_free(tmp_str);
+            }
+        }
+        else {
+            flb_error("[flb_gelf_to_msgpack] key \"%.*s\" "
+                      "use an unsupported value type", key_len, key_str);
+            ret = -1;
+            goto flb_pack_gelf_end;
+        }
+    }
+
+    if (strict) {
+        if (!found_version) {
+            flb_error("[flb_gelf_to_msgpack] missing version key");
+            ret = -1;
+            goto flb_pack_gelf_end;
+        }
+        if (!found_host) {
+            flb_error("[flb_gelf_to_msgpack] missing host key");
+            ret = -1;
+            goto flb_pack_gelf_end;
+        }
+        if (!found_short_message) {
+            flb_error("[flb_gelf_to_msgpack] missing short_message key");
+            ret = -1;
+            goto flb_pack_gelf_end;
+        }
+    }
+
+    *buffer = sbuf.data;
+    *size = sbuf.size;
+    ret = 0;
+ flb_pack_gelf_end:
+    if (ret < 0) {
+        msgpack_sbuffer_destroy(&sbuf);
+    }
+    flb_pack_state_reset(&state);
+    return ret;
 }

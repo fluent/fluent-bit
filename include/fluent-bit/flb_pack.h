@@ -120,4 +120,7 @@ flb_sds_t flb_msgpack_raw_to_gelf(char *buf, size_t buf_size,
                                   struct flb_time *tm,
                                   struct flb_gelf_fields *fields);
 
+int flb_gelf_to_msgpack(const char *js, size_t len, struct flb_time *tm,
+                        char **buffer, size_t *size, bool strict);
+
 #endif

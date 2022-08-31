@@ -169,6 +169,7 @@ int flb_gzip_uncompress(void *in_data, size_t in_len,
     uint8_t *p;
     void *out_buf;
     size_t out_size = 0;
+    size_t data_in_len, total_out;
     void *zip_data;
     size_t zip_len;
     unsigned char flg;
@@ -254,41 +255,22 @@ int flb_gzip_uncompress(void *in_data, size_t in_len,
         start += 2;
     }
 
-    /* Get decompressed length */
-    dlen = read_le32(&p[in_len - 4]);
-
-    /* Limit decompressed length to 100MB */
-    if (dlen > 100000000) {
-        flb_error("[gzip] maximum decompression size is 100MB");
-        return -1;
-    }
-
-    /* Get CRC32 checksum of original data */
-    crc = read_le32(&p[in_len - 8]);
-
-    /* Decompress data */
-    if ((p + in_len) - p < 8) {
-        flb_error("[gzip] invalid gzip CRC32 checksum");
-        return -1;
-    }
-
-    /* Allocate outgoing buffer */
-    out_buf = flb_malloc(dlen);
-    if (!out_buf) {
-        flb_errno();
-        return -1;
-    }
-    out_size = dlen;
-
     /* Ensure size is above 0 */
     if (((p + in_len) - start - 8) <= 0) {
-        flb_free(out_buf);
         return -1;
     }
 
     /* Map zip content */
     zip_data = (uint8_t *) start;
     zip_len = (p + in_len) - start - 8;
+
+    /* Allocate outgoing buffer */
+    out_size = zip_len * 2;
+    out_buf = flb_malloc(out_size);
+    if (!out_buf) {
+        flb_errno();
+        return -1;
+    }
 
     memset(&stream, 0, sizeof(stream));
     stream.next_in = zip_data;
@@ -302,34 +284,144 @@ int flb_gzip_uncompress(void *in_data, size_t in_len,
         return -1;
     }
 
-    status = mz_inflate(&stream, MZ_FINISH);
-    if (status != MZ_STREAM_END) {
-        mz_inflateEnd(&stream);
-        flb_free(out_buf);
-        return -1;
+    while (1) {
+        status = mz_inflate(&stream, MZ_NO_FLUSH);
+        if (status == MZ_STREAM_END) {
+            break;
+        }
+        else if (status == MZ_OK) {
+            void *tmp;
+            size_t new_out_size = out_size * 2;
+            /* Limit decompressed length to 100MB */
+            if (new_out_size > 100000000) {
+                flb_error("[gzip] maximum decompression size is 100MB");
+                mz_inflateEnd(&stream);
+                flb_free(out_buf);
+                return -1;
+            }
+            tmp = flb_realloc(out_buf, new_out_size);
+            if (!tmp) {
+                flb_errno();
+                mz_inflateEnd(&stream);
+                flb_free(out_buf);
+                return -1;
+            }
+            out_buf = tmp;
+            stream.next_out = (unsigned char *)out_buf + stream.total_out;
+            stream.avail_out = new_out_size - out_size;
+            out_size = new_out_size;
+        }
+        else {
+            flb_error("[gzip] error: %s", mz_error(status));
+            mz_inflateEnd(&stream);
+            flb_free(out_buf);
+            return -1;
+        }
     }
 
-    if (stream.total_out != dlen) {
-        mz_inflateEnd(&stream);
-        flb_free(out_buf);
-        flb_error("[gzip] invalid gzip data size");
-        return -1;
-    }
+    total_out = stream.total_out;
+    data_in_len = start - p + stream.total_in + 8;
 
     /* terminate the stream, it's not longer required */
     mz_inflateEnd(&stream);
 
-    /* Validate message CRC vs inflated data CRC */
-    crc_out = mz_crc32(MZ_CRC32_INIT, out_buf, dlen);
-    if (crc_out != crc) {
+    if (data_in_len > in_len) {
+        flb_error("[gzip] invalid number of procesed bytes");
         flb_free(out_buf);
-        flb_error("[gzip] invalid GZip checksum (CRC32)");
         return -1;
     }
 
+    /* Get decompressed length */
+    dlen = read_le32(&p[data_in_len - 4]);
+    if (dlen != total_out) {
+        flb_error("[gzip] invalid decompress size");
+        flb_free(out_buf);
+        return -1;
+    }
+
+    /* Get CRC32 checksum of original data */
+    crc = read_le32(&p[data_in_len - 8]);
+    /* Validate message CRC vs inflated data CRC */
+    crc_out = mz_crc32(MZ_CRC32_INIT, out_buf, total_out);
+    if (crc_out != crc) {
+        flb_error("[gzip] invalid GZip checksum (CRC32)");
+        flb_free(out_buf);
+        return -2;
+    }
+
     /* set the uncompressed data */
-    *out_len = dlen;
+    *out_len = total_out;
     *out_data = out_buf;
+
+    return 0;
+}
+
+int flb_zlib_uncompress(void *in_data, size_t in_len,
+                        void **out_data, size_t *out_len)
+{
+    int status;
+    void *out_buf = NULL;
+    size_t out_size = 0;
+    mz_stream stream;
+
+    /* Allocate outgoing buffer */
+    out_size = in_len * 2;
+    out_buf = flb_malloc(out_size);
+    if (!out_buf) {
+        flb_errno();
+        return -1;
+    }
+
+    memset(&stream, 0, sizeof(stream));
+    stream.next_in = in_data,
+    stream.avail_in = in_len,
+    stream.next_out = out_buf;
+    stream.avail_out = out_size;
+
+    status = mz_inflateInit2(&stream, Z_DEFAULT_WINDOW_BITS);
+    if (status != MZ_OK) {
+        flb_free(out_buf);
+        return -1;
+    }
+
+    while (1) {
+        status = mz_inflate(&stream, MZ_NO_FLUSH);
+        if (status == MZ_STREAM_END) {
+            break;
+        }
+        else if (status == MZ_OK) {
+            void *tmp;
+            size_t new_out_size = out_size * 2;
+            /* Limit decompressed length to 100MB */
+            if (new_out_size > 100000000) {
+                flb_error("[zlib] maximum decompression size is 100MB");
+                mz_inflateEnd(&stream);
+                flb_free(out_buf);
+                return -1;
+            }
+            tmp = flb_realloc(out_buf, new_out_size);
+            if (!tmp) {
+                flb_errno();
+                mz_inflateEnd(&stream);
+                flb_free(out_buf);
+                return -1;
+            }
+            out_buf = tmp;
+            stream.next_out = (unsigned char *)out_buf + stream.total_out;
+            stream.avail_out = new_out_size - out_size;
+            out_size = new_out_size;
+        }
+        else {
+            flb_error("[zlib] error: %s", mz_error(status));
+            mz_inflateEnd(&stream);
+            flb_free(out_buf);
+            return -1;
+        }
+    }
+
+    *out_len = stream.total_out;
+    *out_data = out_buf;
+    mz_inflateEnd(&stream);
 
     return 0;
 }

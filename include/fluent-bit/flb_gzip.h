@@ -28,4 +28,7 @@ int flb_gzip_compress(void *in_data, size_t in_len,
 int flb_gzip_uncompress(void *in_data, size_t in_len,
                         void **out_data, size_t *out_size);
 
+int flb_zlib_uncompress(void *in_data, size_t in_len,
+                        void **out_data, size_t *out_len);
+
 #endif
