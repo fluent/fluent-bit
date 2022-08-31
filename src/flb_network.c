@@ -23,6 +23,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#ifdef FLB_HAVE_SYS_UCRED_H
+#include <sys/ucred.h>
+#endif
 #include <fcntl.h>
 #include <errno.h>
 #include <ctype.h>
@@ -1785,7 +1788,6 @@ static int net_address_unix_socket_peer_pid_raw(flb_sockfd_t fd,
 {
     unsigned int peer_credentials_size;
     size_t       required_buffer_size;
-    struct ucred peer_credentials;
     int          result;
 
     if (address->ss_family != AF_UNIX) {
@@ -1799,20 +1801,46 @@ static int net_address_unix_socket_peer_pid_raw(flb_sockfd_t fd,
         return -1;
     }
 
-    peer_credentials_size = sizeof(struct ucred);
+#if FLB_HAVE_DECL_LOCAL_PEERCRED
+    {
+        struct xucred peer_credentials;
 
-    result = getsockopt(fd,
-                        SOL_SOCKET,
-                        SO_PEERCRED,
-                        &peer_credentials,
-                        &peer_credentials_size);
+        peer_credentials_size = sizeof(struct xucred);
 
-    if (result != -1) {
-        *output_data_size = snprintf(output_buffer,
-                                     output_buffer_size,
-                                     "%ld",
-                                     (long) peer_credentials.pid);
+        result = getsockopt(fd,
+                            SOL_SOCKET,
+                            LOCAL_PEERCRED,
+                            &peer_credentials,
+                            &peer_credentials_size);
+
+        if (result != -1) {
+            /* NOTE: xucred does not define pid. Always zero. */
+            *output_data_size = snprintf(output_buffer,
+                                         output_buffer_size,
+                                         "%ld",
+                                         (long) 0);
+        }
     }
+#elif FLB_HAVE_DECL_SO_PEERCRED
+    {
+        struct ucred peer_credentials;
+
+        peer_credentials_size = sizeof(struct ucred);
+
+        result = getsockopt(fd,
+                            SOL_SOCKET,
+                            SO_PEERCRED,
+                            &peer_credentials,
+                            &peer_credentials_size);
+
+        if (result != -1) {
+            *output_data_size = snprintf(output_buffer,
+                                         output_buffer_size,
+                                         "%ld",
+                                         (long) peer_credentials.pid);
+        }
+    }
+#endif
 
     return result;
 }

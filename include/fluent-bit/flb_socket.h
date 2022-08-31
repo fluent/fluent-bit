@@ -37,6 +37,9 @@
 #else
 #include <sys/types.h>
 #include <sys/socket.h>
+#ifdef FLB_HAVE_SYS_UCRED_H
+#include <sys/ucred.h>
+#endif
 
 #define flb_sockfd_t         int
 

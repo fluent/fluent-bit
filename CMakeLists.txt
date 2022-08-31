@@ -61,6 +61,7 @@ endif()
 
 include(GNUInstallDirs)
 include(ExternalProject)
+include(CheckIncludeFile)
 include(cmake/FindJournald.cmake)
 include(cmake/FindMonkey.cmake)
 include(cmake/macros.cmake)
@@ -677,6 +678,21 @@ check_c_source_compiles("
   }" FLB_HAVE_UNIX_SOCKET)
 if(FLB_HAVE_UNIX_SOCKET)
   FLB_DEFINITION(FLB_HAVE_UNIX_SOCKET)
+endif()
+
+check_include_file(sys/ucred.h FLB_HAVE_SYS_UCRED_H)
+if(FLB_HAVE_SYS_UCRED_H)
+  FLB_DEFINITION(FLB_HAVE_SYS_UCRED_H)
+endif()
+
+check_symbol_exists(SO_PEERCRED "sys/socket.h" FLB_HAVE_DECL_SO_PEERCRED)
+if(FLB_HAVE_DECL_SO_PEERCRED)
+  FLB_DEFINITION(FLB_HAVE_DECL_SO_PEERCRED)
+endif()
+
+check_symbol_exists(LOCAL_PEERCRED "sys/un.h" FLB_HAVE_DECL_LOCAL_PEERCRED)
+if(FLB_HAVE_DECL_LOCAL_PEERCRED)
+  FLB_DEFINITION(FLB_HAVE_DECL_LOCAL_PEERCRED)
 endif()
 
 # Configuration file YAML format support
