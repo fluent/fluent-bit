@@ -77,6 +77,8 @@ static int in_http_init(struct flb_input_instance *ins,
         return -1;
     }
 
+    ctx->collector_id = -1;
+
     /* Populate context with config map defaults and incoming properties */
     ret = flb_input_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
@@ -129,6 +131,8 @@ static int in_http_init(struct flb_input_instance *ins,
 
         return -1;
     }
+
+    ctx->collector_id = ret;
 
     return 0;
 }

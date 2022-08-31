@@ -36,6 +36,8 @@ struct flb_http {
     flb_sds_t tcp_port;
     const char *tag_key;
 
+    int collector_id;
+
     size_t buffer_max_size;            /* Maximum buffer size */
     size_t buffer_chunk_size;          /* Chunk allocation size */
 

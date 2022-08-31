@@ -77,6 +77,7 @@ static int in_tcp_init(struct flb_input_instance *in,
     if (!ctx) {
         return -1;
     }
+    ctx->collector_id = -1;
     ctx->ins = in;
     mk_list_init(&ctx->connections);
 
@@ -116,6 +117,8 @@ static int in_tcp_init(struct flb_input_instance *in,
 
         return -1;
     }
+
+    ctx->collector_id = ret;
 
     return 0;
 }

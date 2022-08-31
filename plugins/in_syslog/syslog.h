@@ -64,6 +64,7 @@ struct flb_syslog {
     struct flb_parser *parser;
 
     int dgram_mode_flag;
+    int collector_id;
     struct mk_event *collector_event;
     struct flb_downstream *downstream;
     struct syslog_conn *dummy_conn;

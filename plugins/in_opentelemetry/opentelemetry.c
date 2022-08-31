@@ -74,6 +74,7 @@ static int in_opentelemetry_init(struct flb_input_instance *ins,
     if (!ctx) {
         return -1;
     }
+    ctx->collector_id = -1;
 
     /* Populate context with config map defaults and incoming properties */
     ret = flb_input_config_map_set(ins, (void *) ctx);
@@ -128,6 +129,8 @@ static int in_opentelemetry_init(struct flb_input_instance *ins,
         opentelemetry_config_destroy(ctx);
         return -1;
     }
+
+    ctx->collector_id = ret;
 
     return 0;
 }
