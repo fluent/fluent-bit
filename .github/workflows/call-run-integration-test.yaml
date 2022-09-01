@@ -57,6 +57,7 @@ jobs:
       aks-cluster-resource-group: ${{ steps.aks-cluster-resource-group.outputs.stdout }}
       aws-opensearch-endpoint: ${{ steps.aws-opensearch-endpoint.outputs.stdout }}
       gke-cluster-name: ${{ steps.gke-cluster-name.outputs.stdout }}
+      gke-cluster-region: ${{ steps.gke-cluster-region.outputs.stdout }}
       gke-cluster-zone: ${{ steps.gke-cluster-zone.outputs.stdout }}
     env:
       # https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/guides/service_principal_client_secret
@@ -170,6 +171,11 @@ jobs:
 
       - id: gke-cluster-name
         run: terraform output -no-color -raw gke_kubernetes_cluster_name
+        working-directory: terraform
+        shell: bash
+
+      - id: gke-cluster-region
+        run: terraform output -no-color -raw gke_region
         working-directory: terraform
         shell: bash
 
@@ -306,11 +312,23 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ secrets.azure-subscription-id }}
           ARM_TENANT_ID: ${{ secrets.azure-tenant-id }}
 
+      - name: Check Kubeconfig set up
+        run: |
+          kubectl cluster-info
+          kubectl get nodes --show-labels
+          kubectl get pods --all-namespaces --show-labels
+          kubectl get ns
+        shell: bash
+
       - name: Run tests
+        # https://github.com/fluent/fluent-bit-ci/issues/80
+        continue-on-error: ${{ matrix.cloud == 'gke' }}
         run:  |
           ./run-tests.sh
         shell: bash
         env:
+          # Namespace per test run to hopefully isolate a bit
+          TEST_NAMESPACE: test-${{ github.run_id }}
           FLUENTBIT_IMAGE_REPOSITORY: ${{ inputs.image_name }}
           FLUENTBIT_IMAGE_TAG: ${{ inputs.image_tag }}
           HOSTED_OPENSEARCH_HOST: ${{ needs.call-run-terraform-setup.outputs.aws-opensearch-endpoint }}
