@@ -1,11 +1,11 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_utils.h>
 
 #include "flb_tests_internal.h"
-
 
 struct url_check {
     int ret;
@@ -37,6 +37,19 @@ struct url_check url_checks[] = {
     {-1, "://", NULL, NULL, NULL, NULL},
 };
 
+static void initialization_crutch()
+{
+    struct flb_config *config;
+
+    config = flb_config_init();
+
+    if (config == NULL) {
+        return;
+    }
+
+    flb_config_exit(config);
+}
+
 void test_url_split()
 {
     int i;
@@ -47,6 +60,8 @@ void test_url_split()
     char *port;
     char *uri;
     struct url_check *u;
+
+    initialization_crutch();
 
     size = sizeof(url_checks) / sizeof(struct url_check);
     for (i = 0; i < size; i ++) {
@@ -133,6 +148,9 @@ static void write_str_test_cases_w_buf_size(struct write_str_case *cases, int bu
     int ret;
 
     struct write_str_case *tcase = cases;
+
+    initialization_crutch();
+
     while (!(tcase->input == 0 && tcase->output == 0)) {
         memset(buf, 0, size);
         off = 0;
@@ -174,6 +192,8 @@ void test_write_str()
     int size = sizeof(buf);
     int off;
     int ret;
+
+    initialization_crutch();
 
     off = 0;
     ret = flb_utils_write_str(buf, &off, size, "a", 1);
@@ -393,6 +413,8 @@ void test_proxy_url_split() {
     char *username;
     char *password;
     struct proxy_url_check *u;
+
+    initialization_crutch();
 
     size = sizeof(proxy_url_checks) / sizeof(struct proxy_url_check);
     for (i = 0; i < size; i++) {
