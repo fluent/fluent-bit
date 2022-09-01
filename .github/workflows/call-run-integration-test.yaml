@@ -286,7 +286,7 @@ jobs:
         if: matrix.cloud == 'gke'
         run: |
           gcloud info
-          gcloud container clusters get-credentials "$GKE_CLUSTER_NAME" --region "$GKE_ZONE"
+          gcloud container clusters get-credentials "$GKE_CLUSTER_NAME" --zone "$GKE_ZONE"
         shell: bash
         env:
           GKE_CLUSTER_NAME: ${{ needs.call-run-terraform-setup.outputs.gke-cluster-name }}
