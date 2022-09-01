@@ -1,11 +1,25 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_metrics.h>
 
 #include "flb_tests_internal.h"
+
+static void initialization_crutch()
+{
+    struct flb_config *config;
+
+    config = flb_config_init();
+
+    if (config == NULL) {
+        return;
+    }
+
+    flb_config_exit(config);
+}
 
 static void test_create_usage()
 {
@@ -15,6 +29,8 @@ static void test_create_usage()
     int id_3;
     struct flb_metric *m;
     struct flb_metrics *ctx;
+
+    initialization_crutch();
 
     /* Create and destroy */
     ctx = flb_metrics_create("metrics");
