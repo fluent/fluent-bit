@@ -1,6 +1,7 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_config_format.h>
