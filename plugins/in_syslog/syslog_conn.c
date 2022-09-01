@@ -222,7 +222,9 @@ int syslog_conn_del(struct syslog_conn *conn)
     /* The downstream unregisters the file descriptor from the event-loop
      * so there's nothing to be done by the plugin
      */
-    flb_downstream_conn_release(conn->connection);
+    if (!ctx->dgram_mode_flag) {
+        flb_downstream_conn_release(conn->connection);
+    }
 
     /* Release resources */
     mk_list_del(&conn->_head);
