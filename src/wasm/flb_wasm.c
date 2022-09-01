@@ -51,11 +51,18 @@ static int flb_wasm_load_wasm_binary(const char *wasm_path, int8_t **out_buf, ui
         goto error;
     }
 
-    if ((get_package_type((const uint8_t *)buffer, buf_size) != Wasm_Module_Bytecode) &&
-        (get_package_type((const uint8_t *)buffer, buf_size) != Wasm_Module_AoT)) {
-        flb_error("WASM bytecode or AOT is expected but other file format");
+#if defined(FLB_WAMR_DISABLE_AOT_LOADING)
+    if ((get_package_type((const uint8_t *)buffer, buf_size) != Wasm_Module_Bytecode)) {
+        flb_error("WASM bytecode is expected but other file format");
         goto error;
     }
+#else
+    if ((get_package_type((const uint8_t *)buffer, buf_size) != Wasm_Module_Bytecode) &&
+        (get_package_type((const uint8_t *)buffer, buf_size) != Wasm_Module_AoT)) {
+        flb_error("WASM bytecode or AOT object is expected but other file format");
+        goto error;
+    }
+#endif
 
     *out_buf = buffer;
     *out_size = buf_size;
