@@ -492,17 +492,19 @@ int flb_sched_timer_cb_create(struct flb_sched *sched, int type, int ms,
 /* Disable notifications, used before to destroy the context */
 int flb_sched_timer_cb_disable(struct flb_sched_timer *timer)
 {
-    mk_event_timeout_disable(timer->sched->evl, &timer->event);
-    timer->timer_fd = -1;
+    if (timer->timer_fd != -1) {
+        mk_event_timeout_destroy(timer->sched->evl, &timer->event);
+
+        timer->timer_fd = -1;
+    }
+
     return 0;
 }
 
 int flb_sched_timer_cb_destroy(struct flb_sched_timer *timer)
 {
-    if (timer->timer_fd > 0) {
-        flb_sched_timer_cb_disable(timer);
-    }
     flb_sched_timer_destroy(timer);
+
     return 0;
 }
 
@@ -637,7 +639,7 @@ struct flb_sched_timer *flb_sched_timer_create(struct flb_sched *sched)
 
 void flb_sched_timer_invalidate(struct flb_sched_timer *timer)
 {
-    mk_event_timeout_disable(timer->sched->evl, &timer->event);
+    flb_sched_timer_cb_disable(timer);
 
     timer->active = FLB_FALSE;
 
@@ -648,11 +650,7 @@ void flb_sched_timer_invalidate(struct flb_sched_timer *timer)
 /* Destroy a timer context */
 int flb_sched_timer_destroy(struct flb_sched_timer *timer)
 {
-    mk_event_timeout_destroy(timer->sched->evl, &timer->event);
-
-    if (timer->timer_fd > 0) {
-        flb_sched_timer_cb_disable(timer);
-    }
+    flb_sched_timer_cb_disable(timer);
 
     mk_list_del(&timer->_head);
     flb_free(timer);
