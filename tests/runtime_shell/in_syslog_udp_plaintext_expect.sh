@@ -1,23 +1,23 @@
 #!/bin/sh
 
-. ${FLB_RUNTIME_SHELL_PATH}/in_syslog_common.sh
+. ${FLB_RUNTIME_SHELL_PATH}/common.sh
 
-syslog_udp_plaintext_input_generator() {
-    result=$(wait_for_fluent_bit)
+input_generator() {
+    result=$(wait_for_fluent_bit ${SIGNAL_FILE_PATH})
 
     if test "$result" -eq "0"
     then
-        logger -d -n $LISTENER_HOST -P $LISTENER_PORT 'Hello!'
+        echo '<13>1 1970-01-01T00:00:00.000000+00:00 testhost testuser - - [] Hello!' | \
+            nc -w 1 -u $LISTENER_HOST $LISTENER_PORT
     fi
 }
 
-# logger -u /tmp/fb_syslog_uds_dgram.sock '{"a": "b"}'
-
 test_in_syslog_tcp_plaintext_filter_expect() {
+    export SIGNAL_FILE_PATH="/tmp/fb_signal_$$"
     export LISTENER_HOST=127.0.0.1 
     export LISTENER_PORT=9999 
 
-    syslog_udp_plaintext_input_generator &
+    input_generator &
 
     $FLB_BIN -c $FLB_RUNTIME_SHELL_CONF/in_syslog_udp_plaintext_expect.conf
 }

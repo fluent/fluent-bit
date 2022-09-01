@@ -1,6 +1,6 @@
 #!/bin/sh
 
-. ${FLB_RUNTIME_SHELL_PATH}/in_syslog_common.sh
+. ${FLB_RUNTIME_SHELL_PATH}/common.sh
 
 input_generator() {
     result=$(wait_for_fluent_bit)
@@ -15,6 +15,7 @@ input_generator() {
 }
 
 test_in_http_tls_filter_expect() {
+    export SIGNAL_FILE_PATH="/tmp/fb_signal_$$"
     export LISTENER_VHOST=leo.vcap.me
     export LISTENER_HOST=127.0.0.1 
     export LISTENER_PORT=9999

@@ -1,18 +1,19 @@
 #!/bin/sh
 
-. ${FLB_RUNTIME_SHELL_PATH}/in_syslog_common.sh
+. ${FLB_RUNTIME_SHELL_PATH}/common.sh
 
 input_generator() {
-    result=$(wait_for_fluent_bit)
+    result=$(wait_for_fluent_bit ${SIGNAL_FILE_PATH})
 
     if test "$result" -eq "0"
     then
-        logger -d -n $LISTENER_HOST -P $LISTENER_PORT 'Hello!' -s 2>&1 | \
+        echo '<13>1 1970-01-01T00:00:00.000000+00:00 testhost testuser - - [] Hello!' | \
             openssl s_client -connect $LISTENER_HOST:$LISTENER_PORT 2>&1 >/dev/null
     fi
 }
 
 test_in_syslog_tcp_plaintext_filter_expect() {
+    export SIGNAL_FILE_PATH="/tmp/fb_signal_$$"
     export LISTENER_VHOST=leo.vcap.me
     export LISTENER_HOST=127.0.0.1 
     export LISTENER_PORT=9999
