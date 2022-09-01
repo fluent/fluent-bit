@@ -75,8 +75,8 @@ If you are interested into more details, please refer to the [Build & Install](h
 - CMake >= 3.0
 - Flex
 - Bison
-- YAML headers
-- OpenSSL headers
+- YAML library/headers
+- OpenSSL library/headers
 
 #### Linux Packages
 
