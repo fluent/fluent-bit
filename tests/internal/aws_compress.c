@@ -247,8 +247,17 @@ static void flb_aws_compress_general_test_cases(int test_type,
     size_t out_data_len;
     unsigned char* out_data_b64;
     size_t out_data_b64_len;
-
+    struct flb_config *config;
     struct flb_aws_test_case *tcase = cases;
+
+    config = flb_config_init();
+
+    if (config == NULL) {
+        return;
+    }
+
+    flb_config_exit(config);
+
     while (tcase->compression_keyword != 0) {
 
         size_t in_data_len = strlen(tcase->in_data);
@@ -333,14 +342,8 @@ static void flb_aws_compress_general_test_cases(int test_type,
  */
 /* Copied from monkey/plugins/auth/base64.c */
 
-#include <monkey/mk_api.h>
-#if defined(MALLOC_JEMALLOC)
-#define __mem_alloc    mk_api->mem_alloc
-#define __mem_free     mk_api->mem_free
-#else
 #define __mem_alloc    malloc
 #define __mem_free     free
-#endif
 
 static const unsigned char base64_table[65] =
 	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -370,12 +373,8 @@ static unsigned char * base64_encode(const unsigned char *src, size_t len,
 	olen++; /* nul termination */
 	if (olen < len)
 		return NULL; /* integer overflow */
-	if (mk_api != NULL) {
-		out = __mem_alloc(olen);
-	}
-	else {
-                out = __mem_alloc(olen);
-        }
+
+	out = __mem_alloc(olen);
 
 	if (out == NULL)
 		return NULL;
