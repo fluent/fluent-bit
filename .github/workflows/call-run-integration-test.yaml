@@ -173,8 +173,8 @@ jobs:
         working-directory: terraform
         shell: bash
 
-      - id: gke-cluster-region
-        run: terraform output -no-color -raw gke_region
+      - id: gke-cluster-zone
+        run: terraform output -no-color -raw gke_zone
         working-directory: terraform
         shell: bash
 
@@ -286,11 +286,11 @@ jobs:
         if: matrix.cloud == 'gke'
         run: |
           gcloud info
-          gcloud container clusters get-credentials "$GKE_CLUSTER_NAME" --region "$GKE_REGION"
+          gcloud container clusters get-credentials "$GKE_CLUSTER_NAME" --region "$GKE_ZONE"
         shell: bash
         env:
           GKE_CLUSTER_NAME: ${{ needs.call-run-terraform-setup.outputs.gke-cluster-name }}
-          GKE_REGION: ${{ needs.call-run-terraform-setup.outputs.gke-cluster-region }}
+          GKE_ZONE: ${{ needs.call-run-terraform-setup.outputs.gke-cluster-zone }}
 
       - name: Get the AKS Kubeconfig
         if: matrix.cloud == 'aks'
