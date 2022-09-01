@@ -33,6 +33,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_http_client.h>
@@ -78,6 +79,19 @@ struct aws_test {
     struct flb_http_client *c;
     struct mk_list _head;
 };
+
+static void initialization_crutch()
+{
+    struct flb_config *config;
+
+    config = flb_config_init();
+
+    if (config == NULL) {
+        return;
+    }
+
+    flb_config_exit(config);
+}
 
 static struct request *http_request_create(char *request)
 {
@@ -557,6 +571,8 @@ static void aws_test_suite()
     struct aws_test *awt;
     struct flb_aws_provider *provider;
 
+    initialization_crutch();
+
     config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
         flb_errno();
@@ -640,6 +656,8 @@ static void check_normalize(char *s, size_t len, char *out)
 
 void normalize()
 {
+    initialization_crutch();
+
     /* get-relative */
     check_normalize("/example/..", 11, "/");
 
