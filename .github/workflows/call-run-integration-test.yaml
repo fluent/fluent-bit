@@ -58,6 +58,7 @@ jobs:
       aws-opensearch-endpoint: ${{ steps.aws-opensearch-endpoint.outputs.stdout }}
       gke-cluster-name: ${{ steps.gke-cluster-name.outputs.stdout }}
       gke-cluster-region: ${{ steps.gke-cluster-region.outputs.stdout }}
+      gke-cluster-zone: ${{ steps.gke-cluster-zone.outputs.stdout }}
     env:
       # https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/guides/service_principal_client_secret
       # Note these have to be set in the Terraform Cloud workspace as well
@@ -178,6 +179,11 @@ jobs:
         working-directory: terraform
         shell: bash
 
+      - id: gke-cluster-zone
+        run: terraform output -no-color -raw gke_zone
+        working-directory: terraform
+        shell: bash
+
       - id: aks-cluster-name
         run: terraform output -no-color -raw aks_cluster_name
         working-directory: terraform
@@ -286,11 +292,11 @@ jobs:
         if: matrix.cloud == 'gke'
         run: |
           gcloud info
-          gcloud container clusters get-credentials "$GKE_CLUSTER_NAME" --region "$GKE_REGION"
+          gcloud container clusters get-credentials "$GKE_CLUSTER_NAME" --zone "$GKE_ZONE"
         shell: bash
         env:
           GKE_CLUSTER_NAME: ${{ needs.call-run-terraform-setup.outputs.gke-cluster-name }}
-          GKE_REGION: ${{ needs.call-run-terraform-setup.outputs.gke-cluster-region }}
+          GKE_ZONE: ${{ needs.call-run-terraform-setup.outputs.gke-cluster-zone }}
 
       - name: Get the AKS Kubeconfig
         if: matrix.cloud == 'aks'
@@ -306,11 +312,23 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ secrets.azure-subscription-id }}
           ARM_TENANT_ID: ${{ secrets.azure-tenant-id }}
 
+      - name: Check Kubeconfig set up
+        run: |
+          kubectl cluster-info
+          kubectl get nodes --show-labels
+          kubectl get pods --all-namespaces --show-labels
+          kubectl get ns
+        shell: bash
+
       - name: Run tests
+        # https://github.com/fluent/fluent-bit-ci/issues/80
+        continue-on-error: ${{ matrix.cloud == 'gke' }}
         run:  |
           ./run-tests.sh
         shell: bash
         env:
+          # Namespace per test run to hopefully isolate a bit
+          TEST_NAMESPACE: test-${{ github.run_id }}
           FLUENTBIT_IMAGE_REPOSITORY: ${{ inputs.image_name }}
           FLUENTBIT_IMAGE_TAG: ${{ inputs.image_tag }}
           HOSTED_OPENSEARCH_HOST: ${{ needs.call-run-terraform-setup.outputs.aws-opensearch-endpoint }}
