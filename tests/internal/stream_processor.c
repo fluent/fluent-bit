@@ -19,6 +19,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_error.h>
@@ -53,6 +54,19 @@
     FLB_TESTS_DATA_PATH "/data/stream_processor/samples-hw/"
 
 #define MP_UOK MSGPACK_UNPACK_SUCCESS
+
+static void initialization_crutch()
+{
+    struct flb_config *config;
+
+    config = flb_config_init();
+
+    if (config == NULL) {
+        return;
+    }
+
+    flb_config_exit(config);
+}
 
 int flb_sp_fd_event_test(int fd, struct flb_sp_task *task, struct sp_buffer *out_buf)
 {
@@ -199,6 +213,8 @@ static void invalid_queries()
     struct flb_sp *sp;
     struct flb_sp_task *task;
 
+    initialization_crutch();
+
     /* Total number of checks for invalid queries */
     checks = sizeof(invalid_query_checks) / sizeof(char *);
 
@@ -242,6 +258,8 @@ static void test_select_keys()
 #ifdef _WIN32
     WSADATA wsa_data;
 #endif
+
+    initialization_crutch();
 
     config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
@@ -328,6 +346,8 @@ static void test_select_subkeys()
 #ifdef _WIN32
     WSADATA wsa_data;
 #endif
+
+    initialization_crutch();
 
     config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
@@ -456,6 +476,8 @@ static void test_window()
 #ifdef _WIN32
     WSADATA wsa_data;
 #endif
+
+    initialization_crutch();
 
     config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
@@ -607,6 +629,8 @@ static void test_snapshot()
 #ifdef _WIN32
     WSADATA wsa_data;
 #endif
+
+    initialization_crutch();
 
     config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
