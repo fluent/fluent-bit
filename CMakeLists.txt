@@ -676,6 +676,7 @@ endif()
 
 # unix socket support
 check_c_source_compiles("
+  #include <unistd.h>
   #include <sys/un.h>
   #include <sys/types.h>
   #include <sys/socket.h>
