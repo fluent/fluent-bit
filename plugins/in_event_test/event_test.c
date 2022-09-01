@@ -71,11 +71,20 @@ static void set_unit_test_status(struct event_test *ctx, int id, int status)
 
 static int config_destroy(struct event_test *ctx)
 {
+    size_t test_index;
+
     if (!ctx) {
         return 0;
     }
 
     if (ctx->tests) {
+        for (test_index = 0 ; test_index < 3 ; test_index++) {
+            if (ctx->tests[0].coll_id != -1) {
+                flb_input_collector_pause(ctx->tests[0].coll_id,
+                                          ctx->ins);
+            }
+        }
+
         flb_free(ctx->tests);
     }
 
@@ -118,6 +127,7 @@ static int cb_collector_time(struct flb_input_instance *ins,
     /* disable the collector */
     ut = &ctx->tests[0];
     flb_input_collector_pause(ut->coll_id, ins);
+    ut->coll_id = -1;
 
     /*
      * before to return, trigger test 1 (collector_fd_event) by writing a byte
@@ -157,6 +167,8 @@ static int cb_collector_fd(struct flb_input_instance *ins,
     /* disable the collector */
     ut = &ctx->tests[1];
     flb_input_collector_pause(ut->coll_id, ins);
+    ut->coll_id = -1;
+
     set_unit_test_status(ctx, 1, STATUS_OK);
 
     FLB_INPUT_RETURN(0);
@@ -182,6 +194,8 @@ static int cb_collector_server_socket(struct flb_input_instance *ins,
 
     ut = &ctx->tests[2];
     flb_input_collector_pause(ut->coll_id, ins);
+    ut->coll_id = -1;
+
     set_unit_test_status(ctx, 2, STATUS_OK);
 
     flb_plg_info(ins, "[OK] collector_server_socket");
@@ -212,6 +226,8 @@ static int cb_collector_server_client(struct flb_input_instance *ins,
 
     /* disable this collector */
     flb_input_collector_pause(ctx->client_coll_id, ins);
+    ctx->client_coll_id = -1;
+
     FLB_INPUT_RETURN(0);
 }
 
