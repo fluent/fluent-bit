@@ -382,8 +382,14 @@ static void test_sts_uri()
 static void test_process_sts_response()
 {
     struct flb_aws_credentials *creds;
+    struct flb_config *config;
     time_t expiration;
 
+    config = flb_config_init();
+
+    if (config == NULL) {
+        return;
+    }
     creds = flb_parse_sts_resp(STS_RESPONSE_EKS, &expiration);
 
     TEST_CHECK(strcmp(EKS_ACCESS_KEY, creds->access_key_id) == 0);
@@ -391,7 +397,7 @@ static void test_process_sts_response()
     TEST_CHECK(strcmp(EKS_TOKEN, creds->session_token) == 0);
 
     flb_aws_credentials_destroy(creds);
-
+    flb_config_exit(config);
 }
 
 static void test_eks_provider() {
