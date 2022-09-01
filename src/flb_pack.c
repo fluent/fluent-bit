@@ -322,6 +322,7 @@ int flb_pack_state_init(struct flb_pack_state *s)
     if (!s->buf_data) {
         flb_errno();
         flb_free(s->tokens);
+        s->tokens = NULL;
         return -1;
     }
     s->buf_size = size;
@@ -405,7 +406,7 @@ int flb_pack_json_state(const char *js, size_t len,
         return ret;
     }
 
-    if (state->tokens_count == 0) {
+    if (state->tokens_count == 0 || state->tokens == NULL) {
         state->last_byte = last;
         return FLB_ERR_JSON_INVAL;
     }
