@@ -1629,7 +1629,9 @@ flb_sockfd_t flb_net_server_unix(const char *listen_path,
     return fd;
 }
 #else
-flb_sockfd_t flb_net_server_unix(const char *listen_path)
+flb_sockfd_t flb_net_server_unix(const char *listen_path,
+                                 int stream_mode,
+                                 int backlog)
 {
     flb_error("Unix sockets are not available in this platform");
 
