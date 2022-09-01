@@ -77,6 +77,20 @@ if (NOT MSVC)
   endif ()
 endif ()
 
+# Searching homebrewed LLVM automatically on macOS.
+if(FLB_SYSTEM_MACOS)
+  execute_process(
+    COMMAND brew --prefix llvm
+    RESULT_VARIABLE HOMEBREW_LLVM
+    OUTPUT_VARIABLE HOMEBREW_LLVM_PREFIX
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+  if (HOMEBREW_LLVM EQUAL 0 AND EXISTS "${HOMEBREW_LLVM_PREFIX}")
+    message(STATUS "Using llvm keg installed by Homebrew at ${HOMEBREW_LLVM_PREFIX}")
+    set(ENV{LLVM_DIR} "${HOMEBREW_LLVM_PREFIX}")
+  endif()
+endif()
+
 # Enable LLVM
 set (WAMR_BUILD_WITH_SYSTEM_LLVM 1)
 if (NOT WAMR_BUILD_WITH_SYSTEM_LLVM)
