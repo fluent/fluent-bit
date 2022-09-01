@@ -57,7 +57,7 @@ jobs:
       aks-cluster-resource-group: ${{ steps.aks-cluster-resource-group.outputs.stdout }}
       aws-opensearch-endpoint: ${{ steps.aws-opensearch-endpoint.outputs.stdout }}
       gke-cluster-name: ${{ steps.gke-cluster-name.outputs.stdout }}
-      gke-cluster-region: ${{ steps.gke-cluster-region.outputs.stdout }}
+      gke-cluster-zone: ${{ steps.gke-cluster-zone.outputs.stdout }}
     env:
       # https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/guides/service_principal_client_secret
       # Note these have to be set in the Terraform Cloud workspace as well
