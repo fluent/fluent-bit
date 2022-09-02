@@ -24,4 +24,22 @@
 #include "../lib/acutest/acutest.h"
 #define FLB_TESTS_DATA_PATH "@FLB_TESTS_DATA_PATH@"
 
+static inline int wait_for_file(char *path, int access_type, int time_limit)
+{
+    int elapsed_time;
+    int result;
+
+    for (elapsed_time = 0 ; elapsed_time < time_limit ; elapsed_time++) {
+        result = access(path, access_type);
+
+        if (result == 0) {
+            break;
+        }
+
+        sleep(1);
+    }
+
+    return result;
+}
+
 #endif
