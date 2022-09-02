@@ -408,6 +408,7 @@ void flb_test_input_chunk_fs_chunks_size_real()
     struct mk_event_loop *evl;
     struct cio_options opts = {0};
 
+    flb_init_env();
     cfg = flb_config_init();
     evl = mk_event_loop_create(256);
 
