@@ -451,7 +451,7 @@ int flb_downstream_conn_timeouts(struct mk_list *list)
                 if (connection->event.status != MK_EVENT_NONE) {
                     mk_event_inject(connection->evl,
                                     &connection->event,
-                                    MK_EVENT_READ | MK_EVENT_WRITE,
+                                    connection->event.mask,
                                     FLB_TRUE);
                 }
 
