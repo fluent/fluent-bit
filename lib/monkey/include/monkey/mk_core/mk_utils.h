@@ -86,8 +86,7 @@ extern pthread_key_t mk_utils_error_key;
 #define MK_UTILS_LIBC_ERRNO_BUFFER()                                    \
     int _err  = errno;                                                  \
     char bufs[256];                                                     \
-    char *buf = (char *) pthread_getspecific(mk_utils_error_key);       \
-    if (!buf) buf = bufs;                                               \
+    char *buf = bufs;                                                   \
     if (strerror_r(_err, buf, MK_UTILS_ERROR_SIZE) != 0) {              \
         mk_err("strerror_r() failed");                                  \
     }
