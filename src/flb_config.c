@@ -415,7 +415,9 @@ void flb_config_exit(struct flb_config *config)
 
     /* Event flush */
     if (config->evl) {
-        mk_event_timeout_destroy(config->evl, &config->event_flush);
+        if (config->event_flush.status != MK_EVENT_NONE) {
+            mk_event_timeout_destroy(config->evl, &config->event_flush);
+        }
     }
 
     /* Release scheduler */
