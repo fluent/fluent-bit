@@ -37,7 +37,12 @@
 #define S3_OBJECT_KEY_POST_OVERFLOW_INDEX "logs/a-0-b-c"
 
 #define S3_KEY_FORMAT_MIXED_TIMESTAMP "logs/%Y/m/%m/d/%d/%q"
+#ifdef FLB_SYSTEM_MACOS
+/* macOS's strftime throws away for % character for % and suqsequent invalid format character. */
+#define S3_OBJECT_KEY_MIXED_TIMESTAMP "logs/2020/m/08/d/15/q"
+#else
 #define S3_OBJECT_KEY_MIXED_TIMESTAMP "logs/2020/m/08/d/15/%q"
+#endif
 
 #define NO_TAG ""
 #define TAG "aa.bb.ccc"
