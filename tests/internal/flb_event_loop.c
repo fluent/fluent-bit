@@ -18,7 +18,14 @@
 
 #define EVENT_LOOP_TEST_PRIORITIES 7
 #define EVENT_LOOP_MAX_EVENTS 64
-#ifdef _WIN32
+
+/* I don't think those are CI friendly parameters,
+ * at least in github macos exceeds them considerably.
+ */
+
+#ifdef FLB_SYSTEM_MACOS
+    #define TIME_EPSILON_MS 200
+#elif FLB_SYSTEM_WINDOWS
     #define TIME_EPSILON_MS 30
 #else
     #define TIME_EPSILON_MS 10
