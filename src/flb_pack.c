@@ -946,6 +946,11 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
                                sizeof(time_formatted) - 1 - s,
                                ".%06" PRIu64,
                                (uint64_t) tms.tm.tv_nsec / 1000);
+
+                /* If the output was truncated, or failure, dont continue */
+                if (len < 0 || len > (sizeof(time_formatted) - 1 - s)) {
+                  break;
+                }
                 s += len;
                 msgpack_pack_str(&tmp_pck, s);
                 msgpack_pack_str_body(&tmp_pck, time_formatted, s);
