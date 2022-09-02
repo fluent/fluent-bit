@@ -89,7 +89,7 @@ void flb_test_plot_json_multiple(void)
         TEST_CHECK(bytes == strlen(p));
     }
 
-    ret = wait_for_file(TEST_LOGFILE, R_OK, TEST_TIMEOUT);
+    ret = wait_for_file(TEST_LOGFILE, 1, TEST_TIMEOUT);
     TEST_CHECK(ret == 0);
 
     flb_stop(ctx);
@@ -140,7 +140,7 @@ void flb_test_plot_key_mismatch(void)
         TEST_CHECK(bytes == strlen(p));
     }
 
-    ret = wait_for_file(TEST_LOGFILE, R_OK, TEST_TIMEOUT);
+    ret = wait_for_file(TEST_LOGFILE, 1, TEST_TIMEOUT);
     TEST_CHECK(ret == 0);
 
     flb_stop(ctx);
