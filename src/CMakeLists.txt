@@ -12,7 +12,7 @@ set(src
   flb_env.c
   flb_file.c
   flb_uri.c
-  flb_hash.c
+  flb_hash_table.c
   flb_help.c
   flb_pack.c
   flb_pack_gelf.c
@@ -41,6 +41,8 @@ set(src
   flb_scheduler.c
   flb_io.c
   flb_storage.c
+  flb_connection.c
+  flb_downstream.c
   flb_upstream.c
   flb_upstream_ha.c
   flb_upstream_node.c
@@ -49,7 +51,9 @@ set(src
   flb_coro.c
   flb_time.c
   flb_sosreport.c
-  flb_sha512.c
+  flb_hmac.c
+  flb_hash.c
+  flb_crypto.c
   flb_random.c
   flb_plugin.c
   flb_gzip.c
@@ -115,11 +119,6 @@ endif()
 
 # Fluent Bit have TLS support
 if(FLB_TLS)
-  configure_file(
-    "${PROJECT_SOURCE_DIR}/src/tls/mbedtls.c.in"
-    "${PROJECT_SOURCE_DIR}/src/tls/mbedtls.c"
-    )
-
   # Register the TLS interface and functions
   set(src
     ${src}
@@ -309,6 +308,16 @@ if(FLB_PROXY_GO)
   set(FLB_PROXY_PLUGINS ${FLB_PROXY_PLUGINS} flb-plugin-proxy-go)
 endif()
 
+# WASM runtime
+if(FLB_WASM)
+  add_subdirectory(wasm)
+endif()
+
+# WAMRC compiler
+if(FLB_WAMRC)
+  add_subdirectory(wamrc)
+endif()
+
 # HTTP Server
 if(FLB_HTTP_SERVER)
   set(FLB_DEPS
@@ -325,6 +334,14 @@ set(FLB_DEPS
   )
 endif()
 
+# WASM runtime
+if(FLB_WASM)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    vmlib-static
+    flb-wasm-static)
+endif()
+
 # Set static dependencies
 set(FLB_DEPS
   ${FLB_DEPS}
@@ -339,7 +356,6 @@ set(FLB_DEPS
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}
-  mbedtls
   c-ares
   snappy-c
   lwrb

@@ -101,7 +101,7 @@ void test_multiline_parser(msgpack_object *root2, int rand_val) {
         flb_time_get(&tm2);
         for (int i = 0; i < 4; i++) {
             for (int j = 0; j < 5; j++) {
-                if (random_strings[j] != NULL) {
+                if (random_strings[i] != NULL && stream_ids[j] != NULL) {
                     /* stream_ids index by j, random_strings index by i */
                     flb_ml_append(ml, stream_ids[j], FLB_ML_TYPE_TEXT, &tm2,
                                   random_strings[i], strlen(random_strings[i]));

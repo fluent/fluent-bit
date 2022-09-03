@@ -22,6 +22,9 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_network.h>
+#include <fluent-bit/tls/flb_tls.h>
+#include <fluent-bit/flb_downstream.h>
+#include <fluent-bit/flb_input_plugin.h>
 
 #include <unistd.h>
 #include <sys/stat.h>
@@ -31,53 +34,91 @@
 
 #include "syslog.h"
 
+static int remove_existing_socket_file(char *socket_path)
+{
+    struct stat file_data;
+    int         result;
+
+    result = stat(socket_path, &file_data);
+
+    if (result == -1) {
+        if (errno == ENOENT) {
+            return 0;
+        }
+
+        flb_errno();
+
+        return -1;
+    }
+
+    if (S_ISSOCK(file_data.st_mode) == 0) {
+        return -2;
+    }
+
+    result = unlink(socket_path);
+
+    if (result != 0) {
+        return -3;
+    }
+
+    return 0;
+}
+
 static int syslog_server_unix_create(struct flb_syslog *ctx)
 {
-    flb_sockfd_t fd = -1;
-    unsigned long len;
-    size_t address_length;
-    struct sockaddr_un address;
+    int             result;
+    int             mode;
+    struct flb_tls *tls;
 
     if (ctx->mode == FLB_SYSLOG_UNIX_TCP) {
-        fd = flb_net_socket_create(AF_UNIX, FLB_TRUE);
+        mode = FLB_TRANSPORT_UNIX_STREAM;
+        tls = ctx->ins->tls;
     }
     else if (ctx->mode == FLB_SYSLOG_UNIX_UDP) {
-        fd = flb_net_socket_create_udp(AF_UNIX, FLB_TRUE);
-    }
+        ctx->dgram_mode_flag = FLB_TRUE;
 
-    if (fd == -1) {
+        mode = FLB_TRANSPORT_UNIX_DGRAM;
+        tls = NULL;
+    }
+    else {
         return -1;
     }
 
-    ctx->server_fd = fd;
+    result = remove_existing_socket_file(ctx->unix_path);
 
-    /* Prepare the unix socket path */
-    unlink(ctx->unix_path);
-    len = strlen(ctx->unix_path);
+    if (result != 0) {
+        if (result == -2) {
+            flb_plg_error(ctx->ins,
+                          "%s exists and it is not a unix socket. Aborting",
+                          ctx->unix_path);
+        }
+        else {
+            flb_plg_error(ctx->ins,
+                          "could not remove existing unix socket %s. Aborting",
+                          ctx->unix_path);
+        }
 
-    address.sun_family = AF_UNIX;
-    sprintf(address.sun_path, "%s", ctx->unix_path);
-    address_length = sizeof(address.sun_family) + len + 1;
-    if (bind(fd, (struct sockaddr *) &address, address_length) != 0) {
-        flb_errno();
-        close(fd);
         return -1;
     }
 
-    if (chmod(address.sun_path, ctx->unix_perm)) {
+    ctx->downstream = flb_downstream_create(mode,
+                                            ctx->ins->flags,
+                                            ctx->unix_path,
+                                            0,
+                                            tls,
+                                            ctx->ins->config,
+                                            &ctx->ins->net_setup);
+
+    if (ctx->downstream == NULL) {
+        return -1;
+    }
+
+    if (chmod(ctx->unix_path, ctx->unix_perm)) {
         flb_errno();
         flb_error("[in_syslog] cannot set permission on '%s' to %04o",
-                  address.sun_path, ctx->unix_perm);
-        close(fd);
-        return -1;
-    }
+                  ctx->unix_path, ctx->unix_perm);
 
-    if (ctx->mode == FLB_SYSLOG_UNIX_TCP) {
-        if (listen(fd, 5) != 0) {
-            flb_errno();
-            close(fd);
-            return -1;
-        }
+        return -1;
     }
 
     return 0;
@@ -85,14 +126,35 @@ static int syslog_server_unix_create(struct flb_syslog *ctx)
 
 static int syslog_server_net_create(struct flb_syslog *ctx)
 {
+    unsigned short int port;
+    int                mode;
+    struct flb_tls    *tls;
+
+    port = (unsigned short int) strtoul(ctx->port, NULL, 10);
+
     if (ctx->mode == FLB_SYSLOG_TCP) {
-        ctx->server_fd = flb_net_server(ctx->port, ctx->listen);
+        mode = FLB_TRANSPORT_TCP;
+        tls = ctx->ins->tls;
+    }
+    else if (ctx->mode == FLB_SYSLOG_UDP) {
+        ctx->dgram_mode_flag = FLB_TRUE;
+
+        mode = FLB_TRANSPORT_UDP;
+        tls = NULL;
     }
     else {
-        ctx->server_fd = flb_net_server_udp(ctx->port, ctx->listen);
+        return -1;
     }
 
-    if (ctx->server_fd > 0) {
+    ctx->downstream = flb_downstream_create(mode,
+                                            ctx->ins->flags,
+                                            ctx->listen,
+                                            port,
+                                            tls,
+                                            ctx->ins->config,
+                                            &ctx->ins->net_setup);
+
+    if (ctx->downstream != NULL) {
         flb_info("[in_syslog] %s server binding %s:%s",
                  ((ctx->mode == FLB_SYSLOG_TCP) ? "TCP" : "UDP"),
                  ctx->listen, ctx->port);
@@ -100,10 +162,11 @@ static int syslog_server_net_create(struct flb_syslog *ctx)
     else {
         flb_error("[in_syslog] could not bind address %s:%s. Aborting",
                   ctx->listen, ctx->port);
+
         return -1;
     }
 
-    flb_net_socket_nonblocking(ctx->server_fd);
+    flb_net_socket_nonblocking(ctx->downstream->server_fd);
 
     return 0;
 }
@@ -111,18 +174,6 @@ static int syslog_server_net_create(struct flb_syslog *ctx)
 int syslog_server_create(struct flb_syslog *ctx)
 {
     int ret;
-
-    if (ctx->mode == FLB_SYSLOG_UDP || ctx->mode == FLB_SYSLOG_UNIX_UDP) {
-        /* Create UDP buffer */
-        ctx->buffer_data = flb_calloc(1, ctx->buffer_chunk_size);
-        if (!ctx->buffer_data) {
-            flb_errno();
-            return -1;
-        }
-        ctx->buffer_size = ctx->buffer_chunk_size;
-        flb_info("[in_syslog] UDP buffer size set to %lu bytes",
-                 ctx->buffer_size);
-    }
 
     if (ctx->mode == FLB_SYSLOG_TCP || ctx->mode == FLB_SYSLOG_UDP) {
         ret = syslog_server_net_create(ctx);
@@ -141,6 +192,18 @@ int syslog_server_create(struct flb_syslog *ctx)
 
 int syslog_server_destroy(struct flb_syslog *ctx)
 {
+    if (ctx->collector_id != -1) {
+        flb_input_collector_delete(ctx->collector_id, ctx->ins);
+
+        ctx->collector_id = -1;
+    }
+
+    if (ctx->downstream != NULL) {
+        flb_downstream_destroy(ctx->downstream);
+
+        ctx->downstream = NULL;
+    }
+
     if (ctx->mode == FLB_SYSLOG_UNIX_TCP || ctx->mode == FLB_SYSLOG_UNIX_UDP) {
         if (ctx->unix_path) {
             unlink(ctx->unix_path);
@@ -149,8 +212,6 @@ int syslog_server_destroy(struct flb_syslog *ctx)
     else {
         flb_free(ctx->port);
     }
-
-    close(ctx->server_fd);
 
     return 0;
 }

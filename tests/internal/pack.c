@@ -1,6 +1,7 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_error.h>
@@ -12,7 +13,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <unistd.h>
-
+#include <math.h> /* for NAN */
 
 #include "flb_tests_internal.h"
 
@@ -35,6 +36,19 @@ struct pack_test {
 /* If we get more than 256 tests, just update the size */
 struct pack_test pt[256];
 
+static void initialization_crutch()
+{
+    struct flb_config *config;
+
+    config = flb_config_init();
+
+    if (config == NULL) {
+        return;
+    }
+
+    flb_config_exit(config);
+}
+
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
     memmove(buf, buf + bytes, length - bytes);
@@ -49,6 +63,8 @@ void test_json_pack()
     char *data;
     char *out_buf;
     size_t out_size;
+
+    initialization_crutch();
 
     data = mk_file_to_buffer(JSON_SINGLE_MAP1);
     TEST_CHECK(data != NULL);
@@ -72,6 +88,8 @@ void test_json_pack_iter()
     char *out_buf = NULL;
     int out_size;
     struct flb_pack_state state;
+
+    initialization_crutch();
 
     data = mk_file_to_buffer(JSON_SINGLE_MAP1);
     TEST_CHECK(data != NULL);
@@ -113,6 +131,8 @@ void test_json_pack_mult()
     msgpack_unpacked result;
     msgpack_object root;
     struct flb_pack_state state;
+
+    initialization_crutch();
 
     data1 = mk_file_to_buffer(JSON_SINGLE_MAP1);
     TEST_CHECK(data1 != NULL);
@@ -181,6 +201,8 @@ void test_json_pack_mult_iter()
     msgpack_unpacked result;
     msgpack_object root;
     struct flb_pack_state state;
+
+    initialization_crutch();
 
     data1 = mk_file_to_buffer(JSON_SINGLE_MAP1);
     TEST_CHECK(data1 != NULL);
@@ -262,6 +284,8 @@ void test_json_dup_keys()
     flb_sds_t out_json;
     flb_sds_t d;
 
+    initialization_crutch();
+
     /* Read JSON input file */
     data_in = mk_file_to_buffer(JSON_DUP_KEYS_I);
     TEST_CHECK(data_in != NULL);
@@ -311,6 +335,9 @@ void test_json_pack_bug342()
     struct stat st;
     struct flb_pack_state state;
     msgpack_unpacked result;
+
+    initialization_crutch();
+
     ret = stat(JSON_BUG342, &st);
     if (ret == -1) {
         perror("stat");
@@ -395,6 +422,8 @@ static int utf8_tests_create()
     struct dirent *entry;
     struct stat st;
 
+    initialization_crutch();
+
     memset(pt, '\0', sizeof(pt));
 
     dir = opendir(PACK_SAMPLES);
@@ -470,6 +499,8 @@ void test_utf8_to_json()
     size_t json_size;
     struct stat st;
     struct pack_test *test;
+
+    initialization_crutch();
 
     n_tests = utf8_tests_create();
 
@@ -561,6 +592,8 @@ void test_json_pack_bug1278()
                    "\"\\\\n\"",
     };
 
+    initialization_crutch();
+
     printf("\n");
     items = sizeof(in) / sizeof(char *);
     for (i = 0; i < items; i++) {
@@ -632,6 +665,55 @@ void test_json_pack_bug1278()
         msgpack_sbuffer_destroy(&mp_sbuf);
 
     }
+}
+
+void test_json_pack_nan()
+{
+    int ret;
+    char json_str[128] = {0};
+    char *p = NULL;
+    struct flb_config config;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+    msgpack_object obj;
+    msgpack_zone mempool;
+
+    config.convert_nan_to_null = FLB_TRUE;
+
+    initialization_crutch();
+
+    // initialize msgpack
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_double(&mp_pck, NAN);
+    msgpack_zone_init(&mempool, 2048);
+    msgpack_unpack(mp_sbuf.data, mp_sbuf.size, NULL, &mempool, &obj);
+    msgpack_zone_destroy(&mempool);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    // convert msgpack to json
+    ret = flb_msgpack_to_json(&json_str[0], sizeof(json_str), &obj);
+    TEST_CHECK(ret >= 0);
+
+    p = strstr(&json_str[0], "nan");
+    if (!TEST_CHECK(p != NULL)) {
+        TEST_MSG("json should be nan. json_str=%s", json_str);
+    }
+
+    // convert. nan -> null
+    memset(&json_str[0], 0, sizeof(json_str));
+    flb_pack_init(&config);
+    ret = flb_msgpack_to_json(&json_str[0], sizeof(json_str), &obj);
+    TEST_CHECK(ret >= 0);
+
+    p = strstr(&json_str[0], "null");
+    if (!TEST_CHECK(p != NULL)) {
+        TEST_MSG("json should be null. json_str=%s", json_str);
+    }
+
+    // clear setting
+    config.convert_nan_to_null = FLB_FALSE;
+    flb_pack_init(&config);
 }
 
 static int check_msgpack_val(msgpack_object obj, int expected_type, char *expected_val)
@@ -722,6 +804,8 @@ void test_json_pack_bug5336()
 
     int loop_cnt = 0;
 
+    initialization_crutch();
+
     for (i=len; i<len*2; i++) {
         loop_cnt++;
 
@@ -792,6 +876,7 @@ TEST_LIST = {
     { "json_dup_keys"      , test_json_dup_keys},
     { "json_pack_bug342"   , test_json_pack_bug342},
     { "json_pack_bug1278"  , test_json_pack_bug1278},
+    { "json_pack_nan"      , test_json_pack_nan},
     { "json_pack_bug5336"  , test_json_pack_bug5336},
 
     /* Mixed bytes, check JSON encoding */

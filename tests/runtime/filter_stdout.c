@@ -34,6 +34,13 @@ void flb_test_filter_stdout_case_insensitive(void)
         TEST_MSG("%s should be valid\n", filter_name);
     }
 
+    /* Initialize thread local storage (FLB_TLS) properly when without calling flb_start().
+     * Then, FLB_TLS_GET working on macOS.
+     * In general, macOS requests surely initialization for pthread stuffs.
+     */
+    flb_init_env();
+
+    flb_stop(ctx);
     flb_destroy(ctx);
 }
 

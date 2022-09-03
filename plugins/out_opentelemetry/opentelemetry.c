@@ -34,7 +34,7 @@ static int http_post(struct opentelemetry_context *ctx,
     int out_ret = FLB_OK;
     size_t b_sent;
     struct flb_upstream *u;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
     struct mk_list *head;
     struct flb_config_map_val *mv;

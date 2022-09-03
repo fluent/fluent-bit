@@ -57,6 +57,10 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, grace)},
 
+    {FLB_CONF_STR_CONV_NAN,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, convert_nan_to_null)},
+
     {FLB_CONF_STR_DAEMON,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, daemon)},
@@ -215,6 +219,9 @@ struct flb_config *flb_config_init()
     config->grace_count  = 0;
     config->exit_status_code = 0;
 
+    /* json */
+    config->convert_nan_to_null = FLB_FALSE;
+
 #ifdef FLB_HAVE_HTTP_SERVER
     config->http_ctx                     = NULL;
     config->http_server                  = FLB_FALSE;
@@ -288,6 +295,7 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->proxies);
     mk_list_init(&config->workers);
     mk_list_init(&config->upstreams);
+    mk_list_init(&config->downstreams);
     mk_list_init(&config->cmetrics);
     mk_list_init(&config->cf_parsers_list);
 
@@ -407,7 +415,9 @@ void flb_config_exit(struct flb_config *config)
 
     /* Event flush */
     if (config->evl) {
-        mk_event_timeout_destroy(config->evl, &config->event_flush);
+        if (config->event_flush.status != MK_EVENT_NONE) {
+            mk_event_timeout_destroy(config->evl, &config->event_flush);
+        }
     }
 
     /* Release scheduler */

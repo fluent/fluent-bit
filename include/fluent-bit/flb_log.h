@@ -104,7 +104,7 @@ int flb_log_set_file(struct flb_config *config, char *out);
 
 int flb_log_destroy(struct flb_log *log, struct flb_config *config);
 void flb_log_print(int type, const char *file, int line, const char *fmt, ...);
-
+int flb_log_is_truncated(int type, const char *file, int line, const char *fmt, ...);
 
 /* Logging macros */
 #define flb_helper(fmt, ...)                                    \
@@ -114,28 +114,58 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...);
     if (flb_log_check(FLB_LOG_ERROR))                                \
         flb_log_print(FLB_LOG_ERROR, NULL, 0, fmt, ##__VA_ARGS__)
 
+#define flb_error_is_truncated(fmt, ...)                                   \
+    flb_log_check(FLB_LOG_ERROR)                                           \
+        ? flb_log_is_truncated(FLB_LOG_ERROR, NULL, 0, fmt, ##__VA_ARGS__) \
+        : 0
+
 #define flb_warn(fmt, ...)                                           \
     if (flb_log_check(FLB_LOG_WARN))                                 \
         flb_log_print(FLB_LOG_WARN, NULL, 0, fmt, ##__VA_ARGS__)
+
+#define flb_warn_is_truncated(fmt, ...     )                              \
+    flb_log_check(FLB_LOG_WARN)                                           \
+        ? flb_log_is_truncated(FLB_LOG_WARN, NULL, 0, fmt, ##__VA_ARGS__) \
+        : 0
 
 #define flb_info(fmt, ...)                                           \
     if (flb_log_check(FLB_LOG_INFO))                                 \
         flb_log_print(FLB_LOG_INFO, NULL, 0, fmt, ##__VA_ARGS__)
 
+#define flb_info_is_truncated(fmt, ...)                                   \
+    flb_log_check(FLB_LOG_INFO)                                           \
+        ? flb_log_is_truncated(FLB_LOG_INFO, NULL, 0, fmt, ##__VA_ARGS__) \
+        : 0
+
 #define flb_debug(fmt, ...)                                         \
     if (flb_log_check(FLB_LOG_DEBUG))                               \
         flb_log_print(FLB_LOG_DEBUG, NULL, 0, fmt, ##__VA_ARGS__)
 
+#define flb_debug_is_truncated(fmt, ...       )                            \
+    flb_log_check(FLB_LOG_DEBUG)                                           \
+        ? flb_log_is_truncated(FLB_LOG_DEBUG, NULL, 0, fmt, ##__VA_ARGS__) \
+        : 0
+
 #define flb_idebug(fmt, ...)                                        \
     flb_log_print(FLB_LOG_IDEBUG, NULL, 0, fmt, ##__VA_ARGS__)
+
+#define flb_idebug_is_truncated(fmt, ...)                           \
+    flb_log_is_truncated(FLB_LOG_IDEBUG, NULL, 0, fmt, ##__VA_ARGS__)
 
 #ifdef FLB_HAVE_TRACE
 #define flb_trace(fmt, ...)                                             \
     if (flb_log_check(FLB_LOG_TRACE))                                   \
         flb_log_print(FLB_LOG_TRACE, __FILE__, __LINE__,                \
                       fmt, ##__VA_ARGS__)
+
+#define flb_trace_is_truncated(fmt, ...)                           \
+    flb_log_check(FLB_LOG_TRACE)                                   \
+        ? flb_log_is_truncated(FLB_LOG_TRACE, __FILE__, __LINE__,  \
+                      fmt, ##__VA_ARGS__)                          \
+        : 0
 #else
 #define flb_trace(fmt, ...)  do {} while(0)
+#define flb_trace_is_truncated(fmt, ...)  do {} while(0)
 #endif
 
 int flb_log_worker_init(struct flb_worker *worker);

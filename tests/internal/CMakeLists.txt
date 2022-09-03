@@ -6,7 +6,9 @@ set(UNIT_TESTS_FILES
   pack.c
   pipe.c
   sds.c
-  sha512.c
+  hmac.c
+  crypto.c
+  hash.c
   slist.c
   router.c
   network.c
@@ -128,6 +130,8 @@ if(FLB_LUAJIT)
 endif()
 
 set(UNIT_TESTS_DATA
+  data/tls/certificate.pem
+  data/tls/private_key.pem
   data/pack/json_single_map_001.json
   data/pack/json_single_map_002.json
   data/parser/json.conf

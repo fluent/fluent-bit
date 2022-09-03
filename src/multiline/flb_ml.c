@@ -151,7 +151,7 @@ static void cb_ml_flush_timer(struct flb_config *ctx, void *data)
     struct flb_ml *ml = data;
 
     now = time_ms_now();
-    if (ml->last_flush + ml->flush_ms < now) {
+    if (ml->last_flush + ml->flush_ms > now) {
         return;
     }
 

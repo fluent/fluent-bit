@@ -70,6 +70,8 @@ static int in_dummy_thread_init(struct flb_input_instance *in,
         flb_errno();
         return -1;
     }
+    ctx->it.coll_fd = -1;
+    ctx->ins = in;
     
     /* Load the config map */
     ret = flb_input_config_map_set(in, (void *)ctx);
@@ -124,6 +126,13 @@ static int in_dummy_thread_exit(void *in_context, struct flb_config *config)
 
     it = in_context;
     ctx = container_of(it, struct flb_in_dummy_thread_config, it);
+
+    if (it->coll_fd != -1) {
+        flb_input_collector_delete(it->coll_fd, ctx->ins);
+
+        it->coll_fd = -1;
+    }
+
     flb_input_thread_destroy(it, ctx->ins);
     flb_free(ctx);
 

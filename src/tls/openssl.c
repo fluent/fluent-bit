@@ -46,12 +46,14 @@
 struct tls_context {
     int debug_level;
     SSL_CTX *ctx;
+    int mode;
     pthread_mutex_t mutex;
 };
 
 struct tls_session {
     SSL *ssl;
     int fd;
+    int continuation_flag;
     struct tls_context *parent;    /* parent struct tls_context ref */
 };
 
@@ -68,8 +70,6 @@ static int tls_init(void)
     OPENSSL_add_all_algorithms_noconf();
     SSL_load_error_strings();
     SSL_library_init();
-#else
-    SSL_load_error_strings();
 #endif
     return 0;
 }
@@ -207,11 +207,15 @@ static int load_system_certificates(struct tls_context *ctx)
     return 0;
 }
 
-static void *tls_context_create(int verify, int debug,
+static void *tls_context_create(int verify,
+                                int debug,
+                                int mode,
                                 const char *vhost,
                                 const char *ca_path,
-                                const char *ca_file, const char *crt_file,
-                                const char *key_file, const char *key_passwd)
+                                const char *ca_file,
+                                const char *crt_file,
+                                const char *key_file,
+                                const char *key_passwd)
 {
     int ret;
     SSL_CTX *ssl_ctx;
@@ -233,9 +237,20 @@ static void *tls_context_create(int verify, int debug,
      *
      * https://www.openssl.org/docs/man1.0.2/man3/SSLv23_method.html
      */
-    ssl_ctx = SSL_CTX_new(SSLv23_client_method());
+    if (mode == FLB_TLS_SERVER_MODE) {
+        ssl_ctx = SSL_CTX_new(SSLv23_server_method());
+    }
+    else {
+        ssl_ctx = SSL_CTX_new(SSLv23_client_method());
+    }
+
 #else
-    ssl_ctx = SSL_CTX_new(TLS_client_method());
+    if (mode == FLB_TLS_SERVER_MODE) {
+        ssl_ctx = SSL_CTX_new(TLS_server_method());
+    }
+    else {
+        ssl_ctx = SSL_CTX_new(TLS_client_method());
+    }
 #endif
     if (!ssl_ctx) {
         flb_error("[openssl] could not create context");
@@ -248,6 +263,7 @@ static void *tls_context_create(int verify, int debug,
         return NULL;
     }
     ctx->ctx = ssl_ctx;
+    ctx->mode = mode;
     ctx->debug_level = debug;
     pthread_mutex_init(&ctx->mutex, NULL);
 
@@ -323,7 +339,7 @@ static void *tls_context_create(int verify, int debug,
 }
 
 static void *tls_session_create(struct flb_tls *tls,
-                                struct flb_upstream_conn *u_conn)
+                                int fd)
 {
     struct tls_session *session;
     struct tls_context *ctx = tls->ctx;
@@ -345,9 +361,11 @@ static void *tls_session_create(struct flb_tls *tls,
         pthread_mutex_unlock(&ctx->mutex);
         return NULL;
     }
+
+    session->continuation_flag = FLB_FALSE;
     session->ssl = ssl;
-    session->fd = u_conn->fd;
-    SSL_set_fd(ssl, u_conn->fd);
+    session->fd = fd;
+    SSL_set_fd(ssl, fd);
 
     /*
      * TLS Debug Levels:
@@ -361,7 +379,6 @@ static void *tls_session_create(struct flb_tls *tls,
     if (tls->debug == 1) {
         SSL_set_info_callback(session->ssl, tls_info_callback);
     }
-    SSL_set_connect_state(ssl);
     pthread_mutex_unlock(&ctx->mutex);
     return session;
 }
@@ -390,21 +407,33 @@ static int tls_session_destroy(void *session)
     return 0;
 }
 
-static int tls_net_read(struct flb_upstream_conn *u_conn,
+static int tls_net_read(struct flb_tls_session *session,
                         void *buf, size_t len)
 {
     int ret;
     char err_buf[256];
-    struct tls_session *session = (struct tls_session *) u_conn->tls_session;
     struct tls_context *ctx;
+    struct tls_session *backend_session;
 
-    ctx = session->parent;
+    if (session->ptr == NULL) {
+        flb_error("[tls] error: uninitialized backend session");
+
+        return -1;
+    }
+
+    backend_session = (struct tls_session *) session->ptr;
+
+    ctx = backend_session->parent;
+
     pthread_mutex_lock(&ctx->mutex);
 
     ERR_clear_error();
-    ret = SSL_read(session->ssl, buf, len);
+
+    ret = SSL_read(backend_session->ssl, buf, len);
+
     if (ret <= 0) {
-        ret = SSL_get_error(session->ssl, ret);
+        ret = SSL_get_error(backend_session->ssl, ret);
+
         if (ret == SSL_ERROR_WANT_READ) {
             ret = FLB_TLS_WANT_READ;
         }
@@ -424,24 +453,35 @@ static int tls_net_read(struct flb_upstream_conn *u_conn,
     return ret;
 }
 
-static int tls_net_write(struct flb_upstream_conn *u_conn,
+static int tls_net_write(struct flb_tls_session *session,
                          const void *data, size_t len)
 {
     int ret;
     char err_buf[256];
     size_t total = 0;
-    struct tls_session *session = (struct tls_session *) u_conn->tls_session;
     struct tls_context *ctx;
+    struct tls_session *backend_session;
 
-    ctx = session->parent;
+    if (session->ptr == NULL) {
+        flb_error("[tls] error: uninitialized backend session");
+
+        return -1;
+    }
+
+    backend_session = (struct tls_session *) session->ptr;
+    ctx = backend_session->parent;
+
     pthread_mutex_lock(&ctx->mutex);
 
     ERR_clear_error();
-    ret = SSL_write(session->ssl,
+
+    ret = SSL_write(backend_session->ssl,
                     (unsigned char *) data + total,
                     len - total);
+
     if (ret <= 0) {
-        ret = SSL_get_error(session->ssl, ret);
+        ret = SSL_get_error(backend_session->ssl, ret);
+
         if (ret == SSL_ERROR_WANT_WRITE) {
             ret = FLB_TLS_WANT_WRITE;
         }
@@ -451,6 +491,7 @@ static int tls_net_write(struct flb_upstream_conn *u_conn,
         else {
             ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
             flb_error("[tls] error: %s", err_buf);
+
             ret = -1;
         }
     }
@@ -461,7 +502,9 @@ static int tls_net_write(struct flb_upstream_conn *u_conn,
     return ret;
 }
 
-static int tls_net_handshake(struct flb_tls *tls, void *ptr_session)
+static int tls_net_handshake(struct flb_tls *tls,
+                             char *vhost,
+                             void *ptr_session)
 {
     int ret = 0;
     char err_buf[256];
@@ -471,12 +514,35 @@ static int tls_net_handshake(struct flb_tls *tls, void *ptr_session)
     ctx = session->parent;
     pthread_mutex_lock(&ctx->mutex);
 
-    if (tls->vhost) {
-        SSL_set_tlsext_host_name(session->ssl, tls->vhost);
+    if (!session->continuation_flag) {
+        if (tls->mode == FLB_TLS_CLIENT_MODE) {
+            SSL_set_connect_state(session->ssl);
+        }
+        else if (tls->mode == FLB_TLS_SERVER_MODE) {
+            SSL_set_accept_state(session->ssl);
+        }
+        else {
+            flb_error("[tls] error: invalid tls mode : %d", tls->mode);
+            return -1;
+        }
+
+        if (vhost != NULL) {
+            SSL_set_tlsext_host_name(session->ssl, vhost);
+        }
+        else if (tls->vhost) {
+            SSL_set_tlsext_host_name(session->ssl, tls->vhost);
+        }
     }
 
     ERR_clear_error();
-    ret = SSL_connect(session->ssl);
+
+    if (tls->mode == FLB_TLS_CLIENT_MODE) {
+        ret = SSL_connect(session->ssl);
+    }
+    else if (tls->mode == FLB_TLS_SERVER_MODE) {
+        ret = SSL_accept(session->ssl);
+    }
+
     if (ret != 1) {
         ret = SSL_get_error(session->ssl, ret);
         if (ret != SSL_ERROR_WANT_READ &&
@@ -490,19 +556,29 @@ static int tls_net_handshake(struct flb_tls *tls, void *ptr_session)
                 ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
                 flb_error("[tls] error: %s", err_buf);
             }
+
             pthread_mutex_unlock(&ctx->mutex);
+
             return -1;
         }
 
         if (ret == SSL_ERROR_WANT_WRITE) {
             pthread_mutex_unlock(&ctx->mutex);
+
+            session->continuation_flag = FLB_TRUE;
+
             return FLB_TLS_WANT_WRITE;
         }
         else if (ret == SSL_ERROR_WANT_READ) {
             pthread_mutex_unlock(&ctx->mutex);
+
+            session->continuation_flag = FLB_TRUE;
+
             return FLB_TLS_WANT_READ;
         }
     }
+
+    session->continuation_flag = FLB_FALSE;
 
     pthread_mutex_unlock(&ctx->mutex);
     flb_trace("[tls] connection and handshake OK");
@@ -511,12 +587,12 @@ static int tls_net_handshake(struct flb_tls *tls, void *ptr_session)
 
 /* OpenSSL backend registration */
 static struct flb_tls_backend tls_openssl = {
-    .name            = "openssl",
-    .context_create  = tls_context_create,
-    .context_destroy = tls_context_destroy,
-    .session_create  = tls_session_create,
-    .session_destroy = tls_session_destroy,
-    .net_read        = tls_net_read,
-    .net_write       = tls_net_write,
-    .net_handshake   = tls_net_handshake
+    .name                 = "openssl",
+    .context_create       = tls_context_create,
+    .context_destroy      = tls_context_destroy,
+    .session_create       = tls_session_create,
+    .session_destroy      = tls_session_destroy,
+    .net_read             = tls_net_read,
+    .net_write            = tls_net_write,
+    .net_handshake        = tls_net_handshake,
 };

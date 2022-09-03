@@ -1,5 +1,6 @@
 .idea
 .vscode
+.clang-format
 .DS_Store
 *~
 _book/
@@ -35,3 +36,9 @@ compile_commands.json
 
 workflow/
 .kitchen/
+
+.vagrant/
+# examples
+examples/wasi_serde_json/target/
+# WASM test data
+tests/runtime/wasm/go/*.wasm

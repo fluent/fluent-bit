@@ -21,7 +21,32 @@
 #ifndef FLB_TESTS_RUNTIME_H
 #define FLB_TESTS_RUNTIME_H
 
+#include <sys/stat.h>
+
 #include "../lib/acutest/acutest.h"
 #define FLB_TESTS_DATA_PATH "@FLB_TESTS_DATA_PATH@"
+
+static inline int wait_for_file(char *path, 
+                                size_t minimum_size, 
+                                int time_limit)
+{
+    int         elapsed_time;
+    struct stat file_info;
+    int         result;
+
+    for (elapsed_time = 0 ; elapsed_time < time_limit ; elapsed_time++) {
+        result = stat(path, &file_info);
+
+        if (result == 0) {
+            if (file_info.st_size >= minimum_size) {
+                break;
+            }
+        }
+
+        sleep(1);
+    }
+
+    return result;
+}
 
 #endif

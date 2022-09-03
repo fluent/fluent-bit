@@ -19,7 +19,8 @@
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_time.h>
-#include <fluent-bit/flb_sha512.h>
+#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_crypto.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include "forward.h"
 
@@ -86,17 +87,23 @@ static int append_options(struct flb_forward *ctx,
     int opt_count = 0;
     char *chunk = NULL;
     uint8_t checksum[64];
-    struct flb_sha512 sha512;
+    int     result;
 
     if (fc->require_ack_response == FLB_TRUE) {
         /*
          * for ack we calculate  sha512 of context, take 16 bytes,
          * make 32 byte hex string of it
          */
-        flb_sha512_init(&sha512);
-        flb_sha512_update(&sha512, data, bytes);
-        flb_sha512_sum(&sha512, checksum);  /* => 65 bytes */
+        result = flb_hash_simple(FLB_HASH_SHA512,
+                                 data, bytes,
+                                 checksum, sizeof(checksum));
+
+        if (result != FLB_CRYPTO_SUCCESS) {
+            return -1;
+        }
+
         flb_forward_format_bin_to_hex(checksum, 16, out_chunk);
+
         out_chunk[32] = '\0';
         chunk = (char *) out_chunk;
         opt_count++;

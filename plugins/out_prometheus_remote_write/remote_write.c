@@ -35,7 +35,7 @@ static int http_post(struct prometheus_remote_write_context *ctx,
     void *payload_buf = NULL;
     size_t payload_size = 0;
     struct flb_upstream *u;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
     struct mk_list *head;
     struct flb_config_map_val *mv;

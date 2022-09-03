@@ -34,8 +34,9 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_storage.h>
+#include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_kv.h>
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_ring_buffer.h>
 
@@ -159,6 +160,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
 {
     int id;
     int ret;
+    int flags = 0;
     struct mk_list *head;
     struct flb_input_plugin *plugin;
     struct flb_input_instance *instance = NULL;
@@ -199,16 +201,18 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         id =  instance_id(plugin, config);
 
         /* Index for log Chunks (hash table) */
-        instance->ht_log_chunks = flb_hash_create(FLB_HASH_EVICT_NONE, 512, 0);
+        instance->ht_log_chunks = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE,
+                                                        512, 0);
         if (!instance->ht_log_chunks) {
             flb_free(instance);
             return NULL;
         }
 
         /* Index for metric Chunks (hash table) */
-        instance->ht_metric_chunks = flb_hash_create(FLB_HASH_EVICT_NONE, 512, 0);
+        instance->ht_metric_chunks = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE,
+                                                           512, 0);
         if (!instance->ht_metric_chunks) {
-            flb_hash_destroy(instance->ht_log_chunks);
+            flb_hash_table_destroy(instance->ht_log_chunks);
             flb_free(instance);
             return NULL;
         }
@@ -227,8 +231,8 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         else {
             flb_error("[input] invalid plugin event type %i on '%s'",
                       plugin->event_type, instance->name);
-            flb_hash_destroy(instance->ht_log_chunks);
-            flb_hash_destroy(instance->ht_metric_chunks);
+            flb_hash_table_destroy(instance->ht_log_chunks);
+            flb_hash_table_destroy(instance->ht_metric_chunks);
             flb_free(instance);
             return NULL;
         }
@@ -280,10 +284,12 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         mk_list_init(&instance->collectors);
         mk_list_init(&instance->input_coro_list);
         mk_list_init(&instance->input_coro_list_destroy);
+        mk_list_init(&instance->downstreams);
         mk_list_init(&instance->upstreams);
 
         /* Initialize properties list */
         flb_kv_init(&instance->properties);
+        flb_kv_init(&instance->net_properties);
 
         /* Plugin use networking */
         if (plugin->flags & FLB_INPUT_NET) {
@@ -297,6 +303,32 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
 /* initialize lock for access to chunk trace context. */
 #ifdef FLB_HAVE_CHUNK_TRACE
         pthread_mutex_init(&instance->chunk_trace_lock, &attr);
+#endif
+
+        /* Parent plugin flags */
+        flags = instance->flags;
+        if (flags & FLB_IO_TCP) {
+            instance->use_tls = FLB_FALSE;
+        }
+        else if (flags & FLB_IO_TLS) {
+            instance->use_tls = FLB_TRUE;
+        }
+        else if (flags & FLB_IO_OPT_TLS) {
+            /* TLS must be enabled manually in the config */
+            instance->use_tls = FLB_FALSE;
+            instance->flags |= FLB_IO_TLS;
+        }
+
+#ifdef FLB_HAVE_TLS
+        instance->tls                   = NULL;
+        instance->tls_debug             = -1;
+        instance->tls_verify            = FLB_TRUE;
+        instance->tls_vhost             = NULL;
+        instance->tls_ca_path           = NULL;
+        instance->tls_ca_file           = NULL;
+        instance->tls_crt_file          = NULL;
+        instance->tls_key_file          = NULL;
+        instance->tls_key_passwd        = NULL;
 #endif
 
         /* Plugin requires a co-routine context ? */
@@ -500,6 +532,65 @@ int flb_input_set_property(struct flb_input_instance *ins,
         ins->host.ipv6 = flb_utils_bool(tmp);
         flb_sds_destroy(tmp);
     }
+    else if (strncasecmp("net.", k, 4) == 0 && tmp) {
+        kv = flb_kv_item_create(&ins->net_properties, (char *) k, NULL);
+        if (!kv) {
+            if (tmp) {
+                flb_sds_destroy(tmp);
+            }
+            return -1;
+        }
+        kv->val = tmp;
+    }
+
+#ifdef FLB_HAVE_TLS
+    else if (prop_key_check("tls", k, len) == 0 && tmp) {
+        if (strcasecmp(tmp, "true") == 0 || strcasecmp(tmp, "on") == 0) {
+            if ((ins->flags & FLB_IO_TLS) == 0) {
+                flb_error("[config] %s don't support TLS", ins->name);
+                flb_sds_destroy(tmp);
+                return -1;
+            }
+
+            ins->use_tls = FLB_TRUE;
+        }
+        else {
+            ins->use_tls = FLB_FALSE;
+        }
+        flb_sds_destroy(tmp);
+    }
+    else if (prop_key_check("tls.verify", k, len) == 0 && tmp) {
+        if (strcasecmp(tmp, "true") == 0 || strcasecmp(tmp, "on") == 0) {
+            ins->tls_verify = FLB_TRUE;
+        }
+        else {
+            ins->tls_verify = FLB_FALSE;
+        }
+        flb_sds_destroy(tmp);
+    }
+    else if (prop_key_check("tls.debug", k, len) == 0 && tmp) {
+        ins->tls_debug = atoi(tmp);
+        flb_sds_destroy(tmp);
+    }
+    else if (prop_key_check("tls.vhost", k, len) == 0) {
+        ins->tls_vhost = tmp;
+    }
+    else if (prop_key_check("tls.ca_path", k, len) == 0) {
+        ins->tls_ca_path = tmp;
+    }
+    else if (prop_key_check("tls.ca_file", k, len) == 0) {
+        ins->tls_ca_file = tmp;
+    }
+    else if (prop_key_check("tls.crt_file", k, len) == 0) {
+        ins->tls_crt_file = tmp;
+    }
+    else if (prop_key_check("tls.key_file", k, len) == 0) {
+        ins->tls_key_file = tmp;
+    }
+    else if (prop_key_check("tls.key_passwd", k, len) == 0) {
+        ins->tls_key_passwd = tmp;
+    }
+#endif
     else if (prop_key_check("storage.type", k, len) == 0 && tmp) {
         /* Set the storage type */
         if (strcasecmp(tmp, "filesystem") == 0) {
@@ -599,6 +690,42 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
         flb_sds_destroy(ins->host.listen);
     }
 
+#ifdef FLB_HAVE_TLS
+    if (ins->use_tls) {
+        if (ins->tls != NULL) {
+            flb_tls_destroy(ins->tls);
+        }
+    }
+
+    if (ins->tls_config_map) {
+        flb_config_map_destroy(ins->tls_config_map);
+    }
+#endif
+
+    if (ins->tls_vhost) {
+        flb_sds_destroy(ins->tls_vhost);
+    }
+
+    if (ins->tls_ca_path) {
+        flb_sds_destroy(ins->tls_ca_path);
+    }
+
+    if (ins->tls_ca_file) {
+        flb_sds_destroy(ins->tls_ca_file);
+    }
+
+    if (ins->tls_crt_file) {
+        flb_sds_destroy(ins->tls_crt_file);
+    }
+
+    if (ins->tls_key_file) {
+        flb_sds_destroy(ins->tls_key_file);
+    }
+
+    if (ins->tls_key_passwd) {
+        flb_sds_destroy(ins->tls_key_passwd);
+    }
+
     /* release the tag if any */
     flb_sds_destroy(ins->tag);
 
@@ -607,6 +734,7 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
 
     /* release properties */
     flb_kv_release(&ins->properties);
+    flb_kv_release(&ins->net_properties);
 
 
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -633,13 +761,17 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
         flb_config_map_destroy(ins->config_map);
     }
 
+    if (ins->net_config_map) {
+        flb_config_map_destroy(ins->net_config_map);
+    }
+
     /* hash table for chunks */
     if (ins->ht_log_chunks) {
-        flb_hash_destroy(ins->ht_log_chunks);
+        flb_hash_table_destroy(ins->ht_log_chunks);
     }
 
     if (ins->ht_metric_chunks) {
-        flb_hash_destroy(ins->ht_metric_chunks);
+        flb_hash_table_destroy(ins->ht_metric_chunks);
     }
 
     if (ins->ch_events[0] > 0) {
@@ -790,6 +922,75 @@ int flb_input_instance_init(struct flb_input_instance *ins,
         /* Validate incoming properties against config map */
         ret = flb_config_map_properties_check(ins->p->name,
                                               &ins->properties, ins->config_map);
+        if (ret == -1) {
+            if (config->program_name) {
+                flb_helper("try the command: %s -i %s -h\n",
+                           config->program_name, ins->p->name);
+            }
+            flb_input_instance_destroy(ins);
+            return -1;
+        }
+    }
+
+#ifdef FLB_HAVE_TLS
+    if (ins->use_tls == FLB_TRUE) {
+        ins->tls = flb_tls_create(FLB_TLS_SERVER_MODE,
+                                  ins->tls_verify,
+                                  ins->tls_debug,
+                                  ins->tls_vhost,
+                                  ins->tls_ca_path,
+                                  ins->tls_ca_file,
+                                  ins->tls_crt_file,
+                                  ins->tls_key_file,
+                                  ins->tls_key_passwd);
+        if (ins->tls == NULL) {
+            flb_error("[input %s] error initializing TLS context",
+                      ins->name);
+            flb_input_instance_destroy(ins);
+
+            return -1;
+        }
+    }
+
+    struct flb_config_map *m;
+
+    /* TLS config map (just for 'help' formatting purposes) */
+    ins->tls_config_map = flb_tls_get_config_map(config);
+
+    if (ins->tls_config_map == NULL) {
+        flb_input_instance_destroy(ins);
+
+        return -1;
+    }
+
+    /* Override first configmap value based on it plugin flag */
+    m = mk_list_entry_first(ins->tls_config_map, struct flb_config_map, _head);
+    if (p->flags & FLB_IO_TLS) {
+        m->value.val.boolean = FLB_TRUE;
+    }
+    else {
+        m->value.val.boolean = FLB_FALSE;
+    }
+#endif
+
+    /* Init network defaults */
+    flb_net_setup_init(&ins->net_setup);
+
+    /* Get Downstream net_setup configmap */
+    ins->net_config_map = flb_downstream_get_config_map(config);
+    if (!ins->net_config_map) {
+        flb_input_instance_destroy(ins);
+        return -1;
+    }
+
+    /*
+     * Validate 'net.*' properties: if the plugin use the Downstream interface,
+     * it might receive some networking settings.
+     */
+    if (mk_list_size(&ins->net_properties) > 0) {
+        ret = flb_config_map_properties_check(ins->p->name,
+                                              &ins->net_properties,
+                                              ins->net_config_map);
         if (ret == -1) {
             if (config->program_name) {
                 flb_helper("try the command: %s -i %s -h\n",
@@ -1286,6 +1487,20 @@ int flb_input_collector_running(int coll_id, struct flb_input_instance *in)
     return coll->running;
 }
 
+struct mk_event *flb_input_collector_get_event(int coll_id,
+                                               struct flb_input_instance *ins)
+{
+    struct flb_input_collector *collector;
+
+    collector = get_collector(coll_id, ins);
+
+    if (collector == NULL) {
+        return NULL;
+    }
+
+    return &collector->event;
+}
+
 /*
  * TEST: this is a test function that can be used by input plugins to check the
  * 'pause' and 'resume' callback operations.
@@ -1571,8 +1786,56 @@ int flb_input_upstream_set(struct flb_upstream *u, struct flb_input_instance *in
      */
     if (flb_input_is_threaded(ins)) {
         flb_upstream_thread_safe(u);
-        mk_list_add(&u->_head, &ins->upstreams);
+        mk_list_add(&u->base._head, &ins->upstreams);
     }
+
+    /* Set networking options 'net.*' received through instance properties */
+    memcpy(&u->base.net, &ins->net_setup, sizeof(struct flb_net_setup));
+
+    return 0;
+}
+
+int flb_input_downstream_set(struct flb_stream *stream,
+                             struct flb_input_instance *ins)
+{
+    int flags = 0;
+
+    if (stream == NULL) {
+        return -1;
+    }
+
+    /* TLS */
+#ifdef FLB_HAVE_TLS
+    if (ins->use_tls == FLB_TRUE) {
+        flags |= FLB_IO_TLS;
+    }
+    else {
+        flags |= FLB_IO_TCP;
+    }
+#else
+    flags |= FLB_IO_TCP;
+#endif
+
+    /* IPv6 */
+    if (ins->host.ipv6 == FLB_TRUE) {
+        flags |= FLB_IO_IPV6;
+    }
+
+    /* Set flags */
+    flb_stream_enable_flags(stream, flags);
+
+    /*
+     * If the input plugin will run in multiple threads, enable
+     * the thread safe mode for the Downstream context.
+     */
+    if (flb_input_is_threaded(ins)) {
+        flb_stream_enable_thread_safety(stream);
+
+        mk_list_add(&stream->_head, &ins->downstreams);
+    }
+
+    /* Set networking options 'net.*' received through instance properties */
+    memcpy(&stream->net, &ins->net_setup, sizeof(struct flb_net_setup));
 
     return 0;
 }

@@ -15,12 +15,15 @@ if(FLB_WINDOWS_DEFAULTS)
   set(FLB_HTTP_SERVER           Yes)
   set(FLB_METRICS               Yes)
   set(FLB_CONFIG_YAML           No)
+  set(FLB_WASM                  No)
+  set(FLB_WAMRC                 No)
 
   # INPUT plugins
   # =============
   set(FLB_IN_CPU                 No)
   set(FLB_IN_DISK                No)
   set(FLB_IN_EXEC                No)
+  set(FLB_IN_EXEC_WASI           No)
   set(FLB_IN_FORWARD            Yes)
   set(FLB_IN_HEALTH              No)
   set(FLB_IN_HTTP                No)
@@ -51,6 +54,7 @@ if(FLB_WINDOWS_DEFAULTS)
   # ==============
   set(FLB_OUT_AZURE             Yes)
   set(FLB_OUT_AZURE_BLOB        Yes)
+  set(FLB_OUT_AZURE_KUSTO       Yes)
   set(FLB_OUT_BIGQUERY           No)
   set(FLB_OUT_COUNTER           Yes)
   set(FLB_OUT_DATADOG           Yes)
@@ -75,7 +79,8 @@ if(FLB_WINDOWS_DEFAULTS)
   set(FLB_OUT_KAFKA_REST         No)
   set(FLB_OUT_CLOUDWATCH_LOGS   Yes)
   set(FLB_OUT_S3                Yes)
-  set(FLB_OUT_KINESIS_FIREHOSE   No)
+  set(FLB_OUT_KINESIS_FIREHOSE   Yes)
+  set(FLB_OUT_KINESIS_STREAMS   Yes)
 
   # FILTER plugins
   # ==============
@@ -91,6 +96,8 @@ if(FLB_WINDOWS_DEFAULTS)
   set(FLB_FILTER_RECORD_MODIFIER Yes)
   set(FLB_FILTER_REWRITE_TAG    Yes)
   set(FLB_FILTER_GEOIP2         Yes)
+  set(FLB_FILTER_AWS            Yes)
+  set(FLB_FILTER_WASM           No)
 endif()
 
 # Search bison and flex executables

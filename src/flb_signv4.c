@@ -28,10 +28,11 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_hmac.h>
+#include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_aws_credentials.h>
-#include <mbedtls/sha256.h>
 
 #include <stdlib.h>
 #include <ctype.h>
@@ -65,21 +66,16 @@ static int hmac_sha256_sign(unsigned char out[32],
                             unsigned char *key, size_t key_len,
                             unsigned char *msg, size_t msg_len)
 {
-    mbedtls_md_context_t ctx;
-    mbedtls_md_type_t md_type = MBEDTLS_MD_SHA256;
+    int result;
 
-    mbedtls_md_init(&ctx);
-    mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(md_type), 1);
+    result = flb_hmac_simple(FLB_HASH_SHA256,
+                             key, key_len,
+                             msg, msg_len,
+                             out, 32);
 
-    /* Start with the key */
-    mbedtls_md_hmac_starts(&ctx, key, key_len);
-
-    /* Update message */
-    mbedtls_md_hmac_update(&ctx, msg, msg_len);
-
-    /* Write digest to output buffer */
-    mbedtls_md_hmac_finish(&ctx, out);
-    mbedtls_md_free(&ctx);
+    if (result != FLB_CRYPTO_SUCCESS) {
+        return -1;
+    }
 
     return 0;
 }
@@ -579,6 +575,7 @@ static flb_sds_t flb_signv4_canonical_request(struct flb_http_client *c,
     int len;
     int items;
     int post_params = FLB_FALSE;
+    int result;
     size_t size;
     char *val;
     struct flb_kv **arr;
@@ -591,7 +588,6 @@ static flb_sds_t flb_signv4_canonical_request(struct flb_http_client *c,
     struct mk_list list_tmp;
     struct mk_list *head;
     unsigned char sha256_buf[64] = {0};
-    mbedtls_sha256_context sha256_ctx;
 
     /* Size hint */
     size = strlen(c->uri) + (mk_list_size(&c->headers) * 64) + 256;
@@ -746,13 +742,22 @@ static flb_sds_t flb_signv4_canonical_request(struct flb_http_client *c,
     if (s3_mode == S3_MODE_UNSIGNED_PAYLOAD) {
         payload_hash = flb_sds_create("UNSIGNED-PAYLOAD");
     } else {
-        mbedtls_sha256_init(&sha256_ctx);
-        mbedtls_sha256_starts(&sha256_ctx, 0);
         if (c->body_len > 0 && post_params == FLB_FALSE) {
-            mbedtls_sha256_update(&sha256_ctx, (const unsigned char *) c->body_buf,
-                                  c->body_len);
+            result = flb_hash_simple(FLB_HASH_SHA256,
+                                     (unsigned char *) c->body_buf, c->body_len,
+                                     sha256_buf, sizeof(sha256_buf));
         }
-        mbedtls_sha256_finish(&sha256_ctx, sha256_buf);
+        else {
+            result = flb_hash_simple(FLB_HASH_SHA256,
+                                     (unsigned char *) NULL, 0,
+                                     sha256_buf, sizeof(sha256_buf));
+        }
+
+        if (result != FLB_CRYPTO_SUCCESS) {
+            flb_error("[signv4] error hashing payload");
+            flb_sds_destroy(cr);
+            return NULL;
+        }
 
         payload_hash = flb_sds_create_size(64);
         if (!payload_hash) {
@@ -927,10 +932,10 @@ static flb_sds_t flb_signv4_string_to_sign(struct flb_http_client *c,
                                            char *region)
 {
     int i;
+    int result;
     flb_sds_t tmp;
     flb_sds_t sign;
     unsigned char sha256_buf[64] = {0};
-    mbedtls_sha256_context sha256_ctx;
 
     sign = flb_sds_create_size(256);
     if (!sign) {
@@ -966,10 +971,15 @@ static flb_sds_t flb_signv4_string_to_sign(struct flb_http_client *c,
     }
 
     /* Hash of Canonical Request */
-    mbedtls_sha256_init(&sha256_ctx);
-    mbedtls_sha256_starts(&sha256_ctx, 0);
-    mbedtls_sha256_update(&sha256_ctx, (unsigned char *) cr, flb_sds_len(cr));
-    mbedtls_sha256_finish(&sha256_ctx, sha256_buf);
+    result = flb_hash_simple(FLB_HASH_SHA256,
+                             (unsigned char *) cr, flb_sds_len(cr),
+                             sha256_buf, sizeof(sha256_buf));
+
+    if (result != FLB_CRYPTO_SUCCESS) {
+        flb_error("[signv4] error hashing canonical request");
+        flb_sds_destroy(sign);
+        return NULL;
+    }
 
     for (i = 0; i < 32; i++) {
         tmp = flb_sds_printf(&sign, "%02x", (unsigned char) sha256_buf[i]);

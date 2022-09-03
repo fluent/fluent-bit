@@ -619,6 +619,9 @@ int flb_ra_regex_match(struct flb_record_accessor *ra, msgpack_object map,
     struct flb_ra_parser *rp;
 
     rp = mk_list_entry_first(&ra->list, struct flb_ra_parser, _head);
+    if (rp == NULL || rp->key == NULL) {
+        return -1;
+    }
     return flb_ra_key_regex_match(rp->key->name, map, rp->key->subkeys,
                                   regex, result);
 }

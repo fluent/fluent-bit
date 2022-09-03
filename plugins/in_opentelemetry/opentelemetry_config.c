@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_input_plugin.h>
+#include <fluent-bit/flb_downstream.h>
 
 #include "opentelemetry.h"
 #include "http_conn.h"
@@ -69,11 +70,23 @@ int opentelemetry_config_destroy(struct flb_opentelemetry *ctx)
     /* release all connections */
     opentelemetry_conn_release_all(ctx);
 
+    if (ctx->collector_id != -1) {
+        flb_input_collector_delete(ctx->collector_id, ctx->ins);
+
+        ctx->collector_id = -1;
+    }
+
+    if (ctx->downstream != NULL) {
+        flb_downstream_destroy(ctx->downstream);
+    }
+
     if (ctx->server) {
         flb_free(ctx->server);
     }
+
     flb_free(ctx->listen);
     flb_free(ctx->tcp_port);
     flb_free(ctx);
+
     return 0;
 }

@@ -223,7 +223,8 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     }
 
     /* one tls instance for provider, one for cw client */
-    ctx->cred_tls = flb_tls_create(FLB_TRUE,
+    ctx->cred_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                   FLB_TRUE,
                                    ins->tls_debug,
                                    ins->tls_vhost,
                                    ins->tls_ca_path,
@@ -237,7 +238,8 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         goto error;
     }
 
-    ctx->client_tls = flb_tls_create(FLB_TRUE,
+    ctx->client_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                     FLB_TRUE,
                                      ins->tls_debug,
                                      ins->tls_vhost,
                                      ins->tls_ca_path,
@@ -271,7 +273,8 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         }
 
         /* STS provider needs yet another separate TLS instance */
-        ctx->sts_tls = flb_tls_create(FLB_TRUE,
+        ctx->sts_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                      FLB_TRUE,
                                       ins->tls_debug,
                                       ins->tls_vhost,
                                       ins->tls_ca_path,
@@ -349,7 +352,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
      * CW output runs in sync mode; because the CW API currently requires
      * PutLogEvents requests to a log stream to be made serially
      */
-    upstream->flags &= ~(FLB_IO_ASYNC);
+    flb_stream_disable_async_mode(&upstream->base);
 
     ctx->cw_client->upstream = upstream;
     flb_output_upstream_set(upstream, ctx->ins);

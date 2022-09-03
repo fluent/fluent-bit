@@ -171,7 +171,7 @@ static int load_file_patterns(struct checklist *ctx)
 
         /* add the entry as a hash table key, no value reference is needed */
         if (ctx->mode == CHECK_EXACT_MATCH) {
-            ret = flb_hash_add(ctx->ht, buf, len, "", 0);
+            ret = flb_hash_table_add(ctx->ht, buf, len, "", 0);
         }
         else if (ctx->mode == CHECK_PARTIAL_MATCH) {
             ret = db_insert(ctx, buf, len);
@@ -214,7 +214,8 @@ static int init_config(struct checklist *ctx)
 
     if (ctx->mode == CHECK_EXACT_MATCH) {
         /* create hash table */
-        ctx->ht = flb_hash_create(FLB_HASH_EVICT_NONE, CHECK_HASH_TABLE_SIZE, -1);
+        ctx->ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE,
+                                        CHECK_HASH_TABLE_SIZE, -1);
         if (!ctx->ht) {
             flb_plg_error(ctx->ins, "could not create hash table");
             return -1;
@@ -444,8 +445,8 @@ static int cb_checklist_filter(const void *data, size_t bytes,
                 cmp_size = rval->o.via.str.size;
 
                 if (ctx->mode == CHECK_EXACT_MATCH) {
-                    id = flb_hash_get(ctx->ht, cmp_buf, cmp_size,
-                                      (void *) &tmp_buf, &tmp_size);
+                    id = flb_hash_table_get(ctx->ht, cmp_buf, cmp_size,
+                                            (void *) &tmp_buf, &tmp_size);
                     if (id >= 0) {
                         found = FLB_TRUE;
                     }
@@ -518,7 +519,7 @@ static int cb_exit(void *data, struct flb_config *config)
     }
 
     if (ctx->ht) {
-        flb_hash_destroy(ctx->ht);
+        flb_hash_table_destroy(ctx->ht);
     }
 
     if (ctx->db) {

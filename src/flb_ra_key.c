@@ -150,7 +150,9 @@ static int subkey_to_object(msgpack_object *map, struct mk_list *subkeys,
                 return -1;
             }
 
-            cur = cur.via.array.ptr[entry->array_id];
+            val = &cur.via.array.ptr[entry->array_id];
+            cur = *val;
+            key = NULL; /* fill NULL since the type is array. */
             goto next;
         }
 

@@ -33,8 +33,8 @@ static int netdev_hash_set(struct flb_ne *ctx, struct cmt_counter *c,
     int len;
 
     len = strlen(metric_name);
-    ret = flb_hash_add(ctx->netdev_ht,
-                       metric_name, len, c, 0);
+    ret = flb_hash_table_add(ctx->netdev_ht,
+                             metric_name, len, c, 0);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not register hash entry");
         return -1;
@@ -52,9 +52,9 @@ static struct cmt_counter *netdev_hash_get(struct flb_ne *ctx,
     struct cmt_counter *c;
 
     len = strlen(metric_name);
-    ret = flb_hash_get(ctx->netdev_ht,
-                       metric_name, len,
-                       (void *) &c, &out_size);
+    ret = flb_hash_table_get(ctx->netdev_ht,
+                             metric_name, len,
+                             (void *) &c, &out_size);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "hash entry '%s' not found", metric_name);
         return NULL;
@@ -87,7 +87,7 @@ static int netdev_configure(struct flb_ne *ctx)
     struct cmt_counter *c;
 
     /* Initialize hash table */
-    ctx->netdev_ht = flb_hash_create(FLB_HASH_EVICT_NONE, 16, 0);
+    ctx->netdev_ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 16, 0);
     if (!ctx->netdev_ht) {
         return -1;
     }
@@ -357,7 +357,7 @@ int ne_netdev_update(struct flb_ne *ctx)
 int ne_netdev_exit(struct flb_ne *ctx)
 {
     if (ctx->netdev_ht) {
-        flb_hash_destroy(ctx->netdev_ht);
+        flb_hash_table_destroy(ctx->netdev_ht);
     }
     return 0;
 }

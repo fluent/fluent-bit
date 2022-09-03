@@ -688,10 +688,10 @@ int pack_complex_metric_sample(struct cmt_prometheus_remote_write_context *conte
                                struct cmt_metric *metric,
                                int add_metadata)
 {
-    size_t                             original_label_value_count;
+    size_t                             original_label_value_count = 0;
     cmt_sds_t                          synthetized_metric_name;
     cmt_sds_t                          original_metric_name;
-    size_t                             label_value_count;
+    size_t                             label_value_count = 0;
     cmt_sds_t                          additional_label_caption;
     size_t                             label_key_count;
     struct cmt_map_label              *additional_label;

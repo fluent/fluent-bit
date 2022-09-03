@@ -366,7 +366,7 @@ static void cb_logdna_flush(struct flb_event_chunk *event_chunk,
     flb_sds_t tmp;
     flb_sds_t payload;
     struct flb_logdna *ctx = out_context;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
 
     /* Format the data to the expected LogDNA Payload */

@@ -1019,10 +1019,10 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     }
 
     if (flb_input_event_type_is_log(in)) {
-        flb_hash_add(in->ht_log_chunks, tag, tag_len, ic, 0);
+        flb_hash_table_add(in->ht_log_chunks, tag, tag_len, ic, 0);
     }
     else if (flb_input_event_type_is_metric(in)) {
-        flb_hash_add(in->ht_metric_chunks, tag, tag_len, ic, 0);
+        flb_hash_table_add(in->ht_metric_chunks, tag, tag_len, ic, 0);
     }
 
     return ic;
@@ -1094,12 +1094,12 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
          * chunk for a specific Tag.
          */
         if (ic->event_type == FLB_INPUT_LOGS) {
-            flb_hash_del_ptr(ic->in->ht_log_chunks,
-                             tag_buf, tag_len, (void *) ic);
+            flb_hash_table_del_ptr(ic->in->ht_log_chunks,
+                                   tag_buf, tag_len, (void *) ic);
         }
         else if (ic->event_type == FLB_INPUT_METRICS) {
-            flb_hash_del_ptr(ic->in->ht_metric_chunks,
-                             tag_buf, tag_len, (void *) ic);
+            flb_hash_table_del_ptr(ic->in->ht_metric_chunks,
+                                   tag_buf, tag_len, (void *) ic);
         }
     }
 
@@ -1135,12 +1135,12 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
     }
 
     if (in->event_type == FLB_INPUT_LOGS) {
-        id = flb_hash_get(in->ht_log_chunks, tag, tag_len,
-                          (void *) &ic, &out_size);
+        id = flb_hash_table_get(in->ht_log_chunks, tag, tag_len,
+                                (void *) &ic, &out_size);
     }
     else if (in->event_type == FLB_INPUT_METRICS) {
-        id = flb_hash_get(in->ht_metric_chunks, tag, tag_len,
-                          (void *) &ic, &out_size);
+        id = flb_hash_table_get(in->ht_metric_chunks, tag, tag_len,
+                                (void *) &ic, &out_size);
     }
 
     if (id >= 0) {

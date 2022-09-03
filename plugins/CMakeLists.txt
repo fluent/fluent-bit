@@ -216,13 +216,21 @@ if(FLB_PARSER)
   REGISTER_IN_PLUGIN("in_exec")
 endif()
 
+REGISTER_IN_PLUGIN("in_udp")
+
+if(FLB_WASM)
+  REGISTER_IN_PLUGIN("in_exec_wasi")
+endif()
+
 REGISTER_IN_PLUGIN("in_tcp")
+REGISTER_IN_PLUGIN("in_unix_socket")
 REGISTER_IN_PLUGIN("in_mqtt")
 REGISTER_IN_PLUGIN("in_lib")
 REGISTER_IN_PLUGIN("in_forward")
 REGISTER_IN_PLUGIN("in_random")
 REGISTER_OUT_PLUGIN("out_azure")
 REGISTER_OUT_PLUGIN("out_azure_blob")
+REGISTER_OUT_PLUGIN("out_azure_kusto")
 REGISTER_OUT_PLUGIN("out_bigquery")
 REGISTER_OUT_PLUGIN("out_calyptia")
 REGISTER_OUT_PLUGIN("out_counter")
@@ -302,6 +310,9 @@ REGISTER_FILTER_PLUGIN("filter_stdout")
 REGISTER_FILTER_PLUGIN("filter_geoip2")
 
 REGISTER_FILTER_PLUGIN("filter_nightfall")
+if (FLB_WASM)
+  REGISTER_FILTER_PLUGIN("filter_wasm")
+endif ()
 
 # Register external input and output plugins
 if(EXT_IN_PLUGINS)

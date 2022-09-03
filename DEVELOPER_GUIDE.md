@@ -1,26 +1,33 @@
-## Beginners Guide to Contributing to Fluent Bit
+# Beginners Guide to Contributing to Fluent Bit
 
 Assuming you have some basic knowledge of C, this guide should help you understand how to make code
 changes to Fluent Bit.
 
-### Table of Contents
-- [Libraries](#libraries)
+## Table of Contents
+
+- [Beginners Guide to Contributing to Fluent Bit](#beginners-guide-to-contributing-to-fluent-bit)
+  - [Table of Contents](#table-of-contents)
+  - [Libraries](#libraries)
     - [Memory Management](#memory-management)
     - [Strings](#strings)
     - [HTTP Client](#http-client)
     - [Linked Lists](#linked-lists)
     - [Message Pack](#message-pack)
-- [Concurrency](#concurrency)
-- [Plugin API](#plugin-api)
+  - [Concurrency](#concurrency)
+    - [Coroutine Code: How does it work?](#coroutine-code-how-does-it-work)
+    - [Practical Advice: How coroutines will affect your code](#practical-advice-how-coroutines-will-affect-your-code)
+      - [Filter Plugins](#filter-plugins)
+      - [Output plugins](#output-plugins)
+  - [Plugin API](#plugin-api)
     - [Input](#input)
     - [Filter](#filter)
     - [Output](#output)
     - [Config Maps](#config-maps)
-- [Testing](#testing)
+  - [Testing](#testing)
     - [Valgrind](#valgrind)
-- [Need more help?](#need-more-help)
+  - [Need more help?](#need-more-help)
 
-### Libraries
+## Libraries
 
 Most external libraries are embedded in the project in the [/lib](/lib) folder. To keep its footprint low and make cross-platform builds simple, Fluent Bit attempts keep its dependency graph small.
 
@@ -28,9 +35,10 @@ The external library you are mostly likely to interact with is [msgpack](https:/
 
 For crypto, Fluent Bit uses [mbedtls](https://github.com/ARMmbed/mbedtls).
 
-#### Memory Management
+### Memory Management
 
 When you write Fluent Bit code, you will use Fluent Bit's versions of the standard C functions for working with memory:
+
 - [`flb_malloc()`](include/fluent-bit/flb_mem.h) - equivalent to `malloc`, allocates memory.
 - [`flb_calloc()`](include/fluent-bit/flb_mem.h)  - equivalent to `calloc`, allocates memory and initializes it to zero.
 - [`flb_realloc()`](include/fluent-bit/flb_mem.h) - equivalent to `realloc`.
@@ -39,15 +47,16 @@ When you write Fluent Bit code, you will use Fluent Bit's versions of the standa
 Note that many types have a specialized create and destroy function. For example,
 [`flb_sds_create()` and `flb_sds_destroy()`](include/fluent-bit/flb_sds.h) (more about this in the next section).
 
-#### Strings
+### Strings
 
 Fluent Bit has a stripped down version of the popular [SDS](https://github.com/antirez/sds) string library. See [flb_sds.h](include/fluent-bit/flb_sds.h) for the API.
 
 In general, you should use SDS strings in any string processing code. SDS strings are fully compatible with any C function that accepts a null-terminated sequence of characters; to understand how they work, see the [explanation on Github](https://github.com/antirez/sds#how-sds-strings-work).
 
-#### HTTP Client
+### HTTP Client
 
 Fluent Bit has its own network connection library. The key types and functions are defined in the following header files:
+
 - [flb_upstream.h](include/fluent-bit/flb_upstream.h)
 - [flb_http_client.h](include/fluent-bit/flb_http_client.h)
 - [flb_io.h](include/fluent-bit/flb_io.h)
@@ -103,7 +112,7 @@ static flb_sds_t make_request(struct flb_config *config)
     }
 
     /* Perform the HTTP request */
-	ret = flb_http_do(client, &b_sent)
+ ret = flb_http_do(client, &b_sent)
 
     /* Validate return status and HTTP status if set */
     if (ret != 0 || client->resp.status != 200) {
@@ -131,7 +140,7 @@ static flb_sds_t make_request(struct flb_config *config)
 
 An `flb_upstream` structure represents a host/endpoint that you want to call. Normally, you'd store this structure somewhere so that it can be re-used. An `flb_upstream_conn` represents a connection to that host for a single HTTP request. The connection structure should not be used for more than one request.
 
-#### Linked Lists
+### Linked Lists
 
 Fluent Bit contains a library for constructing linked lists- [mk_list](lib/monkey/include/monkey/mk_core/mk_list.h). The type stores data as a circular linked list.
 
@@ -190,7 +199,7 @@ static int example()
 }
 ```
 
-#### Message Pack
+### Message Pack
 
 Fluent Bit uses [msgpack](https://msgpack.org/index.html) to internally store data. If you write code for Fluent Bit, it is almost certain that you will interact with msgpack.
 
@@ -280,22 +289,24 @@ static int cb_filter(const void *data, size_t bytes,
 
 Please also check out the message pack examples on the [msgpack-c GitHub repo](https://github.com/msgpack/msgpack-c).
 
-### Concurrency
+## Concurrency
 
 Fluent Bit uses ["coroutines"](https://en.wikipedia.org/wiki/Coroutine); a concurrent programming model in which subroutines can be paused and resumed. Co-routines are cooperative routines- instead of blocking, they cooperatively pass execution between each other. Coroutines are implemented as part of Fluent Bit's core network IO libraries. When a blocking network IO operation is made (for example, waiting for a response on a socket), a routine will cooperatively yield (pause itself) and pass execution to Fluent Bit engine, which will schedule (activate) other routines. Once the blocking IO operation is complete, the sleeping coroutine will be scheduled again (resumed). This model allows Fluent Bit to achieve performance benefits without the headaches that often come from having multiple active threads.
 
 This Fluent Bit engine consists of an event loop that is built upon [github.com/monkey/monkey](https://github.com/monkey/monkey). The monkey project is a server and library designed for low resource usage. It was primarily implemented by Eduardo Silva, who also created Fluent Bit.
 
-#### Coroutine Code: How does it work?
+### Coroutine Code: How does it work?
 
 To understand how this works, let's walkthrough an example in the code.
 
 The elasticsearch plugin makes an HTTP request to an elasticsearch cluster, when the following [line of code runs](https://github.com/fluent/fluent-bit/blob/1.3/plugins/out_es/es.c#L581):
+
 ```c
 ret = flb_http_do(c, &b_sent);
 ```
 
 This calls the http request function, in [`flb_http_client.c`, which makes a TCP write call](https://github.com/fluent/fluent-bit/blob/1.3/src/flb_http_client.c#L840):
+
 ```c
 ret = flb_io_net_write(c->u_conn,
                        c->body_buf, c->body_len,
@@ -303,6 +314,7 @@ ret = flb_io_net_write(c->u_conn,
 ```
 
 That activates code in Fluent Bit's core TCP library, which is where the coroutine magic happens. This code is in [flb_io.c](https://github.com/fluent/fluent-bit/blob/1.3/src/flb_io.c#L241). After opening a socket, the code inserts an item on the event loop:
+
 ```c
 ret = mk_event_add(u->evl,
                    u_conn->fd,
@@ -311,6 +323,7 @@ ret = mk_event_add(u->evl,
 ```
 
 This instructs the event loop to watch our socket's file descriptor. Then, [a few lines below, we yield back to the engine thread](https://github.com/fluent/fluent-bit/blob/1.3/src/flb_io.c#L304):
+
 ```c
 /*
  * Return the control to the parent caller, we need to wait for
@@ -322,6 +335,7 @@ flb_thread_yield(th, FLB_FALSE);
 Remember, only one thread is active at a time. If the current coroutine did not yield back to engine, it would monopolize execution until the socket IO operation was complete. Since IO operations may take a long time, we can increase performance by allowing another routine to perform work.
 
 The core routine in Fluent Bit is the engine in `flb_engine.c`. Here we can find the [code that will resume the elasticsearch plugin](https://github.com/fluent/fluent-bit/blob/1.3/src/flb_engine.c#L553) once it's IO operation is complete:
+
 ```c
 if (event->type == FLB_ENGINE_EV_THREAD) {
     struct flb_upstream_conn *u_conn;
@@ -340,17 +354,18 @@ if (event->type == FLB_ENGINE_EV_THREAD) {
 
 This will return execution to the code right after the [flb_thread_yield](https://github.com/fluent/fluent-bit/blob/1.3/src/flb_io.c#L304) call in the IO library.
 
-#### Practical Advice: How coroutines will affect your code
+### Practical Advice: How coroutines will affect your code
 
-##### Filter Plugins
+#### Filter Plugins
 
 Filter plugins do not support coroutines, consequently you must disable async mode if your filter makes an HTTP request:
+
 ```c
 /* Remove async flag from upstream */
 upstream->flags &= ~(FLB_IO_ASYNC);
 ```
 
-##### Output plugins
+#### Output plugins
 
 Output plugins use coroutines. Plugins have a context structure which is available in all calls and can be used to store state. In general, you can write code without ever considering concurrency. This is because only one coroutine is active at a time. Thus, synchronization primitives like mutex locks or semaphores are not needed.
 
@@ -393,18 +408,17 @@ This can be re-enabled at any time:
 upstream->flags |= FLB_IO_ASYNC;
 ```
 
-
-### Plugin API
+## Plugin API
 
 Each plugin is a shared object which is [loaded into Fluent Bit](https://github.com/fluent/fluent-bit/blob/1.3/src/flb_plugin.c#L70) using dlopen and dlsym.
 
-#### Input
+### Input
 
 The input plugin structure is defined in [flb_input.h](https://github.com/fluent/fluent-bit/blob/master/include/fluent-bit/flb_input.h#L62). There are a number of functions which a plugin can implement, most only implement `cb_init`, `cb_collect`, and `cb_exit`.
 
 The [`"dummy"` input plugin](plugins/in_dummy) very simple and is an excellent example to review to understand more.
 
-#### Filter
+### Filter
 
 The structure for filter plugins is defined in [flb_filter.h](https://github.com/fluent/fluent-bit/blob/master/include/fluent-bit/flb_filter.h#L44). Each plugin must implement `cb_init`, `cb_filter`, and `cb_exit`.
 
@@ -417,13 +431,13 @@ Note that filter plugins can not asynchronously make HTTP requests. If your plug
 upstream->flags &= ~(FLB_IO_ASYNC);
 ```
 
-#### Output
+### Output
 
 Output plugins are defined in [flb_output.h](https://github.com/fluent/fluent-bit/blob/master/include/fluent-bit/flb_output.h#L57). Each plugin must implement `cb_init`, `cb_flush`, and `cb_exit`.
 
 The [stdout plugin](plugins/out_stdout) is very simple; review its code to understand how output plugins work.
 
-#### Config Maps
+### Config Maps
 
 Config maps are an improvement to the previous Fluent Bit API that was used by plugins to read configuration values. The new config maps feature warns the user if there is an unknown configuration key and reduces risk of bad configuration due to typos or deprecated property names. They will also allow dynamic configuration reloading to be implemented in the future.
 
@@ -488,9 +502,9 @@ struct flb_output_plugin out_stdout_plugin = {
 };
 
 ```
+
 In the above code snippet, the property *format* is of type string which supports formats like json, msgpack etc. It has default value NULL(in which case it uses msgpack), no flags, and it is being only validated by the config map and hence set_property field is `FLB_FALSE` with member offset 0. No description is written for *format* property at present.
 Similarly, for the property *json_date_key*, type is string, default value is date, and it is being written to context so the set_property field is `FLB_TRUE` with a member offset. Again, no description is written for it.
-
 
 Upon initilization the engine loads the config map like [this](https://github.com/fluent/fluent-bit/blob/v1.4.2/plugins/out_stdout/stdout.c#L48):
 
@@ -501,23 +515,45 @@ Upon initilization the engine loads the config map like [this](https://github.co
 [flb_output_config_map_set](https://github.com/fluent/fluent-bit/blob/v1.4.2/include/fluent-bit/flb_output.h#L510) returns [flb_config_map_set](https://github.com/fluent/fluent-bit/blob/v1.4.2/src/flb_config_map.c#L513) which is a function used by plugins that needs to populate their context structure with the configuration properties already mapped.
 
 Some points to keep in mind while migrating an existing plugin to a config map interface:
+
 - All memory allocations and releases of properties on exit are handled by the config map interface.
 - The config map does not parse host and port properties since these properties are handled automatically for plugins that perform network operations.
 - Some plugins might also have an empty config_map. This is so that it would show an error when someone tried to use a non-existent parameter.
 
-### Testing
+## Testing
 
 During development, you can build Fluent Bit as follows:
 
-```
+```shell
 cd build
 cmake -DFLB_DEV=On ../
 make
 ```
+
 Note that Fluent Bit uses Cmake 3 and on some systems you may need to invoke it as `cmake3`.
 
-To enable the unit tests run:
+To set up and build your environment, please refer to the packaging containers for a dependency list: <https://github.com/fluent/fluent-bit/tree/master/packaging/distros>.
+
+A [`Vagrantfile`](./Vagrantfile) is provided to simplify building on a VM, this will set up a VM using Vagrant you can then build in.
+
+```shell
+vagrant up
+vagrant ssh
+cd build
+rm -rf *
+cmake ...
+make
 ```
+
+It also acts as a reference for the tooling required to be installed on a local PC if you want to build things.
+
+The VM created by Vagrant uses `rsync` to synchronize the files with rather than directly mounting the local directory.
+The reason is to handle any permission issues and isolate the underlying host filesystem.
+Refer to the Vagrant documentation for syncing changes: <https://www.vagrantup.com/docs/cli/rsync-auto>
+
+To enable the unit tests run:
+
+```shell
 cmake -DFLB_DEV=On -DFLB_TESTS_RUNTIME=On -DFLB_TESTS_INTERNAL=On ../
 make
 ```
@@ -526,31 +562,31 @@ Internal tests are for the internal libraries of Fluent Bit. Runtime tests are f
 
 You can run the unit tests with `make test`, however, this is inconvenient in practice. Each test file will create an executable in the `build/bin` directory which you can run directly. For example, if you want to run the SDS tests, you can invoke them as follows:
 
-```
+```shell
 $ ./bin/flb-it-sds
 Test sds_usage...                               [   OK   ]
 Test sds_printf...                              [   OK   ]
 SUCCESS: All unit tests have passed.
 ```
 
-#### Valgrind
+### Valgrind
 
 [Valgrind](https://valgrind.org/) is a tool that will help you detect and diagnose memory issues in your code. It will check for memory leaks and invalid memory accesses.
 
 To use it while developing, invoke it before Fluent Bit:
 
-```
+```shell
 valgrind ./bin/fluent-bit {args for fluent bit}
 ```
 
 Valgrind becomes especially powerful when you run it on your unit tests. We recommend writing unit tests that cover a large fraction of code paths in your contribution. You can then check your code for memory issues by invoking the test binaries with Valgrind:
 
-```
-$ valgrind ./bin/flb-rt-your-test
+```shell
+valgrind ./bin/flb-rt-your-test
 ```
 
 This will allow you to check for memory issues in code paths (ex error cases) which are hard to trigger through manual testing.
 
-### Need more help?
+## Need more help?
 
 The best way to learn how Fluent Bit code works is to read it. If you need help understanding the code, reach out to the community, or open a PR with changes that are a work in progress.

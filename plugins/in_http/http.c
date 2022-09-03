@@ -34,36 +34,50 @@
 static int in_http_collect(struct flb_input_instance *ins,
                            struct flb_config *config, void *in_context)
 {
-    int fd;
-    struct flb_http *ctx = in_context;
-    struct http_conn *conn;
+    struct flb_connection *connection;
+    struct http_conn      *conn;
+    struct flb_http       *ctx;
 
-    /* Accept the new connection */
-    fd = flb_net_accept(ctx->server_fd);
-    if (fd == -1) {
+    ctx = in_context;
+
+    connection = flb_downstream_conn_get(ctx->downstream);
+
+    if (connection == NULL) {
         flb_plg_error(ctx->ins, "could not accept new connection");
+
         return -1;
     }
 
-    flb_plg_trace(ctx->ins, "new TCP connection arrived FD=%i", fd);
-    conn = http_conn_add(fd, ctx);
-    if (!conn) {
+    flb_plg_trace(ctx->ins, "new TCP connection arrived FD=%i",
+                  connection->fd);
+
+    conn = http_conn_add(connection, ctx);
+
+    if (conn == NULL) {
+        flb_downstream_conn_release(connection);
+
         return -1;
     }
+
     return 0;
 }
 
 static int in_http_init(struct flb_input_instance *ins,
                         struct flb_config *config, void *data)
 {
-    int ret;
-    struct flb_http *ctx;
+    unsigned short int  port;
+    int                 ret;
+    struct flb_http    *ctx;
+
+    (void) data;
 
     /* Create context and basic conf */
     ctx = http_config_create(ins);
     if (!ctx) {
         return -1;
     }
+
+    ctx->collector_id = -1;
 
     /* Populate context with config map defaults and incoming properties */
     ret = flb_input_config_map_set(ins, (void *) ctx);
@@ -78,15 +92,23 @@ static int in_http_init(struct flb_input_instance *ins,
 
     ctx->evl = config->evl;
 
-    /* Create HTTP listener */
-    ctx->server_fd = flb_net_server(ctx->tcp_port, ctx->listen);
-    if (ctx->server_fd > 0) {
-        flb_plg_info(ctx->ins, "listening on %s:%s", ctx->listen, ctx->tcp_port);
-    }
-    else {
-        flb_plg_error(ctx->ins, "could not bind address %s:%s. Aborting",
+    port = (unsigned short int) strtoul(ctx->tcp_port, NULL, 10);
+
+    ctx->downstream = flb_downstream_create(FLB_TRANSPORT_TCP,
+                                            ins->flags,
+                                            ctx->listen,
+                                            port,
+                                            ins->tls,
+                                            config,
+                                            &ins->net_setup);
+
+    if (ctx->downstream == NULL) {
+        flb_plg_error(ctx->ins,
+                      "could not initialize downstream on %s:%s. Aborting",
                       ctx->listen, ctx->tcp_port);
+
         http_config_destroy(ctx);
+
         return -1;
     }
 
@@ -98,33 +120,35 @@ static int in_http_init(struct flb_input_instance *ins,
         ctx->successful_response_code = 201;
     }
 
-    /* Set the socket non-blocking */
-    flb_net_socket_nonblocking(ctx->server_fd);
-
     /* Collect upon data available on the standard input */
     ret = flb_input_set_collector_socket(ins,
                                          in_http_collect,
-                                         ctx->server_fd,
+                                         ctx->downstream->server_fd,
                                          config);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "Could not set collector for IN_TCP input plugin");
         http_config_destroy(ctx);
+
         return -1;
     }
+
+    ctx->collector_id = ret;
 
     return 0;
 }
 
 static int in_http_exit(void *data, struct flb_config *config)
 {
-    struct flb_http *ctx = data;
+    struct flb_http *ctx;
+
     (void) config;
 
-    if (!ctx) {
-        return 0;
+    ctx = data;
+
+    if (ctx != NULL) {
+        http_config_destroy(ctx);
     }
 
-    http_config_destroy(ctx);
     return 0;
 }
 
@@ -170,5 +194,5 @@ struct flb_input_plugin in_http_plugin = {
     .cb_resume    = NULL,
     .cb_exit      = in_http_exit,
     .config_map   = config_map,
-    .flags        = FLB_INPUT_NET,
+    .flags        = FLB_INPUT_NET | FLB_IO_OPT_TLS,
 };

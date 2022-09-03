@@ -706,7 +706,16 @@ _conv_num64(const unsigned char **buf, int64_t *dest, int64_t llim, int64_t ulim
 
 	/* we use rulim to break out of the loop when we run out of digits */
 	do {
+		/* Avoid overflow: result > ((2**64)/2.0) / 10.0 */
+		if (result > 922337203685477580) {
+			return (0);
+		}
 		result *= 10;
+
+		/* Avoid overflow: result > ((2**64)/2.0) - 48 */
+		if (result > 9223372036854775760) {
+			return (0);
+		}
 		result += *(*buf)++ - '0';
 		rulim /= 10;
         /* watch out for overflows. If value gets above

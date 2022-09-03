@@ -798,7 +798,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     size_t out_size;
     size_t b_sent;
     struct flb_elasticsearch *ctx = out_context;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
     flb_sds_t signature = NULL;
     int compressed = FLB_FALSE;
@@ -916,12 +916,24 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
                 if (ctx->trace_error) {
                     /*
                      * If trace_error is set, trace the actual
-                     * input/output to Elasticsearch that caused the problem.
+                     * response from Elasticsearch explaining the problem.
+                     * Trace_Output can be used to see the request. 
                      */
-                    flb_plg_debug(ctx->ins, "error caused by: Input\n%s\n",
-                                  pack);
-                    flb_plg_error(ctx->ins, "error: Output\n%s",
-                                  c->resp.payload);
+                    if (pack_size < 4000) {
+                        flb_plg_debug(ctx->ins, "error caused by: Input\n%.*s\n",
+                                      (int) pack_size, pack);
+                    }
+                    if (c->resp.payload_size < 4000) {
+                        flb_plg_error(ctx->ins, "error: Output\n%s",
+                                      c->resp.payload);
+                    } else {
+                        /*
+                        * We must use fwrite since the flb_log functions
+                        * will truncate data at 4KB
+                        */
+                        fwrite(c->resp.payload, 1, c->resp.payload_size, stderr);
+                        fflush(stderr);
+                    }
                 }
                 goto retry;
             }

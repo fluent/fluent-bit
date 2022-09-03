@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_network.h>
+#include <fluent-bit/flb_downstream.h>
 
 #include "fw.h"
 #include "fw_prot.h"
@@ -35,11 +36,20 @@ int fw_conn_event(void *data)
     int available;
     int size;
     char *tmp;
+    struct fw_conn *conn;
     struct mk_event *event;
-    struct fw_conn *conn = data;
-    struct flb_in_fw_config *ctx = conn->ctx;
+    struct flb_in_fw_config *ctx;
+    struct flb_connection *connection;
 
-    event = &conn->event;
+    connection = (struct flb_connection *) data;
+
+    conn = connection->user_data;
+
+    ctx = conn->ctx;
+
+    event = &connection->event;
+
+
     if (event->mask & MK_EVENT_READ) {
         available = (conn->buf_size - conn->buf_len);
         if (available < 1) {
@@ -70,8 +80,9 @@ int fw_conn_event(void *data)
             available = (conn->buf_size - conn->buf_len);
         }
 
-        bytes = recv(conn->fd,
-                     conn->buf + conn->buf_len, available, 0);
+        bytes = flb_io_net_read(connection,
+                                (void *) &conn->buf[conn->buf_len],
+                                available);
 
         if (bytes > 0) {
             flb_plg_trace(ctx->ins, "read()=%i pre_len=%i now_len=%i",
@@ -101,27 +112,26 @@ int fw_conn_event(void *data)
 }
 
 /* Create a new Forward request instance */
-struct fw_conn *fw_conn_add(int fd, struct flb_in_fw_config *ctx)
+struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_config *ctx)
 {
-    int ret;
     struct fw_conn *conn;
-    struct mk_event *event;
+    int             ret;
 
     conn = flb_malloc(sizeof(struct fw_conn));
     if (!conn) {
         flb_errno();
+
         return NULL;
     }
 
+    conn->connection = connection;
+
     /* Set data for the event-loop */
-    event = &conn->event;
-    MK_EVENT_NEW(event);
-    event->fd           = fd;
-    event->type         = FLB_ENGINE_EV_CUSTOM;
-    event->handler      = fw_conn_event;
+    connection->user_data     = conn;
+    connection->event.type    = FLB_ENGINE_EV_CUSTOM;
+    connection->event.handler = fw_conn_event;
 
     /* Connection info */
-    conn->fd      = fd;
     conn->ctx     = ctx;
     conn->buf_len = 0;
     conn->rest    = 0;
@@ -131,20 +141,25 @@ struct fw_conn *fw_conn_add(int fd, struct flb_in_fw_config *ctx)
     conn->buf = flb_malloc(ctx->buffer_chunk_size);
     if (!conn->buf) {
         flb_errno();
-        flb_socket_close(fd);
         flb_free(conn);
+
         return NULL;
     }
     conn->buf_size = ctx->buffer_chunk_size;
     conn->in       = ctx->ins;
 
     /* Register instance into the event loop */
-    ret = mk_event_add(ctx->evl, fd, FLB_ENGINE_EV_CUSTOM, MK_EVENT_READ, conn);
+    ret = mk_event_add(ctx->evl,
+                       connection->fd,
+                       FLB_ENGINE_EV_CUSTOM,
+                       MK_EVENT_READ,
+                       &connection->event);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not register new connection");
-        flb_socket_close(fd);
+
         flb_free(conn->buf);
         flb_free(conn);
+
         return NULL;
     }
 
@@ -155,12 +170,14 @@ struct fw_conn *fw_conn_add(int fd, struct flb_in_fw_config *ctx)
 
 int fw_conn_del(struct fw_conn *conn)
 {
-    /* Unregister the file descriptior from the event-loop */
-    mk_event_del(conn->ctx->evl, &conn->event);
+    /* The downstream unregisters the file descriptor from the event-loop
+     * so there's nothing to be done by the plugin
+     */
+    flb_downstream_conn_release(conn->connection);
 
     /* Release resources */
     mk_list_del(&conn->_head);
-    flb_socket_close(conn->fd);
+
     flb_free(conn->buf);
     flb_free(conn);
 

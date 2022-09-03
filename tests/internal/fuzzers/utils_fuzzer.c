@@ -24,9 +24,9 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_gzip.h>
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_uri.h>
-#include <fluent-bit/flb_sha512.h>
+#include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_regex.h>
 #include "flb_fuzz_header.h"
 
@@ -121,16 +121,16 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     }
 
     /* Fuzzing of flb_hash.c */
-    struct flb_hash *ht = NULL;
-    ht = flb_hash_create((int)(data[2] % 0x04),
-                         (size_t)data[0],
-                         (int)data[1]);
+    struct flb_hash_table *ht = NULL;
+    ht = flb_hash_table_create((int)(data[2] % 0x04),
+                               (size_t)data[0],
+                               (int)data[1]);
     if (ht != NULL) {
-        flb_hash_add(ht, null_terminated, size, null_terminated, size);
+        flb_hash_table_add(ht, null_terminated, size, null_terminated, size);
 
         char *out_buf = NULL;
         size_t out_size;
-        flb_hash_get(ht, null_terminated, size, (void **)&out_buf, &out_size);
+        flb_hash_table_get(ht, null_terminated, size, (void **)&out_buf, &out_size);
 
         /* now let's create some more instances */
         char *instances1[128] = { NULL };
@@ -142,7 +142,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
             memcpy(in2, data+(i*4)+2, 2);
             in1[2] = '\0';
             in2[2] = '\0';
-            flb_hash_add(ht, in1, 2, in2, 2);
+            flb_hash_table_add(ht, in1, 2, in2, 2);
             instances1[i] = in1;
             instances2[i] = in2;
         }
@@ -150,16 +150,16 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         for(int i = 0; i < 20; i++) {
             char *hash_out_buf;
             size_t hash_out_size;
-            flb_hash_get_by_id(ht, (int)data[i], null_terminated,
-                               (const char **)&hash_out_buf, &hash_out_size);
+            flb_hash_table_get_by_id(ht, (int)data[i], null_terminated,
+                                    (const char **)&hash_out_buf, &hash_out_size);
         }
 
-        flb_hash_del(ht, null_terminated1);
-        flb_hash_exists(ht, ran_hash);
-        flb_hash_del_ptr(ht, null_terminated2, strlen(null_terminated2), NULL);
-        flb_hash_get_ptr(ht, null_terminated3, strlen(null_terminated3));
+        flb_hash_table_del(ht, null_terminated1);
+        flb_hash_table_exists(ht, ran_hash);
+        flb_hash_table_del_ptr(ht, null_terminated2, strlen(null_terminated2), NULL);
+        flb_hash_table_get_ptr(ht, null_terminated3, strlen(null_terminated3));
 
-        flb_hash_destroy(ht);
+        flb_hash_table_destroy(ht);
         for (int i =0; i<128; i++) {
             flb_free(instances1[i]);
             flb_free(instances2[i]);
@@ -197,14 +197,15 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     }
 
     /* Fuzzing the sha routines */
-    struct flb_sha512 sha512;
+    struct flb_hash sha512;
     uint8_t buf[64];
-    flb_sha512_init(&sha512);
-    flb_sha512_update(&sha512, null_terminated, 32);
-    flb_sha512_update(&sha512, null_terminated+32, 32);
-    flb_sha512_update(&sha512, null_terminated+64, 32);
-    flb_sha512_sum(&sha512, buf);
 
+    flb_hash_init(&sha512, FLB_HASH_SHA512);
+    flb_hash_update(&sha512, (unsigned char *) null_terminated, 32);
+    flb_hash_update(&sha512, (unsigned char *) null_terminated+32, 32);
+    flb_hash_update(&sha512, (unsigned char *) null_terminated+64, 32);
+    flb_hash_finalize(&sha512, buf, sizeof(buf));
+    flb_hash_cleanup(&sha512);
 
     /* regex */
     char *pregex = "^(?<INT>[^ ]+) (?<FLOAT>[^ ]+) (?<BOOL>[^ ]+) (?<STRING>.+)$";

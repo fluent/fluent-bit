@@ -1,0 +1,61 @@
+# using [clang-formt-12 options](https://releases.llvm.org/12.0.0/tools/clang/docs/ClangFormatStyleOptions.html)
+RawStringFormats:
+  - Language: Cpp
+    Delimiters:
+      - c
+      - C
+      - cc
+      - CC
+      - cpp
+      - Cpp
+      - CPP
+      - 'c++'
+      - 'C++'
+      - h
+      - hpp
+    CanonicalDelimiter: ''
+    BasedOnStyle:    Mozilla
+
+Language: Cpp
+BasedOnStyle: Mozilla
+# 6.1
+IndentWidth: 4
+ContinuationIndentWidth: 4
+# 6.2
+TabWidth: 4
+UseTab: Never
+# 6.3
+ColumnLimit: 80
+# 6.9
+AlignAfterOpenBracket: Align
+BinPackArguments: true
+BinPackParameters: true
+# 6.10
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterCaseLabel: true
+  AfterClass: true
+  AfterControlStatement: false
+  AfterEnum: false
+  AfterFunction: true
+  AfterNamespace: false
+  AfterObjCDeclaration: false
+  AfterStruct: false
+  AfterUnion: false
+  AfterExternBlock: false
+  BeforeCatch: false
+  BeforeElse: true
+  IndentBraces: false
+  SplitEmptyFunction: true
+  SplitEmptyRecord: false
+  SplitEmptyNamespace: true
+# 6.27
+BreakBeforeBinaryOperators: NonAssignment
+
+# additional
+AlignEscapedNewlines: Left
+AllowAllParametersOfDeclarationOnNextLine: false
+AllowAllArgumentsOnNextLine: false
+PointerAlignment: Right
+SpaceAroundPointerQualifiers: After
+SortIncludes: false

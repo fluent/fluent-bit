@@ -1,8 +1,6 @@
-/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,523 +15,191 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_hash.h>
-#include <fluent-bit/flb_log.h>
-#include <fluent-bit/flb_str.h>
-#include <xxhash.h>
+#include <openssl/bio.h>
 
-static inline void flb_hash_entry_free(struct flb_hash *ht,
-                                       struct flb_hash_entry *entry)
+static const EVP_MD *flb_crypto_get_digest_algorithm_instance_by_id(int algorithm_id)
 {
-    mk_list_del(&entry->_head);
-    mk_list_del(&entry->_head_parent);
-    entry->table->count--;
-    ht->total_count--;
-    flb_free(entry->key);
-    if (entry->val && entry->val_size > 0) {
-        flb_free(entry->val);
+    const EVP_MD *algorithm;
+
+    if (algorithm_id == FLB_HASH_SHA256) {
+        algorithm = EVP_sha256();
     }
-    flb_free(entry);
-}
-
-struct flb_hash *flb_hash_create(int evict_mode, size_t size, int max_entries)
-{
-    int i;
-    struct flb_hash_table *tmp;
-    struct flb_hash *ht;
-
-    if (size <= 0) {
-        return NULL;
+    else if (algorithm_id == FLB_HASH_SHA512) {
+        algorithm = EVP_sha512();
     }
-
-    ht = flb_malloc(sizeof(struct flb_hash));
-    if (!ht) {
-        flb_errno();
-        return NULL;
-    }
-
-    mk_list_init(&ht->entries);
-    ht->evict_mode = evict_mode;
-    ht->max_entries = max_entries;
-    ht->size = size;
-    ht->total_count = 0;
-    ht->cache_ttl = 0;
-    ht->table = flb_calloc(1, sizeof(struct flb_hash_table) * size);
-    if (!ht->table) {
-        flb_errno();
-        flb_free(ht);
-        return NULL;
-    }
-
-    /* Initialize chains list head */
-    for (i = 0; i < size; i++) {
-        tmp = &ht->table[i];
-        tmp->count = 0;
-        mk_list_init(&tmp->chains);
-    }
-
-    return ht;
-}
-
-struct flb_hash *flb_hash_create_with_ttl(int cache_ttl, int evict_mode, 
-                                          size_t size, int max_entries)
-{
-    struct flb_hash *ht;
-
-    ht = flb_hash_create(evict_mode, size, max_entries);
-    if (!ht) {
-        flb_errno();
-        return NULL;
-    }
-
-    ht->cache_ttl = cache_ttl;
-
-    return ht;
-}
-
-int flb_hash_del_ptr(struct flb_hash *ht, const char *key, int key_len,
-                     void *ptr)
-{
-    int id;
-    uint64_t hash;
-    struct mk_list *head;
-    struct flb_hash_entry *entry = NULL;
-    struct flb_hash_table *table;
-
-    /* Generate hash number */
-    hash = XXH3_64bits(key, key_len);
-    id = (hash % ht->size);
-
-    /* Link the new entry in our table at the end of the list */
-    table = &ht->table[id];
-
-    mk_list_foreach(head, &table->chains) {
-        entry = mk_list_entry(head, struct flb_hash_entry, _head);
-        if (strncmp(entry->key, key, key_len) == 0 && entry->val == ptr) {
-            break;
-        }
-        entry = NULL;
-    }
-
-    if (!entry) {
-        return -1;
-    }
-
-    /* delete the entry */
-    flb_hash_entry_free(ht, entry);
-    return 0;
-}
-
-
-void flb_hash_destroy(struct flb_hash *ht)
-{
-    int i;
-    struct mk_list *tmp;
-    struct mk_list *head;
-    struct flb_hash_entry *entry;
-    struct flb_hash_table *table;
-
-    for (i = 0; i < ht->size; i++) {
-        table = &ht->table[i];
-        mk_list_foreach_safe(head, tmp, &table->chains) {
-            entry = mk_list_entry(head, struct flb_hash_entry, _head);
-            flb_hash_entry_free(ht, entry);
-        }
-    }
-
-    flb_free(ht->table);
-    flb_free(ht);
-}
-
-static void flb_hash_evict_random(struct flb_hash *ht)
-{
-    int id;
-    int count = 0;
-    struct mk_list *tmp;
-    struct mk_list *head;
-    struct flb_hash_entry *entry;
-
-    id = random() % ht->total_count;
-    mk_list_foreach_safe(head, tmp, &ht->entries) {
-        if (id == count) {
-            entry = mk_list_entry(head, struct flb_hash_entry, _head_parent);
-            flb_hash_entry_free(ht, entry);
-            break;
-        }
-        count++;
-    }
-}
-
-static void flb_hash_evict_less_used(struct flb_hash *ht)
-{
-    struct mk_list *head;
-    struct flb_hash_entry *entry;
-    struct flb_hash_entry *entry_less_used = NULL;
-
-    mk_list_foreach(head, &ht->entries) {
-        entry = mk_list_entry(head, struct flb_hash_entry, _head_parent);
-        if (!entry_less_used) {
-            entry_less_used = entry;
-        }
-        else if (entry->hits < entry_less_used->hits) {
-            entry_less_used = entry;
-        }
-    }
-
-    flb_hash_entry_free(ht, entry_less_used);
-}
-
-static void flb_hash_evict_older(struct flb_hash *ht)
-{
-    struct flb_hash_entry *entry;
-
-    entry = mk_list_entry_first(&ht->entries, struct flb_hash_entry, _head_parent);
-    flb_hash_entry_free(ht, entry);
-}
-
-static struct flb_hash_entry *hash_get_entry(struct flb_hash *ht,
-                                             const char *key, int key_len, int *out_id)
-{
-    int id;
-    uint64_t hash;
-    struct mk_list *head;
-    struct flb_hash_table *table;
-    struct flb_hash_entry *entry;
-
-    if (!key || key_len <= 0) {
-        return NULL;
-    }
-
-    hash = XXH3_64bits(key, key_len);
-    id = (hash % ht->size);
-
-    table = &ht->table[id];
-    if (table->count == 0) {
-        return NULL;
-    }
-
-    if (table->count == 1) {
-        entry = mk_list_entry_first(&table->chains,
-                                    struct flb_hash_entry, _head);
-
-        if (entry->key_len != key_len
-            || strncmp(entry->key, key, key_len) != 0) {
-            entry = NULL;
-        }
+    else if (algorithm_id == FLB_HASH_MD5) {
+        algorithm = EVP_md5();
     }
     else {
-        /* Iterate entries */
-        mk_list_foreach(head, &table->chains) {
-            entry = mk_list_entry(head, struct flb_hash_entry, _head);
-            if (entry->key_len != key_len) {
-                entry = NULL;
-                continue;
+        algorithm = NULL;
+    }
+
+    return algorithm;
+}
+
+int flb_hash_init(struct flb_hash *context, int hash_type)
+{
+    const EVP_MD *digest_algorithm;
+    int           result;
+
+    if (context == NULL) {
+        return FLB_CRYPTO_INVALID_ARGUMENT;
+    }
+
+    digest_algorithm = flb_crypto_get_digest_algorithm_instance_by_id(hash_type);
+
+    if (digest_algorithm == NULL) {
+        return FLB_CRYPTO_INVALID_ARGUMENT;
+    }
+
+    context->backend_context = EVP_MD_CTX_create();
+
+    if (context->backend_context == NULL) {
+        context->last_error = ERR_get_error();
+
+        return FLB_CRYPTO_BACKEND_ERROR;
+    }
+
+    result = EVP_DigestInit_ex(context->backend_context, digest_algorithm, 0);
+
+    if (result == 0) {
+        context->last_error = ERR_get_error();
+
+        return FLB_CRYPTO_BACKEND_ERROR;
+    }
+
+    context->digest_size = EVP_MD_CTX_size(context->backend_context);
+
+    return FLB_CRYPTO_SUCCESS;
+}
+
+int flb_hash_finalize(struct flb_hash *context,
+                      unsigned char *digest_buffer,
+                      size_t digest_buffer_size)
+{
+    unsigned int digest_length;
+    int          result;
+
+    if (context->backend_context == NULL) {
+        return FLB_CRYPTO_INVALID_ARGUMENT;
+    }
+
+    if (digest_buffer == NULL) {
+        return FLB_CRYPTO_INVALID_ARGUMENT;
+    }
+
+    if (digest_buffer_size < context->digest_size) {
+        return FLB_CRYPTO_INVALID_ARGUMENT;
+    }
+
+    result = EVP_DigestFinal_ex(context->backend_context,
+                                digest_buffer, &digest_length);
+
+    if (result == 0) {
+        context->last_error = ERR_get_error();
+
+        return FLB_CRYPTO_BACKEND_ERROR;
+    }
+
+    (void) digest_length;
+
+    return FLB_CRYPTO_SUCCESS;
+}
+
+int flb_hash_update(struct flb_hash *context,
+                    unsigned char *data,
+                    size_t data_length)
+{
+    int result;
+
+    if (context->backend_context == NULL) {
+        return FLB_CRYPTO_INVALID_ARGUMENT;
+    }
+
+    if (data == NULL) {
+        return FLB_CRYPTO_INVALID_ARGUMENT;
+    }
+
+    result = EVP_DigestUpdate(context->backend_context,
+                              data,
+                              data_length);
+
+    if (result == 0) {
+        context->last_error = ERR_get_error();
+
+        return FLB_CRYPTO_BACKEND_ERROR;
+    }
+
+    return FLB_CRYPTO_SUCCESS;
+}
+
+int flb_hash_cleanup(struct flb_hash *context)
+{
+    if (context->backend_context == NULL) {
+        return FLB_CRYPTO_INVALID_ARGUMENT;
+    }
+
+    EVP_MD_CTX_destroy(context->backend_context);
+
+    context->backend_context = NULL;
+
+    return FLB_CRYPTO_SUCCESS;
+}
+
+int  flb_hash_simple_batch(int hash_type,
+                           size_t entry_count,
+                           unsigned char **data_entries,
+                           size_t *length_entries,
+                           unsigned char *digest_buffer,
+                           size_t digest_buffer_size)
+{
+    struct flb_hash digest_context;
+    size_t          entry_index;
+    int             result;
+
+    result = flb_hash_init(&digest_context, hash_type);
+
+    if (result == FLB_CRYPTO_SUCCESS) {
+        for (entry_index = 0 ;
+             entry_index < entry_count && result == FLB_CRYPTO_SUCCESS;
+             entry_index++) {
+            if (data_entries[entry_index] != NULL &&
+                length_entries[entry_index] > 0) {
+                result = flb_hash_update(&digest_context,
+                                         data_entries[entry_index],
+                                         length_entries[entry_index]);
             }
-
-            if (strncmp(entry->key, key, key_len) == 0) {
-                break;
-            }
-
-            entry = NULL;
         }
+
+        if (result == FLB_CRYPTO_SUCCESS) {
+            result = flb_hash_finalize(&digest_context,
+                                       digest_buffer,
+                                       digest_buffer_size);
+        }
+
+        flb_hash_cleanup(&digest_context);
     }
 
-    if (entry) {
-        *out_id = id;
-    }
-
-    return entry;
+    return result;
 }
 
-static int entry_set_value(struct flb_hash_entry *entry, void *val, size_t val_size)
+int flb_hash_simple(int hash_type,
+                    unsigned char *data,
+                    size_t data_length,
+                    unsigned char *digest_buffer,
+                    size_t digest_buffer_size)
 {
-    char *ptr;
+    size_t         length_entries[1];
+    unsigned char *data_entries[1];
 
-    /*
-     * If the entry already contains a previous value in the heap, just remove
-     * the previously assigned memory.
-     */
-    if (entry->val_size > 0) {
-        flb_free(entry->val);
-    }
+    data_entries[0] = data;
+    length_entries[0] = data_length;
 
-    /*
-     * Now set the new value. If val_size > 0, we create a new memory area, otherwise
-     * it means the caller just wants to store a pointer address, no allocation
-     * is required.
-     */
-    if (val_size > 0) {
-        entry->val = flb_malloc(val_size + 1);
-        if (!entry->val) {
-            flb_errno();
-            return -1;
-        }
-
-        /*
-         * Copy the buffer and append a NULL byte in case the caller set and
-         * expects a string.
-         */
-        memcpy(entry->val, val, val_size);
-        ptr = (char *) entry->val;
-        ptr[val_size] = '\0';
-        entry->val_size = val_size;
-    }
-    else {
-        /* just do a reference */
-        entry->val = val;
-        entry->val_size = -1;
-    }
-
-    entry->created = time(NULL);
-
-    return 0;
-}
-
-int flb_hash_add(struct flb_hash *ht, const char *key, int key_len,
-                 void *val, ssize_t val_size)
-{
-    int id;
-    int ret;
-    uint64_t hash;
-    struct flb_hash_entry *entry;
-    struct flb_hash_table *table;
-
-    if (!key || key_len <= 0) {
-        return -1;
-    }
-
-    /* Check capacity */
-    if (ht->max_entries > 0 && ht->total_count >= ht->max_entries) {
-        if (ht->evict_mode == FLB_HASH_EVICT_NONE) {
-            /* Do nothing */
-        }
-        else if (ht->evict_mode == FLB_HASH_EVICT_OLDER) {
-            flb_hash_evict_older(ht);
-        }
-        else if (ht->evict_mode == FLB_HASH_EVICT_LESS_USED) {
-            flb_hash_evict_less_used(ht);
-        }
-        else if (ht->evict_mode == FLB_HASH_EVICT_RANDOM) {
-            flb_hash_evict_random(ht);
-        }
-    }
-
-    /* Check if this is a replacement */
-    entry = hash_get_entry(ht, key, key_len, &id);
-    if (entry) {
-        /*
-         * The key already exists, just perform a value replacement, check if the
-         * value refers to our own previous allocation.
-         */
-        ret = entry_set_value(entry, val, val_size);
-        if (ret == -1) {
-            return -1;
-        }
-
-        return id;
-    }
-
-    /*
-     * Below is just code to handle the creation of a new entry in the table
-     */
-
-    /* Generate hash number */
-    hash = XXH3_64bits(key, key_len);
-    id = (hash % ht->size);
-
-    /* Allocate the entry */
-    entry = flb_calloc(1, sizeof(struct flb_hash_entry));
-    if (!entry) {
-        flb_errno();
-        return -1;
-    }
-    entry->created = time(NULL);
-    entry->hash = hash;
-    entry->hits = 0;
-
-    /* Store the key and value as a new memory region */
-    entry->key = flb_strndup(key, key_len);
-    entry->key_len = key_len;
-    entry->val_size = 0;
-
-    /* store or reference the value */
-    ret = entry_set_value(entry, val, val_size);
-    if (ret == -1) {
-        flb_free(entry);
-        return -1;
-    }
-
-    /* Link the new entry in our table at the end of the list */
-    table = &ht->table[id];
-    entry->table = table;
-
-    /* Add the new entry */
-    mk_list_add(&entry->_head, &table->chains);
-    mk_list_add(&entry->_head_parent, &ht->entries);
-
-    /* Update counters */
-    table->count++;
-    ht->total_count++;
-
-    return id;
-}
-
-int flb_hash_get(struct flb_hash *ht,
-                 const char *key, int key_len,
-                 void **out_buf, size_t *out_size)
-{
-    int id;
-    struct flb_hash_entry *entry;
-    time_t expiration;
-
-    entry = hash_get_entry(ht, key, key_len, &id);
-    if (!entry) {
-        return -1;
-    }
-
-    if (ht->cache_ttl > 0) {
-        expiration = entry->created + ht->cache_ttl;
-        if (time(NULL) > expiration) {
-            flb_hash_entry_free(ht, entry);
-            return -1;
-        }
-    }
-
-    entry->hits++;
-    *out_buf = entry->val;
-    *out_size = entry->val_size;
-
-    return id;
-}
-
-/* check if a hash exists */
-int flb_hash_exists(struct flb_hash *ht, uint64_t hash)
-{
-    int id;
-    struct mk_list *head;
-    struct flb_hash_table *table;
-    struct flb_hash_entry *entry;
-
-    id = (hash % ht->size);
-    table = &ht->table[id];
-
-    /* Iterate entries */
-    mk_list_foreach(head, &table->chains) {
-        entry = mk_list_entry(head, struct flb_hash_entry, _head);
-        if (entry->hash == hash) {
-            return FLB_TRUE;
-        }
-    }
-
-    return FLB_FALSE;
-}
-
-/*
- * Get an entry based in the table id. Note that a table id might have multiple
- * entries so the 'key' parameter is required to get an exact match.
- */
-int flb_hash_get_by_id(struct flb_hash *ht, int id,
-                       const char *key,
-                       const char **out_buf, size_t * out_size)
-{
-    struct mk_list *head;
-    struct flb_hash_entry *entry = NULL;
-    struct flb_hash_table *table;
-
-    if (ht->size <= id) {
-        return -1;
-    }
-
-    table = &ht->table[id];
-    if (table->count == 0) {
-        return -1;
-    }
-
-    if (table->count == 1) {
-        entry = mk_list_entry_first(&table->chains,
-                                    struct flb_hash_entry, _head);
-    }
-    else {
-        mk_list_foreach(head, &table->chains) {
-            entry = mk_list_entry(head, struct flb_hash_entry, _head);
-            if (strcmp(entry->key, key) == 0) {
-                break;
-            }
-            entry = NULL;
-        }
-    }
-
-    if (!entry) {
-        return -1;
-    }
-
-    *out_buf = entry->val;
-    *out_size = entry->val_size;
-
-    return 0;
-}
-
-void *flb_hash_get_ptr(struct flb_hash *ht, const char *key, int key_len)
-{
-    int id;
-    struct flb_hash_entry *entry;
-
-    entry = hash_get_entry(ht, key, key_len, &id);
-    if (!entry) {
-        return NULL;
-    }
-
-    entry->hits++;
-    return entry->val;
-}
-
-int flb_hash_del(struct flb_hash *ht, const char *key)
-{
-    int id;
-    int len;
-    uint64_t hash;
-    struct mk_list *head;
-    struct flb_hash_entry *entry = NULL;
-    struct flb_hash_table *table;
-
-    if (!key) {
-        return -1;
-    }
-
-    len = strlen(key);
-    if (len == 0) {
-        return -1;
-    }
-
-    hash = XXH3_64bits(key, len);
-    id = (hash % ht->size);
-
-    table = &ht->table[id];
-    if (table->count == 1) {
-        entry = mk_list_entry_first(&table->chains,
-                                    struct flb_hash_entry,
-                                    _head);
-        if (strcmp(entry->key, key) != 0) {
-            entry = NULL;
-        }
-    }
-    else {
-        mk_list_foreach(head, &table->chains) {
-            entry = mk_list_entry(head, struct flb_hash_entry, _head);
-            if (strcmp(entry->key, key) == 0) {
-                break;
-            }
-            entry = NULL;
-        }
-    }
-
-    if (!entry) {
-        return -1;
-    }
-
-    flb_hash_entry_free(ht, entry);
-
-    return 0;
+    return flb_hash_simple_batch(hash_type,
+                                 1,
+                                 data_entries,
+                                 length_entries,
+                                 digest_buffer,
+                                 digest_buffer_size);
 }

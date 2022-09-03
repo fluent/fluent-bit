@@ -43,28 +43,39 @@ static void test_environment_provider()
 {
     struct flb_aws_provider *provider;
     struct flb_aws_credentials *creds;
+    struct flb_config *config;
     int ret;
+
+    config = flb_config_init();
+
+    if (config == NULL) {
+        return;
+    }
 
     /* set environment */
     ret = setenv(AWS_ACCESS_KEY_ID, ACCESS_KEY, 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     ret = setenv(AWS_SECRET_ACCESS_KEY, SECRET_KEY, 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     ret = setenv(AWS_SESSION_TOKEN, TOKEN, 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
     provider = flb_aws_env_provider_create();
     if (!provider) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
@@ -72,6 +83,7 @@ static void test_environment_provider()
     creds = provider->provider_vtable->get_credentials(provider);
     if (!creds) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     TEST_CHECK(strcmp(ACCESS_KEY, creds->access_key_id) == 0);
@@ -83,6 +95,7 @@ static void test_environment_provider()
     creds = provider->provider_vtable->get_credentials(provider);
     if (!creds) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     TEST_CHECK(strcmp(ACCESS_KEY, creds->access_key_id) == 0);
@@ -98,6 +111,7 @@ static void test_environment_provider()
     unsetenv_credentials();
 
     flb_aws_provider_destroy(provider);
+    flb_config_exit(config);
 }
 
 /* token is not required */
@@ -105,23 +119,33 @@ static void test_environment_provider_no_token()
 {
     struct flb_aws_provider *provider;
     struct flb_aws_credentials *creds;
+    struct flb_config *config;
     int ret;
+
+    config = flb_config_init();
+
+    if (config == NULL) {
+        return;
+    }
 
     /* set environment */
     ret = setenv(AWS_ACCESS_KEY_ID, ACCESS_KEY, 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     ret = setenv(AWS_SECRET_ACCESS_KEY, SECRET_KEY, 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
     provider = flb_aws_env_provider_create();
     if (!provider) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
@@ -129,6 +153,7 @@ static void test_environment_provider_no_token()
     creds = provider->provider_vtable->get_credentials(provider);
     if (!creds) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     TEST_CHECK(strcmp(ACCESS_KEY, creds->access_key_id) == 0);
@@ -140,6 +165,7 @@ static void test_environment_provider_no_token()
     creds = provider->provider_vtable->get_credentials(provider);
     if (!creds) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     TEST_CHECK(strcmp(ACCESS_KEY, creds->access_key_id) == 0);
@@ -155,6 +181,7 @@ static void test_environment_provider_no_token()
     unsetenv_credentials();
 
     flb_aws_provider_destroy(provider);
+        flb_config_exit(config);
 }
 
 /* access and secret key are required */
@@ -162,18 +189,27 @@ static void test_environment_provider_only_access()
 {
     struct flb_aws_provider *provider;
     struct flb_aws_credentials *creds;
+    struct flb_config *config;
     int ret;
+
+    config = flb_config_init();
+
+    if (config == NULL) {
+        return;
+    }
 
     /* set environment */
     ret = setenv(AWS_ACCESS_KEY_ID, ACCESS_KEY, 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
     provider = flb_aws_env_provider_create();
     if (!provider) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
@@ -195,6 +231,7 @@ static void test_environment_provider_only_access()
     unsetenv_credentials();
 
     flb_aws_provider_destroy(provider);
+    flb_config_exit(config);
 }
 
 /* test the env provider when no cred env vars are set */
@@ -202,14 +239,21 @@ static void test_environment_provider_unset()
 {
     struct flb_aws_provider *provider;
     struct flb_aws_credentials *creds;
+    struct flb_config *config;
     int ret;
 
-    unsetenv_credentials();
+    config = flb_config_init();
 
+    if (config == NULL) {
+        return;
+    }
+
+    unsetenv_credentials();
 
     provider = flb_aws_env_provider_create();
     if (!provider) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
@@ -225,6 +269,7 @@ static void test_environment_provider_unset()
     TEST_CHECK(ret < 0);
 
     flb_aws_provider_destroy(provider);
+    flb_config_exit(config);
 }
 
 static void test_credential_expiration()
@@ -247,33 +292,34 @@ static void test_standard_chain_provider()
 {
     struct flb_aws_provider *provider;
     struct flb_aws_credentials *creds;
-    int ret;
     struct flb_config *config;
+    int ret;
+
+    config = flb_config_init();
+
+    if (config == NULL) {
+        return;
+    }
 
     /* set environment */
     ret = setenv(AWS_ACCESS_KEY_ID, ACCESS_KEY, 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     ret = setenv(AWS_SECRET_ACCESS_KEY, SECRET_KEY, 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     ret = setenv(AWS_SESSION_TOKEN, TOKEN, 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
-
-    config = flb_calloc(1, sizeof(struct flb_config));
-    if (!config) {
-        flb_errno();
-        return;
-    }
-
-    mk_list_init(&config->upstreams);
 
     provider = flb_standard_chain_provider_create(config, NULL, "us-west-2",
                                                   "https://sts.us-west-2.amazonaws.com",
@@ -281,6 +327,7 @@ static void test_standard_chain_provider()
                                                   flb_aws_client_generator());
     if (!provider) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
@@ -288,6 +335,7 @@ static void test_standard_chain_provider()
     creds = provider->provider_vtable->get_credentials(provider);
     if (!creds) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     TEST_CHECK(strcmp(ACCESS_KEY, creds->access_key_id) == 0);
@@ -299,6 +347,7 @@ static void test_standard_chain_provider()
     creds = provider->provider_vtable->get_credentials(provider);
     if (!creds) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     TEST_CHECK(strcmp(ACCESS_KEY, creds->access_key_id) == 0);
@@ -314,7 +363,7 @@ static void test_standard_chain_provider()
     unsetenv_credentials();
 
     flb_aws_provider_destroy(provider);
-    flb_free(config);
+    flb_config_exit(config);
 }
 
 TEST_LIST = {

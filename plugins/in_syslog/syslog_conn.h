@@ -22,13 +22,12 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_connection.h>
 
 #include "syslog.h"
 
 /* Respresents a connection */
 struct syslog_conn {
-    struct mk_event event;           /* Built-in event data for mk_events */
-    int fd;                          /* Socket file descriptor            */
     int status;                      /* Connection status                 */
 
     /* Buffer */
@@ -38,12 +37,16 @@ struct syslog_conn {
     size_t buf_parsed;               /* Parsed buffer (offset)            */
     struct flb_input_instance *ins;  /* Parent plugin instance            */
     struct flb_syslog *ctx;          /* Plugin configuration context      */
+    struct flb_connection *connection;
 
     struct mk_list _head;
 };
 
 int syslog_conn_event(void *data);
-struct syslog_conn *syslog_conn_add(int fd, struct flb_syslog *ctx);
+int syslog_stream_conn_event(void *data);
+int syslog_dgram_conn_event(void *data);
+struct syslog_conn *syslog_conn_add(struct flb_connection *connection,
+                                    struct flb_syslog *ctx);
 int syslog_conn_del(struct syslog_conn *conn);
 int syslog_conn_exit(struct flb_syslog *ctx);
 

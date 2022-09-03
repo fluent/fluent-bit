@@ -25,7 +25,7 @@ on:
 jobs:
   run-ubuntu-unit-tests:
     runs-on: ubuntu-18.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -78,7 +78,7 @@ jobs:
     needs:
       - run-ubuntu-unit-tests
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -102,7 +102,7 @@ jobs:
         run: |
           echo "CC = $CC, CXX = $CXX, FLB_OPT = $FLB_OPT"
           brew update
-          brew install bison flex || true
+          brew install bison flex openssl || true
           ci/scripts/run-unit-tests.sh
         env:
           CC: gcc

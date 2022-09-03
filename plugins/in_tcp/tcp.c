@@ -33,22 +33,32 @@
 static int in_tcp_collect(struct flb_input_instance *in,
                           struct flb_config *config, void *in_context)
 {
-    int fd;
-    struct flb_in_tcp_config *ctx = in_context;
-    struct tcp_conn *conn;
+    struct flb_connection    *connection;
+    struct tcp_conn          *conn;
+    struct flb_in_tcp_config *ctx;
 
-    /* Accept the new connection */
-    fd = flb_net_accept(ctx->server_fd);
-    if (fd == -1) {
+    ctx = in_context;
+
+    connection = flb_downstream_conn_get(ctx->downstream);
+
+    if (connection == NULL) {
         flb_plg_error(ctx->ins, "could not accept new connection");
+
         return -1;
     }
 
-    flb_plg_trace(ctx->ins, "new TCP connection arrived FD=%i", fd);
-    conn = tcp_conn_add(fd, ctx);
-    if (!conn) {
+    flb_plg_trace(ctx->ins, "new TCP connection arrived FD=%i", connection->fd);
+
+    conn = tcp_conn_add(connection, ctx);
+
+    if (conn == NULL) {
+        flb_plg_error(ctx->ins, "could not accept new connection");
+
+        flb_downstream_conn_release(connection);
+
         return -1;
     }
+
     return 0;
 }
 
@@ -56,8 +66,10 @@ static int in_tcp_collect(struct flb_input_instance *in,
 static int in_tcp_init(struct flb_input_instance *in,
                       struct flb_config *config, void *data)
 {
-    int ret;
+    unsigned short int        port;
+    int                       ret;
     struct flb_in_tcp_config *ctx;
+
     (void) data;
 
     /* Allocate space for the configuration */
@@ -65,37 +77,48 @@ static int in_tcp_init(struct flb_input_instance *in,
     if (!ctx) {
         return -1;
     }
+    ctx->collector_id = -1;
     ctx->ins = in;
     mk_list_init(&ctx->connections);
 
     /* Set the context */
     flb_input_set_context(in, ctx);
 
-    /* Create TCP server */
-    ctx->server_fd = flb_net_server(ctx->tcp_port, ctx->listen);
-    if (ctx->server_fd > 0) {
-        flb_plg_info(ctx->ins, "listening on %s:%s", ctx->listen, ctx->tcp_port);
-    }
-    else {
-        flb_plg_error(ctx->ins, "could not bind address %s:%s. Aborting",
+    port = (unsigned short int) strtoul(ctx->tcp_port, NULL, 10);
+
+    ctx->downstream = flb_downstream_create(FLB_TRANSPORT_TCP,
+                                            in->flags,
+                                            ctx->listen,
+                                            port,
+                                            in->tls,
+                                            config,
+                                            &in->net_setup);
+
+    if (ctx->downstream == NULL) {
+        flb_plg_error(ctx->ins,
+                      "could not initialize downstream on %s:%s. Aborting",
                       ctx->listen, ctx->tcp_port);
+
         tcp_config_destroy(ctx);
+
         return -1;
     }
-    flb_net_socket_nonblocking(ctx->server_fd);
 
     ctx->evl = config->evl;
 
     /* Collect upon data available on the standard input */
     ret = flb_input_set_collector_socket(in,
                                          in_tcp_collect,
-                                         ctx->server_fd,
+                                         ctx->downstream->server_fd,
                                          config);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "Could not set collector for IN_TCP input plugin");
         tcp_config_destroy(ctx);
+
         return -1;
     }
+
+    ctx->collector_id = ret;
 
     return 0;
 }
@@ -104,16 +127,21 @@ static int in_tcp_exit(void *data, struct flb_config *config)
 {
     struct mk_list *tmp;
     struct mk_list *head;
-    (void) *config;
-    struct flb_in_tcp_config *ctx = data;
+    struct flb_in_tcp_config *ctx;
     struct tcp_conn *conn;
+
+    (void) *config;
+
+    ctx = data;
 
     mk_list_foreach_safe(head, tmp, &ctx->connections) {
         conn = mk_list_entry(head, struct tcp_conn, _head);
+
         tcp_conn_del(conn);
     }
 
     tcp_config_destroy(ctx);
+
     return 0;
 }
 
@@ -152,5 +180,5 @@ struct flb_input_plugin in_tcp_plugin = {
     .cb_flush_buf = NULL,
     .cb_exit      = in_tcp_exit,
     .config_map   = config_map,
-    .flags        = FLB_INPUT_NET,
+    .flags        = FLB_INPUT_NET | FLB_IO_OPT_TLS,
 };

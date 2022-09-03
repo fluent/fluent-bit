@@ -85,36 +85,6 @@ static inline int metric_hist_exchange(struct cmt_metric *metric,
     return 1;
 }
 
-static inline int metric_hist_sum_exchange(struct cmt_metric *metric,
-                                           uint64_t timestamp,
-                                           uint64_t new, uint64_t old)
-{
-    int result;
-
-    result = cmt_atomic_compare_exchange(&metric->hist_sum, old, new);
-    if (result == 0) {
-        return 0;
-    }
-
-    cmt_atomic_store(&metric->timestamp, timestamp);
-    return 1;
-}
-
-static inline int metric_hist_count_exchange(struct cmt_metric *metric,
-                                             uint64_t timestamp,
-                                             uint64_t new, uint64_t old)
-{
-    int result;
-
-    result = cmt_atomic_compare_exchange(&metric->hist_count, old, new);
-    if (result == 0) {
-        return 0;
-    }
-
-    cmt_atomic_store(&metric->timestamp, timestamp);
-    return 1;
-}
-
 void cmt_metric_hist_bucket_inc(struct cmt_metric *metric, uint64_t timestamp,
                                 int bucket_id)
 {
