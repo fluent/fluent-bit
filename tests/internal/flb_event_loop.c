@@ -18,14 +18,7 @@
 
 #define EVENT_LOOP_TEST_PRIORITIES 7
 #define EVENT_LOOP_MAX_EVENTS 64
-
-/* I don't think those are CI friendly parameters,
- * at least in github macos exceeds them considerably.
- */
-
-#ifdef FLB_SYSTEM_MACOS
-    #define TIME_EPSILON_MS 200
-#elif FLB_SYSTEM_WINDOWS
+#ifdef _WIN32
     #define TIME_EPSILON_MS 30
 #else
     #define TIME_EPSILON_MS 10
@@ -110,8 +103,8 @@ void test_timeout_create(struct mk_event_loop *loop,
 void test_timeout_destroy(struct mk_event_loop *loop, void *data)
 {
     struct mk_event *event = (struct mk_event *) data;
-    mk_event_del(loop, event);
     flb_pipe_close(event->fd);
+    mk_event_del(loop, event);
 }
 
 struct test_evl_context *evl_context_create()

@@ -31,19 +31,6 @@
 #define D_SEC 1647061992.123;
 const char eventtime[8] = {0x62, 0x2c, 0x2b, 0xe8, 0x07, 0x54, 0xd4, 0xc0 };
 
-static void initialization_crutch()
-{
-    struct flb_config *config;
-
-    config = flb_config_init();
-
-    if (config == NULL) {
-        return;
-    }
-
-    flb_config_exit(config);
-}
-
 void test_to_nanosec()
 {
     uint64_t expect = 123000000456;
@@ -237,8 +224,6 @@ void test_msgpack_to_time_invalid()
 
 
     msgpack_object tm_obj;
-
-    initialization_crutch();
 
     /* create int object*/
     msgpack_sbuffer_init(&mp_sbuf);

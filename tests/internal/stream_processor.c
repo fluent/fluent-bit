@@ -19,7 +19,6 @@
  */
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_error.h>
@@ -54,19 +53,6 @@
     FLB_TESTS_DATA_PATH "/data/stream_processor/samples-hw/"
 
 #define MP_UOK MSGPACK_UNPACK_SUCCESS
-
-static void initialization_crutch()
-{
-    struct flb_config *config;
-
-    config = flb_config_init();
-
-    if (config == NULL) {
-        return;
-    }
-
-    flb_config_exit(config);
-}
 
 int flb_sp_fd_event_test(int fd, struct flb_sp_task *task, struct sp_buffer *out_buf)
 {
@@ -213,8 +199,6 @@ static void invalid_queries()
     struct flb_sp *sp;
     struct flb_sp_task *task;
 
-    initialization_crutch();
-
     /* Total number of checks for invalid queries */
     checks = sizeof(invalid_query_checks) / sizeof(char *);
 
@@ -258,8 +242,6 @@ static void test_select_keys()
 #ifdef _WIN32
     WSADATA wsa_data;
 #endif
-
-    initialization_crutch();
 
     config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
@@ -346,8 +328,6 @@ static void test_select_subkeys()
 #ifdef _WIN32
     WSADATA wsa_data;
 #endif
-
-    initialization_crutch();
 
     config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
@@ -466,7 +446,7 @@ static void test_window()
     int t;
     int checks;
     int ret;
-    char datafile[PATH_MAX];
+    char datafile[100];
     struct sp_buffer data_buf;
     struct sp_buffer out_buf;
     struct task_check *check;
@@ -476,8 +456,6 @@ static void test_window()
 #ifdef _WIN32
     WSADATA wsa_data;
 #endif
-
-    initialization_crutch();
 
     config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
@@ -551,9 +529,8 @@ static void test_window()
             task->window.fd_hop = 1;
             double record_timestamp = 1.0;
             for (t = 0; t < check->window_size_sec + check->window_hop_sec; t++) {
-                snprintf(datafile, sizeof(datafile) - 1,
-                         "%s%d.mp",
-                         DATA_SAMPLES_HOPPING_WINDOW_PATH, t + 1);
+                sprintf(datafile, "%s%d.mp",
+                        DATA_SAMPLES_HOPPING_WINDOW_PATH, t + 1);
                 ret = file_to_buf(datafile, &data_buf);
                 if (ret == -1) {
                     flb_error("[sp test] cannot open DATA_SAMPLES file %s", datafile);
@@ -615,7 +592,7 @@ static void test_snapshot()
     int t;
     int checks;
     int ret;
-    char datafile[PATH_MAX];
+    char datafile[100];
     char stream_name[100];
     char window_val[3];
     struct sp_buffer data_buf;
@@ -630,8 +607,6 @@ static void test_snapshot()
 #ifdef _WIN32
     WSADATA wsa_data;
 #endif
-
-    initialization_crutch();
 
     config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
@@ -691,9 +666,8 @@ static void test_snapshot()
 
         /* Read 1.mp -> 5.mp message pack buffers created for window tests */
         for (t = 0; t < 5; t++) {
-            snprintf(datafile, sizeof(datafile) - 1,
-                     "%s%d.mp",
-                     DATA_SAMPLES_HOPPING_WINDOW_PATH, t + 1);
+            sprintf(datafile, "%s%d.mp",
+                    DATA_SAMPLES_HOPPING_WINDOW_PATH, t + 1);
 
             if (data_buf.buffer) {
                 flb_free(data_buf.buffer);
