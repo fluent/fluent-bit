@@ -15,19 +15,6 @@
 
 #define ERROR_LOG "fluentbit_conf_error.log"
 
-static void initialization_crutch()
-{
-    struct flb_config *config;
-
-    config = flb_config_init();
-
-    if (config == NULL) {
-        return;
-    }
-
-    flb_config_exit(config);
-}
-
 /* data/config_format/fluent-bit.conf */
 void test_basic()
 {
@@ -35,8 +22,6 @@ void test_basic()
 	struct flb_cf *cf;
     struct flb_cf_section *s;
     struct flb_cf_group *g;
-
-    initialization_crutch();
 
     cf = flb_cf_fluentbit_create(NULL, FLB_000, NULL, 0);
     TEST_CHECK(cf != NULL);
@@ -146,8 +131,6 @@ void missing_value()
                                 .size = sizeof(expected_strs)/sizeof(char*),
                                 .lists = &expected_strs[0],
     };
-
-    initialization_crutch();
 
     unlink(ERROR_LOG);
 
