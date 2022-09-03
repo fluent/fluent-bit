@@ -466,7 +466,7 @@ static void test_window()
     int t;
     int checks;
     int ret;
-    char datafile[PATH_MAX];
+    char datafile[100];
     struct sp_buffer data_buf;
     struct sp_buffer out_buf;
     struct task_check *check;
@@ -551,9 +551,8 @@ static void test_window()
             task->window.fd_hop = 1;
             double record_timestamp = 1.0;
             for (t = 0; t < check->window_size_sec + check->window_hop_sec; t++) {
-                snprintf(datafile, sizeof(datafile) - 1,
-                         "%s%d.mp",
-                         DATA_SAMPLES_HOPPING_WINDOW_PATH, t + 1);
+                sprintf(datafile, "%s%d.mp",
+                        DATA_SAMPLES_HOPPING_WINDOW_PATH, t + 1);
                 ret = file_to_buf(datafile, &data_buf);
                 if (ret == -1) {
                     flb_error("[sp test] cannot open DATA_SAMPLES file %s", datafile);
@@ -615,7 +614,7 @@ static void test_snapshot()
     int t;
     int checks;
     int ret;
-    char datafile[PATH_MAX];
+    char datafile[100];
     char stream_name[100];
     char window_val[3];
     struct sp_buffer data_buf;
@@ -691,9 +690,8 @@ static void test_snapshot()
 
         /* Read 1.mp -> 5.mp message pack buffers created for window tests */
         for (t = 0; t < 5; t++) {
-            snprintf(datafile, sizeof(datafile) - 1,
-                     "%s%d.mp",
-                     DATA_SAMPLES_HOPPING_WINDOW_PATH, t + 1);
+            sprintf(datafile, "%s%d.mp",
+                    DATA_SAMPLES_HOPPING_WINDOW_PATH, t + 1);
 
             if (data_buf.buffer) {
                 flb_free(data_buf.buffer);
