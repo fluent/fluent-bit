@@ -72,10 +72,28 @@ int mk_mimetype_add(struct mk_server *server, char *name, const char *type)
     for ( ; *p; ++p) *p = tolower(*p);
 
     new_mime = mk_mem_alloc_z(sizeof(struct mk_mimetype));
+    if (!new_mime) {
+        return -1;
+    }
     new_mime->name = mk_string_dup(name);
+    if (!new_mime->name) {
+        mk_mem_free(new_mime);
+        return -1;
+    }
     new_mime->type.data = mk_mem_alloc(len);
+    if (!new_mime->type.data) {
+        mk_mem_free(new_mime->name);
+        mk_mem_free(new_mime);
+        return -1;
+    }
     new_mime->type.len = len - 1;
     new_mime->header_type.data = mk_mem_alloc(len + 32);
+    if (!new_mime->header_type.data) {
+        mk_mem_free(new_mime->name);
+        mk_mem_free(new_mime->type.data);
+        mk_mem_free(new_mime);
+        return -1;
+    }
     new_mime->header_type.len = snprintf(new_mime->header_type.data,
                                          len + 32,
                                          "Content-Type: %s\r\n",
@@ -97,6 +115,7 @@ int mk_mimetype_add(struct mk_server *server, char *name, const char *type)
 int mk_mimetype_init(struct mk_server *server)
 {
     char *name;
+    int ret;
 
     /* Initialize the heads */
     mk_list_init(&server->mimetype_list);
@@ -104,10 +123,14 @@ int mk_mimetype_init(struct mk_server *server)
 
     name = mk_string_dup(MIMETYPE_DEFAULT_NAME);
     if (server->mimetype_default_str) {
-        mk_mimetype_add(server, name, server->mimetype_default_str);
+        ret = mk_mimetype_add(server, name, server->mimetype_default_str);
     }
     else {
-        mk_mimetype_add(server, name, MIMETYPE_DEFAULT_TYPE);
+        ret = mk_mimetype_add(server, name, MIMETYPE_DEFAULT_TYPE);
+    }
+    if (ret < 0) {
+        mk_mem_free(name);
+        return -1;
     }
     server->mimetype_default = mk_list_entry_first(&server->mimetype_list,
                                                    struct mk_mimetype,
