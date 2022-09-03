@@ -19,7 +19,6 @@
  */
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_sds.h>
@@ -31,19 +30,6 @@
 #include "flb_tests_internal.h"
 
 #include <stdlib.h>
-
-static void initialization_crutch()
-{
-    struct flb_config *config;
-
-    config = flb_config_init();
-
-    if (config == NULL) {
-        return;
-    }
-
-    flb_config_exit(config);
-}
 
 static int create_map(char *input_json, msgpack_object *out_map,
                       char **out_buf, msgpack_unpacked *out_result)
@@ -87,8 +73,6 @@ static int set_str_to_msgpack_object(char *str, msgpack_object *obj)
 void cb_keys()
 {
     struct flb_record_accessor *ra;
-
-    initialization_crutch();
 
     printf("\n=== test ===");
     ra = flb_ra_create("$aaa['a'] extra $bbb['b'] final access", FLB_TRUE);
@@ -152,8 +136,6 @@ void cb_translate()
     msgpack_unpacked result;
     msgpack_object map;
     struct flb_record_accessor *ra;
-
-    initialization_crutch();
 
     /* Sample JSON message */
     json =
@@ -227,8 +209,6 @@ void cb_translate_tag()
     msgpack_object map;
     struct flb_record_accessor *ra;
 
-    initialization_crutch();
-
     /* Sample JSON message */
     json =
         "{\"k1\": \"string\", \"k2\": true, \"k3\": false," \
@@ -284,8 +264,6 @@ void cb_dots_subkeys()
     msgpack_unpacked result;
     msgpack_object map;
     struct flb_record_accessor *ra;
-
-    initialization_crutch();
 
     /* Sample JSON message */
     json =
@@ -348,8 +326,6 @@ void cb_array_id()
     msgpack_unpacked result;
     msgpack_object map;
     struct flb_record_accessor *ra;
-
-    initialization_crutch();
 
     /* Sample JSON message */
     json =
@@ -420,8 +396,6 @@ void cb_get_kv_pair()
     msgpack_unpacked result;
     msgpack_object map;
     struct flb_record_accessor *ra;
-
-    initialization_crutch();
 
     /* Sample JSON message */
     json =
@@ -500,8 +474,6 @@ void cb_update_key_val()
 
     struct flb_record_accessor *ra;
     struct flb_record_accessor *updated_ra;
-
-    initialization_crutch();
 
     /* Sample JSON message */
     json =
@@ -608,8 +580,6 @@ void cb_update_val()
 
     struct flb_record_accessor *ra;
 
-    initialization_crutch();
-
     /* Sample JSON message */
     json =
         "{\"key1\": \"something\", "
@@ -699,8 +669,6 @@ void cb_update_key()
     struct flb_record_accessor *ra;
     struct flb_record_accessor *updated_ra;
 
-    initialization_crutch();
-
     /* Sample JSON message */
     json =
         "{\"key1\": \"something\", "
@@ -789,8 +757,6 @@ void cb_dash_key()
     msgpack_object map;
     struct flb_record_accessor *ra;
 
-    initialization_crutch();
-
     /* Sample JSON message */
     json = "{\"key-dash\": \"something\"}";
 
@@ -851,8 +817,6 @@ void cb_dot_and_slash_key()
     msgpack_object map;
     struct flb_record_accessor *ra;
 
-    initialization_crutch();
-
     /* Sample JSON message */
     json = "{\"root.with/symbols\": \"something\"}";
 
@@ -911,8 +875,6 @@ static int order_lookup_check(char *buf, size_t size,
     msgpack_object map;
     struct flb_record_accessor *ra;
 
-    initialization_crutch();
-
     /* Check bool is 'true' */
     fmt = flb_sds_create(fmt);
     if (!TEST_CHECK(fmt != NULL)) {
@@ -962,8 +924,6 @@ void cb_key_order_lookup()
     size_t out_size;
     char *json;
 
-    initialization_crutch();
-
     /* Sample JSON message */
     json = "{\"key\": \"abc\", \"bool\": false, \"bool\": true, "
              "\"str\": \"bad\", \"str\": \"good\", "
@@ -1003,8 +963,6 @@ void cb_issue_4917()
     struct flb_record_accessor *ra;
     msgpack_unpacked result;
     msgpack_object map;
-
-    initialization_crutch();
 
     fmt_out = "from.new.fluent.bit.out";
 
@@ -1088,8 +1046,6 @@ void cb_update_root_key()
 
     struct flb_record_accessor *ra;
     struct flb_record_accessor *updated_ra;
-
-    initialization_crutch();
 
     /* Sample JSON message */
     json =
@@ -1189,8 +1145,6 @@ void cb_update_root_key_val()
 
     struct flb_record_accessor *ra;
     struct flb_record_accessor *updated_ra;
-
-    initialization_crutch();
 
     /* Sample JSON message */
     json =
@@ -1301,8 +1255,6 @@ void cb_add_key_val()
     struct flb_record_accessor *ra;
     struct flb_record_accessor *updated_ra;
 
-    initialization_crutch();
-
     /* Sample JSON message */
     json =
         "{\"key1\": \"something\", "
@@ -1407,8 +1359,6 @@ void cb_add_root_key_val()
     struct flb_record_accessor *ra;
     struct flb_record_accessor *updated_ra;
 
-    initialization_crutch();
-
     /* Sample JSON message */
     json =
         "{\"key1\": \"something\", "
@@ -1503,8 +1453,6 @@ void cb_ra_translate_check()
     struct flb_record_accessor *ra;
     int check_translation = FLB_TRUE;
 
-    initialization_crutch();
-
     /* Sample JSON message */
     json = "{\"root.with/symbols\": \"something\"}";
 
@@ -1567,8 +1515,6 @@ void cb_issue_5936_last_array()
     msgpack_unpacked result;
     msgpack_object map;
     struct flb_record_accessor *ra;
-
-    initialization_crutch();
 
     /* Sample JSON message */
     json ="{ \"key\": {\"nested\":[\"val0\", \"val1\"]}}";
