@@ -19,7 +19,6 @@
  */
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_fstore.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_compat.h>
@@ -38,18 +37,6 @@
 #define FSF_STORE_PATH "/tmp/flb-fstore"
 #endif
 
-static void initialization_crutch()
-{
-    struct flb_config *config;
-
-    config = flb_config_init();
-
-    if (config == NULL) {
-        return;
-    }
-
-    flb_config_exit(config);
-}
 void cb_all()
 {
     int ret;
@@ -59,8 +46,6 @@ void cb_all()
     struct flb_fstore *fs;
     struct flb_fstore_stream *st;
     struct flb_fstore_file *fsf;
-
-    initialization_crutch();
 
     cio_utils_recursive_delete(FSF_STORE_PATH);
 

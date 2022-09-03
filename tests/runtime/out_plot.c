@@ -20,7 +20,6 @@ TEST_LIST = {
 };
 
 #define TEST_LOGFILE "flb_test_plot_dummy.log"
-#define TEST_TIMEOUT 5
 
 void flb_test_plot_json_invalid(void)
 {
@@ -89,8 +88,7 @@ void flb_test_plot_json_multiple(void)
         TEST_CHECK(bytes == strlen(p));
     }
 
-    ret = wait_for_file(TEST_LOGFILE, 1, TEST_TIMEOUT);
-    TEST_CHECK(ret == 0);
+    sleep(1); /* waiting flush */
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -140,8 +138,7 @@ void flb_test_plot_key_mismatch(void)
         TEST_CHECK(bytes == strlen(p));
     }
 
-    ret = wait_for_file(TEST_LOGFILE, 1, TEST_TIMEOUT);
-    TEST_CHECK(ret == 0);
+    sleep(1); /* waiting flush */
 
     flb_stop(ctx);
     flb_destroy(ctx);
