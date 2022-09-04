@@ -17,6 +17,7 @@ set(src
   flb_pack.c
   flb_pack_gelf.c
   flb_sds.c
+  flb_sds_list.c
   flb_pipe.c
   flb_meta.c
   flb_kernel.c
