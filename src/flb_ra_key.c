@@ -55,6 +55,11 @@ static int msgpack_object_to_ra_value(msgpack_object o,
         result->type = FLB_RA_STRING;
         result->val.string = flb_sds_create_len((char *) o.via.str.ptr,
                                                 o.via.str.size);
+
+        /* Handle cases where flb_sds_create_len fails */
+        if (result->val.string == NULL) {
+          return -1;
+        }
         return 0;
     }
     else if (o.type == MSGPACK_OBJECT_MAP) {
