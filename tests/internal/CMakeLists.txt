@@ -6,6 +6,7 @@ set(UNIT_TESTS_FILES
   pack.c
   pipe.c
   sds.c
+  sds_list.c
   hmac.c
   crypto.c
   hash.c
