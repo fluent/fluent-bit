@@ -173,6 +173,13 @@ static int read_glob(struct flb_cf *cf, struct local_ctx *ctx, const char * path
         return ret;
     }
 
+    /* Break infinite recursion */
+    if (strchr(path, '*') != NULL) {
+        flb_warn("[%s] glob: breaking recursion", __FUNCTION__);
+        globfree(&glb);
+        return -1;
+    }
+
     for (i = 0; i < glb.gl_pathc; i++) {
         ret = read_config(cf, ctx, glb.gl_pathv[i], NULL, 0);
         if (ret < 0) {
