@@ -22,6 +22,8 @@
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_sds_list.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
@@ -329,6 +331,72 @@ struct flb_record_accessor *flb_ra_create(char *str, int translate_env)
     }
     ra->size_hint = hint + 128;
     return ra;
+}
+
+/*
+    flb_ra_create_str_from_list returns record accessor string from string list.
+     e.g. {"aa", "bb", "cc", NULL} -> "$aa['bb']['cc']"
+    Return value should be freed using flb_sds_destroy after using.
+ */
+flb_sds_t flb_ra_create_str_from_list(struct flb_sds_list *str_list, int translate_env)
+{
+    int i = 0;
+    int ret_i = 0;
+    int offset = 0;
+
+    char *fmt = NULL;
+    char **strs = NULL;
+    flb_sds_t str;
+    flb_sds_t tmp_sds;
+
+    if (str_list == NULL || flb_sds_list_size(str_list) == 0) {
+        return NULL;
+    }
+
+    str = flb_sds_create_size(256);
+    if (str == NULL) {
+        flb_errno();
+        return NULL;
+    }
+
+    strs = flb_sds_list_create_str_array(str_list);
+    if (strs == NULL) {
+        flb_error("%s flb_sds_list_create_str_array failed", __FUNCTION__);
+        return NULL;
+    }
+
+    while(strs[i] != NULL) {
+        if (i == 0) {
+            fmt = "$%s";
+        }
+        else {
+            fmt = "['%s']";
+        }
+
+        ret_i = snprintf(str+offset, flb_sds_alloc(str)-offset-1, fmt, strs[i]);
+        if (ret_i > flb_sds_alloc(str)-offset-1) {
+            tmp_sds = flb_sds_increase(str, ret_i);
+            if (tmp_sds == NULL) {
+                flb_errno();
+                flb_sds_list_destroy_str_array(strs);
+                flb_sds_destroy(str);
+                return NULL;
+            }
+            str = tmp_sds;
+            ret_i = snprintf(str+offset, flb_sds_alloc(str)-offset-1, fmt, strs[i]);
+            if (ret_i > flb_sds_alloc(str)-offset-1) {
+                flb_errno();
+                flb_sds_list_destroy_str_array(strs);
+                flb_sds_destroy(str);
+                return NULL;
+            }
+        }
+        offset += ret_i;
+        i++;
+    }
+    flb_sds_list_destroy_str_array(strs);
+
+    return str;
 }
 
 void flb_ra_dump(struct flb_record_accessor *ra)
