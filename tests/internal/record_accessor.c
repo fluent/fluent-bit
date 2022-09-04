@@ -23,6 +23,8 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_sds_list.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
 #include <msgpack.h>
@@ -1561,6 +1563,76 @@ void cb_issue_5936_last_array()
     msgpack_unpacked_destroy(&result);
 }
 
+struct char_list_ra_str{
+    char **strs;
+    char *expect;
+};
+
+void cb_ra_create_str_from_list()
+{
+    char *case1[] = {"a", NULL};
+    char *case2[] = {"aa", "bb", "cc", NULL};
+
+    struct char_list_ra_str testcases[] = {
+        { .strs = &case1[0], .expect = "$a"},
+        { .strs = &case2[0], .expect = "$aa['bb']['cc']"},
+    };
+    size_t case_size = sizeof(testcases)/sizeof(struct char_list_ra_str);
+    int case_i;
+    struct flb_sds_list *list = NULL;
+    flb_sds_t ret_str;
+    char *str;
+    int i;
+    int ret;
+
+    for (case_i = 0; case_i < case_size; case_i++) {
+        list = flb_sds_list_create();
+        if (!TEST_CHECK(list != NULL)) {
+            TEST_MSG("%d: flb_sds_list_create failed", case_i);
+            exit(EXIT_FAILURE);
+        }
+        i = 0;
+        while(testcases[case_i].strs[i] != NULL) {
+            str = testcases[case_i].strs[i];
+            ret = flb_sds_list_add(list, str, strlen(str));
+            if (!TEST_CHECK(ret == 0)) {
+                TEST_MSG("%d: flb_sds_list_add failed", case_i);
+                flb_sds_list_destroy(list);
+                exit(EXIT_FAILURE);
+            }
+            i++;
+        }
+
+        ret_str = flb_ra_create_str_from_list(list, FLB_FALSE);
+        if (!TEST_CHECK(ret_str != NULL)) {
+            TEST_MSG("%d: flb_ra_create_str_from failed", case_i);
+            flb_sds_list_destroy(list);
+            exit(EXIT_FAILURE);
+        }
+        if (!TEST_CHECK(strcmp(testcases[case_i].expect, ret_str) == 0)) {
+            TEST_MSG("%d: strcmp error.got=%s expect=%s", case_i, ret_str, testcases[case_i].expect);
+        }
+
+        flb_sds_destroy(ret_str);
+        flb_sds_list_destroy(list);
+    }
+
+
+    /* Error if we pass empty list */
+    list = flb_sds_list_create();
+    if (!TEST_CHECK(list != NULL)) {
+        TEST_MSG("flb_sds_list_create failed");
+        exit(EXIT_FAILURE);
+    }
+    ret_str = flb_ra_create_str_from_list(list, FLB_FALSE);
+    if (!TEST_CHECK(ret_str == NULL)) {
+        TEST_MSG("flb_ra_create_str_from should be failed");
+        flb_sds_list_destroy(list);
+        exit(EXIT_FAILURE);
+    }
+    flb_sds_list_destroy(list);
+}
+
 TEST_LIST = {
     { "keys"            , cb_keys},
     { "dash_key"        , cb_dash_key},
@@ -1584,5 +1656,6 @@ TEST_LIST = {
     { "issue_4917"      , cb_issue_4917},
     { "flb_ra_translate_check" , cb_ra_translate_check},
     { "issue_5936_last_array"      , cb_issue_5936_last_array},
+    { "ra_create_str_from_list", cb_ra_create_str_from_list},
     { NULL }
 };
