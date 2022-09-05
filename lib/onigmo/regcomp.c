@@ -535,6 +535,9 @@ compile_string_node(Node* node, regex_t* reg)
     }
     else {
       r = add_compile_string(prev, prev_len, blen, reg, ambig);
+      if (p + len > end) {
+        return 0;
+      }
       if (r) return r;
 
       prev  = p;
