@@ -373,7 +373,7 @@ static inline int _mk_event_inject(struct mk_event_loop *loop,
                                    int mask,
                                    int prevent_duplication)
 {
-    size_t               index;
+    int                  index;
     struct mk_event_ctx *ctx;
 
     ctx = loop->data;

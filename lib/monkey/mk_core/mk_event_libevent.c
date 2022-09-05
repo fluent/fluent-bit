@@ -317,10 +317,16 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
 
 static inline int _mk_event_timeout_destroy(struct mk_event_ctx *ctx, void *data)
 {
+    int              result;
     struct mk_event *event;
+
     event = (struct mk_event *) data;
+
+    result = _mk_event_del(ctx, data);
+
     evutil_closesocket(event->fd);
-    return _mk_event_del(ctx, data);
+
+    return result;
 }
 
 static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
