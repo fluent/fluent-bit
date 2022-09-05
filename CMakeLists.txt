@@ -827,7 +827,8 @@ endif()
 
 # Memory Allocator
 # ================
-if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+#if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+if(FLB_JEMALLOC)
   FLB_DEFINITION(FLB_HAVE_JEMALLOC)
   FLB_DEFINITION(JEMALLOC_MANGLE)
 
@@ -841,8 +842,8 @@ if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 
   # Link to Jemalloc as an external dependency
   ExternalProject_Add(jemalloc
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.2.1
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.2.1/configure ${AUTOCONF_HOST_OPT} "${FLB_JEMALLOC_OPTIONS_LIST}" --prefix=<INSTALL_DIR>
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.3.0
+    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.3.0/configure ${AUTOCONF_HOST_OPT} "${FLB_JEMALLOC_OPTIONS_LIST}" --prefix=<INSTALL_DIR>
     CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
     BUILD_COMMAND $(MAKE)
     INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
