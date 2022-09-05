@@ -58,7 +58,7 @@ static int msgpack_object_to_ra_value(msgpack_object o,
 
         /* Handle cases where flb_sds_create_len fails */
         if (result->val.string == NULL) {
-          return -1;
+            return -1;
         }
         return 0;
     }
