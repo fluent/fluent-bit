@@ -364,6 +364,10 @@ static int mkpath(struct flb_output_instance *ins, const char *dir)
 {
     struct stat st;
     char *dup_dir = NULL;
+#ifdef FLB_SYSTEM_MACOS
+    char *parent_dir = NULL;
+#endif
+
     int ret;
 
     if (!dir) {
@@ -396,6 +400,35 @@ static int mkpath(struct flb_output_instance *ins, const char *dir)
         return -1;
     }
     return 0;
+#elif FLB_SYSTEM_MACOS
+    dup_dir = strdup(dir);
+    if (!dup_dir) {
+        return -1;
+    }
+
+    /* macOS's dirname(3) should return current directory when slash
+     * charachter is not included in passed string.
+     * And note that macOS's dirname(3) does not modify passed string.
+     */
+    parent_dir = dirname(dup_dir);
+    if (stat(parent_dir, &st) == 0 && strncmp(parent_dir, ".", 1)) {
+        if (S_ISDIR (st.st_mode)) {
+            flb_plg_debug(ins, "creating directory %s", dup_dir);
+            ret = mkdir(dup_dir, 0755);
+            free(dup_dir);
+            return ret;
+        }
+    }
+
+    ret = mkpath(ins, dirname(dup_dir));
+    if (ret != 0) {
+        free(dup_dir);
+        return ret;
+    }
+    flb_plg_debug(ins, "creating directory %s", dup_dir);
+    ret = mkdir(dup_dir, 0755);
+    free(dup_dir);
+    return ret;
 #else
     dup_dir = strdup(dir);
     if (!dup_dir) {
