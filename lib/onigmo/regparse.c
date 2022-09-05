@@ -3319,6 +3319,7 @@ fetch_token(OnigToken* tok, UChar** src, UChar* end, ScanEnv* env)
   tok->backp = p;
 
   PFETCH(c);
+  if (p > end) return ONIGERR_PREMATURE_END_OF_CHAR_CLASS;
   if (IS_MC_ESC_CODE(c, syn)) {
     if (PEND) return ONIGERR_END_PATTERN_AT_ESCAPE;
 
