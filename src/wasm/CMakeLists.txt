@@ -30,9 +30,11 @@ if (NOT DEFINED WAMR_BUILD_TARGET)
   elseif (CMAKE_SIZEOF_VOID_P EQUAL 8)
     # Build as X86_64 by default in 64-bit platform
     set (WAMR_BUILD_TARGET "X86_64")
-  else ()
+  elseif (CMAKE_SIZEOF_VOID_P EQUAL 4)
     # Build as X86_32 by default in 32-bit platform
     set (WAMR_BUILD_TARGET "X86_32")
+  else ()
+    message(SEND_ERROR "Unsupported build target platform!")
   endif ()
 endif ()
 
