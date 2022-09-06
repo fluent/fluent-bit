@@ -52,14 +52,16 @@ ENV DEBIAN_FRONTEND noninteractive
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
+# See https://github.com/fluent/fluent-bit/issues/6007 for the reason for the downgrade
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
-    apt-get install -y --allow-downgrades libsystemd0=237-3ubuntu10.53 curl ca-certificates build-essential libsystemd-dev \
-    cmake make bash wget unzip nano vim valgrind dh-make flex bison \
-    libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 \
-    software-properties-common libyaml-dev \
-    apt-transport-https ca-certificates && \
+    apt-get install -y --allow-downgrades libsystemd0=237-3ubuntu10.53 libsystemd-dev && \
+    apt-get install -y curl ca-certificates build-essential \
+        cmake make bash wget unzip nano vim valgrind dh-make flex bison \
+        libpq-dev postgresql-server-dev-all \
+        libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 \
+        software-properties-common libyaml-dev \
+        apt-transport-https ca-certificates && \
     wget -q -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | \
          gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null && \
          apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main' && \
