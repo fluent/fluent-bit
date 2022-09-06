@@ -106,8 +106,6 @@ int mk_event_add(struct mk_event_loop *loop, int fd,
 int mk_event_inject(struct mk_event_loop *loop, struct mk_event *event,
                     int flags, int prevent_duplication)
 {
-    int result;
-
     if (loop->n_events + 1 >= loop->size) {
         return -1;
     }

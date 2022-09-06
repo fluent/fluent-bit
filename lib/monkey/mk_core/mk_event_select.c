@@ -100,6 +100,9 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
 {
     struct mk_event *event;
 
+    mk_bug(ctx == NULL);
+    mk_bug(data == NULL);
+
     if (fd > FD_SETSIZE) {
         return -1;
     }
@@ -114,10 +117,11 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
     event = (struct mk_event *) data;
     event->fd   = fd;
     event->mask = events;
-    event->priority = MK_EVENT_PRIORITY_DEFAULT;
-    event->_priority_head.next = NULL;
-    event->_priority_head.prev = NULL;
     event->status = MK_EVENT_REGISTERED;
+
+    event->priority = MK_EVENT_PRIORITY_DEFAULT;
+    mk_list_entry_init(&event->_priority_head);
+
     if (type != MK_EVENT_UNMODIFIED) {
         event->type = type;
     }
@@ -137,7 +141,10 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
     int fd;
     struct mk_event *s_event;
 
-    if ((event->status & MK_EVENT_REGISTERED) == 0) {
+    mk_bug(ctx == NULL);
+    mk_bug(event == NULL);
+
+    if (!MK_EVENT_IS_REGISTERED(event)) {
         return 0;
     }
 
@@ -169,8 +176,7 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
     ctx->events[fd] = NULL;
 
     /* Remove from priority queue */
-    if (event->_priority_head.next != NULL &&
-        event->_priority_head.prev != NULL) {
+    if (!mk_list_entry_is_orphan(&event->_priority_head)) {
         mk_list_del(&event->_priority_head);
     }
 
@@ -293,6 +299,8 @@ static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
     int ret;
     int fd[2];
     struct mk_event *event;
+
+    mk_bug(data == NULL);
 
     ret = pipe(fd);
     if (ret < 0) {

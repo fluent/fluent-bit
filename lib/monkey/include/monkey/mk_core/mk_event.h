@@ -67,6 +67,9 @@
 #define MK_EP_SOCKET_DONE     3
 /* ---- end ---- */
 
+
+#define MK_EVENT_IS_REGISTERED(event) ((event->status & MK_EVENT_REGISTERED) != 0)
+
 #if defined(_WIN32)
     #include "mk_event_libevent.h"
 #elif defined(MK_HAVE_EVENT_SELECT)
