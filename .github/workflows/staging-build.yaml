@@ -16,6 +16,11 @@ on:
         description: Only build a specific Linux target, intended for debug/test/quick builds only.
         required: false
         default: ""
+      ignore_failing_targets:
+        description: Optionally ignore any failing builds in the matrix and continue.
+        type: boolean
+        required: false
+        default: false
 
 # We do not want a new staging build to run whilst we are releasing the current staging build.
 # We also do not want multiples to run for the same version.
@@ -136,6 +141,7 @@ jobs:
       ref: ${{ github.event.inputs.version || github.ref_name }}
       build_matrix: ${{ needs.staging-build-generate-matrix.outputs.build-matrix }}
       environment: staging
+      ignore_failing_targets: $${{ github.event.inputs.ignore_failing_targets || false }}
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
       bucket: ${{ secrets.AWS_S3_BUCKET_STAGING }}
