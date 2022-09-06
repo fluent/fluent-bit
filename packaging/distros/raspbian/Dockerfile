@@ -40,6 +40,7 @@ RUN apt-get update && \
 # Common build for all distributions now
 # hadolint ignore=DL3006
 FROM $BASE_BUILDER as builder
+ENV TINI_SUBREAPER true
 
 ARG FLB_NIGHTLY_BUILD
 ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
@@ -77,4 +78,4 @@ RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
           ../
 
 VOLUME [ "/output" ]
-CMD [ "/bin/bash", "-c", "make -j 4 && cpack -G DEB && cp *.deb /output/" ]
+CMD [ "/bin/bash", "-c", "make && cpack -G DEB && cp *.deb /output/" ]
