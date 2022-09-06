@@ -11,29 +11,31 @@ ARG BASE_BUILDER
 # Current balenalib/rpi-raspbian:buster triggers cmake failures for GNU C compiler detection
 FROM resin/rpi-raspbian:buster as raspbian-buster-base
 ENV DEBIAN_FRONTEND noninteractive
+ENV TINI_SUBREAPER true
 
 # Builder image so dependencies can be latest, recommended and no need to wipe
 # hadolint ignore=DL3008,DL3015
-RUN apt-get -qq update && \
-    apt-get install -y -qq curl ca-certificates build-essential \
+RUN apt-get update && \
+    apt-get install -y curl ca-certificates build-essential \
                            cmake make bash sudo wget unzip dh-make \
                            libsystemd-dev zlib1g-dev flex bison \
                            libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
                            libsasl2-2 libsasl2-dev libyaml-dev && \
-    apt-get install -y -qq --reinstall lsb-base lsb-release
+    apt-get install -y --reinstall lsb-base lsb-release
 
 # raspbian/bullseye base image
 FROM balenalib/rpi-raspbian:bullseye as raspbian-bullseye-base
 ENV DEBIAN_FRONTEND noninteractive
+ENV TINI_SUBREAPER true
 
 # hadolint ignore=DL3008,DL3015
-RUN apt-get -qq update && \
-    apt-get install -y -qq curl ca-certificates build-essential \
+RUN apt-get update && \
+    apt-get install -y curl ca-certificates build-essential \
                            cmake make bash sudo wget unzip dh-make \
                            libsystemd-dev zlib1g-dev flex bison \
                            libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
                            libsasl2-2 libsasl2-dev libyaml-dev && \
-    apt-get install -y -qq --reinstall lsb-base lsb-release
+    apt-get install -y --reinstall lsb-base lsb-release
 
 # Common build for all distributions now
 # hadolint ignore=DL3006
