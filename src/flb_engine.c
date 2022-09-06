@@ -47,6 +47,7 @@
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_circuit_breaker.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_version.h>
 #include <fluent-bit/flb_upstream.h>
@@ -269,10 +270,22 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
                      flb_input_name(task->i_ins),
                      flb_output_name(ins), out_id);
         }
+
+        /* Feed circuit breaker on succeeded request */
+        if (ins->use_circuit_breaker == FLB_TRUE) {
+            flb_circuit_breaker_on_success(ins->circuit_breaker);
+        }
+
         flb_task_retry_clean(task, ins);
         flb_task_users_dec(task, FLB_TRUE);
     }
     else if (ret == FLB_RETRY && config->is_running && !config->is_shutting_down) {
+
+        /* Feed circuit breaker on failed request */
+        if (ins->use_circuit_breaker == FLB_TRUE) {
+            flb_circuit_breaker_on_failure(ins->circuit_breaker);
+        }
+
         if (ins->retry_limit == FLB_OUT_RETRY_NONE) {
             /* cmetrics: output_dropped_records_total */
             cmt_counter_add(ins->cmt_dropped_records, ts, task->records,

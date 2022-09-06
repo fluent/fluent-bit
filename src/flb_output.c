@@ -34,6 +34,7 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_plugin_proxy.h>
+#include <fluent-bit/flb_circuit_breaker.h>
 #include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_output_thread.h>
 #include <fluent-bit/flb_mp.h>
@@ -259,6 +260,11 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
         flb_metrics_destroy(ins->metrics);
     }
 #endif
+
+    /* destroy circuit breaker */
+    if (ins->circuit_breaker) {
+        flb_circuit_breaker_destroy(ins->circuit_breaker);
+    }
 
     /* destroy callback context */
     if (ins->callback) {
@@ -495,6 +501,10 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->host.address = NULL;
     instance->net_config_map = NULL;
 
+    /* Circuit Breaker */
+    instance->use_circuit_breaker = FLB_FALSE;
+    instance->circuit_breaker = NULL;
+
     /* Storage */
     instance->total_limit_size = -1;
 
@@ -640,6 +650,59 @@ int flb_output_set_property(struct flb_output_instance *ins,
             ins->retry_limit = 1;
         }
     }
+    else if (prop_key_check("circuit_breaker", k, len) == 0 && tmp) {
+        ins->use_circuit_breaker = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
+    }
+    else if (prop_key_check("circuit_breaker.error_percent_threshold", k, len) == 0) {
+        ins->circuit_breaker_error_percent_threshold = atoi(tmp);
+        if (ins->circuit_breaker_error_percent_threshold <= 0) {
+            flb_warn("[config] invalid circuit_breaker.error_percent_threshold. set default.");
+            ins->circuit_breaker_error_percent_threshold = DEFAULT_CB_ERROR_PERCENT_THRESHOLD;
+        }
+        flb_sds_destroy(tmp);
+    }
+    else if (prop_key_check("circuit_breaker.sleep_window", k, len) == 0) {
+        ins->circuit_breaker_sleep_window = atoi(tmp);
+        if (ins->circuit_breaker_sleep_window <= 0) {
+            flb_warn("[config] invalid circuit_breaker->sleep_window. set default.");
+            ins->circuit_breaker_sleep_window = DEFAULT_CB_SLEEP_WINDOW;
+        }
+        flb_sds_destroy(tmp);
+    }
+    else if (prop_key_check("circuit_breaker.calculate_interval", k, len) == 0) {
+        ins->circuit_breaker_calculate_interval = atoi(tmp);
+        if (ins->circuit_breaker_calculate_interval <= 0) {
+            flb_warn("[config] invalid circuit_breaker->calculate_interval. set default.");
+            ins->circuit_breaker_calculate_interval = DEFAULT_CB_CALCULATE_INTERVAL;
+        }
+        flb_sds_destroy(tmp);
+    }
+    else if (prop_key_check("circuit_breaker.minimum_requests_to_open", k, len) == 0) {
+        ins->circuit_breaker_minimum_requests_to_open = atoi(tmp);
+        if (ins->circuit_breaker_minimum_requests_to_open <= 0) {
+            flb_warn("[config] invalid circuit_breaker->minimum_requests_to_open. set default.");
+            ins->circuit_breaker_minimum_requests_to_open = DEFAULT_CB_MINIMUM_REQUESTS_TO_OPEN;
+        }
+        flb_sds_destroy(tmp);
+    }
+    else if (prop_key_check("circuit_breaker.required_consecutive_successes", k, len) == 0) {
+        ins->circuit_breaker_required_consecutive_successes = atoi(tmp);
+        if (ins->circuit_breaker_required_consecutive_successes <= 0) {
+            flb_warn("[config] invalid circuit_breaker->required_consecutive_successes. set default.");
+            ins->circuit_breaker_required_consecutive_successes = DEFAULT_CB_REQUIRED_CONSECUTIVE_SUCCESSES;
+        }
+        flb_sds_destroy(tmp);
+    }
+    else if (prop_key_check("circuit_breaker.required_consecutive_failures", k, len) == 0) {
+        ins->circuit_breaker_required_consecutive_failures = atoi(tmp);
+        if (ins->circuit_breaker_required_consecutive_failures <= 0) {
+            flb_warn("[config] invalid circuit_breaker->required_consecutive_failures. set default.");
+            ins->circuit_breaker_required_consecutive_failures = DEFAULT_CB_REQUIRED_CONSECUTIVE_FAILURES;
+        }
+        flb_sds_destroy(tmp);
+    }
+
     else if (strncasecmp("net.", k, 4) == 0 && tmp) {
         kv = flb_kv_item_create(&ins->net_properties, (char *) k, NULL);
         if (!kv) {
@@ -951,6 +1014,23 @@ int flb_output_init_all(struct flb_config *config)
                         "retried_records", ins->metrics);
         }
 #endif
+
+        /* Circuit Breaker */
+        if (ins->use_circuit_breaker) {
+            ins->circuit_breaker = flb_circuit_breaker_create(flb_output_name(ins),
+                                                              ins->use_circuit_breaker,
+                                                              ins->circuit_breaker_error_percent_threshold,
+                                                              ins->circuit_breaker_sleep_window,
+                                                              ins->circuit_breaker_calculate_interval,
+                                                              ins->circuit_breaker_minimum_requests_to_open,
+                                                              ins->circuit_breaker_required_consecutive_successes,
+                                                              ins->circuit_breaker_required_consecutive_failures);
+            if (!ins->circuit_breaker) {
+                flb_error("[output] error initializing circuit breaker context");
+                flb_output_instance_destroy(ins);
+                return -1;
+            }
+        }
 
 #ifdef FLB_HAVE_PROXY_GO
         /* Proxy plugins have their own initialization */

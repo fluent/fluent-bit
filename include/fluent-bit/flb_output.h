@@ -39,6 +39,7 @@
 #include <fluent-bit/flb_task.h>
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_callback.h>
+#include <fluent-bit/flb_circuit_breaker.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_http_client.h>
@@ -251,6 +252,31 @@ struct flb_output_instance {
 #ifdef FLB_HAVE_REGEX
     struct flb_regex *match_regex;       /* match rule (regex) based on Tags */
 #endif
+
+    /*
+     * Circuit Breaker
+     * --------
+     * CircuitBreaker is a state machine to prevent sending requests that are
+     * likely to fail. There are 3 main states in circuit breaker:
+     *
+     * - Closed: default state which let requests go through. If a request is
+     * successful/failed but under a threshold, the state remains the same.
+     *
+     * - Open: all the requests will be marked as failed with error. This is a
+     * fail-fast mechanism without waiting for timeout time to finish.
+     *
+     * - Half Open: periodically, an attempt to make a request to check the system
+     * has recovered.
+     */
+    int use_circuit_breaker;                            /* bool, use circuit breaker                    */
+    int circuit_breaker_error_percent_threshold;        /* error percent threshold (default: 10)        */
+    int circuit_breaker_sleep_window;                   /* sleep window seconds (default: 10s)          */
+    int circuit_breaker_calculate_interval;             /* calculate interval seconds (default: 10s)    */
+    int circuit_breaker_minimum_requests_to_open;       /* minimum requests to open (default: 0)        */
+    int circuit_breaker_required_consecutive_successes; /* required consecutive successes (default: 5)  */
+    int circuit_breaker_required_consecutive_failures;  /* required consecutive failures (default: 5)   */
+
+    struct flb_circuit_breaker *circuit_breaker;
 
 #ifdef FLB_HAVE_TLS
     int tls_verify;                      /* Verify certs (default: true) */

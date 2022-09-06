@@ -60,6 +60,7 @@ set(src
   flb_snappy.c
   flb_http_client.c
   flb_callback.c
+  flb_circuit_breaker.c
   flb_strptime.c
   flb_fstore.c
   flb_thread_pool.c
@@ -416,7 +417,7 @@ endif()
 
 # Shared Library
 if(FLB_SHARED_LIB)
-  add_library(fluent-bit-shared SHARED ${src})
+  add_library(fluent-bit-shared SHARED ${src} flb_circuit_breaker.c)
   add_sanitizers(fluent-bit-shared)
   set_target_properties(fluent-bit-shared
     PROPERTIES OUTPUT_NAME fluent-bit)
