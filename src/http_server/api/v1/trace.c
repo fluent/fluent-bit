@@ -31,7 +31,7 @@
 #include <msgpack.h>
 
 
-struct flb_input_instance *find_input(struct flb_hs *hs, const char *name)
+static struct flb_input_instance *find_input(struct flb_hs *hs, const char *name)
 {
     struct mk_list *head;
     struct flb_input_instance *in;
@@ -365,6 +365,10 @@ static int http_enable_trace(mk_request_t *request, void *data, const char *inpu
 
         if (limit.type != 0) {
             input_instance = find_input(hs, input_name);
+            if (input_instance == NULL) {
+                ret = 404;
+            	goto parse_error;
+            }
             if (limit.type == FLB_CHUNK_TRACE_LIMIT_TIME) {
                 flb_chunk_trace_context_set_limit(input_instance->chunk_trace_ctxt, limit.type, limit.seconds);
             }
