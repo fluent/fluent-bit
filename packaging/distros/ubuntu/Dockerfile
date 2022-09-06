@@ -32,6 +32,7 @@ RUN apt-get update && \
 FROM ubuntu:18.04 as ubuntu-18.04-base
 ENV DEBIAN_FRONTEND noninteractive
 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
@@ -52,6 +53,7 @@ ENV DEBIAN_FRONTEND noninteractive
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # See https://github.com/fluent/fluent-bit/issues/6007 for the reason for the downgrade
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
