@@ -61,8 +61,9 @@ ARG FLB_SQLDB=On
 ARG FLB_HTTP_SERVER=On
 ARG FLB_OUT_KAFKA=On
 ARG FLB_OUT_PGSQL=On
-ARG FLB_JEMALLOC=On
 
+# Currently issues with Jemalloc compilation in 1.9.8+ builds on Raspbian
+ENV FLB_JEMALLOC="Off"
 ENV CFLAGS=$CFLAGS
 RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
           -DCMAKE_INSTALL_SYSCONFDIR="$CMAKE_INSTALL_SYSCONFDIR" \
@@ -74,8 +75,8 @@ RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
           -DFLB_OUT_KAFKA="$FLB_OUT_KAFKA" \
           -DFLB_OUT_PGSQL="$FLB_OUT_PGSQL" \
           -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
-          -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
+          -DFLB_JEMALLOC="Off" \
           ../
 
 VOLUME [ "/output" ]
-CMD [ "/bin/bash", "-c", "make && cpack -G DEB && cp *.deb /output/" ]
+CMD [ "/bin/bash", "-c", "make -j 4 && cpack -G DEB && cp *.deb /output/" ]
