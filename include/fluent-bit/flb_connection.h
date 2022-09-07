@@ -23,7 +23,6 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_config.h>
-// #include <fluent-bit/flb_stream.h>
 
 #define FLB_UNKNOWN_CONNECTION    0
 #define FLB_UPSTREAM_CONNECTION   1
@@ -163,6 +162,8 @@ struct flb_connection *flb_connection_create(flb_sockfd_t socket,
 
 void flb_connection_destroy(struct flb_connection *connection);
 
+void flb_connection_set_remote_host(struct flb_connection *connection,
+                                    struct sockaddr *remote_host);
 char *flb_connection_get_remote_address(struct flb_connection *connection);
 
 int flb_connection_get_flags(struct flb_connection *connection);

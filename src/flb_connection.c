@@ -115,6 +115,21 @@ static void compose_user_friendly_remote_host(struct flb_connection *connection)
     }
 }
 
+void flb_connection_set_remote_host(struct flb_connection *connection,
+                                    struct sockaddr *remote_host)
+{
+    size_t address_size;
+
+    address_size = flb_network_address_size(remote_host);
+
+    if (address_size > 0 &&
+        address_size < sizeof(struct sockaddr_storage)) {
+        memcpy(&connection->raw_remote_host,
+               remote_host,
+               address_size);
+    }
+}
+
 char *flb_connection_get_remote_address(struct flb_connection *connection)
 {
     int    address_refresh_required;
@@ -140,7 +155,6 @@ char *flb_connection_get_remote_address(struct flb_connection *connection)
                  transport == FLB_TRANSPORT_UNIX_STREAM) {
             if (connection->raw_remote_host.ss_family == AF_UNSPEC) {
                 address_refresh_required = FLB_TRUE;
-                refresh_required = FLB_TRUE;
             }
         }
     }
@@ -149,9 +163,12 @@ char *flb_connection_get_remote_address(struct flb_connection *connection)
             transport == FLB_TRANSPORT_UNIX_STREAM) {
             if (connection->raw_remote_host.ss_family == AF_UNSPEC) {
                 address_refresh_required = FLB_TRUE;
-                refresh_required = FLB_TRUE;
             }
         }
+    }
+
+    if (connection->remote_port == 0) {
+        refresh_required = FLB_TRUE;
     }
 
     if (refresh_required) {
