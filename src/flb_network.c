@@ -1317,6 +1317,8 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
             u_conn->event.fd = fd;
         }
 
+        flb_connection_set_remote_host(u_conn, rp->ai_addr);
+
         /* Perform TCP connection */
         if (is_async == FLB_TRUE) {
             ret = net_connect_async(fd, rp->ai_addr, rp->ai_addrlen,
@@ -1767,15 +1769,19 @@ static int net_socket_get_peer_address(flb_sockfd_t fd,
 
 static unsigned short int net_address_port(struct sockaddr_storage *address)
 {
+    unsigned short int port;
+
     if (address->ss_family == AF_INET) {
-        return ((struct sockaddr_in *) address)->sin_port;
+        port = ((struct sockaddr_in *) address)->sin_port;
     }
     else if (address->ss_family == AF_INET6) {
-        return ((struct sockaddr_in6 *) address)->sin6_port;
+        port = ((struct sockaddr_in6 *) address)->sin6_port;
     }
     else {
-        return 0;
+        port = 0;
     }
+
+    return ntohs(port);
 }
 
 #ifdef FLB_HAVE_UNIX_SOCKET
@@ -1821,7 +1827,7 @@ static int net_address_unix_socket_peer_pid_raw(flb_sockfd_t fd,
 #else
     *output_data_size = snprintf(output_buffer,
                                  output_buffer_size,
-                                 "unavailable");
+                                 FLB_NETWORK_ADDRESS_UNAVAILABLE);
 #endif
 
     return result;
@@ -1902,6 +1908,11 @@ static int net_address_ip_raw(flb_sockfd_t fd,
 
     errno = 0;
 
+    if (address->ss_family == AF_UNSPEC) {
+        flb_debug("socket_ip_raw: uninitialized address");
+
+        return -1;
+    }
     if (address->ss_family == AF_INET) {
         address_data = ((char *) &((struct sockaddr_in *) address)->sin_addr);
         address_size = sizeof(struct in_addr);
@@ -1919,7 +1930,7 @@ static int net_address_ip_raw(flb_sockfd_t fd,
                                                       &address_size);
 
         if (result != 0) {
-            flb_error("socket_ip_raw: error getting client process pid");
+            flb_debug("socket_ip_raw: error getting client process pid");
 
             return -1;
         }
@@ -1928,14 +1939,14 @@ static int net_address_ip_raw(flb_sockfd_t fd,
     }
 #endif
     else {
-        flb_error("socket_ip_raw: unsupported address type (%i)",
+        flb_debug("socket_ip_raw: unsupported address type (%i)",
                   address->ss_family);
 
         return -1;
     }
 
     if (output_buffer_size < address_size) {
-        flb_error("socket_ip_raw: insufficient buffer size (%i < %zu)",
+        flb_debug("socket_ip_raw: insufficient buffer size (%i < %zu)",
                   output_buffer_size, address_size);
 
         return -1;
@@ -1961,7 +1972,14 @@ static int net_address_ip_str(flb_sockfd_t fd,
 
     errno = 0;
 
-    if (address->ss_family == AF_INET) {
+    if (address->ss_family == AF_UNSPEC) {
+        *output_data_size = snprintf(output_buffer,
+                                     output_buffer_size,
+                                     FLB_NETWORK_ADDRESS_UNAVAILABLE);
+
+        return 0;
+    }
+    else if (address->ss_family == AF_INET) {
         address_data = (void *) &((struct sockaddr_in *) address)->sin_addr;
     }
     else if (address->ss_family == AF_INET6) {
@@ -1976,14 +1994,14 @@ static int net_address_ip_str(flb_sockfd_t fd,
                                                       output_data_size);
 
         if (result != 0) {
-            flb_error("socket_ip_raw: error getting client process pid");
+            flb_debug("socket_ip_str: error getting client process pid");
         }
 
         return result;
     }
 #endif
     else {
-        flb_error("socket_ip_raw: unsupported address type (%i)",
+        flb_debug("socket_ip_str: unsupported address type (%i)",
                   address->ss_family);
 
         return -1;
@@ -1993,7 +2011,7 @@ static int net_address_ip_str(flb_sockfd_t fd,
                    address_data,
                    output_buffer,
                    output_buffer_size)) == NULL) {
-        flb_error("socket_ip_str: Can't get the IP text form (%i)", errno);
+        flb_debug("socket_ip_str: Can't get the IP text form (%i)", errno);
 
         return -1;
     }
