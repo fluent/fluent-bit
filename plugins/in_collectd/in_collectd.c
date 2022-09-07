@@ -48,11 +48,14 @@ static int in_collectd_callback(struct flb_input_instance *i_ins,
 static int in_collectd_init(struct flb_input_instance *in,
                             struct flb_config *config, void *data)
 {
-    int ret;
+    char                          *listen;
+    unsigned short int             port;
+    int                            ret;
     struct flb_in_collectd_config *ctx;
-    struct mk_list *tdb;
-    char *listen = DEFAULT_LISTEN;
-    int port = DEFAULT_PORT;
+    struct mk_list                *tdb;
+
+    listen = DEFAULT_LISTEN;
+    port = DEFAULT_PORT;
 
     /* Initialize context */
     ctx = flb_calloc(1, sizeof(struct flb_in_collectd_config));
@@ -110,29 +113,45 @@ static int in_collectd_init(struct flb_input_instance *in,
     /* Set the context */
     flb_input_set_context(in, ctx);
 
-    ctx->server_fd = flb_net_server_udp(ctx->port, ctx->listen);
-    if (ctx->server_fd < 0) {
-        flb_plg_error(ctx->ins, "failed to bind to %s:%s", ctx->listen,
-                      ctx->port);
+    ctx->downstream = flb_downstream_create(FLB_TRANSPORT_UDP,
+                                            in->flags,
+                                            ctx->listen,
+                                            port,
+                                            NULL,
+                                            config,
+                                            &in->net_setup);
+
+    if (ctx->downstream == NULL) {
+        flb_plg_error(ctx->ins,
+                      "could not initialize downstream on %s:%s. Aborting",
+                      ctx->listen, ctx->port);
+
         typesdb_destroy(ctx->tdb);
+
         flb_free(ctx->buf);
         flb_free(ctx);
+
         return -1;
     }
 
     /* Set the collector */
     ret = flb_input_set_collector_socket(in,
                                          in_collectd_callback,
-                                         ctx->server_fd,
+                                         ctx->downstream->server_fd,
                                          config);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "failed set up a collector");
-        flb_socket_close(ctx->server_fd);
+
+        flb_downstream_destroy(ctx->downstream);
+
         typesdb_destroy(ctx->tdb);
+
         flb_free(ctx->buf);
         flb_free(ctx);
+
         return -1;
     }
+
     ctx->coll_fd = ret;
 
     flb_plg_info(ctx->ins, "start listening to %s:%s",
@@ -143,17 +162,32 @@ static int in_collectd_init(struct flb_input_instance *in,
 static int in_collectd_callback(struct flb_input_instance *i_ins,
                                 struct flb_config *config, void *in_context)
 {
-    int len;
-    msgpack_packer pck;
-    msgpack_sbuffer sbuf;
-    struct flb_in_collectd_config *ctx = in_context;
+    struct flb_connection         *connection;
+    msgpack_sbuffer                sbuf;
+    msgpack_packer                 pck;
+    int                            len;
+    struct flb_in_collectd_config *ctx;
 
-    len = recv(ctx->server_fd, ctx->buf, ctx->bufsize, 0);
+    ctx = in_context;
+
+    connection = flb_downstream_conn_get(ctx->downstream);
+
+    if (connection == NULL) {
+        flb_plg_error(ctx->ins, "could get UDP server dummy connection");
+
+        return -1;
+    }
+
+    /* Read data */
+    len = flb_io_net_read(connection,
+                          (void *) ctx->buf,
+                          ctx->bufsize);
+
     if (len < 0) {
         flb_errno();
         return -1;
     }
-    if (len == 0) {
+    else if (len == 0) {
         return 0;
     }
 
@@ -169,6 +203,7 @@ static int in_collectd_callback(struct flb_input_instance *i_ins,
     flb_input_chunk_append_raw(i_ins, NULL, 0, sbuf.data, sbuf.size);
 
     msgpack_sbuffer_destroy(&sbuf);
+
     return 0;
 }
 
@@ -176,9 +211,16 @@ static int in_collectd_exit(void *data, struct flb_config *config)
 {
     struct flb_in_collectd_config *ctx = data;
 
-    flb_socket_close(ctx->server_fd);
+    if (ctx->downstream != NULL) {
+        flb_downstream_destroy(ctx->downstream);
+    }
+
+    /* This seems wrong, probably some legacy remains but I
+     * don't want to break stuff so I'll leave it as is.
+     */
     flb_pipe_close(ctx->coll_fd);
     typesdb_destroy(ctx->tdb);
+
     flb_free(ctx->buf);
     flb_free(ctx);
 

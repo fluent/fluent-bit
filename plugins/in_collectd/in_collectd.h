@@ -21,6 +21,7 @@
 #define FLB_IN_COLLECTD_H
 
 #include <fluent-bit/flb_input_plugin.h>
+#include <fluent-bit/flb_downstream.h>
 
 struct flb_in_collectd_config {
     char *buf;
@@ -31,7 +32,7 @@ struct flb_in_collectd_config {
     char port[6];     /* RFC-793 */
 
     /* Sockets */
-    flb_sockfd_t server_fd;
+    struct flb_downstream *downstream;
     flb_pipefd_t coll_fd;
 
     flb_sds_t types_db;
