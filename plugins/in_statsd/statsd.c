@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_input_plugin.h>
+#include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_pack.h>
@@ -35,7 +36,7 @@ struct flb_statsd {
     char *buf;                         /* buffer */
     char listen[256];                  /* listening address (RFC-2181) */
     char port[6];                      /* listening port (RFC-793) */
-    flb_sockfd_t server_fd;            /* server socket */
+    struct flb_downstream *downstream; /* server downstream */
     flb_pipefd_t coll_fd;              /* server handler */
     struct flb_input_instance *ins;    /* input instance */
 };
@@ -192,18 +193,36 @@ static int statsd_process_line(struct flb_statsd *ctx,
 static int cb_statsd_receive(struct flb_input_instance *ins,
                              struct flb_config *config, void *data)
 {
-    char *line;
-    int len;
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
-    struct flb_statsd *ctx = data;
+    struct flb_connection   *connection;
+    msgpack_sbuffer          mp_sbuf;
+    msgpack_packer           mp_pck;
+    char                    *line;
+    int                      len;
+    struct flb_statsd       *ctx;
 
-    /* Receive a UDP datagram */
-    len = recv(ctx->server_fd, ctx->buf, MAX_PACKET_SIZE - 1, 0);
+    ctx = data;
+
+    connection = flb_downstream_conn_get(ctx->downstream);
+
+    if (connection == NULL) {
+        flb_plg_error(ctx->ins, "could get UDP server dummy connection");
+
+        return -1;
+    }
+
+    /* Read data */
+    len = flb_io_net_read(connection,
+                          (void *) ctx->buf,
+                          MAX_PACKET_SIZE - 1);
+
     if (len < 0) {
         flb_errno();
         return -1;
     }
+    else if (len == 0) {
+        return 0;
+    }
+
     ctx->buf[len] = '\0';
 
     msgpack_sbuffer_init(&mp_sbuf);
@@ -223,6 +242,7 @@ static int cb_statsd_receive(struct flb_input_instance *ins,
     if (mp_sbuf.size > 0) {
         flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     }
+
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;
@@ -231,10 +251,10 @@ static int cb_statsd_receive(struct flb_input_instance *ins,
 static int cb_statsd_init(struct flb_input_instance *ins,
                           struct flb_config *config, void *data)
 {
+    char              *listen;
+    unsigned short int port;
     struct flb_statsd *ctx;
-    char *listen;
-    int port;
-    int ret;
+    int                ret;
 
     ctx = flb_calloc(1, sizeof(struct flb_statsd));
     if (!ctx) {
@@ -278,27 +298,43 @@ static int cb_statsd_init(struct flb_input_instance *ins,
     /* Export plugin context */
     flb_input_set_context(ins, ctx);
 
-    /* Accepts metrics from UDP connections. */
-    ctx->server_fd = flb_net_server_udp(ctx->port, ctx->listen);
-    if (ctx->server_fd == -1) {
-        flb_plg_error(ctx->ins, "can't bind to %s:%s", ctx->listen, ctx->port);
+    ctx->downstream = flb_downstream_create(FLB_TRANSPORT_UDP,
+                                            ins->flags,
+                                            ctx->listen,
+                                            port,
+                                            NULL,
+                                            config,
+                                            &ins->net_setup);
+
+    if (ctx->downstream == NULL) {
+        flb_plg_error(ctx->ins,
+                      "could not initialize downstream on %s:%s. Aborting",
+                      ctx->listen, ctx->port);
+
         flb_free(ctx->buf);
         flb_free(ctx);
+
         return -1;
     }
 
     /* Set up the UDP connection callback */
-    ctx->coll_fd = flb_input_set_collector_socket(ins, cb_statsd_receive,
-                                                  ctx->server_fd, config);
+    ctx->coll_fd = flb_input_set_collector_socket(ins,
+                                                  cb_statsd_receive,
+                                                  ctx->downstream->server_fd,
+                                                  config);
     if (ctx->coll_fd == -1) {
         flb_plg_error(ctx->ins, "cannot set up connection callback ");
-        flb_socket_close(ctx->server_fd);
+
+        flb_downstream_destroy(ctx->downstream);
+
         flb_free(ctx->buf);
         flb_free(ctx);
+
         return -1;
     }
 
     flb_plg_info(ctx->ins, "start UDP server on %s:%s", ctx->listen, ctx->port);
+
     return 0;
 }
 
@@ -318,7 +354,10 @@ static int cb_statsd_exit(void *data, struct flb_config *config)
 {
     struct flb_statsd *ctx = data;
 
-    flb_socket_close(ctx->server_fd);
+    if (ctx->downstream != NULL) {
+        flb_downstream_destroy(ctx->downstream);
+    }
+
     flb_free(ctx->buf);
     flb_free(ctx);
 
