@@ -30,6 +30,7 @@
 
 #define FLB_NETWORK_DEFAULT_BACKLOG_SIZE              128
 #define FLB_NETWORK_UNIX_SOCKET_PEER_ADDRESS_TEMPLATE "pid_%s"
+#define FLB_NETWORK_ADDRESS_UNAVAILABLE               "unavailable"
 
 /* FLB_NETWORK_MAX_UNIX_ADDRESS_LENGTH should be enough for the
  * string "PID " plus the string form of a signed 32 bit integer
