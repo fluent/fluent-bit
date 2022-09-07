@@ -20,6 +20,7 @@
 #include <stdlib.h>
 
 #include <fluent-bit/flb_input_plugin.h>
+#include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_utils.h>
 
 #include "mqtt.h"
@@ -50,9 +51,10 @@ struct flb_in_mqtt_config *mqtt_config_init(struct flb_input_instance *ins)
 
 void mqtt_config_free(struct flb_in_mqtt_config *config)
 {
-    if (config->server_fd > 0) {
-        close(config->server_fd);
+    if (config->downstream != NULL) {
+        flb_downstream_destroy(config->downstream);
     }
+
     flb_free(config->tcp_port);
     flb_free(config);
 }

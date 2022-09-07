@@ -154,6 +154,10 @@ struct flb_input_instance {
     int flags;
 
     int id;                              /* instance id                  */
+#ifdef FLB_HAVE_CHUNK_TRACE
+    struct flb_chunk_trace_context *chunk_trace_ctxt;
+    pthread_mutex_t chunk_trace_lock;
+#endif /* FLB_HAVE_CHUNK_TRACE */
     int log_level;                       /* log level for this plugin    */
     flb_pipefd_t channel[2];             /* pipe(2) channel              */
     int runs_in_coroutine;               /* instance runs in coroutine ? */
@@ -291,6 +295,9 @@ struct flb_input_instance {
     /* List of upstreams */
     struct mk_list upstreams;
 
+    /* List of downstreams */
+    struct mk_list downstreams;
+
     /*
      * CMetrics
      * --------
@@ -308,6 +315,30 @@ struct flb_input_instance {
      */
     struct flb_hash_table *ht_log_chunks;
     struct flb_hash_table *ht_metric_chunks;
+
+    /* TLS settings */
+    int use_tls;                         /* bool, try to use TLS for I/O */
+    int tls_verify;                      /* Verify certs (default: true) */
+    int tls_debug;                       /* mbedtls debug level          */
+    char *tls_vhost;                     /* Virtual hostname for SNI     */
+    char *tls_ca_path;                   /* Path to certificates         */
+    char *tls_ca_file;                   /* CA root cert                 */
+    char *tls_crt_file;                  /* Certificate                  */
+    char *tls_key_file;                  /* Cert Key                     */
+    char *tls_key_passwd;                /* Cert Key Password            */
+
+    struct mk_list *tls_config_map;
+
+#ifdef FLB_HAVE_TLS
+    struct flb_tls *tls;
+#else
+    void *tls;
+#endif
+
+    /* General network options like timeouts and keepalive */
+    struct flb_net_setup net_setup;
+    struct mk_list *net_config_map;
+    struct mk_list net_properties;
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
@@ -517,7 +548,27 @@ static inline int flb_input_buf_paused(struct flb_input_instance *i)
 static inline int flb_input_config_map_set(struct flb_input_instance *ins,
                                            void *context)
 {
-    return flb_config_map_set(&ins->properties, ins->config_map, context);
+    int ret;
+
+    /* Process normal properties */
+    if (ins->config_map) {
+        ret = flb_config_map_set(&ins->properties, ins->config_map, context);
+
+        if (ret == -1) {
+            return -1;
+        }
+    }
+
+    /* Net properties */
+    if (ins->net_config_map) {
+        ret = flb_config_map_set(&ins->net_properties, ins->net_config_map,
+                                 &ins->net_setup);
+        if (ret == -1) {
+            return -1;
+        }
+    }
+
+    return ret;
 }
 
 int flb_input_register_all(struct flb_config *config);
@@ -547,6 +598,8 @@ int flb_input_collector_resume(int coll_id, struct flb_input_instance *ins);
 int flb_input_collector_delete(int coll_id, struct flb_input_instance *ins);
 int flb_input_collector_destroy(struct flb_input_collector *coll);
 int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config);
+struct mk_event *flb_input_collector_get_event(int coll_id,
+                                               struct flb_input_instance *ins);
 int flb_input_set_collector_time(struct flb_input_instance *ins,
                                  int (*cb_collect) (struct flb_input_instance *,
                                                     struct flb_config *, void *),
@@ -597,5 +650,7 @@ int flb_input_log_check(struct flb_input_instance *ins, int l);
 
 struct mk_event_loop *flb_input_event_loop_get(struct flb_input_instance *ins);
 int flb_input_upstream_set(struct flb_upstream *u, struct flb_input_instance *ins);
+int flb_input_downstream_set(struct flb_stream *stream,
+                             struct flb_input_instance *ins);
 
 #endif

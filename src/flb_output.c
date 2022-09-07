@@ -975,7 +975,8 @@ int flb_output_init_all(struct flb_config *config)
 
 #ifdef FLB_HAVE_TLS
         if (ins->use_tls == FLB_TRUE) {
-            ins->tls = flb_tls_create(ins->tls_verify,
+            ins->tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                      ins->tls_verify,
                                       ins->tls_debug,
                                       ins->tls_vhost,
                                       ins->tls_ca_path,
@@ -1149,19 +1150,21 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
     }
 
     /* Set flags */
-    u->flags |= flags;
+    flb_stream_enable_flags(&u->base, flags);
 
     /*
      * If the output plugin flush callbacks will run in multiple threads, enable
      * the thread safe mode for the Upstream context.
      */
     if (ins->tp_workers > 0) {
-        flb_upstream_thread_safe(u);
-        mk_list_add(&u->_head, &ins->upstreams);
+        flb_stream_enable_thread_safety(&u->base);
+
+        mk_list_add(&u->base._head, &ins->upstreams);
     }
 
     /* Set networking options 'net.*' received through instance properties */
-    memcpy(&u->net, &ins->net_setup, sizeof(struct flb_net_setup));
+    memcpy(&u->base.net, &ins->net_setup, sizeof(struct flb_net_setup));
+
     return 0;
 }
 

@@ -1183,7 +1183,7 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     flb_output_upstream_set(ctx->u, ins);
 
     /* Metadata Upstream Sync flags */
-    ctx->metadata_u->flags &= ~FLB_IO_ASYNC;
+    flb_stream_disable_async_mode(&ctx->metadata_u->base);
 
     if (ins->test_mode == FLB_FALSE) {
         /* Retrieve oauth2 token */
@@ -2331,14 +2331,15 @@ static void update_http_metrics(struct flb_stackdriver *ctx,
 
     /* convert status to string format */
     snprintf(tmp, sizeof(tmp) - 1, "%i", http_status);
+    char *name = (char *) flb_output_name(ctx->ins);
 
     /* processed records total */
     cmt_counter_add(ctx->cmt_proc_records_total, ts, event_chunk->total_events,
-                    1, (char *[]) {tmp});
+                    2, (char *[]) {tmp, name});
 
     /* HTTP status */
     if (http_status != STACKDRIVER_NET_ERROR) {
-        cmt_counter_inc(ctx->cmt_requests_total, ts, 1, (char *[]) {tmp});
+        cmt_counter_inc(ctx->cmt_requests_total, ts, 2, (char *[]) {tmp, name});
     }
 }
 #endif
@@ -2358,7 +2359,7 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     flb_sds_t payload_buf;
     size_t payload_size;
     struct flb_stackdriver *ctx = out_context;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
 #ifdef FLB_HAVE_METRICS
     char *name = (char *) flb_output_name(ctx->ins);

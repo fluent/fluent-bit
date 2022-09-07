@@ -57,6 +57,10 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, grace)},
 
+    {FLB_CONF_STR_CONV_NAN,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, convert_nan_to_null)},
+
     {FLB_CONF_STR_DAEMON,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, daemon)},
@@ -159,6 +163,12 @@ struct flb_service_config service_configs[] = {
      offsetof(struct flb_config, stream_processor_file)},
 #endif
 
+#ifdef FLB_HAVE_CHUNK_TRACE
+    {FLB_CONF_STR_ENABLE_CHUNK_TRACE,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, enable_chunk_trace)},
+#endif
+
     {NULL, FLB_CONF_TYPE_OTHER, 0} /* end of array */
 };
 
@@ -208,6 +218,9 @@ struct flb_config *flb_config_init()
     config->grace        = 5;
     config->grace_count  = 0;
     config->exit_status_code = 0;
+
+    /* json */
+    config->convert_nan_to_null = FLB_FALSE;
 
 #ifdef FLB_HAVE_HTTP_SERVER
     config->http_ctx                     = NULL;
@@ -282,6 +295,7 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->proxies);
     mk_list_init(&config->workers);
     mk_list_init(&config->upstreams);
+    mk_list_init(&config->downstreams);
     mk_list_init(&config->cmetrics);
     mk_list_init(&config->cf_parsers_list);
 

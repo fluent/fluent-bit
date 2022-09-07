@@ -106,7 +106,7 @@ static void cb_check_str_list(void *ctx, int ffd, int res_ret,
     flb_sds_destroy(out_line);
 }
 
-static struct test_ctx *test_ctx_create(struct flb_lib_out_cb *data)
+static struct test_ctx *test_ctx_create()
 {
     int i_ffd;
     int o_ffd;
@@ -133,7 +133,7 @@ static struct test_ctx *test_ctx_create(struct flb_lib_out_cb *data)
     ctx->i_ffd = i_ffd;
 
     /* Output */
-    o_ffd = flb_output(ctx->flb, (char *) "syslog", (void *) data);
+    o_ffd = flb_output(ctx->flb, (char *) "syslog", NULL);
     ctx->o_ffd = o_ffd;
 
     return ctx;
@@ -151,7 +151,6 @@ static void test_ctx_destroy(struct test_ctx *ctx)
 
 void flb_test_syslog_rfc5424()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -167,7 +166,7 @@ void flb_test_syslog_rfc5424()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -206,7 +205,6 @@ void flb_test_syslog_rfc5424()
 
 void flb_test_severity_key_rfc5424()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -223,7 +221,7 @@ void flb_test_severity_key_rfc5424()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -263,7 +261,6 @@ void flb_test_severity_key_rfc5424()
 
 void flb_test_severity_key_rfc3164()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -280,7 +277,7 @@ void flb_test_severity_key_rfc3164()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -320,7 +317,6 @@ void flb_test_severity_key_rfc3164()
 
 void flb_test_facility_key_rfc5424()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -337,7 +333,7 @@ void flb_test_facility_key_rfc5424()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -377,7 +373,6 @@ void flb_test_facility_key_rfc5424()
 
 void flb_test_facility_key_rfc3164()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -394,7 +389,7 @@ void flb_test_facility_key_rfc3164()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -434,7 +429,6 @@ void flb_test_facility_key_rfc3164()
 
 void flb_test_severity_facility_key_rfc5424()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -451,7 +445,7 @@ void flb_test_severity_facility_key_rfc5424()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -492,7 +486,6 @@ void flb_test_severity_facility_key_rfc5424()
 
 void flb_test_severity_facility_key_rfc3164()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -509,7 +502,7 @@ void flb_test_severity_facility_key_rfc3164()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -550,7 +543,6 @@ void flb_test_severity_facility_key_rfc3164()
 
 void flb_test_hostname_key_rfc5424()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -567,7 +559,7 @@ void flb_test_hostname_key_rfc5424()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -607,7 +599,6 @@ void flb_test_hostname_key_rfc5424()
 
 void flb_test_hostname_key_rfc3164()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -624,7 +615,7 @@ void flb_test_hostname_key_rfc3164()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -664,7 +655,6 @@ void flb_test_hostname_key_rfc3164()
 
 void flb_test_appname_key_rfc5424()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -681,7 +671,7 @@ void flb_test_appname_key_rfc5424()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -721,7 +711,6 @@ void flb_test_appname_key_rfc5424()
 
 void flb_test_appname_key_rfc3164()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -738,7 +727,7 @@ void flb_test_appname_key_rfc3164()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -778,7 +767,6 @@ void flb_test_appname_key_rfc3164()
 
 void flb_test_procid_key_rfc5424()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -795,7 +783,7 @@ void flb_test_procid_key_rfc5424()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -835,7 +823,6 @@ void flb_test_procid_key_rfc5424()
 
 void flb_test_msgid_key_rfc5424()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -852,7 +839,7 @@ void flb_test_msgid_key_rfc5424()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -892,7 +879,6 @@ void flb_test_msgid_key_rfc5424()
 
 void flb_test_sd_key_rfc5424()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -909,7 +895,7 @@ void flb_test_sd_key_rfc5424()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);

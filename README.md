@@ -70,6 +70,14 @@ bin/fluent-bit -i cpu -o stdout -f 1
 
 If you are interested into more details, please refer to the [Build & Install](https://docs.fluentbit.io/manual/installation/sources/build-and-install) section.
 
+#### Requirements
+
+- CMake >= 3.0
+- Flex
+- Bison
+- YAML library/headers
+- OpenSSL library/headers
+
 #### Linux Packages
 
 We provide packages for most common Linux distributions:
@@ -169,7 +177,6 @@ Fluent Bit is fully supported on Windows environments, get started with [these i
 
 If you are interested in contributing to Fluent bit with bug fixes, new features or coding in general, please refer to the code [CONTRIBUTING](CONTRIBUTING.md) guidelines. You can also refer the Beginners Guide to contributing to Fluent Bit [here.](DEVELOPER_GUIDE.md)
 
-![Visualization of the codebase](./codebase-structure.svg)
 ## Community & Contact
 
 Feel free to join us on our Slack channel, Mailing List or IRC:

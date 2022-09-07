@@ -41,6 +41,8 @@ set(src
   flb_scheduler.c
   flb_io.c
   flb_storage.c
+  flb_connection.c
+  flb_downstream.c
   flb_upstream.c
   flb_upstream_ha.c
   flb_upstream_node.c
@@ -229,6 +231,13 @@ if(FLB_STATIC_CONF)
     )
 endif()
 
+if(FLB_CHUNK_TRACE)
+  set(src
+    ${src}
+    "flb_chunk_trace.c"
+    )
+endif()
+
 include(CheckSymbolExists)
 check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
 
@@ -299,6 +308,16 @@ if(FLB_PROXY_GO)
   set(FLB_PROXY_PLUGINS ${FLB_PROXY_PLUGINS} flb-plugin-proxy-go)
 endif()
 
+# WASM runtime
+if(FLB_WASM)
+  add_subdirectory(wasm)
+endif()
+
+# WAMRC compiler
+if(FLB_WAMRC)
+  add_subdirectory(wamrc)
+endif()
+
 # HTTP Server
 if(FLB_HTTP_SERVER)
   set(FLB_DEPS
@@ -313,6 +332,14 @@ set(FLB_DEPS
   avro-static
   jansson
   )
+endif()
+
+# WASM runtime
+if(FLB_WASM)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    vmlib-static
+    flb-wasm-static)
 endif()
 
 # Set static dependencies

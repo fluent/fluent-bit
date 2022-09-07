@@ -24,7 +24,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_upstream_ha.h>
 #include <fluent-bit/flb_record_accessor.h>
-#include <fluent-bit/flb_upstream_conn.h>
+#include <fluent-bit/flb_connection.h>
 
 /* Forward modes */
 #define MODE_MESSAGE               0
@@ -69,9 +69,9 @@ struct flb_forward_config {
     struct flb_record_accessor *ra_tag; /* Tag Record accessor */
     int ra_static;                      /* Is the record accessor static ? */
 #endif
-    int (*io_write)(struct flb_upstream_conn* conn, int fd, const void* data,
+    int (*io_write)(struct flb_connection* conn, int fd, const void* data,
                         size_t len, size_t *out_len);
-    int (*io_read)(struct flb_upstream_conn* conn, int fd, void* buf, size_t len);
+    int (*io_read)(struct flb_connection* conn, int fd, void* buf, size_t len);
     struct mk_list _head;     /* Link to list flb_forward->configs */
 };
 

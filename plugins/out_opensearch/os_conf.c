@@ -209,7 +209,8 @@ struct flb_opensearch *flb_os_conf_create(struct flb_output_instance *ins,
             flb_debug("[out_es] Enabled AWS Auth");
 
             /* AWS provider needs a separate TLS instance */
-            ctx->aws_tls = flb_tls_create(FLB_TRUE,
+            ctx->aws_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                          FLB_TRUE,
                                           ins->tls_debug,
                                           ins->tls_vhost,
                                           ins->tls_ca_path,
@@ -268,7 +269,8 @@ struct flb_opensearch *flb_os_conf_create(struct flb_output_instance *ins,
                 }
 
                 /* STS provider needs yet another separate TLS instance */
-                ctx->aws_sts_tls = flb_tls_create(FLB_TRUE,
+                ctx->aws_sts_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                                  FLB_TRUE,
                                                   ins->tls_debug,
                                                   ins->tls_vhost,
                                                   ins->tls_ca_path,

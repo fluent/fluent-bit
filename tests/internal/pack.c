@@ -12,6 +12,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <math.h> /* for NAN */
 
 
 #include "flb_tests_internal.h"
@@ -634,6 +635,53 @@ void test_json_pack_bug1278()
     }
 }
 
+void test_json_pack_nan()
+{
+    int ret;
+    char json_str[128] = {0};
+    char *p = NULL;
+    struct flb_config config;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+    msgpack_object obj;
+    msgpack_zone mempool;
+
+    config.convert_nan_to_null = FLB_TRUE;
+
+    // initialize msgpack
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_double(&mp_pck, NAN);
+    msgpack_zone_init(&mempool, 2048);
+    msgpack_unpack(mp_sbuf.data, mp_sbuf.size, NULL, &mempool, &obj);
+    msgpack_zone_destroy(&mempool);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    // convert msgpack to json
+    ret = flb_msgpack_to_json(&json_str[0], sizeof(json_str), &obj);
+    TEST_CHECK(ret >= 0);
+
+    p = strstr(&json_str[0], "nan");
+    if (!TEST_CHECK(p != NULL)) {
+        TEST_MSG("json should be nan. json_str=%s", json_str);
+    }
+
+    // convert. nan -> null
+    memset(&json_str[0], 0, sizeof(json_str));
+    flb_pack_init(&config);
+    ret = flb_msgpack_to_json(&json_str[0], sizeof(json_str), &obj);
+    TEST_CHECK(ret >= 0);
+
+    p = strstr(&json_str[0], "null");
+    if (!TEST_CHECK(p != NULL)) {
+        TEST_MSG("json should be null. json_str=%s", json_str);
+    }
+
+    // clear setting
+    config.convert_nan_to_null = FLB_FALSE;
+    flb_pack_init(&config);
+}
+
 static int check_msgpack_val(msgpack_object obj, int expected_type, char *expected_val)
 {
     int len;
@@ -792,6 +840,7 @@ TEST_LIST = {
     { "json_dup_keys"      , test_json_dup_keys},
     { "json_pack_bug342"   , test_json_pack_bug342},
     { "json_pack_bug1278"  , test_json_pack_bug1278},
+    { "json_pack_nan"      , test_json_pack_nan},
     { "json_pack_bug5336"  , test_json_pack_bug5336},
 
     /* Mixed bytes, check JSON encoding */

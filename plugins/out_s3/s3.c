@@ -770,7 +770,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
     }
 
     if (ctx->insecure == FLB_FALSE) {
-        ctx->client_tls = flb_tls_create(ins->tls_verify,
+        ctx->client_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                         ins->tls_verify,
                                          ins->tls_debug,
                                          ins->tls_vhost,
                                          ins->tls_ca_path,
@@ -785,7 +786,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
     }
 
     /* AWS provider needs a separate TLS instance */
-    ctx->provider_tls = flb_tls_create(FLB_TRUE,
+    ctx->provider_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                       FLB_TRUE,
                                        ins->tls_debug,
                                        ins->tls_vhost,
                                        ins->tls_ca_path,
@@ -817,7 +819,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
         role_arn = (char *) tmp;
 
         /* STS provider needs yet another separate TLS instance */
-        ctx->sts_provider_tls = flb_tls_create(FLB_TRUE,
+        ctx->sts_provider_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                               FLB_TRUE,
                                                ins->tls_debug,
                                                ins->tls_vhost,
                                                ins->tls_ca_path,
@@ -916,8 +919,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
     }
 
     /* init must use sync mode */
-    async_flags = ctx->s3_client->upstream->flags;
-    ctx->s3_client->upstream->flags &= ~(FLB_IO_ASYNC);
+    async_flags = flb_stream_get_flags(&ctx->s3_client->upstream->base);
+    flb_stream_disable_async_mode(&ctx->s3_client->upstream->base);
 
     /* clean up any old buffers found on startup */
     if (ctx->has_old_buffers == FLB_TRUE) {
@@ -959,7 +962,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
          * will be sufficient for most users, and long term we can do the work
          * to enable async if needed.
          */
-        ctx->s3_client->upstream->flags = async_flags;
+        flb_stream_set_flags(&ctx->s3_client->upstream->base, async_flags);
     }
 
     /* this is done last since in the previous block we make calls to AWS */
@@ -1707,8 +1710,8 @@ static void s3_upload_queue(struct flb_config *config, void *out_context)
 
     /* upload timer must use sync mode */
     if (ctx->use_put_object == FLB_TRUE) {
-        async_flags = ctx->s3_client->upstream->flags;
-        ctx->s3_client->upstream->flags &= ~(FLB_IO_ASYNC);
+        async_flags = flb_stream_get_flags(&ctx->s3_client->upstream->base);
+        flb_stream_disable_async_mode(&ctx->s3_client->upstream->base);
     }
 
     /* Iterate through each file in upload queue */
@@ -1762,7 +1765,7 @@ static void s3_upload_queue(struct flb_config *config, void *out_context)
 exit:
     /* re-enable async mode */
     if (ctx->use_put_object == FLB_TRUE) {
-        ctx->s3_client->upstream->flags = async_flags;
+        flb_stream_set_flags(&ctx->s3_client->upstream->base, async_flags);
     }
 }
 
@@ -1785,8 +1788,8 @@ static void cb_s3_upload(struct flb_config *config, void *data)
 
     /* upload timer must use sync mode */
     if (ctx->use_put_object == FLB_TRUE) {
-        async_flags = ctx->s3_client->upstream->flags;
-        ctx->s3_client->upstream->flags &= ~(FLB_IO_ASYNC);
+        async_flags = flb_stream_get_flags(&ctx->s3_client->upstream->base);
+        flb_stream_disable_async_mode(&ctx->s3_client->upstream->base);
     }
 
     now = time(NULL);
@@ -1867,7 +1870,7 @@ static void cb_s3_upload(struct flb_config *config, void *data)
     }
 
     if (ctx->use_put_object == FLB_TRUE) {
-        ctx->s3_client->upstream->flags = async_flags;
+        flb_stream_set_flags(&ctx->s3_client->upstream->base, async_flags);
     }
 }
 
@@ -2237,7 +2240,7 @@ static int cb_s3_exit(void *data, struct flb_config *config)
     if (s3_store_has_data(ctx) == FLB_TRUE) {
         if (ctx->use_put_object == FLB_TRUE) {
             /* exit must run in sync mode  */
-            ctx->s3_client->upstream->flags &= ~(FLB_IO_ASYNC);
+            flb_stream_disable_async_mode(&ctx->s3_client->upstream->base);
         }
         flb_plg_info(ctx->ins, "Sending all locally buffered data to S3");
         ret = put_all_chunks(ctx);

@@ -33,11 +33,13 @@
 #define CALYPTIA_ACTION_REGISTER  0
 #define CALYPTIA_ACTION_PATCH     1
 #define CALYPTIA_ACTION_METRICS   2
+#define CALYPTIA_ACTION_TRACE     3
 
 /* Endpoints */
 #define CALYPTIA_ENDPOINT_CREATE  "/v1/agents"
 #define CALYPTIA_ENDPOINT_PATCH   "/v1/agents/%s"
 #define CALYPTIA_ENDPOINT_METRICS "/v1/agents/%s/metrics"
+#define CALYPTIA_ENDPOINT_TRACE   "/v1/traces/%s"
 
 /* Storage */
 #define CALYPTIA_SESSION_FILE     "session.CALYPTIA"
@@ -72,6 +74,11 @@ struct flb_calyptia {
     struct mk_list kv_labels;             /* parsed add_labels */
     struct flb_output_instance *ins;      /* plugin instance */
     struct flb_config *config;            /* Fluent Bit context */
+/* used for reporting chunk trace records to calyptia cloud. */
+#ifdef FLB_HAVE_CHUNK_TRACE
+    flb_sds_t trace_endpoint;
+    flb_sds_t pipeline_id;
+#endif /* FLB_HAVE_CHUNK_TRACE */
 };
 
 #endif

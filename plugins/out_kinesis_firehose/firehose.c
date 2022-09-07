@@ -149,7 +149,8 @@ static int cb_firehose_init(struct flb_output_instance *ins,
     }
 
     /* one tls instance for provider, one for cw client */
-    ctx->cred_tls = flb_tls_create(FLB_TRUE,
+    ctx->cred_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                   FLB_TRUE,
                                    ins->tls_debug,
                                    ins->tls_vhost,
                                    ins->tls_ca_path,
@@ -163,7 +164,8 @@ static int cb_firehose_init(struct flb_output_instance *ins,
         goto error;
     }
 
-    ctx->client_tls = flb_tls_create(FLB_TRUE,
+    ctx->client_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                     FLB_TRUE,
                                      ins->tls_debug,
                                      ins->tls_vhost,
                                      ins->tls_ca_path,
@@ -197,7 +199,8 @@ static int cb_firehose_init(struct flb_output_instance *ins,
         }
 
         /* STS provider needs yet another separate TLS instance */
-        ctx->sts_tls = flb_tls_create(FLB_TRUE,
+        ctx->sts_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                      FLB_TRUE,
                                       ins->tls_debug,
                                       ins->tls_vhost,
                                       ins->tls_ca_path,
@@ -305,7 +308,7 @@ struct flush *new_flush_buffer()
     }
     buf->tmp_buf_size = PUT_RECORD_BATCH_PAYLOAD_SIZE;
 
-    buf->events = flb_malloc(sizeof(struct event) * MAX_EVENTS_PER_PUT);
+    buf->events = flb_malloc(sizeof(struct firehose_event) * MAX_EVENTS_PER_PUT);
     if (!buf->events) {
         flb_errno();
         flush_destroy(buf);

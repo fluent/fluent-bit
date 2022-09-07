@@ -46,8 +46,11 @@
 #include <fluent-bit/flb_sosreport.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_http_server.h>
+#include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_version.h>
+#include <fluent-bit/flb_upstream.h>
+#include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_ring_buffer.h>
 
 #ifdef FLB_HAVE_METRICS
@@ -160,8 +163,11 @@ static void cb_engine_sched_timer(struct flb_config *ctx, void *data)
 {
     (void) data;
 
-    /* Upstream connections timeouts handling */
+    /* Upstream timeout handling */
     flb_upstream_conn_timeouts(&ctx->upstreams);
+
+    /* Downstream timeout handling */
+    flb_downstream_conn_timeouts(&ctx->downstreams);
 }
 
 static inline int handle_input_event(flb_pipefd_t fd, uint64_t ts,
@@ -592,10 +598,11 @@ int flb_engine_start(struct flb_config *config)
 
     /* Initialize the networking layer */
     flb_net_lib_init();
-
     flb_net_ctx_init(&dns_ctx);
     flb_net_dns_ctx_init();
     flb_net_dns_ctx_set(&dns_ctx);
+
+    flb_pack_init(config);
 
     /* Create the event loop and set it in the global configuration */
     evl = mk_event_loop_create(256);
@@ -936,18 +943,19 @@ int flb_engine_start(struct flb_config *config)
                 event->handler(event);
             }
             else if (event->type == FLB_ENGINE_EV_THREAD) {
-                struct flb_upstream_conn *u_conn;
-                struct flb_coro *co;
+                struct flb_connection *connection;
 
                 /*
                  * Check if we have some co-routine associated to this event,
                  * if so, resume the co-routine
                  */
-                u_conn = (struct flb_upstream_conn *) event;
-                co = u_conn->coro;
-                if (co) {
-                    flb_trace("[engine] resuming coroutine=%p", co);
-                    flb_coro_resume(co);
+
+                connection = (struct flb_connection *) event;
+
+                if (connection->coroutine) {
+                    flb_trace("[engine] resuming coroutine=%p", connection->coroutine);
+
+                    flb_coro_resume(connection->coroutine);
                 }
             }
             else if (event->type == FLB_ENGINE_EV_OUTPUT) {
@@ -979,6 +987,7 @@ int flb_engine_start(struct flb_config *config)
             flb_net_dns_lookup_context_cleanup(&dns_ctx);
             flb_sched_timer_cleanup(config->sched);
             flb_upstream_conn_pending_destroy_list(&config->upstreams);
+            flb_downstream_conn_pending_destroy_list(&config->downstreams);
 
             /*
             * depend on main thread to clean up expired message

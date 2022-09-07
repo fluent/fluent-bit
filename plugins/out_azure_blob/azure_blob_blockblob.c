@@ -148,7 +148,7 @@ int azb_block_blob_commit(struct flb_azure_blob *ctx, char *blockid, char *tag,
     flb_sds_t uri = NULL;
     flb_sds_t payload;
     struct flb_http_client *c;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);

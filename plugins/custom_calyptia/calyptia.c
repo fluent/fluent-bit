@@ -36,6 +36,11 @@ struct calyptia {
     flb_sds_t cloud_port;
     flb_sds_t machine_id;
 
+/* used for reporting chunk trace records. */
+#ifdef FLB_HAVE_CHUNK_TRACE
+    flb_sds_t pipeline_id;
+#endif /* FLB_HAVE_CHUNK_TRACE */
+
     int cloud_tls;
     int cloud_tls_verify;
 
@@ -87,16 +92,18 @@ static void pipeline_config_add_properties(flb_sds_t *buf, struct mk_list *props
     mk_list_foreach(head, props) {
         kv = mk_list_entry(head, struct flb_kv, _head);
 
-        flb_sds_printf(buf, "    %s ", kv->key);
+        if (kv->key != NULL && kv->val != NULL) {
+            flb_sds_printf(buf, "    %s ", kv->key);
 
-        if (is_sensitive_property(kv->key)) {
-            flb_sds_printf(buf, "--redacted--");
-        }
-        else {
-            flb_sds_printf(buf, kv->val);
-        }
+            if (is_sensitive_property(kv->key)) {
+                flb_sds_printf(buf, "--redacted--");
+            }
+            else {
+                flb_sds_printf(buf, kv->val);
+            }
 
-        flb_sds_printf(buf, "\n");
+            flb_sds_printf(buf, "\n");
+        }
     }
 }
 
@@ -312,6 +319,10 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
         flb_output_set_property(ctx->o, "tls.verify", "false");
     }
 
+#ifdef FLB_HAVE_CHUNK_TRACE
+    flb_output_set_property(ctx->o, "pipeline_id", ctx->pipeline_id);
+#endif /* FLB_HAVE_CHUNK_TRACE */
+
     flb_router_connect(ctx->i, ctx->o);
     flb_plg_info(ins, "custom initialized!");
     return 0;
@@ -376,6 +387,14 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct calyptia, machine_id),
      "Custom machine_id to be used when registering agent"
     },
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+    {
+     FLB_CONFIG_MAP_STR, "pipeline_id", NULL,
+     0, FLB_TRUE, offsetof(struct calyptia, pipeline_id),
+     "Pipeline ID for reporting to calyptia cloud."
+    },
+#endif /* FLB_HAVE_CHUNK_TRACE */
 
     /* EOF */
     {0}

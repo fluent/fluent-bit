@@ -315,9 +315,9 @@ static flb_sds_t uri_encode(const char *uri, size_t len)
 /* https://cloud.google.com/iam/docs/using-workload-identity-federation */
 static int bigquery_exchange_aws_creds_for_google_oauth(struct flb_bigquery *ctx)
 {
-    struct flb_upstream_conn *aws_sts_conn;
-    struct flb_upstream_conn *google_sts_conn = NULL;
-    struct flb_upstream_conn *google_gen_access_token_conn = NULL;
+    struct flb_connection *aws_sts_conn;
+    struct flb_connection *google_sts_conn = NULL;
+    struct flb_connection *google_gen_access_token_conn = NULL;
     struct flb_http_client *aws_sts_c = NULL;
     struct flb_http_client *google_sts_c = NULL;
     struct flb_http_client *google_gen_access_token_c = NULL;
@@ -684,7 +684,8 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
 
     if (ctx->has_identity_federation) {
         /* Configure AWS IMDS */
-        ctx->aws_tls = flb_tls_create(FLB_TRUE,
+        ctx->aws_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                      FLB_TRUE,
                                       ins->tls_debug,
                                       ins->tls_vhost,
                                       ins->tls_ca_path,
@@ -721,7 +722,8 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
         ctx->aws_provider->provider_vtable->upstream_set(ctx->aws_provider, ctx->ins);
 
         /* Configure AWS STS */
-        ctx->aws_sts_tls = flb_tls_create(FLB_TRUE,
+        ctx->aws_sts_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                          FLB_TRUE,
                                           ins->tls_debug,
                                           ins->tls_vhost,
                                           ins->tls_ca_path,
@@ -748,10 +750,11 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
             return -1;
         }
 
-        ctx->aws_sts_upstream->net.keepalive = FLB_FALSE;
+        ctx->aws_sts_upstream->base.net.keepalive = FLB_FALSE;
 
         /* Configure Google STS */
-        ctx->google_sts_tls = flb_tls_create(FLB_TRUE,
+        ctx->google_sts_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                             FLB_TRUE,
                                              ins->tls_debug,
                                              ins->tls_vhost,
                                              ins->tls_ca_path,
@@ -778,7 +781,8 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
         }
 
         /* Configure Google IAM */
-        ctx->google_iam_tls = flb_tls_create(FLB_TRUE,
+        ctx->google_iam_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                             FLB_TRUE,
                                              ins->tls_debug,
                                              ins->tls_vhost,
                                              ins->tls_ca_path,
@@ -805,9 +809,9 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
         }
 
         /* Remove async flag from upstream */
-        ctx->aws_sts_upstream->flags    &= ~(FLB_IO_ASYNC);
-        ctx->google_sts_upstream->flags &= ~(FLB_IO_ASYNC);
-        ctx->google_iam_upstream->flags &= ~(FLB_IO_ASYNC);
+        flb_stream_disable_async_mode(&ctx->aws_sts_upstream->base);
+        flb_stream_disable_async_mode(&ctx->google_sts_upstream->base);
+        flb_stream_disable_async_mode(&ctx->google_iam_upstream->base);
     }
 
     /* Create oauth2 context */
@@ -959,7 +963,7 @@ static void cb_bigquery_flush(struct flb_event_chunk *event_chunk,
     flb_sds_t payload_buf;
     size_t payload_size;
     struct flb_bigquery *ctx = out_context;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
 
     flb_plg_trace(ctx->ins, "flushing bytes %zu", event_chunk->size);

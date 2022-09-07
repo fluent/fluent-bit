@@ -88,7 +88,7 @@ static void cb_tcp_flush(struct flb_event_chunk *event_chunk,
     int ret = FLB_ERROR;
     size_t bytes_sent;
     struct flb_upstream *u;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_out_tcp *ctx = out_context;
     void *out_payload = NULL;
     size_t out_size = 0;

@@ -369,7 +369,8 @@ struct flb_aws_provider *flb_managed_chain_provider_create(struct flb_output_ins
     strcpy(config_key_external_id + key_prefix_len, "external_id");
 
     /* AWS provider needs a separate TLS instance */
-    cred_tls = flb_tls_create(FLB_TRUE,
+    cred_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                              FLB_TRUE,
                               ins->tls_debug,
                               ins->tls_vhost,
                               ins->tls_ca_path,
@@ -417,7 +418,8 @@ struct flb_aws_provider *flb_managed_chain_provider_create(struct flb_output_ins
         }
 
         /* STS provider needs yet another separate TLS instance */
-        sts_tls = flb_tls_create(FLB_TRUE,
+        sts_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                 FLB_TRUE,
                                  ins->tls_debug,
                                  ins->tls_vhost,
                                  ins->tls_ca_path,

@@ -25,6 +25,7 @@
 
 #include <msgpack.h>
 #include <fluent-bit/flb_input_plugin.h>
+#include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
@@ -39,22 +40,37 @@
 static int in_syslog_collect_tcp(struct flb_input_instance *i_ins,
                                  struct flb_config *config, void *in_context)
 {
-    int fd;
-    struct flb_syslog *ctx = in_context;
-    struct syslog_conn *conn;
+    struct flb_connection *connection;
+    struct syslog_conn    *conn;
+    struct flb_syslog     *ctx;
+
     (void) i_ins;
 
-    /* Accept the new connection */
-    fd = flb_net_accept(ctx->server_fd);
-    if (fd == -1) {
+    ctx = in_context;
+
+    connection = flb_downstream_conn_get(ctx->downstream);
+
+    if (connection == NULL) {
         flb_plg_error(ctx->ins, "could not accept new connection");
+
         return -1;
     }
 
-    flb_plg_debug(ctx->ins, "new Unix connection arrived FD=%i", fd);
-    conn = syslog_conn_add(fd, ctx);
-    if (!conn) {
-        return -1;
+    if (ctx->dgram_mode_flag) {
+        return syslog_dgram_conn_event(connection);
+    }
+    else {
+        flb_plg_trace(ctx->ins, "new Unix connection arrived FD=%i", connection->fd);
+
+        conn = syslog_conn_add(connection, ctx);
+
+        if (conn == NULL) {
+            flb_plg_error(ctx->ins, "could not accept new connection");
+
+            flb_downstream_conn_release(connection);
+
+            return -1;
+        }
     }
 
     return 0;
@@ -68,24 +84,13 @@ static int in_syslog_collect_udp(struct flb_input_instance *i_ins,
                                  struct flb_config *config,
                                  void *in_context)
 {
-    int bytes;
-    struct flb_syslog *ctx = in_context;
+    struct flb_syslog *ctx;
+
     (void) i_ins;
 
-    bytes = recvfrom(ctx->server_fd,
-                     ctx->buffer_data, ctx->buffer_size - 1, 0,
-                     NULL, NULL);
-    if (bytes > 0) {
-        ctx->buffer_data[bytes] = '\0';
-        ctx->buffer_len = bytes;
-        syslog_prot_process_udp(ctx->buffer_data, ctx->buffer_len, ctx);
-    }
-    else {
-        flb_errno();
-    }
-    ctx->buffer_len = 0;
+    ctx = in_context;
 
-    return 0;
+    return syslog_dgram_conn_event(ctx->dummy_conn->connection);
 }
 
 /* Initialize plugin */
@@ -94,6 +99,7 @@ static int in_syslog_init(struct flb_input_instance *in,
 {
     int ret;
     struct flb_syslog *ctx;
+    struct flb_connection *connection;
 
     /* Allocate space for the configuration */
     ctx = syslog_conf_create(in, config);
@@ -101,6 +107,7 @@ static int in_syslog_init(struct flb_input_instance *in,
         flb_plg_error(in, "could not initialize plugin");
         return -1;
     }
+    ctx->collector_id = -1;
 
     if ((ctx->mode == FLB_SYSLOG_UNIX_TCP || ctx->mode == FLB_SYSLOG_UNIX_UDP)
         && !ctx->unix_path) {
@@ -116,6 +123,30 @@ static int in_syslog_init(struct flb_input_instance *in,
         return -1;
     }
 
+    if (ctx->dgram_mode_flag) {
+        connection = flb_downstream_conn_get(ctx->downstream);
+
+        if (connection == NULL) {
+            flb_plg_error(ctx->ins, "could not get DGRAM server dummy "
+                                    "connection");
+
+            syslog_conf_destroy(ctx);
+
+            return -1;
+        }
+
+        ctx->dummy_conn = syslog_conn_add(connection, ctx);
+
+        if (ctx->dummy_conn == NULL) {
+            flb_plg_error(ctx->ins, "could not track DGRAM server dummy "
+                                    "connection");
+
+            syslog_conf_destroy(ctx);
+
+            return -1;
+        }
+    }
+
     /* Set context */
     flb_input_set_context(in, ctx);
 
@@ -124,19 +155,31 @@ static int in_syslog_init(struct flb_input_instance *in,
         ctx->mode == FLB_SYSLOG_TCP) {
         ret = flb_input_set_collector_socket(in,
                                              in_syslog_collect_tcp,
-                                             ctx->server_fd,
+                                             ctx->downstream->server_fd,
                                              config);
     }
     else {
         ret = flb_input_set_collector_socket(in,
                                              in_syslog_collect_udp,
-                                             ctx->server_fd,
+                                             ctx->downstream->server_fd,
                                              config);
     }
 
     if (ret == -1) {
         flb_plg_error(ctx->ins, "Could not set collector");
         syslog_conf_destroy(ctx);
+
+        return -1;
+    }
+
+    ctx->collector_id = ret;
+    ctx->collector_event = flb_input_collector_get_event(ret, in);
+
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "Could not get collector event");
+        syslog_conf_destroy(ctx);
+
+        return -1;
     }
 
     return 0;

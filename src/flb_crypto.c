@@ -193,7 +193,7 @@ int flb_crypto_transform(struct flb_crypto *context,
                          unsigned char *output_buffer,
                          size_t *output_length)
 {
-    int           result;
+    int result = FLB_CRYPTO_BACKEND_ERROR;
 
     if (context == NULL) {
         return FLB_CRYPTO_INVALID_ARGUMENT;
@@ -209,10 +209,10 @@ int flb_crypto_transform(struct flb_crypto *context,
         if (operation == FLB_CRYPTO_OPERATION_SIGN) {
             result = EVP_PKEY_sign_init(context->backend_context);
         }
-        else if(operation == FLB_CRYPTO_OPERATION_ENCRYPT) {
+        else if (operation == FLB_CRYPTO_OPERATION_ENCRYPT) {
             result = EVP_PKEY_encrypt_init(context->backend_context);
         }
-        else if(operation == FLB_CRYPTO_OPERATION_DECRYPT) {
+        else if (operation == FLB_CRYPTO_OPERATION_DECRYPT) {
             result = EVP_PKEY_decrypt_init(context->backend_context);
         }
 

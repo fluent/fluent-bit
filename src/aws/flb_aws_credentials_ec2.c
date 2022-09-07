@@ -158,7 +158,7 @@ void sync_fn_ec2(struct flb_aws_provider *provider) {
 
     flb_debug("[aws_credentials] Sync called on the EC2 provider");
     /* remove async flag */
-    implementation->client->upstream->flags &= ~(FLB_IO_ASYNC);
+    flb_stream_disable_async_mode(&implementation->client->upstream->base);
 }
 
 void async_fn_ec2(struct flb_aws_provider *provider) {
@@ -166,7 +166,7 @@ void async_fn_ec2(struct flb_aws_provider *provider) {
 
     flb_debug("[aws_credentials] Async called on the EC2 provider");
     /* add async flag */
-    implementation->client->upstream->flags |= FLB_IO_ASYNC;
+    flb_stream_enable_async_mode(&implementation->client->upstream->base);
 }
 
 void upstream_set_fn_ec2(struct flb_aws_provider *provider,
@@ -249,9 +249,9 @@ struct flb_aws_provider *flb_ec2_provider_create(struct flb_config *config,
     }
 
     /* IMDSv2 token request will timeout if hops = 1 and running within container */
-    upstream->net.connect_timeout = FLB_AWS_IMDS_TIMEOUT;
-    upstream->net.io_timeout = FLB_AWS_IMDS_TIMEOUT;
-    upstream->net.keepalive = FLB_FALSE; /* On timeout, the connection is broken */
+    upstream->base.net.connect_timeout = FLB_AWS_IMDS_TIMEOUT;
+    upstream->base.net.io_timeout = FLB_AWS_IMDS_TIMEOUT;
+    upstream->base.net.keepalive = FLB_FALSE; /* On timeout, the connection is broken */
 
     implementation->client = generator->create();
     if (!implementation->client) {
