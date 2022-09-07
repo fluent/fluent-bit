@@ -175,8 +175,7 @@ static inline void mk_list_entry_init(struct mk_list *list)
 static inline int mk_list_entry_is_orphan(struct mk_list *head)
 {
     if (head->next != NULL &&
-        head->prev != NULL &&
-        head->next != head->prev) {
+        head->prev != NULL) {
         return MK_FALSE;
     }
 
