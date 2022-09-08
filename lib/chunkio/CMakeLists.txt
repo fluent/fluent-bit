@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.0)
 project(chunk-io)
 
 set(CIO_VERSION_MAJOR  1)
-set(CIO_VERSION_MINOR  2)
+set(CIO_VERSION_MINOR  3)
 set(CIO_VERSION_PATCH  0)
 set(CIO_VERSION_STR "${CIO_VERSION_MAJOR}.${CIO_VERSION_MINOR}.${CIO_VERSION_PATCH}")
 
@@ -14,7 +14,12 @@ else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall ")
 endif()
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__=__FILE__")
+# Set __FILENAME__
+if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__='\"$(subst ${CMAKE_SOURCE_DIR}/,,$(abspath $<))\"'")
+else()
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__=__FILE__")
+endif()
 
 include(cmake/macros.cmake)
 
@@ -88,12 +93,12 @@ endif()
 
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/chunkio/cio_info.h.in"
-  "${PROJECT_SOURCE_DIR}/include/chunkio/cio_info.h"
+  "${PROJECT_BINARY_DIR}/include/chunkio/cio_info.h"
   )
 
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/chunkio/cio_version.h.in"
-  "${PROJECT_SOURCE_DIR}/include/chunkio/cio_version.h"
+  "${PROJECT_BINARY_DIR}/include/chunkio/cio_version.h"
   )
 
 include_directories(

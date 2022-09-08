@@ -75,8 +75,8 @@ static inline uint16_t cio_file_st_get_meta_len(char *map)
 /* Set metadata length */
 static inline void cio_file_st_set_meta_len(char *map, uint16_t len)
 {
-    map[22] = (uint8_t) len >> 8;
-    map[23] = (uint8_t) len;
+    map[22] = (uint8_t) (len >> 8);
+    map[23] = (uint8_t) (len & 0xFF);
 }
 
 /* Return pointer to start point of metadata */
