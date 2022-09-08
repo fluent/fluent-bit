@@ -350,7 +350,7 @@ crc_t crc_update(crc_t crc, const void *data, size_t data_len)
     const uint32_t *d32 = (const uint32_t *)d;
     while (data_len >= 8)
     {
-#if __BYTE_ORDER == __BIG_ENDIAN
+#if defined(__BYTE_ORDER) && __BYTE_ORDER == __BIG_ENDIAN
         crc_t d1 = *d32++ ^ le16toh(crc);
         crc_t d2 = *d32++;
         crc  =
