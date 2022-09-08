@@ -48,6 +48,6 @@
     if (flb_log_check_level(ctx->log_level, FLB_LOG_TRACE))             \
         flb_log_print(FLB_LOG_TRACE, NULL, 0,                           \
                       "[custom:%s:%s at %s:%i] " fmt,                   \
-                      ctx->p->name, flb_custom_name(ctx), __FILENAME__, \
+                      ctx->p->name, flb_custom_name(ctx), __FLB_FILENAME__, \
                       __LINE__, ##__VA_ARGS__)
 #endif
