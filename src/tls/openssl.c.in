@@ -42,6 +42,15 @@
  */
 #define RHEL_DEFAULT_CA "/etc/ssl/certs/ca-bundle.crt"
 
+#ifdef FLB_SYSTEM_MACOS
+/* On macOS, default PEM format certificates are not provided by
+ * default. Instead, we'll generate them into:
+ * "@CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_SYSCONFDIR@/certs/rootcert.pem"
+ * during the building process.
+ */
+#define MACOS_DEFAULT_CA "@CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_SYSCONFDIR@/certs/rootcert.pem"
+#endif
+
 /* OpenSSL library context */
 struct tls_context {
     int debug_level;
@@ -187,7 +196,11 @@ static int windows_load_system_certificates(struct tls_context *ctx)
 static int load_system_certificates(struct tls_context *ctx)
 {
     int ret;
+#ifdef FLB_SYSTEM_MACOS
+    const char ca_path[] = "@CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_SYSCONFDIR@/certs/";
+#else
     const char ca_path[] = "/etc/ssl/certs/";
+#endif
 
     /* For Windows use specific API to read the certs store */
 #ifdef _MSC_VER
@@ -197,6 +210,11 @@ static int load_system_certificates(struct tls_context *ctx)
     if (access(RHEL_DEFAULT_CA, R_OK) == 0) {
         ret = SSL_CTX_load_verify_locations(ctx->ctx, RHEL_DEFAULT_CA, ca_path);
     }
+#ifdef FLB_SYSTEM_MACOS
+    else if (access(MACOS_DEFAULT_CA, R_OK) == 0) {
+        ret = SSL_CTX_load_verify_locations(ctx->ctx, MACOS_DEFAULT_CA, ca_path);
+    }
+#endif
     else {
         ret = SSL_CTX_load_verify_locations(ctx->ctx, NULL, ca_path);
     }
