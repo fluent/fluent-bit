@@ -17,7 +17,7 @@ init/fluent-bit.service
 lib/chunkio/include/chunkio/cio_version.h
 lib/monkey/monkey.service
 lib/monkey/include/monkey/mk_core/mk_core_info.h
-src/tls/mbedtls.c
+src/tls/openssl.c
 
 packaging/.env
 packaging/packages
