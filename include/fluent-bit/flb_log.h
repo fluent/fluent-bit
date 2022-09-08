@@ -171,8 +171,8 @@ int flb_log_is_truncated(int type, const char *file, int line, const char *fmt, 
 int flb_log_worker_init(struct flb_worker *worker);
 int flb_errno_print(int errnum, const char *file, int line);
 
-#ifdef __FILENAME__
-#define flb_errno() flb_errno_print(errno, __FILENAME__, __LINE__)
+#ifdef __FLB_FILENAME__
+#define flb_errno() flb_errno_print(errno, __FLB_FILENAME__, __LINE__)
 #else
 #define flb_errno() flb_errno_print(errno, __FILE__, __LINE__)
 #endif
