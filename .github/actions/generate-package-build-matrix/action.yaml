@@ -35,10 +35,20 @@ runs:
         if [[ -d "packaging" ]]; then
           BUILD_TYPE="1.9"
         fi
+        if [[ -f "packaging/build-config.json" ]]; then
+          BUILD_TYPE="2.0"
+        fi
         echo "Detected type: $BUILD_TYPE"
         echo ::set-output name=BUILD_TYPE::$BUILD_TYPE
       shell: bash
       working-directory: version-check
+
+    - name: 2.0 targets
+      if: steps.determine-build-type.outputs.BUILD_TYPE == '2.0'
+      run: |
+        matrix=$(echo '{ "distro" : '$(jq -cr '.linux_targets' packaging/build-config.json)'}'|jq -c .)
+        echo "MATRIX=$matrix" >> $GITHUB_ENV
+      shell: bash
 
     - name: 1.9 targets
       if: steps.determine-build-type.outputs.BUILD_TYPE == '1.9'

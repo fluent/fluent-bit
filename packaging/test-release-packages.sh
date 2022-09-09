@@ -19,6 +19,7 @@ APT_TARGETS=("ubuntu:18.04"
 
 YUM_TARGETS=("centos:7"
     "rockylinux:8"
+    "quay.io/centos/centos:stream9"
     "amazonlinux:2")
 
 for IMAGE in "${APT_TARGETS[@]}"
