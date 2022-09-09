@@ -54,11 +54,9 @@ ENV DEBIAN_FRONTEND noninteractive
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-# See https://github.com/fluent/fluent-bit/issues/6007 for the reason for the downgrade
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
-    apt-get install -y --allow-downgrades libsystemd0=237-3ubuntu10.53 libsystemd-dev && \
-    apt-get install -y curl ca-certificates build-essential \
+    apt-get install -y curl ca-certificates build-essential libsystemd-dev \
         cmake make bash wget unzip nano vim valgrind dh-make flex bison \
         libpq-dev postgresql-server-dev-all \
         libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 \
