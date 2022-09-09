@@ -797,7 +797,7 @@ void test_issue_fluent_bit_5894()
 {
     char errbuf[256];
     int status;
-    cmt_sds_t result;
+    cmt_sds_t result = NULL;
     struct cmt *cmt;
     struct cmt_decode_prometheus_parse_opts opts;
     memset(&opts, 0, sizeof(opts));
@@ -954,7 +954,8 @@ void test_issue_fluent_bit_5894()
     TEST_CHECK(status == 0);
     if (status) {
         fprintf(stderr, "PARSE ERROR:\n======\n%s\n======\n", errbuf);
-    } else {
+    }
+    else {
         result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
         status = strcmp(result, expected);
         TEST_CHECK(status == 0);
@@ -1015,6 +1016,347 @@ void test_empty_metrics()
     cmt_decode_prometheus_destroy(cmt);
 }
 
+// reproduces https://github.com/fluent/fluent-bit/issues/5894
+void test_issue_fluent_bit_6021()
+{
+    char errbuf[256];
+    int status;
+    cmt_sds_t result = NULL;
+    struct cmt *cmt;
+    struct cmt_decode_prometheus_parse_opts opts;
+    memset(&opts, 0, sizeof(opts));
+    opts.errbuf = errbuf;
+    opts.errbuf_size = sizeof(errbuf);
+    cmt_sds_t in_buf = read_file(CMT_TESTS_DATA_PATH "/issue_fluent_bit_6021.txt");
+    size_t in_size = cmt_sds_len(in_buf);
+
+    const char expected[] =
+        "# HELP envoy_cluster_manager_cds_init_fetch_timeout\n"
+        "# TYPE envoy_cluster_manager_cds_init_fetch_timeout counter\n"
+        "envoy_cluster_manager_cds_init_fetch_timeout 0 0\n"
+        "# HELP envoy_cluster_manager_cds_update_attempt\n"
+        "# TYPE envoy_cluster_manager_cds_update_attempt counter\n"
+        "envoy_cluster_manager_cds_update_attempt 1 0\n"
+        "# HELP envoy_cluster_manager_cds_update_failure\n"
+        "# TYPE envoy_cluster_manager_cds_update_failure counter\n"
+        "envoy_cluster_manager_cds_update_failure 0 0\n"
+        "# HELP envoy_http_downstream_cx_length_ms\n"
+        "# TYPE envoy_http_downstream_cx_length_ms histogram\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"0.5\",envoy_http_conn_manager_prefix=\"admin\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"1.0\",envoy_http_conn_manager_prefix=\"admin\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"5.0\",envoy_http_conn_manager_prefix=\"admin\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"10.0\",envoy_http_conn_manager_prefix=\"admin\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"25.0\",envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"50.0\",envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"100.0\",envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"250.0\",envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"500.0\",envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"1000.0\",envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"2500.0\",envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"5000.0\",envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"10000.0\",envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"30000.0\",envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"60000.0\",envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"300000.0\",envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"600000.0\",envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"1.8e+06\",envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"3.6e+06\",envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"+Inf\",envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
+        "envoy_http_downstream_cx_length_ms_sum{envoy_http_conn_manager_prefix=\"admin\"} 15.5 0\n"
+        "envoy_http_downstream_cx_length_ms_count{envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"0.5\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"1.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"5.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"10.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"25.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"50.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"100.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"250.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"500.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"1000.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"2500.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"5000.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"10000.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"30000.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"60000.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"300000.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"600000.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"1.8e+06\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"3.6e+06\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"+Inf\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_sum{envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_count{envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "# HELP envoy_http_downstream_rq_time\n"
+        "# TYPE envoy_http_downstream_rq_time histogram\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"0.5\",envoy_http_conn_manager_prefix=\"admin\"} 0 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"1.0\",envoy_http_conn_manager_prefix=\"admin\"} 0 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"5.0\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"10.0\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"25.0\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"50.0\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"100.0\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"250.0\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"500.0\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"1000.0\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"2500.0\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"5000.0\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"10000.0\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"30000.0\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"60000.0\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"300000.0\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"600000.0\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"1.8e+06\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"3.6e+06\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"+Inf\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
+        "envoy_http_downstream_rq_time_sum{envoy_http_conn_manager_prefix=\"admin\"} 25.5 0\n"
+        "envoy_http_downstream_rq_time_count{envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"0.5\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"1.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"5.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"10.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"25.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"50.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"100.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"250.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"500.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"1000.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"2500.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"5000.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"10000.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"30000.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"60000.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"300000.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"600000.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"1.8e+06\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"3.6e+06\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"+Inf\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_rq_time_sum{envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_rq_time_count{envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "# HELP envoy_listener_admin_downstream_cx_length_ms\n"
+        "# TYPE envoy_listener_admin_downstream_cx_length_ms histogram\n"
+        "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"0.5\"} 0 0\n"
+        "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"1.0\"} 0 0\n"
+        "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"5.0\"} 0 0\n"
+        "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"10.0\"} 0 0\n"
+        "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"25.0\"} 1 0\n"
+        "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"50.0\"} 1 0\n"
+        "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"100.0\"} 1 0\n"
+        "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"250.0\"} 1 0\n"
+        "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"500.0\"} 1 0\n"
+        "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"1000.0\"} 1 0\n"
+        "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"2500.0\"} 1 0\n"
+        "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"5000.0\"} 1 0\n"
+        "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"10000.0\"} 1 0\n"
+        "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"30000.0\"} 1 0\n"
+        "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"60000.0\"} 1 0\n"
+        "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"300000.0\"} 1 0\n"
+        "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"600000.0\"} 1 0\n"
+        "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"1.8e+06\"} 1 0\n"
+        "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"3.6e+06\"} 1 0\n"
+        "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"+Inf\"} 1 0\n"
+        "envoy_listener_admin_downstream_cx_length_ms_sum 15.5 0\n"
+        "envoy_listener_admin_downstream_cx_length_ms_count 1 0\n"
+        "# HELP envoy_listener_downstream_cx_length_ms\n"
+        "# TYPE envoy_listener_downstream_cx_length_ms histogram\n"
+        "envoy_listener_downstream_cx_length_ms_bucket{le=\"0.5\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
+        "envoy_listener_downstream_cx_length_ms_bucket{le=\"1.0\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
+        "envoy_listener_downstream_cx_length_ms_bucket{le=\"5.0\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
+        "envoy_listener_downstream_cx_length_ms_bucket{le=\"10.0\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
+        "envoy_listener_downstream_cx_length_ms_bucket{le=\"25.0\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
+        "envoy_listener_downstream_cx_length_ms_bucket{le=\"50.0\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
+        "envoy_listener_downstream_cx_length_ms_bucket{le=\"100.0\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
+        "envoy_listener_downstream_cx_length_ms_bucket{le=\"250.0\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
+        "envoy_listener_downstream_cx_length_ms_bucket{le=\"500.0\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
+        "envoy_listener_downstream_cx_length_ms_bucket{le=\"1000.0\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
+        "envoy_listener_downstream_cx_length_ms_bucket{le=\"2500.0\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
+        "envoy_listener_downstream_cx_length_ms_bucket{le=\"5000.0\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
+        "envoy_listener_downstream_cx_length_ms_bucket{le=\"10000.0\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
+        "envoy_listener_downstream_cx_length_ms_bucket{le=\"30000.0\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
+        "envoy_listener_downstream_cx_length_ms_bucket{le=\"60000.0\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
+        "envoy_listener_downstream_cx_length_ms_bucket{le=\"300000.0\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
+        "envoy_listener_downstream_cx_length_ms_bucket{le=\"600000.0\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
+        "envoy_listener_downstream_cx_length_ms_bucket{le=\"1.8e+06\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
+        "envoy_listener_downstream_cx_length_ms_bucket{le=\"3.6e+06\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
+        "envoy_listener_downstream_cx_length_ms_bucket{le=\"+Inf\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
+        "envoy_listener_downstream_cx_length_ms_sum{envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
+        "envoy_listener_downstream_cx_length_ms_count{envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
+        "# HELP envoy_listener_manager_lds_update_duration\n"
+        "# TYPE envoy_listener_manager_lds_update_duration histogram\n"
+        "envoy_listener_manager_lds_update_duration_bucket{le=\"0.5\"} 0 0\n"
+        "envoy_listener_manager_lds_update_duration_bucket{le=\"1.0\"} 0 0\n"
+        "envoy_listener_manager_lds_update_duration_bucket{le=\"5.0\"} 0 0\n"
+        "envoy_listener_manager_lds_update_duration_bucket{le=\"10.0\"} 0 0\n"
+        "envoy_listener_manager_lds_update_duration_bucket{le=\"25.0\"} 0 0\n"
+        "envoy_listener_manager_lds_update_duration_bucket{le=\"50.0\"} 0 0\n"
+        "envoy_listener_manager_lds_update_duration_bucket{le=\"100.0\"} 0 0\n"
+        "envoy_listener_manager_lds_update_duration_bucket{le=\"250.0\"} 0 0\n"
+        "envoy_listener_manager_lds_update_duration_bucket{le=\"500.0\"} 0 0\n"
+        "envoy_listener_manager_lds_update_duration_bucket{le=\"1000.0\"} 0 0\n"
+        "envoy_listener_manager_lds_update_duration_bucket{le=\"2500.0\"} 0 0\n"
+        "envoy_listener_manager_lds_update_duration_bucket{le=\"5000.0\"} 0 0\n"
+        "envoy_listener_manager_lds_update_duration_bucket{le=\"10000.0\"} 0 0\n"
+        "envoy_listener_manager_lds_update_duration_bucket{le=\"30000.0\"} 0 0\n"
+        "envoy_listener_manager_lds_update_duration_bucket{le=\"60000.0\"} 0 0\n"
+        "envoy_listener_manager_lds_update_duration_bucket{le=\"300000.0\"} 0 0\n"
+        "envoy_listener_manager_lds_update_duration_bucket{le=\"600000.0\"} 0 0\n"
+        "envoy_listener_manager_lds_update_duration_bucket{le=\"1.8e+06\"} 0 0\n"
+        "envoy_listener_manager_lds_update_duration_bucket{le=\"3.6e+06\"} 0 0\n"
+        "envoy_listener_manager_lds_update_duration_bucket{le=\"+Inf\"} 0 0\n"
+        "envoy_listener_manager_lds_update_duration_sum 0 0\n"
+        "envoy_listener_manager_lds_update_duration_count 0 0\n"
+        "# HELP envoy_sds_tls_sds_update_duration\n"
+        "# TYPE envoy_sds_tls_sds_update_duration histogram\n"
+        "envoy_sds_tls_sds_update_duration_bucket{le=\"0.5\"} 0 0\n"
+        "envoy_sds_tls_sds_update_duration_bucket{le=\"1.0\"} 0 0\n"
+        "envoy_sds_tls_sds_update_duration_bucket{le=\"5.0\"} 0 0\n"
+        "envoy_sds_tls_sds_update_duration_bucket{le=\"10.0\"} 0 0\n"
+        "envoy_sds_tls_sds_update_duration_bucket{le=\"25.0\"} 0 0\n"
+        "envoy_sds_tls_sds_update_duration_bucket{le=\"50.0\"} 0 0\n"
+        "envoy_sds_tls_sds_update_duration_bucket{le=\"100.0\"} 0 0\n"
+        "envoy_sds_tls_sds_update_duration_bucket{le=\"250.0\"} 0 0\n"
+        "envoy_sds_tls_sds_update_duration_bucket{le=\"500.0\"} 0 0\n"
+        "envoy_sds_tls_sds_update_duration_bucket{le=\"1000.0\"} 0 0\n"
+        "envoy_sds_tls_sds_update_duration_bucket{le=\"2500.0\"} 0 0\n"
+        "envoy_sds_tls_sds_update_duration_bucket{le=\"5000.0\"} 0 0\n"
+        "envoy_sds_tls_sds_update_duration_bucket{le=\"10000.0\"} 0 0\n"
+        "envoy_sds_tls_sds_update_duration_bucket{le=\"30000.0\"} 0 0\n"
+        "envoy_sds_tls_sds_update_duration_bucket{le=\"60000.0\"} 0 0\n"
+        "envoy_sds_tls_sds_update_duration_bucket{le=\"300000.0\"} 0 0\n"
+        "envoy_sds_tls_sds_update_duration_bucket{le=\"600000.0\"} 0 0\n"
+        "envoy_sds_tls_sds_update_duration_bucket{le=\"1.8e+06\"} 0 0\n"
+        "envoy_sds_tls_sds_update_duration_bucket{le=\"3.6e+06\"} 0 0\n"
+        "envoy_sds_tls_sds_update_duration_bucket{le=\"+Inf\"} 0 0\n"
+        "envoy_sds_tls_sds_update_duration_sum 0 0\n"
+        "envoy_sds_tls_sds_update_duration_count 0 0\n"
+        "# HELP envoy_server_initialization_time_ms\n"
+        "# TYPE envoy_server_initialization_time_ms histogram\n"
+        "envoy_server_initialization_time_ms_bucket{le=\"0.5\"} 0 0\n"
+        "envoy_server_initialization_time_ms_bucket{le=\"1.0\"} 0 0\n"
+        "envoy_server_initialization_time_ms_bucket{le=\"5.0\"} 0 0\n"
+        "envoy_server_initialization_time_ms_bucket{le=\"10.0\"} 0 0\n"
+        "envoy_server_initialization_time_ms_bucket{le=\"25.0\"} 0 0\n"
+        "envoy_server_initialization_time_ms_bucket{le=\"50.0\"} 1 0\n"
+        "envoy_server_initialization_time_ms_bucket{le=\"100.0\"} 1 0\n"
+        "envoy_server_initialization_time_ms_bucket{le=\"250.0\"} 1 0\n"
+        "envoy_server_initialization_time_ms_bucket{le=\"500.0\"} 1 0\n"
+        "envoy_server_initialization_time_ms_bucket{le=\"1000.0\"} 1 0\n"
+        "envoy_server_initialization_time_ms_bucket{le=\"2500.0\"} 1 0\n"
+        "envoy_server_initialization_time_ms_bucket{le=\"5000.0\"} 1 0\n"
+        "envoy_server_initialization_time_ms_bucket{le=\"10000.0\"} 1 0\n"
+        "envoy_server_initialization_time_ms_bucket{le=\"30000.0\"} 1 0\n"
+        "envoy_server_initialization_time_ms_bucket{le=\"60000.0\"} 1 0\n"
+        "envoy_server_initialization_time_ms_bucket{le=\"300000.0\"} 1 0\n"
+        "envoy_server_initialization_time_ms_bucket{le=\"600000.0\"} 1 0\n"
+        "envoy_server_initialization_time_ms_bucket{le=\"1.8e+06\"} 1 0\n"
+        "envoy_server_initialization_time_ms_bucket{le=\"3.6e+06\"} 1 0\n"
+        "envoy_server_initialization_time_ms_bucket{le=\"+Inf\"} 1 0\n"
+        "envoy_server_initialization_time_ms_sum 30.5 0\n"
+        "envoy_server_initialization_time_ms_count 1 0\n"
+        ;
+
+    status = cmt_decode_prometheus_create(&cmt, in_buf, in_size, &opts);
+    TEST_CHECK(status == 0);
+    if (status) {
+        fprintf(stderr, "PARSE ERROR:\n======\n%s\n======\n", errbuf);
+    }
+    else {
+        result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
+        status = strcmp(result, expected);
+        TEST_CHECK(status == 0);
+        if (status) {
+            fprintf(stderr, "EXPECTED:\n======\n%s\n======\nRESULT:\n======\n%s\n======\n", expected, result);
+        }
+    }
+
+    cmt_sds_destroy(in_buf);
+    cmt_sds_destroy(result);
+    cmt_decode_prometheus_destroy(cmt);
+}
+
+void test_override_timestamp()
+{
+    int status;
+    cmt_sds_t result = NULL;
+    struct cmt *cmt;
+    struct cmt_decode_prometheus_parse_opts opts;
+    memset(&opts, 0, sizeof(opts));
+    opts.override_timestamp = 123;
+    const char in_buf[] =
+        "# HELP hikaricp_connections_timeout_total Connection timeout total count\n"
+        "# TYPE hikaricp_connections_timeout_total counter\n"
+        "hikaricp_connections_timeout_total{pool=\"mcadb\"} 0 0\n"
+        "# HELP rabbitmq_consumed_total\n"
+        "# TYPE rabbitmq_consumed_total counter\n"
+        "rabbitmq_consumed_total{name=\"rabbit\"} 0 0\n"
+        "# HELP rabbitmq_failed_to_publish_total\n"
+        "# TYPE rabbitmq_failed_to_publish_total counter\n"
+        "rabbitmq_failed_to_publish_total{name=\"rabbit\"} 0 0\n"
+        "# HELP rabbitmq_acknowledged_published_total\n"
+        "# TYPE rabbitmq_acknowledged_published_total counter\n"
+        "rabbitmq_acknowledged_published_total{name=\"rabbit\"} 0 0\n"
+        "# HELP tomcat_sessions_rejected_sessions_total\n"
+        "# TYPE tomcat_sessions_rejected_sessions_total counter\n"
+        "tomcat_sessions_rejected_sessions_total 0 0\n"
+        "# A histogram, which has a pretty complex representation in the text format:\n"
+        "# HELP http_request_duration_seconds_bucket A histogram of the request duration.\n"
+        "# TYPE http_request_duration_seconds_bucket counter\n"
+        "http_request_duration_seconds_bucket{le=\"0.05\"} 24054\n"
+        "http_request_duration_seconds_bucket{le=\"0.1\"} 33444\n"
+        "http_request_duration_seconds_bucket{le=\"0.2\"} 100392\n"
+        "http_request_duration_seconds_bucket{le=\"0.5\"} 129389\n"
+        "http_request_duration_seconds_bucket{le=\"1\"} 133988\n"
+        "http_request_duration_seconds_bucket{le=\"+Inf\"} 144320\n"
+        "http_request_duration_seconds_sum 53423\n"
+        "http_request_duration_seconds_count 144320\n"
+        ;
+
+    const char expected[] =
+        "# HELP hikaricp_connections_timeout_total Connection timeout total count\n"
+        "# TYPE hikaricp_connections_timeout_total counter\n"
+        "hikaricp_connections_timeout_total{pool=\"mcadb\"} 0 123\n"
+        "# HELP http_request_duration_seconds_bucket A histogram of the request duration.\n"
+        "# TYPE http_request_duration_seconds_bucket counter\n"
+        "http_request_duration_seconds_bucket{le=\"0.05\"} 24054 123\n"
+        "http_request_duration_seconds_bucket{le=\"0.1\"} 33444 123\n"
+        "http_request_duration_seconds_bucket{le=\"0.2\"} 100392 123\n"
+        "http_request_duration_seconds_bucket{le=\"0.5\"} 129389 123\n"
+        "http_request_duration_seconds_bucket{le=\"1\"} 133988 123\n"
+        "http_request_duration_seconds_bucket{le=\"+Inf\"} 144320 123\n"
+        "# HELP rabbitmq_consumed_total\n"
+        "# TYPE rabbitmq_consumed_total untyped\n"
+        "rabbitmq_consumed_total{name=\"rabbit\"} 0 123\n"
+        "# HELP rabbitmq_failed_to_publish_total\n"
+        "# TYPE rabbitmq_failed_to_publish_total untyped\n"
+        "rabbitmq_failed_to_publish_total{name=\"rabbit\"} 0 123\n"
+        "# HELP rabbitmq_acknowledged_published_total\n"
+        "# TYPE rabbitmq_acknowledged_published_total untyped\n"
+        "rabbitmq_acknowledged_published_total{name=\"rabbit\"} 0 123\n"
+        "# HELP tomcat_sessions_rejected_sessions_total\n"
+        "# TYPE tomcat_sessions_rejected_sessions_total untyped\n"
+        "tomcat_sessions_rejected_sessions_total 0 123\n"
+        "# HELP http_request_duration_seconds_sum\n"
+        "# TYPE http_request_duration_seconds_sum untyped\n"
+        "http_request_duration_seconds_sum 53423 123\n"
+        "# HELP http_request_duration_seconds_count\n"
+        "# TYPE http_request_duration_seconds_count untyped\n"
+        "http_request_duration_seconds_count 144320 123\n"
+        ;
+
+    cmt_initialize();
+    status = cmt_decode_prometheus_create(&cmt, in_buf, 0, &opts);
+    TEST_CHECK(status == 0);
+    if (!status) {
+        result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
+        status = strcmp(result, expected);
+        TEST_CHECK(status == 0);
+        if (status) {
+            fprintf(stderr, "EXPECTED:\n======\n%s\n======\nRESULT:\n======\n%s\n======\n", expected, result);
+        }
+    }
+    cmt_sds_destroy(result);
+    cmt_decode_prometheus_destroy(cmt);
+}
+
 TEST_LIST = {
     {"header_help", test_header_help},
     {"header_type", test_header_type},
@@ -1042,5 +1384,7 @@ TEST_LIST = {
     {"issue_fluent_bit_5541", test_issue_fluent_bit_5541},
     {"issue_fluent_bit_5894", test_issue_fluent_bit_5894},
     {"empty_metrics", test_empty_metrics},
+    {"issue_fluent_bit_6021", test_issue_fluent_bit_6021},
+    {"override_timestamp", test_override_timestamp},
     { 0 }
 };
