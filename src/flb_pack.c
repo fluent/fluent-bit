@@ -822,18 +822,17 @@ int flb_pack_to_json_date_type(const char *str)
 }
 
 
-static int msgpack_pack_formatted_datetime(struct tm tm, flb_sds_t out_buf, char time_formatted[],
+static int msgpack_pack_formatted_datetime(flb_sds_t out_buf, char time_formatted[], int max_len,
                                            msgpack_packer* tmp_pck, struct flb_time* tms,
                                            const char *date_format,
                                            const char *time_format)
 {
     int len;
-    int max_len;
     size_t s;
+    struct tm tm;
 
     gmtime_r(&tms->tm.tv_sec, &tm);
 
-    max_len = sizeof(time_formatted);
     s = strftime(time_formatted, max_len,
                  date_format, &tm);
     if (!s) {
@@ -878,7 +877,6 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
     msgpack_object *obj;
     msgpack_object *k;
     msgpack_object *v;
-    struct tm tm;
     struct flb_time tms;
 
     /* For json lines and streams mode we need a pre-allocated buffer */
@@ -953,7 +951,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
                 msgpack_pack_double(&tmp_pck, flb_time_to_double(&tms));
                 break;
             case FLB_PACK_JSON_DATE_JAVA_SQL_TIMESTAMP:
-                if (msgpack_pack_formatted_datetime(tm, out_buf, time_formatted, &tmp_pck, &tms,
+                if (msgpack_pack_formatted_datetime(out_buf, time_formatted, sizeof(time_formatted), &tmp_pck, &tms,
                                                     FLB_PACK_JSON_DATE_JAVA_SQL_TIMESTAMP_FMT, ".%06" PRIu64)) {
                     flb_sds_destroy(out_buf);
                     msgpack_sbuffer_destroy(&tmp_sbuf);
@@ -962,7 +960,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
                 }
                 break;
             case FLB_PACK_JSON_DATE_ISO8601:
-                if (msgpack_pack_formatted_datetime(tm, out_buf, time_formatted, &tmp_pck, &tms,
+                if (msgpack_pack_formatted_datetime(out_buf, time_formatted, sizeof(time_formatted), &tmp_pck, &tms,
                                                     FLB_PACK_JSON_DATE_ISO8601_FMT, ".%06" PRIu64 "Z")) {
                     flb_sds_destroy(out_buf);
                     msgpack_sbuffer_destroy(&tmp_sbuf);
