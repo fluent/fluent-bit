@@ -148,7 +148,7 @@ WORKDIR /tmp/fluent-bit/build/
 # CMake configuration variables
 # Unused
 ARG CFLAGS
-ARG CMAKE_INSTALL_PREFIX=/opt/td-agent-bit/
+ARG CMAKE_INSTALL_PREFIX=/opt/fluent-bit/
 ARG CMAKE_INSTALL_SYSCONFDIR=/etc/
 ARG FLB_TD=Off
 ARG FLB_RELEASE=On
