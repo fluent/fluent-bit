@@ -40,7 +40,7 @@ start:
   | START_LABELS labels
   | START_SAMPLES samples
   | metrics {
-    if (finish_metric(context, true)) {
+    if (finish_metric(context, true, NULL)) {
         YYABORT;
     }
   }
@@ -66,14 +66,18 @@ header:
 
 help:
     HELP METRIC_DOC {
-        parse_metric_name(context, $1);
+        if (parse_metric_name(context, $1)) {
+            YYABORT;
+        }
         context->metric.docstring = $2;
     }
 ;
 
 type:
     TYPE metric_type {
-        parse_metric_name(context, $1);
+        if (parse_metric_name(context, $1)) {
+            YYABORT;
+        }
         context->metric.type = $2;
     }
 ;
@@ -104,7 +108,8 @@ sample:
 ;
 
 sample_data:
-    '{' labels '}' values
+    '{' '}' values
+  | '{' labels '}' values
   | values
 ;
 
