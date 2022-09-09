@@ -101,10 +101,9 @@ ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
 FROM quay.io/centos/centos:stream9 as centos-9-base
 
 # Add for the YAML development libraries
-RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-enabled crb
-
-# Add our dependencies
-RUN dnf -y install rpm-build ca-certificates gcc gcc-c++ cmake make bash \
+# hadolint ignore=DL3033
+RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-enabled crb && \
+    dnf -y install rpm-build ca-certificates gcc gcc-c++ cmake make bash \
                    wget unzip systemd-devel wget flex bison \
                    postgresql-libs postgresql-devel postgresql-server postgresql \
                    cyrus-sasl-lib openssl openssl-libs openssl-devel libyaml-devel && \
@@ -113,15 +112,15 @@ RUN dnf -y install rpm-build ca-certificates gcc gcc-c++ cmake make bash \
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
 
+# hadolint ignore=DL3029
 FROM --platform=arm64 quay.io/centos/centos:stream9 as centos-9.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
 # Add for the YAML development libraries
-RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-enabled crb
-
-# Add our dependencies
-RUN dnf -y install rpm-build ca-certificates gcc gcc-c++ cmake make bash \
+# hadolint ignore=DL3033
+RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-enabled crb && \
+    dnf -y install rpm-build ca-certificates gcc gcc-c++ cmake make bash \
                    wget unzip systemd-devel wget flex bison \
                    postgresql-libs postgresql-devel postgresql-server postgresql \
                    cyrus-sasl-lib openssl openssl-libs openssl-devel libyaml-devel && \
