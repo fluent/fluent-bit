@@ -101,7 +101,7 @@ ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
 FROM quay.io/centos/centos:stream9 as centos-9-base
 
 # Add for the YAML development libraries
-# hadolint ignore=DL3033
+# hadolint ignore=DL3033,DL3041
 RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-enabled crb && \
     dnf -y install rpm-build ca-certificates gcc gcc-c++ cmake make bash \
                    wget unzip systemd-devel wget flex bison \
@@ -118,7 +118,7 @@ FROM --platform=arm64 quay.io/centos/centos:stream9 as centos-9.arm64v8-base
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
 # Add for the YAML development libraries
-# hadolint ignore=DL3033
+# hadolint ignore=DL3033,DL3041
 RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-enabled crb && \
     dnf -y install rpm-build ca-certificates gcc gcc-c++ cmake make bash \
                    wget unzip systemd-devel wget flex bison \
