@@ -15,16 +15,14 @@ execute_process(
   COMMAND security find-certificate -a -p /Library/Keychains/System.keychain
   RESULT_VARIABLE SECURITY_SYSTEM_RESULT
   OUTPUT_VARIABLE SECURITY_SYSTEM_CERTS
-  OUTPUT_STRIP_TRAILING_WHITESPACE
-  )
+  ) # Don't strip trailing a white space and newline in the end of exported certificate.
 file(WRITE ${MACOS_ROOT_CERT} ${SECURITY_SYSTEM_CERTS})
 
 execute_process(
   COMMAND security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain
   RESULT_VARIABLE SECURITY_ROOT_RESULT
   OUTPUT_VARIABLE SECURITY_ROOT_CERTS
-  OUTPUT_STRIP_TRAILING_WHITESPACE
-  )
+  ) # Don't strip trailing a white space and newline in the end of exported certificate.
 file(APPEND ${MACOS_ROOT_CERT} ${SECURITY_ROOT_CERTS})
 
 install(FILES ${MACOS_ROOT_CERT} COMPONENT binary DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/certs)
