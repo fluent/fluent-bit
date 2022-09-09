@@ -34,8 +34,6 @@
 #define CMT_DECODE_PROMETHEUS_PARSE_VALUE_FAILED         60
 #define CMT_DECODE_PROMETHEUS_PARSE_TIMESTAMP_FAILED     70
 
-#define CMT_DECODE_PROMETHEUS_DUPLICATE_SUM_COUNT        10000
-
 #define CMT_DECODE_PROMETHEUS_MAX_LABEL_COUNT 128
 
 enum cmt_decode_prometheus_context_sample_type {
@@ -70,6 +68,7 @@ struct cmt_decode_prometheus_context_metric {
 struct cmt_decode_prometheus_parse_opts {
     int start_token;
     uint64_t default_timestamp;
+    uint64_t override_timestamp;
     char *errbuf;
     size_t errbuf_size;
 };

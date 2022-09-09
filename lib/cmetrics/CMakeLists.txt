@@ -31,20 +31,21 @@ endif()
 # CMetrics Version
 set(CMT_VERSION_MAJOR  0)
 set(CMT_VERSION_MINOR  3)
-set(CMT_VERSION_PATCH  6)
+set(CMT_VERSION_PATCH  7)
 set(CMT_VERSION_STR "${CMT_VERSION_MAJOR}.${CMT_VERSION_MINOR}.${CMT_VERSION_PATCH}")
 
-# Define __FILENAME__ consistently across Operating Systems
+# Define __CMT_FILENAME__ consistently across Operating Systems
 if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__='\"$(subst ${CMAKE_SOURCE_DIR}/,,$(abspath $<))\"'")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__CMT_FILENAME__='\"$(subst ${CMAKE_SOURCE_DIR}/,,$(abspath $<))\"'")
 else()
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__=__FILE__")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__CMT_FILENAME__=__FILE__")
 endif()
 
 # Configuration options
-option(CMT_DEV             "Enable development mode"                   No)
-option(CMT_TESTS           "Enable unit testing"                       No)
-option(CMT_INSTALL_TARGETS "Enable subdirectory library installations" Yes)
+option(CMT_DEV                       "Enable development mode"                   No)
+option(CMT_TESTS                     "Enable unit testing"                       No)
+option(CMT_INSTALL_TARGETS           "Enable subdirectory library installations" Yes)
+option(CMT_ENABLE_PROMETHEUS_DECODER "Enable prometheus decoder"                 Yes)
 
 if(CMT_DEV)
   set(CMT_TESTS   Yes)
@@ -119,18 +120,20 @@ check_c_source_compiles("
      return 0;
   }" CMT_HAVE_MSGPACK)
 
-# Flex and Bison: check if the variables has not been defined before by
-# a parent project to avoid conflicts.
-if(NOT FLEX_FOUND)
-  find_package(FLEX 2)
-endif()
+if(CMT_ENABLE_PROMETHEUS_DECODER)
+    # Flex and Bison: check if the variables has not been defined before by
+    # a parent project to avoid conflicts.
+    if(NOT FLEX_FOUND)
+      find_package(FLEX 2)
+    endif()
 
-if(NOT BISON_FOUND)
-  find_package(BISON 3)
-endif()
+    if(NOT BISON_FOUND)
+      find_package(BISON 3)
+    endif()
 
-if(FLEX_FOUND AND BISON_FOUND)
-    set(CMT_BUILD_PROMETHEUS_DECODER 1)
+    if(FLEX_FOUND AND BISON_FOUND)
+        set(CMT_BUILD_PROMETHEUS_DECODER 1)
+    endif()
 endif()
 
 configure_file(

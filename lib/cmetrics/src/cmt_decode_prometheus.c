@@ -270,7 +270,10 @@ static int parse_value_timestamp(
                 "value", sample->value1);
     }
 
-    if (!strlen(sample->value2)) {
+    if (context->opts.override_timestamp) {
+        *timestamp = context->opts.override_timestamp;
+    }
+    else if (!strlen(sample->value2)) {
         /* No timestamp was specified, use default value */
         *timestamp = context->opts.default_timestamp;
         return 0;
@@ -454,7 +457,7 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
      * - sum
      * - count */
     bucket_count = mk_list_size(&context->metric.samples) - 3;
-    timestamp = 0;
+    timestamp = context->opts.override_timestamp;
 
     bucket_defaults = calloc(bucket_count + 1, sizeof(*bucket_defaults));
     if (!bucket_defaults) {
@@ -589,16 +592,16 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
         timestamp = context->opts.default_timestamp;
     }
 
-    cmt_buckets = cmt_histogram_buckets_create_size(buckets, bucket_count);
-    if (!cmt_buckets) {
-        ret = report_error(context,
-                CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
-                "cmt_histogram_buckets_create_size failed");
-        goto end;
-    }
-
     h = context->current.histogram;
     if (!h) {
+        cmt_buckets = cmt_histogram_buckets_create_size(buckets, bucket_count);
+        if (!cmt_buckets) {
+            ret = report_error(context,
+                               CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
+                               "cmt_histogram_buckets_create_size failed");
+            goto end;
+        }
+
         h = cmt_histogram_create(context->cmt,
                                  context->metric.ns,
                                  context->metric.subsystem,
@@ -670,7 +673,7 @@ static int add_metric_summary(struct cmt_decode_prometheus_context *context)
      * - sum
      * - count */
     quantile_count = mk_list_size(&context->metric.samples) - 2;
-    timestamp = 0;
+    timestamp = context->opts.override_timestamp;
 
     quantile_defaults = calloc(quantile_count, sizeof(*quantile_defaults));
     if (!quantile_defaults) {
@@ -853,7 +856,8 @@ end:
 }
 
 static int finish_metric(struct cmt_decode_prometheus_context *context,
-                         bool reset_summary)
+                         bool reset_summary,
+                         cmt_sds_t current_metric_name)
 {
     int rv = 0;
 
@@ -881,6 +885,15 @@ static int finish_metric(struct cmt_decode_prometheus_context *context,
 
 end:
     reset_context(context, reset_summary);
+
+    if (current_metric_name) {
+        context->metric.name_orig = current_metric_name;
+        rv = split_metric_name(context,
+                               current_metric_name,
+                               &(context->metric.ns),
+                               &(context->metric.subsystem),
+                               &(context->metric.name));
+    }
     return rv;
 }
 
@@ -894,26 +907,29 @@ static int finish_duplicate_histogram_summary_sum_count(
     int current_metric_type;
     cmt_sds_t current_metric_docstring;
 
+    if (type == CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_COUNT) {
+        cmt_sds_set_len(metric_name, cmt_sds_len(metric_name) - 6);
+    } else if (type == CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_SUM) {
+        cmt_sds_set_len(metric_name, cmt_sds_len(metric_name) - 4);
+    } else {
+        cmt_sds_set_len(metric_name, cmt_sds_len(metric_name) - 7);
+    }
+    metric_name[cmt_sds_len(metric_name)] = 0;
+
     current_metric_type = context->metric.type;
     current_metric_docstring = cmt_sds_create(context->metric.docstring);
 
-    rv = finish_metric(context, false);
+    rv = finish_metric(context, false, metric_name);
     if (rv) {
         cmt_sds_destroy(current_metric_docstring);
         return rv;
-    }
-
-    if (type == CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_COUNT) {
-        metric_name[cmt_sds_len(metric_name) - 6] = 0;
-    } else {
-        metric_name[cmt_sds_len(metric_name) - 4] = 0;
     }
 
     context->metric.type = current_metric_type;
     context->metric.docstring = current_metric_docstring;
     context->metric.current_sample_type = type;
 
-    return CMT_DECODE_PROMETHEUS_DUPLICATE_SUM_COUNT;
+    return 0;
 }
 
 static int parse_histogram_summary_name(
@@ -933,15 +949,16 @@ static int parse_histogram_summary_name(
     if (current_name_len < parsed_name_len) {
         /* current name length cannot be less than the length already parsed. That means
          * another metric has started */
-        return finish_metric(context, true);
+        return finish_metric(context, true, metric_name);
     }
 
     if (strncmp(context->metric.name_orig, metric_name, parsed_name_len)) {
         /* the name prefix must be the same or we are starting a new metric */
-        return finish_metric(context, true);
+        return finish_metric(context, true, metric_name);
     }
     else if (parsed_name_len == current_name_len) {
         /* parsing HELP after TYPE */
+        cmt_sds_destroy(metric_name);
         return 0;
     }
 
@@ -965,6 +982,13 @@ static int parse_histogram_summary_name(
 
     /* invalid histogram/summary suffix, treat it as a different metric */
     if (!strcmp(metric_name + parsed_name_len, "_bucket")) {
+        if (sum_found && count_found) {
+            /* already found both sum and count, so this is a new metric */
+            return finish_duplicate_histogram_summary_sum_count(
+                    context,
+                    metric_name,
+                    CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_BUCKET);
+        }
         context->metric.current_sample_type = CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_BUCKET;
     }
     else if (!strcmp(metric_name + parsed_name_len, "_sum")) {
@@ -991,10 +1015,11 @@ static int parse_histogram_summary_name(
     }
     else {
         /* invalid histogram/summary suffix, treat it as a different metric */
-        return finish_metric(context, true);
+        return finish_metric(context, true, metric_name);
     }
 
     /* still in the same metric */
+    cmt_sds_destroy(metric_name);
     return 0;
 }
 
@@ -1006,18 +1031,16 @@ static int parse_metric_name(
 
     if (context->metric.name_orig) {
         if (strcmp(context->metric.name_orig, metric_name)) {
-            if (context->metric.type == HISTOGRAM ||
-                    context->metric.type == SUMMARY) {
+            if (context->metric.type == HISTOGRAM || context->metric.type == SUMMARY) {
                 ret = parse_histogram_summary_name(context, metric_name);
                 if (!ret) {
                     /* bucket/sum/count parsed */
-                    cmt_sds_destroy(metric_name);
                     return ret;
                 }
             }
             else {
                 /* new metric name means the current metric is finished */
-                ret = finish_metric(context, true);
+                return finish_metric(context, true, metric_name);
             }
         }
         else {
@@ -1027,7 +1050,7 @@ static int parse_metric_name(
         }
     }
 
-    if (!ret || ret == CMT_DECODE_PROMETHEUS_DUPLICATE_SUM_COUNT) {
+    if (!ret) {
         context->metric.name_orig = metric_name;
         ret = split_metric_name(context, metric_name,
                 &(context->metric.ns),
