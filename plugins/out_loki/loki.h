@@ -66,6 +66,8 @@ struct flb_loki {
     struct mk_list *label_keys;
     struct mk_list *remove_keys;
 
+    flb_sds_t label_map_path;
+
     /* Private */
     int tcp_port;
     char *tcp_host;
