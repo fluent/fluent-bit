@@ -1603,7 +1603,7 @@ void cb_ra_create_str_from_list()
             i++;
         }
 
-        ret_str = flb_ra_create_str_from_list(list, FLB_FALSE);
+        ret_str = flb_ra_create_str_from_list(list);
         if (!TEST_CHECK(ret_str != NULL)) {
             TEST_MSG("%d: flb_ra_create_str_from failed", case_i);
             flb_sds_list_destroy(list);
@@ -1624,7 +1624,7 @@ void cb_ra_create_str_from_list()
         TEST_MSG("flb_sds_list_create failed");
         exit(EXIT_FAILURE);
     }
-    ret_str = flb_ra_create_str_from_list(list, FLB_FALSE);
+    ret_str = flb_ra_create_str_from_list(list);
     if (!TEST_CHECK(ret_str == NULL)) {
         TEST_MSG("flb_ra_create_str_from should be failed");
         flb_sds_list_destroy(list);
