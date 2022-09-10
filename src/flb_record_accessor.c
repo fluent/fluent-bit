@@ -338,7 +338,7 @@ struct flb_record_accessor *flb_ra_create(char *str, int translate_env)
      e.g. {"aa", "bb", "cc", NULL} -> "$aa['bb']['cc']"
     Return value should be freed using flb_sds_destroy after using.
  */
-flb_sds_t flb_ra_create_str_from_list(struct flb_sds_list *str_list, int translate_env)
+flb_sds_t flb_ra_create_str_from_list(struct flb_sds_list *str_list)
 {
     int i = 0;
     int ret_i = 0;
@@ -397,6 +397,23 @@ flb_sds_t flb_ra_create_str_from_list(struct flb_sds_list *str_list, int transla
     flb_sds_list_destroy_str_array(strs);
 
     return str;
+}
+
+struct flb_record_accessor *flb_ra_create_from_list(struct flb_sds_list *str_list, int translate_env)
+{
+    flb_sds_t tmp = NULL;
+    struct flb_record_accessor *ret = NULL;
+
+    tmp = flb_ra_create_str_from_list(str_list);
+    if (tmp == NULL) {
+        flb_errno();
+        return NULL;
+    }
+
+    ret = flb_ra_create(tmp, translate_env);
+    flb_sds_destroy(tmp);
+
+    return ret;
 }
 
 void flb_ra_dump(struct flb_record_accessor *ra)
