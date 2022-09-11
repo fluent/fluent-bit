@@ -26,7 +26,7 @@
 struct cmt_counter {
     struct cmt_opts opts;
     struct cmt_map *map;
-    struct mk_list _head;
+    struct cfl_list _head;
     struct cmt *cmt;
     int    allow_reset;
     int    aggregation_type;

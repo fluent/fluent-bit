@@ -41,7 +41,7 @@ void test_gauge()
     TEST_CHECK(g != NULL);
 
     /* Timestamp */
-    ts = cmt_time_now();
+    ts = cfl_time_now();
 
     /* Default value */
     ret = cmt_gauge_get_val(g, 0, NULL, &val);
@@ -83,7 +83,7 @@ void test_labels()
     int ret;
     double val;
     uint64_t ts;
-    cmt_sds_t prom;
+    cfl_sds_t prom;
     struct cmt *cmt;
     struct cmt_gauge *g;
 
@@ -98,7 +98,7 @@ void test_labels()
     TEST_CHECK(g != NULL);
 
     /* Timestamp */
-    ts = cmt_time_now();
+    ts = cfl_time_now();
 
     /*
      * Test 1: hash zero (no labels)

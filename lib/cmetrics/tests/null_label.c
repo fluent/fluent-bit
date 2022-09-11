@@ -21,7 +21,6 @@
 #include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_encode_prometheus.h>
 
-#include "cmetrics/cmt_sds.h"
 #include "cmt_tests.h"
 
 void test_labels()
@@ -36,7 +35,7 @@ void test_labels()
     c = cmt_counter_create(cmt, "test", "dummy", "labels", "testing labels",
                            6, (char *[]) {"A", "B", "C", "D", "E", "F"});
 
-    ts = cmt_time_now();
+    ts = cfl_time_now();
 
     ret = cmt_counter_get_val(c, 0, NULL, &val);
     TEST_CHECK(ret == -1);
@@ -83,7 +82,7 @@ void test_labels()
 
 void test_encoding()
 {
-    cmt_sds_t result;
+    cfl_sds_t result;
     struct cmt *cmt;
     struct cmt_counter *c;
 
@@ -99,7 +98,7 @@ void test_encoding()
         "# TYPE test_dummy_labels counter\n"
         "test_dummy_labels 2 0\n"
         ) == 0);
-    cmt_sds_destroy(result);
+    cfl_sds_destroy(result);
 
     cmt_counter_inc(c, 0, 6, (char *[]) {NULL,"b",NULL,NULL,NULL,NULL});
     result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
@@ -109,7 +108,7 @@ void test_encoding()
         "test_dummy_labels 2 0\n"
         "test_dummy_labels{B=\"b\"} 1 0\n"
         ) == 0);
-    cmt_sds_destroy(result);
+    cfl_sds_destroy(result);
 
     cmt_counter_inc(c, 0, 6, (char *[]) {NULL,"b",NULL,NULL,NULL,NULL});
     result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
@@ -119,7 +118,7 @@ void test_encoding()
         "test_dummy_labels 2 0\n"
         "test_dummy_labels{B=\"b\"} 2 0\n"
         ) == 0);
-    cmt_sds_destroy(result);
+    cfl_sds_destroy(result);
 
 
     cmt_counter_set(c, 0, 5, 6, (char *[]) {NULL,NULL,NULL,"d",NULL,NULL});
@@ -131,7 +130,7 @@ void test_encoding()
         "test_dummy_labels{B=\"b\"} 2 0\n"
         "test_dummy_labels{D=\"d\"} 5 0\n"
         ) == 0);
-    cmt_sds_destroy(result);
+    cfl_sds_destroy(result);
 
     cmt_counter_set(c, 0, 50, 6, (char *[]) {NULL,"b",NULL,"d",NULL,"f"});
     result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
@@ -143,7 +142,7 @@ void test_encoding()
         "test_dummy_labels{D=\"d\"} 5 0\n"
         "test_dummy_labels{B=\"b\",D=\"d\",F=\"f\"} 50 0\n"
         ) == 0);
-    cmt_sds_destroy(result);
+    cfl_sds_destroy(result);
 
     cmt_counter_inc(c, 0, 6, (char *[]) {"a","b","c","d","e","f"});
     result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
@@ -156,7 +155,7 @@ void test_encoding()
         "test_dummy_labels{B=\"b\",D=\"d\",F=\"f\"} 50 0\n"
         "test_dummy_labels{A=\"a\",B=\"b\",C=\"c\",D=\"d\",E=\"e\",F=\"f\"} 1 0\n"
         ) == 0);
-    cmt_sds_destroy(result);
+    cfl_sds_destroy(result);
 
     cmt_destroy(cmt);
 }

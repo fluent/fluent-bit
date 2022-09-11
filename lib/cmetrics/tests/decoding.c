@@ -122,9 +122,9 @@ static struct cmt *generate_encoder_test_data()
 
 void test_opentelemetry()
 {
-    cmt_sds_t   reference_prometheus_context;
-    cmt_sds_t   opentelemetry_context;
-    cmt_sds_t   prometheus_context;
+    cfl_sds_t   reference_prometheus_context;
+    cfl_sds_t   opentelemetry_context;
+    cfl_sds_t   prometheus_context;
     struct cmt *decoded_context;
     size_t      offset;
     int         result;
@@ -147,7 +147,7 @@ void test_opentelemetry()
         if (opentelemetry_context != NULL) {
             result = cmt_decode_opentelemetry_create(&decoded_context,
                                                      opentelemetry_context,
-                                                     cmt_sds_len(opentelemetry_context),
+                                                     cfl_sds_len(opentelemetry_context),
                                                      &offset);
             TEST_CHECK(result == 0);
 

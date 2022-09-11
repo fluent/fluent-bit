@@ -22,9 +22,8 @@
 #define CMT_ENCODE_PROMETHEUS_H
 
 #include <cmetrics/cmetrics.h>
-#include <cmetrics/cmt_sds.h>
 
-cmt_sds_t cmt_encode_prometheus_create(struct cmt *cmt, int add_timestamp);
-void cmt_encode_prometheus_destroy(cmt_sds_t text);
+cfl_sds_t cmt_encode_prometheus_create(struct cmt *cmt, int add_timestamp);
+void cmt_encode_prometheus_destroy(cfl_sds_t text);
 
 #endif

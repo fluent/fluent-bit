@@ -240,7 +240,7 @@ struct cmt_histogram *cmt_histogram_create(struct cmt *cmt,
         cmt_errno();
         return NULL;
     }
-    mk_list_add(&h->_head, &cmt->histograms);
+    cfl_list_add(&h->_head, &cmt->histograms);
 
     /* set buckets */
     if (buckets) {
@@ -284,7 +284,7 @@ struct cmt_histogram *cmt_histogram_create(struct cmt *cmt,
 
 int cmt_histogram_destroy(struct cmt_histogram *h)
 {
-    mk_list_del(&h->_head);
+    cfl_list_del(&h->_head);
     cmt_opts_exit(&h->opts);
 
     if (h->buckets) {
