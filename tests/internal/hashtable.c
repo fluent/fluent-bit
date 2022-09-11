@@ -4,8 +4,6 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_hash_table.h>
 
-#include <cfl/cfl.h>
-
 #include "flb_tests_internal.h"
 
 struct map {
