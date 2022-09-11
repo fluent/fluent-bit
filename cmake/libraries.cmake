@@ -1,4 +1,5 @@
 # List of bundled libraries
+set(FLB_PATH_LIB_CFL         "lib/cfl")
 set(FLB_PATH_LIB_CO          "lib/flb_libco")
 set(FLB_PATH_LIB_RBTREE      "lib/rbtree")
 set(FLB_PATH_LIB_MSGPACK     "lib/msgpack-c")
@@ -14,7 +15,6 @@ set(FLB_PATH_LIB_ONIGMO      "lib/onigmo")
 set(FLB_PATH_LIB_MPACK       "lib/mpack-amalgamation-1.0")
 set(FLB_PATH_LIB_MINIZ       "lib/miniz")
 set(FLB_PATH_LIB_TUTF8E      "lib/tutf8e")
-set(FLB_PATH_LIB_XXHASH      "lib/xxHash-0.8.1")
 set(FLB_PATH_LIB_CMETRICS    "lib/cmetrics")
 set(FLB_PATH_LIB_CARES       "lib/c-ares-1.18.1")
 set(FLB_PATH_LIB_SNAPPY      "lib/snappy-fef67ac")
