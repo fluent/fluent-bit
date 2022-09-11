@@ -398,7 +398,7 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
     (void) i_ins;
 
 #ifdef FLB_HAVE_METRICS
-    ts = cmt_time_now();
+    ts = cfl_time_now();
     name = (char *) flb_filter_name(f_ins);
 #endif
 
