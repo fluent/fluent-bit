@@ -823,7 +823,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
     ic->total_records = records;
     if (ic->total_records > 0) {
         /* timestamp */
-        ts = cmt_time_now();
+        ts = cfl_time_now();
 
         /* fluentbit_input_records_total */
         cmt_counter_add(in->cmt_records, ts, ic->total_records,
@@ -1474,7 +1474,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
 
     if (ic->total_records > 0) {
         /* timestamp */
-        ts = cmt_time_now();
+        ts = cfl_time_now();
 
         /* fluentbit_input_records_total */
         cmt_counter_add(in->cmt_records, ts, ic->added_records,
