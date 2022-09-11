@@ -126,7 +126,7 @@ static void append_labels(struct prom_exporter *ctx, struct cmt *cmt)
 }
 
 static int hash_store(struct prom_exporter *ctx, struct flb_input_instance *ins,
-                      cmt_sds_t buf)
+                      cfl_sds_t buf)
 {
     int ret;
     int len;
@@ -135,7 +135,7 @@ static int hash_store(struct prom_exporter *ctx, struct flb_input_instance *ins,
 
     /* store/override the content into the hash table */
     ret = flb_hash_table_add(ctx->ht_metrics, ins->name, len,
-                             buf, cmt_sds_len(buf));
+                             buf, cfl_sds_len(buf));
     if (ret < 0) {
         return -1;
     }
@@ -175,7 +175,7 @@ static void cb_prom_flush(struct flb_event_chunk *event_chunk,
     int add_ts;
     size_t off = 0;
     flb_sds_t metrics;
-    cmt_sds_t text;
+    cfl_sds_t text;
     struct cmt *cmt;
     struct prom_exporter *ctx = out_context;
 
@@ -210,7 +210,7 @@ static void cb_prom_flush(struct flb_event_chunk *event_chunk,
     }
     cmt_destroy(cmt);
 
-    if (cmt_sds_len(text) == 0) {
+    if (cfl_sds_len(text) == 0) {
         flb_plg_debug(ctx->ins, "context without metrics (empty)");
         cmt_encode_text_destroy(text);
         FLB_OUTPUT_RETURN(FLB_OK);
