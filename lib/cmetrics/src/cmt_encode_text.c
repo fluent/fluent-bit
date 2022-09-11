@@ -20,7 +20,6 @@
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_metric.h>
 #include <cmetrics/cmt_map.h>
-#include <cmetrics/cmt_sds.h>
 #include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_untyped.h>
@@ -29,7 +28,7 @@
 #include <cmetrics/cmt_time.h>
 #include <cmetrics/cmt_compat.h>
 
-static void append_histogram_metric_value(cmt_sds_t *buf,
+static void append_histogram_metric_value(cfl_sds_t *buf,
                                           struct cmt_map *map,
                                           struct cmt_metric *metric)
 {
@@ -44,7 +43,7 @@ static void append_histogram_metric_value(cmt_sds_t *buf,
     histogram = (struct cmt_histogram *) map->parent;
     buckets = histogram->buckets;
 
-    cmt_sds_cat_safe(buf, " = { buckets = { ", 17);
+    cfl_sds_cat_safe(buf, " = { buckets = { ", 17);
 
     for (index = 0 ; index <= buckets->count ; index++) {
         if (index < buckets->count) {
@@ -72,29 +71,29 @@ static void append_histogram_metric_value(cmt_sds_t *buf,
                                         cmt_metric_hist_get_value(metric,
                                                                   index));
 
-        cmt_sds_cat_safe(buf, entry_buffer, entry_buffer_length);
+        cfl_sds_cat_safe(buf, entry_buffer, entry_buffer_length);
     }
 
-    cmt_sds_cat_safe(buf, "}, ", 3);
+    cfl_sds_cat_safe(buf, "}, ", 3);
 
     entry_buffer_length = snprintf(entry_buffer,
                                    sizeof(entry_buffer) - 1 ,
                                    "sum=%g, ",
                                    cmt_metric_hist_get_sum_value(metric));
 
-    cmt_sds_cat_safe(buf, entry_buffer, entry_buffer_length);
+    cfl_sds_cat_safe(buf, entry_buffer, entry_buffer_length);
 
     entry_buffer_length = snprintf(entry_buffer,
                                    sizeof(entry_buffer) - 1 ,
                                    "count=%" PRIu64 ,
                                    cmt_metric_hist_get_count_value(metric));
 
-    cmt_sds_cat_safe(buf, entry_buffer, entry_buffer_length);
+    cfl_sds_cat_safe(buf, entry_buffer, entry_buffer_length);
 
-    cmt_sds_cat_safe(buf, " }\n", 3);
+    cfl_sds_cat_safe(buf, " }\n", 3);
 }
 
-static void append_summary_metric_value(cmt_sds_t *buf,
+static void append_summary_metric_value(cfl_sds_t *buf,
                                         struct cmt_map *map,
                                         struct cmt_metric *metric)
 {
@@ -106,7 +105,7 @@ static void append_summary_metric_value(cmt_sds_t *buf,
 
     summary = (struct cmt_summary *) map->parent;
 
-    cmt_sds_cat_safe(buf, " = { quantiles = { ", 19);
+    cfl_sds_cat_safe(buf, " = { quantiles = { ", 19);
 
     for (index = 0 ; index < summary->quantiles_count ; index++) {
         if (index < summary->quantiles_count - 1) {
@@ -123,29 +122,29 @@ static void append_summary_metric_value(cmt_sds_t *buf,
                                        cmt_summary_quantile_get_value(metric,
                                                                       index));
 
-        cmt_sds_cat_safe(buf, entry_buffer, entry_buffer_length);
+        cfl_sds_cat_safe(buf, entry_buffer, entry_buffer_length);
     }
 
-    cmt_sds_cat_safe(buf, "}, ", 3);
+    cfl_sds_cat_safe(buf, "}, ", 3);
 
     entry_buffer_length = snprintf(entry_buffer,
                                    sizeof(entry_buffer) - 1 ,
                                    "sum=%g, ",
                                    cmt_summary_get_sum_value(metric));
 
-    cmt_sds_cat_safe(buf, entry_buffer, entry_buffer_length);
+    cfl_sds_cat_safe(buf, entry_buffer, entry_buffer_length);
 
     entry_buffer_length = snprintf(entry_buffer,
                                    sizeof(entry_buffer) - 1 ,
                                    "count=%" PRIu64,
                                    cmt_summary_get_count_value(metric));
 
-    cmt_sds_cat_safe(buf, entry_buffer, entry_buffer_length);
+    cfl_sds_cat_safe(buf, entry_buffer, entry_buffer_length);
 
-    cmt_sds_cat_safe(buf, " }\n", 3);
+    cfl_sds_cat_safe(buf, " }\n", 3);
 }
 
-static void append_metric_value(cmt_sds_t *buf, struct cmt_map *map,
+static void append_metric_value(cfl_sds_t *buf, struct cmt_map *map,
                                 struct cmt_metric *metric)
 {
     int len;
@@ -163,10 +162,10 @@ static void append_metric_value(cmt_sds_t *buf, struct cmt_map *map,
     val = cmt_metric_get_value(metric);
 
     len = snprintf(tmp, sizeof(tmp) - 1, " = %.17g\n", val);
-    cmt_sds_cat_safe(buf, tmp, len);
+    cfl_sds_cat_safe(buf, tmp, len);
 }
 
-static void format_metric(struct cmt *cmt, cmt_sds_t *buf, struct cmt_map *map,
+static void format_metric(struct cmt *cmt, cfl_sds_t *buf, struct cmt_map *map,
                           struct cmt_metric *metric)
 {
     int i;
@@ -180,7 +179,7 @@ static void format_metric(struct cmt *cmt, cmt_sds_t *buf, struct cmt_map *map,
     struct timespec tms;
     struct cmt_map_label *label_k;
     struct cmt_map_label *label_v;
-    struct mk_list *head;
+    struct cfl_list *head;
     struct cmt_opts *opts;
     struct cmt_label *slabel;
 
@@ -193,77 +192,77 @@ static void format_metric(struct cmt *cmt, cmt_sds_t *buf, struct cmt_map *map,
 
     cmt_platform_gmtime_r(&tms.tv_sec, &tm);
     len = strftime(tmp, sizeof(tmp) - 1, "%Y-%m-%dT%H:%M:%S.", &tm);
-    cmt_sds_cat_safe(buf, tmp, len);
+    cfl_sds_cat_safe(buf, tmp, len);
 
     len = snprintf(tmp, sizeof(tmp) - 1, "%09luZ ", tms.tv_nsec);
-    cmt_sds_cat_safe(buf, tmp, len);
+    cfl_sds_cat_safe(buf, tmp, len);
 
     /* Metric info */
-    cmt_sds_cat_safe(buf, opts->fqname, cmt_sds_len(opts->fqname));
+    cfl_sds_cat_safe(buf, opts->fqname, cfl_sds_len(opts->fqname));
 
     /* Static labels */
     static_labels = cmt_labels_count(cmt->static_labels);
     if (static_labels > 0) {
-        cmt_sds_cat_safe(buf, "{", 1);
-        mk_list_foreach(head, &cmt->static_labels->list) {
+        cfl_sds_cat_safe(buf, "{", 1);
+        cfl_list_foreach(head, &cmt->static_labels->list) {
             count++;
-            slabel = mk_list_entry(head, struct cmt_label, _head);
-            cmt_sds_cat_safe(buf, slabel->key, cmt_sds_len(slabel->key));
-            cmt_sds_cat_safe(buf, "=\"", 2);
-            cmt_sds_cat_safe(buf, slabel->val, cmt_sds_len(slabel->val));
-            cmt_sds_cat_safe(buf, "\"", 1);
+            slabel = cfl_list_entry(head, struct cmt_label, _head);
+            cfl_sds_cat_safe(buf, slabel->key, cfl_sds_len(slabel->key));
+            cfl_sds_cat_safe(buf, "=\"", 2);
+            cfl_sds_cat_safe(buf, slabel->val, cfl_sds_len(slabel->val));
+            cfl_sds_cat_safe(buf, "\"", 1);
 
             if (count < static_labels) {
-                cmt_sds_cat_safe(buf, ",", 1);
+                cfl_sds_cat_safe(buf, ",", 1);
             }
         }
     }
 
-    n = mk_list_size(&metric->labels);
+    n = cfl_list_size(&metric->labels);
     if (n > 0) {
         if (static_labels > 0) {
-            cmt_sds_cat_safe(buf, ",", 1);
+            cfl_sds_cat_safe(buf, ",", 1);
         }
         else {
-            cmt_sds_cat_safe(buf, "{", 1);
+            cfl_sds_cat_safe(buf, "{", 1);
         }
 
-        label_k = mk_list_entry_first(&map->label_keys, struct cmt_map_label, _head);
+        label_k = cfl_list_entry_first(&map->label_keys, struct cmt_map_label, _head);
 
         i = 1;
-        mk_list_foreach(head, &metric->labels) {
-            label_v = mk_list_entry(head, struct cmt_map_label, _head);
+        cfl_list_foreach(head, &metric->labels) {
+            label_v = cfl_list_entry(head, struct cmt_map_label, _head);
 
-            cmt_sds_cat_safe(buf, label_k->name, cmt_sds_len(label_k->name));
-            cmt_sds_cat_safe(buf, "=\"", 2);
-            cmt_sds_cat_safe(buf, label_v->name, cmt_sds_len(label_v->name));
+            cfl_sds_cat_safe(buf, label_k->name, cfl_sds_len(label_k->name));
+            cfl_sds_cat_safe(buf, "=\"", 2);
+            cfl_sds_cat_safe(buf, label_v->name, cfl_sds_len(label_v->name));
 
             if (i < n) {
-                cmt_sds_cat_safe(buf, "\",", 2);
+                cfl_sds_cat_safe(buf, "\",", 2);
             }
             else {
-                cmt_sds_cat_safe(buf, "\"", 1);
+                cfl_sds_cat_safe(buf, "\"", 1);
             }
             i++;
 
-            label_k = mk_list_entry_next(&label_k->_head, struct cmt_map_label,
+            label_k = cfl_list_entry_next(&label_k->_head, struct cmt_map_label,
                                          _head, &map->label_keys);
         }
-        cmt_sds_cat_safe(buf, "}", 1);
+        cfl_sds_cat_safe(buf, "}", 1);
 
         append_metric_value(buf, map, metric);
     }
     else {
         if (static_labels > 0) {
-            cmt_sds_cat_safe(buf, "}", 1);
+            cfl_sds_cat_safe(buf, "}", 1);
         }
         append_metric_value(buf, map, metric);
     }
 }
 
-static void format_metrics(struct cmt *cmt, cmt_sds_t *buf, struct cmt_map *map)
+static void format_metrics(struct cmt *cmt, cfl_sds_t *buf, struct cmt_map *map)
 {
-    struct mk_list *head;
+    struct cfl_list *head;
     struct cmt_metric *metric;
 
     /* Simple metric, no labels */
@@ -271,17 +270,17 @@ static void format_metrics(struct cmt *cmt, cmt_sds_t *buf, struct cmt_map *map)
         format_metric(cmt, buf, map, &map->metric);
     }
 
-    mk_list_foreach(head, &map->metrics) {
-        metric = mk_list_entry(head, struct cmt_metric, _head);
+    cfl_list_foreach(head, &map->metrics) {
+        metric = cfl_list_entry(head, struct cmt_metric, _head);
         format_metric(cmt, buf, map, metric);
     }
 }
 
 /* Format all the registered metrics in Prometheus Text format */
-cmt_sds_t cmt_encode_text_create(struct cmt *cmt)
+cfl_sds_t cmt_encode_text_create(struct cmt *cmt)
 {
-    cmt_sds_t buf;
-    struct mk_list *head;
+    cfl_sds_t buf;
+    struct cfl_list *head;
     struct cmt_counter *counter;
     struct cmt_gauge *gauge;
     struct cmt_untyped *untyped;
@@ -289,45 +288,45 @@ cmt_sds_t cmt_encode_text_create(struct cmt *cmt)
     struct cmt_histogram *histogram;
 
     /* Allocate a 1KB of buffer */
-    buf = cmt_sds_create_size(1024);
+    buf = cfl_sds_create_size(1024);
     if (!buf) {
         return NULL;
     }
 
     /* Counters */
-    mk_list_foreach(head, &cmt->counters) {
-        counter = mk_list_entry(head, struct cmt_counter, _head);
+    cfl_list_foreach(head, &cmt->counters) {
+        counter = cfl_list_entry(head, struct cmt_counter, _head);
         format_metrics(cmt, &buf, counter->map);
     }
 
     /* Gauges */
-    mk_list_foreach(head, &cmt->gauges) {
-        gauge = mk_list_entry(head, struct cmt_gauge, _head);
+    cfl_list_foreach(head, &cmt->gauges) {
+        gauge = cfl_list_entry(head, struct cmt_gauge, _head);
         format_metrics(cmt, &buf, gauge->map);
     }
 
     /* Summaries */
-    mk_list_foreach(head, &cmt->summaries) {
-        summary = mk_list_entry(head, struct cmt_summary, _head);
+    cfl_list_foreach(head, &cmt->summaries) {
+        summary = cfl_list_entry(head, struct cmt_summary, _head);
         format_metrics(cmt, &buf, summary->map);
     }
 
     /* Histograms */
-    mk_list_foreach(head, &cmt->histograms) {
-        histogram = mk_list_entry(head, struct cmt_histogram, _head);
+    cfl_list_foreach(head, &cmt->histograms) {
+        histogram = cfl_list_entry(head, struct cmt_histogram, _head);
         format_metrics(cmt, &buf, histogram->map);
     }
 
     /* Untyped */
-    mk_list_foreach(head, &cmt->untypeds) {
-        untyped = mk_list_entry(head, struct cmt_untyped, _head);
+    cfl_list_foreach(head, &cmt->untypeds) {
+        untyped = cfl_list_entry(head, struct cmt_untyped, _head);
         format_metrics(cmt, &buf, untyped->map);
     }
 
     return buf;
 }
 
-void cmt_encode_text_destroy(cmt_sds_t text)
+void cmt_encode_text_destroy(cfl_sds_t text)
 {
-    cmt_sds_destroy(text);
+    cfl_sds_destroy(text);
 }

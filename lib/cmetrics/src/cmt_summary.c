@@ -71,7 +71,7 @@ struct cmt_summary *cmt_summary_create(struct cmt *cmt,
         cmt_errno();
         return NULL;
     }
-    mk_list_add(&s->_head, &cmt->summaries);
+    cfl_list_add(&s->_head, &cmt->summaries);
 
     /* initialize options */
     ret = cmt_opts_init(&s->opts, ns, subsystem, name, help);
@@ -111,7 +111,7 @@ struct cmt_summary *cmt_summary_create(struct cmt *cmt,
 
 int cmt_summary_destroy(struct cmt_summary *summary)
 {
-    mk_list_del(&summary->_head);
+    cfl_list_del(&summary->_head);
     cmt_opts_exit(&summary->opts);
 
     if (summary->map) {

@@ -56,7 +56,7 @@ struct cmt_counter *cmt_counter_create(struct cmt *cmt,
         cmt_errno();
         return NULL;
     }
-    mk_list_add(&counter->_head, &cmt->counters);
+    cfl_list_add(&counter->_head, &cmt->counters);
 
     ret = cmt_opts_init(&counter->opts, ns, subsystem, name, help);
     if (ret == -1) {
@@ -85,7 +85,7 @@ void cmt_counter_allow_reset(struct cmt_counter *counter)
 
 int cmt_counter_destroy(struct cmt_counter *counter)
 {
-    mk_list_del(&counter->_head);
+    cfl_list_del(&counter->_head);
     cmt_opts_exit(&counter->opts);
 
     if (counter->map) {

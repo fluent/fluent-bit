@@ -24,7 +24,6 @@
 #include <stdio.h>
 
 #include "cmetrics/cmt_counter.h"
-#include "cmetrics/cmt_sds.h"
 #include "cmetrics/cmt_summary.h"
 #include "cmt_decode_prometheus_parser.h"
 #include "cmt_tests.h"
@@ -46,7 +45,7 @@ struct fixture *init(int start_token, const char *test)
     memset(f, 0, sizeof(*f));
     f->context.cmt = cmt_create();
     f->context.opts.start_token = start_token;
-    mk_list_init(&(f->context.metric.samples));
+    cfl_list_init(&(f->context.metric.samples));
     cmt_decode_prometheus_lex_init(&f->scanner);
     f->buf = cmt_decode_prometheus__scan_string(test, f->scanner);
     return f;
@@ -78,8 +77,8 @@ void test_header_help()
     TEST_CHECK(strcmp(f->context.metric.name, "test") == 0);
     TEST_CHECK(strcmp(f->context.metric.docstring, "Static labels test") == 0);
     TEST_CHECK(f->context.metric.type == 0);
-    cmt_sds_destroy(f->context.metric.name_orig);
-    cmt_sds_destroy(f->context.metric.docstring);
+    cfl_sds_destroy(f->context.metric.name_orig);
+    cfl_sds_destroy(f->context.metric.docstring);
     free(f->context.metric.ns);
 
     destroy(f);
@@ -97,7 +96,7 @@ void test_header_type()
     TEST_CHECK(strcmp(f->context.metric.name, "test") == 0);
     TEST_CHECK(f->context.metric.type == COUNTER);
     TEST_CHECK(f->context.metric.docstring == NULL);
-    cmt_sds_destroy(f->context.metric.name_orig);
+    cfl_sds_destroy(f->context.metric.name_orig);
     free(f->context.metric.ns);
 
     destroy(f);
@@ -117,8 +116,8 @@ void test_header_help_type()
     TEST_CHECK(strcmp(f->context.metric.subsystem, "labels") == 0);
     TEST_CHECK(strcmp(f->context.metric.name, "test") == 0);
     TEST_CHECK(f->context.metric.type == SUMMARY);
-    cmt_sds_destroy(f->context.metric.name_orig);
-    cmt_sds_destroy(f->context.metric.docstring);
+    cfl_sds_destroy(f->context.metric.name_orig);
+    cfl_sds_destroy(f->context.metric.docstring);
     free(f->context.metric.ns);
 
     destroy(f);
@@ -138,8 +137,8 @@ void test_header_type_help()
     TEST_CHECK(strcmp(f->context.metric.subsystem, "labels") == 0);
     TEST_CHECK(strcmp(f->context.metric.name, "test") == 0);
     TEST_CHECK(f->context.metric.type == GAUGE);
-    cmt_sds_destroy(f->context.metric.name_orig);
-    cmt_sds_destroy(f->context.metric.docstring);
+    cfl_sds_destroy(f->context.metric.name_orig);
+    cfl_sds_destroy(f->context.metric.docstring);
     free(f->context.metric.ns);
 
     destroy(f);
@@ -150,7 +149,7 @@ struct cmt_decode_prometheus_context_sample *add_empty_sample(struct fixture *f)
     struct cmt_decode_prometheus_context_sample *sample;
     sample = malloc(sizeof(*sample));
     memset(sample, 0, sizeof(*sample));
-    mk_list_add(&sample->_head, &f->context.metric.samples);
+    cfl_list_add(&sample->_head, &f->context.metric.samples);
     return sample;
 }
 
@@ -164,10 +163,10 @@ void test_labels()
     TEST_CHECK(strcmp(sample->label_values[0], "Calyptia") == 0);
     TEST_CHECK(strcmp(f->context.metric.labels[1], "lang") == 0);
     TEST_CHECK(strcmp(sample->label_values[1], "C") == 0);
-    cmt_sds_destroy(f->context.metric.labels[0]);
-    cmt_sds_destroy(sample->label_values[0]);
-    cmt_sds_destroy(f->context.metric.labels[1]);
-    cmt_sds_destroy(sample->label_values[1]);
+    cfl_sds_destroy(f->context.metric.labels[0]);
+    cfl_sds_destroy(sample->label_values[0]);
+    cfl_sds_destroy(f->context.metric.labels[1]);
+    cfl_sds_destroy(sample->label_values[1]);
     free(sample);
     destroy(f);
 }
@@ -182,17 +181,17 @@ void test_labels_trailing_comma()
     TEST_CHECK(strcmp(sample->label_values[0], "Calyptia") == 0);
     TEST_CHECK(strcmp(f->context.metric.labels[1], "lang") == 0);
     TEST_CHECK(strcmp(sample->label_values[1], "C") == 0);
-    cmt_sds_destroy(f->context.metric.labels[0]);
-    cmt_sds_destroy(sample->label_values[0]);
-    cmt_sds_destroy(f->context.metric.labels[1]);
-    cmt_sds_destroy(sample->label_values[1]);
+    cfl_sds_destroy(f->context.metric.labels[0]);
+    cfl_sds_destroy(sample->label_values[0]);
+    cfl_sds_destroy(f->context.metric.labels[1]);
+    cfl_sds_destroy(sample->label_values[1]);
     free(sample);
     destroy(f);
 }
 
 void test_sample()
 {
-    cmt_sds_t result;
+    cfl_sds_t result;
     const char expected[] = (
             "# HELP cmt_labels_test some docstring\n"
             "# TYPE cmt_labels_test counter\n"
@@ -208,14 +207,14 @@ void test_sample()
     TEST_CHECK(parse(f) == 0);
     result = cmt_encode_prometheus_create(f->context.cmt, CMT_TRUE);
     TEST_CHECK(strcmp(result, expected) == 0);
-    cmt_sds_destroy(result);
+    cfl_sds_destroy(result);
 
     destroy(f);
 }
 
 void test_samples()
 {
-    cmt_sds_t result;
+    cfl_sds_t result;
     const char expected[] = (
             "# HELP cmt_labels_test some docstring\n"
             "# TYPE cmt_labels_test gauge\n"
@@ -234,14 +233,14 @@ void test_samples()
     TEST_CHECK(parse(f) == 0);
     result = cmt_encode_prometheus_create(f->context.cmt, CMT_TRUE);
     TEST_CHECK(strcmp(result, expected) == 0);
-    cmt_sds_destroy(result);
+    cfl_sds_destroy(result);
 
     destroy(f);
 }
 
 void test_escape_sequences()
 {
-    cmt_sds_t result;
+    cfl_sds_t result;
     const char expected[] = (
         "# HELP msdos_file_access_time_seconds\n"
         "# TYPE msdos_file_access_time_seconds untyped\n"
@@ -256,14 +255,14 @@ void test_escape_sequences()
     TEST_CHECK(parse(f) == 0);
     result = cmt_encode_prometheus_create(f->context.cmt, CMT_TRUE);
     TEST_CHECK(strcmp(result, expected) == 0);
-    cmt_sds_destroy(result);
+    cfl_sds_destroy(result);
 
     destroy(f);
 }
 
 void test_metric_without_labels()
 { 
-    cmt_sds_t result;
+    cfl_sds_t result;
 
     const char expected[] =
         "# HELP metric_without_timestamp_and_labels\n"
@@ -279,7 +278,7 @@ void test_metric_without_labels()
     TEST_CHECK(parse(f) == 0);
     result = cmt_encode_prometheus_create(f->context.cmt, CMT_TRUE);
     TEST_CHECK(strcmp(result, expected) == 0);
-    cmt_sds_destroy(result);
+    cfl_sds_destroy(result);
 
     destroy(f);
 }
@@ -288,7 +287,7 @@ void test_prometheus_spec_example()
 {
     char errbuf[256];
     int status;
-    cmt_sds_t result;
+    cfl_sds_t result;
     struct cmt *cmt;
     struct cmt_decode_prometheus_parse_opts opts;
     memset(&opts, 0, sizeof(opts));
@@ -380,7 +379,7 @@ void test_prometheus_spec_example()
     TEST_CHECK(status == 0);
     result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
     TEST_CHECK(strcmp(result, expected) == 0);
-    cmt_sds_destroy(result);
+    cfl_sds_destroy(result);
     cmt_decode_prometheus_destroy(cmt);
 }
 
@@ -470,7 +469,7 @@ void test_label_limits()
 
     status = cmt_decode_prometheus_create(&cmt, inbuf, 0, &opts);
     TEST_CHECK(status == 0);
-    counter = mk_list_entry_first(&cmt->counters, struct cmt_counter, _head);
+    counter = cfl_list_entry_first(&cmt->counters, struct cmt_counter, _head);
     TEST_CHECK(counter->map->label_count == CMT_DECODE_PROMETHEUS_MAX_LABEL_COUNT);
     cmt_decode_prometheus_destroy(cmt);
 
@@ -522,7 +521,7 @@ void test_invalid_timestamp()
 void test_default_timestamp()
 {
     int status;
-    cmt_sds_t result;
+    cfl_sds_t result;
     struct cmt *cmt;
     struct cmt_decode_prometheus_parse_opts opts;
     memset(&opts, 0, sizeof(opts));
@@ -539,15 +538,25 @@ void test_default_timestamp()
             "# HELP metric_name some docstring\n"
             "# TYPE metric_name counter\n"
             "metric_name{key=\"abc\"} 10 557\n") == 0);
-    cmt_sds_destroy(result);
+    cfl_sds_destroy(result);
     cmt_decode_prometheus_destroy(cmt);
 }
 
 void test_values()
 {
-    int status;
-    cmt_sds_t result;
+    int status = 0;
+    cfl_sds_t result = NULL;
     struct cmt *cmt;
+
+    const char expected[] = "# HELP metric_name some docstring\n"
+            "# TYPE metric_name gauge\n"
+            "metric_name{key=\"simple integer\"} 54 0\n"
+            "metric_name{key=\"simple float\"} 12.470000000000001 0\n"
+            "metric_name{key=\"scientific notation 1\"} 17560473 0\n"
+            "metric_name{key=\"scientific notation 2\"} 1.7560473000000001 0\n"
+            "metric_name{key=\"Positive \\\"not a number\\\"\"} nan 0\n"
+            "metric_name{key=\"Positive infinity\"} inf 0\n"
+            "metric_name{key=\"Negative infinity\"} -inf 0\n";
 
     status = cmt_decode_prometheus_create(&cmt,
             "# HELP metric_name some docstring\n"
@@ -557,37 +566,33 @@ void test_values()
             "metric_name {key=\"scientific notation 1\"} 1.7560473e+07\n"
             "metric_name {key=\"scientific notation 2\"} 17560473e-07\n"
             "metric_name {key=\"Positive \\\"not a number\\\"\"} +NAN\n"
-            "metric_name {key=\"Negative \\\"not a number\\\"\"} -NaN\n"
             "metric_name {key=\"Positive infinity\"} +INF\n"
             "metric_name {key=\"Negative infinity\"} -iNf\n", 0, NULL);
     TEST_CHECK(status == 0);
-    result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
-    TEST_CHECK(strcmp(result,
-            "# HELP metric_name some docstring\n"
-            "# TYPE metric_name gauge\n"
-            "metric_name{key=\"simple integer\"} 54 0\n"
-            "metric_name{key=\"simple float\"} 12.470000000000001 0\n"
-            "metric_name{key=\"scientific notation 1\"} 17560473 0\n"
-            "metric_name{key=\"scientific notation 2\"} 1.7560473000000001 0\n"
-            "metric_name{key=\"Positive \\\"not a number\\\"\"} nan 0\n"
-            "metric_name{key=\"Negative \\\"not a number\\\"\"} -nan 0\n"
-            "metric_name{key=\"Positive infinity\"} inf 0\n"
-            "metric_name{key=\"Negative infinity\"} -inf 0\n") == 0);
-    cmt_sds_destroy(result);
+    if (!status) {
+        result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
+        status = strcmp(result, expected);
+        TEST_CHECK(status == 0);
+        if (status) {
+            fprintf(stderr, "EXPECTED:\n======\n%s\n======\nRESULT:\n======\n%s\n======\n", expected, result);
+        }
+    }
+
+    cfl_sds_destroy(result);
     cmt_decode_prometheus_destroy(cmt);
 }
 
 void test_in_size()
 {
     int status;
-    cmt_sds_t result;
+    cfl_sds_t result;
     struct cmt *cmt;
-    cmt_sds_t in_buf;
+    cfl_sds_t in_buf;
     size_t in_size;
 
-    in_buf = cmt_sds_create("metric_name {key=\"1\"} 1\n");
-    in_size = cmt_sds_len(in_buf);
-    in_buf = cmt_sds_cat(in_buf, "metric_name {key=\"2\"} 2\n", in_size);
+    in_buf = cfl_sds_create("metric_name {key=\"1\"} 1\n");
+    in_size = cfl_sds_len(in_buf);
+    in_buf = cfl_sds_cat(in_buf, "metric_name {key=\"2\"} 2\n", in_size);
 
     status = cmt_decode_prometheus_create(&cmt, in_buf, in_size, NULL);
     TEST_CHECK(status == 0);
@@ -596,8 +601,8 @@ void test_in_size()
                 "# HELP metric_name\n"
                 "# TYPE metric_name untyped\n"
                 "metric_name{key=\"1\"} 1 0\n") == 0);
-    cmt_sds_destroy(result);
-    cmt_sds_destroy(in_buf);
+    cfl_sds_destroy(result);
+    cfl_sds_destroy(in_buf);
     cmt_decode_prometheus_destroy(cmt);
 }
 
@@ -606,12 +611,12 @@ void test_issue_71()
 {
     int status;
     struct cmt *cmt;
-    cmt_sds_t in_buf = read_file(CMT_TESTS_DATA_PATH "/issue_71.txt");
-    size_t in_size = cmt_sds_len(in_buf);
+    cfl_sds_t in_buf = read_file(CMT_TESTS_DATA_PATH "/issue_71.txt");
+    size_t in_size = cfl_sds_len(in_buf);
 
     status = cmt_decode_prometheus_create(&cmt, in_buf, in_size, NULL);
     TEST_CHECK(status == 0);
-    cmt_sds_destroy(in_buf);
+    cfl_sds_destroy(in_buf);
     cmt_decode_prometheus_destroy(cmt);
 }
 
@@ -620,7 +625,7 @@ void test_histogram()
     int status;
     struct cmt *cmt;
     struct cmt_decode_prometheus_parse_opts opts;
-    cmt_sds_t result;
+    cfl_sds_t result;
     memset(&opts, 0, sizeof(opts));
 
     status = cmt_decode_prometheus_create(&cmt,
@@ -647,7 +652,7 @@ void test_histogram()
             "http_request_duration_seconds_bucket{le=\"+Inf\"} 144320\n"
             "http_request_duration_seconds_sum 53423\n"
             "http_request_duration_seconds_count 144320\n") == 0);
-    cmt_sds_destroy(result);
+    cfl_sds_destroy(result);
     cmt_decode_prometheus_destroy(cmt);
 }
 
@@ -657,7 +662,7 @@ void test_histogram_labels()
     struct cmt *cmt;
     struct cmt_decode_prometheus_parse_opts opts;
     memset(&opts, 0, sizeof(opts));
-    cmt_sds_t result;
+    cfl_sds_t result;
 
     status = cmt_decode_prometheus_create(&cmt,
             "# HELP http_request_duration_seconds A histogram of the request duration.\n"
@@ -683,7 +688,7 @@ void test_histogram_labels()
             "http_request_duration_seconds_bucket{le=\"+Inf\",label1=\"val1\",label2=\"val2\"} 144320\n"
             "http_request_duration_seconds_sum{label1=\"val1\",label2=\"val2\"} 53423\n"
             "http_request_duration_seconds_count{label1=\"val1\",label2=\"val2\"} 144320\n") == 0);
-    cmt_sds_destroy(result);
+    cfl_sds_destroy(result);
     cmt_decode_prometheus_destroy(cmt);
 }
 
@@ -692,7 +697,7 @@ void test_summary()
     int status;
     struct cmt *cmt;
     struct cmt_decode_prometheus_parse_opts opts;
-    cmt_sds_t result;
+    cfl_sds_t result;
     memset(&opts, 0, sizeof(opts));
 
     status = cmt_decode_prometheus_create(&cmt,
@@ -717,14 +722,14 @@ void test_summary()
         "rpc_duration_seconds{quantile=\"0.99\"} 76656\n"
         "rpc_duration_seconds_sum 17560473\n"
         "rpc_duration_seconds_count 2693\n") == 0);
-    cmt_sds_destroy(result);
+    cfl_sds_destroy(result);
     cmt_decode_prometheus_destroy(cmt);
 }
 
 void test_null_labels()
 {
     int status;
-    cmt_sds_t result;
+    cfl_sds_t result;
     struct cmt *cmt;
     struct cmt_decode_prometheus_parse_opts opts;
     memset(&opts, 0, sizeof(opts));
@@ -746,7 +751,7 @@ void test_null_labels()
     TEST_CHECK(status == 0);
     result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
     TEST_CHECK(strcmp(result, expected) == 0);
-    cmt_sds_destroy(result);
+    cfl_sds_destroy(result);
     cmt_decode_prometheus_destroy(cmt);
 }
 
@@ -756,8 +761,8 @@ void test_issue_fluent_bit_5541()
     int status;
     char *result;
     struct cmt *cmt;
-    cmt_sds_t in_buf = read_file(CMT_TESTS_DATA_PATH "/issue_fluent_bit_5541.txt");
-    size_t in_size = cmt_sds_len(in_buf);
+    cfl_sds_t in_buf = read_file(CMT_TESTS_DATA_PATH "/issue_fluent_bit_5541.txt");
+    size_t in_size = cfl_sds_len(in_buf);
 
     const char expected[] =
         "# HELP http_request_duration_seconds HTTP request latency (seconds)\n"
@@ -787,8 +792,8 @@ void test_issue_fluent_bit_5541()
     result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
     TEST_CHECK(strcmp(result, expected) == 0);
 
-    cmt_sds_destroy(in_buf);
-    cmt_sds_destroy(result);
+    cfl_sds_destroy(in_buf);
+    cfl_sds_destroy(result);
     cmt_decode_prometheus_destroy(cmt);
 }
 
@@ -797,14 +802,14 @@ void test_issue_fluent_bit_5894()
 {
     char errbuf[256];
     int status;
-    cmt_sds_t result = NULL;
+    cfl_sds_t result = NULL;
     struct cmt *cmt;
     struct cmt_decode_prometheus_parse_opts opts;
     memset(&opts, 0, sizeof(opts));
     opts.errbuf = errbuf;
     opts.errbuf_size = sizeof(errbuf);
-    cmt_sds_t in_buf = read_file(CMT_TESTS_DATA_PATH "/issue_fluent_bit_5894.txt");
-    size_t in_size = cmt_sds_len(in_buf);
+    cfl_sds_t in_buf = read_file(CMT_TESTS_DATA_PATH "/issue_fluent_bit_5894.txt");
+    size_t in_size = cfl_sds_len(in_buf);
 
     const char expected[] =
         "# HELP hikaricp_connections_timeout_total Connection timeout total count\n"
@@ -964,15 +969,15 @@ void test_issue_fluent_bit_5894()
         }
     }
 
-    cmt_sds_destroy(in_buf);
-    cmt_sds_destroy(result);
+    cfl_sds_destroy(in_buf);
+    cfl_sds_destroy(result);
     cmt_decode_prometheus_destroy(cmt);
 }
 
 void test_empty_metrics()
 {
     int status;
-    cmt_sds_t result;
+    cfl_sds_t result;
     struct cmt *cmt;
     struct cmt_decode_prometheus_parse_opts opts;
     memset(&opts, 0, sizeof(opts));
@@ -1012,7 +1017,7 @@ void test_empty_metrics()
     TEST_CHECK(status == 0);
     result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
     TEST_CHECK(strcmp(result, expected) == 0);
-    cmt_sds_destroy(result);
+    cfl_sds_destroy(result);
     cmt_decode_prometheus_destroy(cmt);
 }
 
@@ -1021,14 +1026,14 @@ void test_issue_fluent_bit_6021()
 {
     char errbuf[256];
     int status;
-    cmt_sds_t result = NULL;
+    cfl_sds_t result = NULL;
     struct cmt *cmt;
     struct cmt_decode_prometheus_parse_opts opts;
     memset(&opts, 0, sizeof(opts));
     opts.errbuf = errbuf;
     opts.errbuf_size = sizeof(errbuf);
-    cmt_sds_t in_buf = read_file(CMT_TESTS_DATA_PATH "/issue_fluent_bit_6021.txt");
-    size_t in_size = cmt_sds_len(in_buf);
+    cfl_sds_t in_buf = read_file(CMT_TESTS_DATA_PATH "/issue_fluent_bit_6021.txt");
+    size_t in_size = cfl_sds_len(in_buf);
 
     const char expected[] =
         "# HELP envoy_cluster_manager_cds_init_fetch_timeout\n"
@@ -1268,15 +1273,15 @@ void test_issue_fluent_bit_6021()
         }
     }
 
-    cmt_sds_destroy(in_buf);
-    cmt_sds_destroy(result);
+    cfl_sds_destroy(in_buf);
+    cfl_sds_destroy(result);
     cmt_decode_prometheus_destroy(cmt);
 }
 
 void test_override_timestamp()
 {
     int status;
-    cmt_sds_t result = NULL;
+    cfl_sds_t result = NULL;
     struct cmt *cmt;
     struct cmt_decode_prometheus_parse_opts opts;
     memset(&opts, 0, sizeof(opts));
@@ -1353,7 +1358,7 @@ void test_override_timestamp()
             fprintf(stderr, "EXPECTED:\n======\n%s\n======\nRESULT:\n======\n%s\n======\n", expected, result);
         }
     }
-    cmt_sds_destroy(result);
+    cfl_sds_destroy(result);
     cmt_decode_prometheus_destroy(cmt);
 }
 

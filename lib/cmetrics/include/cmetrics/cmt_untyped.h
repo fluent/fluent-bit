@@ -27,7 +27,7 @@ struct cmt_untyped {
     struct cmt_opts opts;
     struct cmt_map *map;
     struct cmt *cmt;
-    struct mk_list _head;
+    struct cfl_list _head;
 };
 
 struct cmt_untyped *cmt_untyped_create(struct cmt *cmt,

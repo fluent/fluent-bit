@@ -37,7 +37,7 @@ int cmt_test_encode_all(struct cmt *cmt)
 {
     char *out_buf;
     size_t out_size;
-    cmt_sds_t sds_buf;
+    cfl_sds_t sds_buf;
 
     /* text */
     sds_buf = cmt_encode_text_create(cmt);

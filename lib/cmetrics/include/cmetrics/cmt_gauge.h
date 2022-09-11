@@ -27,7 +27,7 @@ struct cmt_gauge {
     struct cmt_opts opts;  /* Metric options */
     struct cmt_map *map;
     struct cmt     *cmt;
-    struct mk_list _head;  /* Link to list struct cmt->gauges */
+    struct cfl_list _head;  /* Link to list struct cmt->gauges */
 };
 
 struct cmt_gauge *cmt_gauge_create(struct cmt *cmt,

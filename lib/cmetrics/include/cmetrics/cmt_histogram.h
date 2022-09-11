@@ -32,7 +32,7 @@ struct cmt_histogram {
     struct cmt_histogram_buckets *buckets;
     struct cmt_opts opts;
     struct cmt_map *map;
-    struct mk_list _head;
+    struct cfl_list _head;
     struct cmt *cmt;
     int    aggregation_type;
 };

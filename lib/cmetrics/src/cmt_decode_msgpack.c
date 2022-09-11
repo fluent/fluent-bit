@@ -20,7 +20,6 @@
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_metric.h>
 #include <cmetrics/cmt_map.h>
-#include <cmetrics/cmt_sds.h>
 #include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_histogram.h>
 #include <cmetrics/cmt_counter.h>
@@ -158,16 +157,16 @@ static int create_metric_instance(struct cmt_map *map)
     return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
 }
 
-static struct cmt_map_label *find_label_by_index(struct mk_list *label_list, size_t desired_index)
+static struct cmt_map_label *find_label_by_index(struct cfl_list *label_list, size_t desired_index)
 {
-    struct mk_list *head;
+    struct cfl_list *head;
     size_t          entry_index;
 
     entry_index = 0;
 
-    mk_list_foreach(head, label_list) {
+    cfl_list_foreach(head, label_list) {
         if (entry_index == desired_index) {
-            return mk_list_entry(head, struct cmt_map_label, _head);
+            return cfl_list_entry(head, struct cmt_map_label, _head);
         }
 
         entry_index++;
@@ -238,23 +237,23 @@ static int unpack_opts(mpack_reader_t *reader, struct cmt_opts *opts)
          * later on.
          */
 
-        opts->fqname = cmt_sds_create_size(cmt_sds_len(opts->ns) + \
-                                           cmt_sds_len(opts->subsystem) + \
-                                           cmt_sds_len(opts->name) + \
+        opts->fqname = cfl_sds_create_size(cfl_sds_len(opts->ns) + \
+                                           cfl_sds_len(opts->subsystem) + \
+                                           cfl_sds_len(opts->name) + \
                                            4);
 
         if (NULL == opts->fqname) {
             return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
         }
 
-        cmt_sds_cat(opts->fqname, opts->ns, cmt_sds_len(opts->ns));
-        cmt_sds_cat(opts->fqname, "_", 1);
+        cfl_sds_cat(opts->fqname, opts->ns, cfl_sds_len(opts->ns));
+        cfl_sds_cat(opts->fqname, "_", 1);
 
-        if (cmt_sds_len(opts->subsystem) > 0) {
-            cmt_sds_cat(opts->fqname, opts->subsystem, cmt_sds_len(opts->subsystem));
-            cmt_sds_cat(opts->fqname, "_", 1);
+        if (cfl_sds_len(opts->subsystem) > 0) {
+            cfl_sds_cat(opts->fqname, opts->subsystem, cfl_sds_len(opts->subsystem));
+            cfl_sds_cat(opts->fqname, "_", 1);
         }
-        cmt_sds_cat(opts->fqname, opts->name, cmt_sds_len(opts->name));
+        cfl_sds_cat(opts->fqname, opts->name, cfl_sds_len(opts->name));
     }
 
     return result;
@@ -266,27 +265,27 @@ static int unpack_label_dictionary_entry(mpack_reader_t *reader,
 {
     int                   result;
     struct cmt_map_label *new_label;
-    cmt_sds_t             label_name;
-    struct mk_list       *target_label_list;
+    cfl_sds_t             label_name;
+    struct cfl_list       *target_label_list;
 
     if (NULL == reader  ||
         NULL == context ) {
         return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
     }
 
-    target_label_list = (struct mk_list *) context;
+    target_label_list = (struct cfl_list *) context;
 
     result = cmt_mpack_consume_string_tag(reader, &label_name);
 
     if (CMT_DECODE_MSGPACK_SUCCESS != result) {
-        cmt_sds_destroy(label_name);
+        cfl_sds_destroy(label_name);
         return result;
     }
 
     new_label = calloc(1, sizeof(struct cmt_map_label));
 
     if (NULL == new_label) {
-        cmt_sds_destroy(label_name);
+        cfl_sds_destroy(label_name);
 
         return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
     }
@@ -294,7 +293,7 @@ static int unpack_label_dictionary_entry(mpack_reader_t *reader,
     {
         new_label->name = label_name;
 
-        mk_list_add(&new_label->_head, target_label_list);
+        cfl_list_add(&new_label->_head, target_label_list);
     }
 
     return CMT_DECODE_MSGPACK_SUCCESS;
@@ -302,8 +301,8 @@ static int unpack_label_dictionary_entry(mpack_reader_t *reader,
 
 static int unpack_label(mpack_reader_t *reader,
                         size_t index,
-                        struct mk_list *unique_label_list,
-                        struct mk_list *target_label_list)
+                        struct cfl_list *unique_label_list,
+                        struct cfl_list *target_label_list)
 {
     int                   result;
     struct cmt_map_label *new_label;
@@ -334,7 +333,7 @@ static int unpack_label(mpack_reader_t *reader,
         return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
     }
     else {
-        new_label->name = cmt_sds_create(dictionary_entry->name);
+        new_label->name = cfl_sds_create(dictionary_entry->name);
 
         if (NULL == new_label->name) {
             free(new_label);
@@ -342,7 +341,7 @@ static int unpack_label(mpack_reader_t *reader,
             return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
         }
 
-        mk_list_add(&new_label->_head, target_label_list);
+        cfl_list_add(&new_label->_head, target_label_list);
     }
 
     return CMT_DECODE_MSGPACK_SUCCESS;
@@ -351,8 +350,8 @@ static int unpack_label(mpack_reader_t *reader,
 static int unpack_static_label(mpack_reader_t *reader,
                                size_t index, void *context)
 {
-    struct mk_list                    *target_label_list;
-    struct mk_list                    *unique_label_list;
+    struct cfl_list                    *target_label_list;
+    struct cfl_list                    *unique_label_list;
     struct cmt_label                  *last_static_label;
     struct cmt_map_label              *dictionary_entry;
     struct cmt_label                  *new_static_label;
@@ -398,7 +397,7 @@ static int unpack_static_label(mpack_reader_t *reader,
             return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
         }
         else {
-            new_static_label->key = cmt_sds_create(dictionary_entry->name);
+            new_static_label->key = cfl_sds_create(dictionary_entry->name);
 
             if (NULL == new_static_label->key) {
                 free(new_static_label);
@@ -408,17 +407,17 @@ static int unpack_static_label(mpack_reader_t *reader,
 
             new_static_label->val = NULL;
 
-            mk_list_add(&new_static_label->_head, target_label_list);
+            cfl_list_add(&new_static_label->_head, target_label_list);
         }
     }
     else {
-        last_static_label = mk_list_entry_last(target_label_list, struct cmt_label, _head);
+        last_static_label = cfl_list_entry_last(target_label_list, struct cmt_label, _head);
 
         if (NULL == last_static_label) {
             return CMT_DECODE_MSGPACK_DICTIONARY_LOOKUP_ERROR; /* Not quite */
         }
 
-        last_static_label->val = cmt_sds_create(dictionary_entry->name);
+        last_static_label->val = cfl_sds_create(dictionary_entry->name);
 
         if (NULL == last_static_label->val) {
             return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
@@ -761,7 +760,7 @@ static int unpack_metric(mpack_reader_t *reader,
         }
     }
 
-    mk_list_init(&metric->labels);
+    cfl_list_init(&metric->labels);
 
     decode_context->metric = metric;
 
@@ -804,7 +803,7 @@ static int unpack_metric_array_entry(mpack_reader_t *reader, size_t index, void 
     result = unpack_metric(reader, decode_context, &metric);
 
     if (CMT_DECODE_MSGPACK_SUCCESS == result) {
-        if (0 == mk_list_size(&metric->labels)) {
+        if (0 == cfl_list_size(&metric->labels)) {
             /* Should we care about finding more than one "implicitly static metric" in
              * the array?
              */
@@ -830,7 +829,7 @@ static int unpack_metric_array_entry(mpack_reader_t *reader, size_t index, void 
         }
         else
         {
-            mk_list_add(&metric->_head, &decode_context->map->metrics);
+            cfl_list_add(&metric->_head, &decode_context->map->metrics);
         }
     }
 
@@ -1064,7 +1063,7 @@ static int unpack_basic_type_meta(mpack_reader_t *reader, size_t index, void *co
     result = cmt_mpack_unpack_map(reader, callbacks, context);
 
     if (CMT_DECODE_MSGPACK_SUCCESS == result) {
-        decode_context->map->label_count = mk_list_size(&decode_context->map->label_keys);
+        decode_context->map->label_count = cfl_list_size(&decode_context->map->label_keys);
 
         if (decode_context->map->type == CMT_HISTOGRAM) {
             histogram = (struct cmt_histogram *) decode_context->map->parent;
@@ -1145,14 +1144,14 @@ static int unpack_basic_type(mpack_reader_t *reader, struct cmt *cmt, struct cmt
     decode_context.cmt = cmt;
     decode_context.map = *map;
 
-    if (mk_list_is_empty(&cmt->static_labels->list) == 0) {
+    if (cfl_list_is_empty(&cmt->static_labels->list)) {
         decode_context.static_labels_unpacked = CMT_FALSE;
     }
     else {
         decode_context.static_labels_unpacked = CMT_TRUE;
     }
 
-    mk_list_init(&decode_context.unique_label_list);
+    cfl_list_init(&decode_context.unique_label_list);
 
     result = cmt_mpack_unpack_map(reader, callbacks, (void *) &decode_context);
 
@@ -1234,7 +1233,7 @@ static int append_unpacked_counter_to_metrics_context(struct cmt *context,
 
     map->opts = &counter->opts;
 
-    mk_list_add(&counter->_head, &context->counters);
+    cfl_list_add(&counter->_head, &context->counters);
 
     return CMT_DECODE_MSGPACK_SUCCESS;
 }
@@ -1265,7 +1264,7 @@ static int append_unpacked_gauge_to_metrics_context(struct cmt *context,
 
     map->opts = &gauge->opts;
 
-    mk_list_add(&gauge->_head, &context->gauges);
+    cfl_list_add(&gauge->_head, &context->gauges);
 
     return CMT_DECODE_MSGPACK_SUCCESS;
 }
@@ -1295,7 +1294,7 @@ static int append_unpacked_untyped_to_metrics_context(struct cmt *context,
 
     map->opts = &untyped->opts;
 
-    mk_list_add(&untyped->_head, &context->untypeds);
+    cfl_list_add(&untyped->_head, &context->untypeds);
 
     return CMT_DECODE_MSGPACK_SUCCESS;
 }
@@ -1325,7 +1324,7 @@ static int append_unpacked_summary_to_metrics_context(struct cmt *context,
 
     map->opts = &summary->opts;
 
-    mk_list_add(&summary->_head, &context->summaries);
+    cfl_list_add(&summary->_head, &context->summaries);
 
     return CMT_DECODE_MSGPACK_SUCCESS;
 }
@@ -1356,7 +1355,7 @@ static int append_unpacked_histogram_to_metrics_context(
 
     map->opts = &histogram->opts;
 
-    mk_list_add(&histogram->_head, &context->histograms);
+    cfl_list_add(&histogram->_head, &context->histograms);
 
     return CMT_DECODE_MSGPACK_SUCCESS;
 }

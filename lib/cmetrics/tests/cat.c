@@ -30,7 +30,7 @@ void test_cat()
 {
     int ret;
     uint64_t ts;
-    cmt_sds_t text;
+    cfl_sds_t text;
     struct cmt *cmt1;
     struct cmt *cmt2;
     struct cmt *cmt3;
@@ -55,13 +55,13 @@ void test_cat()
     TEST_CHECK(u != NULL);
 
 
-    ts = cmt_time_now();
+    ts = cfl_time_now();
     cmt_counter_set(c, ts, 1.1, 2, (char *[]) {"aaa", "bbb"});
 
-    ts = cmt_time_now();
+    ts = cfl_time_now();
     cmt_gauge_set(g, ts, 1.2, 2, (char *[]) {"yyy", "xxx"});
 
-    ts = cmt_time_now();
+    ts = cfl_time_now();
     cmt_untyped_set(u, ts, 1.3, 2, (char *[]) {"qwe", "asd"});
 
     /* cmetrics 2 */
@@ -76,13 +76,13 @@ void test_cat()
                          2, (char *[]) {"label3", "label4"});
     TEST_CHECK(g != NULL);
 
-    ts = cmt_time_now();
+    ts = cfl_time_now();
     cmt_counter_set(c, ts, 2.1, 2, (char *[]) {"ccc", "ddd"});
 
     /* no labels */
     cmt_counter_set(c, ts, 5, 0, NULL);
 
-    ts = cmt_time_now();
+    ts = cfl_time_now();
     cmt_gauge_add(g, ts, 10, 2, (char *[]) {"tyu", "iop"});
 
     /*

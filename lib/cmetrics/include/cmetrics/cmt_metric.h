@@ -40,8 +40,8 @@ struct cmt_metric {
     /* internal */
     uint64_t hash;
     uint64_t timestamp;
-    struct mk_list labels;
-    struct mk_list _head;
+    struct cfl_list labels;
+    struct cfl_list _head;
 };
 
 void cmt_metric_set(struct cmt_metric *metric, uint64_t timestamp, double val);
