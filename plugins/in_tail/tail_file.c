@@ -48,7 +48,7 @@
 #include "win32.h"
 #endif
 
-#include <xxhash.h>
+#include <cfl/cfl.h>
 
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
@@ -77,7 +77,7 @@ static int stat_to_hash_bits(struct flb_tail_config *ctx, struct stat *st,
     len = snprintf(tmp, sizeof(tmp) - 1, "%" PRIu64 ":%" PRIu64,
                    st_dev, st->st_ino);
 
-    *out_hash = XXH3_64bits(tmp, len);
+    *out_hash = cfl_hash_64bits(tmp, len);
     return 0;
 }
 
