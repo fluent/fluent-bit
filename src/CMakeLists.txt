@@ -352,7 +352,6 @@ set(FLB_DEPS
   mpack-static
   chunkio-static
   miniz
-  xxhash
   cmetrics-static
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
