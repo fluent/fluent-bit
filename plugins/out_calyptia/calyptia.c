@@ -951,7 +951,7 @@ static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
         if (!c) {
             flb_upstream_conn_release(u_conn);
             flb_sds_destroy(json);
-            flb_sds_destroy(&ctx->metrics_endpoint);
+            flb_sds_destroy(ctx->metrics_endpoint);
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
         
