@@ -263,7 +263,7 @@ static int netdev_update(struct flb_ne *ctx)
     flb_slist_split_string(&tx_list, tx_header->str, ' ', -1);
 
     n = 0;
-    ts = cmt_time_now();
+    ts = cfl_time_now();
     mk_list_foreach(head, &list) {
         line = mk_list_entry(head, struct flb_slist_entry, _head);
 

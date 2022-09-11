@@ -105,7 +105,7 @@ static int cpufreq_update(struct flb_ne *ctx)
         return 0;
     }
 
-    ts = cmt_time_now();
+    ts = cfl_time_now();
 
     /* Process entries */
     mk_list_foreach(head, &list) {
