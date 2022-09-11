@@ -929,7 +929,7 @@ int we_perflib_update_counters(struct flb_we                   *ctx,
     int                              result;
 
 
-    timestamp = cmt_time_now();
+    timestamp = cfl_time_now();
 
     result = we_perflib_query(ctx, query, &measurement);
 
