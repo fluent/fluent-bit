@@ -830,7 +830,7 @@ static void debug_payload(struct flb_calyptia *ctx, void *data, size_t bytes)
     int ret;
     size_t off = 0;
     struct cmt *cmt;
-    cmt_sds_t out;
+    cfl_sds_t out;
 
     ret = cmt_decode_msgpack_create(&cmt, (char *) data, bytes, &off);
     if (ret != CMT_DECODE_MSGPACK_SUCCESS) {
