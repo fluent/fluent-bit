@@ -103,7 +103,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
 
 #ifdef FLB_HAVE_METRICS
     /* timestamp */
-    ts = cmt_time_now();
+    ts = cfl_time_now();
 
     /* Count number of incoming records */
     in_records = ic->added_records;
@@ -432,7 +432,7 @@ int flb_filter_init_all(struct flb_config *config)
 
         /* Get name or alias for the instance */
         name = (char *) flb_filter_name(ins);
-        ts = cmt_time_now();
+        ts = cfl_time_now();
 
         /* CMetrics */
         ins->cmt = cmt_create();
