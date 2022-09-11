@@ -26,7 +26,8 @@
 #include <signal.h>
 #include <ctype.h>
 
-#include <monkey/mk_core.h>
+#include <cfl/cfl.h>
+
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_dump.h>
