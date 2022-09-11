@@ -870,7 +870,7 @@ int flb_input_instance_init(struct flb_input_instance *ins,
     char *name;
 
     name = (char *) flb_input_name(ins);
-    ts = cmt_time_now();
+    ts = cfl_time_now();
 
     /* CMetrics */
     ins->cmt = cmt_create();
