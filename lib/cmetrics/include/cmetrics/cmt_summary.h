@@ -36,7 +36,7 @@ struct cmt_summary {
     /* metrics common */
     struct cmt_opts opts;
     struct cmt_map *map;
-    struct mk_list _head;
+    struct cfl_list _head;
     struct cmt *cmt;
 
 };

@@ -74,7 +74,7 @@
 
 <HELPTAG,TYPETAG>[^ \t]+ {
     // The next token will be the metric name
-    yylval->str = cmt_sds_create(yytext);
+    yylval->str = cfl_sds_create(yytext);
     return YYSTATE == HELPTAG ? HELP : TYPE;
 }
 
@@ -107,17 +107,17 @@
 
 <INHELPTAG>\\n {
     // Process linefeed escape sequence
-    context->strbuf = cmt_sds_cat(context->strbuf, "\n", 1);
+    context->strbuf = cfl_sds_cat(context->strbuf, "\n", 1);
 }
 
 <INHELPTAG>\\\\ {
     // Process backslack escape sequence
-    context->strbuf = cmt_sds_cat(context->strbuf, "\\", 1);
+    context->strbuf = cfl_sds_cat(context->strbuf, "\\", 1);
 }
 
 <INHELPTAG>[^\r\n\\]+ {
     // Put everything that is not a backslash or a line feed into strbuf
-    context->strbuf = cmt_sds_cat(context->strbuf, yytext, yyleng);
+    context->strbuf = cfl_sds_cat(context->strbuf, yytext, yyleng);
 }
 
 <INTYPETAG>counter {
@@ -150,19 +150,19 @@
 }
 
 <INQUOTE>[\\]["] {
-    context->strbuf = cmt_sds_cat(context->strbuf, "\"", 1);
+    context->strbuf = cfl_sds_cat(context->strbuf, "\"", 1);
 }
 
 <INQUOTE>\\n {
-    context->strbuf = cmt_sds_cat(context->strbuf, "\n", 1);
+    context->strbuf = cfl_sds_cat(context->strbuf, "\n", 1);
 }
 
 <INQUOTE>\\\\ {
-    context->strbuf = cmt_sds_cat(context->strbuf, "\\", 1);
+    context->strbuf = cfl_sds_cat(context->strbuf, "\\", 1);
 }
 
 <INQUOTE>[^\r\n\\"]+ {
-    context->strbuf = cmt_sds_cat(context->strbuf, yytext, yyleng);
+    context->strbuf = cfl_sds_cat(context->strbuf, yytext, yyleng);
 }
 
 <INQUOTE>["] {
@@ -177,7 +177,7 @@
 }
 
 [a-zA-Z_][a-zA-Z_0-9]*  {
-    yylval->str = cmt_sds_create(yytext);
+    yylval->str = cfl_sds_create(yytext);
     return IDENTIFIER;
 }
 

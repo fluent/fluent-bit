@@ -13,7 +13,7 @@
 %}
 
 %union {
-    cmt_sds_t str;
+    cfl_sds_t str;
     char numstr[64];
     int integer;
 }
@@ -28,7 +28,7 @@
 %type <numstr> value
 
 %destructor {
-    cmt_sds_destroy($$);
+    cfl_sds_destroy($$);
 } <str>
 
 %start start;
