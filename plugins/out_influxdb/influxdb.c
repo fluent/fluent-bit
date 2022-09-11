@@ -441,7 +441,7 @@ static int format_metrics(struct flb_output_instance *ins,
 {
     int ret;
     size_t off = 0;
-    cmt_sds_t text;
+    cfl_sds_t text;
     struct cmt *cmt = NULL;
 
     /* get cmetrics context */
