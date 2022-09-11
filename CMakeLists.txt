@@ -437,6 +437,10 @@ endif()
 # fluent-bit do not use it.
 set(WITH_SYSTEM_MALLOC  1 CACHE BOOL "Use system memory allocator")
 
+# CFL
+set(CMAKE_REQUIRED_INCLUDES "${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CFL}/include")
+add_subdirectory(${FLB_PATH_LIB_CFL} EXCLUDE_FROM_ALL)
+
 # MsgPack options
 option(MSGPACK_ENABLE_CXX             OFF)
 option(MSGPACK_ENABLE_SHARED          OFF)
@@ -471,12 +475,6 @@ endif()
 if(FLB_UTF8_ENCODER)
   add_subdirectory(${FLB_PATH_LIB_TUTF8E} EXCLUDE_FROM_ALL)
 endif()
-
-# xxHash
-FLB_OPTION(BUILD_SHARED_LIBS "Build shared libs" OFF)
-set(XXHASH_BUILD_ENABLE_INLINE_API OFF)
-set(XXHASH_BUILD_XXHSUM OFF)
-add_subdirectory(${FLB_PATH_LIB_XXHASH}/cmake_unofficial EXCLUDE_FROM_ALL)
 
 # snappy
 add_subdirectory(${FLB_PATH_LIB_SNAPPY} EXCLUDE_FROM_ALL)
