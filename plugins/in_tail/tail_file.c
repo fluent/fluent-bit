@@ -1125,7 +1125,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
 
 #ifdef FLB_HAVE_METRICS
     name = (char *) flb_input_name(ctx->ins);
-    ts = cmt_time_now();
+    ts = cfl_time_now();
     cmt_counter_inc(ctx->cmt_files_opened, ts, 1, (char *[]) {name});
 
     /* Old api */
@@ -1212,7 +1212,7 @@ void flb_tail_file_remove(struct flb_tail_file *file)
 
 #ifdef FLB_HAVE_METRICS
     name = (char *) flb_input_name(ctx->ins);
-    ts = cmt_time_now();
+    ts = cfl_time_now();
     cmt_counter_inc(ctx->cmt_files_closed, ts, 1, (char *[]) {name});
 
     /* old api */
@@ -1700,7 +1700,7 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
 
 #ifdef FLB_HAVE_METRICS
         i_name = (char *) flb_input_name(ctx->ins);
-        ts = cmt_time_now();
+        ts = cfl_time_now();
         cmt_counter_inc(ctx->cmt_files_rotated, ts, 1, (char *[]) {i_name});
 
         /* OLD api */
