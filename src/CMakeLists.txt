@@ -345,6 +345,7 @@ endif()
 # Set static dependencies
 set(FLB_DEPS
   ${FLB_DEPS}
+  cfl-static
   mk_core
   jsmn
   msgpack-c-static
