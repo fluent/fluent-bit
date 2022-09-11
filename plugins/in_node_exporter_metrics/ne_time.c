@@ -39,7 +39,7 @@ static int time_update(struct flb_ne *ctx)
     double val;
     uint64_t ts;
 
-    ts = cmt_time_now();
+    ts = cfl_time_now();
     val = ((double) ts) / 1e9;
     cmt_gauge_set(ctx->time, ts, val, 0, NULL);
 
