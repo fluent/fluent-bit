@@ -108,7 +108,7 @@ gnu_software_URL=https://www.gnu.org/software
 program_details ()
 {
   case $1 in
-    aclocal|automake)
+    automake)
       echo "The '$1' program is part of the GNU Automake package:"
       echo "<$gnu_software_URL/automake>"
       echo "It also requires GNU Autoconf, GNU m4 and Perl in order to run:"
