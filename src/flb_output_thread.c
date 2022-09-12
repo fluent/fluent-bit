@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_output_thread.h>
 #include <fluent-bit/flb_thread_pool.h>
+#include <fluent-bit/flb_coroutine_scheduler.h>
 
 static pthread_once_t local_thread_instance_init = PTHREAD_ONCE_INIT;
 FLB_TLS_DEFINE(struct flb_out_thread_instance, local_thread_instance);
