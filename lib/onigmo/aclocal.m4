@@ -481,7 +481,7 @@ _AM_IF_OPTION([no-define],,
 # Some tools Automake needs.
 AC_REQUIRE([AM_SANITY_CHECK])dnl
 AC_REQUIRE([AC_ARG_PROGRAM])dnl
-AM_MISSING_PROG([ACLOCAL], [aclocal-${am__api_version}])
+#AM_MISSING_PROG([ACLOCAL], [aclocal-${am__api_version}])
 AM_MISSING_PROG([AUTOCONF], [autoconf])
 AM_MISSING_PROG([AUTOMAKE], [automake-${am__api_version}])
 AM_MISSING_PROG([AUTOHEADER], [autoheader])
