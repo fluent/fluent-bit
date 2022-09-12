@@ -1,0 +1,6 @@
+regversion.lo: regversion.c onigmo.h \
+  /Library/Developer/CommandLineTools/usr/lib/clang/13.1.6/include/stddef.h
+
+onigmo.h:
+
+/Library/Developer/CommandLineTools/usr/lib/clang/13.1.6/include/stddef.h:

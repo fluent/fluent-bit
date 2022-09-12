@@ -1,0 +1,13 @@
+enc/iso_8859_13.lo: enc/iso_8859_13.c regenc.h config.h onigmo.h \
+  /Library/Developer/CommandLineTools/usr/lib/clang/13.1.6/include/stddef.h \
+  enc/iso_8859.h
+
+regenc.h:
+
+config.h:
+
+onigmo.h:
+
+/Library/Developer/CommandLineTools/usr/lib/clang/13.1.6/include/stddef.h:
+
+enc/iso_8859.h:

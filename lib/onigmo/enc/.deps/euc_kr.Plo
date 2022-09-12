@@ -1,0 +1,10 @@
+enc/euc_kr.lo: enc/euc_kr.c regenc.h config.h onigmo.h \
+  /Library/Developer/CommandLineTools/usr/lib/clang/13.1.6/include/stddef.h
+
+regenc.h:
+
+config.h:
+
+onigmo.h:
+
+/Library/Developer/CommandLineTools/usr/lib/clang/13.1.6/include/stddef.h:

@@ -1,0 +1,14 @@
+prefix=/Users/edsiper/coding/fluent-bit/build
+exec_prefix=/Users/edsiper/coding/fluent-bit/build
+libdir=/Users/edsiper/coding/fluent-bit/build/lib
+includedir=/Users/edsiper/coding/fluent-bit/build/include
+datarootdir=/Users/edsiper/coding/fluent-bit/build/share
+datadir=/Users/edsiper/coding/fluent-bit/build/share
+
+Name: onigmo
+Description: Regular expression library
+Version: 6.2.0
+Requires:
+Libs: -L${libdir} -lonigmo
+Cflags: -I${includedir}
+

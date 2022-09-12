@@ -1,0 +1,13 @@
+enc/utf_32le.lo: enc/utf_32le.c regenc.h config.h onigmo.h \
+  /Library/Developer/CommandLineTools/usr/lib/clang/13.1.6/include/stddef.h \
+  enc/iso_8859.h
+
+regenc.h:
+
+config.h:
+
+onigmo.h:
+
+/Library/Developer/CommandLineTools/usr/lib/clang/13.1.6/include/stddef.h:
+
+enc/iso_8859.h:

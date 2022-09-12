@@ -1,0 +1,13 @@
+enc/euc_jp.lo: enc/euc_jp.c regenc.h config.h onigmo.h \
+  /Library/Developer/CommandLineTools/usr/lib/clang/13.1.6/include/stddef.h \
+  enc/jis/props.h
+
+regenc.h:
+
+config.h:
+
+onigmo.h:
+
+/Library/Developer/CommandLineTools/usr/lib/clang/13.1.6/include/stddef.h:
+
+enc/jis/props.h:

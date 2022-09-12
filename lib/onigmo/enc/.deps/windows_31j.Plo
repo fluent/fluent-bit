@@ -1,0 +1,16 @@
+enc/windows_31j.lo: enc/windows_31j.c enc/shift_jis.h regenc.h config.h \
+  onigmo.h \
+  /Library/Developer/CommandLineTools/usr/lib/clang/13.1.6/include/stddef.h \
+  enc/jis/props.h
+
+enc/shift_jis.h:
+
+regenc.h:
+
+config.h:
+
+onigmo.h:
+
+/Library/Developer/CommandLineTools/usr/lib/clang/13.1.6/include/stddef.h:
+
+enc/jis/props.h:
