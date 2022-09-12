@@ -18,7 +18,7 @@ test_in_http_tls_filter_expect() {
     export SIGNAL_FILE_PATH="/tmp/fb_signal_$$"
     export LISTENER_VHOST=leo.vcap.me
     export LISTENER_HOST=127.0.0.1 
-    export LISTENER_PORT=9999
+    export LISTENER_PORT=50000
 
     input_generator &
 
