@@ -448,11 +448,8 @@ int flb_downstream_conn_timeouts(struct mk_list *list)
                     }
                 }
 
-                if (connection->event.status != MK_EVENT_NONE) {
-                    mk_event_inject(connection->evl,
-                                    &connection->event,
-                                    MK_EVENT_READ | MK_EVENT_WRITE,
-                                    FLB_TRUE);
+                if (connection->coroutine != NULL) {
+                    flb_coro_enqueue(connection->coroutine);
                 }
 
                 connection->net_error = ETIMEDOUT;
