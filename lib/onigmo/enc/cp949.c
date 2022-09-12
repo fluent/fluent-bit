@@ -1,5 +1,5 @@
 /**********************************************************************
-  euc_kr.c -  Oniguruma (regular expression library)
+  cp949.c -  Oniguruma (regular expression library)
 **********************************************************************/
 /*-
  * Copyright (c) 2002-2007  K.Kosako  <sndgk393 AT ybb DOT ne DOT jp>
@@ -29,9 +29,7 @@
 
 #include "regenc.h"
 
-static const int EncLen_EUCKR[] = {
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+static const int EncLen_CP949[] = {
   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -45,8 +43,32 @@ static const int EncLen_EUCKR[] = {
   2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
   2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
   2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+  2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+  2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
   2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1
 };
+
+static const char CP949_CAN_BE_TRAIL_TABLE[256] = {
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0,
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0
+};
+
+#define CP949_ISMB_FIRST(byte)  (EncLen_CP949[byte] > 1)
+#define CP949_ISMB_TRAIL(byte)  CP949_CAN_BE_TRAIL_TABLE[(byte)]
 
 typedef enum { FAILURE = -2, ACCEPT = -1, S0 = 0, S1 } state_t;
 #define A ACCEPT
@@ -61,9 +83,9 @@ static const signed char trans[][0x100] = {
     /* 5 */ A, A, A, A, A, A, A, A, A, A, A, A, A, A, A, A,
     /* 6 */ A, A, A, A, A, A, A, A, A, A, A, A, A, A, A, A,
     /* 7 */ A, A, A, A, A, A, A, A, A, A, A, A, A, A, A, A,
-    /* 8 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
-    /* 9 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
-    /* a */ F, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    /* 8 */ A, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    /* 9 */ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    /* a */ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
     /* b */ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
     /* c */ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
     /* d */ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -75,13 +97,13 @@ static const signed char trans[][0x100] = {
     /* 1 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
     /* 2 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
     /* 3 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
-    /* 4 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
-    /* 5 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
-    /* 6 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
-    /* 7 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
-    /* 8 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
-    /* 9 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
-    /* a */ F, A, A, A, A, A, A, A, A, A, A, A, A, A, A, A,
+    /* 4 */ F, A, A, A, A, A, A, A, A, A, A, A, A, A, A, A,
+    /* 5 */ A, A, A, A, A, A, A, A, A, A, A, F, F, F, F, F,
+    /* 6 */ F, A, A, A, A, A, A, A, A, A, A, A, A, A, A, A,
+    /* 7 */ A, A, A, A, A, A, A, A, A, A, A, F, F, F, F, F,
+    /* 8 */ F, A, A, A, A, A, A, A, A, A, A, A, A, A, A, A,
+    /* 9 */ A, A, A, A, A, A, A, A, A, A, A, A, A, A, A, A,
+    /* a */ A, A, A, A, A, A, A, A, A, A, A, A, A, A, A, A,
     /* b */ A, A, A, A, A, A, A, A, A, A, A, A, A, A, A, A,
     /* c */ A, A, A, A, A, A, A, A, A, A, A, A, A, A, A, A,
     /* d */ A, A, A, A, A, A, A, A, A, A, A, A, A, A, A, A,
@@ -93,7 +115,7 @@ static const signed char trans[][0x100] = {
 #undef F
 
 static int
-euckr_mbc_enc_len(const UChar* p, const UChar* e, OnigEncoding enc ARG_UNUSED)
+cp949_mbc_enc_len(const UChar* p, const UChar* e, OnigEncoding enc ARG_UNUSED)
 {
   int firstbyte = *p++;
   state_t s = trans[0][firstbyte];
@@ -101,26 +123,26 @@ euckr_mbc_enc_len(const UChar* p, const UChar* e, OnigEncoding enc ARG_UNUSED)
     return s == ACCEPT ? ONIGENC_CONSTRUCT_MBCLEN_CHARFOUND(n) : \
                          ONIGENC_CONSTRUCT_MBCLEN_INVALID()
   if (s < 0) RETURN(1);
-  if (p == e) return ONIGENC_CONSTRUCT_MBCLEN_NEEDMORE(EncLen_EUCKR[firstbyte]-1);
+  if (p == e) return ONIGENC_CONSTRUCT_MBCLEN_NEEDMORE(EncLen_CP949[firstbyte]-1);
   s = trans[s][*p++];
   RETURN(2);
 #undef RETURN
 }
 
 static OnigCodePoint
-euckr_mbc_to_code(const UChar* p, const UChar* end, OnigEncoding enc)
+cp949_mbc_to_code(const UChar* p, const UChar* end, OnigEncoding enc)
 {
   return onigenc_mbn_mbc_to_code(enc, p, end);
 }
 
 static int
-euckr_code_to_mbc(OnigCodePoint code, UChar *buf, OnigEncoding enc)
+cp949_code_to_mbc(OnigCodePoint code, UChar *buf, OnigEncoding enc)
 {
   return onigenc_mb2_code_to_mbc(enc, code, buf);
 }
 
 static int
-euckr_mbc_case_fold(OnigCaseFoldType flag, const UChar** pp, const UChar* end,
+cp949_mbc_case_fold(OnigCaseFoldType flag, const UChar** pp, const UChar* end,
                     UChar* lower, OnigEncoding enc)
 {
   return onigenc_mbn_mbc_case_fold(enc, flag,
@@ -129,7 +151,7 @@ euckr_mbc_case_fold(OnigCaseFoldType flag, const UChar** pp, const UChar* end,
 
 #if 0
 static int
-euckr_is_mbc_ambiguous(OnigCaseFoldType flag,
+cp949_is_mbc_ambiguous(OnigCaseFoldType flag,
 		       const UChar** pp, const UChar* end, OnigEncoding enc)
 {
   return onigenc_mbn_is_mbc_ambiguous(enc, flag, pp, end);
@@ -137,26 +159,28 @@ euckr_is_mbc_ambiguous(OnigCaseFoldType flag,
 #endif
 
 static int
-euckr_is_code_ctype(OnigCodePoint code, unsigned int ctype, OnigEncoding enc)
+cp949_is_code_ctype(OnigCodePoint code, unsigned int ctype, OnigEncoding enc)
 {
   return onigenc_mb2_is_code_ctype(enc, code, ctype);
 }
 
-#define euckr_islead(c)    ((c) < 0xa1 || (c) == 0xff)
-
 static UChar*
-euckr_left_adjust_char_head(const UChar* start, const UChar* s, const UChar* end, OnigEncoding enc)
+cp949_left_adjust_char_head(const UChar* start, const UChar* s, const UChar* end, OnigEncoding enc)
 {
-  /* Assumed in this encoding,
-     mb-trail bytes don't mix with single bytes.
-  */
   const UChar *p;
   int len;
 
   if (s <= start) return (UChar* )s;
   p = s;
 
-  while (!euckr_islead(*p) && p > start) p--;
+  if (CP949_ISMB_TRAIL(*p)) {
+    while (p > start) {
+      if (! CP949_ISMB_FIRST(*--p)) {
+	p++;
+	break;
+      }
+    }
+  }
   len = enclen(enc, p, end);
   if (p + len > s) return (UChar* )p;
   p += len;
@@ -164,30 +188,29 @@ euckr_left_adjust_char_head(const UChar* start, const UChar* s, const UChar* end
 }
 
 static int
-euckr_is_allowed_reverse_match(const UChar* s, const UChar* end ARG_UNUSED, OnigEncoding enc ARG_UNUSED)
+cp949_is_allowed_reverse_match(const UChar* s, const UChar* end ARG_UNUSED, OnigEncoding enc ARG_UNUSED)
 {
   const UChar c = *s;
-  if (c <= 0x7e) return TRUE;
-  else           return FALSE;
+  return (CP949_ISMB_TRAIL(c) ? FALSE : TRUE);
 }
 
-OnigEncodingDefine(euc_kr, EUC_KR) = {
-  euckr_mbc_enc_len,
-  "EUC-KR",   /* name */
+OnigEncodingDefine(cp949, CP949) = {
+  cp949_mbc_enc_len,
+  "CP949",      /* name */
   2,          /* max enc length */
   1,          /* min enc length */
   onigenc_is_mbc_newline_0x0a,
-  euckr_mbc_to_code,
+  cp949_mbc_to_code,
   onigenc_mb2_code_to_mbclen,
-  euckr_code_to_mbc,
-  euckr_mbc_case_fold,
+  cp949_code_to_mbc,
+  cp949_mbc_case_fold,
   onigenc_ascii_apply_all_case_fold,
   onigenc_ascii_get_case_fold_codes_by_str,
   onigenc_minimum_property_name_to_ctype,
-  euckr_is_code_ctype,
+  cp949_is_code_ctype,
   onigenc_not_support_get_ctype_code_range,
-  euckr_left_adjust_char_head,
-  euckr_is_allowed_reverse_match,
+  cp949_left_adjust_char_head,
+  cp949_is_allowed_reverse_match,
 #ifdef USE_CASE_MAP_API
   onigenc_ascii_only_case_map,
 #else
@@ -196,33 +219,8 @@ OnigEncodingDefine(euc_kr, EUC_KR) = {
   0,
   ONIGENC_FLAG_NONE,
 };
-ENC_ALIAS("eucKR", "EUC-KR")
-
-#ifndef RUBY
-/* Same with OnigEncodingEUC_KR except the name */
-OnigEncodingDefine(euc_cn, EUC_CN) = {
-  euckr_mbc_enc_len,
-  "EUC-CN",   /* name */
-  2,          /* max enc length */
-  1,          /* min enc length */
-  onigenc_is_mbc_newline_0x0a,
-  euckr_mbc_to_code,
-  onigenc_mb2_code_to_mbclen,
-  euckr_code_to_mbc,
-  euckr_mbc_case_fold,
-  onigenc_ascii_apply_all_case_fold,
-  onigenc_ascii_get_case_fold_codes_by_str,
-  onigenc_minimum_property_name_to_ctype,
-  euckr_is_code_ctype,
-  onigenc_not_support_get_ctype_code_range,
-  euckr_left_adjust_char_head,
-  euckr_is_allowed_reverse_match,
-#ifdef USE_CASE_MAP_API
-  onigenc_ascii_only_case_map,
-#else
-  NULL,
-#endif
-  0,
-  ONIGENC_FLAG_NONE,
-};
-#endif /* RUBY */
+/*
+ * Name: CP949
+ * Link: http://www.microsoft.com/globaldev/reference/dbcs/949.mspx
+ * Link: http://en.wikipedia.org/wiki/EUC-KR#EUC-KR
+ */
