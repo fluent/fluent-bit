@@ -17,7 +17,7 @@ test_in_syslog_uds_stream_plaintext_filter_expect() {
     if test "$platform" != "Darwin"
         then    
         export SIGNAL_FILE_PATH="/tmp/fb_signal_$$"
-        export SOCKET_PATH=/tmp/fluent_bit_syslog_uds_stream.sock
+        export SOCKET_PATH=/tmp/fluent_bit_syslog_uds_dgram.sock
 
         input_generator &
 
