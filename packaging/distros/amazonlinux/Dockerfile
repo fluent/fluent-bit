@@ -28,9 +28,33 @@ COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64
 
 # hadolint ignore=DL3033
 RUN yum -y update && \
-    yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
+    yum install -y rpm-build ca-certificates gcc gcc-c++ cmake make bash \
                    wget unzip systemd-devel wget flex bison \
                    cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
+                   postgresql-devel postgresql-libs \
+                   cmake3 libyaml-devel && \
+    yum clean all
+
+FROM amazonlinux:2022 as amazonlinux-2022-base
+
+# hadolint ignore=DL3033
+RUN yum -y update && \
+    yum install -y rpm-build ca-certificates gcc gcc-c++ cmake make bash \
+                   wget unzip systemd-devel wget flex bison \
+                   cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
+                   postgresql-devel postgresql-libs \
+                   cmake3 libyaml-devel && \
+    yum clean all
+
+FROM arm64v8/amazonlinux:2022 as amazonlinux-2022-base.arm64v8-base
+
+COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
+
+# hadolint ignore=DL3033
+RUN yum -y update && \
+    yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
+                   wget unzip systemd-devel wget flex bison \
+                   cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
                    postgresql-devel postgresql-libs \
                    cmake3 libyaml-devel && \
     yum clean all
