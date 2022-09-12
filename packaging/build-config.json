@@ -1,0 +1,25 @@
+{
+    "linux_targets": [
+        "amazonlinux/2",
+        "amazonlinux/2.arm64v8",
+        "centos/7",
+        "centos/7.arm64v8",
+        "centos/8",
+        "centos/8.arm64v8",
+        "centos/9",
+        "centos/9.arm64v8",
+        "debian/buster",
+        "debian/buster.arm64v8",
+        "debian/bullseye",
+        "debian/bullseye.arm64v8",
+        "ubuntu/16.04",
+        "ubuntu/18.04",
+        "ubuntu/18.04.arm64v8",
+        "ubuntu/20.04",
+        "ubuntu/20.04.arm64v8",
+        "ubuntu/22.04",
+        "ubuntu/22.04.arm64v8",
+        "raspbian/buster",
+        "raspbian/bullseye"
+      ]
+}
