@@ -133,6 +133,7 @@ static int schedule_request_now(int seconds,
         return -1;
     }
     request->fd = fd;
+    timer->timer_fd = fd;
 
     /*
      * Note: mk_event_timeout_create() sets a type = MK_EVENT_NOTIFICATION by
