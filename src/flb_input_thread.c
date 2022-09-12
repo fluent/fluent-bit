@@ -31,6 +31,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_input_thread.h>
+#include <fluent-bit/flb_coroutine_scheduler.h>
 
 static int input_thread_instance_set_status(struct flb_input_instance *ins, uint32_t status);
 static int input_thread_instance_get_status(struct flb_input_instance *ins);
@@ -42,10 +43,13 @@ static void cb_thread_sched_timer(struct flb_config *ctx, void *data)
 
     (void) ctx;
 
-    /* Downstream timeout handling */
+    /* Timeout handling */
     ins = (struct flb_input_instance *) data;
 
+    /* Upstream timeout handling */
     flb_upstream_conn_timeouts(&ins->upstreams);
+
+    /* Downstream timeout handling */
     flb_downstream_conn_timeouts(&ins->downstreams);
 }
 
@@ -299,12 +303,17 @@ static void input_thread(void *data)
     struct flb_input_plugin *p;
     struct flb_sched *sched = NULL;
     struct flb_net_dns dns_ctx = {0};
+    struct flb_coroutine_scheduler coro_sched;
 
     thi = (struct flb_input_thread_instance *) data;
     ins = thi->ins;
     p = ins->p;
 
     flb_engine_evl_set(thi->evl);
+
+    flb_coroutine_scheduler_init(&coro_sched, -1);
+    flb_coroutine_scheduler_set(&coro_sched);
+    flb_coroutine_scheduler_add_event_loop(&coro_sched, thi->evl);
 
     /* Create a scheduler context */
     sched = flb_sched_create(ins->config, thi->evl);
@@ -435,7 +444,12 @@ static void input_thread(void *data)
             else if (event->type == FLB_ENGINE_EV_THREAD_INPUT) {
                 handle_input_thread_event(event->fd, ins->config);
             }
+            else if(event->type == FLB_ENGINE_EV_CORO_SCHEDULER) {
+                flb_coroutine_scheduler_consume_continuation_signal(NULL);
+            }
         }
+
+        flb_coroutine_scheduler_resume_enqueued_coroutines();
 
         flb_net_dns_lookup_context_cleanup(&dns_ctx);
 
