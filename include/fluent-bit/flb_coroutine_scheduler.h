@@ -43,6 +43,7 @@ struct flb_coroutine_scheduler {
     size_t          resumption_count;
     uint64_t        cycle_number;
     uint64_t        last_wakeup_emission_cycle;
+    uint64_t        collective_time_slice;
 };
 
 struct flb_coroutine_scheduler *flb_coroutine_scheduler_get();
@@ -67,12 +68,5 @@ int flb_coroutine_scheduler_consume_continuation_signal(struct flb_coroutine_sch
 
 struct flb_coro *flb_coroutine_scheduler_fetch_next_enqueued_coroutine();
 int flb_coroutine_scheduler_resume_enqueued_coroutines();
-
-// void flb_coro_resume_request_list_init();
-// struct mk_list *flb_coro_resume_request_list_get();
-// void flb_coro_resume_request_list_set(struct mk_list *list);
-// int flb_coro_resume_request_enqueue(struct flb_coro *coro);
-// struct flb_coro_resume_request *flb_coro_resume_request_fetch();
-// void flb_coro_resume_request_destroy(struct flb_coro_resume_request *request);
 
 #endif /* !FLB_COROUTINE_SCHEDULER_H */

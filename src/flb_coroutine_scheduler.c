@@ -134,7 +134,6 @@ int flb_coroutine_scheduler_uninitialize(struct flb_coroutine_scheduler *schedul
         scheduler->wakeup_channels[1] = -1;
     }
 
-
     return 0;
 }
 
@@ -155,11 +154,17 @@ int flb_coroutine_scheduler_set_coroutine_state(struct flb_coro *coroutine,
         return -1;
     }
 
-    result = mk_list_entry_orphan(&coroutine->_head);
-
-    if (result == 0) {
+    if (!mk_list_entry_is_orphan(&coroutine->_head)) {
         mk_list_del(&coroutine->_head);
     }
+
+    /* Coroutines that were explicitly enqueued to be resumed are prepended to
+     * the queued_coroutines list and coroutines that have performed a
+     * collaborative yield are appended to the list which allows the scheduler
+     * to naturally prioritize coroutines that need to be immediately resumed
+     * as well as wasting less time iterating collaboratively yielded coroutines
+     * that have to be resumed in the current scheduler cycle.
+     */
 
     if (state == FLB_COROUTINE_STATUS_PAUSED) {
         coroutine->yield_cycle = scheduler->cycle_number;
@@ -208,6 +213,8 @@ int flb_coroutine_scheduler_emit_continuation_signal(struct flb_coroutine_schedu
         return -4;
     }
 
+    scheduler->last_wakeup_emission_cycle = scheduler->cycle_number;
+
     return 0;
 }
 
@@ -232,7 +239,7 @@ int flb_coroutine_scheduler_consume_continuation_signal(struct flb_coroutine_sch
         return -3;
     }
 
-    result = flb_pipe_read_all(scheduler->wakeup_channels[2], signal_buffer, 1);
+    result = flb_pipe_read_all(scheduler->wakeup_channels[0], signal_buffer, 1);
 
     if (result == -1) {
         return -4;
@@ -273,6 +280,10 @@ struct flb_coro *flb_coroutine_scheduler_fetch_next_enqueued_coroutine()
 
 int flb_coroutine_scheduler_resume_enqueued_coroutines()
 {
+    int                             continuation_required;
+    uint64_t                        current_timestamp;
+    uint64_t                        start_timestamp;
+    uint64_t                        timeslice_end;
     struct flb_coro                *coroutine;
     struct flb_coroutine_scheduler *scheduler;
 
@@ -283,6 +294,14 @@ int flb_coroutine_scheduler_resume_enqueued_coroutines()
     }
 
     scheduler->resumption_count = 0;
+    continuation_required = FLB_FALSE;
+
+    timeslice_end = 0;
+
+    if (scheduler->collective_time_slice != FLB_CORO_TIME_SLICE_UNLIMITED) {
+        timeslice_end  = flb_time_get_cpu_timestamp();
+        timeslice_end += scheduler->collective_time_slice;
+    }
 
     do {
         coroutine = flb_coroutine_scheduler_fetch_next_enqueued_coroutine();
@@ -297,99 +316,32 @@ int flb_coroutine_scheduler_resume_enqueued_coroutines()
 
         if (scheduler->resumption_limit != -1) {
             if (scheduler->resumption_count >= scheduler->resumption_limit) {
-                flb_coroutine_scheduler_emit_continuation_signal(scheduler);
-
-                break;
+                continuation_required = FLB_TRUE;
             }
         }
+
+        if (!continuation_required) {
+            if (timeslice_end > 0) {
+                if (flb_time_get_cpu_timestamp() > timeslice_end) {
+                    continuation_required = FLB_TRUE;
+                }
+            }
+        }
+
+        if (continuation_required) {
+            printf("EXITING AFTER %d\n", scheduler->resumption_count);
+            flb_coroutine_scheduler_emit_continuation_signal(scheduler);
+
+            break;
+        }
     } while (1);
+
+    /* This cycle counter is meant to wrap, it's a number because it's not
+     * an expensive operation but could very well be a boolean and it would
+     * retain its desired properties.
+     */
 
     scheduler->cycle_number = (scheduler->cycle_number + 1) % UINT64_MAX;
 
     return 0;
 }
-
-/*
-static pthread_once_t local_thread_resume_request_list_init = PTHREAD_ONCE_INIT;
-
-FLB_TLS_DEFINE(struct mk_list, flb_coro_resume_request_list);
-
-FLB_TLS_DEFINE(struct flb_coro, flb_coro_key);
-
-static pthread_mutex_t coro_mutex_init;
-
-static void flb_coro_resume_request_list_init_private()
-{
-    FLB_TLS_INIT(flb_coro_resume_request_list);
-}
-
-void flb_coro_resume_request_list_init()
-{
-    pthread_once(&local_thread_resume_request_list_init,
-                 flb_coro_resume_request_list_init_private);
-}
-
-struct mk_list *flb_coro_resume_request_list_get()
-{
-    return FLB_TLS_GET(flb_coro_resume_request_list);
-}
-
-void flb_coro_resume_request_list_set(struct mk_list *list)
-{
-    FLB_TLS_SET(flb_coro_resume_request_list, list);
-}
-
-int flb_coro_resume_request_enqueue(struct flb_coro *coro)
-{
-    struct mk_list                 *request_list;
-    struct flb_coro_resume_request *request;
-
-    request_list = flb_coro_resume_request_list_get();
-
-    if (request_list == NULL) {
-        return NULL;
-    }
-
-    request = flb_calloc(1, sizeof(struct flb_coro_resume_request));
-
-    if (request == NULL) {
-        return -1;
-    }
-
-    request->coro = coro;
-
-    mk_list_add(&request->_head, request_list);
-
-    return 0;
-}
-
-struct flb_coro_resume_request *flb_coro_resume_request_fetch()
-{
-    struct mk_list                 *request_list;
-    struct flb_coro_resume_request *request;
-
-    request_list = flb_coro_resume_request_list_get();
-
-    if (request_list == NULL) {
-        return NULL;
-    }
-
-    request = NULL;
-
-    if (mk_list_is_empty(request_list)) {
-        request = mk_list_entry_first(request_list, struct flb_coro_resume_request, _head);
-
-        if (request != NULL) {
-            mk_list_del(&request->_head);
-        }
-    }
-
-    return request;
-}
-
-void flb_coro_resume_request_destroy(struct flb_coro_resume_request *request)
-{
-    free(request);
-}
-
-*/
