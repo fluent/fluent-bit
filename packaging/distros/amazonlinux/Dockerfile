@@ -46,6 +46,7 @@ RUN yum -y update && \
                    cmake3 libyaml-devel && \
     yum clean all
 
+# hadolint ignore=DL3029
 FROM --platform=arm64 amazonlinux:2022 as amazonlinux-2022.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
