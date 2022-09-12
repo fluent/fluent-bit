@@ -840,11 +840,8 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
                     }
                 }
 
-                if (u_conn->event.status != MK_EVENT_NONE) {
-                    mk_event_inject(u_conn->evl,
-                                    &u_conn->event,
-                                    MK_EVENT_READ | MK_EVENT_WRITE,
-                                    FLB_TRUE);
+                if (u_conn->coroutine != NULL) {
+                    flb_coro_enqueue(u_conn->coroutine);
                 }
 
                 u_conn->net_error = ETIMEDOUT;
