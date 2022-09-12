@@ -49,7 +49,7 @@ enabled=1
 EOF
 sed -i 's|VERSION_ARCH_SUBSTR|\$releasever/\$basearch/|g' /etc/yum.repos.d/fluent-bit.repo
 cat /etc/yum.repos.d/fluent-bit.repo
-yum -y install fluent-bit || yum -y install td-agent-bit
+yum -y install fluent-bit
 SCRIPT
     ;;
     centos|centoslinux|rhel|redhatenterpriselinuxserver|fedora|rocky|almalinux)
@@ -66,7 +66,7 @@ enabled=1
 EOF
 sed -i 's|VERSION_ARCH_SUBSTR|\$releasever/\$basearch/|g' /etc/yum.repos.d/fluent-bit.repo
 cat /etc/yum.repos.d/fluent-bit.repo
-yum -y install fluent-bit || yum -y install td-agent-bit
+yum -y install fluent-bit
 SCRIPT
     ;;
     ubuntu|debian)
@@ -81,7 +81,7 @@ deb [signed-by=/usr/share/keyrings/fluentbit-keyring.gpg] $RELEASE_URL/${OS}/${C
 EOF
 cat /etc/apt/sources.list.d/fluent-bit.list
 apt-get -y update
-apt-get -y install fluent-bit || apt-get -y install td-agent-bit
+apt-get -y install fluent-bit
 SCRIPT
     ;;
     *)
