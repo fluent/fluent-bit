@@ -13,11 +13,11 @@ include/fluent-bit/flb_info.h
 include/fluent-bit/flb_plugins.h
 include/fluent-bit/flb_version.h
 include/fluent-bit/conf/*.h
+include/fluent-bit/tls/flb_tls_info.h
 init/fluent-bit.service
 lib/chunkio/include/chunkio/cio_version.h
 lib/monkey/monkey.service
 lib/monkey/include/monkey/mk_core/mk_core_info.h
-src/tls/openssl.c
 
 packaging/.env
 packaging/packages

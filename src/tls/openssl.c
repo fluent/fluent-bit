@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/tls/flb_tls.h>
+#include <fluent-bit/tls/flb_tls_info.h>
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -41,15 +42,6 @@
  * Use the bundled cert as the default trusted CA.
  */
 #define RHEL_DEFAULT_CA "/etc/ssl/certs/ca-bundle.crt"
-
-#ifdef FLB_SYSTEM_MACOS
-/* On macOS, default PEM format certificates are not provided by
- * default. Instead, we'll generate them into:
- * "@CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_SYSCONFDIR@/certs/rootcert.pem"
- * during the building process.
- */
-#define MACOS_DEFAULT_CA "@CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_SYSCONFDIR@/certs/rootcert.pem"
-#endif
 
 /* OpenSSL library context */
 struct tls_context {
@@ -197,7 +189,7 @@ static int load_system_certificates(struct tls_context *ctx)
 {
     int ret;
 #ifdef FLB_SYSTEM_MACOS
-    const char ca_path[] = "@CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_SYSCONFDIR@/certs/";
+    const char ca_path[] = MACOS_CA_DIR;
 #else
     const char ca_path[] = "/etc/ssl/certs/";
 #endif
