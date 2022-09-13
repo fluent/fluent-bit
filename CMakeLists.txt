@@ -995,6 +995,11 @@ configure_file(
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_version.h"
   )
 
+configure_file(
+  "${PROJECT_SOURCE_DIR}/include/fluent-bit/tls/flb_tls_info.h.in"
+  "${PROJECT_SOURCE_DIR}/include/fluent-bit/tls/flb_tls_info.h"
+  )
+
 # Installation Directories
 # ========================
 if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")

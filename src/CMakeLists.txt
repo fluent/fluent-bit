@@ -119,7 +119,6 @@ endif()
 
 # Fluent Bit have TLS support
 if(FLB_TLS)
-  configure_file(${CMAKE_SOURCE_DIR}/src/tls/openssl.c.in ${CMAKE_SOURCE_DIR}/src/tls/openssl.c)
   # Register the TLS interface and functions
   set(src
     ${src}
