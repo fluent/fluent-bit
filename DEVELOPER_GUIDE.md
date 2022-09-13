@@ -534,6 +534,24 @@ Note that Fluent Bit uses Cmake 3 and on some systems you may need to invoke it 
 
 To set up and build your environment, please refer to the packaging containers for a dependency list: <https://github.com/fluent/fluent-bit/tree/master/packaging/distros>.
 
+A simple container-based script [`run_code_analysis.sh`](./run_code_analysis.sh) is provided to run unit tests using <https://github.com/marketplace/actions/cmake-swiss-army-knife>.
+
+```shell
+$ ./run_code_analysis.sh
+...
++ ctest --output-on-failure .
+Test project /tmp/source
+        Start   1: flb-rt-core-timeout
+  1/109 Test   #1: flb-rt-core-timeout ........................   Passed   10.31 sec
+        Start   2: flb-rt-in_event_test
+  2/109 Test   #2: flb-rt-in_event_test .......................   Passed    9.01 sec
+        Start   3: flb-rt-in_cpu
+...
+
+```
+
+Refer to <https://github.com/marketplace/actions/cmake-swiss-army-knife> for full details but this can run with sanitizers, valgrind and other tooling too by setting the `TEST_PRESENT` environment variable.
+
 A [`Vagrantfile`](./Vagrantfile) is provided to simplify building on a VM, this will set up a VM using Vagrant you can then build in.
 
 ```shell
@@ -586,6 +604,14 @@ valgrind ./bin/flb-rt-your-test
 ```
 
 This will allow you to check for memory issues in code paths (ex error cases) which are hard to trigger through manual testing.
+
+See above for using the `run_code_analysis.sh` script as well to run Valgrind on unit tests with the simple tooling in a container:
+
+```shell
+$ export TEST_PRESET=valgrind
+$ ./run_code_analysis.sh
+...
+```
 
 ## Need more help?
 
