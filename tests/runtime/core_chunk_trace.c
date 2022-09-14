@@ -87,6 +87,7 @@ void do_test_records_trace(void (*records_cb)(struct callback_records *))
 
     TEST_CHECK(flb_service_set(ctx, "Flush", "0.5",
                                     "Grace", "1",
+                                    "Enable_Chunk_Trace", "On",
                                     NULL) == 0);
 
 
