@@ -706,7 +706,10 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
             encoded_to_buf(p, tmp, len);
             p += len;
         }
-        else if (c >= 0x80 && c <= 0xFFFF) {
+#if defined(__powerpc64__)
+        else if (c >= 0x80) {
+#else
+	    else if (c >= 0x80 && c <= 0xFFFF) {
             hex_bytes = flb_utf8_len(str + i);
             if (available - written < 6) {
                 return FLB_FALSE;
@@ -742,6 +745,7 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
             i += (hex_bytes - 1);
         }
         else if (c > 0xFFFF) {
+#endif
             utf_sequence_length = flb_utf8_len(str + i);
 
             if (i + utf_sequence_length > str_len) {
