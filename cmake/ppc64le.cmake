@@ -1,0 +1,6 @@
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(powerpc|ppc)64le")
+  message(STATUS "This platform does not support WAMR building so disabled.")
+  set(FLB_WASM OFF)
+  message(STATUS "This platform does not support LuaJIT so disabled.")
+  set(FLB_LUAJIT OFF)
+endif ()

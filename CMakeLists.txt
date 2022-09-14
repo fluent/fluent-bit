@@ -349,6 +349,11 @@ if (FLB_SYSTEM_MACOS)
   include(cmake/macos-setup.cmake)
 endif()
 
+# Teak build targets for Linux on ppc64le
+if (FLB_SYSTEM_LINUX)
+  include(cmake/ppc64le.cmake)
+endif ()
+
 # Extract Git commit information for debug output.
 # Note that this is only set when cmake is run, the intent here is to use in CI for verification of releases so is acceptable.
 # For a better solution see https://jonathanhamberg.com/post/cmake-embedding-git-hash/ but this is simple and easy.
@@ -562,10 +567,6 @@ if(FLB_WASM)
       FLB_DEFINITION(FLB_HAVE_WASM)
     else ()
       message(STATUS "This platform does not provide stdatomic.h that is needed for the FLB_WASM feature so disabled.")
-      set(FLB_WASM OFF)
-    endif ()
-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(powerpc|ppc)64le")
-      message(STATUS "This platform does not support WAMR building so disabled.")
       set(FLB_WASM OFF)
     endif ()
   else ()
@@ -911,13 +912,8 @@ endif()
 # LuaJIT (Scripting Support)
 # ==========================
 if(FLB_LUAJIT)
-  if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(powerpc|ppc)64le")
-    message(STATUS "This platform does not support LuaJIT so disabled.")
-    set(FLB_LUAJIT OFF)
-  else ()
-    include(cmake/luajit.cmake)
-    FLB_DEFINITION(FLB_HAVE_LUAJIT)
-  endif ()
+  include(cmake/luajit.cmake)
+  FLB_DEFINITION(FLB_HAVE_LUAJIT)
 endif()
 
 # PostgreSQL
