@@ -122,7 +122,10 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     char *aws_external_id = NULL;
     char *aws_session_name = NULL;
 #endif
+    char *cloud_port_char;
     char *cloud_host = NULL;
+    int cloud_host_port = 0;
+    int cloud_port = FLB_ES_DEFAULT_HTTPS_PORT;
     struct flb_uri *uri = ins->host.uri;
     struct flb_uri_field *f_index = NULL;
     struct flb_uri_field *f_type = NULL;
@@ -153,8 +156,36 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
             flb_es_conf_destroy(ctx);
             return NULL;
         }
+        flb_plg_debug(ctx->ins, "extracted cloud_host: '%s'", cloud_host);
+
+        cloud_port_char = strchr(cloud_host, ':');
+
+	if (cloud_port_char == NULL) {
+            flb_plg_debug(ctx->ins, "cloud_host: '%s' does not contain a port: '%s'", cloud_host, cloud_host);
+        }
+        else {
+            cloud_port_char[0] = '\0';
+            cloud_port_char = &cloud_port_char[1];
+            flb_plg_debug(ctx->ins, "extracted cloud_port_char: '%s'", cloud_port_char);
+            cloud_host_port = (int) strtol(cloud_port_char, (char **) NULL, 10);
+            flb_plg_debug(ctx->ins, "converted cloud_port_char to port int: '%i'", cloud_host_port);
+	}
+
+        if (cloud_host_port == 0) {
+            cloud_host_port = cloud_port;
+        }
+
+        flb_plg_debug(ctx->ins,
+                      "checked whether extracted port was null and set it to "
+                      "default https port or not. Outcome: '%i' and cloud_host: '%s'.",
+                      cloud_host_port, cloud_host);
+
+        if (ins->host.name != NULL) {
+            flb_sds_destroy(ins->host.name);
+        }
+
         ins->host.name = cloud_host;
-        ins->host.port = 443;
+        ins->host.port = cloud_host_port;
     }
 
     /* Set default network configuration */
