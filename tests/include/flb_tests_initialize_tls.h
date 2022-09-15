@@ -18,26 +18,27 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_TEST_INTERNAL_H
-#define FLB_TEST_INTERNAL_H
+#ifndef FLB_TESTS_INITALIZE_TLS_H
+#define FLB_TESTS_INITALIZE_TLS_H
 
-#ifdef FLB_TEST_INIT_NOP
-static inline void init_nop() {};
-#define TEST_INIT { init_nop(); }
-#else
-#include "../include/flb_tests_initialize_tls.h"
-#define TEST_INIT { flb_test_env_config_init(); }
-#endif
+#include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_mem.h>
 
-#ifdef FLB_TEST_FINI_NOP
-static inline void fini_nop() {};
-#define TEST_FINI { fini_nop(); }
-#else
-#include "../include/flb_tests_initialize_tls.h"
-#define TEST_FINI { flb_test_env_config_destroy(); }
-#endif
+struct flb_config *test_env_config = NULL;
 
-#include "../lib/acutest/acutest.h"
-#define FLB_TESTS_DATA_PATH "@FLB_TESTS_DATA_PATH@"
+static inline void flb_test_env_config_init(void)
+{
+    test_env_config = flb_config_init();
+
+    if (test_env_config == NULL) {
+        return;
+    }
+}
+
+static inline void flb_test_env_config_destroy(void) {
+    if (test_env_config != NULL) {
+        flb_config_exit(test_env_config);
+    }
+}
 
 #endif
