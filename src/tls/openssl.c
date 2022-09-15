@@ -34,15 +34,6 @@
  */
 #define OPENSSL_1_1_0 0x010100000L
 
-/*
- * RHEL-family distrbutions do not provide system certificates in
- * a format that OpenSSL's CAPath can read, but do provide a single
- * packed cert in /etc/certs.
- *
- * Use the bundled cert as the default trusted CA.
- */
-#define RHEL_DEFAULT_CA "/etc/ssl/certs/ca-bundle.crt"
-
 /* OpenSSL library context */
 struct tls_context {
     int debug_level;
@@ -188,25 +179,16 @@ static int windows_load_system_certificates(struct tls_context *ctx)
 static int load_system_certificates(struct tls_context *ctx)
 {
     int ret;
-#ifdef FLB_SYSTEM_MACOS
-    const char ca_path[] = MACOS_CA_DIR;
-#else
-    const char ca_path[] = "/etc/ssl/certs/";
-#endif
+    const char ca_path[] = FLB_DEFAULT_CA_DIR;
 
     /* For Windows use specific API to read the certs store */
 #ifdef _MSC_VER
     return windows_load_system_certificates(ctx);
 #endif
 
-    if (access(RHEL_DEFAULT_CA, R_OK) == 0) {
-        ret = SSL_CTX_load_verify_locations(ctx->ctx, RHEL_DEFAULT_CA, ca_path);
+    if (access(FLB_DEFAULT_SEARCH_CA_BUNDLE, R_OK) == 0) {
+        ret = SSL_CTX_load_verify_locations(ctx->ctx, FLB_DEFAULT_SEARCH_CA_BUNDLE, ca_path);
     }
-#ifdef FLB_SYSTEM_MACOS
-    else if (access(MACOS_DEFAULT_CA, R_OK) == 0) {
-        ret = SSL_CTX_load_verify_locations(ctx->ctx, MACOS_DEFAULT_CA, ca_path);
-    }
-#endif
     else {
         ret = SSL_CTX_load_verify_locations(ctx->ctx, NULL, ca_path);
     }
