@@ -179,19 +179,17 @@ static int windows_load_system_certificates(struct tls_context *ctx)
 static int load_system_certificates(struct tls_context *ctx)
 {
     int ret;
-    const char ca_path[] = FLB_DEFAULT_CA_DIR;
+    const char *ca_file = FLB_DEFAULT_SEARCH_CA_BUNDLE;
 
     /* For Windows use specific API to read the certs store */
 #ifdef _MSC_VER
     return windows_load_system_certificates(ctx);
 #endif
+    if (access(ca_file, R_OK) != 0) {
+        ca_file = NULL;
+    }
 
-    if (access(FLB_DEFAULT_SEARCH_CA_BUNDLE, R_OK) == 0) {
-        ret = SSL_CTX_load_verify_locations(ctx->ctx, FLB_DEFAULT_SEARCH_CA_BUNDLE, ca_path);
-    }
-    else {
-        ret = SSL_CTX_load_verify_locations(ctx->ctx, NULL, ca_path);
-    }
+    ret = SSL_CTX_load_verify_locations(ctx->ctx, ca_file, FLB_DEFAULT_CA_DIR);
 
     if (ret != 1) {
         ERR_print_errors_fp(stderr);
