@@ -68,8 +68,6 @@ struct flb_coro {
     struct mk_list _head;
 };
 
-#define FLB_CORO_TIME_SLICE_UNLIMITED -1
-
 #ifdef FLB_CORO_STACK_SIZE
 #define FLB_CORO_STACK_SIZE_BYTE      FLB_CORO_STACK_SIZE
 #else
@@ -88,15 +86,15 @@ static FLB_INLINE int flb_coro_enqueue(struct flb_coro *coro)
 
 static FLB_INLINE void flb_coro_disable_time_slice_limit(struct flb_coro *coro)
 {
-    if (coro->time_slice != FLB_CORO_TIME_SLICE_UNLIMITED) {
+    if (coro->time_slice != FLB_TIMESLICE_UNLIMITED) {
         coro->time_slice_backup = coro->time_slice;
-        coro->time_slice = FLB_CORO_TIME_SLICE_UNLIMITED;
+        coro->time_slice = FLB_TIMESLICE_UNLIMITED;
     }
 }
 
 static FLB_INLINE void flb_coro_restore_time_slice_limit(struct flb_coro *coro)
 {
-    if (coro->time_slice == FLB_CORO_TIME_SLICE_UNLIMITED) {
+    if (coro->time_slice == FLB_TIMESLICE_UNLIMITED) {
         coro->time_slice = coro->time_slice_backup;
     }
 }
@@ -115,7 +113,7 @@ static FLB_INLINE void flb_coro_collab_yield(struct flb_coro *coro, int force)
     yield_needed = force;
 
     if (!yield_needed) {
-        if (coro->time_slice != FLB_CORO_TIME_SLICE_UNLIMITED) {
+        if (coro->time_slice != FLB_TIMESLICE_UNLIMITED) {
             current_time = flb_time_get_cpu_timestamp();
             elapsed_time = current_time - coro->resume_time;
 
@@ -176,7 +174,7 @@ static FLB_INLINE void flb_coro_resume(struct flb_coro *coro)
     flb_coroutine_scheduler_set_coroutine_state(coro, 
                                                 FLB_COROUTINE_STATUS_RUNNING);
 
-    if (coro->time_slice != FLB_CORO_TIME_SLICE_UNLIMITED) {
+    if (coro->time_slice != FLB_TIMESLICE_UNLIMITED) {
         coro->resume_time = flb_time_get_cpu_timestamp();
     }
 
