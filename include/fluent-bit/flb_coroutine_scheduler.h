@@ -26,6 +26,8 @@
 
 #include <monkey/mk_core.h>
 
+#define FLB_TIMESLICE_UNLIMITED                      -1
+
 #define FLB_COROUTINE_STATUS_UNINITIALIZED           0
 #define FLB_COROUTINE_STATUS_RUNNING                 1
 #define FLB_COROUTINE_STATUS_PAUSED                  2
@@ -52,6 +54,9 @@ void flb_coroutine_scheduler_set(struct flb_coroutine_scheduler *scheduler);
 
 int flb_coroutine_scheduler_init(struct flb_coroutine_scheduler *scheduler,
                                  size_t resumption_limit);
+
+void flb_coroutine_scheduler_set_collective_timeslice(struct flb_coroutine_scheduler *scheduler,
+                                                      uint64_t timeslice);
 
 int flb_coroutine_scheduler_add_event_loop(struct flb_coroutine_scheduler *scheduler,
                                            struct mk_event_loop *event_loop);
