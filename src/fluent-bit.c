@@ -138,6 +138,8 @@ static void flb_help(int rc, struct flb_config *config)
 #endif
     print_opt_i("-s, --coro_stack_size", "set coroutines stack size in bytes",
                 config->coro_stack_size);
+    print_opt_i("-X, --coro_collective_timeslice=SECONDS", "collective coroutine timeslice in seconds",
+                FLB_CONFIG_COLLECTIVE_TIMESLICE_SECS);
     print_opt("-q, --quiet", "quiet mode");
     print_opt("-S, --sosreport", "support report for Enterprise customers");
     print_opt("-V, --version", "show version number");
@@ -922,6 +924,8 @@ int flb_main(int argc, char **argv)
         { "help",            no_argument      , NULL, 'h' },
         { "help-json",       no_argument      , NULL, 'J' },
         { "coro_stack_size", required_argument, NULL, 's' },
+        { "coro_collective_timeslice", required_argument, NULL, 'X' },
+
         { "sosreport",       no_argument      , NULL, 'S' },
 #ifdef FLB_HAVE_HTTP_SERVER
         { "http_server",     no_argument      , NULL, 'H' },
@@ -1107,6 +1111,10 @@ int flb_main(int argc, char **argv)
         case 's':
             config->coro_stack_size = (unsigned int) atoi(optarg);
             break;
+        case 'X':
+            flb_cf_property_add(cf, &service->properties,
+                                FLB_CONF_STR_COLLECTIVE_TIMESLICE, 0, optarg, 0);
+            break;
         case 'S':
             config->support_mode = FLB_TRUE;
             break;
@@ -1171,6 +1179,11 @@ int flb_main(int argc, char **argv)
     /* Check co-routine stack size */
     if (config->coro_stack_size < getpagesize()) {
         flb_utils_error(FLB_ERR_CORO_STACK_SIZE);
+    }
+
+    /* Validate collective coroutine timeslice (seconds) */
+    if (config->collective_timeslice <= (double) 0.0) {
+        flb_utils_error(FLB_ERR_CFG_COLLECTIVE_TIMESLICE);
     }
 
     /* Validate flush time (seconds) */
