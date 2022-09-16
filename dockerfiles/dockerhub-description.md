@@ -6,7 +6,7 @@ Our stable images are based in [Distroless](https://github.com/GoogleContainerTo
 
 Optionally, we provide debug images which contain shells and tooling that can be used to troubleshoot or for testing purposes.
 
-For a detailed list of Tags and versions available, please refer to the the official documentation:
+For a detailed list of tags and versions available, please refer to the the official documentation:
 
 <https://docs.fluentbit.io/manual/installation/docker>
 
@@ -41,6 +41,12 @@ Fluent Bit v1.9.8
 [2022/09/16 10:03:48] [ info] [output:stdout:stdout.0] worker #0 started
 {"date":1663322636.0,"source":"stdout","log":"Testing a log message\r","container_id":"e29e02e84ffa00116818a86f6f99305a7d0f77f25420eceeb9206b725f137af4","container_name":"/intelligent_austin"}
 ```
+
+## Dockerfile
+
+Refer to the definition in the source repository: <https://github.com/fluent/fluent-bit/blob/master/dockerfiles/Dockerfile>.
+
+The container is built according to the instructions here: <https://github.com/fluent/fluent-bit/tree/master/dockerfiles>.
 
 ## Contact
 
