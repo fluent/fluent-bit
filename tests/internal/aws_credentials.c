@@ -192,6 +192,8 @@ static void test_environment_provider_only_access()
     struct flb_config *config;
     int ret;
 
+    unsetenv_credentials();
+
     config = flb_config_init();
 
     if (config == NULL) {
