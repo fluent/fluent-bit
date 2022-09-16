@@ -44,6 +44,7 @@ static flb_sds_t extract_cloud_host(struct flb_elasticsearch *ctx,
     char *colon;
     char *region;
     char *host;
+    char *port = NULL;
     char buf[256] = {0};
     char cloud_host_buf[256] = {0};
     const char dollar[2] = "$";
@@ -71,9 +72,27 @@ static flb_sds_t extract_cloud_host(struct flb_elasticsearch *ctx,
     if (host == NULL) {
         return NULL;
     }
+
+    /*
+     * Some cloud id format is "<deployment_region>$<elasticsearch_hostname>:<port>$<kibana_hostname>" .
+     *   e.g. https://github.com/elastic/beats/blob/v8.4.1/libbeat/cloudid/cloudid_test.go#L60
+     *
+     * It means the variable "host" can contains ':' and port number.
+     */
+    colon = strchr(host, ':');
+    if (colon != NULL) {
+        /* host contains host number */
+        *colon = '\0'; /* remove port number from host */
+        port = colon+1;
+    }
+
     strcpy(cloud_host_buf, host);
     strcat(cloud_host_buf, ".");
     strcat(cloud_host_buf, region);
+    if (port != NULL) {
+        strcat(cloud_host_buf, ":");
+        strcat(cloud_host_buf, port);
+    }
     return flb_sds_create(cloud_host_buf);
 }
 
