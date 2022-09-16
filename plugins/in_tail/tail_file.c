@@ -48,7 +48,7 @@
 #include "win32.h"
 #endif
 
-#include <xxhash.h>
+#include <cfl/cfl.h>
 
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
@@ -77,7 +77,7 @@ static int stat_to_hash_bits(struct flb_tail_config *ctx, struct stat *st,
     len = snprintf(tmp, sizeof(tmp) - 1, "%" PRIu64 ":%" PRIu64,
                    st_dev, st->st_ino);
 
-    *out_hash = XXH3_64bits(tmp, len);
+    *out_hash = cfl_hash_64bits(tmp, len);
     return 0;
 }
 
@@ -1125,7 +1125,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
 
 #ifdef FLB_HAVE_METRICS
     name = (char *) flb_input_name(ctx->ins);
-    ts = cmt_time_now();
+    ts = cfl_time_now();
     cmt_counter_inc(ctx->cmt_files_opened, ts, 1, (char *[]) {name});
 
     /* Old api */
@@ -1212,7 +1212,7 @@ void flb_tail_file_remove(struct flb_tail_file *file)
 
 #ifdef FLB_HAVE_METRICS
     name = (char *) flb_input_name(ctx->ins);
-    ts = cmt_time_now();
+    ts = cfl_time_now();
     cmt_counter_inc(ctx->cmt_files_closed, ts, 1, (char *[]) {name});
 
     /* old api */
@@ -1700,7 +1700,7 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
 
 #ifdef FLB_HAVE_METRICS
         i_name = (char *) flb_input_name(ctx->ins);
-        ts = cmt_time_now();
+        ts = cfl_time_now();
         cmt_counter_inc(ctx->cmt_files_rotated, ts, 1, (char *[]) {i_name});
 
         /* OLD api */

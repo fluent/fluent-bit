@@ -2363,7 +2363,7 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     struct flb_http_client *c;
 #ifdef FLB_HAVE_METRICS
     char *name = (char *) flb_output_name(ctx->ins);
-    uint64_t ts = cmt_time_now();
+    uint64_t ts = cfl_time_now();
 #endif
 
     /* Get upstream connection */

@@ -864,7 +864,7 @@ int flb_output_init_all(struct flb_config *config)
         name = (char *) flb_output_name(ins);
 
         /* get timestamp */
-        ts = cmt_time_now();
+        ts = cfl_time_now();
 
         /* CMetrics */
         ins->cmt = cmt_create();

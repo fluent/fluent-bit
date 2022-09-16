@@ -22,9 +22,8 @@
 #define CMT_ENCODE_TEXT_H
 
 #include <cmetrics/cmetrics.h>
-#include <cmetrics/cmt_sds.h>
 
-cmt_sds_t cmt_encode_text_create(struct cmt *cmt);
-void cmt_encode_text_destroy(cmt_sds_t text);
+cfl_sds_t cmt_encode_text_create(struct cmt *cmt);
+void cmt_encode_text_destroy(cfl_sds_t text);
 
 #endif

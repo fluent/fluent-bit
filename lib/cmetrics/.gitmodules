@@ -1,0 +1,3 @@
+[submodule "lib/cfl"]
+	path = lib/cfl
+	url = https://github.com/fluent/cfl

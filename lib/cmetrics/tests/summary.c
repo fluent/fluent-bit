@@ -26,7 +26,7 @@
 
 static void prometheus_encode_test(struct cmt *cmt)
 {
-    cmt_sds_t buf;
+    cfl_sds_t buf;
 
     buf = cmt_encode_prometheus_create(cmt, CMT_FALSE);
     printf("\n%s\n", buf);
@@ -49,7 +49,7 @@ void test_set_defaults()
     cmt_initialize();
 
     /* Timestamp */
-    ts = cmt_time_now();
+    ts = cfl_time_now();
 
     /* CMetrics context */
     cmt = cmt_create();
@@ -108,7 +108,7 @@ void fluentbit_bug_5894()
     cmt_initialize();
 
     /* Timestamp */
-    ts = cmt_time_now();
+    ts = cfl_time_now();
 
     /* CMetrics context */
     cmt = cmt_create();

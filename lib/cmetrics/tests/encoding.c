@@ -143,7 +143,7 @@ static struct cmt *generate_encoder_test_data()
     quantiles[3] = 4.4;
     quantiles[4] = 5.5;
 
-    cmt_summary_set_default(s1, ts, quantiles, 10, 51.612894511314444, 0, NULL);
+    cmt_summary_set_default(s1, ts, quantiles, 51.612894511314444, 10, 0, NULL);
 
     quantiles[0] = 11.11;
     quantiles[1] = 0;
@@ -151,7 +151,7 @@ static struct cmt *generate_encoder_test_data()
     quantiles[3] = 44.44;
     quantiles[4] = 55.55;
 
-    cmt_summary_set_default(s1, ts, quantiles, 10, 51.612894511314444, 1, (char *[]) {"my_val"});
+    cmt_summary_set_default(s1, ts, quantiles, 51.612894511314444, 10, 1, (char *[]) {"my_val"});
 
     return cmt;
 }
@@ -298,12 +298,12 @@ void test_cmt_to_msgpack_integrity()
     /* CMT1 -> Text */
     text1_buf = cmt_encode_text_create(cmt1);
     TEST_CHECK(text1_buf != NULL);
-    text1_size = cmt_sds_len(text1_buf);
+    text1_size = cfl_sds_len(text1_buf);
 
     /* CMT2 -> Text */
     text2_buf = cmt_encode_text_create(cmt2);
     TEST_CHECK(text2_buf != NULL);
-    text2_size = cmt_sds_len(text2_buf);
+    text2_size = cfl_sds_len(text2_buf);
 
     /* Compare msgpacks */
     TEST_CHECK(text1_size == text2_size);
@@ -332,7 +332,7 @@ void test_cmt_msgpack_partial_processing()
     double current_counter_value = 0;
     size_t expected_counter_count = 0;
     struct cmt_counter *first_counter = NULL;
-    cmt_sds_t serialized_data_buffer = NULL;
+    cfl_sds_t serialized_data_buffer = NULL;
     size_t serialized_data_buffer_length = 0;
 
     /* Generate an encoder context with more than one counter */
@@ -344,14 +344,14 @@ void test_cmt_msgpack_partial_processing()
      * next phase are individual ones and not just a glitch
      */
 
-    first_counter = mk_list_entry_first(&cmt1->counters, struct cmt_counter, _head);
+    first_counter = cfl_list_entry_first(&cmt1->counters, struct cmt_counter, _head);
     TEST_CHECK(NULL != first_counter);
 
     ret = cmt_counter_get_val(first_counter, 0, NULL, &base_counter_value);
     TEST_CHECK(0 == ret);
 
-    expected_counter_count = mk_list_size(&cmt1->counters);
-    expected_gauge_count = mk_list_size(&cmt1->gauges);
+    expected_counter_count = cfl_list_size(&cmt1->counters);
+    expected_gauge_count = cfl_list_size(&cmt1->gauges);
 
     /* Since we are modifying the counter on each iteration we have to re-encode it */
     for (iteration = 0 ;
@@ -365,11 +365,11 @@ void test_cmt_msgpack_partial_processing()
         TEST_CHECK(0 == ret);
 
         if (NULL == serialized_data_buffer) {
-            serialized_data_buffer = cmt_sds_create_len(mp1_buf, mp1_size);
+            serialized_data_buffer = cfl_sds_create_len(mp1_buf, mp1_size);
             TEST_CHECK(NULL != serialized_data_buffer);
         }
         else {
-            cmt_sds_cat_safe(&serialized_data_buffer, mp1_buf, mp1_size);
+            cfl_sds_cat_safe(&serialized_data_buffer, mp1_buf, mp1_size);
             /* TEST_CHECK(0 == ret); */
         }
 
@@ -388,7 +388,7 @@ void test_cmt_msgpack_partial_processing()
     ret = 0;
     offset = 0;
     iteration = 0;
-    serialized_data_buffer_length = cmt_sds_len(serialized_data_buffer);
+    serialized_data_buffer_length = cfl_sds_len(serialized_data_buffer);
 
     while (CMT_DECODE_MSGPACK_SUCCESS == ret) {
         ret = cmt_decode_msgpack_create(&cmt2, serialized_data_buffer,
@@ -403,7 +403,7 @@ void test_cmt_msgpack_partial_processing()
 
         TEST_CHECK(0 == ret);
 
-        first_counter = mk_list_entry_first(&cmt2->counters, struct cmt_counter, _head);
+        first_counter = cfl_list_entry_first(&cmt2->counters, struct cmt_counter, _head);
         TEST_CHECK(NULL != first_counter);
 
         ret = cmt_counter_get_val(first_counter, 0, NULL, &current_counter_value);
@@ -411,8 +411,8 @@ void test_cmt_msgpack_partial_processing()
 
         TEST_CHECK(base_counter_value == (current_counter_value - iteration - 1));
 
-        TEST_CHECK(expected_counter_count == mk_list_size(&cmt2->counters));
-        TEST_CHECK(expected_gauge_count == mk_list_size(&cmt2->gauges));
+        TEST_CHECK(expected_counter_count == cfl_list_size(&cmt2->counters));
+        TEST_CHECK(expected_gauge_count == cfl_list_size(&cmt2->gauges));
 
         cmt_decode_msgpack_destroy(cmt2);
 
@@ -421,7 +421,7 @@ void test_cmt_msgpack_partial_processing()
 
     TEST_CHECK(MSGPACK_PARTIAL_PROCESSING_ELEMENT_COUNT == iteration);
 
-    cmt_sds_destroy(serialized_data_buffer);
+    cfl_sds_destroy(serialized_data_buffer);
 }
 
 void test_cmt_to_msgpack_stability()
@@ -462,7 +462,7 @@ void test_cmt_to_msgpack_labels()
     size_t mp2_size = 2;
     struct cmt *cmt1 = NULL;
     struct cmt *cmt2 = NULL;
-    cmt_sds_t text_result;
+    cfl_sds_t text_result;
     const char expected_text[] = "1970-01-01T00:00:00.000000000Z kubernetes_network_load{dev=\"Calyptia\",lang=\"C\"} = 3\n" \
                                  "1970-01-01T00:00:00.000000000Z kubernetes_network_load{dev=\"Calyptia\",lang=\"C\",hostname=\"localhost\",app=\"cmetrics\"} = 1\n" \
                                  "1970-01-01T00:00:00.000000000Z kubernetes_network_load{dev=\"Calyptia\",lang=\"C\",hostname=\"localhost\",app=\"test\"} = 12.15\n";
@@ -507,7 +507,7 @@ void test_cmt_to_msgpack_labels()
 void test_prometheus_remote_write()
 {
     struct cmt *cmt;
-    cmt_sds_t   payload;
+    cfl_sds_t   payload;
     FILE       *sample_file;
 
     cmt_initialize();
@@ -533,7 +533,7 @@ curl -v 'http://localhost:9090/receive' -H 'Content-Type: application/x-protobuf
 
     sample_file = fopen("prometheus_remote_write_payload.bin", "wb+");
 
-    fwrite(payload, 1, cmt_sds_len(payload), sample_file);
+    fwrite(payload, 1, cfl_sds_len(payload), sample_file);
 
     fclose(sample_file);
 
@@ -544,7 +544,7 @@ curl -v 'http://localhost:9090/receive' -H 'Content-Type: application/x-protobuf
 
 void test_opentelemetry()
 {
-    cmt_sds_t payload;
+    cfl_sds_t payload;
     struct cmt *cmt;
     FILE *sample_file;
 
@@ -569,7 +569,7 @@ curl -v 'http://localhost:9090/v1/metrics' -H 'Content-Type: application/x-proto
 
     sample_file = fopen("opentelemetry_payload.bin", "wb+");
 
-    fwrite(payload, 1, cmt_sds_len(payload), sample_file);
+    fwrite(payload, 1, cfl_sds_len(payload), sample_file);
 
     fclose(sample_file);
 
@@ -581,7 +581,7 @@ curl -v 'http://localhost:9090/v1/metrics' -H 'Content-Type: application/x-proto
 void test_prometheus()
 {
     uint64_t ts;
-    cmt_sds_t text;
+    cfl_sds_t text;
     struct cmt *cmt;
     struct cmt_counter *c;
 
@@ -632,7 +632,7 @@ void test_prometheus()
 void test_text()
 {
     uint64_t ts;
-    cmt_sds_t text;
+    cfl_sds_t text;
     struct cmt *cmt;
     struct cmt_counter *c;
 
@@ -678,7 +678,7 @@ void test_text()
 void test_influx()
 {
     uint64_t ts;
-    cmt_sds_t text;
+    cfl_sds_t text;
     struct cmt *cmt;
     struct cmt_counter *c1;
     struct cmt_counter *c2;

@@ -29,7 +29,7 @@ static int copy_label_keys(struct cmt_map *map, char **out)
     int i;
     int s;
     char **labels = NULL;
-    struct mk_list *head;
+    struct cfl_list *head;
     struct cmt_map_label *label;
 
     /* labels array */
@@ -49,8 +49,8 @@ static int copy_label_keys(struct cmt_map *map, char **out)
 
     /* label keys: by using the labels array, just point out the names */
     i = 0;
-    mk_list_foreach(head, &map->label_keys) {
-        label = mk_list_entry(head, struct cmt_map_label, _head);
+    cfl_list_foreach(head, &map->label_keys) {
+        label = cfl_list_entry(head, struct cmt_map_label, _head);
         labels[i] = label->name;
         i++;
     }
@@ -64,11 +64,11 @@ static int copy_label_values(struct cmt_metric *metric, char **out)
     int i;
     int s;
     char **labels = NULL;
-    struct mk_list *head;
+    struct cfl_list *head;
     struct cmt_map_label *label;
 
     /* labels array */
-    s = mk_list_size(&metric->labels);
+    s = cfl_list_size(&metric->labels);
     if (s == 0) {
         *out = NULL;
         return 0;
@@ -84,8 +84,8 @@ static int copy_label_values(struct cmt_metric *metric, char **out)
 
     /* label keys: by using the labels array, just point out the names */
     i = 0;
-    mk_list_foreach(head, &metric->labels) {
-        label = mk_list_entry(head, struct cmt_map_label, _head);
+    cfl_list_foreach(head, &metric->labels) {
+        label = cfl_list_entry(head, struct cmt_map_label, _head);
         labels[i] = label->name;
         i++;
     }
@@ -101,7 +101,7 @@ static int copy_map(struct cmt_opts *opts, struct cmt_map *dst, struct cmt_map *
     uint64_t ts;
     double val;
     char **labels = NULL;
-    struct mk_list *head;
+    struct cfl_list *head;
     struct cmt_metric *metric_dst;
     struct cmt_metric *metric_src;
 
@@ -120,15 +120,15 @@ static int copy_map(struct cmt_opts *opts, struct cmt_map *dst, struct cmt_map *
     }
 
     /* Process map dynamic metrics */
-    mk_list_foreach(head, &src->metrics) {
-        metric_src = mk_list_entry(head, struct cmt_metric, _head);
+    cfl_list_foreach(head, &src->metrics) {
+        metric_src = cfl_list_entry(head, struct cmt_metric, _head);
 
         ret = copy_label_values(metric_src, (char **) &labels);
         if (ret == -1) {
             return -1;
         }
 
-        c = mk_list_size(&metric_src->labels);
+        c = cfl_list_size(&metric_src->labels);
         metric_dst = cmt_map_metric_get(opts, dst, c, labels, CMT_TRUE);
         free(labels);
 
@@ -252,14 +252,14 @@ static int copy_untyped(struct cmt *cmt, struct cmt_untyped *untyped)
 static int append_context(struct cmt *dst, struct cmt *src)
 {
     int ret;
-    struct mk_list *head;
+    struct cfl_list *head;
     struct cmt_counter *counter;
     struct cmt_gauge *gauge;
     struct cmt_untyped *untyped;
 
      /* Counters */
-    mk_list_foreach(head, &src->counters) {
-        counter = mk_list_entry(head, struct cmt_counter, _head);
+    cfl_list_foreach(head, &src->counters) {
+        counter = cfl_list_entry(head, struct cmt_counter, _head);
         ret = copy_counter(dst, counter);
         if (ret == -1) {
             return -1;
@@ -267,8 +267,8 @@ static int append_context(struct cmt *dst, struct cmt *src)
     }
 
     /* Gauges */
-    mk_list_foreach(head, &src->gauges) {
-        gauge = mk_list_entry(head, struct cmt_gauge, _head);
+    cfl_list_foreach(head, &src->gauges) {
+        gauge = cfl_list_entry(head, struct cmt_gauge, _head);
         ret = copy_gauge(dst, gauge);
         if (ret == -1) {
             return -1;
@@ -276,8 +276,8 @@ static int append_context(struct cmt *dst, struct cmt *src)
     }
 
     /* Untyped */
-    mk_list_foreach(head, &src->untypeds) {
-        untyped = mk_list_entry(head, struct cmt_untyped, _head);
+    cfl_list_foreach(head, &src->untypeds) {
+        untyped = cfl_list_entry(head, struct cmt_untyped, _head);
         ret = copy_untyped(dst, untyped);
         if (ret == -1) {
             return -1;

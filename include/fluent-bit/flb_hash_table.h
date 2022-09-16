@@ -21,6 +21,8 @@
 #define FLB_HASH_TABLE_H
 
 #include <fluent-bit/flb_info.h>
+#include <cfl/cfl.h>
+
 #include <monkey/mk_core.h>
 
 #include <stdio.h>

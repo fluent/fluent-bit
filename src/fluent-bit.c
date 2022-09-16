@@ -26,7 +26,8 @@
 #include <signal.h>
 #include <ctype.h>
 
-#include <monkey/mk_core.h>
+#include <cfl/cfl.h>
+
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_dump.h>
@@ -1072,7 +1073,7 @@ int flb_main(int argc, char **argv)
 
                 printf("%s\n", json);
                 flb_sds_destroy(json);
-                exit(0);
+                exit(EXIT_SUCCESS);
             }
             else {
                 flb_help_plugin(EXIT_SUCCESS, FLB_HELP_JSON, config,

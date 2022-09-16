@@ -34,8 +34,6 @@
 #define CMT_DECODE_PROMETHEUS_PARSE_VALUE_FAILED         60
 #define CMT_DECODE_PROMETHEUS_PARSE_TIMESTAMP_FAILED     70
 
-#define CMT_DECODE_PROMETHEUS_DUPLICATE_SUM_COUNT        10000
-
 #define CMT_DECODE_PROMETHEUS_MAX_LABEL_COUNT 128
 
 enum cmt_decode_prometheus_context_sample_type {
@@ -49,27 +47,28 @@ struct cmt_decode_prometheus_context_sample {
     char value1[64];
     char value2[64];
     int type;
-    cmt_sds_t label_values[CMT_DECODE_PROMETHEUS_MAX_LABEL_COUNT];
+    cfl_sds_t label_values[CMT_DECODE_PROMETHEUS_MAX_LABEL_COUNT];
 
-    struct mk_list _head;
+    struct cfl_list _head;
 };
 
 struct cmt_decode_prometheus_context_metric {
-    cmt_sds_t name_orig;
+    cfl_sds_t name_orig;
     char *ns;
     char *subsystem;
     char *name;
     int type;
     int current_sample_type;
-    cmt_sds_t docstring;
+    cfl_sds_t docstring;
     size_t label_count;
-    cmt_sds_t labels[CMT_DECODE_PROMETHEUS_MAX_LABEL_COUNT];
-    struct mk_list samples;
+    cfl_sds_t labels[CMT_DECODE_PROMETHEUS_MAX_LABEL_COUNT];
+    struct cfl_list samples;
 };
 
 struct cmt_decode_prometheus_parse_opts {
     int start_token;
     uint64_t default_timestamp;
+    uint64_t override_timestamp;
     char *errbuf;
     size_t errbuf_size;
 };
@@ -82,7 +81,7 @@ struct cmt_decode_prometheus_context {
     struct cmt *cmt;
     struct cmt_decode_prometheus_parse_opts opts;
     int errcode;
-    cmt_sds_t strbuf;
+    cfl_sds_t strbuf;
     struct cmt_decode_prometheus_context_metric metric;
 };
 

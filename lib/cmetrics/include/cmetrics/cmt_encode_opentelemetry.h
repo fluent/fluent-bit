@@ -22,7 +22,6 @@
 #define CMT_ENCODE_OPENTELEMETRY_H
 
 #include <cmetrics/cmetrics.h>
-#include <cmetrics/cmt_sds.h>
 #include <opentelemetry/metrics.pb-c.h>
 #include <opentelemetry/metrics_service.pb-c.h>
 
@@ -38,7 +37,7 @@ struct cmt_opentelemetry_context
     struct cmt                                     *cmt;
 };
 
-cmt_sds_t cmt_encode_opentelemetry_create(struct cmt *cmt);
-void cmt_encode_opentelemetry_destroy(cmt_sds_t text);
+cfl_sds_t cmt_encode_opentelemetry_create(struct cmt *cmt);
+void cmt_encode_opentelemetry_destroy(cfl_sds_t text);
 
 #endif

@@ -29,8 +29,7 @@
 #include <fluent-bit/flb_ra_key.h>
 #include <msgpack.h>
 
-#include <xxhash.h>
-#include <time.h>
+#include <cfl/cfl.h>
 
 #include "opensearch.h"
 #include "os_conf.h"
@@ -261,8 +260,8 @@ static int opensearch_format(struct flb_config *config,
     struct flb_time tms;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
-    XXH128_hash_t hash;
-    unsigned char h[sizeof(XXH128_hash_t)];
+    cfl_hash_128bits_t hash;
+    unsigned char h[sizeof(cfl_hash_128bits_t)];
     int index_custom_len;
     struct flb_opensearch *ctx = plugin_context;
     flb_sds_t j_index;
@@ -504,7 +503,7 @@ static int opensearch_format(struct flb_config *config,
 
         if (ctx->generate_id == FLB_TRUE) {
             /* use a 128 bit hash and copy it to a buffer */
-            hash = XXH3_128bits(tmp_sbuf.data, tmp_sbuf.size);
+            hash = cfl_hash_128bits(tmp_sbuf.data, tmp_sbuf.size);
             memcpy(h, &hash, sizeof(hash));
             snprintf(uuid, sizeof(uuid),
                      "%02X%02X%02X%02X-%02X%02X-%02X%02X-"

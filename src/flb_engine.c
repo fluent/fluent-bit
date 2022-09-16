@@ -969,7 +969,7 @@ int flb_engine_start(struct flb_config *config)
                 }
             }
             else if (event->type == FLB_ENGINE_EV_OUTPUT) {
-                ts = cmt_time_now();
+                ts = cfl_time_now();
 
                 /*
                  * Event originated by an output plugin. likely a Task return
@@ -978,7 +978,7 @@ int flb_engine_start(struct flb_config *config)
                 handle_output_event(event->fd, ts, config);
             }
             else if (event->type == FLB_ENGINE_EV_INPUT) {
-                ts = cmt_time_now();
+                ts = cfl_time_now();
                 handle_input_event(event->fd, ts, config);
             }
             else if(event->type == FLB_ENGINE_EV_THREAD_INPUT) {

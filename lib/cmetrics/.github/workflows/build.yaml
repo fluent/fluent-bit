@@ -20,6 +20,9 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: true
+
       - name: Build on ${{ matrix.os }} with vs-2019
         run: |
           .\scripts\win_build.bat
@@ -37,17 +40,23 @@ jobs:
       - name: Set up base image dependencies
         run: |
           yum -y update && \
-          yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make wget && \
+          yum install -y ca-certificates cmake gcc gcc-c++ git make wget && \
           wget http://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm && \
           rpm -ivh epel-release-latest-7.noarch.rpm && \
           yum install -y cmake3
+        shell: bash
 
-      - uses: actions/checkout@v3
+      - name: Clone repo with submodules (1.8.3 version of Git)
+        run: |
+          git clone --recursive https://github.com/calyptia/cmetrics.git
+        shell: bash
 
       - name: Run compilation
         run: |
           cmake3 -DCMT_TESTS=on -DCMT_DEV=on .
           make
+        shell: bash
+        working-directory: cmetrics
 
   build-unix-arm64:
     name: Build sources on arm64 for ${{ matrix.os }} - ${{ matrix.compiler }}
@@ -61,8 +70,11 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: true
+
       - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
-        uses: uraimo/run-on-arch-action@v2.2.0
+        uses: uraimo/run-on-arch-action@v2.2.1
         with:
           arch: aarch64
           distro: ubuntu20.04
@@ -92,6 +104,9 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: true
+
       - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
         run: |
           echo "CC = $CC, CXX = $CXX"
@@ -118,6 +133,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: true
+
       - uses: docker://lpenz/ghaction-cmake:0.19
         with:
           preset: ${{ matrix.preset }}

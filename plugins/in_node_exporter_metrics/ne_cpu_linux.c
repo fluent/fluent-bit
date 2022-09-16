@@ -388,7 +388,7 @@ int ne_cpu_update(struct flb_ne *ctx)
 {
     uint64_t ts;
 
-    ts = cmt_time_now();
+    ts = cfl_time_now();
 
     cpu_thermal_update(ctx, ts);
     cpu_stat_update(ctx, ts);

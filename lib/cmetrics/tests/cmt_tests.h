@@ -28,8 +28,8 @@
 #include "tests/cmt_tests_config.h"
 #include "encode_output.h"
 
-#include <cmetrics/cmt_sds.h>
+#include <cmetrics/cmetrics.h>
 
-cmt_sds_t read_file(const char *path);
+cfl_sds_t read_file(const char *path);
 
 #endif

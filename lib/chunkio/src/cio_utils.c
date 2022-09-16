@@ -31,6 +31,7 @@
 
 #include <chunkio/cio_info.h>
 #include <chunkio/chunkio_compat.h>
+#include <chunkio/chunkio.h>
 #include <chunkio/cio_log.h>
 
 #ifndef _MSC_VER
@@ -95,9 +96,112 @@ int cio_utils_recursive_delete(const char *dir)
     return ret;
 }
 #else
+static int cio_utils_recursive_delete_handler(const char *path,
+                                              size_t current_depth,
+                                              size_t depth_limit)
+{
+    char             search_path[MAX_PATH];
+    char             entry_path[MAX_PATH];
+    DWORD            target_file_flags;
+    HANDLE           find_file_handle;
+    WIN32_FIND_DATAA find_file_data;
+    int              error_detected;
+    DWORD            result;
+
+    result = snprintf(search_path, sizeof(search_path) - 1, "%s\\*", path);
+
+    if (result <= 0) {
+        return CIO_ERROR;
+    }
+
+    find_file_handle = FindFirstFileA(search_path, &find_file_data);
+
+    if (find_file_handle == INVALID_HANDLE_VALUE) {
+        return CIO_ERROR;
+    }
+
+    target_file_flags = FILE_ATTRIBUTE_NORMAL | FILE_ATTRIBUTE_ARCHIVE;
+    error_detected = CIO_FALSE;
+    result = 0;
+
+    do {
+        if (strcmp(find_file_data.cFileName, ".")  != 0 &&
+            strcmp(find_file_data.cFileName, "..") != 0) {
+
+            result = snprintf(entry_path, sizeof(entry_path) - 1, "%s\\%s", path,
+                              find_file_data.cFileName);
+
+            if (result > 0) {
+                if (find_file_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+                    if (current_depth < depth_limit) {
+                        result = (DWORD) cio_utils_recursive_delete_handler(entry_path,
+                                                                            current_depth + 1,
+                                                                            depth_limit);
+
+                        if (result != CIO_OK) {
+                            error_detected = CIO_TRUE;
+                        }
+                    }
+                    else {
+                        error_detected = CIO_TRUE;
+                    }
+                }
+                else if (find_file_data.dwFileAttributes & target_file_flags) {
+                    result = DeleteFileA(entry_path);
+
+                    if (result == 0) {
+                        error_detected = CIO_TRUE;
+                    }
+                }
+
+            }
+            else {
+                error_detected = CIO_TRUE;
+            }
+        }
+
+        if (error_detected == CIO_FALSE) {
+            result = FindNextFile(find_file_handle, &find_file_data);
+
+            if (result == 0) {
+                result = GetLastError();
+
+                if (result != ERROR_NO_MORE_FILES) {
+                    error_detected = CIO_TRUE;
+                }
+
+                break;
+            }
+        }
+    }
+    while (error_detected == CIO_FALSE);
+
+    FindClose(find_file_handle);
+
+    if (error_detected) {
+        return CIO_ERROR;
+    }
+
+    result = RemoveDirectoryA(path);
+
+    if (result == 0) {
+        return CIO_ERROR;
+    }
+
+    return CIO_OK;
+}
+
 int cio_utils_recursive_delete(const char *dir)
 {
-    return -1;
+    DWORD result;
+
+    result = cio_utils_recursive_delete_handler(dir, 0, 100);
+
+    if (result != CIO_OK) {
+        return -1;
+    }
+
+    return 0;
 }
 #endif
 

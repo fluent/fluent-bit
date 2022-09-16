@@ -72,7 +72,7 @@ static int loadavg_update(struct flb_ne *ctx)
         return -1;
     }
 
-    ts = cmt_time_now();
+    ts = cfl_time_now();
     mk_list_foreach(head, &list) {
         line = mk_list_entry(head, struct flb_slist_entry, _head);
 

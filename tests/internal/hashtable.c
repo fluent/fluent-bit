@@ -5,7 +5,6 @@
 #include <fluent-bit/flb_hash_table.h>
 
 #include "flb_tests_internal.h"
-#include <xxhash.h>
 
 struct map {
     char *key;
@@ -375,7 +374,7 @@ void test_hash_exists()
         TEST_CHECK(id >= 0);
 
         len = strlen(m->key);
-        hash = XXH3_64bits(m->key, len);
+        hash = cfl_hash_64bits(m->key, len);
 
         ret = flb_hash_table_exists(ht, hash);
         TEST_CHECK(ret == FLB_TRUE);
@@ -386,7 +385,7 @@ void test_hash_exists()
 
         /* get hash */
         len = strlen(m->key);
-        hash = XXH3_64bits(m->key, len);
+        hash = cfl_hash_64bits(m->key, len);
 
         /* delete */
         ret = flb_hash_table_del(ht, m->key);

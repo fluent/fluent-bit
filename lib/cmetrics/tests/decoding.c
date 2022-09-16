@@ -107,7 +107,7 @@ static struct cmt *generate_encoder_test_data()
     quantiles[3] = 4.4;
     quantiles[4] = 5.5;
 
-    cmt_summary_set_default(s1, ts, quantiles, 10, 51.612894511314444, 0, NULL);
+    cmt_summary_set_default(s1, ts, quantiles, 51.612894511314444, 10, 0, NULL);
 
     quantiles[0] = 11.11;
     quantiles[1] = 0;
@@ -115,16 +115,16 @@ static struct cmt *generate_encoder_test_data()
     quantiles[3] = 44.44;
     quantiles[4] = 55.55;
 
-    cmt_summary_set_default(s1, ts, quantiles, 10, 51.612894511314444, 1, (char *[]) {"my_val"});
+    cmt_summary_set_default(s1, ts, quantiles, 51.612894511314444, 10, 1, (char *[]) {"my_val"});
 
     return cmt;
 }
 
 void test_opentelemetry()
 {
-    cmt_sds_t   reference_prometheus_context;
-    cmt_sds_t   opentelemetry_context;
-    cmt_sds_t   prometheus_context;
+    cfl_sds_t   reference_prometheus_context;
+    cfl_sds_t   opentelemetry_context;
+    cfl_sds_t   prometheus_context;
     struct cmt *decoded_context;
     size_t      offset;
     int         result;
@@ -147,7 +147,7 @@ void test_opentelemetry()
         if (opentelemetry_context != NULL) {
             result = cmt_decode_opentelemetry_create(&decoded_context,
                                                      opentelemetry_context,
-                                                     cmt_sds_len(opentelemetry_context),
+                                                     cfl_sds_len(opentelemetry_context),
                                                      &offset);
             TEST_CHECK(result == 0);
 

@@ -17,6 +17,7 @@ set(src
   flb_pack.c
   flb_pack_gelf.c
   flb_sds.c
+  flb_sds_list.c
   flb_pipe.c
   flb_meta.c
   flb_kernel.c
@@ -346,13 +347,13 @@ endif()
 # Set static dependencies
 set(FLB_DEPS
   ${FLB_DEPS}
+  cfl-static
   mk_core
   jsmn
   msgpack-c-static
   mpack-static
   chunkio-static
   miniz
-  xxhash
   cmetrics-static
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}

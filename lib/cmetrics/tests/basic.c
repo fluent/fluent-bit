@@ -78,8 +78,8 @@ void test_basic()
     int ret;
     int error;
     size_t off = 0;
-    cmt_sds_t text1;
-    cmt_sds_t text2;
+    cfl_sds_t text1;
+    cfl_sds_t text2;
     char *mp_buf;
     size_t mp_size;
     struct cmt *cmt1;
@@ -106,7 +106,7 @@ void test_basic()
 
     /* compate both texts */
     error = 0;
-    if ((cmt_sds_len(text1) != cmt_sds_len(text2)) ||
+    if ((cfl_sds_len(text1) != cfl_sds_len(text2)) ||
         strcmp(text1, text2) != 0) {
 
         printf("\n");

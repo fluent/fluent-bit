@@ -22,7 +22,8 @@
 #include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_str.h>
-#include <xxhash.h>
+
+#include <cfl/cfl.h>
 
 static inline void flb_hash_table_entry_free(struct flb_hash_table *ht,
                                              struct flb_hash_table_entry *entry)
@@ -102,7 +103,7 @@ int flb_hash_table_del_ptr(struct flb_hash_table *ht, const char *key, int key_l
     struct flb_hash_table_chain *table;
 
     /* Generate hash number */
-    hash = XXH3_64bits(key, key_len);
+    hash = cfl_hash_64bits(key, key_len);
     id = (hash % ht->size);
 
     /* Link the new entry in our table at the end of the list */
@@ -205,7 +206,7 @@ static struct flb_hash_table_entry *hash_get_entry(struct flb_hash_table *ht,
         return NULL;
     }
 
-    hash = XXH3_64bits(key, key_len);
+    hash = cfl_hash_64bits(key, key_len);
     id = (hash % ht->size);
 
     table = &ht->table[id];
@@ -339,7 +340,7 @@ int flb_hash_table_add(struct flb_hash_table *ht, const char *key, int key_len,
      */
 
     /* Generate hash number */
-    hash = XXH3_64bits(key, key_len);
+    hash = cfl_hash_64bits(key, key_len);
     id = (hash % ht->size);
 
     /* Allocate the entry */
@@ -506,7 +507,7 @@ int flb_hash_table_del(struct flb_hash_table *ht, const char *key)
         return -1;
     }
 
-    hash = XXH3_64bits(key, len);
+    hash = cfl_hash_64bits(key, len);
     id = (hash % ht->size);
 
     table = &ht->table[id];

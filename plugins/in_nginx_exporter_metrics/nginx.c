@@ -117,7 +117,7 @@ static int nginx_collect_stub_status(struct flb_input_instance *ins,
     size_t b_sent;
     int ret = -1;
     int rc = -1;
-    uint64_t ts = cmt_time_now();
+    uint64_t ts = cfl_time_now();
 
 
     u_conn = flb_upstream_conn_get(ctx->upstream);
@@ -1433,7 +1433,7 @@ static int nginx_collect_plus(struct flb_input_instance *ins,
     struct nginx_ctx *ctx = (struct nginx_ctx *)in_context;
     int rc = -1;
     int ret = -1;
-    uint64_t ts = cmt_time_now();
+    uint64_t ts = cfl_time_now();
 
 
     version = nginx_plus_get_version(ins, config, in_context);

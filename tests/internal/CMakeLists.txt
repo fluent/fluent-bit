@@ -6,6 +6,7 @@ set(UNIT_TESTS_FILES
   pack.c
   pipe.c
   sds.c
+  sds_list.c
   hmac.c
   crypto.c
   hash.c
@@ -184,7 +185,7 @@ function(prepare_unit_tests TEST_PREFIX SOURCEFILES)
         target_link_libraries(${source_file_we} flb-sp)
       endif()
 
-      target_link_libraries(${source_file_we} fluent-bit-static)
+      target_link_libraries(${source_file_we} fluent-bit-static cfl-static)
 
       if(FLB_AVRO_ENCODER)
         target_link_libraries(${source_file_we} avro-static jansson)

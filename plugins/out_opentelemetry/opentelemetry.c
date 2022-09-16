@@ -185,7 +185,7 @@ static void cb_opentelemetry_flush(struct flb_event_chunk *event_chunk,
     int ok;
     int ret;
     int result;
-    cmt_sds_t encoded_chunk;
+    cfl_sds_t encoded_chunk;
     flb_sds_t buf = NULL;
     size_t diff = 0;
     size_t off = 0;

@@ -318,7 +318,7 @@ int flb_metrics_fluentbit_add(struct flb_config *ctx, struct cmt *cmt)
     char hostname[128];
 
     /* current timestamp */
-    ts = cmt_time_now();
+    ts = cfl_time_now();
 
     /* get hostname */
     ret = gethostname(hostname, sizeof(hostname) - 1);
