@@ -110,6 +110,9 @@ void flb_utils_error(int err)
     case FLB_ERR_CORO_STACK_SIZE:
         msg = "invalid coroutine stack size";
         break;
+    case FLB_ERR_CFG_COLLECTIVE_TIMESLICE:
+        msg = "invalid collective coroutine timeslice value";
+        break;
     }
 
     if (!msg) {
