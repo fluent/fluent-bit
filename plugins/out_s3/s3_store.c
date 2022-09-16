@@ -401,18 +401,6 @@ int s3_store_has_uploads(struct flb_s3 *ctx)
     return FLB_FALSE;
 }
 
-int s3_store_file_inactive(struct flb_s3 *ctx, struct s3_file *s3_file)
-{
-    int ret;
-    struct flb_fstore_file *fsf;
-
-    fsf = s3_file->fsf;
-    flb_free(s3_file);
-    ret = flb_fstore_file_inactive(ctx->fs, fsf);
-
-    return ret;
-}
-
 int s3_store_file_delete(struct flb_s3 *ctx, struct s3_file *s3_file)
 {
     struct flb_fstore_file *fsf;

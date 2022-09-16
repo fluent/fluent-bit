@@ -47,24 +47,12 @@
 
 #define DEFAULT_UPLOAD_TIMEOUT 3600
 
-/*
- * If we see repeated errors on an upload/chunk, we will discard it
- * This saves us from scenarios where something goes wrong and an upload can
- * not proceed (may be some other process completed it or deleted the upload)
- * instead of erroring out forever, we eventually discard the upload.
- *
- * The same is done for chunks, just to be safe, even though realistically
- * I can't think of a reason why a chunk could become unsendable.
- */
-#define MAX_UPLOAD_ERRORS 5
-
 struct upload_queue {
     struct s3_file *upload_file;
     struct multipart_upload *m_upload_file;
     char *tag;
     int tag_len;
 
-    int retry_counter;
     time_t upload_time;
 
     struct mk_list _head;
@@ -84,20 +72,16 @@ struct multipart_upload {
     flb_sds_t etags[10000];
     int part_number;
 
-    /*
-     * we use async http, so we need to check that all part requests have
-     * completed before we complete the upload
-     */
-    int parts_uploaded;
-
     /* ongoing tracker of how much data has been sent for this upload */
     size_t bytes;
 
     struct mk_list _head;
 
-    /* see note for MAX_UPLOAD_ERRORS */
-    int upload_errors;
+    /* checked against user configured retry_limit */
     int complete_errors;
+
+    /* for warn message to get input name */
+    char *input_name;
 };
 
 struct flb_s3 {
@@ -163,7 +147,6 @@ struct flb_s3 {
     size_t file_size;
     size_t upload_chunk_size;
     time_t upload_timeout;
-    time_t retry_time;
 
     int timer_created;
     int timer_ms;
