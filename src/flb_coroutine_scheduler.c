@@ -68,11 +68,18 @@ int flb_coroutine_scheduler_init(struct flb_coroutine_scheduler *scheduler,
 
     scheduler->last_wakeup_emission_cycle = -1;
     scheduler->resumption_limit = resumption_limit;
+    scheduler->collective_time_slice = FLB_TIMESLICE_UNLIMITED;
 
     scheduler->wakeup_channels[0] = -1;
     scheduler->wakeup_channels[1] = -1;
 
     return 0;
+}
+
+void flb_coroutine_scheduler_set_collective_timeslice(struct flb_coroutine_scheduler *scheduler,
+                                                      uint64_t timeslice)
+{
+    scheduler->collective_time_slice = timeslice;
 }
 
 int flb_coroutine_scheduler_add_event_loop(struct flb_coroutine_scheduler *scheduler,
@@ -298,7 +305,7 @@ int flb_coroutine_scheduler_resume_enqueued_coroutines()
 
     timeslice_end = 0;
 
-    if (scheduler->collective_time_slice != FLB_CORO_TIME_SLICE_UNLIMITED) {
+    if (scheduler->collective_time_slice != FLB_TIMESLICE_UNLIMITED) {
         timeslice_end  = flb_time_get_cpu_timestamp();
         timeslice_end += scheduler->collective_time_slice;
     }
@@ -329,7 +336,6 @@ int flb_coroutine_scheduler_resume_enqueued_coroutines()
         }
 
         if (continuation_required) {
-            printf("EXITING AFTER %d\n", scheduler->resumption_count);
             flb_coroutine_scheduler_emit_continuation_signal(scheduler);
 
             break;
@@ -343,5 +349,5 @@ int flb_coroutine_scheduler_resume_enqueued_coroutines()
 
     scheduler->cycle_number = (scheduler->cycle_number + 1) % UINT64_MAX;
 
-    return 0;
+    return (int) scheduler->resumption_count;
 }
