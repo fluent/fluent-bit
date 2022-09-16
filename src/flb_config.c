@@ -149,6 +149,10 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, coro_stack_size)},
 
+    {FLB_CONF_STR_COLLECTIVE_TIMESLICE,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, collective_timeslice)},
+
     /* Scheduler */
     {FLB_CONF_STR_SCHED_CAP,
      FLB_CONF_TYPE_INT,
@@ -276,6 +280,8 @@ struct flb_config *flb_config_init()
                  config->coro_stack_size, getpagesize());
         config->coro_stack_size = (unsigned int)getpagesize();
     }
+
+    config->collective_timeslice = FLB_CONFIG_COLLECTIVE_TIMESLICE_SECS;
 
     /* collectors */
     pthread_mutex_init(&config->collectors_mutex, NULL);
