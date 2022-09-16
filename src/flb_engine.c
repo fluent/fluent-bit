@@ -585,107 +585,6 @@ int sb_segregate_chunks(struct flb_config *config)
 }
 #endif
 
-#define TEST_COROUTINE_COUNT      50
-#define TEST_COROUTINE_TIMESLICE  90000
-#define TEST_COROUTINE_ITERATIONS 99999999999
-#define TEST_COROUTINE_SLEEP_TIME 200
-
-struct flb_test_coro_context {
-    size_t           accumulator;
-    uint64_t         timeslice;
-    struct flb_coro *coroutine;
-};
-
-struct flb_test_coro_context test_coro_list[TEST_COROUTINE_COUNT] = {0};
-
-void test_coro_entry_point()
-{
-    struct flb_coro *coroutine;
-    size_t           iteration;
-    uint64_t         last_yield_time;
-    uint64_t         last_resume_time;
-    size_t           uninterrupted_cycles;
-    size_t           message_since_print;
-    double           dummy_value;
-
-    coroutine = flb_coro_get();
-
-    last_yield_time = coroutine->resume_time;
-    last_resume_time = coroutine->resume_time;
-    uninterrupted_cycles = 0;
-
-    message_since_print = 0;
-    for (iteration = 0 ;
-         iteration < TEST_COROUTINE_ITERATIONS ;
-         iteration++) {
-        usleep(TEST_COROUTINE_SLEEP_TIME);
-
-        last_yield_time = flb_time_get_cpu_timestamp();
-        flb_coro_collab_yield(coroutine, FLB_FALSE);
-
-        if (last_resume_time != coroutine->resume_time) {
-            // if (message_since_print >= 100) {
-            //     printf("%p - PREVIOUS TIMESLICE LENGTH %zu uS - %d UNINTERRUPTED CYCLES\n",
-            //            coroutine,
-            //            last_yield_time - last_resume_time,
-            //            uninterrupted_cycles);
-
-            //     message_since_print = 0;
-            // }
-
-            last_resume_time = coroutine->resume_time;
-            uninterrupted_cycles = 0;
-        }
-        else {
-            uninterrupted_cycles++;
-        }
-
-        message_since_print++;
-    }
-
-    // printf("%p - LAST TIMESLICE LENGTH %zu uS - %d UNINTERRUPTED CYCLES\n",
-    //        coroutine,
-    //        flb_time_get_cpu_timestamp() - coroutine->resume_time,
-    //        uninterrupted_cycles);
-
-    flb_coro_yield(coroutine, FLB_FALSE);
-}
-
-static int flb_create_test_coro(struct flb_test_coro_context *coro_context,
-                                void *coro_entry_point)
-{
-    size_t stack_size;
-
-    coro_context->coroutine = flb_coro_create(coro_context);
-
-    if (coro_context->coroutine == NULL) {
-        return -1;
-    }
-
-    stack_size = 4096;
-
-    coro_context->coroutine->caller = co_active();
-    coro_context->coroutine->callee = co_create(stack_size,
-                                                coro_entry_point,
-                                                &stack_size);
-
-    if (coro_context->coroutine->callee == NULL) {
-        flb_coro_destroy(coro_context->coroutine);
-
-        return -2;
-    }
-
-    if (coro_context->timeslice != FLB_CORO_TIME_SLICE_UNLIMITED &&
-        coro_context->timeslice > 0) {
-        flb_coro_set_time_slice_limit(coro_context->coroutine,
-                                      coro_context->timeslice);
-    }
-
-    coro_context->accumulator = 0;
-
-    return 0;
-}
-
 int flb_engine_start(struct flb_config *config)
 {
     int ret;
@@ -719,8 +618,8 @@ int flb_engine_start(struct flb_config *config)
     flb_coroutine_scheduler_init(&coro_sched, -1);
     flb_coroutine_scheduler_set(&coro_sched);
     flb_coroutine_scheduler_add_event_loop(&coro_sched, config->evl);
-
-    coro_sched.collective_time_slice = 800000;
+    flb_coroutine_scheduler_set_collective_timeslice(&coro_sched,
+                                                     config->collective_timeslice);
 
     /* Create the bucket queue (FLB_ENGINE_PRIORITY_COUNT priorities) */
     evl_bktq = flb_bucket_queue_create(FLB_ENGINE_PRIORITY_COUNT);
@@ -944,37 +843,8 @@ int flb_engine_start(struct flb_config *config)
         return -2;
     }
 
-
-{
-    int coro_create_result;
-    int coro_index;
-
-    for (coro_index = 0 ; coro_index < TEST_COROUTINE_COUNT ; coro_index++) {
-#ifdef TEST_COROUTINE_TIMESLICE
-        test_coro_list[coro_index].timeslice = TEST_COROUTINE_TIMESLICE;
-#endif
-
-        coro_create_result = flb_create_test_coro(&test_coro_list[coro_index],
-                                                  test_coro_entry_point);
-
-        if (coro_create_result != 0) {
-            printf("COROUTINE # %d CREATION FAILED WITH ERROR %d\n",
-                   coro_index,
-                   coro_create_result);
-
-            exit(0);
-        }
-
-        flb_coro_enqueue(test_coro_list[coro_index].coroutine);
-    }
-}
-
     while (1) {
         rb_flush_flag = FLB_FALSE;
-
-// {
-//     printf("ENGINE AWAKENED AT %zu\n", time(NULL));
-// }
 
         mk_event_wait(evl); /* potentially conditional mk_event_wait or mk_event_wait_2 based on bucket queue capacity for one shot events */
         flb_event_priority_live_foreach(event, evl_bktq, evl, FLB_ENGINE_LOOP_MAX_ITER) {
