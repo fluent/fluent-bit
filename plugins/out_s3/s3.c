@@ -140,7 +140,7 @@ static void s3_retry_warn(struct flb_s3 *ctx, const char *tag,
             flb_plg_warn(ctx->ins,
                         "chunk tag=%s, create_time=%s cannot be retried",
                         tag, create_time_str);
-        }
+        }   
     }
     else {
         if (less_than_limit == FLB_TRUE) {
@@ -1118,12 +1118,12 @@ put_object:
         if (chunk) {
             chunk->failures += 1;
             if (chunk->failures > ctx->ins->retry_limit){
-                s3_retry_warn(ctx, tag, chunk->input_name, create_time, FLB_FALSE);
+                s3_retry_warn(ctx, tag, chunk->input_name, file_first_log_time, FLB_FALSE);
                 s3_store_file_delete(ctx, chunk);
                 return -2;
             }
             else {
-                s3_retry_warn(ctx, tag, chunk->input_name, create_time, FLB_TRUE);
+                s3_retry_warn(ctx, tag, chunk->input_name, file_first_log_time, FLB_TRUE);
                 s3_store_file_unlock(chunk);
                 return -1;
             }
