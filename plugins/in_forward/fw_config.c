@@ -65,6 +65,20 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
         flb_debug("[in_fw] Listen='%s' TCP_Port=%s",
                   config->listen, config->tcp_port);
     }
+
+    if (!config->data_type_str) {
+      config->data_type = FLB_INPUT_LOGS;
+    } else {
+      if (strcmp(config->data_type_str, "logs") == 0) {
+        config->data_type = FLB_INPUT_LOGS;
+      } else if (strcmp(config->data_type_str, "traces") == 0) {
+        /* For now traces are identified with the event type FLB_INPUT_LOGS as well */
+        config->data_type = FLB_INPUT_LOGS;
+      } else {
+        flb_plg_error(i_ins, "Invalid value provided for data_type. Expected 'logs' or 'traces'");
+        return NULL;
+      }
+    }
     return config;
 }
 

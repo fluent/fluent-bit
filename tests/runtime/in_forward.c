@@ -565,6 +565,39 @@ void flb_test_unix_perm()
 }
 #endif /* FLB_HAVE_UNIX_SOCKET */
 
+void flb_test_data_type()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    int ret;
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "\"test\":\"msg\"";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "data_type", "notvalid", /*test invalid data_type*/
+                        NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "test",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine. Expected failure. */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret != 0);
+
+    test_ctx_destroy(ctx);
+}
 
 TEST_LIST = {
     {"forward", flb_test_forward},
@@ -574,6 +607,7 @@ TEST_LIST = {
     {"unix_path", flb_test_unix_path},
     {"unix_perm", flb_test_unix_perm},
 #endif
+    {"data_type", flb_test_data_type},
     {NULL, NULL}
 };
 

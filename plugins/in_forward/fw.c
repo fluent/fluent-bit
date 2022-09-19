@@ -244,6 +244,8 @@ static int in_fw_init(struct flb_input_instance *ins,
 
     ctx->coll_fd = ret;
 
+    ctx->ins->event_type = ctx->data_type;
+
     return 0;
 }
 
@@ -304,6 +306,11 @@ static struct flb_config_map config_map[] = {
     FLB_CONFIG_MAP_SIZE, "buffer_max_size", FLB_IN_FW_CHUNK_MAX_SIZE,
     0, FLB_TRUE, offsetof(struct flb_in_fw_config, buffer_max_size),
     "The maximum buffer memory size used to receive a Forward message."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "data_type", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_in_fw_config, data_type_str),
+    "Set the data type for incoming Forward messages."
    },
    {0}
 };

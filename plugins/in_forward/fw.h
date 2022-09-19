@@ -33,6 +33,9 @@ struct flb_in_fw_config {
 
     flb_sds_t tag_prefix;           /* tag prefix                  */
 
+    flb_sds_t data_type_str;        /* Data type string            */
+    int data_type;                  /* Data type                   */
+
     /* Unix Socket */
     char *unix_path;                /* Unix path for socket        */
     unsigned int unix_perm;         /* Permission for socket       */
