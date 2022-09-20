@@ -52,9 +52,9 @@ The container is built according to the instructions here: <https://github.com/f
 
 Feel free to contact us through the following community channels:
 
-Slack: <https://slack.fluentd.org> / channel #fluent-bit
-Github: <https://github.com/fluent/fluent-bit>
-Twitter: <https://twitter.com/fluentbit>
+- Slack: <https://slack.fluentd.org> / channel #fluent-bit
+- Github: <https://github.com/fluent/fluent-bit>
+- Twitter: <https://twitter.com/fluentbit>
 
 ## Fluent Bit & Fluentd
 
