@@ -18,7 +18,7 @@ jobs:
         uses: peter-evans/dockerhub-description@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ github.repository }}
           readme-filepath: ./dockerfiles/dockerhub-description.md
           short-description: 'Fluent Bit, lightweight logs and metrics collector and forwarder'
