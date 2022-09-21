@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.12)
 project(fluent-bit)
 
+# CMP0069 ensures that LTO is enabled for all compilers
+cmake_policy(SET CMP0069 NEW)
+set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
+
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  2)
 set(FLB_VERSION_MINOR  0)
@@ -391,6 +395,16 @@ elseif(FLB_DEBUG)
   set(CMAKE_BUILD_TYPE "Debug")
 elseif(FLB_RELEASE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
+endif()
+
+if(FLB_RELEASE)
+  include(CheckIPOSupported)
+  check_ipo_supported(RESULT ipo_supported)
+  if(ipo_supported)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+  else()
+    message(Warning "IPO is not supported on this platform")
+  endif()
 endif()
 
 if(FLB_PARSER)
