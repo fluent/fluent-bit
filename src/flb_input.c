@@ -413,10 +413,13 @@ int flb_input_set_property(struct flb_input_instance *ins,
     else if (prop_key_check("storage.type", k, len) == 0 && tmp) {
         /* Set the storage type */
         if (strcasecmp(tmp, "filesystem") == 0) {
-            ins->storage_type = CIO_STORE_FS;
+            ins->storage_type = FLB_STORAGE_FS;
         }
         else if (strcasecmp(tmp, "memory") == 0) {
-            ins->storage_type = CIO_STORE_MEM;
+            ins->storage_type = FLB_STORAGE_MEM;
+        }
+        else if (strcasecmp(tmp, "memrb") == 0) {
+            ins->storage_type = FLB_STORAGE_MEMRB;
         }
         else {
             flb_sds_destroy(tmp);
@@ -425,7 +428,7 @@ int flb_input_set_property(struct flb_input_instance *ins,
         flb_sds_destroy(tmp);
     }
     else if (prop_key_check("storage.pause_on_chunks_overlimit", k, len) == 0 && tmp) {
-        if (ins->storage_type == CIO_STORE_FS) {
+        if (ins->storage_type == FLB_STORAGE_FS) {
             ret = flb_utils_bool(tmp);
             if (ret == -1) {
                 return -1;
@@ -609,18 +612,44 @@ int flb_input_instance_init(struct flb_input_instance *ins,
         return -1;
     }
 
-    /* Register generic input plugin metrics */
+    /*
+     * Register generic input plugin metrics
+     */
+
+    /* fluentbit_input_bytes_total */
     ins->cmt_bytes = cmt_counter_create(ins->cmt,
                                         "fluentbit", "input", "bytes_total",
                                         "Number of input bytes.",
                                         1, (char *[]) {"name"});
     cmt_counter_set(ins->cmt_bytes, ts, 0, 1, (char *[]) {name});
 
+    /* fluentbit_input_records_total */
     ins->cmt_records = cmt_counter_create(ins->cmt,
                                         "fluentbit", "input", "records_total",
                                         "Number of input records.",
                                         1, (char *[]) {"name"});
     cmt_counter_set(ins->cmt_records, ts, 0, 1, (char *[]) {name});
+
+
+    if (ins->storage_type == FLB_STORAGE_MEMRB) {
+        /* fluentbit_input_memrb_dropped_chunks */
+        ins->cmt_memrb_dropped_chunks = cmt_counter_create(ins->cmt,
+                                                          "fluentbit", "input",
+                                                          "memrb_dropped_chunks",
+                                                          "Number of memrb dropped chunks.",
+                                                          1, (char *[]) {"name"});
+        cmt_counter_set(ins->cmt_memrb_dropped_chunks, ts, 0, 1, (char *[]) {name});
+
+
+        /* fluentbit_input_memrb_dropped_bytes */
+        ins->cmt_memrb_dropped_bytes = cmt_counter_create(ins->cmt,
+                                                          "fluentbit", "input",
+                                                          "memrb_dropped_bytes",
+                                                          "Number of memrb dropped bytes.",
+                                                          1, (char *[]) {"name"});
+
+        cmt_counter_set(ins->cmt_memrb_dropped_bytes, ts, 0, 1, (char *[]) {name});
+    }
 
     /* OLD Metrics */
     ins->metrics = flb_metrics_create(name);
