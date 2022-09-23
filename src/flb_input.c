@@ -852,6 +852,7 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                             struct flb_config *config)
 {
     int ret;
+    struct flb_config *ctx = ins->config;
     struct mk_list *config_map;
     struct flb_input_plugin *p = ins->p;
 
@@ -880,20 +881,94 @@ int flb_input_instance_init(struct flb_input_instance *ins,
         return -1;
     }
 
-    /* Register generic input plugin metrics */
-    ins->cmt_bytes = cmt_counter_create(ins->cmt,
-                                        "fluentbit", "input", "bytes_total",
-                                        "Number of input bytes.",
-                                        1, (char *[]) {"name"});
+    /*
+     * Register generic input plugin metrics
+     * -------------------------------------
+     */
+
+    /* fluentbit_input_bytes_total */
+    ins->cmt_bytes = \
+        cmt_counter_create(ins->cmt,
+                           "fluentbit", "input", "bytes_total",
+                           "Number of input bytes.",
+                           1, (char *[]) {"name"});
     cmt_counter_set(ins->cmt_bytes, ts, 0, 1, (char *[]) {name});
 
-    ins->cmt_records = cmt_counter_create(ins->cmt,
-                                        "fluentbit", "input", "records_total",
-                                        "Number of input records.",
-                                        1, (char *[]) {"name"});
+    /* fluentbit_input_records_total */
+    ins->cmt_records = \
+        cmt_counter_create(ins->cmt,
+                           "fluentbit", "input", "records_total",
+                           "Number of input records.",
+                           1, (char *[]) {"name"});
     cmt_counter_set(ins->cmt_records, ts, 0, 1, (char *[]) {name});
 
-    /* OLD Metrics */
+    /* Storage Metrics */
+    if (ctx->storage_metrics == FLB_TRUE) {
+        /* fluentbit_input_storage_overlimit */
+        ins->cmt_storage_overlimit = \
+            cmt_gauge_create(ins->cmt,
+                             "fluentbit", "input",
+                             "storage_overlimit",
+                             "Is the input memory usage overlimit ?.",
+                             1, (char *[]) {"name"});
+        cmt_gauge_set(ins->cmt_storage_overlimit, ts, 0, 1, (char *[]) {name});
+
+        /* fluentbit_input_storage_memory_bytes */
+        ins->cmt_storage_memory_bytes = \
+            cmt_gauge_create(ins->cmt,
+                             "fluentbit", "input",
+                             "storage_memory_bytes",
+                             "Memory bytes used by the chunks.",
+                             1, (char *[]) {"name"});
+        cmt_gauge_set(ins->cmt_storage_memory_bytes, ts, 0, 1, (char *[]) {name});
+
+        /* fluentbit_input_storage_chunks */
+        ins->cmt_storage_chunks = \
+            cmt_gauge_create(ins->cmt,
+                             "fluentbit", "input",
+                             "storage_chunks",
+                             "Total number of chunks.",
+                             1, (char *[]) {"name"});
+        cmt_gauge_set(ins->cmt_storage_chunks, ts, 0, 1, (char *[]) {name});
+
+        /* fluentbit_input_storage_chunks_up */
+        ins->cmt_storage_chunks_up = \
+            cmt_gauge_create(ins->cmt,
+                             "fluentbit", "input",
+                             "storage_chunks_up",
+                             "Total number of chunks up in memory.",
+                             1, (char *[]) {"name"});
+        cmt_gauge_set(ins->cmt_storage_chunks_up, ts, 0, 1, (char *[]) {name});
+
+        /* fluentbit_input_storage_chunks_down */
+        ins->cmt_storage_chunks_down = \
+            cmt_gauge_create(ins->cmt,
+                             "fluentbit", "input",
+                             "storage_chunks_down",
+                             "Total number of chunks down.",
+                             1, (char *[]) {"name"});
+        cmt_gauge_set(ins->cmt_storage_chunks_down, ts, 0, 1, (char *[]) {name});
+
+        /* fluentbit_input_storage_chunks_busy */
+        ins->cmt_storage_chunks_busy = \
+            cmt_gauge_create(ins->cmt,
+                             "fluentbit", "input",
+                             "storage_chunks_busy",
+                             "Total number of chunks in a busy state.",
+                             1, (char *[]) {"name"});
+        cmt_gauge_set(ins->cmt_storage_chunks_busy, ts, 0, 1, (char *[]) {name});
+
+        /* fluentbit_input_storage_chunks_busy_bytes */
+        ins->cmt_storage_chunks_busy_bytes = \
+            cmt_gauge_create(ins->cmt,
+                             "fluentbit", "input",
+                             "storage_chunks_busy_bytes",
+                             "Total number of bytes used by chunks in a busy state.",
+                             1, (char *[]) {"name"});
+        cmt_gauge_set(ins->cmt_storage_chunks_busy_bytes, ts, 0, 1, (char *[]) {name});
+    }
+
+    /* --- OLD Metrics ---*/
     ins->metrics = flb_metrics_create(name);
     if (ins->metrics) {
         flb_metrics_add(FLB_METRIC_N_RECORDS, "records", ins->metrics);

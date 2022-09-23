@@ -275,7 +275,6 @@ struct flb_input_instance {
     struct mk_list input_coro_list_destroy;
 
 #ifdef FLB_HAVE_METRICS
-
     /* old metrics API */
     struct flb_metrics *metrics;         /* metrics                    */
 #endif
@@ -301,10 +300,33 @@ struct flb_input_instance {
     /*
      * CMetrics
      * --------
+     *
+     * All metrics available for an input plugin instance.
      */
     struct cmt *cmt;                     /* parent context              */
     struct cmt_counter *cmt_bytes;       /* metric: input_bytes_total   */
     struct cmt_counter *cmt_records;     /* metric: input_records_total */
+
+    /* is the input instance overlimit ?: 1 or 0 */
+    struct cmt_gauge   *cmt_storage_overlimit;
+
+    /* memory bytes used by chunks */
+    struct cmt_gauge   *cmt_storage_memory_bytes;
+
+    /* total number of chunks */
+    struct cmt_gauge   *cmt_storage_chunks;
+
+    /* total number of chunks up in memory */
+    struct cmt_gauge   *cmt_storage_chunks_up;
+
+    /* total number of chunks down */
+    struct cmt_gauge   *cmt_storage_chunks_down;
+
+    /* number of chunks in a busy state */
+    struct cmt_gauge   *cmt_storage_chunks_busy;
+
+    /* total bytes used by chunks in a busy state */
+    struct cmt_gauge   *cmt_storage_chunks_busy_bytes;
 
     /*
      * Indexes for generated chunks: simple hash tables that keeps the latest
