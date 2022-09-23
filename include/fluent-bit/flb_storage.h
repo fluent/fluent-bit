@@ -29,6 +29,15 @@
 
 struct flb_storage_metrics {
     int fd;
+
+    struct cmt *cmt;
+
+    /* cmetrics */
+    struct cmt_gauge *cmt_chunks;           /* total number of chunks */
+    struct cmt_gauge *cmt_mem_chunks;       /* number of chunks up in memory */
+    struct cmt_gauge *cmt_fs_chunks;        /* total number of filesystem chunks */
+    struct cmt_gauge *cmt_fs_chunks_up;     /* number of filesystem chunks up in memory */
+    struct cmt_gauge *cmt_fs_chunks_down;   /* number of filesystem chunks down */
 };
 
 /*
@@ -50,5 +59,8 @@ void flb_storage_destroy(struct flb_config *ctx);
 void flb_storage_input_destroy(struct flb_input_instance *in);
 
 struct flb_storage_metrics *flb_storage_metrics_create(struct flb_config *ctx);
+
+/* cmetrics */
+int flb_storage_metrics_update(struct flb_config *config, struct flb_storage_metrics *sm);
 
 #endif
