@@ -206,6 +206,13 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
         uri = tmp_uri;
     }
 
+    ctx->uri = flb_sds_create(uri);
+    flb_free(uri);
+    if (ctx->uri == NULL) {
+        flb_http_conf_destroy(ctx);
+        return NULL;
+    }
+
     /* Output format */
     ctx->out_format = FLB_PACK_JSON_FORMAT_NONE;
     tmp = flb_output_get_property("format", ins);
@@ -259,7 +266,6 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
     }
 
     ctx->u = upstream;
-    ctx->uri = uri;
     ctx->host = ins->host.name;
     ctx->port = ins->host.port;
 
@@ -293,6 +299,6 @@ void flb_http_conf_destroy(struct flb_out_http *ctx)
 #endif
 
     flb_free(ctx->proxy_host);
-    flb_free(ctx->uri);
+    flb_sds_destroy(ctx->uri);
     flb_free(ctx);
 }
