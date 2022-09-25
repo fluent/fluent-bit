@@ -62,6 +62,8 @@ struct flb_out_http {
 
     /* HTTP URI */
     flb_sds_t uri;
+    struct flb_record_accessor *uri_ra;
+    int uri_ra_static;
     char *host;
     int port;
 
