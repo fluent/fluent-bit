@@ -182,6 +182,7 @@ static int fw_process_array(struct flb_input_instance *in,
                             msgpack_object *root, msgpack_object *arr, int chunk_id)
 {
     int i;
+    int ret;
     msgpack_object entry;
     msgpack_object options;
     msgpack_object chunk;
@@ -203,8 +204,13 @@ static int fw_process_array(struct flb_input_instance *in,
         msgpack_pack_object(&mp_pck, entry);
     }
 
-    flb_input_chunk_append_raw(in, tag, tag_len, mp_sbuf.data, mp_sbuf.size);
+    ret = flb_input_chunk_append_raw(in, tag, tag_len, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
+
+    if (ret == -1) {
+        flb_warn("[in_forward] Failed to append raw input chunk.");
+        return -1;
+    }
 
     if (chunk_id != -1) {
         options = root->via.array.ptr[2];
@@ -453,11 +459,19 @@ int fw_prot_process(struct fw_conn *conn)
                 msgpack_pack_object(&mp_pck, map);
 
                 /* Register data object */
-                flb_input_chunk_append_raw(conn->in,
+                ret = flb_input_chunk_append_raw(conn->in,
                                            out_tag, flb_sds_len(out_tag),
                                            mp_sbuf.data, mp_sbuf.size);
                 msgpack_sbuffer_destroy(&mp_sbuf);
                 c++;
+
+                if (ret == -1) {
+                    flb_plg_debug(ctx->ins, "failed to append raw input chunk");
+                    msgpack_unpacked_destroy(&result);
+                    msgpack_unpacker_free(unp);
+                    flb_sds_destroy(out_tag);
+                    return -1;
+                }
 
                 /* Handle ACK response */
                 if (chunk_id != -1) {
@@ -513,15 +527,23 @@ int fw_prot_process(struct fw_conn *conn)
                         }
 
                         /* Append uncompressed data */
-                        flb_input_chunk_append_raw(conn->in,
+                        ret = flb_input_chunk_append_raw(conn->in,
                                                    out_tag, flb_sds_len(out_tag),
                                                    gz_data, gz_size);
                         flb_free(gz_data);
                     }
                     else {
-                        flb_input_chunk_append_raw(conn->in,
+                        ret = flb_input_chunk_append_raw(conn->in,
                                                    out_tag, flb_sds_len(out_tag),
                                                    data, len);
+                    }
+
+                    if (ret == -1) {
+                        flb_plg_debug(ctx->ins, "failed to append raw input chunk");
+                        msgpack_unpacked_destroy(&result);
+                        msgpack_unpacker_free(unp);
+                        flb_sds_destroy(out_tag);
+                        return -1;
                     }
 
                     /* Handle ACK response */
