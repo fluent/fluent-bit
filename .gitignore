@@ -5,7 +5,6 @@
 *~
 _book/
 lib/jemalloc
-lib/onigmo
 tests/internal/flb_tests_internal.h
 tests/runtime/flb_tests_runtime.h
 build/*

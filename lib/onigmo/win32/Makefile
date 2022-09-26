@@ -43,7 +43,7 @@ RC = rc
 DEFS = -DHAVE_CONFIG_H -DEXPORT
 
 !if "$(ARCH)"=="x86"
-PYTHON = py -3.4-32
+PYTHON = py -3-32
 !else
 PYTHON = py -3
 !endif
