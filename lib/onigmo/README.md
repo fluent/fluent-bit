@@ -2,6 +2,8 @@
 [![Build status](https://ci.appveyor.com/api/projects/status/kndb924qaw1hq72i/branch/master?svg=true)](https://ci.appveyor.com/project/k-takata/onigmo/branch/master)
 [![Coverage Status](https://coveralls.io/repos/k-takata/Onigmo/badge.svg?branch=master&service=github)](https://coveralls.io/github/k-takata/Onigmo?branch=master)
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/2778/badge.svg)](https://scan.coverity.com/projects/k-takata-onigmo)
+[![Code Quality: Cpp](https://img.shields.io/lgtm/grade/cpp/g/k-takata/Onigmo.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/k-takata/Onigmo/context:cpp)
+[![Total Alerts](https://img.shields.io/lgtm/alerts/g/k-takata/Onigmo.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/k-takata/Onigmo/alerts)
 
 Onigmo (Oniguruma-mod)
 ======================
@@ -30,9 +32,10 @@ Install
 
 ### Case 1: Unix and Cygwin platform
 
-   1. `./configure`
-   2. `make`
-   3. `make install`
+   1. `./autogen.sh`  (If `configure` doesn't exist.)
+   2. `./configure`
+   3. `make`
+   4. `make install`
 
    * test
 

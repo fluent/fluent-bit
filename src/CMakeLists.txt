@@ -201,7 +201,7 @@ endif()
 if(FLB_REGEX)
   set(extra_libs
     ${extra_libs}
-    "libonigmo")
+    onigmo-static)
   set(src
     ${src}
     "flb_regex.c"
@@ -449,7 +449,7 @@ if(FLB_BINARY)
   endif()
 
   if(FLB_REGEX)
-    target_link_libraries(fluent-bit-bin libonigmo)
+    target_link_libraries(fluent-bit-bin onigmo-static)
   endif()
 
   if(FLB_JEMALLOC)
