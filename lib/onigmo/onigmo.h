@@ -4,8 +4,8 @@
   onigmo.h - Onigmo (Oniguruma-mod) (regular expression library)
 **********************************************************************/
 /*-
- * Copyright (c) 2002-2009  K.Kosako  <sndgk393 AT ybb DOT ne DOT jp>
- * Copyright (c) 2011-2017  K.Takata  <kentkt AT csc DOT jp>
+ * Copyright (c) 2002-2016  K.Kosako  <sndgk393 AT ybb DOT ne DOT jp>
+ * Copyright (c) 2011-2019  K.Takata  <kentkt AT csc DOT jp>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -38,8 +38,8 @@ extern "C" {
 #endif
 
 #define ONIGMO_VERSION_MAJOR   6
-#define ONIGMO_VERSION_MINOR   1
-#define ONIGMO_VERSION_TEENY   3
+#define ONIGMO_VERSION_MINOR   2
+#define ONIGMO_VERSION_TEENY   0
 
 #ifndef ONIG_EXTERN
 # ifdef RUBY_EXTERN
@@ -701,6 +701,7 @@ ONIG_EXTERN const OnigSyntaxType*   OnigDefaultSyntax;
 #define ONIG_IS_CAPTURE_HISTORY_GROUP(r, i) \
   ((i) <= ONIG_MAX_CAPTURE_HISTORY_GROUP && (r)->list && (r)->list[i])
 
+#ifdef USE_CAPTURE_HISTORY
 typedef struct OnigCaptureTreeNodeStruct {
   int group;   /* group number */
   OnigPosition beg;
@@ -709,6 +710,7 @@ typedef struct OnigCaptureTreeNodeStruct {
   int num_childs;
   struct OnigCaptureTreeNodeStruct** childs;
 } OnigCaptureTreeNode;
+#endif
 
 /* match result region type */
 struct re_registers {
@@ -716,8 +718,10 @@ struct re_registers {
   int  num_regs;
   OnigPosition* beg;
   OnigPosition* end;
+#ifdef USE_CAPTURE_HISTORY
   /* extended */
   OnigCaptureTreeNode* history_root;  /* capture history tree root */
+#endif
 };
 
 /* capture tree traverse */
@@ -784,8 +788,8 @@ typedef struct re_pattern_buffer {
   unsigned char *exact;
   unsigned char *exact_end;
   unsigned char  map[ONIG_CHAR_TABLE_SIZE]; /* used as BM skip or char-map */
-  int           *int_map;                   /* BM skip for exact_len > 255 */
-  int           *int_map_backward;          /* BM skip for backward search */
+  int           *reserved1;
+  int           *reserved2;
   OnigDistance   dmin;                      /* min-distance of exact or map */
   OnigDistance   dmax;                      /* max-distance of exact or map */
 
@@ -866,8 +870,10 @@ ONIG_EXTERN
 int onig_number_of_captures(const OnigRegexType *reg);
 ONIG_EXTERN
 int onig_number_of_capture_histories(const OnigRegexType *reg);
+#ifdef USE_CAPTURE_HISTORY
 ONIG_EXTERN
 OnigCaptureTreeNode* onig_get_capture_tree(OnigRegion* region);
+#endif
 ONIG_EXTERN
 int onig_capture_tree_traverse(OnigRegion* region, int at, int(*callback_func)(int,OnigPosition,OnigPosition,int,int,void*), void* arg);
 ONIG_EXTERN
