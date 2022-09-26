@@ -3,7 +3,7 @@
 **********************************************************************/
 /*-
  * Copyright (c) 2002-2007  K.Kosako  <sndgk393 AT ybb DOT ne DOT jp>
- * Copyright (c) 2011-2016  K.Takata  <kentkt AT csc DOT jp>
+ * Copyright (c) 2011-2019  K.Takata  <kentkt AT csc DOT jp>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -625,18 +625,23 @@ onigenc_single_byte_mbc_to_code(const UChar* p, const UChar* end ARG_UNUSED,
 }
 
 extern int
-onigenc_single_byte_code_to_mbclen(OnigCodePoint code ARG_UNUSED, OnigEncoding enc ARG_UNUSED)
+onigenc_single_byte_code_to_mbclen(OnigCodePoint code, OnigEncoding enc ARG_UNUSED)
 {
+  if (code > 0xff)
+    return ONIGERR_INVALID_CODE_POINT_VALUE;
   return 1;
 }
 
 extern int
 onigenc_single_byte_code_to_mbc(OnigCodePoint code, UChar *buf, OnigEncoding enc ARG_UNUSED)
 {
+  if (code > 0xff) {
 #ifdef RUBY
-  if (code > 0xff)
     rb_raise(rb_eRangeError, "%u out of char range", code);
+#else
+    return ONIGERR_INVALID_CODE_POINT_VALUE;
 #endif
+  }
   *buf = (UChar )(code & 0xff);
   return 1;
 }
@@ -951,6 +956,7 @@ onigenc_property_list_add_property(UChar* name, const OnigCodePoint* prop,
 }
 #endif
 
+#ifdef USE_CASE_MAP_API
 extern int
 onigenc_ascii_only_case_map(OnigCaseFoldType* flagP, const OnigUChar** pp, const OnigUChar* end,
 			    OnigUChar* to, OnigUChar* to_end, const struct OnigEncodingTypeST* enc)
@@ -969,7 +975,7 @@ onigenc_ascii_only_case_map(OnigCaseFoldType* flagP, const OnigUChar** pp, const
 
     if (code >= 'a' && code <= 'z' && (flags & ONIGENC_CASE_UPCASE)) {
       flags |= ONIGENC_CASE_MODIFIED;
-      code += 'A' - 'a';
+      code -= 'a' - 'A';
     } else if (code >= 'A' && code <= 'Z' &&
 	(flags & (ONIGENC_CASE_DOWNCASE | ONIGENC_CASE_FOLD))) {
       flags |= ONIGENC_CASE_MODIFIED;
@@ -997,7 +1003,7 @@ onigenc_single_byte_ascii_only_case_map(OnigCaseFoldType* flagP, const OnigUChar
 
     if (code >= 'a' && code <= 'z' && (flags & ONIGENC_CASE_UPCASE)) {
       flags |= ONIGENC_CASE_MODIFIED;
-      code += 'A' - 'a';
+      code -= 'a' - 'A';
     } else if (code >= 'A' && code <= 'Z' &&
 	(flags & (ONIGENC_CASE_DOWNCASE | ONIGENC_CASE_FOLD))) {
       flags |= ONIGENC_CASE_MODIFIED;
@@ -1010,3 +1016,4 @@ onigenc_single_byte_ascii_only_case_map(OnigCaseFoldType* flagP, const OnigUChar
   *flagP = flags;
   return (int )(to - to_start);
 }
+#endif

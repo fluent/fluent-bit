@@ -22,6 +22,9 @@ $unicode_version = File.basename(ARGV[0])[/\A[.\d]+\z/]
 
 POSIX_NAMES = %w[NEWLINE Alpha Blank Cntrl Digit Graph Lower Print XPosixPunct Space Upper XDigit Word Alnum ASCII Punct]
 
+GPERF_VERSION = `gperf -v`.split("\n").first # /^GNU gperf (.+)$/
+  .split.last
+
 def pair_codepoints(codepoints)
 
   # We have a sorted Array of codepoints that we wish to partition into
@@ -133,14 +136,15 @@ def parse_scripts(data, categories)
   files = [
     {:fn => 'DerivedCoreProperties.txt', :title => 'Derived Property'},
     {:fn => 'Scripts.txt', :title => 'Script'},
-    {:fn => 'PropList.txt', :title => 'Binary Property'}
+    {:fn => 'PropList.txt', :title => 'Binary Property'},
+    {:fn => 'emoji-data.txt', :title => 'Emoji'}
   ]
   current = nil
   cps = []
   names = {}
   files.each do |file|
     data_foreach(file[:fn]) do |line|
-      if /^# Total code points: / =~ line
+      if /^# Total (?:code points|elements): / =~ line
         data[current] = cps
         categories[current] = file[:title]
         (names[file[:title]] ||= []) << current
@@ -228,7 +232,6 @@ def parse_GraphemeBreakProperty(data)
 end
 
 def parse_block(data)
-  current = nil
   cps = []
   blocks = []
   data_foreach('Blocks.txt') do |line|
@@ -310,13 +313,15 @@ def data_foreach(name, &block)
   pat = /^# #{File.basename(name).sub(/\./, '-([\\d.]+)\\.')}/
   File.open(fn, 'rb') do |f|
     line = f.gets
-    unless pat =~ line
-      raise ArgumentError, "#{name}: no Unicode version"
-    end
-    if !$unicode_version
-      $unicode_version = $1
-    elsif $unicode_version != $1
-      raise ArgumentError, "#{name}: Unicode version mismatch: #$1"
+    unless /^emoji-/ =~ name
+      unless pat =~ line
+        raise ArgumentError, "#{name}: no Unicode version"
+      end
+      if !$unicode_version
+        $unicode_version = $1
+      elsif $unicode_version != $1
+        raise ArgumentError, "#{name}: Unicode version mismatch: #$1"
+      end
     end
     f.each(&block)
   end
@@ -438,7 +443,7 @@ output.ifdef :USE_UNICODE_PROPERTIES do
   blocks.each{|name|puts"  CR_#{name},"}
 end
 
-puts(<<'__HEREDOC')
+puts(<<"__HEREDOC")
 };
 struct uniname2ctype_struct {
   short name;
@@ -446,7 +451,7 @@ struct uniname2ctype_struct {
 };
 #define uniname2ctype_offset(str) offsetof(struct uniname2ctype_pool_t, uniname2ctype_pool_##str)
 
-static const struct uniname2ctype_struct *uniname2ctype_p(const char *, unsigned int);
+static const struct uniname2ctype_struct *uniname2ctype_p(const char *, #{ GPERF_VERSION >= '3.1' ? 'size_t' : 'unsigned int' });
 %}
 struct uniname2ctype_struct;
 %%

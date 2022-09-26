@@ -5,7 +5,7 @@
 **********************************************************************/
 /*-
  * Copyright (c) 2002-2008  K.Kosako  <sndgk393 AT ybb DOT ne DOT jp>
- * Copyright (c) 2011-2016  K.Takata  <kentkt AT csc DOT jp>
+ * Copyright (c) 2011-2019  K.Takata  <kentkt AT csc DOT jp>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -122,18 +122,20 @@ typedef struct {
 } PosixBracketEntryType;
 
 #define POSIX_BRACKET_ENTRY_INIT(name, ctype) \
-  {(short int )(sizeof(name) - 1), (name), (ctype)}
+  {(short int )(sizeof(name) - 1), name, (ctype)}
 
 #ifndef numberof
 # define numberof(array) (int )(sizeof(array) / sizeof((array)[0]))
 #endif
 
 
+/* config */
 #define USE_CRNL_AS_LINE_TERMINATOR
 #define USE_UNICODE_PROPERTIES
 #define USE_UNICODE_AGE_PROPERTIES
 /* #define USE_UNICODE_CASE_FOLD_TURKISH_AZERI */
 /* #define USE_UNICODE_ALL_LINE_TERMINATORS */  /* see Unicode.org UTS #18 */
+#define USE_CASE_MAP_API
 
 
 #define ONIG_ENCODING_INIT_DEFAULT           ONIG_ENCODING_ASCII

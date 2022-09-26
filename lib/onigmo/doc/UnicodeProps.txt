@@ -1,4 +1,4 @@
-Onigmo (Oniguruma-mod) Unicode Properties  Version 6.0.0    2016/10/15
+Onigmo (Oniguruma-mod) Unicode Properties  Version 6.2.1    2019/07/28
 
 * POSIX brackets
     Alpha
@@ -92,9 +92,11 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.0.0    2016/10/15
     Cyrillic
     Deseret
     Devanagari
+    Dogra
     Duployan
     Egyptian_Hieroglyphs
     Elbasan
+    Elymaic
     Ethiopic
     Georgian
     Glagolitic
@@ -102,9 +104,11 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.0.0    2016/10/15
     Grantha
     Greek
     Gujarati
+    Gunjala_Gondi
     Gurmukhi
     Han
     Hangul
+    Hanifi_Rohingya
     Hanunoo
     Hatran
     Hebrew
@@ -132,10 +136,13 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.0.0    2016/10/15
     Lycian
     Lydian
     Mahajani
+    Makasar
     Malayalam
     Mandaic
     Manichaean
     Marchen
+    Masaram_Gondi
+    Medefaidrin
     Meetei_Mayek
     Mende_Kikakui
     Meroitic_Cursive
@@ -147,9 +154,12 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.0.0    2016/10/15
     Multani
     Myanmar
     Nabataean
+    Nandinagari
     New_Tai_Lue
     Newa
     Nko
+    Nushu
+    Nyiakeng_Puachue_Hmong
     Ogham
     Ol_Chiki
     Old_Hungarian
@@ -157,6 +167,7 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.0.0    2016/10/15
     Old_North_Arabian
     Old_Permic
     Old_Persian
+    Old_Sogdian
     Old_South_Arabian
     Old_Turkic
     Oriya
@@ -177,7 +188,9 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.0.0    2016/10/15
     Siddham
     SignWriting
     Sinhala
+    Sogdian
     Sora_Sompeng
+    Soyombo
     Sundanese
     Syloti_Nagri
     Syriac
@@ -198,8 +211,10 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.0.0    2016/10/15
     Ugaritic
     Unknown
     Vai
+    Wancho
     Warang_Citi
     Yi
+    Zanabazar_Square
 
 * DerivedCoreProperties
     Alphabetic
@@ -250,12 +265,20 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.0.0    2016/10/15
     Prepended_Concatenation_Mark
     Quotation_Mark
     Radical
+    Regional_Indicator
     Sentence_Terminal
     Soft_Dotted
     Terminal_Punctuation
     Unified_Ideograph
     Variation_Selector
     White_Space
+
+* Emoji
+    Emoji
+    Emoji_Component
+    Emoji_Modifier
+    Emoji_Modifier_Base
+    Emoji_Presentation
 
 * PropertyAliases
     AHex
@@ -294,6 +317,7 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.0.0    2016/10/15
     Pat_Syn
     Pat_WS
     QMark
+    RI
     SD
     STerm
     Term
@@ -371,13 +395,17 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.0.0    2016/10/15
     Cprt
     Cyrl
     Deva
+    Dogr
     Dsrt
     Dupl
     Egyp
     Elba
+    Elym
     Ethi
     Geor
     Glag
+    Gong
+    Gonm
     Goth
     Gran
     Grek
@@ -391,6 +419,7 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.0.0    2016/10/15
     Hira
     Hluw
     Hmng
+    Hmnp
     Hung
     Ital
     Java
@@ -411,9 +440,11 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.0.0    2016/10/15
     Lyci
     Lydi
     Mahj
+    Maka
     Mand
     Mani
     Marc
+    Medf
     Mend
     Merc
     Mero
@@ -423,9 +454,11 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.0.0    2016/10/15
     Mtei
     Mult
     Mymr
+    Nand
     Narb
     Nbat
     Nkoo
+    Nshu
     Ogam
     Olck
     Orkh
@@ -442,6 +475,7 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.0.0    2016/10/15
     Plrd
     Prti
     Rjng
+    Rohg
     Runr
     Samr
     Sarb
@@ -452,7 +486,10 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.0.0    2016/10/15
     Sidd
     Sind
     Sinh
+    Sogd
+    Sogo
     Sora
+    Soyo
     Sund
     Sylo
     Syrc
@@ -472,9 +509,11 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.0.0    2016/10/15
     Ugar
     Vaii
     Wara
+    Wcho
     Xpeo
     Xsux
     Yiii
+    Zanb
     Zinh
     Qaai
     Zyyy
@@ -482,6 +521,10 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.0.0    2016/10/15
 
 * DerivedAges
     Age=1.1
+    Age=10.0
+    Age=11.0
+    Age=12.0
+    Age=12.1
     Age=2.0
     Age=2.1
     Age=3.0
@@ -520,6 +563,7 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.0.0    2016/10/15
     In_NKo
     In_Samaritan
     In_Mandaic
+    In_Syriac_Supplement
     In_Arabic_Extended_A
     In_Devanagari
     In_Bengali
@@ -563,6 +607,7 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.0.0    2016/10/15
     In_Lepcha
     In_Ol_Chiki
     In_Cyrillic_Extended_C
+    In_Georgian_Extended
     In_Sundanese_Supplement
     In_Vedic_Extensions
     In_Phonetic_Extensions
@@ -702,7 +747,11 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.0.0    2016/10/15
     In_Psalter_Pahlavi
     In_Old_Turkic
     In_Old_Hungarian
+    In_Hanifi_Rohingya
     In_Rumi_Numeral_Symbols
+    In_Old_Sogdian
+    In_Sogdian
+    In_Elymaic
     In_Brahmi
     In_Kaithi
     In_Sora_Sompeng
@@ -721,36 +770,54 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.0.0    2016/10/15
     In_Mongolian_Supplement
     In_Takri
     In_Ahom
+    In_Dogra
     In_Warang_Citi
+    In_Nandinagari
+    In_Zanabazar_Square
+    In_Soyombo
     In_Pau_Cin_Hau
     In_Bhaiksuki
     In_Marchen
+    In_Masaram_Gondi
+    In_Gunjala_Gondi
+    In_Makasar
+    In_Tamil_Supplement
     In_Cuneiform
     In_Cuneiform_Numbers_and_Punctuation
     In_Early_Dynastic_Cuneiform
     In_Egyptian_Hieroglyphs
+    In_Egyptian_Hieroglyph_Format_Controls
     In_Anatolian_Hieroglyphs
     In_Bamum_Supplement
     In_Mro
     In_Bassa_Vah
     In_Pahawh_Hmong
+    In_Medefaidrin
     In_Miao
     In_Ideographic_Symbols_and_Punctuation
     In_Tangut
     In_Tangut_Components
     In_Kana_Supplement
+    In_Kana_Extended_A
+    In_Small_Kana_Extension
+    In_Nushu
     In_Duployan
     In_Shorthand_Format_Controls
     In_Byzantine_Musical_Symbols
     In_Musical_Symbols
     In_Ancient_Greek_Musical_Notation
+    In_Mayan_Numerals
     In_Tai_Xuan_Jing_Symbols
     In_Counting_Rod_Numerals
     In_Mathematical_Alphanumeric_Symbols
     In_Sutton_SignWriting
     In_Glagolitic_Supplement
+    In_Nyiakeng_Puachue_Hmong
+    In_Wancho
     In_Mende_Kikakui
     In_Adlam
+    In_Indic_Siyaq_Numbers
+    In_Ottoman_Siyaq_Numbers
     In_Arabic_Mathematical_Alphabetic_Symbols
     In_Mahjong_Tiles
     In_Domino_Tiles
@@ -765,10 +832,13 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.0.0    2016/10/15
     In_Geometric_Shapes_Extended
     In_Supplemental_Arrows_C
     In_Supplemental_Symbols_and_Pictographs
+    In_Chess_Symbols
+    In_Symbols_and_Pictographs_Extended_A
     In_CJK_Unified_Ideographs_Extension_B
     In_CJK_Unified_Ideographs_Extension_C
     In_CJK_Unified_Ideographs_Extension_D
     In_CJK_Unified_Ideographs_Extension_E
+    In_CJK_Unified_Ideographs_Extension_F
     In_CJK_Compatibility_Ideographs_Supplement
     In_Tags
     In_Variation_Selectors_Supplement

@@ -92,9 +92,10 @@ Install
 
  Case 1: Unix and Cygwin platform
 
-   1. ./configure
-   2. make
-   3. make install
+   1. ./autogen.sh  (If `configure` doesn't exist.)
+   2. ./configure
+   3. make
+   4. make install
 
    * uninstall
 

@@ -2,7 +2,7 @@ noinst_PROGRAMS = encode listcap names posix simple sql syntax scan crnl
 
 libname = $(top_builddir)/libonigmo.la
 LDADD   = $(libname)
-INCLUDES  = -I$(top_srcdir) -I$(includedir)
+AM_CPPFLAGS = -I$(top_srcdir) -I$(includedir)
 
 encode_SOURCES  = encode.c
 listcap_SOURCES = listcap.c
