@@ -1462,7 +1462,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
             /* update metrics if required */
             if (dropped_chunks > 0 || dropped_bytes > 0) {
                 /* timestamp and input plugin name for label */
-                ts = cfl_time_now();
+                ts = cmt_time_now();
                 name = (char *) flb_input_name(in);
 
                 /* update counters */
