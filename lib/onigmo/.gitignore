@@ -38,16 +38,30 @@
 /build*/
 
 # autotools generated files
+/aclocal.m4
 /autom4te.cache
+/compile
+/config.guess
 /config.h
+/config.h.in
 /config.log
 /config.status
+/config.sub
+/configure
+/depcomp
+/install-sh
 /libtool
+/ltmain.sh
+/m4/*.m4
+/missing
 /onigmo-config
 /onigmo.pc
 /Makefile
+/Makefile.in
 /sample/Makefile
+/sample/Makefile.in
 /stamp-h1
+/test-driver
 
 # generated executable files
 /enc/mktable
