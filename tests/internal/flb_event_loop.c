@@ -20,6 +20,8 @@
 #define EVENT_LOOP_MAX_EVENTS 64
 #ifdef _WIN32
     #define TIME_EPSILON_MS 30
+#elif FLB_SYSTEM_MACOS
+    #define TIME_EPSILON_MS 50
 #else
     #define TIME_EPSILON_MS 10
 #endif
