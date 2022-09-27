@@ -52,7 +52,7 @@ static void make_error_data_key()
     pthread_key_create(&error_data_key, free);
 }
 #elif defined _WIN32
-#include <Windows.h>
+#include <windows.h>
 
 static __declspec( thread ) struct avro_error_data_t TLS_ERROR_DATA = { "", "", NULL, NULL };
 

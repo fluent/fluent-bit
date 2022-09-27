@@ -17,8 +17,8 @@
  *  limitations under the License.
  */
 
-#include <Windows.h>
-#include <Shlwapi.h>
+#include <windows.h>
+#include <shlwapi.h>
 
 struct flb_config;
 extern struct flb_config *config;

@@ -22,7 +22,7 @@
  * Win32's FIndFirstFile/FindNextFile API.
  */
 
-#include <Windows.h>
+#include <windows.h>
 #include <shlwapi.h>
 
 #include "dirent.h"
