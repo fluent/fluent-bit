@@ -60,5 +60,6 @@ cfl_sds_t cfl_sds_cat(cfl_sds_t s, const char *str, int len);
 cfl_sds_t cfl_sds_create_size(size_t size);
 void cfl_sds_set_len(cfl_sds_t s, size_t len);
 void cfl_sds_cat_safe(cfl_sds_t *buf, const char *str, int len);
+cfl_sds_t cfl_sds_printf(cfl_sds_t *sds, const char *fmt, ...);
 
 #endif

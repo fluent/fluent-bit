@@ -85,9 +85,11 @@ jobs:
 
       - name: Unstable release on push to master to make it easier to download
         uses: pyTooling/Actions/releaser@r0
+        continue-on-error: true
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag: 'unstable'
+          rm: true
           files: |
             artifacts/**/*
 

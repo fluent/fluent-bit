@@ -2,6 +2,7 @@ include_directories(lib/acutest)
 
 set(UNIT_TESTS_FILES
   kv.c
+  sds.c
   hash.c
   list.c
   )
