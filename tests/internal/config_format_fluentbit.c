@@ -6,12 +6,10 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_config_format.h>
 #include <fluent-bit/flb_sds.h>
-#include <sys/stat.h>
+#include <fluent-bit/flb_compat.h>
 
 #include "flb_tests_internal.h"
-
 #include <sys/stat.h>
-#include <unistd.h>
 
 #define FLB_000 FLB_TESTS_DATA_PATH "/data/config_format/classic/fluent-bit.conf"
 #define FLB_001 FLB_TESTS_DATA_PATH "/data/config_format/classic/issue_5880.conf"
