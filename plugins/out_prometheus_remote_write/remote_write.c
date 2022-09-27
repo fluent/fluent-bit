@@ -21,9 +21,39 @@
 #include <fluent-bit/flb_snappy.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_signv4.h>
+#include <fluent-bit/flb_aws_credentials.h>
 
 #include "remote_write.h"
 #include "remote_write_conf.h"
+
+#ifdef FLB_HAVE_AWS
+static flb_sds_t add_aws_auth(struct flb_http_client *c,
+                              struct prometheus_remote_write_context *ctx)
+{
+    flb_sds_t signature = NULL;
+    int ret;
+
+    flb_plg_debug(ctx->ins, "Signing request with AWS Sigv4");
+
+    /* AWS Prometheus Sigv4 does not allow the host header to include the port */
+    ret = flb_http_strip_port_from_host(c);
+    if (ret < 0) {
+        flb_plg_error(ctx->ins, "could not strip port from host for sigv4");
+        return NULL;
+    }
+
+    signature = flb_signv4_do(c, FLB_TRUE, FLB_TRUE, time(NULL),
+                              ctx->aws_region, "es",
+                              0,
+                              ctx->aws_provider);
+    if (!signature) {
+        flb_plg_error(ctx->ins, "could not sign request with sigv4");
+        return NULL;
+    }
+    return signature;
+}
+#endif /* FLB_HAVE_AWS */
 
 static int http_post(struct prometheus_remote_write_context *ctx,
                      const void *body, size_t body_len,
@@ -41,6 +71,7 @@ static int http_post(struct prometheus_remote_write_context *ctx,
     struct flb_config_map_val *mv;
     struct flb_slist_entry *key = NULL;
     struct flb_slist_entry *val = NULL;
+    flb_sds_t signature = NULL;
 
     /* Get upstream context and connection */
     u = ctx->u;
@@ -112,6 +143,19 @@ static int http_post(struct prometheus_remote_write_context *ctx,
                             val->str, flb_sds_len(val->str));
     }
 
+    /* Map debug callbacks */
+    flb_http_client_debug(c, ctx->ins->callback);
+
+#ifdef FLB_HAVE_AWS
+    if (ctx->has_aws_auth == FLB_TRUE) {
+        signature = add_aws_auth(c, ctx);
+        if (!signature) {
+            out_ret = FLB_RETRY;
+            goto retry;
+        }
+    }
+#endif
+
     ret = flb_http_do(c, &b_sent);
     if (ret == 0) {
         /*
@@ -157,6 +201,8 @@ static int http_post(struct prometheus_remote_write_context *ctx,
                       ctx->host, ctx->port, ret);
         out_ret = FLB_RETRY;
     }
+
+retry:
 
     /*
      * If the payload buffer is different than incoming records in body, means
@@ -347,6 +393,36 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct prometheus_remote_write_context, log_response_payload),
      "Specify if the response paylod should be logged or not"
     },
+
+    /* AWS Authentication */
+#ifdef FLB_HAVE_AWS
+    {
+     FLB_CONFIG_MAP_BOOL, "aws_auth", "false",
+     0, FLB_TRUE, offsetof(struct prometheus_remote_write_context, has_aws_auth),
+     "Enable AWS Sigv4 Authentication"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "aws_region", NULL,
+     0, FLB_TRUE, offsetof(struct prometheus_remote_write_context, aws_region),
+     "AWS Region of your Amazon OpenSearch Service cluster"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "aws_sts_endpoint", NULL,
+     0, FLB_TRUE, offsetof(struct prometheus_remote_write_context, aws_sts_endpoint),
+     "Custom endpoint for the AWS STS API, used with the AWS_Role_ARN option"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "aws_role_arn", NULL,
+     0, FLB_FALSE, 0,
+     "AWS IAM Role to assume to put records to your Amazon OpenSearch cluster"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "aws_external_id", NULL,
+     0, FLB_FALSE, 0,
+     "External ID for the AWS IAM Role specified with `aws_role_arn`"
+    },
+#endif
+
     /* EOF */
     {0}
 };
