@@ -1,0 +1,30 @@
+name: Lint PRs
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    name: Shellcheck
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ludeeus/action-shellcheck@master
+        with:
+          ignore_paths: lib
+
+  actionlint:
+    runs-on: ubuntu-latest
+    name: Actionlint
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v3
+      - run: |
+          echo "::add-matcher::.github/actionlint-matcher.json"
+          bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color -shellcheck=
+        shell: bash
+
