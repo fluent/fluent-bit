@@ -328,6 +328,10 @@ struct flb_input_instance {
     /* total bytes used by chunks in a busy state */
     struct cmt_gauge   *cmt_storage_chunks_busy_bytes;
 
+    /* memory ring buffer (memrb) metrics */
+    struct cmt_counter *cmt_memrb_dropped_chunks;
+    struct cmt_counter *cmt_memrb_dropped_bytes;
+
     /*
      * Indexes for generated chunks: simple hash tables that keeps the latest
      * available chunks for writing data operations. This optimizes the

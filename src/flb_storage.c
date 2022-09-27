@@ -452,7 +452,7 @@ static void print_storage_info(struct flb_config *ctx, struct cio_ctx *cio)
         type = "memory+filesystem";
     }
     else {
-        type = "memory-only";
+        type = "memory";
     }
 
     if (cio->options.flags & CIO_FULL_SYNC) {
@@ -463,13 +463,13 @@ static void print_storage_info(struct flb_config *ctx, struct cio_ctx *cio)
     }
 
     if (cio->options.flags & CIO_CHECKSUM) {
-        checksum = "enabled";
+        checksum = "on";
     }
     else {
-        checksum = "disabled";
+        checksum = "off";
     }
 
-    flb_info("[storage] version=%s, type=%s, sync=%s, checksum=%s, max_chunks_up=%i",
+    flb_info("[storage] ver=%s, type=%s, sync=%s, checksum=%s, max_chunks_up=%i",
              cio_version(), type, sync, checksum, ctx->storage_max_chunks_up);
 
     /* Storage input plugin */
@@ -499,26 +499,36 @@ static void log_cb(void *ctx, int level, const char *file, int line,
 int flb_storage_input_create(struct cio_ctx *cio,
                              struct flb_input_instance *in)
 {
+    int cio_storage_type;
     struct flb_storage_input *si;
     struct cio_stream *stream;
 
     /* storage config: get stream type */
     if (in->storage_type == -1) {
-        in->storage_type = CIO_STORE_MEM;
+        in->storage_type = FLB_STORAGE_MEM;
     }
 
-    if (in->storage_type == CIO_STORE_FS && cio->options.root_path == NULL) {
+    if (in->storage_type == FLB_STORAGE_FS && cio->options.root_path == NULL) {
         flb_error("[storage] instance '%s' requested filesystem storage "
                   "but no filesystem path was defined.",
                   flb_input_name(in));
         return -1;
     }
 
+    /*
+     * The input instance can define it owns storage type which is based on some
+     * specific Chunk I/O storage type. We handle the proper initialization here.
+     */
+    cio_storage_type = in->storage_type;
+    if (in->storage_type == FLB_STORAGE_MEMRB) {
+        cio_storage_type = FLB_STORAGE_MEM;
+    }
+
     /* Check for duplicates */
     stream = cio_stream_get(cio, in->name);
     if (!stream) {
         /* create stream for input instance */
-        stream = cio_stream_create(cio, in->name, in->storage_type);
+        stream = cio_stream_create(cio, in->name, cio_storage_type);
         if (!stream) {
             flb_error("[storage] cannot create stream for instance %s",
                       in->name);

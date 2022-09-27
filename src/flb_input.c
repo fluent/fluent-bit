@@ -40,6 +40,9 @@
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_ring_buffer.h>
 
+/* input plugin macro helpers */
+#include <fluent-bit/flb_input_plugin.h>
+
 #ifdef FLB_HAVE_CHUNK_TRACE
 #include <fluent-bit/flb_chunk_trace.h>
 #endif /* FLB_HAVE_CHUNK_TRACE */
@@ -351,7 +354,6 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
             return NULL;
         }
 
-        instance->mp_total_buf_size = 0;
         instance->mem_buf_status = FLB_INPUT_RUNNING;
         instance->mem_buf_limit = 0;
         instance->mem_chunks_size = 0;
@@ -594,10 +596,13 @@ int flb_input_set_property(struct flb_input_instance *ins,
     else if (prop_key_check("storage.type", k, len) == 0 && tmp) {
         /* Set the storage type */
         if (strcasecmp(tmp, "filesystem") == 0) {
-            ins->storage_type = CIO_STORE_FS;
+            ins->storage_type = FLB_STORAGE_FS;
         }
         else if (strcasecmp(tmp, "memory") == 0) {
-            ins->storage_type = CIO_STORE_MEM;
+            ins->storage_type = FLB_STORAGE_MEM;
+        }
+        else if (strcasecmp(tmp, "memrb") == 0) {
+            ins->storage_type = FLB_STORAGE_MEMRB;
         }
         else {
             flb_sds_destroy(tmp);
@@ -616,7 +621,7 @@ int flb_input_set_property(struct flb_input_instance *ins,
         ins->is_threaded = enabled;
     }
     else if (prop_key_check("storage.pause_on_chunks_overlimit", k, len) == 0 && tmp) {
-        if (ins->storage_type == CIO_STORE_FS) {
+        if (ins->storage_type == FLB_STORAGE_FS) {
             ret = flb_utils_bool(tmp);
             if (ret == -1) {
                 return -1;
@@ -968,7 +973,27 @@ int flb_input_instance_init(struct flb_input_instance *ins,
         cmt_gauge_set(ins->cmt_storage_chunks_busy_bytes, ts, 0, 1, (char *[]) {name});
     }
 
-    /* --- OLD Metrics ---*/
+    if (ins->storage_type == FLB_STORAGE_MEMRB) {
+        /* fluentbit_input_memrb_dropped_chunks */
+        ins->cmt_memrb_dropped_chunks = cmt_counter_create(ins->cmt,
+                                                          "fluentbit", "input",
+                                                          "memrb_dropped_chunks",
+                                                          "Number of memrb dropped chunks.",
+                                                          1, (char *[]) {"name"});
+        cmt_counter_set(ins->cmt_memrb_dropped_chunks, ts, 0, 1, (char *[]) {name});
+
+
+        /* fluentbit_input_memrb_dropped_bytes */
+        ins->cmt_memrb_dropped_bytes = cmt_counter_create(ins->cmt,
+                                                          "fluentbit", "input",
+                                                          "memrb_dropped_bytes",
+                                                          "Number of memrb dropped bytes.",
+                                                          1, (char *[]) {"name"});
+
+        cmt_counter_set(ins->cmt_memrb_dropped_bytes, ts, 0, 1, (char *[]) {name});
+    }
+
+    /* OLD Metrics */
     ins->metrics = flb_metrics_create(name);
     if (ins->metrics) {
         flb_metrics_add(FLB_METRIC_N_RECORDS, "records", ins->metrics);
@@ -1022,7 +1047,6 @@ int flb_input_instance_init(struct flb_input_instance *ins,
             flb_error("[input %s] error initializing TLS context",
                       ins->name);
             flb_input_instance_destroy(ins);
-
             return -1;
         }
     }
@@ -1078,6 +1102,9 @@ int flb_input_instance_init(struct flb_input_instance *ins,
 
     /* Initialize the input */
     if (p->cb_init) {
+        flb_plg_info(ins, "initializing");
+        flb_plg_info(ins, "storage_strategy=%s", flb_storage_get_type(ins->storage_type));
+
         /* Sanity check: all non-dynamic tag input plugins must have a tag */
         if (!ins->tag) {
             flb_input_set_property(ins, "tag", ins->name);

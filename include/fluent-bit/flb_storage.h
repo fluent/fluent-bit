@@ -24,6 +24,12 @@
 #include <chunkio/chunkio.h>
 #include <chunkio/cio_stats.h>
 
+/* Storage type */
+#define FLB_STORAGE_FS      CIO_STORE_FS    /* 0 */
+#define FLB_STORAGE_MEM     CIO_STORE_MEM   /* 1 */
+#define FLB_STORAGE_MEMRB   10
+
+/* Storage defaults */
 #define FLB_STORAGE_BL_MEM_LIMIT   "100M"
 #define FLB_STORAGE_MAX_CHUNKS_UP  128
 
@@ -51,6 +57,20 @@ struct flb_storage_input {
     struct cio_stream *stream;
     struct cio_ctx *cio;
 };
+
+static inline char *flb_storage_get_type(int type)
+{
+    switch(type) {
+        case FLB_STORAGE_FS:
+            return "'filesystem' (memory + filesystem)";
+        case FLB_STORAGE_MEM:
+            return "'memory' (memory only)";
+        case FLB_STORAGE_MEMRB:
+            return "'memrb' (memory ring buffer)";
+    };
+
+    return NULL;
+}
 
 int flb_storage_create(struct flb_config *ctx);
 int flb_storage_input_create(struct cio_ctx *cio,
