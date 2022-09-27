@@ -992,9 +992,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
                 msgpack_pack_uint64(&tmp_pck, (long long unsigned)(tms.tm.tv_sec));
                 break;
             case FLB_PACK_JSON_DATE_EPOCH_MS:
-                msgpack_pack_uint64(&tmp_pck,
-                                    (long long unsigned)(tms.tm.tv_sec) * 1000 +
-                                    tms.tm.tv_nsec / 1000000);
+                msgpack_pack_uint64(&tmp_pck, flb_time_to_millisec(&tms));
                 break;
             }
         }
