@@ -65,6 +65,7 @@
 /* Input plugin event type */
 #define FLB_INPUT_LOGS        0
 #define FLB_INPUT_METRICS     1
+#define FLB_INPUT_TRACES      2
 
 struct flb_input_instance;
 
@@ -336,11 +337,10 @@ struct flb_input_instance {
      * Indexes for generated chunks: simple hash tables that keeps the latest
      * available chunks for writing data operations. This optimizes the
      * lookup for candidates chunks to write data.
-     *
-     * Starting from v1.8 we have separate hash tables for logs and metrics.
      */
     struct flb_hash_table *ht_log_chunks;
     struct flb_hash_table *ht_metric_chunks;
+    struct flb_hash_table *ht_trace_chunks;
 
     /* TLS settings */
     int use_tls;                         /* bool, try to use TLS for I/O */
