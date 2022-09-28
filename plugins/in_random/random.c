@@ -79,7 +79,8 @@ static int in_random_collect(struct flb_input_instance *ins,
     msgpack_pack_str_body(&mp_pck, "rand_value", 10);
     msgpack_pack_uint64(&mp_pck, val);
 
-    flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    flb_input_log_append(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+
     msgpack_sbuffer_destroy(&mp_sbuf);
     ctx->samples_count++;
 
