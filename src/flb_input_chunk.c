@@ -54,8 +54,9 @@
 
 struct input_chunk_raw {
     struct flb_input_instance *ins;
-    flb_sds_t tag;
+    int event_type;
     size_t records;
+    flb_sds_t tag;
     void *buf_data;
     size_t buf_size;
 };
@@ -1457,6 +1458,7 @@ static int memrb_input_chunk_release_space(struct flb_input_instance *ins,
 
 /* Append a RAW MessagPack buffer to the input instance */
 static int input_chunk_append_raw(struct flb_input_instance *in,
+                                  int event_type,
                                   size_t n_records,
                                   const char *tag, size_t tag_len,
                                   const void *buf, size_t buf_size)
@@ -1741,10 +1743,13 @@ static void destroy_chunk_raw(struct input_chunk_raw *cr)
     flb_free(cr);
 }
 
-static int append_raw_to_ring_buffer(struct flb_input_instance *ins,
-                                     const char *tag, size_t tag_len,
-                                     size_t records,
-                                     const void *buf, size_t buf_size)
+static int append_to_ring_buffer(struct flb_input_instance *ins,
+                                 int event_type,
+                                 size_t records,
+                                 const char *tag,
+                                 size_t tag_len,
+                                 const void *buf,
+                                 size_t buf_size)
 
 {
     int ret;
@@ -1758,6 +1763,7 @@ static int append_raw_to_ring_buffer(struct flb_input_instance *ins,
         return -1;
     }
     cr->ins = ins;
+    cr->event_type = event_type;
 
     if (tag && tag_len > 0) {
         cr->tag = flb_sds_create_len(tag, tag_len);
@@ -1839,7 +1845,7 @@ void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data)
                     tag_len = 0;
                 }
 
-                input_chunk_append_raw(cr->ins, cr->records,
+                input_chunk_append_raw(cr->ins, cr->event_type, cr->records,
                                        cr->tag, tag_len,
                                        cr->buf_data, cr->buf_size);
                 destroy_chunk_raw(cr);
@@ -1852,40 +1858,25 @@ void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data)
 }
 
 int flb_input_chunk_append_raw(struct flb_input_instance *in,
+                               int event_type,
+                               size_t records,
                                const char *tag, size_t tag_len,
                                const void *buf, size_t buf_size)
 {
     int ret;
-    size_t records;
-
-    records = flb_mp_count(buf, buf_size);
 
     /*
      * If the plugin instance registering the data runs in a separate thread, we must
      * add the data reference to the ring buffer.
      */
     if (flb_input_is_threaded(in)) {
-        ret = append_raw_to_ring_buffer(in, tag, tag_len, records, buf, buf_size);
+        ret = append_to_ring_buffer(in, event_type, records,
+                                    tag, tag_len,
+                                    buf, buf_size);
     }
     else {
-        ret = input_chunk_append_raw(in, records, tag, tag_len, buf, buf_size);
-    }
-
-    return ret;
-}
-
-int flb_input_chunk_append_raw2(struct flb_input_instance *in,
-                                size_t records,
-                                const char *tag, size_t tag_len,
-                                const void *buf, size_t buf_size)
-{
-    int ret;
-
-    if (flb_input_is_threaded(in)) {
-        ret = append_raw_to_ring_buffer(in, tag, tag_len, records, buf, buf_size);
-    }
-    else {
-        ret = input_chunk_append_raw(in, records, tag, tag_len, buf, buf_size);
+        ret = input_chunk_append_raw(in, event_type, records,
+                                     tag, tag_len, buf, buf_size);
     }
 
     return ret;
