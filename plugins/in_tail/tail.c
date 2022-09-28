@@ -353,6 +353,16 @@ static int in_tail_init(struct flb_input_instance *in,
     }
     ctx->ins = in;
 
+    ctx->coll_fd_static = -1;
+    ctx->coll_fd_scan = -1;
+    ctx->coll_fd_watcher = -1;
+    ctx->coll_fd_rotated = -1;
+    ctx->coll_fd_pending = -1;
+    ctx->coll_fd_dmode_flush = -1;
+#ifdef FLB_HAVE_PARSER
+    ctx->coll_fd_mult_flush = -1;
+#endif
+
     /* Initialize file-system watcher */
     ret = flb_tail_fs_init(in, ctx, config);
     if (ret == -1) {
@@ -475,6 +485,45 @@ static int in_tail_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_tail_config *ctx = data;
+
+    /* Clean up collectors */
+    if (ctx->coll_fd_static != -1) {
+        flb_input_collector_delete(ctx->coll_fd_static, ctx->ins);
+
+        ctx->coll_fd_static = -1;
+    }
+    if (ctx->coll_fd_scan != -1) {
+        flb_input_collector_delete(ctx->coll_fd_scan, ctx->ins);
+
+        ctx->coll_fd_scan = -1;
+    }
+    if (ctx->coll_fd_watcher != -1) {
+        flb_input_collector_delete(ctx->coll_fd_watcher, ctx->ins);
+
+        ctx->coll_fd_watcher = -1;
+    }
+    if (ctx->coll_fd_rotated != -1) {
+        flb_input_collector_delete(ctx->coll_fd_rotated, ctx->ins);
+
+        ctx->coll_fd_rotated = -1;
+    }
+    if (ctx->coll_fd_pending != -1) {
+        flb_input_collector_delete(ctx->coll_fd_pending, ctx->ins);
+
+        ctx->coll_fd_pending = -1;
+    }
+    if (ctx->coll_fd_dmode_flush != -1) {
+        flb_input_collector_delete(ctx->coll_fd_dmode_flush, ctx->ins);
+
+        ctx->coll_fd_dmode_flush = -1;
+    }
+#ifdef FLB_HAVE_PARSER
+    if (ctx->coll_fd_mult_flush != -1) {
+        flb_input_collector_delete(ctx->coll_fd_mult_flush, ctx->ins);
+
+        ctx->coll_fd_mult_flush = -1;
+    }
+#endif
 
     flb_tail_file_remove_all(ctx);
     flb_tail_fs_exit(ctx);
