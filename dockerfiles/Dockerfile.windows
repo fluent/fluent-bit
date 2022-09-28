@@ -68,17 +68,19 @@ ARG IMAGE_SOURCE_REVISION
 
 # Metadata as defined in OCI image spec annotations
 # https://github.com/opencontainers/image-spec/blob/master/annotations.md
-LABEL org.opencontainers.image.title="Fluent Bit" `
-      org.opencontainers.image.description="Fluent Bit is an open source and multi-platform Log Processor and Forwarder which allows you to collect data/logs from different sources, unify and send them to multiple destinations. It's fully compatible with Docker and Kubernetes environments." `
-      org.opencontainers.image.created=$IMAGE_CREATE_DATE `
-      org.opencontainers.image.version=$FLUENTBIT_VERSION `
-      org.opencontainers.image.authors="Eduardo Silva <eduardo@calyptia.com>" `
-      org.opencontainers.image.url="https://hub.docker.com/r/fluent/fluent-bit" `
-      org.opencontainers.image.documentation="https://docs.fluentbit.io/manual/" `
-      org.opencontainers.image.vendor="Fluent Organization" `
-      org.opencontainers.image.licenses="Apache-2.0" `
-      org.opencontainers.image.source="https://github.com/fluent/fluent-bit" `
-      org.opencontainers.image.revision=$IMAGE_SOURCE_REVISION
+# LABEL org.opencontainers.image.title="Fluent Bit" `
+#       org.opencontainers.image.description="Fluent Bit is an open source and multi-platform Log Processor and Forwarder which allows you to collect data/logs from different sources, unify and send them to multiple destinations. It's fully compatible with Docker and Kubernetes environments." `
+#       org.opencontainers.image.created=$IMAGE_CREATE_DATE `
+#       org.opencontainers.image.version=$FLUENTBIT_VERSION `
+#       org.opencontainers.image.authors="Eduardo Silva <eduardo@calyptia.com>" `
+#       org.opencontainers.image.url="https://hub.docker.com/r/fluent/fluent-bit" `
+#       org.opencontainers.image.documentation="https://docs.fluentbit.io/manual/" `
+#       org.opencontainers.image.vendor="Fluent Organization" `
+#       org.opencontainers.image.licenses="Apache-2.0" `
+#       org.opencontainers.image.source="https://github.com/fluent/fluent-bit" `
+#       org.opencontainers.image.revision=$IMAGE_SOURCE_REVISION
+
+LABEL org.opencontainers.image.source="https://github.com/praizz/fluent-bit"
 
 COPY --from=builder /fluent-bit /fluent-bit
 
