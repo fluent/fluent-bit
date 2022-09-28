@@ -17,7 +17,7 @@ jobs:
       ref: ${{ github.event.inputs.version }}
       registry: ghcr.io
       username: ${{ github.actor }}
-      image: ${{ github.repository }}/windows/${{ github.event.inputs.version }}
+      image: ${{ github.repository }} # /windows/${{ github.event.inputs.version }}
       # unstable: ${{ github.event.inputs.version }}
     secrets:
       token: ${{ secrets.PAT_TOKEN }} #PAT
