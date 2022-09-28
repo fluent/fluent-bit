@@ -207,7 +207,7 @@ static inline int process_line(const char *line,
     msgpack_pack_str(&mp_pck, line_len - 1);
     msgpack_pack_str_body(&mp_pck, p, line_len - 1);
 
-    flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    flb_input_log_append(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     flb_plg_debug(ctx->ins, "pri=%i seq=%" PRIu64 " sec=%ld usec=%ld msg_length=%i",

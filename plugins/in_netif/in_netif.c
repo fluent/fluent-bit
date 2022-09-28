@@ -255,7 +255,7 @@ static int in_netif_collect_linux(struct flb_input_instance *i_ins,
             }
         }
 
-        flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+        flb_input_log_append(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
         msgpack_sbuffer_destroy(&mp_sbuf);
     }
 

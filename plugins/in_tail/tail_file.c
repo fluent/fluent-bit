@@ -353,7 +353,7 @@ static int ml_stream_buffer_append(struct flb_tail_file *file, char *buf_data, s
 static int ml_stream_buffer_flush(struct flb_tail_config *ctx, struct flb_tail_file *file)
 {
     if (file->ml_sbuf.size > 0) {
-        flb_input_chunk_append_raw(ctx->ins,
+        flb_input_log_append(ctx->ins,
                                    file->tag_buf,
                                    file->tag_len,
                                    file->ml_sbuf.data, file->ml_sbuf.size);
@@ -555,12 +555,12 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         *bytes = processed_bytes;
 
         if (out_sbuf->size > 0) {
-            flb_input_chunk_append_raw2(ctx->ins,
-                                        lines,
-                                        file->tag_buf,
-                                        file->tag_len,
-                                        out_sbuf->data,
-                                        out_sbuf->size);
+            flb_input_log_append_records(ctx->ins,
+                                         lines,
+                                         file->tag_buf,
+                                         file->tag_len,
+                                         out_sbuf->data,
+                                         out_sbuf->size);
         }
 
     }
