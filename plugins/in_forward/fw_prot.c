@@ -203,7 +203,7 @@ static int fw_process_array(struct flb_input_instance *in,
         msgpack_pack_object(&mp_pck, entry);
     }
 
-    flb_input_chunk_append_raw(in, tag, tag_len, mp_sbuf.data, mp_sbuf.size);
+    flb_input_log_append(in, tag, tag_len, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     if (chunk_id != -1) {
@@ -453,9 +453,9 @@ int fw_prot_process(struct fw_conn *conn)
                 msgpack_pack_object(&mp_pck, map);
 
                 /* Register data object */
-                flb_input_chunk_append_raw(conn->in,
-                                           out_tag, flb_sds_len(out_tag),
-                                           mp_sbuf.data, mp_sbuf.size);
+                flb_input_log_append(conn->in,
+                                     out_tag, flb_sds_len(out_tag),
+                                     mp_sbuf.data, mp_sbuf.size);
                 msgpack_sbuffer_destroy(&mp_sbuf);
                 c++;
 
@@ -513,15 +513,15 @@ int fw_prot_process(struct fw_conn *conn)
                         }
 
                         /* Append uncompressed data */
-                        flb_input_chunk_append_raw(conn->in,
-                                                   out_tag, flb_sds_len(out_tag),
-                                                   gz_data, gz_size);
+                        flb_input_log_append(conn->in,
+                                             out_tag, flb_sds_len(out_tag),
+                                             gz_data, gz_size);
                         flb_free(gz_data);
                     }
                     else {
-                        flb_input_chunk_append_raw(conn->in,
-                                                   out_tag, flb_sds_len(out_tag),
-                                                   data, len);
+                        flb_input_log_append(conn->in,
+                                             out_tag, flb_sds_len(out_tag),
+                                             data, len);
                     }
 
                     /* Handle ACK response */
