@@ -21,7 +21,6 @@
 #define FLB_INPUT_H
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_engine_macros.h>
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_config.h>
@@ -34,6 +33,11 @@
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_hash_table.h>
+
+#include <fluent-bit/flb_input_chunk.h>
+#include <fluent-bit/flb_input_log.h>
+#include <fluent-bit/flb_input_metric.h>
+#include <fluent-bit/flb_input_trace.h>
 
 #ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics.h>
