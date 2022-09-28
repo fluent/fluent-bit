@@ -72,7 +72,7 @@ static inline int process_pack(struct tcp_conn *conn,
 
     msgpack_unpacked_destroy(&result);
 
-    flb_input_chunk_append_raw(conn->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    flb_input_log_append(conn->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;
@@ -153,7 +153,7 @@ static ssize_t parse_payload_none(struct tcp_conn *conn)
         }
     }
 
-    flb_input_chunk_append_raw(conn->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    flb_input_log_append(conn->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return consumed;

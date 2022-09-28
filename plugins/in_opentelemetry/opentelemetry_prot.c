@@ -156,7 +156,7 @@ static int process_payload_traces(struct flb_opentelemetry *ctx, struct http_con
     }
 
     ctx->ins->event_type = FLB_INPUT_LOGS;
-    flb_input_chunk_append_raw(ctx->ins, tag, flb_sds_len(tag), mp_sbuf.data, mp_sbuf.size);
+    flb_input_log_append(ctx->ins, tag, flb_sds_len(tag), mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;

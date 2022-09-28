@@ -262,7 +262,7 @@ int in_thermal_collect(struct flb_input_instance *i_ins,
         flb_plg_trace(ctx->ins, "%s temperature %0.2f", info[i].name, info[i].temp);
     }
 
-    flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    flb_input_log_append(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;

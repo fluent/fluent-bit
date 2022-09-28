@@ -147,7 +147,7 @@ static int in_winevtlog_read_channel(struct flb_input_instance *ins,
         winevtlog_sqlite_save(ch, ctx->db);
     }
 
-    flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    flb_input_log_append(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
 
     msgpack_sbuffer_destroy(&mp_sbuf);
     return 0;

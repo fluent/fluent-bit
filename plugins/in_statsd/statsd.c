@@ -221,7 +221,7 @@ static int cb_statsd_receive(struct flb_input_instance *ins,
 
     /* Send to output */
     if (mp_sbuf.size > 0) {
-        flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+        flb_input_log_append(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     }
     msgpack_sbuffer_destroy(&mp_sbuf);
 

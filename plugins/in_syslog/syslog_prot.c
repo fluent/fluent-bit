@@ -45,7 +45,7 @@ static inline int pack_line(struct flb_syslog *ctx,
     flb_time_append_to_msgpack(time, &mp_pck, 0);
     msgpack_sbuffer_write(&mp_sbuf, data, data_size);
 
-    flb_input_chunk_append_raw(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    flb_input_log_append(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;

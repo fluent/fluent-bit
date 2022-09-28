@@ -412,7 +412,7 @@ static int cpu_collect_system(struct flb_input_instance *ins,
     snapshots_switch(cstats);
     flb_plg_trace(ins, "CPU %0.2f%%", s->p_cpu);
 
-    flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    flb_input_log_append(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;
@@ -466,7 +466,7 @@ static int cpu_collect_pid(struct flb_input_instance *ins,
     snapshots_switch(cstats);
     flb_plg_trace(ctx->ins, "PID %i CPU %0.2f%%", ctx->pid, s->p_cpu);
 
-    flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    flb_input_log_append(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;

@@ -113,7 +113,7 @@ int in_emitter_add_record(const char *tag, int tag_len,
     msgpack_sbuffer_write(&ec->mp_sbuf, buf_data, buf_size);
 
     /* Associate this backlog chunk to this instance into the engine */
-    ret = flb_input_chunk_append_raw(in,
+    ret = flb_input_log_append(in,
                                      ec->tag, flb_sds_len(ec->tag),
                                      ec->mp_sbuf.data,
                                      ec->mp_sbuf.size);

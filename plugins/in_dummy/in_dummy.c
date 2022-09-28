@@ -106,11 +106,11 @@ static int in_dummy_collect(struct flb_input_instance *ins,
     if (ctx->fixed_timestamp == FLB_FALSE) {
         msgpack_sbuffer_init(&mp_sbuf);
         gen_msg(ins, in_context, &mp_sbuf);
-        flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+        flb_input_log_append(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
         msgpack_sbuffer_destroy(&mp_sbuf);
     }
     else {
-        flb_input_chunk_append_raw(ins, NULL, 0, ctx->mp_sbuf.data, ctx->mp_sbuf.size);
+        flb_input_log_append(ins, NULL, 0, ctx->mp_sbuf.data, ctx->mp_sbuf.size);
     }
 
     if (ctx->samples > 0) {

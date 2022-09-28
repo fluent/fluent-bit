@@ -125,7 +125,7 @@ static int in_health_collect(struct flb_input_instance *ins,
         msgpack_pack_int32(&mp_pck, ctx->port);
     }
 
-    flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    flb_input_log_append(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     FLB_INPUT_RETURN(0);
