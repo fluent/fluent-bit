@@ -152,7 +152,6 @@ option(FLB_IN_LIB                      "Enable library mode input plugin"       
 option(FLB_IN_RANDOM                   "Enable random input plugin"                   Yes)
 option(FLB_IN_SERIAL                   "Enable Serial input plugin"                   Yes)
 option(FLB_IN_STDIN                    "Enable Standard input plugin"                 Yes)
-option(FLB_IN_DUMMY_THREAD             "Enable Threaded dummy plugin"                 Yes)
 option(FLB_IN_SYSLOG                   "Enable Syslog input plugin"                   Yes)
 option(FLB_IN_TAIL                     "Enable Tail input plugin"                     Yes)
 option(FLB_IN_UDP                      "Enable UDP input plugin"                      Yes)
