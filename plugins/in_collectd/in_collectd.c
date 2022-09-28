@@ -166,7 +166,7 @@ static int in_collectd_callback(struct flb_input_instance *i_ins,
         return -1;
     }
 
-    flb_input_chunk_append_raw(i_ins, NULL, 0, sbuf.data, sbuf.size);
+    flb_input_log_append(i_ins, NULL, 0, sbuf.data, sbuf.size);
 
     msgpack_sbuffer_destroy(&sbuf);
     return 0;

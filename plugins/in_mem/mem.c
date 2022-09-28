@@ -253,7 +253,7 @@ static int in_mem_collect(struct flb_input_instance *i_ins,
                   info.swap_total, info.swap_used, info.swap_free);
     ++ctx->idx;
 
-    flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    flb_input_log_append(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;
