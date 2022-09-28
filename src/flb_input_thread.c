@@ -799,7 +799,7 @@ int flb_input_thread_collect(struct flb_input_instance *ins,
     }
 
     chunks_len = it->bufpos - remaining_bytes;
-    flb_input_chunk_append_raw(ins, NULL, 0, it->buf, chunks_len);
+    //FIXMEflb_input_chunk_append_raw(ins, NULL, 0, it->buf, chunks_len);
     memmove(it->buf, it->buf + chunks_len, remaining_bytes);
     it->bufpos = remaining_bytes;
     return 0;
