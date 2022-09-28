@@ -89,7 +89,7 @@ static int in_lib_collect(struct flb_input_instance *ins,
     ctx->buf_len = 0;
 
     /* Pack data */
-    flb_input_chunk_append_raw(ctx->ins, NULL, 0, pack, out_size);
+    flb_input_log_append(ctx->ins, NULL, 0, pack, out_size);
     flb_free(pack);
     flb_pack_state_reset(&ctx->state);
     flb_pack_state_init(&ctx->state);
