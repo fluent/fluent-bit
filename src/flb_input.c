@@ -135,6 +135,15 @@ int flb_input_event_type_is_metric(struct flb_input_instance *ins)
     return FLB_FALSE;
 }
 
+int flb_input_event_type_is_trace(struct flb_input_instance *ins)
+{
+    if (ins->event_type == FLB_INPUT_METRICS) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 int flb_input_event_type_is_log(struct flb_input_instance *ins)
 {
     if (ins->event_type == FLB_INPUT_LOGS) {
@@ -216,6 +225,16 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
                                                            512, 0);
         if (!instance->ht_metric_chunks) {
             flb_hash_table_destroy(instance->ht_log_chunks);
+            flb_free(instance);
+            return NULL;
+        }
+
+        /* Index for trace Chunks (hash table) */
+        instance->ht_trace_chunks = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE,
+                                                          512, 0);
+        if (!instance->ht_trace_chunks) {
+            flb_hash_table_destroy(instance->ht_log_chunks);
+            flb_hash_table_destroy(instance->ht_metric_chunks);
             flb_free(instance);
             return NULL;
         }
@@ -777,6 +796,10 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
 
     if (ins->ht_metric_chunks) {
         flb_hash_table_destroy(ins->ht_metric_chunks);
+    }
+
+    if (ins->ht_trace_chunks) {
+        flb_hash_table_destroy(ins->ht_trace_chunks);
     }
 
     if (ins->ch_events[0] > 0) {

@@ -793,6 +793,9 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
 
         }
     }
+    else if (ic->event_type == FLB_INPUT_TRACES) {
+
+    }
 
     /* Skip chunks without content data */
     if (records == 0) {
@@ -912,6 +915,9 @@ static int input_chunk_write_header(struct cio_chunk *chunk, int event_type,
     else if (event_type == FLB_INPUT_METRICS) {
         meta[2] = FLB_INPUT_CHUNK_TYPE_METRIC;
     }
+    else if (event_type == FLB_INPUT_TRACES) {
+        meta[2] = FLB_INPUT_CHUNK_TYPE_TRACES;
+    }
 
     /* unused byte */
     meta[3] = 0;
@@ -987,7 +993,8 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
 
     /*
      * Check chunk content type to be created: depending of the value set by
-     * the input plugin, this can be FLB_INPUT_LOGS or FLB_INPUT_METRICS
+     * the input plugin, this can be FLB_INPUT_LOGS, FLB_INPUT_METRICS or
+     * FLB_INPUT_TRACES.
      */
     ic->event_type = in->event_type;
 
@@ -1022,6 +1029,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     else if (flb_input_event_type_is_metric(in)) {
         flb_hash_table_add(in->ht_metric_chunks, tag, tag_len, ic, 0);
     }
+    /* FIXME: IS TRACE ? */
 
     return ic;
 }
@@ -1099,6 +1107,10 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
             flb_hash_table_del_ptr(ic->in->ht_metric_chunks,
                                    tag_buf, tag_len, (void *) ic);
         }
+        else if (ic->event_type == FLB_INPUT_TRACES) {
+            flb_hash_table_del_ptr(ic->in->ht_trace_chunks,
+                                   tag_buf, tag_len, (void *) ic);
+        }
     }
 
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -1138,6 +1150,10 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
     }
     else if (in->event_type == FLB_INPUT_METRICS) {
         id = flb_hash_table_get(in->ht_metric_chunks, tag, tag_len,
+                                (void *) &ic, &out_size);
+    }
+    else if (in->event_type == FLB_INPUT_TRACES) {
+        id = flb_hash_table_get(in->ht_trace_chunks, tag, tag_len,
                                 (void *) &ic, &out_size);
     }
 
@@ -1978,6 +1994,9 @@ int flb_input_chunk_get_event_type(struct flb_input_chunk *ic)
         }
         else if (buf[2] == FLB_INPUT_CHUNK_TYPE_METRIC) {
             type = FLB_INPUT_METRICS;
+        }
+        else if (buf[2] == FLB_INPUT_CHUNK_TYPE_TRACES) {
+            type = FLB_INPUT_TRACES;
         }
     }
     else {
