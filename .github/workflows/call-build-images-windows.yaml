@@ -100,13 +100,13 @@ jobs:
           ref: ${{ inputs.ref }}
 
       - name: 'Build:dockerimage'
-        uses: docker/build-push-action@v1
+        uses: docker/build-push-action@v3
         with:
           registry: ghcr.io
           username: ${{ inputs.username }}
           password: ${{ secrets.token }}
           repository: praizz/fluent-bit
-          file: ./dockerfiles/Dockerfile.windows
+          dockerfile: ./dockerfiles/Dockerfile.windows
           tags: ${{ inputs.registry }}/${{ inputs.image }}:windows-2019-${{ inputs.version }}
 
       # - name: Log in to the Container registry
