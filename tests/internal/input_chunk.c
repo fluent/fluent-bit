@@ -392,6 +392,7 @@ static void log_cb(void *data, int level, const char *file, int line,
  */
 void flb_test_input_chunk_fs_chunks_size_real()
 {
+    int records;
     bool have_size_discrepancy = FLB_FALSE;
     bool has_checked_size = FLB_FALSE;
     struct flb_input_instance *i_ins;
@@ -441,14 +442,16 @@ void flb_test_input_chunk_fs_chunks_size_real()
     memset((void *)buf, 0x41, sizeof(buf));
     msgpack_sbuffer_init(&mp_sbuf);
     gen_buf(&mp_sbuf, buf, sizeof(buf));
-    flb_input_chunk_append_raw(i_ins, "dummy", 4, (void *)buf, sizeof(buf));
+
+    records = flb_mp_count(buf, sizeof(buf));
+    flb_input_chunk_append_raw(i_ins, FLB_INPUT_LOGS, records, "dummy", 4, (void *)buf, sizeof(buf));
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     /* then force a realloc? */
     memset((void *)buf, 0x42, 256);
     msgpack_sbuffer_init(&mp_sbuf);
     gen_buf(&mp_sbuf, buf, 256);
-    flb_input_chunk_append_raw(i_ins, "dummy", 4, (void *)buf, 256);
+    flb_input_chunk_append_raw(i_ins, FLB_INPUT_LOGS, 256, "dummy", 4, (void *)buf, 256);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     /* clean up test chunks */
