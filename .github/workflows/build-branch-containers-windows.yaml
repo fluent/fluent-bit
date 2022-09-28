@@ -5,7 +5,7 @@ on:
       - deploy-windows-container
   workflow_dispatch:
     inputs:
-      version:
+      version: 
         description: Version of Fluent Bit to build, commit, branch, etc. The container image will be ghcr.io/praizz/fluent-bit/windows/<this value>.
         required: true
         default: master
@@ -13,7 +13,7 @@ jobs:
   build-branch-containers:
     uses: praizz/fluent-bit/.github/workflows/call-build-images-windows.yaml@deploy-windows-container
     with:
-      version: ${{ github.event.inputs.version }}
+      version: "1.0"
       ref: ${{ github.event.inputs.version }}
       registry: ghcr.io
       username: ${{ github.actor }}
