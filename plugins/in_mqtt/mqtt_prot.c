@@ -184,7 +184,7 @@ static int mqtt_data_append(char *topic, size_t topic_len,
     }
 
 
-    flb_input_chunk_append_raw(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    flb_input_log_append(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     msgpack_unpacked_destroy(&result);

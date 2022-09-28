@@ -184,7 +184,7 @@ static int in_disk_collect(struct flb_input_instance *i_ins,
         msgpack_pack_str_body(&mp_pck, STR_KEY_WRITE, strlen(STR_KEY_WRITE));
         msgpack_pack_uint64(&mp_pck, write_total);
 
-        flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+        flb_input_log_append(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
         msgpack_sbuffer_destroy(&mp_sbuf);
     }
 
