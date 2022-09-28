@@ -26,4 +26,9 @@
 int flb_input_log_append(struct flb_input_instance *ins,
                          const char *tag, size_t tag_len,
                          const void *buf, size_t buf_size);
+
+int flb_input_log_append_records(struct flb_input_instance *ins,
+                                 size_t records,
+                                 const char *tag, size_t tag_len,
+                                 const void *buf, size_t buf_size);
 #endif
