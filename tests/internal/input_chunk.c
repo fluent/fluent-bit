@@ -370,8 +370,8 @@ static int gen_buf(msgpack_sbuffer *mp_sbuf, char *buf, size_t buf_size)
     return 0;
 }
 
-static void log_cb(void *data, int level, const char *file, int line,
-                   const char *str)
+static int log_cb(struct cio_ctx *data, int level, const char *file, int line,
+                  char *str)
 {
     if (level == CIO_LOG_ERROR) {
         flb_error("[fstore] %s", str);
@@ -385,6 +385,8 @@ static void log_cb(void *data, int level, const char *file, int line,
     else if (level == CIO_LOG_DEBUG) {
         flb_debug("[fstore] %s", str);
     }
+
+    return 0;
 }
 
 /* This tests uses the subsystems of the engine directly
