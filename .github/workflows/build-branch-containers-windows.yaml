@@ -1,0 +1,23 @@
+name: Build containers for a specific branch
+on:
+  push:
+    branches:
+      - deploy-windows-container
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version of Fluent Bit to build, commit, branch, etc. The container image will be ghcr.io/praizz/fluent-bit/windows/<this value>.
+        required: true
+        default: master
+jobs:
+  build-branch-containers:
+    uses: praizz/fluent-bit/.github/workflows/call-build-images-windows.yaml@deploy-windows-container
+    with:
+      version: ${{ github.event.inputs.version }}
+      ref: ${{ github.event.inputs.version }}
+      registry: ghcr.io
+      username: ${{ github.actor }}
+      image: ${{ github.repository }}/windows/${{ github.event.inputs.version }}
+      # unstable: ${{ github.event.inputs.version }}
+    secrets:
+      token: ${{ secrets.PAT_TOKEN }} #PAT
