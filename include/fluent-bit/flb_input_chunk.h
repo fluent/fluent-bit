@@ -92,12 +92,10 @@ int flb_input_chunk_append_obj(struct flb_input_instance *in,
                                const char *tag, int tag_len,
                                msgpack_object data);
 int flb_input_chunk_append_raw(struct flb_input_instance *in,
+                               int event_type,
+                               size_t records,
                                const char *tag, size_t tag_len,
                                const void *buf, size_t buf_size);
-int flb_input_chunk_append_raw2(struct flb_input_instance *in,
-                                size_t records,
-                                const char *tag, size_t tag_len,
-                                const void *buf, size_t buf_size);
 
 const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size);
 int flb_input_chunk_release_lock(struct flb_input_chunk *ic);
