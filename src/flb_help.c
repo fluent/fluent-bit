@@ -201,7 +201,7 @@ int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_s
     struct mk_list *tls_config;
     struct flb_config_map m_input_net_listen = {
         .type =      FLB_CONFIG_MAP_STR,
-        .name =      "listen",
+        .name =      "host",
         .def_value = "0.0.0.0",
         .desc =      "Listen Address",
     };
