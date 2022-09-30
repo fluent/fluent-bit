@@ -7,27 +7,27 @@ service:
 
 pipeline:
     inputs:
-        - random:
-            tag: test
-            samples: 10
+        - name: random
+          tag: test
+          samples: 10
 
     filters:
-        - lua:
-            match: test
-            call: append_tag
-            code: |
-                function append_tag(tag, timestamp, record)
-                   new_record = record
-                   new_record["tag"] = tag
-                   return 1, timestamp, new_record
-                end
+        - name: lua
+          match: test
+          call: append_tag
+          code: |
+              function append_tag(tag, timestamp, record)
+                 new_record = record
+                 new_record["tag"] = tag
+                 return 1, timestamp, new_record
+              end
 
-        - expect:
-            match: test
-            key_exists: tag
-            key_val_eq: tag test
-            action: exit
+        - name: expect
+          match: test
+          key_exists: tag
+          key_val_eq: tag test
+          action: exit
 
     outputs:
-        - stdout:
-              match: test
+        - name: stdout
+          match: test
