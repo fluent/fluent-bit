@@ -107,14 +107,14 @@ static int sp_config_file(struct flb_config *config, struct flb_sp *sp,
         exec = NULL;
 
         /* name */
-        name = flb_cf_section_property_get(cf, section, "name");
+        name = flb_cf_section_property_get_string(cf, section, "name");
         if (!name) {
             flb_error("[sp] task 'name' not found in file '%s'", cfg);
             goto fconf_error;
         }
 
         /* exec */
-        exec = flb_cf_section_property_get(cf, section, "exec");
+        exec = flb_cf_section_property_get_string(cf, section, "exec");
         if (!exec) {
             flb_error("[sp] task '%s' don't have an 'exec' command", name);
             goto fconf_error;

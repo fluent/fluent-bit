@@ -420,6 +420,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     struct flb_cf_meta *meta;
     struct flb_cf_section *current_section = NULL;
     struct flb_cf_group *current_group = NULL;
+    struct cfl_variant *var;
 
     struct flb_kv *kv;
     FILE *f = NULL;
@@ -527,8 +528,8 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
             continue;
         }
         else if (buf[0] == '@' && len > 3) {
-            meta = flb_cf_meta_create(cf, buf, len);
-            if (!meta) {
+            meta = flb_cf_meta_property_add(cf, buf, len);
+            if (meta == NULL) {
                 goto error;
             }
             continue;
@@ -659,18 +660,18 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
         }
 
         /* register entry: key and val are copied as duplicated */
-        kv = NULL;
+        var = NULL;
         if (current_group) {
-            kv = flb_cf_property_add(cf, &current_group->properties,
-                                     key, key_len,
-                                     val, val_len);
+            var = flb_cf_section_property_add(cf, current_group->properties,
+                                              key, key_len,
+                                              val, val_len);
         }
         else if (current_section) {
-            kv = flb_cf_property_add(cf, &current_section->properties,
-                                     key, key_len,
-                                     val, val_len);
+            var = flb_cf_section_property_add(cf, current_section->properties,
+                                              key, key_len,
+                                              val, val_len);
         }
-        if (!kv) {
+        if (var == NULL) {
             config_error(cfg_file, line, "could not allocate key value pair");
             goto error;
         }
