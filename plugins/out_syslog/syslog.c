@@ -695,11 +695,22 @@ static flb_sds_t syslog_format(struct flb_syslog *ctx, msgpack_object *o,
     ret = msgpack_to_syslog(ctx, o, &msg);
     if (!ret) {
         if (msg.severity < 0) {
-            msg.severity = 6;
+            msg.severity = ctx->severity_preset;
         }
-
         if (msg.facility  < 0) {
-            msg.facility = 1;
+            msg.facility = ctx->facility_preset;
+        }
+        if (msg.hostname == NULL && ctx->hostname_preset) {
+            msg.hostname = flb_sds_create(ctx->hostname_preset);
+        }
+        if (msg.appname == NULL && ctx->appname_preset) {
+            msg.appname = flb_sds_create(ctx->appname_preset);
+        }
+        if (msg.procid == NULL && ctx->procid_preset) {
+            msg.procid = flb_sds_create(ctx->procid_preset);
+        }
+        if (msg.msgid == NULL && ctx->msgid_preset) {
+            msg.msgid = flb_sds_create(ctx->msgid_preset);
         }
 
         if (ctx->parsed_format == FLB_SYSLOG_RFC3164) {
@@ -761,7 +772,7 @@ static void cb_syslog_flush(struct flb_event_chunk *event_chunk,
     msgpack_object map;
     msgpack_object *obj;
     struct flb_time tm;
-    struct flb_upstream_conn *u_conn = NULL;
+    struct flb_connection *u_conn = NULL;
     int ret;
 
     if (ctx->parsed_mode != FLB_SYSLOG_UDP) {
@@ -871,10 +882,13 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
         }
     }
     else {
-        io_flags = FLB_IO_TCP;
 
-        if (ctx->parsed_mode == FLB_SYSLOG_TLS) {
+        /* use TLS ? */
+        if (ins->use_tls == FLB_TRUE) {
             io_flags = FLB_IO_TLS;
+        }
+        else {
+            io_flags = FLB_IO_TCP;
         }
 
         if (ins->host.ipv6 == FLB_TRUE) {
@@ -893,8 +907,9 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
     /* Set the plugin context */
     flb_output_set_context(ins, ctx);
 
-    flb_plg_info(ctx->ins, "setup done for %s:%i",
-                 ins->host.name, ins->host.port);
+    flb_plg_info(ctx->ins, "setup done for %s:%i (TLS=%s)",
+                 ins->host.name, ins->host.port,
+                 ins->use_tls ? "on" : "off");
     return 0;
 }
 
@@ -987,7 +1002,8 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "mode", "udp",
      0, FLB_TRUE, offsetof(struct flb_syslog, mode),
-     "Set the desired transport type, the available options are tcp, tls and udp."
+     "Set the desired transport type, the available options are tcp and udp. If you need to "
+     "use a TLS secure channel, choose 'tcp' mode here and enable the 'tls' option separately."
     },
 
     {
@@ -1015,10 +1031,24 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_INT, "syslog_severity_preset", "6",
+     0, FLB_TRUE, offsetof(struct flb_syslog, severity_preset),
+     "Specify the preset severity number. It must be 0-7. "
+     " This configuration is optional."
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "syslog_facility_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_syslog, facility_key),
      "Specify the name of the key from the original record that contains the Syslog "
      "facility number. This configuration is optional."
+    },
+
+    {
+     FLB_CONFIG_MAP_INT, "syslog_facility_preset", "1",
+     0, FLB_TRUE, offsetof(struct flb_syslog, facility_preset),
+     "Specify the preset facility number. It must be 0-23. "
+     " This configuration is optional."
     },
 
     {
@@ -1029,10 +1059,22 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_STR, "syslog_hostname_preset", NULL,
+     0, FLB_TRUE, offsetof(struct flb_syslog, hostname_preset),
+     "Specify the preset hostname. This configuration is optional."
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "syslog_appname_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_syslog, appname_key),
      "Specify the key name from the original record that contains the application "
      "name that generated the message. This configuration is optional."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "syslog_appname_preset", NULL,
+     0, FLB_TRUE, offsetof(struct flb_syslog, appname_preset),
+     "Specify the preset appname. This configuration is optional."
     },
 
     {
@@ -1043,10 +1085,22 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_STR, "syslog_procid_preset", NULL,
+     0, FLB_TRUE, offsetof(struct flb_syslog, procid_preset),
+     "Specify the preset procid.  This configuration is optional."
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "syslog_msgid_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_syslog, msgid_key),
      "Specify the key name from the original record that contains the Message ID "
      "associated to the message. This configuration is optional."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "syslog_msgid_preset", NULL,
+     0, FLB_TRUE, offsetof(struct flb_syslog, msgid_preset),
+     "Specify the preset msgid. This configuration is optional."
     },
 
     {

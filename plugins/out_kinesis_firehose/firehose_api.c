@@ -42,8 +42,11 @@
 #include <msgpack.h>
 #include <string.h>
 #include <stdio.h>
-#include <unistd.h>
 #include <stdlib.h>
+
+#ifndef FLB_SYSTEM_WINDOWS
+#include <unistd.h>
+#endif
 
 #include "firehose_api.h"
 
@@ -100,7 +103,7 @@ error:
  * Writes a log event to the output buffer
  */
 static int write_event(struct flb_firehose *ctx, struct flush *buf,
-                       struct event *event, int *offset)
+                       struct firehose_event *event, int *offset)
 {
     if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
                       "{\"Data\":\"", 9)) {
@@ -154,7 +157,7 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
     int ret;
     size_t size;
     size_t b64_len;
-    struct event *event;
+    struct firehose_event *event;
     char *tmp_buf_ptr;
     char *time_key_ptr;
     struct tm time_stamp;
@@ -341,7 +344,7 @@ static int send_log_events(struct flb_firehose *ctx, struct flush *buf) {
     int ret;
     int offset;
     int i;
-    struct event *event;
+    struct firehose_event *event;
 
     if (buf->event_index <= 0) {
         /*
@@ -415,7 +418,7 @@ static int add_event(struct flb_firehose *ctx, struct flush *buf,
                      const msgpack_object *obj, struct flb_time *tms)
 {
     int ret;
-    struct event *event;
+    struct firehose_event *event;
     int retry_add = FLB_FALSE;
     size_t event_bytes = 0;
 

@@ -57,6 +57,10 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, grace)},
 
+    {FLB_CONF_STR_CONV_NAN,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, convert_nan_to_null)},
+
     {FLB_CONF_STR_DAEMON,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, daemon)},
@@ -159,6 +163,12 @@ struct flb_service_config service_configs[] = {
      offsetof(struct flb_config, stream_processor_file)},
 #endif
 
+#ifdef FLB_HAVE_CHUNK_TRACE
+    {FLB_CONF_STR_ENABLE_CHUNK_TRACE,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, enable_chunk_trace)},
+#endif
+
     {NULL, FLB_CONF_TYPE_OTHER, 0} /* end of array */
 };
 
@@ -209,6 +219,9 @@ struct flb_config *flb_config_init()
     config->grace_count  = 0;
     config->exit_status_code = 0;
 
+    /* json */
+    config->convert_nan_to_null = FLB_FALSE;
+
 #ifdef FLB_HAVE_HTTP_SERVER
     config->http_ctx                     = NULL;
     config->http_server                  = FLB_FALSE;
@@ -240,6 +253,7 @@ struct flb_config *flb_config_init()
     config->cio          = NULL;
     config->storage_path = NULL;
     config->storage_input_plugin = NULL;
+    config->storage_metrics = FLB_TRUE;
 
     config->sched_cap  = FLB_SCHED_CAP;
     config->sched_base = FLB_SCHED_BASE;
@@ -264,8 +278,10 @@ struct flb_config *flb_config_init()
         config->coro_stack_size = (unsigned int)getpagesize();
     }
 
+    /* collectors */
+    pthread_mutex_init(&config->collectors_mutex, NULL);
+
     /* Initialize linked lists */
-    mk_list_init(&config->collectors);
     mk_list_init(&config->custom_plugins);
     mk_list_init(&config->custom_plugins);
     mk_list_init(&config->in_plugins);
@@ -280,6 +296,7 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->proxies);
     mk_list_init(&config->workers);
     mk_list_init(&config->upstreams);
+    mk_list_init(&config->downstreams);
     mk_list_init(&config->cmetrics);
     mk_list_init(&config->cf_parsers_list);
 
@@ -325,7 +342,6 @@ void flb_config_exit(struct flb_config *config)
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_cf *cf;
-    struct flb_input_collector *collector;
 
     if (config->log_file) {
         flb_free(config->log_file);
@@ -375,24 +391,6 @@ void flb_config_exit(struct flb_config *config)
         }
     }
 
-    /* Collectors */
-    mk_list_foreach_safe(head, tmp, &config->collectors) {
-        collector = mk_list_entry(head, struct flb_input_collector, _head);
-
-        if (collector->type == FLB_COLLECT_TIME) {
-            if (collector->fd_timer > 0) {
-                mk_event_timeout_destroy(config->evl, &collector->event);
-                mk_event_closesocket(collector->fd_timer);
-            }
-        }
-        else {
-            mk_event_del(config->evl, &collector->event);
-        }
-
-        mk_list_del(&collector->_head);
-        flb_free(collector);
-    }
-
     flb_env_destroy(config->env);
 
     /* Program name */
@@ -418,9 +416,8 @@ void flb_config_exit(struct flb_config *config)
 
     /* Event flush */
     if (config->evl) {
-        mk_event_del(config->evl, &config->event_flush);
+        mk_event_timeout_destroy(config->evl, &config->event_flush);
     }
-    mk_event_closesocket(config->flush_fd);
 
     /* Release scheduler */
     flb_sched_destroy(config->sched);

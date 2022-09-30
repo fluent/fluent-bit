@@ -70,6 +70,14 @@ bin/fluent-bit -i cpu -o stdout -f 1
 
 If you are interested into more details, please refer to the [Build & Install](https://docs.fluentbit.io/manual/installation/sources/build-and-install) section.
 
+#### Requirements
+
+- CMake >= 3.0
+- Flex
+- Bison
+- YAML library/headers
+- OpenSSL library/headers
+
 #### Linux Packages
 
 We provide packages for most common Linux distributions:
@@ -169,7 +177,6 @@ Fluent Bit is fully supported on Windows environments, get started with [these i
 
 If you are interested in contributing to Fluent bit with bug fixes, new features or coding in general, please refer to the code [CONTRIBUTING](CONTRIBUTING.md) guidelines. You can also refer the Beginners Guide to contributing to Fluent Bit [here.](DEVELOPER_GUIDE.md)
 
-![Visualization of the codebase](./codebase-structure.svg)
 ## Community & Contact
 
 Feel free to join us on our Slack channel, Mailing List or IRC:
@@ -186,4 +193,7 @@ This program is under the terms of the [Apache License v2.0](http://www.apache.o
 
 ## Authors
 
-[Fluent Bit](http://fluentbit.io) is originally made and currently sponsored by [Treasure Data](http://treasuredata.com) among other [contributors](https://github.com/fluent/fluent-bit/graphs/contributors).
+[Fluent Bit](http://fluentbit.io) is sponsored and maintained by several companies of the Cloud Native community, including all the major cloud providers.
+
+You can see a list of contributors [here](https://github.com/fluent/fluent-bit/graphs/contributors).
+

@@ -67,7 +67,7 @@ struct flb_out_ws *flb_ws_conf_create(struct flb_output_instance *ins,
     io_flags = FLB_IO_TCP;
 #endif
 
-    upstream = flb_upstream_create(config, ins->host.name, ins->host.port, io_flags, (void *)&ins->tls);
+    upstream = flb_upstream_create(config, ins->host.name, ins->host.port, io_flags, ins->tls);
     if (!upstream) {
         flb_free(ctx);
         return NULL;

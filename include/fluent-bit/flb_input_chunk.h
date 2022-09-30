@@ -22,7 +22,9 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_routes_mask.h>
+
 #include <monkey/mk_core.h>
 #include <msgpack.h>
 
@@ -48,6 +50,10 @@
 #define FLB_INPUT_CHUNK_TYPE_LOG      0
 #define FLB_INPUT_CHUNK_TYPE_METRIC   1
 
+#ifdef FLB_HAVE_CHUNK_TRACE
+#define FLB_INPUT_CHUNK_HAS_TRACE     1 << 31
+#endif /* FLB_HAVE_CHUNK_TRACE */
+
 /* Max length for Tag */
 #define FLB_INPUT_CHUNK_TAG_MAX        (65535 - FLB_INPUT_CHUNK_META_HEADER)
 
@@ -66,6 +72,9 @@ struct flb_input_chunk {
     msgpack_packer mp_pck;          /* msgpack packer */
     struct flb_input_instance *in;  /* reference to parent input instance */
     struct flb_task *task;          /* reference to the outgoing task */
+#ifdef FLB_HAVE_CHUNK_TRACE
+    struct flb_chunk_trace *trace;
+#endif /* FLB_HAVE_CHUNK_TRACE */
     uint64_t routes_mask
         [FLB_ROUTES_MASK_ELEMENTS]; /* track the output plugins the chunk routes to */
     struct mk_list _head;
@@ -96,6 +105,7 @@ int flb_input_chunk_get_event_type(struct flb_input_chunk *ic);
 
 int flb_input_chunk_get_tag(struct flb_input_chunk *ic,
                             const char **tag_buf, int *tag_len);
+void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data);
 ssize_t flb_input_chunk_get_size(struct flb_input_chunk *ic);
 size_t flb_input_chunk_set_limits(struct flb_input_instance *in);
 size_t flb_input_chunk_total_size(struct flb_input_instance *in);

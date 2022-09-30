@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_mp.h>
 
 #include <ctype.h>
+#include <sys/stat.h>
 
 #include "loki.h"
 
@@ -407,6 +408,235 @@ static flb_sds_t pack_labels(struct flb_loki *ctx,
     return 0;
 }
 
+static int create_label_map_entry(struct flb_loki *ctx,
+                                  struct flb_sds_list *list, msgpack_object *val, int *ra_used)
+{
+    msgpack_object key;
+    flb_sds_t label_key;
+    flb_sds_t val_str;
+    int i;
+    int len;
+    int ret;
+
+    if (ctx == NULL || list == NULL || val == NULL || ra_used == NULL) {
+        return -1;
+    }
+
+    switch (val->type) {
+    case MSGPACK_OBJECT_STR:
+        label_key = flb_sds_create_len(val->via.str.ptr, val->via.str.size);
+        if (label_key == NULL) {
+            flb_errno();
+            return -1;
+        }
+
+        val_str = flb_ra_create_str_from_list(list);
+        if (val_str == NULL) {
+            flb_plg_error(ctx->ins, "[%s] flb_ra_create_from_list failed", __FUNCTION__);
+            flb_sds_destroy(label_key);
+            return -1;
+        }
+
+        /* for debugging
+          printf("label_key=%s val_str=%s\n", label_key, val_str);
+         */
+
+        ret = flb_loki_kv_append(ctx, label_key, val_str);
+        flb_sds_destroy(label_key);
+        flb_sds_destroy(val_str);
+        if (ret == -1) {
+            return -1;
+        }
+        *ra_used = *ra_used + 1;
+
+        break;
+    case MSGPACK_OBJECT_MAP:
+        len = val->via.map.size;
+        for (i=0; i<len; i++) {
+            key = val->via.map.ptr[i].key;
+            if (key.type != MSGPACK_OBJECT_STR) {
+                flb_plg_error(ctx->ins, "[%s] key is not string", __FUNCTION__);
+                return -1;
+            }
+            ret = flb_sds_list_add(list, (char*)key.via.str.ptr, key.via.str.size);
+            if (ret < 0) {
+                flb_plg_error(ctx->ins, "[%s] flb_sds_list_add failed", __FUNCTION__);
+                return -1;
+            }
+
+            ret = create_label_map_entry(ctx, list, &val->via.map.ptr[i].val, ra_used);
+            if (ret < 0) {
+                return -1;
+            }
+
+            ret = flb_sds_list_del_last_entry(list);
+            if (ret < 0) {
+                flb_plg_error(ctx->ins, "[%s] flb_sds_list_del_last_entry failed", __FUNCTION__);
+                return -1;
+            }
+        }
+
+        break;
+    default:
+        flb_plg_error(ctx->ins, "[%s] value type is not str or map. type=%d", val->type);
+        return -1;
+    }
+    return 0;
+}
+
+static int create_label_map_entries(struct flb_loki *ctx,
+                                    char *msgpack_buf, size_t msgpack_size, int *ra_used)
+{
+    struct flb_sds_list *list = NULL;
+    msgpack_unpacked result;
+    size_t off = 0;
+    int i;
+    int len;
+    int ret;
+    msgpack_object key;
+
+    if (ctx == NULL || msgpack_buf == NULL || ra_used == NULL) {
+        return -1;
+    }
+
+    msgpack_unpacked_init(&result);
+    while(msgpack_unpack_next(&result, msgpack_buf, msgpack_size, &off) == MSGPACK_UNPACK_SUCCESS) {
+        if (result.data.type != MSGPACK_OBJECT_MAP) {
+            flb_plg_error(ctx->ins, "[%s] data type is not map", __FUNCTION__);
+            msgpack_unpacked_destroy(&result);
+            return -1;
+        }
+
+        len = result.data.via.map.size;
+        for (i=0; i<len; i++) {
+            list = flb_sds_list_create();
+            if (list == NULL) {
+                flb_plg_error(ctx->ins, "[%s] flb_sds_list_create failed", __FUNCTION__);
+                msgpack_unpacked_destroy(&result);
+                return -1;
+            }
+            key = result.data.via.map.ptr[i].key;
+            if (key.type != MSGPACK_OBJECT_STR) {
+                flb_plg_error(ctx->ins, "[%s] key is not string", __FUNCTION__);
+                flb_sds_list_destroy(list);
+                msgpack_unpacked_destroy(&result);
+                return -1;
+            }
+
+            ret = flb_sds_list_add(list, (char*)key.via.str.ptr, key.via.str.size);
+            if (ret < 0) {
+                flb_plg_error(ctx->ins, "[%s] flb_sds_list_add failed", __FUNCTION__);
+                flb_sds_list_destroy(list);
+                msgpack_unpacked_destroy(&result);
+                return -1;
+            }
+
+            ret = create_label_map_entry(ctx, list, &result.data.via.map.ptr[i].val, ra_used);
+            if (ret < 0) {
+                flb_plg_error(ctx->ins, "[%s] create_label_map_entry failed", __FUNCTION__);
+                flb_sds_list_destroy(list);
+                msgpack_unpacked_destroy(&result);
+                return -1;
+            }
+
+            flb_sds_list_destroy(list);
+            list = NULL;
+        }
+    }
+
+    msgpack_unpacked_destroy(&result);
+
+    return 0;
+}
+
+static int read_label_map_path_file(struct flb_output_instance *ins, flb_sds_t path,
+                                    char **out_buf, size_t *out_size)
+{
+    int ret;
+    int root_type;
+    char *buf = NULL;
+    char *msgp_buf = NULL;
+    FILE *fp = NULL;
+    struct stat st;
+    size_t file_size;
+    size_t ret_size;
+
+    ret = access(path, R_OK);
+    if (ret < 0) {
+        flb_errno();
+        flb_plg_error(ins, "can't access %s", path);
+        return -1;
+    }
+
+    ret = stat(path, &st);
+    if (ret < 0) {
+        flb_errno();
+        flb_plg_error(ins, "stat failed %s", path);
+        return -1;
+    }
+    file_size = st.st_size;
+
+    fp = fopen(path, "r");
+    if (fp == NULL) {
+        flb_plg_error(ins, "can't open %s", path);
+        return -1;
+    }
+
+    buf = flb_malloc(file_size);
+    if (buf == NULL) {
+        flb_plg_error(ins, "malloc failed");
+        fclose(fp);
+        return -1;
+    }
+
+    ret_size = fread(buf, 1, file_size, fp);
+    if (ret_size < file_size && feof(fp) != 0) {
+        flb_plg_error(ins, "fread failed");
+        fclose(fp);
+        flb_free(buf);
+        return -1;
+    }
+
+    ret = flb_pack_json(buf, file_size, &msgp_buf, &ret_size, &root_type);
+    if (ret < 0) {
+        flb_plg_error(ins, "flb_pack_json failed");
+        fclose(fp);
+        flb_free(buf);
+        return -1;
+    }
+
+    *out_buf = msgp_buf;
+    *out_size = ret_size;
+
+    fclose(fp);
+    flb_free(buf);
+    return 0;
+}
+
+static int load_label_map_path(struct flb_loki *ctx, flb_sds_t path, int *ra_used)
+{
+    int ret;
+    char *msgpack_buf = NULL;
+    size_t msgpack_size;
+
+    ret = read_label_map_path_file(ctx->ins, path, &msgpack_buf, &msgpack_size);
+    if (ret < 0) {
+        return -1;
+    }
+
+    ret = create_label_map_entries(ctx, msgpack_buf, msgpack_size, ra_used);
+    if (ret < 0) {
+        flb_free(msgpack_buf);
+        return -1;
+    }
+
+    if (msgpack_buf != NULL) {
+        flb_free(msgpack_buf);
+    }
+
+    return 0;
+}
+
 static int parse_labels(struct flb_loki *ctx)
 {
     int ret;
@@ -489,6 +719,14 @@ static int parse_labels(struct flb_loki *ctx)
             else if (ret > 0) {
                 ra_used++;
             }
+        }
+    }
+
+    /* label_map_path */
+    if (ctx->label_map_path) {
+        ret = load_label_map_path(ctx, ctx->label_map_path, &ra_used);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "failed to load label_map_path");
         }
     }
 
@@ -1160,7 +1398,7 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
     size_t b_sent;
     flb_sds_t payload = NULL;
     struct flb_loki *ctx = out_context;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
 
     /* Format the data to the expected Newrelic Payload */
@@ -1356,6 +1594,12 @@ static struct flb_config_map config_map[] = {
      "the Fluent Bit record dumped as json. If set to 'key_value', the log line "
      "will be each item in the record concatenated together (separated by a "
      "single space) in the format '='."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "label_map_path", NULL,
+     0, FLB_TRUE, offsetof(struct flb_loki, label_map_path),
+     "A label map file path"
     },
 
     {

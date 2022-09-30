@@ -35,6 +35,7 @@ static int send_response(struct http_conn *conn, int http_status, char *message)
 {
     int len;
     flb_sds_t out;
+    size_t sent;
 
     out = flb_sds_create_size(256);
     if (!out) {
@@ -78,8 +79,14 @@ static int send_response(struct http_conn *conn, int http_status, char *message)
                        len, message);
     }
 
-    write(conn->fd, out, flb_sds_len(out));
+    /* We should check the outcome of this operation */
+    flb_io_net_write(conn->connection,
+                     (void *) out,
+                     flb_sds_len(out),
+                     &sent);
+
     flb_sds_destroy(out);
+
     return 0;
 }
 
@@ -101,6 +108,7 @@ static int process_payload_metrics(struct flb_opentelemetry *ctx, struct http_co
                                              &offset);
 
     if (result == CMT_DECODE_OPENTELEMETRY_SUCCESS) {
+        ctx->ins->event_type = FLB_INPUT_METRICS;
         result = flb_input_metrics_append(ctx->ins, NULL, 0, decoded_context);
 
         cmt_decode_opentelemetry_destroy(decoded_context);
@@ -114,6 +122,11 @@ static int process_payload_traces(struct flb_opentelemetry *ctx, struct http_con
                                   struct mk_http_session *session,
                                   struct mk_http_request *request)
 {
+    int ret;
+    int root_type;
+    char *out_buf = NULL;
+    size_t out_size;
+
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
 
@@ -122,14 +135,30 @@ static int process_payload_traces(struct flb_opentelemetry *ctx, struct http_con
 
     msgpack_pack_array(&mp_pck, 2);
     flb_pack_time_now(&mp_pck);
-    msgpack_pack_map(&mp_pck, 1);
-    msgpack_pack_str_with_body(&mp_pck, "trace", 5);
-    msgpack_pack_str_with_body(&mp_pck, request->data.data, request->data.len);
+
+    /* Check if the incoming payload is a valid JSON message and convert it to msgpack */
+    ret = flb_pack_json(request->data.data, request->data.len, &out_buf, &out_size, &root_type);
+
+    if (ret == 0 && root_type == JSMN_OBJECT) {
+        /* JSON found, pack it msgpack representation */
+        msgpack_sbuffer_write(&mp_sbuf, out_buf, out_size);
+    }
+    else {
+        /* the content might be a binary payload or invalid JSON */
+        msgpack_pack_map(&mp_pck, 1);
+        msgpack_pack_str_with_body(&mp_pck, "trace", 5);
+        msgpack_pack_str_with_body(&mp_pck, request->data.data, request->data.len);
+    }
+
+    /* release 'out_buf' if it was allocated */
+    if (out_buf) {
+        flb_free(out_buf);
+    }
 
     ctx->ins->event_type = FLB_INPUT_LOGS;
-
     flb_input_chunk_append_raw(ctx->ins, tag, flb_sds_len(tag), mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
+
     return 0;
 }
 
@@ -185,7 +214,7 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
         uri[request->uri.len] = '\0';
     }
 
-    if (strcmp(uri, "/metrics") != 0 && strcmp(uri, "/traces") != 0) {
+    if (strcmp(uri, "/v1/metrics") != 0 && strcmp(uri, "/v1/traces") != 0) {
         send_response(conn, 400, "error: invalid endpoint\n");
         mk_mem_free(uri);
         return -1;
@@ -233,6 +262,7 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
     /* HTTP/1.1 needs Host header */
     if (!request->host.data && request->protocol == MK_HTTP_PROTOCOL_11) {
         flb_sds_destroy(tag);
+        mk_mem_free(uri);
         return -1;
     }
 
@@ -251,14 +281,15 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
 
     if (request->method != MK_METHOD_POST) {
         flb_sds_destroy(tag);
+        mk_mem_free(uri);
         send_response(conn, 400, "error: invalid HTTP method\n");
         return -1;
     }
 
-    if (strcmp(uri, "/metrics") == 0) {
+    if (strcmp(uri, "/v1/metrics") == 0) {
         ret = process_payload_metrics(ctx, conn, tag, session, request);
     }
-    else if (strcmp(uri, "/traces") == 0) {
+    else if (strcmp(uri, "/v1/traces") == 0) {
         ret = process_payload_traces(ctx, conn, tag, session, request);
     }
     mk_mem_free(uri);

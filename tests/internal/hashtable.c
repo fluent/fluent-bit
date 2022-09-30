@@ -2,10 +2,9 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_macros.h>
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_hash_table.h>
 
 #include "flb_tests_internal.h"
-#include <xxhash.h>
 
 struct map {
     char *key;
@@ -53,7 +52,7 @@ struct map entries[] = {
 
 };
 
-static int ht_add(struct flb_hash *ht, char *key, char *val)
+static int ht_add(struct flb_hash_table *ht, char *key, char *val)
 {
   int id;
   int idn;
@@ -66,11 +65,11 @@ static int ht_add(struct flb_hash *ht, char *key, char *val)
   vlen = strlen(val);
 
   /* Insert the key value */
-  id = flb_hash_add(ht, key, klen, val, vlen);
+  id = flb_hash_table_add(ht, key, klen, val, vlen);
   TEST_CHECK(id >=0);
 
   /* Retrieve the value of the recently added key */
-  idn = flb_hash_get(ht, key, klen, (void *) &out_buf, &out_size);
+  idn = flb_hash_table_get(ht, key, klen, (void *) &out_buf, &out_size);
   TEST_CHECK(idn == id);
   TEST_CHECK(strcmp(out_buf, val) == 0);
 
@@ -79,9 +78,9 @@ static int ht_add(struct flb_hash *ht, char *key, char *val)
 
 void test_create_zero()
 {
-    struct flb_hash *ht;
+    struct flb_hash_table *ht;
 
-    ht  = flb_hash_create(FLB_HASH_EVICT_NONE, 0, -1);
+    ht  = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 0, -1);
     TEST_CHECK(ht == NULL);
 }
 
@@ -91,30 +90,30 @@ void test_single()
     int ret;
     const char *out_buf;
     size_t out_size;
-    struct flb_hash *ht;
+    struct flb_hash_table *ht;
 
-    ht = flb_hash_create(FLB_HASH_EVICT_NONE, 1, -1);
+    ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 1, -1);
     TEST_CHECK(ht != NULL);
 
     ret = ht_add(ht, "key", "value");
     TEST_CHECK(ret != -1);
 
-    ret = flb_hash_get(ht, "key", 3, (void *) &out_buf, &out_size);
+    ret = flb_hash_table_get(ht, "key", 3, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
 
-    ret = flb_hash_get(ht, "NOT", 3, (void *) &out_buf, &out_size);
+    ret = flb_hash_table_get(ht, "NOT", 3, (void *) &out_buf, &out_size);
     TEST_CHECK(ret == -1);
 
-    flb_hash_destroy(ht);
+    flb_hash_table_destroy(ht);
 }
 
 void test_small_table()
 {
     int i;
     struct map *m;
-    struct flb_hash *ht;
+    struct flb_hash_table *ht;
 
-    ht = flb_hash_create(FLB_HASH_EVICT_NONE, 8, -1);
+    ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 8, -1);
     TEST_CHECK(ht != NULL);
 
     for (i = 0; i < sizeof(entries) / sizeof(struct map); i++) {
@@ -122,16 +121,16 @@ void test_small_table()
         ht_add(ht, m->key, m->val);
     }
 
-    flb_hash_destroy(ht);
+    flb_hash_table_destroy(ht);
 }
 
 void test_medium_table()
 {
     int i;
     struct map *m;
-    struct flb_hash *ht;
+    struct flb_hash_table *ht;
 
-    ht = flb_hash_create(FLB_HASH_EVICT_NONE, 8, -1);
+    ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 8, -1);
     TEST_CHECK(ht != NULL);
 
     for (i = 0; i < sizeof(entries) / sizeof(struct map); i++) {
@@ -139,7 +138,7 @@ void test_medium_table()
         ht_add(ht, m->key, m->val);
     }
 
-    flb_hash_destroy(ht);
+    flb_hash_table_destroy(ht);
 }
 
 void test_chaining()
@@ -150,10 +149,10 @@ void test_chaining()
     int chains = 0;
     struct map *m;
     struct mk_list *head;
-    struct flb_hash_table *table;
-    struct flb_hash *ht;
+    struct flb_hash_table_chain *table;
+    struct flb_hash_table *ht;
 
-    ht = flb_hash_create(FLB_HASH_EVICT_NONE, 8, -1);
+    ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 8, -1);
     TEST_CHECK(ht != NULL);
 
     for (i = 0; i < 8; i++) {
@@ -177,7 +176,7 @@ void test_chaining()
 
     /* Tests diff between total, new minus 3 overrides */
     TEST_CHECK(chains == inserts - 3);
-    flb_hash_destroy(ht);
+    flb_hash_table_destroy(ht);
 }
 
 void test_delete_all()
@@ -188,10 +187,10 @@ void test_delete_all()
     int not_found = 0;
     int total = 0;
     struct map *m;
-    struct flb_hash_table *table;
-    struct flb_hash *ht;
+    struct flb_hash_table_chain *table;
+    struct flb_hash_table *ht;
 
-    ht = flb_hash_create(FLB_HASH_EVICT_NONE, 8, -1);
+    ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 8, -1);
     TEST_CHECK(ht != NULL);
 
     total = sizeof(entries) / sizeof(struct map);
@@ -202,7 +201,7 @@ void test_delete_all()
 
     for (i = total - 1; i >= 0; i--) {
         m = &entries[i];
-        ret = flb_hash_del(ht, m->key);
+        ret = flb_hash_table_del(ht, m->key);
         if (ret == -1) {
             not_found++;
         }
@@ -215,7 +214,7 @@ void test_delete_all()
     }
 
     TEST_CHECK(count == 0);
-    flb_hash_destroy(ht);
+    flb_hash_table_destroy(ht);
 }
 
 void test_random_eviction()
@@ -223,9 +222,9 @@ void test_random_eviction()
     int ret;
     const char *out_buf;
     size_t out_size;
-    struct flb_hash *ht;
+    struct flb_hash_table *ht;
 
-    ht = flb_hash_create(FLB_HASH_EVICT_RANDOM, 8, 1);
+    ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_RANDOM, 8, 1);
     TEST_CHECK(ht != NULL);
 
     ret = ht_add(ht, "key1", "value1");
@@ -234,13 +233,13 @@ void test_random_eviction()
     ret = ht_add(ht, "key2", "value2");
     TEST_CHECK(ret != -1);
 
-    ret = flb_hash_get(ht, "key1", 4, (void *) &out_buf, &out_size);
+    ret = flb_hash_table_get(ht, "key1", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret == -1);
 
-    ret = flb_hash_get(ht, "key2", 4, (void *) &out_buf, &out_size);
+    ret = flb_hash_table_get(ht, "key2", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
 
-    flb_hash_destroy(ht);
+    flb_hash_table_destroy(ht);
 }
 
 void test_less_used_eviction()
@@ -248,9 +247,9 @@ void test_less_used_eviction()
     int ret;
     const char *out_buf;
     size_t out_size;
-    struct flb_hash *ht;
+    struct flb_hash_table *ht;
 
-    ht = flb_hash_create(FLB_HASH_EVICT_LESS_USED, 8, 2);
+    ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_LESS_USED, 8, 2);
     TEST_CHECK(ht != NULL);
 
     ret = ht_add(ht, "key1", "value1");
@@ -259,28 +258,28 @@ void test_less_used_eviction()
     ret = ht_add(ht, "key2", "value2");
     TEST_CHECK(ret != -1);
 
-    ret = flb_hash_get(ht, "key1", 4, (void *) &out_buf, &out_size);
+    ret = flb_hash_table_get(ht, "key1", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
 
-    ret = flb_hash_get(ht, "key2", 4, (void *) &out_buf, &out_size);
+    ret = flb_hash_table_get(ht, "key2", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
 
-    ret = flb_hash_get(ht, "key2", 4, (void *) &out_buf, &out_size);
+    ret = flb_hash_table_get(ht, "key2", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
 
     ret = ht_add(ht, "key3", "value3");
     TEST_CHECK(ret != -1);
 
-    ret = flb_hash_get(ht, "key3", 4, (void *) &out_buf, &out_size);
+    ret = flb_hash_table_get(ht, "key3", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
 
-    ret = flb_hash_get(ht, "key2", 4, (void *) &out_buf, &out_size);
+    ret = flb_hash_table_get(ht, "key2", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
 
-    ret = flb_hash_get(ht, "key1", 4, (void *) &out_buf, &out_size);
+    ret = flb_hash_table_get(ht, "key1", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret == -1);
 
-    flb_hash_destroy(ht);
+    flb_hash_table_destroy(ht);
 }
 
 void test_older_eviction()
@@ -288,9 +287,9 @@ void test_older_eviction()
     int ret;
     const char *out_buf;
     size_t out_size;
-    struct flb_hash *ht;
+    struct flb_hash_table *ht;
 
-    ht = flb_hash_create(FLB_HASH_EVICT_OLDER, 8, 2);
+    ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_OLDER, 8, 2);
     TEST_CHECK(ht != NULL);
 
     ret = ht_add(ht, "key2", "value2");
@@ -299,28 +298,28 @@ void test_older_eviction()
     ret = ht_add(ht, "key1", "value1");
     TEST_CHECK(ret != -1);
 
-    ret = flb_hash_get(ht, "key1", 4, (void *) &out_buf, &out_size);
+    ret = flb_hash_table_get(ht, "key1", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
 
-    ret = flb_hash_get(ht, "key2", 4, (void *) &out_buf, &out_size);
+    ret = flb_hash_table_get(ht, "key2", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
 
-    ret = flb_hash_get(ht, "key2", 4, (void *) &out_buf, &out_size);
+    ret = flb_hash_table_get(ht, "key2", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
 
     ret = ht_add(ht, "key3", "value3");
     TEST_CHECK(ret != -1);
 
-    ret = flb_hash_get(ht, "key3", 4, (void *) &out_buf, &out_size);
+    ret = flb_hash_table_get(ht, "key3", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
 
-    ret = flb_hash_get(ht, "key2", 4, (void *) &out_buf, &out_size);
+    ret = flb_hash_table_get(ht, "key2", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret == -1);
 
-    ret = flb_hash_get(ht, "key1", 4, (void *) &out_buf, &out_size);
+    ret = flb_hash_table_get(ht, "key1", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
 
-    flb_hash_destroy(ht);
+    flb_hash_table_destroy(ht);
 }
 
 void test_pointer()
@@ -328,32 +327,32 @@ void test_pointer()
     int ret;
     const char *out_buf;
     size_t out_size;
-    struct flb_hash *ht;
+    struct flb_hash_table *ht;
 
     char *val1 = "val1";
     char *val2 = "val2";
 
-    ht = flb_hash_create(FLB_HASH_EVICT_NONE, 512, 0);
+    ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 512, 0);
     TEST_CHECK(ht != NULL);
 
-    ret = flb_hash_add(ht, "key1", 4, (void *) val1, 0);
+    ret = flb_hash_table_add(ht, "key1", 4, (void *) val1, 0);
     TEST_CHECK(ret >= 0);
 
-    ret = flb_hash_add(ht, "key2", 4, (void *) val2, 0);
+    ret = flb_hash_table_add(ht, "key2", 4, (void *) val2, 0);
     TEST_CHECK(ret >= 0);
 
-    ret = flb_hash_get(ht, "key2", 4, (void *) &out_buf, &out_size);
+    ret = flb_hash_table_get(ht, "key2", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
     TEST_CHECK((void *) out_buf == (void *) val2);
 
-    out_buf = flb_hash_get_ptr(ht, "key2", 4);
+    out_buf = flb_hash_table_get_ptr(ht, "key2", 4);
     TEST_CHECK((void *) out_buf == (void *) val2);
 
-    ret = flb_hash_del_ptr(ht, "key2", 4, (void *) out_buf);
+    ret = flb_hash_table_del_ptr(ht, "key2", 4, (void *) out_buf);
     TEST_CHECK(ret == 0);
 
     TEST_CHECK(ht->total_count == 1);
-    flb_hash_destroy(ht);
+    flb_hash_table_destroy(ht);
 }
 
 void test_hash_exists()
@@ -364,9 +363,9 @@ void test_hash_exists()
     int len;
     struct map *m;
     uint64_t hash;
-    struct flb_hash *ht;
+    struct flb_hash_table *ht;
 
-    ht = flb_hash_create(FLB_HASH_EVICT_NONE, 1000, 0);
+    ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 1000, 0);
     TEST_CHECK(ht != NULL);
 
     for (i = 0; i < sizeof(entries) / sizeof(struct map); i++) {
@@ -375,9 +374,9 @@ void test_hash_exists()
         TEST_CHECK(id >= 0);
 
         len = strlen(m->key);
-        hash = XXH3_64bits(m->key, len);
+        hash = cfl_hash_64bits(m->key, len);
 
-        ret = flb_hash_exists(ht, hash);
+        ret = flb_hash_table_exists(ht, hash);
         TEST_CHECK(ret == FLB_TRUE);
     }
 
@@ -386,16 +385,16 @@ void test_hash_exists()
 
         /* get hash */
         len = strlen(m->key);
-        hash = XXH3_64bits(m->key, len);
+        hash = cfl_hash_64bits(m->key, len);
 
         /* delete */
-        ret = flb_hash_del(ht, m->key);
+        ret = flb_hash_table_del(ht, m->key);
 
-        ret = flb_hash_exists(ht, hash);
+        ret = flb_hash_table_exists(ht, hash);
         TEST_CHECK(ret == FLB_FALSE);;
     }
 
-    flb_hash_destroy(ht);
+    flb_hash_table_destroy(ht);
 }
 
 TEST_LIST = {

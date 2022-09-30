@@ -41,7 +41,7 @@
 
 struct cmt_msgpack_temporary_bucket {
     double upper_bound;
-    struct mk_list _head;
+    struct cfl_list _head;
 };
 
 struct cmt_msgpack_decode_context {
@@ -52,7 +52,7 @@ struct cmt_msgpack_decode_context {
     size_t             bucket_count;
     double            *quantile_list;
     size_t             quantile_count;
-    struct mk_list     unique_label_list;
+    struct cfl_list     unique_label_list;
     uint64_t           summary_quantiles[5];
     int                static_labels_unpacked;
 };

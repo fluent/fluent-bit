@@ -10,7 +10,7 @@ import os
 import re
 import datetime
 
-onig_ver = "6.0.0"
+onig_ver = "6.2.1"
 ucddir = "."
 
 def print_list(arr, title):
@@ -50,7 +50,7 @@ def output_categories():
 
 def output_scripts(filename, title, add=[]):
     scripts = set(add)
-    pattern = re.compile('^.*?; (\w+) # ')
+    pattern = re.compile('^[0-9a-fA-F]+(?:\.\.[0-9a-fA-F]+)? *; (\w+) +# ')
     with open(filename, 'r') as f:
         for line in f:
             res = pattern.match(line)
@@ -135,6 +135,7 @@ def main():
     scripts |= output_scripts(ucddir + os.sep + 'Scripts.txt', 'Scripts', ["Unknown"])
     scripts |= output_scripts(ucddir + os.sep + 'DerivedCoreProperties.txt', 'DerivedCoreProperties')
     scripts |= output_scripts(ucddir + os.sep + 'PropList.txt', 'PropList')
+    scripts |= output_scripts(ucddir + os.sep + 'emoji-data.txt', 'Emoji')
     output_aliases(scripts)
     output_valuealiases(scripts)
     output_ages()

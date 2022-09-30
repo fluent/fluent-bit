@@ -1,10 +1,10 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.12)
 project(fluent-bit)
 
 # Fluent Bit Version
-set(FLB_VERSION_MAJOR  1)
-set(FLB_VERSION_MINOR  9)
-set(FLB_VERSION_PATCH  6)
+set(FLB_VERSION_MAJOR  2)
+set(FLB_VERSION_MINOR  0)
+set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -20,6 +20,12 @@ endif()
 if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
   set(FLB_SYSTEM_MACOS On)
   add_definitions(-DFLB_SYSTEM_MACOS)
+endif()
+
+# Define macro to identify Linux system
+if(CMAKE_SYSTEM_NAME MATCHES "Linux")
+  set(FLB_SYSTEM_LINUX On)
+  add_definitions(-DFLB_SYSTEM_LINUX)
 endif()
 
 # Update CFLAGS
@@ -46,15 +52,17 @@ else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 endif()
 
-if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__='\"$(subst ${CMAKE_SOURCE_DIR}/,,$(abspath $<))\"'")
-else()
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__=__FILE__")
-endif()
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FLB_FILENAME__=__FILE__")
 
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "armv7l")
   set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -latomic")
   set(CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS} -latomic")
+endif()
+if(${CMAKE_SYSTEM_NAME} MATCHES "FreeBSD")
+  set(FLB_SYSTEM_FREEBSD On)
+  add_definitions(-DFLB_SYSTEM_FREEBSD)
+  set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -lutil")
+  set(CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS} -lutil")
 endif()
 
 include(GNUInstallDirs)
@@ -72,8 +80,8 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/lib")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
 
 # Build Options
-option(FLB_ALL                 "Enable all features"           No)
-option(FLB_DEBUG               "Build with debug mode (-g)"    Yes)
+option(FLB_ALL                 "Enable all features"                         No)
+option(FLB_DEBUG               "Build with debug mode (-g)"                 Yes)
 option(FLB_RELEASE             "Build with release mode (-O2 -g -DNDEBUG)"   No)
 option(FLB_SMALL               "Optimise for small size"       No)
 option(FLB_COVERAGE            "Build with code-coverage"      No)
@@ -87,6 +95,7 @@ option(FLB_EXAMPLES            "Build examples"               Yes)
 option(FLB_SHARED_LIB          "Build shared library"         Yes)
 option(FLB_VALGRIND            "Enable Valgrind support"       No)
 option(FLB_TRACE               "Enable trace mode"             No)
+option(FLB_CHUNK_TRACE         "Enable chunk traces"           No)
 option(FLB_TESTS_RUNTIME       "Enable runtime tests"          No)
 option(FLB_TESTS_INTERNAL      "Enable internal tests"         No)
 option(FLB_TESTS_INTERNAL_FUZZ "Enable internal fuzz tests"    No)
@@ -102,128 +111,137 @@ option(FLB_RECORD_ACCESSOR     "Enable record accessor"       Yes)
 option(FLB_SIGNV4              "Enable AWS Signv4 support"    Yes)
 option(FLB_AWS                 "Enable AWS support"           Yes)
 option(FLB_STATIC_CONF         "Build binary using static configuration")
-option(FLB_STREAM_PROCESSOR    "Enable Stream Processor"      Yes)
+option(FLB_STREAM_PROCESSOR    "Enable Stream Processor"                    Yes)
 option(FLB_CORO_STACK_SIZE     "Set coroutine stack size")
-option(FLB_AVRO_ENCODER        "Build with Avro encoding support" No)
-option(FLB_AWS_ERROR_REPORTER  "Build with aws error reporting support" No)
-option(FLB_ARROW               "Build with Apache Arrow support"  No)
-option(FLB_WINDOWS_DEFAULTS    "Build with predefined Windows settings"  Yes)
+option(FLB_AVRO_ENCODER        "Build with Avro encoding support"            No)
+option(FLB_AWS_ERROR_REPORTER  "Build with aws error reporting support"      No)
+option(FLB_ARROW               "Build with Apache Arrow support"             No)
+option(FLB_WINDOWS_DEFAULTS    "Build with predefined Windows settings"     Yes)
+option(FLB_WASM                "Build with WASM runtime support"            Yes)
+option(FLB_WAMRC               "Build with WASM AOT compiler executable"    No)
 
 # Native Metrics Support (cmetrics)
-option(FLB_METRICS            "Enable metrics support"       Yes)
+option(FLB_METRICS             "Enable metrics support"       Yes)
 
 # Proxy Plugins
-option(FLB_PROXY_GO           "Enable Go plugins support"   Yes)
+option(FLB_PROXY_GO            "Enable Go plugins support"    Yes)
 
 # Built-in Custom Plugins
-option(FLB_CUSTOM_CALYPTIA    "Enable Calyptia Support"      Yes)
+option(FLB_CUSTOM_CALYPTIA     "Enable Calyptia Support"      Yes)
 
 # Config formats
-option(FLB_CONFIG_YAML        "Enable YAML config format"    Yes)
+option(FLB_CONFIG_YAML         "Enable YAML config format"    Yes)
 
 # Built-in Plugins
-option(FLB_IN_CPU             "Enable CPU input plugin"             Yes)
-option(FLB_IN_THERMAL         "Enable Thermal plugin"               Yes)
-option(FLB_IN_DISK            "Enable Disk input plugin"            Yes)
-option(FLB_IN_DOCKER          "Enable Docker input plugin"          Yes)
-option(FLB_IN_DOCKER_EVENTS   "Enable Docker events input plugin"   Yes)
-option(FLB_IN_EXEC            "Enable Exec input plugin"            Yes)
-option(FLB_IN_FLUENTBIT_METRICS "Enable Fluent Bit metrics  plugin" Yes)
-option(FLB_IN_FORWARD         "Enable Forward input plugin"         Yes)
-option(FLB_IN_HEALTH          "Enable Health input plugin"          Yes)
-option(FLB_IN_HTTP            "Enable HTTP input plugin"            Yes)
-option(FLB_IN_MEM             "Enable Memory input plugin"          Yes)
-option(FLB_IN_KAFKA           "Enable Kafka input plugin"           No)
-option(FLB_IN_KMSG            "Enable Kernel log input plugin"      Yes)
-option(FLB_IN_LIB             "Enable library mode input plugin"    Yes)
-option(FLB_IN_RANDOM          "Enable random input plugin"          Yes)
-option(FLB_IN_SERIAL          "Enable Serial input plugin"          Yes)
-option(FLB_IN_STDIN           "Enable Standard input plugin"        Yes)
-option(FLB_IN_DUMMY_THREAD    "Enable Threaded dummy plugin"        Yes)
-option(FLB_IN_SYSLOG          "Enable Syslog input plugin"          Yes)
-option(FLB_IN_TAIL            "Enable Tail input plugin"            Yes)
-option(FLB_IN_TCP             "Enable TCP input plugin"             Yes)
-option(FLB_IN_MQTT            "Enable MQTT Broker input plugin"     Yes)
-option(FLB_IN_HEAD            "Enable Head input plugin"            Yes)
-option(FLB_IN_PROC            "Enable Process input plugin"         Yes)
-option(FLB_IN_SYSTEMD         "Enable Systemd input plugin"         Yes)
-option(FLB_IN_DUMMY           "Enable Dummy input plugin"           Yes)
-option(FLB_IN_NGINX_EXPORTER_METRICS "Enable Nginx Metrics input plugin" Yes)
-option(FLB_IN_NETIF           "Enable NetworkIF input plugin"       Yes)
-option(FLB_IN_WINLOG          "Enable Windows Log input plugin"      No)
-option(FLB_IN_WINSTAT         "Enable Windows Stat input plugin"     No)
-option(FLB_IN_WINEVTLOG       "Enable Windows EvtLog input plugin"   No)
-option(FLB_IN_COLLECTD        "Enable Collectd input plugin"        Yes)
-option(FLB_IN_PROMETHEUS_SCRAPE "Enable Promeheus Scrape input plugin" Yes)
-option(FLB_IN_STATSD          "Enable StatsD input plugin"          Yes)
-option(FLB_IN_STORAGE_BACKLOG "Enable storage backlog input plugin" Yes)
-option(FLB_IN_EMITTER         "Enable emitter input plugin"         Yes)
-option(FLB_IN_NODE_EXPORTER_METRICS "Enable node exporter metrics input plugin" Yes)
+option(FLB_IN_CPU                      "Enable CPU input plugin"                      Yes)
+option(FLB_IN_THERMAL                  "Enable Thermal plugin"                        Yes)
+option(FLB_IN_DISK                     "Enable Disk input plugin"                     Yes)
+option(FLB_IN_DOCKER                   "Enable Docker input plugin"                   Yes)
+option(FLB_IN_DOCKER_EVENTS            "Enable Docker events input plugin"            Yes)
+option(FLB_IN_EXEC                     "Enable Exec input plugin"                     Yes)
+option(FLB_IN_EXEC_WASI                "Enable Exec WASI input plugin"                Yes)
+option(FLB_IN_EVENT_TEST               "Enable Events test plugin"                    Yes)
+option(FLB_IN_FLUENTBIT_METRICS        "Enable Fluent Bit metrics  plugin"            Yes)
+option(FLB_IN_FORWARD                  "Enable Forward input plugin"                  Yes)
+option(FLB_IN_HEALTH                   "Enable Health input plugin"                   Yes)
+option(FLB_IN_HTTP                     "Enable HTTP input plugin"                     Yes)
+option(FLB_IN_MEM                      "Enable Memory input plugin"                   Yes)
+option(FLB_IN_KAFKA                    "Enable Kafka input plugin"                     No)
+option(FLB_IN_KMSG                     "Enable Kernel log input plugin"               Yes)
+option(FLB_IN_LIB                      "Enable library mode input plugin"             Yes)
+option(FLB_IN_RANDOM                   "Enable random input plugin"                   Yes)
+option(FLB_IN_SERIAL                   "Enable Serial input plugin"                   Yes)
+option(FLB_IN_STDIN                    "Enable Standard input plugin"                 Yes)
+option(FLB_IN_DUMMY_THREAD             "Enable Threaded dummy plugin"                 Yes)
+option(FLB_IN_SYSLOG                   "Enable Syslog input plugin"                   Yes)
+option(FLB_IN_TAIL                     "Enable Tail input plugin"                     Yes)
+option(FLB_IN_UDP                      "Enable UDP input plugin"                      Yes)
+option(FLB_IN_TCP                      "Enable TCP input plugin"                      Yes)
+option(FLB_IN_UNIX_SOCKET              "Enable Unix socket input plugin"               No)
+option(FLB_IN_MQTT                     "Enable MQTT Broker input plugin"              Yes)
+option(FLB_IN_HEAD                     "Enable Head input plugin"                     Yes)
+option(FLB_IN_PROC                     "Enable Process input plugin"                  Yes)
+option(FLB_IN_SYSTEMD                  "Enable Systemd input plugin"                  Yes)
+option(FLB_IN_DUMMY                    "Enable Dummy input plugin"                    Yes)
+option(FLB_IN_NGINX_EXPORTER_METRICS   "Enable Nginx Metrics input plugin"            Yes)
+option(FLB_IN_NETIF                    "Enable NetworkIF input plugin"                Yes)
+option(FLB_IN_WINLOG                   "Enable Windows Log input plugin"               No)
+option(FLB_IN_WINSTAT                  "Enable Windows Stat input plugin"              No)
+option(FLB_IN_WINEVTLOG                "Enable Windows EvtLog input plugin"            No)
+option(FLB_IN_COLLECTD                 "Enable Collectd input plugin"                 Yes)
+option(FLB_IN_PROMETHEUS_SCRAPE        "Enable Promeheus Scrape input plugin"         Yes)
+option(FLB_IN_STATSD                   "Enable StatsD input plugin"                   Yes)
+option(FLB_IN_EVENT_TEST               "Enable event test plugin"                      No)
+option(FLB_IN_STORAGE_BACKLOG          "Enable storage backlog input plugin"          Yes)
+option(FLB_IN_EMITTER                  "Enable emitter input plugin"                  Yes)
+option(FLB_IN_NODE_EXPORTER_METRICS    "Enable node exporter metrics input plugin"    Yes)
 option(FLB_IN_WINDOWS_EXPORTER_METRICS "Enable windows exporter metrics input plugin" Yes)
-option(FLB_IN_OPENTELEMETRY            "Enable OpenTelemetry input plugin"         Yes)
-option(FLB_OUT_AZURE          "Enable Azure output plugin"          Yes)
-option(FLB_OUT_AZURE_BLOB     "Enable Azure output plugin"          Yes)
-option(FLB_OUT_BIGQUERY       "Enable BigQuery output plugin"       Yes)
-option(FLB_OUT_CALYPTIA       "Enable Calyptia monitoring plugin"   Yes)
-option(FLB_OUT_COUNTER        "Enable Counter output plugin"        Yes)
-option(FLB_OUT_DATADOG        "Enable DataDog output plugin"        Yes)
-option(FLB_OUT_ES             "Enable Elasticsearch output plugin"  Yes)
-option(FLB_OUT_EXIT           "Enable Exit output plugin"           Yes)
-option(FLB_OUT_FORWARD        "Enable Forward output plugin"        Yes)
-option(FLB_OUT_GELF           "Enable GELF output plugin"           Yes)
-option(FLB_OUT_HTTP           "Enable HTTP output plugin"           Yes)
-option(FLB_OUT_INFLUXDB       "Enable InfluxDB output plugin"       Yes)
-option(FLB_OUT_NATS           "Enable NATS output plugin"           Yes)
-option(FLB_OUT_NRLOGS         "Enable New Relic output plugin"      Yes)
-option(FLB_OUT_OPENSEARCH     "Enable OpenSearch output plugin"     Yes)
-option(FLB_OUT_TCP            "Enable TCP output plugin"            Yes)
-option(FLB_OUT_PLOT           "Enable Plot output plugin"           Yes)
-option(FLB_OUT_FILE           "Enable file output plugin"           Yes)
-option(FLB_OUT_TD             "Enable Treasure Data output plugin"  Yes)
-option(FLB_OUT_RETRY          "Enable Retry test output plugin"      No)
-option(FLB_OUT_PGSQL          "Enable PostgreSQL output plugin"      No)
-option(FLB_OUT_SKYWALKING     "Enable Apache SkyWalking output plugin" Yes)
-option(FLB_OUT_SLACK          "Enable Slack output plugin"          Yes)
-option(FLB_OUT_SPLUNK         "Enable Splunk output plugin"         Yes)
-option(FLB_OUT_STACKDRIVER    "Enable Stackdriver output plugin"    Yes)
-option(FLB_OUT_STDOUT         "Enable STDOUT output plugin"         Yes)
-option(FLB_OUT_SYSLOG         "Enable Syslog output plugin"         Yes)
-option(FLB_OUT_LIB            "Enable library mode output plugin"   Yes)
-option(FLB_OUT_NULL           "Enable dev null output plugin"       Yes)
-option(FLB_OUT_FLOWCOUNTER    "Enable flowcount output plugin"      Yes)
-option(FLB_OUT_LOGDNA         "Enable LogDNA output plugin"         Yes)
-option(FLB_OUT_LOKI           "Enable Loki output plugin"           Yes)
-option(FLB_OUT_KAFKA          "Enable Kafka output plugin"           No)
-option(FLB_OUT_KAFKA_REST     "Enable Kafka Rest output plugin"     Yes)
-option(FLB_OUT_CLOUDWATCH_LOGS "Enable AWS CloudWatch output plugin" Yes)
-option(FLB_OUT_KINESIS_FIREHOSE "Enable AWS Firehose output plugin" Yes)
-option(FLB_OUT_KINESIS_STREAMS "Enable AWS Kinesis output plugin" Yes)
-option(FLB_OUT_OPENTELEMETRY  "Enable OpenTelemetry plugin" Yes)
-option(FLB_OUT_PROMETHEUS_EXPORTER "Enable Prometheus exporter plugin" Yes)
-option(FLB_OUT_PROMETHEUS_REMOTE_WRITE "Enable Prometheus remote write plugin" Yes)
-option(FLB_OUT_S3             "Enable AWS S3 output plugin"         Yes)
-option(FLB_OUT_WEBSOCKET      "Enable Websocket output plugin"      Yes)
-option(FLB_FILTER_ALTER_SIZE  "Enable alter_size filter"            Yes)
-option(FLB_FILTER_AWS         "Enable aws filter"                   Yes)
-option(FLB_FILTER_CHECKLIST   "Enable checklist filter"             Yes)
-option(FLB_FILTER_EXPECT      "Enable expect filter"                Yes)
-option(FLB_FILTER_GREP        "Enable grep filter"                  Yes)
-option(FLB_FILTER_MODIFY      "Enable modify filter"                Yes)
-option(FLB_FILTER_STDOUT      "Enable stdout filter"                Yes)
-option(FLB_FILTER_PARSER      "Enable parser filter"                Yes)
-option(FLB_FILTER_KUBERNETES  "Enable kubernetes filter"            Yes)
-option(FLB_FILTER_REWRITE_TAG "Enable tag rewrite filter"           Yes)
-option(FLB_FILTER_THROTTLE    "Enable throttle filter"              Yes)
-option(FLB_FILTER_THROTTLE_SIZE "Enable throttle size filter"        No)
-option(FLB_FILTER_TYPE_CONVERTER "Enable type converter filter"     Yes)
-option(FLB_FILTER_MULTILINE   "Enable multiline filter"             Yes)
-option(FLB_FILTER_NEST        "Enable nest filter"                  Yes)
-option(FLB_FILTER_LUA         "Enable Lua scripting filter"         Yes)
-option(FLB_FILTER_LUA_USE_MPACK  "Enable mpack on the lua filter"   Yes)
-option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter"   Yes)
-option(FLB_FILTER_TENSORFLOW  "Enable tensorflow filter"             No)
-option(FLB_FILTER_GEOIP2      "Enable geoip2 filter"                Yes)
-option(FLB_FILTER_NIGHTFALL   "Enable Nightfall filter"             Yes)
+option(FLB_IN_OPENTELEMETRY            "Enable OpenTelemetry input plugin"            Yes)
+option(FLB_OUT_AZURE                   "Enable Azure output plugin"                   Yes)
+option(FLB_OUT_AZURE_BLOB              "Enable Azure output plugin"                   Yes)
+option(FLB_OUT_AZURE_KUSTO             "Enable Azure Kusto output plugin"             Yes)
+option(FLB_OUT_BIGQUERY                "Enable BigQuery output plugin"                Yes)
+option(FLB_OUT_CALYPTIA                "Enable Calyptia monitoring plugin"            Yes)
+option(FLB_OUT_COUNTER                 "Enable Counter output plugin"                 Yes)
+option(FLB_OUT_DATADOG                 "Enable DataDog output plugin"                 Yes)
+option(FLB_OUT_ES                      "Enable Elasticsearch output plugin"           Yes)
+option(FLB_OUT_EXIT                    "Enable Exit output plugin"                    Yes)
+option(FLB_OUT_FORWARD                 "Enable Forward output plugin"                 Yes)
+option(FLB_OUT_GELF                    "Enable GELF output plugin"                    Yes)
+option(FLB_OUT_HTTP                    "Enable HTTP output plugin"                    Yes)
+option(FLB_OUT_INFLUXDB                "Enable InfluxDB output plugin"                Yes)
+option(FLB_OUT_NATS                    "Enable NATS output plugin"                    Yes)
+option(FLB_OUT_NRLOGS                  "Enable New Relic output plugin"               Yes)
+option(FLB_OUT_OPENSEARCH              "Enable OpenSearch output plugin"              Yes)
+option(FLB_OUT_TCP                     "Enable TCP output plugin"                     Yes)
+option(FLB_OUT_PLOT                    "Enable Plot output plugin"                    Yes)
+option(FLB_OUT_FILE                    "Enable file output plugin"                    Yes)
+option(FLB_OUT_TD                      "Enable Treasure Data output plugin"           Yes)
+option(FLB_OUT_RETRY                   "Enable Retry test output plugin"               No)
+option(FLB_OUT_PGSQL                   "Enable PostgreSQL output plugin"               No)
+option(FLB_OUT_SKYWALKING              "Enable Apache SkyWalking output plugin"       Yes)
+option(FLB_OUT_SLACK                   "Enable Slack output plugin"                   Yes)
+option(FLB_OUT_SPLUNK                  "Enable Splunk output plugin"                  Yes)
+option(FLB_OUT_STACKDRIVER             "Enable Stackdriver output plugin"             Yes)
+option(FLB_OUT_STDOUT                  "Enable STDOUT output plugin"                  Yes)
+option(FLB_OUT_SYSLOG                  "Enable Syslog output plugin"                  Yes)
+option(FLB_OUT_LIB                     "Enable library mode output plugin"            Yes)
+option(FLB_OUT_NULL                    "Enable dev null output plugin"                Yes)
+option(FLB_OUT_FLOWCOUNTER             "Enable flowcount output plugin"               Yes)
+option(FLB_OUT_LOGDNA                  "Enable LogDNA output plugin"                  Yes)
+option(FLB_OUT_LOKI                    "Enable Loki output plugin"                    Yes)
+option(FLB_OUT_KAFKA                   "Enable Kafka output plugin"                    No)
+option(FLB_OUT_KAFKA_REST              "Enable Kafka Rest output plugin"              Yes)
+option(FLB_OUT_CLOUDWATCH_LOGS         "Enable AWS CloudWatch output plugin"          Yes)
+option(FLB_OUT_KINESIS_FIREHOSE        "Enable AWS Firehose output plugin"            Yes)
+option(FLB_OUT_KINESIS_STREAMS         "Enable AWS Kinesis output plugin"             Yes)
+option(FLB_OUT_OPENTELEMETRY           "Enable OpenTelemetry plugin"                  Yes)
+option(FLB_OUT_PROMETHEUS_EXPORTER     "Enable Prometheus exporter plugin"            Yes)
+option(FLB_OUT_PROMETHEUS_REMOTE_WRITE "Enable Prometheus remote write plugin"        Yes)
+option(FLB_OUT_S3                      "Enable AWS S3 output plugin"                  Yes)
+option(FLB_OUT_WEBSOCKET               "Enable Websocket output plugin"               Yes)
+option(FLB_FILTER_ALTER_SIZE           "Enable alter_size filter"                     Yes)
+option(FLB_FILTER_AWS                  "Enable aws filter"                            Yes)
+option(FLB_FILTER_CHECKLIST            "Enable checklist filter"                      Yes)
+option(FLB_FILTER_EXPECT               "Enable expect filter"                         Yes)
+option(FLB_FILTER_GREP                 "Enable grep filter"                           Yes)
+option(FLB_FILTER_MODIFY               "Enable modify filter"                         Yes)
+option(FLB_FILTER_STDOUT               "Enable stdout filter"                         Yes)
+option(FLB_FILTER_PARSER               "Enable parser filter"                         Yes)
+option(FLB_FILTER_KUBERNETES           "Enable kubernetes filter"                     Yes)
+option(FLB_FILTER_REWRITE_TAG          "Enable tag rewrite filter"                    Yes)
+option(FLB_FILTER_THROTTLE             "Enable throttle filter"                       Yes)
+option(FLB_FILTER_THROTTLE_SIZE        "Enable throttle size filter"                   No)
+option(FLB_FILTER_TYPE_CONVERTER       "Enable type converter filter"                 Yes)
+option(FLB_FILTER_MULTILINE            "Enable multiline filter"                      Yes)
+option(FLB_FILTER_NEST                 "Enable nest filter"                           Yes)
+option(FLB_FILTER_LUA                  "Enable Lua scripting filter"                  Yes)
+option(FLB_FILTER_LUA_USE_MPACK        "Enable mpack on the lua filter"               Yes)
+option(FLB_FILTER_RECORD_MODIFIER      "Enable record_modifier filter"                Yes)
+option(FLB_FILTER_TENSORFLOW           "Enable tensorflow filter"                      No)
+option(FLB_FILTER_GEOIP2               "Enable geoip2 filter"                         Yes)
+option(FLB_FILTER_NIGHTFALL            "Enable Nightfall filter"                      Yes)
+option(FLB_FILTER_WASM                 "Enable WASM filter"                           Yes)
 
 if(DEFINED FLB_NIGHTLY_BUILD AND NOT "${FLB_NIGHTLY_BUILD}" STREQUAL "")
   FLB_DEFINITION_VAL(FLB_NIGHTLY_BUILD ${FLB_NIGHTLY_BUILD})
@@ -242,40 +260,41 @@ option(FLB_RUN_LDCONFIG "Enable execution of ldconfig after installation" No)
 # Enable all features
 if(FLB_ALL)
   # Global
-  set(FLB_DEBUG        1)
-  set(FLB_TLS          1)
+  set(FLB_DEBUG           1)
+  set(FLB_TLS             1)
 
   # Input plugins
-  set(FLB_IN_CPU       1)
-  set(FLB_IN_MEM       1)
-  set(FLB_IN_KMSG      1)
-  set(FLB_IN_MQTT      1)
-  set(FLB_IN_SERIAL    1)
-  set(FLB_IN_STDIN     1)
-  set(FLB_IN_HEAD      1)
-  set(FLB_IN_PROC      1)
-  set(FLB_IN_DISK      1)
-  set(FLB_IN_DUMMY     1)
+  set(FLB_IN_CPU          1)
+  set(FLB_IN_MEM          1)
+  set(FLB_IN_KMSG         1)
+  set(FLB_IN_MQTT         1)
+  set(FLB_IN_SERIAL       1)
+  set(FLB_IN_STDIN        1)
+  set(FLB_IN_HEAD         1)
+  set(FLB_IN_PROC         1)
+  set(FLB_IN_DISK         1)
+  set(FLB_IN_DUMMY        1)
   set(FLB_IN_DUMMY_THREAD 1)
-  set(FLB_IN_NETIF     1)
+  set(FLB_IN_NETIF        1)
   set(FLB_IN_NGINX_STATUS 1)
-  set(FLB_IN_EXEC      1)
+  set(FLB_IN_EXEC         1)
+  set(FLB_IN_UNIX_SOCKET  1)
 
   # Output plugins
-  set(FLB_OUT_ES       1)
-  set(FLB_OUT_FORWARD  1)
-  set(FLB_OUT_GELF     1)
-  set(FLB_OUT_HTTP     1)
-  set(FLB_OUT_NATS     1)
-  set(FLB_OUT_NULL     1)
-  set(FLB_OUT_PLOT     1)
-  set(FLB_OUT_FILE     1)
-  set(FLB_OUT_RETRY    1)
-  set(FLB_OUT_TD       1)
-  set(FLB_OUT_STDOUT   1)
-  set(FLB_OUT_S3       1)
-  set(FLB_OUT_SYSLOG   1)
-  set(FLB_OUT_LIB      1)
+  set(FLB_OUT_ES          1)
+  set(FLB_OUT_FORWARD     1)
+  set(FLB_OUT_GELF        1)
+  set(FLB_OUT_HTTP        1)
+  set(FLB_OUT_NATS        1)
+  set(FLB_OUT_NULL        1)
+  set(FLB_OUT_PLOT        1)
+  set(FLB_OUT_FILE        1)
+  set(FLB_OUT_RETRY       1)
+  set(FLB_OUT_TD          1)
+  set(FLB_OUT_STDOUT      1)
+  set(FLB_OUT_S3          1)
+  set(FLB_OUT_SYSLOG      1)
+  set(FLB_OUT_LIB         1)
   set(FLB_OUT_FLOWCOUNTER 1)
   set(FLB_OUT_WEBSOCKET   1)
 endif()
@@ -283,10 +302,20 @@ endif()
 if(FLB_DEV)
   set(FLB_DEBUG             On)
   set(FLB_TRACE             On)
+  set(FLB_CHUNK_TRACE       On)
   set(FLB_METRICS           On)
+  set(FLB_IN_EVENT_TEST     On)
   set(FLB_HTTP_SERVER       On)
   set(FLB_HTTP_CLIENT_DEBUG On)
   set(FLB_TESTS_INTERNAL    On)
+endif()
+
+if(FLB_TRACE)
+  add_definitions(-DFLB_TRACE=1)
+endif()
+
+if(FLB_CHUNK_TRACE)
+  add_definitions(-DFLB_HAVE_CHUNK_TRACE=1)
 endif()
 
 # SSL/TLS: add encryption support
@@ -408,6 +437,10 @@ endif()
 # fluent-bit do not use it.
 set(WITH_SYSTEM_MALLOC  1 CACHE BOOL "Use system memory allocator")
 
+# CFL
+set(CMAKE_REQUIRED_INCLUDES "${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CFL}/include")
+add_subdirectory(${FLB_PATH_LIB_CFL} EXCLUDE_FROM_ALL)
+
 # MsgPack options
 option(MSGPACK_ENABLE_CXX             OFF)
 option(MSGPACK_ENABLE_SHARED          OFF)
@@ -421,6 +454,9 @@ add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
 
 # Miniz (zip)
 add_subdirectory(${FLB_PATH_LIB_MINIZ} EXCLUDE_FROM_ALL)
+
+# ring buffer library
+add_subdirectory(${FLB_PATH_LIB_RING_BUFFER} EXCLUDE_FROM_ALL)
 
 # Avro
 if(FLB_AVRO_ENCODER)
@@ -440,12 +476,6 @@ if(FLB_UTF8_ENCODER)
   add_subdirectory(${FLB_PATH_LIB_TUTF8E} EXCLUDE_FROM_ALL)
 endif()
 
-# xxHash
-FLB_OPTION(BUILD_SHARED_LIBS "Build shared libs" OFF)
-set(XXHASH_BUILD_ENABLE_INLINE_API OFF)
-set(XXHASH_BUILD_XXHSUM OFF)
-add_subdirectory(${FLB_PATH_LIB_XXHASH}/cmake_unofficial EXCLUDE_FROM_ALL)
-
 # snappy
 add_subdirectory(${FLB_PATH_LIB_SNAPPY} EXCLUDE_FROM_ALL)
 
@@ -458,6 +488,10 @@ FLB_OPTION(CARES_SHARED      OFF)
 FLB_OPTION(CARES_INSTALL     OFF)
 FLB_OPTION(CARES_BUILD_TESTS OFF)
 FLB_OPTION(CARES_BUILD_TOOLS OFF)
+if (FLB_SYSTEM_MACOS)
+  # macOS SDK always has <arpa/nameser.h>.
+  FLB_DEFINITION(CARES_HAVE_ARPA_NAMESER_H)
+endif()
 add_subdirectory(${FLB_PATH_LIB_CARES})# EXCLUDE_FROM_ALL)
 
 # Chunk I/O
@@ -491,11 +525,9 @@ endif()
 if(FLB_TLS)
   FLB_DEFINITION(FLB_HAVE_TLS)
 
-  # Build mbedtls: yes, in this transition period we always enable it
   option(ENABLE_TESTING  OFF)
   option(ENABLE_PROGRAMS OFF)
   option(INSTALL_MBEDTLS_HEADERS OFF)
-  add_subdirectory(${FLB_PATH_LIB_MBEDTLS} EXCLUDE_FROM_ALL)
 
   # Link OpenSSL statically on Windows.
   if (FLB_SYSTEM_WINDOWS)
@@ -513,6 +545,29 @@ endif()
 # Metrics
 if(FLB_METRICS)
   FLB_DEFINITION(FLB_HAVE_METRICS)
+endif()
+
+# WASM
+if(FLB_WASM)
+  if (FLB_SYSTEM_LINUX)
+    check_c_source_compiles("
+       #include <stdatomic.h>
+       int main() {
+          _Atomic int a;
+          return 0;
+       }" FLB_HAVE_STDATOMIC_H)
+    check_include_files(stdatomic.h FLB_HAVE_STDATOMIC_H)
+    if (FLB_HAVE_STDATOMIC_H)
+      enable_language (ASM)
+      FLB_DEFINITION(FLB_HAVE_WASM)
+    else ()
+      message(STATUS "This platform does not provide stdatomic.h that is needed for the FLB_WASM feature so disabled.")
+      set(FLB_WASM OFF)
+    endif ()
+  else ()
+    enable_language (ASM)
+    FLB_DEFINITION(FLB_HAVE_WASM)
+  endif ()
 endif()
 
 # AWS
@@ -652,6 +707,8 @@ endif()
 
 # unix socket support
 check_c_source_compiles("
+  #include <unistd.h>
+  #include <sys/un.h>
   #include <sys/types.h>
   #include <sys/socket.h>
   int main() {
@@ -666,24 +723,38 @@ endif()
 
 # Configuration file YAML format support
 if(FLB_CONFIG_YAML)
-# Requies libyaml support
-check_c_source_compiles("
-  #include <yaml.h>
-  int main() {
-    yaml_parser_t parser;
-    return 0;
-  }" FLB_HAVE_LIBYAML)
+  find_package(PkgConfig)
+  # libyaml's corresponding pkg-config file is yaml-0.1.pc.
+  # We should search it first.
+  pkg_check_modules(LIBYAML QUIET yaml-0.1)
 
-  if(NOT FLB_HAVE_LIBYAML)
-    message(FATAL_ERROR
-      "YAML development dependencies required for YAML configuration format handling.\n"
-      "This is a build time dependency, you can either install the "
-      "dependencies or disable the feature setting the CMake option "
-      "-DFLB_CONFIG_YAML=Off ."
-      )
+  if (LIBYAML_FOUND)
+    # For if(FLB_HAVE_LIBYAML) clause on CMakeList.txt.
+    set(FLB_HAVE_LIBYAML 1)
+    FLB_DEFINITION(FLB_HAVE_LIBYAML)
+    # For non-standard libyaml installation paths such as homebrew bottled libyaml.
+    include_directories(${LIBYAML_INCLUDEDIR})
+    link_directories(${LIBYAML_LIBRARY_DIRS})
+  else()
+    # Requires libyaml support
+    check_c_source_compiles("
+      #include <yaml.h>
+      int main() {
+        yaml_parser_t parser;
+        return 0;
+      }" FLB_HAVE_LIBYAML)
+
+    if(NOT FLB_HAVE_LIBYAML)
+      message(FATAL_ERROR
+        "YAML development dependencies required for YAML configuration format handling.\n"
+        "This is a build time dependency, you can either install the "
+        "dependencies or disable the feature setting the CMake option "
+        "-DFLB_CONFIG_YAML=Off ."
+        )
+    endif()
+
+    FLB_DEFINITION(FLB_HAVE_LIBYAML)
   endif()
-
-  FLB_DEFINITION(FLB_HAVE_LIBYAML)
 endif()
 
 # check attribute alloc_size
@@ -768,8 +839,8 @@ if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 
   # Link to Jemalloc as an external dependency
   ExternalProject_Add(jemalloc
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.2.1
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.2.1/configure ${AUTOCONF_HOST_OPT} "${FLB_JEMALLOC_OPTIONS_LIST}" --prefix=<INSTALL_DIR>
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.3.0
+    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.3.0/configure ${AUTOCONF_HOST_OPT} "${FLB_JEMALLOC_OPTIONS_LIST}" --prefix=<INSTALL_DIR>
     CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
     BUILD_COMMAND $(MAKE)
     INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
@@ -814,11 +885,21 @@ if(FLB_IN_KAFKA OR FLB_OUT_KAFKA)
     add_subdirectory(${FLB_PATH_LIB_RDKAFKA} EXCLUDE_FROM_ALL)
 endif()
 
-# Onigmo (Regex Engine)
+# Onigmo (Regex Engine) options
 # =====================
 if(FLB_REGEX)
-  include(cmake/onigmo.cmake)
+  option(ONIGMO_SHARED_LIB    OFF)
+  option(ONIGMO_CTESTS        OFF)
+  option(ONIGMO_CTESTS_SAMPLE OFF)
+  option(ONIGMO_PYTHON_TESTS  OFF)
   FLB_DEFINITION(FLB_HAVE_REGEX)
+
+  if (FLB_SYSTEM_WINDOWS)
+    # We need this line in order to link libonigmo.lib statically.
+    # Read onigmo/README for details.
+    FLB_DEFINITION_VAL(ONIG_EXTERN "extern")
+  endif()
+  add_subdirectory(${FLB_PATH_LIB_ONIGMO} EXCLUDE_FROM_ALL)
 endif()
 
 # tutf8e (UTF8 Encoding)
@@ -922,6 +1003,11 @@ configure_file(
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_version.h.in"
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_version.h"
+  )
+
+configure_file(
+  "${PROJECT_SOURCE_DIR}/include/fluent-bit/tls/flb_tls_info.h.in"
+  "${PROJECT_SOURCE_DIR}/include/fluent-bit/tls/flb_tls_info.h"
   )
 
 # Installation Directories
@@ -1080,9 +1166,11 @@ endif()
 if(CPACK_GENERATOR MATCHES "WIX")
   set(CPACK_WIX_UPGRADE_GUID cb6825fd-37e6-4596-a55d-6d490d4fe178)
   configure_file(LICENSE "${CMAKE_CURRENT_BINARY_DIR}/LICENSE.txt")
+  configure_file(${CMAKE_SOURCE_DIR}/cpack/wix/WIX.template.in.cmakein
+    ${CMAKE_CURRENT_BINARY_DIR}/WIX.template.in)
   # Specify LICENSE file that has .txt extension
   set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_BINARY_DIR}/LICENSE.txt")
-  set(CPACK_WIX_TEMPLATE ${CMAKE_SOURCE_DIR}/cpack/wix/WIX.template.in)
+  set(CPACK_WIX_TEMPLATE ${CMAKE_CURRENT_BINARY_DIR}/WIX.template.in)
   set(CPACK_WIX_LIGHT_EXTENSIONS "WixUtilExtension")
 endif()
 

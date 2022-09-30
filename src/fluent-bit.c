@@ -26,7 +26,8 @@
 #include <signal.h>
 #include <ctype.h>
 
-#include <monkey/mk_core.h>
+#include <cfl/cfl.h>
+
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_dump.h>
@@ -124,8 +125,11 @@ static void flb_help(int rc, struct flb_config *config)
     print_opt("-T, --sp-task=SQL", "define a stream processor task");
 #endif
     print_opt("-v, --verbose", "increase logging verbosity (default: info)");
-#ifdef FLB_HAVE_TRACE
+#ifdef FLB_TRACE
     print_opt("-vv", "trace mode (available)");
+#endif
+#ifdef FLB_HAVE_CHUNK_TRACE
+    print_opt("-Z, --enable-chunk-trace", "enable chunk tracing. activating it requires using the HTTP Server API.");
 #endif
     print_opt("-w, --workdir", "set the working directory");
 #ifdef FLB_HAVE_HTTP_SERVER
@@ -925,6 +929,9 @@ int flb_main(int argc, char **argv)
         { "http_listen",     required_argument, NULL, 'L' },
         { "http_port",       required_argument, NULL, 'P' },
 #endif
+#ifdef FLB_HAVE_CHUNK_TRACE
+        { "enable-chunk-trace",    no_argument, NULL, 'Z' },
+#endif
         { NULL, 0, NULL, 0 }
     };
 
@@ -948,7 +955,7 @@ int flb_main(int argc, char **argv)
     /* Parse the command line options */
     while ((opt = getopt_long(argc, argv,
                               "b:c:dDf:C:i:m:o:R:F:p:e:"
-                              "t:T:l:vw:qVhJL:HP:s:S",
+                              "t:T:l:vw:qVhJL:HP:s:SZ",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -1062,7 +1069,7 @@ int flb_main(int argc, char **argv)
 
                 printf("%s\n", json);
                 flb_sds_destroy(json);
-                exit(0);
+                exit(EXIT_SUCCESS);
             }
             else {
                 flb_help_plugin(EXIT_SUCCESS, FLB_HELP_JSON, config,
@@ -1104,6 +1111,11 @@ int flb_main(int argc, char **argv)
         case 'S':
             config->support_mode = FLB_TRUE;
             break;
+#ifdef FLB_HAVE_CHUNK_TRACE
+        case 'Z':
+            config->enable_chunk_trace = FLB_TRUE;
+            break;
+#endif /* FLB_HAVE_CHUNK_TRACE */
         default:
             flb_help(EXIT_FAILURE, config);
         }

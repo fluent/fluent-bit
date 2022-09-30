@@ -23,10 +23,10 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_filter.h>
-#include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_hash_table.h>
 
 #ifndef FLB_HAVE_TLS
 #error "Fluent Bit was built without TLS support"
@@ -90,7 +90,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
         ctx->api_https = FLB_FALSE;
     }
     else if (ctx->use_kubelet) {
-        ctx->api_host = flb_strdup(FLB_KUBELET_HOST);
+        ctx->api_host = flb_strdup(ctx->kubelet_host);
         ctx->api_port = ctx->kubelet_port;
         ctx->api_https = FLB_TRUE;
 
@@ -142,15 +142,15 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
              ctx->api_host, ctx->api_port);
 
     if (ctx->kube_meta_cache_ttl > 0) {
-        ctx->hash_table = flb_hash_create_with_ttl(ctx->kube_meta_cache_ttl,
-                                                   FLB_HASH_EVICT_OLDER,
-                                                   FLB_HASH_TABLE_SIZE,
-                                                   FLB_HASH_TABLE_SIZE);
+        ctx->hash_table = flb_hash_table_create_with_ttl(ctx->kube_meta_cache_ttl,
+                                                         FLB_HASH_TABLE_EVICT_OLDER,
+                                                         FLB_HASH_TABLE_SIZE,
+                                                         FLB_HASH_TABLE_SIZE);
     }
     else {
-        ctx->hash_table = flb_hash_create(FLB_HASH_EVICT_RANDOM,
-                                          FLB_HASH_TABLE_SIZE,
-                                          FLB_HASH_TABLE_SIZE);
+        ctx->hash_table = flb_hash_table_create(FLB_HASH_TABLE_EVICT_RANDOM,
+                                                FLB_HASH_TABLE_SIZE,
+                                                FLB_HASH_TABLE_SIZE);
     }
     
     if (!ctx->hash_table) {
@@ -200,7 +200,7 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
     }
 
     if (ctx->hash_table) {
-        flb_hash_destroy(ctx->hash_table);
+        flb_hash_table_destroy(ctx->hash_table);
     }
 
     if (ctx->merge_log == FLB_TRUE) {

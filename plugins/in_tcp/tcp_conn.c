@@ -168,10 +168,18 @@ int tcp_conn_event(void *data)
     ssize_t ret_payload = -1;
     char *tmp;
     struct mk_event *event;
-    struct tcp_conn *conn = data;
-    struct flb_in_tcp_config *ctx = conn->ctx;
+    struct tcp_conn *conn;
+    struct flb_connection *connection;
+    struct flb_in_tcp_config *ctx;
 
-    event = &conn->event;
+    connection = (struct flb_connection *) data;
+
+    conn = connection->user_data;
+
+    ctx = conn->ctx;
+
+    event = &connection->event;
+
     if (event->mask & MK_EVENT_READ) {
         available = (conn->buf_size - conn->buf_len) - 1;
         if (available < 1) {
@@ -198,8 +206,10 @@ int tcp_conn_event(void *data)
         }
 
         /* Read data */
-        bytes = recv(conn->fd,
-                     conn->buf_data + conn->buf_len, available, 0);
+        bytes = flb_io_net_read(connection,
+                                (void *) &conn->buf_data[conn->buf_len],
+                                available);
+
         if (bytes <= 0) {
             flb_plg_trace(ctx->ins, "fd=%i closed connection", event->fd);
             tcp_conn_del(conn);
@@ -246,6 +256,7 @@ int tcp_conn_event(void *data)
             }
         }
 
+
         consume_bytes(conn->buf_data, ret_payload, conn->buf_len);
         conn->buf_len -= ret_payload;
         conn->buf_data[conn->buf_len] = '\0';
@@ -270,11 +281,11 @@ int tcp_conn_event(void *data)
 }
 
 /* Create a new mqtt request instance */
-struct tcp_conn *tcp_conn_add(int fd, struct flb_in_tcp_config *ctx)
+struct tcp_conn *tcp_conn_add(struct flb_connection *connection,
+                              struct flb_in_tcp_config *ctx)
 {
-    int ret;
     struct tcp_conn *conn;
-    struct mk_event *event;
+    int              ret;
 
     conn = flb_malloc(sizeof(struct tcp_conn));
     if (!conn) {
@@ -282,15 +293,16 @@ struct tcp_conn *tcp_conn_add(int fd, struct flb_in_tcp_config *ctx)
         return NULL;
     }
 
+    conn->connection = connection;
+
     /* Set data for the event-loop */
-    event = &conn->event;
-    MK_EVENT_NEW(event);
-    event->fd           = fd;
-    event->type         = FLB_ENGINE_EV_CUSTOM;
-    event->handler      = tcp_conn_event;
+    MK_EVENT_NEW(&connection->event);
+
+    connection->user_data     = conn;
+    connection->event.type    = FLB_ENGINE_EV_CUSTOM;
+    connection->event.handler = tcp_conn_event;
 
     /* Connection info */
-    conn->fd      = fd;
     conn->ctx     = ctx;
     conn->buf_len = 0;
     conn->rest    = 0;
@@ -299,9 +311,10 @@ struct tcp_conn *tcp_conn_add(int fd, struct flb_in_tcp_config *ctx)
     conn->buf_data = flb_malloc(ctx->chunk_size);
     if (!conn->buf_data) {
         flb_errno();
-        flb_socket_close(fd);
+
         flb_plg_error(ctx->ins, "could not allocate new connection");
         flb_free(conn);
+
         return NULL;
     }
     conn->buf_size = ctx->chunk_size;
@@ -314,12 +327,17 @@ struct tcp_conn *tcp_conn_add(int fd, struct flb_in_tcp_config *ctx)
     }
 
     /* Register instance into the event loop */
-    ret = mk_event_add(ctx->evl, fd, FLB_ENGINE_EV_CUSTOM, MK_EVENT_READ, conn);
+    ret = mk_event_add(ctx->evl,
+                       connection->fd,
+                       FLB_ENGINE_EV_CUSTOM,
+                       MK_EVENT_READ,
+                       &connection->event);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not register new connection");
-        flb_socket_close(fd);
+
         flb_free(conn->buf_data);
         flb_free(conn);
+
         return NULL;
     }
 
@@ -337,12 +355,15 @@ int tcp_conn_del(struct tcp_conn *conn)
     if (ctx->format == FLB_TCP_FMT_JSON) {
         flb_pack_state_reset(&conn->pack_state);
     }
-    /* Unregister the file descriptior from the event-loop */
-    mk_event_del(ctx->evl, &conn->event);
+
+    /* The downstream unregisters the file descriptor from the event-loop
+     * so there's nothing to be done by the plugin
+     */
+    flb_downstream_conn_release(conn->connection);
 
     /* Release resources */
     mk_list_del(&conn->_head);
-    flb_socket_close(conn->fd);
+
     flb_free(conn->buf_data);
     flb_free(conn);
 

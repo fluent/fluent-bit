@@ -89,7 +89,8 @@ static int cb_nightfall_init(struct flb_filter_instance *f_ins,
                    "Bearer %s",
                    ctx->nightfall_api_key);
 
-    ctx->tls = flb_tls_create(ctx->tls_verify,
+    ctx->tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                              ctx->tls_verify,
                               ctx->tls_debug,
                               ctx->tls_vhost,
                               ctx->tls_ca_path,
@@ -111,7 +112,8 @@ static int cb_nightfall_init(struct flb_filter_instance *f_ins,
         return -1;
     }
 
-    ctx->upstream->flags &= ~(FLB_IO_ASYNC);
+    flb_stream_disable_async_mode(&ctx->upstream->base);
+
     flb_filter_set_context(f_ins, ctx);
 
     srand((unsigned int)time(NULL));

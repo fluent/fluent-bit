@@ -102,7 +102,7 @@ static int histogram_observe_all(struct cmt_histogram *h,
 
 static void prometheus_encode_test(struct cmt *cmt)
 {
-    cmt_sds_t buf;
+    cfl_sds_t buf;
 
     buf = cmt_encode_prometheus_create(cmt, CMT_FALSE);
     printf("\n%s\n", buf);
@@ -120,7 +120,7 @@ void test_histogram()
     cmt_initialize();
 
     /* Timestamp */
-    ts = cmt_time_now();
+    ts = cfl_time_now();
 
     /* CMetrics context */
     cmt = cmt_create();
@@ -168,7 +168,7 @@ void test_set_defaults()
     cmt_initialize();
 
     /* Timestamp */
-    ts = cmt_time_now();
+    ts = cfl_time_now();
 
     /* CMetrics context */
     cmt = cmt_create();

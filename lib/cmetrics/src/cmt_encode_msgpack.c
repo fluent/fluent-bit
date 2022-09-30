@@ -20,7 +20,6 @@
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_metric.h>
 #include <cmetrics/cmt_map.h>
-#include <cmetrics/cmt_sds.h>
 #include <cmetrics/cmt_histogram.h>
 #include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_counter.h>
@@ -31,16 +30,16 @@
 
 #include <mpack/mpack.h>
 
-static ptrdiff_t find_label_index(struct mk_list *label_list, cmt_sds_t label_name)
+static ptrdiff_t find_label_index(struct cfl_list *label_list, cfl_sds_t label_name)
 {
-    struct mk_list       *head;
+    struct cfl_list       *head;
     struct cmt_map_label *label;
     size_t                entry_index;
 
     entry_index = 0;
 
-    mk_list_foreach(head, label_list) {
-        label = mk_list_entry(head, struct cmt_map_label, _head);
+    cfl_list_foreach(head, label_list) {
+        label = cfl_list_entry(head, struct cmt_map_label, _head);
 
         if (0 == strcmp(label_name, label->name)) {
             return entry_index;
@@ -59,7 +58,7 @@ struct cmt_map_label *create_label(char *label_text)
     new_label = calloc(1, sizeof(struct cmt_map_label));
 
     if (NULL != new_label) {
-        new_label->name = cmt_sds_create(label_text);
+        new_label->name = cfl_sds_create(label_text);
 
         if (NULL == new_label->name) {
             free(new_label);
@@ -71,16 +70,16 @@ struct cmt_map_label *create_label(char *label_text)
     return new_label;
 }
 
-static int gather_label_entries(struct mk_list *unique_label_list,
-                                struct mk_list *source_label_list)
+static int gather_label_entries(struct cfl_list *unique_label_list,
+                                struct cfl_list *source_label_list)
 {
-    struct mk_list       *head;
+    struct cfl_list       *head;
     struct cmt_map_label *label;
     struct cmt_map_label *new_label;
     ptrdiff_t             label_index;
 
-    mk_list_foreach(head, source_label_list) {
-        label = mk_list_entry(head, struct cmt_map_label, _head);
+    cfl_list_foreach(head, source_label_list) {
+        label = cfl_list_entry(head, struct cmt_map_label, _head);
 
         label_index = find_label_index(unique_label_list, label->name);
 
@@ -91,25 +90,25 @@ static int gather_label_entries(struct mk_list *unique_label_list,
                 return 1;
             }
 
-            mk_list_add(&new_label->_head, unique_label_list);
+            cfl_list_add(&new_label->_head, unique_label_list);
         }
     }
 
     return 0;
 }
 
-static int gather_label_entries_in_map(struct mk_list *unique_label_list,
+static int gather_label_entries_in_map(struct cfl_list *unique_label_list,
                                        struct cmt_map *map)
 {
-    struct mk_list       *head;
+    struct cfl_list       *head;
     struct cmt_metric    *metric;
     int                   result;
 
     result = gather_label_entries(unique_label_list, &map->label_keys);
 
     if (0 == result) {
-        mk_list_foreach(head, &map->metrics) {
-            metric = mk_list_entry(head, struct cmt_metric, _head);
+        cfl_list_foreach(head, &map->metrics) {
+            metric = cfl_list_entry(head, struct cmt_metric, _head);
 
             result = gather_label_entries(unique_label_list, &metric->labels);
 
@@ -122,16 +121,16 @@ static int gather_label_entries_in_map(struct mk_list *unique_label_list,
     return result;
 }
 
-static int gather_static_label_entries(struct mk_list *unique_label_list,
+static int gather_static_label_entries(struct cfl_list *unique_label_list,
                                        struct cmt *cmt)
 {
-    struct mk_list       *head;
+    struct cfl_list       *head;
     struct cmt_map_label *new_label;
     ptrdiff_t             label_index;
     struct cmt_label     *static_label;
 
-    mk_list_foreach(head, &cmt->static_labels->list) {
-        static_label = mk_list_entry(head, struct cmt_label, _head);
+    cfl_list_foreach(head, &cmt->static_labels->list) {
+        static_label = cfl_list_entry(head, struct cmt_label, _head);
 
         label_index = find_label_index(unique_label_list, static_label->key);
 
@@ -142,7 +141,7 @@ static int gather_static_label_entries(struct mk_list *unique_label_list,
                 return 1;
             }
 
-            mk_list_add(&new_label->_head, unique_label_list);
+            cfl_list_add(&new_label->_head, unique_label_list);
         }
 
         label_index = find_label_index(unique_label_list, static_label->val);
@@ -154,7 +153,7 @@ static int gather_static_label_entries(struct mk_list *unique_label_list,
                 return 1;
             }
 
-            mk_list_add(&new_label->_head, unique_label_list);
+            cfl_list_add(&new_label->_head, unique_label_list);
         }
 
         /* If we got this far then we are sure we have the entry in the list */
@@ -163,14 +162,14 @@ static int gather_static_label_entries(struct mk_list *unique_label_list,
     return 0;
 }
 
-static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map *map, struct mk_list *unique_label_list)
+static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map *map, struct cfl_list *unique_label_list)
 {
     struct cmt_opts      *opts;
-    struct mk_list       *head;
+    struct cfl_list       *head;
     struct cmt_map_label *label;
     size_t                index;
-    struct cmt_summary   *summary;
-    struct cmt_histogram *histogram;
+    struct cmt_summary   *summary = NULL;
+    struct cmt_histogram *histogram = NULL;
     ptrdiff_t             label_index;
     struct cmt_label     *static_label;
     size_t                meta_field_count;
@@ -227,18 +226,18 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
 
     /* 'label_dictionary' (unique label key text) */
     mpack_write_cstr(writer, "label_dictionary");
-    mpack_start_array(writer, mk_list_size(unique_label_list));
-    mk_list_foreach(head, unique_label_list) {
-        label = mk_list_entry(head, struct cmt_map_label, _head);
+    mpack_start_array(writer, cfl_list_size(unique_label_list));
+    cfl_list_foreach(head, unique_label_list) {
+        label = cfl_list_entry(head, struct cmt_map_label, _head);
         mpack_write_cstr(writer, label->name);
     }
     mpack_finish_array(writer);
 
     /* 'static_labels' (static labels) */
     mpack_write_cstr(writer, "static_labels");
-    mpack_start_array(writer, mk_list_size(&cmt->static_labels->list) * 2);
-    mk_list_foreach(head, &cmt->static_labels->list) {
-        static_label = mk_list_entry(head, struct cmt_label, _head);
+    mpack_start_array(writer, cfl_list_size(&cmt->static_labels->list) * 2);
+    cfl_list_foreach(head, &cmt->static_labels->list) {
+        static_label = cfl_list_entry(head, struct cmt_label, _head);
 
         label_index = find_label_index(unique_label_list, static_label->key);
 
@@ -254,8 +253,8 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
     /* 'labels' (label keys) */
     mpack_write_cstr(writer, "labels");
     mpack_start_array(writer, map->label_count);
-    mk_list_foreach(head, &map->label_keys) {
-        label = mk_list_entry(head, struct cmt_map_label, _head);
+    cfl_list_foreach(head, &map->label_keys) {
+        label = cfl_list_entry(head, struct cmt_map_label, _head);
 
         label_index = find_label_index(unique_label_list, label->name);
 
@@ -296,19 +295,19 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
     mpack_finish_map(writer); /* 'meta' */
 }
 
-static int pack_metric(mpack_writer_t *writer, struct cmt_map *map, struct cmt_metric *metric, struct mk_list *unique_label_list)
+static int pack_metric(mpack_writer_t *writer, struct cmt_map *map, struct cmt_metric *metric, struct cfl_list *unique_label_list)
 {
     int c_labels;
     int s;
     double val;
     size_t index;
-    struct mk_list *head;
+    struct cfl_list *head;
     struct cmt_map_label *label;
     struct cmt_summary *summary;
     struct cmt_histogram *histogram;
     ptrdiff_t label_index;
 
-    c_labels = mk_list_size(&metric->labels);
+    c_labels = cfl_list_size(&metric->labels);
 
     s = 3;
 
@@ -377,13 +376,13 @@ static int pack_metric(mpack_writer_t *writer, struct cmt_map *map, struct cmt_m
         mpack_write_double(writer, val);
     }
 
-    s = mk_list_size(&metric->labels);
+    s = cfl_list_size(&metric->labels);
     if (s > 0) {
         mpack_write_cstr(writer, "labels");
         mpack_start_array(writer, c_labels);
 
-        mk_list_foreach(head, &metric->labels) {
-            label = mk_list_entry(head, struct cmt_map_label, _head);
+        cfl_list_foreach(head, &metric->labels) {
+            label = cfl_list_entry(head, struct cmt_map_label, _head);
 
             label_index = find_label_index(unique_label_list, label->name);
 
@@ -405,11 +404,11 @@ static int pack_basic_type(mpack_writer_t *writer, struct cmt *cmt, struct cmt_m
 {
     int result;
     int values_size = 0;
-    struct mk_list *head;
+    struct cfl_list *head;
     struct cmt_metric *metric;
-    struct mk_list unique_label_list;
+    struct cfl_list unique_label_list;
 
-    mk_list_init(&unique_label_list);
+    cfl_list_init(&unique_label_list);
 
 
     result = gather_static_label_entries(&unique_label_list, cmt);
@@ -431,7 +430,7 @@ static int pack_basic_type(mpack_writer_t *writer, struct cmt *cmt, struct cmt_m
     if (map->metric_static_set) {
         values_size++;
     }
-    values_size += mk_list_size(&map->metrics);
+    values_size += cfl_list_size(&map->metrics);
 
     mpack_write_cstr(writer, "values");
     mpack_start_array(writer, values_size);
@@ -440,8 +439,8 @@ static int pack_basic_type(mpack_writer_t *writer, struct cmt *cmt, struct cmt_m
         pack_metric(writer, map, &map->metric, &unique_label_list);
     }
 
-    mk_list_foreach(head, &map->metrics) {
-        metric = mk_list_entry(head, struct cmt_metric, _head);
+    cfl_list_foreach(head, &map->metrics) {
+        metric = cfl_list_entry(head, struct cmt_metric, _head);
         pack_metric(writer, map, metric, &unique_label_list);
     }
     mpack_finish_array(writer);
@@ -460,7 +459,7 @@ int cmt_encode_msgpack_create(struct cmt *cmt, char **out_buf, size_t *out_size)
     char *data;
     size_t size;
     mpack_writer_t writer;
-    struct mk_list *head;
+    struct cfl_list *head;
     struct cmt_counter *counter;
     struct cmt_gauge *gauge;
     struct cmt_untyped *untyped;
@@ -527,42 +526,42 @@ int cmt_encode_msgpack_create(struct cmt *cmt, char **out_buf, size_t *out_size)
     mpack_writer_init_growable(&writer, &data, &size);
 
     metric_count  = 0;
-    metric_count += mk_list_size(&cmt->counters);
-    metric_count += mk_list_size(&cmt->gauges);
-    metric_count += mk_list_size(&cmt->untypeds);
-    metric_count += mk_list_size(&cmt->summaries);
-    metric_count += mk_list_size(&cmt->histograms);
+    metric_count += cfl_list_size(&cmt->counters);
+    metric_count += cfl_list_size(&cmt->gauges);
+    metric_count += cfl_list_size(&cmt->untypeds);
+    metric_count += cfl_list_size(&cmt->summaries);
+    metric_count += cfl_list_size(&cmt->histograms);
 
     /* We want an array to group all these metrics in a context */
     mpack_start_array(&writer, metric_count);
 
     /* Counters */
-    mk_list_foreach(head, &cmt->counters) {
-        counter = mk_list_entry(head, struct cmt_counter, _head);
+    cfl_list_foreach(head, &cmt->counters) {
+        counter = cfl_list_entry(head, struct cmt_counter, _head);
         pack_basic_type(&writer, cmt, counter->map);
     }
 
     /* Gauges */
-    mk_list_foreach(head, &cmt->gauges) {
-        gauge = mk_list_entry(head, struct cmt_gauge, _head);
+    cfl_list_foreach(head, &cmt->gauges) {
+        gauge = cfl_list_entry(head, struct cmt_gauge, _head);
         pack_basic_type(&writer, cmt, gauge->map);
     }
 
     /* Untyped */
-    mk_list_foreach(head, &cmt->untypeds) {
-        untyped = mk_list_entry(head, struct cmt_untyped, _head);
+    cfl_list_foreach(head, &cmt->untypeds) {
+        untyped = cfl_list_entry(head, struct cmt_untyped, _head);
         pack_basic_type(&writer, cmt, untyped->map);
     }
 
     /* Summary */
-    mk_list_foreach(head, &cmt->summaries) {
-        summary = mk_list_entry(head, struct cmt_summary, _head);
+    cfl_list_foreach(head, &cmt->summaries) {
+        summary = cfl_list_entry(head, struct cmt_summary, _head);
         pack_basic_type(&writer, cmt, summary->map);
     }
 
     /* Histogram */
-    mk_list_foreach(head, &cmt->histograms) {
-        histogram = mk_list_entry(head, struct cmt_histogram, _head);
+    cfl_list_foreach(head, &cmt->histograms) {
+        histogram = cfl_list_entry(head, struct cmt_histogram, _head);
         pack_basic_type(&writer, cmt, histogram->map);
     }
 

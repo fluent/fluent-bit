@@ -11,19 +11,22 @@
 # docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7" -f ./dockerfiles/Dockerfile.multiarch --build-arg FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v1.8.11.tar.gz ./dockerfiles/
 
 # Set this to the current release version: it gets done so as part of the release.
-ARG RELEASE_VERSION=1.9.5
+ARG RELEASE_VERSION=2.0.0
 
 # For multi-arch builds - assumption is running on an AMD64 host
 FROM multiarch/qemu-user-static:x86_64-arm as qemu-arm32
 FROM multiarch/qemu-user-static:x86_64-aarch64 as qemu-arm64
 
-FROM debian:bullseye-slim as builder
+FROM debian:bullseye-slim as builder-base
 
 COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 
 ARG FLB_NIGHTLY_BUILD
 ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
+
+ARG FLB_CHUNK_TRACE=Off
+ENV FLB_CHUNK_TRACE=${FLB_CHUNK_TRACE}
 
 RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log
 
@@ -56,9 +59,10 @@ RUN apt-get update && \
 WORKDIR /src/fluent-bit/
 COPY . ./
 
+# We split the builder setup out so people can target it or use as a base image without doing a full build.
+FROM builder-base as builder
 WORKDIR /src/fluent-bit/build/
 RUN cmake -DFLB_RELEASE=On \
-          -DFLB_TRACE=Off \
           -DFLB_JEMALLOC=On \
           -DFLB_TLS=On \
           -DFLB_SHARED_LIB=Off \
@@ -70,6 +74,7 @@ RUN cmake -DFLB_RELEASE=On \
           -DFLB_OUT_PGSQL=On \
           -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
           -DFLB_LOG_NO_CONTROL_CHARS=On \
+          -DFLB_CHUNK_TRACE="$FLB_CHUNK_TRACE" \
           ..
 
 RUN make -j "$(getconf _NPROCESSORS_ONLN)"

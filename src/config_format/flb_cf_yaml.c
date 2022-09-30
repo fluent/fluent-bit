@@ -78,9 +78,9 @@ enum state {
     STATE_CUSTOM_VAL,
 
     STATE_PLUGIN_TYPE,
-    STATE_PLUGIN_KEY_VALUE_PAIR,
     STATE_PLUGIN_KEY,
     STATE_PLUGIN_VAL,
+    STATE_PLUGIN_VAL_LIST,
 
     STATE_GROUP_KEY,
     STATE_GROUP_VAL,
@@ -736,40 +736,20 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 return YAML_FAILURE;
             }
 
-            /* the 'type' is the plugin name, so we add it as a 'name' property */
-            value = (char *) event->data.scalar.value;
-            len = strlen(value);
-
-            /* register the type: name = abc */
-            kv = flb_cf_property_add(cf, &s->cf_section->properties,
-                                     "name", 4,
-                                     value, len);
-            if (!kv) {
-                return YAML_FAILURE;
-            }
-            /* next state are key value pairs */
-            s->state = STATE_PLUGIN_KEY_VALUE_PAIR;
+            /* the next state is the keys of the properties of the plugin. */
+            s->state = STATE_PLUGIN_KEY;
             break;
         case YAML_MAPPING_START_EVENT:
+            ret = add_section_type(cf, s);
+            if (ret == -1) {
+                return YAML_FAILURE;
+            }
+            s->state = STATE_PLUGIN_KEY;
             break;
         case YAML_MAPPING_END_EVENT:
             break;
         case YAML_SEQUENCE_END_EVENT:
             s->state = STATE_PIPELINE;
-            break;
-        default:
-            yaml_error_event(ctx, s, event);
-            return YAML_FAILURE;
-        }
-        break;
-
-    case STATE_PLUGIN_KEY_VALUE_PAIR:
-        switch(event->type) {
-        case YAML_MAPPING_START_EVENT:
-            s->state = STATE_PLUGIN_KEY;
-            break;
-        case YAML_MAPPING_END_EVENT:
-            s->state = STATE_PLUGIN_TYPE;
             break;
         default:
             yaml_error_event(ctx, s, event);

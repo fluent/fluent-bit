@@ -119,6 +119,9 @@ struct flb_ml_stream {
 
     struct flb_ml_stream_group *last_stream_group;
 
+    /* runtime flags */
+    int forced_flush;
+
     /* reference to parent instance */
     struct flb_ml_parser_ins *parser;
 
@@ -258,7 +261,7 @@ struct flb_ml_group {
 struct flb_ml {
     flb_sds_t name;                /* name of this multiline setup */
     int flush_ms;                  /* max flush interval found in groups/parsers */
-    time_t last_flush;             /* last flush time (involving groups) */
+    uint64_t last_flush;           /* last flush time (involving groups) */
     struct mk_list groups;         /* list head for flb_ml_group(s) */
     struct flb_config *config;     /* Fluent Bit context */
 };
@@ -282,13 +285,15 @@ void flb_ml_flush_pending_now(struct flb_ml *ml);
 
 void flb_ml_flush_parser_instance(struct flb_ml *ml,
                                   struct flb_ml_parser_ins *parser_i,
-                                  uint64_t stream_id);
+                                  uint64_t stream_id,
+                                  int forced_flush);
 
 int flb_ml_auto_flush_init(struct flb_ml *ml);
 
 int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
                               struct flb_ml_stream *mst,
-                              struct flb_ml_stream_group *group);
+                              struct flb_ml_stream_group *group,
+                              int forced_flush);
 
 /* Multiline streams */
 int flb_ml_stream_create(struct flb_ml *ml,

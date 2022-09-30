@@ -23,7 +23,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/multiline/flb_ml.h>
 #include <fluent-bit/multiline/flb_ml_rule.h>
-#include <xxhash.h>
+#include <cfl/cfl.h>
 
 static int ml_flush_stdout(struct flb_ml_parser *parser,
                            struct flb_ml_stream *mst,
@@ -235,7 +235,7 @@ int flb_ml_stream_create(struct flb_ml *ml,
     }
 
     /* Set the stream id by creating a hash using the name */
-    id = XXH3_64bits(name, name_len);
+    id = cfl_hash_64bits(name, name_len);
 
     /* For every group and parser, create a stream for this stream_id/hash */
     mk_list_foreach(head, &ml->groups) {
@@ -305,7 +305,7 @@ void flb_ml_stream_id_destroy_all(struct flb_ml *ml, uint64_t stream_id)
                 }
 
                 /* flush any pending data */
-                flb_ml_flush_parser_instance(ml, parser_i, stream_id);
+                flb_ml_flush_parser_instance(ml, parser_i, stream_id, FLB_TRUE);
 
                 /* destroy internal groups of the stream */
                 flb_ml_stream_destroy(mst);

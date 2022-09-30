@@ -59,7 +59,7 @@ static int uname_update(struct flb_ne *ctx)
 
     uname(&u);
 
-    ts = cmt_time_now();
+    ts = cfl_time_now();
     ret = cmt_gauge_set(ctx->uname, ts, 1, 6,
                         (char *[]) {
                             u.sysname,

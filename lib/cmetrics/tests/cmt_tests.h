@@ -26,8 +26,10 @@
 #define MSGPACK_PARTIAL_PROCESSING_ELEMENT_COUNT 20
 
 #include "tests/cmt_tests_config.h"
-#include <cmetrics/cmt_sds.h>
+#include "encode_output.h"
 
-cmt_sds_t read_file(const char *path);
+#include <cmetrics/cmetrics.h>
+
+cfl_sds_t read_file(const char *path);
 
 #endif

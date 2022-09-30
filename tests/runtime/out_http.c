@@ -227,7 +227,7 @@ static void cb_check_msgpack_kv(void *ctx, int ffd, int res_ret,
     return ;
 }
 
-static struct test_ctx *test_ctx_create(struct flb_lib_out_cb *data)
+static struct test_ctx *test_ctx_create()
 {
     int i_ffd;
     int o_ffd;
@@ -254,7 +254,7 @@ static struct test_ctx *test_ctx_create(struct flb_lib_out_cb *data)
     ctx->i_ffd = i_ffd;
 
     /* Output */
-    o_ffd = flb_output(ctx->flb, (char *) "http", (void *) data);
+    o_ffd = flb_output(ctx->flb, (char *) "http", NULL);
     ctx->o_ffd = o_ffd;
 
     return ctx;
@@ -272,7 +272,6 @@ static void test_ctx_destroy(struct test_ctx *ctx)
 
 void flb_test_format_msgpack()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -288,7 +287,7 @@ void flb_test_format_msgpack()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -326,7 +325,6 @@ void flb_test_format_msgpack()
 
 void flb_test_format_json()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -344,7 +342,7 @@ void flb_test_format_json()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -384,7 +382,6 @@ void flb_test_format_json()
 
 void flb_test_format_json_stream()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -402,7 +399,7 @@ void flb_test_format_json_stream()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -442,7 +439,6 @@ void flb_test_format_json_stream()
 
 void flb_test_format_json_lines()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -460,7 +456,7 @@ void flb_test_format_json_lines()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -500,7 +496,6 @@ void flb_test_format_json_lines()
 
 void flb_test_format_gelf()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -516,7 +511,7 @@ void flb_test_format_gelf()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -556,7 +551,6 @@ void flb_test_format_gelf()
 
 void flb_test_format_gelf_host_key()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -572,7 +566,7 @@ void flb_test_format_gelf_host_key()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -612,7 +606,6 @@ void flb_test_format_gelf_host_key()
 
 void flb_test_format_gelf_timestamp_key()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -628,7 +621,7 @@ void flb_test_format_gelf_timestamp_key()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -668,7 +661,6 @@ void flb_test_format_gelf_timestamp_key()
 
 void flb_test_format_gelf_full_message_key()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -684,7 +676,7 @@ void flb_test_format_gelf_full_message_key()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -724,7 +716,6 @@ void flb_test_format_gelf_full_message_key()
 
 void flb_test_format_gelf_level_key()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -740,7 +731,7 @@ void flb_test_format_gelf_level_key()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -780,7 +771,6 @@ void flb_test_format_gelf_level_key()
 
 void flb_test_set_json_date_key()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -796,7 +786,7 @@ void flb_test_set_json_date_key()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -835,7 +825,6 @@ void flb_test_set_json_date_key()
 
 void flb_test_disable_json_date_key()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -851,7 +840,7 @@ void flb_test_disable_json_date_key()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -890,7 +879,6 @@ void flb_test_disable_json_date_key()
 
 void flb_test_json_date_format_epoch()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -906,7 +894,7 @@ void flb_test_json_date_format_epoch()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -945,7 +933,6 @@ void flb_test_json_date_format_epoch()
 
 void flb_test_json_date_format_iso8601()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -961,7 +948,7 @@ void flb_test_json_date_format_iso8601()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -1000,7 +987,6 @@ void flb_test_json_date_format_iso8601()
 
 void flb_test_json_date_format_java_sql_timestamp()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -1016,7 +1002,7 @@ void flb_test_json_date_format_java_sql_timestamp()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);

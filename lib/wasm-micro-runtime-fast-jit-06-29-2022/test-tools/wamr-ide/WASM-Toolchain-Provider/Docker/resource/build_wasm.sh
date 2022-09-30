@@ -1,0 +1,24 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+#!/bin/bash
+export CC=/opt/wasi-sdk/bin/clang
+export CXX=/opt/wasi-sdk/bin/clang++
+
+if [ -d /mnt/build ];then
+  rm -fr /mnt/build
+fi
+
+mkdir -p /mnt/build
+cd /mnt/build/
+echo "========> compile wasm with wasi-sdk"
+cmake ../.wamr && make
+
+echo && echo
+echo "========> compile wasm to AoT with wamrc"
+# target name will be provided:
+#    - user input the target name in IDE
+#    - generated wasm binary name will be set as user's input target name
+#    - aot binary name should be the same as wasm binary name
+#    - target name will be provided through 1st parameter
+wamrc -o $1.aot $1.wasm

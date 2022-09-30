@@ -46,8 +46,12 @@
 #include <fluent-bit/flb_sosreport.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_http_server.h>
+#include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_version.h>
+#include <fluent-bit/flb_upstream.h>
+#include <fluent-bit/flb_downstream.h>
+#include <fluent-bit/flb_ring_buffer.h>
 
 #ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics_exporter.h>
@@ -100,6 +104,40 @@ int flb_engine_destroy_tasks(struct mk_list *tasks)
     return c;
 }
 
+void flb_engine_reschedule_retries(struct flb_config *config)
+{
+    int ret;
+    struct mk_list *head;
+    struct mk_list *t_head;
+    struct mk_list *rt_head;
+    struct mk_list *tmp_task;
+    struct mk_list *tmp_retry_task;
+    struct flb_task *task;
+    struct flb_input_instance *ins;
+    struct flb_task_retry *retry;
+
+    /* Invalidate and reschedule all retry tasks to be retried immediately */
+    mk_list_foreach(head, &config->inputs) {
+        ins = mk_list_entry(head, struct flb_input_instance, _head);
+        mk_list_foreach_safe(t_head, tmp_task, &ins->tasks) {
+            task = mk_list_entry(t_head, struct flb_task, _head);
+            mk_list_foreach_safe(rt_head, tmp_retry_task, &task->retries) {
+                retry = mk_list_entry(rt_head, struct flb_task_retry, _head);
+                flb_sched_request_invalidate(config, retry);
+                ret = flb_sched_retry_now(config, retry);
+                if (ret == -1) {
+                    /* Can't do much here, just continue on */
+                    flb_warn("[engine] failed to immediately re-schedule retry=%p "
+                             "for task %i. Err: %d", retry, task->id, flb_errno());
+                } else {
+                    flb_debug("[engine] re-scheduled retry=%p for task %i",
+                        retry, task->id);
+                }
+            }
+        }
+    }
+}
+
 int flb_engine_flush(struct flb_config *config,
                      struct flb_input_plugin *in_force)
 {
@@ -125,8 +163,11 @@ static void cb_engine_sched_timer(struct flb_config *ctx, void *data)
 {
     (void) data;
 
-    /* Upstream connections timeouts handling */
+    /* Upstream timeout handling */
     flb_upstream_conn_timeouts(&ctx->upstreams);
+
+    /* Downstream timeout handling */
+    flb_downstream_conn_timeouts(&ctx->downstreams);
 }
 
 static inline int handle_input_event(flb_pipefd_t fd, uint64_t ts,
@@ -265,7 +306,7 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
         flb_task_retry_clean(task, ins);
         flb_task_users_dec(task, FLB_TRUE);
     }
-    else if (ret == FLB_RETRY && config->is_running && !config->is_shutting_down) {
+    else if (ret == FLB_RETRY) {
         if (ins->retry_limit == FLB_OUT_RETRY_NONE) {
             /* cmetrics: output_dropped_records_total */
             cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
@@ -484,6 +525,7 @@ int flb_engine_failed(struct flb_config *config)
 
     /* Check the channel is valid (enabled by library mode) */
     if (config->ch_notif[1] <= 0) {
+        flb_error("[engine] no channel to notify FAILED message");
         return -1;
     }
 
@@ -524,6 +566,14 @@ static int flb_engine_log_start(struct flb_config *config)
     return 0;
 }
 
+static void flb_engine_drain_ring_buffer_signal_channel(flb_pipefd_t fd)
+{
+    static char signal_buffer[512];
+
+    flb_pipe_r(fd, signal_buffer, sizeof(signal_buffer));
+}
+
+
 #ifdef FLB_HAVE_IN_STORAGE_BACKLOG
 extern int sb_segregate_chunks(struct flb_config *config);
 #else
@@ -538,6 +588,7 @@ int flb_engine_start(struct flb_config *config)
     int ret;
     uint64_t ts;
     char tmp[16];
+    int rb_flush_flag;
     struct flb_time t_flush;
     struct mk_event *event;
     struct mk_event_loop *evl;
@@ -547,14 +598,16 @@ int flb_engine_start(struct flb_config *config)
 
     /* Initialize the networking layer */
     flb_net_lib_init();
-
     flb_net_ctx_init(&dns_ctx);
     flb_net_dns_ctx_init();
     flb_net_dns_ctx_set(&dns_ctx);
 
+    flb_pack_init(config);
+
     /* Create the event loop and set it in the global configuration */
     evl = mk_event_loop_create(256);
     if (!evl) {
+        fprintf(stderr, "[log] could not create event loop\n");
         return -1;
     }
     config->evl = evl;
@@ -594,6 +647,7 @@ int flb_engine_start(struct flb_config *config)
     /* Start the Logging service */
     ret = flb_engine_log_start(config);
     if (ret == -1) {
+        fprintf(stderr, "[engine] log start failed\n");
         return -1;
     }
 
@@ -614,7 +668,7 @@ int flb_engine_start(struct flb_config *config)
     ret = mk_event_channel_create(config->evl,
                                   &config->ch_manager[0],
                                   &config->ch_manager[1],
-                                  config);
+                                  &config->ch_event);
     if (ret != 0) {
         flb_error("[engine] could not create manager channels");
         return -1;
@@ -629,6 +683,7 @@ int flb_engine_start(struct flb_config *config)
     /* Start the Storage engine */
     ret = flb_storage_create(config);
     if (ret == -1) {
+        flb_error("[engine] storage creation failed");
         return -1;
     }
 
@@ -648,16 +703,17 @@ int flb_engine_start(struct flb_config *config)
     flb_sched_ctx_init();
     flb_sched_ctx_set(sched);
 
-
     /* Initialize input plugins */
     ret = flb_input_init_all(config);
     if (ret == -1) {
+        flb_error("[engine] input initialization failed");
         return -1;
     }
 
     /* Initialize filter plugins */
     ret = flb_filter_init_all(config);
     if (ret == -1) {
+        flb_error("[engine] filter initialization failed");
         return -1;
     }
 
@@ -667,6 +723,7 @@ int flb_engine_start(struct flb_config *config)
     /* Initialize output plugins */
     ret = flb_output_init_all(config);
     if (ret == -1) {
+        flb_error("[engine] output initialization failed");
         return -1;
     }
 
@@ -694,9 +751,6 @@ int flb_engine_start(struct flb_config *config)
         config->storage_metrics_ctx = flb_storage_metrics_create(config);
     }
 #endif
-
-    /* Initialize collectors */
-    flb_input_collectors_start(config);
 
     /* Prepare routing paths */
     ret = flb_router_io_set(config);
@@ -733,6 +787,9 @@ int flb_engine_start(struct flb_config *config)
     }
 #endif
 
+    /* Initialize collectors */
+    flb_input_collectors_start(config);
+
     /*
      * Sched a permanent callback triggered every 1.5 second to let other
      * Fluent Bit components run tasks at that interval.
@@ -745,27 +802,64 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
 
+    /* DEV/TEST change only */
+    int rb_ms;
+    char *rb_env;
+
+    rb_env = getenv("FLB_DEV_RB_MS");
+    if (!rb_env) {
+        rb_ms = 250;
+    }
+    else {
+        rb_ms = atoi(rb_env);
+    }
+
+    /* Input instance / Ring buffer collector */
+    ret = flb_sched_timer_cb_create(config->sched,
+                                    FLB_SCHED_TIMER_CB_PERM,
+                                    rb_ms, flb_input_chunk_ring_buffer_collector,
+                                    config, NULL);
+    if (ret == -1) {
+        flb_error("[engine] could not schedule permanent callback");
+        return -1;
+    }
+
     /* Signal that we have started */
     flb_engine_started(config);
 
     ret = sb_segregate_chunks(config);
 
-    if (ret)
-    {
+    if (ret) {
         flb_error("[engine] could not segregate backlog chunks");
         return -2;
     }
 
     while (1) {
+        rb_flush_flag = FLB_FALSE;
+
         mk_event_wait(evl); /* potentially conditional mk_event_wait or mk_event_wait_2 based on bucket queue capacity for one shot events */
         flb_event_priority_live_foreach(event, evl_bktq, evl, FLB_ENGINE_LOOP_MAX_ITER) {
             if (event->type == FLB_ENGINE_EV_CORE) {
                 ret = flb_engine_handle_event(event->fd, event->mask, config);
                 if (ret == FLB_ENGINE_STOP) {
                     if (config->grace_count == 0) {
-                        flb_warn("[engine] service will shutdown in max %u seconds",
+                        if (config->grace >= 0) {
+                            flb_warn("[engine] service will shutdown in max %u seconds",
                                  config->grace);
+                        } else {
+                            flb_warn("[engine] service will shutdown when all remaining tasks are flushed");
+                        }
+
+                        /* Reschedule retry tasks to be retried immediately */
+                        flb_engine_reschedule_retries(config);
                     }
+
+                    /* mark the runtime as the ingestion is not active and that we are in shutting down mode */
+                    config->is_ingestion_active = FLB_FALSE;
+                    config->is_shutting_down = FLB_TRUE;
+
+                    /* pause all input plugin instances */
+                    flb_input_pause_all(config);
 
                     /*
                      * We are preparing to shutdown, we give a graceful time
@@ -800,14 +894,16 @@ int flb_engine_start(struct flb_config *config)
                     config->grace_count++;
 
                     /*
-                     * Grace period has finished, but we need to check if there is
+                     * Grace timeout has finished, but we need to check if there is
                      * any pending running task. A running task is associated to an
                      * output co-routine, since we don't know what's the state or
                      * resources allocated by that co-routine, the best thing is to
                      * wait again for the grace period and re-check again.
+                     * If grace period is set to -1, keep trying to shut down until all
+                     * tasks and retries get flushed.
                      */
                     ret = flb_task_running_count(config);
-                    if (ret > 0 && config->grace_count < config->grace) {
+                    if (ret > 0 && (config->grace_count < config->grace || config->grace == -1)) {
                         if (config->grace_count == 1) {
                             flb_task_running_print(config);
                         }
@@ -847,22 +943,23 @@ int flb_engine_start(struct flb_config *config)
                 event->handler(event);
             }
             else if (event->type == FLB_ENGINE_EV_THREAD) {
-                struct flb_upstream_conn *u_conn;
-                struct flb_coro *co;
+                struct flb_connection *connection;
 
                 /*
                  * Check if we have some co-routine associated to this event,
                  * if so, resume the co-routine
                  */
-                u_conn = (struct flb_upstream_conn *) event;
-                co = u_conn->coro;
-                if (co) {
-                    flb_trace("[engine] resuming coroutine=%p", co);
-                    flb_coro_resume(co);
+
+                connection = (struct flb_connection *) event;
+
+                if (connection->coroutine) {
+                    flb_trace("[engine] resuming coroutine=%p", connection->coroutine);
+
+                    flb_coro_resume(connection->coroutine);
                 }
             }
             else if (event->type == FLB_ENGINE_EV_OUTPUT) {
-                ts = cmt_time_now();
+                ts = cfl_time_now();
 
                 /*
                  * Event originated by an output plugin. likely a Task return
@@ -871,9 +968,18 @@ int flb_engine_start(struct flb_config *config)
                 handle_output_event(event->fd, ts, config);
             }
             else if (event->type == FLB_ENGINE_EV_INPUT) {
-                ts = cmt_time_now();
+                ts = cfl_time_now();
                 handle_input_event(event->fd, ts, config);
             }
+            else if(event->type == FLB_ENGINE_EV_THREAD_INPUT) {
+                flb_engine_drain_ring_buffer_signal_channel(event->fd);
+
+                rb_flush_flag = FLB_TRUE;
+            }
+        }
+
+        if (rb_flush_flag) {
+            flb_input_chunk_ring_buffer_collector(config, NULL);
         }
 
         /* Cleanup functions associated to events and timers */
@@ -881,6 +987,7 @@ int flb_engine_start(struct flb_config *config)
             flb_net_dns_lookup_context_cleanup(&dns_ctx);
             flb_sched_timer_cleanup(config->sched);
             flb_upstream_conn_pending_destroy_list(&config->upstreams);
+            flb_downstream_conn_pending_destroy_list(&config->downstreams);
 
             /*
             * depend on main thread to clean up expired message
@@ -912,8 +1019,8 @@ int flb_engine_shutdown(struct flb_config *config)
     flb_router_exit(config);
 
     /* cleanup plugins */
-    flb_filter_exit(config);
     flb_input_exit_all(config);
+    flb_filter_exit(config);
     flb_output_exit(config);
     flb_custom_exit(config);
 
@@ -939,12 +1046,7 @@ int flb_engine_shutdown(struct flb_config *config)
 int flb_engine_exit(struct flb_config *config)
 {
     int ret;
-    uint64_t val = FLB_ENGINE_EV_STOP;
-
-    config->is_ingestion_active = FLB_FALSE;
-    config->is_shutting_down = FLB_TRUE;
-
-    flb_input_pause_all(config);
+    uint64_t val;
 
     val = FLB_ENGINE_EV_STOP;
     ret = flb_pipe_w(config->ch_manager[1], &val, sizeof(uint64_t));

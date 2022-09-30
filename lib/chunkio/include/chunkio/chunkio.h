@@ -54,13 +54,15 @@
 /* defaults */
 #define CIO_MAX_CHUNKS_UP  64   /* default limit for cio_ctx->max_chunks_up */
 
+struct cio_ctx;
+
 struct cio_options {
     int flags;
     char *root_path;
 
     /* logging */
     int log_level;
-    void (*log_cb)(void *, int, const char *, int, const char *);
+    int (*log_cb)(struct cio_ctx *, int, const char *, int, char *);
 
     char *user;
     char *group;

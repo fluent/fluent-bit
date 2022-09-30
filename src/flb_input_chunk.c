@@ -24,6 +24,7 @@
 	op->name, op->fs_chunks_size, mod, flb_input_chunk_get_name(chunk));}
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_input_plugin.h>
@@ -34,7 +35,15 @@
 #include <fluent-bit/flb_routes_mask.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/stream_processor/flb_sp.h>
+#include <fluent-bit/flb_ring_buffer.h>
 #include <chunkio/chunkio.h>
+#include <monkey/mk_core.h>
+
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+#include <fluent-bit/flb_chunk_trace.h>
+#endif /* FLB_HAVE_CHUNK_TRACE */
+
 
 #define BLOCK_UNTIL_KEYPRESS() {char temp_keypress_buffer; read(0, &temp_keypress_buffer, 1);}
 
@@ -42,6 +51,15 @@
 #define FLB_INPUT_CHUNK_RELEASE_SCOPE_GLOBAL 1
 
 #ifdef FLB_HAVE_IN_STORAGE_BACKLOG
+
+struct input_chunk_raw {
+    struct flb_input_instance *ins;
+    flb_sds_t tag;
+    size_t records;
+    void *buf_data;
+    size_t buf_size;
+};
+
 
 extern ssize_t sb_get_releasable_output_queue_space(struct flb_output_instance *output_plugin,
                                                     size_t                      required_space);
@@ -414,7 +432,6 @@ int flb_input_chunk_release_space_compound(
                                                    FLB_INPUT_CHUNK_RELEASE_SCOPE_LOCAL);
 
             if (result) {
-                printf("FAILED\n");
                 return -5;
             }
 
@@ -619,7 +636,6 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
     if (count != 0) {
         flb_error("[input chunk] fail to drop enough chunks in order to place new data");
     }
-
     return 0;
 }
 
@@ -805,7 +821,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
     ic->total_records = records;
     if (ic->total_records > 0) {
         /* timestamp */
-        ts = cmt_time_now();
+        ts = cfl_time_now();
 
         /* fluentbit_input_records_total */
         cmt_counter_add(in->cmt_records, ts, ic->total_records,
@@ -1001,10 +1017,10 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     }
 
     if (flb_input_event_type_is_log(in)) {
-        flb_hash_add(in->ht_log_chunks, tag, tag_len, ic, 0);
+        flb_hash_table_add(in->ht_log_chunks, tag, tag_len, ic, 0);
     }
     else if (flb_input_event_type_is_metric(in)) {
-        flb_hash_add(in->ht_metric_chunks, tag, tag_len, ic, 0);
+        flb_hash_table_add(in->ht_metric_chunks, tag, tag_len, ic, 0);
     }
 
     return ic;
@@ -1076,14 +1092,20 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
          * chunk for a specific Tag.
          */
         if (ic->event_type == FLB_INPUT_LOGS) {
-            flb_hash_del_ptr(ic->in->ht_log_chunks,
-                             tag_buf, tag_len, (void *) ic);
+            flb_hash_table_del_ptr(ic->in->ht_log_chunks,
+                                   tag_buf, tag_len, (void *) ic);
         }
         else if (ic->event_type == FLB_INPUT_METRICS) {
-            flb_hash_del_ptr(ic->in->ht_metric_chunks,
-                             tag_buf, tag_len, (void *) ic);
+            flb_hash_table_del_ptr(ic->in->ht_metric_chunks,
+                                   tag_buf, tag_len, (void *) ic);
         }
     }
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+    if (ic->trace != NULL) {
+        flb_chunk_trace_destroy(ic->trace);
+    }
+#endif /* FLB_HAVE_CHUNK_TRACE */
 
     cio_chunk_close(ic->chunk, del);
     mk_list_del(&ic->_head);
@@ -1111,12 +1133,12 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
     }
 
     if (in->event_type == FLB_INPUT_LOGS) {
-        id = flb_hash_get(in->ht_log_chunks, tag, tag_len,
-                          (void *) &ic, &out_size);
+        id = flb_hash_table_get(in->ht_log_chunks, tag, tag_len,
+                                (void *) &ic, &out_size);
     }
     else if (in->event_type == FLB_INPUT_METRICS) {
-        id = flb_hash_get(in->ht_metric_chunks, tag, tag_len,
-                          (void *) &ic, &out_size);
+        id = flb_hash_table_get(in->ht_metric_chunks, tag, tag_len,
+                                (void *) &ic, &out_size);
     }
 
     if (id >= 0) {
@@ -1157,7 +1179,6 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
         if (new_chunk || flb_routes_mask_is_empty(ic->routes_mask) == FLB_TRUE) {
             flb_input_chunk_destroy(ic, FLB_TRUE);
         }
-
         return NULL;
     }
 
@@ -1181,8 +1202,7 @@ static inline int flb_input_chunk_is_storage_overlimit(struct flb_input_instance
 {
     struct flb_storage_input *storage = (struct flb_storage_input *)i->storage;
 
-
-    if (storage->type == CIO_STORE_FS) {
+    if (storage->type == FLB_STORAGE_FS) {
         if (i->storage_pause_on_chunks_overlimit == FLB_TRUE) {
             if (storage->cio->total_chunks >= storage->cio->max_chunks_up) {
                 return FLB_TRUE;
@@ -1220,6 +1240,7 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
 
     /* Gather total number of enqueued bytes */
     total = flb_input_chunk_total_size(in);
+
     /* Register the total into the context variable */
     in->mem_chunks_size = total;
 
@@ -1268,28 +1289,32 @@ static inline int flb_input_chunk_protect(struct flb_input_instance *i)
                  i->name,
                  storage->cio->total_chunks,
                  storage->cio->max_chunks_up);
-
-        if (!flb_input_buf_paused(i)) {
-            if (i->p->cb_pause) {
-                i->p->cb_pause(i->context, i->config);
-            }
-        }
+        flb_input_pause(i);
         i->storage_buf_status = FLB_INPUT_PAUSED;
         return FLB_TRUE;
     }
 
-    if (storage->type == CIO_STORE_FS) {
+    if (storage->type == FLB_STORAGE_FS) {
         return FLB_FALSE;
     }
 
     if (flb_input_chunk_is_mem_overlimit(i) == FLB_TRUE) {
+        /*
+         * if the plugin is already overlimit and the strategy is based on
+         * a memory-ring-buffer logic, do not pause the plugin, upon next
+         * try of ingestion 'memrb' will make sure to release some bytes.
+         */
+        if (i->storage_type == FLB_STORAGE_MEMRB) {
+            return FLB_FALSE;
+        }
+
+        /*
+         * The plugin is using 'memory' buffering only and already reached
+         * it limit, just pause the ingestion.
+         */
         flb_warn("[input] %s paused (mem buf overlimit)",
                  i->name);
-        if (!flb_input_buf_paused(i)) {
-            if (i->p->cb_pause) {
-                i->p->cb_pause(i->context, i->config);
-            }
-        }
+        flb_input_pause(i);
         i->mem_buf_status = FLB_INPUT_PAUSED;
         return FLB_TRUE;
     }
@@ -1335,7 +1360,6 @@ int flb_input_chunk_set_up_down(struct flb_input_chunk *ic)
 int flb_input_chunk_is_up(struct flb_input_chunk *ic)
 {
     return cio_chunk_is_up(ic->chunk);
-
 }
 
 int flb_input_chunk_down(struct flb_input_chunk *ic)
@@ -1356,6 +1380,65 @@ int flb_input_chunk_set_up(struct flb_input_chunk *ic)
     return 0;
 }
 
+static int memrb_input_chunk_release_space(struct flb_input_instance *ins,
+                                           size_t required_space,
+                                           size_t *dropped_chunks, size_t *dropped_bytes)
+{
+    int ret;
+    int released;
+    size_t removed_chunks = 0;
+    ssize_t chunk_size;
+    ssize_t released_space = 0;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_input_chunk *ic;
+
+    mk_list_foreach_safe(head, tmp, &ins->chunks) {
+        ic = mk_list_entry(head, struct flb_input_chunk, _head);
+
+        /* check if is there any task or no users associated */
+        ret = flb_input_chunk_is_task_safe_delete(ic->task);
+        if (ret == FLB_FALSE) {
+            continue;
+        }
+
+        /* get chunk size */
+        chunk_size = flb_input_chunk_get_real_size(ic);
+
+        released = FLB_FALSE;
+        if (ic->task != NULL) {
+            if (ic->task->users == 0) {
+                flb_task_destroy(ic->task, FLB_TRUE);
+                released = FLB_TRUE;
+            }
+        }
+        else {
+            flb_input_chunk_destroy(ic, FLB_TRUE);
+            released = FLB_TRUE;
+        }
+
+        if (released) {
+            released_space += chunk_size;
+            removed_chunks++;
+        }
+
+        if (released_space >= required_space) {
+            break;
+        }
+    }
+
+    /* no matter if we succeeded or not, set the counters */
+    *dropped_bytes = released_space;
+    *dropped_chunks = removed_chunks;
+
+    /* set the final status of the operation */
+    if (released_space >= required_space) {
+        return 0;
+    }
+
+    return -1;
+}
+
 /* Append a RAW MessagPack buffer to the input instance */
 static int input_chunk_append_raw(struct flb_input_instance *in,
                                   size_t n_records,
@@ -1367,12 +1450,49 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     int min;
     int new_chunk = FLB_FALSE;
     uint64_t ts;
+    char *name;
+    size_t dropped_chunks;
+    size_t dropped_bytes;
     size_t content_size;
     size_t real_diff;
     size_t real_size;
     size_t pre_real_size;
     struct flb_input_chunk *ic;
     struct flb_storage_input *si;
+
+    /* memory ring-buffer checker */
+    if (in->storage_type == FLB_STORAGE_MEMRB) {
+        /* check if we are overlimit */
+        ret = flb_input_chunk_is_mem_overlimit(in);
+        if (ret) {
+            /* reset counters */
+            dropped_chunks = 0;
+            dropped_bytes = 0;
+
+            /* try to release 'buf_size' */
+            ret = memrb_input_chunk_release_space(in, buf_size,
+                                                  &dropped_chunks, &dropped_bytes);
+
+            /* update metrics if required */
+            if (dropped_chunks > 0 || dropped_bytes > 0) {
+                /* timestamp and input plugin name for label */
+                ts = cfl_time_now();
+                name = (char *) flb_input_name(in);
+
+                /* update counters */
+                cmt_counter_add(in->cmt_memrb_dropped_chunks, ts,
+                                dropped_chunks, 1, (char *[]) {name});
+
+                cmt_counter_add(in->cmt_memrb_dropped_bytes, ts,
+                                dropped_bytes, 1, (char *[]) {name});
+            }
+
+            if (ret != 0) {
+                /* we could not allocate the required space, just return */
+                return -1;
+            }
+        }
+    }
 
     /* Check if the input plugin has been paused */
     if (flb_input_buf_paused(in) == FLB_TRUE) {
@@ -1435,7 +1555,8 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
      */
     if (new_chunk == FLB_TRUE) {
         pre_real_size = 0;
-    } else {
+    }
+    else {
         pre_real_size = flb_input_chunk_get_real_size(ic);
     }
 
@@ -1448,6 +1569,10 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         return -1;
     }
 
+#ifdef FLB_HAVE_CHUNK_TRACE
+    flb_chunk_trace_do_input(ic);
+#endif /* FLB_HAVE_CHUNK_TRACE */
+
     /* Update 'input' metrics */
 #ifdef FLB_HAVE_METRICS
     if (ret == CIO_OK) {
@@ -1457,7 +1582,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
 
     if (ic->total_records > 0) {
         /* timestamp */
-        ts = cmt_time_now();
+        ts = cfl_time_now();
 
         /* fluentbit_input_records_total */
         cmt_counter_add(in->cmt_records, ts, ic->added_records,
@@ -1550,7 +1675,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
      */
     si = (struct flb_storage_input *) in->storage;
     if (flb_input_chunk_is_mem_overlimit(in) == FLB_TRUE &&
-        si->type == CIO_STORE_FS) {
+        si->type == FLB_STORAGE_FS) {
         if (cio_chunk_is_up(ic->chunk) == CIO_TRUE) {
             /*
              * If we are already over limit, a sub-sequent data ingestion
@@ -1577,19 +1702,160 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         flb_input_chunk_update_output_instances(ic, real_diff);
     }
 
+#ifdef FLB_HAVE_CHUNK_TRACE
+    if (ic->trace) {
+        flb_chunk_trace_pre_output(ic->trace);
+    }
+#endif /* FLB_HAVE_CHUNK_TRACE */
+
     flb_input_chunk_protect(in);
+    return 0;
+}
+
+static void destroy_chunk_raw(struct input_chunk_raw *cr)
+{
+    if (cr->buf_data) {
+        flb_free(cr->buf_data);
+    }
+
+    if (cr->tag) {
+        flb_sds_destroy(cr->tag);
+    }
+
+    flb_free(cr);
+}
+
+static int append_raw_to_ring_buffer(struct flb_input_instance *ins,
+                                     const char *tag, size_t tag_len,
+                                     size_t records,
+                                     const void *buf, size_t buf_size)
+
+{
+    int ret;
+    int retries = 0;
+    int retry_limit = 10;
+    struct input_chunk_raw *cr;
+
+    cr = flb_calloc(1, sizeof(struct input_chunk_raw));
+    if (!cr) {
+        flb_errno();
+        return -1;
+    }
+    cr->ins = ins;
+
+    if (tag && tag_len > 0) {
+        cr->tag = flb_sds_create_len(tag, tag_len);
+        if (!cr->tag) {
+            flb_free(cr);
+            return -1;
+        }
+    }
+    else {
+        cr->tag = NULL;
+    }
+
+    cr->records = records;
+    cr->buf_data = flb_malloc(buf_size);
+    if (!cr->buf_data) {
+        flb_errno();
+        destroy_chunk_raw(cr);
+        return -1;
+    }
+
+    /*
+     * this memory copy is just a simple overhead, the problem we have is that
+     * input instances always assume that they have to release their buffer since
+     * the append raw operation already did a copy. Not a big issue but maybe this
+     * is a tradeoff...
+     */
+    memcpy(cr->buf_data, buf, buf_size);
+    cr->buf_size = buf_size;
+
+
+
+retry:
+    /*
+     * There is a little chance that the ring buffer is full or due to saturation
+     * from the main thread the data is not being consumed. On this scenario we
+     * retry up to 'retry_limit' times with a little wait time.
+     */
+    if (retries >= retry_limit) {
+        flb_plg_error(ins, "could not enqueue records into the ring buffer");
+        destroy_chunk_raw(cr);
+        return -1;
+    }
+
+    /* append chunk raw context to the ring buffer */
+    ret = flb_ring_buffer_write(ins->rb, (void *) &cr, sizeof(cr));
+    if (ret == -1) {
+        printf("[%s] failed buffer write, retries=%i\n",
+               flb_input_name(ins), retries); fflush(stdout);
+
+        /* sleep for 100000 microseconds (100 milliseconds) */
+        usleep(100000);
+        retries++;
+        goto retry;
+    }
 
     return 0;
+}
+
+void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data)
+{
+    int ret;
+    int tag_len = 0;
+    struct mk_list *head;
+    struct flb_input_instance *ins;
+    struct input_chunk_raw *cr;
+
+    mk_list_foreach(head, &ctx->inputs) {
+        ins = mk_list_entry(head, struct flb_input_instance, _head);
+        cr = NULL;
+
+        while ((ret = flb_ring_buffer_read(ins->rb,
+                                           (void *) &cr,
+                                           sizeof(cr))) == 0) {
+            if (cr) {
+                if (cr->tag) {
+                    tag_len = flb_sds_len(cr->tag);
+                }
+                else {
+                    tag_len = 0;
+                }
+
+                input_chunk_append_raw(cr->ins, cr->records,
+                                       cr->tag, tag_len,
+                                       cr->buf_data, cr->buf_size);
+                destroy_chunk_raw(cr);
+            }
+            cr = NULL;
+        }
+
+        ins->rb->flush_pending = FLB_FALSE;
+    }
 }
 
 int flb_input_chunk_append_raw(struct flb_input_instance *in,
                                const char *tag, size_t tag_len,
                                const void *buf, size_t buf_size)
 {
+    int ret;
     size_t records;
 
     records = flb_mp_count(buf, buf_size);
-    return input_chunk_append_raw(in, records, tag, tag_len, buf, buf_size);
+
+    /*
+     * If the plugin instance registering the data runs in a separate thread, we must
+     * add the data reference to the ring buffer.
+     */
+    if (flb_input_is_threaded(in)) {
+        ret = append_raw_to_ring_buffer(in, tag, tag_len, records, buf, buf_size);
+    }
+    else {
+        ret = input_chunk_append_raw(in, records, tag, tag_len, buf, buf_size);
+    }
+
+    return ret;
 }
 
 int flb_input_chunk_append_raw2(struct flb_input_instance *in,
@@ -1597,7 +1863,16 @@ int flb_input_chunk_append_raw2(struct flb_input_instance *in,
                                 const char *tag, size_t tag_len,
                                 const void *buf, size_t buf_size)
 {
-    return input_chunk_append_raw(in, records, tag, tag_len, buf, buf_size);
+    int ret;
+
+    if (flb_input_is_threaded(in)) {
+        ret = append_raw_to_ring_buffer(in, tag, tag_len, records, buf, buf_size);
+    }
+    else {
+        ret = input_chunk_append_raw(in, records, tag, tag_len, buf, buf_size);
+    }
+
+    return ret;
 }
 
 /* Retrieve a raw buffer from a dyntag node */

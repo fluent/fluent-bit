@@ -141,6 +141,8 @@ int flb_sched_timer_cb_disable(struct flb_sched_timer *timer);
 int flb_sched_timer_cb_destroy(struct flb_sched_timer *timer);
 void flb_sched_timer_invalidate(struct flb_sched_timer *timer);
 int flb_sched_timer_cleanup(struct flb_sched *sched);
+int flb_sched_retry_now(struct flb_config *config, 
+                        struct flb_task_retry *retry);
 
 /* Sched context api for multithread environment */
 void flb_sched_ctx_init();

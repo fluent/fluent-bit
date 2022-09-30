@@ -203,6 +203,7 @@ static flb_sockfd_t connect_tcp(char *in_host, int in_port)
     return fd;
 }
 
+#ifdef FLB_HAVE_UNIX_SOCKET
 static flb_sockfd_t connect_tcp_unix(char *path)
 {
     flb_sockfd_t fd;
@@ -263,6 +264,7 @@ static flb_sockfd_t init_udp_unix(char *path, struct sockaddr_un *sun)
     }
     return fd;
 }
+#endif
 
 static int init_udp(char *in_host, int in_port, struct sockaddr_in *addr)
 {
@@ -860,7 +862,9 @@ TEST_LIST = {
     {"syslog_tcp_port", flb_test_syslog_tcp_port},
     {"syslog_udp_port", flb_test_syslog_udp_port},
     {"syslog_unknown_mode", flb_test_syslog_unknown_mode},
+#ifdef FLB_HAVE_UNIX_SOCKET
     {"syslog_unix_perm", flb_test_syslog_unix_perm},
+#endif
     {"syslog_rfc3164", flb_test_syslog_rfc3164},
 #ifdef FLB_HAVE_UNIX_SOCKET
     {"syslog_tcp_unix", flb_test_syslog_tcp_unix},

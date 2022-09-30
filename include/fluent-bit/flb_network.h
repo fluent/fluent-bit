@@ -28,6 +28,15 @@
 #include <fluent-bit/flb_net_dns.h>
 #include <ares.h>
 
+#define FLB_NETWORK_DEFAULT_BACKLOG_SIZE              128
+#define FLB_NETWORK_UNIX_SOCKET_PEER_ADDRESS_TEMPLATE "pid_%s"
+#define FLB_NETWORK_ADDRESS_UNAVAILABLE               "unavailable"
+
+/* FLB_NETWORK_MAX_UNIX_ADDRESS_LENGTH should be enough for the
+ * string "PID " plus the string form of a signed 32 bit integer
+ * and a NULL character.
+ */
+
 /* Network connection setup */
 struct flb_net_setup {
     /* enable/disable keepalive support */
@@ -38,6 +47,14 @@ struct flb_net_setup {
 
     /* max time in seconds to wait for a established connection */
     int connect_timeout;
+
+    /* max time in seconds an incoming connection can take including the
+     * TLS handshake
+     */
+    int accept_timeout;
+
+    /* accept timeout log error (default: true) */
+    int accept_timeout_log_error;
 
     /* max time in seconds to wait for blocking io calls */
     int io_timeout;
@@ -63,12 +80,12 @@ struct flb_net_setup {
 
 /* Defines a host service and it properties */
 struct flb_net_host {
-    int ipv6;              /* IPv6 required ?      */
-    flb_sds_t address;     /* Original address     */
-    int port;              /* TCP port             */
-    flb_sds_t name;        /* Hostname             */
-    flb_sds_t listen;      /* Listen interface     */
-    struct flb_uri *uri;   /* Extra URI parameters */
+    int ipv6;              /* IPv6 required ?        */
+    flb_sds_t address;     /* Original address       */
+    int port;              /* TCP port               */
+    flb_sds_t name;        /* Hostname               */
+    flb_sds_t listen;      /* Listen interface       */
+    struct flb_uri *uri;   /* Extra URI parameters   */
 };
 
 /* Defines an async DNS lookup context */
@@ -135,7 +152,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
                                  char *source_addr, int connect_timeout,
                                  int is_async,
                                  void *async_ctx,
-                                 struct flb_upstream_conn *u_conn);
+                                 struct flb_connection *u_conn);
 
 flb_sockfd_t flb_net_udp_connect(const char *host, unsigned long port,
                                  char *source_addr);
@@ -143,13 +160,49 @@ flb_sockfd_t flb_net_udp_connect(const char *host, unsigned long port,
 int flb_net_tcp_fd_connect(flb_sockfd_t fd, const char *host, unsigned long port);
 flb_sockfd_t flb_net_server(const char *port, const char *listen_addr);
 flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr);
+flb_sockfd_t flb_net_server_unix(const char *listen_path, int stream_mode,
+                                 int backlog);
 int flb_net_bind(flb_sockfd_t fd, const struct sockaddr *addr,
                  socklen_t addrlen, int backlog);
 int flb_net_bind_udp(flb_sockfd_t fd, const struct sockaddr *addr,
                  socklen_t addrlen);
 flb_sockfd_t flb_net_accept(flb_sockfd_t server_fd);
+
 int flb_net_address_to_str(int family, const struct sockaddr *addr,
                            char *output_buffer, size_t output_buffer_size);
-int flb_net_socket_ip_str(flb_sockfd_t fd, char **buf, int size, unsigned long *len);
+
+int flb_net_socket_peer_address(flb_sockfd_t fd,
+                                struct sockaddr_storage *output_buffer);
+
+int flb_net_socket_address_info(flb_sockfd_t fd,
+                                struct sockaddr_storage *address,
+                                unsigned short int *port_output_buffer,
+                                char *str_output_buffer,
+                                int str_output_buffer_size,
+                                size_t *str_output_data_size);
+
+int flb_net_socket_peer_ip_str(flb_sockfd_t fd,
+                               char *output_buffer,
+                               int output_buffer_size,
+                               size_t *output_data_size,
+                               int *output_address_family);
+
+int flb_net_socket_peer_ip_raw(flb_sockfd_t fd,
+                               char *output_buffer,
+                               int output_buffer_size,
+                               size_t *output_data_size,
+                               int *output_address_family);
+
+int flb_net_socket_peer_port(flb_sockfd_t fd,
+                             unsigned short int *output_buffer);
+
+int flb_net_socket_peer_info(flb_sockfd_t fd,
+                             unsigned short int *port_output_buffer,
+                             struct sockaddr_storage *raw_output_buffer,
+                             char *str_output_buffer,
+                             int str_output_buffer_size,
+                             size_t *str_output_data_size);
+
+size_t flb_network_address_size(struct sockaddr_storage *address);
 
 #endif

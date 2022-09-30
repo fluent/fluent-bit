@@ -7,7 +7,7 @@ on:
     inputs:
       version:
         type: string
-        description: The version we want to release from staging.
+        description: The version we want to release from staging, ensure this is numeric without the v prefix for the tag.
         required: true
       docker-image:
         type: string
@@ -99,6 +99,7 @@ jobs:
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: "us-east-1"
       shell: bash
 
     - name: GPG set up keys for signing
@@ -124,6 +125,7 @@ jobs:
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: "us-east-1"
       shell: bash
 
   # We have two options here:
@@ -218,6 +220,25 @@ jobs:
           RELEASE_CREDS: ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ matrix.tag }}
         shell: bash
+
+  staging-release-images-dockerhub-update:
+    name: Update Dockerhub description
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    environment: release
+    needs: staging-release-images
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Docker Hub Description
+        uses: peter-evans/dockerhub-description@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+          repository: ${{ github.repository }}
+          readme-filepath: ./dockerfiles/dockerhub-description.md
+          short-description: 'Fluent Bit, lightweight logs and metrics collector and forwarder'
 
   staging-release-images-sign:
     name: Sign container image manifests

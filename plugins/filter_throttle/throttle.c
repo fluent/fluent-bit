@@ -35,6 +35,8 @@
 #include <stdio.h>
 #include <sys/types.h>
 
+pthread_mutex_t throttle_mut;
+
 
 static bool apply_suffix (double *x, char suffix_char)
 {
@@ -74,6 +76,7 @@ void *time_ticker(void *args)
     while (1) {
         flb_time_get(&ftm);
         timestamp = flb_time_to_double(&ftm);
+        pthread_mutex_lock(&throttle_mut);
         window_add(ctx->hash, timestamp, 0);
 
         ctx->hash->current_timestamp = timestamp;
@@ -86,7 +89,7 @@ void *time_ticker(void *args)
                          ctx->window_size,
                          ctx->hash->total / ctx->hash->size);
         }
-
+        pthread_mutex_unlock(&throttle_mut);
         /* sleep is a cancelable function */
         sleep(ctx->ticker_data.seconds);
     }
@@ -154,6 +157,8 @@ static int cb_throttle_init(struct flb_filter_instance *f_ins,
     int ret;
     struct flb_filter_throttle_ctx *ctx;
 
+    pthread_mutex_init(&throttle_mut, NULL);
+
     /* Create context */
     ctx = flb_malloc(sizeof(struct flb_filter_throttle_ctx));
     if (!ctx) {
@@ -213,8 +218,9 @@ static int cb_throttle_filter(const void *data, size_t bytes,
         }
 
         old_size++;
-
+        pthread_mutex_lock(&throttle_mut);
         ret = throttle_data(context);
+        pthread_mutex_unlock(&throttle_mut);
         if (ret == THROTTLE_RET_KEEP) {
             msgpack_pack_object(&tmp_pck, root);
             new_size++;
@@ -235,7 +241,6 @@ static int cb_throttle_filter(const void *data, size_t bytes,
     /* link new buffers */
     *out_buf   = tmp_sbuf.data;
     *out_size = tmp_sbuf.size;
-
     return FLB_FILTER_MODIFIED;
 }
 

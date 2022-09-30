@@ -807,6 +807,13 @@ const char *flb_output_get_property(const char *key, struct flb_output_instance 
     return flb_config_prop_get(key, &ins->properties);
 }
 
+#ifdef FLB_HAVE_METRICS
+void *flb_output_get_cmt_instance(struct flb_output_instance *ins)
+{
+    return (void *)ins->cmt;
+}
+#endif
+
 /* Trigger the output plugins setup callbacks to prepare them. */
 int flb_output_init_all(struct flb_config *config)
 {
@@ -857,7 +864,7 @@ int flb_output_init_all(struct flb_config *config)
         name = (char *) flb_output_name(ins);
 
         /* get timestamp */
-        ts = cmt_time_now();
+        ts = cfl_time_now();
 
         /* CMetrics */
         ins->cmt = cmt_create();
@@ -948,7 +955,7 @@ int flb_output_init_all(struct flb_config *config)
 #ifdef FLB_HAVE_PROXY_GO
         /* Proxy plugins have their own initialization */
         if (p->type == FLB_OUTPUT_PLUGIN_PROXY) {
-            ret = flb_plugin_proxy_init(p->proxy, ins, config);
+            ret = flb_plugin_proxy_output_init(p->proxy, ins, config);
             if (ret == -1) {
                 flb_output_instance_destroy(ins);
                 return -1;
@@ -968,7 +975,8 @@ int flb_output_init_all(struct flb_config *config)
 
 #ifdef FLB_HAVE_TLS
         if (ins->use_tls == FLB_TRUE) {
-            ins->tls = flb_tls_create(ins->tls_verify,
+            ins->tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                      ins->tls_verify,
                                       ins->tls_debug,
                                       ins->tls_vhost,
                                       ins->tls_ca_path,
@@ -1098,6 +1106,18 @@ int flb_output_check(struct flb_config *config)
     return 0;
 }
 
+/* Check output plugin's log level.
+ * Not for core plugins but for Golang plugins.
+ * Golang plugins do not have thread-local flb_worker_ctx information. */
+int flb_output_log_check(struct flb_output_instance *ins, int l)
+{
+    if (ins->log_level < l) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
 /*
  * Output plugins might have enabled certain features that have not been passed
  * directly to the upstream context. In order to avoid let plugins validate specific
@@ -1130,19 +1150,21 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
     }
 
     /* Set flags */
-    u->flags |= flags;
+    flb_stream_enable_flags(&u->base, flags);
 
     /*
      * If the output plugin flush callbacks will run in multiple threads, enable
      * the thread safe mode for the Upstream context.
      */
     if (ins->tp_workers > 0) {
-        flb_upstream_thread_safe(u);
-        mk_list_add(&u->_head, &ins->upstreams);
+        flb_stream_enable_thread_safety(&u->base);
+
+        mk_list_add(&u->base._head, &ins->upstreams);
     }
 
     /* Set networking options 'net.*' received through instance properties */
-    memcpy(&u->net, &ins->net_setup, sizeof(struct flb_net_setup));
+    memcpy(&u->base.net, &ins->net_setup, sizeof(struct flb_net_setup));
+
     return 0;
 }
 

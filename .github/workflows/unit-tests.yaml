@@ -23,49 +23,44 @@ on:
   workflow_dispatch:
 
 jobs:
-  run-unit-tests-amd64:
-    name: ${{ matrix.os }} - ${{ matrix.compiler }} - ${{ matrix.flb_option }} unit tests run on AMD64
-    runs-on: ${{ matrix.os }}
+  run-ubuntu-unit-tests:
+    runs-on: ubuntu-18.04
+    timeout-minutes: 60
     strategy:
-      max-parallel: 48
       fail-fast: false
       matrix:
-        flb_option: [ "-DFLB_JEMALLOC=On", "-DFLB_JEMALLOC=Off", "-DFLB_SMALL=On", "-DSANITIZE_ADDRESS=On", "-DSANITIZE_UNDEFINED=On", "-DFLB_COVERAGE=On", "-DFLB_SANITIZE_MEMORY=On", "-DFLB_SANITIZE_THREAD=On"]
-        os: [ubuntu-18.04, macos-latest]
-        compiler: [ gcc, clang ]
+        flb_option:
+          - "-DFLB_JEMALLOC=On"
+          - "-DFLB_JEMALLOC=Off"
+          - "-DFLB_SMALL=On"
+          - "-DSANITIZE_ADDRESS=On"
+          - "-DSANITIZE_UNDEFINED=On"
+          - "-DFLB_COVERAGE=On"
+          - "-DFLB_SANITIZE_MEMORY=On"
+          - "-DFLB_SANITIZE_THREAD=On"
+        compiler:
+          - gcc
+          - clang
         exclude:
-          - os: macos-latest
-            flb_option: "-DFLB_JEMALLOC=On"
-          - os: macos-latest
-            flb_option: "-DFLB_SMALL=On"
-          - os: macos-latest
-            flb_option: "-DSANITIZE_ADDRESS=On"
-          - os: macos-latest
-            flb_option: "-DSANITIZE_UNDEFINED=On"
-          - os: macos-latest
-            flb_option: "-DFLB_COVERAGE=On"
-          - os: macos-latest
-            flb_option: "-DFLB_JEMALLOC=Off"
+          - flb_option: "-DFLB_COVERAGE=On"
             compiler: clang
-          - os: ubuntu-18.04
-            flb_option: "-DFLB_COVERAGE=On"
-            compiler: clang
+    permissions:
+      contents: read
     steps:
-      - name: Setup environment ubuntu-18.04
-        if: matrix.os == 'ubuntu-18.04'
+      - name: Setup environment
         run: |
           sudo apt update
           sudo apt install -yyq gcc-7 g++-7 clang-6.0 libsystemd-dev gcovr libyaml-dev
           sudo ln -s /usr/bin/llvm-symbolizer-6.0 /usr/bin/llvm-symbolizer || true
 
       - uses: actions/checkout@v3
+
       - uses: actions/checkout@v3
         with:
           repository: calyptia/fluent-bit-ci
           path: ci
 
-      - name: Run ci/s/run-unit-tests.sh on ${{ matrix.os }} with ${{ matrix.compiler }} - ${{ matrix.flb_option }}
-        if: matrix.os == 'ubuntu-18.04'
+      - name: ${{ matrix.compiler }} - ${{ matrix.flb_option }}
         run: |
           echo "CC = $CC, CXX = $CXX, FLB_OPT = $FLB_OPT"
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 90
@@ -78,13 +73,37 @@ jobs:
           CXX: ${{ matrix.compiler }}
           FLB_OPT: ${{ matrix.flb_option }}
 
-      - name: Run ci/s/run-unit-tests.sh on ${{ matrix.os }} with ${{ matrix.compiler }} - ${{ matrix.flb_option }}
-        if: matrix.os == 'macos-latest'
+  run-macos-unit-tests:
+    # We chain this after Linux one as there are costs and restrictions associated
+    needs:
+      - run-ubuntu-unit-tests
+    runs-on: macos-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        flb_option:
+          - "-DFLB_JEMALLOC=Off"
+          - "-DFLB_SANITIZE_MEMORY=On"
+          - "-DFLB_SANITIZE_THREAD=On"
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/checkout@v3
+        with:
+          repository: calyptia/fluent-bit-ci
+          path: ci
+
+      - name: ${{ matrix.flb_option }}
+        # Currently MacOS is unsupported so we do not want to fail on any errors here, the unit tests are for information
+        # during review - they should pass still.
+        continue-on-error: true
         run: |
           echo "CC = $CC, CXX = $CXX, FLB_OPT = $FLB_OPT"
           brew update
-          brew install bison flex || true
-          ci/scripts/run-unit-tests.sh || true
+          brew install bison flex openssl || true
+          ci/scripts/run-unit-tests.sh
         env:
           CC: gcc
           CXX: g++
@@ -92,11 +111,16 @@ jobs:
 
   # Required check looks at this so do not remove
   run-all-unit-tests:
-    if: ${{ always() }}
+    if: always()
     runs-on: ubuntu-latest
     name: Unit tests (matrix)
-    needs: run-unit-tests-amd64
+    permissions:
+      contents: none
+    needs:
+      - run-macos-unit-tests
+      - run-ubuntu-unit-tests
     steps:
       - name: Check build matrix status
-        if: ${{ needs.run-unit-tests-amd64.result != 'success' }}
+        # Ignore MacOS failures
+        if: ${{ needs.run-ubuntu-unit-tests.result != 'success' }}
         run: exit 1

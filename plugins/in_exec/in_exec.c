@@ -219,7 +219,7 @@ static int in_exec_init(struct flb_input_instance *in,
     int ret = -1;
 
     /* Allocate space for the configuration */
-    ctx = flb_malloc(sizeof(struct flb_exec));
+    ctx = flb_calloc(1, sizeof(struct flb_exec));
     if (!ctx) {
         return -1;
     }
@@ -329,7 +329,7 @@ static struct flb_config_map config_map[] = {
       "Set the buffer size"
     },
     {
-      FLB_CONFIG_MAP_BOOL, "bool", "false",
+      FLB_CONFIG_MAP_BOOL, "oneshot", "false",
       0, FLB_TRUE, offsetof(struct flb_exec, oneshot),
       "execute the command only once"
     },

@@ -1,0 +1,23 @@
+---
+name: Update Dockerhub description
+
+on:
+  workflow_dispatch:
+
+jobs:
+  update-dockerhub:
+    name: Update Dockerhub description
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Docker Hub Description
+        uses: peter-evans/dockerhub-description@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          readme-filepath: ./dockerfiles/dockerhub-description.md
+          short-description: 'Fluent Bit, lightweight logs and metrics collector and forwarder'

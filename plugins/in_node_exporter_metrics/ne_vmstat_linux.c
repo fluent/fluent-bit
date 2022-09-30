@@ -18,7 +18,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_hash_table.h>
 
 #include <fluent-bit/flb_input_plugin.h>
 
@@ -56,7 +56,7 @@ static int vmstat_configure(struct flb_ne *ctx)
     }
 
     /* Initialize hash table */
-    ctx->vml_ht = flb_hash_create(FLB_HASH_EVICT_NONE, 16, 0);
+    ctx->vml_ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 16, 0);
     if (!ctx->vml_ht) {
         return -1;
     }
@@ -104,8 +104,8 @@ static int vmstat_configure(struct flb_ne *ctx)
             return -1;
         }
 
-        ret = flb_hash_add(ctx->vml_ht,
-                           key->str, flb_sds_len(key->str), u, 0);
+        ret = flb_hash_table_add(ctx->vml_ht,
+                                 key->str, flb_sds_len(key->str), u, 0);
         if (ret == -1) {
             flb_plg_error(ctx->ins,
                           "could not add hash for vmstat metric: %s", key->str);
@@ -144,7 +144,7 @@ static int vmstat_update(struct flb_ne *ctx)
         return -1;
     }
 
-    ts = cmt_time_now();
+    ts = cfl_time_now();
     mk_list_foreach(head, &list) {
         line = mk_list_entry(head, struct flb_slist_entry, _head);
 
@@ -170,9 +170,9 @@ static int vmstat_update(struct flb_ne *ctx)
             continue;
         }
 
-        ret = flb_hash_get(ctx->vml_ht,
-                           key->str, flb_sds_len(key->str),
-                           (void *) &u, &out_size);
+        ret = flb_hash_table_get(ctx->vml_ht,
+                                 key->str, flb_sds_len(key->str),
+                                 (void *) &u, &out_size);
         if (ret == -1) {
             flb_plg_error(ctx->ins,
                           "could not retrieve vmstat hash metric: '%s'", key->str);
@@ -210,7 +210,7 @@ int ne_vmstat_exit(struct flb_ne *ctx)
     }
 
     if (ctx->vml_ht) {
-        flb_hash_destroy(ctx->vml_ht);
+        flb_hash_table_destroy(ctx->vml_ht);
     }
     return 0;
 }

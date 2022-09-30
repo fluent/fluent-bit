@@ -28,6 +28,10 @@
 #include <fluent-bit/flb_metrics.h>
 #include <chunkio/chunkio.h>
 
+#ifdef FLB_HAVE_CHUNK_TRACE
+#include <fluent-bit/flb_chunk_trace.h>
+#endif /* FLB_HAVE_CHUNK_TRACE */
+
 static inline int instance_id(struct flb_config *config)
 {
     struct flb_filter_instance *entry;
@@ -78,6 +82,11 @@ void flb_filter_do(struct flb_input_chunk *ic,
     struct mk_list *head;
     struct flb_filter_instance *f_ins;
     struct flb_input_instance *i_ins = ic->in;
+/* measure time between filters for chunk traces. */
+#ifdef FLB_HAVE_CHUNK_TRACE
+    struct flb_time tm_start;
+    struct flb_time tm_finish;
+#endif /* FLB_HAVE_CHUNK_TRACE */
 
     /* For the incoming Tag make sure to create a NULL terminated reference */
     ntag = flb_malloc(tag_len + 1);
@@ -94,7 +103,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
 
 #ifdef FLB_HAVE_METRICS
     /* timestamp */
-    ts = cmt_time_now();
+    ts = cfl_time_now();
 
     /* Count number of incoming records */
     in_records = ic->added_records;
@@ -120,6 +129,11 @@ void flb_filter_do(struct flb_input_chunk *ic,
             /* where to position the new content if modified ? */
             write_at = (content_size - work_size);
 
+#ifdef FLB_HAVE_CHUNK_TRACE
+            if (ic->trace) {
+                flb_time_get(&tm_start);
+            }
+#endif /* FLB_HAVE_CHUNK_TRACE */
             /* Invoke the filter callback */
             ret = f_ins->p->cb_filter(work_data,      /* msgpack buffer   */
                                       work_size,      /* msgpack size     */
@@ -130,6 +144,11 @@ void flb_filter_do(struct flb_input_chunk *ic,
                                       i_ins,          /* input instance   */
                                       f_ins->context, /* filter priv data */
                                       config);
+#ifdef FLB_HAVE_CHUNK_TRACE
+            if (ic->trace) {
+                flb_time_get(&tm_finish);
+            }
+#endif /* FLB_HAVE_CHUNK_TRACE */
 
 #ifdef FLB_HAVE_METRICS
             name = (char *) flb_filter_name(f_ins);
@@ -141,6 +160,12 @@ void flb_filter_do(struct flb_input_chunk *ic,
                 if (out_size == 0) {
                     /* reset data content length */
                     flb_input_chunk_write_at(ic, write_at, "", 0);
+#ifdef FLB_HAVE_CHUNK_TRACE
+                    if (ic->trace) {
+                        flb_chunk_trace_filter(ic->trace, &tm_start, &tm_finish, (void *)f_ins, "", 0);
+                    }
+#endif /* FLB_HAVE_CHUNK_TRACE */
+
 
 #ifdef FLB_HAVE_METRICS
                     ic->total_records = pre_records;
@@ -194,6 +219,12 @@ void flb_filter_do(struct flb_input_chunk *ic,
                     flb_free(out_buf);
                     continue;
                 }
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+                if (ic->trace) {
+                    flb_chunk_trace_filter(ic->trace, (void *)f_ins, &tm_start, &tm_finish, out_buf, out_size);
+                }
+#endif /* FLB_HAVE_CHUNK_TRACE */
 
                 /* Point back the 'data' pointer to the new address */
                 ret = cio_chunk_get_content(ic->chunk,
@@ -401,7 +432,7 @@ int flb_filter_init_all(struct flb_config *config)
 
         /* Get name or alias for the instance */
         name = (char *) flb_filter_name(ins);
-        ts = cmt_time_now();
+        ts = cfl_time_now();
 
         /* CMetrics */
         ins->cmt = cmt_create();

@@ -31,6 +31,8 @@
 #include <fluent-bit/flb_callback.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_metrics.h>
+#include <fluent-bit/flb_upstream.h>
+#include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/tls/flb_tls.h>
 
 #include <signal.h>
@@ -117,6 +119,7 @@ void flb_init_env()
     flb_tls_init();
     flb_coro_init();
     flb_upstream_init();
+    flb_downstream_init();
     flb_output_prepare();
 
     /* libraries */
@@ -667,7 +670,9 @@ int flb_start(flb_ctx_t *ctx)
         fd = event->fd;
         bytes = flb_pipe_r(fd, &val, sizeof(uint64_t));
         if (bytes <= 0) {
+#if defined(FLB_SYSTEM_MACOS)
             pthread_cancel(tid);
+#endif
             pthread_join(tid, NULL);
             ctx->status = FLB_LIB_ERROR;
             return -1;
@@ -680,6 +685,9 @@ int flb_start(flb_ctx_t *ctx)
         }
         else if (val == FLB_ENGINE_FAILED) {
             flb_error("[lib] backend failed");
+#if defined(FLB_SYSTEM_MACOS)
+            pthread_cancel(tid);
+#endif
             pthread_join(tid, NULL);
             ctx->status = FLB_LIB_ERROR;
             return -1;
@@ -711,6 +719,9 @@ int flb_stop(flb_ctx_t *ctx)
          * the service exited for some reason (plugin action). Always
          * wait and double check that the child thread is not running.
          */
+#if defined(FLB_SYSTEM_MACOS)
+        pthread_cancel(tid);
+#endif
         pthread_join(tid, NULL);
         return 0;
     }
@@ -726,6 +737,9 @@ int flb_stop(flb_ctx_t *ctx)
     flb_debug("[lib] sending STOP signal to the engine");
 
     flb_engine_exit(ctx->config);
+#if defined(FLB_SYSTEM_MACOS)
+    pthread_cancel(tid);
+#endif
     ret = pthread_join(tid, NULL);
     if (ret != 0) {
         flb_errno();

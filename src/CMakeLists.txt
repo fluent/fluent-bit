@@ -12,11 +12,12 @@ set(src
   flb_env.c
   flb_file.c
   flb_uri.c
-  flb_hash.c
+  flb_hash_table.c
   flb_help.c
   flb_pack.c
   flb_pack_gelf.c
   flb_sds.c
+  flb_sds_list.c
   flb_pipe.c
   flb_meta.c
   flb_kernel.c
@@ -41,6 +42,8 @@ set(src
   flb_scheduler.c
   flb_io.c
   flb_storage.c
+  flb_connection.c
+  flb_downstream.c
   flb_upstream.c
   flb_upstream_ha.c
   flb_upstream_node.c
@@ -49,7 +52,9 @@ set(src
   flb_coro.c
   flb_time.c
   flb_sosreport.c
-  flb_sha512.c
+  flb_hmac.c
+  flb_hash.c
+  flb_crypto.c
   flb_random.c
   flb_plugin.c
   flb_gzip.c
@@ -63,6 +68,7 @@ set(src
   flb_typecast.c
   flb_event.c
   flb_base64.c
+  flb_ring_buffer.c
   )
 
 # Config format
@@ -114,11 +120,6 @@ endif()
 
 # Fluent Bit have TLS support
 if(FLB_TLS)
-  configure_file(
-    "${PROJECT_SOURCE_DIR}/src/tls/mbedtls.c.in"
-    "${PROJECT_SOURCE_DIR}/src/tls/mbedtls.c"
-    )
-
   # Register the TLS interface and functions
   set(src
     ${src}
@@ -199,9 +200,9 @@ if(FLB_JEMALLOC)
 endif()
 
 if(FLB_REGEX)
-  set(extra_libs
-    ${extra_libs}
-    "libonigmo")
+  set(FLB_DEPS
+    ${FLB_DEPSS}
+    onigmo-static)
   set(src
     ${src}
     "flb_regex.c"
@@ -228,6 +229,13 @@ if(FLB_STATIC_CONF)
   set(src
     ${src}
     "flb_config_static.c"
+    )
+endif()
+
+if(FLB_CHUNK_TRACE)
+  set(src
+    ${src}
+    "flb_chunk_trace.c"
     )
 endif()
 
@@ -301,6 +309,16 @@ if(FLB_PROXY_GO)
   set(FLB_PROXY_PLUGINS ${FLB_PROXY_PLUGINS} flb-plugin-proxy-go)
 endif()
 
+# WASM runtime
+if(FLB_WASM)
+  add_subdirectory(wasm)
+endif()
+
+# WAMRC compiler
+if(FLB_WAMRC)
+  add_subdirectory(wamrc)
+endif()
+
 # HTTP Server
 if(FLB_HTTP_SERVER)
   set(FLB_DEPS
@@ -317,23 +335,31 @@ set(FLB_DEPS
   )
 endif()
 
+# WASM runtime
+if(FLB_WASM)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    vmlib-static
+    flb-wasm-static)
+endif()
+
 # Set static dependencies
 set(FLB_DEPS
   ${FLB_DEPS}
+  cfl-static
   mk_core
   jsmn
   msgpack-c-static
   mpack-static
   chunkio-static
   miniz
-  xxhash
   cmetrics-static
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}
-  mbedtls
   c-ares
   snappy-c
+  lwrb
   )
 
 if(OPENSSL_FOUND)
@@ -449,7 +475,7 @@ if(FLB_BINARY)
   endif()
 
   if(FLB_REGEX)
-    target_link_libraries(fluent-bit-bin libonigmo)
+    target_link_libraries(fluent-bit-bin onigmo-static)
   endif()
 
   if(FLB_JEMALLOC)

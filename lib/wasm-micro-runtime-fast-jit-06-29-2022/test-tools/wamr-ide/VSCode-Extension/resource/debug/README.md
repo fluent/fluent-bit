@@ -1,0 +1,11 @@
+### If you want to enable `source debugging` for this extension, please build `lldb` firstly following this [instruction](../../../../../doc/source_debugging.md#debugging-with-interpreter).
+
+### After building(`linux` for example), create `bin` folder and `lib` folder respectively in current directory, add following necessary target files into the folders.
+
+    ```shell
+     /llvm/build-lldb/bin/lldb # move this file to resource/debug/bin/
+     /llvm/build-lldb/bin/lldb-vscode # move this file to resource/debug/bin/
+     /llvm/build-lldb/lib/liblldb.so.13 # move this file to resource/debug/lib/
+    ```
+
+### Then you can start the extension and run the execute source debugging by clicking the `debug` button in the extension panel.

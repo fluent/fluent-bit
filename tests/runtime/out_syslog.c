@@ -106,7 +106,7 @@ static void cb_check_str_list(void *ctx, int ffd, int res_ret,
     flb_sds_destroy(out_line);
 }
 
-static struct test_ctx *test_ctx_create(struct flb_lib_out_cb *data)
+static struct test_ctx *test_ctx_create()
 {
     int i_ffd;
     int o_ffd;
@@ -133,7 +133,7 @@ static struct test_ctx *test_ctx_create(struct flb_lib_out_cb *data)
     ctx->i_ffd = i_ffd;
 
     /* Output */
-    o_ffd = flb_output(ctx->flb, (char *) "syslog", (void *) data);
+    o_ffd = flb_output(ctx->flb, (char *) "syslog", NULL);
     ctx->o_ffd = o_ffd;
 
     return ctx;
@@ -151,7 +151,6 @@ static void test_ctx_destroy(struct test_ctx *ctx)
 
 void flb_test_syslog_rfc5424()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -167,7 +166,7 @@ void flb_test_syslog_rfc5424()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -206,7 +205,6 @@ void flb_test_syslog_rfc5424()
 
 void flb_test_severity_key_rfc5424()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -223,7 +221,7 @@ void flb_test_severity_key_rfc5424()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -234,6 +232,63 @@ void flb_test_severity_key_rfc5424()
                          "syslog_format", "rfc5424",
                          "syslog_message_key", "msg",
                          "syslog_severity_key", "s_key",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set_test(ctx->flb, ctx->o_ffd,
+                         "formatter", cb_check_str_list,
+                          &expected, NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf, size);
+    TEST_CHECK(ret >= 0);
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+
+    test_ctx_destroy(ctx);
+}
+
+
+void flb_test_severity_preset_rfc5424()
+{
+    struct test_ctx *ctx;
+    int ret;
+    int num;
+
+    char *buf = "[1, {\"msg\":\"hello world\", \"s_key\":\"5\"}]";
+    size_t size = strlen(buf);
+
+    char *expected_strs[] = {"hello world", "1970-01-01T00:00:01.000000Z", "<13>" /* 1(user-level messages) * 8 + 5(severity) */,
+                             "<13>1 1970-01-01T00:00:01.000000Z - - - - - ﻿hello world"};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+    clear_output_num();
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "syslog_format", "rfc5424",
+                         "syslog_message_key", "msg",
+                         "syslog_severity_preset", "5",
                          NULL);
     TEST_CHECK(ret == 0);
 
@@ -263,7 +318,6 @@ void flb_test_severity_key_rfc5424()
 
 void flb_test_severity_key_rfc3164()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -280,7 +334,7 @@ void flb_test_severity_key_rfc3164()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -318,9 +372,64 @@ void flb_test_severity_key_rfc3164()
     test_ctx_destroy(ctx);
 }
 
+void flb_test_severity_preset_rfc3164()
+{
+    struct test_ctx *ctx;
+    int ret;
+    int num;
+
+    char *buf = "[1, {\"msg\":\"hello world\", \"s_key\":\"5\"}]";
+    size_t size = strlen(buf);
+
+    char *expected_strs[] = {"hello world", "Jan  1 00:00:01", "<13>" /* 1(user-level messages) * 8 + 5(severity) */,
+                             "<13>Jan  1 00:00:01 hello world"};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+    clear_output_num();
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "syslog_format", "rfc3164",
+                         "syslog_message_key", "msg",
+                         "syslog_severity_preset", "5",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set_test(ctx->flb, ctx->o_ffd,
+                         "formatter", cb_check_str_list,
+                          &expected, NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf, size);
+    TEST_CHECK(ret >= 0);
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+
+    test_ctx_destroy(ctx);
+}
+
 void flb_test_facility_key_rfc5424()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -337,7 +446,7 @@ void flb_test_facility_key_rfc5424()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -375,9 +484,64 @@ void flb_test_facility_key_rfc5424()
     test_ctx_destroy(ctx);
 }
 
+void flb_test_facility_preset_rfc5424()
+{
+    struct test_ctx *ctx;
+    int ret;
+    int num;
+
+    char *buf = "[1, {\"msg\":\"hello world\", \"f_key\":\"13\"}]";
+    size_t size = strlen(buf);
+
+    char *expected_strs[] = {"hello world", "1970-01-01T00:00:01.000000Z", "<110>" /* 13(log audit) * 8 + 6(default severity) */,
+                             "<110>1 1970-01-01T00:00:01.000000Z - - - - - ﻿hello world"};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+    clear_output_num();
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "syslog_format", "rfc5424",
+                         "syslog_message_key", "msg",
+                         "syslog_facility_preset", "13",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set_test(ctx->flb, ctx->o_ffd,
+                         "formatter", cb_check_str_list,
+                          &expected, NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf, size);
+    TEST_CHECK(ret >= 0);
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+
+    test_ctx_destroy(ctx);
+}
+
 void flb_test_facility_key_rfc3164()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -394,7 +558,7 @@ void flb_test_facility_key_rfc3164()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -432,9 +596,64 @@ void flb_test_facility_key_rfc3164()
     test_ctx_destroy(ctx);
 }
 
+void flb_test_facility_preset_rfc3164()
+{
+    struct test_ctx *ctx;
+    int ret;
+    int num;
+
+    char *buf = "[1, {\"msg\":\"hello world\", \"f_key\":\"13\"}]";
+    size_t size = strlen(buf);
+
+    char *expected_strs[] = {"hello world", "Jan  1 00:00:01", "<110>" /* 13(log audit) * 8 + 6(default severity) */,
+                             "<110>Jan  1 00:00:01 hello world"};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+    clear_output_num();
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "syslog_format", "rfc3164",
+                         "syslog_message_key", "msg",
+                         "syslog_facility_preset", "13",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set_test(ctx->flb, ctx->o_ffd,
+                         "formatter", cb_check_str_list,
+                          &expected, NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf, size);
+    TEST_CHECK(ret >= 0);
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+
+    test_ctx_destroy(ctx);
+}
+
 void flb_test_severity_facility_key_rfc5424()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -451,7 +670,7 @@ void flb_test_severity_facility_key_rfc5424()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -492,7 +711,6 @@ void flb_test_severity_facility_key_rfc5424()
 
 void flb_test_severity_facility_key_rfc3164()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -509,7 +727,7 @@ void flb_test_severity_facility_key_rfc3164()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -550,7 +768,6 @@ void flb_test_severity_facility_key_rfc3164()
 
 void flb_test_hostname_key_rfc5424()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -567,7 +784,7 @@ void flb_test_hostname_key_rfc5424()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -578,6 +795,62 @@ void flb_test_hostname_key_rfc5424()
                          "syslog_format", "rfc5424",
                          "syslog_message_key", "msg",
                          "syslog_hostname_key", "h_key",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set_test(ctx->flb, ctx->o_ffd,
+                         "formatter", cb_check_str_list,
+                          &expected, NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf, size);
+    TEST_CHECK(ret >= 0);
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+
+    test_ctx_destroy(ctx);
+}
+
+void flb_test_hostname_preset_rfc5424()
+{
+    struct test_ctx *ctx;
+    int ret;
+    int num;
+
+    char *buf = "[1, {\"msg\":\"hello world\", \"h_key\":\"localhost\"}]";
+    size_t size = strlen(buf);
+
+    char *expected_strs[] = {"hello world", "1970-01-01T00:00:01.000000Z", "localhost",
+                             "<14>1 1970-01-01T00:00:01.000000Z localhost - - - - ﻿hello world"};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+    clear_output_num();
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "syslog_format", "rfc5424",
+                         "syslog_message_key", "msg",
+                         "syslog_hostname_preset", "localhost",
                          NULL);
     TEST_CHECK(ret == 0);
 
@@ -607,7 +880,6 @@ void flb_test_hostname_key_rfc5424()
 
 void flb_test_hostname_key_rfc3164()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -624,7 +896,7 @@ void flb_test_hostname_key_rfc3164()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -662,9 +934,64 @@ void flb_test_hostname_key_rfc3164()
     test_ctx_destroy(ctx);
 }
 
+void flb_test_hostname_preset_rfc3164()
+{
+    struct test_ctx *ctx;
+    int ret;
+    int num;
+
+    char *buf = "[1, {\"msg\":\"hello world\", \"h_key\":\"localhost\"}]";
+    size_t size = strlen(buf);
+
+    char *expected_strs[] = {"hello world", "Jan  1 00:00:01", "localhost",
+                             "<14>Jan  1 00:00:01 localhost hello world"};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+    clear_output_num();
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "syslog_format", "rfc3164",
+                         "syslog_message_key", "msg",
+                         "syslog_hostname_preset", "localhost",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set_test(ctx->flb, ctx->o_ffd,
+                         "formatter", cb_check_str_list,
+                          &expected, NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf, size);
+    TEST_CHECK(ret >= 0);
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+
+    test_ctx_destroy(ctx);
+}
+
 void flb_test_appname_key_rfc5424()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -681,7 +1008,7 @@ void flb_test_appname_key_rfc5424()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -719,9 +1046,64 @@ void flb_test_appname_key_rfc5424()
     test_ctx_destroy(ctx);
 }
 
+void flb_test_appname_preset_rfc5424()
+{
+    struct test_ctx *ctx;
+    int ret;
+    int num;
+
+    char *buf = "[1, {\"msg\":\"hello world\", \"a_key\":\"fluent-bit\"}]";
+    size_t size = strlen(buf);
+
+    char *expected_strs[] = {"hello world", "1970-01-01T00:00:01.000000Z", "fluent-bit",
+                             "<14>1 1970-01-01T00:00:01.000000Z - fluent-bit - - - ﻿hello world"};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+    clear_output_num();
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "syslog_format", "rfc5424",
+                         "syslog_message_key", "msg",
+                         "syslog_appname_preset", "fluent-bit",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set_test(ctx->flb, ctx->o_ffd,
+                         "formatter", cb_check_str_list,
+                          &expected, NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf, size);
+    TEST_CHECK(ret >= 0);
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+
+    test_ctx_destroy(ctx);
+}
+
 void flb_test_appname_key_rfc3164()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -738,7 +1120,7 @@ void flb_test_appname_key_rfc3164()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -776,9 +1158,64 @@ void flb_test_appname_key_rfc3164()
     test_ctx_destroy(ctx);
 }
 
+void flb_test_appname_preset_rfc3164()
+{
+    struct test_ctx *ctx;
+    int ret;
+    int num;
+
+    char *buf = "[1, {\"msg\":\"hello world\", \"a_key\":\"fluent-bit\"}]";
+    size_t size = strlen(buf);
+
+    char *expected_strs[] = {"hello world", "Jan  1 00:00:01", "fluent-bit",
+                             "<14>Jan  1 00:00:01 fluent-bit: hello world"};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+    clear_output_num();
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "syslog_format", "rfc3164",
+                         "syslog_message_key", "msg",
+                         "syslog_appname_preset", "fluent-bit",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set_test(ctx->flb, ctx->o_ffd,
+                         "formatter", cb_check_str_list,
+                          &expected, NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf, size);
+    TEST_CHECK(ret >= 0);
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+
+    test_ctx_destroy(ctx);
+}
+
 void flb_test_procid_key_rfc5424()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -795,7 +1232,7 @@ void flb_test_procid_key_rfc5424()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -833,9 +1270,64 @@ void flb_test_procid_key_rfc5424()
     test_ctx_destroy(ctx);
 }
 
+void flb_test_procid_preset_rfc5424()
+{
+    struct test_ctx *ctx;
+    int ret;
+    int num;
+
+    char *buf = "[1, {\"msg\":\"hello world\", \"p_key\":\"1234\"}]";
+    size_t size = strlen(buf);
+
+    char *expected_strs[] = {"hello world", "1970-01-01T00:00:01.000000Z", "1234",
+                             "<14>1 1970-01-01T00:00:01.000000Z - - 1234 - - ﻿hello world"};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+    clear_output_num();
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "syslog_format", "rfc5424",
+                         "syslog_message_key", "msg",
+                         "syslog_procid_preset", "1234",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set_test(ctx->flb, ctx->o_ffd,
+                         "formatter", cb_check_str_list,
+                          &expected, NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf, size);
+    TEST_CHECK(ret >= 0);
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+
+    test_ctx_destroy(ctx);
+}
+
 void flb_test_msgid_key_rfc5424()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -852,7 +1344,7 @@ void flb_test_msgid_key_rfc5424()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -890,9 +1382,64 @@ void flb_test_msgid_key_rfc5424()
     test_ctx_destroy(ctx);
 }
 
+void flb_test_msgid_preset_rfc5424()
+{
+    struct test_ctx *ctx;
+    int ret;
+    int num;
+
+    char *buf = "[1, {\"msg\":\"hello world\", \"m_key\":\"TCPIN\"}]";
+    size_t size = strlen(buf);
+
+    char *expected_strs[] = {"hello world", "1970-01-01T00:00:01.000000Z", "TCPIN",
+                             "<14>1 1970-01-01T00:00:01.000000Z - - - TCPIN - ﻿hello world"};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+    clear_output_num();
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "syslog_format", "rfc5424",
+                         "syslog_message_key", "msg",
+                         "syslog_msgid_preset", "TCPIN",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set_test(ctx->flb, ctx->o_ffd,
+                         "formatter", cb_check_str_list,
+                          &expected, NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf, size);
+    TEST_CHECK(ret >= 0);
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+
+    test_ctx_destroy(ctx);
+}
+
 void flb_test_sd_key_rfc5424()
 {
-    struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -909,7 +1456,7 @@ void flb_test_sd_key_rfc5424()
 
     clear_output_num();
 
-    ctx = test_ctx_create(&cb_data);
+    ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
@@ -955,6 +1502,10 @@ TEST_LIST = {
     {"format_severity_facility_key_rfc3164", flb_test_severity_facility_key_rfc3164},
     {"format_hostname_key_rfc3164", flb_test_hostname_key_rfc3164},
     {"format_appname_key_rfc3164", flb_test_appname_key_rfc3164},
+    {"format_severity_preset_rfc3164", flb_test_severity_preset_rfc3164},
+    {"format_facility_preset_rfc3164", flb_test_facility_preset_rfc5424},
+    {"format_hostname_preset_rfc3164", flb_test_hostname_preset_rfc5424},
+    {"format_appname_preset_rfc3164", flb_test_appname_preset_rfc3164},
 
     /* rfc5424 (Default) */
     {"format_syslog_rfc5424", flb_test_syslog_rfc5424},
@@ -966,7 +1517,12 @@ TEST_LIST = {
     {"format_procid_key_rfc5424", flb_test_procid_key_rfc5424},
     {"format_msgid_key_rfc5424", flb_test_msgid_key_rfc5424},
     {"format_sd_key_rfc5424", flb_test_sd_key_rfc5424},
-
+    {"format_severity_preset_rfc5424", flb_test_severity_preset_rfc5424},
+    {"format_facility_preset_rfc5424", flb_test_facility_preset_rfc5424},
+    {"format_hostname_preset_rfc5424", flb_test_hostname_preset_rfc5424},
+    {"format_appname_preset_rfc5424", flb_test_appname_preset_rfc5424},
+    {"format_procid_preset_rfc5424", flb_test_procid_preset_rfc5424},
+    {"format_msgid_preset_rfc5424", flb_test_msgid_preset_rfc5424},
     {NULL, NULL}
 };
 

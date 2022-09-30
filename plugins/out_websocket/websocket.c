@@ -23,7 +23,7 @@
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_upstream.h>
-#include <fluent-bit/flb_sha512.h>
+#include <fluent-bit/flb_crypto.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_http_client.h>
@@ -37,7 +37,7 @@ struct flb_output_plugin out_websocket_plugin;
 #define SECURED_BY "Fluent Bit"
 
 
-static int flb_ws_handshake(struct flb_upstream_conn *u_conn,
+static int flb_ws_handshake(struct flb_connection *u_conn,
                                     struct flb_out_ws *ctx)
 {
     int ret;
@@ -88,7 +88,7 @@ static void flb_ws_mask(char *data, int len, char *mask)
     }
 }
 
-static int flb_ws_sendDataFrameHeader(struct flb_upstream_conn *u_conn,
+static int flb_ws_sendDataFrameHeader(struct flb_connection *u_conn,
                                       struct flb_out_ws *ctx, const void *data, size_t bytes)
 {
     int ret = -1;
@@ -198,7 +198,7 @@ static void cb_ws_flush(struct flb_event_chunk *event_chunk,
     size_t bytes_sent;
     flb_sds_t json = NULL;
     struct flb_upstream *u;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_out_ws *ctx = out_context;
     time_t now;
 

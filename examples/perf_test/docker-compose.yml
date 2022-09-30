@@ -1,4 +1,4 @@
-version: "3"
+version: "3.4"
 
 services:
 
@@ -12,6 +12,7 @@ services:
     build:
       context: ../..
       dockerfile: dockerfiles/Dockerfile
+      target: production
     volumes:
       - log-volume:/logs:ro
       - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro

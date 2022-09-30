@@ -441,7 +441,7 @@ static int format_metrics(struct flb_output_instance *ins,
 {
     int ret;
     size_t off = 0;
-    cmt_sds_t text;
+    cfl_sds_t text;
     struct cmt *cmt = NULL;
 
     /* get cmetrics context */
@@ -481,7 +481,7 @@ static void cb_influxdb_flush(struct flb_event_chunk *event_chunk,
     char *pack;
     char tmp[128];
     struct mk_list *head;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
     struct flb_config_map_val *mv;
     struct flb_slist_entry *key = NULL;
