@@ -6,7 +6,7 @@ services:
       context: ../..
       dockerfile: dockerfiles/Dockerfile
       args:
-        - FLB_TRACE=On
+        - FLB_CHUNK_TRACE=On
     ports:
       - "2020:2020"
     volumes:
