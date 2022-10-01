@@ -440,6 +440,9 @@ set(WITH_SYSTEM_MALLOC  1 CACHE BOOL "Use system memory allocator")
 set(CMAKE_REQUIRED_INCLUDES "${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CFL}/include")
 add_subdirectory(${FLB_PATH_LIB_CFL} EXCLUDE_FROM_ALL)
 
+# fluent-otel-proto
+add_subdirectory(${FLB_PATH_LIB_FLUENT_OTEL} EXCLUDE_FROM_ALL)
+
 # MsgPack options
 option(MSGPACK_ENABLE_CXX             OFF)
 option(MSGPACK_ENABLE_SHARED          OFF)
@@ -480,6 +483,9 @@ add_subdirectory(${FLB_PATH_LIB_SNAPPY} EXCLUDE_FROM_ALL)
 
 # CMetrics
 add_subdirectory(${FLB_PATH_LIB_CMETRICS} EXCLUDE_FROM_ALL)
+
+# CTraces
+add_subdirectory(${FLB_PATH_LIB_CTRACES} EXCLUDE_FROM_ALL)
 
 # C-Ares (DNS library)
 FLB_OPTION(CARES_STATIC      ON)
