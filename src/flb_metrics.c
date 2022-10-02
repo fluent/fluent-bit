@@ -102,11 +102,15 @@ struct flb_metrics *flb_metrics_create(const char *title)
 int flb_metrics_title(const char *title, struct flb_metrics *metrics)
 {
     int ret;
+    size_t size = sizeof(metrics->title) - 1;
 
-    ret = snprintf(metrics->title, sizeof(metrics->title) - 1, "%s", title);
+    ret = snprintf(metrics->title, size, "%s", title);
     if (ret == -1) {
         flb_errno();
         return -1;
+    }
+    else if (ret >= size){
+        flb_warn("[%s] title '%s' was truncated", __FUNCTION__, title);
     }
     metrics->title_len = strlen(metrics->title);
     return 0;
@@ -116,6 +120,7 @@ int flb_metrics_add(int id, const char *title, struct flb_metrics *metrics)
 {
     int ret;
     struct flb_metric *m;
+    size_t size;
 
     /* Create context */
     m = flb_malloc(sizeof(struct flb_metric));
@@ -124,14 +129,19 @@ int flb_metrics_add(int id, const char *title, struct flb_metrics *metrics)
         return -1;
     }
     m->val = 0;
+    size = sizeof(m->title) - 1;
 
     /* Write title */
-    ret = snprintf(m->title, sizeof(m->title) - 1, "%s", title);
+    ret = snprintf(m->title, size, "%s", title);
     if (ret == -1) {
         flb_errno();
         flb_free(m);
         return -1;
     }
+    else if (ret >= size) {
+        flb_warn("[%s] title '%s' was truncated", __FUNCTION__, title);
+    }
+
     m->title_len = strlen(m->title);
 
     /* Assign an ID */
