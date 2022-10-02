@@ -231,7 +231,7 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
     }
     ctx->ins = ins;
     ctx->config = config;
-    ctx->recursion_action = REWRITE_ACTION_NONE;
+    ctx->recursion_action = REWRITE_ACTION_EXIT;
     mk_list_init(&ctx->rules);
 
     /*
@@ -666,7 +666,7 @@ static struct flb_config_map config_map[] = {
      "set a memory buffer limit to restrict memory usage of emitter"
     },
     {
-     FLB_CONFIG_MAP_STR, "recursion_action", "none",
+     FLB_CONFIG_MAP_STR, "recursion_action", "exit",
      FLB_FALSE, FLB_FALSE, 0,
      "action when a recursion occurs. 'none', 'drop', 'drop_and_log' and 'exit' are supported."
     },
