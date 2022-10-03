@@ -76,6 +76,9 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
     struct mk_event *event;
     struct kevent ke = {0, 0, 0, 0, 0, 0};
 
+    mk_bug(ctx == NULL);
+    mk_bug(data == NULL);
+
     event = (struct mk_event *) data;
     if (event->mask == MK_EVENT_EMPTY) {
         event->fd   = fd;
@@ -96,7 +99,6 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
     else if ((event->mask & MK_EVENT_READ) && (events ^ MK_EVENT_READ)) {
         EV_SET(&ke, fd, EVFILT_READ, EV_DELETE, 0, 0, event);
         set = MK_TRUE;
-        //printf("[DEL] fd=%i READ\n", fd);
     }
 
     if (set == MK_TRUE) {
@@ -112,12 +114,10 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
     if ((event->mask ^ MK_EVENT_WRITE) && (events & MK_EVENT_WRITE)) {
         EV_SET(&ke, fd, EVFILT_WRITE, EV_ADD, 0, 0, event);
         set = MK_TRUE;
-        //printf("[ADD] fd=%i WRITE\n", fd);
     }
     else if ((event->mask & MK_EVENT_WRITE) && (events ^ MK_EVENT_WRITE)) {
         EV_SET(&ke, fd, EVFILT_WRITE, EV_DELETE, 0, 0, event);
         set = MK_TRUE;
-        //printf("[DEL] fd=%i WRITE\n", fd);
     }
 
     if (set == MK_TRUE) {
@@ -130,8 +130,8 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
 
     event->mask = events;
     event->priority = MK_EVENT_PRIORITY_DEFAULT;
-    event->_priority_head.next = NULL;
-    event->_priority_head.prev = NULL;
+    mk_list_entry_init(&event->_priority_head);
+
     return 0;
 }
 
@@ -140,7 +140,10 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
     int ret;
     struct kevent ke = {0, 0, 0, 0, 0, 0};
 
-    if ((event->status & MK_EVENT_REGISTERED) == 0) {
+    mk_bug(ctx == NULL);
+    mk_bug(event == NULL);
+
+    if (!MK_EVENT_IS_REGISTERED(event)) {
         return 0;
     }
 
@@ -163,8 +166,7 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
     }
 
     /* Remove from priority queue */
-    if (event->_priority_head.next != NULL &&
-        event->_priority_head.prev != NULL) {
+    if (!mk_list_entry_is_orphan(&event->_priority_head)) {
         mk_list_del(&event->_priority_head);
     }
 
@@ -180,6 +182,8 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     int ret;
     struct mk_event *event;
     struct kevent ke;
+
+    mk_bug(data == NULL);
 
     /*
      * We just need a file descriptor number, we don't care from where it
@@ -198,8 +202,7 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     event->mask = MK_EVENT_EMPTY;
 
     event->priority = MK_EVENT_PRIORITY_DEFAULT;
-    event->_priority_head.next = NULL;
-    event->_priority_head.prev = NULL;
+    mk_list_entry_init(&event->_priority_head);
 
 #if defined(NOTE_SECONDS) && !defined(__APPLE__)
     /* FreeBSD or LINUX_KQUEUE defined */
@@ -232,6 +235,14 @@ static inline int _mk_event_timeout_destroy(struct mk_event_ctx *ctx, void *data
     struct mk_event *event;
     struct kevent ke = {0, 0, 0, 0, 0, 0};
 
+    if (data == NULL) {
+        return 0;
+    }
+
+    if (!MK_EVENT_IS_REGISTERED(event)) {
+        return 0;
+    }
+
     event = (struct mk_event *) data;
     EV_SET(&ke, event->fd, EVFILT_TIMER, EV_DELETE, 0,0, NULL);
 
@@ -242,8 +253,7 @@ static inline int _mk_event_timeout_destroy(struct mk_event_ctx *ctx, void *data
     }
 
     /* Remove from priority queue */
-    if (event->_priority_head.next != NULL &&
-        event->_priority_head.prev != NULL) {
+    if (!mk_list_entry_is_orphan(&event->_priority_head)) {
         mk_list_del(&event->_priority_head);
     }
 
@@ -259,6 +269,8 @@ static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
     int ret;
     int fd[2];
     struct mk_event *event;
+
+    mk_bug(data == NULL);
 
     ret = pipe(fd);
     if (ret < 0) {
@@ -281,6 +293,29 @@ static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
 
     *r_fd = fd[0];
     *w_fd = fd[1];
+
+    return 0;
+}
+
+static inline int _mk_event_channel_destroy(struct mk_event_ctx *ctx,
+                                            int r_fd, int w_fd, void *data)
+{
+    struct mk_event *event;
+    int ret;
+
+
+    event = (struct mk_event *)data;
+    if (event->fd != r_fd) {
+        return -1;
+    }
+
+    ret = _mk_event_del(ctx, event);
+    if (ret != 0) {
+        return ret;
+    }
+
+    close(r_fd);
+    close(w_fd);
 
     return 0;
 }

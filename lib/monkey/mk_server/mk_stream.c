@@ -27,6 +27,9 @@ struct mk_channel *mk_channel_new(int type, int fd)
     struct mk_channel *channel;
 
     channel = mk_mem_alloc(sizeof(struct mk_channel));
+    if (!channel) {
+        return NULL;
+    }
     channel->type   = type;
     channel->fd     = fd;
     channel->status = MK_CHANNEL_OK;

@@ -67,6 +67,9 @@
 #define MK_EP_SOCKET_DONE     3
 /* ---- end ---- */
 
+
+#define MK_EVENT_IS_REGISTERED(event) ((event->status & MK_EVENT_REGISTERED) != 0)
+
 #if defined(_WIN32)
     #include "mk_event_libevent.h"
 #elif defined(MK_HAVE_EVENT_SELECT)
@@ -142,6 +145,8 @@ int mk_event_timeout_disable(struct mk_event_loop *loop, void *data);
 int mk_event_timeout_destroy(struct mk_event_loop *loop, void *data);
 int mk_event_channel_create(struct mk_event_loop *loop,
                             int *r_fd, int *w_fd, void *data);
+int mk_event_channel_destroy(struct mk_event_loop *loop,
+                             int r_fd, int w_fd, void *data);
 int mk_event_wait(struct mk_event_loop *loop);
 int mk_event_wait_2(struct mk_event_loop *loop, int timeout);
 int mk_event_translate(struct mk_event_loop *loop);
