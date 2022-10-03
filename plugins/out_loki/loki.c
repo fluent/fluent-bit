@@ -1658,5 +1658,5 @@ struct flb_output_plugin out_loki_plugin = {
     /* for testing */
     .test_formatter.callback = cb_loki_format_test,
 
-    .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS | FLB_OUTPUT_NO_MULTIPLEX,
+    .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };
