@@ -453,6 +453,7 @@ static flb_sds_t get_parser_key(struct flb_config *config,
         return NULL;
     }
 
+    flb_sds_destroy(tmp);
     return val;
 }
 
