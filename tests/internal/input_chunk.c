@@ -8,6 +8,7 @@
 #include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_router.h>
+#include <fluent-bit/flb_time.h>
 #include "flb_tests_internal.h"
 #include "chunkio/chunkio.h"
 #include "data/input_chunk/log/test_buffer_drop_chunks.h"
@@ -313,7 +314,7 @@ void flb_test_input_chunk_dropping_chunks()
         flb_input_chunk_destroy(ic, FLB_TRUE);
     }
 
-    sleep(2);
+    flb_time_msleep(2100);
     flb_stop(ctx);
     flb_destroy(ctx);
 }
