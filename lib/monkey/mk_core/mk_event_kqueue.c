@@ -239,11 +239,10 @@ static inline int _mk_event_timeout_destroy(struct mk_event_ctx *ctx, void *data
         return 0;
     }
 
+    event = (struct mk_event *) data;
     if (!MK_EVENT_IS_REGISTERED(event)) {
         return 0;
     }
-
-    event = (struct mk_event *) data;
     EV_SET(&ke, event->fd, EVFILT_TIMER, EV_DELETE, 0,0, NULL);
 
     ret = kevent(ctx->kfd, &ke, 1, NULL, 0, NULL);
