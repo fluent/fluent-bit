@@ -6,6 +6,7 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_socket.h>
+#include <fluent-bit/flb_time.h>
 
 #include <time.h>
 #include "flb_tests_internal.h"
@@ -84,6 +85,12 @@ static void test_client_server(int is_ipv6)
     ret = flb_net_tcp_fd_connect(fd_client, host, atol(TEST_PORT));
     TEST_CHECK(ret == -1);
     TEST_CHECK(errno == EINPROGRESS);
+
+#ifdef FLB_SYSTEM_MACOS
+    /* On macOS, its internal timer's is inacccurate without waiting code.
+     * We need to proceed its timer tick for processing events. */
+    flb_time_msleep(50);
+#endif
 
     /* Event loop */
     while (1) {
