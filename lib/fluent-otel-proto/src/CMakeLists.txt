@@ -30,8 +30,8 @@ if (FLUENT_PROTO_LOGS)
 endif()
 
 if (FLUENT_PROTO_METRICS)
-	set(src ${src} ${PROJECT_BINARY_DIR}/opentelemetry/proto/metrics/v1/metrics.pb-c.c)
-	set(src ${src} ${PROJECT_BINARY_DIR}/opentelemetry/proto/collector/metrics/v1/metrics_service.pb-c.c)
+	set(src ${src} ${OTEL_C_FILES}/proto/metrics/v1/metrics.pb-c.c)
+	set(src ${src} ${OTEL_C_FILES}/proto/collector/metrics/v1/metrics_service.pb-c.c)
 endif()
 
 add_library(fluent-otel-proto STATIC ${src})

@@ -1,5 +1,9 @@
 # List of bundled libraries
 set(FLB_PATH_LIB_CFL         "lib/cfl")
+set(FLB_PATH_LIB_FLUENT_OTEL "lib/fluent-otel-proto")
+set(FLB_PATH_LIB_CMETRICS    "lib/cmetrics")
+set(FLB_PATH_LIB_CTRACES     "lib/ctraces")
+
 set(FLB_PATH_LIB_CO          "lib/flb_libco")
 set(FLB_PATH_LIB_RBTREE      "lib/rbtree")
 set(FLB_PATH_LIB_MSGPACK     "lib/msgpack-c")
@@ -15,9 +19,10 @@ set(FLB_PATH_LIB_ONIGMO      "lib/onigmo")
 set(FLB_PATH_LIB_MPACK       "lib/mpack-amalgamation-1.0")
 set(FLB_PATH_LIB_MINIZ       "lib/miniz")
 set(FLB_PATH_LIB_TUTF8E      "lib/tutf8e")
-set(FLB_PATH_LIB_CMETRICS    "lib/cmetrics")
 set(FLB_PATH_LIB_CARES       "lib/c-ares-1.18.1")
 set(FLB_PATH_LIB_SNAPPY      "lib/snappy-fef67ac")
 set(FLB_PATH_LIB_RDKAFKA     "lib/librdkafka-1.8.2")
 set(FLB_PATH_LIB_RING_BUFFER "lib/lwrb")
 set(FLB_PATH_LIB_WASM_MICRO_RUNTIME  "lib/wasm-micro-runtime-fast-jit-06-29-2022")
+
+

@@ -17,30 +17,27 @@
  *  limitations under the License.
  */
 
-#ifndef FLUENT_OTEL_INFO_H
-#define FLUENT_OTEL_INFO_H
+/*
+ * This is a dummy header that can be used by parent projects to check if
+ * fluent-otel-proto headers are found in their path.
+ *
+ * In order to use it, the caller might try to use check_c_source_compiles() CMake function
+ * and try to include this header and invoke the inline function defined here, e.g:
+ *
+ *   check_c_source_compiles("
+ *     include <fluent-otel-proto/fluent-otel_found.h>
+ *
+ *     int main() {
+ *        return fluent_otel_found();
+ *     }" CFL_FOUND)
+ */
 
-#define FLUENT_OTEL_SOURCE_DIR "/Users/edsiper/coding/fluent-otel-proto"
+#ifndef FLUENT_OTEL_FOUND_H
+#define FLUENT_OTEL_FOUND_H
 
-/* General flags set by /CMakeLists.txt */
-#ifndef FLUENT_OTEL_HAVE_COMMON
-#define FLUENT_OTEL_HAVE_COMMON
-#endif
-#ifndef FLUENT_OTEL_HAVE_RESOURCE
-#define FLUENT_OTEL_HAVE_RESOURCE
-#endif
-#ifndef FLUENT_OTEL_HAVE_TRACE
-#define FLUENT_OTEL_HAVE_TRACE
-#endif
-#ifndef FLUENT_OTEL_HAVE_LOGS
-#define FLUENT_OTEL_HAVE_LOGS
-#endif
-#ifndef FLUENT_OTEL_HAVE_LOGS
-#define FLUENT_OTEL_HAVE_LOGS
-#endif
-#ifndef FLUENT_OTEL_HAVE_METRICS
-#define FLUENT_OTEL_HAVE_METRICS
-#endif
-
+static inline int fluent_otel_found()
+{
+    return 0;
+}
 
 #endif

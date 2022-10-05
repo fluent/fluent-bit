@@ -349,13 +349,16 @@ endif()
 set(FLB_DEPS
   ${FLB_DEPS}
   cfl-static
+  fluent-otel-proto
+  cmetrics-static
+  ctraces-static
   mk_core
   jsmn
   msgpack-c-static
   mpack-static
   chunkio-static
   miniz
-  cmetrics-static
+
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}

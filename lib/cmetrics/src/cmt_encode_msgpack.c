@@ -27,29 +27,7 @@
 #include <cmetrics/cmt_untyped.h>
 #include <cmetrics/cmt_compat.h>
 #include <cmetrics/cmt_encode_msgpack.h>
-
-#include <mpack/mpack.h>
-
-static ptrdiff_t find_label_index(struct cfl_list *label_list, cfl_sds_t label_name)
-{
-    struct cfl_list       *head;
-    struct cmt_map_label *label;
-    size_t                entry_index;
-
-    entry_index = 0;
-
-    cfl_list_foreach(head, label_list) {
-        label = cfl_list_entry(head, struct cmt_map_label, _head);
-
-        if (0 == strcmp(label_name, label->name)) {
-            return entry_index;
-        }
-
-        entry_index++;
-    }
-
-    return -1;
-}
+#include <cmetrics/cmt_variant_utils.h>
 
 struct cmt_map_label *create_label(char *label_text)
 {
@@ -70,99 +48,7 @@ struct cmt_map_label *create_label(char *label_text)
     return new_label;
 }
 
-static int gather_label_entries(struct cfl_list *unique_label_list,
-                                struct cfl_list *source_label_list)
-{
-    struct cfl_list       *head;
-    struct cmt_map_label *label;
-    struct cmt_map_label *new_label;
-    ptrdiff_t             label_index;
-
-    cfl_list_foreach(head, source_label_list) {
-        label = cfl_list_entry(head, struct cmt_map_label, _head);
-
-        label_index = find_label_index(unique_label_list, label->name);
-
-        if (-1 == label_index) {
-            new_label = create_label(label->name);
-
-            if(NULL == new_label) {
-                return 1;
-            }
-
-            cfl_list_add(&new_label->_head, unique_label_list);
-        }
-    }
-
-    return 0;
-}
-
-static int gather_label_entries_in_map(struct cfl_list *unique_label_list,
-                                       struct cmt_map *map)
-{
-    struct cfl_list       *head;
-    struct cmt_metric    *metric;
-    int                   result;
-
-    result = gather_label_entries(unique_label_list, &map->label_keys);
-
-    if (0 == result) {
-        cfl_list_foreach(head, &map->metrics) {
-            metric = cfl_list_entry(head, struct cmt_metric, _head);
-
-            result = gather_label_entries(unique_label_list, &metric->labels);
-
-            if (0 != result) {
-                break;
-            }
-        }
-    }
-
-    return result;
-}
-
-static int gather_static_label_entries(struct cfl_list *unique_label_list,
-                                       struct cmt *cmt)
-{
-    struct cfl_list       *head;
-    struct cmt_map_label *new_label;
-    ptrdiff_t             label_index;
-    struct cmt_label     *static_label;
-
-    cfl_list_foreach(head, &cmt->static_labels->list) {
-        static_label = cfl_list_entry(head, struct cmt_label, _head);
-
-        label_index = find_label_index(unique_label_list, static_label->key);
-
-        if (-1 == label_index) {
-            new_label = create_label(static_label->key);
-
-            if(NULL == new_label) {
-                return 1;
-            }
-
-            cfl_list_add(&new_label->_head, unique_label_list);
-        }
-
-        label_index = find_label_index(unique_label_list, static_label->val);
-
-        if (-1 == label_index) {
-            new_label = create_label(static_label->val);
-
-            if(NULL == new_label) {
-                return 1;
-            }
-
-            cfl_list_add(&new_label->_head, unique_label_list);
-        }
-
-        /* If we got this far then we are sure we have the entry in the list */
-    }
-
-    return 0;
-}
-
-static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map *map, struct cfl_list *unique_label_list)
+static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map *map)
 {
     struct cmt_opts      *opts;
     struct cfl_list       *head;
@@ -170,12 +56,10 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
     size_t                index;
     struct cmt_summary   *summary = NULL;
     struct cmt_histogram *histogram = NULL;
-    ptrdiff_t             label_index;
-    struct cmt_label     *static_label;
     size_t                meta_field_count;
 
     opts = map->opts;
-    meta_field_count = 6;
+    meta_field_count = 4;
 
     if (map->type == CMT_HISTOGRAM) {
         histogram = (struct cmt_histogram *) map->parent;
@@ -187,8 +71,6 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
 
         meta_field_count++;
     }
-
-    mpack_start_map(writer, 2);
 
     /* 'meta' */
     mpack_write_cstr(writer, "meta");
@@ -224,42 +106,13 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
 
     mpack_finish_map(writer); /* 'opts' */
 
-    /* 'label_dictionary' (unique label key text) */
-    mpack_write_cstr(writer, "label_dictionary");
-    mpack_start_array(writer, cfl_list_size(unique_label_list));
-    cfl_list_foreach(head, unique_label_list) {
-        label = cfl_list_entry(head, struct cmt_map_label, _head);
-        mpack_write_cstr(writer, label->name);
-    }
-    mpack_finish_array(writer);
-
-    /* 'static_labels' (static labels) */
-    mpack_write_cstr(writer, "static_labels");
-    mpack_start_array(writer, cfl_list_size(&cmt->static_labels->list) * 2);
-    cfl_list_foreach(head, &cmt->static_labels->list) {
-        static_label = cfl_list_entry(head, struct cmt_label, _head);
-
-        label_index = find_label_index(unique_label_list, static_label->key);
-
-        mpack_write_uint(writer, (uint16_t) label_index);
-
-        label_index = find_label_index(unique_label_list, static_label->val);
-
-        mpack_write_uint(writer, (uint16_t) label_index);
-        /* If we got this far then we are sure we have the entry in the list */
-    }
-    mpack_finish_array(writer);
-
     /* 'labels' (label keys) */
     mpack_write_cstr(writer, "labels");
     mpack_start_array(writer, map->label_count);
     cfl_list_foreach(head, &map->label_keys) {
         label = cfl_list_entry(head, struct cmt_map_label, _head);
 
-        label_index = find_label_index(unique_label_list, label->name);
-
-        mpack_write_uint(writer, (uint16_t) label_index);
-        /* If we got this far then we are sure we have the entry in the list */
+        mpack_write_cstr(writer, label->name);
     }
     mpack_finish_array(writer);
 
@@ -295,7 +148,7 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
     mpack_finish_map(writer); /* 'meta' */
 }
 
-static int pack_metric(mpack_writer_t *writer, struct cmt_map *map, struct cmt_metric *metric, struct cfl_list *unique_label_list)
+static int pack_metric(mpack_writer_t *writer, struct cmt_map *map, struct cmt_metric *metric)
 {
     int c_labels;
     int s;
@@ -305,7 +158,6 @@ static int pack_metric(mpack_writer_t *writer, struct cmt_map *map, struct cmt_m
     struct cmt_map_label *label;
     struct cmt_summary *summary;
     struct cmt_histogram *histogram;
-    ptrdiff_t label_index;
 
     c_labels = cfl_list_size(&metric->labels);
 
@@ -384,9 +236,13 @@ static int pack_metric(mpack_writer_t *writer, struct cmt_map *map, struct cmt_m
         cfl_list_foreach(head, &metric->labels) {
             label = cfl_list_entry(head, struct cmt_map_label, _head);
 
-            label_index = find_label_index(unique_label_list, label->name);
-
-            mpack_write_uint(writer, (uint16_t) label_index);
+            if (label->name != NULL) {
+                printf("label->name = '%s'\n", label->name);
+                mpack_write_cstr(writer, label->name);
+            }
+            else {
+                mpack_write_nil(writer);
+            }
         }
 
         mpack_finish_array(writer);
@@ -402,30 +258,14 @@ static int pack_metric(mpack_writer_t *writer, struct cmt_map *map, struct cmt_m
 
 static int pack_basic_type(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map *map)
 {
-    int result;
     int values_size = 0;
     struct cfl_list *head;
     struct cmt_metric *metric;
-    struct cfl_list unique_label_list;
 
-    cfl_list_init(&unique_label_list);
+    /* metric scope dictionary that holds meta and values*/
+    mpack_start_map(writer, 2);
 
-
-    result = gather_static_label_entries(&unique_label_list, cmt);
-
-    if (0 != result) {
-        fprintf(stderr, "An error occurred preprocessing the data!\n");
-        return -1;
-    }
-
-    result = gather_label_entries_in_map(&unique_label_list, map);
-
-    if (0 != result) {
-        fprintf(stderr, "An error occurred preprocessing the data!\n");
-        return -1;
-    }
-
-    pack_header(writer, cmt, map, &unique_label_list);
+    pack_header(writer, cmt, map);
 
     if (map->metric_static_set) {
         values_size++;
@@ -436,22 +276,162 @@ static int pack_basic_type(mpack_writer_t *writer, struct cmt *cmt, struct cmt_m
     mpack_start_array(writer, values_size);
 
     if (map->metric_static_set) {
-        pack_metric(writer, map, &map->metric, &unique_label_list);
+        pack_metric(writer, map, &map->metric);
     }
 
     cfl_list_foreach(head, &map->metrics) {
         metric = cfl_list_entry(head, struct cmt_metric, _head);
-        pack_metric(writer, map, metric, &unique_label_list);
+        pack_metric(writer, map, metric);
     }
     mpack_finish_array(writer);
 
     mpack_finish_map(writer);
 
-    destroy_label_list(&unique_label_list);
+    return 0;
+}
+
+static void pack_static_labels(mpack_writer_t *writer, struct cmt *cmt)
+{
+    struct cmt_label *static_label;
+    struct cfl_list  *head;
+
+    /* 'static_labels' (static labels) */
+    mpack_write_cstr(writer, "static_labels");
+
+    mpack_start_array(writer, cfl_list_size(&cmt->static_labels->list));
+
+    cfl_list_foreach(head, &cmt->static_labels->list) {
+        static_label = cfl_list_entry(head, struct cmt_label, _head);
+
+        mpack_start_array(writer, 2);
+
+        mpack_write_cstr(writer, static_label->key);
+        mpack_write_cstr(writer, static_label->val);
+
+        mpack_finish_array(writer);
+    }
+
+    mpack_finish_array(writer);
+}
+
+static int pack_static_processing_section(mpack_writer_t *writer, struct cmt *cmt)
+{
+    mpack_write_cstr(writer, "processing");
+
+    mpack_start_map(writer, 1);
+
+    pack_static_labels(writer, cmt);
+
+    mpack_finish_map(writer); /* 'processing' */
 
     return 0;
 }
 
+static int pack_context_header(mpack_writer_t *writer, struct cmt *cmt)
+{
+    int result;
+
+    mpack_write_cstr(writer, "meta");
+    mpack_start_map(writer, 3);
+
+    mpack_write_cstr(writer, "cmetrics");
+    result = pack_cfl_variant_kvlist(writer, cmt->internal_metadata);
+
+    if (result != 0) {
+        return -1;
+    }
+
+    mpack_write_cstr(writer, "external");
+    result = pack_cfl_variant_kvlist(writer, cmt->external_metadata);
+
+    if (result != 0) {
+        return -2;
+    }
+
+    pack_static_processing_section(writer, cmt);
+
+    mpack_finish_map(writer); /* 'context_header' */
+
+    return 0;
+}
+
+static int pack_context_metrics(mpack_writer_t *writer, struct cmt *cmt)
+{
+    size_t                metric_count;
+    struct cmt_histogram *histogram;
+    struct cmt_summary   *summary;
+    struct cmt_untyped   *untyped;
+    struct cmt_counter   *counter;
+    struct cmt_gauge     *gauge;
+    struct cfl_list      *head;
+
+    metric_count  = 0;
+    metric_count += cfl_list_size(&cmt->counters);
+    metric_count += cfl_list_size(&cmt->gauges);
+    metric_count += cfl_list_size(&cmt->untypeds);
+    metric_count += cfl_list_size(&cmt->summaries);
+    metric_count += cfl_list_size(&cmt->histograms);
+
+    mpack_write_cstr(writer, "metrics");
+    mpack_start_array(writer, metric_count);
+
+    /* Counters */
+    cfl_list_foreach(head, &cmt->counters) {
+        counter = cfl_list_entry(head, struct cmt_counter, _head);
+        pack_basic_type(writer, cmt, counter->map);
+    }
+
+    /* Gauges */
+    cfl_list_foreach(head, &cmt->gauges) {
+        gauge = cfl_list_entry(head, struct cmt_gauge, _head);
+        pack_basic_type(writer, cmt, gauge->map);
+    }
+
+    /* Untyped */
+    cfl_list_foreach(head, &cmt->untypeds) {
+        untyped = cfl_list_entry(head, struct cmt_untyped, _head);
+        pack_basic_type(writer, cmt, untyped->map);
+    }
+
+    /* Summary */
+    cfl_list_foreach(head, &cmt->summaries) {
+        summary = cfl_list_entry(head, struct cmt_summary, _head);
+        pack_basic_type(writer, cmt, summary->map);
+    }
+
+    /* Histogram */
+    cfl_list_foreach(head, &cmt->histograms) {
+        histogram = cfl_list_entry(head, struct cmt_histogram, _head);
+        pack_basic_type(writer, cmt, histogram->map);
+    }
+
+    mpack_finish_array(writer);
+
+    return 0;
+}
+
+static int pack_context(mpack_writer_t *writer, struct cmt *cmt)
+{
+    int result;
+
+    mpack_start_map(writer, 2);
+
+    result = pack_context_header(writer, cmt);
+
+    if (result != 0) {
+        return -1;
+    }
+
+    result = pack_context_metrics(writer, cmt);
+
+    if (result != 0) {
+        return -2;
+    }
+
+    mpack_finish_map(writer); /* outermost context scope */
+
+    return 0;
+}
 
 /* Takes a cmetrics context and serialize it using msgpack */
 int cmt_encode_msgpack_create(struct cmt *cmt, char **out_buf, size_t *out_size)
@@ -459,56 +439,62 @@ int cmt_encode_msgpack_create(struct cmt *cmt, char **out_buf, size_t *out_size)
     char *data;
     size_t size;
     mpack_writer_t writer;
-    struct cfl_list *head;
-    struct cmt_counter *counter;
-    struct cmt_gauge *gauge;
-    struct cmt_untyped *untyped;
-    struct cmt_summary *summary;
-    struct cmt_histogram *histogram;
-    size_t metric_count;
+    int result;
 
     /*
      * CMetrics data schema
-     *  [
-     *      {
-     *        'meta' => {
-     *                      'ver' => INTEGER
-     *                      'type' => INTEGER
-     *                                '0' = counter
-     *                                '1' = gauge
-     *                                '2' = histogram (WIP)
-     *                      'opts' => {
-     *                                 'ns'   => ns
-     *                                 'subsystem'   => subsystem
-     *                                 'name'        => name
-     *                                 'description' => description
-     *                                },
-     *                      'label_dictionary' => ['', ...],
-     *                      'static_labels' => [n, ...],
-     *                      'label_keys' => [n, ...],
-     *                      'buckets' => [n, ...]
-     *                    },
-     *        'values' => [
-     *                      {
-     *                       'ts'   : nanosec timestamp,
-     *                       'value': float64 value,
-     *                       'label_values': [n, ...],
-     *                       'histogram': {
-     *                                         'sum': float64,
-     *                                         'count': uint64,
-     *                                         'buckets': [n, ...]
-     *                                     },
-     *                       'summary': {
-     *                                      'sum': float64,
-     *                                      'count': uint64,
-     *                                      'quantiles': [n, ...],
-     *                                      'quantiles_set': uint64
-     *                                  },
-     *                       'hash': uint64 value
-     *                      }
-     *                    ]
-     *      }
-     *  , ...]
+
+        {
+            'meta' => {
+                'cmetrics' => {
+                                'producer': STRING
+                },
+                'external' => { ... },
+                'processing' => {
+                                    'static_labels' =>  [
+                                                            [STRING, STRING], ...
+                                                        ]
+                                }
+            },
+            'metrics' =>    [
+                                {
+                                    'meta' => {
+                                                'ver'  => INTEGER
+                                                'type' => INTEGER
+                                                            '0' = counter
+                                                            '1' = gauge
+                                                            '2' = histogram (WIP)
+                                                'opts' => {
+                                                            'ns'          => ns
+                                                            'subsystem'   => subsystem
+                                                            'name'        => name
+                                                            'description' => description
+                                                },
+                                                'label_keys' => [STRING, ...],
+                                                'buckets' => [n, ...]
+                                    },
+                                    'values' => [
+                                        {
+                                            'ts'   : nanosec timestamp,
+                                            'value': float64 value,
+                                            'label_values': [STRING, ...],
+                                            'histogram':{
+                                                            'sum': float64,
+                                                            'count': uint64,
+                                                            'buckets': [n, ...]
+                                                        },
+                                            'summary':  {
+                                                            'sum': float64,
+                                                            'count': uint64,
+                                                            'quantiles': [n, ...],
+                                                            'quantiles_set': uint64
+                                                        },
+                                            'hash': uint64 value
+                                        }
+                                    ]
+                                }, ...
+            ]
+        }
      *
      *
      * The following fields are metric type specific and are only
@@ -525,52 +511,17 @@ int cmt_encode_msgpack_create(struct cmt *cmt, char **out_buf, size_t *out_size)
 
     mpack_writer_init_growable(&writer, &data, &size);
 
-    metric_count  = 0;
-    metric_count += cfl_list_size(&cmt->counters);
-    metric_count += cfl_list_size(&cmt->gauges);
-    metric_count += cfl_list_size(&cmt->untypeds);
-    metric_count += cfl_list_size(&cmt->summaries);
-    metric_count += cfl_list_size(&cmt->histograms);
-
-    /* We want an array to group all these metrics in a context */
-    mpack_start_array(&writer, metric_count);
-
-    /* Counters */
-    cfl_list_foreach(head, &cmt->counters) {
-        counter = cfl_list_entry(head, struct cmt_counter, _head);
-        pack_basic_type(&writer, cmt, counter->map);
-    }
-
-    /* Gauges */
-    cfl_list_foreach(head, &cmt->gauges) {
-        gauge = cfl_list_entry(head, struct cmt_gauge, _head);
-        pack_basic_type(&writer, cmt, gauge->map);
-    }
-
-    /* Untyped */
-    cfl_list_foreach(head, &cmt->untypeds) {
-        untyped = cfl_list_entry(head, struct cmt_untyped, _head);
-        pack_basic_type(&writer, cmt, untyped->map);
-    }
-
-    /* Summary */
-    cfl_list_foreach(head, &cmt->summaries) {
-        summary = cfl_list_entry(head, struct cmt_summary, _head);
-        pack_basic_type(&writer, cmt, summary->map);
-    }
-
-    /* Histogram */
-    cfl_list_foreach(head, &cmt->histograms) {
-        histogram = cfl_list_entry(head, struct cmt_histogram, _head);
-        pack_basic_type(&writer, cmt, histogram->map);
-    }
+    result = pack_context(&writer, cmt);
 
     if (mpack_writer_destroy(&writer) != mpack_ok) {
         fprintf(stderr, "An error occurred encoding the data!\n");
+
         return -1;
     }
 
-    mpack_finish_array(&writer);
+    if (result != 0) {
+        return result;
+    }
 
     *out_buf = data;
     *out_size = size;

@@ -30,7 +30,7 @@ endif()
 
 # CMetrics Version
 set(CMT_VERSION_MAJOR  0)
-set(CMT_VERSION_MINOR  4)
+set(CMT_VERSION_MINOR  5)
 set(CMT_VERSION_PATCH  0)
 set(CMT_VERSION_STR "${CMT_VERSION_MAJOR}.${CMT_VERSION_MINOR}.${CMT_VERSION_PATCH}")
 
@@ -55,6 +55,7 @@ set(FLEX_BISON_GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR})
 
 # Bundled libraries
 include(cmake/libraries.cmake)
+include(cmake/headers.cmake)
 
 # Include headers and dependency headers
 include_directories(
@@ -150,6 +151,17 @@ if(CMT_HAVE_CFL)
   message(STATUS "CFL found in the system. OK")
 endif()
 
+# Check if fluent-otel-proto library is available in the environment, if not,
+# we will try to build a local copy at a later stage
+check_c_source_compiles("
+  #include <fluent-otel-proto/fluent-otel_found.h>
+  int main() {
+     return fluent_otel_found();
+  }" CMT_HAVE_FLUENT_OTEL_PROTO)
+if(CMT_HAVE_FLUENT_OTEL_PROTO)
+  CMT_DEFINITION(CMT_HAVE_FLUENT_OTEL_PROTO)
+endif()
+
 # Configure header files
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/cmetrics/cmt_info.h.in"
@@ -196,6 +208,16 @@ if (NOT CMT_HAVE_CFL)
   add_subdirectory(lib/cfl)
   CMT_DEFINITION(CMT_HAVE_CFL)
   CMT_DEFINITION(CMT_HAVE_CFL_INTERNAL)
+endif()
+
+# fluent-otel-proto
+if (NOT CMT_HAVE_FLUENT_OTEL_PROTO)
+  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/${CMT_PATH_LIB_FLUENT_OTEL_PROTO}/include)
+  CMT_OPTION(FLUENT_PROTO_METRICS   "on")
+  CMT_OPTION(FLUENT_PROTO_EXAMPLES "off")
+  add_subdirectory(lib/fluent-otel-proto)
+  CMT_DEFINITION(CMT_HAVE_FLUENT_OTEL_PROTO)
+  CMT_DEFINITION(CMT_HAVE_FLUENT_OTEL_PROTO_INTERNAL)
 endif()
 
 # Source code

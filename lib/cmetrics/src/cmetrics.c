@@ -80,6 +80,8 @@ struct cmt *cmt_create()
     cfl_list_init(&cmt->untypeds);
 
     cmt->log_level = CMT_LOG_ERROR;
+
+    cfl_list_entry_init(&cmt->_head);
     
     return cmt;
 }

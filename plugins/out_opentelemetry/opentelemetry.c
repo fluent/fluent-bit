@@ -24,10 +24,8 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_pack.h>
 #include <cmetrics/cmt_encode_opentelemetry.h>
-#include <opentelemetry/common.pb-c.h>
 
-#include "opentelemetry_logs.pb-c.h"
-#include "opentelemetry_logs_service.pb-c.h"
+#include <fluent-otel-proto/fluent-otel.h>
 #include "opentelemetry.h"
 #include "opentelemetry_conf.h"
 
