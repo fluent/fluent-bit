@@ -6,8 +6,13 @@ include_directories(
   ${FLB_PATH_ROOT_SOURCE}/include/
   ${FLB_PATH_ROOT_SOURCE}/lib/
 
+  # fluent-otel-proto
+  ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_FLUENT_OTEL}/include/
+  ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_FLUENT_OTEL}/proto_c/
+
   # CFL
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CFL}/include
+
 
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CO}
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_RBTREE}
@@ -30,6 +35,7 @@ include_directories(
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_ONIGMO}
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_SNAPPY}
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CMETRICS}/include
+  ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CTRACES}/include
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CARES}/include
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_RING_BUFFER}/lwrb/src/include
 
@@ -40,8 +46,6 @@ include_directories(
 
   ${CMAKE_CURRENT_BINARY_DIR}/lib/monkey/include/
   ${CMAKE_CURRENT_BINARY_DIR}/lib/monkey/include/monkey/
-
-
   )
 
 if(FLB_IN_KAFKA OR FLB_OUT_KAFKA)

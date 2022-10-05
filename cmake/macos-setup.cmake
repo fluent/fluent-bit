@@ -4,6 +4,9 @@ execute_process(
   OUTPUT_VARIABLE HOMEBREW_PREFIX
   OUTPUT_STRIP_TRAILING_WHITESPACE
   )
+
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wundef-prefix=TARGET_OS_ ")
+
 if (HOMEBREW EQUAL 0 AND EXISTS "${HOMEBREW_PREFIX}")
   message(STATUS "Found Homebrew at ${HOMEBREW_PREFIX}")
   include(cmake/homebrew.cmake)
