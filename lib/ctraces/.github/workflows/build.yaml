@@ -40,7 +40,7 @@ jobs:
       - name: Set up base image dependencies
         run: |
           yum -y update && \
-          yum install -y ca-certificates cmake gcc gcc-c++ git make wget && \
+          yum install -y ca-certificates cmake curl-devel gcc gcc-c++ git make wget && \
           wget http://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm && \
           rpm -ivh epel-release-latest-7.noarch.rpm && \
           yum install -y cmake3

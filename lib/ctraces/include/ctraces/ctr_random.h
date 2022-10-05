@@ -2,7 +2,7 @@
 
 /*  CTraces
  *  =======
- *  Copyright 2022 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2022 The CTraces Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -19,6 +19,8 @@
 
 #ifndef CTR_RANDOM_H
 #define CTR_RANDOM_H
+
+#include <ctraces/ctraces.h>
 
 ssize_t ctr_random_get(void *buf, size_t len);
 
