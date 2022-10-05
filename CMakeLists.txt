@@ -436,11 +436,23 @@ endif()
 # fluent-bit do not use it.
 set(WITH_SYSTEM_MALLOC  1 CACHE BOOL "Use system memory allocator")
 
+# Headers: required headers by bundled libraries, this act as a helper for
+# CFL, Ctraces, CMetrics and fluent-otel-proto
+#
+# Note: any check_c_source_compiles() cmake function might require this to
+# work.
+#
+set(CMAKE_REQUIRED_INCLUDES
+  ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CFL}/include
+  ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_FLUENT_OTEL}/include/
+  ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_FLUENT_OTEL}/proto_c/
+  )
+
 # CFL
-set(CMAKE_REQUIRED_INCLUDES "${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CFL}/include")
 add_subdirectory(${FLB_PATH_LIB_CFL} EXCLUDE_FROM_ALL)
 
 # fluent-otel-proto
+FLB_OPTION(FLUENT_PROTO_METRICS ON)
 add_subdirectory(${FLB_PATH_LIB_FLUENT_OTEL} EXCLUDE_FROM_ALL)
 
 # MsgPack options
