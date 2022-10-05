@@ -17,7 +17,7 @@ configure_file(sample_trace.bin sample_trace.bin COPYONLY)
 
 # example: opentelemetry encoder
 set(src
-	otlp-encoder.c
+	otlp-encoder/otlp-encoder.c
 	)
 
 add_executable(ctraces-otlp-encoder ${src})
