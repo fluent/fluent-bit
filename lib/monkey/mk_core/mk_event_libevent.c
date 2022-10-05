@@ -166,6 +166,9 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, evutil_socket_t fd,
     struct mk_event *event;
     struct ev_map *ev_map;
 
+    mk_bug(ctx == NULL);
+    mk_bug(data == NULL);
+
     event = (struct mk_event *) data;
     if (event->mask != MK_EVENT_EMPTY) {
         return _mk_event_update(ctx, fd, type, events, data);
@@ -188,11 +191,11 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, evutil_socket_t fd,
     event->fd   = fd;
     event->type = type;
     event->mask = events;
-    event->priority = MK_EVENT_PRIORITY_DEFAULT;
-    event->_priority_head.next = NULL;
-    event->_priority_head.prev = NULL;
     event->status = MK_EVENT_REGISTERED;
     event->data   = ev_map;
+
+    event->priority = MK_EVENT_PRIORITY_DEFAULT;
+    mk_list_entry_init(&event->_priority_head);
 
     /* Register into libevent */
     flags |= EV_PERSIST;
@@ -215,25 +218,34 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
     int ret;
     struct ev_map *ev_map;
 
-    if ((event->status & MK_EVENT_REGISTERED) == 0) {
+    mk_bug(ctx == NULL);
+    mk_bug(event == NULL);
+
+    if (!MK_EVENT_IS_REGISTERED(event)) {
         return 0;
     }
 
     ev_map = event->data;
+
+    mk_bug(ev_map == NULL);
+
     if (ev_map->pipe[0] > 0) {
         evutil_closesocket(ev_map->pipe[0]);
+        ev_map->pipe[0] = -1;
     }
     if (ev_map->pipe[1] > 0) {
         evutil_closesocket(ev_map->pipe[1]);
+        ev_map->pipe[1] = -1;
     }
 
     ret = event_del(ev_map->event);
     event_free(ev_map->event);
     mk_mem_free(ev_map);
 
+    event->data = NULL;
+
     /* Remove from priority queue */
-    if (event->_priority_head.next != NULL &&
-        event->_priority_head.prev != NULL) {
+    if (!mk_list_entry_is_orphan(&event->_priority_head)) {
         mk_list_del(&event->_priority_head);
     }
 
@@ -281,6 +293,8 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     struct timeval timev = {sec, nsec / 1000}; /* (tv_sec, tv_usec} */
     struct ev_map *ev_map;
 
+    mk_bug(data == NULL);
+
     if (evutil_socketpair(AF_UNIX, SOCK_STREAM, 0, fd) == -1) {
         perror("socketpair");
         return -1;
@@ -317,20 +331,29 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
 
 static inline int _mk_event_timeout_destroy(struct mk_event_ctx *ctx, void *data)
 {
-    struct mk_event *event;
-    event = (struct mk_event *) data;
-    evutil_closesocket(event->fd);
+    if (data == NULL) {
+        return 0;
+    }
+
+    /* The event fd member is already being closed by _mk_event_del
+     * so we don't need to do it here as well.
+     */
+
     return _mk_event_del(ctx, data);
 }
 
 static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
                                            int *r_fd, int *w_fd, void *data)
 {
-    int ret;
-    evutil_socket_t fd[2];
     struct mk_event *event;
+    evutil_socket_t  fd[2];
+    int              ret;
 
-    if (evutil_socketpair(AF_UNIX, SOCK_STREAM, 0, fd) == -1) {
+    mk_bug(data == NULL);
+
+    ret = evutil_socketpair(AF_UNIX, SOCK_STREAM, 0, fd);
+
+    if (ret == -1) {
         perror("socketpair");
         return -1;
     }
@@ -351,6 +374,29 @@ static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
 
     *r_fd = fd[0];
     *w_fd = fd[1];
+
+    return 0;
+}
+
+static inline int _mk_event_channel_destroy(struct mk_event_ctx *ctx,
+                                            int r_fd, int w_fd, void *data)
+{
+    struct mk_event *event;
+    int ret;
+
+
+    event = (struct mk_event *)data;
+    if (event->fd != r_fd) {
+        return -1;
+    }
+
+    ret = _mk_event_del(ctx, event);
+    if (ret != 0) {
+        return ret;
+    }
+
+    evutil_closesocket(r_fd);
+    evutil_closesocket(w_fd);
 
     return 0;
 }

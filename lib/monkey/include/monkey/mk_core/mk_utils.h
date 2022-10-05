@@ -79,17 +79,14 @@ extern pthread_key_t mk_utils_error_key;
 #endif
 
 /*
- * Helpers to format and print out common errno errors, we use thread
- * keys to hold a buffer per thread so strerror_r(2) can be used without
- * a memory allocation.
+ * Helpers to format and print out common errno errors.
  */
-#define MK_UTILS_LIBC_ERRNO_BUFFER()                                    \
-    int _err  = errno;                                                  \
-    char bufs[256];                                                     \
-    char *buf = (char *) pthread_getspecific(mk_utils_error_key);       \
-    if (!buf) buf = bufs;                                               \
-    if (strerror_r(_err, buf, MK_UTILS_ERROR_SIZE) != 0) {              \
-        mk_err("strerror_r() failed");                                  \
+#define MK_UTILS_LIBC_ERRNO_BUFFER()                       \
+    char buf[MK_UTILS_ERROR_SIZE];                         \
+    int  _err;                                             \
+    _err = errno;                                          \
+    if (strerror_r(_err, buf, MK_UTILS_ERROR_SIZE) != 0) { \
+        mk_err("strerror_r() failed");                     \
     }
 
 static inline void mk_utils_libc_error(char *caller, char *file, int line)
