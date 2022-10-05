@@ -17,23 +17,23 @@
  *  limitations under the License.
  */
 
-#ifndef CTR_ID_H
-#define CTR_ID_H
+#ifndef CTR_COMPAT_H
+#define CTR_COMPAT_H
 
-#define CTR_ID_BUFFER_SIZE    16
-#define CTR_ID_DEFAULT        "000000F1BI700000"
+#ifdef _WIN32
 
-struct ctrace_id {
-    cfl_sds_t buf;
-};
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <windows.h>
 
-struct ctrace_id *ctr_id_create_random();
-struct ctrace_id *ctr_id_create(void *buf, size_t len);
-void ctr_id_destroy(struct ctrace_id *cid);
-int ctr_id_set(struct ctrace_id *cid, void *buf, size_t len);
-int ctr_id_cmp(struct ctrace_id *cid1, struct ctrace_id *cid2);
-size_t ctr_id_get_len(struct ctrace_id *cid);
-void *ctr_id_get_buf(struct ctrace_id *cid);
-cfl_sds_t ctr_id_to_lower_base16(struct ctrace_id *cid);
-
+#ifndef ssize_t
+typedef SSIZE_T ssize_t;
 #endif
+
+
+#else
+#include <unistd.h>
+
+#endif /* !_WIN32 */
+
+#endif /* !CTR_COMPAT_H */

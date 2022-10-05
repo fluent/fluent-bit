@@ -2,7 +2,7 @@
 
 /*  CTraces
  *  =======
- *  Copyright 2022 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2022 The CTraces Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -1307,6 +1307,7 @@ cfl_sds_t ctr_encode_opentelemetry_create(struct ctrace *ctr)
     if (!buf) {
         return NULL;
     }
+    cfl_sds_set_len(buf, len);
 
     opentelemetry__proto__collector__trace__v1__export_trace_service_request__pack(req, (uint8_t *)buf);
 

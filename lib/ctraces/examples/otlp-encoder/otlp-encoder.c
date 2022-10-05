@@ -33,7 +33,7 @@ struct ctrace_id *create_random_span_id()
 
 int main()
 {
-    char *buf;
+    cfl_sds_t buf;
     struct ctrace *ctx;
     struct ctrace_opts opts;
     struct ctrace_span *span_root;
@@ -49,6 +49,10 @@ int main()
     struct cfl_array *array;
     struct cfl_array *sub_array;
     struct cfl_kvlist *kv;
+
+    struct curl_slist *headers;
+    CURL *curl;
+    CURLcode res;
 
     /*
      * create an options context: this is used to initialize a CTrace context only,
@@ -175,19 +179,22 @@ int main()
 
     /* Encode Trace as otlp buffer */
     buf = ctr_encode_opentelemetry_create(ctx);
-    printf("%s\n", buf);
+    if (!buf) {
+        ctr_destroy(ctx);
+        ctr_encode_opentelemetry_destroy(buf);
+        ctr_opts_exit(&opts);
+        exit(EXIT_FAILURE);
+    }
 
-    CURL *curl;
-    CURLcode res;
     curl = curl_easy_init();
 
     if (curl){
-        struct curl_slist *headers = NULL;
+        headers = NULL;
         headers = curl_slist_append(headers, "Content-Type: application/x-protobuf");
         curl_easy_setopt(curl, CURLOPT_URL, "0.0.0.0:4318/v1/traces");
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, buf);
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, 583);
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, cfl_sds_len(buf));
         res = curl_easy_perform(curl);
         if(res != CURLE_OK)
             fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
