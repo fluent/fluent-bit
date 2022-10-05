@@ -2,7 +2,7 @@
 
 /*  CTraces
  *  =======
- *  Copyright 2022 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2022 The CTraces Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -19,8 +19,10 @@
 
 #include <ctraces/ctraces.h>
 
-#define ITS_A_UNIX_FRIEND defined(unix) || defined (__unix) || defined(__unix__) || defined(__linux__) || \
-                          defined(__APPLE__) || defined(__MACH__) || defined(__FreeBSD__) || defined(__ANDROID__)
+#if defined(unix) || defined (__unix) || defined(__unix__) || defined(__linux__) || \
+    defined(__APPLE__) || defined(__MACH__) || defined(__FreeBSD__) || defined(__ANDROID__)
+#define ITS_A_UNIX_FRIEND
+#endif
 
 #ifdef CTR_HAVE_GETRANDOM
 #include <sys/random.h>
@@ -29,6 +31,14 @@
 #ifdef ITS_A_UNIX_FRIEND
 #include <fcntl.h>
 #include <unistd.h>
+#else
+// #define needed to link in RtlGenRandom(), a.k.a. SystemFunction036.  See the
+// "Community Additions" comment on MSDN here:
+// http://msdn.microsoft.com/en-us/library/windows/desktop/aa387694.aspx
+#define SystemFunction036 NTAPI SystemFunction036
+#include <ntsecapi.h>
+#undef SystemFunction036
+
 #endif
 
 #include <time.h>
@@ -59,7 +69,6 @@ ssize_t ctr_random_get(void *buf, size_t len)
         close(fd);
         return ret;
     }
-#endif
 
     s = time(NULL);
 
@@ -69,6 +78,9 @@ ssize_t ctr_random_get(void *buf, size_t len)
         /* fixme: we need a good entropy here */
         tmp[i] = rand_r(&s);
     }
+#else /* Windows ? */
+    ret = RtlGenRandom(buf, len);
+#endif
 
     return ret;
 }
