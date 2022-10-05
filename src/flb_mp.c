@@ -350,30 +350,6 @@ void flb_mp_array_header_end(struct flb_mp_map_header *mh)
     flb_mp_set_array_header_size(ptr, mh->entries);
 }
 
-/* TODO: move to mk_list.h ? */
-static inline void list_add_before(struct mk_list *_new,
-                                   struct mk_list *next,
-                                   struct mk_list *head)
-{
-    struct mk_list *prev;
-
-    if (_new == NULL || next == NULL || head == NULL) {
-        return;
-    }
-
-    if ((head->prev == head && head->next == head) /*empty*/||
-        next == head) {
-        mk_list_add(_new, head);
-        return;
-    }
-
-    prev = next->prev;
-    _new->next = next;
-    _new->prev = prev;
-    prev->next = _new;
-    next->prev = _new;
-}
-
 static int insert_by_subkey_num(struct flb_record_accessor *ra, struct flb_mp_accessor *mpa)
 {
     int subkey_num;
@@ -394,7 +370,7 @@ static int insert_by_subkey_num(struct flb_record_accessor *ra, struct flb_mp_ac
         val_ra = mk_list_entry(h, struct flb_record_accessor, _head);
         num = flb_ra_subkey_num(val_ra);
         if (num >=  subkey_num) {
-            list_add_before(&ra->_head, &val_ra->_head, &mpa->ra_list);
+            mk_list_add_before(&ra->_head, &val_ra->_head, &mpa->ra_list);
             return 0;
         }
     }
