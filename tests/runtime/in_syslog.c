@@ -256,12 +256,6 @@ static flb_sockfd_t init_udp_unix(char *path, struct sockaddr_un *sun)
 
     sun->sun_family = AF_LOCAL;
     strcpy(sun->sun_path, path);
-    ret = connect(fd, (const struct sockaddr *)sun, sizeof(struct sockaddr_un));
-    if (!TEST_CHECK(ret >= 0)) {
-        TEST_MSG("failed to connect. path=%s errno=%d", path, errno);
-        flb_socket_close(fd);
-        return -1;
-    }
     return fd;
 }
 #endif
@@ -735,8 +729,8 @@ void flb_test_syslog_udp_unix()
     char *unix_path = "in_syslog_unix";
 
     struct str_list expected = {
-                                .size = sizeof(RFC5424_EXPECTED_STRS_1)/sizeof(char*),
-                                .lists = &RFC5424_EXPECTED_STRS_1[0],
+        .size = sizeof(RFC5424_EXPECTED_STRS_1)/sizeof(char*),
+        .lists = &RFC5424_EXPECTED_STRS_1[0],
     };
 
     char *buf = RFC5424_EXAMPLE_1;
