@@ -67,6 +67,9 @@ struct cmt {
     struct cfl_list histograms;
     struct cfl_list summaries;
     struct cfl_list untypeds;
+
+    /* Only used by the otlp decoder */
+    struct cfl_list _head;
 };
 
 void cmt_initialize();
