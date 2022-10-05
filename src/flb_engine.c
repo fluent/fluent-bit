@@ -17,6 +17,7 @@
  *  limitations under the License.
  */
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -52,6 +53,7 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_ring_buffer.h>
+#include <fluent-bit/flb_coroutine_scheduler.h>
 
 #ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics_exporter.h>
@@ -595,6 +597,7 @@ int flb_engine_start(struct flb_config *config)
     struct flb_bucket_queue *evl_bktq;
     struct flb_sched *sched;
     struct flb_net_dns dns_ctx;
+    struct flb_coroutine_scheduler coro_sched;
 
     /* Initialize the networking layer */
     flb_net_lib_init();
@@ -611,6 +614,12 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
     config->evl = evl;
+
+    flb_coroutine_scheduler_init(&coro_sched, -1);
+    flb_coroutine_scheduler_set(&coro_sched);
+    flb_coroutine_scheduler_add_event_loop(&coro_sched, config->evl);
+    flb_coroutine_scheduler_set_collective_timeslice(&coro_sched,
+                                                     config->collective_timeslice);
 
     /* Create the bucket queue (FLB_ENGINE_PRIORITY_COUNT priorities) */
     evl_bktq = flb_bucket_queue_create(FLB_ENGINE_PRIORITY_COUNT);
@@ -922,7 +931,8 @@ int flb_engine_start(struct flb_config *config)
                     }
                 }
             }
-            else if (event->type & FLB_ENGINE_EV_SCHED) {
+            else if (event->type == FLB_ENGINE_EV_SCHED ||
+                     event->type == FLB_ENGINE_EV_SCHED_FRAME ) {
                 /* Event type registered by the Scheduler */
                 flb_sched_event_handler(config, event);
             }
@@ -953,7 +963,7 @@ int flb_engine_start(struct flb_config *config)
                 connection = (struct flb_connection *) event;
 
                 if (connection->coroutine) {
-                    flb_trace("[engine] resuming coroutine=%p", connection->coroutine);
+                    flb_info("[engine] resuming coroutine=%p", connection->coroutine);
 
                     flb_coro_resume(connection->coroutine);
                 }
@@ -976,11 +986,16 @@ int flb_engine_start(struct flb_config *config)
 
                 rb_flush_flag = FLB_TRUE;
             }
+            else if(event->type == FLB_ENGINE_EV_CORO_SCHEDULER) {
+                flb_coroutine_scheduler_consume_continuation_signal(NULL);
+            }
         }
 
         if (rb_flush_flag) {
             flb_input_chunk_ring_buffer_collector(config, NULL);
         }
+
+        flb_coroutine_scheduler_resume_enqueued_coroutines();
 
         /* Cleanup functions associated to events and timers */
         if (config->is_running == FLB_TRUE) {

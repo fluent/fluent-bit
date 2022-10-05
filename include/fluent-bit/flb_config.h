@@ -30,6 +30,7 @@
 
 #include <monkey/mk_core.h>
 
+#define FLB_CONFIG_COLLECTIVE_TIMESLICE_SECS 1
 #define FLB_CONFIG_FLUSH_SECS   1
 #define FLB_CONFIG_HTTP_LISTEN  "0.0.0.0"
 #define FLB_CONFIG_HTTP_PORT    "2020"
@@ -249,6 +250,12 @@ struct flb_config {
     /* Co-routines */
     unsigned int coro_stack_size;
 
+    /* Collective timeslice per scheduler cycle.
+     * ie. how much time can the coroutine scheduler resuming
+     *     coroutines per event loop cycle
+     */
+    uint64_t collective_timeslice;
+
     /* Upstream contexts created by plugins */
     struct mk_list upstreams;
 
@@ -337,8 +344,8 @@ enum conf_type {
 #define FLB_CONF_STORAGE_MAX_CHUNKS_UP "storage.max_chunks_up"
 
 /* Coroutines */
-#define FLB_CONF_STR_CORO_STACK_SIZE "Coro_Stack_Size"
-
+#define FLB_CONF_STR_CORO_STACK_SIZE      "Coro_Stack_Size"
+#define FLB_CONF_STR_COLLECTIVE_TIMESLICE "Coro_Collective_Timeslice"
 /* Scheduler */
 #define FLB_CONF_STR_SCHED_CAP        "scheduler.cap"
 #define FLB_CONF_STR_SCHED_BASE       "scheduler.base"

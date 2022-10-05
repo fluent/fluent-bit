@@ -31,6 +31,7 @@ set(UNIT_TESTS_FILES
   bucket_queue.c
   flb_event_loop.c
   ring_buffer.c
+  coroutine_scheduler.c
   )
 
 # Config format

@@ -46,6 +46,6 @@
 #define FLB_ERR_JSON_PART            -502
 
 /* Coroutine errors */
-#define FLB_ERR_CORO_STACK_SIZE      -600
-
+#define FLB_ERR_CORO_STACK_SIZE          -600
+#define FLB_ERR_CFG_COLLECTIVE_TIMESLICE -601
 #endif

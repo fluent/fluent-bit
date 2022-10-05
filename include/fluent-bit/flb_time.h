@@ -72,10 +72,15 @@ static inline int flb_time_equal(struct flb_time *t0, struct flb_time *t1) {
     return t0->tm.tv_sec == t1->tm.tv_sec && t0->tm.tv_nsec == t1->tm.tv_nsec;
 }
 
+static inline uint64_t flb_timestamp_ns_to_us(uint64_t timestamp) {
+    return timestamp / 1000;
+}
+
 int flb_time_get(struct flb_time *tm);
 int flb_time_msleep(uint32_t ms);
 double flb_time_to_double(struct flb_time *tm);
 uint64_t flb_time_to_nanosec(struct flb_time *tm);
+uint64_t flb_time_get_cpu_timestamp();
 int flb_time_add(struct flb_time *base, struct flb_time *duration,
                  struct flb_time *result);
 int flb_time_diff(struct flb_time *time1,

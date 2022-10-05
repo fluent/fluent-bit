@@ -40,6 +40,7 @@ set(src
   flb_task.c
   flb_unescape.c
   flb_scheduler.c
+  flb_coroutine_scheduler.c
   flb_io.c
   flb_storage.c
   flb_connection.c

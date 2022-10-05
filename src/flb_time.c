@@ -96,6 +96,82 @@ uint64_t flb_time_to_nanosec(struct flb_time *tm)
     return (((uint64_t)tm->tm.tv_sec * 1000000000L) + tm->tm.tv_nsec);
 }
 
+/* These flb_time_get_cpu_timestamp implementations attempt
+ * to expose a time counter with a reasonable granularity
+ * level for coroutine management.
+ *
+ * Speed is favored over accuracy since we don't aim to
+ * offer sub micro second time slices.
+ */
+
+#if defined(FLB_SYSTEM_WINDOWS)
+/* QueryPerformanceCounter actually returns a value
+ * expressed in microseconds
+ */
+uint64_t flb_time_get_cpu_timestamp()
+{
+    LARGE_INTEGER timestamp;
+    DWORD         result;
+
+    result = QueryPerformanceCounter(&timestamp);
+
+    if (result == 0) {
+        return 0;
+    }
+
+    return timestamp.QuadPart;
+}
+
+#elif defined(FLB_SYSTEM_MACOS)
+static uint64_t flb_ticks_to_nanoseconds(uint64_t tick_count)
+{
+    static int                       time_base_flag = FLB_FALSE;
+    static mach_timebase_info_data_t time_base_info;
+    uint64_t                         timestamp;
+    int                              result;
+
+    if (!time_base_flag) {
+        result = mach_timebase_info(&time_base_info);
+
+        if (result == KERN_SUCCESS) {
+            time_base_flag = FLB_TRUE;
+        }
+    }
+
+    if (time_base_flag) {
+        /* convert the tick count to nanoseconds*/
+        timestamp  = tick_count;
+        timestamp *= time_base_info.numer;
+        timestamp /= time_base_info.denom;
+    }
+    else {
+        timestamp = 0;
+    }
+
+    return flb_timestamp_ns_to_us(timestamp);
+}
+
+uint64_t flb_time_get_cpu_timestamp()
+{
+    return flb_ticks_to_nanoseconds(mach_absolute_time());
+}
+
+#else
+uint64_t flb_time_get_cpu_timestamp()
+{
+    struct flb_time timestamp;
+    int             result;
+
+    result = clock_gettime(CLOCK_MONOTONIC_RAW, &timestamp.tm);
+
+    if (result != 0) {
+        return 0;
+    }
+
+    return flb_timestamp_ns_to_us(flb_time_to_nanosec(&timestamp));
+}
+#endif
+
 int flb_time_add(struct flb_time *base, struct flb_time *duration, struct flb_time *result)
 {
     if (base == NULL || duration == NULL|| result == NULL) {
