@@ -11,6 +11,11 @@ services:
       - "2020:2020"
     volumes:
       - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+    command:
+      - /fluent-bit/bin/fluent-bit
+      - -Z
+      - -c
+      - /fluent-bit/etc/fluent-bit.conf
 
   enable-tracing:
     image: ubuntu:20.04
