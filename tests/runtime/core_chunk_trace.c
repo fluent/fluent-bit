@@ -43,12 +43,16 @@ int callback_add_record(void* data, size_t size, void* cb_data)
 
     if (size > 0) {
         flb_info("[test] flush record");
+        /* We should check ctx->num_records has a valid value. */
+        if (ctx->num_records < 0) {
+            return -1;
+        }
         if (ctx->records == NULL) {
             ctx->records = (struct callback_record *)
                            flb_calloc(1, sizeof(struct callback_record));
         } else {
             ctx->records = (struct callback_record *)
-                           flb_realloc(ctx->records, 
+                           flb_realloc(ctx->records,
                                        (ctx->num_records+1)*sizeof(struct callback_record));
         }
         if (ctx->records ==  NULL) {

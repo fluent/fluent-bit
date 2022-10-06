@@ -238,7 +238,7 @@ int cfl_array_append_bool(struct cfl_array *array, int value)
     return 0;
 }
 
-int cfl_array_append_int(struct cfl_array *array, int64_t value)
+int cfl_array_append_int64(struct cfl_array *array, int64_t value)
 {
     struct cfl_variant *value_instance;
     int                 result;

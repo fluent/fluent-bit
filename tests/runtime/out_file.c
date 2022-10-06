@@ -50,6 +50,7 @@ TEST_LIST = {
 
 #define TEST_LOGFILE "flb_test_file_dummy.log"
 #define TEST_LOGPATH "out_file"
+#define TEST_TIMEOUT 5
 
 void flb_test_file_json_invalid(void)
 {
@@ -129,7 +130,8 @@ void flb_test_file_json_long(void)
         TEST_CHECK(bytes == 1);
     }
 
-    sleep(1); /* waiting flush */
+    ret = wait_for_file(TEST_LOGFILE, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -175,7 +177,8 @@ void flb_test_file_json_small(void)
         TEST_CHECK(bytes == 1);
     }
 
-    sleep(1); /* waiting flush */
+    ret = wait_for_file(TEST_LOGFILE, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -223,7 +226,8 @@ void flb_test_file_format_csv(void)
         TEST_CHECK(bytes == 1);
     }
 
-    sleep(1); /* waiting flush */
+    ret = wait_for_file(TEST_LOGFILE, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -272,7 +276,8 @@ void flb_test_file_format_ltsv(void)
         TEST_CHECK(bytes == 1);
     }
 
-    sleep(1); /* waiting flush */
+    ret = wait_for_file(TEST_LOGFILE, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -320,7 +325,8 @@ void flb_test_file_format_out_file(void)
         TEST_CHECK(bytes == 1);
     }
 
-    sleep(1); /* waiting flush */
+    ret = wait_for_file(TEST_LOGFILE, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -433,7 +439,8 @@ void flb_test_file_path(void)
         TEST_CHECK(bytes == 1);
     }
 
-    sleep(1); /* waiting flush */
+    ret = wait_for_file(path, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -498,7 +505,8 @@ void flb_test_file_path_file(void)
         TEST_CHECK(bytes == 1);
     }
 
-    sleep(1); /* waiting flush */
+    ret = wait_for_file(path, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -548,7 +556,8 @@ void flb_test_file_delim_csv(void)
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
 
-    sleep(1); /* waiting flush */
+    ret = wait_for_file(TEST_LOGFILE, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -605,7 +614,8 @@ void flb_test_file_delim_ltsv(void)
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
 
-    sleep(1); /* waiting flush */
+    ret = wait_for_file(TEST_LOGFILE, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -663,7 +673,8 @@ void flb_test_file_label_delim(void)
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
 
-    sleep(1); /* waiting flush */
+    ret = wait_for_file(TEST_LOGFILE, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -720,7 +731,8 @@ void flb_test_file_template(void)
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
 
-    sleep(1); /* waiting flush */
+    ret = wait_for_file(TEST_LOGFILE, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -794,7 +806,8 @@ void flb_test_file_mkdir(void)
         TEST_CHECK(bytes == 1);
     }
 
-    sleep(1); /* waiting flush */
+    ret = wait_for_file(path, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);

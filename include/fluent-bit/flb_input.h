@@ -21,7 +21,6 @@
 #define FLB_INPUT_H
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_engine_macros.h>
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_config.h>
@@ -34,6 +33,11 @@
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_hash_table.h>
+
+#include <fluent-bit/flb_input_chunk.h>
+#include <fluent-bit/flb_input_log.h>
+#include <fluent-bit/flb_input_metric.h>
+#include <fluent-bit/flb_input_trace.h>
 
 #ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics.h>
@@ -65,6 +69,7 @@
 /* Input plugin event type */
 #define FLB_INPUT_LOGS        0
 #define FLB_INPUT_METRICS     1
+#define FLB_INPUT_TRACES      2
 
 struct flb_input_instance;
 
@@ -275,7 +280,6 @@ struct flb_input_instance {
     struct mk_list input_coro_list_destroy;
 
 #ifdef FLB_HAVE_METRICS
-
     /* old metrics API */
     struct flb_metrics *metrics;         /* metrics                    */
 #endif
@@ -301,20 +305,46 @@ struct flb_input_instance {
     /*
      * CMetrics
      * --------
+     *
+     * All metrics available for an input plugin instance.
      */
     struct cmt *cmt;                     /* parent context              */
     struct cmt_counter *cmt_bytes;       /* metric: input_bytes_total   */
     struct cmt_counter *cmt_records;     /* metric: input_records_total */
 
+    /* is the input instance overlimit ?: 1 or 0 */
+    struct cmt_gauge   *cmt_storage_overlimit;
+
+    /* memory bytes used by chunks */
+    struct cmt_gauge   *cmt_storage_memory_bytes;
+
+    /* total number of chunks */
+    struct cmt_gauge   *cmt_storage_chunks;
+
+    /* total number of chunks up in memory */
+    struct cmt_gauge   *cmt_storage_chunks_up;
+
+    /* total number of chunks down */
+    struct cmt_gauge   *cmt_storage_chunks_down;
+
+    /* number of chunks in a busy state */
+    struct cmt_gauge   *cmt_storage_chunks_busy;
+
+    /* total bytes used by chunks in a busy state */
+    struct cmt_gauge   *cmt_storage_chunks_busy_bytes;
+
+    /* memory ring buffer (memrb) metrics */
+    struct cmt_counter *cmt_memrb_dropped_chunks;
+    struct cmt_counter *cmt_memrb_dropped_bytes;
+
     /*
      * Indexes for generated chunks: simple hash tables that keeps the latest
      * available chunks for writing data operations. This optimizes the
      * lookup for candidates chunks to write data.
-     *
-     * Starting from v1.8 we have separate hash tables for logs and metrics.
      */
     struct flb_hash_table *ht_log_chunks;
     struct flb_hash_table *ht_metric_chunks;
+    struct flb_hash_table *ht_trace_chunks;
 
     /* TLS settings */
     int use_tls;                         /* bool, try to use TLS for I/O */

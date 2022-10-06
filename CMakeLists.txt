@@ -152,7 +152,6 @@ option(FLB_IN_LIB                      "Enable library mode input plugin"       
 option(FLB_IN_RANDOM                   "Enable random input plugin"                   Yes)
 option(FLB_IN_SERIAL                   "Enable Serial input plugin"                   Yes)
 option(FLB_IN_STDIN                    "Enable Standard input plugin"                 Yes)
-option(FLB_IN_DUMMY_THREAD             "Enable Threaded dummy plugin"                 Yes)
 option(FLB_IN_SYSLOG                   "Enable Syslog input plugin"                   Yes)
 option(FLB_IN_TAIL                     "Enable Tail input plugin"                     Yes)
 option(FLB_IN_UDP                      "Enable UDP input plugin"                      Yes)
@@ -437,9 +436,24 @@ endif()
 # fluent-bit do not use it.
 set(WITH_SYSTEM_MALLOC  1 CACHE BOOL "Use system memory allocator")
 
+# Headers: required headers by bundled libraries, this act as a helper for
+# CFL, Ctraces, CMetrics and fluent-otel-proto
+#
+# Note: any check_c_source_compiles() cmake function might require this to
+# work.
+#
+set(CMAKE_REQUIRED_INCLUDES
+  ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CFL}/include
+  ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_FLUENT_OTEL}/include/
+  ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_FLUENT_OTEL}/proto_c/
+  )
+
 # CFL
-set(CMAKE_REQUIRED_INCLUDES "${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CFL}/include")
 add_subdirectory(${FLB_PATH_LIB_CFL} EXCLUDE_FROM_ALL)
+
+# fluent-otel-proto
+FLB_OPTION(FLUENT_PROTO_METRICS ON)
+add_subdirectory(${FLB_PATH_LIB_FLUENT_OTEL} EXCLUDE_FROM_ALL)
 
 # MsgPack options
 option(MSGPACK_ENABLE_CXX             OFF)
@@ -481,6 +495,9 @@ add_subdirectory(${FLB_PATH_LIB_SNAPPY} EXCLUDE_FROM_ALL)
 
 # CMetrics
 add_subdirectory(${FLB_PATH_LIB_CMETRICS} EXCLUDE_FROM_ALL)
+
+# CTraces
+add_subdirectory(${FLB_PATH_LIB_CTRACES} EXCLUDE_FROM_ALL)
 
 # C-Ares (DNS library)
 FLB_OPTION(CARES_STATIC      ON)
@@ -885,11 +902,21 @@ if(FLB_IN_KAFKA OR FLB_OUT_KAFKA)
     add_subdirectory(${FLB_PATH_LIB_RDKAFKA} EXCLUDE_FROM_ALL)
 endif()
 
-# Onigmo (Regex Engine)
+# Onigmo (Regex Engine) options
 # =====================
 if(FLB_REGEX)
-  include(cmake/onigmo.cmake)
+  option(ONIGMO_SHARED_LIB    OFF)
+  option(ONIGMO_CTESTS        OFF)
+  option(ONIGMO_CTESTS_SAMPLE OFF)
+  option(ONIGMO_PYTHON_TESTS  OFF)
   FLB_DEFINITION(FLB_HAVE_REGEX)
+
+  if (FLB_SYSTEM_WINDOWS)
+    # We need this line in order to link libonigmo.lib statically.
+    # Read onigmo/README for details.
+    FLB_DEFINITION_VAL(ONIG_EXTERN "extern")
+  endif()
+  add_subdirectory(${FLB_PATH_LIB_ONIGMO} EXCLUDE_FROM_ALL)
 endif()
 
 # tutf8e (UTF8 Encoding)
@@ -993,6 +1020,11 @@ configure_file(
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_version.h.in"
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_version.h"
+  )
+
+configure_file(
+  "${PROJECT_SOURCE_DIR}/include/fluent-bit/tls/flb_tls_info.h.in"
+  "${PROJECT_SOURCE_DIR}/include/fluent-bit/tls/flb_tls_info.h"
   )
 
 # Installation Directories

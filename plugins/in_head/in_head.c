@@ -156,7 +156,7 @@ static int single_value_per_record(struct flb_input_instance *i_ins,
 
     ret = 0;
 
-    flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    flb_input_log_append(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return ret;
@@ -227,7 +227,7 @@ static int split_lines_per_record(struct flb_input_instance *i_ins,
                               ctx->buf, str_len);
     }
 
-    flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    flb_input_log_append(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
     fclose(fp);
     return 0;
