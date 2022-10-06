@@ -76,6 +76,17 @@ static int create_simple_json(char **out_buf, size_t *size)
     return ret;
 }
 
+static int create_simple_trace_json(char **out_buf, size_t *size)
+{
+    int root_type;
+    int ret;
+    char json[] = "[\"test\", 1234567890, {\"resourceSpans\": [{\"resource\": {\"attributes\": [{\"key\": \"resource-attr\", \"value\": {\"stringValue\": \"resource-attr-val-1\"}}]}, \"scopeSpans\": [{\"scope\": {}, \"spans\": [{\"traceId\": \"0102030405060708090a0b0c0d0e0f10\", \"spanId\": \"1112131415161718\", \"parentSpanId\": \"\", \"name\": \"operationA\", \"kind\": \"SPAN_KIND_CLIENT\", \"startTimeUnixNano\": \"1663256345833023000\", \"endTimeUnixNano\": \"1663256350833008000\", \"attributes\": []}]}]}]}]";
+
+    ret = flb_pack_json(&json[0], strlen(json), out_buf, size, &root_type);
+    TEST_CHECK(ret == 0);
+
+    return ret;
+}
 
 /* Callback to check expected results */
 static int cb_check_result_json(void *record, size_t size, void *data)
@@ -599,6 +610,70 @@ void flb_test_data_type()
     test_ctx_destroy(ctx);
 }
 
+void flb_test_forward_traces()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    flb_sockfd_t fd;
+    int ret;
+    int num;
+    ssize_t w_size;
+
+    char *buf;
+    size_t size;
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "\"resourceSpans\"";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                      "data_type", "traces",
+                      NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "test",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* use default host/port */
+    fd = connect_tcp(NULL, -1);
+    if (!TEST_CHECK(fd >= 0)) {
+        exit(EXIT_FAILURE);
+    }
+    create_simple_trace_json(&buf, &size);
+    w_size = send(fd, buf, size, 0);
+    flb_free(buf);
+    if (!TEST_CHECK(w_size == size)) {
+        TEST_MSG("failed to send, errno=%d", errno);
+        flb_socket_close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+
+    flb_socket_close(fd);
+    test_ctx_destroy(ctx);
+}
+
 TEST_LIST = {
     {"forward", flb_test_forward},
     {"forward_port", flb_test_forward_port},
@@ -608,6 +683,7 @@ TEST_LIST = {
     {"unix_perm", flb_test_unix_perm},
 #endif
     {"data_type", flb_test_data_type},
+    {"forward_traces", flb_test_forward_traces},
     {NULL, NULL}
 };
 
