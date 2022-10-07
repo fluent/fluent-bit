@@ -1,8 +1,8 @@
+.. _thread-safety:
+
 *************
 Thread safety
 *************
-
-.. _thread-safety:
 
 Jansson as a library is thread safe and has no mutable global state.
 The only exceptions are the hash function seed and memory allocation
