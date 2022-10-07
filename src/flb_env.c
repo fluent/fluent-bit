@@ -195,7 +195,7 @@ flb_sds_t flb_env_var_translate(struct flb_env *env, const char *value)
 
         v_start += 2;
         v_len = v_end - v_start;
-        if (v_len <= 0) {
+        if (v_len <= 0 || v_len >= sizeof(tmp)) {
             break;
         }
 
