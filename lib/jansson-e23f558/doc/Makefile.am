@@ -1,5 +1,5 @@
-EXTRA_DIST = conf.py apiref.rst changes.rst conformance.rst		\
-	gettingstarted.rst github_commits.c index.rst portability.rst	\
+EXTRA_DIST = conf.py apiref.rst changes.rst conformance.rst  \
+	gettingstarted.rst github_commits.c index.rst threadsafety.rst  \
 	tutorial.rst upgrading.rst ext/refcounting.py
 
 SPHINXBUILD = sphinx-build

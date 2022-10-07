@@ -127,6 +127,7 @@ static void test_keylen(void) {
 
 static void test_invalid_keylen(void) {
     json_t *obj = json_object();
+    json_t *empty_obj = json_object();
     const char key[] = {'t', 'e', 's', 't', '1'};
 
     json_object_set_new_nocheck(obj, "test1", json_true());
@@ -149,7 +150,14 @@ static void test_invalid_keylen(void) {
     if (!json_object_del(obj, NULL))
         fail("json_object_del with NULL failed");
 
+    if (!json_object_deln(empty_obj, key, sizeof(key)))
+        fail("json_object_deln with empty object failed");
+
+    if (!json_object_deln(obj, key, sizeof(key) - 1))
+        fail("json_object_deln with incomplete key failed");
+
     json_decref(obj);
+    json_decref(empty_obj);
 }
 
 static void test_binary_keys(void) {
@@ -165,6 +173,21 @@ static void test_binary_keys(void) {
 
     if (!json_is_true(json_object_getn(obj, (const char *)&key1, sizeof(key2))))
         fail("cannot get integer key2");
+
+    if (json_object_size(obj) != 2)
+        fail("binary object size missmatch");
+
+    if (json_object_deln(obj, (const char *)&key1, sizeof(key1)))
+        fail("cannot del integer key1");
+
+    if (json_object_size(obj) != 1)
+        fail("binary object size missmatch");
+
+    if (json_object_deln(obj, (const char *)&key2, sizeof(key2)))
+        fail("cannot del integer key2");
+
+    if (json_object_size(obj) != 0)
+        fail("binary object size missmatch");
 
     json_decref(obj);
 }

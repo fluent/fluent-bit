@@ -114,7 +114,7 @@ also cause errors.
 Type
 ----
 
-.. type:: enum json_type
+.. c:enum:: json_type
 
    The type of a JSON value. The following members are defined:
 
@@ -599,7 +599,7 @@ A JSON array is an ordered collection of other JSON values.
    Iterate over every element of ``array``, running the block
    of code that follows each time with the proper values set to
    variables ``index`` and ``value``, of types :type:`size_t` and
-   :type:`json_t *` respectively. Example::
+   :type:`json_t` pointer respectively. Example::
 
        /* array is a JSON array */
        size_t index;
@@ -781,7 +781,7 @@ allowed in object keys.
    Iterate over every key-value pair of ``object``, running the block
    of code that follows each time with the proper values set to
    variables ``key`` and ``value``, of types ``const char *`` and
-   :type:`json_t *` respectively. Example::
+   :type:`json_t` pointer respectively. Example::
 
        /* obj is a JSON object */
        const char *key;
@@ -1003,7 +1003,7 @@ success. See :ref:`apiref-decoding` for more info.
 All functions also accept *NULL* as the :type:`json_error_t` pointer,
 in which case no error information is returned to the caller.
 
-.. type:: enum json_error_code
+.. c:enum:: json_error_code
 
    An enumeration containing numeric error codes.  The following errors are
    currently defined:

@@ -191,13 +191,14 @@ int json_object_clear(json_t *json) {
 
 int json_object_update(json_t *object, json_t *other) {
     const char *key;
+    size_t key_len;
     json_t *value;
 
     if (!json_is_object(object) || !json_is_object(other))
         return -1;
 
-    json_object_foreach(other, key, value) {
-        if (json_object_set_nocheck(object, key, value))
+    json_object_keylen_foreach(other, key, key_len, value) {
+        if (json_object_setn_nocheck(object, key, key_len, value))
             return -1;
     }
 
@@ -222,14 +223,15 @@ int json_object_update_existing(json_t *object, json_t *other) {
 
 int json_object_update_missing(json_t *object, json_t *other) {
     const char *key;
+    size_t key_len;
     json_t *value;
 
     if (!json_is_object(object) || !json_is_object(other))
         return -1;
 
-    json_object_foreach(other, key, value) {
-        if (!json_object_get(object, key))
-            json_object_set_nocheck(object, key, value);
+    json_object_keylen_foreach(other, key, key_len, value) {
+        if (!json_object_getn(object, key, key_len))
+            json_object_setn_nocheck(object, key, key_len, value);
     }
 
     return 0;
@@ -250,7 +252,7 @@ int do_object_update_recursive(json_t *object, json_t *other, hashtable_t *paren
         return -1;
 
     json_object_keylen_foreach(other, key, key_len, value) {
-        json_t *v = json_object_get(object, key);
+        json_t *v = json_object_getn(object, key, key_len);
 
         if (json_is_object(v) && json_is_object(value)) {
             if (do_object_update_recursive(v, value, parents)) {
@@ -352,13 +354,14 @@ void *json_object_key_to_iter(const char *key) {
 
 static int json_object_equal(const json_t *object1, const json_t *object2) {
     const char *key;
+    size_t key_len;
     const json_t *value1, *value2;
 
     if (json_object_size(object1) != json_object_size(object2))
         return 0;
 
-    json_object_foreach((json_t *)object1, key, value1) {
-        value2 = json_object_get(object2, key);
+    json_object_keylen_foreach((json_t *)object1, key, key_len, value1) {
+        value2 = json_object_getn(object2, key, key_len);
 
         if (!json_equal(value1, value2))
             return 0;
@@ -371,13 +374,15 @@ static json_t *json_object_copy(json_t *object) {
     json_t *result;
 
     const char *key;
+    size_t key_len;
     json_t *value;
 
     result = json_object();
     if (!result)
         return NULL;
 
-    json_object_foreach(object, key, value) json_object_set_nocheck(result, key, value);
+    json_object_keylen_foreach(object, key, key_len, value)
+        json_object_setn_nocheck(result, key, key_len, value);
 
     return result;
 }
@@ -400,11 +405,14 @@ static json_t *json_object_deep_copy(const json_t *object, hashtable_t *parents)
     iter = json_object_iter((json_t *)object);
     while (iter) {
         const char *key;
+        size_t key_len;
         const json_t *value;
         key = json_object_iter_key(iter);
+        key_len = json_object_iter_key_len(iter);
         value = json_object_iter_value(iter);
 
-        if (json_object_set_new_nocheck(result, key, do_deep_copy(value, parents))) {
+        if (json_object_setn_new_nocheck(result, key, key_len,
+                                         do_deep_copy(value, parents))) {
             json_decref(result);
             result = NULL;
             break;

@@ -1,51 +1,3 @@
-# Notes:
-#
-# Author: Paul Harris, June 2012
-# Additions: Joakim Soderberg, February 2013
-#
-# Supports: building static/shared, release/debug/etc, can also build html docs
-# and some of the tests.
-# Note that its designed for out-of-tree builds, so it will not pollute your
-# source tree.
-#
-# TODO 1: Finish implementing tests. api tests are working, but the valgrind
-# variants are not flagging problems.
-#
-# TODO 2: There is a check_exports script that would try and incorporate.
-#
-# TODO 3: Consolidate version numbers, currently the version number is written
-# into: * cmake (here) * autotools (the configure) * source code header files.
-# Should not be written directly into header files, autotools/cmake can do
-# that job.
-#
-# Brief intro on how to use cmake:
-# > mkdir build (somewhere - we do out-of-tree builds)
-# > use cmake, ccmake, or cmake-gui to configure the project. for linux, you
-# can only choose one variant: release,debug,etc... and static or shared.
-# >> example:
-# >> cd build
-# >> ccmake -i ../path_to_jansson_dir
-# >>  inside, configure your options. press C until there are no lines
-#     with * next to them.
-# >>  note, I like to configure the 'install' path to ../install, so I get
-#     self-contained clean installs I can point other projects to.
-# >>  press G to 'generate' the project files.
-# >> make (to build the project)
-# >> make install
-# >> make test (to run the tests, if you enabled them)
-#
-# Brief description on how it works:
-# There is a small hierarchy of CMakeLists.txt files which define how the
-# project is built.
-# Header file detection etc is done, and the results are written into config.h
-# and jansson_config.h, which are generated from the corresponding
-# config.h.cmake and jansson_config.h.cmake template files.
-# The generated header files end up in the build directory - not in
-# the source directory.
-# The rest is down to the usual make process.
-
-
-
 cmake_minimum_required (VERSION 3.1)
 project(jansson C)
 
@@ -64,8 +16,6 @@ option(JANSSON_EXAMPLES "Compile example applications" ON)
 
 if (UNIX)
    option(JANSSON_COVERAGE "(GCC Only! Requires gcov/lcov to be installed). Include target for doing coverage analysis for the test suite. Note that -DCMAKE_BUILD_TYPE=Debug must be set" OFF)
-   option(JANSSON_COVERALLS "Generate coverage info for Coveralls" OFF)
-   option(JANSSON_COVERALLS_UPLOAD "Upload coverage info to Coveralls (Only works via Travis)" ON)
 endif ()
 
 # Set some nicer output dirs.
@@ -85,10 +35,10 @@ endif()
 # set (JANSSON_VERSION "2.3.1")
 # set (JANSSON_SOVERSION 2)
 
-set(JANSSON_DISPLAY_VERSION "2.13.1")
+set(JANSSON_DISPLAY_VERSION "2.14")
 
 # This is what is required to match the same numbers as automake's
-set(JANSSON_VERSION "4.13.0")
+set(JANSSON_VERSION "4.14.0")
 set(JANSSON_SOVERSION 4)
 
 # for CheckFunctionKeywords
@@ -107,9 +57,6 @@ if (HAS_NO_FORMAT_TRUNCATION)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-format-truncation")
 endif()
 
-include (CheckSymbolExists)
-check_symbol_exists("__GLIBC__" "stdlib.h" LIBC_IS_GLIBC)
-
 if (MSVC)
    # Turn off Microsofts "security" warnings.
    add_definitions( "/W3 /D_CRT_SECURE_NO_WARNINGS /wd4005 /wd4996 /nologo" )
@@ -122,17 +69,9 @@ endif()
 
 message("C compiler: ${CMAKE_C_COMPILER_ID}")
 
-# Coverage only works with GCC for a debug build.
-if (JANSSON_COVERALLS)
-   set(JANSSON_COVERAGE ON)
-endif()
-
 if (JANSSON_COVERAGE)
    include(CodeCoverage)
-   include(Coveralls)
-
-   # This adds coverage arguments to gcc/clang.
-   coveralls_turn_on_coverage()
+   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 -fprofile-arcs -ftest-coverage")
 endif()
 
 check_include_files (endian.h HAVE_ENDIAN_H)
@@ -369,8 +308,42 @@ if(JANSSON_BUILD_SHARED_LIBS)
       ${JANSSON_HDR_PUBLIC}
       src/jansson.def)
 
-   if (LIBC_IS_GLIBC)
+# check if linker support --default-symver
+   list(APPEND CMAKE_REQUIRED_LIBRARIES "-Wl,--default-symver")
+   check_c_source_compiles(
+   "
+   int main (void)
+   {
+      return 0;
+   }
+   "
+   DSYMVER_WORKS
+   )
+   list(REMOVE_ITEM CMAKE_REQUIRED_LIBRARIES "-Wl,--default-symver")
+
+   if (SYMVER_WORKS)
       set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--default-symver")
+   else()
+# some linkers may only support --version-script
+      file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/jansson.sym" "JANSSON_${JANSSON_SOVERSION} {
+    global:
+          *;
+};
+")
+      list(APPEND CMAKE_REQUIRED_LIBRARIES "-Wl,--version-script,${CMAKE_CURRENT_BINARY_DIR}/jansson.sym")
+      check_c_source_compiles(
+   "
+   int main (void)
+   {
+      return 0;
+   }
+   "
+   VSCRIPT_WORKS
+   )
+      list(REMOVE_ITEM CMAKE_REQUIRED_LIBRARIES "-Wl,--version-script,${CMAKE_CURRENT_BINARY_DIR}/jansson.sym")
+      if (VSCRIPT_WORKS)
+         set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--version-script,${CMAKE_CURRENT_BINARY_DIR}/jansson.sym")
+      endif()
    endif()
 
    set_target_properties(jansson PROPERTIES
@@ -586,16 +559,7 @@ if (NOT JANSSON_WITHOUT_TESTS)
    endforeach ()
 
    if (JANSSON_COVERAGE)
-      setup_target_for_coverage(
-            coverage             # Coverage make target "make coverage".
-            coverage             # Name of output directory.
-            make                 # Name of test runner executable.
-            test)                # Arguments to the test runner above (make test).
-
-      if (JANSSON_COVERALLS)
-         set(COVERAGE_SRCS ${JANSSON_SRC})
-         coveralls_setup("${COVERAGE_SRCS}" ${JANSSON_COVERALLS_UPLOAD})
-      endif ()
+      SETUP_TARGET_FOR_COVERAGE(coverage coverage ctest)
    endif ()
 
    # Enable using "make check" just like the autotools project.
