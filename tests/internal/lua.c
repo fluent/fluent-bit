@@ -193,7 +193,7 @@ static void test_tompack()
     flb_lua_tompack(l, &writer, 0, &l2cc);
 
     msgpack_unpacked_init(&msg);
-    msgpack_unpack_next(&msg, writer.buffer, writer.current - writer.buffer, NULL);
+    msgpack_unpack_next(&msg, writer.buffer, writer.position - writer.buffer, NULL);
     msgpack_object_print_buffer(printbuf, sizeof(printbuf), msg.data);
 
     TEST_CHECK(strcmp(printbuf, expected) == 0);
