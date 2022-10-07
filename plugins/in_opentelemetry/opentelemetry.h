@@ -34,6 +34,7 @@ struct flb_opentelemetry {
     flb_sds_t listen;
     flb_sds_t tcp_port;
     const char *tag_key;
+    bool raw_traces;
 
     size_t buffer_max_size;            /* Maximum buffer size */
     size_t buffer_chunk_size;          /* Chunk allocation size */

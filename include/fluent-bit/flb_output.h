@@ -66,6 +66,7 @@
 /* Event type handlers */
 #define FLB_OUTPUT_LOGS        1
 #define FLB_OUTPUT_METRICS     2
+#define FLB_OUTPUT_TRACES      3
 
 #define FLB_OUTPUT_FLUSH_COMPAT_OLD_18()                 \
     const void *data   = event_chunk->data;              \
@@ -149,6 +150,7 @@ struct flb_output_plugin {
      *
      *  - FLB_OUTPUT_LOGS
      *  - FLB_OUTPUT_METRICS
+     *  - FLB_OUTPUT_TRACES
      */
     int event_type;
 
@@ -231,6 +233,7 @@ struct flb_output_instance {
      *
      *  - FLB_OUTPUT_LOGS
      *  - FLB_OUTPUT_METRICS
+     *  - FLB_OUTPUT_TRACES
      */
     int event_type;
     int id;                              /* instance id                  */

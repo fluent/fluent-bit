@@ -174,6 +174,12 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_opentelemetry, successful_response_code),
      "Set successful response code. 200, 201 and 204 are supported."
     },
+    {
+     FLB_CONFIG_MAP_BOOL, "raw_traces", "false",
+     0, FLB_TRUE, offsetof(struct flb_opentelemetry, raw_traces),
+     "Forward traces without processing"
+    },
+
 
 
     /* EOF */
@@ -193,5 +199,5 @@ struct flb_input_plugin in_opentelemetry_plugin = {
     .cb_exit      = in_opentelemetry_exit,
     .config_map   = config_map,
     .flags        = FLB_INPUT_NET | FLB_IO_OPT_TLS,
-    .event_type   = FLB_INPUT_LOGS | FLB_INPUT_METRICS 
+    .event_type   = FLB_INPUT_LOGS | FLB_INPUT_METRICS | FLB_INPUT_TRACES
 };

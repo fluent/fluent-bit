@@ -324,9 +324,9 @@ static int process_logs(struct flb_event_chunk *event_chunk,
 }
 
 static int process_metrics(struct flb_event_chunk *event_chunk,
-                    struct flb_output_flush *out_flush,
-                    struct flb_input_instance *ins, void *out_context,
-                    struct flb_config *config)
+                           struct flb_output_flush *out_flush,
+                           struct flb_input_instance *ins, void *out_context,
+                           struct flb_config *config)
 {
     int c = 0;
     int ok;
@@ -420,6 +420,103 @@ exit:
     return result;
 }
 
+static int process_traces(struct flb_event_chunk *event_chunk,
+                          struct flb_output_flush *out_flush,
+                          struct flb_input_instance *ins, void *out_context,
+                          struct flb_config *config)
+{
+    int c = 0;
+    int ok;
+    int ret;
+    int result;
+    cfl_sds_t encoded_chunk;
+    flb_sds_t buf = NULL;
+    size_t diff = 0;
+    size_t off = 0;
+    struct ctrace *ctr;
+    struct opentelemetry_context *ctx = out_context;
+
+    /* Initialize vars */
+    ctx = out_context;
+    ok = 0;
+    result = FLB_OK;
+
+    /* Buffer to concatenate multiple metrics contexts */
+    buf = flb_sds_create_size(event_chunk->size);
+    if (!buf) {
+        flb_plg_error(ctx->ins, "could not allocate outgoing buffer");
+        return FLB_RETRY;
+    }
+
+    flb_plg_debug(ctx->ins, "ctraces msgpack size: %lu",
+                  event_chunk->size);
+
+    /* Decode and encode every CMetric context */
+    diff = 0;
+    while ((ret = ctr_decode_msgpack_create(&ctr,
+                                            (char *) event_chunk->data,
+                                            event_chunk->size, &off)) == ok) {
+
+        /* Create a OpenTelemetry payload */
+        encoded_chunk = ctr_encode_opentelemetry_create(ctr);
+        if (encoded_chunk == NULL) {
+            flb_plg_error(ctx->ins,
+                          "Error encoding context as opentelemetry");
+            result = FLB_ERROR;
+            goto exit;
+        }
+
+        flb_plg_debug(ctx->ins, "ctrace_id=%i decoded %lu-%lu payload_size=%lu",
+                      c, diff, off, flb_sds_len(encoded_chunk));
+        c++;
+        diff = off;
+
+        /* concat buffer */
+        flb_sds_cat_safe(&buf, encoded_chunk, flb_sds_len(encoded_chunk));
+
+        /* release */
+        ctr_encode_opentelemetry_destroy(encoded_chunk);
+        ctr_destroy(ctr);
+    }
+
+    if (ret == 0) {
+        flb_plg_debug(ctx->ins, "final payload size: %lu", flb_sds_len(buf));
+        if (buf && flb_sds_len(buf) > 0) {
+            /* Send HTTP request */
+            result = http_post(ctx, buf, flb_sds_len(buf),
+                               event_chunk->tag,
+                               flb_sds_len(event_chunk->tag),
+                               ctx->traces_uri);
+
+            /* Debug http_post() result statuses */
+            if (result == FLB_OK) {
+                flb_plg_debug(ctx->ins, "http_post result FLB_OK");
+            }
+            else if (result == FLB_ERROR) {
+                flb_plg_debug(ctx->ins, "http_post result FLB_ERROR");
+            }
+            else if (result == FLB_RETRY) {
+                flb_plg_debug(ctx->ins, "http_post result FLB_RETRY");
+            }
+        }
+        flb_sds_destroy(buf);
+        buf = NULL;
+        return result;
+    }
+    else {
+        flb_plg_error(ctx->ins, "Error decoding msgpack encoded context");
+        return FLB_ERROR;
+    }
+
+exit:
+    if (buf) {
+        flb_sds_destroy(buf);
+    }
+    return result;
+
+    return 0;
+}
+
 static int cb_opentelemetry_exit(void *data, struct flb_config *config)
 {
     struct opentelemetry_context *ctx;
@@ -458,6 +555,9 @@ static void cb_opentelemetry_flush(struct flb_event_chunk *event_chunk,
     }
     else if (ins->event_type == FLB_INPUT_LOGS || ins->event_type == FLB_OUTPUT_LOGS){
         result = process_logs(event_chunk, out_flush, ins, out_context, config);
+    }
+    else if (ins->event_type == FLB_INPUT_LOGS || ins->event_type == FLB_OUTPUT_LOGS){
+        result = process_traces(event_chunk, out_flush, ins, out_context, config);
     }
     FLB_OUTPUT_RETURN(result);
 }
@@ -502,6 +602,11 @@ static struct flb_config_map config_map[] = {
      "Specify an optional HTTP URI for the target OTel endpoint."
     },
     {
+     FLB_CONFIG_MAP_STR, "traces_uri", "/v1/traces",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, traces_uri),
+     "Specify an optional HTTP URI for the target OTel endpoint."
+    },
+    {
      FLB_CONFIG_MAP_BOOL, "log_response_payload", "true",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, log_response_payload),
      "Specify if the response paylod should be logged or not"
@@ -518,6 +623,6 @@ struct flb_output_plugin out_opentelemetry_plugin = {
     .cb_flush    = cb_opentelemetry_flush,
     .cb_exit     = cb_opentelemetry_exit,
     .config_map  = config_map,
-    .event_type  = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS,
+    .event_type  = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS | FLB_OUTPUT_TRACES,
     .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };

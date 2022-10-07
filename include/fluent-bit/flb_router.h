@@ -40,6 +40,10 @@ static inline int flb_router_match_type(int in_event_type,
              !(ins->event_type & FLB_OUTPUT_METRICS)) {
         return FLB_FALSE;
     }
+    else if (in_event_type == FLB_INPUT_TRACES &&
+             !(ins->event_type & FLB_OUTPUT_TRACES)) {
+        return FLB_FALSE;
+    }
 
     return FLB_TRUE;
 }

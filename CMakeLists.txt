@@ -122,6 +122,8 @@ option(FLB_WAMRC               "Build with WASM AOT compiler executable"    No)
 
 # Native Metrics Support (cmetrics)
 option(FLB_METRICS             "Enable metrics support"       Yes)
+# # Native Traces Support (ctraces)
+# option(FLB_TRACES              "Enable traces support"        Yes)
 
 # Proxy Plugins
 option(FLB_PROXY_GO            "Enable Go plugins support"    Yes)
