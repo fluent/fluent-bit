@@ -491,7 +491,7 @@ static int parser_conf_file(const char *cfg, struct flb_cf *cf,
         name = get_parser_key(config, cf, s, "name");
         if (!name) {
             flb_error("[parser] no parser 'name' found in file '%s'", cfg);
-            goto fconf_error;
+            goto fconf_early_error;
         }
 
         /* format */
@@ -499,7 +499,7 @@ static int parser_conf_file(const char *cfg, struct flb_cf *cf,
         if (!format) {
             flb_error("[parser] no parser 'format' found for '%s' in file '%s'",
                       name, cfg);
-            goto fconf_error;
+            goto fconf_early_error;
         }
 
         /* regex (if 'format' == 'regex') */
@@ -507,7 +507,7 @@ static int parser_conf_file(const char *cfg, struct flb_cf *cf,
         if (!regex && strcmp(format, "regex") == 0) {
             flb_error("[parser] no parser 'regex' found for '%s' in file '%s",
                       name, cfg);
-            goto fconf_error;
+            goto fconf_early_error;
         }
         
         /* skip_empty_values */
@@ -586,6 +586,19 @@ static int parser_conf_file(const char *cfg, struct flb_cf *cf,
     }
 
     return 0;
+
+ /* Use early exit before call to flb_parser_create */
+ fconf_early_error:
+    if (name) {
+        flb_sds_destroy(name);
+    }
+    if (format) {
+        flb_sds_destroy(format);
+    }
+    if (regex) {
+        flb_sds_destroy(regex);
+    }
+    return -1;
 
  fconf_error:
     flb_sds_destroy(name);
