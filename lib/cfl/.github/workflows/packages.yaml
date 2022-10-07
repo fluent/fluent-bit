@@ -18,7 +18,7 @@ jobs:
       matrix:
         format: [ rpm, deb ]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: uraimo/run-on-arch-action@v2.2.1
         name: Build the ${{matrix.format}} packages
         with:
@@ -51,7 +51,7 @@ jobs:
 
     runs-on: [ ubuntu-latest ]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Build the ${{matrix.format}} packages
         run:  |
           cmake .
