@@ -1,7 +1,7 @@
 /**
  * The MIT License (MIT)
  * 
- * Copyright (c) 2015-2018 Nicholas Fraser
+ * Copyright (c) 2015-2021 Nicholas Fraser and the MPack authors
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,7 +24,7 @@
  */
 
 /*
- * This is the MPack 1.0 amalgamation package.
+ * This is the MPack 1.1 amalgamation package.
  *
  * http://github.com/ludocode/mpack
  */
@@ -33,13 +33,132 @@
 #define MPACK_H 1
 
 #define MPACK_AMALGAMATED 1
+#define MPACK_RELEASE_VERSION 1
 
 #if defined(MPACK_HAS_CONFIG) && MPACK_HAS_CONFIG
 #include "mpack-config.h"
 #endif
 
 
-/* mpack/mpack-defaults.h.h */
+/* mpack/mpack-platform.h.h */
+
+/**
+ * @file
+ *
+ * Abstracts all platform-specific code from MPack and handles configuration
+ * options.
+ *
+ * This verifies the configuration and sets defaults based on the platform,
+ * contains implementations of standard C functions when libc is not available,
+ * and provides wrappers to all library functions.
+ *
+ * Documentation for configuration options is available here:
+ *
+ *     https://ludocode.github.io/mpack/group__config.html
+ */
+
+#ifndef MPACK_PLATFORM_H
+#define MPACK_PLATFORM_H 1
+
+
+
+/**
+ * @defgroup config Configuration Options
+ *
+ * Defines the MPack configuration options.
+ *
+ * Custom configuration of MPack is not usually necessary. In almost all
+ * cases you can ignore this and use the defaults.
+ *
+ * If you do want to configure MPack, you can define the below options as part
+ * of your build system or project settings. This will override the below
+ * defaults.
+ *
+ * If you'd like to use a file for configuration instead, define
+ * @ref MPACK_HAS_CONFIG to 1 in your build system or project settings.
+ * This will cause MPack to include a file you create called @c mpack-config.h
+ * in which you can define your configuration. This is useful if you need to
+ * include specific headers (such as a custom allocator) in order to configure
+ * MPack to use it.
+ *
+ * @warning The value of all configuration options must be the same in
+ * all translation units of your project, as well as in the mpack source
+ * itself. These configuration options affect the layout of structs, among
+ * other things, which cannot be different in source files that are linked
+ * together.
+ *
+ * @note MPack does not contain defaults for building inside the Linux kernel.
+ * There is a <a href="https://github.com/ludocode/mpack-linux-kernel">
+ * configuration file for the Linux kernel</a> that can be used instead.
+ *
+ * @{
+ */
+
+
+
+/*
+ * Pre-include checks
+ *
+ * These need to come before the user's mpack-config.h because they might be
+ * including headers in it.
+ */
+
+/** @cond */
+#if defined(_MSC_VER) && _MSC_VER < 1800 && !defined(__cplusplus)
+    #error "In Visual Studio 2012 and earlier, MPack must be compiled as C++. Enable the /Tp compiler flag."
+#endif
+
+#if defined(_WIN32) && MPACK_INTERNAL
+    #define _CRT_SECURE_NO_WARNINGS 1
+#endif
+
+#ifndef __STDC_LIMIT_MACROS
+    #define __STDC_LIMIT_MACROS 1
+#endif
+#ifndef __STDC_FORMAT_MACROS
+    #define __STDC_FORMAT_MACROS 1
+#endif
+#ifndef __STDC_CONSTANT_MACROS
+    #define __STDC_CONSTANT_MACROS 1
+#endif
+/** @endcond */
+
+
+
+/**
+ * @name File Configuration
+ * @{
+ */
+
+/**
+ * @def MPACK_HAS_CONFIG
+ *
+ * Causes MPack to include a file you create called @c mpack-config.h .
+ *
+ * The file is included before MPack sets any defaults for undefined
+ * configuration options. You can use it to configure MPack.
+ *
+ * This is off by default.
+ */
+#if defined(MPACK_HAS_CONFIG)
+    #if MPACK_HAS_CONFIG
+        #include "mpack-config.h"
+    #endif
+#else
+    #define MPACK_HAS_CONFIG 0
+#endif
+
+/**
+ * @}
+ */
+
+// this needs to come first since some stuff depends on it
+/** @cond */
+#ifndef MPACK_NO_BUILTINS
+    #define MPACK_NO_BUILTINS 0
+#endif
+/** @endcond */
+
 
 
 /**
@@ -84,6 +203,25 @@
 #endif
 
 /**
+ * @def MPACK_BUILDER
+ *
+ * Enables compilation of the Builder.
+ *
+ * The Builder API provides additional functions to the Writer for
+ * automatically determining the element count of compound elements so you do
+ * not have to specify them up-front.
+ *
+ * This requires a @c malloc(). It is enabled by default if MPACK_WRITER is
+ * enabled and MPACK_MALLOC is defined.
+ *
+ * @see mpack_build_map()
+ * @see mpack_build_array()
+ * @see mpack_complete_map()
+ * @see mpack_complete_array()
+ */
+// This is defined furthur below after we've resolved whether we have malloc().
+
+/**
  * @def MPACK_COMPATIBILITY
  *
  * Enables compatibility features for reading and writing older
@@ -116,10 +254,25 @@
 #define MPACK_EXTENSIONS 0
 #endif
 
-
 /**
  * @}
  */
+
+
+
+// workarounds for Doxygen
+#if defined(MPACK_DOXYGEN)
+#if MPACK_DOXYGEN
+// We give these their default values of 0 here even though they are defined to
+// 1 in the doxyfile. Doxygen will show this as the value in the docs, even
+// though it ignores it when parsing the rest of the source. This is what we
+// want, since we want the documentation to show these defaults but still
+// generate documentation for the functions they add when they're on.
+#define MPACK_COMPATIBILITY 0
+#define MPACK_EXTENSIONS 0
+#endif
+#endif
+
 
 
 /**
@@ -128,22 +281,62 @@
  */
 
 /**
- * @def MPACK_HAS_CONFIG
+ * @def MPACK_CONFORMING
  *
- * Enables the use of an @c mpack-config.h configuration file for MPack.
- * This file must be in the same folder as @c mpack.h, or it must be
- * available from your project's include paths.
+ * Enables the inclusion of basic C headers to define standard types and
+ * macros.
+ *
+ * This causes MPack to include headers required for conforming implementations
+ * of C99 even in freestanding, in particular <stddef.h>, <stdint.h>,
+ * <stdbool.h> and <limits.h>. It also includes <inttypes.h>; this is
+ * technically not required for freestanding but MPack needs it to detect
+ * integer limits.
+ *
+ * You can disable this if these headers are unavailable or if they do not
+ * define the standard types and macros (for example inside the Linux kernel.)
+ * If this is disabled, MPack will include no headers and will assume a 32-bit
+ * int. You will probably also want to define @ref MPACK_HAS_CONFIG to 1 and
+ * include your own headers in the config file. You must provide definitions
+ * for standard types such as @c size_t, @c bool, @c int32_t and so on.
+ *
+ * @see <a href="https://en.cppreference.com/w/c/language/conformance">
+ * cppreference.com documentation on Conformance</a>
  */
-// This goes in your project settings.
+#ifndef MPACK_CONFORMING
+    #define MPACK_CONFORMING 1
+#endif
 
 /**
  * @def MPACK_STDLIB
  *
- * Enables the use of C stdlib. This allows the library to use malloc
- * for debugging and in allocation helpers.
+ * Enables the use of the C stdlib.
+ *
+ * This allows the library to use basic functions like @c memcmp() and @c
+ * strlen(), as well as @c malloc() for debugging and in allocation helpers.
+ *
+ * If this is disabled, allocation helper functions will not be defined, and
+ * MPack will attempt to detect compiler intrinsics for functions like @c
+ * memcmp() (assuming @ref MPACK_NO_BUILTINS is not set.) It will fallback to
+ * its own (slow) implementations if it cannot use builtins. You may want to
+ * define @ref MPACK_MEMCMP and friends if you disable this.
+ *
+ * @see MPACK_MEMCMP
+ * @see MPACK_MEMCPY
+ * @see MPACK_MEMMOVE
+ * @see MPACK_MEMSET
+ * @see MPACK_STRLEN
+ * @see MPACK_MALLOC
+ * @see MPACK_REALLOC
+ * @see MPACK_FREE
  */
 #ifndef MPACK_STDLIB
-#define MPACK_STDLIB 1
+    #if !MPACK_CONFORMING
+        // If we don't even have a proper <limits.h> we assume we won't have
+        // malloc() either.
+        #define MPACK_STDLIB 0
+    #else
+        #define MPACK_STDLIB 1
+    #endif
 #endif
 
 /**
@@ -153,7 +346,42 @@
  * reading/writing C files and makes debugging easier.
  */
 #ifndef MPACK_STDIO
-#define MPACK_STDIO 1
+    #if !MPACK_STDLIB || defined(__AVR__)
+        #define MPACK_STDIO 0
+    #else
+        #define MPACK_STDIO 1
+    #endif
+#endif
+
+/**
+ * Whether the 'float' type and floating point operations are supported.
+ *
+ * If @ref MPACK_FLOAT is disabled, floats are read and written as @c uint32_t
+ * instead. This way messages with floats do not result in errors and you can
+ * still perform manual float parsing yourself.
+ */
+#ifndef MPACK_FLOAT
+    #define MPACK_FLOAT 1
+#endif
+
+/**
+ * Whether the 'double' type is supported. This requires support for 'float'.
+ *
+ * If @ref MPACK_DOUBLE is disabled, doubles are read and written as @c
+ * uint32_t instead. This way messages with doubles do not result in errors and
+ * you can still perform manual doubles parsing yourself.
+ *
+ * If @ref MPACK_FLOAT is enabled but @ref MPACK_DOUBLE is not, doubles can be
+ * read as floats using the shortening conversion functions, e.g. @ref
+ * mpack_expect_float() or @ref mpack_node_float().
+ */
+#ifndef MPACK_DOUBLE
+    #if !MPACK_FLOAT || defined(__AVR__)
+        // AVR supports only float, not double.
+        #define MPACK_DOUBLE 0
+    #else
+        #define MPACK_DOUBLE 1
+    #endif
 #endif
 
 /**
@@ -161,8 +389,9 @@
  */
 
 
+
 /**
- * @name System Functions
+ * @name Allocation Functions
  * @{
  */
 
@@ -174,6 +403,13 @@
  * debugging functions. If this macro is undefined, the allocation helpers
  * will not be compiled.
  *
+ * Set this to use a custom @c malloc() function. Your function must have the
+ * signature:
+ *
+ * @code
+ * void* malloc(size_t size);
+ * @endcode
+ *
  * The default is @c malloc() if @ref MPACK_STDLIB is enabled.
  */
 /**
@@ -182,6 +418,13 @@
  * Defines the memory free function used by MPack. This is used by helpers
  * for automatically allocating data the correct size. If this macro is
  * undefined, the allocation helpers will not be compiled.
+ *
+ * Set this to use a custom @c free() function. Your function must have the
+ * signature:
+ *
+ * @code
+ * void free(void* p);
+ * @endcode
  *
  * The default is @c free() if @ref MPACK_MALLOC has not been customized and
  * @ref MPACK_STDLIB is enabled.
@@ -195,14 +438,51 @@
  * The default is @c realloc() if @ref MPACK_MALLOC has not been customized and
  * @ref MPACK_STDLIB is enabled.
  *
+ * Set this to use a custom @c realloc() function. Your function must have the
+ * signature:
+ *
+ * @code
+ * void* realloc(void* p, size_t new_size);
+ * @endcode
+ *
  * This is optional, even when @ref MPACK_MALLOC is used. If @ref MPACK_MALLOC is
  * set and @ref MPACK_REALLOC is not, @ref MPACK_MALLOC is used with a simple copy
  * to grow buffers.
  */
-#if defined(MPACK_STDLIB) && MPACK_STDLIB && !defined(MPACK_MALLOC)
-#define MPACK_MALLOC malloc
-#define MPACK_REALLOC realloc
-#define MPACK_FREE free
+
+#if defined(MPACK_MALLOC) && !defined(MPACK_FREE)
+    #error "MPACK_MALLOC requires MPACK_FREE."
+#endif
+#if !defined(MPACK_MALLOC) && defined(MPACK_FREE)
+    #error "MPACK_FREE requires MPACK_MALLOC."
+#endif
+
+// These were never configurable in lowercase but we check anyway.
+#ifdef mpack_malloc
+    #error "Define MPACK_MALLOC, not mpack_malloc."
+#endif
+#ifdef mpack_realloc
+    #error "Define MPACK_REALLOC, not mpack_realloc."
+#endif
+#ifdef mpack_free
+    #error "Define MPACK_FREE, not mpack_free."
+#endif
+
+// We don't use calloc() at all.
+#ifdef MPACK_CALLOC
+    #error "Don't define MPACK_CALLOC. MPack does not use calloc()."
+#endif
+#ifdef mpack_calloc
+    #error "Don't define mpack_calloc. MPack does not use calloc()."
+#endif
+
+// Use defaults in stdlib if we have them. Without it we don't use malloc.
+#if defined(MPACK_STDLIB)
+    #if MPACK_STDLIB && !defined(MPACK_MALLOC)
+        #define MPACK_MALLOC malloc
+        #define MPACK_REALLOC realloc
+        #define MPACK_FREE free
+    #endif
 #endif
 
 /**
@@ -210,8 +490,167 @@
  */
 
 
+
+// This needs to be defined after we've decided whether we have malloc().
+#ifndef MPACK_BUILDER
+    #if defined(MPACK_MALLOC) && MPACK_WRITER
+        #define MPACK_BUILDER 1
+    #else
+        #define MPACK_BUILDER 0
+    #endif
+#endif
+
+
+
+/**
+ * @name System Functions
+ * @{
+ */
+
+/**
+ * @def MPACK_MEMCMP
+ *
+ * The function MPack will use to provide @c memcmp().
+ *
+ * Set this to use a custom @c memcmp() function. Your function must have the
+ * signature:
+ *
+ * @code
+ * int memcmp(const void* left, const void* right, size_t count);
+ * @endcode
+ */
+/**
+ * @def MPACK_MEMCPY
+ *
+ * The function MPack will use to provide @c memcpy().
+ *
+ * Set this to use a custom @c memcpy() function. Your function must have the
+ * signature:
+ *
+ * @code
+ * void* memcpy(void* restrict dest, const void* restrict src, size_t count);
+ * @endcode
+ */
+/**
+ * @def MPACK_MEMMOVE
+ *
+ * The function MPack will use to provide @c memmove().
+ *
+ * Set this to use a custom @c memmove() function. Your function must have the
+ * signature:
+ *
+ * @code
+ * void* memmove(void* dest, const void* src, size_t count);
+ * @endcode
+ */
+/**
+ * @def MPACK_MEMSET
+ *
+ * The function MPack will use to provide @c memset().
+ *
+ * Set this to use a custom @c memset() function. Your function must have the
+ * signature:
+ *
+ * @code
+ * void* memset(void* p, int c, size_t count);
+ * @endcode
+ */
+/**
+ * @def MPACK_STRLEN
+ *
+ * The function MPack will use to provide @c strlen().
+ *
+ * Set this to use a custom @c strlen() function. Your function must have the
+ * signature:
+ *
+ * @code
+ * size_t strlen(const char* str);
+ * @endcode
+ */
+
+// These were briefly configurable in lowercase in an unreleased version. Just
+// to make sure no one is doing this, we make sure these aren't already defined.
+#ifdef mpack_memcmp
+    #error "Define MPACK_MEMCMP, not mpack_memcmp."
+#endif
+#ifdef mpack_memcpy
+    #error "Define MPACK_MEMCPY, not mpack_memcpy."
+#endif
+#ifdef mpack_memmove
+    #error "Define MPACK_MEMMOVE, not mpack_memmove."
+#endif
+#ifdef mpack_memset
+    #error "Define MPACK_MEMSET, not mpack_memset."
+#endif
+#ifdef mpack_strlen
+    #error "Define MPACK_STRLEN, not mpack_strlen."
+#endif
+
+// If the standard library is available, we prefer to use its functions.
+#if MPACK_STDLIB
+    #ifndef MPACK_MEMCMP
+        #define MPACK_MEMCMP memcmp
+    #endif
+    #ifndef MPACK_MEMCPY
+        #define MPACK_MEMCPY memcpy
+    #endif
+    #ifndef MPACK_MEMMOVE
+        #define MPACK_MEMMOVE memmove
+    #endif
+    #ifndef MPACK_MEMSET
+        #define MPACK_MEMSET memset
+    #endif
+    #ifndef MPACK_STRLEN
+        #define MPACK_STRLEN strlen
+    #endif
+#endif
+
+#if !MPACK_NO_BUILTINS
+    #ifdef __has_builtin
+        #if !defined(MPACK_MEMCMP) && __has_builtin(__builtin_memcmp)
+            #define MPACK_MEMCMP __builtin_memcmp
+        #endif
+        #if !defined(MPACK_MEMCPY) && __has_builtin(__builtin_memcpy)
+            #define MPACK_MEMCPY __builtin_memcpy
+        #endif
+        #if !defined(MPACK_MEMMOVE) && __has_builtin(__builtin_memmove)
+            #define MPACK_MEMMOVE __builtin_memmove
+        #endif
+        #if !defined(MPACK_MEMSET) && __has_builtin(__builtin_memset)
+            #define MPACK_MEMSET __builtin_memset
+        #endif
+        #if !defined(MPACK_STRLEN) && __has_builtin(__builtin_strlen)
+            #define MPACK_STRLEN __builtin_strlen
+        #endif
+    #elif defined(__GNUC__)
+        #ifndef MPACK_MEMCMP
+            #define MPACK_MEMCMP __builtin_memcmp
+        #endif
+        #ifndef MPACK_MEMCPY
+            #define MPACK_MEMCPY __builtin_memcpy
+        #endif
+        // There's not always a builtin memmove for GCC. If we can't test for
+        // it with __has_builtin above, we don't use it. It's been around for
+        // much longer under clang, but then so has __has_builtin, so we let
+        // the block above handle it.
+        #ifndef MPACK_MEMSET
+            #define MPACK_MEMSET __builtin_memset
+        #endif
+        #ifndef MPACK_STRLEN
+            #define MPACK_STRLEN __builtin_strlen
+        #endif
+    #endif
+#endif
+
+/**
+ * @}
+ */
+
+
+
 /**
  * @name Debugging Options
+ * @{
  */
 
 /**
@@ -222,8 +661,12 @@
  * are defined. (@c NDEBUG is not used since it is allowed to have
  * different values in different translation units.)
  */
-#if !defined(MPACK_DEBUG) && (defined(DEBUG) || defined(_DEBUG))
-#define MPACK_DEBUG 1
+#if !defined(MPACK_DEBUG)
+    #if defined(DEBUG) || defined(_DEBUG)
+        #define MPACK_DEBUG 1
+    #else
+        #define MPACK_DEBUG 0
+    #endif
 #endif
 
 /**
@@ -236,7 +679,11 @@
  * mpack_error_to_string() and mpack_type_to_string() return an empty string.
  */
 #ifndef MPACK_STRINGS
-#define MPACK_STRINGS 1
+    #ifdef __AVR__
+        #define MPACK_STRINGS 0
+    #else
+        #define MPACK_STRINGS 1
+    #endif
 #endif
 
 /**
@@ -259,11 +706,15 @@
  * This is enabled by default in debug builds (provided a @c malloc() is
  * available.)
  */
-#if !defined(MPACK_READ_TRACKING) && \
-        defined(MPACK_DEBUG) && MPACK_DEBUG && \
-        defined(MPACK_READER) && MPACK_READER && \
-        defined(MPACK_MALLOC)
-#define MPACK_READ_TRACKING 1
+#if !defined(MPACK_READ_TRACKING)
+    #if MPACK_DEBUG && MPACK_READER && defined(MPACK_MALLOC)
+        #define MPACK_READ_TRACKING 1
+    #else
+        #define MPACK_READ_TRACKING 0
+    #endif
+#endif
+#if MPACK_READ_TRACKING && !MPACK_READER
+    #error "MPACK_READ_TRACKING requires MPACK_READER."
 #endif
 
 /**
@@ -280,16 +731,22 @@
  * This is enabled by default in debug builds (provided a @c malloc() is
  * available.)
  */
-#if !defined(MPACK_WRITE_TRACKING) && \
-        defined(MPACK_DEBUG) && MPACK_DEBUG && \
-        defined(MPACK_WRITER) && MPACK_WRITER && \
-        defined(MPACK_MALLOC)
-#define MPACK_WRITE_TRACKING 1
+#if !defined(MPACK_WRITE_TRACKING)
+    #if MPACK_DEBUG && MPACK_WRITER && defined(MPACK_MALLOC)
+        #define MPACK_WRITE_TRACKING 1
+    #else
+        #define MPACK_WRITE_TRACKING 0
+    #endif
+#endif
+#if MPACK_WRITE_TRACKING && !MPACK_WRITER
+    #error "MPACK_WRITE_TRACKING requires MPACK_WRITER."
 #endif
 
 /**
  * @}
  */
+
+
 
 
 /**
@@ -301,23 +758,26 @@
  * Whether to optimize for size or speed.
  *
  * Optimizing for size simplifies some parsing and encoding algorithms
- * at the expense of speed, and saves a few kilobytes of space in the
+ * at the expense of speed and saves a few kilobytes of space in the
  * resulting executable.
  *
  * This automatically detects -Os with GCC/Clang. Unfortunately there
  * doesn't seem to be a macro defined for /Os under MSVC.
  */
 #ifndef MPACK_OPTIMIZE_FOR_SIZE
-#ifdef __OPTIMIZE_SIZE__
-#define MPACK_OPTIMIZE_FOR_SIZE 1
-#else
-#define MPACK_OPTIMIZE_FOR_SIZE 0
-#endif
+    #ifdef __OPTIMIZE_SIZE__
+        #define MPACK_OPTIMIZE_FOR_SIZE 1
+    #else
+        #define MPACK_OPTIMIZE_FOR_SIZE 0
+    #endif
 #endif
 
 /**
  * Stack space in bytes to use when initializing a reader or writer
  * with a stack-allocated buffer.
+ *
+ * @warning Make sure you have sufficient stack space. Some libc use relatively
+ * small stacks even on desktop platforms, e.g. musl.
  */
 #ifndef MPACK_STACK_SIZE
 #define MPACK_STACK_SIZE 4096
@@ -336,6 +796,16 @@
 #endif
 
 /**
+ * Minimum size for paged allocations in bytes.
+ *
+ * This is the value used by default for MPACK_NODE_PAGE_SIZE and
+ * MPACK_BUILDER_PAGE_SIZE.
+ */
+#ifndef MPACK_PAGE_SIZE
+#define MPACK_PAGE_SIZE 4096
+#endif
+
+/**
  * Minimum size of an allocated node page in bytes.
  *
  * The children for a given compound element must be contiguous, so
@@ -349,7 +819,54 @@
  * messages.
  */
 #ifndef MPACK_NODE_PAGE_SIZE
-#define MPACK_NODE_PAGE_SIZE 4096
+#define MPACK_NODE_PAGE_SIZE MPACK_PAGE_SIZE
+#endif
+
+/**
+ * Minimum size of an allocated builder page in bytes.
+ *
+ * Builder writes are deferred to the allocated builder buffer which is
+ * composed of a list of buffer pages. This defines the size of those pages.
+ */
+#ifndef MPACK_BUILDER_PAGE_SIZE
+#define MPACK_BUILDER_PAGE_SIZE MPACK_PAGE_SIZE
+#endif
+
+/**
+ * @def MPACK_BUILDER_INTERNAL_STORAGE
+ *
+ * Enables a small amount of internal storage within the writer to avoid some
+ * allocations when using builders.
+ *
+ * This is disabled by default. Enable it to potentially improve performance at
+ * the expense of a larger writer.
+ *
+ * @see MPACK_BUILDER_INTERNAL_STORAGE_SIZE to configure its size.
+ */
+#ifndef MPACK_BUILDER_INTERNAL_STORAGE
+#define MPACK_BUILDER_INTERNAL_STORAGE 0
+#endif
+
+/**
+ * Amount of space reserved inside @ref mpack_writer_t for the Builders. This
+ * can allow small messages to be built with the Builder API without incurring
+ * an allocation.
+ *
+ * Builder metadata is placed in this space in addition to the literal
+ * MessagePack data. It needs to be big enough to be useful, but not so big as
+ * to overflow the stack. If more space is needed, pages are allocated.
+ *
+ * This is only used if MPACK_BUILDER_INTERNAL_STORAGE is enabled.
+ *
+ * @see MPACK_BUILDER_PAGE_SIZE
+ * @see MPACK_BUILDER_INTERNAL_STORAGE
+ *
+ * @warning Writers are typically placed on the stack so make sure you have
+ * sufficient stack space. Some libc use relatively small stacks even on
+ * desktop platforms, e.g. musl.
+ */
+#ifndef MPACK_BUILDER_INTERNAL_STORAGE_SIZE
+#define MPACK_BUILDER_INTERNAL_STORAGE_SIZE 256
 #endif
 
 /**
@@ -369,88 +886,65 @@
 #endif
 
 /**
- * @}
- */
-
-
-/**
- * @}
- */
-
-
-/* mpack/mpack-platform.h.h */
-
-/**
- * @file
+ * @def MPACK_NO_BUILTINS
  *
- * Abstracts all platform-specific code from MPack. This contains
- * implementations of standard C functions when libc is not available,
- * as well as wrappers to library functions.
+ * Whether to disable compiler intrinsics and other built-in functions.
+ *
+ * If this is enabled, MPack won't use `__attribute__`, `__declspec`, any
+ * function starting with `__builtin`, or pretty much anything else that isn't
+ * standard C.
+ */
+#if defined(MPACK_DOXYGEN)
+#if MPACK_DOXYGEN
+    #define MPACK_NO_BUILTINS 0
+#endif
+#endif
+
+/**
+ * @}
  */
 
-#ifndef MPACK_PLATFORM_H
-#define MPACK_PLATFORM_H 1
 
 
-
-/* Pre-include checks */
-
-#if defined(_MSC_VER) && _MSC_VER < 1800 && !defined(__cplusplus)
-#error "In Visual Studio 2012 and earlier, MPack must be compiled as C++. Enable the /Tp compiler flag."
-#endif
-
-#if defined(WIN32) && defined(MPACK_INTERNAL) && MPACK_INTERNAL
-#define _CRT_SECURE_NO_WARNINGS 1
-#endif
-
-
-
-/* Doxygen preprocs */
-#if defined(MPACK_DOXYGEN) && MPACK_DOXYGEN
-#define MPACK_HAS_CONFIG 0
-// We give these their default values of 0 here even though they are defined to
-// 1 in the doxyfile. Doxygen will show this as the value in the docs, even
-// though it ignores it when parsing the rest of the source. This is what we
-// want, since we want the documentation to show these defaults but still
-// generate documentation for the functions they add when they're on.
-#define MPACK_COMPATIBILITY 0
-#define MPACK_EXTENSIONS 0
-#endif
-
-
-
-/* Include the custom config file if enabled */
-
-#if defined(MPACK_HAS_CONFIG) && MPACK_HAS_CONFIG
-/* #include "mpack-config.h" */
-#endif
-
-/*
- * Now that the optional config is included, we define the defaults
- * for any of the configuration options and other switches that aren't
- * yet defined.
+#if MPACK_DEBUG
+/**
+ * @name Debug Functions
+ * @{
  */
-#if defined(MPACK_DOXYGEN) && MPACK_DOXYGEN
-/* #include "mpack-defaults-doxygen.h" */
-#else
-/* #include "mpack-defaults.h" */
+/**
+ * Implement this and define @ref MPACK_CUSTOM_ASSERT to use a custom
+ * assertion function.
+ *
+ * This function should not return. If it does, MPack will @c abort().
+ *
+ * If you use C++, make sure you include @c mpack.h where you define
+ * this to get the correct linkage (or define it <code>extern "C"</code>.)
+ *
+ * Asserts are only used when @ref MPACK_DEBUG is enabled, and can be
+ * triggered by bugs in MPack or bugs due to incorrect usage of MPack.
+ */
+void mpack_assert_fail(const char* message);
+/**
+ * @}
+ */
 #endif
 
+
+
+// The rest of this file shouldn't show up in Doxygen docs.
+/** @cond */
+
+
+
 /*
- * All remaining configuration options that have not yet been set must
+ * All remaining pseudo-configuration options that have not yet been set must
  * be defined here in order to support -Wundef.
+ *
+ * These aren't real configuration options; they are implementation details of
+ * MPack.
  */
-#ifndef MPACK_DEBUG
-#define MPACK_DEBUG 0
-#endif
 #ifndef MPACK_CUSTOM_BREAK
 #define MPACK_CUSTOM_BREAK 0
-#endif
-#ifndef MPACK_READ_TRACKING
-#define MPACK_READ_TRACKING 0
-#endif
-#ifndef MPACK_WRITE_TRACKING
-#define MPACK_WRITE_TRACKING 0
 #endif
 #ifndef MPACK_EMIT_INLINE_DEFS
 #define MPACK_EMIT_INLINE_DEFS 0
@@ -464,108 +958,221 @@
 #ifndef MPACK_INTERNAL
 #define MPACK_INTERNAL 0
 #endif
-#ifndef MPACK_NO_BUILTINS
-#define MPACK_NO_BUILTINS 0
-#endif
 
 
 
 /* System headers (based on configuration) */
 
-#ifndef __STDC_LIMIT_MACROS
-#define __STDC_LIMIT_MACROS 1
+#if MPACK_CONFORMING
+    #include <stddef.h>
+    #include <stdint.h>
+    #include <stdbool.h>
+    #include <inttypes.h>
+    #include <limits.h>
 #endif
-#ifndef __STDC_FORMAT_MACROS
-#define __STDC_FORMAT_MACROS 1
-#endif
-#ifndef __STDC_CONSTANT_MACROS
-#define __STDC_CONSTANT_MACROS 1
-#endif
-
-#include <stddef.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include <inttypes.h>
-#include <limits.h>
 
 #if MPACK_STDLIB
-#include <string.h>
-#include <stdlib.h>
+    #include <string.h>
+    #include <stdlib.h>
 #endif
 
 #if MPACK_STDIO
-#include <stdio.h>
-#include <errno.h>
+    #include <stdio.h>
+    #include <errno.h>
+    #if MPACK_DEBUG
+        #include <stdarg.h>
+    #endif
 #endif
 
 
 
 /*
- * Header configuration
+ * Integer Constants and Limits
+ */
+
+#if MPACK_CONFORMING
+    #define MPACK_INT64_C INT64_C
+    #define MPACK_UINT64_C UINT64_C
+
+    #define MPACK_INT8_MIN INT8_MIN
+    #define MPACK_INT16_MIN INT16_MIN
+    #define MPACK_INT32_MIN INT32_MIN
+    #define MPACK_INT64_MIN INT64_MIN
+    #define MPACK_INT_MIN INT_MIN
+
+    #define MPACK_INT8_MAX INT8_MAX
+    #define MPACK_INT16_MAX INT16_MAX
+    #define MPACK_INT32_MAX INT32_MAX
+    #define MPACK_INT64_MAX INT64_MAX
+    #define MPACK_INT_MAX INT_MAX
+
+    #define MPACK_UINT8_MAX UINT8_MAX
+    #define MPACK_UINT16_MAX UINT16_MAX
+    #define MPACK_UINT32_MAX UINT32_MAX
+    #define MPACK_UINT64_MAX UINT64_MAX
+    #define MPACK_UINT_MAX UINT_MAX
+#else
+    // For a non-conforming implementation we assume int is 32 bits.
+
+    #define MPACK_INT64_C(x) ((int64_t)(x##LL))
+    #define MPACK_UINT64_C(x) ((uint64_t)(x##LLU))
+
+    #define MPACK_INT8_MIN ((int8_t)(0x80))
+    #define MPACK_INT16_MIN ((int16_t)(0x8000))
+    #define MPACK_INT32_MIN ((int32_t)(0x80000000))
+    #define MPACK_INT64_MIN MPACK_INT64_C(0x8000000000000000)
+    #define MPACK_INT_MIN MPACK_INT32_MIN
+
+    #define MPACK_INT8_MAX ((int8_t)(0x7f))
+    #define MPACK_INT16_MAX ((int16_t)(0x7fff))
+    #define MPACK_INT32_MAX ((int32_t)(0x7fffffff))
+    #define MPACK_INT64_MAX MPACK_INT64_C(0x7fffffffffffffff)
+    #define MPACK_INT_MAX MPACK_INT32_MAX
+
+    #define MPACK_UINT8_MAX ((uint8_t)(0xffu))
+    #define MPACK_UINT16_MAX ((uint16_t)(0xffffu))
+    #define MPACK_UINT32_MAX ((uint32_t)(0xffffffffu))
+    #define MPACK_UINT64_MAX MPACK_UINT64_C(0xffffffffffffffff)
+    #define MPACK_UINT_MAX MPACK_UINT32_MAX
+#endif
+
+
+
+/*
+ * Floating point support
+ */
+
+#if MPACK_DOUBLE && !MPACK_FLOAT
+    #error "MPACK_DOUBLE requires MPACK_FLOAT."
+#endif
+
+// If we don't have support for float or double, we poison the identifiers to
+// make sure we don't define anything related to them.
+#if MPACK_INTERNAL
+    #ifdef __GNUC__
+        #if !MPACK_FLOAT
+            #pragma GCC poison float
+        #endif
+        #if !MPACK_DOUBLE
+            #pragma GCC poison double
+        #endif
+    #endif
+#endif
+
+
+
+/*
+ * extern C
  */
 
 #ifdef __cplusplus
-    #define MPACK_EXTERN_C_START extern "C" {
+    #define MPACK_EXTERN_C_BEGIN extern "C" {
     #define MPACK_EXTERN_C_END   }
 #else
-    #define MPACK_EXTERN_C_START /* nothing */
-    #define MPACK_EXTERN_C_END   /* nothing */
+    #define MPACK_EXTERN_C_BEGIN /*nothing*/
+    #define MPACK_EXTERN_C_END   /*nothing*/
 #endif
 
-/* We can't push/pop diagnostics before GCC 4.6, so if you're on a really old
- * compiler, MPack does not support the below warning flags. You will have to
- * manually disable them to use MPack. */
+
+
+/*
+ * Warnings
+ */
+
+#if defined(__GNUC__)
+    // Diagnostic push is not supported before GCC 4.6.
+    #if defined(__clang__) || __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6)
+        #define MPACK_SILENCE_WARNINGS_PUSH _Pragma ("GCC diagnostic push")
+        #define MPACK_SILENCE_WARNINGS_POP _Pragma ("GCC diagnostic pop")
+    #endif
+#elif defined(_MSC_VER)
+    // To support VS2017 and earlier we need to use __pragma and not _Pragma
+    #define MPACK_SILENCE_WARNINGS_PUSH __pragma(warning(push))
+    #define MPACK_SILENCE_WARNINGS_POP __pragma(warning(pop))
+#endif
+
+#if defined(_MSC_VER)
+    // These are a bunch of mostly useless warnings emitted under MSVC /W4,
+    // some as a result of the expansion of macros.
+    #define MPACK_SILENCE_WARNINGS_MSVC_W4 \
+            __pragma(warning(disable:4996)) /* _CRT_SECURE_NO_WARNINGS */ \
+            __pragma(warning(disable:4127)) /* comparison is constant */ \
+            __pragma(warning(disable:4702)) /* unreachable code */ \
+            __pragma(warning(disable:4310)) /* cast truncates constant value */
+#else
+    #define MPACK_SILENCE_WARNINGS_MSVC_W4 /*nothing*/
+#endif
 
 /* GCC versions before 5.1 warn about defining a C99 non-static inline function
- * before declaring it (see issue #20). Diagnostic push is not supported before
- * GCC 4.6. */
+ * before declaring it (see issue #20). */
 #if defined(__GNUC__) && !defined(__clang__)
-    #if (__GNUC__ == 4 && __GNUC_MINOR__ >= 6) || (__GNUC__ == 5 && __GNUC_MINOR__ < 1)
+    #if __GNUC__ < 5 || (__GNUC__ == 5 && __GNUC_MINOR__ < 1)
         #ifdef __cplusplus
-            #define MPACK_DECLARED_INLINE_WARNING_START \
-                _Pragma ("GCC diagnostic push") \
+            #define MPACK_SILENCE_WARNINGS_MISSING_PROTOTYPES \
                 _Pragma ("GCC diagnostic ignored \"-Wmissing-declarations\"")
         #else
-            #define MPACK_DECLARED_INLINE_WARNING_START \
-                _Pragma ("GCC diagnostic push") \
+            #define MPACK_SILENCE_WARNINGS_MISSING_PROTOTYPES \
                 _Pragma ("GCC diagnostic ignored \"-Wmissing-prototypes\"")
         #endif
-        #define MPACK_DECLARED_INLINE_WARNING_END \
-            _Pragma ("GCC diagnostic pop")
     #endif
 #endif
-#ifndef MPACK_DECLARED_INLINE_WARNING_START
-    #define MPACK_DECLARED_INLINE_WARNING_START /* nothing */
-    #define MPACK_DECLARED_INLINE_WARNING_END /* nothing */
+#ifndef MPACK_SILENCE_WARNINGS_MISSING_PROTOTYPES
+    #define MPACK_SILENCE_WARNINGS_MISSING_PROTOTYPES /*nothing*/
 #endif
 
 /* GCC versions before 4.8 warn about shadowing a function with a variable that
- * isn't a function or function pointer (like "index"). Diagnostic push is not
- * supported before GCC 4.6. */
+ * isn't a function or function pointer (like "index"). */
 #if defined(__GNUC__) && !defined(__clang__)
-    #if __GNUC__ == 4 && __GNUC_MINOR__ >= 6 && __GNUC_MINOR__ < 8
-        #define MPACK_WSHADOW_WARNING_START \
-            _Pragma ("GCC diagnostic push") \
+    #if __GNUC__ == 4 && __GNUC_MINOR__ < 8
+        #define MPACK_SILENCE_WARNINGS_SHADOW \
             _Pragma ("GCC diagnostic ignored \"-Wshadow\"")
-        #define MPACK_WSHADOW_WARNING_END \
-            _Pragma ("GCC diagnostic pop")
     #endif
 #endif
-#ifndef MPACK_WSHADOW_WARNING_START
-    #define MPACK_WSHADOW_WARNING_START /* nothing */
-    #define MPACK_WSHADOW_WARNING_END /* nothing */
+#ifndef MPACK_SILENCE_WARNINGS_SHADOW
+    #define MPACK_SILENCE_WARNINGS_SHADOW /*nothing*/
 #endif
 
-#define MPACK_HEADER_START \
-    MPACK_WSHADOW_WARNING_START \
-    MPACK_DECLARED_INLINE_WARNING_START
+// On platforms with small size_t (e.g. AVR) we get type limits warnings where
+// we compare a size_t to e.g. MPACK_UINT32_MAX.
+#ifdef __AVR__
+    #define MPACK_SILENCE_WARNINGS_TYPE_LIMITS \
+        _Pragma ("GCC diagnostic ignored \"-Wtype-limits\"")
+#else
+    #define MPACK_SILENCE_WARNINGS_TYPE_LIMITS /*nothing*/
+#endif
 
-#define MPACK_HEADER_END \
-    MPACK_DECLARED_INLINE_WARNING_END \
-    MPACK_WSHADOW_WARNING_END
+// MPack uses declarations after statements. This silences warnings about it
+// (e.g. when using MPack in a Linux kernel module.)
+#if defined(__GNUC__) && !defined(__cplusplus)
+    #define MPACK_SILENCE_WARNINGS_DECLARATION_AFTER_STATEMENT \
+        _Pragma ("GCC diagnostic ignored \"-Wdeclaration-after-statement\"")
+#else
+    #define MPACK_SILENCE_WARNINGS_DECLARATION_AFTER_STATEMENT /*nothing*/
+#endif
 
-MPACK_HEADER_START
-MPACK_EXTERN_C_START
+#ifdef MPACK_SILENCE_WARNINGS_PUSH
+    // We only silence warnings if push/pop is supported, that way we aren't
+    // silencing warnings in code that uses MPack. If your compiler doesn't
+    // support push/pop silencing of warnings, you'll have to turn off
+    // conflicting warnings manually.
+
+    #define MPACK_SILENCE_WARNINGS_BEGIN \
+        MPACK_SILENCE_WARNINGS_PUSH \
+        MPACK_SILENCE_WARNINGS_MSVC_W4 \
+        MPACK_SILENCE_WARNINGS_MISSING_PROTOTYPES \
+        MPACK_SILENCE_WARNINGS_SHADOW \
+        MPACK_SILENCE_WARNINGS_TYPE_LIMITS \
+        MPACK_SILENCE_WARNINGS_DECLARATION_AFTER_STATEMENT
+
+    #define MPACK_SILENCE_WARNINGS_END \
+        MPACK_SILENCE_WARNINGS_POP
+#else
+    #define MPACK_SILENCE_WARNINGS_BEGIN /*nothing*/
+    #define MPACK_SILENCE_WARNINGS_END /*nothing*/
+#endif
+
+MPACK_SILENCE_WARNINGS_BEGIN
+MPACK_EXTERN_C_BEGIN
 
 
 
@@ -698,11 +1305,48 @@ MPACK_EXTERN_C_START
     #if defined(_MSC_VER)
         #define MPACK_NOINLINE __declspec(noinline)
     #elif defined(__GNUC__) || defined(__clang__)
-        #define MPACK_NOINLINE __attribute__((noinline))
+        #define MPACK_NOINLINE __attribute__((__noinline__))
     #endif
 #endif
 #ifndef MPACK_NOINLINE
     #define MPACK_NOINLINE /* nothing */
+#endif
+
+
+
+/* restrict */
+
+// We prefer the builtins even though e.g. MSVC's __restrict may not have
+// exactly the same behaviour as the proper C99 restrict keyword because the
+// builtins work in C++, so using the same keyword in both C and C++ prevents
+// any incompatibilities when using MPack compiled as C in C++ code.
+#if !MPACK_NO_BUILTINS
+    #if defined(__GNUC__)
+        #define MPACK_RESTRICT __restrict__
+    #elif defined(_MSC_VER)
+        #define MPACK_RESTRICT __restrict
+    #endif
+#endif
+
+#ifndef MPACK_RESTRICT
+    #ifdef __cplusplus
+        #define MPACK_RESTRICT /* nothing, unavailable in C++ */
+    #endif
+#endif
+
+#ifndef MPACK_RESTRICT
+    #ifdef _MSC_VER
+        // MSVC 2015 apparently doesn't properly support the restrict keyword
+        // in C. We're using builtins above which do work on 2015, but when
+        // MPACK_NO_BUILTINS is enabled we can't use it.
+        #if _MSC_VER < 1910
+            #define MPACK_RESTRICT /*nothing*/
+        #endif
+    #endif
+#endif
+
+#ifndef MPACK_RESTRICT
+    #define MPACK_RESTRICT restrict /* required in C99 */
 #endif
 
 
@@ -712,21 +1356,11 @@ MPACK_EXTERN_C_START
 #if !MPACK_NO_BUILTINS
     #if defined(__GNUC__) || defined(__clang__)
         #define MPACK_UNREACHABLE __builtin_unreachable()
-        #define MPACK_NORETURN(fn) fn __attribute__((noreturn))
-        #define MPACK_RESTRICT __restrict__
+        #define MPACK_NORETURN(fn) fn __attribute__((__noreturn__))
     #elif defined(_MSC_VER)
         #define MPACK_UNREACHABLE __assume(0)
         #define MPACK_NORETURN(fn) __declspec(noreturn) fn
-        #define MPACK_RESTRICT __restrict
     #endif
-#endif
-
-#ifndef MPACK_RESTRICT
-#ifdef __cplusplus
-#define MPACK_RESTRICT /* nothing, unavailable in C++ */
-#else
-#define MPACK_RESTRICT restrict /* required in C99 */
-#endif
 #endif
 
 #ifndef MPACK_UNREACHABLE
@@ -763,6 +1397,42 @@ MPACK_EXTERN_C_START
 #ifndef MPACK_UNLIKELY
     #define MPACK_UNLIKELY(x) (x)
 #endif
+
+
+
+/* alignof */
+
+#ifndef MPACK_ALIGNOF
+    #if defined(__STDC_VERSION__)
+        #if __STDC_VERSION__ >= 201112L
+            #define MPACK_ALIGNOF(T) (_Alignof(T))
+        #endif
+    #endif
+#endif
+
+#ifndef MPACK_ALIGNOF
+    #if defined(__cplusplus)
+        #if __cplusplus >= 201103L
+            #define MPACK_ALIGNOF(T) (alignof(T))
+        #endif
+    #endif
+#endif
+
+#ifndef MPACK_ALIGNOF
+    #if defined(__GNUC__) && !defined(MPACK_NO_BUILTINS)
+        #if defined(__clang__) || __GNUC__ >= 4
+            #define MPACK_ALIGNOF(T) (__alignof__(T))
+        #endif
+    #endif
+#endif
+
+#ifndef MPACK_ALIGNOF
+    #ifdef _MSC_VER
+        #define MPACK_ALIGNOF(T) __alignof(T)
+    #endif
+#endif
+
+// MPACK_ALIGNOF may not exist, in which case a workaround is used.
 
 
 
@@ -942,12 +1612,16 @@ MPACK_EXTERN_C_START
         #endif
     #endif
 
-#elif defined(_MSC_VER) && defined(_WIN32) && !MPACK_NO_BUILTINS
+#elif defined(_MSC_VER) && defined(_WIN32) && MPACK_STDLIB && !MPACK_NO_BUILTINS
 
     // On Windows, we assume x86 and x86_64 are always little-endian.
     // We make no assumptions about ARM even though all current
     // Windows Phone devices are little-endian in case Microsoft's
     // compiler is ever used with a big-endian ARM device.
+
+    // These are functions in <stdlib.h> so we depend on MPACK_STDLIB.
+    // It's not clear if these are actually faster than just doing the
+    // swap manually; maybe we shouldn't bother with this.
 
     #if defined(_M_IX86) || defined(_M_X64) || defined(_M_AMD64)
         #define MPACK_NHSWAP16(x) _byteswap_ushort(x)
@@ -1014,34 +1688,6 @@ MPACK_EXTERN_C_START
  */
 
 #if MPACK_DEBUG
-
-    /**
-     * @addtogroup config
-     * @{
-     */
-    /**
-     * @name Debug Functions
-     */
-    /**
-     * Implement this and define @ref MPACK_CUSTOM_ASSERT to use a custom
-     * assertion function.
-     *
-     * This function should not return. If it does, MPack will @c abort().
-     *
-     * If you use C++, make sure you include @c mpack.h where you define
-     * this to get the correct linkage (or define it <code>extern "C"</code>.)
-     *
-     * Asserts are only used when @ref MPACK_DEBUG is enabled, and can be
-     * triggered by bugs in MPack or bugs due to incorrect usage of MPack.
-     */
-    void mpack_assert_fail(const char* message);
-    /**
-     * @}
-     */
-    /**
-     * @}
-     */
-
     MPACK_NORETURN(void mpack_assert_fail_wrapper(const char* message));
     #if MPACK_STDIO
         MPACK_NORETURN(void mpack_assert_fail_format(const char* format, ...));
@@ -1066,8 +1712,8 @@ MPACK_EXTERN_C_START
     //
     // This adds two unused arguments to the format argument list when a
     // format string is provided, so this would complicate the use of
-    // -Wformat and __attribute__((format)) on mpack_assert_fail_format() if we
-    // ever bothered to implement it.
+    // -Wformat and __attribute__((__format__)) on mpack_assert_fail_format()
+    // if we ever bothered to implement it.
     #define mpack_assert(...) \
             MPACK_EXPAND(((!(MPACK_EXTRACT_ARG0(__VA_ARGS__))) ? \
                 mpack_assert_fail_pos(__LINE__, __FILE__, MPACK_STRINGIFY_ARG0(__VA_ARGS__) , __VA_ARGS__ , "", NULL) : \
@@ -1094,76 +1740,64 @@ MPACK_EXTERN_C_START
 
 
 
-/* Wrap some needed libc functions */
-
-#if MPACK_STDLIB
-    #define mpack_memcmp memcmp
-    #define mpack_memcpy memcpy
-    #define mpack_memmove memmove
-    #define mpack_memset memset
-    #ifndef mpack_strlen
-        #define mpack_strlen strlen
-    #endif
-
-    #if defined(MPACK_UNIT_TESTS) && MPACK_INTERNAL && defined(__GNUC__)
-        // make sure we don't use the stdlib directly during development
-        #undef memcmp
-        #undef memcpy
-        #undef memmove
-        #undef memset
-        #undef strlen
-        #undef malloc
-        #undef free
-        #pragma GCC poison memcmp
-        #pragma GCC poison memcpy
-        #pragma GCC poison memmove
-        #pragma GCC poison memset
-        #pragma GCC poison strlen
-        #pragma GCC poison malloc
-        #pragma GCC poison free
-    #endif
-
-#elif defined(__GNUC__) && !MPACK_NO_BUILTINS
-    // there's not always a builtin memmove for GCC,
-    // and we don't have a way to test for it
-    #define mpack_memcmp __builtin_memcmp
-    #define mpack_memcpy __builtin_memcpy
-    #define mpack_memset __builtin_memset
-    #define mpack_strlen __builtin_strlen
-
-#elif defined(__clang__) && defined(__has_builtin) && !MPACK_NO_BUILTINS
-    #if __has_builtin(__builtin_memcmp)
-    #define mpack_memcmp __builtin_memcmp
-    #endif
-    #if __has_builtin(__builtin_memcpy)
-    #define mpack_memcpy __builtin_memcpy
-    #endif
-    #if __has_builtin(__builtin_memmove)
-    #define mpack_memmove __builtin_memmove
-    #endif
-    #if __has_builtin(__builtin_memset)
-    #define mpack_memset __builtin_memset
-    #endif
-    #if __has_builtin(__builtin_strlen)
-    #define mpack_strlen __builtin_strlen
-    #endif
+// make sure we don't use the stdlib directly during development
+#if MPACK_STDLIB && defined(MPACK_UNIT_TESTS) && MPACK_INTERNAL && defined(__GNUC__)
+    #undef memcmp
+    #undef memcpy
+    #undef memmove
+    #undef memset
+    #undef strlen
+    #undef malloc
+    #undef calloc
+    #undef realloc
+    #undef free
+    #pragma GCC poison memcmp
+    #pragma GCC poison memcpy
+    #pragma GCC poison memmove
+    #pragma GCC poison memset
+    #pragma GCC poison strlen
+    #pragma GCC poison malloc
+    #pragma GCC poison calloc
+    #pragma GCC poison realloc
+    #pragma GCC poison free
 #endif
 
-#ifndef mpack_memcmp
-int mpack_memcmp(const void* s1, const void* s2, size_t n);
+
+
+// If we don't have these stdlib functions, we need to define them ourselves.
+// Either way we give them a lowercase name to make the code a bit nicer.
+
+#ifdef MPACK_MEMCMP
+    #define mpack_memcmp MPACK_MEMCMP
+#else
+    int mpack_memcmp(const void* s1, const void* s2, size_t n);
 #endif
-#ifndef mpack_memcpy
-void* mpack_memcpy(void* MPACK_RESTRICT s1, const void* MPACK_RESTRICT s2, size_t n);
+
+#ifdef MPACK_MEMCPY
+    #define mpack_memcpy MPACK_MEMCPY
+#else
+    void* mpack_memcpy(void* MPACK_RESTRICT s1, const void* MPACK_RESTRICT s2, size_t n);
 #endif
-#ifndef mpack_memmove
-void* mpack_memmove(void* s1, const void* s2, size_t n);
+
+#ifdef MPACK_MEMMOVE
+    #define mpack_memmove MPACK_MEMMOVE
+#else
+    void* mpack_memmove(void* s1, const void* s2, size_t n);
 #endif
-#ifndef mpack_memset
-void* mpack_memset(void* s, int c, size_t n);
+
+#ifdef MPACK_MEMSET
+    #define mpack_memset MPACK_MEMSET
+#else
+    void* mpack_memset(void* s, int c, size_t n);
 #endif
-#ifndef mpack_strlen
-size_t mpack_strlen(const char* s);
+
+#ifdef MPACK_STRLEN
+    #define mpack_strlen MPACK_STRLEN
+#else
+    size_t mpack_strlen(const char* s);
 #endif
+
+
 
 #if MPACK_STDIO
     #if defined(WIN32)
@@ -1178,7 +1812,7 @@ size_t mpack_strlen(const char* s);
 /* Debug logging */
 #if 0
     #include <stdio.h>
-    #define mpack_log(...) (MPACK_EXPAND(printf(__VA_ARGS__), fflush(stdout)))
+    #define mpack_log(...) (MPACK_EXPAND(printf(__VA_ARGS__)), fflush(stdout))
 #else
     #define mpack_log(...) ((void)0)
 #endif
@@ -1186,18 +1820,6 @@ size_t mpack_strlen(const char* s);
 
 
 /* Make sure our configuration makes sense */
-#if defined(MPACK_MALLOC) && !defined(MPACK_FREE)
-    #error "MPACK_MALLOC requires MPACK_FREE."
-#endif
-#if !defined(MPACK_MALLOC) && defined(MPACK_FREE)
-    #error "MPACK_FREE requires MPACK_MALLOC."
-#endif
-#if MPACK_READ_TRACKING && !defined(MPACK_READER)
-    #error "MPACK_READ_TRACKING requires MPACK_READER."
-#endif
-#if MPACK_WRITE_TRACKING && !defined(MPACK_WRITER)
-    #error "MPACK_WRITE_TRACKING requires MPACK_WRITER."
-#endif
 #ifndef MPACK_MALLOC
     #if MPACK_STDIO
         #error "MPACK_STDIO requires preprocessor definitions for MPACK_MALLOC and MPACK_FREE."
@@ -1226,15 +1848,15 @@ size_t mpack_strlen(const char* s);
 
 
 
+/** @endcond */
 /**
  * @}
  */
 
 MPACK_EXTERN_C_END
-MPACK_HEADER_END
+MPACK_SILENCE_WARNINGS_END
 
 #endif
-
 
 /* mpack/mpack-common.h.h */
 
@@ -1253,8 +1875,8 @@ MPACK_HEADER_END
 #define MPACK_PRINT_BYTE_COUNT 12
 #endif
 
-MPACK_HEADER_START
-MPACK_EXTERN_C_START
+MPACK_SILENCE_WARNINGS_BEGIN
+MPACK_EXTERN_C_BEGIN
 
 
 
@@ -1270,7 +1892,7 @@ MPACK_EXTERN_C_START
 /* Version information */
 
 #define MPACK_VERSION_MAJOR 1  /**< The major version number of MPack. */
-#define MPACK_VERSION_MINOR 0  /**< The minor version number of MPack. */
+#define MPACK_VERSION_MINOR 1  /**< The minor version number of MPack. */
 #define MPACK_VERSION_PATCH 0  /**< The patch version number of MPack. */
 
 /** A number containing the version number of MPack for comparison purposes. */
@@ -1471,9 +2093,19 @@ struct mpack_tag_t {
     union {
         uint64_t u; /*< The value if the type is unsigned int. */
         int64_t  i; /*< The value if the type is signed int. */
-        double   d; /*< The value if the type is double. */
-        float    f; /*< The value if the type is float. */
         bool     b; /*< The value if the type is bool. */
+
+        #if MPACK_FLOAT
+        float    f; /*< The value if the type is float. */
+        #else
+        uint32_t f; /*< The raw value if the type is float. */
+        #endif
+
+        #if MPACK_DOUBLE
+        double   d; /*< The value if the type is double. */
+        #else
+        uint64_t d; /*< The raw value if the type is double. */
+        #endif
 
         /* The number of bytes if the type is str, bin or ext. */
         uint32_t l;
@@ -1551,16 +2183,28 @@ MPACK_INLINE mpack_tag_t mpack_tag_make_uint(uint64_t value) {
     return ret;
 }
 
+#if MPACK_FLOAT
 /** Generates a float tag. */
-MPACK_INLINE mpack_tag_t mpack_tag_make_float(float value) {
+MPACK_INLINE mpack_tag_t mpack_tag_make_float(float value)
+#else
+/** Generates a float tag from a raw uint32_t. */
+MPACK_INLINE mpack_tag_t mpack_tag_make_raw_float(uint32_t value)
+#endif
+{
     mpack_tag_t ret = MPACK_TAG_ZERO;
     ret.type = mpack_type_float;
     ret.v.f = value;
     return ret;
 }
 
+#if MPACK_DOUBLE
 /** Generates a double tag. */
-MPACK_INLINE mpack_tag_t mpack_tag_make_double(double value) {
+MPACK_INLINE mpack_tag_t mpack_tag_make_double(double value)
+#else
+/** Generates a double tag from a raw uint64_t. */
+MPACK_INLINE mpack_tag_t mpack_tag_make_raw_double(uint64_t value)
+#endif
+{
     mpack_tag_t ret = MPACK_TAG_ZERO;
     ret.type = mpack_type_double;
     ret.v.d = value;
@@ -1689,7 +2333,13 @@ MPACK_INLINE uint64_t mpack_tag_uint_value(mpack_tag_t* tag) {
  *
  * @see mpack_type_float
  */
-MPACK_INLINE float mpack_tag_float_value(mpack_tag_t* tag) {
+MPACK_INLINE
+#if MPACK_FLOAT
+float mpack_tag_float_value(mpack_tag_t* tag)
+#else
+uint32_t mpack_tag_raw_float_value(mpack_tag_t* tag)
+#endif
+{
     mpack_assert(tag->type == mpack_type_float, "tag is not a float!");
     return tag->v.f;
 }
@@ -1705,7 +2355,13 @@ MPACK_INLINE float mpack_tag_float_value(mpack_tag_t* tag) {
  *
  * @see mpack_type_double
  */
-MPACK_INLINE double mpack_tag_double_value(mpack_tag_t* tag) {
+MPACK_INLINE
+#if MPACK_DOUBLE
+double mpack_tag_double_value(mpack_tag_t* tag)
+#else
+uint64_t mpack_tag_raw_double_value(mpack_tag_t* tag)
+#endif
+{
     mpack_assert(tag->type == mpack_type_double, "tag is not a double!");
     return tag->v.d;
 }
@@ -1973,15 +2629,19 @@ MPACK_INLINE mpack_tag_t mpack_tag_uint(uint64_t value) {
     return mpack_tag_make_uint(value);
 }
 
+#if MPACK_FLOAT
 /** \deprecated Renamed to mpack_tag_make_float(). */
 MPACK_INLINE mpack_tag_t mpack_tag_float(float value) {
     return mpack_tag_make_float(value);
 }
+#endif
 
+#if MPACK_DOUBLE
 /** \deprecated Renamed to mpack_tag_make_double(). */
 MPACK_INLINE mpack_tag_t mpack_tag_double(double value) {
     return mpack_tag_make_double(value);
 }
+#endif
 
 /** \deprecated Renamed to mpack_tag_make_array(). */
 MPACK_INLINE mpack_tag_t mpack_tag_array(int32_t count) {
@@ -2125,6 +2785,7 @@ MPACK_INLINE void mpack_store_i16(char* p, int16_t val) {mpack_store_u16(p, (uin
 MPACK_INLINE void mpack_store_i32(char* p, int32_t val) {mpack_store_u32(p, (uint32_t)val);}
 MPACK_INLINE void mpack_store_i64(char* p, int64_t val) {mpack_store_u64(p, (uint64_t)val);}
 
+#if MPACK_FLOAT
 MPACK_INLINE float mpack_load_float(const char* p) {
     MPACK_CHECK_FLOAT_ORDER();
     MPACK_STATIC_ASSERT(sizeof(float) == sizeof(uint32_t), "float is wrong size??");
@@ -2135,7 +2796,9 @@ MPACK_INLINE float mpack_load_float(const char* p) {
     v.u = mpack_load_u32(p);
     return v.f;
 }
+#endif
 
+#if MPACK_DOUBLE
 MPACK_INLINE double mpack_load_double(const char* p) {
     MPACK_CHECK_FLOAT_ORDER();
     MPACK_STATIC_ASSERT(sizeof(double) == sizeof(uint64_t), "double is wrong size??");
@@ -2146,7 +2809,9 @@ MPACK_INLINE double mpack_load_double(const char* p) {
     v.u = mpack_load_u64(p);
     return v.d;
 }
+#endif
 
+#if MPACK_FLOAT
 MPACK_INLINE void mpack_store_float(char* p, float value) {
     MPACK_CHECK_FLOAT_ORDER();
     union {
@@ -2156,7 +2821,9 @@ MPACK_INLINE void mpack_store_float(char* p, float value) {
     v.f = value;
     mpack_store_u32(p, v.u);
 }
+#endif
 
+#if MPACK_DOUBLE
 MPACK_INLINE void mpack_store_double(char* p, double value) {
     MPACK_CHECK_FLOAT_ORDER();
     union {
@@ -2166,6 +2833,72 @@ MPACK_INLINE void mpack_store_double(char* p, double value) {
     v.d = value;
     mpack_store_u64(p, v.u);
 }
+#endif
+
+#if MPACK_FLOAT && !MPACK_DOUBLE
+/**
+ * Performs a manual shortening conversion on the raw 64-bit representation of
+ * a double. This is useful for parsing doubles on platforms that only support
+ * floats (such as AVR.)
+ *
+ * The significand is truncated rather than rounded and subnormal numbers are
+ * set to 0 so this may not be quite as accurate as a real double-to-float
+ * conversion.
+ */
+MPACK_INLINE float mpack_shorten_raw_double_to_float(uint64_t d) {
+    MPACK_CHECK_FLOAT_ORDER();
+    union {
+        float f;
+        uint32_t u;
+    } v;
+
+    // float has  1 bit sign,  8 bits exponent, 23 bits significand
+    // double has 1 bit sign, 11 bits exponent, 52 bits significand
+
+    uint64_t d_sign = (uint64_t)(d >> 63);
+    uint64_t d_exponent = (uint32_t)(d >> 52) & ((1 << 11) - 1);
+    uint64_t d_significand = d & (((uint64_t)1 << 52) - 1);
+
+    uint32_t f_sign = (uint32_t)d_sign;
+    uint32_t f_exponent;
+    uint32_t f_significand;
+
+    if (MPACK_UNLIKELY(d_exponent == ((1 << 11) - 1))) {
+        // infinity or NAN. shift down to preserve the top bit since it
+        // indicates signaling NAN, but also set the low bit if any bits were
+        // set (that way we can't shift NAN to infinity.)
+        f_exponent = ((1 << 8) - 1);
+        f_significand = (uint32_t)(d_significand >> 29) | (d_significand ? 1 : 0);
+
+    } else {
+        int fix_bias = (int)d_exponent - ((1 << 10) - 1) + ((1 << 7) - 1);
+        if (MPACK_UNLIKELY(fix_bias <= 0)) {
+            // we don't currently handle subnormal numbers. just set it to zero.
+            f_exponent = 0;
+            f_significand = 0;
+        } else if (MPACK_UNLIKELY(fix_bias > 0xff)) {
+            // exponent is too large; saturate to infinity
+            f_exponent = 0xff;
+            f_significand = 0;
+        } else {
+            // a normal number that fits in a float. this is the usual case.
+            f_exponent = (uint32_t)fix_bias;
+            f_significand = (uint32_t)(d_significand >> 29);
+        }
+    }
+
+    #if 0
+    printf("\n===============\n");
+    for (size_t i = 0; i < 64; ++i)
+        printf("%i%s",(int)((d>>(63-i))&1),((i%8)==7)?" ":"");
+    printf("\n%lu %lu %lu\n", d_sign, d_exponent, d_significand);
+    printf("%u %u %u\n", f_sign, f_exponent, f_significand);
+    #endif
+
+    v.u = (f_sign << 31) | (f_exponent << 23) | f_significand;
+    return v.f;
+}
+#endif
 
 /** @endcond */
 
@@ -2224,7 +2957,16 @@ MPACK_INLINE void mpack_store_double(char* p, double value) {
 
 typedef struct mpack_track_element_t {
     mpack_type_t type;
-    uint64_t left; // we need 64-bit because (2 * INT32_MAX) elements can be stored in a map
+    uint32_t left;
+
+    // indicates that a value still needs to be read/written for an already
+    // read/written key. left is not decremented until both key and value are
+    // read/written.
+    bool key_needs_value;
+
+    // tracks whether the map/array being written is using a builder. if true,
+    // the number of elements is automatic, and left is 0.
+    bool builder;
 } mpack_track_element_t;
 
 typedef struct mpack_track_t {
@@ -2236,12 +2978,14 @@ typedef struct mpack_track_t {
 #if MPACK_INTERNAL
 mpack_error_t mpack_track_init(mpack_track_t* track);
 mpack_error_t mpack_track_grow(mpack_track_t* track);
-mpack_error_t mpack_track_push(mpack_track_t* track, mpack_type_t type, uint64_t count);
+mpack_error_t mpack_track_push(mpack_track_t* track, mpack_type_t type, uint32_t count);
+mpack_error_t mpack_track_push_builder(mpack_track_t* track, mpack_type_t type);
 mpack_error_t mpack_track_pop(mpack_track_t* track, mpack_type_t type);
+mpack_error_t mpack_track_pop_builder(mpack_track_t* track, mpack_type_t type);
 mpack_error_t mpack_track_element(mpack_track_t* track, bool read);
 mpack_error_t mpack_track_peek_element(mpack_track_t* track, bool read);
-mpack_error_t mpack_track_bytes(mpack_track_t* track, bool read, uint64_t count);
-mpack_error_t mpack_track_str_bytes_all(mpack_track_t* track, bool read, uint64_t count);
+mpack_error_t mpack_track_bytes(mpack_track_t* track, bool read, size_t count);
+mpack_error_t mpack_track_str_bytes_all(mpack_track_t* track, bool read, size_t count);
 mpack_error_t mpack_track_check_empty(mpack_track_t* track);
 mpack_error_t mpack_track_destroy(mpack_track_t* track, bool cancel);
 #endif
@@ -2284,12 +3028,8 @@ bool mpack_str_check_no_null(const char* str, size_t bytes);
  * @}
  */
 
-/**
- * @}
- */
-
 MPACK_EXTERN_C_END
-MPACK_HEADER_END
+MPACK_SILENCE_WARNINGS_END
 
 #endif
 
@@ -2309,8 +3049,8 @@ MPACK_HEADER_END
 
 #if MPACK_WRITER
 
-MPACK_HEADER_START
-MPACK_EXTERN_C_START
+MPACK_SILENCE_WARNINGS_BEGIN
+MPACK_EXTERN_C_BEGIN
 
 #if MPACK_WRITE_TRACKING
 struct mpack_track_t;
@@ -2385,6 +3125,59 @@ typedef void (*mpack_writer_teardown_t)(mpack_writer_t* writer);
 /* Hide internals from documentation */
 /** @cond */
 
+#if MPACK_BUILDER
+/**
+ * Build buffer pages form a linked list.
+ *
+ * They don't always fill up. If there is not enough space within them to write
+ * a tag or place an mpack_build_t, a new page is allocated. For this reason
+ * they store the number of used bytes.
+ */
+typedef struct mpack_builder_page_t {
+    struct mpack_builder_page_t* next;
+    size_t bytes_used;
+} mpack_builder_page_t;
+
+/**
+ * Builds form a linked list of mpack_build_t, interleaved with their encoded
+ * contents directly in the paged builder buffer.
+ */
+typedef struct mpack_build_t {
+    //mpack_builder_page_t* page;
+    struct mpack_build_t* parent;
+    //struct mpack_build_t* next;
+
+    size_t bytes; // number of bytes between this build and the next one
+    uint32_t count; // number of elements (or key/value pairs) in this map/array
+    mpack_type_t type;
+
+    // depth of nested non-build compound elements within this
+    // build.
+    uint32_t nested_compound_elements;
+
+    // indicates that a value still needs to be written for an already
+    // written key. count is not incremented until both key and value are
+    // written.
+    bool key_needs_value;
+} mpack_build_t;
+
+/**
+ * The builder state. This is stored within mpack_writer_t.
+ */
+typedef struct mpack_builder_t {
+    mpack_build_t* current_build; // build which is accumulating elements
+    mpack_build_t* latest_build; // build which is accumulating bytes
+    mpack_builder_page_t* current_page;
+    mpack_builder_page_t* pages;
+    char* stash_buffer;
+    char* stash_position;
+    char* stash_end;
+    #if MPACK_BUILDER_INTERNAL_STORAGE
+    char internal[MPACK_BUILDER_INTERNAL_STORAGE_SIZE];
+    #endif
+} mpack_builder_t;
+#endif
+
 struct mpack_writer_t {
     #if MPACK_COMPATIBILITY
     mpack_version_t version;          /* Version of the MessagePack spec to write */
@@ -2395,7 +3188,7 @@ struct mpack_writer_t {
     void* context;                    /* Context for writer callbacks */
 
     char* buffer;         /* Byte buffer */
-    char* current;        /* Current position within the buffer */
+    char* position;       /* Current position within the buffer */
     char* end;            /* The end of the buffer */
     mpack_error_t error;  /* Error state */
 
@@ -2408,25 +3201,36 @@ struct mpack_writer_t {
      * context in order to reduce heap allocations. */
     void* reserved[2];
     #endif
+
+    #if MPACK_BUILDER
+    mpack_builder_t builder;
+    #endif
 };
 
+
 #if MPACK_WRITE_TRACKING
-void mpack_writer_track_push(mpack_writer_t* writer, mpack_type_t type, uint64_t count);
+void mpack_writer_track_push(mpack_writer_t* writer, mpack_type_t type, uint32_t count);
+void mpack_writer_track_push_builder(mpack_writer_t* writer, mpack_type_t type);
 void mpack_writer_track_pop(mpack_writer_t* writer, mpack_type_t type);
-void mpack_writer_track_element(mpack_writer_t* writer);
+void mpack_writer_track_pop_builder(mpack_writer_t* writer, mpack_type_t type);
 void mpack_writer_track_bytes(mpack_writer_t* writer, size_t count);
 #else
-MPACK_INLINE void mpack_writer_track_push(mpack_writer_t* writer, mpack_type_t type, uint64_t count) {
+MPACK_INLINE void mpack_writer_track_push(mpack_writer_t* writer, mpack_type_t type, uint32_t count) {
     MPACK_UNUSED(writer);
     MPACK_UNUSED(type);
     MPACK_UNUSED(count);
+}
+MPACK_INLINE void mpack_writer_track_push_builder(mpack_writer_t* writer, mpack_type_t type) {
+    MPACK_UNUSED(writer);
+    MPACK_UNUSED(type);
 }
 MPACK_INLINE void mpack_writer_track_pop(mpack_writer_t* writer, mpack_type_t type) {
     MPACK_UNUSED(writer);
     MPACK_UNUSED(type);
 }
-MPACK_INLINE void mpack_writer_track_element(mpack_writer_t* writer) {
+MPACK_INLINE void mpack_writer_track_pop_builder(mpack_writer_t* writer, mpack_type_t type) {
     MPACK_UNUSED(writer);
+    MPACK_UNUSED(type);
 }
 MPACK_INLINE void mpack_writer_track_bytes(mpack_writer_t* writer, size_t count) {
     MPACK_UNUSED(writer);
@@ -2672,20 +3476,20 @@ MPACK_INLINE void mpack_writer_set_teardown(mpack_writer_t* writer, mpack_writer
 /**
  * Flushes any buffered data to the underlying stream.
  *
- * If write tracking is enabled, this will break and flag @ref
- * mpack_error_bug if the writer has any open compound types, ensuring
- * that no compound types are still open. This prevents a "missing
- * finish" bug from causing a never-ending message.
- *
  * If the writer is connected to a socket and you are keeping it open,
  * you will want to call this after writing a message (or set of
  * messages) so that the data is actually sent.
  *
  * It is not necessary to call this if you are not keeping the writer
- * open afterwards. You can just call `mpack_writer_destroy()`, and it
+ * open afterwards. You can just call `mpack_writer_destroy()` and it
  * will flush before cleaning up.
  *
  * This will assert if no flush function is assigned to the writer.
+ *
+ * If write tracking is enabled, this will break and flag @ref
+ * mpack_error_bug if the writer has any open compound types, ensuring
+ * that no compound types are still open. This prevents a "missing
+ * finish" bug from causing a never-ending message.
  */
 void mpack_writer_flush_message(mpack_writer_t* writer);
 
@@ -2695,7 +3499,7 @@ void mpack_writer_flush_message(mpack_writer_t* writer);
  * been flushed to an underlying stream.
  */
 MPACK_INLINE size_t mpack_writer_buffer_used(mpack_writer_t* writer) {
-    return (size_t)(writer->current - writer->buffer);
+    return (size_t)(writer->position - writer->buffer);
 }
 
 /**
@@ -2703,7 +3507,7 @@ MPACK_INLINE size_t mpack_writer_buffer_used(mpack_writer_t* writer) {
  * after a write if bytes are flushed to an underlying stream.
  */
 MPACK_INLINE size_t mpack_writer_buffer_left(mpack_writer_t* writer) {
-    return (size_t)(writer->end - writer->current);
+    return (size_t)(writer->end - writer->position);
 }
 
 /**
@@ -2812,11 +3616,21 @@ MPACK_INLINE void mpack_write_uint(mpack_writer_t* writer, uint64_t value) {
  * @{
  */
 
+#if MPACK_FLOAT
 /** Writes a float. */
 void mpack_write_float(mpack_writer_t* writer, float value);
+#else
+/** Writes a float from a raw uint32_t. */
+void mpack_write_raw_float(mpack_writer_t* writer, uint32_t raw_value);
+#endif
 
+#if MPACK_DOUBLE
 /** Writes a double. */
 void mpack_write_double(mpack_writer_t* writer, double value);
+#else
+/** Writes a double from a raw uint64_t. */
+void mpack_write_raw_double(mpack_writer_t* writer, uint64_t raw_value);
+#endif
 
 /** Writes a boolean. */
 void mpack_write_bool(mpack_writer_t* writer, bool value);
@@ -2882,7 +3696,11 @@ MPACK_INLINE void mpack_write_timestamp_struct(mpack_writer_t* writer, mpack_tim
  * `count` elements must follow, and mpack_finish_array() must be called
  * when done.
  *
+ * If you do not know the number of elements to be written ahead of time, call
+ * mpack_build_array() instead.
+ *
  * @see mpack_finish_array()
+ * @see mpack_build_array() to count the number of elements automatically
  */
 void mpack_start_array(mpack_writer_t* writer, uint32_t count);
 
@@ -2892,13 +3710,40 @@ void mpack_start_array(mpack_writer_t* writer, uint32_t count);
  * `count * 2` elements must follow, and mpack_finish_map() must be called
  * when done.
  *
+ * If you do not know the number of elements to be written ahead of time, call
+ * mpack_build_map() instead.
+ *
  * Remember that while map elements in MessagePack are implicitly ordered,
  * they are not ordered in JSON. If you need elements to be read back
  * in the order they are written, consider use an array instead.
  *
  * @see mpack_finish_map()
+ * @see mpack_build_map() to count the number of key/value pairs automatically
  */
 void mpack_start_map(mpack_writer_t* writer, uint32_t count);
+
+MPACK_INLINE void mpack_builder_compound_push(mpack_writer_t* writer) {
+    MPACK_UNUSED(writer);
+
+    #if MPACK_BUILDER
+    mpack_build_t* build = writer->builder.current_build;
+    if (build != NULL) {
+        ++build->nested_compound_elements;
+    }
+    #endif
+}
+
+MPACK_INLINE void mpack_builder_compound_pop(mpack_writer_t* writer) {
+    MPACK_UNUSED(writer);
+
+    #if MPACK_BUILDER
+    mpack_build_t* build = writer->builder.current_build;
+    if (build != NULL) {
+        mpack_assert(build->nested_compound_elements > 0);
+        --build->nested_compound_elements;
+    }
+    #endif
+}
 
 /**
  * Finishes writing an array.
@@ -2906,12 +3751,14 @@ void mpack_start_map(mpack_writer_t* writer, uint32_t count);
  * This should be called only after a corresponding call to mpack_start_array()
  * and after the array contents are written.
  *
- * This will track writes to ensure that the correct number of elements are written.
+ * In debug mode (or if MPACK_WRITE_TRACKING is not 0), this will track writes
+ * to ensure that the correct number of elements are written.
  *
  * @see mpack_start_array()
  */
 MPACK_INLINE void mpack_finish_array(mpack_writer_t* writer) {
     mpack_writer_track_pop(writer, mpack_type_array);
+    mpack_builder_compound_pop(writer);
 }
 
 /**
@@ -2920,13 +3767,89 @@ MPACK_INLINE void mpack_finish_array(mpack_writer_t* writer) {
  * This should be called only after a corresponding call to mpack_start_map()
  * and after the map contents are written.
  *
- * This will track writes to ensure that the correct number of elements are written.
+ * In debug mode (or if MPACK_WRITE_TRACKING is not 0), this will track writes
+ * to ensure that the correct number of elements are written.
  *
  * @see mpack_start_map()
  */
 MPACK_INLINE void mpack_finish_map(mpack_writer_t* writer) {
     mpack_writer_track_pop(writer, mpack_type_map);
+    mpack_builder_compound_pop(writer);
 }
+
+/**
+ * Starts building an array.
+ *
+ * Elements must follow, and mpack_complete_map() must be called when done. The
+ * number of elements is determined automatically.
+ *
+ * If you know ahead of time the number of elements in the array, it is more
+ * efficient to call mpack_start_array() instead, even if you are already
+ * within another open build.
+ *
+ * Builder containers can be nested within normal (known size) containers and
+ * vice versa. You can call mpack_build_array(), then mpack_start_array()
+ * inside it, then mpack_build_array() inside that, and so forth.
+ *
+ * @see mpack_complete_array() to complete this array
+ * @see mpack_start_array() if you already know the size of the array
+ * @see mpack_build_map() for implementation details
+ */
+void mpack_build_array(struct mpack_writer_t* writer);
+
+/**
+ * Starts building a map.
+ *
+ * An even number of elements must follow, and mpack_complete_map() must be
+ * called when done. The number of elements is determined automatically.
+ *
+ * If you know ahead of time the number of elements in the map, it is more
+ * efficient to call mpack_start_map() instead, even if you are already within
+ * another open build.
+ *
+ * Builder containers can be nested within normal (known size) containers and
+ * vice versa. You can call mpack_build_map(), then mpack_start_map() inside
+ * it, then mpack_build_map() inside that, and so forth.
+ *
+ * A writer in build mode diverts writes to a builder buffer that allocates as
+ * needed. Once the last map or array being built is completed, the deferred
+ * message is composed with computed array and map sizes into the writer.
+ * Builder maps and arrays are encoded exactly the same as ordinary maps and
+ * arrays in the final message.
+ *
+ * This indirect encoding is costly, as it incurs at least an extra copy of all
+ * data written within a builder (but not additional copies for nested
+ * builders.) Expect a speed penalty of half or more.
+ *
+ * A good strategy is to use this during early development when your messages
+ * are constantly changing, and then closer to release when your message
+ * formats have stabilized, replace all your build calls with start calls with
+ * pre-computed sizes. Or don't, if you find the builder has little impact on
+ * performance, because even with builders MPack is extremely fast.
+ *
+ * @note When an array or map starts being built, nothing will be flushed
+ *       until it is completed. If you are building a large message that
+ *       does not fit in the output stream, you won't get an error about it
+ *       until everything is written.
+ *
+ * @see mpack_complete_map() to complete this map
+ * @see mpack_start_map() if you already know the size of the map
+ */
+void mpack_build_map(struct mpack_writer_t* writer);
+
+/**
+ * Completes an array being built.
+ *
+ * @see mpack_build_array()
+ */
+void mpack_complete_array(struct mpack_writer_t* writer);
+
+/**
+ * Completes a map being built.
+ *
+ * @see mpack_build_map()
+ */
+void mpack_complete_map(struct mpack_writer_t* writer);
 
 /**
  * @}
@@ -3203,6 +4126,16 @@ MPACK_INLINE void mpack_finish_type(mpack_writer_t* writer, mpack_type_t type) {
  * all of type `int`, not `bool` or `void*`! They will emit unexpected
  * types when passed uncast, so be careful when using them.
  */
+#if MPACK_FLOAT
+    #define MPACK_WRITE_GENERIC_FLOAT float: mpack_write_float,
+#else
+    #define MPACK_WRITE_GENERIC_FLOAT /*nothing*/
+#endif
+#if MPACK_DOUBLE
+    #define MPACK_WRITE_GENERIC_DOUBLE double: mpack_write_double,
+#else
+    #define MPACK_WRITE_GENERIC_DOUBLE /*nothing*/
+#endif
 #define mpack_write(writer, value) \
     _Generic(((void)0, value),                      \
               int8_t: mpack_write_i8,               \
@@ -3214,8 +4147,8 @@ MPACK_INLINE void mpack_finish_type(mpack_writer_t* writer, mpack_type_t type) {
             uint32_t: mpack_write_u32,              \
             uint64_t: mpack_write_u64,              \
                 bool: mpack_write_bool,             \
-               float: mpack_write_float,            \
-              double: mpack_write_double,           \
+            MPACK_WRITE_GENERIC_FLOAT               \
+            MPACK_WRITE_GENERIC_DOUBLE              \
               char *: mpack_write_cstr_or_nil,      \
         const char *: mpack_write_cstr_or_nil       \
     )(writer, value)
@@ -3395,7 +4328,7 @@ MPACK_INLINE void mpack_write_kv(mpack_writer_t* writer, const char *key, const 
  * @}
  */
 
-MPACK_HEADER_END
+MPACK_SILENCE_WARNINGS_END
 
 #endif // MPACK_WRITER
 
@@ -3414,8 +4347,8 @@ MPACK_HEADER_END
 
 /* #include "mpack-common.h" */
 
-MPACK_HEADER_START
-MPACK_EXTERN_C_START
+MPACK_SILENCE_WARNINGS_BEGIN
+MPACK_EXTERN_C_BEGIN
 
 #if MPACK_READER
 
@@ -3838,7 +4771,7 @@ size_t mpack_reader_remaining(mpack_reader_t* reader, const char** data);
  * @note Maps in JSON are unordered, so it is recommended not to expect
  * a specific ordering for your map values in case your data is converted
  * to/from JSON.
- * 
+ *
  * @see mpack_read_bytes()
  * @see mpack_done_array()
  * @see mpack_done_map()
@@ -4325,12 +5258,12 @@ MPACK_INLINE mpack_error_t mpack_reader_track_peek_element(mpack_reader_t* reade
     return MPACK_READER_TRACK(reader, mpack_track_peek_element(&reader->track, true));
 }
 
-MPACK_INLINE mpack_error_t mpack_reader_track_bytes(mpack_reader_t* reader, uint64_t count) {
+MPACK_INLINE mpack_error_t mpack_reader_track_bytes(mpack_reader_t* reader, size_t count) {
     MPACK_UNUSED(count);
     return MPACK_READER_TRACK(reader, mpack_track_bytes(&reader->track, true, count));
 }
 
-MPACK_INLINE mpack_error_t mpack_reader_track_str_bytes_all(mpack_reader_t* reader, uint64_t count) {
+MPACK_INLINE mpack_error_t mpack_reader_track_str_bytes_all(mpack_reader_t* reader, size_t count) {
     MPACK_UNUSED(count);
     return MPACK_READER_TRACK(reader, mpack_track_str_bytes_all(&reader->track, true, count));
 }
@@ -4342,7 +5275,7 @@ MPACK_INLINE mpack_error_t mpack_reader_track_str_bytes_all(mpack_reader_t* read
 #endif
 
 MPACK_EXTERN_C_END
-MPACK_HEADER_END
+MPACK_SILENCE_WARNINGS_END
 
 #endif
 
@@ -4360,8 +5293,8 @@ MPACK_HEADER_END
 
 /* #include "mpack-reader.h" */
 
-MPACK_HEADER_START
-MPACK_EXTERN_C_START
+MPACK_SILENCE_WARNINGS_BEGIN
+MPACK_EXTERN_C_BEGIN
 
 #if MPACK_EXPECT
 
@@ -4476,6 +5409,7 @@ int32_t mpack_expect_i32(mpack_reader_t* reader);
  */
 int64_t mpack_expect_i64(mpack_reader_t* reader);
 
+#if MPACK_FLOAT
 /**
  * Reads a number, returning the value as a float. The underlying value can be an
  * integer, float or double; the value is converted to a float.
@@ -4486,7 +5420,9 @@ int64_t mpack_expect_i64(mpack_reader_t* reader);
  * @throws mpack_error_type if the underlying value is not a float, double or integer.
  */
 float mpack_expect_float(mpack_reader_t* reader);
+#endif
 
+#if MPACK_DOUBLE
 /**
  * Reads a number, returning the value as a double. The underlying value can be an
  * integer, float or double; the value is converted to a double.
@@ -4497,7 +5433,9 @@ float mpack_expect_float(mpack_reader_t* reader);
  * @throws mpack_error_type if the underlying value is not a float, double or integer.
  */
 double mpack_expect_double(mpack_reader_t* reader);
+#endif
 
+#if MPACK_FLOAT
 /**
  * Reads a float. The underlying value must be a float, not a double or an integer.
  * This ensures no loss of precision can occur.
@@ -4505,7 +5443,9 @@ double mpack_expect_double(mpack_reader_t* reader);
  * @throws mpack_error_type if the underlying value is not a float.
  */
 float mpack_expect_float_strict(mpack_reader_t* reader);
+#endif
 
+#if MPACK_DOUBLE
 /**
  * Reads a double. The underlying value must be a float or double, not an integer.
  * This ensures no loss of precision can occur.
@@ -4513,6 +5453,27 @@ float mpack_expect_float_strict(mpack_reader_t* reader);
  * @throws mpack_error_type if the underlying value is not a float or double.
  */
 double mpack_expect_double_strict(mpack_reader_t* reader);
+#endif
+
+#if !MPACK_FLOAT
+/**
+ * Reads a float as a raw uint32_t. The underlying value must be a float, not a
+ * double or an integer.
+ *
+ * @throws mpack_error_type if the underlying value is not a float.
+ */
+uint32_t mpack_expect_raw_float(mpack_reader_t* reader);
+#endif
+
+#if !MPACK_DOUBLE
+/**
+ * Reads a double as a raw uint64_t. The underlying value must be a double, not a
+ * float or an integer.
+ *
+ * @throws mpack_error_type if the underlying value is not a double.
+ */
+uint64_t mpack_expect_raw_double(mpack_reader_t* reader);
+#endif
 
 /**
  * @}
@@ -4759,6 +5720,7 @@ MPACK_INLINE int mpack_expect_int_max(mpack_reader_t* reader, int max_value) {
     return mpack_expect_int_range(reader, 0, max_value);
 }
 
+#if MPACK_FLOAT
 /**
  * Reads a number, ensuring that it falls within the given range and returning
  * the value as a float. The underlying value can be an integer, float or
@@ -4770,7 +5732,9 @@ MPACK_INLINE int mpack_expect_int_max(mpack_reader_t* reader, int max_value) {
  * @throws mpack_error_type if the underlying value is not a float, double or integer.
  */
 float mpack_expect_float_range(mpack_reader_t* reader, float min_value, float max_value);
+#endif
 
+#if MPACK_DOUBLE
 /**
  * Reads a number, ensuring that it falls within the given range and returning
  * the value as a double. The underlying value can be an integer, float or
@@ -4782,6 +5746,7 @@ float mpack_expect_float_range(mpack_reader_t* reader, float min_value, float ma
  * @throws mpack_error_type if the underlying value is not a float, double or integer.
  */
 double mpack_expect_double_range(mpack_reader_t* reader, double min_value, double max_value);
+#endif
 
 /**
  * @}
@@ -4811,7 +5776,7 @@ MPACK_INLINE unsigned int mpack_expect_uint(mpack_reader_t* reader) {
         return (unsigned int)mpack_expect_u32(reader);
 
     // Otherwise we wrap the max function to ensure it fits.
-    return (unsigned int)mpack_expect_u64_max(reader, UINT_MAX);
+    return (unsigned int)mpack_expect_u64_max(reader, MPACK_UINT_MAX);
 
 }
 
@@ -4830,7 +5795,7 @@ MPACK_INLINE int mpack_expect_int(mpack_reader_t* reader) {
         return (int)mpack_expect_i32(reader);
 
     // Otherwise we wrap the range function to ensure it fits.
-    return (int)mpack_expect_i64_range(reader, INT_MIN, INT_MAX);
+    return (int)mpack_expect_i64_range(reader, MPACK_INT_MIN, MPACK_INT_MAX);
 
 }
 
@@ -4860,6 +5825,10 @@ void mpack_expect_uint_match(mpack_reader_t* reader, uint64_t value);
  * integer or if it does not exactly match the given value.
  */
 void mpack_expect_int_match(mpack_reader_t* reader, int64_t value);
+
+/**
+ * @}
+ */
 
 /**
  * @name Other Basic Types
@@ -5024,7 +5993,7 @@ void mpack_expect_map_match(mpack_reader_t* reader, uint32_t count);
  * with a safe maximum size instead.
  *
  * @returns @c true if a map was read successfully; @c false if nil was read
- *     or an error occured.
+ *     or an error occurred.
  * @throws mpack_error_type if the value is not a nil or map.
  */
 bool mpack_expect_map_or_nil(mpack_reader_t* reader, uint32_t* count);
@@ -5044,7 +6013,7 @@ bool mpack_expect_map_or_nil(mpack_reader_t* reader, uint32_t* count);
  * to switch on the key; see @ref docs/expect.md for examples.
  *
  * @returns @c true if a map was read successfully; @c false if nil was read
- *     or an error occured.
+ *     or an error occurred.
  * @throws mpack_error_type if the value is not a nil or map.
  */
 bool mpack_expect_map_max_or_nil(mpack_reader_t* reader, uint32_t max_count, uint32_t* count);
@@ -5125,7 +6094,7 @@ void mpack_expect_array_match(mpack_reader_t* reader, uint32_t count);
  * with a safe maximum size instead.
  *
  * @returns @c true if an array was read successfully; @c false if nil was read
- *     or an error occured.
+ *     or an error occurred.
  * @throws mpack_error_type if the value is not a nil or array.
  */
 bool mpack_expect_array_or_nil(mpack_reader_t* reader, uint32_t* count);
@@ -5140,7 +6109,7 @@ bool mpack_expect_array_or_nil(mpack_reader_t* reader, uint32_t* count);
  * have been read (only if an array was read.)
  *
  * @returns @c true if an array was read successfully; @c false if nil was read
- *     or an error occured.
+ *     or an error occurred.
  * @throws mpack_error_type if the value is not a nil or array.
  */
 bool mpack_expect_array_max_or_nil(mpack_reader_t* reader, uint32_t max_count, uint32_t* count);
@@ -5423,8 +6392,8 @@ MPACK_INLINE uint32_t mpack_expect_bin_max(mpack_reader_t* reader, uint32_t maxs
  * or mpack_read_bytes_inplace(). @ref mpack_done_bin() must be called
  * once all bytes have been read.
  *
- * mpack_error_type is raised if the value is not a binary blob or if its
- * length does not match.
+ * @throws mpack_error_type if the value is not a binary blob or if its size
+ * does not match.
  */
 MPACK_INLINE void mpack_expect_bin_size(mpack_reader_t* reader, uint32_t count) {
     if (mpack_expect_bin(reader) != count)
@@ -5439,6 +6408,18 @@ MPACK_INLINE void mpack_expect_bin_size(mpack_reader_t* reader, uint32_t count) 
  * under the "raw" type which became string in 1.1.)
  */
 size_t mpack_expect_bin_buf(mpack_reader_t* reader, char* buf, size_t size);
+
+/**
+ * Reads a binary blob with the exact given size into the given buffer.
+ *
+ * For compatibility, this will accept if the underlying type is string or
+ * binary (since in MessagePack 1.0, strings and binary data were combined
+ * under the "raw" type which became string in 1.1.)
+ *
+ * @throws mpack_error_type if the value is not a binary blob or if its size
+ * does not match.
+ */
+void mpack_expect_bin_size_buf(mpack_reader_t* reader, char* buf, uint32_t size);
 
 /**
  * Reads a binary blob with the given total maximum size, allocating storage for it.
@@ -5764,7 +6745,7 @@ size_t mpack_expect_key_cstr(mpack_reader_t* reader, const char* keys[],
 #endif
 
 MPACK_EXTERN_C_END
-MPACK_HEADER_END
+MPACK_SILENCE_WARNINGS_END
 
 #endif
 
@@ -5783,8 +6764,8 @@ MPACK_HEADER_END
 
 /* #include "mpack-reader.h" */
 
-MPACK_HEADER_START
-MPACK_EXTERN_C_START
+MPACK_SILENCE_WARNINGS_BEGIN
+MPACK_EXTERN_C_BEGIN
 
 #if MPACK_NODE
 
@@ -5908,14 +6889,25 @@ struct mpack_node_data_t {
      */
     uint32_t len;
 
-    union
-    {
+    union {
         bool     b; /* The value if the type is bool. */
+
+        #if MPACK_FLOAT
         float    f; /* The value if the type is float. */
+        #else
+        uint32_t f; /*< The raw value if the type is float. */
+        #endif
+
+        #if MPACK_DOUBLE
         double   d; /* The value if the type is double. */
+        #else
+        uint64_t d; /*< The raw value if the type is double. */
+        #endif
+
         int64_t  i; /* The value if the type is signed int. */
         uint64_t u; /* The value if the type is unsigned int. */
         size_t offset; /* The byte offset for str, bin and ext */
+
         mpack_node_data_t* children; /* The children for map or array */
     } value;
 };
@@ -6556,6 +7548,7 @@ unsigned int mpack_node_uint(mpack_node_t node);
  */
 int mpack_node_int(mpack_node_t node);
 
+#if MPACK_FLOAT
 /**
  * Returns the float value of the node. The underlying value can be an
  * integer, float or double; the value is converted to a float.
@@ -6566,7 +7559,9 @@ int mpack_node_int(mpack_node_t node);
  * @throws mpack_error_type if the underlying value is not a float, double or integer.
  */
 float mpack_node_float(mpack_node_t node);
+#endif
 
+#if MPACK_DOUBLE
 /**
  * Returns the double value of the node. The underlying value can be an
  * integer, float or double; the value is converted to a double.
@@ -6577,7 +7572,9 @@ float mpack_node_float(mpack_node_t node);
  * @throws mpack_error_type if the underlying value is not a float, double or integer.
  */
 double mpack_node_double(mpack_node_t node);
+#endif
 
+#if MPACK_FLOAT
 /**
  * Returns the float value of the node. The underlying value must be a float,
  * not a double or an integer. This ensures no loss of precision can occur.
@@ -6585,7 +7582,9 @@ double mpack_node_double(mpack_node_t node);
  * @throws mpack_error_type if the underlying value is not a float.
  */
 float mpack_node_float_strict(mpack_node_t node);
+#endif
 
+#if MPACK_DOUBLE
 /**
  * Returns the double value of the node. The underlying value must be a float
  * or double, not an integer. This ensures no loss of precision can occur.
@@ -6593,6 +7592,28 @@ float mpack_node_float_strict(mpack_node_t node);
  * @throws mpack_error_type if the underlying value is not a float or double.
  */
 double mpack_node_double_strict(mpack_node_t node);
+#endif
+
+#if !MPACK_FLOAT
+/**
+ * Returns the float value of the node as a raw uint32_t. The underlying value
+ * must be a float, not a double or an integer.
+ *
+ * @throws mpack_error_type if the underlying value is not a float.
+ */
+uint32_t mpack_node_raw_float(mpack_node_t node);
+#endif
+
+#if !MPACK_DOUBLE
+/**
+ * Returns the double value of the node as a raw uint64_t. The underlying value
+ * must be a double, not a float or an integer.
+ *
+ * @throws mpack_error_type if the underlying value is not a float or double.
+ */
+uint64_t mpack_node_raw_double(mpack_node_t node);
+#endif
+
 
 #if MPACK_EXTENSIONS
 /**
@@ -7036,7 +8057,7 @@ mpack_node_t mpack_node_map_uint(mpack_node_t node, uint64_t num);
 
 /**
  * Returns the value node in the given map for the given unsigned integer
- * key, or a nil node if the map does not contain the given key.
+ * key, or a missing node if the map does not contain the given key.
  *
  * The key must be unique. An error is flagged if the node has multiple
  * entries with the given key.
@@ -7068,7 +8089,7 @@ mpack_node_t mpack_node_map_uint_optional(mpack_node_t node, uint64_t num);
 mpack_node_t mpack_node_map_str(mpack_node_t node, const char* str, size_t length);
 
 /**
- * Returns the value node in the given map for the given string key, or a nil
+ * Returns the value node in the given map for the given string key, or a missing
  * node if the map does not contain the given key.
  *
  * The key must be unique. An error is flagged if the node has multiple
@@ -7103,7 +8124,7 @@ mpack_node_t mpack_node_map_cstr(mpack_node_t node, const char* cstr);
 
 /**
  * Returns the value node in the given map for the given null-terminated
- * string key, or a nil node if the map does not contain the given key.
+ * string key, or a missing node if the map does not contain the given key.
  *
  * The key must be unique. An error is flagged if the node has multiple
  * entries with the given key.
@@ -7177,7 +8198,7 @@ bool mpack_node_map_contains_cstr(mpack_node_t node, const char* cstr);
 #endif
 
 MPACK_EXTERN_C_END
-MPACK_HEADER_END
+MPACK_SILENCE_WARNINGS_END
 
 #endif
 
