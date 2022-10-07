@@ -300,12 +300,7 @@ static int convert_any_value(struct opentelemetry_decode_value *ctr_val,
 {
     int result;
 
-    result = -2;
-
     switch (val->value_case) {
-        case OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE__NOT_SET:
-            result = -1;
-            break;
 
         case OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE:
             result = convert_string_value(ctr_val, value_type, key, val->string_value);
@@ -334,10 +329,10 @@ static int convert_any_value(struct opentelemetry_decode_value *ctr_val,
         case OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_BYTES_VALUE:
             result = convert_bytes_value(ctr_val, value_type, key, val->bytes_value.data, val->bytes_value.len);
             break;
-        }
 
-        if (result == -2) {
-            return -1;
+        default:
+            result = -1;
+            break;
         }
 
     return result;
@@ -590,4 +585,9 @@ int ctr_decode_opentelemetry_create(struct ctrace **out_ctr,
     *out_ctr = ctr;
 
     return 0;
+}
+
+void ctr_decode_opentelemetry_destroy(struct ctrace *ctr)
+{
+    ctr_destroy(ctr);
 }
