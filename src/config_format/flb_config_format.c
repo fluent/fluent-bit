@@ -656,7 +656,7 @@ static void dump_section(struct flb_cf_section *s)
     if (cfl_list_size(&s->properties->list) > 0) {
         printf("  properties:\n");
         cfl_list_foreach(p_head, &s->properties->list) {
-            kv = mk_list_entry(p_head, struct cfl_kvpair, _head);
+            kv = cfl_list_entry(p_head, struct cfl_kvpair, _head);
             printf("    - %-15s: %s\n", kv->key, kv->val->data.as_string);
         }
     }
