@@ -1,3 +1,28 @@
+Version 2.14
+============
+
+Released 2021-09-09
+
+* New Features:
+
+  - Add `json_object_getn`, `json_object_setn`, `json_object_deln`, and the
+    corresponding `nocheck` functions. (#520, by Maxim Zhukov)
+
+* Fixes:
+
+  - Handle `sprintf` corner cases (#537, by Tobias Stoeckmann)
+
+* Build:
+
+  - Symbol versioning for all exported symbols (#540, by Simon McVittie)
+  - Fix compiler warnings (#555, by Kelvin Lee)
+
+* Documentation:
+
+  - Small fixes (#544, #546, by @i-ky)
+  - Sphinx 3 compatibility (#543, by Pierce Lopez)
+
+
 Version 2.13.1
 ==============
 
