@@ -1,13 +1,14 @@
 set(UNIT_TESTS_FILES
+  decoding.c
   basic.c
   span.c
   )
 
 set(CTR_TESTS_DATA_PATH "${CMAKE_CURRENT_SOURCE_DIR}/data")
-#configure_file(
-#  "${CMAKE_CURRENT_SOURCE_DIR}/ctr_tests_config.h.in"
-#  "${CMAKE_CURRENT_BINARY_DIR}/ctr_tests_config.h"
-#  )
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/ctr_tests_config.h.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/ctr_tests_config.h"
+  )
 
 # Prepare list of unit tests
 foreach(source_file ${UNIT_TESTS_FILES})
@@ -26,7 +27,7 @@ if(NOT CTR_SYSTEM_WINDOWS)
 endif()
 
   add_test(NAME ${source_file_we}
-    COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we}
+    COMMAND ${CMAKE_BINARY_DIR}/tests/${source_file_we}
     WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/tests)
   set_tests_properties(${source_file_we} PROPERTIES LABELS "internal")
 endforeach()
