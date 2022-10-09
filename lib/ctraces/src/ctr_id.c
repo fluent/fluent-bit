@@ -133,7 +133,7 @@ cfl_sds_t ctr_id_to_lower_base16(struct ctrace_id *cid)
     }
 
     len = cfl_sds_len(cid->buf);
-    out = cfl_sds_create_size(len * 2);
+    out = cfl_sds_create_size(len * 2 + 1);
     if (!out) {
         return NULL;
     }
@@ -142,6 +142,8 @@ cfl_sds_t ctr_id_to_lower_base16(struct ctrace_id *cid)
         out[i * 2] = hex[(cid->buf[i] >> 4) & 0xF];
         out[i * 2 + 1] = hex[(cid->buf[i] >> 0) & 0xF];
     }
+
+    out[i * 2] = 0;
 
     return out;
 }
