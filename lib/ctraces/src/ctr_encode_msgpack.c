@@ -91,9 +91,9 @@ static void pack_bytes(mpack_writer_t *writer, cfl_sds_t bytes)
 
     len = cfl_sds_len(bytes);
 
-    mpack_start_bin(writer, len);
+    // mpack_start_bin(writer, len);
     mpack_write_bin(writer, bytes, len);
-    mpack_finish_bin(writer);
+    // mpack_finish_bin(writer);
 }
 
 static void pack_variant(mpack_writer_t *writer, struct cfl_variant *variant)
@@ -354,7 +354,7 @@ static void pack_span(mpack_writer_t *writer, struct ctrace_span *span)
     mpack_write_cstr(writer, "status");
     mpack_start_map(writer, 2);
     mpack_write_cstr(writer, "code");
-    mpack_write_u64(writer, span->status.code);
+    mpack_write_i32(writer, span->status.code);
     mpack_write_cstr(writer, "message");
     if (span->status.message) {
         mpack_write_str(writer, span->status.message, cfl_sds_len(span->status.message));
@@ -452,8 +452,8 @@ int ctr_encode_msgpack_create(struct ctrace *ctx,  char **out_buf, size_t *out_s
     cfl_list_foreach(head, &ctx->resource_spans) {
         resource_span = cfl_list_entry(head, struct ctrace_resource_span, _head);
 
-        /* resourceSpans is an array of maps, each maps containers a 'resource' and 'scopeSpans' entry */
-        mpack_start_map(&writer, 2);
+        /* resourceSpans is an array of maps, each maps containers a 'resource', 'schema_url' and 'scopeSpans' entry */
+        mpack_start_map(&writer, 3);
 
         /* resource key */
         resource = resource_span->resource;
@@ -476,6 +476,15 @@ int ctr_encode_msgpack_create(struct ctrace *ctx,  char **out_buf, size_t *out_s
         mpack_write_u32(&writer, resource->dropped_attr_count);
 
         mpack_finish_map(&writer);
+
+        /* schema_url */
+        mpack_write_cstr(&writer, "schema_url");
+        if (resource_span->schema_url) {
+            mpack_write_str(&writer, resource_span->schema_url, cfl_sds_len(resource_span->schema_url));
+        }
+        else {
+            mpack_write_nil(&writer);
+        }
 
         /* scopeSpans */
         pack_scope_spans(&writer, &resource_span->scope_spans);
