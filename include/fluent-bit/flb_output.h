@@ -66,6 +66,7 @@
 /* Event type handlers */
 #define FLB_OUTPUT_LOGS        1
 #define FLB_OUTPUT_METRICS     2
+#define FLB_OUTPUT_TRACES      4
 
 #define FLB_OUTPUT_FLUSH_COMPAT_OLD_18()                 \
     const void *data   = event_chunk->data;              \
