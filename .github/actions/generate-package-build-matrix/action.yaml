@@ -1,4 +1,3 @@
-
 name: Composite action to generate the matrix of targets to build packages for.
 description: Remove any duplication of this information so we only have to update in one place.
 
@@ -9,7 +8,7 @@ inputs:
   target:
     description: Override to build a single target for debug/test only.
     required: false
-    default: ''
+    default: ""
   ref:
     description: The commit, tag or branch of Fluent Bit to checkout for building we then use to determine version for.
     required: true
@@ -27,14 +26,9 @@ runs:
         path: version-check
 
     - name: Determine target type
-      # TODO: probably switch to a sentinel file with the version in rather than checking for specific changes, or git branch tests.
       id: determine-build-type
       run: |
-        ls -l
-        BUILD_TYPE="1.8"
-        if [[ -d "packaging" ]]; then
-          BUILD_TYPE="1.9"
-        fi
+        BUILD_TYPE="1.9"
         if [[ -f "packaging/build-config.json" ]]; then
           BUILD_TYPE="2.0"
         fi
@@ -61,21 +55,6 @@ runs:
           echo '"ubuntu/16.04", "ubuntu/18.04", "ubuntu/20.04", "ubuntu/22.04",'
           echo '"ubuntu/18.04.arm64v8", "ubuntu/20.04.arm64v8", "ubuntu/22.04.arm64v8",'
           echo '"raspbian/buster", "raspbian/bullseye"'
-          echo ']}'
-        ) | jq -c .)
-        echo "MATRIX=$matrix" >> $GITHUB_ENV
-      shell: bash
-
-    - name: 1.8 targets
-      if: steps.determine-build-type.outputs.BUILD_TYPE == '1.8'
-      run: |
-        matrix=$((
-          echo '{ "distro" : ['
-          echo '"amazonlinux/2", "amazonlinux/2.arm64v8",'
-          echo '"centos/7", "centos/7.arm64v8",'
-          echo '"debian/stretch", "debian/stretch.arm64v8", "debian/buster", "debian/buster.arm64v8",'
-          echo '"ubuntu/16.04", "ubuntu/18.04", "ubuntu/20.04", "ubuntu/18.04.arm64v8", "ubuntu/20.04.arm64v8",'
-          echo '"raspbian/buster"'
           echo ']}'
         ) | jq -c .)
         echo "MATRIX=$matrix" >> $GITHUB_ENV
