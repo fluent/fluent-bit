@@ -15,7 +15,7 @@ if [[ "$DISABLE_SIGNING" != "true" ]]; then
     rpm -q gpg-pubkey --qf '%{name}-%{version}-%{release} --> %{summary}\n'
 fi
 
-RPM_REPO_PATHS=("amazonlinux/2" "centos/7" "centos/8" "centos/9")
+RPM_REPO_PATHS=("amazonlinux/2" "amazonlinux/2022" "centos/7" "centos/8" "centos/9")
 
 for RPM_REPO in "${RPM_REPO_PATHS[@]}"; do
     echo "Updating $RPM_REPO"
@@ -23,7 +23,7 @@ for RPM_REPO in "${RPM_REPO_PATHS[@]}"; do
     [[ ! -d "$REPO_DIR" ]] && continue
 
     if [[ "$DISABLE_SIGNING" != "true" ]]; then
-        # Sign all RPMs created for this target, cover both fluent-bit and td-agent-bit packages
+        # Sign all RPMs created for this target, cover both fluent-bit and legacy packages for 1.9 branch
         find "$REPO_DIR" -name "*-bit-*.rpm" -exec rpm --define "_gpg_name $GPG_KEY" --addsign {} \;
     fi
     # Create full metadata for all RPMs in the directory

@@ -1,6 +1,0 @@
-/etc/td-agent-bit/parsers.conf
-/etc/td-agent-bit/plugins.conf
-/etc/td-agent-bit/td-agent-bit.conf
-/etc/fluent-bit/parsers.conf
-/etc/fluent-bit/plugins.conf
-/etc/fluent-bit/fluent-bit.conf
