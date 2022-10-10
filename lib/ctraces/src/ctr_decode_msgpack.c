@@ -104,19 +104,24 @@ static int unpack_instrumentation_scope_attributes(mpack_reader_t *reader, size_
     struct ctrace_attributes          *attributes;
     int                                result;
 
-    attributes = ctr_attributes_create();
-
-    cfl_kvlist_destroy(attributes->kv);
-
-    attributes->kv = NULL;
-
-    result = unpack_cfl_kvlist(reader, &attributes->kv);
-
-    if (result != 0) {
-        return CTR_DECODE_MSGPACK_VARIANT_DECODE_ERROR;
+    if (ctr_mpack_peek_type(reader) == mpack_type_nil) {
+        result = ctr_mpack_consume_nil_tag(reader);
     }
+    else {
+        attributes = ctr_attributes_create();
 
-    context->scope_span->instrumentation_scope->attr = attributes;
+        cfl_kvlist_destroy(attributes->kv);
+
+        attributes->kv = NULL;
+
+        result = unpack_cfl_kvlist(reader, &attributes->kv);
+
+        if (result != 0) {
+            return CTR_DECODE_MSGPACK_VARIANT_DECODE_ERROR;
+        }
+
+        context->scope_span->instrumentation_scope->attr = attributes;
+    }
 
     return CTR_DECODE_MSGPACK_SUCCESS;
 }
