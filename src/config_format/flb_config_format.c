@@ -193,7 +193,7 @@ struct cfl_variant *flb_cf_section_property_add(struct flb_cf *cf,
     }
 
     if (v_len == 0) {
-        v_len = strlen(k_buf);
+        v_len = strlen(v_buf);
     }
     val = flb_sds_create_len(v_buf, v_len);
     if (val == NULL) {
