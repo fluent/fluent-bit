@@ -25,6 +25,9 @@
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_metrics.h>
 
+#include <ctraces/ctraces.h>
+#include <ctraces/ctr_decode_msgpack.h>
+
 #include <msgpack.h>
 #include "stdout.h"
 
@@ -124,6 +127,33 @@ static void print_metrics_text(struct flb_output_instance *ins,
 }
 #endif
 
+static void print_traces_text(struct flb_output_instance *ins,
+                              const void *data, size_t bytes)
+{
+    int ret;
+    size_t off = 0;
+    cfl_sds_t text;
+    struct ctrace *ctr = NULL;
+
+    /* get cmetrics context */
+    ret = ctr_decode_msgpack_create(&ctr, (char *) data, bytes, &off);
+    if (ret != 0) {
+        flb_plg_error(ins, "could not process traces payload (ret=%i)", ret);
+        return;
+    }
+
+    /* convert to text representation */
+    text = ctr_encode_text_create(ctr);
+
+    /* destroy cmt context */
+    ctr_destroy(ctr);
+
+    printf("%s", text);
+    fflush(stdout);
+
+    ctr_encode_text_destroy(text);
+}
+
 static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
                             struct flb_output_flush *out_flush,
                             struct flb_input_instance *i_ins,
@@ -141,13 +171,20 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
 
 #ifdef FLB_HAVE_METRICS
     /* Check if the event type is metrics, handle the payload differently */
-    if (event_chunk->type == FLB_EVENT_TYPE_METRIC) {
+    if (event_chunk->type == FLB_EVENT_TYPE_METRICS) {
         print_metrics_text(ctx->ins, (char *)
                            event_chunk->data,
                            event_chunk->size);
         FLB_OUTPUT_RETURN(FLB_OK);
     }
 #endif
+
+    if (event_chunk->type == FLB_EVENT_TYPE_TRACES) {
+        print_traces_text(ctx->ins, (char *)
+                          event_chunk->data,
+                          event_chunk->size);
+        FLB_OUTPUT_RETURN(FLB_OK);
+    }
 
     /* Assuming data is a log entry...*/
     if (ctx->out_format != FLB_PACK_JSON_FORMAT_NONE) {
