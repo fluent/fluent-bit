@@ -23,10 +23,29 @@
 #include <fluent-bit/flb_input_trace.h>
 #include <fluent-bit/flb_input_plugin.h>
 
+#include <ctraces/ctraces.h>
+#include <ctraces/ctr_decode_msgpack.h>
+
 /* Take a CTrace context and enqueue it as a Trace chunk */
 int flb_input_trace_append(struct flb_input_instance *ins,
                            const char *tag, size_t tag_len,
-                           void *ctrace)
+                           struct ctrace *ctr)
 {
-    return 0;
+    int ret;
+    char *out_buf;
+    size_t out_size;
+
+    /* Convert trace context to msgpack */
+    ret = ctr_encode_msgpack_create(ctr, &out_buf, &out_size);
+    if (ret != 0) {
+        flb_plg_error(ins, "could not encode traces");
+        return -1;
+    }
+
+    /* Append packed metrics */
+    ret = flb_input_chunk_append_raw(ins, FLB_INPUT_TRACES, 0,
+                                     tag, tag_len, out_buf, out_size);
+    ctr_encode_msgpack_destroy(out_buf);
+
+    return ret;
 }
