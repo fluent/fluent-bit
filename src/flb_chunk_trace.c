@@ -188,7 +188,7 @@ struct flb_chunk_trace_context *flb_chunk_trace_context_new(void *trace_input,
         flb_error("could not load trace emitter");
         goto error_flb;
     }
-    input->event_type = FLB_EVENT_TYPE_LOG | FLB_EVENT_TYPE_HAS_TRACE;
+    input->event_type = FLB_EVENT_TYPE_LOGS | FLB_EVENT_TYPE_HAS_TRACE;
 
     ret = flb_input_set_property(input, "alias", "trace-emitter");
     if (ret != 0) {
