@@ -31,6 +31,7 @@ RUN apt-get update && \
 # ubuntu/18.04 base image
 FROM ubuntu:18.04 as ubuntu-18.04-base
 ENV DEBIAN_FRONTEND noninteractive
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
@@ -49,6 +50,7 @@ RUN apt-get update && \
 # ubuntu/18.04.arm64v8 base image
 FROM arm64v8/ubuntu:18.04 as ubuntu-18.04.arm64v8-base
 ENV DEBIAN_FRONTEND noninteractive
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
@@ -141,6 +143,7 @@ ARG FLB_HTTP_SERVER=On
 ARG FLB_OUT_KAFKA=On
 ARG FLB_OUT_PGSQL=On
 ARG FLB_JEMALLOC=On
+ARG FLB_CHUNK_TRACE=On
 
 ENV CFLAGS=$CFLAGS
 RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
@@ -153,6 +156,7 @@ RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DFLB_OUT_PGSQL="$FLB_OUT_PGSQL" \
     -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
+    -DFLB_CHUNK_TRACE="${FLB_CHUNK_TRACE}" \
     ../
 
 VOLUME [ "/output" ]
