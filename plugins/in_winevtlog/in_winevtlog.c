@@ -68,7 +68,7 @@ static int in_winevtlog_init(struct flb_input_instance *in,
         tmp = "Application";
     }
 
-    ctx->active_channel = winevtlog_open_all(tmp, ctx->read_existing_events);
+    ctx->active_channel = winevtlog_open_all(tmp, ctx->read_existing_events, ctx->ignore_missing_channels);
     if (!ctx->active_channel) {
         flb_plg_error(ctx->ins, "failed to open channels");
         flb_free(ctx);
@@ -236,6 +236,11 @@ static struct flb_config_map config_map[] = {
     {
       FLB_CONFIG_MAP_BOOL, "use_ansi", "false",
       0, FLB_TRUE, offsetof(struct winevtlog_config, use_ansi),
+      "Use ANSI encoding on eventlog messages"
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "use_ansi", "false",
+      0, FLB_TRUE, offsetof(struct winevtlog_config, ignore_missing_channels),
       "Use ANSI encoding on eventlog messages"
     },
 
