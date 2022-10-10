@@ -820,16 +820,8 @@ else()
 
 endif()
 
-# TD Agent options
-if(FLB_TD)
-  FLB_DEFINITION(FLB_IS_TD_AGENT)
-  FLB_OPTION(FLB_JEMALLOC ON)
-  set(FLB_PROG_NAME "TD Agent Bit")
-  set(FLB_OUT_NAME "td-agent-bit")
-else()
-  set(FLB_PROG_NAME "Fluent Bit")
-  set(FLB_OUT_NAME "fluent-bit")
-endif()
+set(FLB_PROG_NAME "Fluent Bit")
+set(FLB_OUT_NAME "fluent-bit")
 
 if(FLB_PROXY_GO)
   FLB_DEFINITION(FLB_HAVE_PROXY_GO)
@@ -1075,12 +1067,7 @@ endif()
 # ============================
 
 set(CPACK_PACKAGE_VERSION ${FLB_VERSION_STR})
-
-if(FLB_TD)
-  set(CPACK_PACKAGE_NAME "td-agent-bit")
-else()
-  set(CPACK_PACKAGE_NAME "fluent-bit")
-endif()
+set(CPACK_PACKAGE_NAME "fluent-bit")
 
 set(CPACK_PACKAGE_RELEASE 1)
 set(CPACK_PACKAGE_CONTACT "Eduardo Silva <eduardo@calyptia.com>")
@@ -1178,11 +1165,7 @@ set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 # CPack: Windows System
 if(CPACK_GENERATOR MATCHES "NSIS")
   set(CPACK_MONOLITHIC_INSTALL 1)
-  if(FLB_TD)
-    set(CPACK_PACKAGE_INSTALL_DIRECTORY "td-agent-bit")
-  else()
-    set(CPACK_PACKAGE_INSTALL_DIRECTORY "fluent-bit")
-  endif()
+  set(CPACK_PACKAGE_INSTALL_DIRECTORY "fluent-bit")
 endif()
 
 # CPack: Windows System w/ WiX

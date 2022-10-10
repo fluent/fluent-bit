@@ -1,4 +1,4 @@
-name: Build containers for a specific branch
+name: Build containers for a specific branch of 1.9+
 on:
   workflow_dispatch:
     inputs:
@@ -8,7 +8,7 @@ on:
         default: master
 jobs:
   build-branch-containers:
-    uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@master
+    uses: ./.github/workflows/call-build-images.yaml
     with:
       version: ${{ github.event.inputs.version }}
       ref: ${{ github.event.inputs.version }}
