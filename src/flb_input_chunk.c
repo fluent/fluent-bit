@@ -882,7 +882,7 @@ static int input_chunk_write_header(struct cio_chunk *chunk, int event_type,
      * ----------------------------------
      * m[0] = FLB_INPUT_CHUNK_MAGIC_BYTE_0
      * m[1] = FLB_INPUT_CHUNK_MAGIC_BYTE_1
-     * m[2] = type (FLB_INPUT_CHUNK_TYPE_LOG | FLB_INPUT_CHUNK_TYPE_METRIC)
+     * m[2] = type (FLB_INPUT_CHUNK_TYPE_LOG or FLB_INPUT_CHUNK_TYPE_METRIC or FLB_INPUT_CHUNK_TYPE_TRACE
      * m[3] = 0 (unused for now)
      */
 
@@ -911,10 +911,10 @@ static int input_chunk_write_header(struct cio_chunk *chunk, int event_type,
 
     /* event type */
     if (event_type == FLB_INPUT_LOGS) {
-        meta[2] = FLB_INPUT_CHUNK_TYPE_LOG;
+        meta[2] = FLB_INPUT_CHUNK_TYPE_LOGS;
     }
     else if (event_type == FLB_INPUT_METRICS) {
-        meta[2] = FLB_INPUT_CHUNK_TYPE_METRIC;
+        meta[2] = FLB_INPUT_CHUNK_TYPE_METRICS;
     }
     else if (event_type == FLB_INPUT_TRACES) {
         meta[2] = FLB_INPUT_CHUNK_TYPE_TRACES;
@@ -938,7 +938,7 @@ static int input_chunk_write_header(struct cio_chunk *chunk, int event_type,
     return 0;
 }
 
-struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
+struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in, int event_type,
                                                const char *tag, int tag_len)
 {
     int ret;
@@ -978,7 +978,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     }
 
     /* Write chunk header */
-    ret = input_chunk_write_header(chunk, in->event_type, (char *) tag, tag_len);
+    ret = input_chunk_write_header(chunk, event_type, (char *) tag, tag_len);
     if (ret == -1) {
         cio_chunk_close(chunk, CIO_TRUE);
         return NULL;
@@ -1129,6 +1129,7 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
 
 /* Return or create an available chunk to write data */
 static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
+                                               int event_type,
                                                const char *tag, int tag_len,
                                                size_t chunk_size, int *set_down)
 {
@@ -1145,15 +1146,15 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
         tag_len = FLB_INPUT_CHUNK_TAG_MAX;
     }
 
-    if (in->event_type == FLB_INPUT_LOGS) {
+    if (event_type == FLB_INPUT_LOGS) {
         id = flb_hash_table_get(in->ht_log_chunks, tag, tag_len,
                                 (void *) &ic, &out_size);
     }
-    else if (in->event_type == FLB_INPUT_METRICS) {
+    else if (event_type == FLB_INPUT_METRICS) {
         id = flb_hash_table_get(in->ht_metric_chunks, tag, tag_len,
                                 (void *) &ic, &out_size);
     }
-    else if (in->event_type == FLB_INPUT_TRACES) {
+    else if (event_type == FLB_INPUT_TRACES) {
         id = flb_hash_table_get(in->ht_trace_chunks, tag, tag_len,
                                 (void *) &ic, &out_size);
     }
@@ -1173,11 +1174,12 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
 
     /* No chunk was found, we need to create a new one */
     if (!ic) {
-        ic = flb_input_chunk_create(in, (char *) tag, tag_len);
+        ic = flb_input_chunk_create(in, event_type, (char *) tag, tag_len);
         new_chunk = FLB_TRUE;
         if (!ic) {
             return NULL;
         }
+        ic->event_type = event_type;
     }
 
     /*
@@ -1543,7 +1545,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
      * Get a target input chunk, can be one with remaining space available
      * or a new one.
      */
-    ic = input_chunk_get(in, tag, tag_len, buf_size, &set_down);
+    ic = input_chunk_get(in, event_type, tag, tag_len, buf_size, &set_down);
     if (!ic) {
         flb_error("[input chunk] no available chunk");
         return -1;
@@ -1965,7 +1967,10 @@ static inline int input_chunk_has_magic_bytes(char *buf, int len)
     return FLB_FALSE;
 }
 
-/* Get the event type by retrieving metadata header */
+/*
+ * Get the event type by retrieving metadata header. NOTE: this function only event type discovery by looking at the
+ * headers bytes of a chunk that exists on disk.
+ */
 int flb_input_chunk_get_event_type(struct flb_input_chunk *ic)
 {
     int len;
@@ -1980,10 +1985,10 @@ int flb_input_chunk_get_event_type(struct flb_input_chunk *ic)
 
     /* Check metadata header / magic bytes */
     if (input_chunk_has_magic_bytes(buf, len)) {
-        if (buf[2] == FLB_INPUT_CHUNK_TYPE_LOG) {
+        if (buf[2] == FLB_INPUT_CHUNK_TYPE_LOGS) {
             type = FLB_INPUT_LOGS;
         }
-        else if (buf[2] == FLB_INPUT_CHUNK_TYPE_METRIC) {
+        else if (buf[2] == FLB_INPUT_CHUNK_TYPE_METRICS) {
             type = FLB_INPUT_METRICS;
         }
         else if (buf[2] == FLB_INPUT_CHUNK_TYPE_TRACES) {
