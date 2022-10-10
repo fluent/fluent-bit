@@ -21,8 +21,9 @@
 #define FLB_INPUT_TRACE_H
 
 #include <fluent-bit/flb_info.h>
+#include <ctraces/ctraces.h>
 
 int flb_input_trace_append(struct flb_input_instance *ins,
                            const char *tag, size_t tag_len,
-                           void *ctrace);
+                           struct ctrace *ctr);
 #endif
