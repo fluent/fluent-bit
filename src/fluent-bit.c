@@ -723,14 +723,15 @@ static int service_configure_plugin(struct flb_config *config,
             ins = flb_output_new(config, tmp, NULL, FLB_TRUE);
         }
         flb_sds_destroy(tmp);
-        flb_sds_destroy(name);
 
         /* validate the instance creation */
         if (!ins) {
             flb_error("[config] section '%s' tried to instance a plugin name "
                       "that don't exists", name);
+            flb_sds_destroy(name);
             return -1;
         }
+        flb_sds_destroy(name);
 
         /*
          * iterate section properties and populate instance by using specific
