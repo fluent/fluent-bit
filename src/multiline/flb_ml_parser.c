@@ -69,6 +69,13 @@ int flb_ml_parser_builtin_create(struct flb_config *config)
         return -1;
     }
 
+    /* Ruby */
+    mlp = flb_ml_parser_ruby(config, NULL);
+    if (!mlp) {
+        flb_error("[multiline] could not init 'ruby' built-in parser");
+        return -1;
+    }
+
     /* Python */
     mlp = flb_ml_parser_python(config, NULL);
     if (!mlp) {
