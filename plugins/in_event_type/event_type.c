@@ -32,11 +32,37 @@
 #include <cmetrics/cmt_histogram.h>
 
 #define CALLBACK_TIME     2
+#define OTEL_SPAN_ID_LEN  8
 
 struct event_type {
     int coll_fd;
     int type;
 };
+
+static struct ctrace_id *create_random_span_id()
+{
+    char *buf;
+    ssize_t ret;
+    struct ctrace_id *cid;
+
+    buf = calloc(1, OTEL_SPAN_ID_LEN);
+    if (!buf) {
+        ctr_errno();
+        return NULL;
+    }
+
+    ret = ctr_random_get(buf, OTEL_SPAN_ID_LEN);
+    if (ret < 0) {
+        free(buf);
+        return NULL;
+    }
+
+    cid = ctr_id_create(buf, OTEL_SPAN_ID_LEN);
+    free(buf);
+
+    return cid;
+
+}
 
 static int send_logs(struct flb_input_instance *ins)
 {
@@ -211,7 +237,7 @@ static int send_traces(struct flb_input_instance *ins)
     trace_id = ctr_id_create_random();
 
     /* generate a random ID for the new span */
-    span_id = ctr_id_create_random();
+    span_id = create_random_span_id();
 
     /* Create a root span */
     span_root = ctr_span_create(ctx, scope_span, "main", NULL);
@@ -277,7 +303,7 @@ static int send_traces(struct flb_input_instance *ins)
 
     /* delete old span id and generate a new one */
     ctr_id_destroy(span_id);
-    span_id = ctr_id_create_random();
+    span_id = create_random_span_id();
     ctr_span_set_span_id_with_cid(span_child, span_id);
 
     /* destroy the IDs since is not longer needed */
@@ -289,7 +315,7 @@ static int send_traces(struct flb_input_instance *ins)
 
     /* create a Link (no valid IDs of course) */
     trace_id = ctr_id_create_random();
-    span_id = ctr_id_create_random();
+    span_id = create_random_span_id();
 
     link = ctr_link_create_with_cid(span_child, trace_id, span_id);
     ctr_link_set_trace_state(link, "aaabbbccc");
@@ -358,12 +384,15 @@ static int cb_event_type_init(struct flb_input_instance *ins,
     if (tmp) {
         if (strcasecmp(tmp, "logs") == 0) {
             ctx->type = FLB_EVENT_TYPE_LOGS;
+            ins->event_type = FLB_INPUT_LOGS;
         }
         else if (strcasecmp(tmp, "metrics") == 0) {
             ctx->type = FLB_EVENT_TYPE_METRICS;
+            ins->event_type = FLB_INPUT_METRICS;
         }
         else if (strcasecmp(tmp, "traces") == 0) {
             ctx->type = FLB_EVENT_TYPE_TRACES;
+            ins->event_type = FLB_INPUT_TRACES;
         }
     }
 
