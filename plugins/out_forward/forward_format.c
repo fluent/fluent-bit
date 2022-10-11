@@ -19,9 +19,11 @@
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_crypto.h>
 #include <fluent-bit/flb_record_accessor.h>
+
 #include "forward.h"
 
 void flb_forward_format_bin_to_hex(uint8_t *buf, size_t len, char *out)
@@ -80,14 +82,24 @@ int flb_forward_format_append_tag(struct flb_forward *ctx,
 
 static int append_options(struct flb_forward *ctx,
                           struct flb_forward_config *fc,
+                          int event_type,
                           msgpack_packer *mp_pck,
                           int entries, void *data, size_t bytes,
                           char *out_chunk)
 {
-    int opt_count = 0;
     char *chunk = NULL;
     uint8_t checksum[64];
     int     result;
+    struct flb_mp_map_header mh;
+
+    /* options is map, use the dynamic map type */
+    flb_mp_map_header_init(&mh, mp_pck);
+
+    /* event type (FLB_EVENT_TYPE_LOGS, FLB_EVENT_TYPE_METRICS, FLB_EVENT_TYPE_TRACES) */
+    flb_mp_map_header_append(&mh);
+    msgpack_pack_str(mp_pck, 13);
+    msgpack_pack_str_body(mp_pck, "fluent_signal", 13);
+    msgpack_pack_int64(mp_pck, event_type);
 
     if (fc->require_ack_response == FLB_TRUE) {
         /*
@@ -106,24 +118,11 @@ static int append_options(struct flb_forward *ctx,
 
         out_chunk[32] = '\0';
         chunk = (char *) out_chunk;
-        opt_count++;
     }
-
-    if (entries > 0) {
-        opt_count++;
-    }
-
-    if (entries > 0 &&                      /* not message mode */
-        fc->time_as_integer == FLB_FALSE && /* not compat mode */
-        fc->compress == COMPRESS_GZIP) {
-        opt_count++;
-    }
-
-    /* options is map */
-    msgpack_pack_map(mp_pck, opt_count);
 
     /* "chunk": '<checksum-base-64>' */
     if (chunk) {
+        flb_mp_map_header_append(&mh);
         msgpack_pack_str(mp_pck, 5);
         msgpack_pack_str_body(mp_pck, "chunk", 5);
         msgpack_pack_str(mp_pck, 32);
@@ -132,19 +131,25 @@ static int append_options(struct flb_forward *ctx,
 
     /* "size": entries */
     if (entries > 0) {
+        flb_mp_map_header_append(&mh);
         msgpack_pack_str(mp_pck, 4);
         msgpack_pack_str_body(mp_pck, "size", 4);
         msgpack_pack_int64(mp_pck, entries);
     }
 
+    /* "compressed": "gzip" */
     if (entries > 0 &&                      /* not message mode */
         fc->time_as_integer == FLB_FALSE && /* not compat mode */
         fc->compress == COMPRESS_GZIP) {
+
+        flb_mp_map_header_append(&mh);
         msgpack_pack_str(mp_pck, 10);
         msgpack_pack_str_body(mp_pck, "compressed", 10);
         msgpack_pack_str(mp_pck, 4);
         msgpack_pack_str_body(mp_pck, "gzip", 4);
     }
+
+    flb_mp_map_header_end(&mh);
 
     flb_plg_debug(ctx->ins,
                   "send options records=%d chunk='%s'",
@@ -245,7 +250,8 @@ static int flb_forward_format_message_mode(struct flb_forward *ctx,
         }
 
         if (fc->require_ack_response == FLB_TRUE) {
-            append_options(ctx, fc, &mp_pck, 0, (char *) data + pre, record_size,
+            append_options(ctx, fc, FLB_EVENT_TYPE_LOGS, &mp_pck, 0,
+                           (char *) data + pre, record_size,
                            chunk);
         }
 
@@ -261,48 +267,6 @@ static int flb_forward_format_message_mode(struct flb_forward *ctx,
 }
 #endif
 
-static int flb_forward_format_metrics_mode(struct flb_forward *ctx,
-                                           struct flb_forward_config *fc,
-                                           struct flb_forward_flush *ff,
-                                           const char *tag, int tag_len,
-                                           const void *data, size_t bytes,
-                                           void **out_buf, size_t *out_size)
-{
-    msgpack_packer   mp_pck;
-    msgpack_sbuffer  mp_sbuf;
-    struct flb_time tm;
-
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
-    msgpack_pack_array(&mp_pck, 3);
-
-    if (fc->tag) {
-        msgpack_pack_str(&mp_pck, flb_sds_len(fc->tag));
-        msgpack_pack_str_body(&mp_pck, fc->tag, flb_sds_len(fc->tag));
-    }
-    else {
-        msgpack_pack_str(&mp_pck, tag_len);
-        msgpack_pack_str_body(&mp_pck, tag, tag_len);
-    }
-
-    /* timestamp */
-    flb_time_get(&tm);
-    flb_time_append_to_msgpack(&tm, &mp_pck, 0);
-
-    /* metrics */
-    msgpack_pack_map(&mp_pck, 1);
-    msgpack_pack_str(&mp_pck, 8);
-    msgpack_pack_str_body(&mp_pck, "cmetrics", 8);
-    msgpack_pack_bin(&mp_pck, bytes);
-    msgpack_pack_bin_body(&mp_pck, data, bytes);
-
-    *out_buf  = mp_sbuf.data;
-    *out_size = mp_sbuf.size;
-
-    return 0;
-}
-
 /*
  * Forward Protocol: Forward Mode
  * ------------------------------
@@ -312,6 +276,7 @@ static int flb_forward_format_metrics_mode(struct flb_forward *ctx,
 static int flb_forward_format_forward_mode(struct flb_forward *ctx,
                                            struct flb_forward_config *fc,
                                            struct flb_forward_flush *ff,
+                                           int event_type,
                                            const char *tag, int tag_len,
                                            const void *data, size_t bytes,
                                            void **out_buf, size_t *out_size)
@@ -332,9 +297,16 @@ static int flb_forward_format_forward_mode(struct flb_forward *ctx,
         chunk = chunk_buf;
     }
 
-    if (fc->send_options == FLB_TRUE) {
-        entries = flb_mp_count(data, bytes);
-        append_options(ctx, fc, &mp_pck, entries, (char *) data, bytes, chunk);
+    if (fc->send_options == FLB_TRUE || (event_type == FLB_EVENT_TYPE_METRICS || event_type == FLB_EVENT_TYPE_TRACES)) {
+        if (event_type == FLB_EVENT_TYPE_LOGS) {
+            entries = flb_mp_count(data, bytes);
+        }
+        else {
+            /* for non logs, we don't count the number of entries */
+            entries = 0;
+        }
+
+        append_options(ctx, fc, event_type, &mp_pck, entries, (char *) data, bytes, chunk);
     }
 
     *out_buf  = mp_sbuf.data;
@@ -413,7 +385,8 @@ static int flb_forward_format_forward_compat_mode(struct flb_forward *ctx,
     }
 
     if (fc->send_options == FLB_TRUE) {
-        append_options(ctx, fc, &mp_pck, entries, (char *) data, bytes, chunk);
+        append_options(ctx, fc, FLB_EVENT_TYPE_LOGS, &mp_pck, entries,
+                       (char *) data, bytes, chunk);
     }
 
     *out_buf  = mp_sbuf.data;
@@ -426,6 +399,7 @@ int flb_forward_format(struct flb_config *config,
                        struct flb_input_instance *ins,
                        void *ins_ctx,
                        void *flush_ctx,
+                       int event_type,
                        const char *tag, int tag_len,
                        const void *data, size_t bytes,
                        void **out_buf, size_t *out_size)
@@ -449,17 +423,13 @@ int flb_forward_format(struct flb_config *config,
         return -1;
     }
 
-    /* metric handling */
-    if (flb_input_event_type_is_metric(ins)) {
-        ret = flb_forward_format_metrics_mode(ctx, fc, ff,
-                                              tag, tag_len,
-                                              data, bytes,
-                                              out_buf, out_size);
-        if (ret != 0) {
-            return -1;
-        }
-
-        return MODE_MESSAGE;
+    if (event_type == FLB_EVENT_TYPE_METRICS) {
+        mode = MODE_FORWARD;
+        goto do_formatting;
+    }
+    else if (event_type == FLB_EVENT_TYPE_TRACES) {
+        mode = MODE_FORWARD;
+        goto do_formatting;
     }
 
 #ifdef FLB_HAVE_RECORD_ACCESSOR
@@ -498,6 +468,9 @@ int flb_forward_format(struct flb_config *config,
     }
 #endif
 
+
+do_formatting:
+
     /* Message Mode: the user needs custom Tags */
     if (mode == MODE_MESSAGE) {
 #ifdef FLB_HAVE_RECORD_ACCESSOR
@@ -509,6 +482,7 @@ int flb_forward_format(struct flb_config *config,
     }
     else if (mode == MODE_FORWARD) {
         ret = flb_forward_format_forward_mode(ctx, fc, ff,
+                                              event_type,
                                               tag, tag_len,
                                               data, bytes,
                                               out_buf, out_size);
