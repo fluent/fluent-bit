@@ -42,8 +42,7 @@ RUN Start-Process /local/vc_redist.x64.exe -ArgumentList '/install', '/quiet', '
 ENV chocolateyUseWindowsCompression false
 RUN iex ((new-object net.webclient).DownloadString('https://chocolatey.org/install.ps1')); `
     choco feature disable --name showDownloadProgress ; `
-    choco install -y openssl; `
-    Copy-Item -Path /Program Files/OpenSSL-Win64/*.dll -Destination /fluent-bit/bin/;
+    choco install -y openssl;
 
 # Build Fluent Bit from source - context must be the root of the Git repo
 WORKDIR /src/build
