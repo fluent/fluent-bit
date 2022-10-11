@@ -201,7 +201,7 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
                               struct mk_http_request *request)
 {
     int i;
-    int ret;
+    int ret = -1;
     int len;
     char *uri;
     char *qs;
