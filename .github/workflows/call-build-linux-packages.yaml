@@ -70,12 +70,6 @@ jobs:
           tar -czvf $SOURCE_FILENAME_PREFIX.tar.gz -C source --exclude-vcs .
           md5sum $SOURCE_FILENAME_PREFIX.tar.gz > $SOURCE_FILENAME_PREFIX.tar.gz.md5
           sha256sum $SOURCE_FILENAME_PREFIX.tar.gz > $SOURCE_FILENAME_PREFIX.tar.gz.sha256
-          if [[ -d packaging ]]; then
-            echo "Also adding 1.8 packaging code"
-            tar -czvf $SOURCE_FILENAME_PREFIX-packaging.tar.gz -C packaging --exclude-vcs .
-            md5sum $SOURCE_FILENAME_PREFIX-packaging.tar.gz > $SOURCE_FILENAME_PREFIX-packaging.tar.gz.md5
-            sha256sum $SOURCE_FILENAME_PREFIX-packaging.tar.gz > $SOURCE_FILENAME_PREFIX-packaging.tar.gz.sha256
-          fi
           # Move to a directory to simplify upload/sync
           mkdir -p source-packages
           cp -fv $SOURCE_FILENAME_PREFIX* source-packages/
@@ -145,7 +139,6 @@ jobs:
         env:
           FLB_DISTRO: ${{ matrix.distro }}
           FLB_OUT_DIR: ${{ inputs.version }}/staging
-          FLB_TD: "Off"
           FLB_NIGHTLY_BUILD: ${{ inputs.unstable }}
           CMAKE_INSTALL_PREFIX: /opt/fluent-bit/
         working-directory: packaging
