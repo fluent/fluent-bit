@@ -24,12 +24,23 @@ if [[ ! -d "$SOURCE_DIR" ]]; then
     echo "Missing source directory: $SOURCE_DIR"
 fi
 
+# Amazon Linux 2022
+if [[ -d "$SOURCE_DIR/amazonlinux/2022/" ]]; then
+    echo "Publishing AmazonLinux 2022"
+    mkdir -p /var/www/apt.fluentbit.io/amazonlinux/2022/x86_64 /var/www/apt.fluentbit.io/amazonlinux/2022/aarch64
+    find "$SOURCE_DIR/amazonlinux/2022" -iname "*-bit-$VERSION-*x86_64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/amazonlinux/2022/x86_64" \;
+    createrepo -dvp "/var/www/apt.fluentbit.io/amazonlinux/2022/x86_64"
+
+    find "$SOURCE_DIR/amazonlinux/2022" -iname "*-bit-$VERSION-*aarch64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/amazonlinux/2022/aarch64" \;
+    createrepo -dvp "/var/www/apt.fluentbit.io/amazonlinux/2022/aarch64"
+fi
+
 # Amazon Linux 2
 echo "Publishing AmazonLinux 2"
-find "$SOURCE_DIR/amazonlinux/" -iname "*-bit-$VERSION-*aarch64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/amazonlinux/2/aarch64" \;
+find "$SOURCE_DIR/amazonlinux/2" -iname "*-bit-$VERSION-*aarch64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/amazonlinux/2/aarch64" \;
 createrepo -dvp "/var/www/apt.fluentbit.io/amazonlinux/2/aarch64"
 
-find "$SOURCE_DIR/amazonlinux/" -iname "*-bit-$VERSION-*x86_64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/amazonlinux/2/x86_64" \;
+find "$SOURCE_DIR/amazonlinux/2" -iname "*-bit-$VERSION-*x86_64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/amazonlinux/2/x86_64" \;
 createrepo -dvp "/var/www/apt.fluentbit.io/amazonlinux/2/x86_64"
 
 # Centos 7
