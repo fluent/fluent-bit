@@ -241,7 +241,7 @@ static struct flb_config_map config_map[] = {
     {
       FLB_CONFIG_MAP_BOOL, "use_ansi", "false",
       0, FLB_TRUE, offsetof(struct winevtlog_config, ignore_missing_channels),
-      "Use ANSI encoding on eventlog messages"
+      "Whether to ignore channels missing in eventlog"
     },
 
     /* EOF */
