@@ -136,6 +136,7 @@ struct flb_test_out_formatter {
                      struct flb_input_instance *,
                      void *,         /* plugin instance context */
                      void *,         /* optional flush context */
+                     int,            /* event type */
                      const char *,   /* tag        */
                      int,            /* tag length */
                      const void *,   /* incoming msgpack data */
