@@ -489,7 +489,7 @@ static void cb_influxdb_flush(struct flb_event_chunk *event_chunk,
     struct flb_influxdb *ctx = out_context;
 
     /* Convert format: metrics / logs */
-    if (event_chunk->type == FLB_EVENT_TYPE_METRIC) {
+    if (event_chunk->type == FLB_EVENT_TYPE_METRICS) {
         /* format metrics */
         ret = format_metrics(ctx->ins,
                              (char *) event_chunk->data,
