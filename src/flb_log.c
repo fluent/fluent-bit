@@ -168,6 +168,22 @@ int flb_log_worker_init(struct flb_worker *worker)
     return 0;
 }
 
+int flb_log_worker_fini(struct flb_worker *worker)
+{
+    int rc1;
+    int rc2;
+
+    rc1 = close(worker->log[0]);
+    rc2 = close(worker->log[1]);
+    if (rc1 != 0) {
+        return rc1;
+    }
+    if (rc2 != 0) {
+        return rc2;
+    }
+    return 0;
+}
+
 int flb_log_set_level(struct flb_config *config, int level)
 {
     config->log->level = level;
@@ -516,6 +532,7 @@ int flb_log_destroy(struct flb_log *log, struct flb_config *config)
     /* Release resources */
     mk_event_loop_destroy(log->evl);
     flb_pipe_destroy(log->ch_mng);
+    flb_log_worker_fini(log->worker);
     flb_free(log->worker);
     flb_free(log);
 

@@ -917,6 +917,10 @@ int flb_engine_start(struct flb_config *config)
                                  ret);
                         ret = config->exit_status_code;
                         flb_engine_shutdown(config);
+                        mk_event_channel_destroy(config->evl,
+                                                 config->ch_self_events[0],
+                                                 config->ch_self_events[1],
+                                                 (void *)&config->event_thread_init);
                         config = NULL;
                         return ret;
                     }

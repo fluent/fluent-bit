@@ -143,6 +143,7 @@ void flb_worker_destroy(struct flb_worker *worker)
     }
 
     mk_list_del(&worker->_head);
+    flb_log_worker_fini(worker);
     flb_free(worker);
 }
 

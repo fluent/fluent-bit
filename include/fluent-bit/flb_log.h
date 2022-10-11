@@ -169,6 +169,7 @@ int flb_log_is_truncated(int type, const char *file, int line, const char *fmt, 
 #endif
 
 int flb_log_worker_init(struct flb_worker *worker);
+int flb_log_worker_fini(struct flb_worker *worker);
 int flb_errno_print(int errnum, const char *file, int line);
 
 #ifdef __FLB_FILENAME__
