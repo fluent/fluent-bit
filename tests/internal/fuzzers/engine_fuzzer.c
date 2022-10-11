@@ -71,7 +71,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                                                    1, "\0", 0);
 
                         struct flb_input_chunk *ic = NULL;
-                        ic = flb_input_chunk_create(entry, nm3, 10);
+                        ic = flb_input_chunk_create(entry, FLB_INPUT_LOGS, nm3, 10);
                         if (ic != NULL) {
                             flb_input_chunk_get_size(ic);
                             flb_input_chunk_set_up_down(ic);
