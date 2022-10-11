@@ -23,6 +23,6 @@
 #include "fw_conn.h"
 
 int fw_prot_parser(struct fw_conn *conn);
-int fw_prot_process(struct fw_conn *conn);
+int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn);
 
 #endif
