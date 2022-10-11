@@ -41,6 +41,7 @@ static int azure_blob_format(struct flb_config *config,
                              struct flb_input_instance *ins,
                              void *plugin_context,
                              void *flush_ctx,
+                             int event_type,
                              const char *tag, int tag_len,
                              const void *data, size_t bytes,
                              void **out_data, size_t *out_size)
@@ -111,6 +112,7 @@ static int send_blob(struct flb_config *config,
     /* Format the data */
     ret = azure_blob_format(config, i_ins,
                             ctx, NULL,
+                            FLB_EVENT_TYPE_LOGS,
                             tag, tag_len,
                             data, bytes,
                             &out_buf, &out_size);
