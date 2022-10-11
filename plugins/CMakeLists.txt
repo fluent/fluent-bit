@@ -184,7 +184,13 @@ REGISTER_IN_PLUGIN("in_http")
 REGISTER_IN_PLUGIN("in_collectd")
 REGISTER_IN_PLUGIN("in_statsd")
 REGISTER_IN_PLUGIN("in_opentelemetry")
+
+# Test the event loop messaging when used in threaded mode
 REGISTER_IN_PLUGIN("in_event_test")
+
+# Send different event types: logs, metrics and traces
+REGISTER_IN_PLUGIN("in_event_type")
+
 
 if (FLB_IN_STORAGE_BACKLOG)
   REGISTER_IN_PLUGIN("in_storage_backlog")

@@ -141,6 +141,7 @@ option(FLB_IN_DOCKER_EVENTS            "Enable Docker events input plugin"      
 option(FLB_IN_EXEC                     "Enable Exec input plugin"                     Yes)
 option(FLB_IN_EXEC_WASI                "Enable Exec WASI input plugin"                Yes)
 option(FLB_IN_EVENT_TEST               "Enable Events test plugin"                    Yes)
+option(FLB_IN_EVENT_TYPE               "Enable event type plugin"                     Yes)
 option(FLB_IN_FLUENTBIT_METRICS        "Enable Fluent Bit metrics  plugin"            Yes)
 option(FLB_IN_FORWARD                  "Enable Forward input plugin"                  Yes)
 option(FLB_IN_HEALTH                   "Enable Health input plugin"                   Yes)
