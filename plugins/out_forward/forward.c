@@ -1049,6 +1049,7 @@ static int flush_message_mode(struct flb_forward *ctx,
     return FLB_OK;
 }
 
+#include <fluent-bit/flb_pack.h>
 /*
  * Forward Mode: this is the generic mechanism used in Fluent Bit, it takes
  * advantage of the internal data representation and avoid re-formatting data,
@@ -1060,12 +1061,14 @@ static int flush_message_mode(struct flb_forward *ctx,
 static int flush_forward_mode(struct flb_forward *ctx,
                               struct flb_forward_config *fc,
                               struct flb_connection *u_conn,
+                              int event_type,
                               const char *tag, int tag_len,
                               const void *data, size_t bytes,
                               char *opts_buf, size_t opts_size)
 {
     int ret;
     int entries;
+    int send_options;
     size_t off = 0;
     size_t bytes_sent;
     msgpack_object root;
@@ -1080,7 +1083,11 @@ static int flush_forward_mode(struct flb_forward *ctx,
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    msgpack_pack_array(&mp_pck, fc->send_options ? 3 : 2);
+    send_options = fc->send_options;
+    if (event_type == FLB_EVENT_TYPE_METRICS || event_type == FLB_EVENT_TYPE_TRACES) {
+        send_options = FLB_TRUE;
+    }
+    msgpack_pack_array(&mp_pck, send_options ? 3 : 2);
 
     /* Tag */
     flb_forward_format_append_tag(ctx, fc, &mp_pck, NULL, tag, tag_len);
@@ -1097,13 +1104,20 @@ static int flush_forward_mode(struct flb_forward *ctx,
         }
 
         msgpack_pack_bin(&mp_pck, final_bytes);
-
-    } else {
+    }
+    else {
         final_data = (void *) data;
         final_bytes = bytes;
 
-        entries = flb_mp_count(data, bytes);
-        msgpack_pack_array(&mp_pck, entries);
+        if (event_type == FLB_EVENT_TYPE_LOGS) {
+            /* for log events we create an array for the serialized messages */
+            entries = flb_mp_count(data, bytes);
+            msgpack_pack_array(&mp_pck, entries);
+        }
+        else {
+            /* FLB_EVENT_TYPE_METRICS and FLB_EVENT_TYPE_TRACES */
+            msgpack_pack_bin(&mp_pck, bytes);
+        }
     }
 
     /* Write message header */
@@ -1118,7 +1132,7 @@ static int flush_forward_mode(struct flb_forward *ctx,
     }
     msgpack_sbuffer_destroy(&mp_sbuf);
 
-    /* Write entries */
+    /* Write msgpack content / entries */
     ret = fc->io_write(u_conn, fc->unix_fd, final_data, final_bytes, &bytes_sent);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not write forward entries");
@@ -1133,7 +1147,7 @@ static int flush_forward_mode(struct flb_forward *ctx,
     }
 
     /* Write options */
-    if (fc->send_options == FLB_TRUE) {
+    if (send_options == FLB_TRUE) {
         ret = fc->io_write(u_conn, fc->unix_fd, opts_buf, opts_size, &bytes_sent);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "could not write forward options");
@@ -1277,6 +1291,7 @@ static void cb_forward_flush(struct flb_event_chunk *event_chunk,
 
     /* Format the right payload and retrieve the 'forward mode' used */
     mode = flb_forward_format(config, i_ins, ctx, flush_ctx,
+                              event_chunk->type,
                               event_chunk->tag, flb_sds_len(event_chunk->tag),
                               event_chunk->data, event_chunk->size,
                               &out_buf, &out_size);
@@ -1320,12 +1335,22 @@ static void cb_forward_flush(struct flb_event_chunk *event_chunk,
         }
     }
 
+    /*
+     * Note about the mode used for different type of events/messages:
+     *
+     * - Logs can be send either by using MODE_MESSAGE, MODE_FORWARD
+     *   OR MODE_FORWARD_COMPAT.
+     *
+     * - Metrics and Traces uses MODE_FORWARD only.
+     */
+
     if (mode == MODE_MESSAGE) {
         ret = flush_message_mode(ctx, fc, u_conn, out_buf, out_size);
         flb_free(out_buf);
     }
     else if (mode == MODE_FORWARD) {
         ret = flush_forward_mode(ctx, fc, u_conn,
+                                 event_chunk->type,
                                  event_chunk->tag, flb_sds_len(event_chunk->tag),
                                  event_chunk->data, event_chunk->size,
                                  out_buf, out_size);
@@ -1471,5 +1496,5 @@ struct flb_output_plugin out_forward_plugin = {
     .flags        = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 
     /* Event types */
-    .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS
+    .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS | FLB_OUTPUT_TRACES
 };

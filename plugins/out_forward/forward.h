@@ -26,12 +26,33 @@
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_connection.h>
 
-/* Forward modes */
+/*
+ * Forward modes
+ * =============
+ */
+
+/*
+ * Message mode
+ * ------------
+ * https://github.com/fluent/fluentd/wiki/Forward-Protocol-Specification-v1#message-modes
+ */
 #define MODE_MESSAGE               0
+
+/*
+ * Forward mode
+ * ------------
+ * https://github.com/fluent/fluentd/wiki/Forward-Protocol-Specification-v1#forward-mode
+ */
 #define MODE_FORWARD               1
+
+/*
+ * Forward Compat: similar to MODE_FORWARD, but it sends the timestamps as unsigned
+ * integers for compatibility with very old versions of Fluentd that don't have timestamps
+ * with nanoseconds. This mode only applies for Logs.
+ */
 #define MODE_FORWARD_COMPAT        3
 
-/* Compression modes */
+/* Compression options */
 #define COMPRESS_NONE              0
 #define COMPRESS_GZIP              1
 
