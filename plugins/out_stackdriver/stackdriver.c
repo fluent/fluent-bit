@@ -2297,6 +2297,7 @@ static int stackdriver_format_test(struct flb_config *config,
                                    struct flb_input_instance *ins,
                                    void *plugin_context,
                                    void *flush_ctx,
+                                   int event_type,
                                    const char *tag, int tag_len,
                                    const void *data, size_t bytes,
                                    void **out_data, size_t *out_size)
