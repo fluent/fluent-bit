@@ -6,17 +6,16 @@ ARG BASE_BUILDER
 # Lookup the name to use below but should follow the '<distro>-base' convention with slashes replaced.
 # Use buildkit to skip unused base images: DOCKER_BUILDKIT=1
 
-# raspbian/buster base image
-# Use deprecated image as it pins dependencies to working ones.
-# Current balenalib/rpi-raspbian:buster triggers cmake failures for GNU C compiler detection
-FROM resin/rpi-raspbian:buster as raspbian-buster-base
+FROM balenalib/rpi-raspbian:buster as raspbian-buster-base
 ENV DEBIAN_FRONTEND noninteractive
 
 # Builder image so dependencies can be latest, recommended and no need to wipe
+# We pin cmake to a working version (latest 3.16 triggers cmake failures for GNU C compiler detection)
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
-    apt-get install -y curl ca-certificates build-essential \
-    cmake make bash sudo wget unzip dh-make \
+    apt-get install -y cmake=3.13.4-1 cmake-data=3.13.4-1 \
+    curl ca-certificates build-essential \
+    make bash sudo wget unzip dh-make \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev && \
