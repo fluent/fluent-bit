@@ -548,7 +548,7 @@ static int cb_queue_chunks(struct flb_input_instance *in,
                  */
                 tmp_ic.chunk = chunk_instance->chunk;
 
-                /* Retrieve the event type: FLB_INPUT_LOGS or FLB_INPUT_METRICS */
+                /* Retrieve the event type: FLB_INPUT_LOGS, FLB_INPUT_METRICS of FLB_INPUT_TRACES */
                 ret = flb_input_chunk_get_event_type(&tmp_ic);
                 if (ret == -1) {
                     flb_plg_error(ctx->ins, "removing chunk with wrong metadata "
