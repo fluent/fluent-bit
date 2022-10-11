@@ -150,7 +150,7 @@ static void out_lib_flush(struct flb_event_chunk *event_chunk,
             break;
         case FLB_OUT_LIB_FMT_JSON:
 #ifdef FLB_HAVE_METRICS
-            if (event_chunk->type == FLB_EVENT_TYPE_METRIC) {
+            if (event_chunk->type == FLB_EVENT_TYPE_METRICS) {
                 alloc_size = (off - last_off) + 4096;
                 buf = flb_msgpack_to_json_str(alloc_size, &result.data);
                 if (buf == NULL) {
