@@ -103,6 +103,7 @@ static void test_run_formatter(struct flb_config *config,
                         i_ins,
                         o_ins->context,
                         flush_ctx,
+                        evc->type,
                         evc->tag, flb_sds_len(evc->tag),
                         evc->data, evc->size,
                         &out_buf, &out_size);
