@@ -17,7 +17,7 @@
 # under the License.
 #
 cmake_minimum_required(VERSION 3.1)
-project(AvroC)
+project(AvroC C)
 enable_testing()
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_SOURCE_DIR})
@@ -178,16 +178,19 @@ endif (LZMA_FOUND)
 set(CODEC_LIBRARIES ${ZLIB_LIBRARIES} ${LZMA_LIBRARIES} ${SNAPPY_LIBRARIES})
 set(CODEC_PKG "@ZLIB_PKG@ @LZMA_PKG@ @SNAPPY_PKG@")
 
+# updated by edsiper, avro version 77692d8c1
 # commented out by mcqueen because jansson is now embedded here 07OCT2020
 # Jansson JSON library
 #pkg_check_modules(JANSSON jansson>=2.3)
 #if (JANSSON_FOUND)
-    #set(JANSSON_PKG libjansson)
-    #include_directories(${JANSSON_INCLUDE_DIRS})
-    #link_directories(${JANSSON_LIBRARY_DIRS})
+#    set(JANSSON_PKG libjansson)
+#    include_directories(${JANSSON_INCLUDE_DIRS})
+#    link_directories(${JANSSON_LIBRARY_DIRS})
 #else (JANSSON_FOUND)
-    #message(FATAL_ERROR "libjansson >=2.3 not found")
+#    message(FATAL_ERROR "libjansson >=2.3 not found")
 #endif (JANSSON_FOUND)
+
+# updated by edsiper, avro version 77692d8c1
 # added by mcqueen to get the headers into the fluent-bit build root 07OCT2020
 include_directories(${CMAKE_BINARY_DIR}/lib/jansson/include/)
 
@@ -195,9 +198,6 @@ add_subdirectory(src)
 #add_subdirectory(examples)
 #add_subdirectory(tests)
 #add_subdirectory(docs)
-
-#added mcqueen 8/16/2020 for fluent-bit compatability
-add_dependencies(avro-static jansson)
 
 add_custom_target(pretty
     "${CMAKE_COMMAND}" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake_pretty.cmake")

@@ -31,7 +31,7 @@ endif()
 # CMetrics Version
 set(CMT_VERSION_MAJOR  0)
 set(CMT_VERSION_MINOR  5)
-set(CMT_VERSION_PATCH  0)
+set(CMT_VERSION_PATCH  2)
 set(CMT_VERSION_STR "${CMT_VERSION_MAJOR}.${CMT_VERSION_MINOR}.${CMT_VERSION_PATCH}")
 
 # Define __CMT_FILENAME__ consistently across Operating Systems
@@ -346,5 +346,8 @@ if(CMT_SYSTEM_MACOS)
     set(CPACK_PRODUCTBUILD_IDENTIFIER "com.calyptia.${CPACK_PACKAGE_NAME}")
   endif()
 endif()
+
+# Create tarball
+add_custom_target(tarball COMMAND "bash" "${CMAKE_CURRENT_SOURCE_DIR}/create-submoduled-tarball.sh" "cmetrics-${CMT_VERSION_STR}")
 
 include(CPack)

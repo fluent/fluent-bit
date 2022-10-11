@@ -67,10 +67,11 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                     entry = mk_list_entry(head, struct flb_input_instance, _head);
                     if (entry->storage != NULL) {
                         char bufbuf[100];
-                        flb_input_chunk_append_raw(entry, "A", 1, "\0", 0);
+                        flb_input_chunk_append_raw(entry, FLB_INPUT_LOGS, 0, "A",
+                                                   1, "\0", 0);
 
                         struct flb_input_chunk *ic = NULL;
-                        ic = flb_input_chunk_create(entry, nm3, 10);
+                        ic = flb_input_chunk_create(entry, FLB_INPUT_LOGS, nm3, 10);
                         if (ic != NULL) {
                             flb_input_chunk_get_size(ic);
                             flb_input_chunk_set_up_down(ic);

@@ -141,6 +141,7 @@ option(FLB_IN_DOCKER_EVENTS            "Enable Docker events input plugin"      
 option(FLB_IN_EXEC                     "Enable Exec input plugin"                     Yes)
 option(FLB_IN_EXEC_WASI                "Enable Exec WASI input plugin"                Yes)
 option(FLB_IN_EVENT_TEST               "Enable Events test plugin"                    Yes)
+option(FLB_IN_EVENT_TYPE               "Enable event type plugin"                     Yes)
 option(FLB_IN_FLUENTBIT_METRICS        "Enable Fluent Bit metrics  plugin"            Yes)
 option(FLB_IN_FORWARD                  "Enable Forward input plugin"                  Yes)
 option(FLB_IN_HEALTH                   "Enable Health input plugin"                   Yes)
@@ -345,6 +346,7 @@ endif()
 
 # Tweak build targets for macOS
 if (FLB_SYSTEM_MACOS)
+  # build tweaks
   include(cmake/macos-setup.cmake)
 endif()
 
@@ -819,16 +821,8 @@ else()
 
 endif()
 
-# TD Agent options
-if(FLB_TD)
-  FLB_DEFINITION(FLB_IS_TD_AGENT)
-  FLB_OPTION(FLB_JEMALLOC ON)
-  set(FLB_PROG_NAME "TD Agent Bit")
-  set(FLB_OUT_NAME "td-agent-bit")
-else()
-  set(FLB_PROG_NAME "Fluent Bit")
-  set(FLB_OUT_NAME "fluent-bit")
-endif()
+set(FLB_PROG_NAME "Fluent Bit")
+set(FLB_OUT_NAME "fluent-bit")
 
 if(FLB_PROXY_GO)
   FLB_DEFINITION(FLB_HAVE_PROXY_GO)
@@ -882,8 +876,8 @@ if(FLB_BACKTRACE)
     set(DEPS_C_COMPILER "${CMAKE_C_COMPILER}")
   endif()
   ExternalProject_Add(backtrace
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-2446c66/
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-2446c66/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/
+    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
     BUILD_COMMAND $(MAKE)
     INSTALL_COMMAND $(MAKE) DESTDIR= install
     )
@@ -898,6 +892,11 @@ if(FLB_IN_KAFKA OR FLB_OUT_KAFKA)
     FLB_OPTION(RDKAFKA_BUILD_EXAMPLES Off)
     FLB_OPTION(RDKAFKA_BUILD_TESTS    Off)
     FLB_OPTION(ENABLE_LZ4_EXT         Off)
+
+    # disable Curl
+    if (FLB_SYSTEM_MACOS)
+      FLB_OPTION(WITH_CURL  Off)
+    endif()
 
     add_subdirectory(${FLB_PATH_LIB_RDKAFKA} EXCLUDE_FROM_ALL)
 endif()
@@ -1069,12 +1068,7 @@ endif()
 # ============================
 
 set(CPACK_PACKAGE_VERSION ${FLB_VERSION_STR})
-
-if(FLB_TD)
-  set(CPACK_PACKAGE_NAME "td-agent-bit")
-else()
-  set(CPACK_PACKAGE_NAME "fluent-bit")
-endif()
+set(CPACK_PACKAGE_NAME "fluent-bit")
 
 set(CPACK_PACKAGE_RELEASE 1)
 set(CPACK_PACKAGE_CONTACT "Eduardo Silva <eduardo@calyptia.com>")
@@ -1172,11 +1166,7 @@ set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 # CPack: Windows System
 if(CPACK_GENERATOR MATCHES "NSIS")
   set(CPACK_MONOLITHIC_INSTALL 1)
-  if(FLB_TD)
-    set(CPACK_PACKAGE_INSTALL_DIRECTORY "td-agent-bit")
-  else()
-    set(CPACK_PACKAGE_INSTALL_DIRECTORY "fluent-bit")
-  endif()
+  set(CPACK_PACKAGE_INSTALL_DIRECTORY "fluent-bit")
 endif()
 
 # CPack: Windows System w/ WiX

@@ -36,6 +36,9 @@
 #include <fluent-bit/multiline/flb_ml_parser.h>
 #include <fluent-bit/multiline/flb_ml_rule.h>
 
+#include <cfl/cfl.h>
+#include <cfl/cfl_kvlist.h>
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <limits.h>
@@ -430,24 +433,27 @@ static flb_sds_t get_parser_key(struct flb_config *config,
                                 char *key)
 
 {
-    char *tmp;
+    flb_sds_t tmp;
     flb_sds_t val;
 
-    tmp = flb_cf_section_property_get(cf, s, key);
+    tmp = flb_cf_section_property_get_string(cf, s, key);
     if (!tmp) {
         return NULL;
     }
 
     val = flb_env_var_translate(config->env, tmp);
     if (!val) {
+        flb_sds_destroy(tmp);
         return NULL;
     }
 
     if (flb_sds_len(val) == 0) {
         flb_sds_destroy(val);
+        flb_sds_destroy(tmp);
         return NULL;
     }
 
+    flb_sds_destroy(tmp);
     return val;
 }
 
@@ -626,14 +632,14 @@ static int multiline_load_regex_rules(struct flb_ml_parser *ml_parser,
     int ret;
     char *to_state = NULL;
     struct mk_list list;
-    struct mk_list *head;
-    struct flb_kv *entry;
+    struct cfl_list *head;
+    struct cfl_kvpair *entry;
     struct flb_slist_entry *from_state;
     struct flb_slist_entry *regex_pattern;
     struct flb_slist_entry *tmp;
 
-    mk_list_foreach(head, &section->properties) {
-        entry = mk_list_entry(head, struct flb_kv, _head);
+    cfl_list_foreach(head, &section->properties->list) {
+        entry = cfl_list_entry(head, struct cfl_kvpair, _head);
 
         /* only process 'rule' keys */
         if (strcasecmp(entry->key, "rule") != 0) {
@@ -641,7 +647,7 @@ static int multiline_load_regex_rules(struct flb_ml_parser *ml_parser,
         }
 
         mk_list_init(&list);
-        ret = flb_slist_split_tokens(&list, entry->val, 3);
+        ret = flb_slist_split_tokens(&list, entry->val->data.as_string, 3);
         if (ret == -1) {
             flb_error("[multiline parser: %s] invalid section on key '%s'",
                       ml_parser->name, entry->key);

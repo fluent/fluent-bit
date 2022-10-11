@@ -25,6 +25,15 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_gzip.h>
 
+#include <fluent-bit/flb_input_metric.h>
+#include <fluent-bit/flb_input_trace.h>
+
+#include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_decode_msgpack.h>
+
+#include <ctraces/ctraces.h>
+#include <ctraces/ctr_decode_msgpack.h>
+
 #include <msgpack.h>
 
 #include "fw.h"
@@ -33,6 +42,50 @@
 
 /* Try parsing rounds up-to 32 bytes */
 #define EACH_RECV_SIZE 32
+
+static int get_chunk_event_type(struct flb_input_instance *ins, msgpack_object options)
+{
+    int i;
+    int type = FLB_EVENT_TYPE_LOGS;
+    msgpack_object k;
+    msgpack_object v;
+
+    if (options.type != MSGPACK_OBJECT_MAP) {
+        flb_plg_error(ins, "invalid options field in record");
+        return -1;
+    }
+
+    for (i = 0; i < options.via.map.size; i++) {
+        k = options.via.map.ptr[i].key;
+        v = options.via.map.ptr[i].val;
+
+        if (k.type != MSGPACK_OBJECT_STR) {
+            return -1;
+        }
+
+        if (k.via.str.size != 13) {
+            continue;
+        }
+
+        if (strncmp(k.via.str.ptr, "fluent_signal", 13) == 0) {
+            if (v.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
+                flb_plg_error(ins, "invalid value type in options fluent_signal");
+                return -1;
+            }
+
+            if (v.via.i64 != FLB_EVENT_TYPE_LOGS && v.via.i64 != FLB_EVENT_TYPE_METRICS && v.via.i64 != FLB_EVENT_TYPE_TRACES) {
+                flb_plg_error(ins, "invalid value in options fluent_signal");
+                return -1;
+            }
+
+            /* cast should be fine */
+            type = (int) v.via.i64;
+            break;
+        }
+    }
+
+    return type;
+}
 
 static int is_gzip_compressed(msgpack_object options)
 {
@@ -43,6 +96,7 @@ static int is_gzip_compressed(msgpack_object options)
     if (options.type != MSGPACK_OBJECT_MAP) {
         return -1;
     }
+
 
     for (i = 0; i < options.via.map.size; i++) {
         k = options.via.map.ptr[i].key;
@@ -249,16 +303,18 @@ static size_t receiver_to_unpacker(struct fw_conn *conn, size_t request_size,
     return recv_len;
 }
 
-int fw_prot_process(struct fw_conn *conn)
+int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
 {
     int ret;
     int stag_len;
     int c = 0;
+    int event_type;
+    int contain_options = FLB_FALSE;
+    size_t off = 0;
     size_t chunk_id = -1;
     const char *stag;
     flb_sds_t out_tag = NULL;
     size_t bytes;
-    size_t buf_off = 0;
     size_t recv_len;
     size_t gz_size;
     void *gz_data;
@@ -273,6 +329,8 @@ int fw_prot_process(struct fw_conn *conn)
     struct msgpack_sbuffer mp_sbuf;
     struct msgpack_packer mp_pck;
     struct flb_in_fw_config *ctx = conn->ctx;
+    struct cmt *cmt;
+    struct ctrace *ctr;
 
     /*
      * [tag, time, record]
@@ -306,7 +364,6 @@ int fw_prot_process(struct fw_conn *conn)
         }
 
         /* Always summarize the total number of bytes requested to parse */
-        buf_off += recv_len;
         ret = msgpack_unpacker_next_with_size(unp, &result, &bytes);
 
         /*
@@ -372,6 +429,10 @@ int fw_prot_process(struct fw_conn *conn)
                 msgpack_unpacker_free(unp);
                 flb_sds_destroy(out_tag);
                 return -1;
+            }
+
+            if (root.via.array.size == 3) {
+                contain_options = FLB_TRUE;
             }
 
             /* Get the tag */
@@ -519,9 +580,49 @@ int fw_prot_process(struct fw_conn *conn)
                         flb_free(gz_data);
                     }
                     else {
-                        flb_input_log_append(conn->in,
-                                             out_tag, flb_sds_len(out_tag),
-                                             data, len);
+                        event_type = FLB_EVENT_TYPE_LOGS;
+                        if (contain_options) {
+                            ret = get_chunk_event_type(ins, root.via.array.ptr[2]);
+                            if (ret == -1) {
+                                msgpack_unpacked_destroy(&result);
+                                msgpack_unpacker_free(unp);
+                                flb_sds_destroy(out_tag);
+                                return -1;
+                            }
+                            event_type = ret;
+                        }
+
+                        if (event_type == FLB_EVENT_TYPE_LOGS) {
+                            flb_input_log_append(conn->in,
+                                                 out_tag, flb_sds_len(out_tag),
+                                                 data, len);
+                        }
+                        else if (event_type == FLB_EVENT_TYPE_METRICS) {
+                            ret = cmt_decode_msgpack_create(&cmt, (char *) data, len, &off);
+                            if (ret == -1) {
+                                msgpack_unpacked_destroy(&result);
+                                msgpack_unpacker_free(unp);
+                                flb_sds_destroy(out_tag);
+                                return -1;
+                            }
+                            flb_input_metrics_append(conn->in,
+                                                     out_tag, flb_sds_len(out_tag),
+                                                     cmt);
+                        }
+                        else if (event_type == FLB_EVENT_TYPE_TRACES) {
+                            off = 0;
+                            ret = ctr_decode_msgpack_create(&ctr, (char *) data, len, &off);
+                            if (ret == -1) {
+                                msgpack_unpacked_destroy(&result);
+                                msgpack_unpacker_free(unp);
+                                flb_sds_destroy(out_tag);
+                                return -1;
+                            }
+
+                            flb_input_trace_append(ins,
+                                                   out_tag, flb_sds_len(out_tag),
+                                                   ctr);
+                        }
                     }
 
                     /* Handle ACK response */

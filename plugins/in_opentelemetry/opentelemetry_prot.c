@@ -96,22 +96,33 @@ static int process_payload_metrics(struct flb_opentelemetry *ctx, struct http_co
                                    struct mk_http_session *session,
                                    struct mk_http_request *request)
 {
-    struct cmt *decoded_context;
-    size_t      offset;
-    int         result;
+    struct cfl_list  decoded_contexts;
+    struct cfl_list *iterator;
+    struct cmt      *context;
+    size_t           offset;
+    int              result;
 
     offset = 0;
 
-    result = cmt_decode_opentelemetry_create(&decoded_context,
+    result = cmt_decode_opentelemetry_create(&decoded_contexts,
                                              request->data.data,
                                              request->data.len,
                                              &offset);
 
     if (result == CMT_DECODE_OPENTELEMETRY_SUCCESS) {
         ctx->ins->event_type = FLB_INPUT_METRICS;
-        result = flb_input_metrics_append(ctx->ins, NULL, 0, decoded_context);
 
-        cmt_decode_opentelemetry_destroy(decoded_context);
+        cfl_list_foreach(iterator, &decoded_contexts) {
+            context = cfl_list_entry(iterator, struct cmt, _head);
+
+            result = flb_input_metrics_append(ctx->ins, NULL, 0, context);
+
+            if (result != 0) {
+                flb_plg_debug(ctx->ins, "could not ingest metrics context : %d", result);
+            }
+        }
+
+        cmt_decode_opentelemetry_destroy(&decoded_contexts);
     }
 
     return 0;
@@ -190,7 +201,7 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
                               struct mk_http_request *request)
 {
     int i;
-    int ret;
+    int ret = -1;
     int len;
     char *uri;
     char *qs;

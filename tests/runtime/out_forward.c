@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -126,6 +125,11 @@ static void cb_check_forward_mode(void *ctx, int ffd,
     msgpack_object root;
     msgpack_unpacked result;
 
+    /*
+     * the check for forward mode is a bit special, since no data is formatted, instead the formatter callback
+     * will return the "options" map that will be send after the records chunk. The options are set because the
+     * caller specified 'send_options true'.
+     */
     TEST_CHECK(res_ret == MODE_FORWARD);
 
     msgpack_unpacked_init(&result);
@@ -134,16 +138,18 @@ static void cb_check_forward_mode(void *ctx, int ffd,
 
     TEST_CHECK(ret == MSGPACK_UNPACK_SUCCESS);
     TEST_CHECK(root.type == MSGPACK_OBJECT_MAP);
-    TEST_CHECK(root.via.map.size == 1);
+
+    /* fluent_signal and size */
+    TEST_CHECK(root.via.map.size == 2);
 
     /* Record */
     key = root.via.map.ptr[0].key;
     val = root.via.map.ptr[0].val;
 
-    ret = strncmp(key.via.str.ptr, "size", 4);
+    ret = strncmp(key.via.str.ptr, "fluent_signal", 13);
     TEST_CHECK(ret == 0);
     TEST_CHECK(val.type == MSGPACK_OBJECT_POSITIVE_INTEGER);
-    TEST_CHECK(val.via.u64 == 1);
+    TEST_CHECK(val.via.u64 == 0);
 
     msgpack_unpacked_destroy(&result);
     flb_free(res_data);

@@ -7,6 +7,9 @@
 #include <fluent-bit/flb_sds.h>
 #include <sys/stat.h>
 
+#include <cfl/cfl.h>
+#include <cfl/cfl_list.h>
+
 #include "flb_tests_internal.h"
 
 #define FLB_000 FLB_TESTS_DATA_PATH "/data/config_format/classic/fluent-bit.conf"
@@ -32,7 +35,7 @@ void test_basic()
 	/* SERVICE check */
     TEST_CHECK(cf->service != NULL);
     if (cf->service) {
-        TEST_CHECK(mk_list_size(&cf->service->properties) == 3);
+        TEST_CHECK(cfl_list_size(&cf->service->properties->list) == 3);
     }
 
     /* Meta commands */
@@ -54,7 +57,7 @@ void test_basic()
 
     mk_list_foreach(head, &s->groups) {
         g = mk_list_entry(head, struct flb_cf_group, _head);
-        TEST_CHECK(mk_list_size(&g->properties) == 2);
+        TEST_CHECK(cfl_list_size(&g->properties->list) == 2);
     }
 
     printf("\n");
