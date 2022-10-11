@@ -315,7 +315,6 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
     const char *stag;
     flb_sds_t out_tag = NULL;
     size_t bytes;
-    size_t buf_off = 0;
     size_t recv_len;
     size_t gz_size;
     void *gz_data;
@@ -365,7 +364,6 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
         }
 
         /* Always summarize the total number of bytes requested to parse */
-        buf_off += recv_len;
         ret = msgpack_unpacker_next_with_size(unp, &result, &bytes);
 
         /*
