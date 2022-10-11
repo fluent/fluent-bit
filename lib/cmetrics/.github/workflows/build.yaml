@@ -84,7 +84,7 @@ jobs:
             build-essential \
             cmake \
             file \
-            make 
+            make
             export CC=${{ env.compiler }}
             cmake -DCMT_TESTS=On .
             make all

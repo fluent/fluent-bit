@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.12)
 project(cfl C)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -6,7 +6,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # C Floppy Version
 set(CFL_VERSION_MAJOR  0)
 set(CFL_VERSION_MINOR  1)
-set(CFL_VERSION_PATCH  5)
+set(CFL_VERSION_PATCH  8)
 set(CFL_VERSION_STR    "${CFL_VERSION_MAJOR}.${CFL_VERSION_MINOR}.${CFL_VERSION_PATCH}")
 
 # Configuration options
@@ -123,6 +123,16 @@ if(NOT TARGET xxhash)
   add_subdirectory(lib/xxhash/cmake_unofficial EXCLUDE_FROM_ALL)
 endif()
 
+# Installation Directories
+# ========================
+if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+  set(CFL_INSTALL_BINDIR "bin")
+  set(CFL_INSTALL_LIBDIR "lib")
+else()
+  set(CFL_INSTALL_BINDIR ${CMAKE_INSTALL_FULL_BINDIR})
+  set(CFL_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}")
+endif()
+
 # CFL sources
 add_subdirectory(src)
 
@@ -131,6 +141,10 @@ if(CFL_TESTS)
   enable_testing()
   add_subdirectory(tests)
 endif()
+
+# Output paths
+set(CFL_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
+set(CFL_BUILD_DIR "${CFL_ROOT}/build")
 
 # Installer Generation (Cpack)
 # ============================
@@ -223,31 +237,30 @@ if(CFL_SYSTEM_MACOS)
     OUTPUT_STRIP_TRAILING_WHITESPACE
     )
   if (UNAME_M_RESULT EQUAL 0 AND UNAME_ARCH STREQUAL "arm64")
-    set(CFL_PKG ${CMAKE_CURRENT_BINARY_DIR}/${CPACK_PACKAGE_NAME}-${CFL_VERSION_STR}-apple)
+    set(CFL_PKG ${CFL_BUILD_DIR}/${CPACK_PACKAGE_NAME}-${CFL_VERSION_STR}-apple)
   elseif(UNAME_M_RESULT EQUAL 0 AND UNAME_ARCH STREQUAL "x86_64")
-    set(CFL_PKG ${CMAKE_CURRENT_BINARY_DIR}/${CPACK_PACKAGE_NAME}-${CFL_VERSION_STR}-intel)
+    set(CFL_PKG ${CFL_BUILD_DIR}/${CPACK_PACKAGE_NAME}-${CFL_VERSION_STR}-intel)
   else()
-    set(CFL_PKG ${CMAKE_CURRENT_BINARY_DIR}/${CPACK_PACKAGE_NAME}-${CFL_VERSION_STR}-${UNAME_ARCH})
+    set(CFL_PKG ${CFL_BUILD_DIR}/${CPACK_PACKAGE_NAME}-${CFL_VERSION_STR}-${UNAME_ARCH})
   endif()
 
   if (CPACK_GENERATOR MATCHES "productbuild")
     set(CPACK_SET_DESTDIR "ON")
-    configure_file(cpack/macos/welcome.txt.cmakein ${CMAKE_CURRENT_BINARY_DIR}/welcome.txt)
-    configure_file(LICENSE ${CMAKE_CURRENT_BINARY_DIR}/LICENSE.txt)
+    configure_file(cpack/macos/welcome.txt.cmakein ${CFL_BUILD_DIR}/welcome.txt)
+    configure_file(LICENSE ${CFL_BUILD_DIR}/LICENSE.txt)
     find_program(CONVERTER textutil)
     if (NOT CONVERTER)
       message(FATAL_ERROR "textutil not found.")
     endif()
     if (CONVERTER)
-      execute_process(COMMAND ${CONVERTER} -convert html "${CMAKE_SOURCE_DIR}/README.md" -output "${CMAKE_BINARY_DIR}/README.html")
+      execute_process(COMMAND ${CONVERTER} -convert html "${CMAKE_SOURCE_DIR}/README.md" -output "${CFL_BUILD_DIR}/README.html")
     endif()
     set(CPACK_PACKAGE_FILE_NAME "${CFL_PKG}")
-    set(CPACK_RESOURCE_FILE_WELCOME ${CMAKE_CURRENT_BINARY_DIR}/welcome.txt)
-    set(CPACK_RESOURCE_FILE_LICENSE ${CMAKE_CURRENT_BINARY_DIR}/LICENSE.txt)
-    set(CPACK_RESOURCE_FILE_README ${CMAKE_CURRENT_BINARY_DIR}/README.html)
+    set(CPACK_RESOURCE_FILE_WELCOME ${CFL_BUILD_DIR}/welcome.txt)
+    set(CPACK_RESOURCE_FILE_LICENSE ${CFL_BUILD_DIR}/LICENSE.txt)
+    set(CPACK_RESOURCE_FILE_README ${CFL_BUILD_DIR}/README.html)
     set(CPACK_PRODUCTBUILD_IDENTIFIER "com.calyptia.${CPACK_PACKAGE_NAME}")
   endif()
 endif()
 
 include(CPack)
-

@@ -868,7 +868,9 @@ TEST_LIST = {
     {"syslog_rfc3164", flb_test_syslog_rfc3164},
 #ifdef FLB_HAVE_UNIX_SOCKET
     {"syslog_tcp_unix", flb_test_syslog_tcp_unix},
+#ifndef FLB_SYSTEM_MACOS
     {"syslog_udp_unix", flb_test_syslog_udp_unix},
+#endif
 #endif
     {NULL, NULL}
 };

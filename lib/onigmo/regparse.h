@@ -5,7 +5,7 @@
 **********************************************************************/
 /*-
  * Copyright (c) 2002-2007  K.Kosako  <sndgk393 AT ybb DOT ne DOT jp>
- * Copyright (c) 2011-2016  K.Takata  <kentkt AT csc DOT jp>
+ * Copyright (c) 2011-2019  K.Takata  <kentkt AT csc DOT jp>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -186,7 +186,7 @@ typedef struct {
   int target_empty_info;
   struct _Node* head_exact;
   struct _Node* next_head_exact;
-  int is_refered;     /* include called node. don't eliminate even if {0} */
+  int is_referred;     /* include called node. don't eliminate even if {0} */
 #ifdef USE_COMBINATION_EXPLOSION_CHECK
   int comb_exp_check_num;  /* 1,2,3...: check,  0: no check  */
 #endif

@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/tls/flb_tls.h>
+#include <fluent-bit/tls/flb_tls_info.h>
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -32,15 +33,6 @@
  *       MMNNFFPPS    N = minor  P = patch
  */
 #define OPENSSL_1_1_0 0x010100000L
-
-/*
- * RHEL-family distrbutions do not provide system certificates in
- * a format that OpenSSL's CAPath can read, but do provide a single
- * packed cert in /etc/certs.
- *
- * Use the bundled cert as the default trusted CA.
- */
-#define RHEL_DEFAULT_CA "/etc/ssl/certs/ca-bundle.crt"
 
 /* OpenSSL library context */
 struct tls_context {
@@ -187,19 +179,17 @@ static int windows_load_system_certificates(struct tls_context *ctx)
 static int load_system_certificates(struct tls_context *ctx)
 {
     int ret;
-    const char ca_path[] = "/etc/ssl/certs/";
+    const char *ca_file = FLB_DEFAULT_SEARCH_CA_BUNDLE;
 
     /* For Windows use specific API to read the certs store */
 #ifdef _MSC_VER
     return windows_load_system_certificates(ctx);
 #endif
+    if (access(ca_file, R_OK) != 0) {
+        ca_file = NULL;
+    }
 
-    if (access(RHEL_DEFAULT_CA, R_OK) == 0) {
-        ret = SSL_CTX_load_verify_locations(ctx->ctx, RHEL_DEFAULT_CA, ca_path);
-    }
-    else {
-        ret = SSL_CTX_load_verify_locations(ctx->ctx, NULL, ca_path);
-    }
+    ret = SSL_CTX_load_verify_locations(ctx->ctx, ca_file, FLB_DEFAULT_CA_DIR);
 
     if (ret != 1) {
         ERR_print_errors_fp(stderr);

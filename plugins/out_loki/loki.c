@@ -1623,6 +1623,7 @@ static int cb_loki_format_test(struct flb_config *config,
                                struct flb_input_instance *ins,
                                void *plugin_context,
                                void *flush_ctx,
+                               int event_type,
                                const char *tag, int tag_len,
                                const void *data, size_t bytes,
                                void **out_data, size_t *out_size)
@@ -1658,5 +1659,5 @@ struct flb_output_plugin out_loki_plugin = {
     /* for testing */
     .test_formatter.callback = cb_loki_format_test,
 
-    .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS | FLB_OUTPUT_NO_MULTIPLEX,
+    .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };

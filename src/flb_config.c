@@ -253,6 +253,7 @@ struct flb_config *flb_config_init()
     config->cio          = NULL;
     config->storage_path = NULL;
     config->storage_input_plugin = NULL;
+    config->storage_metrics = FLB_TRUE;
 
     config->sched_cap  = FLB_SCHED_CAP;
     config->sched_base = FLB_SCHED_BASE;
@@ -415,7 +416,9 @@ void flb_config_exit(struct flb_config *config)
 
     /* Event flush */
     if (config->evl) {
-        mk_event_timeout_destroy(config->evl, &config->event_flush);
+        if (config->event_flush.status != MK_EVENT_NONE) {
+            mk_event_timeout_destroy(config->evl, &config->event_flush);
+        }
     }
 
     /* Release scheduler */

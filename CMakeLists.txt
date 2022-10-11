@@ -147,6 +147,7 @@ option(FLB_IN_DOCKER_EVENTS            "Enable Docker events input plugin"      
 option(FLB_IN_EXEC                     "Enable Exec input plugin"                     Yes)
 option(FLB_IN_EXEC_WASI                "Enable Exec WASI input plugin"                Yes)
 option(FLB_IN_EVENT_TEST               "Enable Events test plugin"                    Yes)
+option(FLB_IN_EVENT_TYPE               "Enable event type plugin"                     Yes)
 option(FLB_IN_FLUENTBIT_METRICS        "Enable Fluent Bit metrics  plugin"            Yes)
 option(FLB_IN_FORWARD                  "Enable Forward input plugin"                  Yes)
 option(FLB_IN_HEALTH                   "Enable Health input plugin"                   Yes)
@@ -158,7 +159,6 @@ option(FLB_IN_LIB                      "Enable library mode input plugin"       
 option(FLB_IN_RANDOM                   "Enable random input plugin"                   Yes)
 option(FLB_IN_SERIAL                   "Enable Serial input plugin"                   Yes)
 option(FLB_IN_STDIN                    "Enable Standard input plugin"                 Yes)
-option(FLB_IN_DUMMY_THREAD             "Enable Threaded dummy plugin"                 Yes)
 option(FLB_IN_SYSLOG                   "Enable Syslog input plugin"                   Yes)
 option(FLB_IN_TAIL                     "Enable Tail input plugin"                     Yes)
 option(FLB_IN_UDP                      "Enable UDP input plugin"                      Yes)
@@ -352,6 +352,7 @@ endif()
 
 # Tweak build targets for macOS
 if (FLB_SYSTEM_MACOS)
+  # build tweaks
   include(cmake/macos-setup.cmake)
 endif()
 
@@ -454,9 +455,24 @@ endif()
 # fluent-bit do not use it.
 set(WITH_SYSTEM_MALLOC  1 CACHE BOOL "Use system memory allocator")
 
+# Headers: required headers by bundled libraries, this act as a helper for
+# CFL, Ctraces, CMetrics and fluent-otel-proto
+#
+# Note: any check_c_source_compiles() cmake function might require this to
+# work.
+#
+set(CMAKE_REQUIRED_INCLUDES
+  ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CFL}/include
+  ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_FLUENT_OTEL}/include/
+  ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_FLUENT_OTEL}/proto_c/
+  )
+
 # CFL
-set(CMAKE_REQUIRED_INCLUDES "${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CFL}/include")
 add_subdirectory(${FLB_PATH_LIB_CFL} EXCLUDE_FROM_ALL)
+
+# fluent-otel-proto
+FLB_OPTION(FLUENT_PROTO_METRICS ON)
+add_subdirectory(${FLB_PATH_LIB_FLUENT_OTEL} EXCLUDE_FROM_ALL)
 
 # MsgPack options
 option(MSGPACK_ENABLE_CXX             OFF)
@@ -498,6 +514,9 @@ add_subdirectory(${FLB_PATH_LIB_SNAPPY} EXCLUDE_FROM_ALL)
 
 # CMetrics
 add_subdirectory(${FLB_PATH_LIB_CMETRICS} EXCLUDE_FROM_ALL)
+
+# CTraces
+add_subdirectory(${FLB_PATH_LIB_CTRACES} EXCLUDE_FROM_ALL)
 
 # C-Ares (DNS library)
 FLB_OPTION(CARES_STATIC      ON)
@@ -819,16 +838,8 @@ else()
 
 endif()
 
-# TD Agent options
-if(FLB_TD)
-  FLB_DEFINITION(FLB_IS_TD_AGENT)
-  FLB_OPTION(FLB_JEMALLOC ON)
-  set(FLB_PROG_NAME "TD Agent Bit")
-  set(FLB_OUT_NAME "td-agent-bit")
-else()
-  set(FLB_PROG_NAME "Fluent Bit")
-  set(FLB_OUT_NAME "fluent-bit")
-endif()
+set(FLB_PROG_NAME "Fluent Bit")
+set(FLB_OUT_NAME "fluent-bit")
 
 if(FLB_PROXY_GO)
   FLB_DEFINITION(FLB_HAVE_PROXY_GO)
@@ -882,8 +893,8 @@ if(FLB_BACKTRACE)
     set(DEPS_C_COMPILER "${CMAKE_C_COMPILER}")
   endif()
   ExternalProject_Add(backtrace
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-2446c66/
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-2446c66/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/
+    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
     BUILD_COMMAND $(MAKE)
     INSTALL_COMMAND $(MAKE) DESTDIR= install
     )
@@ -899,14 +910,29 @@ if(FLB_IN_KAFKA OR FLB_OUT_KAFKA)
     FLB_OPTION(RDKAFKA_BUILD_TESTS    Off)
     FLB_OPTION(ENABLE_LZ4_EXT         Off)
 
+    # disable Curl
+    if (FLB_SYSTEM_MACOS)
+      FLB_OPTION(WITH_CURL  Off)
+    endif()
+
     add_subdirectory(${FLB_PATH_LIB_RDKAFKA} EXCLUDE_FROM_ALL)
 endif()
 
-# Onigmo (Regex Engine)
+# Onigmo (Regex Engine) options
 # =====================
 if(FLB_REGEX)
-  include(cmake/onigmo.cmake)
+  option(ONIGMO_SHARED_LIB    OFF)
+  option(ONIGMO_CTESTS        OFF)
+  option(ONIGMO_CTESTS_SAMPLE OFF)
+  option(ONIGMO_PYTHON_TESTS  OFF)
   FLB_DEFINITION(FLB_HAVE_REGEX)
+
+  if (FLB_SYSTEM_WINDOWS)
+    # We need this line in order to link libonigmo.lib statically.
+    # Read onigmo/README for details.
+    FLB_DEFINITION_VAL(ONIG_EXTERN "extern")
+  endif()
+  add_subdirectory(${FLB_PATH_LIB_ONIGMO} EXCLUDE_FROM_ALL)
 endif()
 
 # tutf8e (UTF8 Encoding)
@@ -1012,6 +1038,11 @@ configure_file(
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_version.h"
   )
 
+configure_file(
+  "${PROJECT_SOURCE_DIR}/include/fluent-bit/tls/flb_tls_info.h.in"
+  "${PROJECT_SOURCE_DIR}/include/fluent-bit/tls/flb_tls_info.h"
+  )
+
 # Installation Directories
 # ========================
 if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
@@ -1054,12 +1085,7 @@ endif()
 # ============================
 
 set(CPACK_PACKAGE_VERSION ${FLB_VERSION_STR})
-
-if(FLB_TD)
-  set(CPACK_PACKAGE_NAME "td-agent-bit")
-else()
-  set(CPACK_PACKAGE_NAME "fluent-bit")
-endif()
+set(CPACK_PACKAGE_NAME "fluent-bit")
 
 set(CPACK_PACKAGE_RELEASE 1)
 set(CPACK_PACKAGE_CONTACT "Eduardo Silva <eduardo@calyptia.com>")
@@ -1157,11 +1183,7 @@ set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 # CPack: Windows System
 if(CPACK_GENERATOR MATCHES "NSIS")
   set(CPACK_MONOLITHIC_INSTALL 1)
-  if(FLB_TD)
-    set(CPACK_PACKAGE_INSTALL_DIRECTORY "td-agent-bit")
-  else()
-    set(CPACK_PACKAGE_INSTALL_DIRECTORY "fluent-bit")
-  endif()
+  set(CPACK_PACKAGE_INSTALL_DIRECTORY "fluent-bit")
 endif()
 
 # CPack: Windows System w/ WiX

@@ -17,13 +17,14 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_OPENTELEMETRY_H
-#define FLB_OPENTELEMETRY_H
+#ifndef FLB_OUT_OPENTELEMETRY_H
+#define FLB_OUT_OPENTELEMETRY_H
 
 #include <fluent-bit/flb_output_plugin.h>
 
 #define FLB_OPENTELEMETRY_CONTENT_TYPE_HEADER_NAME "Content-Type"
 #define FLB_OPENTELEMETRY_MIME_PROTOBUF_LITERAL    "application/x-protobuf"
+#define FLB_LOG_RECORD_BATCH_SIZE 64
 
 /* Plugin context */
 struct opentelemetry_context {
@@ -37,7 +38,8 @@ struct opentelemetry_context {
     int proxy_port;
 
     /* HTTP URI */
-    char *uri;
+    char *metrics_uri;
+    char *logs_uri;
     char *host;
     int port;
 

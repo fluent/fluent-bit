@@ -15,10 +15,10 @@ FROM amazonlinux:2 as amazonlinux-2-base
 # hadolint ignore=DL3033
 RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
-                   wget unzip systemd-devel wget flex bison \
-                   cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
-                   postgresql-devel postgresql-libs \
-                   cmake3 libyaml-devel && \
+    wget unzip systemd-devel wget flex bison \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
+    postgresql-devel postgresql-libs \
+    cmake3 libyaml-devel && \
     yum clean all
 
 # amazonlinux/2.arm64v8 base image
@@ -29,10 +29,10 @@ COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64
 # hadolint ignore=DL3033
 RUN yum -y update && \
     yum install -y rpm-build ca-certificates gcc gcc-c++ cmake make bash \
-                   wget unzip systemd-devel wget flex bison \
-                   cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
-                   postgresql-devel postgresql-libs \
-                   cmake3 libyaml-devel && \
+    wget unzip systemd-devel wget flex bison \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
+    postgresql-devel postgresql-libs \
+    cmake3 libyaml-devel && \
     yum clean all
 
 FROM amazonlinux:2022 as amazonlinux-2022-base
@@ -40,10 +40,10 @@ FROM amazonlinux:2022 as amazonlinux-2022-base
 # hadolint ignore=DL3033
 RUN yum -y update && \
     yum install -y rpm-build ca-certificates gcc gcc-c++ cmake make bash \
-                   wget unzip systemd-devel wget flex bison \
-                   cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
-                   postgresql-devel postgresql-libs \
-                   cmake3 libyaml-devel && \
+    wget unzip systemd-devel wget flex bison \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
+    postgresql-devel postgresql-libs \
+    cmake3 libyaml-devel && \
     yum clean all
 
 # hadolint ignore=DL3029
@@ -54,10 +54,10 @@ COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64
 # hadolint ignore=DL3033
 RUN yum -y update && \
     yum install -y rpm-build ca-certificates gcc gcc-c++ cmake make bash \
-                   wget unzip systemd-devel wget flex bison \
-                   cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
-                   postgresql-devel postgresql-libs \
-                   cmake3 libyaml-devel && \
+    wget unzip systemd-devel wget flex bison \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
+    postgresql-devel postgresql-libs \
+    cmake3 libyaml-devel && \
     yum clean all
 
 # Common build for all distributions now
@@ -75,9 +75,8 @@ WORKDIR /tmp/fluent-bit/build/
 # CMake configuration variables
 # Unused
 ARG CFLAGS
-ARG CMAKE_INSTALL_PREFIX=/opt/td-agent-bit/
+ARG CMAKE_INSTALL_PREFIX=/opt/fluent-bit/
 ARG CMAKE_INSTALL_SYSCONFDIR=/etc/
-ARG FLB_TD=On
 ARG FLB_RELEASE=On
 ARG FLB_TRACE=On
 ARG FLB_SQLDB=On
@@ -85,19 +84,20 @@ ARG FLB_HTTP_SERVER=On
 ARG FLB_OUT_KAFKA=On
 ARG FLB_OUT_PGSQL=On
 ARG FLB_JEMALLOC=On
+ARG FLB_CHUNK_TRACE=On
 
 RUN cmake3 -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
-           -DCMAKE_INSTALL_SYSCONFDIR="$CMAKE_INSTALL_SYSCONFDIR" \
-           -DFLB_RELEASE="$FLB_RELEASE" \
-           -DFLB_TRACE="$FLB_TRACE" \
-           -DFLB_TD="$FLB_TD" \
-           -DFLB_SQLDB="$FLB_SQLDB" \
-           -DFLB_HTTP_SERVER="$FLB_HTTP_SERVER" \
-           -DFLB_OUT_KAFKA="$FLB_OUT_KAFKA" \
-           -DFLB_OUT_PGSQL="$FLB_OUT_PGSQL" \
-           -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
-           -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
-           ../
+    -DCMAKE_INSTALL_SYSCONFDIR="$CMAKE_INSTALL_SYSCONFDIR" \
+    -DFLB_RELEASE="$FLB_RELEASE" \
+    -DFLB_TRACE="$FLB_TRACE" \
+    -DFLB_SQLDB="$FLB_SQLDB" \
+    -DFLB_HTTP_SERVER="$FLB_HTTP_SERVER" \
+    -DFLB_OUT_KAFKA="$FLB_OUT_KAFKA" \
+    -DFLB_OUT_PGSQL="$FLB_OUT_PGSQL" \
+    -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
+    -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
+    -DFLB_CHUNK_TRACE="${FLB_CHUNK_TRACE}" \
+    ../
 
 VOLUME [ "/output" ]
 CMD [ "/bin/bash", "-c", "make -j 4 && cpack3 -G RPM && cp *.rpm /output/" ]

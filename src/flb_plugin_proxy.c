@@ -32,6 +32,7 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_plugin_proxy.h>
+#include <fluent-bit/flb_input_log.h>
 
 /* Proxies */
 #include "proxy/go/go.h"
@@ -88,8 +89,7 @@ static int flb_proxy_input_cb_collect(struct flb_input_instance *ins,
             return -1;
         }
 
-        flb_input_chunk_append_raw(ins, NULL, 0, data, len);
-
+        flb_input_log_append(ins, NULL, 0, data, len);
         if (!data) {
             free(data);
         }

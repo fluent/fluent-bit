@@ -25,6 +25,11 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_slist.h>
 
+#include <cfl/cfl.h>
+#include <cfl/cfl_sds.h>
+#include <cfl/cfl_variant.h>
+#include <cfl/cfl_kvlist.h>
+
 #include <yaml.h>
 
 #include <ctype.h>
@@ -78,9 +83,9 @@ enum state {
     STATE_CUSTOM_VAL,
 
     STATE_PLUGIN_TYPE,
-    STATE_PLUGIN_KEY_VALUE_PAIR,
     STATE_PLUGIN_KEY,
     STATE_PLUGIN_VAL,
+    STATE_PLUGIN_VAL_LIST,
 
     STATE_GROUP_KEY,
     STATE_GROUP_VAL,
@@ -105,6 +110,7 @@ struct parser_state {
 
     /* active section */
     struct flb_cf_section *cf_section;
+    struct cfl_array *values; /* pointer to current values in a list. */
 
     /* active group */
     struct flb_cf_group *cf_group;
@@ -349,7 +355,6 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
     int len;
     int ret;
     char *value;
-    struct mk_list *list;
     struct flb_kv *kv;
     char *last_included = get_last_included_file(ctx);
 
@@ -429,10 +434,9 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             }
 
             /* value is the 'custom plugin name', create a section instance */
-            kv = flb_cf_property_add(cf, &s->cf_section->properties,
-                                     "name", 4,
-                                     value, len);
-            if (!kv) {
+            if (flb_cf_section_property_add(cf, s->cf_section->properties,
+                                            "name", 4,
+                                            value, len) < 0) {
                 return YAML_FAILURE;
             }
 
@@ -495,9 +499,9 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             s->val = flb_sds_create(value);
 
             /* register key/value pair as a property */
-            flb_cf_property_add(cf, &s->cf_section->properties,
-                                s->key, flb_sds_len(s->key),
-                                s->val, flb_sds_len(s->val));
+            flb_cf_section_property_add(cf, s->cf_section->properties,
+                                        s->key, flb_sds_len(s->key),
+                                        s->val, flb_sds_len(s->val));
             flb_sds_destroy(s->key);
             flb_sds_destroy(s->val);
             break;
@@ -681,17 +685,23 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
 
             /* Check if the incoming k/v pair set a config environment variable */
             if (s->section == SECTION_ENV) {
-                list = &cf->env;
+                kv = flb_cf_env_property_add(cf,
+                                             s->key, flb_sds_len(s->key),
+                                             s->val, flb_sds_len(s->val));
+                if (kv == NULL) {
+                    return YAML_FAILURE;
+                }
             }
             else {
-                list = &s->cf_section->properties;
-            }
-            /* register key/value pair as a property */
-            kv = flb_cf_property_add(cf, list,
-                                     s->key, flb_sds_len(s->key),
-                                     s->val, flb_sds_len(s->val));
-            if (!kv) {
-                return YAML_FAILURE;
+                /* register key/value pair as a property */
+                if (s->cf_section == NULL) {
+                    return YAML_FAILURE;
+                }
+                if (flb_cf_section_property_add(cf, s->cf_section->properties,
+                                                s->key, flb_sds_len(s->key),
+                                                s->val, flb_sds_len(s->val)) < 0) {
+                    return YAML_FAILURE;
+                }
             }
             flb_sds_destroy(s->key);
             flb_sds_destroy(s->val);
@@ -736,40 +746,20 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 return YAML_FAILURE;
             }
 
-            /* the 'type' is the plugin name, so we add it as a 'name' property */
-            value = (char *) event->data.scalar.value;
-            len = strlen(value);
-
-            /* register the type: name = abc */
-            kv = flb_cf_property_add(cf, &s->cf_section->properties,
-                                     "name", 4,
-                                     value, len);
-            if (!kv) {
-                return YAML_FAILURE;
-            }
-            /* next state are key value pairs */
-            s->state = STATE_PLUGIN_KEY_VALUE_PAIR;
+            /* the next state is the keys of the properties of the plugin. */
+            s->state = STATE_PLUGIN_KEY;
             break;
         case YAML_MAPPING_START_EVENT:
+            ret = add_section_type(cf, s);
+            if (ret == -1) {
+                return YAML_FAILURE;
+            }
+            s->state = STATE_PLUGIN_KEY;
             break;
         case YAML_MAPPING_END_EVENT:
             break;
         case YAML_SEQUENCE_END_EVENT:
             s->state = STATE_PIPELINE;
-            break;
-        default:
-            yaml_error_event(ctx, s, event);
-            return YAML_FAILURE;
-        }
-        break;
-
-    case STATE_PLUGIN_KEY_VALUE_PAIR:
-        switch(event->type) {
-        case YAML_MAPPING_START_EVENT:
-            s->state = STATE_PLUGIN_KEY;
-            break;
-        case YAML_MAPPING_END_EVENT:
-            s->state = STATE_PLUGIN_TYPE;
             break;
         default:
             yaml_error_event(ctx, s, event);
@@ -790,6 +780,8 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
         case YAML_MAPPING_END_EVENT:
             s->state = STATE_PLUGIN_TYPE;
             break;
+        case YAML_SEQUENCE_END_EVENT:
+            break;
         default:
             yaml_error_event(ctx, s, event);
             return YAML_FAILURE;
@@ -804,9 +796,14 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             s->val = flb_sds_create(value);
 
             /* register key/value pair as a property */
-            flb_cf_property_add(cf, &s->cf_section->properties,
-                                s->key, flb_sds_len(s->key),
-                                s->val, flb_sds_len(s->val));
+            if (flb_cf_section_property_add(cf, s->cf_section->properties,
+                                            s->key, flb_sds_len(s->key),
+                                            s->val, flb_sds_len(s->val)) < 0) {
+                return YAML_FAILURE;
+            }
+            if (cfl_kvlist_count(s->cf_section->properties) <= 0) {
+                return YAML_FAILURE;
+            }
             flb_sds_destroy(s->key);
             flb_sds_destroy(s->val);
             break;
@@ -818,6 +815,34 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             if (!s->cf_group) {
                 return YAML_FAILURE;
             }
+            break;
+        case YAML_SEQUENCE_START_EVENT:
+            s->state = STATE_PLUGIN_VAL_LIST;
+            s->values = flb_cf_section_property_add_list(cf,
+                                                         s->cf_section->properties,
+                                                         s->key, flb_sds_len(s->key));
+            if (s->values == NULL) {
+                return YAML_FAILURE;
+            }
+            flb_sds_destroy(s->key);
+        break;
+        default:
+            yaml_error_event(ctx, s, event);
+            return YAML_FAILURE;
+        }
+        break;
+
+    case STATE_PLUGIN_VAL_LIST:
+        switch(event->type) {
+        case YAML_SCALAR_EVENT:
+            if (s->values == NULL) {
+                return YAML_FAILURE;
+            }
+            cfl_array_append_string(s->values, (char *)event->data.scalar.value);
+            break;
+        case YAML_SEQUENCE_END_EVENT:
+            s->values = NULL;
+            s->state = STATE_PLUGIN_KEY;
             break;
         default:
             yaml_error_event(ctx, s, event);
@@ -850,9 +875,9 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             s->val = flb_sds_create(value);
 
             /* register key/value pair as a property */
-            flb_cf_property_add(cf, &s->cf_group->properties,
-                                s->key, flb_sds_len(s->key),
-                                s->val, flb_sds_len(s->val));
+            flb_cf_section_property_add(cf, s->cf_group->properties,
+                                        s->key, flb_sds_len(s->key),
+                                        s->val, flb_sds_len(s->val));
             flb_sds_destroy(s->key);
             flb_sds_destroy(s->val);
             break;

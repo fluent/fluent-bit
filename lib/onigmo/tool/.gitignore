@@ -10,6 +10,7 @@ Scripts.txt
 SpecialCasing.txt
 UnicodeData.txt
 GraphemeBreakProperty.txt
+emoji-data.txt
 
 # ignore generated files
 casefold.h
