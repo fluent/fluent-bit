@@ -349,7 +349,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
      * CW output runs in sync mode; because the CW API currently requires
      * PutLogEvents requests to a log stream to be made serially
      */
-    upstream->flags &= ~(FLB_IO_ASYNC);
+    // upstream->flags &= ~(FLB_IO_ASYNC);
 
     ctx->cw_client->upstream = upstream;
     flb_output_upstream_set(upstream, ctx->ins);
@@ -666,7 +666,7 @@ struct flb_output_plugin out_cloudwatch_logs_plugin = {
     .cb_init      = cb_cloudwatch_init,
     .cb_flush     = cb_cloudwatch_flush,
     .cb_exit      = cb_cloudwatch_exit,
-    .flags        = 0,
+    .flags        = FLB_OUTPUT_NO_MULTIPLEX,
     .workers      = 1,
 
     /* Configuration */
