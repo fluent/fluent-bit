@@ -89,7 +89,7 @@ int fw_conn_event(void *data)
                           bytes, conn->buf_len, conn->buf_len + bytes);
             conn->buf_len += bytes;
 
-            ret = fw_prot_process(conn);
+            ret = fw_prot_process(ctx->ins, conn);
             if (ret == -1) {
                 fw_conn_del(conn);
                 return -1;
