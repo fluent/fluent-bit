@@ -17,8 +17,8 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_OPENTELEMETRY_H
-#define FLB_OPENTELEMETRY_H
+#ifndef FLB_OUT_OPENTELEMETRY_H
+#define FLB_OUT_OPENTELEMETRY_H
 
 #include <fluent-bit/flb_output_plugin.h>
 

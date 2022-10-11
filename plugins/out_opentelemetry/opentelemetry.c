@@ -23,11 +23,19 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_pack.h>
+
+#include <cfl/cfl.h>
+#include <fluent-otel-proto/fluent-otel.h>
+
+#include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_encode_opentelemetry.h>
 
-#include <fluent-otel-proto/fluent-otel.h>
+extern cfl_sds_t cmt_encode_opentelemetry_create(struct cmt *cmt);
+extern void cmt_encode_opentelemetry_destroy(struct cmt *cmt);
+
 #include "opentelemetry.h"
 #include "opentelemetry_conf.h"
+
 
 static int http_post(struct opentelemetry_context *ctx,
                      const void *body, size_t body_len,
@@ -452,7 +460,8 @@ static void cb_opentelemetry_flush(struct flb_event_chunk *event_chunk,
                                    struct flb_input_instance *ins, void *out_context,
                                    struct flb_config *config)
 {
-    int result;
+    int result = FLB_RETRY;
+
     if (ins->event_type == FLB_OUTPUT_METRICS || ins->event_type == FLB_INPUT_METRICS){
         result = process_metrics(event_chunk, out_flush, ins, out_context, config);
     }
