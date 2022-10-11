@@ -180,10 +180,10 @@ static int parse_key_value_list(struct flb_stackdriver *ctx,
                                 struct mk_list *dest,
                                 int shouldTrim)
 {
-    int ret;
     char *p;
     flb_sds_t key;
     flb_sds_t val;
+    struct flb_kv *kv;
     struct mk_list *head;
     struct flb_slist_entry *entry;
 
@@ -219,11 +219,11 @@ static int parse_key_value_list(struct flb_stackdriver *ctx,
                 return -1;
             }
 
-            ret = flb_kv_item_create(dest, key, val);
+            kv = flb_kv_item_create(dest, key, val);
             flb_sds_destroy(key);
             flb_sds_destroy(val);
 
-            if (ret == -1) {
+            if (!kv) {
                 return -1;
             }
         }
