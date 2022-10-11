@@ -31,6 +31,7 @@ RUN apt-get update && \
 # ubuntu/18.04 base image
 FROM ubuntu:18.04 as ubuntu-18.04-base
 ENV DEBIAN_FRONTEND noninteractive
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
@@ -49,6 +50,7 @@ RUN apt-get update && \
 # ubuntu/18.04.arm64v8 base image
 FROM arm64v8/ubuntu:18.04 as ubuntu-18.04.arm64v8-base
 ENV DEBIAN_FRONTEND noninteractive
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
