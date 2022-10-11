@@ -15,6 +15,23 @@ if [[ "$DISABLE_SIGNING" != "true" ]]; then
     rpm -q gpg-pubkey --qf '%{name}-%{version}-%{release} --> %{summary}\n'
 fi
 
+# Handle Ubuntu 18/22 differences - no support on Ubuntu 20
+CREATE_REPO_CMD=${CREATE_REPO_CMD:-}
+
+# Assume if set we want to use it
+if [[ -n "$CREATE_REPO_CMD" ]]; then
+    echo "Using $CREATE_REPO_CMD"
+elif command -v createrepo &> /dev/null; then
+    echo "Found createrepo"
+    CREATE_REPO_CMD="createrepo -dvp"
+elif command -v createrepo_c &> /dev/null; then
+    echo "Found createrepo_c"
+    CREATE_REPO_CMD="createrepo_c -dvp"
+else
+    echo "Unable to find a command equivalent to createrepo"
+    exit 1
+fi
+
 RPM_REPO_PATHS=("amazonlinux/2" "amazonlinux/2022" "centos/7" "centos/8" "centos/9")
 
 for RPM_REPO in "${RPM_REPO_PATHS[@]}"; do
@@ -27,7 +44,7 @@ for RPM_REPO in "${RPM_REPO_PATHS[@]}"; do
         find "$REPO_DIR" -name "*-bit-*.rpm" -exec rpm --define "_gpg_name $GPG_KEY" --addsign {} \;
     fi
     # Create full metadata for all RPMs in the directory
-    createrepo -dvp "$REPO_DIR"
+    "$CREATE_REPO_CMD" "$REPO_DIR"
 
     # Set up repo info
     if [[ -n "${AWS_S3_BUCKET:-}" ]]; then

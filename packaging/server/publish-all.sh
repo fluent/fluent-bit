@@ -24,49 +24,66 @@ if [[ ! -d "$SOURCE_DIR" ]]; then
     echo "Missing source directory: $SOURCE_DIR"
 fi
 
+# Handle Ubuntu 18/22 differences - no support on Ubuntu 20
+CREATE_REPO_CMD=${CREATE_REPO_CMD:-}
+
+# Assume if set we want to use it
+if [[ -n "$CREATE_REPO_CMD" ]]; then
+    echo "Using $CREATE_REPO_CMD"
+elif command -v createrepo &> /dev/null; then
+    echo "Found createrepo"
+    CREATE_REPO_CMD="createrepo -dvp"
+elif command -v createrepo_c &> /dev/null; then
+    echo "Found createrepo_c"
+    CREATE_REPO_CMD="createrepo_c -dvp"
+else
+    echo "Unable to find a command equivalent to createrepo"
+    exit 1
+fi
+
 # Amazon Linux 2022
 if [[ -d "$SOURCE_DIR/amazonlinux/2022/" ]]; then
     echo "Publishing AmazonLinux 2022"
     mkdir -p /var/www/apt.fluentbit.io/amazonlinux/2022/x86_64 /var/www/apt.fluentbit.io/amazonlinux/2022/aarch64
     find "$SOURCE_DIR/amazonlinux/2022" -iname "*-bit-$VERSION-*x86_64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/amazonlinux/2022/x86_64" \;
-    createrepo -dvp "/var/www/apt.fluentbit.io/amazonlinux/2022/x86_64"
+    "$CREATE_REPO_CMD" "/var/www/apt.fluentbit.io/amazonlinux/2022/x86_64"
 
     find "$SOURCE_DIR/amazonlinux/2022" -iname "*-bit-$VERSION-*aarch64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/amazonlinux/2022/aarch64" \;
-    createrepo -dvp "/var/www/apt.fluentbit.io/amazonlinux/2022/aarch64"
+    "$CREATE_REPO_CMD" "/var/www/apt.fluentbit.io/amazonlinux/2022/aarch64"
 fi
 
 # Amazon Linux 2
 echo "Publishing AmazonLinux 2"
 find "$SOURCE_DIR/amazonlinux/2" -iname "*-bit-$VERSION-*aarch64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/amazonlinux/2/aarch64" \;
-createrepo -dvp "/var/www/apt.fluentbit.io/amazonlinux/2/aarch64"
+"$CREATE_REPO_CMD" "/var/www/apt.fluentbit.io/amazonlinux/2/aarch64"
 
 find "$SOURCE_DIR/amazonlinux/2" -iname "*-bit-$VERSION-*x86_64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/amazonlinux/2/x86_64" \;
-createrepo -dvp "/var/www/apt.fluentbit.io/amazonlinux/2/x86_64"
+"$CREATE_REPO_CMD" "/var/www/apt.fluentbit.io/amazonlinux/2/x86_64"
 
 # Centos 7
 echo "Publishing Centos 7"
 find "$SOURCE_DIR/centos/7/" -iname "*-bit-$VERSION-*aarch64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/centos/7/aarch64" \;
-createrepo -dvp "/var/www/apt.fluentbit.io/centos/7/aarch64"
+"$CREATE_REPO_CMD" "/var/www/apt.fluentbit.io/centos/7/aarch64"
 
 find "$SOURCE_DIR/centos/7/" -iname "*-bit-$VERSION-*x86_64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/centos/7/x86_64" \;
-createrepo -dvp "/var/www/apt.fluentbit.io/centos/7/x86_64"
+"$CREATE_REPO_CMD" "/var/www/apt.fluentbit.io/centos/7/x86_64"
 
 # Centos 8
 echo "Publishing Centos 8"
 find "$SOURCE_DIR/centos/8/" -iname "*-bit-$VERSION-*aarch64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/centos/8/aarch64" \;
-createrepo -dvp "/var/www/apt.fluentbit.io/centos/8/aarch64"
+"$CREATE_REPO_CMD" "/var/www/apt.fluentbit.io/centos/8/aarch64"
 
 find "$SOURCE_DIR/centos/8/" -iname "*-bit-$VERSION-*x86_64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/centos/8/x86_64" \;
-createrepo -dvp "/var/www/apt.fluentbit.io/centos/8/x86_64"
+"$CREATE_REPO_CMD" "/var/www/apt.fluentbit.io/centos/8/x86_64"
 
 # Centos 9
 if [[ -d "$SOURCE_DIR/centos/9/" ]]; then
     echo "Publishing Centos 9"
     find "$SOURCE_DIR/centos/9/" -iname "*-bit-$VERSION-*aarch64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/centos/9/aarch64" \;
-    createrepo -dvp "/var/www/apt.fluentbit.io/centos/9/aarch64"
+    "$CREATE_REPO_CMD" "/var/www/apt.fluentbit.io/centos/9/aarch64"
 
     find "$SOURCE_DIR/centos/9/" -iname "*-bit-$VERSION-*x86_64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/centos/9/x86_64" \;
-    createrepo -dvp "/var/www/apt.fluentbit.io/centos/9/x86_64"
+    "$CREATE_REPO_CMD" "/var/www/apt.fluentbit.io/centos/9/x86_64"
 fi
 
 # Debian 10 Buster
