@@ -45,7 +45,7 @@ static struct ctrace_id *create_random_span_id()
     ssize_t ret;
     struct ctrace_id *cid;
 
-    buf = calloc(1, OTEL_SPAN_ID_LEN);
+    buf = flb_malloc(OTEL_SPAN_ID_LEN);
     if (!buf) {
         ctr_errno();
         return NULL;
@@ -53,12 +53,12 @@ static struct ctrace_id *create_random_span_id()
 
     ret = ctr_random_get(buf, OTEL_SPAN_ID_LEN);
     if (ret < 0) {
-        free(buf);
+        flb_free(buf);
         return NULL;
     }
 
     cid = ctr_id_create(buf, OTEL_SPAN_ID_LEN);
-    free(buf);
+    flb_free(buf);
 
     return cid;
 
