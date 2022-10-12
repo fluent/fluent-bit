@@ -616,6 +616,9 @@ struct mk_list *winevtlog_open_all(const char *channels, int read_existing_event
             if (ch) {
                 mk_list_add(&ch->_head, list);
             }
+            else {
+                flb_debug("[in_winevtlog] channel '%s' does not exist", channel);
+            }             
         }
         else {
             if (!ch) {
