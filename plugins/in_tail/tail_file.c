@@ -75,7 +75,7 @@ static int stat_to_hash_bits(struct flb_tail_config *ctx, struct stat *st,
     st_dev = stat_get_st_dev(st);
 
     len = snprintf(tmp, sizeof(tmp) - 1, "%" PRIu64 ":%" PRIu64,
-                   st_dev, st->st_ino);
+                   st_dev, (uint64_t)st->st_ino);
 
     *out_hash = cfl_hash_64bits(tmp, len);
     return 0;
@@ -95,7 +95,7 @@ static int stat_to_hash_key(struct flb_tail_config *ctx, struct stat *st,
 
     st_dev = stat_get_st_dev(st);
     tmp = flb_sds_printf(&buf, "%" PRIu64 ":%" PRIu64,
-                         st_dev, st->st_ino);
+                         st_dev, (uint64_t)st->st_ino);
     if (!tmp) {
         flb_sds_destroy(buf);
         return -1;
@@ -1794,7 +1794,7 @@ int flb_tail_file_purge(struct flb_input_instance *ins,
                 flb_plg_debug(ctx->ins,
                               "inode=%"PRIu64" purge rotated file %s " \
                               "(offset=%"PRId64" / size = %"PRIu64")",
-                              file->inode, file->name, file->offset, st.st_size);
+                              file->inode, file->name, file->offset, (uint64_t)st.st_size);
                 if (file->pending_bytes > 0 && flb_input_buf_paused(ins)) {
                     flb_plg_warn(ctx->ins, "purged rotated file while data "
                                  "ingestion is paused, consider increasing "
