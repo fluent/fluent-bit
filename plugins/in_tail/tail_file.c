@@ -75,7 +75,7 @@ static int stat_to_hash_bits(struct flb_tail_config *ctx, struct stat *st,
     st_dev = stat_get_st_dev(st);
 
     len = snprintf(tmp, sizeof(tmp) - 1, "%" PRIu64 ":%" PRIu64,
-                   st_dev, st->st_ino);
+                   st_dev, (uint64_t)st->st_ino);
 
     *out_hash = cfl_hash_64bits(tmp, len);
     return 0;
@@ -95,7 +95,7 @@ static int stat_to_hash_key(struct flb_tail_config *ctx, struct stat *st,
 
     st_dev = stat_get_st_dev(st);
     tmp = flb_sds_printf(&buf, "%" PRIu64 ":%" PRIu64,
-                         st_dev, st->st_ino);
+                         st_dev, (uint64_t)st->st_ino);
     if (!tmp) {
         flb_sds_destroy(buf);
         return -1;
