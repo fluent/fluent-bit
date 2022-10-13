@@ -28,6 +28,123 @@
 #include "kafka_topic.h"
 #include "kafka_callbacks.h"
 
+
+static struct {
+	int64_t  t_start;
+	int64_t  t_end;
+	int64_t  t_end_send;
+	uint64_t msgs;
+	uint64_t msgs_last;
+        uint64_t msgs_dr_ok;
+        uint64_t msgs_dr_err;
+        uint64_t bytes_dr_ok;
+	uint64_t bytes;
+	uint64_t bytes_last;
+	uint64_t tx;	
+    uint64_t tx_err;
+        uint64_t avg_rtt;
+        uint64_t offset;
+	int64_t  t_fetch_latency;
+	int64_t  t_last;
+        int64_t  t_enobufs_last;
+	int64_t  t_total;
+        int64_t  latency_last;
+        int64_t  latency_lo;
+        int64_t  latency_hi;
+        int64_t  latency_sum;
+        int      latency_cnt;
+    int64_t  last_offset;
+} cnt;
+
+static FILE *stats_fp;
+
+static struct flb_output_instance * p_ins;
+/**
+ * Find and extract single value from a two-level search.
+ * First find 'field1', then find 'field2' and extract its value.
+ * Returns 0 on miss else the value.
+ */
+static uint64_t json_parse_fields (const char *json, const char **end,
+                                   const char *field1, const char *field2) {
+        const char *t = json;
+        const char *t2;
+        int len1 = (int)strlen(field1);
+        int len2 = (int)strlen(field2);
+
+        while ((t2 = strstr(t, field1))) {
+                uint64_t v;
+
+                t = t2;
+                t += len1;
+
+                /* Find field */
+                if (!(t2 = strstr(t, field2)))
+                        continue;
+                t2 += len2;
+
+                while (isspace((int)*t2))
+                        t2++;
+
+                v = strtoull(t2, (char **)&t, 10);
+                if (t2 == t)
+                        continue;
+
+                *end = t;
+                return v;
+        }
+
+        *end = t + strlen(t);
+        return 0;
+}
+
+/**
+ * Parse various values from rdkafka stats
+ */
+static void json_parse_stats (const char *json) {
+        const char *t;
+#define MAX_AVGS 100 /* max number of brokers to scan for rtt */
+        uint64_t avg_rtt[MAX_AVGS+1];
+        int avg_rtt_i     = 0;
+
+        /* Store totals at end of array */
+        avg_rtt[MAX_AVGS]     = 0;
+
+        /* Extract all broker RTTs */
+        t = json;
+        while (avg_rtt_i < MAX_AVGS && *t) {
+                avg_rtt[avg_rtt_i] = json_parse_fields(t, &t,
+                                                       "\"rtt\":",
+                                                       "\"avg\":");
+
+                /* Skip low RTT values, means no messages are passing */
+                if (avg_rtt[avg_rtt_i] < 100 /*0.1ms*/)
+                        continue;
+
+
+                avg_rtt[MAX_AVGS] += avg_rtt[avg_rtt_i];
+                avg_rtt_i++;
+        }
+
+        if (avg_rtt_i > 0)
+                avg_rtt[MAX_AVGS] /= avg_rtt_i;
+
+        cnt.avg_rtt = avg_rtt[MAX_AVGS];
+}
+
+
+static int stats_cb (rd_kafka_t *rk, char *json, size_t json_len,
+		     void *opaque) {
+
+        /* Extract values for our own stats */
+        json_parse_stats(json);
+
+        //flb_plg_info(p_ins, "json='%s'", json);
+
+        if (stats_fp)
+                fprintf(stats_fp, "%s\n", json);
+	return 0;
+}
+
 struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
                                         struct flb_config *config)
 {
@@ -107,6 +224,24 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
 
     /* Callback: log */
     rd_kafka_conf_set_log_cb(ctx->conf, cb_kafka_logger);
+
+    tmp = flb_output_get_property("stats_log_name", ins);
+    stats_fp = fopen(tmp ? tmp : "fluent-bit_stats.log","a");
+
+    p_ins = ctx->ins;
+
+    rd_kafka_conf_set_stats_cb(ctx->conf, stats_cb);
+
+    char* stats_intvlstr = "5000";
+    tmp = flb_output_get_property("stats_interval", ins);
+
+    if (rd_kafka_conf_set(ctx->conf, "statistics.interval.ms",
+                          tmp ? tmp : stats_intvlstr,
+                          errstr, sizeof(errstr)) !=
+        RD_KAFKA_CONF_OK) {
+            fprintf(stderr, "%% %s\n", errstr);
+            exit(1);
+    }
 
     /* Config: Topic_Key */
     tmp = flb_output_get_property("topic_key", ins);

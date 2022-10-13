@@ -28,6 +28,8 @@
 #endif
 
 #include "rdkafka.h"
+#include "rd.h"
+#include "rdtime.h"
 
 #define FLB_KAFKA_FMT_JSON            0
 #define FLB_KAFKA_FMT_MSGP            1

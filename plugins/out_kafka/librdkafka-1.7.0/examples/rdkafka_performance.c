@@ -1156,7 +1156,7 @@ int main (int argc, char **argv) {
                         "  -X file=<path> Read config from file.\n"
                         "  -X list      Show full list of supported properties.\n"
                         "  -X dump      Show configuration\n"
-			"  -T <intvl>   Enable statistics from librdkafka at "
+			"  conf <intvl>   Enable statistics from librdkafka at "
 			"specified interval (ms)\n"
                         "  -Y <command> Pipe statistics to <command>\n"
 			"  -I           Idle: dont produce any messages\n"
