@@ -25,6 +25,8 @@
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/aws/flb_aws_compress.h>
+#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_crypto.h>
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_gzip.h>
@@ -32,7 +34,6 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 
-#include <mbedtls/md5.h>
 #include <msgpack.h>
 
 #include "s3.h"
@@ -117,6 +118,37 @@ static char *mock_error_response(char *error_env_var)
 
     return NULL;
 }
+
+static void s3_retry_warn(struct flb_s3 *ctx, char* tag, char* input_name, time_t create_time, int less_than_limit){
+    struct tm now_time;
+    char create_time_str[20];
+    struct tm *tmp;
+    tmp = localtime_r(&create_time, &now_time);
+    strftime(create_time_str, 20, "%Y-%m-%d %H:%M:%S", tmp);
+    if (input_name == NULL) {
+        if (less_than_limit == FLB_TRUE) {
+            flb_plg_warn(ctx->ins,
+                        "failed to flush chunk tag=%s, create_time=%s"
+                        "(out_id=%d)",
+                        tag, create_time_str, ctx->ins->name, ctx->ins->id);
+        } else {
+            flb_plg_warn(ctx->ins,
+                        "chunk tag=%s, create_time=%s cannot be retried",
+                        tag, create_time_str, ctx->ins->name);
+        }   
+    } else if (strlen(input_name) > 0) {
+        if (less_than_limit == FLB_TRUE) {
+            flb_plg_warn(ctx->ins,
+                        "failed to flush chunk tag=%s, create_time=%s"
+                        "retry issued: input=%s > output=%s (out_id=%d)",
+                        tag, create_time_str, input_name, ctx->ins->name, ctx->ins->id);
+        } else {
+            flb_plg_warn(ctx->ins,
+                        "chunk tag=%s, create_time=%s cannot be retried: input=%s > output=%s",
+                        tag, create_time_str, input_name, ctx->ins->name);
+        }
+    }
+} 
 
 int s3_plugin_under_test()
 {
@@ -438,7 +470,6 @@ static void s3_context_destroy(struct flb_s3 *ctx)
     struct mk_list *tmp;
     struct multipart_upload *m_upload;
     struct upload_queue *upload_contents;
-
     if (!ctx) {
         return;
     }
@@ -672,7 +703,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
             return -1;
         }
         if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
-            if(ctx->upload_chunk_size > MAX_CHUNKED_UPLOAD_COMPRESS_SIZE) {
+            if (ctx->upload_chunk_size > MAX_CHUNKED_UPLOAD_COMPRESS_SIZE) {
                 flb_plg_error(ctx->ins, "upload_chunk_size in compressed multipart upload cannot exceed 5GB");
                 return -1;
             }
@@ -769,7 +800,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
     }
 
     if (ctx->insecure == FLB_FALSE) {
-        ctx->client_tls = flb_tls_create(ins->tls_verify,
+        ctx->client_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                         ins->tls_verify,
                                          ins->tls_debug,
                                          ins->tls_vhost,
                                          ins->tls_ca_path,
@@ -784,7 +816,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
     }
 
     /* AWS provider needs a separate TLS instance */
-    ctx->provider_tls = flb_tls_create(FLB_TRUE,
+    ctx->provider_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                       FLB_TRUE,
                                        ins->tls_debug,
                                        ins->tls_vhost,
                                        ins->tls_ca_path,
@@ -816,7 +849,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
         role_arn = (char *) tmp;
 
         /* STS provider needs yet another separate TLS instance */
-        ctx->sts_provider_tls = flb_tls_create(FLB_TRUE,
+        ctx->sts_provider_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                               FLB_TRUE,
                                                ins->tls_debug,
                                                ins->tls_vhost,
                                                ins->tls_ca_path,
@@ -915,8 +949,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
     }
 
     /* init must use sync mode */
-    async_flags = ctx->s3_client->upstream->flags;
-    ctx->s3_client->upstream->flags &= ~(FLB_IO_ASYNC);
+    async_flags = flb_stream_get_flags(&ctx->s3_client->upstream->base);
+    flb_stream_disable_async_mode(&ctx->s3_client->upstream->base);
 
     /* clean up any old buffers found on startup */
     if (ctx->has_old_buffers == FLB_TRUE) {
@@ -958,7 +992,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
          * will be sufficient for most users, and long term we can do the work
          * to enable async if needed.
          */
-        ctx->s3_client->upstream->flags = async_flags;
+        flb_stream_set_flags(&ctx->s3_client->upstream->base, async_flags);
     }
 
     /* this is done last since in the previous block we make calls to AWS */
@@ -987,6 +1021,7 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
     void *payload_buf = NULL;
     size_t payload_size = 0;
     size_t preCompress_size = 0;
+    int less_than_limit = FLB_TRUE;
 
     if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
         /* Map payload */
@@ -1026,7 +1061,7 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
             /* already big enough, just use PutObject API */
             goto put_object;
         }
-        else if(body_size > MIN_CHUNKED_UPLOAD_SIZE) {
+        else if (body_size > MIN_CHUNKED_UPLOAD_SIZE) {
             init_upload = FLB_TRUE;
             goto multipart;
         }
@@ -1067,10 +1102,20 @@ put_object:
     if (ret < 0) {
         /* re-add chunk to list */
         if (chunk) {
-            s3_store_file_unlock(chunk);
             chunk->failures += 1;
+            if (chunk->failures > ctx->ins->retry_limit){
+                less_than_limit = FLB_FALSE;
+            }
+            s3_retry_warn(ctx, (char *) tag, m_upload->input_name, chunk->create_time, less_than_limit);
         }
-        return FLB_RETRY;
+
+        if(less_than_limit == FLB_FALSE){
+            s3_store_file_unlock(chunk);
+            return FLB_RETRY;
+        } else {
+            s3_store_file_delete(ctx, chunk);
+            return FLB_ERROR;
+        }
     }
 
     /* data was sent successfully- delete the local buffer */
@@ -1118,8 +1163,12 @@ multipart:
         m_upload->upload_errors += 1;
         /* re-add chunk to list */
         if (chunk) {
-            s3_store_file_unlock(chunk);
             chunk->failures += 1;
+            int less_than_limit = FLB_TRUE;
+            if(chunk->failures > ctx->ins->retry_limit) {
+                less_than_limit = FLB_FALSE;
+            }
+            s3_retry_warn(ctx, (char *) chunk->fsf->meta_buf, m_upload->input_name, chunk->create_time, less_than_limit);
         }
         if (ctx->key_fmt_has_seq_index) {
             ctx->seq_index--;
@@ -1130,7 +1179,13 @@ multipart:
                 return -1;
             }
         }
-        return FLB_RETRY;
+        if (less_than_limit == FLB_TRUE) {
+            s3_store_file_unlock(chunk);
+            return FLB_RETRY;
+        } else {
+            s3_store_file_delete(ctx, chunk);
+            return FLB_ERROR;
+        }
     }
     m_upload->part_number += 1;
     /* data was sent successfully- delete the local buffer */
@@ -1169,7 +1224,6 @@ multipart:
     return FLB_OK;
 }
 
-
 /*
  * Attempts to send all chunks to S3 using PutObject
  * Used on shut down to try to send all buffered data
@@ -1188,6 +1242,7 @@ static int put_all_chunks(struct flb_s3 *ctx)
     char *buffer = NULL;
     size_t buffer_size;
     int ret;
+    int less_than_limit = FLB_TRUE;
 
     mk_list_foreach(head, &ctx->fs->streams) {
         /* skip multi upload stream */
@@ -1209,11 +1264,8 @@ static int put_all_chunks(struct flb_s3 *ctx)
                 continue;
             }
 
-            if (chunk->failures >= MAX_UPLOAD_ERRORS) {
-                flb_plg_warn(ctx->ins,
-                             "Chunk for tag %s failed to send %i times, "
-                             "will not retry",
-                             (char *) fsf->meta_buf, MAX_UPLOAD_ERRORS);
+            if (chunk->failures > ctx->ins->retry_limit) {
+                s3_retry_warn(ctx, (char *) fsf->meta_buf, NULL, chunk->create_time, FLB_FALSE);
                 flb_fstore_file_inactive(ctx->fs, fsf);
                 continue;
             }
@@ -1244,8 +1296,14 @@ static int put_all_chunks(struct flb_s3 *ctx)
                                 chunk->create_time, buffer, buffer_size);
             flb_free(buffer);
             if (ret < 0) {
-                s3_store_file_unlock(chunk);
                 chunk->failures += 1;
+                if (chunk->failures > ctx->ins->retry_limit){
+                    less_than_limit = FLB_FALSE;
+                    s3_store_file_delete(ctx, chunk);
+                } else {
+                    s3_store_file_unlock(chunk);
+                }
+                s3_retry_warn(ctx, (char *) fsf->meta_buf, NULL, chunk->create_time, less_than_limit);
                 return -1;
             }
 
@@ -1467,13 +1525,16 @@ int get_md5_base64(char *buf, size_t buf_size, char *md5_str, size_t md5_str_siz
     size_t olen;
     int ret;
 
-    ret = mbedtls_md5_ret((unsigned char*) buf, buf_size, md5_bin);
-    if (ret != 0) {
-        return ret;
+    ret = flb_hash_simple(FLB_HASH_MD5,
+                          (unsigned char *) buf, buf_size,
+                          md5_bin, sizeof(md5_bin));
+
+    if (ret != FLB_CRYPTO_SUCCESS) {
+        return -1;
     }
 
-    ret = flb_base64_encode((unsigned char*) md5_str, md5_str_size, &olen, md5_bin,
-                                sizeof(md5_bin));
+    ret = flb_base64_encode((unsigned char*) md5_str, md5_str_size,
+                            &olen, md5_bin, sizeof(md5_bin));
     if (ret != 0) {
         return ret;
     }
@@ -1481,8 +1542,7 @@ int get_md5_base64(char *buf, size_t buf_size, char *md5_str, size_t md5_str_siz
     return 0;
 }
 
-static struct multipart_upload *get_upload(struct flb_s3 *ctx,
-                                           const char *tag, int tag_len)
+static struct multipart_upload *get_upload(struct flb_s3 *ctx,const char *tag, int tag_len)
 {
     struct multipart_upload *m_upload = NULL;
     struct multipart_upload *tmp_upload = NULL;
@@ -1491,14 +1551,12 @@ static struct multipart_upload *get_upload(struct flb_s3 *ctx,
 
     mk_list_foreach_safe(head, tmp, &ctx->uploads) {
         tmp_upload = mk_list_entry(head, struct multipart_upload, _head);
-
         if (tmp_upload->upload_state == MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS) {
             continue;
         }
-        if (tmp_upload->upload_errors >= MAX_UPLOAD_ERRORS) {
+        if (tmp_upload->upload_errors > ctx->ins->retry_limit) {
             tmp_upload->upload_state = MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS;
-            flb_plg_error(ctx->ins, "Upload for %s has reached max upload errors",
-                          tmp_upload->s3_key);
+            s3_retry_warn(ctx, (char *) tmp_upload->tag, tmp_upload->input_name, tmp_upload->init_time, FLB_FALSE);
             continue;
         }
         if (strcmp(tmp_upload->tag, tag) == 0) {
@@ -1703,8 +1761,8 @@ static void s3_upload_queue(struct flb_config *config, void *out_context)
 
     /* upload timer must use sync mode */
     if (ctx->use_put_object == FLB_TRUE) {
-        async_flags = ctx->s3_client->upstream->flags;
-        ctx->s3_client->upstream->flags &= ~(FLB_IO_ASYNC);
+        async_flags = flb_stream_get_flags(&ctx->s3_client->upstream->base);
+        flb_stream_disable_async_mode(&ctx->s3_client->upstream->base);
     }
 
     /* Iterate through each file in upload queue */
@@ -1737,9 +1795,8 @@ static void s3_upload_queue(struct flb_config *config, void *out_context)
 
             /* If retry limit was reached, discard file and remove file from queue */
             upload_contents->retry_counter++;
-            if (upload_contents->retry_counter >= MAX_UPLOAD_ERRORS) {
-                flb_plg_warn(ctx->ins, "Chunk file failed to send %d times, will not "
-                             "retry", upload_contents->retry_counter);
+            if (upload_contents->retry_counter > ctx->ins->retry_limit) {
+                s3_retry_warn(ctx, (char *) upload_contents->tag, upload_contents->m_upload_file->input_name, upload_contents->upload_time, FLB_FALSE);
                 s3_store_file_inactive(ctx, upload_contents->upload_file);
                 multipart_upload_destroy(upload_contents->m_upload_file);
                 remove_from_queue(upload_contents);
@@ -1758,7 +1815,7 @@ static void s3_upload_queue(struct flb_config *config, void *out_context)
 exit:
     /* re-enable async mode */
     if (ctx->use_put_object == FLB_TRUE) {
-        ctx->s3_client->upstream->flags = async_flags;
+        flb_stream_set_flags(&ctx->s3_client->upstream->base, async_flags);
     }
 }
 
@@ -1781,8 +1838,8 @@ static void cb_s3_upload(struct flb_config *config, void *data)
 
     /* upload timer must use sync mode */
     if (ctx->use_put_object == FLB_TRUE) {
-        async_flags = ctx->s3_client->upstream->flags;
-        ctx->s3_client->upstream->flags &= ~(FLB_IO_ASYNC);
+        async_flags = flb_stream_get_flags(&ctx->s3_client->upstream->base);
+        flb_stream_disable_async_mode(&ctx->s3_client->upstream->base);
     }
 
     now = time(NULL);
@@ -1825,10 +1882,8 @@ static void cb_s3_upload(struct flb_config *config, void *data)
         m_upload = mk_list_entry(head, struct multipart_upload, _head);
         complete = FLB_FALSE;
 
-        if (m_upload->complete_errors >= MAX_UPLOAD_ERRORS) {
-            flb_plg_error(ctx->ins,
-                          "Upload for %s has reached max completion errors, "
-                          "plugin will give up", m_upload->s3_key);
+        if (m_upload->complete_errors > ctx->ins->retry_limit) {
+            s3_retry_warn(ctx, (char *) m_upload->tag, NULL, m_upload->init_time, FLB_FALSE);
             mk_list_del(&m_upload->_head);
             continue;
         }
@@ -1863,7 +1918,7 @@ static void cb_s3_upload(struct flb_config *config, void *data)
     }
 
     if (ctx->use_put_object == FLB_TRUE) {
-        ctx->s3_client->upstream->flags = async_flags;
+        flb_stream_set_flags(&ctx->s3_client->upstream->base, async_flags);
     }
 }
 
@@ -2140,10 +2195,9 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
                         chunk, chunk_size, m_upload_file);
     }
 
-    /* Discard upload_file if it has failed to upload MAX_UPLOAD_ERRORS times */
-    if (upload_file != NULL && upload_file->failures >= MAX_UPLOAD_ERRORS) {
-        flb_plg_warn(ctx->ins, "File with tag %s failed to send %d times, will not "
-                     "retry", event_chunk->tag, MAX_UPLOAD_ERRORS);
+    /* Discard upload_file if it has failed to upload ctx->ins->retry_limit times */
+    if (upload_file != NULL && upload_file->failures > ctx->ins->retry_limit) {
+        s3_retry_warn(ctx, (char *) event_chunk->tag, out_flush->task->i_ins->name, upload_file->create_time, FLB_FALSE);
         s3_store_file_inactive(ctx, upload_file);
         upload_file = NULL;
     }
@@ -2163,6 +2217,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
         (m_upload_file->init_time + ctx->upload_timeout)) {
         upload_timeout_check = FLB_TRUE;
         flb_plg_info(ctx->ins, "upload_timeout reached for %s", event_chunk->tag);
+        m_upload_file->input_name = out_flush->task->i_ins->name;
     }
 
     /* If total_file_size has been reached, upload file */
@@ -2233,7 +2288,7 @@ static int cb_s3_exit(void *data, struct flb_config *config)
     if (s3_store_has_data(ctx) == FLB_TRUE) {
         if (ctx->use_put_object == FLB_TRUE) {
             /* exit must run in sync mode  */
-            ctx->s3_client->upstream->flags &= ~(FLB_IO_ASYNC);
+            flb_stream_disable_async_mode(&ctx->s3_client->upstream->base);
         }
         flb_plg_info(ctx->ins, "Sending all locally buffered data to S3");
         ret = put_all_chunks(ctx);

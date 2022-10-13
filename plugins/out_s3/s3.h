@@ -98,6 +98,9 @@ struct multipart_upload {
     /* see note for MAX_UPLOAD_ERRORS */
     int upload_errors;
     int complete_errors;
+
+    /* for warn message to get input name */
+    char *input_name;
 };
 
 struct flb_s3 {
@@ -196,3 +199,4 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
                    int multipart_upload);
 
 #endif
+
