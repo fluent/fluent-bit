@@ -618,6 +618,6 @@ struct flb_output_plugin out_opentelemetry_plugin = {
     .cb_flush    = cb_opentelemetry_flush,
     .cb_exit     = cb_opentelemetry_exit,
     .config_map  = config_map,
-    .event_type  = FLB_OUTPUT_LOGS,
+    .event_type  = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS | FLB_OUTPUT_TRACES,
     .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };
