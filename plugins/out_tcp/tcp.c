@@ -94,12 +94,6 @@ static void cb_tcp_flush(struct flb_event_chunk *event_chunk,
     size_t out_size = 0;
     (void) i_ins;
 
-    ret = compose_payload(ctx, event_chunk->data, event_chunk->size,
-                          &out_payload, &out_size);
-    if (ret != FLB_OK) {
-        return FLB_OUTPUT_RETURN(ret);
-    }
-
     /* Get upstream context and connection */
     u = ctx->u;
     u_conn = flb_upstream_conn_get(u);
@@ -107,6 +101,13 @@ static void cb_tcp_flush(struct flb_event_chunk *event_chunk,
         flb_plg_error(ctx->ins, "no upstream connections available to %s:%i",
                       u->tcp_host, u->tcp_port);
         FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    ret = compose_payload(ctx, event_chunk->data, event_chunk->size,
+                          &out_payload, &out_size);
+    if (ret != FLB_OK) {
+        flb_upstream_conn_release(u_conn);
+        return FLB_OUTPUT_RETURN(ret);
     }
 
     if (ctx->out_format == FLB_PACK_JSON_FORMAT_NONE) {
