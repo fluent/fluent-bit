@@ -224,6 +224,52 @@ static void flb_allowlist_keys()
     filter_test_destroy(ctx);
 }
 
+static void flb_whitelist_keys()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+    struct expect_str expect[] = {
+      {"\"aaa\":\"ok\"", FLB_TRUE},
+      {"\"bbb\":\"ok\"", FLB_TRUE},
+      {"\"ccc\":\"removed\"", FLB_FALSE},
+      {NULL, FLB_TRUE}
+    };
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "whitelist_key", "aaa",
+                         "whitelist_key", "bbb",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = &expect;
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    /* The pair "ccc":"removed" should be removed */
+    p = "[0, {\"aaa\":\"ok\",\"ccc\":\"removed\",\"bbb\":\"ok\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
 static void flb_remove_keys()
 {
     int len;
@@ -407,6 +453,7 @@ TEST_LIST = {
     {"remove_keys"         , flb_remove_keys},
     {"records"             , flb_records},
     {"allowlist_keys"      , flb_allowlist_keys},
+    {"whitelist_keys"      , flb_whitelist_keys},
     {"multiple"            , flb_multiple},
     {"exclusive_setting"   , flb_exclusive_setting},
     {NULL, NULL}
