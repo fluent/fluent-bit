@@ -38,11 +38,17 @@ RUN Start-Process /local/vc_redist.x64.exe -ArgumentList '/install', '/quiet', '
     Copy-Item -Path /Windows/System32/vccorlib140.dll -Destination /fluent-bit/bin/; `
     Copy-Item -Path /Windows/System32/vcruntime140.dll -Destination /fluent-bit/bin/;
 
+# Install Chocolatey and OpenSSL: https://github.com/StefanScherer/dockerfiles-windows/blob/main/openssl/Dockerfile
+ENV chocolateyUseWindowsCompression false
+RUN iex ((new-object net.webclient).DownloadString('https://chocolatey.org/install.ps1')); `
+    choco feature disable --name showDownloadProgress ; `
+    choco install -y openssl;
+
 # Build Fluent Bit from source - context must be the root of the Git repo
 WORKDIR /src/build
 COPY . /src/
 
-RUN cmake -G "'Visual Studio 16 2019'" -DCMAKE_BUILD_TYPE=Release ../; `
+RUN cmake -G "'Visual Studio 16 2019'" -DOPENSSL_ROOT_DIR='C:\Program Files\OpenSSL-Win64' -DCMAKE_BUILD_TYPE=Release ../;`
     cmake --build . --config Release;
 
 # Set up config files and binaries in single /fluent-bit hierarchy for easy copy in later stage
@@ -69,16 +75,16 @@ ARG IMAGE_SOURCE_REVISION
 # Metadata as defined in OCI image spec annotations
 # https://github.com/opencontainers/image-spec/blob/master/annotations.md
 LABEL org.opencontainers.image.title="Fluent Bit" `
-      org.opencontainers.image.description="Fluent Bit is an open source and multi-platform Log Processor and Forwarder which allows you to collect data/logs from different sources, unify and send them to multiple destinations. It's fully compatible with Docker and Kubernetes environments." `
-      org.opencontainers.image.created=$IMAGE_CREATE_DATE `
-      org.opencontainers.image.version=$FLUENTBIT_VERSION `
-      org.opencontainers.image.authors="Eduardo Silva <eduardo@calyptia.com>" `
-      org.opencontainers.image.url="https://hub.docker.com/r/fluent/fluent-bit" `
-      org.opencontainers.image.documentation="https://docs.fluentbit.io/manual/" `
-      org.opencontainers.image.vendor="Fluent Organization" `
-      org.opencontainers.image.licenses="Apache-2.0" `
-      org.opencontainers.image.source="https://github.com/fluent/fluent-bit" `
-      org.opencontainers.image.revision=$IMAGE_SOURCE_REVISION
+    org.opencontainers.image.description="Fluent Bit is an open source and multi-platform Log Processor and Forwarder which allows you to collect data/logs from different sources, unify and send them to multiple destinations. It's fully compatible with Docker and Kubernetes environments." `
+    org.opencontainers.image.created=$IMAGE_CREATE_DATE `
+    org.opencontainers.image.version=$FLUENTBIT_VERSION `
+    org.opencontainers.image.authors="Eduardo Silva <eduardo@calyptia.com>" `
+    org.opencontainers.image.url="https://hub.docker.com/r/fluent/fluent-bit" `
+    org.opencontainers.image.documentation="https://docs.fluentbit.io/manual/" `
+    org.opencontainers.image.vendor="Fluent Organization" `
+    org.opencontainers.image.licenses="Apache-2.0" `
+    org.opencontainers.image.source="https://github.com/fluent/fluent-bit" `
+    org.opencontainers.image.revision=$IMAGE_SOURCE_REVISION
 
 COPY --from=builder /fluent-bit /fluent-bit
 
