@@ -2,6 +2,8 @@
     "linux_targets": [
         "amazonlinux/2",
         "amazonlinux/2.arm64v8",
+        "amazonlinux/2022",
+        "amazonlinux/2022.arm64v8",
         "centos/7",
         "centos/7.arm64v8",
         "centos/8",
