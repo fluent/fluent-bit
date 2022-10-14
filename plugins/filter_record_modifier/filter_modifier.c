@@ -43,7 +43,7 @@ static int config_allowlist_key(struct record_modifier_ctx *ctx,
         return -1;
     }
 
-    flb_config_map_foreach(head, mv, ctx->allowlist_keys_map) {
+    flb_config_map_foreach(head, mv, list) {
         mod_key = flb_malloc(sizeof(struct modifier_key));
         if (!mod_key) {
             flb_errno();
