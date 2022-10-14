@@ -1254,7 +1254,6 @@ static void cb_forward_flush(struct flb_event_chunk *event_chunk,
     int mode;
     msgpack_packer   mp_pck;
     msgpack_sbuffer  mp_sbuf;
-    void *tmp_buf = NULL;
     void *out_buf = NULL;
     size_t out_size = 0;
     struct flb_forward *ctx = out_context;
@@ -1309,7 +1308,7 @@ static void cb_forward_flush(struct flb_event_chunk *event_chunk,
             flb_plg_error(ctx->ins, "no upstream connections available");
             msgpack_sbuffer_destroy(&mp_sbuf);
             if (fc->time_as_integer == FLB_TRUE) {
-                flb_free(tmp_buf);
+                flb_free(out_buf);
             }
             flb_free(flush_ctx);
             FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -1328,7 +1327,7 @@ static void cb_forward_flush(struct flb_event_chunk *event_chunk,
             }
             msgpack_sbuffer_destroy(&mp_sbuf);
             if (fc->time_as_integer == FLB_TRUE) {
-                flb_free(tmp_buf);
+                flb_free(out_buf);
             }
             flb_free(flush_ctx);
             FLB_OUTPUT_RETURN(FLB_RETRY);
