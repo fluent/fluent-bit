@@ -182,7 +182,7 @@ static int logfmt_parser(struct flb_parser *parser,
                                 msgpack_pack_str(tmp_pck, 0);
                             }
                             else {
-                                msgpack_pack_nil(tmp_pck);
+                                msgpack_pack_true(tmp_pck);
                             }
                         }
                         else {
