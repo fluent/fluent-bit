@@ -587,7 +587,7 @@ int winevtlog_read(struct winevtlog_channel *ch, msgpack_packer *mp_pck, struct 
  *
  * "channels" are comma-separated names like "Setup,Security".
  */
-struct mk_list *winevtlog_open_all(const char *channels, int read_existing_events)
+struct mk_list *winevtlog_open_all(const char *channels, int read_existing_events, int ignore_missing_channels)
 {
     char *tmp;
     char *channel;
@@ -612,14 +612,30 @@ struct mk_list *winevtlog_open_all(const char *channels, int read_existing_event
     channel = strtok_s(tmp , ",", &state);
     while (channel) {
         ch = winevtlog_subscribe(channel, read_existing_events, NULL);
-        if (!ch) {
-            flb_free(tmp);
-            winevtlog_close_all(list);
-            return NULL;
+        if (ignore_missing_channels) {
+            if (ch) {
+                mk_list_add(&ch->_head, list);
+            }
+            else {
+                flb_debug("[in_winevtlog] channel '%s' does not exist", channel);
+            }             
         }
-        mk_list_add(&ch->_head, list);
+        else {
+            if (!ch) {
+                flb_free(tmp);
+                winevtlog_close_all(list);
+                return NULL;
+            }
+        }
         channel = strtok_s(NULL, ",", &state);
     }
+
+    if (mk_list_size(list) == 0) {
+        flb_free(tmp);
+        winevtlog_close_all(list);
+        return NULL;
+    }
+
     flb_free(tmp);
     return list;
 }
