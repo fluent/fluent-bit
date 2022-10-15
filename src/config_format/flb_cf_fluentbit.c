@@ -447,6 +447,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
                 cfg_file = tmp;
             }
         }
+#ifndef _WIN32
         /* check if readed file */
         for (i=0; i<*ino_num; i++) {
             if (st.st_ino == ino_table[i]) {
@@ -456,6 +457,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
         }
         ino_table[*ino_num]  = st.st_ino;
         *ino_num += 1;
+#endif
     }
 #endif
 
