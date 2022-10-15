@@ -15,6 +15,7 @@
 #define FLB_000 FLB_TESTS_DATA_PATH "/data/config_format/classic/fluent-bit.conf"
 #define FLB_001 FLB_TESTS_DATA_PATH "/data/config_format/classic/issue_5880.conf"
 #define FLB_002 FLB_TESTS_DATA_PATH "/data/config_format/classic/indent_level_error.conf"
+#define FLB_003 FLB_TESTS_DATA_PATH "/data/config_format/classic/recursion.conf"
 
 #define ERROR_LOG "fluentbit_conf_error.log"
 
@@ -208,9 +209,25 @@ void indent_level_error()
     unlink(ERROR_LOG);
 }
 
+void recursion()
+{
+	struct flb_cf *cf;
+
+    cf = flb_cf_create();
+    if (!TEST_CHECK(cf != NULL)) {
+        TEST_MSG("flb_cf_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    cf = flb_cf_fluentbit_create(cf, FLB_003, NULL, 0);
+
+    /* No SIGSEGV means success */
+}
+
 TEST_LIST = {
     { "basic"    , test_basic},
     { "missing_value_issue5880" , missing_value},
     { "indent_level_error" , indent_level_error},
+    { "recursion" , recursion},
     { 0 }
 };
