@@ -41,6 +41,7 @@
 #endif
 
 #define FLB_CF_BUF_SIZE     4096
+#define FLB_CF_FILE_NUM_LIMIT 1000
 
 /* indent checker return codes */
 #define INDENT_ERROR          -1
@@ -70,7 +71,7 @@ struct local_ctx {
 };
 
 static int read_config(struct flb_cf *cf, struct local_ctx *ctx, char *cfg_file,
-                       char *buf, size_t size);
+                       char *buf, size_t size, ino_t *ino_table, int *ino_num);
 
 /* Raise a configuration schema error */
 static void config_error(const char *path, int line, const char *msg)
@@ -137,7 +138,8 @@ static int static_fgets(char *out, size_t size, const char *data, size_t *off)
 #endif
 
 #ifndef _WIN32
-static int read_glob(struct flb_cf *cf, struct local_ctx *ctx, const char * path)
+static int read_glob(struct flb_cf *cf, struct local_ctx *ctx, const char * path,
+                     ino_t *ino_table, int *ino_num)
 {
     int ret = -1;
     glob_t glb;
@@ -174,7 +176,7 @@ static int read_glob(struct flb_cf *cf, struct local_ctx *ctx, const char * path
     }
 
     for (i = 0; i < glb.gl_pathc; i++) {
-        ret = read_config(cf, ctx, glb.gl_pathv[i], NULL, 0);
+        ret = read_config(cf, ctx, glb.gl_pathv[i], NULL, 0, ino_table, ino_num);
         if (ret < 0) {
             break;
         }
@@ -184,7 +186,8 @@ static int read_glob(struct flb_cf *cf, struct local_ctx *ctx, const char * path
     return ret;
 }
 #else
-static int read_glob(struct flb_cf *cf, struct local_ctx *ctx, const char *path)
+static int read_glob(struct flb_cf *cf, struct local_ctx *ctx, const char *path,
+                     ino_t *ino_table, int *ino_num)
 {
     char *star, *p0, *p1;
     char pattern[MAX_PATH];
@@ -252,13 +255,13 @@ static int read_glob(struct flb_cf *cf, struct local_ctx *ctx, const char *path)
         }
 
         if (strchr(p1, '*')) {
-            read_glob(cf, ctx, buf); /* recursive */
+            read_glob(cf, ctx, buf, ino_table, ino_num); /* recursive */
             continue;
         }
 
         ret = stat(buf, &st);
         if (ret == 0 && (st.st_mode & S_IFMT) == S_IFREG) {
-            if (read_config(cf, ctx, buf, NULL, 0) < 0) {
+            if (read_config(cf, ctx, buf, NULL, 0, ino_table, ino_num) < 0) {
                 return -1;
             }
         }
@@ -397,7 +400,8 @@ static int check_indent(const char *line, const char *indent, int *out_level)
 }
 
 static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
-                       char *cfg_file, char *in_data, size_t in_size)
+                       char *cfg_file, char *in_data, size_t in_size,
+                       ino_t *ino_table, int *ino_num)
 {
     int i;
     int len;
@@ -422,8 +426,11 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     struct flb_cf_group *current_group = NULL;
     struct cfl_variant *var;
 
-    struct flb_kv *kv;
     FILE *f = NULL;
+
+    if (*ino_num >= FLB_CF_FILE_NUM_LIMIT) {
+        return -1;
+    }
 
     /* Check if the path exists (relative cases for included files) */
 #ifndef FLB_HAVE_STATIC_CONF
@@ -440,6 +447,15 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
                 cfg_file = tmp;
             }
         }
+        /* check if readed file */
+        for (i=0; i<*ino_num; i++) {
+            if (st.st_ino == ino_table[i]) {
+                flb_warn("[config] Read twice. path=%s", cfg_file);
+                return -1;
+            }
+        }
+        ino_table[*ino_num]  = st.st_ino;
+        *ino_num += 1;
     }
 #endif
 
@@ -512,10 +528,10 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
 
         if (len > 9 && strncasecmp(buf, "@INCLUDE ", 9) == 0) {
             if (strchr(buf + 9, '*') != NULL) {
-                ret = read_glob(cf, ctx, buf + 9);
+                ret = read_glob(cf, ctx, buf + 9, ino_table, ino_num);
             }
             else {
-                ret = read_config(cf, ctx, buf + 9, NULL, 0);
+                ret = read_config(cf, ctx, buf + 9, NULL, 0, ino_table, ino_num);
             }
             if (ret == -1) {
                 ctx->level--;
@@ -723,6 +739,8 @@ struct flb_cf *flb_cf_fluentbit_create(struct flb_cf *cf,
 {
     int ret;
     struct local_ctx ctx;
+    ino_t ino_table[FLB_CF_FILE_NUM_LIMIT];
+    int ino_num = 0;
 
     if (!cf) {
         cf = flb_cf_create();
@@ -739,12 +757,15 @@ struct flb_cf *flb_cf_fluentbit_create(struct flb_cf *cf,
         return NULL;
     }
 
-    ret = read_config(cf, &ctx, file_path, buf, size);
+    ret = read_config(cf, &ctx, file_path, buf, size, &ino_table[0], &ino_num);
 
     local_exit(&ctx);
 
     if (ret == -1) {
         flb_cf_destroy(cf);
+        if (ino_num >= FLB_CF_FILE_NUM_LIMIT) {
+            flb_error("Too many config files. Limit = %d", FLB_CF_FILE_NUM_LIMIT);
+        }
         return NULL;
     }
 
