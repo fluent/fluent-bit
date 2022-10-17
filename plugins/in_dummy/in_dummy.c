@@ -400,10 +400,10 @@ static int configure(struct flb_dummy *ctx,
         tm->tv_nsec = 1000000000 / ctx->rate;
     }
 
-    if (strcmp(ctx->event_type, "log") == 0) {
+    if (strcasecmp(ctx->event_type, "log") == 0) {
         ret = configure_log(ctx, in);
     }
-    else if (strcmp(ctx->event_type, "trace") == 0) {
+    else if (strcasecmp(ctx->event_type, "trace") == 0) {
         ret = configure_trace(ctx, in);
     }
     else {
