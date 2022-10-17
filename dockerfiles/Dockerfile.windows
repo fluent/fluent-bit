@@ -38,9 +38,9 @@ RUN Start-Process /local/vc_redist.x64.exe -ArgumentList '/install', '/quiet', '
     Copy-Item -Path /Windows/System32/vccorlib140.dll -Destination /fluent-bit/bin/; `
     Copy-Item -Path /Windows/System32/vcruntime140.dll -Destination /fluent-bit/bin/;
 
-# Install ZLIB
-ADD https://zlib.net/zlib1213.zip /local/zlib1213.zip
-RUN Expand-Archive /local/zlib1213.zip -Destination /zlibsrc;
+# Install ZLIB: https://github.com/horta/zlib.install
+ADD https://github.com/alt-dima/zlib.install/raw/master/install.bat /local/install_zlib.bat
+RUN /local/install_zlib.bat
 
 # Install Chocolatey and OpenSSL: https://github.com/StefanScherer/dockerfiles-windows/blob/main/openssl/Dockerfile
 ENV chocolateyUseWindowsCompression false
@@ -52,7 +52,7 @@ RUN iex ((new-object net.webclient).DownloadString('https://chocolatey.org/insta
 WORKDIR /src/build
 COPY . /src/
 
-RUN cmake -G "'Visual Studio 16 2019'" -DZLIB_ROOT='C:\zlibsrc\zlib-1.2.13' -DOPENSSL_ROOT_DIR='C:\Program Files\OpenSSL-Win64' -DCMAKE_BUILD_TYPE=Release ../;`
+RUN cmake -G "'Visual Studio 16 2019'" -DOPENSSL_ROOT_DIR='C:\Program Files\OpenSSL-Win64' -DCMAKE_BUILD_TYPE=Release ../;`
     cmake --build . --config Release;
 
 # Set up config files and binaries in single /fluent-bit hierarchy for easy copy in later stage
