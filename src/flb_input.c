@@ -243,12 +243,15 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         snprintf(instance->name, sizeof(instance->name) - 1,
                  "%s.%i", plugin->name, id);
 
-        /* set plugin type based on flags: logs or metrics ? */
+        /* set plugin type based on flags: logs, metrics, or traces ? */
         if (plugin->event_type == FLB_INPUT_LOGS) {
             instance->event_type = FLB_INPUT_LOGS;
         }
         else if (plugin->event_type == FLB_INPUT_METRICS) {
             instance->event_type = FLB_INPUT_METRICS;
+        }
+        else if (plugin->event_type == FLB_INPUT_TRACES) {
+            instance->event_type = FLB_INPUT_TRACES;
         }
         else {
             flb_error("[input] invalid plugin event type %i on '%s'",
