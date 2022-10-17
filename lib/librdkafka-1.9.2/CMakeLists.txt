@@ -19,11 +19,6 @@ option(ENABLE_REFCNT_DEBUG "Enable refcnt debugging" OFF)
 set(TRYCOMPILE_SRC_DIR "${CMAKE_CURRENT_LIST_DIR}/packaging/cmake/try_compile")
 set(BUILT_WITH "CMAKE")
 
-if (CMAKE_VERSION VERSION_GREATER 3.12 OR CMAKE_VERSION VERSION_EQUAL 3.12)
-  # Enable find_package uses of <PackageName>_ROOT variables.
-  cmake_policy(SET CMP0074 NEW)
-endif()
-
 # Toolchain {
 list(APPEND BUILT_WITH "${CMAKE_C_COMPILER_ID}")
 list(APPEND BUILT_WITH "${CMAKE_CXX_COMPILER_ID}")
