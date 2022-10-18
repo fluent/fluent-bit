@@ -2341,7 +2341,7 @@ static void update_http_metrics(struct flb_stackdriver *ctx,
     
     /* processed records total by group */
     cmt_counter_add(ctx->cmt_proc_records_total_by_group, ts, event_chunk->total_events,
-                    2, (char *[]) {tmp, input_name, output_name});
+                    3, (char *[]) {tmp, input_name, output_name});
 
     /* HTTP status */
     if (http_status != STACKDRIVER_NET_ERROR) {
