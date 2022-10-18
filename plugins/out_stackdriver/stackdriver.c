@@ -2500,7 +2500,7 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
 
     /* Update metrics counter by using labels/http status code */
     if (ret == 0) {
-        update_http_metrics(ctx, event_chunk, ts, c->resp.status);
+        update_http_metrics(ctx, event_chunk, ts, c->resp.status, input_name, output_name);
     }
 #endif
 
