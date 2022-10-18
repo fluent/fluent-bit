@@ -17,16 +17,17 @@ fi
 
 # Handle Ubuntu 18/22 differences - no support on Ubuntu 20
 CREATE_REPO_CMD=${CREATE_REPO_CMD:-}
+CREATE_REPO_ARGS=${CREATE_REPO_ARGS:--dvp}
 
 # Assume if set we want to use it
 if [[ -n "$CREATE_REPO_CMD" ]]; then
     echo "Using $CREATE_REPO_CMD"
 elif command -v createrepo &> /dev/null; then
     echo "Found createrepo"
-    CREATE_REPO_CMD="createrepo -dvp"
+    CREATE_REPO_CMD="createrepo"
 elif command -v createrepo_c &> /dev/null; then
     echo "Found createrepo_c"
-    CREATE_REPO_CMD="createrepo_c -dvp"
+    CREATE_REPO_CMD="createrepo_c"
 else
     echo "Unable to find a command equivalent to createrepo"
     exit 1
@@ -44,7 +45,7 @@ for RPM_REPO in "${RPM_REPO_PATHS[@]}"; do
         find "$REPO_DIR" -name "*-bit-*.rpm" -exec rpm --define "_gpg_name $GPG_KEY" --addsign {} \;
     fi
     # Create full metadata for all RPMs in the directory
-    "$CREATE_REPO_CMD" "$REPO_DIR"
+    "$CREATE_REPO_CMD" "$CREATE_REPO_ARGS" "$REPO_DIR"
 
     # Set up repo info
     if [[ -n "${AWS_S3_BUCKET:-}" ]]; then
