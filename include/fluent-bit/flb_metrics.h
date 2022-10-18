@@ -37,6 +37,7 @@
 #include <cmetrics/cmt_encode_prometheus.h>
 #include <cmetrics/cmt_encode_prometheus_remote_write.h>
 #include <cmetrics/cmt_encode_msgpack.h>
+#include <cmetrics/cmt_encode_splunk_hec.h>
 
 /* Metrics IDs for general purpose (used by core and Plugins */
 #define FLB_METRIC_N_RECORDS   0
