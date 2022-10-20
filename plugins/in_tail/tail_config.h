@@ -69,6 +69,7 @@ struct flb_tail_config {
     int coll_fd_inactive;
     int coll_fd_dmode_flush;
     int coll_fd_mult_flush;
+    int coll_fd_progress_check;
 
     /* Backend collectors */
     int coll_fd_fs1;           /* used by fs_inotify & fs_stat */
@@ -92,6 +93,9 @@ struct flb_tail_config {
     int   skip_long_lines;     /* skip long lines              */
     int   skip_empty_lines;    /* skip empty lines (off)       */
     int   exit_on_eof;         /* exit fluent-bit on EOF, test */
+
+    int progress_check_interval;      /* watcher interval             */
+    int progress_check_interval_nsec; /* watcher interval             */
 
 #ifdef FLB_HAVE_INOTIFY
     int   inotify_watcher;     /* enable/disable inotify monitor */
