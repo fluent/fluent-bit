@@ -1120,6 +1120,14 @@ static int pack_record(struct flb_loki *ctx,
     msgpack_unpacked mp_buffer;
     size_t off = 0;
 
+    /*
+     * Get tenant id from record before removing keys.
+     * https://github.com/fluent/fluent-bit/issues/6207
+     */
+    if (ctx->ra_tenant_id_key && rec->type == MSGPACK_OBJECT_MAP) {
+        get_tenant_id_from_record(ctx, rec);
+    }
+
     /* Remove keys in remove_keys */
     msgpack_unpacked_init(&mp_buffer);
     if (ctx->remove_mpa) {
@@ -1134,11 +1142,6 @@ static int pack_record(struct flb_loki *ctx,
             }
             rec = &mp_buffer.data;
         }
-    }
-
-    // Get tenant id from record.
-    if (ctx->ra_tenant_id_key && rec->type == MSGPACK_OBJECT_MAP) {
-        get_tenant_id_from_record(ctx, rec);
     }
 
     /* Drop single key */
