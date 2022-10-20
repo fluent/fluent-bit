@@ -843,8 +843,8 @@ static int ml_flush_callback(struct flb_ml_parser *parser,
     else {
         /* adjust the records in a new buffer */
         record_append_custom_keys(file,
-                                  file->mult_sbuf.data,
-                                  file->mult_sbuf.size,
+                                  buf_data,
+                                  buf_size,
                                   &mult_buf, &mult_size);
 
         flb_input_chunk_append_raw(ctx->ins,
