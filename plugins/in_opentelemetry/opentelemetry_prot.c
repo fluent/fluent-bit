@@ -128,10 +128,33 @@ static int process_payload_metrics(struct flb_opentelemetry *ctx, struct http_co
     return 0;
 }
 
-static int process_payload_traces(struct flb_opentelemetry *ctx, struct http_conn *conn,
-                                  flb_sds_t tag,
-                                  struct mk_http_session *session,
-                                  struct mk_http_request *request)
+static int process_payload_traces_proto(struct flb_opentelemetry *ctx, struct http_conn *conn,
+                                        flb_sds_t tag,
+                                        struct mk_http_session *session,
+                                        struct mk_http_request *request)
+{
+    struct ctrace *decoded_context;
+    size_t         offset;
+    int            result;
+
+    offset = 0;
+    result = ctr_decode_opentelemetry_create(&decoded_context,
+                                             request->data.data,
+                                             request->data.len,
+                                             &offset);
+    if (result == 0) {
+        ctx->ins->event_type = FLB_INPUT_TRACES;
+        result = flb_input_trace_append(ctx->ins, NULL, 0, decoded_context);
+        ctr_decode_opentelemetry_destroy(decoded_context);
+    }
+
+    return result;
+}
+
+static int process_payload_raw_traces(struct flb_opentelemetry *ctx, struct http_conn *conn,
+                                      flb_sds_t tag,
+                                      struct mk_http_session *session,
+                                      struct mk_http_request *request)
 {
     int ret;
     int root_type;
@@ -171,6 +194,23 @@ static int process_payload_traces(struct flb_opentelemetry *ctx, struct http_con
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;
+}
+
+static int process_payload_traces(struct flb_opentelemetry *ctx, struct http_conn *conn,
+                                  flb_sds_t tag,
+                                  struct mk_http_session *session,
+                                  struct mk_http_request *request)
+{
+    int result;
+
+    if (ctx->raw_traces) {
+        result = process_payload_raw_traces(ctx, conn, tag, session, request);
+    }
+    else {
+        result = process_payload_traces_proto(ctx, conn, tag, session, request);
+    }
+
+    return result;
 }
 
 static inline int mk_http_point_header(mk_ptr_t *h,
