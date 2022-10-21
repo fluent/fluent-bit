@@ -20,6 +20,7 @@
 #ifndef CFL_ARRAY_H
 #define CFL_ARRAY_H
 
+#include <stdio.h>
 #include <cfl/cfl_variant.h>
 
 struct cfl_array {
@@ -56,5 +57,6 @@ int cfl_array_append_array(struct cfl_array *array, struct cfl_array *value);
 int cfl_array_append_new_array(struct cfl_array *array, size_t size);
 int cfl_array_append_kvlist(struct cfl_array *array, struct 
 cfl_kvlist *value);
+int cfl_array_print(FILE *fp, struct cfl_array *array);
 
 #endif

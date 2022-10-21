@@ -5,6 +5,7 @@ set(UNIT_TESTS_FILES
   sds.c
   hash.c
   list.c
+  variant.c
   )
 
 configure_file(
