@@ -532,11 +532,11 @@ void test_simple_to_msgpack_and_back()
     ctr_scope_span_set_instrumentation_scope(scope_span, instrumentation_scope);
 
     /* generate a random trace_id */
-    trace_id = ctr_id_create_random();
+    trace_id = ctr_id_create_random(CTR_ID_OTEL_TRACE_SIZE);
     TEST_ASSERT(trace_id != NULL);
 
     /* generate a random ID for the new span */
-    span_id = ctr_id_create_random();
+    span_id = ctr_id_create_random(CTR_ID_OTEL_SPAN_SIZE);
     TEST_ASSERT(span_id != NULL);
 
     /* Create a root span */
@@ -599,7 +599,7 @@ void test_simple_to_msgpack_and_back()
 
     /* delete old span id and generate a new one */
     ctr_id_destroy(span_id);
-    span_id = ctr_id_create_random();
+    span_id = ctr_id_create_random(CTR_ID_OTEL_SPAN_SIZE);
     TEST_ASSERT(span_id != NULL);
     ctr_span_set_span_id_with_cid(span_child, span_id);
 
@@ -611,10 +611,10 @@ void test_simple_to_msgpack_and_back()
     ctr_span_kind_set(span_child, CTRACE_SPAN_CLIENT);
 
     /* create a Link (no valid IDs of course) */
-    trace_id = ctr_id_create_random();
+    trace_id = ctr_id_create_random(CTR_ID_OTEL_TRACE_SIZE);
     TEST_ASSERT(trace_id != NULL);
 
-    span_id = ctr_id_create_random();
+    span_id = ctr_id_create_random(CTR_ID_OTEL_SPAN_SIZE);
     TEST_ASSERT(span_id != NULL);
 
     link = ctr_link_create_with_cid(span_child, trace_id, span_id);

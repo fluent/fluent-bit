@@ -4,33 +4,6 @@
 #include <unistd.h>
 #include <curl/curl.h>
 
-#define OTEL_SPAN_ID_LENGTH 8
-
-struct ctrace_id *create_random_span_id()
-{
-    char *buf;
-    ssize_t ret;
-    struct ctrace_id *cid;
-
-    buf = calloc(1, OTEL_SPAN_ID_LENGTH);
-    if (!buf) {
-        ctr_errno();
-        return NULL;
-    }
-
-    ret = ctr_random_get(buf, OTEL_SPAN_ID_LENGTH);
-    if (ret < 0) {
-        free(buf);
-        return NULL;
-    }
-
-    cid = ctr_id_create(buf, OTEL_SPAN_ID_LENGTH);
-    free(buf);
-
-    return cid;
-
-}
-
 int main()
 {
     cfl_sds_t buf;
@@ -86,10 +59,10 @@ int main()
     ctr_scope_span_set_instrumentation_scope(scope_span, instrumentation_scope);
 
     /* generate a random trace_id */
-    trace_id = ctr_id_create_random();
+    trace_id = ctr_id_create_random(CTR_ID_OTEL_TRACE_SIZE);
 
     /* generate a random ID for the new span */
-    span_id = create_random_span_id();
+    span_id = ctr_id_create_random(CTR_ID_OTEL_SPAN_SIZE);
 
     /* Create a root span */
     span_root = ctr_span_create(ctx, scope_span, "main", NULL);
@@ -155,7 +128,7 @@ int main()
 
     /* delete old span id and generate a new one */
     ctr_id_destroy(span_id);
-    span_id = create_random_span_id();
+    span_id = ctr_id_create_random(CTR_ID_OTEL_SPAN_SIZE);
     ctr_span_set_span_id_with_cid(span_child, span_id);
 
     /* destroy the IDs since is not longer needed */
@@ -166,8 +139,8 @@ int main()
     ctr_span_kind_set(span_child, CTRACE_SPAN_CLIENT);
 
     /* create a Link (no valid IDs of course) */
-    trace_id = ctr_id_create_random();
-    span_id = create_random_span_id();
+    trace_id = ctr_id_create_random(CTR_ID_OTEL_TRACE_SIZE);
+    span_id = ctr_id_create_random(CTR_ID_OTEL_SPAN_SIZE);
 
     link = ctr_link_create_with_cid(span_child, trace_id, span_id);
     ctr_link_set_trace_state(link, "aaabbbccc");

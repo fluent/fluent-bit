@@ -20,25 +20,29 @@
 #include <ctraces/ctraces.h>
 
 /* create an ID with random bytes of length CTR_ID_BUFFER_SIZE (16 bytes) */
-struct ctrace_id *ctr_id_create_random()
+struct ctrace_id *ctr_id_create_random(size_t size)
 {
     char *buf;
     ssize_t ret;
     struct ctrace_id *cid;
 
-    buf = calloc(1, CTR_ID_BUFFER_SIZE);
+    if (size <= 0) {
+        size = CTR_ID_DEFAULT_SIZE;
+    }
+
+    buf = calloc(1, size);
     if (!buf) {
         ctr_errno();
         return NULL;
     }
 
-    ret = ctr_random_get(buf, CTR_ID_BUFFER_SIZE);
+    ret = ctr_random_get(buf, size);
     if (ret < 0) {
         free(buf);
         return NULL;
     }
 
-    cid = ctr_id_create(buf, CTR_ID_BUFFER_SIZE);
+    cid = ctr_id_create(buf, size);
     free(buf);
 
     return cid;
