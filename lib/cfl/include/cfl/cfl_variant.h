@@ -20,6 +20,9 @@
 #ifndef CFL_VARIANT_H
 #define CFL_VARIANT_H
 
+#include <stdio.h>
+#include <inttypes.h>
+
 #define CFL_VARIANT_STRING    1
 #define CFL_VARIANT_BOOL      2
 #define CFL_VARIANT_INT       3
@@ -46,7 +49,7 @@ struct cfl_variant {
         struct cfl_kvlist *as_kvlist;
     } data;
 };
-
+int cfl_variant_print(FILE *fp, struct cfl_variant *val);
 struct cfl_variant *cfl_variant_create_from_string(char *value);
 struct cfl_variant *cfl_variant_create_from_bytes(char *value, size_t length);
 struct cfl_variant *cfl_variant_create_from_bool(int value);
