@@ -435,11 +435,16 @@ static int prepare_destroy_conn(struct flb_upstream_conn *u_conn)
     }
 
     if (u_conn->fd > 0) {
+#ifdef FLB_HAVE_TLS
+        if (u_conn->tls_session) {
+            flb_tls_session_destroy(u_conn->tls, u_conn);
+        }
+#endif
+        shutdown(u_conn->fd, SHUT_RDWR);
         flb_socket_close(u_conn->fd);
         u_conn->fd = -1;
         u_conn->event.fd = -1;
     }
-
     /* remove connection from the queue */
     mk_list_del(&u_conn->_head);
 
@@ -483,11 +488,6 @@ static int destroy_conn(struct flb_upstream_conn *u_conn)
         return 0;
     }
 
-#ifdef FLB_HAVE_TLS
-    if (u_conn->tls_session) {
-        flb_tls_session_destroy(u_conn->tls, u_conn);
-    }
-#endif
     mk_list_del(&u_conn->_head);
     flb_free(u_conn);
 
@@ -855,10 +855,6 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
         mk_list_foreach_safe(u_head, tmp, &uq->av_queue) {
             u_conn = mk_list_entry(u_head, struct flb_upstream_conn, _head);
             if ((now - u_conn->ts_available) >= u->net.keepalive_idle_timeout) {
-                if (u_conn->fd != -1) {
-                    shutdown(u_conn->fd, SHUT_RDWR);
-                }
-
                 prepare_destroy_conn(u_conn);
                 flb_debug("[upstream] drop keepalive connection #%i to %s:%i "
                           "(keepalive idle timeout)",
