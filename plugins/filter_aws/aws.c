@@ -162,7 +162,6 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
         return -1;
     }
 
-    /* Remove async flag from upstream */
     flb_stream_disable_async_mode(&ctx->ec2_upstream->base);
 
     /* Retrieve metadata */
