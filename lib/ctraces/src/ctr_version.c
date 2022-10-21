@@ -17,22 +17,10 @@
  *  limitations under the License.
  */
 
-#ifndef CTR_VERSION_H
-#define CTR_VERSION_H
+#include <ctraces/ctraces.h>
 
-/* Helpers to convert/format version string */
-#define STR_HELPER(s)      #s
-#define STR(s)             STR_HELPER(s)
 
-/* CTraces Version */
-#define CTR_VERSION_MAJOR   @CTR_VERSION_MAJOR@
-#define CTR_VERSION_MINOR   @CTR_VERSION_MINOR@
-#define CTR_VERSION_PATCH   @CTR_VERSION_PATCH@
-#define CTR_VERSION         (CTR_VERSION_MAJOR * 10000 \
-                             CTR_VERSION_MINOR * 100   \
-                             CTR_VERSION_PATCH)
-#define CTR_VERSION_STR     "@CTR_VERSION_STR@"
-
-char *ctr_version();
-
-#endif
+char *ctr_version()
+{
+    return CTR_VERSION_STR;
+}
