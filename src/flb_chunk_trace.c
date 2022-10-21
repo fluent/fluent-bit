@@ -117,6 +117,9 @@ static void log_cb(void *ctx, int level, const char *file, int line,
 
 static void trace_chunk_context_destroy(struct flb_chunk_trace_context *ctxt)
 {
+    int i;
+
+
     if (flb_chunk_trace_has_chunks(ctxt) == FLB_TRUE) {
         flb_chunk_trace_set_destroy(ctxt);
         flb_input_pause_all(ctxt->flb->config);
@@ -127,9 +130,10 @@ static void trace_chunk_context_destroy(struct flb_chunk_trace_context *ctxt)
     flb_input_pause_all(ctxt->flb->config);
     /* waiting for all tasks to end is key to safely stopping and destroying */
     /* the fluent-bit pipeline. */
-    while (flb_task_running_count(ctxt->flb->config) > 0) {
-        sleep(1);
+    for (i = 0; i < 5 && flb_task_running_count(ctxt->flb->config) > 0; i++) {
+        usleep(10 * 1000);
     }
+
     flb_sds_destroy(ctxt->trace_prefix);
     flb_stop(ctxt->flb);
     flb_destroy(ctxt->flb);
@@ -168,6 +172,10 @@ struct flb_chunk_trace_context *flb_chunk_trace_context_new(void *trace_input,
 
     pthread_mutex_lock(&in->chunk_trace_lock);
 
+    if (in->chunk_trace_ctxt) {
+        trace_chunk_context_destroy(in->chunk_trace_ctxt);
+    }
+
     ctx = flb_calloc(1, sizeof(struct flb_chunk_trace_context));
     if (ctx == NULL) {
         flb_errno();
@@ -193,6 +201,12 @@ struct flb_chunk_trace_context *flb_chunk_trace_context_new(void *trace_input,
     ret = flb_input_set_property(input, "alias", "trace-emitter");
     if (ret != 0) {
         flb_error("unable to set alias for trace emitter");
+        goto error_input;
+    }
+
+    ret = flb_input_set_property(input, "ring_buffer_size", "4096");
+    if (ret != 0) {
+        flb_error("unable to set ring buffer size for trace emitter");
         goto error_input;
     }
 
@@ -233,7 +247,7 @@ struct flb_chunk_trace_context *flb_chunk_trace_context_new(void *trace_input,
     ctx->trace_prefix = flb_sds_create(trace_prefix);
 
     flb_start(ctx->flb);
-    
+
     in->chunk_trace_ctxt = ctx;
     pthread_mutex_unlock(&in->chunk_trace_lock);
     return ctx;
