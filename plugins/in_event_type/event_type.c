@@ -234,10 +234,10 @@ static int send_traces(struct flb_input_instance *ins)
     ctr_scope_span_set_instrumentation_scope(scope_span, instrumentation_scope);
 
     /* generate a random trace_id */
-    trace_id = ctr_id_create_random();
+    trace_id = ctr_id_create_random(CTR_ID_OTEL_TRACE_SIZE);
 
     /* generate a random ID for the new span */
-    span_id = create_random_span_id();
+    span_id = ctr_id_create_random(CTR_ID_OTEL_SPAN_SIZE);
 
     /* Create a root span */
     span_root = ctr_span_create(ctx, scope_span, "main", NULL);
@@ -314,8 +314,8 @@ static int send_traces(struct flb_input_instance *ins)
     ctr_span_kind_set(span_child, CTRACE_SPAN_CLIENT);
 
     /* create a Link (no valid IDs of course) */
-    trace_id = ctr_id_create_random();
-    span_id = create_random_span_id();
+    trace_id = ctr_id_create_random(CTR_ID_OTEL_TRACE_SIZE);
+    span_id = ctr_id_create_random(CTR_ID_OTEL_SPAN_SIZE);
 
     link = ctr_link_create_with_cid(span_child, trace_id, span_id);
     ctr_link_set_trace_state(link, "aaabbbccc");
@@ -344,12 +344,15 @@ static int cb_collector_time(struct flb_input_instance *ins,
 
     if (ctx->type == FLB_EVENT_TYPE_LOGS) {
         ret = send_logs(ins);
+        flb_plg_debug(ins, "logs, ret=%i", ret);
     }
     else if (ctx->type == FLB_EVENT_TYPE_METRICS) {
         ret = send_metrics(ins);
+        flb_plg_debug(ins, "metrics, ret=%i", ret);
     }
     else if (ctx->type == FLB_EVENT_TYPE_TRACES) {
         ret = send_traces(ins);
+        flb_plg_debug(ins, "traces, ret=%i", ret);
     }
 
     flb_plg_info(ins, "[OK] collector_time");
@@ -360,12 +363,9 @@ static int cb_collector_time(struct flb_input_instance *ins,
 static int cb_event_type_init(struct flb_input_instance *ins,
                               struct flb_config *config, void *data)
 {
-    int fd;
     int ret;
     char *tmp;
-    struct unit_test *ut;
     struct event_type *ctx = NULL;
-    struct flb_upstream *upstream;
 
     ctx = flb_calloc(1, sizeof(struct event_type));
     if (!ctx) {
@@ -380,7 +380,7 @@ static int cb_event_type_init(struct flb_input_instance *ins,
 
 
     ctx->type = FLB_EVENT_TYPE_LOGS;
-    tmp = flb_input_get_property("type", ins);
+    tmp = (char *) flb_input_get_property("type", ins);
     if (tmp) {
         if (strcasecmp(tmp, "logs") == 0) {
             ctx->type = FLB_EVENT_TYPE_LOGS;
@@ -412,8 +412,6 @@ static int cb_event_type_init(struct flb_input_instance *ins,
 
 static int cb_event_type_exit(void *data, struct flb_config *config)
 {
-    int i;
-    int failed = FLB_FALSE;
     struct event_type *ctx = data;
 
     flb_free(ctx);
