@@ -385,6 +385,12 @@ static int setup(struct filter_modify_ctx *ctx,
                     rule->ruletype = REMOVE_REGEX;
                     rule->key_is_regex = true;
                 }
+                else if (strcasecmp(kv->key, "move_to_start") == 0) {
+                    rule->ruletype = MOVE_TO_START;
+                }
+                else if (strcasecmp(kv->key, "move_to_end") == 0) {
+                    rule->ruletype = MOVE_TO_END;
+                }
                 else {
                     flb_plg_error(ctx->ins, "Invalid operation %s : %s in "
                                   "configuration", kv->key, kv->val);
@@ -1196,6 +1202,50 @@ static inline int apply_rule_REMOVE_REGEX(msgpack_packer * packer,
     }
 }
 
+static inline int apply_rule_MOVE_TO_END(struct filter_modify_ctx *ctx,
+                                         msgpack_packer *packer,
+                                         msgpack_object *map,
+                                         struct modify_rule *rule)
+{
+
+    int match_keys =
+        map_count_keys_matching_wildcard(map, rule->key, rule->key_len);
+
+    if (match_keys == 0) {
+        return FLB_FILTER_NOTOUCH;
+    }
+    else {
+        msgpack_pack_map(packer, map->via.map.size);
+        map_pack_each_fn(packer, map, rule,
+                         kv_key_does_not_match_wildcard_rule_key);
+        map_pack_each_fn(packer, map, rule,
+                         kv_key_matches_wildcard_rule_key);
+        return FLB_FILTER_MODIFIED;
+    }
+}
+
+static inline int apply_rule_MOVE_TO_START(struct filter_modify_ctx *ctx,
+                                           msgpack_packer *packer,
+                                           msgpack_object *map,
+                                           struct modify_rule *rule)
+{
+
+    int match_keys =
+        map_count_keys_matching_wildcard(map, rule->key, rule->key_len);
+
+    if (match_keys == 0) {
+        return FLB_FILTER_NOTOUCH;
+    }
+    else {
+        msgpack_pack_map(packer, map->via.map.size);
+        map_pack_each_fn(packer, map, rule,
+                         kv_key_matches_wildcard_rule_key);
+        map_pack_each_fn(packer, map, rule,
+                         kv_key_does_not_match_wildcard_rule_key);
+        return FLB_FILTER_MODIFIED;
+    }
+}
+
 static inline int apply_modifying_rule(struct filter_modify_ctx *ctx,
                                        msgpack_packer *packer,
                                        msgpack_object *map,
@@ -1220,6 +1270,10 @@ static inline int apply_modifying_rule(struct filter_modify_ctx *ctx,
         return apply_rule_COPY(ctx, packer, map, rule);
     case HARD_COPY:
         return apply_rule_HARD_COPY(ctx, packer, map, rule);
+    case MOVE_TO_START:
+        return apply_rule_MOVE_TO_START(ctx, packer, map, rule);
+    case MOVE_TO_END:
+        return apply_rule_MOVE_TO_END(ctx, packer, map, rule);
     default:
         flb_plg_warn(ctx->ins, "Unknown ruletype for rule with key %s, ignoring",
                      rule->key);
@@ -1445,6 +1499,16 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "Remove_regex", NULL,
      FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
      "Remove all key/value pairs with key matching regexp KEY"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Move_To_Start", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Move key/value pairs with keys matching KEY to the start of the message"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Move_To_End", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Move key/value pairs with keys matching KEY to the end of the message"
     },
     {
      FLB_CONFIG_MAP_STR, "Rename", NULL,
