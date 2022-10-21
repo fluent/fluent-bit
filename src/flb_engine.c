@@ -67,6 +67,8 @@
 extern struct flb_aws_error_reporter *error_reporter;
 #endif
 
+#include <ctraces/ctr_version.h>
+
 FLB_TLS_DEFINE(struct mk_event_loop, flb_engine_evl);
 
 
@@ -690,6 +692,7 @@ int flb_engine_start(struct flb_config *config)
     /* Init Metrics engine */
     cmt_initialize();
     flb_info("[cmetrics] version=%s", cmt_version());
+    flb_info("[ctraces ] version=%s", ctr_version());
 
     /* Initialize the scheduler */
     sched = flb_sched_create(config, config->evl);
