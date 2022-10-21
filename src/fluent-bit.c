@@ -627,7 +627,7 @@ static int set_property(struct flb_cf *cf, struct flb_cf_section *s, char *kv)
     }
 
     tmp = flb_cf_section_property_add(cf, s->properties, key, 0, value, 0);
-    if (tmp != 0) {
+    if (tmp == NULL) {
         fprintf(stderr, "[error] setting up section '%s' plugin property '%s'\n",
                 s->name, key);
     }
