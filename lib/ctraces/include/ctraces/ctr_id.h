@@ -20,14 +20,18 @@
 #ifndef CTR_ID_H
 #define CTR_ID_H
 
-#define CTR_ID_BUFFER_SIZE    16
-#define CTR_ID_DEFAULT        "000000F1BI700000"
+#define CTR_ID_DEFAULT_SIZE     16
+#define CTR_ID_OTEL_TRACE_SIZE  16
+#define CTR_ID_OTEL_SPAN_SIZE    8
+
+#define CTR_ID_TRACE_DEFAULT         "000000F1BI700000000000F1BI700000"
+#define CTR_ID_SPAN_DEFAULT          "000000F1BI700000"
 
 struct ctrace_id {
     cfl_sds_t buf;
 };
 
-struct ctrace_id *ctr_id_create_random();
+struct ctrace_id *ctr_id_create_random(size_t size);
 struct ctrace_id *ctr_id_create(void *buf, size_t len);
 void ctr_id_destroy(struct ctrace_id *cid);
 int ctr_id_set(struct ctrace_id *cid, void *buf, size_t len);

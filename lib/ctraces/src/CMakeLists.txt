@@ -9,6 +9,7 @@ set(src
   ctr_random.c
   ctr_utils.c
   ctr_attributes.c
+  ctr_version.c
   ctr_mpack_utils.c
   # encoders
   ctr_encode_text.c
