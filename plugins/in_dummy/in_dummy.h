@@ -22,29 +22,39 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
+#include <ctraces/ctraces.h>
 
 #define DEFAULT_DUMMY_MESSAGE "{\"message\":\"dummy\"}"
 
-struct flb_dummy {
-    int coll_fd;
-    int  samples;
-    int  rate;
-    int  samples_count;
-    char *dummy_message;
+struct log_message {
+    char  *dummy_message;
     int  dummy_message_len;
     int  start_time_sec;
     int  start_time_nsec;
 
-    bool fixed_timestamp;
+    struct flb_time *dummy_timestamp;
+    struct flb_time *base_timestamp;
 
     char *ref_msgpack;
     size_t ref_msgpack_size;
 
-    struct flb_time *dummy_timestamp;
-    struct flb_time *base_timestamp;
-    struct flb_input_instance *ins;
-
     msgpack_sbuffer mp_sbuf;
+};
+
+struct flb_dummy {
+    int  coll_fd;
+    int  samples;
+    int  rate;
+    int  samples_count;
+    bool fixed_timestamp;
+
+    char *event_type;
+    union {
+        struct log_message log;
+        struct ctrace *trace;
+    } data;
+
+    struct flb_input_instance *ins;
 };
 
 #endif
