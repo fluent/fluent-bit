@@ -170,7 +170,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
                     flb_input_chunk_write_at(ic, write_at, "", 0);
 #ifdef FLB_HAVE_CHUNK_TRACE
                     if (ic->trace) {
-                        flb_chunk_trace_filter(ic->trace, &tm_start, &tm_finish, (void *)f_ins, "", 0);
+                        flb_chunk_trace_filter(ic->trace, (void *)f_ins, &tm_start, &tm_finish, "", 0);
                     }
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
