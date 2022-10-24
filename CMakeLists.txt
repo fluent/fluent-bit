@@ -222,6 +222,7 @@ option(FLB_OUT_S3                      "Enable AWS S3 output plugin"            
 option(FLB_OUT_WEBSOCKET               "Enable Websocket output plugin"               Yes)
 option(FLB_FILTER_ALTER_SIZE           "Enable alter_size filter"                     Yes)
 option(FLB_FILTER_AWS                  "Enable aws filter"                            Yes)
+option(FLB_FILTER_ECS                  "Enable AWS ECS filter"                        Yes)
 option(FLB_FILTER_CHECKLIST            "Enable checklist filter"                      Yes)
 option(FLB_FILTER_EXPECT               "Enable expect filter"                         Yes)
 option(FLB_FILTER_GREP                 "Enable grep filter"                           Yes)
@@ -242,6 +243,7 @@ option(FLB_FILTER_TENSORFLOW           "Enable tensorflow filter"               
 option(FLB_FILTER_GEOIP2               "Enable geoip2 filter"                         Yes)
 option(FLB_FILTER_NIGHTFALL            "Enable Nightfall filter"                      Yes)
 option(FLB_FILTER_WASM                 "Enable WASM filter"                           Yes)
+
 
 if(DEFINED FLB_NIGHTLY_BUILD AND NOT "${FLB_NIGHTLY_BUILD}" STREQUAL "")
   FLB_DEFINITION_VAL(FLB_NIGHTLY_BUILD ${FLB_NIGHTLY_BUILD})
