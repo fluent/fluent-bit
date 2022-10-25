@@ -26,6 +26,8 @@
 
 #define KUBE_JOURNAL_TO_REGEX "^(?<name_prefix>[^_]+)_(?<container_name>[^\\._]+)(\\.(?<container_hash>[^_]+))?_(?<pod_name>[^_]+)_(?<namespace_name>[^_]+)_[^_]+_[^_]+$"
 
+#define KUBE_POD_ID_TAG_TO_REGEX "^[^ ]*pods.(?<pod_uid>[a-z0-9](?:[-a-z0-9]*[a-z0-9]))"
+
 int flb_kube_regex_init(struct flb_kube *ctx);
 
 #endif
