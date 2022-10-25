@@ -279,7 +279,7 @@ void do_test_records_single(char *system, void (*records_cb)(struct callback_rec
     TEST_CHECK(flb_start(ctx) == 0);
 
     /* 4 sec passed. It must have flushed */
-    sleep(2);
+    sleep(5);
 
     records_cb(records);
 
