@@ -39,5 +39,5 @@ do
         -e FLUENT_BIT_PACKAGES_URL="${FLUENT_BIT_PACKAGES_URL:-https://packages.fluentbit.io}" \
         -e FLUENT_BIT_PACKAGES_KEY="${FLUENT_BIT_PACKAGES_KEY:-https://packages.fluentbit.io/fluentbit.key}" \
         "$IMAGE" \
-        sh -c "yum install -y curl sudo;curl $INSTALL_SCRIPT | sh"
+        sh -c "yum update -y curl sudo;curl $INSTALL_SCRIPT | sh"
 done
