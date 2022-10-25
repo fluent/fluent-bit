@@ -90,7 +90,7 @@ COPY --from=builder /fluent-bit /fluent-bit
 
 RUN setx /M PATH "%PATH%;C:\fluent-bit\bin"
 
-ENTRYPOINT [ "C:\fluent-bit\bin\fluent-bit.exe" ]
+ENTRYPOINT [ "fluent-bit.exe" ]
 # Hadolint gets confused by Windows it seems
 # hadolint ignore=DL3025
-CMD [ "C:\fluent-bit\bin\fluent-bit.exe", "-c", "C:\fluent-bit\etc\fluent-bit.conf" ]
+CMD [ "fluent-bit.exe", "-c", "/fluent-bit/etc/fluent-bit.conf" ]
