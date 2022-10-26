@@ -26,7 +26,6 @@
 
 #include <assert.h>
 #include <errno.h>
-#include <pthread.h>
 #include <stdlib.h>
 #include <stddef.h>
 
@@ -41,6 +40,7 @@ static void reheap(struct c_heap_t *h, size_t root, enum reheap_direction dir)
     size_t right;
     size_t min;
     int status;
+    void *tmp;
 
     /* Calculate the positions of the children */
     left = (2 * root) + 1;
@@ -73,7 +73,6 @@ static void reheap(struct c_heap_t *h, size_t root, enum reheap_direction dir)
         return;
     } else {
         /* if (status > 0) */
-        void *tmp;
         tmp = h->array[root];
         h->array[root] = h->array[min];
         h->array[min] = tmp;
@@ -106,7 +105,6 @@ struct c_heap_t *c_heap_create(int (*compare)(void *, void *), int (*deconstruct
     if (h == NULL)
         return NULL;
 
-    pthread_mutex_init(&h->lock, /* attr = */ NULL);
     h->compare = compare;
     h->deconstructor = deconstructor;
     h->array = NULL;
@@ -131,27 +129,22 @@ void c_heap_destroy(struct c_heap_t *h)
     free(h->array);
     h->array = NULL;
 
-    pthread_mutex_destroy(&h->lock);
-
     free(h);
 }
 
 int c_heap_insert(struct c_heap_t *h, void *ptr) 
 {
     size_t index;
+    void **tmp;
 
     if ((h == NULL) || (ptr == NULL))
         return -EINVAL;
 
-    pthread_mutex_lock(&h->lock);
-
     assert(h->array_len <= h->array_size);
     if (h->array_len == h->array_size) {
-        void **tmp;
 
         tmp = realloc(h->array, (h->array_size + 16) * sizeof(*h->array));
         if (tmp == NULL) {
-            pthread_mutex_unlock(&h->lock);
             return -ENOMEM;
         }
 
@@ -167,21 +160,18 @@ int c_heap_insert(struct c_heap_t *h, void *ptr)
     /* Reorganize the heap from bottom up. */
     reheap(h, /* parent of this node */ (index - 1) / 2, DIR_UP);
 
-    pthread_mutex_unlock(&h->lock);
     return 0;
 }
 
 void *c_heap_get_root(struct c_heap_t *h) 
 {
     void *ret = NULL;
+    void **tmp;
 
     if (h == NULL)
         return NULL;
 
-    pthread_mutex_lock(&h->lock);
-
     if (h->array_len == 0) {
-        pthread_mutex_unlock(&h->lock);
         return NULL;
     } else if (h->array_len == 1) {
         ret = h->array[0];
@@ -199,7 +189,6 @@ void *c_heap_get_root(struct c_heap_t *h)
 
     /* free some memory */
     if ((h->array_len + 32) < h->array_size) {
-        void **tmp;
 
         tmp = realloc(h->array, (h->array_len + 16) * sizeof(*h->array));
         if (tmp != NULL) {
@@ -207,8 +196,6 @@ void *c_heap_get_root(struct c_heap_t *h)
             h->array_size = h->array_len + 16;
         }
     }
-
-    pthread_mutex_unlock(&h->lock);
 
     return ret;
 }

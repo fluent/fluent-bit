@@ -19,7 +19,6 @@
  */
 
 struct c_heap_t {
-    pthread_mutex_t lock;
     int (*compare)(void *, void *);
     int (*deconstructor)(void *);
 
@@ -29,8 +28,6 @@ struct c_heap_t {
     /* # entries allocated */
     size_t array_size; 
 };
-
-//typedef struct c_heap_s c_heap_t;
 
 struct c_heap_t *c_heap_create(int (*compare)(void *, void *), int (*deconstructor)(void *));
 void c_heap_destroy(struct c_heap_t *h);
