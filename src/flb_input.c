@@ -126,33 +126,6 @@ void flb_input_net_default_listener(const char *listen, int port,
     }
 }
 
-int flb_input_event_type_is_metric(struct flb_input_instance *ins)
-{
-    if (ins->event_type == FLB_INPUT_METRICS) {
-        return FLB_TRUE;
-    }
-
-    return FLB_FALSE;
-}
-
-int flb_input_event_type_is_trace(struct flb_input_instance *ins)
-{
-    if (ins->event_type == FLB_INPUT_METRICS) {
-        return FLB_TRUE;
-    }
-
-    return FLB_FALSE;
-}
-
-int flb_input_event_type_is_log(struct flb_input_instance *ins)
-{
-    if (ins->event_type == FLB_INPUT_LOGS) {
-        return FLB_TRUE;
-    }
-
-    return FLB_FALSE;
-}
-
 /* Check input plugin's log level.
  * Not for core plugins but for Golang plugins.
  * Golang plugins do not have thread-local flb_worker_ctx information. */
@@ -242,22 +215,6 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         /* format name (with instance id) */
         snprintf(instance->name, sizeof(instance->name) - 1,
                  "%s.%i", plugin->name, id);
-
-        /* set plugin type based on flags: logs or metrics ? */
-        if (plugin->event_type == FLB_INPUT_LOGS) {
-            instance->event_type = FLB_INPUT_LOGS;
-        }
-        else if (plugin->event_type == FLB_INPUT_METRICS) {
-            instance->event_type = FLB_INPUT_METRICS;
-        }
-        else {
-            flb_error("[input] invalid plugin event type %i on '%s'",
-                      plugin->event_type, instance->name);
-            flb_hash_table_destroy(instance->ht_log_chunks);
-            flb_hash_table_destroy(instance->ht_metric_chunks);
-            flb_free(instance);
-            return NULL;
-        }
 
         if (plugin->type == FLB_INPUT_PLUGIN_CORE) {
             instance->context = NULL;
