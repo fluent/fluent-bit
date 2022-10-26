@@ -545,15 +545,15 @@ static void cb_opentelemetry_flush(struct flb_event_chunk *event_chunk,
 {
     int result = FLB_RETRY;
 
-    if (ins->event_type == FLB_INPUT_METRICS){
-        result = process_metrics(event_chunk, out_flush, ins, out_context, config);
-    }
-    else if (ins->event_type == FLB_INPUT_LOGS){
-        result = process_logs(event_chunk, out_flush, ins, out_context, config);
-    }
-    else if (ins->event_type == FLB_INPUT_TRACES){
-        result = process_traces(event_chunk, out_flush, ins, out_context, config);
-    }
+        if (event_chunk->type == FLB_INPUT_METRICS){
+            result = process_metrics(event_chunk, out_flush, ins, out_context, config);
+        }
+        else if (event_chunk->type == FLB_INPUT_LOGS){
+            result = process_logs(event_chunk, out_flush, ins, out_context, config);
+        }
+        else if (event_chunk->type == FLB_INPUT_TRACES){
+            result = process_traces(event_chunk, out_flush, ins, out_context, config);
+        }
     FLB_OUTPUT_RETURN(result);
 }
 
