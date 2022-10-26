@@ -217,5 +217,4 @@ struct flb_input_plugin in_windows_exporter_metrics_plugin = {
     .cb_pause     = in_we_pause,
     .cb_resume    = in_we_resume,
     .cb_exit      = in_we_exit,
-    .event_type   = FLB_INPUT_METRICS
 };
