@@ -82,7 +82,6 @@ struct flb_input_plugin {
     void *proxy;
 
     int flags;                /* plugin flags */
-    int event_type;           /* event type to be generated: logs ?, metrics ? */
 
     /* The Input name */
     char *name;
@@ -145,7 +144,11 @@ struct flb_input_plugin {
  */
 struct flb_input_instance {
     struct mk_event event;           /* events handler */
-    int event_type;                  /* FLB_INPUT_LOGS, FLB_INPUT_METRICS */
+
+
+    /* DEPRECATED: no logic should be build on top of this flag
+     * int event_type;                   FLB_INPUT_LOGS, FLB_INPUT_METRICS
+     */
 
     /*
      * The instance flags are derived from the fixed plugin flags. This
@@ -674,8 +677,6 @@ int flb_input_name_exists(const char *name, struct flb_config *config);
 void flb_input_net_default_listener(const char *listen, int port,
                                     struct flb_input_instance *ins);
 
-int flb_input_event_type_is_metric(struct flb_input_instance *ins);
-int flb_input_event_type_is_log(struct flb_input_instance *ins);
 int flb_input_log_check(struct flb_input_instance *ins, int l);
 
 struct mk_event_loop *flb_input_event_loop_get(struct flb_input_instance *ins);
