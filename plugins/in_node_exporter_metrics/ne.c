@@ -186,5 +186,4 @@ struct flb_input_plugin in_node_exporter_metrics_plugin = {
     .cb_pause     = in_ne_pause,
     .cb_resume    = in_ne_resume,
     .cb_exit      = in_ne_exit,
-    .event_type   = FLB_INPUT_METRICS
 };
