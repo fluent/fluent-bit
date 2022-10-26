@@ -174,11 +174,19 @@ int flb_router_io_set(struct flb_config *config)
     struct flb_output_instance *o_ins;
 
     /* Quick setup for 1:1 */
-    mk_list_foreach(i_head, &config->inputs) {
-        in_count++;
-    }
-    mk_list_foreach(o_head, &config->outputs) {
-        out_count++;
+    in_count = mk_list_size(&config->inputs);
+    out_count = mk_list_size(&config->outputs);
+
+    /* Mostly used for command line tests */
+    if (in_count == 1 && out_count == 1) {
+        i_ins = mk_list_entry_first(&config->inputs, struct flb_input_instance, _head);
+        o_ins = mk_list_entry_first(&config->outputs, struct flb_output_instance, _head);
+
+        if (!o_ins->match) {
+            o_ins->match = flb_sds_create_len("*", 1);
+        }
+        flb_router_connect(i_ins, o_ins);
+        return 0;
     }
 
     /* N:M case, iterate all input instances */
