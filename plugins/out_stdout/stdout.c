@@ -268,6 +268,6 @@ struct flb_output_plugin out_stdout_plugin = {
     .cb_exit      = cb_stdout_exit,
     .flags        = 0,
     .workers      = 1,
-    .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS,
+    .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS | FLB_OUTPUT_TRACES,
     .config_map   = config_map
 };
