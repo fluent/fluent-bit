@@ -198,5 +198,4 @@ struct flb_input_plugin in_fluentbit_metrics_plugin = {
     .cb_pause     = in_metrics_pause,
     .cb_resume    = in_metrics_resume,
     .cb_exit      = in_metrics_exit,
-    .event_type   = FLB_INPUT_METRICS
 };
