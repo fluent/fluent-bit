@@ -182,7 +182,12 @@ int flb_router_io_set(struct flb_config *config)
         i_ins = mk_list_entry_first(&config->inputs, struct flb_input_instance, _head);
         o_ins = mk_list_entry_first(&config->outputs, struct flb_output_instance, _head);
 
-        if (!o_ins->match) {
+        if (!o_ins->match
+#ifdef FLB_HAVE_REGEX
+            && !o_ins->match_regex
+#endif
+            ) {
+
             o_ins->match = flb_sds_create_len("*", 1);
         }
         flb_router_connect(i_ins, o_ins);
