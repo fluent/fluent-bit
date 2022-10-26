@@ -94,37 +94,27 @@ static void check_proxy(struct flb_output_instance *ins,
     }
 }
 
-static char *sanitize_uri(struct flb_output_instance *ins,
-                          struct opentelemetry_context *ctx,
-                          struct flb_upstream *upstream,
-                          char *check_uri){
-    char *uri = NULL;
-    char *tmp = NULL;
-    char *tmp_uri = NULL;
-    int ulen;
+static char *sanitize_uri(char *uri){
+    char *new_uri;
+    int   uri_len;
 
-    if (ins->host.uri) {
-        uri = flb_strdup(ins->host.uri->full);
-    }
-    else {
-        tmp = flb_output_get_property(check_uri, ins);
-        if (tmp) {
-            uri = flb_strdup(tmp);
-        }
-    }
-
-    if (!uri) {
+    if (uri == NULL) {
         uri = flb_strdup("/");
     }
     else if (uri[0] != '/') {
-        ulen = strlen(uri);
-        tmp_uri = flb_malloc(ulen + 2);
-        tmp_uri[0] = '/';
-        memcpy(tmp_uri + 1, uri, ulen);
-        tmp_uri[ulen + 1] = '\0';
-        flb_free(uri);
-        uri = tmp_uri;
+        uri_len = strlen(uri);
+        new_uri = flb_calloc(uri_len + 2, sizeof(char));
+
+        if (new_uri != NULL) {
+            new_uri[0] = '/';
+
+            strncat(new_uri, uri, uri_len + 1);
+        }
+
+        uri = new_uri;
     }
+
+    /* This function could return NULL if flb_calloc fails */
 
     return uri;
 }
@@ -138,6 +128,7 @@ struct opentelemetry_context *flb_opentelemetry_context_create(
     char *host = NULL;
     char *port = NULL;
     char *metrics_uri = NULL;
+    char *traces_uri = NULL;
     char *logs_uri = NULL;
     struct flb_upstream *upstream;
     struct opentelemetry_context *ctx = NULL;
@@ -202,14 +193,41 @@ struct opentelemetry_context *flb_opentelemetry_context_create(
         return NULL;
     }
 
-    logs_uri = sanitize_uri(ins, ctx, upstream, "logs_uri");
-    metrics_uri = sanitize_uri(ins, ctx, upstream, "metrics_uri");
+    logs_uri = sanitize_uri(ctx->logs_uri);
+    traces_uri = sanitize_uri(ctx->traces_uri);
+    metrics_uri = sanitize_uri(ctx->metrics_uri);
 
     ctx->u = upstream;
     ctx->host = ins->host.name;
     ctx->port = ins->host.port;
-    ctx->metrics_uri = metrics_uri;
-    ctx->logs_uri = logs_uri;
+
+    if (logs_uri == NULL) {
+        flb_plg_trace(ctx->ins,
+                      "Could not allocate memory for sanitized "
+                      "log endpoint uri");
+    }
+    else {
+        ctx->logs_uri = logs_uri;
+    }
+
+    if (traces_uri == NULL) {
+        flb_plg_trace(ctx->ins,
+                      "Could not allocate memory for sanitized "
+                      "trace endpoint uri");
+    }
+    else {
+        ctx->traces_uri = traces_uri;
+    }
+
+    if (metrics_uri == NULL) {
+        flb_plg_trace(ctx->ins,
+                      "Could not allocate memory for sanitized "
+                      "metric endpoint uri");
+    }
+    else {
+        ctx->metrics_uri = metrics_uri;
+    }
+
 
     /* Set instance flags into upstream */
     flb_output_upstream_set(ctx->u, ins);
