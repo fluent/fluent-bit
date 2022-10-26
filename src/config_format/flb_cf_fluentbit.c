@@ -446,6 +446,12 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
                 snprintf(tmp, PATH_MAX, "%s/%s", ctx->root_path, cfg_file);
                 cfg_file = tmp;
             }
+            /* stat again */
+            ret = stat(cfg_file, &st);
+            if (ret < 0) {
+                flb_errno();
+                return -1;
+            }
         }
 #ifndef _WIN32
         /* check if readed file */
