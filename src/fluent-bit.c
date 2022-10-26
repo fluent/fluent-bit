@@ -611,7 +611,7 @@ static int set_property(struct flb_cf *cf, struct flb_cf_section *s, char *kv)
     int sep;
     char *key;
     char *value;
-    struct cfl_array *tmp;
+    struct cfl_variant *tmp;
 
     len = strlen(kv);
     sep = mk_string_char_search(kv, '=', len);
