@@ -34,7 +34,7 @@
 #include <ctraces/ctr_decode_msgpack.h>
 
 extern cfl_sds_t cmt_encode_opentelemetry_create(struct cmt *cmt);
-extern void cmt_encode_opentelemetry_destroy(struct cmt *cmt);
+extern void cmt_encode_opentelemetry_destroy(cfl_sds_t text);
 
 #include "opentelemetry.h"
 #include "opentelemetry_conf.h"
