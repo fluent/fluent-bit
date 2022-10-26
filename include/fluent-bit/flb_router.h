@@ -30,14 +30,18 @@ struct flb_router_path {
 };
 
 static inline int flb_router_match_type(int in_event_type,
-                                        struct flb_output_instance *ins)
+                                        struct flb_output_instance *o_ins)
 {
     if (in_event_type == FLB_INPUT_LOGS &&
-        !(ins->event_type & FLB_OUTPUT_LOGS)) {
+        !(o_ins->event_type & FLB_OUTPUT_LOGS)) {
         return FLB_FALSE;
     }
     else if (in_event_type == FLB_INPUT_METRICS &&
-             !(ins->event_type & FLB_OUTPUT_METRICS)) {
+             !(o_ins->event_type & FLB_OUTPUT_METRICS)) {
+        return FLB_FALSE;
+    }
+    else if (in_event_type == FLB_INPUT_TRACES &&
+             !(o_ins->event_type & FLB_OUTPUT_TRACES)) {
         return FLB_FALSE;
     }
 
