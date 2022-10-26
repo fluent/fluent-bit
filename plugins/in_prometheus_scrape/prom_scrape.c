@@ -219,5 +219,4 @@ struct flb_input_plugin in_prometheus_scrape_plugin = {
     .cb_exit      = cb_prom_scrape_exit,
     .config_map   = config_map,
     .flags        = FLB_INPUT_NET | FLB_INPUT_CORO,
-    .event_type   = FLB_INPUT_METRICS
 };
