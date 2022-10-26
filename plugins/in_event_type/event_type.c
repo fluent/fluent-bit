@@ -384,15 +384,12 @@ static int cb_event_type_init(struct flb_input_instance *ins,
     if (tmp) {
         if (strcasecmp(tmp, "logs") == 0) {
             ctx->type = FLB_EVENT_TYPE_LOGS;
-            ins->event_type = FLB_INPUT_LOGS;
         }
         else if (strcasecmp(tmp, "metrics") == 0) {
             ctx->type = FLB_EVENT_TYPE_METRICS;
-            ins->event_type = FLB_INPUT_METRICS;
         }
         else if (strcasecmp(tmp, "traces") == 0) {
             ctx->type = FLB_EVENT_TYPE_TRACES;
-            ins->event_type = FLB_INPUT_TRACES;
         }
     }
 
