@@ -113,8 +113,6 @@ static int process_payload_metrics(struct flb_opentelemetry *ctx, struct http_co
                                              &offset);
 
     if (result == CMT_DECODE_OPENTELEMETRY_SUCCESS) {
-        ctx->ins->event_type = FLB_INPUT_METRICS;
-
         cfl_list_foreach(iterator, &decoded_contexts) {
             context = cfl_list_entry(iterator, struct cmt, _head);
 
@@ -146,7 +144,6 @@ static int process_payload_traces_proto(struct flb_opentelemetry *ctx, struct ht
                                              request->data.len,
                                              &offset);
     if (result == 0) {
-        ctx->ins->event_type = FLB_INPUT_TRACES;
         result = flb_input_trace_append(ctx->ins, NULL, 0, decoded_context);
         ctr_decode_opentelemetry_destroy(decoded_context);
     }
@@ -192,7 +189,6 @@ static int process_payload_raw_traces(struct flb_opentelemetry *ctx, struct http
         flb_free(out_buf);
     }
 
-    ctx->ins->event_type = FLB_INPUT_LOGS;
     flb_input_log_append(ctx->ins, tag, flb_sds_len(tag), mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
@@ -536,8 +532,6 @@ static int process_payload_logs(struct flb_opentelemetry *ctx, struct http_conn 
     if (out_buf) {
         flb_free(out_buf);
     }
-
-    ctx->ins->event_type = FLB_INPUT_LOGS;
 
     flb_input_log_append(ctx->ins, tag, flb_sds_len(tag), mp_sbuf.data, mp_sbuf.size);
 
