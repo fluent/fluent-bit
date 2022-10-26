@@ -2342,5 +2342,4 @@ struct flb_input_plugin in_nginx_exporter_metrics_plugin = {
     .cb_exit      = nginx_exit,
     .config_map   = config_map,
     .flags        = FLB_INPUT_NET|FLB_INPUT_CORO,
-    .event_type   = FLB_INPUT_METRICS
 };
