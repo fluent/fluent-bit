@@ -40,7 +40,12 @@ static cfl_sds_t double_to_string(double val)
     }
 
     len = snprintf(str, 64, "%g", val);
-    cfl_sds_len_set(str, len);
+    if (strstr(str, "e+")) {
+        len = snprintf(str, 64, "%e", val);
+        cfl_sds_len_set(str, len);
+    } else {
+        cfl_sds_len_set(str, len);
+    }
 
     if (!strchr(str, '.')) {
         cfl_sds_cat_safe(&str, ".0", 2);

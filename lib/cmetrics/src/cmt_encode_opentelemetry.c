@@ -494,7 +494,7 @@ static Opentelemetry__Proto__Common__V1__AnyValue *otlp_any_value_initialize(int
 
 static inline Opentelemetry__Proto__Common__V1__KeyValue *cfl_variant_kvpair_to_otlp_kvpair(struct cfl_kvpair *input_pair)
 {
-    static Opentelemetry__Proto__Common__V1__KeyValue *pair;
+    Opentelemetry__Proto__Common__V1__KeyValue *pair;
 
     pair = otlp_kvpair_value_initialize();
 

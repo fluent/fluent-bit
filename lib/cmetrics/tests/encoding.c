@@ -781,6 +781,62 @@ void test_splunk_hec()
     cmt_destroy(cmt);
 }
 
+
+void test_splunk_hec_floating_point()
+{
+    uint64_t ts;
+    cfl_sds_t text;
+    struct cmt *cmt;
+    struct cmt_counter *c1;
+    struct cmt_counter *c2;
+    const char *host = "localhost", *index = "fluent-bit-metrics", *source = "fluent-bit-cmetrics", *source_type = "cmetrics";
+
+    char *out1 = \
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:labels.test\":0.0}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:labels.test\":2.340000e+12,\"host\":\"calyptia.com\",\"app\":\"cmetrics\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:nosubsystem\":0.0}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:nosubsystem\":5.000000e+15,\"host\":\"aaa\",\"app\":\"bbb\"}}";
+    char *out2 = \
+       "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"fields\":{\"metric_name:labels.test\":0.0,\"dev\":\"Calyptia\",\"lang\":\"C\"}}"
+       "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"fields\":{\"metric_name:labels.test\":2.340000e+12,\"dev\":\"Calyptia\",\"lang\":\"C\",\"host\":\"calyptia.com\",\"app\":\"cmetrics\"}}"
+       "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"fields\":{\"metric_name:nosubsystem\":0.0,\"dev\":\"Calyptia\",\"lang\":\"C\"}}"
+       "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"fields\":{\"metric_name:nosubsystem\":5.000000e+15,\"dev\":\"Calyptia\",\"lang\":\"C\",\"host\":\"aaa\",\"app\":\"bbb\"}}";
+
+    cmt = cmt_create();
+    TEST_CHECK(cmt != NULL);
+
+    c1 = cmt_counter_create(cmt, "cmt", "labels", "test", "Static labels test",
+                            2, (char *[]) {"host", "app"});
+
+    ts = 1435658235000000123;
+    cmt_counter_set(c1, ts, 0, 0, NULL);
+    cmt_counter_add(c1, ts, 2e+10, 2, (char *[]) {"calyptia.com", "cmetrics"});
+    cmt_counter_add(c1, ts, 2.32e+12, 2, (char *[]) {"calyptia.com", "cmetrics"});
+
+    c2 = cmt_counter_create(cmt, "cmt", "", "nosubsystem", "No subsystem",
+                            2, (char *[]) {"host", "app"});
+
+    cmt_counter_set(c2, ts, 0, 0, NULL);
+    cmt_counter_add(c2, ts, 5e+15, 2, (char *[]) {"aaa", "bbb"});
+
+    /* Encode to splunk hec (no static labels) */
+    text = cmt_encode_splunk_hec_create(cmt, host, index, source, source_type);
+    printf("%s\n", text);
+    TEST_CHECK(strcmp(text, out1) == 0);
+    cmt_encode_splunk_hec_destroy(text);
+
+    /* append static labels */
+    cmt_label_add(cmt, "dev", "Calyptia");
+    cmt_label_add(cmt, "lang", "C");
+
+    text = cmt_encode_splunk_hec_create(cmt, host, index, NULL, NULL);
+    printf("%s\n", text);
+    TEST_CHECK(strcmp(text, out2) == 0);
+    cmt_encode_splunk_hec_destroy(text);
+
+    cmt_destroy(cmt);
+}
+
 /* values to observe in a histogram */
 double hist_observe_values[10] = {
                                   0.0 , 1.02, 2.04, 3.06,
@@ -993,6 +1049,7 @@ TEST_LIST = {
     {"text",                           test_text},
     {"influx",                         test_influx},
     {"splunk_hec",                     test_splunk_hec},
+    {"splunk_hec_floating_point",      test_splunk_hec_floating_point},
     {"splunk_hec_histogram",           test_splunk_hec_histogram},
     {"splunk_hec_summary",             test_splunk_hec_summary},
     { 0 }
