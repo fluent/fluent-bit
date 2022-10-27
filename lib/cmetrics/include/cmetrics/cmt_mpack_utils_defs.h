@@ -20,6 +20,8 @@
 #ifndef CMT_MPACK_UTILS_DEFS_H
 #define CMT_MPACK_UTILS_DEFS_H
 
+#define CMT_MPACK_TAG_NAME_WILDCARD          "*"
+
 #define CMT_MPACK_SUCCESS                    0
 #define CMT_MPACK_INSUFFICIENT_DATA          1
 #define CMT_MPACK_INVALID_ARGUMENT_ERROR     2

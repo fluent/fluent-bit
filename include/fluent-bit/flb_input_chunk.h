@@ -73,6 +73,11 @@ struct flb_input_chunk {
     struct mk_list _head;
 };
 
+struct flb_input_chunk_ring_buffer_collector_context {
+    struct flb_coro   *coroutine;
+    struct flb_config *config;
+};
+
 struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
                                                const char *tag, int tag_len);
 int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del);
@@ -98,6 +103,8 @@ int flb_input_chunk_get_event_type(struct flb_input_chunk *ic);
 
 int flb_input_chunk_get_tag(struct flb_input_chunk *ic,
                             const char **tag_buf, int *tag_len);
+
+void flb_input_chunk_ring_buffer_collector_coroutine();
 void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data);
 ssize_t flb_input_chunk_get_size(struct flb_input_chunk *ic);
 size_t flb_input_chunk_set_limits(struct flb_input_instance *in);

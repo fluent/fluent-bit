@@ -544,6 +544,41 @@ int sb_segregate_chunks(struct flb_config *config)
 }
 #endif
 
+static int flb_engine_create_input_ring_buffer_coroutine(
+    struct flb_input_chunk_ring_buffer_collector_context *context,
+    struct flb_config *config,
+    void *entry_point)
+{
+    size_t stack_size;
+
+    stack_size = config->coro_stack_size;
+
+    memset(context,
+           0,
+           sizeof(struct flb_input_chunk_ring_buffer_collector_context));
+
+    context->coroutine = flb_coro_create(context);
+
+    if (context->coroutine == NULL) {
+        return -1;
+    }
+
+    context->coroutine->caller = co_active();
+    context->coroutine->callee = co_create(stack_size,
+                                           entry_point,
+                                           &stack_size);
+
+    if (context->coroutine->callee == NULL) {
+        flb_coro_destroy(context->coroutine);
+
+        return -2;
+    }
+
+    context->config = config;
+
+    return 0;
+}
+
 int flb_engine_start(struct flb_config *config)
 {
     int ret;
@@ -557,6 +592,8 @@ int flb_engine_start(struct flb_config *config)
     struct flb_sched *sched;
     struct flb_net_dns dns_ctx;
     struct flb_coroutine_scheduler coro_sched;
+    // struct flb_coro *input_ring_buffer_coroutine;
+    struct flb_input_chunk_ring_buffer_collector_context input_ring_buffer_coroutine;
 
     /* Initialize the networking layer */
     flb_net_lib_init();
@@ -576,6 +613,8 @@ int flb_engine_start(struct flb_config *config)
     flb_coroutine_scheduler_init(&coro_sched, -1);
     flb_coroutine_scheduler_set(&coro_sched);
     flb_coroutine_scheduler_add_event_loop(&coro_sched, config->evl);
+    // flb_coroutine_scheduler_set_collective_timeslice(&coro_sched,
+    //                                                  config->collective_timeslice);
 
     /* Create the bucket queue (FLB_ENGINE_PRIORITY_COUNT priorities) */
     evl_bktq = flb_bucket_queue_create(FLB_ENGINE_PRIORITY_COUNT);
@@ -799,6 +838,30 @@ int flb_engine_start(struct flb_config *config)
         return -2;
     }
 
+    ret = flb_engine_create_input_ring_buffer_coroutine(
+                &input_ring_buffer_coroutine,
+                config,
+                flb_input_chunk_ring_buffer_collector_coroutine);
+
+    if (ret != 0) {
+        flb_error("[engine] could not create ring buffer collector coroutine");
+        return -1;
+    }
+
+    #define FLB_TIME_MILLISECONDS_TO_MICROSECONDS(ts)       ((uint64_t) (floor(((ts) * 1000.0))))
+    #define FLB_TIME_SECONDS_TO_MICROSECONDS(ts)            ((uint64_t) (floor(((ts) * 1000000.0))))
+    #define FLB_TIME_SECONDS_TO_MILLISECONDS(ts)            ((uint64_t) (floor(((ts) * 1000.0))))
+    #define FLB_TIME_MICROSECONDS_TO_SECONDS(ts)            ((double)   (((ts) / 1000000.0)))
+
+    flb_coroutine_scheduler_set_collective_timeslice(&coro_sched,
+                                                     FLB_TIME_MILLISECONDS_TO_MICROSECONDS(1000));
+
+    flb_coro_set_time_slice_limit(input_ring_buffer_coroutine.coroutine,
+                                  FLB_TIME_MILLISECONDS_TO_MICROSECONDS(1000));
+
+    // flb_coro_enqueue_low_priority(input_ring_buffer_coroutine.coroutine);
+    flb_coro_enqueue(input_ring_buffer_coroutine.coroutine);
+
     while (1) {
         rb_flush_flag = FLB_FALSE;
 
@@ -937,7 +1000,8 @@ int flb_engine_start(struct flb_config *config)
         }
 
         if (rb_flush_flag) {
-            flb_input_chunk_ring_buffer_collector(config, NULL);
+            // flb_input_chunk_ring_buffer_collector(config, NULL);
+            flb_coro_enqueue_low_priority(input_ring_buffer_coroutine.coroutine);
         }
 
         flb_coroutine_scheduler_resume_enqueued_coroutines();

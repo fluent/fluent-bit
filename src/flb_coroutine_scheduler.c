@@ -169,6 +169,9 @@ int flb_coroutine_scheduler_set_coroutine_state(struct flb_coro *coroutine,
     else if (state == FLB_COROUTINE_STATUS_QUEUED) {
         mk_list_prepend(&coroutine->_head, &scheduler->queued_coroutines);
     }
+    else if (state == FLB_COROUTINE_STATUS_LOW_PRIORITY_QUEUED) {
+        mk_list_append(&coroutine->_head, &scheduler->queued_coroutines);
+    }
     else if (state == FLB_COROUTINE_STATUS_COLLABORATIVELY_YIELDED) {
         mk_list_append(&coroutine->_head, &scheduler->queued_coroutines);
 
@@ -290,6 +293,7 @@ int flb_coroutine_scheduler_resume_enqueued_coroutines()
         if (coroutine == NULL) {
             break;
         }
+        // printf("RUNNING CORO : %p\n", coroutine);
 
         flb_coro_resume(coroutine);
 

@@ -1672,8 +1672,91 @@ retry:
     return 0;
 }
 
+void flb_input_chunk_ring_buffer_collector_consumer(struct flb_config *ctx)
+{
+    int ret;
+    int tag_len = 0;
+    struct mk_list *head;
+    struct flb_input_instance *ins;
+    struct input_chunk_raw *cr;
+    struct flb_coro *coroutine;
+
+    coroutine = flb_coro_get();
+
+    mk_list_foreach(head, &ctx->inputs) {
+        ins = mk_list_entry(head, struct flb_input_instance, _head);
+        cr = NULL;
+
+        while ((ret = flb_ring_buffer_read(ins->rb,
+                                           (void *) &cr,
+                                           sizeof(cr))) == 0) {
+            if (cr) {
+                if (cr->tag) {
+                    tag_len = flb_sds_len(cr->tag);
+                }
+                else {
+                    tag_len = 0;
+                }
+
+                input_chunk_append_raw(cr->ins, cr->records,
+                                       cr->tag, tag_len,
+                                       cr->buf_data, cr->buf_size);
+                destroy_chunk_raw(cr);
+
+                if (coroutine != NULL) {
+                    flb_coro_collab_yield(coroutine, FLB_FALSE);
+                }
+            }
+            cr = NULL;
+        }
+
+        ins->rb->flush_pending = FLB_FALSE;
+    }
+}
+
+void flb_input_chunk_ring_buffer_collector_coroutine()
+{
+    struct flb_coro                                      *coroutine;
+    struct flb_input_chunk_ring_buffer_collector_context *context;
+
+    coroutine = flb_coro_get();
+    context = (struct flb_input_chunk_ring_buffer_collector_context *) coroutine->data;
+
+    while (1) {
+        // printf("RB COLLECTOR CORO : %zu\n", time(NULL));
+
+        flb_input_chunk_ring_buffer_collector_consumer(context->config);
+
+        flb_coro_yield(coroutine, FLB_FALSE);
+    }
+
+}
+
 void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data)
 {
+    int ret;
+    int tag_len = 0;
+    struct mk_list *head;
+    struct flb_input_instance *ins;
+    struct input_chunk_raw *cr;
+
+    mk_list_foreach(head, &ctx->inputs) {
+        ins = mk_list_entry(head, struct flb_input_instance, _head);
+
+        if (flb_ring_buffer_readable_size(ins->rb) > 0) {
+            if (!ins->rb->flush_pending) {
+                ins->rb->flush_pending = FLB_TRUE;
+
+                flb_pipe_write_all(ins->rb->signal_channels[1], ".", 1);
+                // printf("COLLECTOR TIMER : %zu\n", time(NULL));
+                // printf("TRIGGERING FLUSH\n");
+                return;
+            }
+        }
+    }
+
+
+/*
     int ret;
     int tag_len = 0;
     struct mk_list *head;
@@ -1705,6 +1788,7 @@ void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data)
 
         ins->rb->flush_pending = FLB_FALSE;
     }
+*/
 }
 
 int flb_input_chunk_append_raw(struct flb_input_instance *in,

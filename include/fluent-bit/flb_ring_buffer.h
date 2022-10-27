@@ -33,6 +33,8 @@ struct flb_ring_buffer {
     void *data_buf;                   /* ring buffer */
 };
 
+size_t flb_ring_buffer_readable_size(struct flb_ring_buffer *rb);
+
 struct flb_ring_buffer *flb_ring_buffer_create(uint64_t size);
 void flb_ring_buffer_destroy(struct flb_ring_buffer *rb);
 

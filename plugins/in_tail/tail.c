@@ -764,5 +764,6 @@ struct flb_input_plugin in_tail_plugin = {
     .cb_resume    = in_tail_resume,
     .cb_exit      = in_tail_exit,
     .config_map   = config_map,
-    .flags        = 0
+    .flags        = FLB_INPUT_THREADED
 };
+    // .flags        = 0

@@ -39,6 +39,11 @@
 
 static void flb_ring_buffer_remove_event_loop(struct flb_ring_buffer *rb);
 
+size_t flb_ring_buffer_readable_size(struct flb_ring_buffer *rb)
+{
+    return lwrb_get_full(rb->ctx);
+}
+
 struct flb_ring_buffer *flb_ring_buffer_create(uint64_t size)
 {
     lwrb_t *lwrb;

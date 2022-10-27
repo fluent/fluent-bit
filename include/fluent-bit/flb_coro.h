@@ -61,6 +61,9 @@ struct flb_coro {
     void *data;
 
     int state;
+    uint64_t time_slice_backup;
+    uint64_t time_slice;
+    uint64_t resume_time;
     uint64_t yield_cycle;
     struct mk_list _head;
 };
@@ -72,6 +75,14 @@ struct flb_coro {
 #endif
 
 #define FLB_CORO_DATA(coro)      (((char *) coro) + sizeof(struct flb_coro))
+
+uint64_t flb_time_get_cpu_timestamp();
+
+static FLB_INLINE int flb_coro_enqueue_low_priority(struct flb_coro *coro)
+{
+    return flb_coroutine_scheduler_set_coroutine_state(coro,
+                                                       FLB_COROUTINE_STATUS_LOW_PRIORITY_QUEUED);
+}
 
 static FLB_INLINE int flb_coro_enqueue(struct flb_coro *coro)
 {
