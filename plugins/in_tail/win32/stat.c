@@ -35,6 +35,8 @@
  */
 
 #define UINT64(high, low) ((uint64_t) (high) << 32 | (low))
+#define LDAP_TO_SECONDS_DIVISOR 10000000
+#define LDAP_TO_EPOCH_DIFF_SECONDS 11644473600
 
 static int get_mode(unsigned int attr)
 {
@@ -42,6 +44,18 @@ static int get_mode(unsigned int attr)
         return WIN32_S_IFDIR;
     }
     return WIN32_S_IFREG;
+}
+
+static int64_t filetime_to_epoch(FILETIME ft)
+{
+    int64_t ldap;
+
+    /*
+     * The LDAP timestamp represents the number of
+     * 100-nanosecond intervals since Jan 1, 1601 UTC.
+     */
+    ldap = UINT64(ft.dwHighDateTime, ft.dwLowDateTime);
+    return (ldap / LDAP_TO_SECONDS_DIVISOR) - LDAP_TO_EPOCH_DIFF_SECONDS;
 }
 
 static int is_symlink(const char *path)
@@ -72,7 +86,6 @@ static int hstat(HANDLE h, struct win32_stat *wst)
 {
     BY_HANDLE_FILE_INFORMATION info;
     FILE_STANDARD_INFO std;
-    FILETIME time;
 
     if (!GetFileInformationByHandle(h, &info)) {
         return -1;
@@ -87,12 +100,11 @@ static int hstat(HANDLE h, struct win32_stat *wst)
     if (std.DeletePending) {
         wst->st_nlink = 0;
     }
-    time = info.ftLastWriteTime;
 
     wst->st_mode  = get_mode(info.dwFileAttributes);
     wst->st_size  = UINT64(info.nFileSizeHigh, info.nFileSizeLow);
     wst->st_ino   = UINT64(info.nFileIndexHigh, info.nFileIndexLow);
-    wst->st_mtime = UINT64(time.dwHighDateTime, time.dwLowDateTime);
+    wst->st_mtime = filetime_to_epoch(info.ftLastWriteTime);
 
     return 0;
 }
