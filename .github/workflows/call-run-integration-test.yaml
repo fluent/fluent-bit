@@ -228,7 +228,7 @@ jobs:
           cluster_name: kind
 
       - name: Set up Helm
-        uses: azure/setup-helm@v3.3
+        uses: azure/setup-helm@v3.4
         with:
           version: v3.8.1
 
@@ -281,7 +281,7 @@ jobs:
           bats-version: 1.7.0
 
       - name: Set up Helm
-        uses: azure/setup-helm@v3.3
+        uses: azure/setup-helm@v3.4
         with:
           version: v3.8.1
 
