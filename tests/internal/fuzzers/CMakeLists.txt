@@ -1,4 +1,5 @@
 set(UNIT_TESTS_FILES
+  base64_fuzzer.c
   engine_fuzzer.c
   config_fuzzer.c
   config_random_fuzzer.c
