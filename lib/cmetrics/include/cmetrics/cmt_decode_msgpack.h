@@ -53,6 +53,7 @@ struct cmt_msgpack_decode_context {
     double            *quantile_list;
     size_t             quantile_count;
     uint64_t           summary_quantiles[5];
+    int                aggregation_type;
 };
 
 int cmt_decode_msgpack_create(struct cmt **out_cmt, char *in_buf, size_t in_size, 
