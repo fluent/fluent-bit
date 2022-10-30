@@ -132,6 +132,7 @@ struct opentelemetry_context *flb_opentelemetry_context_create(
     char *logs_uri = NULL;
     struct flb_upstream *upstream;
     struct opentelemetry_context *ctx = NULL;
+    char *tmp = NULL;
 
     /* Allocate plugin context */
     ctx = flb_calloc(1, sizeof(struct opentelemetry_context));
@@ -231,6 +232,14 @@ struct opentelemetry_context *flb_opentelemetry_context_create(
 
     /* Set instance flags into upstream */
     flb_output_upstream_set(ctx->u, ins);
+
+    tmp = flb_output_get_property("compress", ins);
+    ctx->compress_gzip = FLB_FALSE;
+    if (tmp) {
+        if (strcasecmp(tmp, "gzip") == 0) {
+            ctx->compress_gzip = FLB_TRUE;
+        }
+    }
 
     return ctx;
 }

@@ -28,6 +28,7 @@
 #include <fluent-otel-proto/fluent-otel.h>
 
 #include <cmetrics/cmetrics.h>
+#include <fluent-bit/flb_gzip.h>
 #include <cmetrics/cmt_encode_opentelemetry.h>
 
 #include <ctraces/ctraces.h>
@@ -55,6 +56,9 @@ static int http_post(struct opentelemetry_context *ctx,
     struct flb_config_map_val *mv;
     struct flb_slist_entry *key = NULL;
     struct flb_slist_entry *val = NULL;
+    void *final_body = NULL;
+    size_t final_body_len = 0;
+    int compressed = FLB_FALSE;
 
     /* Get upstream context and connection */
     u = ctx->u;
@@ -64,10 +68,21 @@ static int http_post(struct opentelemetry_context *ctx,
                       u->tcp_host, u->tcp_port);
         return FLB_RETRY;
     }
-
+     if (ctx->compress_gzip == FLB_TRUE) {
+        ret = flb_gzip_compress((void *) body, body_len,
+                                &final_body, &final_body_len);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "cannot gzip payload, disabling compression");
+        } else {
+            compressed = FLB_TRUE;
+        }
+    } else {
+        final_body = body;
+        final_body_len = body_len;
+    }
     /* Create HTTP client context */
     c = flb_http_client(u_conn, FLB_HTTP_POST, uri,
-                        body, body_len,
+                        final_body, final_body_len,
                         ctx->host, ctx->port,
                         ctx->proxy, 0);
 
@@ -107,7 +122,9 @@ static int http_post(struct opentelemetry_context *ctx,
                             key->str, flb_sds_len(key->str),
                             val->str, flb_sds_len(val->str));
     }
-
+    if (compressed == FLB_TRUE) {
+        flb_http_set_content_encoding_gzip(c);
+    }
     ret = flb_http_do(c, &b_sent);
     if (ret == 0) {
         /*
@@ -605,6 +622,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "log_response_payload", "true",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, log_response_payload),
      "Specify if the response paylod should be logged or not"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "compress", NULL,
+     0, FLB_FALSE, 0,
+     "Set payload compression mechanism. Option available is 'gzip'"
     },
     /* EOF */
     {0}

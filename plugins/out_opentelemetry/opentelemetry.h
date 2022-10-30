@@ -62,6 +62,9 @@ struct opentelemetry_context {
 
     /* instance context */
     struct flb_output_instance *ins;
+
+    /* Compression mode (gzip) */
+    int compress_gzip;
 };
 
 #endif
