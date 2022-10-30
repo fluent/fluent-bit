@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_downstream.h>
 #include <string.h>
 #include <float.h>
+#include <math.h>
 #include <msgpack.h>
 #include "flb_tests_runtime.h"
 
@@ -146,7 +147,7 @@ static int msgpack_strncmp(char* str, size_t str_len, msgpack_object obj)
     case MSGPACK_OBJECT_FLOAT64:
         {
             double val = strtod(str, NULL);
-            if ((val - obj.via.f64) < DBL_EPSILON) {
+            if (fabs(val - obj.via.f64) < DBL_EPSILON) {
                 ret = 0;
             }
         }
