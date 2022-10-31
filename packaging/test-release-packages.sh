@@ -20,7 +20,8 @@ APT_TARGETS=("ubuntu:18.04"
 YUM_TARGETS=("centos:7"
     "rockylinux:8"
     "quay.io/centos/centos:stream9"
-    "amazonlinux:2")
+    "amazonlinux:2"
+    "amazonlinux:2022")
 
 for IMAGE in "${APT_TARGETS[@]}"
 do
@@ -39,5 +40,5 @@ do
         -e FLUENT_BIT_PACKAGES_URL="${FLUENT_BIT_PACKAGES_URL:-https://packages.fluentbit.io}" \
         -e FLUENT_BIT_PACKAGES_KEY="${FLUENT_BIT_PACKAGES_KEY:-https://packages.fluentbit.io/fluentbit.key}" \
         "$IMAGE" \
-        sh -c "yum update -y curl sudo;curl $INSTALL_SCRIPT | sh"
+        sh -c "yum install -y sudo;curl $INSTALL_SCRIPT | sh"
 done
