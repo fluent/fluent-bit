@@ -73,17 +73,13 @@ enum {
     FLB_PARSER_TYPE_HEX,
 };
 
-static inline time_t flb_parser_tm2time(const struct tm *src)
+static inline time_t flb_parser_tm2time(const struct flb_tm *src)
 {
     struct tm tmp;
     time_t res;
 
-    tmp = *src;
-#ifdef FLB_HAVE_GMTOFF
-    res = timegm(&tmp) - src->tm_gmtoff;
-#else
-    res = timegm(&tmp);
-#endif
+    tmp = src->tm;
+    res = timegm(&tmp) - flb_tm_gmtoff(src);
     return res;
 }
 
@@ -109,7 +105,7 @@ void flb_parser_exit(struct flb_config *config);
 int flb_parser_tzone_offset(const char *str, int len, int *tmdiff);
 int flb_parser_time_lookup(const char *time, size_t tsize, time_t now,
                            struct flb_parser *parser,
-                           struct tm *tm, double *ns);
+                           struct flb_tm *tm, double *ns);
 int flb_parser_typecast(const char *key, int key_len,
                         const char *val, int val_len,
                         msgpack_packer *pck,
