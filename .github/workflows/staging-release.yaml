@@ -175,7 +175,9 @@ jobs:
           "latest",
           "${{ github.event.inputs.version }}-debug",
           "${{ needs.staging-release-version-check.outputs.major-version }}-debug",
-          "latest-debug"
+          "latest-debug",
+          "windows-2019-${{ github.event.inputs.version }}",
+          "windows-2022-${{ github.event.inputs.version }}"
         ]
     steps:
       # Primarily because the skopeo errors are hard to parse and non-obvious
