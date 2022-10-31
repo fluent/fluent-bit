@@ -30,6 +30,19 @@ struct flb_time {
     struct timespec tm;
 };
 
+struct flb_tm {
+    struct tm tm;
+#ifndef FLB_HAVE_GMTOFF
+    long int tm_gmtoff;
+#endif
+};
+
+#ifndef FLB_HAVE_GMTOFF
+#define flb_tm_gmtoff(x) (x)->tm_gmtoff
+#else
+#define flb_tm_gmtoff(x) (x)->tm.tm_gmtoff
+#endif
+
 /*
    to represent eventtime of fluentd
    see also
