@@ -153,6 +153,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
 /* use for locking the use of the chunk trace context. */
 #ifdef FLB_HAVE_CHUNK_TRACE
     pthread_mutexattr_t attr = {0};
+    pthread_mutexattr_init(&attr);
 #endif
 
     if (!input) {
