@@ -1034,7 +1034,7 @@ static int parse_subseconds(char *str, int len, double *subsec)
 int flb_parser_time_lookup(const char *time_str, size_t tsize,
                            time_t now,
                            struct flb_parser *parser,
-                           struct tm *tm, double *ns)
+                           struct flb_tm *tm, double *ns)
 {
     int ret;
     time_t time_now;
@@ -1077,8 +1077,8 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
         gmtime_r(&time_now, &tmy);
 
         /* Make the timestamp default to today */
-        tm->tm_mon = tmy.tm_mon;
-        tm->tm_mday = tmy.tm_mday;
+        tm->tm.tm_mon = tmy.tm_mon;
+        tm->tm.tm_mday = tmy.tm_mday;
 
         uint64_t t = tmy.tm_year + 1900;
 
@@ -1145,11 +1145,9 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
         }
     }
 
-#ifdef FLB_HAVE_GMTOFF
     if (parser->time_with_tz == FLB_FALSE) {
-        tm->tm_gmtoff = parser->time_offset;
+        flb_tm_gmtoff(tm) = parser->time_offset;
     }
-#endif
 
     return 0;
 }
