@@ -65,6 +65,12 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "FreeBSD")
   set(CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS} -lutil")
 endif()
 
+# *BSD is not supported platform for wasm-micro-runtime. Now, we should be disabled for these platforms.
+if(${CMAKE_SYSTEM_NAME} MATCHES "BSD")
+  message(STATUS "This platform is not supported for WASM feature so disabled.")
+  set(FLB_WASM OFF)
+endif()
+
 include(GNUInstallDirs)
 include(ExternalProject)
 include(cmake/FindJournald.cmake)
