@@ -68,7 +68,7 @@ static int logfmt_parser(struct flb_parser *parser,
                          size_t *map_size)
 {
     int ret;
-    struct tm tm = {0};
+    struct flb_tm tm = {0};
     const unsigned char *key = NULL;
     size_t key_len = 0;
     const unsigned char *value = NULL;
