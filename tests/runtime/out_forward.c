@@ -143,8 +143,8 @@ static void cb_check_forward_mode(void *ctx, int ffd,
     TEST_CHECK(root.via.map.size == 2);
 
     /* Record */
-    key = root.via.map.ptr[0].key;
-    val = root.via.map.ptr[0].val;
+    key = root.via.map.ptr[1].key;
+    val = root.via.map.ptr[1].val;
 
     ret = strncmp(key.via.str.ptr, "fluent_signal", 13);
     TEST_CHECK(ret == 0);
