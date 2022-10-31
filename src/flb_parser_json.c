@@ -53,7 +53,7 @@ int flb_parser_json_do(struct flb_parser *parser,
     msgpack_object *k = NULL;
     msgpack_object *v = NULL;
     time_t time_lookup;
-    struct tm tm = {0};
+    struct flb_tm tm = {0};
     struct flb_time *t;
 
     /* Convert incoming in_buf JSON message to message pack format */
