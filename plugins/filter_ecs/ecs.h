@@ -27,7 +27,7 @@
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
 
 #define FLB_ECS_FILTER_HOST                       "127.0.0.1"
-#define FLB_ECS_FILTER_PORT                       51678
+#define FLB_ECS_FILTER_PORT                       "51678"
 #define FLB_ECS_FILTER_CLUSTER_PATH               "/v1/metadata"
 #define FLB_ECS_FILTER_TASK_PATH_FORMAT           "/v1/tasks?dockerid=%s"
 
@@ -104,6 +104,9 @@ struct flb_filter_ecs {
 
     struct mk_list metadata_keys;
     int metadata_keys_len;
+
+    flb_sds_t ecs_host;
+    int ecs_port;
 
     /* 
      * This field is used when we build new container metadata objects
