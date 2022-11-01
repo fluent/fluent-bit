@@ -56,6 +56,7 @@ struct flb_opensearch *flb_os_conf_create(struct flb_output_instance *ins,
     }
     ctx->ins = ins;
 
+    /* only used if the config has been set from the command line */
     if (uri) {
         if (uri->count >= 2) {
             f_index = flb_uri_get(uri, 0);
@@ -104,7 +105,21 @@ struct flb_opensearch *flb_os_conf_create(struct flb_output_instance *ins,
 
     /* Set manual Index and Type */
     if (f_index) {
-        ctx->index = flb_strdup(f_index->value); /* FIXME */
+        ctx->index = flb_strdup(f_index->value);
+    }
+    else {
+        /* Check if the index has been set in the configuration */
+        if (ctx->index) {
+            /* do we have a record accessor pattern ? */
+            if (strchr(ctx->index, '$')) {
+                ctx->ra_index = flb_ra_create(ctx->index, FLB_TRUE);
+                if (!ctx->ra_index) {
+                    flb_plg_error(ctx->ins, "invalid record accessor pattern set for 'index' property");
+                    flb_os_conf_destroy(ctx);
+                    return NULL;
+                }
+            }
+        }
     }
 
     if (f_type) {
@@ -353,6 +368,10 @@ int flb_os_conf_destroy(struct flb_opensearch *ctx)
 
     if (ctx->ra_prefix_key) {
         flb_ra_destroy(ctx->ra_prefix_key);
+    }
+
+    if (ctx->ra_index) {
+        flb_ra_destroy(ctx->ra_index);
     }
 
     flb_free(ctx);
