@@ -163,8 +163,8 @@ static int cb_ecs_init(struct flb_filter_instance *f_ins,
     }
 
     ctx->ecs_upstream = flb_upstream_create(config,
-                                            FLB_ECS_FILTER_HOST,
-                                            FLB_ECS_FILTER_PORT,
+                                            ctx->ecs_host,
+                                            ctx->ecs_port,
                                             FLB_IO_TCP,
                                             NULL);
 
@@ -398,7 +398,7 @@ static int get_ecs_cluster_metadata(struct flb_filter_ecs *ctx)
         c = flb_http_client(u_conn, FLB_HTTP_GET,
                             FLB_ECS_FILTER_CLUSTER_PATH,
                             NULL, 0, 
-                            FLB_ECS_FILTER_HOST, FLB_ECS_FILTER_PORT,
+                            ctx->ecs_host, ctx->ecs_port,
                             NULL, 0);
         flb_http_buffer_size(c, 0); /* 0 means unlimited */
 
@@ -998,7 +998,7 @@ static int get_task_metadata(struct flb_filter_ecs *ctx, char* short_id)
         c = flb_http_client(u_conn, FLB_HTTP_GET,
                             http_path,
                             NULL, 0, 
-                            FLB_ECS_FILTER_HOST, FLB_ECS_FILTER_PORT,
+                            ctx->ecs_host, ctx->ecs_port,
                             NULL, 0);
         flb_http_buffer_size(c, 0); /* 0 means unlimited */
 
@@ -1598,6 +1598,20 @@ static struct flb_config_map config_map[] = {
      "which have been created more than 10 minutes will be evicted."
      "Cache eviction is needed to purge task metadata for tasks that "
      "have been stopped."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "ecs_meta_host", FLB_ECS_FILTER_HOST,
+     0, FLB_TRUE, offsetof(struct flb_filter_ecs, ecs_host),
+     "The host name at which the ECS Agent Introspection endpoint is reachable. "
+     "Defaults to 127.0.0.1"
+    },
+
+    {
+     FLB_CONFIG_MAP_INT, "ecs_meta_port", FLB_ECS_FILTER_PORT,
+     0, FLB_TRUE, offsetof(struct flb_filter_ecs, ecs_port),
+     "The port at which the ECS Agent Introspection endpoint is reachable. "
+     "Defaults to 51678"
     },
 
     {0}
