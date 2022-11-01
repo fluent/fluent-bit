@@ -191,6 +191,15 @@ static int cb_ecs_init(struct flb_filter_instance *f_ins,
         goto error;
     }
 
+    ctx->failed_metadata_request_tags = flb_hash_create_with_ttl(ctx->ecs_meta_cache_ttl,
+                                                                 FLB_HASH_EVICT_OLDER,
+                                                                 FLB_ECS_FILTER_HASH_TABLE_SIZE,
+                                                                 FLB_ECS_FILTER_HASH_TABLE_SIZE);
+    if (!ctx->failed_metadata_request_tags) {
+        flb_plg_error(f_ins, "failed to create failed_metadata_request_tags table");
+        goto error;
+    }
+
     ctx->ecs_tag_prefix_len = strlen(ctx->ecs_tag_prefix);
 
     /* attempt to get metadata in init, can retry in cb_filter */
@@ -1293,16 +1302,16 @@ static int get_metadata_by_id(struct flb_filter_ecs *ctx,
     size_t size;
 
     if (ctx->ecs_tag_prefix_len + 12 > tag_len) {
-        flb_plg_error(ctx->ins, "Tag '%s' length check failed: tag is expected "
-                      "to be or be prefixed with '{ecs_tag_prefix}{12 character container short ID}'",
-                      tag);
+        flb_plg_warn(ctx->ins, "Tag '%s' length check failed: tag is expected "
+                     "to be or be prefixed with '{ecs_tag_prefix}{12 character container short ID}'",
+                     tag);
         return -1;
     }
 
     ret = strncmp(ctx->ecs_tag_prefix, tag, ctx->ecs_tag_prefix_len);
     if (ret != 0) {
-        flb_plg_error(ctx->ins, "Tag '%s' is not prefixed with ecs_tag_prefix '%s'",
-                      tag, ctx->ecs_tag_prefix);
+        flb_plg_warn(ctx->ins, "Tag '%s' is not prefixed with ecs_tag_prefix '%s'",
+                     tag, ctx->ecs_tag_prefix);
         return -1;
     }
 
@@ -1322,7 +1331,8 @@ static int get_metadata_by_id(struct flb_filter_ecs *ctx,
         /* try fetch metadata */
         ret = get_task_metadata(ctx, container_short_id);
         if (ret < 0) {
-            flb_plg_error(ctx->ins, "Requesting metadata from ECS Agent introspection endpoint failed");
+            flb_plg_info(ctx->ins, "Requesting metadata from ECS Agent introspection endpoint failed for tag %s",
+                         tag);
             flb_sds_destroy(container_short_id);
             return -1;
         }
@@ -1355,6 +1365,63 @@ static void clean_old_metadata_buffers(struct flb_filter_ecs *ctx)
     }
 }
 
+static int is_tag_marked_failed(struct flb_filter_ecs *ctx,
+                                const char *tag, int tag_len)
+{
+    int ret;
+    int val = 0;
+    size_t val_size;
+
+    ret = flb_hash_get(ctx->failed_metadata_request_tags,
+                       tag, tag_len,
+                       (void *) &val, &val_size);
+    if (ret != -1) {
+        if (val >= FLB_ECS_FILTER_METADATA_RETRIES) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
+static void mark_tag_failed(struct flb_filter_ecs *ctx,
+                            const char *tag, int tag_len)
+{
+    int ret;
+    int *val = NULL;
+    size_t val_size;
+
+    ret = flb_hash_get(ctx->failed_metadata_request_tags,
+                       tag, tag_len,
+                       (void *) val, &val_size);
+
+    if (ret == -1) {
+        /* hash table copies memory to new heap block */
+        val = flb_malloc(sizeof(int));
+        if (!val) {
+            flb_errno();
+            return;
+        }
+        *val = 1;
+        flb_hash_add(ctx->failed_metadata_request_tags,
+                     tag, tag_len,
+                     val, sizeof(int));
+        /* hash table will contain a copy */
+        flb_free(val);
+    } else {
+        /* increment number of failed metadata requests for this tag */
+        *val = *val + 1;
+        flb_hash_add(ctx->failed_metadata_request_tags,
+                     tag, tag_len,
+                     val, sizeof(int));
+        flb_plg_info(ctx->ins, "Failed to get ECS Metadata for tag %s %d times. "
+                    "This might be because the logs for this tag do not come from an ECS Task Container. "
+                    "This plugin will retry metadata requests at most %d times total for this tag.",
+                    tag, *val, FLB_ECS_FILTER_METADATA_RETRIES);
+
+    }
+}
+
 static int cb_ecs_filter(const void *data, size_t bytes,
                          const char *tag, int tag_len,
                          void **out_buf, size_t *out_size,
@@ -1373,6 +1440,7 @@ static int cb_ecs_filter(const void *data, size_t bytes,
     int len;
     struct flb_time tm;
     int total_records;
+    int check = FLB_FALSE;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
     msgpack_unpacked result;
@@ -1388,20 +1456,29 @@ static int cb_ecs_filter(const void *data, size_t bytes,
     if (ctx->has_cluster_metadata == FLB_FALSE) {
         ret = get_ecs_cluster_metadata(ctx);
         if (ret < 0) {
-            flb_plg_error(ctx->ins, "Could not retrieve cluster metadata "
-                          "from ECS Agent");
+            flb_plg_warn(ctx->ins, "Could not retrieve cluster metadata "
+                         "from ECS Agent");
             return FLB_FILTER_NOTOUCH;
         }
     }
 
-    if (ctx->cluster_metadata_only == FLB_FALSE) {
+    /* check if the current tag is marked as failed */
+    check = is_tag_marked_failed(ctx, tag, tag_len);
+    if (check == FLB_TRUE) {
+        flb_plg_debug(ctx->ins, "Failed to get ECS Metadata for tag %s %d times. "
+                      "Will not attempt to retry the metadata request. Will attach cluster metadata only.",
+                      tag, FLB_ECS_FILTER_METADATA_RETRIES);
+    }
+
+    if (check == FLB_FALSE && ctx->cluster_metadata_only == FLB_FALSE) {
         ret = get_metadata_by_id(ctx, tag, tag_len, &metadata_buffer);
         if (ret == -1) {
-            flb_plg_error(ctx->ins, "Failed to get ECS Task metadata for %s, "
+            flb_plg_info(ctx->ins, "Failed to get ECS Task metadata for %s, "
                         "falling back to process cluster metadata only. If "
                         "this is intentional, set `Cluster_Metadata_Only On`",
                         tag);
-            return FLB_FILTER_NOTOUCH;
+            mark_tag_failed(ctx, tag, tag_len);
+            metadata_buffer = &ctx->cluster_meta_buf;
         }
     } else {
         metadata_buffer = &ctx->cluster_meta_buf;
@@ -1460,8 +1537,8 @@ static int cb_ecs_filter(const void *data, size_t bytes,
             val = flb_ra_translate(metadata_key->ra, NULL, 0,
                                    metadata_buffer->obj, NULL);
             if (!val) {
-                flb_plg_error(ctx->ins, "Translation failed for %s : %s",
-                              metadata_key->key, metadata_key->template);
+                flb_plg_info(ctx->ins, "Translation failed for %s : %s",
+                             metadata_key->key, metadata_key->template);
                 msgpack_unpacked_destroy(&result);
                 msgpack_sbuffer_destroy(&tmp_sbuf);
                 return FLB_FILTER_NOTOUCH;
@@ -1547,6 +1624,9 @@ static void flb_filter_ecs_destroy(struct flb_filter_ecs *ctx)
         }
         if (ctx->container_hash_table) {
             flb_hash_destroy(ctx->container_hash_table);
+        }
+        if (ctx->failed_metadata_request_tags) {
+            flb_hash_destroy(ctx->failed_metadata_request_tags);
         }
         flb_free(ctx);
     }

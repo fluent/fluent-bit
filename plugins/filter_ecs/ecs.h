@@ -30,6 +30,7 @@
 #define FLB_ECS_FILTER_PORT                       "51678"
 #define FLB_ECS_FILTER_CLUSTER_PATH               "/v1/metadata"
 #define FLB_ECS_FILTER_TASK_PATH_FORMAT           "/v1/tasks?dockerid=%s"
+#define FLB_ECS_FILTER_METADATA_RETRIES           2
 
 /*
  * Kubernetes recommends not running more than 110 pods per node
@@ -131,6 +132,14 @@ struct flb_filter_ecs {
      * that need to be freed
      */
     struct mk_list metadata_buffers;
+
+    /* 
+     * Fluent Bit may pick up logs for containers that were not scheduled by ECS
+     * These will lead to continuous error messages. Therefore, we store
+     * a hash table of tags for which we could not get metadata so we can stop
+     * retrying on them.
+     */
+    struct flb_hash *failed_metadata_request_tags;
 
     int ecs_meta_cache_ttl;
     char *ecs_tag_prefix;
