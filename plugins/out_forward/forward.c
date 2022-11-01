@@ -1049,6 +1049,22 @@ static int flush_message_mode(struct flb_forward *ctx,
     return FLB_OK;
 }
 
+/* pack payloads of cmetrics or ctraces */
+static int pack_metricses_payload(msgpack_packer *mp_pck, const void *data, size_t bytes) {
+    int entries;
+    struct flb_time tm;
+
+    /* Format with forward mode representation of entries: [time, [{entries map}] */
+    msgpack_pack_array(mp_pck, 1);
+    msgpack_pack_array(mp_pck, 2);
+    flb_time_get(&tm);
+    flb_time_append_to_msgpack(&tm, mp_pck, 0);
+    entries = flb_mp_count(data, bytes);
+    msgpack_pack_array(mp_pck, entries);
+
+    return 0;
+}
+
 #include <fluent-bit/flb_pack.h>
 /*
  * Forward Mode: this is the generic mechanism used in Fluent Bit, it takes
@@ -1116,7 +1132,7 @@ static int flush_forward_mode(struct flb_forward *ctx,
         }
         else {
             /* FLB_EVENT_TYPE_METRICS and FLB_EVENT_TYPE_TRACES */
-            msgpack_pack_bin(&mp_pck, bytes);
+            pack_metricses_payload(&mp_pck, data, bytes);
         }
     }
 
