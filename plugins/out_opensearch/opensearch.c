@@ -242,10 +242,11 @@ static int opensearch_format(struct flb_config *config,
     int index_len = 0;
     int write_op_update = FLB_FALSE;
     int write_op_upsert = FLB_FALSE;
+    flb_sds_t ra_index = NULL;
     size_t s = 0;
     size_t off = 0;
     char *p;
-    char *index;
+    char *index = NULL;
     char logstash_index[256];
     char time_formatted[256];
     char index_formatted[256];
@@ -327,7 +328,7 @@ static int opensearch_format(struct flb_config *config,
      * The header stored in 'j_index' will be used for the all records on
      * this payload.
      */
-    if (ctx->logstash_format == FLB_FALSE && ctx->generate_id == FLB_FALSE) {
+    if (ctx->logstash_format == FLB_FALSE && ctx->generate_id == FLB_FALSE && ctx->ra_index == NULL) {
         flb_time_get(&tms);
         gmtime_r(&tms.tm.tv_sec, &tm);
         strftime(index_formatted, sizeof(index_formatted) - 1,
@@ -477,6 +478,28 @@ static int opensearch_format(struct flb_config *config,
                      ctx->index, &tm);
             index = index_formatted;
         }
+        else if (ctx->ra_index) {
+            /* a record accessor pattern exists for the index */
+            ra_index = flb_ra_translate(ctx->ra_index,
+                                           (char *) tag, tag_len,
+                                           map, NULL);
+            if (!ra_index) {
+                flb_plg_warn(ctx->ins, "invalid index translation from record accessor pattern, default to static index");
+            }
+            else {
+                index = ra_index;
+            }
+
+            index_len = flb_sds_snprintf(&j_index,
+                                         flb_sds_alloc(j_index),
+                                         OS_BULK_INDEX_FMT_NO_TYPE,
+                                         ctx->action,
+                                         index);
+            flb_sds_destroy(ra_index);
+            ra_index = NULL;
+            index = NULL;
+
+        }
 
         /* Tag Key */
         if (ctx->include_tag_key == FLB_TRUE) {
@@ -556,6 +579,7 @@ static int opensearch_format(struct flb_config *config,
             msgpack_unpacked_destroy(&result);
             flb_sds_destroy(bulk);
             flb_sds_destroy(j_index);
+            flb_sds_destroy(ra_index);
             return -1;
         }
 

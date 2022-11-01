@@ -53,7 +53,9 @@
 
 struct flb_opensearch {
     /* OpenSearch index (database) and type (table) */
-    char *index;
+    flb_sds_t index;
+    struct flb_record_accessor *ra_index;
+
     char *type;
     char suppress_type_name;
 
