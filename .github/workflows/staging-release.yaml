@@ -221,25 +221,6 @@ jobs:
           TAG: ${{ matrix.tag }}
         shell: bash
 
-  staging-release-images-dockerhub-update:
-    name: Update Dockerhub description
-    permissions:
-      contents: read
-    runs-on: ubuntu-latest
-    environment: release
-    needs: staging-release-images
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Docker Hub Description
-        uses: peter-evans/dockerhub-description@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
-          repository: ${{ github.repository }}
-          readme-filepath: ./dockerfiles/dockerhub-description.md
-          short-description: 'Fluent Bit, lightweight logs and metrics collector and forwarder'
-
   staging-release-images-sign:
     name: Sign container image manifests
     permissions:
