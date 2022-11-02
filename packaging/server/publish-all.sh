@@ -33,10 +33,10 @@ if [[ -n "$CREATE_REPO_CMD" ]]; then
     echo "Using $CREATE_REPO_CMD"
 elif command -v createrepo &> /dev/null; then
     echo "Found createrepo"
-    CREATE_REPO_CMD="createrepo -dvp"
+    CREATE_REPO_CMD="createrepo"
 elif command -v createrepo_c &> /dev/null; then
     echo "Found createrepo_c"
-    CREATE_REPO_CMD="createrepo_c -dvp"
+    CREATE_REPO_CMD="createrepo_c"
 else
     echo "Unable to find a command equivalent to createrepo"
     exit 1
