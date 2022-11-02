@@ -273,11 +273,17 @@ jobs:
 
   # This takes a long time...
   call-build-windows-container:
-    name: Windows container image
-    runs-on: windows-2019
+    name: Windows container images
+    runs-on: windows-${{ matrix.windows-base-version }}
     environment: ${{ inputs.environment }}
     needs:
       - call-build-images-meta
+    strategy:
+      fail-fast: true
+      matrix:
+        windows-base-version: 
+          - '2019'
+          - '2022'
     permissions:
       contents: read
       packages: write
@@ -296,8 +302,9 @@ jobs:
 
       - name: Build the production images
         run: |
-          docker build -t ${{ inputs.registry }}/${{ inputs.image }}:windows-2019-${{ inputs.version }} --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc2019 -f ./dockerfiles/Dockerfile.windows .
-          docker push ${{ inputs.registry }}/${{ inputs.image }}:windows-2019-${{ inputs.version }}
+          docker build -t ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }} --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/Dockerfile.windows .
+          docker push ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }}
+        
         # We cannot use this action as it requires privileged mode
         # uses: docker/build-push-action@v3
         # with:
