@@ -800,6 +800,28 @@ static int unpack_meta_type(mpack_reader_t *reader, size_t index, void *context)
     return result;
 }
 
+static int unpack_meta_aggregation_type(mpack_reader_t *reader, size_t index, void *context)
+{
+    uint64_t                           value;
+    int                                result;
+    struct cmt_msgpack_decode_context *decode_context;
+
+    if (NULL == reader ||
+        NULL == context) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+
+    decode_context = (struct cmt_msgpack_decode_context *) context;
+
+    result = cmt_mpack_consume_uint_tag(reader, &value);
+
+    if (CMT_DECODE_MSGPACK_SUCCESS == result) {
+        decode_context->aggregation_type = value;
+    }
+
+    return result;
+}
+
 static int unpack_meta_opts(mpack_reader_t *reader, size_t index, void *context)
 {
     struct cmt_msgpack_decode_context *decode_context;
@@ -933,6 +955,7 @@ static int unpack_basic_type_meta(mpack_reader_t *reader, size_t index, void *co
     int                                   result;
     struct cmt_summary                   *summary;
     struct cmt_histogram                 *histogram;
+    struct cmt_counter                   *counter;
     struct cmt_msgpack_decode_context    *decode_context;
     struct cmt_mpack_map_entry_callback_t callbacks[] = \
         {
@@ -942,6 +965,7 @@ static int unpack_basic_type_meta(mpack_reader_t *reader, size_t index, void *co
             {"labels",           unpack_meta_labels},
             {"buckets",          unpack_meta_buckets},
             {"quantiles",        unpack_meta_quantiles},
+            {"aggregation_type", unpack_meta_aggregation_type},
             {NULL,               NULL}
         };
 
@@ -980,6 +1004,10 @@ static int unpack_basic_type_meta(mpack_reader_t *reader, size_t index, void *co
             if (summary->quantiles == NULL) {
                 result = CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
             }
+        }
+        else if(decode_context->map->type == CMT_COUNTER) {
+            counter = (struct counter *) decode_context->map->parent;
+            counter->aggregation_type = decode_context->aggregation_type;
         }
     }
 
