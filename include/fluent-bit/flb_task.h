@@ -50,9 +50,28 @@
 #define FLB_TASK_SET(ret, task_id, out_id)              \
     (uint32_t) ((ret << 28) | (task_id << 14) | out_id)
 
+#define FLB_TASK_ROUTE_HOOK_RETURN  1
+#define FLB_TASK_HOOK_ONCE          1
+#define FLB_TASK_HOOK_PERSISTANT    2
+
 struct flb_task_route {
     struct flb_output_instance *out;
+    struct mk_list lifecycle_hooks;
     struct mk_list _head;
+};
+
+struct flb_task_lifecycle_hook {
+    int type;
+    void *id;
+    void (*cb)(void *);
+    void *data;
+    int durability;
+    struct mk_list _head;
+};
+
+struct flb_task_queue {
+    struct mk_list *pending;        /* prefer pointer for syntactic sugar*/
+    struct mk_list *in_progress;
 };
 
 /*
@@ -87,6 +106,122 @@ struct flb_task {
     struct flb_input_instance *i_ins;    /* input instance                */
     struct flb_config *config;           /* parent flb config             */
 };
+
+static inline int flb_task_route_lifecycle_hook_add(struct flb_task *task,
+                                             int hook_type,
+                                             int durability,
+                                             void *id,
+                                             struct flb_output_instance *out_instance,
+                                             void (*callback_ptr)(void *),
+                                             void *data)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_task_route *route;
+    int is_route_found = FLB_FALSE;
+    struct flb_task_lifecycle_hook *new_hook;
+
+    /* find route to attach callback to */
+    mk_list_foreach_safe(head, tmp, &task->routes) {
+        route = mk_list_entry(head, struct flb_task_route, _head);
+        if (route->out == out_instance) {
+            is_route_found = FLB_TRUE;
+            break;
+        }
+    }
+
+    if (!is_route_found) {
+        flb_error("unable to find output instance in task routes");
+        return -1;
+    }
+
+    /* create and attach lifecycle hook */
+    new_hook = (struct flb_task_lifecycle_hook*) flb_malloc(sizeof(struct flb_task_lifecycle_hook));
+    if (!new_hook) {
+        flb_errno();
+        return -1;
+    }
+
+    new_hook->durability = durability;
+    new_hook->cb = callback_ptr;
+    new_hook->data = data;
+    new_hook->type = hook_type;
+    
+    mk_list_add(&new_hook->_head, &route->lifecycle_hooks);
+    return 0;
+}
+
+static inline int flb_task_route_lifecycle_hook_trigger(struct flb_task *task,
+                                            int hook_type,
+                                            struct flb_output_instance *out_instance)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_task_route *route;
+    struct flb_task_lifecycle_hook *hook;
+    int is_route_found = FLB_FALSE;
+
+    /* find route to run all callbacks from */
+    mk_list_foreach_safe(head, tmp, &task->routes) {
+        route = mk_list_entry(head, struct flb_task_route, _head);
+        if (route->out == out_instance) {
+            is_route_found = FLB_TRUE;
+            break;
+        }
+    }
+
+    if (!is_route_found) {
+        flb_error("unable to find output instance in task routes");
+        return -1;
+    }
+
+    /* call lifecycle hooks wih the data */
+    mk_list_foreach_safe(head, tmp, &route->lifecycle_hooks) {
+        hook = mk_list_entry(head, struct flb_task_lifecycle_hook, _head);
+        if (hook->type != hook_type) {
+            continue;
+        }
+
+        hook->cb(hook->data);
+        if (hook->durability == FLB_TASK_HOOK_ONCE) {
+            mk_list_del(&hook->_head);
+            flb_free(hook);
+        }
+    }
+
+    return 0;
+}
+
+static inline int flb_task_route_lifecycle_hook_remove_by_id(struct flb_task* task, void *id)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_task_route *route;
+    struct flb_task_lifecycle_hook *hook;
+    int is_id_found = FLB_FALSE;
+
+    /* find route to run all callbacks from */
+    mk_list_foreach_safe(head, tmp, &task->routes) {
+        route = mk_list_entry(head, struct flb_task_route, _head);
+
+        /* delete lifecycle hooks wih the id */
+        mk_list_foreach_safe(head, tmp, &route->lifecycle_hooks) {
+            hook = mk_list_entry(head, struct flb_task_lifecycle_hook, _head);
+            if (hook->id == id) {
+                mk_list_del(&hook->_head);
+                flb_free(hook);
+                is_id_found = FLB_TRUE;
+            }
+        }
+    }
+
+    if (!is_id_found) {
+        flb_error("unable to find hook id in task routes");
+        return -1;
+    }
+
+    return 0;
+}
 
 int flb_task_running_count(struct flb_config *config);
 int flb_task_running_print(struct flb_config *config);

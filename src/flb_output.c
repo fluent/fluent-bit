@@ -173,6 +173,172 @@ void flb_output_coro_add(struct flb_output_instance *ins, struct flb_coro *coro)
     mk_list_add(&out_flush->_head, &ins->flush_list);
 }
 
+
+/*
+ * An enqueued task is a task that is not yet dispatched to a thread
+ * or started on the engine.
+ * 
+ * There may be multiple enqueued instances of the same task.
+ */
+struct flb_task_enqueued {
+    //struct flb_task_queue *queue;
+    struct flb_task *task;
+    struct flb_output_instance *out_instance;   /* only used for non-threaded dispatch */
+    struct flb_config *config;
+    //int is_pending;
+    struct mk_list _head;
+};
+
+struct flb_task_queue* flb_task_queue_create() {
+    struct flb_task_queue *tq;
+    tq = flb_malloc(sizeof(struct flb_task_queue));
+    if (!tq) {
+        flb_errno();
+        return NULL;
+    }
+    tq->pending = flb_malloc(sizeof(struct mk_list));
+    if (!tq->pending) {
+        flb_errno();
+        flb_free(tq);
+        return NULL;
+    }
+    tq->in_progress = flb_malloc(sizeof(struct mk_list));
+    if (!tq->in_progress) {
+        flb_errno();
+        flb_free(tq->pending);
+        flb_free(tq);
+        return NULL;
+    }
+    mk_list_init(tq->pending);
+    mk_list_init(tq->in_progress);
+    return tq;
+}
+
+void flb_task_queue_destroy(struct flb_task_queue *queue) {
+    struct flb_task_enqueued *queued_task;
+    struct mk_list *tmp;
+    struct mk_list *head;
+
+    mk_list_foreach_safe(head, tmp, queue->pending) {
+        queued_task = mk_list_entry(head, struct flb_task_enqueued, _head);
+        flb_free(queued_task);
+    }
+
+    mk_list_foreach_safe(head, tmp, queue->in_progress) {
+        queued_task = mk_list_entry(head, struct flb_task_enqueued, _head);
+        flb_free(queued_task);
+    }
+
+    flb_free(queue->pending);
+    flb_free(queue->in_progress);
+    flb_free(queue);
+}
+
+/*
+ * Queue a task to be flushed at a later time
+ */
+static int flb_output_task_queue_enqueue(struct flb_task_queue *queue,
+                                  struct flb_task *task,
+                                  struct flb_output_instance *out_ins,
+                                  struct flb_config *config)
+{
+    struct flb_task_enqueued *queued_task;
+
+    queued_task = flb_malloc(sizeof(struct flb_task_enqueued));
+    if (!queued_task) {
+        flb_errno();
+        return -1;
+    }
+    queued_task->out_instance = out_ins;
+    queued_task->task = task;
+    queued_task->config = config;
+    //queued_task->queue = queue;
+    //queued_task->is_pending = FLB_TRUE;
+
+    mk_list_add(&queued_task->_head, queue->pending);
+    return 0;
+}
+
+/*
+ * A callback function to inform the singleplex queue when the task is done and to
+ * start up the next task
+ */
+static void cb_flb_output_task_singleplex_deactivate(void* data) {
+    struct flb_task_enqueued *queued_task = (struct flb_task_enqueued *) data;
+//    flb_task_route_lifecycle_hook_remove_by_id((void *) queued_task);
+    mk_list_del(&queued_task->_head);
+    flb_free(queued_task);
+    flb_output_task_singleplex_flush_next(queued_task->task, queued_task->out_instance);
+}
+
+/*
+ * Pop task from queue and flush it
+ */
+static int flb_output_task_queue_flush_one(struct flb_task_queue *queue)
+{
+    struct flb_task_enqueued *queued_task;
+    int ret;
+
+    ret = mk_list_is_empty(queue->pending);
+    if (ret == 0) {
+        flb_error("Attempting to pop task queue with no tasks enqueued");
+        return -1;
+    }
+
+    queued_task = mk_list_entry_first(queue->pending, struct flb_task_enqueued, _head);
+
+    /* Add a lifecycle hook to remove the task from the in_progress queue */
+    flb_task_route_lifecycle_hook_add(queued_task->task,
+                                      FLB_TASK_ROUTE_HOOK_RETURN,
+                                      FLB_TASK_HOOK_ONCE,
+                                      (void *) queued_task,
+                                      queued_task->out_instance,
+                                      cb_flb_output_task_singleplex_deactivate,
+                                      (void *) queued_task
+                                      ); // hook, id, out_instance, data*
+
+    ret = flb_output_task_flush(queued_task->task,
+                                queued_task->out_instance,
+                                queued_task->config);
+
+    mk_list_del(&queued_task->_head);
+    mk_list_add(&queued_task->_head, queue->in_progress);
+
+    //queued_task->is_pending = FLB_FALSE;
+    return ret;
+}
+
+/* Will either run or queue running */
+int flb_output_task_singleplex_enqueue(struct flb_task *task,
+                                         struct flb_output_instance *out_ins,
+                                         struct flb_config *config)
+{
+    /* Enqueue task */
+    int ret;
+    ret = flb_output_task_queue_enqueue(out_ins->singleplex_queue,
+                                         task, out_ins, config);
+    if (ret == -1) {
+        return ret;
+    }
+
+    /* Launch task if nothing is running */
+    if (mk_list_is_empty(out_ins->singleplex_queue->in_progress) == 0) {
+        return flb_output_task_queue_flush_one(out_ins->singleplex_queue);
+    }
+    
+    return ret;
+}
+
+int flb_output_task_singleplex_flush_next(struct flb_task *task,
+                                            struct flb_output_instance *out_ins)
+{
+    /* Flush if there is a pending task queued */
+    if (!(mk_list_is_empty(out_ins->singleplex_queue->pending) == 0)) {
+        return flb_output_task_queue_flush_one(out_ins->singleplex_queue);
+    }
+    return 0;
+}
+
 /*
  * Flush a task through the output plugin, either using a worker thread + coroutine
  * or a simple co-routine in the current thread.
@@ -208,6 +374,8 @@ int flb_output_task_flush(struct flb_task *task,
                         sizeof(struct flb_output_flush*));
         if (ret == -1) {
             flb_errno();
+            flb_output_flush_destroy(out_flush);
+            flb_task_users_dec(task, FLB_FALSE);
             return -1;
         }
     }
@@ -450,7 +618,15 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->log_level = -1;
     instance->test_mode = FLB_FALSE;
     instance->is_threaded = FLB_FALSE;
+    instance->is_sync_task_running = FLB_FALSE;
     instance->tp_workers = plugin->workers;
+
+    instance->singleplex_queue = flb_task_queue_create();
+    if (!instance->singleplex_queue) {
+        flb_free(instance);
+        flb_errno();
+        return NULL;
+    }
 
     /* Retrieve an instance id for the output instance */
     instance->id = instance_id(config);
@@ -461,6 +637,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->p = plugin;
     instance->callback = flb_callback_create(instance->name);
     if (!instance->callback) {
+        flb_task_queue_destroy(instance->singleplex_queue);
         flb_free(instance);
         return NULL;
     }
@@ -474,6 +651,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         ctx = flb_calloc(1, sizeof(struct flb_plugin_proxy_context));
         if (!ctx) {
             flb_errno();
+            flb_task_queue_destroy(instance->singleplex_queue);
             flb_free(instance);
             return NULL;
         }
@@ -527,6 +705,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     if (plugin->flags & FLB_OUTPUT_NET) {
         ret = flb_net_host_set(plugin->name, &instance->host, output);
         if (ret != 0) {
+            flb_task_queue_destroy(instance->singleplex_queue);
             flb_free(instance);
             return NULL;
         }

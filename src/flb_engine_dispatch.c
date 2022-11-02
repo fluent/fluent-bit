@@ -181,12 +181,21 @@ static int tasks_start(struct flb_input_instance *in,
             }
 
             hits++;
-
+            
             /*
-             * We have the Task and the Route, created a thread context for the
-             * data handling.
+             * If the plugin doesn't allow for multiplexing but high throughput
+             * is needed.
              */
-            flb_output_task_flush(task, route->out, config);
+            if (out->flags & FLB_OUTPUT_SYNCHRONOUS) {
+                flb_output_task_singleplex_enqueue(task, route->out, config);
+            }
+            else {
+                /*
+                * We have the Task and the Route, created a thread context for the
+                * data handling.
+                */
+                flb_output_task_flush(task, route->out, config);
+            }
 
             /*
             th = flb_output_thread(task,

@@ -401,6 +401,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                 flb_task_destroy(task, FLB_TRUE);
                 return NULL;
             }
+            mk_list_init(&route->lifecycle_hooks);
 
             route->out = o_ins;
             mk_list_add(&route->_head, &task->routes);
@@ -425,6 +426,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                 flb_errno();
                 continue;
             }
+            mk_list_init(&route->lifecycle_hooks);
 
             route->out = o_ins;
             mk_list_add(&route->_head, &task->routes);

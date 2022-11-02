@@ -224,6 +224,11 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
     }
     name = (char *) flb_output_name(ins);
 
+    /* Trigger task route completion lifecycle hooks */
+    if (ret == FLB_OK || ret == FLB_RETRY || ret == FLB_ERROR) {
+        flb_task_route_lifecycle_hook_trigger(task, FLB_TASK_ROUTE_HOOK_RETURN, ins);
+    }
+
     /* A task has finished, delete it */
     if (ret == FLB_OK) {
         /* cmetrics */

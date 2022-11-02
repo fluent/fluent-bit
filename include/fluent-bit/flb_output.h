@@ -61,6 +61,7 @@
 #define FLB_OUTPUT_PLUGIN_PROXY    1
 #define FLB_OUTPUT_NO_MULTIPLEX  512
 #define FLB_OUTPUT_PRIVATE      1024
+#define FLB_OUTPUT_SYNCHRONOUS  2048
 
 
 /* Event type handlers */
@@ -142,6 +143,7 @@ struct flb_test_out_formatter {
                      void **,        /* output buffer      */
                      size_t *);      /* output buffer size */
 };
+
 
 struct flb_output_plugin {
     /*
@@ -357,6 +359,7 @@ struct flb_output_instance {
      * loaded (in backlog)
      */
     size_t fs_backlog_chunks_size;
+
     /*
      * Buffer limit: optional limit set by configuration so this output instance
      * cannot buffer more than total_limit_size (bytes unit).
@@ -366,6 +369,9 @@ struct flb_output_instance {
      * filesystem as buffer type.
      */
     size_t total_limit_size;
+
+    /* Queue for singleplexed tasks */
+    struct flb_task_queue *singleplex_queue;
 
     /* Thread Pool: this is optional for the caller */
     int tp_workers;
@@ -720,7 +726,11 @@ int flb_output_help(struct flb_output_instance *ins, void **out_buf, size_t *out
 struct flb_output_instance *flb_output_get_instance(struct flb_config *config,
                                                     int out_id);
 int flb_output_flush_finished(struct flb_config *config, int out_id);
-
+int flb_output_task_singleplex_enqueue(struct flb_task *task,
+                                         struct flb_output_instance *out_ins,
+                                         struct flb_config *config);
+int flb_output_task_singleplex_flush_next(struct flb_task *task,
+                                            struct flb_output_instance *out_ins);
 struct flb_output_instance *flb_output_new(struct flb_config *config,
                                            const char *output, void *data,
                                            int public_only);

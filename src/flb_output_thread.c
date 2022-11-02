@@ -266,6 +266,13 @@ static void output_thread(void *data)
                 flb_sched_event_handler(sched->config, event);
             }
             else if (event->type == FLB_ENGINE_EV_THREAD_OUTPUT) {
+                /* Synchronous task scheduling delay */
+                if (th_ins->ins->flags | FLB_OUTPUT_SYNCHRONOUS) {
+                    if (th_ins->ins->is_sync_task_running) {
+                        continue;
+                    }
+                }
+
                 /* Read the task reference */
                 n = flb_pipe_r(event->fd, &task, sizeof(struct flb_task *));
                 if (n <= 0) {
@@ -292,6 +299,9 @@ static void output_thread(void *data)
                 if (!out_flush) {
                     continue;
                 }
+                if (th_ins->ins->flags | FLB_OUTPUT_SYNCHRONOUS) {
+                    th_ins->ins->is_sync_task_running = true;
+                }
                 flb_coro_resume(out_flush->coro);
             }
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
@@ -316,6 +326,9 @@ static void output_thread(void *data)
                  * the return message to the parent event loop so the Task
                  * can be updated.
                  */
+                if (th_ins->ins->flags | FLB_OUTPUT_SYNCHRONOUS) {
+                    th_ins->ins->is_sync_task_running = false;
+                }
                 handle_output_event(th_ins->config, ins->ch_events[1], event->fd);
             }
             else {
