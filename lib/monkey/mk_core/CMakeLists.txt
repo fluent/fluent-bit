@@ -10,7 +10,6 @@ set(src
 
 # Headers
 include_directories(../include/monkey/)
-include_directories(${PROJECT_BINARY_DIR}/include/monkey)
 
 # It set's a definition and register into the mk_core_info.h file */
 macro(MK_DEFINITION var)
@@ -146,7 +145,7 @@ endif()
 
 configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/../include/monkey/mk_core/mk_core_info.h.in"
-  "${PROJECT_BINARY_DIR}/include/monkey/mk_core/mk_core_info.h"
+  "${PROJECT_BINARY_DIR}/include/monkey/mk_core/mk_core_info.h" 
   )
 
 add_library(mk_core STATIC ${src})
