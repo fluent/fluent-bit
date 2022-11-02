@@ -490,11 +490,21 @@ static int opensearch_format(struct flb_config *config,
                 index = ra_index;
             }
 
-            index_len = flb_sds_snprintf(&j_index,
-                                         flb_sds_alloc(j_index),
-                                         OS_BULK_INDEX_FMT_NO_TYPE,
-                                         ctx->action,
-                                         index);
+            if (ctx->suppress_type_name) {
+                index_len = flb_sds_snprintf(&j_index,
+                                             flb_sds_alloc(j_index),
+                                             OS_BULK_INDEX_FMT_NO_TYPE,
+                                             ctx->action,
+                                             index);
+            }
+            else {
+                index_len = flb_sds_snprintf(&j_index,
+                                             flb_sds_alloc(j_index),
+                                             OS_BULK_INDEX_FMT,
+                                             ctx->action,
+                                             index, ctx->type);
+            }
+
             flb_sds_destroy(ra_index);
             ra_index = NULL;
             index = NULL;
