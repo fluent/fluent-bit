@@ -56,6 +56,7 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
     size_t                index;
     struct cmt_summary   *summary = NULL;
     struct cmt_histogram *histogram = NULL;
+    struct cmt_counter   *counter = NULL;
     size_t                meta_field_count;
 
     opts = map->opts;
@@ -66,8 +67,13 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
 
         meta_field_count++;
     }
-    if (map->type == CMT_SUMMARY) {
+    else if (map->type == CMT_SUMMARY) {
         summary = (struct cmt_summary *) map->parent;
+
+        meta_field_count++;
+    }
+    else if (map->type == CMT_COUNTER){
+        counter = (struct cmt_counter *) map->parent;
 
         meta_field_count++;
     }
@@ -143,6 +149,11 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
         }
 
         mpack_finish_array(writer);
+    }
+    else if (map->type == CMT_COUNTER){
+        /* aggregation_type */
+        mpack_write_cstr(writer, "aggregation_type");
+        mpack_write_int(writer, counter->aggregation_type);
     }
 
     mpack_finish_map(writer); /* 'meta' */
