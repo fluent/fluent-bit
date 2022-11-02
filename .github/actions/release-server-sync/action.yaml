@@ -41,7 +41,7 @@ runs:
     id: known_hosts
     run: |
       OUTPUT=$(ssh-keyscan -H ${{ inputs.server_hostname }})
-      echo ::set-output name=OUTPUT::$OUTPUT
+      echo "OUTPUT=$OUTPUT" >> $GITHUB_OUTPUT
     shell: bash
 
   - name: Install SSH Key

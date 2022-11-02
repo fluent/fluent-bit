@@ -168,7 +168,7 @@ jobs:
               fi
           fi
           echo "$TARGET"
-          echo ::set-output name=target::$TARGET
+          echo "target=$TARGET" >> $GITHUB_OUTPUT
         env:
           DISTRO: ${{ matrix.distro }}
         shell: bash

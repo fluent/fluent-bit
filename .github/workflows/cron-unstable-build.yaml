@@ -33,7 +33,7 @@ jobs:
       # For cron builds, i.e. nightly, we provide date and time as extra parameter to distinguish them.
       - name: Get current date
         id: date
-        run: echo "::set-output name=date::$(date '+%Y-%m-%d-%H_%M_%S')"
+        run: echo "date=$(date '+%Y-%m-%d-%H_%M_%S')" >> $GITHUB_OUTPUT
 
       - name: Debug event output
         uses: hmarr/debug-action@v2
@@ -65,7 +65,7 @@ jobs:
             echo "Unable to determine branch to use"
             exit 1
           fi
-          echo "::set-output name=branch::$cron_branch"
+          echo "branch=$cron_branch" >> $GITHUB_OUTPUT
         shell: bash
 
   unstable-build-images:
