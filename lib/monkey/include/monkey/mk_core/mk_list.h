@@ -18,8 +18,8 @@
  *  limitations under the License.
  */
 
-#ifndef   	MK_LIST_H_
-#define   	MK_LIST_H_
+#ifndef MK_LIST_H_
+#define MK_LIST_H_
 
 #include <stddef.h>
 #include "mk_macros.h"

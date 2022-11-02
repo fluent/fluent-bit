@@ -170,6 +170,7 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, evutil_socket_t fd,
     mk_bug(data == NULL);
 
     event = (struct mk_event *) data;
+
     if (event->mask != MK_EVENT_EMPTY) {
         return _mk_event_update(ctx, fd, type, events, data);
     }
@@ -477,6 +478,7 @@ static inline int _mk_event_wait_2(struct mk_event_loop *loop, int timeout)
     timeout_event = event_new(ctx->base, -1,
                       EV_TIMEOUT,
                       cb_wait_2_timeout, &timedout_flag);
+
     event_add(timeout_event, &timev);
 
     /* Blocking wait */
