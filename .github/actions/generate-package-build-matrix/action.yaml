@@ -33,7 +33,7 @@ runs:
           BUILD_TYPE="2.0"
         fi
         echo "Detected type: $BUILD_TYPE"
-        echo ::set-output name=BUILD_TYPE::$BUILD_TYPE
+        echo "BUILD_TYPE=$BUILD_TYPE" >> $GITHUB_OUTPUT
       shell: bash
       working-directory: version-check
 
@@ -78,5 +78,5 @@ runs:
       run: |
         echo $MATRIX
         echo $MATRIX| jq .
-        echo "::set-output name=matrix::$MATRIX"
+        echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
       shell: bash

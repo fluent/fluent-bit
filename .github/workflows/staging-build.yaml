@@ -53,7 +53,7 @@ jobs:
               echo "Defaulting to master"
               VERSION=master
             fi
-            echo ::set-output name=VERSION::$VERSION
+            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
         shell: bash
         env:
           # Use the dispatch variable in preference, if empty use the context ref_name which should
