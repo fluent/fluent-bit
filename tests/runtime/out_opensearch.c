@@ -90,6 +90,20 @@ static void cb_check_index_record_accessor(void *ctx, int ffd,
 {
     char *p;
     char *out_js = res_data;
+    char *index_line = "{\"create\":{\"_index\":\"abc\",\"_type\":\"def\"}";
+
+    p = strstr(out_js, index_line);
+    TEST_CHECK(p != NULL);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_index_record_accessor_suppress_type(void *ctx, int ffd,
+                                                         int res_ret, void *res_data, size_t res_size,
+                                                         void *data)
+{
+    char *p;
+    char *out_js = res_data;
     char *index_line = "{\"create\":{\"_index\":\"abc\"}";
 
     p = strstr(out_js, index_line);
@@ -416,11 +430,57 @@ void flb_test_index_record_accessor()
     flb_output_set(ctx, out_ffd,
                    "match", "test",
                    "index", "$myindex",
+                   "type", "def",
                    NULL);
 
     /* Enable test mode */
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
                               cb_check_index_record_accessor,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    len = strlen(record);
+    flb_lib_push(ctx, in_ffd, record, len);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_index_record_accessor_suppress_type()
+{
+    int ret;
+    int len;
+    int in_ffd;
+    int out_ffd;
+    char *record = "[1448403340, {\"key\": \"something\", \"myindex\": \"abc\"}]";
+
+    flb_ctx_t *ctx;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Elasticsearch output */
+    out_ffd = flb_output(ctx, (char *) "opensearch", NULL);
+
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "index", "$myindex",
+                   "suppress_type_name", "true",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_index_record_accessor_suppress_type,
                               NULL, NULL);
 
     /* Start */
@@ -806,6 +866,7 @@ TEST_LIST = {
     {"write_operation_upsert", flb_test_write_operation_upsert },
     {"index_type"            , flb_test_index_type },
     {"index_record_accessor" , flb_test_index_record_accessor},
+    {"index_record_accessor_suppress_type" , flb_test_index_record_accessor_suppress_type},
     {"logstash_format"       , flb_test_logstash_format },
     {"logstash_format_nanos" , flb_test_logstash_format_nanos },
     {"tag_key"               , flb_test_tag_key },
