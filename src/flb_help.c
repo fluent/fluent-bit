@@ -242,21 +242,21 @@ int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_s
         config_map = flb_config_map_create(ins->config, ins->p->config_map);
         options_size = mk_list_size(config_map);
 
-        if (ins->flags & FLB_INPUT_NET) {
+        if ((ins->flags & (FLB_INPUT_NET | FLB_INPUT_NET_SERVER)) != 0) {
             options_size += 2;
         }
-        if (ins->flags & FLB_IO_OPT_TLS && 0) {
+        if (ins->flags & FLB_IO_OPT_TLS) {
             tls_config = flb_tls_get_config_map(ins->config);
             options_size += mk_list_size(tls_config);
         }
 
         msgpack_pack_array(&mp_pck, options_size);
 
-        if (ins->flags & FLB_INPUT_NET) {
+        if ((ins->flags & (FLB_INPUT_NET | FLB_INPUT_NET_SERVER)) != 0) {
             pack_config_map_entry(&mp_pck, &m_input_net_listen);
             pack_config_map_entry(&mp_pck, &m_input_net_port);
         }
-        if (ins->flags & FLB_IO_OPT_TLS && 0) {
+        if (ins->flags & FLB_IO_OPT_TLS) {
             mk_list_foreach(head, tls_config) {
                 m = mk_list_entry(head, struct flb_config_map, _head);
                 pack_config_map_entry(&mp_pck, m);
