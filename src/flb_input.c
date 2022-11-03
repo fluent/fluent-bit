@@ -271,7 +271,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         flb_kv_init(&instance->net_properties);
 
         /* Plugin use networking */
-        if (plugin->flags & FLB_INPUT_NET) {
+        if (plugin->flags & (FLB_INPUT_NET | FLB_INPUT_NET_SERVER)) {
             ret = flb_net_host_set(plugin->name, &instance->host, input);
             if (ret != 0) {
                 flb_free(instance);
@@ -1014,7 +1014,8 @@ int flb_input_instance_init(struct flb_input_instance *ins,
     }
 
 #ifdef FLB_HAVE_TLS
-    if (ins->use_tls == FLB_TRUE) {
+    if (ins->use_tls == FLB_TRUE &&
+        (p->flags & FLB_INPUT_NET_SERVER) != 0) {
         if (ins->tls_crt_file == NULL) {
             tls_error_message = "certificate file missing";
 
