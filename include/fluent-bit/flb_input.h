@@ -61,6 +61,10 @@
 #define FLB_INPUT_PRIVATE    256   /* plugin is not published/exposed       */
 #define FLB_INPUT_NOTAG      512   /* plugin might don't have tags          */
 #define FLB_INPUT_THREADED  1024   /* plugin must run in a separate thread  */
+#define FLB_INPUT_NET_SERVER   8   /* Input address may set host and port.
+                                    * In addition, if TLS is enabled then a
+                                    * private key and certificate are required.
+                                    */
 
 /* Input status */
 #define FLB_INPUT_RUNNING     1
