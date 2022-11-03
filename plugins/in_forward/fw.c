@@ -319,5 +319,5 @@ struct flb_input_plugin in_forward_plugin = {
     .cb_pause     = in_fw_pause,
     .cb_exit      = in_fw_exit,
     .config_map   = config_map,
-    .flags        = FLB_INPUT_NET
+    .flags        = FLB_INPUT_NET_SERVER | FLB_IO_OPT_TLS
 };
