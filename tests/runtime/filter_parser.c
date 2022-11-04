@@ -793,7 +793,7 @@ TEST_LIST = {
     {"filter_parser_ignore_malformed_time", flb_test_filter_parser_ignore_malformed_time },
     {"filter_parser_preserve_original_field", flb_test_filter_parser_preserve_original_field },
     {"filter_parser_first_matched_when_multiple_parser", flb_test_filter_parser_first_matched_when_mutilple_parser },
-    {"filter_parser_skip_empty_values_false", flb_test_filter_parser_skip_empty_values_false },
+    {"filter_parser_skip_empty_values_false", flb_test_filter_parser_skip_empty_values_false},
     {NULL, NULL}
 };
 
