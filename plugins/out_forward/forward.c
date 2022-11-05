@@ -1054,7 +1054,7 @@ static int pack_metricses_payload(msgpack_packer *mp_pck, const void *data, size
     int entries;
     struct flb_time tm;
 
-    /* Format with forward mode representation of entries: [time, [{entries map}] */
+    /* Format with event stream format of entries: [[time, [{entries map}]]] */
     msgpack_pack_array(mp_pck, 1);
     msgpack_pack_array(mp_pck, 2);
     flb_time_get(&tm);
