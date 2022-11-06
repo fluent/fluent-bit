@@ -116,6 +116,13 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
         ctx->buffer_max_size = ctx->buffer_chunk_size;
     }
 
+    /* Socket rcv buffer size */
+    if (ctx->buffer_rcv_size == -1 || ctx->buffer_rcv_size>INT_MAX) {
+        flb_plg_error(ins, "invalid buffer_rcv_size");
+        flb_free(ctx);
+        return NULL;
+    }
+
     /* Parser */
     if (ctx->parser_name) {
         ctx->parser = flb_parser_get(ctx->parser_name, config);
