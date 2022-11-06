@@ -212,6 +212,16 @@ int flb_net_socket_nonblocking(flb_sockfd_t fd)
     return 0;
 }
 
+int flb_net_socket_rcv_buffer(flb_sockfd_t fd, int rcvbuf)
+{
+    if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf)) != 0) {
+        flb_errno();
+        return -1;
+    }
+
+    return 0;
+}
+
 int flb_net_socket_blocking(flb_sockfd_t fd)
 {
 #ifdef _WIN32
