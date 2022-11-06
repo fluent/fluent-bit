@@ -49,6 +49,7 @@ struct flb_syslog {
     flb_sds_t unix_path;
     flb_sds_t unix_perm_str;
     unsigned int unix_perm;
+    size_t buffer_rcv_size;
 
     /* UDP buffer, data length and buffer size */
         // char *buffer_data;
