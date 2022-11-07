@@ -561,6 +561,7 @@ static int decode_summary_data_point(struct cmt *cmt,
             }
 
             sample->sum_quantiles_set = CMT_TRUE;
+            sample->sum_quantiles_count = data_point->n_quantile_values;
         }
 
         for (index = 0 ;

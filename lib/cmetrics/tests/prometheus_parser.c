@@ -1362,6 +1362,58 @@ void test_override_timestamp()
     cmt_decode_prometheus_destroy(cmt);
 }
 
+// testing bug uncovered by https://github.com/fluent/cmetrics/pull/168
+void test_pr_168()
+{
+    char errbuf[256];
+    int status;
+    struct cmt *cmt;
+    cfl_sds_t result = NULL;
+    struct cmt_decode_prometheus_parse_opts opts;
+    memset(&opts, 0, sizeof(opts));
+    opts.errbuf = errbuf;
+    opts.errbuf_size = sizeof(errbuf);
+    cfl_sds_t in_buf = read_file(CMT_TESTS_DATA_PATH "/pr_168.txt");
+    const char expected[] =
+        "# HELP prometheus_engine_query_duration_seconds Query timings\n"
+        "# TYPE prometheus_engine_query_duration_seconds summary\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.5\",slice=\"inner_eval\"} nan 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.9\",slice=\"inner_eval\"} nan 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.99\",slice=\"inner_eval\"} nan 0\n"
+        "prometheus_engine_query_duration_seconds_sum{slice=\"inner_eval\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds_count{slice=\"inner_eval\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.5\",slice=\"prepare_time\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.9\",slice=\"prepare_time\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.99\",slice=\"prepare_time\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds_sum{slice=\"prepare_time\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds_count{slice=\"prepare_time\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.5\",slice=\"queue_time\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.9\",slice=\"queue_time\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.99\",slice=\"queue_time\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds_sum{slice=\"queue_time\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds_count{slice=\"queue_time\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.5\",slice=\"result_sort\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.9\",slice=\"result_sort\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.99\",slice=\"result_sort\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds_sum{slice=\"result_sort\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds_count{slice=\"result_sort\"} 0 0\n";
+
+    cmt_initialize();
+    status = cmt_decode_prometheus_create(&cmt, in_buf, cfl_sds_len(in_buf), &opts);
+    TEST_CHECK(status == 0);
+    if (!status) {
+        result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
+        status = strcmp(result, expected);
+        TEST_CHECK(status == 0);
+        if (status) {
+            fprintf(stderr, "EXPECTED:\n======\n%s\n======\nRESULT:\n======\n%s\n======\n", expected, result);
+        }
+        cfl_sds_destroy(result);
+    }
+    cfl_sds_destroy(in_buf);
+    cmt_decode_prometheus_destroy(cmt);
+}
+
 TEST_LIST = {
     {"header_help", test_header_help},
     {"header_type", test_header_type},
@@ -1391,5 +1443,6 @@ TEST_LIST = {
     {"empty_metrics", test_empty_metrics},
     {"issue_fluent_bit_6021", test_issue_fluent_bit_6021},
     {"override_timestamp", test_override_timestamp},
+    {"pr_168", test_pr_168},
     { 0 }
 };
