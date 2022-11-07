@@ -50,14 +50,14 @@ static inline void otlp_kvpair_destroy(Opentelemetry__Proto__Common__V1__KeyValu
 {
     if (kvpair != NULL) {
         if (kvpair->key != NULL) {
-            free(kvpair->key);
+            flb_free(kvpair->key);
         }
 
         if (kvpair->value != NULL) {
             otlp_any_value_destroy(kvpair->value);
         }
 
-        free(kvpair);
+        flb_free(kvpair);
     }
 }
 
@@ -71,10 +71,10 @@ static inline void otlp_kvlist_destroy(Opentelemetry__Proto__Common__V1__KeyValu
                 otlp_kvpair_destroy(kvlist->values[index]);
             }
 
-            free(kvlist->values);
+            flb_free(kvlist->values);
         }
 
-        free(kvlist);
+        flb_free(kvlist);
     }
 }
 
@@ -88,10 +88,10 @@ static inline void otlp_array_destroy(Opentelemetry__Proto__Common__V1__ArrayVal
                 otlp_any_value_destroy(array->values[index]);
             }
 
-            free(array->values);
+            flb_free(array->values);
         }
 
-        free(array);
+        flb_free(array);
     }
 }
 
@@ -100,7 +100,7 @@ static inline void otlp_any_value_destroy(Opentelemetry__Proto__Common__V1__AnyV
     if (value != NULL) {
         if (value->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE) {
             if (value->string_value != NULL) {
-                free(value->string_value);
+                flb_free(value->string_value);
                 value->string_value = NULL;
             }
         }
@@ -116,11 +116,11 @@ static inline void otlp_any_value_destroy(Opentelemetry__Proto__Common__V1__AnyV
         }
         else if (value->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_BYTES_VALUE) {
             if (value->bytes_value.data != NULL) {
-                free(value->bytes_value.data);
+                flb_free(value->bytes_value.data);
             }
         }
 
-        free(value);
+        flb_free(value);
         value = NULL;
     }
 }
@@ -270,10 +270,7 @@ static void clear_array(Opentelemetry__Proto__Logs__V1__LogRecord **logs,
     }
 
     for (index = 0 ; index < log_count ; index++) {
-        if (logs[index]->body->string_value) {
-            flb_free(logs[index]->body->string_value);
-            logs[index]->body->string_value = NULL;
-        }
+        otlp_any_value_destroy(logs[index]->body);
     }
 }
 
@@ -281,18 +278,18 @@ static Opentelemetry__Proto__Common__V1__ArrayValue *otlp_array_value_initialize
 {
     Opentelemetry__Proto__Common__V1__ArrayValue *value;
 
-    value = calloc(1, sizeof(Opentelemetry__Proto__Common__V1__ArrayValue));
+    value = flb_calloc(1, sizeof(Opentelemetry__Proto__Common__V1__ArrayValue));
 
     if (value != NULL) {
         opentelemetry__proto__common__v1__array_value__init(value);
 
         if (entry_count > 0) {
             value->values = \
-                calloc(entry_count,
+                flb_calloc(entry_count,
                        sizeof(Opentelemetry__Proto__Common__V1__AnyValue *));
 
             if (value->values == NULL) {
-                free(value);
+                flb_free(value);
 
                 value = NULL;
             }
@@ -309,7 +306,7 @@ static Opentelemetry__Proto__Common__V1__KeyValue *otlp_kvpair_value_initialize(
 {
     Opentelemetry__Proto__Common__V1__KeyValue *value;
 
-    value = calloc(1, sizeof(Opentelemetry__Proto__Common__V1__KeyValue));
+    value = flb_calloc(1, sizeof(Opentelemetry__Proto__Common__V1__KeyValue));
 
     if (value != NULL) {
         opentelemetry__proto__common__v1__key_value__init(value);
@@ -322,18 +319,18 @@ static Opentelemetry__Proto__Common__V1__KeyValueList *otlp_kvlist_value_initial
 {
     Opentelemetry__Proto__Common__V1__KeyValueList *value;
 
-    value = calloc(1, sizeof(Opentelemetry__Proto__Common__V1__KeyValueList));
+    value = flb_calloc(1, sizeof(Opentelemetry__Proto__Common__V1__KeyValueList));
 
     if (value != NULL) {
         opentelemetry__proto__common__v1__key_value_list__init(value);
 
         if (entry_count > 0) {
             value->values = \
-                calloc(entry_count,
+                flb_calloc(entry_count,
                        sizeof(Opentelemetry__Proto__Common__V1__KeyValue *));
 
             if (value->values == NULL) {
-                free(value);
+                flb_free(value);
 
                 value = NULL;
             }
@@ -375,7 +372,7 @@ static Opentelemetry__Proto__Common__V1__AnyValue *otlp_any_value_initialize(int
         value->array_value = otlp_array_value_initialize(entry_count);
 
         if (value->array_value == NULL) {
-            free(value);
+            flb_free(value);
             value = NULL;
         }
     }
@@ -385,7 +382,7 @@ static Opentelemetry__Proto__Common__V1__AnyValue *otlp_any_value_initialize(int
         value->kvlist_value = otlp_kvlist_value_initialize(entry_count);
 
         if (value->kvlist_value == NULL) {
-            free(value);
+            flb_free(value);
 
             value = NULL;
         }
@@ -394,7 +391,7 @@ static Opentelemetry__Proto__Common__V1__AnyValue *otlp_any_value_initialize(int
         value->value_case = OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_BYTES_VALUE;
     }
     else {
-        free(value);
+        flb_free(value);
 
         value = NULL;
     }
@@ -715,15 +712,6 @@ static int process_logs(struct flb_event_chunk *event_chunk,
         }
 
         log_object = msgpack_object_to_otlp_any_value(obj);
-        // json = flb_msgpack_to_json_str(1024, obj);
-
-        // if (json == NULL) {
-        //     clear_array(log_record_list, log_record_count);
-        //     flb_plg_error(ctx->ins, "failed to convert msgpack to json");
-        //     return FLB_ERROR;
-        // }
-
-        // log_bodies[log_record_count].string_value = json;
 
         log_records[log_record_count].body = log_object;
         log_records[log_record_count].time_unix_nano = flb_time_to_nanosec(&tm);
@@ -757,7 +745,6 @@ static int process_logs(struct flb_event_chunk *event_chunk,
         log_record_count = 0;
     }
 
-    flb_free(log_object);
     msgpack_unpacked_destroy(&result);
 
     return res;
