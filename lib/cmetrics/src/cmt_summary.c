@@ -130,7 +130,7 @@ double cmt_summary_quantile_get_value(struct cmt_metric *metric, int quantile_id
 {
     uint64_t val;
 
-    if (quantile_id < 0 || quantile_id > 5) {
+    if (quantile_id < 0 /*|| quantile_id > metric->sum_quantiles_count*/) {
         return 0;
     }
 
@@ -285,6 +285,7 @@ int cmt_summary_set_default(struct cmt_summary *summary,
             cmt_errno();
             return -1;
         }
+        metric->sum_quantiles_count = summary->quantiles_count;
     }
 
     /* set quantile values */

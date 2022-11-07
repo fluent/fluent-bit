@@ -909,7 +909,7 @@ static int finish_duplicate_histogram_summary_sum_count(
         cfl_sds_set_len(metric_name, cfl_sds_len(metric_name) - 6);
     } else if (type == CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_SUM) {
         cfl_sds_set_len(metric_name, cfl_sds_len(metric_name) - 4);
-    } else {
+    } else if (type == CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_BUCKET) {
         cfl_sds_set_len(metric_name, cfl_sds_len(metric_name) - 7);
     }
     metric_name[cfl_sds_len(metric_name)] = 0;
@@ -936,6 +936,7 @@ static int parse_histogram_summary_name(
 {
     bool sum_found;
     bool count_found;
+    bool name_matched = false;
     struct cfl_list *head;
     struct cfl_list *tmp;
     size_t current_name_len;
@@ -955,9 +956,7 @@ static int parse_histogram_summary_name(
         return finish_metric(context, true, metric_name);
     }
     else if (parsed_name_len == current_name_len) {
-        /* parsing HELP after TYPE */
-        cfl_sds_destroy(metric_name);
-        return 0;
+        name_matched = true;
     }
 
     sum_found = false;
@@ -975,6 +974,18 @@ static int parse_histogram_summary_name(
                 break;
             default:
                 break;
+        }
+    }
+
+    if (name_matched) {
+        if (sum_found && count_found) {
+            /* finish instance of the summary/histogram */
+            return finish_duplicate_histogram_summary_sum_count(context, metric_name, -1);
+        }
+        else {
+            /* parsing HELP after TYPE */
+            cfl_sds_destroy(metric_name);
+            return 0;
         }
     }
 
@@ -999,6 +1010,7 @@ static int parse_histogram_summary_name(
                     CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_SUM);
         }
         context->metric.current_sample_type = CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_SUM;
+        sum_found = true;
     }
     else if (!strcmp(metric_name + parsed_name_len, "_count")) {
         if (count_found) {
@@ -1010,6 +1022,7 @@ static int parse_histogram_summary_name(
                     CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_COUNT);
         }
         context->metric.current_sample_type = CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_COUNT;
+        count_found = true;
     }
     else {
         /* invalid histogram/summary suffix, treat it as a different metric */
@@ -1028,18 +1041,16 @@ static int parse_metric_name(
     int ret = 0;
 
     if (context->metric.name_orig) {
-        if (strcmp(context->metric.name_orig, metric_name)) {
-            if (context->metric.type == HISTOGRAM || context->metric.type == SUMMARY) {
-                ret = parse_histogram_summary_name(context, metric_name);
-                if (!ret) {
-                    /* bucket/sum/count parsed */
-                    return ret;
-                }
+        if (context->metric.type == HISTOGRAM || context->metric.type == SUMMARY) {
+            ret = parse_histogram_summary_name(context, metric_name);
+            if (!ret) {
+                /* bucket/sum/count parsed */
+                return ret;
             }
-            else {
-                /* new metric name means the current metric is finished */
-                return finish_metric(context, true, metric_name);
-            }
+        }
+        else if (strcmp(context->metric.name_orig, metric_name)) {
+            /* new metric name means the current metric is finished */
+            return finish_metric(context, true, metric_name);
         }
         else {
             /* same metric with name already allocated, destroy and return */
