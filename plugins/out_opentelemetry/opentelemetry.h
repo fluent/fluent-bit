@@ -24,7 +24,14 @@
 
 #define FLB_OPENTELEMETRY_CONTENT_TYPE_HEADER_NAME "Content-Type"
 #define FLB_OPENTELEMETRY_MIME_PROTOBUF_LITERAL    "application/x-protobuf"
-#define FLB_LOG_RECORD_BATCH_SIZE 64
+
+/*
+ * This lets you send log records in batches instead of a request per log record
+ * It might be removed in furthur versions since if we have a large number of
+ * log records, and a later batch fails, Fluent Bit will retry ALL the batches,
+ * including the ones that succeeded. This is not ideal.
+ */
+#define FLB_LOG_RECORD_BATCH_SIZE 1000
 
 /* Plugin context */
 struct opentelemetry_context {
