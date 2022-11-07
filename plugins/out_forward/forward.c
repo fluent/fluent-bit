@@ -1049,7 +1049,7 @@ static int flush_message_mode(struct flb_forward *ctx,
     return FLB_OK;
 }
 
-/* pack payloads of cmetrics or ctraces */
+/* pack payloads of cmetrics or ctraces with Fluentd compat format */
 static int pack_metricses_payload(msgpack_packer *mp_pck, const void *data, size_t bytes) {
     int entries;
     struct flb_time tm;
@@ -1132,7 +1132,12 @@ static int flush_forward_mode(struct flb_forward *ctx,
         }
         else {
             /* FLB_EVENT_TYPE_METRICS and FLB_EVENT_TYPE_TRACES */
-            pack_metricses_payload(&mp_pck, data, bytes);
+            if (fc->fluentd_compat) {
+                pack_metricses_payload(&mp_pck, data, bytes);
+            }
+            else {
+                msgpack_pack_bin(&mp_pck, bytes);
+            }
         }
     }
 
@@ -1485,6 +1490,12 @@ static struct flb_config_map config_map[] = {
      0, FLB_FALSE, 0,
      "Compression mode"
     },
+    {
+     FLB_CONFIG_MAP_BOOL, "fluentd_compat", "false",
+     0, FLB_TRUE, offsetof(struct flb_forward_config, fluentd_compat),
+     "Send cmetrics and ctreaces with Fluentd compatible format"
+    },
+
     /* EOF */
     {0}
 };
