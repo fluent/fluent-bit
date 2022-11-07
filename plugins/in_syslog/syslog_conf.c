@@ -117,8 +117,8 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
     }
 
     /* Socket rcv buffer size */
-    if (ctx->buffer_rcv_size == -1 || ctx->buffer_rcv_size>INT_MAX) {
-        flb_plg_error(ins, "invalid buffer_rcv_size");
+    if (ctx->receive_buffer_size == -1 || ctx->receive_buffer_size>INT_MAX) {
+        flb_plg_error(ins, "invalid receive_buffer_size");
         flb_free(ctx);
         return NULL;
     }
