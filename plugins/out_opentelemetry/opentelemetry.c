@@ -715,15 +715,6 @@ static int process_logs(struct flb_event_chunk *event_chunk,
         }
 
         log_object = msgpack_object_to_otlp_any_value(obj);
-        // json = flb_msgpack_to_json_str(1024, obj);
-
-        // if (json == NULL) {
-        //     clear_array(log_record_list, log_record_count);
-        //     flb_plg_error(ctx->ins, "failed to convert msgpack to json");
-        //     return FLB_ERROR;
-        // }
-
-        // log_bodies[log_record_count].string_value = json;
 
         log_records[log_record_count].body = log_object;
         log_records[log_record_count].time_unix_nano = flb_time_to_nanosec(&tm);
@@ -736,6 +727,7 @@ static int process_logs(struct flb_event_chunk *event_chunk,
                                 log_record_list,
                                 log_record_count);
 
+            otlp_any_value_destroy(log_object);
             clear_array(log_record_list, log_record_count);
 
             log_record_count = 0;
@@ -752,12 +744,12 @@ static int process_logs(struct flb_event_chunk *event_chunk,
                             log_record_list,
                             log_record_count);
 
+        otlp_any_value_destroy(log_object);
         clear_array(log_record_list, log_record_count);
 
         log_record_count = 0;
     }
 
-    flb_free(log_object);
     msgpack_unpacked_destroy(&result);
 
     return res;
