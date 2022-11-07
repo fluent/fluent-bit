@@ -166,10 +166,11 @@ static int syslog_server_net_create(struct flb_syslog *ctx)
         return -1;
     }
 
-    if (ctx->buffer_rcv_size) {
-        if (flb_net_socket_rcv_buffer(ctx->downstream->server_fd, ctx->buffer_rcv_size)) {
+    if (ctx->receive_buffer_size) {
+        if (flb_net_socket_rcv_buffer(ctx->downstream->server_fd,
+                                      ctx->receive_buffer_size)) {
             flb_error("[in_syslog] could not set rcv buffer to %ld. Aborting",
-                      ctx->buffer_rcv_size);
+                      ctx->receive_buffer_size);
             return -1;
         }
     }

@@ -228,8 +228,8 @@ static struct flb_config_map config_map[] = {
      "Set the parser"
     },
     {
-      FLB_CONFIG_MAP_SIZE, "buffer_rcv_size", (char *)NULL,
-      0, FLB_TRUE, offsetof(struct flb_syslog, buffer_rcv_size),
+      FLB_CONFIG_MAP_SIZE, "receive_buffer_size", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_syslog, receive_buffer_size),
       "Set the socket receiving buffer size"
     },
     /* EOF */
