@@ -39,7 +39,7 @@ jobs:
   call-test-images-cosign-verify:
     name: Cosign verification of container image
     environment: ${{ inputs.environment }}
-    runs-on: [ ubuntu-latest ]
+    runs-on: ubuntu-latest
     steps:
       - name: Install cosign
         uses: sigstore/cosign-installer@v2
@@ -98,7 +98,7 @@ jobs:
         run: |
           docker pull --platform=${{ matrix.arch }} "$REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
           ACTUAL_ARCH=$(docker image inspect --format '{{.Architecture}}' "$REGISTRY/$IMAGE_NAME:$IMAGE_TAG")
-          echo ::set-output name=ACTUAL_ARCH::$ACTUAL_ARCH
+          echo "ACTUAL_ARCH=$ACTUAL_ARCH" >> $GITHUB_OUTPUT
           docker image inspect "$REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
         shell: bash
         env:

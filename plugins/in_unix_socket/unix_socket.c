@@ -316,5 +316,5 @@ struct flb_input_plugin in_unix_socket_plugin = {
     .cb_flush_buf = NULL,
     .cb_exit      = in_unix_socket_exit,
     .config_map   = config_map,
-    .flags        = FLB_INPUT_NET | FLB_IO_OPT_TLS, // | FLB_IO_ASYNC
+    .flags        = FLB_INPUT_NET_SERVER | FLB_IO_OPT_TLS
 };

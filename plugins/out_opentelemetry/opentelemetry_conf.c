@@ -249,7 +249,5 @@ void flb_opentelemetry_context_destroy(
     }
 
     flb_free(ctx->proxy_host);
-    flb_free(ctx->metrics_uri);
-    flb_free(ctx->logs_uri);
     flb_free(ctx);
 }

@@ -37,7 +37,7 @@ jobs:
           fi
           echo $matrix
           echo $matrix| jq .
-          echo "::set-output name=matrix::$matrix"
+          echo "matrix=$matrix" >> $GITHUB_OUTPUT
         shell: bash
 
   master-build-packages:
