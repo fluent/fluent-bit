@@ -158,7 +158,7 @@ jobs:
   # Simple skopeo copy jobs to transfer image from staging to release registry with optional GPG key signing.
   # Unfortunately skopeo currently does not support Cosign: https://github.com/containers/skopeo/issues/1533
   staging-release-images:
-    name: Release ${{ matrix.tag }} container images
+    name: Release ${{ matrix.tag }} Linux container images
     runs-on: ubuntu-latest
     needs:
       - staging-release-version-check
@@ -175,9 +175,7 @@ jobs:
           "latest",
           "${{ github.event.inputs.version }}-debug",
           "${{ needs.staging-release-version-check.outputs.major-version }}-debug",
-          "latest-debug",
-          "windows-2019-${{ github.event.inputs.version }}",
-          "windows-2022-${{ github.event.inputs.version }}"
+          "latest-debug"
         ]
     steps:
       # Primarily because the skopeo errors are hard to parse and non-obvious
