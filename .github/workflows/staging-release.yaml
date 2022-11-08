@@ -24,6 +24,9 @@ on:
 # We also do not want multiples to run for the same version.
 concurrency: staging-build-release
 
+env:
+  STAGING_IMAGE_NAME: ghcr.io/${{ github.repository }}/staging
+
 jobs:
 
   staging-release-version-check:
@@ -163,8 +166,6 @@ jobs:
     needs:
       - staging-release-version-check
     environment: release
-    env:
-      STAGING_IMAGE_NAME: ghcr.io/${{ github.repository }}/staging
     strategy:
       fail-fast: false
       matrix:
@@ -218,6 +219,59 @@ jobs:
         env:
           RELEASE_IMAGE_NAME: ghcr.io/${{ github.event.inputs.github-image || github.repository }}
           RELEASE_CREDS: ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ matrix.tag }}
+        shell: bash
+
+  staging-release-images-windows:
+    name: Release Windows images
+    # Cannot be done by Skopeo on a Linux runner unfortunately
+    runs-on: windows-latest
+    needs:
+      - staging-release-version-check
+    environment: release
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: [
+          "windows-2019-${{ github.event.inputs.version }}",
+          "windows-2022-${{ github.event.inputs.version }}"
+        ]
+    steps:
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check the image exists
+        run: |
+          docker pull "$STAGING_IMAGE_NAME:$TAG"
+        env:
+          TAG: ${{ matrix.tag }}
+        shell: bash
+
+      - name: Promote container images from staging to GHCR.io
+        run: |
+          docker push "$STAGING_IMAGE_NAME:$TAG" $RELEASE_IMAGE_NAME:$TAG"
+        env:
+          RELEASE_IMAGE_NAME: ghcr.io/${{ github.event.inputs.github-image || github.repository }}
+          RELEASE_CREDS: ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ matrix.tag }}
+        shell: bash
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Promote container images from staging to Dockerhub
+        run: |
+          docker push "$STAGING_IMAGE_NAME:$TAG" $RELEASE_IMAGE_NAME:$TAG"
+        env:
+          RELEASE_IMAGE_NAME: docker.io/${{ github.event.inputs.docker-image || secrets.DOCKERHUB_ORGANIZATION }}
+          RELEASE_CREDS: ${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }}
           TAG: ${{ matrix.tag }}
         shell: bash
 
