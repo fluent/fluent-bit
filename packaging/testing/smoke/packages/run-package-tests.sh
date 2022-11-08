@@ -55,6 +55,7 @@ do
                 -f "$SCRIPT_DIR/Dockerfile.$PACKAGE_TEST" "$SCRIPT_DIR/"
 
     "${CONTAINER_RUNTIME}" run --rm -d \
+        --timeout 120 \
         --name "$CONTAINER_NAME" \
         "$CONTAINER_NAME"
 
