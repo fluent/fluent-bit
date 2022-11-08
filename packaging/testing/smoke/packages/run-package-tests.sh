@@ -41,7 +41,8 @@ do
 
     CONTAINER_NAME="package-verify-$PACKAGE_TEST-$TARGET"
 
-    "${CONTAINER_RUNTIME}" rm --force --ignore --volumes "$CONTAINER_NAME"
+    # Cope with needing --ignore for podman but not for docker
+    "${CONTAINER_RUNTIME}" rm --force --ignore --volumes "$CONTAINER_NAME" || "${CONTAINER_RUNTIME}" rm --force --volumes "$CONTAINER_NAME"
 
     # We do want splitting for build args
     # shellcheck disable=SC2086
@@ -54,12 +55,20 @@ do
                 -t "$CONTAINER_NAME" \
                 -f "$SCRIPT_DIR/Dockerfile.$PACKAGE_TEST" "$SCRIPT_DIR/"
 
-    "${CONTAINER_RUNTIME}" run --rm -d \
-        --timeout 120 \
-        --name "$CONTAINER_NAME" \
-        "$CONTAINER_NAME"
+    if [[ "$CONTAINER_RUNTIME" == "docker" ]]; then
+        "${CONTAINER_RUNTIME}" run --rm -d \
+            --privileged \
+            -v /sys/fs/cgroup/:/sys/fs/cgroup:ro \
+            --name "$CONTAINER_NAME" \
+            "$CONTAINER_NAME"
+    else
+        "${CONTAINER_RUNTIME}" run --rm -d \
+            --timeout 30 \
+            --name "$CONTAINER_NAME" \
+            "$CONTAINER_NAME"
+    fi
 
     "${CONTAINER_RUNTIME}" exec -t "$CONTAINER_NAME" /test.sh
 
-    "${CONTAINER_RUNTIME}" rm --force --ignore --volumes "$CONTAINER_NAME"
+    "${CONTAINER_RUNTIME}" rm --force --ignore --volumes "$CONTAINER_NAME" || "${CONTAINER_RUNTIME}" rm --force --volumes "$CONTAINER_NAME"
 done
