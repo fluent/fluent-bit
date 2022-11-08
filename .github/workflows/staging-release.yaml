@@ -366,8 +366,8 @@ jobs:
   # This will require a sign off so can be done after packages are updated to confirm
   # Until S3 bucket is set up as release will only test what is in the server from a prior release.
   # TODO: https://github.com/fluent/fluent-bit/issues/5098
-  staging-release-smoke-test:
-    name: Run smoke tests on release artefacts
+  staging-release-smoke-test-packages:
+    name: Run package smoke tests
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -379,10 +379,29 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Set up dependencies - podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+        shell: bash
+
       - name: Test release packages
         run: |
           ./packaging/test-release-packages.sh
         shell: bash
+
+  staging-release-smoke-test-containers:
+    name: Run container smoke tests
+    permissions:
+      contents: read
+      packages: read
+    runs-on: ubuntu-latest
+    environment: release
+    needs:
+      - staging-release-images
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
       - name: Test containers
         run: |
