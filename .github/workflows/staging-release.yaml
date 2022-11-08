@@ -35,6 +35,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       major-version: ${{ steps.get_major_version.outputs.value }}
+    permissions:
+      contents: none
     steps:
     - name: Get the version on staging
       run: |
@@ -73,6 +75,8 @@ jobs:
     runs-on: ubuntu-18.04 # no createrepo on Ubuntu 20.04
     environment: release
     needs: staging-release-version-check
+    permissions:
+      contents: read
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
@@ -144,6 +148,8 @@ jobs:
     needs: staging-release-packages-s3
     runs-on: ubuntu-18.04 # failures with AWS client on latest
     environment: release
+    permissions:
+      contents: read
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
@@ -178,6 +184,8 @@ jobs:
           "${{ needs.staging-release-version-check.outputs.major-version }}-debug",
           "latest-debug"
         ]
+    permissions:
+      packages: write
     steps:
       # Primarily because the skopeo errors are hard to parse and non-obvious
       - name: Check the image exists
@@ -229,6 +237,8 @@ jobs:
     needs:
       - staging-release-version-check
     environment: release
+    permissions:
+      packages: write
     strategy:
       fail-fast: false
       matrix:
