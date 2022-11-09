@@ -373,7 +373,7 @@ void flb_test_filter_parser_handle_time_key_with_time_zone()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace", "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -418,7 +418,8 @@ void flb_test_filter_parser_handle_time_key_with_time_zone()
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
 
-    wait_with_timeout(2000, &output); /* waiting flush and ensuring data flush */
+    flb_time_msleep(1500); /* waiting flush */
+    output = get_output(); /* 1sec passed, data should be flushed */
     TEST_CHECK_(output != NULL, "Expected output to not be NULL");
     if (output != NULL) {
         /* check the timestamp field was updated correctly */
