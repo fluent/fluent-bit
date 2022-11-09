@@ -188,5 +188,5 @@ struct flb_input_plugin in_udp_plugin = {
     .cb_flush_buf = NULL,
     .cb_exit      = in_udp_exit,
     .config_map   = config_map,
-    .flags        = FLB_INPUT_NET,
+    .flags        = FLB_INPUT_NET_SERVER,
 };

@@ -354,3 +354,37 @@ struct cfl_variant *cfl_kvlist_fetch(struct cfl_kvlist *list, char *key)
     return NULL;
 }
 
+int cfl_kvlist_print(FILE *fp, struct cfl_kvlist *list)
+{
+    size_t size;
+    size_t i;
+    int ret = -1;
+
+    struct cfl_list *head = NULL;
+    struct cfl_kvpair *pair = NULL;
+
+    if (fp == NULL || list == NULL) {
+        return -1;
+    }
+
+    size = (size_t)cfl_kvlist_count(list);
+    i = 0;
+    fputs("{", fp);
+    cfl_list_foreach(head, &list->list) {
+        pair = cfl_list_entry(head, struct cfl_kvpair, _head);
+        if (pair == NULL || pair->key == NULL || pair->val == NULL) {
+            continue;
+        }
+
+        fprintf(fp, "\"%s\":", pair->key);
+        ret = cfl_variant_print(fp, pair->val);
+
+        i++;
+        if (i != size) {
+            fputs(",", fp);
+        }
+    }
+    fputs("}", fp);
+
+    return ret;
+}

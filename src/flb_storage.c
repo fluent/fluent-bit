@@ -479,8 +479,8 @@ static void print_storage_info(struct flb_config *ctx, struct cio_ctx *cio)
     }
 }
 
-static void log_cb(void *ctx, int level, const char *file, int line,
-                   const char *str)
+static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
+                  char *str)
 {
     if (level == CIO_LOG_ERROR) {
         flb_error("[storage] %s", str);
@@ -494,6 +494,8 @@ static void log_cb(void *ctx, int level, const char *file, int line,
     else if (level == CIO_LOG_DEBUG) {
         flb_debug("[storage] %s", str);
     }
+
+    return 0;
 }
 
 int flb_storage_input_create(struct cio_ctx *cio,

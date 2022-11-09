@@ -997,8 +997,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in, in
      * the input plugin, this can be FLB_INPUT_LOGS, FLB_INPUT_METRICS or
      * FLB_INPUT_TRACES.
      */
-    ic->event_type = in->event_type;
-
+    ic->event_type = event_type;
     ic->busy = FLB_FALSE;
     ic->fs_counted = FLB_FALSE;
     ic->chunk = chunk;
@@ -1024,13 +1023,15 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in, in
         cio_chunk_down(chunk);
     }
 
-    if (flb_input_event_type_is_log(in)) {
+    if (event_type == FLB_INPUT_LOGS) {
         flb_hash_table_add(in->ht_log_chunks, tag, tag_len, ic, 0);
     }
-    else if (flb_input_event_type_is_metric(in)) {
+    else if (event_type == FLB_INPUT_METRICS) {
         flb_hash_table_add(in->ht_metric_chunks, tag, tag_len, ic, 0);
     }
-    /* FIXME: IS TRACE ? */
+    else if (event_type == FLB_INPUT_TRACES) {
+        flb_hash_table_add(in->ht_trace_chunks, tag, tag_len, ic, 0);
+    }
 
     return ic;
 }
@@ -1619,7 +1620,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
 #endif
 
     /* Apply filters */
-    if (in->event_type == FLB_INPUT_LOGS) {
+    if (event_type == FLB_INPUT_LOGS) {
         flb_filter_do(ic,
                       buf, buf_size,
                       tag, tag_len, in->config);

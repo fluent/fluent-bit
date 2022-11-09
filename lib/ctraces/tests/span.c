@@ -49,7 +49,7 @@ void test_span()
     TEST_CHECK(span_root->kind == CTRACE_SPAN_INTERNAL);
 
     /* set the span root a random id */
-    id = ctr_id_create_random();
+    id = ctr_id_create_random(CTR_ID_OTEL_SPAN_SIZE);
     TEST_CHECK(id != NULL);
     ctr_span_set_span_id_with_cid(span_root, id);
 

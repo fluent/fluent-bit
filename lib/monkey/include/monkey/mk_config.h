@@ -151,10 +151,14 @@ struct mk_server
     int  server_signature_header_len;
 
     /* Library  mode */
-    int lib_mode;                   /* is running in Library mode ? */
-    int lib_ch_manager[2];          /* lib channel manager */
-    struct mk_event_loop *lib_evl;  /* lib event loop */
-    struct mk_event  lib_ch_event;  /* lib channel manager event ? */
+    int lib_mode;                        /* is running in Library mode ? */
+
+    int lib_ch_manager[2];               /* lib channel manager */
+    struct mk_event_loop *lib_evl;       /* lib event loop */
+    struct mk_event  lib_ch_event;       /* lib channel manager event ? */
+    int lib_ch_start[2];                 /* lib start signal channel */
+    struct mk_event_loop *lib_evl_start; /* lib start event loop */
+    struct mk_event lib_ch_start_event;  /* lib start event */
 
     /* Scheduler context (struct mk_sched_ctx) */
     void *sched_ctx;

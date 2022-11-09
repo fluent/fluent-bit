@@ -33,4 +33,6 @@
                              CTR_VERSION_PATCH)
 #define CTR_VERSION_STR     "@CTR_VERSION_STR@"
 
+char *ctr_version();
+
 #endif
