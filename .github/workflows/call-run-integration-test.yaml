@@ -78,7 +78,7 @@ jobs:
           cli_config_credentials_token: ${{ secrets.terraform_api_token }}
 
       - id: 'auth'
-        uses: 'google-github-actions/auth@v0'
+        uses: 'google-github-actions/auth@v1'
         with:
           credentials_json: ${{ secrets.gcp-service-account-key }}
 
@@ -268,7 +268,7 @@ jobs:
           repository: fluent/fluent-bit-ci
 
       - if: matrix.cloud == 'gke'
-        uses: 'google-github-actions/auth@v0'
+        uses: 'google-github-actions/auth@v1'
         with:
           credentials_json: ${{ secrets.gcp-service-account-key }}
 
