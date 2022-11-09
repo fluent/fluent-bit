@@ -83,7 +83,7 @@ jobs:
           credentials_json: ${{ secrets.gcp-service-account-key }}
 
       - name: 'Set up Cloud SDK'
-        uses: 'google-github-actions/setup-gcloud@v0'
+        uses: 'google-github-actions/setup-gcloud@v1'
 
       - name: Replace terraform variables.
         run: |
@@ -273,7 +273,7 @@ jobs:
           credentials_json: ${{ secrets.gcp-service-account-key }}
 
       - if: matrix.cloud == 'gke'
-        uses: 'google-github-actions/setup-gcloud@v0'
+        uses: 'google-github-actions/setup-gcloud@v1'
 
       - name: Setup BATS
         uses: mig4/setup-bats@v1
