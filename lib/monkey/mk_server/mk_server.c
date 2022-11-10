@@ -157,7 +157,7 @@ void mk_server_listen_exit(struct mk_list *list)
 
     mk_list_foreach_safe(head, tmp, list) {
         listen = mk_list_entry(head, struct mk_server_listen, _head);
-        close(listen->server_fd);
+        mk_event_closesocket(listen->server_fd);
         mk_list_del(&listen->_head);
         mk_mem_free(listen);
     }
