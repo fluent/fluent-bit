@@ -48,14 +48,16 @@ static int get_mode(unsigned int attr)
 
 static int64_t filetime_to_epoch(FILETIME ft)
 {
-    int64_t ldap;
+    ULARGE_INTEGER ldap;
 
     /*
      * The LDAP timestamp represents the number of
      * 100-nanosecond intervals since Jan 1, 1601 UTC.
      */
-    ldap = UINT64(ft.dwHighDateTime, ft.dwLowDateTime);
-    return (ldap / LDAP_TO_SECONDS_DIVISOR) - LDAP_TO_EPOCH_DIFF_SECONDS;
+    ldap.HighPart = ft.dwHighDateTime;
+    ldap.LowPart = ft.dwLowDateTime;
+
+    return ((int64_t) ldap.QuadPart / LDAP_TO_SECONDS_DIVISOR) - LDAP_TO_EPOCH_DIFF_SECONDS;
 }
 
 static int is_symlink(const char *path)
