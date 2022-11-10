@@ -32,6 +32,7 @@ set(UNIT_TESTS_FILES
   flb_event_loop.c
   ring_buffer.c
   parser_json.c
+  parser_ltsv.c
   parser_regex.c
   env.c
   )

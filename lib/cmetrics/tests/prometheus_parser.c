@@ -1414,6 +1414,52 @@ void test_pr_168()
     cmt_decode_prometheus_destroy(cmt);
 }
 
+void test_histogram_different_label_count()
+{
+    char errbuf[256];
+    int status;
+    struct cmt *cmt;
+    cfl_sds_t result = NULL;
+    struct cmt_decode_prometheus_parse_opts opts;
+    memset(&opts, 0, sizeof(opts));
+    opts.errbuf = errbuf;
+    opts.errbuf_size = sizeof(errbuf);
+    cfl_sds_t in_buf = read_file(CMT_TESTS_DATA_PATH "/histogram_different_label_count.txt");
+    const char expected[] =
+        "# HELP k8s_network_load Network load\n"
+        "# TYPE k8s_network_load histogram\n"
+        "k8s_network_load_bucket{le=\"0.05\"} 0 0\n"
+        "k8s_network_load_bucket{le=\"5.0\"} 1 0\n"
+        "k8s_network_load_bucket{le=\"10.0\"} 2 0\n"
+        "k8s_network_load_bucket{le=\"+Inf\"} 3 0\n"
+        "k8s_network_load_sum 1013 0\n"
+        "k8s_network_load_count 3 0\n"
+        "# HELP k8s_network_load Network load\n"
+        "# TYPE k8s_network_load histogram\n"
+        "k8s_network_load_bucket{le=\"0.05\",my_label=\"my_val\"} 0 0\n"
+        "k8s_network_load_bucket{le=\"5.0\",my_label=\"my_val\"} 1 0\n"
+        "k8s_network_load_bucket{le=\"10.0\",my_label=\"my_val\"} 2 0\n"
+        "k8s_network_load_bucket{le=\"+Inf\",my_label=\"my_val\"} 3 0\n"
+        "k8s_network_load_sum{my_label=\"my_val\"} 1013 0\n"
+        "k8s_network_load_count{my_label=\"my_val\"} 3 0\n"
+        ;
+
+    cmt_initialize();
+    status = cmt_decode_prometheus_create(&cmt, in_buf, cfl_sds_len(in_buf), &opts);
+    TEST_CHECK(status == 0);
+    if (!status) {
+        result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
+        status = strcmp(result, expected);
+        TEST_CHECK(status == 0);
+        if (status) {
+            fprintf(stderr, "EXPECTED:\n======\n%s\n======\nRESULT:\n======\n%s\n======\n", expected, result);
+        }
+        cfl_sds_destroy(result);
+    }
+    cfl_sds_destroy(in_buf);
+    cmt_decode_prometheus_destroy(cmt);
+}
+
 TEST_LIST = {
     {"header_help", test_header_help},
     {"header_type", test_header_type},
@@ -1444,5 +1490,6 @@ TEST_LIST = {
     {"issue_fluent_bit_6021", test_issue_fluent_bit_6021},
     {"override_timestamp", test_override_timestamp},
     {"pr_168", test_pr_168},
+    {"histogram_different_label_count", test_histogram_different_label_count},
     { 0 }
 };
