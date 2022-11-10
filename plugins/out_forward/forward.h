@@ -69,6 +69,8 @@ struct flb_forward_config {
     int secured;              /* Using Secure Forward mode ?  */
     int compress;             /* Using compression ? */
     int time_as_integer;      /* Use backward compatible timestamp ? */
+    int fluentd_compat;       /* Use Fluentd compatible payload for
+                               * metrics and ctraces */
 
     /* config */
     flb_sds_t shared_key;        /* shared key                   */

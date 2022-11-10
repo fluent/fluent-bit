@@ -212,6 +212,16 @@ int flb_net_socket_nonblocking(flb_sockfd_t fd)
     return 0;
 }
 
+int flb_net_socket_rcv_buffer(flb_sockfd_t fd, int rcvbuf)
+{
+    if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf)) != 0) {
+        flb_errno();
+        return -1;
+    }
+
+    return 0;
+}
+
 int flb_net_socket_blocking(flb_sockfd_t fd)
 {
 #ifdef _WIN32
@@ -1791,7 +1801,7 @@ static int net_address_unix_socket_peer_pid_raw(flb_sockfd_t fd,
                                                 int output_buffer_size,
                                                 size_t *output_data_size)
 {
-#ifndef FLB_SYSTEM_MACOS    
+#if !defined(FLB_SYSTEM_MACOS) && !defined(FLB_SYSTEM_FREEBSD)
     unsigned int peer_credentials_size;
     struct ucred peer_credentials;
 #endif
@@ -1809,7 +1819,7 @@ static int net_address_unix_socket_peer_pid_raw(flb_sockfd_t fd,
         return -1;
     }
 
-#ifndef FLB_SYSTEM_MACOS    
+#if !defined(FLB_SYSTEM_MACOS) && !defined(FLB_SYSTEM_FREEBSD)
     peer_credentials_size = sizeof(struct ucred);
 
     result = getsockopt(fd,

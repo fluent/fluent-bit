@@ -54,7 +54,7 @@ jobs:
         if [[ $RELEASE_VERSION =~ ^[0-9]+\.[0-9]+ ]]; then
           MAJOR_VERSION="${BASH_REMATCH[0]}"
         fi
-        echo "::set-output name=value::$MAJOR_VERSION"
+        echo "value=$MAJOR_VERSION" >> $GITHUB_OUTPUT
       shell: bash
       env:
         RELEASE_VERSION: ${{ github.event.inputs.version }}
@@ -175,7 +175,9 @@ jobs:
           "latest",
           "${{ github.event.inputs.version }}-debug",
           "${{ needs.staging-release-version-check.outputs.major-version }}-debug",
-          "latest-debug"
+          "latest-debug",
+          "windows-2019-${{ github.event.inputs.version }}",
+          "windows-2022-${{ github.event.inputs.version }}"
         ]
     steps:
       # Primarily because the skopeo errors are hard to parse and non-obvious
@@ -220,25 +222,6 @@ jobs:
           RELEASE_CREDS: ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ matrix.tag }}
         shell: bash
-
-  staging-release-images-dockerhub-update:
-    name: Update Dockerhub description
-    permissions:
-      contents: read
-    runs-on: ubuntu-latest
-    environment: release
-    needs: staging-release-images
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Docker Hub Description
-        uses: peter-evans/dockerhub-description@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
-          repository: ${{ github.repository }}
-          readme-filepath: ./dockerfiles/dockerhub-description.md
-          short-description: 'Fluent Bit, lightweight logs and metrics collector and forwarder'
 
   staging-release-images-sign:
     name: Sign container image manifests

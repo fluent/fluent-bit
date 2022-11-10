@@ -168,7 +168,7 @@ flb_sds_t flb_env_var_translate(struct flb_env *env, const char *value)
     const char *env_var = NULL;
     char *v_start = NULL;
     char *v_end = NULL;
-    char tmp[64];
+    char tmp[4096];
     flb_sds_t buf;
     flb_sds_t s;
 

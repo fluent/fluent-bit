@@ -1,10 +1,14 @@
 cmake_minimum_required(VERSION 3.12)
 project(fluent-bit)
 
+# CMP0069 ensures that LTO is enabled for all compilers
+cmake_policy(SET CMP0069 NEW)
+set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
+
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  2)
 set(FLB_VERSION_MINOR  0)
-set(FLB_VERSION_PATCH  1)
+set(FLB_VERSION_PATCH  5)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -65,6 +69,12 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "FreeBSD")
   set(CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS} -lutil")
 endif()
 
+# *BSD is not supported platform for wasm-micro-runtime. Now, we should be disabled for these platforms.
+if(${CMAKE_SYSTEM_NAME} MATCHES "BSD")
+  message(STATUS "This platform is not supported for WASM feature so disabled.")
+  set(FLB_WASM OFF)
+endif()
+
 include(GNUInstallDirs)
 include(ExternalProject)
 include(cmake/FindJournald.cmake)
@@ -83,6 +93,8 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
 option(FLB_ALL                 "Enable all features"                         No)
 option(FLB_DEBUG               "Build with debug mode (-g)"                 Yes)
 option(FLB_RELEASE             "Build with release mode (-O2 -g -DNDEBUG)"   No)
+set(FLB_IPO "ReleaseOnly" CACHE STRING "Build with interprocedural optimization")
+set_property(CACHE FLB_IPO PROPERTY STRINGS "On;Off;ReleaseOnly")
 option(FLB_SMALL               "Optimise for small size"       No)
 option(FLB_COVERAGE            "Build with code-coverage"      No)
 option(FLB_JEMALLOC            "Build with Jemalloc support"   No)
@@ -394,6 +406,17 @@ elseif(FLB_DEBUG)
   set(CMAKE_BUILD_TYPE "Debug")
 elseif(FLB_RELEASE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
+endif()
+
+if(FLB_IPO STREQUAL "On" OR (FLB_IPO STREQUAL "ReleaseOnly" AND FLB_RELEASE))
+  include(CheckIPOSupported)
+  check_ipo_supported(RESULT ipo_supported)
+  # IPO in GCC versions smaller v8 is broken
+  if(ipo_supported AND NOT (CMAKE_COMPILER_IS_GNUCC AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8))
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+  else()
+    message(Warning "IPO is not supported on this platform")
+  endif()
 endif()
 
 if(FLB_PARSER)

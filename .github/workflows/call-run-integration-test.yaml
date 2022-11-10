@@ -78,12 +78,12 @@ jobs:
           cli_config_credentials_token: ${{ secrets.terraform_api_token }}
 
       - id: 'auth'
-        uses: 'google-github-actions/auth@v0'
+        uses: 'google-github-actions/auth@v1'
         with:
           credentials_json: ${{ secrets.gcp-service-account-key }}
 
       - name: 'Set up Cloud SDK'
-        uses: 'google-github-actions/setup-gcloud@v0'
+        uses: 'google-github-actions/setup-gcloud@v1'
 
       - name: Replace terraform variables.
         run: |
@@ -228,7 +228,7 @@ jobs:
           cluster_name: kind
 
       - name: Set up Helm
-        uses: azure/setup-helm@v3.3
+        uses: azure/setup-helm@v3.4
         with:
           version: v3.8.1
 
@@ -268,12 +268,12 @@ jobs:
           repository: fluent/fluent-bit-ci
 
       - if: matrix.cloud == 'gke'
-        uses: 'google-github-actions/auth@v0'
+        uses: 'google-github-actions/auth@v1'
         with:
           credentials_json: ${{ secrets.gcp-service-account-key }}
 
       - if: matrix.cloud == 'gke'
-        uses: 'google-github-actions/setup-gcloud@v0'
+        uses: 'google-github-actions/setup-gcloud@v1'
 
       - name: Setup BATS
         uses: mig4/setup-bats@v1
@@ -281,7 +281,7 @@ jobs:
           bats-version: 1.7.0
 
       - name: Set up Helm
-        uses: azure/setup-helm@v3.3
+        uses: azure/setup-helm@v3.4
         with:
           version: v3.8.1
 
