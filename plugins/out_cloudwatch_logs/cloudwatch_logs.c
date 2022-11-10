@@ -347,13 +347,6 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         goto error;
     }
 
-    /*
-     * Remove async flag from upstream
-     * CW output runs in sync mode; because the CW API currently requires
-     * PutLogEvents requests to a log stream to be made serially
-     */
-    flb_stream_disable_async_mode(&upstream->base);
-
     ctx->cw_client->upstream = upstream;
     flb_output_upstream_set(upstream, ctx->ins);
     ctx->cw_client->host = ctx->endpoint;
@@ -669,7 +662,12 @@ struct flb_output_plugin out_cloudwatch_logs_plugin = {
     .cb_init      = cb_cloudwatch_init,
     .cb_flush     = cb_cloudwatch_flush,
     .cb_exit      = cb_cloudwatch_exit,
-    .flags        = 0,
+
+    /*
+     * Allow cloudwatch to use async network stack synchronously by opting into
+     * FLB_OUTPUT_SYNCHRONOUS synchronous task scheduler
+     */
+    .flags        = FLB_OUTPUT_SYNCHRONOUS,
     .workers      = 1,
 
     /* Configuration */
