@@ -59,8 +59,8 @@ static uint64_t filetime_to_epoch(FILETIME *ft)
         return 0;
     }
 
-    timestamp.HighPart = ft.dwHighDateTime;
-    timestamp.LowPart = ft.dwLowDateTime;
+    timestamp.HighPart = ft->dwHighDateTime;
+    timestamp.LowPart = ft->dwLowDateTime;
 
     timestamp.QuadPart /= WINDOWS_TICKS_TO_SECONDS_RATIO;
     timestamp.QuadPart -= WINDOWS_EPOCH_TO_UNIX_EPOCH_DELTA;
