@@ -36,6 +36,37 @@
 
 #define UINT64(high, low) ((uint64_t) (high) << 32 | (low))
 
+/* FILETIME timestamps are represented in 100-nanosecond intervals,
+   because of this, that's why we need to divide the number by 10000000
+   in order to convert it to seconds.
+
+   While UNIX timestamps use January 1, 1970 as epoch Windows FILETIME
+   timestamps use January 1, 1601. Because of this we need to subtract
+   11644473600 seconds to account for it.
+
+   Note: Even though this does not account for leap seconds it should be
+   accurate enough.
+*/
+
+static uint64_t native_timestamp_to_unix_timestamp(FILETIME *native_timestamp)
+{
+    const uint64_t timestamp_unit_conversion_ratio = 10000000;
+    const uint64_t epoch_timestamp_difference = 11644473600;
+    ULARGE_INTEGER timestamp_integer;
+
+    if (native_timestamp == NULL) {
+        return 0;
+    }
+
+    timestamp_integer.LowPart  = native_timestamp->dwLowDateTime;
+    timestamp_integer.HighPart = native_timestamp->dwHighDateTime;
+
+    timestamp_integer.QuadPart /= timestamp_unit_conversion_ratio;
+    timestamp_integer.QuadPart -= epoch_timestamp_difference;
+
+    return timestamp_integer.QuadPart;
+}
+
 static int get_mode(unsigned int attr)
 {
     if (attr & FILE_ATTRIBUTE_DIRECTORY) {
@@ -72,7 +103,6 @@ static int hstat(HANDLE h, struct win32_stat *wst)
 {
     BY_HANDLE_FILE_INFORMATION info;
     FILE_STANDARD_INFO std;
-    FILETIME time;
 
     if (!GetFileInformationByHandle(h, &info)) {
         return -1;
@@ -87,12 +117,11 @@ static int hstat(HANDLE h, struct win32_stat *wst)
     if (std.DeletePending) {
         wst->st_nlink = 0;
     }
-    time = info.ftLastWriteTime;
 
     wst->st_mode  = get_mode(info.dwFileAttributes);
     wst->st_size  = UINT64(info.nFileSizeHigh, info.nFileSizeLow);
     wst->st_ino   = UINT64(info.nFileIndexHigh, info.nFileIndexLow);
-    wst->st_mtime = UINT64(time.dwHighDateTime, time.dwLowDateTime);
+    wst->st_mtime = native_timestamp_to_unix_timestamp(&info.ftLastWriteTime);
 
     return 0;
 }
