@@ -38,6 +38,36 @@
 #define WINDOWS_TICKS_TO_SECONDS_RATIO 10000000
 #define WINDOWS_EPOCH_TO_UNIX_EPOCH_DELTA 11644473600
 
+/* 
+ * FILETIME timestamps are represented in 100-nanosecond intervals,
+ * because of this, that's why we need to divide the number by 10000000
+ * in order to convert it to seconds.
+ *
+ * While UNIX timestamps use January 1, 1970 as epoch Windows FILETIME
+ * timestamps use January 1, 1601. Because of this we need to subtract
+ * 11644473600 seconds to account for it.
+ *
+ * Note: Even though this does not account for leap seconds it should be
+ * accurate enough.
+*/
+
+static uint64_t filetime_to_epoch(FILETIME *ft)
+{
+    ULARGE_INTEGER timestamp;
+
+    if (ft == NULL) {
+        return 0;
+    }
+
+    timestamp.HighPart = ft.dwHighDateTime;
+    timestamp.LowPart = ft.dwLowDateTime;
+
+    timestamp.QuadPart /= WINDOWS_TICKS_TO_SECONDS_RATIO;
+    timestamp.QuadPart -= WINDOWS_EPOCH_TO_UNIX_EPOCH_DELTA;
+
+    return timestamp.QuadPart;
+}
+
 static int get_mode(unsigned int attr)
 {
     if (attr & FILE_ATTRIBUTE_DIRECTORY) {
@@ -46,19 +76,7 @@ static int get_mode(unsigned int attr)
     return WIN32_S_IFREG;
 }
 
-static int64_t filetime_to_epoch(FILETIME ft)
-{
-    ULARGE_INTEGER timestamp;
 
-    /*
-     * The FILETIME represents the number of
-     * 100-nanosecond intervals (ticks) since Jan 1, 1601 UTC.
-     */
-    timestamp.HighPart = ft.dwHighDateTime;
-    timestamp.LowPart = ft.dwLowDateTime;
-
-    return ((int64_t) timestamp.QuadPart / WINDOWS_TICKS_TO_SECONDS_RATIO) - WINDOWS_EPOCH_TO_UNIX_EPOCH_DELTA;
-}
 
 static int is_symlink(const char *path)
 {
@@ -106,7 +124,7 @@ static int hstat(HANDLE h, struct win32_stat *wst)
     wst->st_mode  = get_mode(info.dwFileAttributes);
     wst->st_size  = UINT64(info.nFileSizeHigh, info.nFileSizeLow);
     wst->st_ino   = UINT64(info.nFileIndexHigh, info.nFileIndexLow);
-    wst->st_mtime = filetime_to_epoch(info.ftLastWriteTime);
+    wst->st_mtime = filetime_to_epoch(&info.ftLastWriteTime);
 
     return 0;
 }
