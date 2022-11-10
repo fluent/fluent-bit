@@ -49,7 +49,7 @@
  *
  * Note: Even though this does not account for leap seconds it should be
  * accurate enough.
-*/
+ */
 
 static uint64_t filetime_to_epoch(FILETIME *ft)
 {
