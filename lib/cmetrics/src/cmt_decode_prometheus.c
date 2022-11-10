@@ -34,6 +34,7 @@
 #include <cmt_decode_prometheus_parser.h>
 #include <stdio.h>
 #include <string.h>
+#include <cmetrics/cmt_map.h>
 
 static void reset_context(struct cmt_decode_prometheus_context *context,
                           bool reset_summary)
@@ -591,7 +592,7 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
     }
 
     h = context->current.histogram;
-    if (!h) {
+    if (!h || label_i != h->map->label_count) {
         cmt_buckets = cmt_histogram_buckets_create_size(buckets, bucket_count);
         if (!cmt_buckets) {
             ret = report_error(context,
@@ -806,7 +807,7 @@ static int add_metric_summary(struct cmt_decode_prometheus_context *context)
     }
 
     s = context->current.summary;
-    if (!s) {
+    if (!s || label_i != s->map->label_count) {
         s = cmt_summary_create(context->cmt,
                                context->metric.ns,
                                context->metric.subsystem,
