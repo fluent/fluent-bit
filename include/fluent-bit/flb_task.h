@@ -88,6 +88,34 @@ struct flb_task {
     struct flb_config *config;           /* parent flb config             */
 };
 
+/*
+ * A queue of flb_task_enqueued tasks
+ *
+ * This structure is currently used to track pending flushes when FLB_OUTPUT_SYNCHRONOUS
+ * is used.
+ */
+struct flb_task_queue {
+    struct mk_list pending;
+    struct mk_list in_progress;
+};
+
+/*
+ * An enqueued task is a task that is not yet dispatched to a thread
+ * or started on the engine.
+ *
+ * There may be multiple enqueued instances of the same task on different out instances.
+ *
+ * This structure is currently used to track pending flushes when FLB_OUTPUT_SYNCHRONOUS
+ * is used.
+ */
+struct flb_task_enqueued {
+    struct flb_task *task;
+    struct flb_task_retry *retry;
+    struct flb_output_instance *out_instance;
+    struct flb_config *config;
+    struct mk_list _head;
+};
+
 int flb_task_running_count(struct flb_config *config);
 int flb_task_running_print(struct flb_config *config);
 
@@ -104,6 +132,8 @@ void flb_task_add_coro(struct flb_task *task, struct flb_coro *coro);
 
 void flb_task_destroy(struct flb_task *task, int del);
 
+struct flb_task_queue* flb_task_queue_create();
+void flb_task_queue_destroy(struct flb_task_queue *queue);
 struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
                                              struct flb_output_instance *ins);
 
