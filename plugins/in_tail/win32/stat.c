@@ -35,8 +35,8 @@
  */
 
 #define UINT64(high, low) ((uint64_t) (high) << 32 | (low))
-#define LDAP_TO_SECONDS_DIVISOR 10000000
-#define LDAP_TO_EPOCH_DIFF_SECONDS 11644473600
+#define WINDOWS_TICKS_TO_SECONDS_RATIO 10000000
+#define WINDOWS_EPOCH_TO_UNIX_EPOCH_DELTA 11644473600
 
 static int get_mode(unsigned int attr)
 {
@@ -48,16 +48,16 @@ static int get_mode(unsigned int attr)
 
 static int64_t filetime_to_epoch(FILETIME ft)
 {
-    ULARGE_INTEGER ldap;
+    ULARGE_INTEGER timestamp;
 
     /*
-     * The LDAP timestamp represents the number of
-     * 100-nanosecond intervals since Jan 1, 1601 UTC.
+     * The FILETIME represents the number of
+     * 100-nanosecond intervals (ticks) since Jan 1, 1601 UTC.
      */
-    ldap.HighPart = ft.dwHighDateTime;
-    ldap.LowPart = ft.dwLowDateTime;
+    timestamp.HighPart = ft.dwHighDateTime;
+    timestamp.LowPart = ft.dwLowDateTime;
 
-    return ((int64_t) ldap.QuadPart / LDAP_TO_SECONDS_DIVISOR) - LDAP_TO_EPOCH_DIFF_SECONDS;
+    return ((int64_t) timestamp.QuadPart / WINDOWS_TICKS_TO_SECONDS_RATIO) - WINDOWS_EPOCH_TO_UNIX_EPOCH_DELTA;
 }
 
 static int is_symlink(const char *path)
