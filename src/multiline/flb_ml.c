@@ -1015,6 +1015,8 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
     msgpack_packer mp_pck;
     msgpack_unpacked result;
     struct flb_ml_parser_ins *parser_i = mst->parser;
+    struct flb_time *group_time;
+    struct flb_time now;
 
     breakline_prepare(parser_i, group);
     len = flb_sds_len(group->buf);
@@ -1025,7 +1027,10 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
 
     /* if the group don't have a time set, use current time */
     if (flb_time_to_nanosec(&group->mp_time) == 0L) {
-        flb_time_get(&group->mp_time);
+        flb_time_get(&now);
+        group_time = &now;
+    } else {
+        group_time = &group->mp_time;
     }
 
     /* compose final record if we have a first line context */
@@ -1051,7 +1056,7 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
 
         /* Take the first line keys and repack */
         msgpack_pack_array(&mp_pck, 2);
-        flb_time_append_to_msgpack(&group->mp_time, &mp_pck, 0);
+        flb_time_append_to_msgpack(group_time, &mp_pck, 0);
 
         len = flb_sds_len(parser_i->key_content);
         size = map.via.map.size;
@@ -1090,7 +1095,7 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
     else if (len > 0) {
         /* Pack raw content as Fluent Bit record */
         msgpack_pack_array(&mp_pck, 2);
-        flb_time_append_to_msgpack(&group->mp_time, &mp_pck, 0);
+        flb_time_append_to_msgpack(group_time, &mp_pck, 0);
         msgpack_pack_map(&mp_pck, 1);
 
         /* key */
