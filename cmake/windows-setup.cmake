@@ -97,6 +97,7 @@ if(FLB_WINDOWS_DEFAULTS)
   set(FLB_FILTER_REWRITE_TAG    Yes)
   set(FLB_FILTER_GEOIP2         Yes)
   set(FLB_FILTER_AWS            Yes)
+  set(FLB_FILTER_ECS            Yes)
   set(FLB_FILTER_WASM           No)
 endif()
 
