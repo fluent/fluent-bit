@@ -69,5 +69,6 @@ int flb_utils_read_file(char *path, char **out_buf, size_t *out_size);
 char *flb_utils_get_os_name();
 int flb_utils_uuid_v4_gen(char *buf);
 int flb_utils_get_machine_id(char **out_id, size_t *out_size);
+int flb_next_token(const char *str, int separator, char **out, int *out_len);
 
 #endif

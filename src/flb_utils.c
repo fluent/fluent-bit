@@ -276,26 +276,15 @@ struct mk_list *flb_utils_split(const char *line, int separator, int max_split)
 
     len = strlen(line);
     while (i < len) {
-        end = mk_string_char_search(line + i, separator, len - i);
-        if (end >= 0 && end + i < len) {
-            end += i;
-
-            if (i == (unsigned int) end) {
-                i++;
-                continue;
-            }
-
-            val = mk_string_copy_substr(line, i, end);
-            val_len = end - i;
-        }
-        else {
-            val = mk_string_copy_substr(line, i, len);
-            val_len = len - i;
-            end = len;
+        end = flb_next_token(line + i, separator, &val, &val_len);
+        if (end == -1) {
+            flb_error("Parsing failed: %s", line);
+            /* Return what was parsed until error */
+            return list;
         }
 
         /* Update last position */
-        i = end;
+        i += end;
 
         /* Create new entry */
         new = flb_malloc(sizeof(struct flb_split_entry));
@@ -1279,4 +1268,103 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
     }
 
     return -1;
+}
+
+static int quoted_string_len(const char *str)
+{
+    int len = 0;
+    char quote = *str++; /* Consume the quote character. */
+
+    while (quote != 0) {
+        char c = *str++;
+        switch (c) {
+            case '\0':
+                /* Error: string ends before end-quote was seen. */
+                return -1;
+            case '\\':
+                /* Skip escaped quote or \\. */
+                if (*str == quote || *str == '\\') {
+                    str++;
+                }
+                break;
+            case '\'':
+            case '"':
+                /* End-quote seen: stop iterating. */
+                if (c == quote) {
+                    quote = 0;
+                }
+                break;
+            default:
+                break;
+        }
+        len++;
+    }
+
+    /* Go back one character to ignore end-quote */
+    len--;
+
+    return len;
+}
+
+/*
+ * flb_next_token returns the next token in the string 'str' delimited by 'separator'.
+ * 'out' is set to the beginning of the token.
+ * 'out_len' is set to the length of the token.
+ * The function returns offset to next token in the string.
+ */
+int flb_next_token(const char *str, int separator, char **out, int *out_len) {
+    const char *token_in = str;
+    char *token_out;
+    int next_separator = 0;
+    int quote = 0; /* Parser state: 0 not inside quoted string, or '"' or '\'' when inside quoted string. */
+    int len = 0;
+    int i;
+
+    /* Skip leading separators. */
+    while (*token_in == separator) {
+        token_in++;
+    }
+
+    /* Token is not quoted. We copy until separator or the end of string. */
+    if (*token_in != '"' && *token_in != '\'') {
+        len = (int)strlen(token_in);
+        next_separator = mk_string_char_search(token_in, separator, len);
+        if (next_separator > 0) {
+            len = next_separator;
+        }
+        *out_len = len;
+        *out = mk_string_copy_substr(token_in, 0, len);
+
+        return (int)(token_in - str) + len;
+    }
+
+    /* Token is quoted. */
+
+    len = quoted_string_len(token_in);
+    if (len < 0) {
+        return -1;
+    }
+
+    /* Consume the quote character. */
+    token_in++;
+
+    token_out = flb_malloc(len + 1);
+    if (!token_out) {
+        return -1;
+    }
+
+    /* Copy the token */
+    for (i = 0; i < len;) {
+        /* Handle escapes */
+        if (*token_in == '\\' && (token_in[1] == quote || token_in[1] == '\\')) {
+            token_in++;
+        }
+        token_out[i++] = *token_in++;
+    }
+    token_out[i] = '\0';
+
+    *out = token_out;
+    *out_len = len;
+
+    return (int)(token_in - str);
 }
