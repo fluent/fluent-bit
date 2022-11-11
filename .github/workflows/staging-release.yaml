@@ -389,6 +389,8 @@ jobs:
         run: |
           ./packaging/test-release-packages.sh
         shell: bash
+        env:
+          VERSION_TO_CHECK_FOR: ${{ github.event.inputs.version }}
 
   staging-release-smoke-test-containers:
     name: Run container smoke tests
