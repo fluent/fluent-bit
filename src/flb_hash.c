@@ -127,6 +127,30 @@ int flb_hash_del_ptr(struct flb_hash *ht, const char *key, int key_len,
     return 0;
 }
 
+int flb_hash_del_ptr_without_key(struct flb_hash *ht, void *ptr)
+{
+    struct mk_list *head;
+    struct flb_hash_entry *entry = NULL;
+
+    mk_list_foreach(head, &ht->entries) {
+        entry = mk_list_entry(head, struct flb_hash_entry, _head);
+
+        if (entry->val == ptr) {
+            break;
+        }
+
+        entry = NULL;
+    }
+
+    if (entry == NULL) {
+        return -1;
+    }
+
+    /* delete the entry */
+    flb_hash_entry_free(ht, entry);
+
+    return 0;
+}
 
 void flb_hash_destroy(struct flb_hash *ht)
 {
