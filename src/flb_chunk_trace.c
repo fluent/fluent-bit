@@ -163,6 +163,8 @@ struct flb_chunk_trace_context *flb_chunk_trace_context_new(void *trace_input,
     int ret;
 
     if (config->enable_chunk_trace == FLB_FALSE) {
+        flb_warn("[chunk trace] enable chunk tracing via the configuration or "
+                 " command line to be able to activate tracing.");
         return NULL;
     }
 

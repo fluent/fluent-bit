@@ -24,6 +24,9 @@ on:
 # We also do not want multiples to run for the same version.
 concurrency: staging-build-release
 
+env:
+  STAGING_IMAGE_NAME: ghcr.io/${{ github.repository }}/staging
+
 jobs:
 
   staging-release-version-check:
@@ -32,6 +35,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       major-version: ${{ steps.get_major_version.outputs.value }}
+    permissions:
+      contents: none
     steps:
     - name: Get the version on staging
       run: |
@@ -70,6 +75,8 @@ jobs:
     runs-on: ubuntu-18.04 # no createrepo on Ubuntu 20.04
     environment: release
     needs: staging-release-version-check
+    permissions:
+      contents: read
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
@@ -141,6 +148,8 @@ jobs:
     needs: staging-release-packages-s3
     runs-on: ubuntu-18.04 # failures with AWS client on latest
     environment: release
+    permissions:
+      contents: read
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
@@ -158,13 +167,11 @@ jobs:
   # Simple skopeo copy jobs to transfer image from staging to release registry with optional GPG key signing.
   # Unfortunately skopeo currently does not support Cosign: https://github.com/containers/skopeo/issues/1533
   staging-release-images:
-    name: Release ${{ matrix.tag }} container images
+    name: Release ${{ matrix.tag }} Linux container images
     runs-on: ubuntu-latest
     needs:
       - staging-release-version-check
     environment: release
-    env:
-      STAGING_IMAGE_NAME: ghcr.io/${{ github.repository }}/staging
     strategy:
       fail-fast: false
       matrix:
@@ -175,10 +182,10 @@ jobs:
           "latest",
           "${{ github.event.inputs.version }}-debug",
           "${{ needs.staging-release-version-check.outputs.major-version }}-debug",
-          "latest-debug",
-          "windows-2019-${{ github.event.inputs.version }}",
-          "windows-2022-${{ github.event.inputs.version }}"
+          "latest-debug"
         ]
+    permissions:
+      packages: write
     steps:
       # Primarily because the skopeo errors are hard to parse and non-obvious
       - name: Check the image exists
@@ -220,6 +227,63 @@ jobs:
         env:
           RELEASE_IMAGE_NAME: ghcr.io/${{ github.event.inputs.github-image || github.repository }}
           RELEASE_CREDS: ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ matrix.tag }}
+        shell: bash
+
+  staging-release-images-windows:
+    name: Release Windows images
+    # Cannot be done by Skopeo on a Linux runner unfortunately
+    runs-on: windows-latest
+    needs:
+      - staging-release-version-check
+    environment: release
+    permissions:
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: [
+          "windows-2019-${{ github.event.inputs.version }}",
+          "windows-2022-${{ github.event.inputs.version }}"
+        ]
+    steps:
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check the image exists
+        run: |
+          docker pull "$STAGING_IMAGE_NAME:$TAG"
+        env:
+          TAG: ${{ matrix.tag }}
+        shell: bash
+
+      - name: Promote container images from staging to GHCR.io
+        run: |
+          docker tag "$STAGING_IMAGE_NAME:$TAG" "$RELEASE_IMAGE_NAME:$TAG"
+          docker push "$RELEASE_IMAGE_NAME:$TAG"
+        env:
+          RELEASE_IMAGE_NAME: ghcr.io/${{ github.event.inputs.github-image || github.repository }}
+          RELEASE_CREDS: ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ matrix.tag }}
+        shell: bash
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Promote container images from staging to Dockerhub
+        run: |
+          docker tag "$STAGING_IMAGE_NAME:$TAG" "$RELEASE_IMAGE_NAME:$TAG"
+          docker push "$RELEASE_IMAGE_NAME:$TAG"
+        env:
+          RELEASE_IMAGE_NAME: docker.io/${{ github.event.inputs.docker-image || secrets.DOCKERHUB_ORGANIZATION }}
+          RELEASE_CREDS: ${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }}
           TAG: ${{ matrix.tag }}
         shell: bash
 
@@ -304,8 +368,8 @@ jobs:
   # This will require a sign off so can be done after packages are updated to confirm
   # Until S3 bucket is set up as release will only test what is in the server from a prior release.
   # TODO: https://github.com/fluent/fluent-bit/issues/5098
-  staging-release-smoke-test:
-    name: Run smoke tests on release artefacts
+  staging-release-smoke-test-packages:
+    name: Run package smoke tests
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -317,10 +381,29 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Set up dependencies - podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+        shell: bash
+
       - name: Test release packages
         run: |
           ./packaging/test-release-packages.sh
         shell: bash
+
+  staging-release-smoke-test-containers:
+    name: Run container smoke tests
+    permissions:
+      contents: read
+      packages: read
+    runs-on: ubuntu-latest
+    environment: release
+    needs:
+      - staging-release-images
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
       - name: Test containers
         run: |

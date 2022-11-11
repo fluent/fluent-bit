@@ -841,7 +841,7 @@ int flb_input_instance_init(struct flb_input_instance *ins,
     struct flb_config *ctx = ins->config;
     struct mk_list *config_map;
     struct flb_input_plugin *p = ins->p;
-    const char *tls_error_message;
+    int tls_session_mode;
 
     if (ins->log_level == -1 && config->log != NULL) {
         ins->log_level = config->log->level;
@@ -1015,41 +1015,46 @@ int flb_input_instance_init(struct flb_input_instance *ins,
     }
 
 #ifdef FLB_HAVE_TLS
-    if (ins->use_tls == FLB_TRUE &&
-        (p->flags & FLB_INPUT_NET_SERVER) != 0) {
-        if (ins->tls_crt_file == NULL) {
-            tls_error_message = "certificate file missing";
+    if (ins->use_tls == FLB_TRUE) {
+        if ((p->flags & FLB_INPUT_NET_SERVER) != 0) {
+            if (ins->tls_crt_file == NULL) {
+                flb_error("[input %s] error initializing TLS context "
+                          "(certificate file missing)",
+                          ins->name);
 
-            ins->tls = NULL;
-        }
-        else if (ins->tls_key_file == NULL) {
-            tls_error_message = "private key file missing";
+                flb_input_instance_destroy(ins);
 
-            ins->tls = NULL;
+                return -1;
+            }
+            else if (ins->tls_key_file == NULL) {
+                flb_error("[input %s] error initializing TLS context "
+                          "(private key file missing)",
+                          ins->name);
+
+                flb_input_instance_destroy(ins);
+
+                return -1;
+            }
+
+            tls_session_mode = FLB_TLS_SERVER_MODE;
         }
         else {
-            tls_error_message = NULL;
-
-            ins->tls = flb_tls_create(FLB_TLS_SERVER_MODE,
-                                      ins->tls_verify,
-                                      ins->tls_debug,
-                                      ins->tls_vhost,
-                                      ins->tls_ca_path,
-                                      ins->tls_ca_file,
-                                      ins->tls_crt_file,
-                                      ins->tls_key_file,
-                                      ins->tls_key_passwd);
+            tls_session_mode = FLB_TLS_CLIENT_MODE;
         }
 
+        ins->tls = flb_tls_create(tls_session_mode,
+                                  ins->tls_verify,
+                                  ins->tls_debug,
+                                  ins->tls_vhost,
+                                  ins->tls_ca_path,
+                                  ins->tls_ca_file,
+                                  ins->tls_crt_file,
+                                  ins->tls_key_file,
+                                  ins->tls_key_passwd);
+
         if (ins->tls == NULL) {
-            if (tls_error_message != NULL) {
-                flb_error("[input %s] error initializing TLS context (%s)",
-                          ins->name, tls_error_message);
-            }
-            else {
-                flb_error("[input %s] error initializing TLS context",
-                          ins->name);
-            }
+            flb_error("[input %s] error initializing TLS context",
+                      ins->name);
 
             flb_input_instance_destroy(ins);
 

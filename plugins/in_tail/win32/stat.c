@@ -35,6 +35,38 @@
  */
 
 #define UINT64(high, low) ((uint64_t) (high) << 32 | (low))
+#define WINDOWS_TICKS_TO_SECONDS_RATIO 10000000
+#define WINDOWS_EPOCH_TO_UNIX_EPOCH_DELTA 11644473600
+
+/* 
+ * FILETIME timestamps are represented in 100-nanosecond intervals,
+ * because of this, that's why we need to divide the number by 10000000
+ * in order to convert it to seconds.
+ *
+ * While UNIX timestamps use January 1, 1970 as epoch Windows FILETIME
+ * timestamps use January 1, 1601. Because of this we need to subtract
+ * 11644473600 seconds to account for it.
+ *
+ * Note: Even though this does not account for leap seconds it should be
+ * accurate enough.
+ */
+
+static uint64_t filetime_to_epoch(FILETIME *ft)
+{
+    ULARGE_INTEGER timestamp;
+
+    if (ft == NULL) {
+        return 0;
+    }
+
+    timestamp.HighPart = ft->dwHighDateTime;
+    timestamp.LowPart = ft->dwLowDateTime;
+
+    timestamp.QuadPart /= WINDOWS_TICKS_TO_SECONDS_RATIO;
+    timestamp.QuadPart -= WINDOWS_EPOCH_TO_UNIX_EPOCH_DELTA;
+
+    return timestamp.QuadPart;
+}
 
 static int get_mode(unsigned int attr)
 {
@@ -43,6 +75,8 @@ static int get_mode(unsigned int attr)
     }
     return WIN32_S_IFREG;
 }
+
+
 
 static int is_symlink(const char *path)
 {
@@ -72,7 +106,6 @@ static int hstat(HANDLE h, struct win32_stat *wst)
 {
     BY_HANDLE_FILE_INFORMATION info;
     FILE_STANDARD_INFO std;
-    FILETIME time;
 
     if (!GetFileInformationByHandle(h, &info)) {
         return -1;
@@ -87,12 +120,11 @@ static int hstat(HANDLE h, struct win32_stat *wst)
     if (std.DeletePending) {
         wst->st_nlink = 0;
     }
-    time = info.ftLastWriteTime;
 
     wst->st_mode  = get_mode(info.dwFileAttributes);
     wst->st_size  = UINT64(info.nFileSizeHigh, info.nFileSizeLow);
     wst->st_ino   = UINT64(info.nFileIndexHigh, info.nFileIndexLow);
-    wst->st_mtime = UINT64(time.dwHighDateTime, time.dwLowDateTime);
+    wst->st_mtime = filetime_to_epoch(&info.ftLastWriteTime);
 
     return 0;
 }
