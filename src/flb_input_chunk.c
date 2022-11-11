@@ -36,6 +36,7 @@
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/stream_processor/flb_sp.h>
 #include <chunkio/chunkio.h>
+#include <chunkio/cio_error.h>
 
 #define BLOCK_UNTIL_KEYPRESS() {char temp_keypress_buffer; read(0, &temp_keypress_buffer, 1);}
 
@@ -1044,6 +1045,7 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
 {
     int id = -1;
     int ret;
+    int cio_error;
     int new_chunk = FLB_FALSE;
     size_t out_size;
     struct flb_input_chunk *ic = NULL;
@@ -1077,8 +1079,14 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
                  * chunk.
                  */
 
-                flb_error("[input chunk] discarding corrupted chunk");
-                flb_input_chunk_destroy_corrupted(ic);
+                cio_error = cio_error_get(ic->chunk);
+
+                if (cio_error == CIO_ERR_BAD_FILE_SIZE ||
+                    cio_error == CIO_ERR_BAD_LAYOUT)
+                {
+                    flb_error("[input chunk] discarding corrupted chunk");
+                    flb_input_chunk_destroy_corrupted(ic);
+                }
 
                 ic = NULL;
             }
