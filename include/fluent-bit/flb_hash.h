@@ -85,4 +85,6 @@ int flb_hash_del(struct flb_hash *ht, const char *key);
 int flb_hash_del_ptr(struct flb_hash *ht, const char *key, int key_len,
                      void *ptr);
 
+int flb_hash_del_ptr_without_key(struct flb_hash *ht, void *ptr);
+
 #endif
