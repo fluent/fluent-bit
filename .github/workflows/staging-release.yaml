@@ -263,7 +263,8 @@ jobs:
 
       - name: Promote container images from staging to GHCR.io
         run: |
-          docker push "$STAGING_IMAGE_NAME:$TAG" $RELEASE_IMAGE_NAME:$TAG"
+          docker tag "$STAGING_IMAGE_NAME:$TAG" "$RELEASE_IMAGE_NAME:$TAG"
+          docker push "$RELEASE_IMAGE_NAME:$TAG"
         env:
           RELEASE_IMAGE_NAME: ghcr.io/${{ github.event.inputs.github-image || github.repository }}
           RELEASE_CREDS: ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}
@@ -278,7 +279,8 @@ jobs:
 
       - name: Promote container images from staging to Dockerhub
         run: |
-          docker push "$STAGING_IMAGE_NAME:$TAG" $RELEASE_IMAGE_NAME:$TAG"
+          docker tag "$STAGING_IMAGE_NAME:$TAG" "$RELEASE_IMAGE_NAME:$TAG"
+          docker push "$RELEASE_IMAGE_NAME:$TAG"
         env:
           RELEASE_IMAGE_NAME: docker.io/${{ github.event.inputs.docker-image || secrets.DOCKERHUB_ORGANIZATION }}
           RELEASE_CREDS: ${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }}
