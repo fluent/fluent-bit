@@ -905,7 +905,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     return ic;
 }
 
-int flb_input_chunk_destroy_corrupted(struct flb_input_chunk *ic)
+int flb_input_chunk_destroy_corrupted(struct flb_input_chunk *ic, int delete)
 {
     int ret;
     ssize_t bytes;
@@ -949,7 +949,7 @@ int flb_input_chunk_destroy_corrupted(struct flb_input_chunk *ic)
         flb_hash_del_ptr_without_key(ic->in->ht_metric_chunks, (void *) ic);
     }
 
-    cio_chunk_close(ic->chunk, CIO_TRUE);
+    cio_chunk_close(ic->chunk, delete);
     mk_list_del(&ic->_head);
     flb_free(ic);
 
@@ -1046,6 +1046,7 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
     int id = -1;
     int ret;
     int cio_error;
+    int delete_chunk;
     int new_chunk = FLB_FALSE;
     size_t out_size;
     struct flb_input_chunk *ic = NULL;
@@ -1085,8 +1086,13 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
                     cio_error == CIO_ERR_BAD_LAYOUT)
                 {
                     flb_error("[input chunk] discarding corrupted chunk");
-                    flb_input_chunk_destroy_corrupted(ic);
+                    delete_chunk = CIO_TRUE;
                 }
+                else {
+                    delete_chunk = CIO_FALSE;
+                }
+
+                flb_input_chunk_destroy_corrupted(ic, delete_chunk);
 
                 ic = NULL;
             }
