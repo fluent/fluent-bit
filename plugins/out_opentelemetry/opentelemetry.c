@@ -171,6 +171,13 @@ static int http_post(struct opentelemetry_context *ctx,
         out_ret = FLB_RETRY;
     }
 
+    /*
+     * If the payload buffer is different than incoming records in body, means
+     * we generated a different payload and must be freed.
+     */
+    if (final_body != body) {
+        flb_free(final_body);
+    }
     /* Destroy HTTP client context */
     flb_http_client_destroy(c);
 
