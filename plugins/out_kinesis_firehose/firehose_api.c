@@ -165,6 +165,7 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
     size_t len;
     size_t tmp_size;
     void *compressed_tmp_buf;
+    char *out_buff;
 
     tmp_buf_ptr = buf->tmp_buf + buf->tmp_buf_offset;
     ret = flb_msgpack_to_json(tmp_buf_ptr,
@@ -216,8 +217,8 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
                          ctx->delivery_stream);
             return 2;
         }
-        /* guess space needed to write time_key */
-        len = 6 + strlen(ctx->time_key) + 6 * strlen(ctx->time_key_format);
+        /* format time output and get the length */
+        create_time_format_string(&out_buff, &len, ctx->time_key_format, tms);
         /* how much space do we have left */
         tmp_size = (buf->tmp_buf_size - buf->tmp_buf_offset) - written;
         if (len > tmp_size) {
@@ -235,11 +236,10 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
         time_key_ptr += 3;
         tmp_size = buf->tmp_buf_size - buf->tmp_buf_offset;
         tmp_size -= (time_key_ptr - tmp_buf_ptr);
-        len = strftime(time_key_ptr, tmp_size, ctx->time_key_format, &time_stamp);
-        if (len <= 0) {
-            /* ran out of space - should not happen because of check above */
-            return 1;
-        }
+        /* merge out_buff to time_key_ptr */
+        len = snprintf(time_key_ptr, strlen(out_buff) + 1,
+                       "%s", out_buff);
+        free(out_buff);
         time_key_ptr += len;
         memcpy(time_key_ptr, "\"}", 2);
         time_key_ptr += 2;
