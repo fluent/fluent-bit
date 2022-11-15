@@ -374,6 +374,8 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
     if (fs_size > 0) {
         content_size = cio_file_st_get_content_size(cf->map, fs_size);
         if (content_size == -1) {
+            cio_error_set(ch, CIO_ERR_BAD_FILE_SIZE);
+
             cio_log_error(ctx, "invalid content size %s", cf->path);
             munmap(cf->map, cf->alloc_size);
             cf->map = NULL;
