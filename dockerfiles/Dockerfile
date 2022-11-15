@@ -231,3 +231,4 @@ EXPOSE 2020
 
 # No entry point so we can just shell in
 CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
+CMD ["/bin/bash"]
