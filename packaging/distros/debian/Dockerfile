@@ -79,7 +79,7 @@ COPY . ./
 WORKDIR /tmp/fluent-bit/build/
 # CMake configuration variables
 ARG CFLAGS="-std=gnu99"
-ARG CMAKE_INSTALL_PREFIX=/opt/fuent-bit/
+ARG CMAKE_INSTALL_PREFIX=/opt/fluent-bit/
 ARG CMAKE_INSTALL_SYSCONFDIR=/etc/
 ARG FLB_RELEASE=On
 ARG FLB_TRACE=On
