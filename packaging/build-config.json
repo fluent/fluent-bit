@@ -9,6 +9,8 @@
         "centos/8.arm64v8",
         "centos/9",
         "centos/9.arm64v8",
+        "debian/bookworm",
+        "debian/bookworm.arm64v8",
         "debian/buster",
         "debian/buster.arm64v8",
         "debian/bullseye",
