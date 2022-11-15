@@ -905,7 +905,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     return ic;
 }
 
-int flb_input_chunk_destroy_corrupted(struct flb_input_chunk *ic, int delete)
+int flb_input_chunk_destroy_corrupted(struct flb_input_chunk *ic, int del)
 {
     int ret;
     ssize_t bytes;
@@ -949,7 +949,7 @@ int flb_input_chunk_destroy_corrupted(struct flb_input_chunk *ic, int delete)
         flb_hash_del_ptr_without_key(ic->in->ht_metric_chunks, (void *) ic);
     }
 
-    cio_chunk_close(ic->chunk, delete);
+    cio_chunk_close(ic->chunk, del);
     mk_list_del(&ic->_head);
     flb_free(ic);
 
