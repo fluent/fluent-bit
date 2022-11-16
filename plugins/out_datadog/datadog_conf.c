@@ -33,6 +33,7 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
     struct flb_upstream *upstream;
     const char *api_key;
     const char *tmp;
+    flb_sds_t tmp_sds;
 
     int ret;
     char *protocol = NULL;
@@ -75,12 +76,18 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
     /* use TLS ? */
     if (ins->use_tls == FLB_TRUE) {
         io_flags = FLB_IO_TLS;
-        ctx->scheme = flb_sds_create("https://");
+        tmp_sds = flb_sds_create("https://");
     }
     else {
         io_flags = FLB_IO_TCP;
-        ctx->scheme = flb_sds_create("http://");
+        tmp_sds = flb_sds_create("http://");
     }
+    if (!tmp_sds) {
+        flb_errno();
+        flb_datadog_conf_destroy(ctx);
+        return NULL;
+    }
+    ctx->scheme = tmp_sds;
     flb_plg_debug(ctx->ins, "scheme: %s", ctx->scheme);
 
     /* configure URI */
@@ -126,11 +133,17 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
 
     /* Get network configuration */
     if (!ins->host.name) {
-        ctx->host = flb_sds_create(FLB_DATADOG_DEFAULT_HOST);
+        tmp_sds = flb_sds_create(FLB_DATADOG_DEFAULT_HOST);
     }
     else {
-        ctx->host = flb_sds_create(ins->host.name);
+        tmp_sds = flb_sds_create(ins->host.name);
     }
+    if (!tmp_sds) {
+        flb_errno();
+        flb_datadog_conf_destroy(ctx);
+        return NULL;
+    }
+    ctx->host = tmp_sds;
     flb_plg_debug(ctx->ins, "host: %s", ctx->host);
 
     if (ins->host.port != 0) {
