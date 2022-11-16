@@ -1416,8 +1416,6 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
                   in->name);
         cio_chunk_tx_rollback(ic->chunk);
 
-        flb_input_chunk_destroy(ic, FLB_TRUE);
-
         return -1;
     }
 
