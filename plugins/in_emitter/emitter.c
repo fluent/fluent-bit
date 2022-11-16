@@ -23,6 +23,8 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_ring_buffer.h>
+
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -37,6 +39,8 @@ struct em_chunk {
 struct flb_emitter {
     struct mk_list chunks;              /* list of all pending chunks */
     struct flb_input_instance *ins;     /* input instance */
+    struct flb_ring_buffer *msgs;       /* ring buffer for cross-thread messages */
+    int ring_buffer_size;               /* size of the ring buffer */
 };
 
 struct em_chunk *em_chunk_create(const char *tag, int tag_len,
@@ -73,6 +77,28 @@ static void em_chunk_destroy(struct em_chunk *ec)
     flb_free(ec);
 }
 
+int static do_in_emitter_add_record(struct em_chunk *ec,
+                                    struct flb_input_instance *in)
+{
+    struct flb_emitter *ctx = (struct flb_emitter *) in->context;
+    int ret;
+
+    /* Associate this backlog chunk to this instance into the engine */
+    ret = flb_input_log_append(in,
+                               ec->tag, flb_sds_len(ec->tag),
+                               ec->mp_sbuf.data,
+                               ec->mp_sbuf.size);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "error registering chunk with tag: %s",
+                      ec->tag);
+        /* Release the echunk */
+        em_chunk_destroy(ec);
+        return -1;
+    }
+    /* Release the echunk */
+    em_chunk_destroy(ec);
+    return 0;
+}
 
 /*
  * Function used by filters to ingest custom records with custom tags, at the
@@ -88,6 +114,19 @@ int in_emitter_add_record(const char *tag, int tag_len,
     int ret;
 
     ctx = (struct flb_emitter *) in->context;
+
+    /* Use the ring buffer first if it exists */
+    if (ctx->msgs) {
+        ec = flb_calloc(1, sizeof(struct em_chunk));
+        if (ec == NULL) {
+            return -1;
+        }
+        ec->tag = flb_sds_create_len(tag, tag_len);
+        msgpack_sbuffer_write(&ec->mp_sbuf, buf_data, buf_size);
+        ret = flb_ring_buffer_write(ctx->msgs, (void *)ec, sizeof(struct em_chunk));
+        flb_free(ec);
+        return ret;
+    }
 
     /* Check if any target chunk already exists */
     mk_list_foreach(head, &ctx->chunks) {
@@ -112,21 +151,56 @@ int in_emitter_add_record(const char *tag, int tag_len,
     /* Append raw msgpack data */
     msgpack_sbuffer_write(&ec->mp_sbuf, buf_data, buf_size);
 
-    /* Associate this backlog chunk to this instance into the engine */
-    ret = flb_input_log_append(in,
-                                     ec->tag, flb_sds_len(ec->tag),
-                                     ec->mp_sbuf.data,
-                                     ec->mp_sbuf.size);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "error registering chunk with tag: %s",
-                      ec->tag);
-        /* Release the echunk */
-        em_chunk_destroy(ec);
+    return do_in_emitter_add_record(ec, in);
+}
+
+/*
+ * Triggered by refresh_interval, it re-scan the path looking for new files
+ * that match the original path pattern.
+ */
+static int in_emitter_ingest_ring_buffer(struct flb_input_instance *in,
+                                  struct flb_config *config, void *context)
+{
+    int ret;
+    struct flb_emitter *ctx = (struct flb_emitter *)context;
+    struct em_chunk ec;
+    (void) config;
+    (void) in;
+
+
+    while ((ret = flb_ring_buffer_read(ctx->msgs, (void *)&ec, 
+                                       sizeof(struct em_chunk))) == 0) {
+        ret = flb_input_log_append(in,
+                                   ec.tag, flb_sds_len(ec.tag),
+                                   ec.mp_sbuf.data,
+                                   ec.mp_sbuf.size);
+        flb_sds_destroy(ec.tag);
+        msgpack_sbuffer_destroy(&ec.mp_sbuf);
+    }
+    return ret;
+}
+
+static int in_emitter_start_ring_buffer(struct flb_input_instance *in, struct flb_emitter *ctx)
+{
+    if (ctx->ring_buffer_size <= 0) {
+        return 0;
+    }
+
+    if (ctx->msgs != NULL) {
+        flb_warn("emitter %s already has a ring buffer",
+                  flb_input_name(in));
+        return 0;
+    }
+
+    ctx->msgs = flb_ring_buffer_create(sizeof(void *) * ctx->ring_buffer_size);
+    if (!ctx->msgs) {
+        flb_error("emitter %s could not initialize ring buffer",
+                  flb_input_name(in));
         return -1;
     }
-    /* Release the echunk */
-    em_chunk_destroy(ec);
-    return 0;
+
+    return flb_input_set_collector_time(in, in_emitter_ingest_ring_buffer,
+                                       1, 0, in->config);
 }
 
 /* Initialize plugin */
@@ -134,14 +208,30 @@ static int cb_emitter_init(struct flb_input_instance *in,
                            struct flb_config *config, void *data)
 {
     struct flb_emitter *ctx;
+    int ret;
 
-    ctx = flb_malloc(sizeof(struct flb_emitter));
+
+    ctx = flb_calloc(1, sizeof(struct flb_emitter));
     if (!ctx) {
         flb_errno();
         return -1;
     }
     ctx->ins = in;
     mk_list_init(&ctx->chunks);
+
+
+    ret = flb_input_config_map_set(in, (void *) ctx);
+    if (ret == -1) {
+        return -1;
+    }
+
+    if (ctx->ring_buffer_size > 0) {
+        ret = in_emitter_start_ring_buffer(in, ctx);
+        if (ret == -1) {
+            flb_free(ctx);
+            return -1;
+        }
+    }
 
     /* export plugin context */
     flb_input_set_context(in, ctx);
@@ -155,6 +245,9 @@ static int cb_emitter_exit(void *data, struct flb_config *config)
     struct mk_list *head;
     struct flb_emitter *ctx = data;
     struct em_chunk *echunk;
+    struct em_chunk ec;
+    int ret;
+
 
     mk_list_foreach_safe(head, tmp, &ctx->chunks) {
         echunk = mk_list_entry(head, struct em_chunk, _head);
@@ -162,9 +255,27 @@ static int cb_emitter_exit(void *data, struct flb_config *config)
         flb_free(echunk);
     }
 
+    if (ctx->msgs) {
+        while ((ret = flb_ring_buffer_read(ctx->msgs, (void *)&ec, 
+                                        sizeof(struct em_chunk))) == 0) {
+            flb_sds_destroy(ec.tag);
+            msgpack_sbuffer_destroy(&ec.mp_sbuf);
+        }
+        flb_ring_buffer_destroy(ctx->msgs);
+    }
+
     flb_free(ctx);
     return 0;
 }
+
+static struct flb_config_map config_map[] = {
+   {
+    FLB_CONFIG_MAP_INT, "ring_buffer_size", "0",
+    0, FLB_TRUE, offsetof(struct flb_emitter, ring_buffer_size),
+    "use a ring buffer to ingest messages for the emitter (required across threads)."
+   },
+   {0}
+};
 
 /* Plugin reference */
 struct flb_input_plugin in_emitter_plugin = {
@@ -175,6 +286,7 @@ struct flb_input_plugin in_emitter_plugin = {
     .cb_collect   = NULL,
     .cb_ingest    = NULL,
     .cb_flush_buf = NULL,
+    .config_map   = config_map,
     .cb_pause     = NULL,
     .cb_resume    = NULL,
     .cb_exit      = cb_emitter_exit,
