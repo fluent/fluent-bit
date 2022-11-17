@@ -65,6 +65,34 @@ RUN apt-get -qq update && \
     libsasl2-2 libsasl2-dev libyaml-dev && \
     apt-get install -y --reinstall lsb-base lsb-release
 
+# debian/bookworm base image
+FROM debian:bookworm-slim as debian-bookworm-base
+ENV DEBIAN_FRONTEND noninteractive
+
+# hadolint ignore=DL3008,DL3015
+RUN apt-get -qq update && \
+    apt-get install -y curl ca-certificates build-essential \
+    cmake make bash sudo wget unzip dh-make \
+    libsystemd-dev zlib1g-dev flex bison \
+    libssl3 libssl-dev libpq-dev postgresql-server-dev-all \
+    libsasl2-2 libsasl2-dev libyaml-dev && \
+    apt-get install -y --reinstall lsb-base lsb-release
+
+# debian/bookworm.arm64v8 base image
+FROM arm64v8/debian:bookworm-slim as debian-bookworm.arm64v8-base
+ENV DEBIAN_FRONTEND noninteractive
+
+COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
+
+# hadolint ignore=DL3008,DL3015
+RUN apt-get -qq update && \
+    apt-get install -y curl ca-certificates build-essential \
+    cmake make bash sudo wget unzip dh-make \
+    libsystemd-dev zlib1g-dev flex bison \
+    libssl3 libssl-dev libpq-dev postgresql-server-dev-all \
+    libsasl2-2 libsasl2-dev libyaml-dev && \
+    apt-get install -y --reinstall lsb-base lsb-release
+
 # Common build for all distributions now
 # hadolint ignore=DL3006
 FROM $BASE_BUILDER as builder
