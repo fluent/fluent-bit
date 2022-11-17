@@ -54,7 +54,7 @@ extern "C" {
 #include <stddef.h>
 #endif
 #ifdef _MSC_VER
-#include <BaseTsd.h>
+#include <basetsd.h>
 #endif
 #include <stdarg.h>
 #ifdef EVENT__HAVE_NETDB_H

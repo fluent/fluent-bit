@@ -31,8 +31,8 @@
 #include <fcntl.h>
 
 #ifdef FLB_SYSTEM_WINDOWS
-#include <Shlobj.h>
-#include <Shlwapi.h>
+#include <shlobj.h>
+#include <shlwapi.h>
 #endif
 
 #include "file.h"

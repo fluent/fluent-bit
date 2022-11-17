@@ -16,7 +16,7 @@
  */
 
 #ifdef _WIN32
-#include <Windows.h>
+#include <windows.h>
 #define THR_HANDLE HANDLE
 #define LAST_ERROR() GetLastError()
 #define SLEEP_MILLIS(millis) Sleep( millis )

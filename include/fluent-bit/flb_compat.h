@@ -37,7 +37,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #include <windows.h>
-#include <Wincrypt.h> /* flb_io_tls.c */
+#include <wincrypt.h> /* flb_io_tls.c */
 
 #include <monkey/mk_core/mk_sleep.h>
 #include <fluent-bit/flb_dlfcn_win32.h>
