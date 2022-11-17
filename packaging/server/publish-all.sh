@@ -108,6 +108,16 @@ if ! aptly -config="$APTLY_CONFIG" publish switch -gpg-key="releases@fluentbit.i
     exit 1
 fi
 
+# Debian 12 Bookworm
+echo "Publishing Debian 12 Bookworm"
+find "$SOURCE_DIR/debian/bookworm/" -iname "*-bit_$VERSION*.deb" -exec aptly -config="$APTLY_CONFIG" repo add flb-debian-bookworm {} \;
+aptly -config="$APTLY_CONFIG" snapshot create "fluent-bit-debian-bookworm-${VERSION}" from repo flb-debian-bookworm
+if ! aptly -config="$APTLY_CONFIG" publish switch -gpg-key="releases@fluentbit.io" bookworm filesystem:debian/bookworm:bookworm "fluent-bit-debian-bookworm-${VERSION}"; then
+    # Cleanup snapshot in case we want to retry later
+    aptly -config="$APTLY_CONFIG" snapshot drop "fluent-bit-debian-bookworm-${VERSION}"
+    exit 1
+fi
+
 # Raspbian 10 Buster
 echo "Publishing Raspbian 10 Buster"
 find "$SOURCE_DIR/raspbian/buster/" -iname "*-bit_$VERSION*.deb" -exec aptly -config="$APTLY_CONFIG" repo add flb-raspbian-buster {} \;

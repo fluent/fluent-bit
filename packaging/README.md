@@ -10,6 +10,8 @@ This directory contains Docker files used to build [Fluent Bit](http://fluentbit
 | CentOS       |   8                       | arm64v8 | centos/8.arm64v8        |
 | CentOS       |   7                       | x86_64  | centos/7                |
 | CentOS       |   7                       | arm64v8 | centos/7.arm64v8        |
+| Debian       |   12                      | x86_64  | debian/bookworm         |
+| Debian       |   12                      | arm64v8 | debian/bookworm.arm64v8 |
 | Debian       |   11                      | x86_64  | debian/bullseye         |
 | Debian       |   11                      | arm64v8 | debian/bullseye.arm64v8 |
 | Debian       |   10                      | x86_64  | debian/buster           |
