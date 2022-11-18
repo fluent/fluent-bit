@@ -25,6 +25,8 @@
 #include <fluent-bit/flb_upstream_ha.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_connection.h>
+#include <fluent-bit/flb_pthread.h>
+#include <cfl/cfl_list.h>
 
 /*
  * Forward modes
@@ -98,12 +100,20 @@ struct flb_forward_config {
     struct mk_list _head;     /* Link to list flb_forward->configs */
 };
 
+struct flb_forward_uds_connection {
+    flb_sockfd_t    descriptor;
+    struct cfl_list _head;     /* Link to list flb_forward->uds_connnection_list */
+};
+
 /* Plugin Context */
 struct flb_forward {
     /* if HA mode is enabled */
     int ha_mode;              /* High Availability mode enabled ? */
     char *ha_upstream;        /* Upstream configuration file      */
     struct flb_upstream_ha *ha;
+
+    struct cfl_list uds_connection_list;
+    pthread_mutex_t uds_connection_list_mutex;
 
     /* Upstream handler and config context for single mode (no HA) */
     struct flb_upstream *u;
