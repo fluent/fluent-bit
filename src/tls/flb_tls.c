@@ -435,8 +435,6 @@ int flb_tls_session_create(struct flb_tls *tls,
     session->tls = tls;
     session->connection = connection;
 
-    connection->tls_session = session;
-
     result = 0;
 
  retry_handshake:
@@ -511,14 +509,17 @@ int flb_tls_session_create(struct flb_tls *tls,
         connection->coroutine = co;
 
         flb_coro_yield(co, FLB_FALSE);
-
         /* We want this field to hold NULL at all times unless we are explicitly
          * waiting to be resumed.
          */
 
         connection->coroutine = NULL;
 
-        goto retry_handshake;
+        /* This check's purpose is to abort when a timeout is detected.
+         */
+        if (connection->net_error == -1) {
+            goto retry_handshake;
+        }
     }
 
 cleanup:
@@ -528,6 +529,9 @@ cleanup:
 
     if (result != 0) {
         flb_tls_session_destroy(session);
+    }
+    else {
+        connection->tls_session = session;
     }
 
     return result;
