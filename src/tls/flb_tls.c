@@ -520,6 +520,9 @@ int flb_tls_session_create(struct flb_tls *tls,
         if (connection->net_error == -1) {
             goto retry_handshake;
         }
+        else {
+            result = -1;
+        }
     }
 
 cleanup:
