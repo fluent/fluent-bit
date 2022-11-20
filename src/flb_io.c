@@ -258,6 +258,41 @@ static int fd_io_write(int fd, struct sockaddr_storage *address,
     return total;
 }
 
+static FLB_INLINE void net_io_backup_event(struct flb_connection *connection,
+                                           struct mk_event *backup)
+{
+    if (connection != NULL && backup != NULL) {
+        memcpy(backup, &connection->event, sizeof(struct mk_event));
+    }
+}
+
+static FLB_INLINE void net_io_restore_event(struct flb_connection *connection,
+                                            struct mk_event *backup)
+{
+    int result;
+
+    if (connection != NULL && backup != NULL) {
+        if (MK_EVENT_IS_REGISTERED((&connection->event))) {
+            result = mk_event_del(connection->evl, &connection->event);
+
+            assert(result == 0);
+        }
+
+        if (MK_EVENT_IS_REGISTERED(backup)) {
+            connection->event.priority = backup->priority;
+            connection->event.handler = backup->handler;
+
+            result = mk_event_add(connection->evl,
+                                  connection->fd,
+                                  backup->type,
+                                  backup->mask,
+                                  &connection->event);
+
+            assert(result == 0);
+        }
+    }
+}
+
 /*
  * Perform Async socket write(2) operations. This function depends on a main
  * event-loop and the co-routines interface to yield/resume once sockets are
@@ -277,6 +312,12 @@ static FLB_INLINE int net_io_write_async(struct flb_coro *co,
     size_t total = 0;
     size_t to_send;
     char so_error_buf[256];
+    struct mk_event event_backup;
+    int event_restore_needed;
+
+    event_restore_needed = FLB_FALSE;
+
+    net_io_backup_event(connection, &event_backup);
 
 retry:
     error = 0;
@@ -303,6 +344,8 @@ retry:
 
     if (bytes == -1) {
         if (FLB_WOULDBLOCK()) {
+            event_restore_needed = FLB_TRUE;
+
             ret = mk_event_add(connection->evl,
                                connection->fd,
                                FLB_ENGINE_EV_THREAD,
@@ -317,6 +360,8 @@ retry:
                  * let the caller we failed
                  */
                 *out_len = total;
+
+                net_io_restore_event(connection, &event_backup);
 
                 return -1;
             }
@@ -343,6 +388,8 @@ retry:
             if (ret == -1) {
                 *out_len = total;
 
+                net_io_restore_event(connection, &event_backup);
+
                 return -1;
             }
 
@@ -361,6 +408,8 @@ retry:
 
                     *out_len = total;
 
+                    net_io_restore_event(connection, &event_backup);
+
                     return -1;
                 }
 
@@ -371,12 +420,16 @@ retry:
             else {
                 *out_len = total;
 
+                net_io_restore_event(connection, &event_backup);
+
                 return -1;
             }
 
         }
         else {
             *out_len = total;
+
+            net_io_restore_event(connection, &event_backup);
 
             return -1;
         }
@@ -401,6 +454,8 @@ retry:
                  */
                 *out_len = total;
 
+                net_io_restore_event(connection, &event_backup);
+
                 return -1;
             }
         }
@@ -417,11 +472,18 @@ retry:
         goto retry;
     }
 
-    if (connection->event.status & MK_EVENT_REGISTERED) {
-        /* We got a notification, remove the event registered */
-        ret = mk_event_del(connection->evl, &connection->event);
+    if (event_restore_needed) {
+        /* If we enter here it means we registered this connection
+         * in the event loop, in which case we need to unregister it
+         * and restore the original registration if there was one.
+         *
+         * We do it conditionally because in those cases in which
+         * send succeeds on the first try we don't touch the event
+         * and it wouldn't make sense to unregister and register for
+         * the same event.
+         */
 
-        assert(ret == 0);
+        net_io_restore_event(connection, &event_backup);
     }
 
     *out_len = total;
@@ -491,13 +553,21 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_coro *co,
                                             struct flb_connection *connection,
                                             void *buf, size_t len)
 {
+    struct mk_event event_backup;
+    int event_restore_needed;
     int ret;
+
+    event_restore_needed = FLB_FALSE;
+
+    net_io_backup_event(connection, &event_backup);
 
  retry_read:
     ret = recv(connection->fd, buf, len, 0);
 
     if (ret == -1) {
         if (FLB_WOULDBLOCK()) {
+            event_restore_needed = FLB_TRUE;
+
             ret = mk_event_add(connection->evl,
                                connection->fd,
                                FLB_ENGINE_EV_THREAD,
@@ -511,6 +581,8 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_coro *co,
                  * If we failed here there no much that we can do, just
                  * let the caller we failed
                  */
+                net_io_restore_event(connection, &event_backup);
+
                 return -1;
             }
 
@@ -525,10 +597,25 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_coro *co,
 
             goto retry_read;
         }
-        return -1;
+
+        ret = -1;
     }
     else if (ret <= 0) {
-        return -1;
+        ret = -1;
+    }
+
+    if (event_restore_needed) {
+        /* If we enter here it means we registered this connection
+         * in the event loop, in which case we need to unregister it
+         * and restore the original registration if there was one.
+         *
+         * We do it conditionally because in those cases in which
+         * send succeeds on the first try we don't touch the event
+         * and it wouldn't make sense to unregister and register for
+         * the same event.
+         */
+
+        net_io_restore_event(connection, &event_backup);
     }
 
     return ret;
