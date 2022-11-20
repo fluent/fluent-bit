@@ -900,7 +900,6 @@ static void cb_check_basic(void *ctx, int ffd,
 void flb_test_tcp_exit_workers(void)
 {
     int ret;
-    int bytes;
     flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;
@@ -945,7 +944,6 @@ void flb_test_tcp_exit_workers(void)
 void flb_test_tcp_exit_no_workers(void)
 {
     int ret;
-    int bytes;
     flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;
