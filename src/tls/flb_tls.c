@@ -606,7 +606,14 @@ int flb_tls_session_create(struct flb_tls *tls,
 
         connection->coroutine = NULL;
 
-        goto retry_handshake;
+        /* This check's purpose is to abort when a timeout is detected.
+         */
+        if (connection->net_error == -1) {
+            goto retry_handshake;
+        }
+        else {
+            result = -1;
+        }
     }
 
 cleanup:
