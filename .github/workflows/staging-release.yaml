@@ -72,7 +72,7 @@ jobs:
   # Note we could resign all packages as well potentially if we wanted to update the key.
   staging-release-packages-s3:
     name: S3 - create release
-    runs-on: ubuntu-18.04 # no createrepo on Ubuntu 20.04
+    runs-on: ubuntu-22.04 # no createrepo on Ubuntu 20.04
     environment: release
     needs: staging-release-version-check
     permissions:
@@ -83,7 +83,7 @@ jobs:
 
     - name: Setup runner
       run: |
-        sudo apt-get install debsigs createrepo aptly rsync
+        sudo apt-get install debsigs createrepo_c aptly rsync
       shell: bash
 
     - name: Import GPG key for signing
@@ -146,7 +146,7 @@ jobs:
     name: fluentbit.io - upload packages
     # Not required if using the staging bucket
     needs: staging-release-packages-s3
-    runs-on: ubuntu-18.04 # failures with AWS client on latest
+    runs-on: ubuntu-22.04 # failures with AWS client on latest
     environment: release
     permissions:
       contents: read
