@@ -49,8 +49,8 @@ jobs:
     steps:
       - name: Setup environment
         run: |
-          sudo apt update
-          sudo apt install -y gcc-7 g++-7 clang-6.0 libsystemd-dev gcovr libyaml-dev
+          sudo apt-get update
+          sudo apt-get install -y gcc-7 g++-7 clang-6.0 libsystemd-dev gcovr libyaml-dev
           sudo ln -s /usr/bin/llvm-symbolizer-6.0 /usr/bin/llvm-symbolizer || true
 
       - uses: actions/checkout@v3
