@@ -214,7 +214,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y createrepo_c aptly
+          sudo apt-get install -y createrepo-c aptly
 
       - name: Checkout code for repo metadata construction - always latest
         uses: actions/checkout@v3
