@@ -83,7 +83,8 @@ jobs:
 
     - name: Setup runner
       run: |
-        sudo apt-get install debsigs createrepo_c aptly rsync
+        sudo apt-get update
+        sudo apt-get install -y debsigs createrepo-c aptly rsync
       shell: bash
 
     - name: Import GPG key for signing
