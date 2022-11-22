@@ -20,9 +20,14 @@
 #ifndef FLB_OUT_TCP_H
 #define FLB_OUT_TCP_H
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_record_accessor.h>
+
 struct flb_out_tcp {
     /* Output format */
     int out_format;
+    flb_sds_t raw_message_key;
+    struct flb_record_accessor *ra_raw_message_key;
 
     char *host;
     int port;
