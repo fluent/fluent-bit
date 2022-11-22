@@ -580,6 +580,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     }
     instance->config = config;
     instance->log_level = -1;
+    instance->log_suppress_interval = -1;
     instance->test_mode = FLB_FALSE;
     instance->is_threaded = FLB_FALSE;
     instance->tp_workers = plugin->workers;
@@ -750,6 +751,14 @@ int flb_output_set_property(struct flb_output_instance *ins,
             return -1;
         }
         ins->log_level = ret;
+    }
+    else if (prop_key_check("log_suppress_interval", k, len) == 0 && tmp) {
+        ret = flb_utils_time_to_seconds(tmp);
+        flb_sds_destroy(tmp);
+        if (ret == -1) {
+            return -1;
+        }
+        ins->log_suppress_interval = ret;
     }
     else if (prop_key_check("host", k, len) == 0) {
         ins->host.name = tmp;

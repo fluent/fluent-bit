@@ -241,6 +241,7 @@ struct flb_output_instance {
     int event_type;
     int id;                              /* instance id                  */
     int log_level;                       /* instance log level           */
+    int log_suppress_interval;           /* log suppression interval     */
     char name[32];                       /* numbered name (cpu -> cpu.0) */
     char *alias;                         /* alias name for the instance  */
     int flags;                           /* inherit flags from plugin    */
