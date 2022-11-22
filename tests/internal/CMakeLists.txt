@@ -35,6 +35,7 @@ set(UNIT_TESTS_FILES
   parser_ltsv.c
   parser_regex.c
   env.c
+  log.c
   )
 
 # Config format
