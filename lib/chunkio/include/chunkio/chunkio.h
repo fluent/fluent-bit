@@ -79,6 +79,12 @@ struct cio_ctx {
 
     /* streams */
     struct mk_list streams;
+
+    /* errors */
+    int last_chunk_error; /* this field is necessary to discard irrecoverable
+                           * chunks in cio_scan_stream_files, it's not the
+                           * best approach but the only at the moment.
+                           */
 };
 
 #include <chunkio/cio_stream.h>
