@@ -208,7 +208,7 @@ static int cio_file_format_check(struct cio_chunk *ch,
         if (p[0] != CIO_FILE_ID_00 || p[1] != CIO_FILE_ID_01) {
             cio_log_debug(ch->ctx, "[cio file] invalid header at %s",
                           ch->name);
-            cio_error_set(ch, CIO_ERR_PERMISSION);
+            cio_error_set(ch, CIO_ERR_BAD_LAYOUT);
             return -1;
         }
 
