@@ -29,6 +29,7 @@
 #include <chunkio/cio_memfs.h>
 #include <chunkio/cio_chunk.h>
 #include <chunkio/cio_log.h>
+#include <chunkio/cio_error.h>
 
 #ifdef _WIN32
 #include "win32/dirent.h"
@@ -98,8 +99,20 @@ static int cio_scan_stream_files(struct cio_ctx *ctx, struct cio_stream *st,
             }
         }
 
+        ctx->last_chunk_error = 0;
+
         /* register every directory as a stream */
         cio_chunk_open(ctx, st, ent->d_name, ctx->flags, 0, &err);
+
+        if (err == CIO_CORRUPTED) {
+            if (ctx->last_chunk_error == CIO_ERR_BAD_FILE_SIZE ||
+                ctx->last_chunk_error == CIO_ERR_BAD_LAYOUT)
+            {
+                cio_log_debug(ctx, "[cio scan] discarding irrecoverable chunk");
+
+                err = cio_chunk_delete(ctx, st, ent->d_name);
+            }
+        }
     }
 
     closedir(dir);
