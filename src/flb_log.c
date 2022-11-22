@@ -686,6 +686,9 @@ int flb_log_destroy(struct flb_log *log, struct flb_config *config)
     /* Release resources */
     mk_event_loop_destroy(log->evl);
     flb_pipe_destroy(log->ch_mng);
+    if (log->worker->log_cache) {
+        flb_log_cache_destroy(log->worker->log_cache);
+    }
     flb_free(log->worker);
     flb_free(log);
 
