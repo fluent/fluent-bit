@@ -375,8 +375,8 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
         content_size = cio_file_st_get_content_size(cf->map, fs_size);
         if (content_size == -1) {
             cio_error_set(ch, CIO_ERR_BAD_FILE_SIZE);
-
             cio_log_error(ctx, "invalid content size %s", cf->path);
+
             munmap(cf->map, cf->alloc_size);
             cf->map = NULL;
             cf->data_size = 0;
@@ -645,6 +645,64 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
 
     *err = CIO_OK;
     return cf;
+}
+
+/* This function is used to delete a chunk by name, its only purpose is to delete
+ * chunks that cannnot be loaded (otherwise we would set them down with the delete
+ * flag set to TRUE).
+ */
+int cio_file_delete(struct cio_ctx *ctx, struct cio_stream *st, const char *name)
+{
+    int   psize;
+    char *path;
+    int   len;
+    int   ret;
+
+    len = strlen(name);
+    if (len == 1 && (name[0] == '.' || name[0] == '/')) {
+        cio_log_error(ctx, "[cio file] invalid file name");
+
+        return CIO_ERROR;
+    }
+
+    /* Compose path for the file */
+    psize = strlen(ctx->root_path) + strlen(st->name) + strlen(name);
+    psize += 8;
+
+    path = calloc(1, psize);
+    if (!path) {
+        cio_errno();
+
+        return CIO_ERROR;
+    }
+
+    ret = snprintf(path, psize, "%s/%s/%s",
+                   ctx->root_path, st->name, name);
+    if (ret == -1) {
+        cio_errno();
+        free(path);
+
+        return CIO_ERROR;
+    }
+
+    ret = unlink(path);
+
+    if (ret == -1) {
+        cio_errno();
+
+        cio_log_error(ctx,
+                      "[cio file] error deleting file %s:%s",
+                      st->name, name);
+
+        ret = CIO_ERROR;
+    }
+    else {
+        ret = CIO_OK;
+    }
+
+    free(path);
+
+    return ret;
 }
 
 /*

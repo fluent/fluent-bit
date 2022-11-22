@@ -444,6 +444,57 @@ void cio_file_close(struct cio_chunk *ch, int delete)
     free(cf);
 }
 
+/* This function is used to delete a chunk by name, its only purpose is to delete
+ * chunks that cannnot be loaded (otherwise we would set them down with the delete
+ * flag set to TRUE).
+ */
+int cio_file_delete(struct cio_ctx *ctx, struct cio_stream *st, const char *name)
+{
+    char *path;
+    int   len;
+    int   ret;
+
+    len = strlen(ctx->root_path) + strlen(st->name) + strlen(name);
+    len += 3;
+
+    path = calloc(1, len);
+
+    if (!path) {
+        cio_errno();
+
+        return CIO_ERROR;
+    }
+
+    ret = snprintf(path, len, "%s\\%s\\%s",
+                   ctx->root_path, st->name, name);
+
+    if (ret == -1) {
+        cio_errno();
+        free(path);
+
+        return CIO_ERROR;
+    }
+
+    ret = DeleteFileA(path);
+
+    if (ret != 0) {
+        cio_winapi_error();
+
+        cio_log_error(ctx,
+                      "[cio file] error deleting file %s:%s",
+                      st->name, name);
+
+        ret = CIO_ERROR;
+    }
+    else {
+        ret = CIO_OK;
+    }
+
+    free(path);
+
+    return ret;
+}
+
 /*
  * Append data into the end of the file chunk.
  */
