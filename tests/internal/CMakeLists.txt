@@ -37,6 +37,7 @@ set(UNIT_TESTS_FILES
   parser_regex.c
   parser_logfmt.c
   env.c
+  log.c
   )
 
 # Config format
