@@ -88,6 +88,10 @@ static int deliver_chunks_raw(struct flb_out_udp *ctx,
         /* append a new line */
         flb_sds_cat_safe(&buf, "\n", 1);
 
+        if (flb_sds_len(buf) > 65535) {
+            flb_plg_debug(ctx->ins, "record size exceeds maximum datagram size : %zu", flb_sds_len(buf));
+        }
+
         send_result = send(ctx->endpoint_descriptor,
                            buf,
                            flb_sds_len(buf),
@@ -159,6 +163,10 @@ static int deliver_chunks_json(struct flb_out_udp *ctx,
                 }
             }
 
+            if (flb_sds_len(json) > 65535) {
+                flb_plg_debug(ctx->ins, "record size exceeds maximum datagram size : %zu", flb_sds_len(json));
+            }
+
             send_result = send(ctx->endpoint_descriptor,
                                json,
                                flb_sds_len(json),
@@ -184,16 +192,35 @@ static int deliver_chunks_msgpack(struct flb_out_udp *ctx,
                                   const char *tag, int tag_len,
                                   const void *in_data, size_t in_size)
 {
+    size_t off = 0;
+    msgpack_unpacked result;
     ssize_t send_result;
+    size_t previous_offset;
 
-    send_result = send(ctx->endpoint_descriptor,
-                       in_data,
-                       in_size,
-                       MSG_DONTWAIT | MSG_NOSIGNAL);
+    msgpack_unpacked_init(&result);
 
-    if (send_result == -1) {
-        return FLB_RETRY;
+    previous_offset = 0;
+
+    while (msgpack_unpack_next(&result, in_data, in_size, &off) == MSGPACK_UNPACK_SUCCESS) {
+        if ((off - previous_offset) > 65535) {
+            flb_plg_debug(ctx->ins, "record size exceeds maximum datagram size : %zu", (off - previous_offset));
+        }
+
+        send_result = send(ctx->endpoint_descriptor,
+                           &((char *) in_data)[previous_offset],
+                           off - previous_offset,
+                           MSG_DONTWAIT | MSG_NOSIGNAL);
+
+        if (send_result == -1) {
+            msgpack_unpacked_destroy(&result);
+
+            return FLB_RETRY;
+        }
+
+        previous_offset = off;
     }
+
+    msgpack_unpacked_destroy(&result);
 
     return FLB_OK;
 }
