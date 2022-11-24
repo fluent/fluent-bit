@@ -95,7 +95,7 @@ static int deliver_chunks_raw(struct flb_out_udp *ctx,
         send_result = send(ctx->endpoint_descriptor,
                            buf,
                            flb_sds_len(buf),
-                           MSG_DONTWAIT | MSG_NOSIGNAL);
+                           0);
 
         if (send_result == -1) {
             msgpack_unpacked_destroy(&result);
@@ -170,7 +170,7 @@ static int deliver_chunks_json(struct flb_out_udp *ctx,
             send_result = send(ctx->endpoint_descriptor,
                                json,
                                flb_sds_len(json),
-                               MSG_DONTWAIT | MSG_NOSIGNAL);
+                               0);
 
             if (send_result == -1) {
                 msgpack_unpacked_destroy(&result);
@@ -209,7 +209,7 @@ static int deliver_chunks_msgpack(struct flb_out_udp *ctx,
         send_result = send(ctx->endpoint_descriptor,
                            &((char *) in_data)[previous_offset],
                            off - previous_offset,
-                           MSG_DONTWAIT | MSG_NOSIGNAL);
+                           0);
 
         if (send_result == -1) {
             msgpack_unpacked_destroy(&result);
