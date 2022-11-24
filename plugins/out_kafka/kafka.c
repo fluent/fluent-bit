@@ -478,6 +478,14 @@ static void cb_kafka_flush(struct flb_event_chunk *event_chunk,
     while (msgpack_unpack_next(&result,
                                event_chunk->data,
                                event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS) {
+        if (result.data.type != MSGPACK_OBJECT_ARRAY) {
+            continue;
+        }
+
+        if (result.data.via.array.size != 2) {
+            continue;
+        }
+
         flb_time_pop_from_msgpack(&tms, &result, &obj);
 
         ret = produce_message(&tms, obj, ctx, config);
