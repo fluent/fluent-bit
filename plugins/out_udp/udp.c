@@ -274,29 +274,6 @@ static struct flb_config_map config_map[] = {
     {0}
 };
 
-/*
-static int cb_udp_format_test(struct flb_config *config,
-                              struct flb_input_instance *ins,
-                              void *plugin_context,
-                              void *flush_ctx,
-                              int event_type,
-                              const char *tag, int tag_len,
-                              const void *data, size_t bytes,
-                              void **out_data, size_t *out_size)
-{
-    struct flb_out_udp *ctx = plugin_context;
-    int ret;
-
-    ret = compose_payload(ctx, tag, tag_len, data, bytes, out_data, out_size);
-    if (ret != FLB_OK) {
-        flb_error("ret=%d", ret);
-        return -1;
-    }
-
-    return 0;
-}
-*/
-
 /* Plugin reference */
 struct flb_output_plugin out_udp_plugin = {
     .name           = "udp",
@@ -305,9 +282,6 @@ struct flb_output_plugin out_udp_plugin = {
     .cb_flush       = cb_udp_flush,
     .cb_exit        = cb_udp_exit,
     .config_map     = config_map,
-
-    /* for testing */
-    // .test_formatter.callback = cb_udp_format_test,
 
     .workers        = 2,
     .flags          = FLB_OUTPUT_NET,
