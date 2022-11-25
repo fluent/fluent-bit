@@ -430,7 +430,6 @@ jobs:
     environment: release
     needs:
       - staging-release-packages-server
-      - staging-release-images
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -467,3 +466,34 @@ jobs:
         shell: bash
         env:
           IMAGE_TAG: ${{ github.event.inputs.version }}
+
+  staging-release-create-release:
+    name: Create the Github Release once packages and containers are up
+    needs:
+      - staging-release-images
+      - staging-release-packages-server
+    permissions:
+      contents: write
+    environment: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Release 1.9 - not latest
+        uses: softprops/action-gh-release@v1
+        if: startsWith(inputs.version, '1.9')
+        with:
+          body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          draft: false
+          generate_release_notes: false
+          name: "Fluent Bit ${{ inputs.version }}"
+          tag_name: v${{ inputs.version }}
+          target_commitish: '1.9'
+
+      - name: Release 2.0 and latest
+        uses: softprops/action-gh-release@v1
+        if: startsWith(inputs.version, '2.0')
+        with:
+          body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          draft: false
+          generate_release_notes: false
+          name: "Fluent Bit ${{ inputs.version }}"
+          tag_name: v${{ inputs.version }}
