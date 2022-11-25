@@ -214,7 +214,7 @@ static int cb_wasm_init(struct flb_filter_instance *f_ins,
     int ret = -1;
 
     /* Allocate space for the configuration */
-    ctx = flb_malloc(sizeof(struct flb_filter_wasm));
+    ctx = flb_calloc(1, sizeof(struct flb_filter_wasm));
     if (!ctx) {
         return -1;
     }
