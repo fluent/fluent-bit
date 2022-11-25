@@ -103,7 +103,7 @@ static void oauth2_cache_set(char *type, char *token, time_t expires)
         return;
     }
     *tmp_expires = expires;
-    pthread_setspecific(oauth2_token, tmp_expires);
+    pthread_setspecific(oauth2_token_expires, tmp_expires);
 }
 
 /* By using pthread keys cached values, compose the authorizatoin token */
