@@ -71,7 +71,7 @@ static int flb_wasm_load_wasm_binary(const char *wasm_path, int8_t **out_buf, ui
 
 error:
 
-    return -1;
+    return FLB_FALSE;
 }
 
 struct flb_wasm *flb_wasm_instantiate(struct flb_config *config, const char *wasm_path,
@@ -190,6 +190,9 @@ error:
     }
     if (buffer != NULL) {
         BH_FREE(buffer);
+    }
+    if (fw != NULL) {
+        flb_free(fw);
     }
 
     wasm_runtime_destroy();
