@@ -190,7 +190,7 @@ static int filter_wasm_config_read(struct flb_filter_wasm *ctx,
 
     /* function_name setting */
     if (ctx->wasm_function_name == NULL) {
-        flb_plg_error(f_ins, "no WASM 'program path' was given");
+        flb_plg_error(f_ins, "no WASM 'function name' was given");
         return -1;
     }
 
