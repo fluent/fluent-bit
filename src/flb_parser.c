@@ -973,6 +973,12 @@ int flb_parser_tzone_offset(const char *str, int len, int *tmdiff)
         return -1;
     }
 
+    /* Ensure there is enough data */
+    if (len < 4) {
+        *tmdiff = 0;
+        return -1;
+    }
+
     /* Negative value ? */
     neg = (*p++ == '-');
 
@@ -982,6 +988,11 @@ int flb_parser_tzone_offset(const char *str, int len, int *tmdiff)
     /* Gather hours and minutes */
     hour = ((p[0] - '0') * 10) + (p[1] - '0');
     if (end - p == 5 && p[2] == ':') {
+        /* Ensure there is enough data */
+        if (len < 5) {
+            *tmdiff = 0;
+            return -1;
+        }
         min = ((p[3] - '0') * 10) + (p[4] - '0');
     }
     else {
