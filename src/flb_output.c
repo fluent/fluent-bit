@@ -448,12 +448,7 @@ void flb_output_exit(struct flb_config *config)
 
         /* Check a exit callback */
         if (p->cb_exit) {
-            if (!p->proxy) {
-                p->cb_exit(ins->context, config);
-            }
-            else {
-                p->cb_exit(p, ins->context);
-            }
+            p->cb_exit(ins->context, config);
         }
         flb_output_instance_destroy(ins);
     }

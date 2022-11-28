@@ -145,23 +145,29 @@ int proxy_go_output_flush(struct flb_plugin_proxy_context *ctx,
     return ret;
 }
 
-int proxy_go_output_destroy(void *data)
+int proxy_go_output_destroy(struct flb_plugin_proxy_context *ctx)
 {
     int ret = 0;
     struct flbgo_output_plugin *plugin;
 
-    plugin = (struct flbgo_output_plugin *) data;
+    plugin = (struct flbgo_output_plugin *) ctx->proxy->data;
     flb_debug("[GO] running exit callback");
 
     if (plugin->cb_exit_ctx) {
-        ret = plugin->cb_exit_ctx(plugin->context->remote_context);
+        ret = plugin->cb_exit_ctx(ctx->remote_context);
     }
     else if (plugin->cb_exit) {
         ret = plugin->cb_exit();
     }
+    return ret;
+}
+
+void proxy_go_output_unregister(void *data) {
+    struct flbgo_output_plugin *plugin;
+
+    plugin = (struct flbgo_output_plugin *) data;
     flb_free(plugin->name);
     flb_free(plugin);
-    return ret;
 }
 
 int proxy_go_input_register(struct flb_plugin_proxy *proxy,
@@ -253,17 +259,24 @@ int proxy_go_input_cleanup(struct flb_plugin_proxy *ctx,
     return ret;
 }
 
-int proxy_go_input_destroy(void *data)
+int proxy_go_input_destroy(struct flb_plugin_input_proxy_context *ctx)
 {
     int ret = 0;
     struct flbgo_input_plugin *plugin;
 
-    plugin = (struct flbgo_input_plugin *) data;
+    plugin = (struct flbgo_input_plugin *) ctx->proxy->data;
     flb_debug("[GO] running exit callback");
 
-    ret = plugin->cb_exit();
+    if (plugin->cb_exit) {
+        ret = plugin->cb_exit();
+    }
+    return ret;
+}
 
+void proxy_go_input_unregister(void *data) {
+    struct flbgo_input_plugin *plugin;
+
+    plugin = (struct flbgo_input_plugin *) data;
     flb_free(plugin->name);
     flb_free(plugin);
-    return ret;
 }
