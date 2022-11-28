@@ -7,6 +7,7 @@ set(UNIT_TESTS_FILES
   signv4_fuzzer.c
   flb_json_fuzzer.c
   filter_stdout_fuzzer.c
+  fstore_fuzzer.c
   parser_fuzzer.c
   parse_json_fuzzer.c
   parse_logfmt_fuzzer.c
