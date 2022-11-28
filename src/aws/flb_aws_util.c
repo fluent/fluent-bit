@@ -57,6 +57,12 @@
 #define FLB_AWS_BASE_USER_AGENT_LEN    21
 #endif
 
+#define FLB_AWS_MILLISECOND_FORMATTER_LENGTH 3
+#define FLB_AWS_NANOSECOND_FORMATTER_LENGTH 9
+#define FLB_AWS_MILLISECOND_FORMATTER "%3N"
+#define FLB_AWS_NANOSECOND_FORMATTER_N "%9N"
+#define FLB_AWS_NANOSECOND_FORMATTER_L "%L"
+
 struct flb_http_client *request_do(struct flb_aws_client *aws_client,
                                    int method, const char *uri,
                                    const char *body, size_t body_len,
@@ -941,4 +947,95 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
             flb_sds_destroy(tmp_key);
         }
         return NULL;
+}
+
+/*
+ * This function is an extension to strftime which can support milliseconds with %3N,
+ * support nanoseconds with %9N or %L. The return value is the length of formatted
+ * time string.
+ */
+size_t flb_aws_strftime_precision(char **out_buf, const char *time_format,
+                                  struct flb_time *tms)
+{
+    char millisecond_str[FLB_AWS_MILLISECOND_FORMATTER_LENGTH+1];
+    char nanosecond_str[FLB_AWS_NANOSECOND_FORMATTER_LENGTH+1];
+    char *tmp_parsed_time_str;
+    char *buf;
+    size_t out_size;
+    size_t tmp_parsed_time_str_len;
+    size_t time_format_len;
+    struct tm timestamp;
+    struct tm *tmp;
+    int i;
+
+    /*
+     * Guess the max length needed for tmp_parsed_time_str and tmp_out_buf. The
+     * upper bound is 12*strlen(time_format) because the worst scenario will be only
+     * %c in time_format, and %c will be transfer to 24 chars long by function strftime().
+     */
+    time_format_len = strlen(time_format);
+    tmp_parsed_time_str_len = 12*time_format_len;
+
+    /*
+     * Use tmp_parsed_time_str to buffer when replace %3N with milliseconds, replace
+     * %9N and %L with nanoseconds in time_format.
+     */
+    tmp_parsed_time_str = (char *)flb_calloc(1, tmp_parsed_time_str_len*sizeof(char));
+    if (!tmp_parsed_time_str) {
+        flb_errno();
+        return 0;
+    }
+
+    buf = (char *)flb_calloc(1, tmp_parsed_time_str_len*sizeof(char));
+    if (!buf) {
+        flb_errno();
+        flb_free(tmp_parsed_time_str);
+        return 0;
+    }
+
+    /* Replace %3N to millisecond, %9N and %L to nanosecond in time_format. */
+    snprintf(millisecond_str, FLB_AWS_MILLISECOND_FORMATTER_LENGTH+1,
+             "%" PRIu64, (uint64_t) tms->tm.tv_nsec / 1000000);
+    snprintf(nanosecond_str, FLB_AWS_NANOSECOND_FORMATTER_LENGTH+1,
+             "%" PRIu64, (uint64_t) tms->tm.tv_nsec);
+    for (i = 0; i < time_format_len; i++) {
+        if (strncmp(time_format+i, FLB_AWS_MILLISECOND_FORMATTER, 3) == 0) {
+            strncat(tmp_parsed_time_str, millisecond_str,
+                    FLB_AWS_MILLISECOND_FORMATTER_LENGTH+1);
+            i += 2;
+        }
+        else if (strncmp(time_format+i, FLB_AWS_NANOSECOND_FORMATTER_N, 3) == 0) {
+            strncat(tmp_parsed_time_str, nanosecond_str,
+                    FLB_AWS_NANOSECOND_FORMATTER_LENGTH+1);
+            i += 2;
+        }
+        else if (strncmp(time_format+i, FLB_AWS_NANOSECOND_FORMATTER_L, 2) == 0) {
+            strncat(tmp_parsed_time_str, nanosecond_str,
+                    FLB_AWS_NANOSECOND_FORMATTER_LENGTH+1);
+            i += 1;
+        }
+        else {
+            strncat(tmp_parsed_time_str,time_format+i,1);
+        }
+    }
+
+    tmp = gmtime_r(&tms->tm.tv_sec, &timestamp);
+    if (!tmp) {
+        return 0;
+    }
+
+    out_size = strftime(buf, tmp_parsed_time_str_len,
+                        tmp_parsed_time_str, &timestamp);
+
+    /* Check whether tmp_parsed_time_str_len is enough for tmp_out_buff */
+    if (out_size == 0) {
+        flb_free(tmp_parsed_time_str);
+        flb_free(buf);
+        return 0;
+    }
+
+    *out_buf = buf;
+    flb_free(tmp_parsed_time_str);
+
+    return out_size;
 }
