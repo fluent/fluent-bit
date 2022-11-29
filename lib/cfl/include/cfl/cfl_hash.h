@@ -23,7 +23,7 @@
 /* NOTE: this is just a wrapper for naming convention */
 
 #include <stdint.h>
-#include "../../lib/xxhash/xxh3.h"
+#include "xxh3.h"
 
 #define cfl_hash_state_t       XXH3_state_t
 #define cfl_hash_64bits_reset  XXH3_64bits_reset
