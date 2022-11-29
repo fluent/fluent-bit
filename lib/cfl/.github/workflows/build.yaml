@@ -24,6 +24,35 @@ jobs:
         run: |
           ctest --rerun-failed --output-on-failure -C Debug --test-dir .\tests\
 
+  build-msys2:
+    name: Build sources on MSYS2 for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-2019]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Get dependencies w/ chocolatey
+        uses: crazy-max/ghaction-chocolatey@v2
+        with:
+          args: install -y cmake --installargs 'ADD_CMAKE_TO_PATH=System'
+      - uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          msystem: UCRT64
+          path-type: inherit
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+      - name: Build on ${{ matrix.os }} with MSYS2
+        shell: msys2 {0}
+        run: |
+          cmake -G "MinGW Makefiles" -DCFL_TESTS=On .
+          cmake --build .
+      - name: Run unit tests.
+        run: |
+          ctest --rerun-failed --output-on-failure -C Debug --test-dir .\tests\
+
   build-centos:
     name: CentOS 7 build to confirm no issues once used downstream
     runs-on: ubuntu-latest
@@ -74,7 +103,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
-        uses: uraimo/run-on-arch-action@v2.2.1
+        uses: uraimo/run-on-arch-action@v2.3.0
         with:
           arch: aarch64
           distro: ubuntu20.04
