@@ -63,6 +63,7 @@ struct flb_syslog {
     /* Configuration */
     flb_sds_t parser_name;
     struct flb_parser *parser;
+    flb_sds_t message_raw_key;
 
     int dgram_mode_flag;
     int collector_id;
