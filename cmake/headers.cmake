@@ -12,7 +12,7 @@ include_directories(
 
   # CFL
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CFL}/include
-
+  ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CFL}/lib/xxhash
 
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CO}
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_RBTREE}
