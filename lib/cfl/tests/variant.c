@@ -88,7 +88,9 @@ static void test_variant_print_bool()
         }
 
         ret = cfl_variant_print(fp, val);
-        if (!TEST_CHECK(ret > 0)) {
+        /* Check whether EOF or not. Not checking for positive
+         * number here. */
+        if (!TEST_CHECK(ret != EOF)) {
             TEST_MSG("%d:cfl_variant_print failed", i);
             cfl_variant_destroy(val);
             fclose(fp);
@@ -440,7 +442,7 @@ static void test_variant_print_unknown()
     }
 
     ret = cfl_variant_print(fp, val);
-    if (!TEST_CHECK(ret > 0)) {
+    if (!TEST_CHECK(ret != EOF)) {
         TEST_MSG("cfl_variant_print failed");
         fclose(fp);
         cfl_variant_destroy(val);

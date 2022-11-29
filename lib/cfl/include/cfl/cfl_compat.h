@@ -29,14 +29,18 @@
 
 #ifdef CFL_SYSTEM_WINDOWS
 
+#ifdef _MSC_VER
 /*
- * Windows prefer to add an underscore to each POSIX function.
+ * cl.exe that is one of the C++ compilers for Windows prefers
+ * to add an underscore to each POSIX function.
  * To suppress compiler warnings, we need these trivial macros.
+ * For MSYS2 platform on Windows, we don't need to do.
  */
 #define timezone _timezone
 #define tzname _tzname
 #define strncasecmp _strnicmp
 #define timegm _mkgmtime
+#endif /* _MSC_VER */
 
 #endif
 #endif

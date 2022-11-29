@@ -5,13 +5,14 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # C Floppy Version
 set(CFL_VERSION_MAJOR  0)
-set(CFL_VERSION_MINOR  1)
-set(CFL_VERSION_PATCH  9)
+set(CFL_VERSION_MINOR  2)
+set(CFL_VERSION_PATCH  0)
 set(CFL_VERSION_STR    "${CFL_VERSION_MAJOR}.${CFL_VERSION_MINOR}.${CFL_VERSION_PATCH}")
 
 # Configuration options
-option(CFL_DEV             "Enable development mode"                   No)
-option(CFL_TESTS           "Enable unit testing"                       No)
+option(CFL_DEV                            "Enable development mode"                    No)
+option(CFL_TESTS                          "Enable unit testing"                        No)
+option(CFL_INSTALL_BUNDLED_XXHASH_HEADERS "Enable bundled xxHash headers installation" Yes)
 
 if(CFL_DEV)
   set(CMAKE_BUILD_TYPE Debug)
@@ -128,12 +129,19 @@ endif()
 if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
   set(CFL_INSTALL_BINDIR "bin")
   set(CFL_INSTALL_LIBDIR "lib")
+  set(CFL_INSTALL_INCLUDEDIR "include")
 else()
   set(CFL_INSTALL_BINDIR ${CMAKE_INSTALL_FULL_BINDIR})
   set(CFL_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}")
+  set(CFL_INSTALL_INCLUDEDIR "${CMAKE_INSTALL_PREFIX}/include")
 endif()
 
+# Output paths
+set(CFL_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
+set(CFL_BUILD_DIR "${CFL_ROOT}/build")
+
 # CFL sources
+add_subdirectory(include)
 add_subdirectory(src)
 
 # Tests
@@ -141,10 +149,6 @@ if(CFL_TESTS)
   enable_testing()
   add_subdirectory(tests)
 endif()
-
-# Output paths
-set(CFL_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
-set(CFL_BUILD_DIR "${CFL_ROOT}/build")
 
 # Installer Generation (Cpack)
 # ============================
