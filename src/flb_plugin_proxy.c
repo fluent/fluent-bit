@@ -234,7 +234,7 @@ static int flb_proxy_input_cb_exit(void *in_context, struct flb_config *config)
 
     if (proxy->def->proxy == FLB_PROXY_GOLANG) {
 #ifdef FLB_HAVE_PROXY_GO
-        proxy_go_output_destroy(ctx);
+        proxy_go_input_destroy(ctx);
 #endif
     }
 
