@@ -206,6 +206,7 @@ option(FLB_OUT_NATS                    "Enable NATS output plugin"              
 option(FLB_OUT_NRLOGS                  "Enable New Relic output plugin"               Yes)
 option(FLB_OUT_OPENSEARCH              "Enable OpenSearch output plugin"              Yes)
 option(FLB_OUT_TCP                     "Enable TCP output plugin"                     Yes)
+option(FLB_OUT_UDP                     "Enable UDP output plugin"                     Yes)
 option(FLB_OUT_PLOT                    "Enable Plot output plugin"                    Yes)
 option(FLB_OUT_FILE                    "Enable file output plugin"                    Yes)
 option(FLB_OUT_TD                      "Enable Treasure Data output plugin"           Yes)
