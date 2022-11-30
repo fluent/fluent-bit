@@ -29,6 +29,9 @@
 #include <monkey/mk_core/mk_list.h>
 #include <fluent-bit/flb_sds.h>
 
+#include <windows.h>
+#include <wbemidl.h>
+
 #include "we_metric.h"
 
 #define PERFLIB_COUNTER_TYPE_COUNTER          0x400
@@ -106,6 +109,8 @@ struct flb_we {
     struct mk_list *collectors;
 
     struct we_perflib_context perflib_context;
+    IWbemLocator *locator;
+    IWbemServices *service;
 
     float windows_version;
 
