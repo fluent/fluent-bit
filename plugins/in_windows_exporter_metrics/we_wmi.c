@@ -27,13 +27,111 @@
 #include "we.h"
 #include "we_wmi.h"
 
+static int wmi_coinitialize(struct flb_we *ctx)
+{
+    IWbemLocator *locator = 0;
+    IWbemServices *service = 0;
+    HRESULT hr;
+
+    flb_plg_info(ctx->ins, "initializing WMI instance....");
+
+    /* Initialize COM library */
+    hr = CoInitializeEx(0, COINIT_MULTITHREADED);
+    if (FAILED(hr))
+    {
+        flb_plg_error(ctx->ins, "Failed to initialize COM library. Error code = %x", hr);
+        return -1;
+    }
+
+    /* Initialize COM security */
+    hr = CoInitializeSecurity(NULL,
+                              -1,
+                              NULL,
+                              NULL,
+                              RPC_C_AUTHN_LEVEL_DEFAULT,
+                              RPC_C_IMP_LEVEL_IMPERSONATE,
+                              NULL,
+                              EOAC_NONE,
+                              NULL);
+
+    if (FAILED(hr)) {
+        return hr;
+    }
+
+    /* Create WMI instance */
+    hr = CoCreateInstance(&CLSID_WbemLocator, 0,
+                          CLSCTX_INPROC_SERVER, &IID_IWbemLocator, (LPVOID *) &locator);
+    if (FAILED(hr))
+    {
+        flb_plg_error(ctx->ins, "Failed to create IWbemLocator object. Err code = %x", hr);
+        CoUninitialize();
+        return hr;
+    }
+    ctx->locator = locator;
+
+    /* Connect WMI server */
+    hr = locator->lpVtbl->ConnectServer(locator,
+                                        L"ROOT\\CIMV2",
+                                        NULL,
+                                        NULL,
+                                        0,
+                                        0,
+                                        0,
+                                        NULL,
+                                        &service);
+    if (FAILED(hr)) {
+        flb_plg_error(ctx->ins, "Could not connect. Error code = %x", hr);
+        locator->lpVtbl->Release(locator);
+        CoUninitialize();
+        return hr;
+    }
+    ctx->service = service;
+
+    /* Set up ProxyBlanket */
+    hr = CoSetProxyBlanket(service,
+                           RPC_C_AUTHN_WINNT,
+                           RPC_C_AUTHZ_NONE,
+                           NULL,
+                           RPC_C_AUTHN_LEVEL_CALL,
+                           RPC_C_IMP_LEVEL_IMPERSONATE,
+                           NULL,
+                           EOAC_NONE
+                           );
+    if (FAILED(hr)) {
+        flb_plg_error(ctx->ins, "Could not set proxy blanket. Error code =  %x", hr);
+        service->lpVtbl->Release(service);
+        locator->lpVtbl->Release(locator);
+        CoUninitialize();
+        return -1;
+    }
+
+    return 0;
+}
+
+static int wmi_cleanup(struct flb_we *ctx)
+{
+    /* Clean up */
+    ctx->service->lpVtbl->Release(ctx->service);
+    ctx->locator->lpVtbl->Release(ctx->locator);
+    CoUninitialize();
+
+    return 0;
+}
+
+
 int we_wmi_init(struct flb_we *ctx)
 {
+    if (FAILED(wmi_coinitialize(ctx))) {
+        return -1;
+    }
+
     return 0;
 }
 
 int we_wmi_exit(struct flb_we *ctx)
 {
+    wmi_cleanup(ctx);
+
     return 0;
 }
 

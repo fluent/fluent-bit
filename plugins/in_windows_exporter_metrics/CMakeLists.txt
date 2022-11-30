@@ -8,4 +8,4 @@ set(src
   we_perflib.c
   )
 
-FLB_PLUGIN(in_windows_exporter_metrics "${src}" "")
+FLB_PLUGIN(in_windows_exporter_metrics "${src}" "wbemuuid")
