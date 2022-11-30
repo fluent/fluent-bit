@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_pack.h>
 
 #include "syslog.h"
 #include "syslog_conn.h"
@@ -31,131 +32,41 @@ static inline void consume_bytes(char *buf, int bytes, int length)
     memmove(buf, buf + bytes, length - bytes);
 }
 
-static int append_raw_message_to_record_data(char **result_buffer,
-                                             size_t *result_size,
-                                             char *raw_message_key_name,
-                                             char *base_object_buffer,
-                                             size_t base_object_size,
-                                             char *raw_message_buffer,
-                                             size_t raw_message_size)
-{
-    size_t             new_entry_index;
-    msgpack_unpacked   unpacked_buffer;
-    size_t             unpacker_offset;
-    size_t             new_object_size;
-    msgpack_object    *resized_object;
-    msgpack_sbuffer    packer_buffer;
-    msgpack_object_kv *new_entry;
-    msgpack_packer     packer;
-    int                result;
-
-    *result_buffer = NULL;
-    *result_size = 0;
-
-    unpacker_offset = 0;
-
-    msgpack_unpacked_init(&unpacked_buffer);
-
-    result = msgpack_unpack_next(&unpacked_buffer,
-                                 base_object_buffer,
-                                 base_object_size,
-                                 &unpacker_offset);
-
-    if (result != MSGPACK_UNPACK_SUCCESS) {
-        return -1;
-    }
-
-    if (unpacker_offset != base_object_size) {
-        msgpack_unpacked_destroy(&unpacked_buffer);
-
-        return -2;
-    }
-
-    if (unpacked_buffer.data.type != MSGPACK_OBJECT_MAP) {
-        msgpack_unpacked_destroy(&unpacked_buffer);
-
-        return -3;
-    }
-
-    new_object_size = base_object_size + sizeof(msgpack_object);
-
-    resized_object = flb_calloc(1, new_object_size);
-
-    if (resized_object == NULL) {
-        flb_errno();
-
-        return -4;
-    }
-
-    memcpy(resized_object, &unpacked_buffer.data, base_object_size);
-
-    new_entry_index = resized_object->via.map.size;
-    resized_object->via.map.size++;
-
-    new_entry = &resized_object->via.map.ptr[new_entry_index];
-
-    new_entry->key.type = MSGPACK_OBJECT_STR;
-    new_entry->key.via.str.size = strlen(raw_message_key_name);
-    new_entry->key.via.str.ptr  = raw_message_key_name;
-
-    new_entry->val.type = MSGPACK_OBJECT_BIN;
-    new_entry->val.via.bin.size = raw_message_size;
-    new_entry->val.via.bin.ptr  = raw_message_buffer;
-
-    msgpack_sbuffer_init(&packer_buffer);
-
-    msgpack_packer_init(&packer, &packer_buffer, msgpack_sbuffer_write);
-
-    msgpack_pack_object(&packer, *resized_object);
-
-    *result_buffer = flb_calloc(1, packer_buffer.size);
-
-    if (*result_buffer == NULL) {
-        flb_errno();
-
-        result = -4;
-    }
-    else {
-        memcpy(*result_buffer, packer_buffer.data, packer_buffer.size);
-
-        *result_size = packer_buffer.size;
-
-        result = 0;
-    }
-
-    msgpack_sbuffer_destroy(&packer_buffer);
-
-    msgpack_unpacked_destroy(&unpacked_buffer);
-
-    flb_free(resized_object);
-
-    return result;
-}
-
 static inline int pack_line(struct flb_syslog *ctx,
                             struct flb_time *time,
                             char *data, size_t data_size,
                             char *raw_data, size_t raw_data_size)
 {
-    char           *modified_data_buffer;
-    size_t          modified_data_size;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer  mp_pck;
-    int             result;
+    char              *modified_data_buffer;
+    int                modified_data_size;
+    msgpack_object_kv *new_map_entries[1];
+    msgpack_object_kv  raw_message_entry;
+    msgpack_sbuffer    mp_sbuf;
+    msgpack_packer     mp_pck;
+    int                result;
 
     modified_data_buffer = NULL;
 
     if (ctx->message_raw_key != NULL) {
-        result = append_raw_message_to_record_data(&modified_data_buffer,
-                                                   &modified_data_size,
-                                                   ctx->message_raw_key,
-                                                   data,
-                                                   data_size,
-                                                   raw_data,
-                                                   raw_data_size);
+        new_map_entries[0] = &raw_message_entry;
+
+        raw_message_entry.key.type = MSGPACK_OBJECT_STR;
+        raw_message_entry.key.via.str.size = strlen(ctx->message_raw_key);
+        raw_message_entry.key.via.str.ptr  = ctx->message_raw_key;
+
+        raw_message_entry.val.type = MSGPACK_OBJECT_BIN;
+        raw_message_entry.val.via.bin.size = raw_data_size;
+        raw_message_entry.val.via.bin.ptr  = raw_data;
+
+        result = flb_msgpack_expand_map(data, data_size,
+                                        new_map_entries, 1,
+                                        &modified_data_buffer,
+                                        &modified_data_size);
 
         if (result != 0) {
-            flb_plg_debug(ctx->ins, "error appending raw message : %d", result);
+            flb_plg_debug(ctx->ins,
+                          "error expanding log record "
+                          "with raw message : %d", result);
         }
     }
 
