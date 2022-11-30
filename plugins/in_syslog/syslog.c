@@ -233,8 +233,8 @@ static struct flb_config_map config_map[] = {
       "Set the socket receiving buffer size"
     },
     {
-     FLB_CONFIG_MAP_STR, "message_raw_key", (char *)NULL,
-     0, FLB_TRUE, offsetof(struct flb_syslog, message_raw_key),
+     FLB_CONFIG_MAP_STR, "raw_message_key", (char *) NULL,
+     0, FLB_TRUE, offsetof(struct flb_syslog, raw_message_key),
      "Key where the raw message will be preserved"
     },
 

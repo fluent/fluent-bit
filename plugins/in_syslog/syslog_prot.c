@@ -33,29 +33,23 @@ static inline void consume_bytes(char *buf, int bytes, int length)
 
 static int append_raw_message_to_record_data(char **result_buffer,
                                              size_t *result_size,
-                                             char *raw_message_key_name,
+                                             flb_sds_t raw_message_key_name,
                                              char *base_object_buffer,
                                              size_t base_object_size,
                                              char *raw_message_buffer,
                                              size_t raw_message_size)
 {
-    size_t             new_entry_index;
-    msgpack_unpacked   unpacked_buffer;
-    size_t             unpacker_offset;
-    size_t             new_object_size;
-    msgpack_object    *resized_object;
-    msgpack_sbuffer    packer_buffer;
-    msgpack_object_kv *new_entry;
-    msgpack_packer     packer;
+    int                i;
     int                result;
-
+    size_t             unpacker_offset;
+    msgpack_sbuffer    mp_sbuf;
+    msgpack_packer     mp_pck;
+    msgpack_unpacked   unpacked_buffer;
     *result_buffer = NULL;
     *result_size = 0;
 
     unpacker_offset = 0;
-
     msgpack_unpacked_init(&unpacked_buffer);
-
     result = msgpack_unpack_next(&unpacked_buffer,
                                  base_object_buffer,
                                  base_object_size,
@@ -67,68 +61,33 @@ static int append_raw_message_to_record_data(char **result_buffer,
 
     if (unpacker_offset != base_object_size) {
         msgpack_unpacked_destroy(&unpacked_buffer);
-
         return -2;
     }
 
     if (unpacked_buffer.data.type != MSGPACK_OBJECT_MAP) {
         msgpack_unpacked_destroy(&unpacked_buffer);
-
         return -3;
     }
 
-    new_object_size = base_object_size + sizeof(msgpack_object);
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    resized_object = flb_calloc(1, new_object_size);
+    msgpack_pack_map(&mp_pck, unpacked_buffer.data.via.map.size + 1);
 
-    if (resized_object == NULL) {
-        flb_errno();
-
-        return -4;
+    for (i = 0; i < unpacked_buffer.data.via.map.size; i++) {
+        msgpack_pack_object(&mp_pck, unpacked_buffer.data.via.map.ptr[i].key);
+        msgpack_pack_object(&mp_pck, unpacked_buffer.data.via.map.ptr[i].val);
     }
 
-    memcpy(resized_object, &unpacked_buffer.data, base_object_size);
+    msgpack_pack_str(&mp_pck, flb_sds_len(raw_message_key_name));
+    msgpack_pack_str_body(&mp_pck, raw_message_key_name, flb_sds_len(raw_message_key_name));
+    msgpack_pack_str(&mp_pck, raw_message_size);
+    msgpack_pack_str_body(&mp_pck, raw_message_buffer, raw_message_size);
 
-    new_entry_index = resized_object->via.map.size;
-    resized_object->via.map.size++;
-
-    new_entry = &resized_object->via.map.ptr[new_entry_index];
-
-    new_entry->key.type = MSGPACK_OBJECT_STR;
-    new_entry->key.via.str.size = strlen(raw_message_key_name);
-    new_entry->key.via.str.ptr  = raw_message_key_name;
-
-    new_entry->val.type = MSGPACK_OBJECT_BIN;
-    new_entry->val.via.bin.size = raw_message_size;
-    new_entry->val.via.bin.ptr  = raw_message_buffer;
-
-    msgpack_sbuffer_init(&packer_buffer);
-
-    msgpack_packer_init(&packer, &packer_buffer, msgpack_sbuffer_write);
-
-    msgpack_pack_object(&packer, *resized_object);
-
-    *result_buffer = flb_calloc(1, packer_buffer.size);
-
-    if (*result_buffer == NULL) {
-        flb_errno();
-
-        result = -4;
-    }
-    else {
-        memcpy(*result_buffer, packer_buffer.data, packer_buffer.size);
-
-        *result_size = packer_buffer.size;
-
-        result = 0;
-    }
-
-    msgpack_sbuffer_destroy(&packer_buffer);
+    *result_buffer = mp_sbuf.data;
+    *result_size = mp_sbuf.size;
 
     msgpack_unpacked_destroy(&unpacked_buffer);
-
-    flb_free(resized_object);
-
     return result;
 }
 
@@ -145,10 +104,10 @@ static inline int pack_line(struct flb_syslog *ctx,
 
     modified_data_buffer = NULL;
 
-    if (ctx->message_raw_key != NULL) {
+    if (ctx->raw_message_key != NULL) {
         result = append_raw_message_to_record_data(&modified_data_buffer,
                                                    &modified_data_size,
-                                                   ctx->message_raw_key,
+                                                   ctx->raw_message_key,
                                                    data,
                                                    data_size,
                                                    raw_data,
