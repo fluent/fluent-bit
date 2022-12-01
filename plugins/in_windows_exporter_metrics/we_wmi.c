@@ -27,6 +27,9 @@
 #include "we.h"
 #include "we_wmi.h"
 
+static char* convert_wstr(wchar_t *wstr, UINT codePage);
+static wchar_t* convert_str(char *str);
+
 static int wmi_coinitialize(struct flb_we *ctx)
 {
     IWbemLocator *locator = 0;
@@ -63,7 +66,7 @@ static int wmi_coinitialize(struct flb_we *ctx)
                           CLSCTX_INPROC_SERVER, &IID_IWbemLocator, (LPVOID *) &locator);
     if (FAILED(hr))
     {
-        flb_plg_error(ctx->ins, "Failed to create IWbemLocator object. Err code = %x", hr);
+        flb_plg_error(ctx->ins, "Failed to create IWbemLocator object. Error code = %x", hr);
         CoUninitialize();
         return hr;
     }
@@ -98,12 +101,127 @@ static int wmi_coinitialize(struct flb_we *ctx)
                            EOAC_NONE
                            );
     if (FAILED(hr)) {
-        flb_plg_error(ctx->ins, "Could not set proxy blanket. Error code =  %x", hr);
+        flb_plg_error(ctx->ins, "Could not set proxy blanket. Error code = %x", hr);
         service->lpVtbl->Release(service);
         locator->lpVtbl->Release(locator);
         CoUninitialize();
+        return hr;
+    }
+
+    return 0;
+}
+
+static char* convert_wstr(wchar_t *wstr, UINT codePage)
+{
+    int size = 0;
+    char *buf = NULL;
+
+    size = WideCharToMultiByte(codePage, 0, wstr, -1, NULL, 0, NULL, NULL);
+    if (size == 0) {
+        return NULL;
+    }
+
+    buf = flb_malloc(size);
+    if (buf == NULL) {
+        flb_errno();
+        return NULL;
+    }
+    size = WideCharToMultiByte(codePage, 0, wstr, -1, buf, size, NULL, NULL);
+    if (size == 0) {
+        flb_free(buf);
+        return NULL;
+    }
+
+    return buf;
+}
+
+static wchar_t* convert_str(char *str)
+{
+    int size = 0;
+    wchar_t *buf = NULL;
+
+    size = MultiByteToWideChar(CP_UTF8, 0, str, -1, NULL, 0);
+    if (size == 0) {
+        return NULL;
+    }
+
+    buf = flb_malloc(sizeof(PWSTR) * size);
+    if (buf == NULL) {
+        flb_errno();
+        return NULL;
+    }
+    size = MultiByteToWideChar(CP_UTF8, 0, str, -1, buf, size);
+    if (size == 0) {
+        flb_free(buf);
+        return NULL;
+    }
+
+    return buf;
+}
+
+static int wmi_exec_query(struct flb_we *ctx, char* wmi_counter, char* wmi_property)
+{
+    IEnumWbemClassObject* enumerator = NULL;
+    HRESULT hr;
+    char *strprop;
+    wchar_t *wquery, *wproperty, query[256];
+
+    snprintf(query, 14 + strlen(wmi_counter), "SELECT * FROM %s", wmi_counter);
+    wquery = convert_str(query);
+
+    hr = ctx->service->lpVtbl->ExecQuery(
+            ctx->service,
+            L"WQL",
+            wquery,
+            WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
+            NULL,
+            &enumerator);
+
+    flb_free(wquery);
+
+    if (FAILED(hr)) {
+        flb_plg_error(ctx->ins, "Query for %s %s failed. Error code = %x", wmi_counter, wmi_property, hr);
+        ctx->service->lpVtbl->Release(ctx->service);
+        ctx->locator->lpVtbl->Release(ctx->locator);
+        CoUninitialize();
         return -1;
     }
+
+    IWbemClassObject *class_obj = NULL;
+    ULONG ret = 0;
+    DWORD len;
+
+    while (enumerator)
+    {
+        HRESULT hr = enumerator->lpVtbl->Next(enumerator, WBEM_INFINITE, 1,
+            &class_obj, &ret);
+
+        if(0 == ret)
+        {
+            break;
+        }
+
+        VARIANT prop;
+
+        VariantInit(&prop);
+        // Get the value of the Name property
+        wproperty = convert_str(wmi_property);
+        hr = class_obj->lpVtbl->Get(class_obj, wproperty, 0, &prop, 0, 0);
+        strprop = convert_wstr(prop.bstrVal, CP_UTF8);
+        flb_plg_info(ctx->ins, " %s : %s", wmi_property, strprop);
+        flb_free(wproperty);
+        flb_free(strprop);
+        VariantClear(&prop);
+
+        class_obj->lpVtbl->Release(class_obj);
+    }
+
+    return 0;
+}
+
+static int wmi_query(struct flb_we *ctx, char* wmi_counter, char* wmi_property)
+{
+    wmi_exec_query(ctx, wmi_counter, wmi_property);
 
     return 0;
 }
@@ -118,10 +236,13 @@ static int wmi_cleanup(struct flb_we *ctx)
     return 0;
 }
 
-
 int we_wmi_init(struct flb_we *ctx)
 {
     if (FAILED(wmi_coinitialize(ctx))) {
+        return -1;
+    }
+
+    if (FAILED(wmi_query(ctx, "Win32_OperatingSystem", "Name"))) {
         return -1;
     }
 
