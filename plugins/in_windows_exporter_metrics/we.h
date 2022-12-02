@@ -99,6 +99,15 @@ struct we_cpu_counters {
     char                            *query;
 };
 
+struct wmi_query_spec;
+
+struct we_wmi_thermal_counters {
+    struct wmi_query_spec *temperature_celsius;
+    struct wmi_query_spec *percent_passive_limit;
+    struct wmi_query_spec *throttle_reasons;
+    int                    operational;
+};
+
 struct flb_we {
     /* configuration */
     int scrape_interval;
@@ -109,6 +118,7 @@ struct flb_we {
     struct mk_list *collectors;
 
     struct we_perflib_context perflib_context;
+    /* WMI locator and service contexts */
     IWbemLocator *locator;
     IWbemServices *service;
 
@@ -120,6 +130,7 @@ struct flb_we {
      */
 
     struct we_cpu_counters cpu;
+    struct we_wmi_thermal_counters *wmi_thermals;
 
 };
 
