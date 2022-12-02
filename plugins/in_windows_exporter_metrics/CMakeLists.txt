@@ -6,6 +6,7 @@ set(src
   we_util.c
   we_metric.c
   we_perflib.c
+  we_wmi_thermalzone.c
   )
 
 FLB_PLUGIN(in_windows_exporter_metrics "${src}" "wbemuuid")
