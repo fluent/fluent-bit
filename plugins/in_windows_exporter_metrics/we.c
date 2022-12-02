@@ -51,6 +51,7 @@ static void update_metrics(struct flb_input_instance *ins, struct flb_we *ctx)
 
     /* Update our metrics */
     we_cpu_update(ctx);
+    we_wmi_thermalzone_update(ctx);
 }
 
 /*
@@ -158,16 +159,26 @@ static int in_we_init(struct flb_input_instance *in,
         return -1;
     }
 
+    /* Initialize thermalzone metric collectors */
+    ret = we_wmi_thermalzone_init(ctx);
+    if (ret) {
+        return -1;
+    }
+
     return 0;
 }
 
 static int in_we_exit(void *data, struct flb_config *config)
 {
+    struct flb_we* ctx = data;
+
     if (data == NULL) {
         return 0;
     }
 
-    flb_we_config_destroy((struct flb_we *) data);
+    we_wmi_thermalzone_exit(ctx);
+
+    flb_we_config_destroy(ctx);
 
     return 0;
 }

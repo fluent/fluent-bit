@@ -30,13 +30,14 @@
 static char* convert_wstr(wchar_t *wstr, UINT codePage);
 static wchar_t* convert_str(char *str);
 
-static int wmi_coinitialize(struct flb_we *ctx)
+static int wmi_coinitialize(struct flb_we *ctx, char* wmi_namespace)
 {
     IWbemLocator *locator = 0;
     IWbemServices *service = 0;
     HRESULT hr;
+    wchar_t *wnamespace;
 
-    flb_plg_info(ctx->ins, "initializing WMI instance....");
+    flb_plg_debug(ctx->ins, "initializing WMI instance....");
 
     /* Initialize COM library */
     hr = CoInitializeEx(0, COINIT_MULTITHREADED);
@@ -72,9 +73,15 @@ static int wmi_coinitialize(struct flb_we *ctx)
     }
     ctx->locator = locator;
 
+    if (wmi_namespace == NULL) {
+        wnamespace = convert_str("ROOT\\CIMV2");
+    }
+    else {
+        wnamespace = convert_str(wmi_namespace);
+    }
     /* Connect WMI server */
     hr = locator->lpVtbl->ConnectServer(locator,
-                                        L"ROOT\\CIMV2",
+                                        wnamespace,
                                         NULL,
                                         NULL,
                                         0,
@@ -82,6 +89,8 @@ static int wmi_coinitialize(struct flb_we *ctx)
                                         0,
                                         NULL,
                                         &service);
+    flb_free(wnamespace);
+
     if (FAILED(hr)) {
         flb_plg_error(ctx->ins, "Could not connect. Error code = %x", hr);
         locator->lpVtbl->Release(locator);
@@ -159,14 +168,58 @@ static wchar_t* convert_str(char *str)
     return buf;
 }
 
-static int wmi_exec_query(struct flb_we *ctx, char* wmi_counter, char* wmi_property)
+int wmi_utils_str_to_double(char *str, double *out_val)
+{
+    double val;
+    char *end;
+
+    errno = 0;
+    val = strtod(str, &end);
+    if (errno != 0 || *end != '\0') {
+        return -1;
+    }
+    *out_val = val;
+    return 0;
+}
+
+static int wmi_update_metric(struct wmi_query_spec *spec, uint64_t timestamp, double val, int metric_label_count, char **metric_label_set)
+{
+    val = spec->value_adjuster(val);
+
+    if (spec->type == CMT_GAUGE) {
+        cmt_gauge_set((struct cmt_gauge *)spec->metric_instance, timestamp,
+                      val,
+                      metric_label_count, metric_label_set);
+    }
+    else if (spec->type == CMT_COUNTER) {
+        cmt_counter_set((struct cmt_counter *)spec->metric_instance, timestamp,
+                        val,
+                        metric_label_count, metric_label_set);
+    }
+
+    return 0;
+}
+
+static int wmi_exec_query(struct flb_we *ctx, struct wmi_query_spec *spec)
 {
     IEnumWbemClassObject* enumerator = NULL;
     HRESULT hr;
-    char *strprop;
-    wchar_t *wquery, *wproperty, query[256];
+    char *strprop, *strlabel;
+    int numlabel;
+    wchar_t *wquery, *wproperty, *wlabel, query[256];
 
-    snprintf(query, 14 + strlen(wmi_counter), "SELECT * FROM %s", wmi_counter);
+    IWbemClassObject *class_obj = NULL;
+    ULONG ret = 0;
+    DWORD len;
+    double val = 0;
+    uint64_t timestamp = 0;
+    char *metric_label_set[WE_WMI_METRIC_LABEL_LIST_SIZE];
+    int metric_label_count = 0;
+    char buf[16];
+
+    timestamp = cfl_time_now();
+
+    snprintf(query, 14 + strlen(spec->wmi_counter), "SELECT * FROM %s", spec->wmi_counter);
     wquery = convert_str(query);
 
     hr = ctx->service->lpVtbl->ExecQuery(
@@ -180,19 +233,19 @@ static int wmi_exec_query(struct flb_we *ctx, char* wmi_counter, char* wmi_prope
     flb_free(wquery);
 
     if (FAILED(hr)) {
-        flb_plg_error(ctx->ins, "Query for %s %s failed. Error code = %x", wmi_counter, wmi_property, hr);
+        flb_plg_error(ctx->ins, "Query for %s %s failed. Error code = %x",
+                      spec->wmi_counter, spec->wmi_counter, hr);
         ctx->service->lpVtbl->Release(ctx->service);
         ctx->locator->lpVtbl->Release(ctx->locator);
         CoUninitialize();
         return -1;
     }
 
-    IWbemClassObject *class_obj = NULL;
-    ULONG ret = 0;
-    DWORD len;
-
     while (enumerator)
     {
+        VARIANT prop;
+        int label_index = 0;
+
         HRESULT hr = enumerator->lpVtbl->Next(enumerator, WBEM_INFINITE, 1,
             &class_obj, &ret);
 
@@ -201,16 +254,49 @@ static int wmi_exec_query(struct flb_we *ctx, char* wmi_counter, char* wmi_prope
             break;
         }
 
-        VARIANT prop;
-
         VariantInit(&prop);
         // Get the value of the Name property
-        wproperty = convert_str(wmi_property);
+        wproperty = convert_str(spec->wmi_property);
         hr = class_obj->lpVtbl->Get(class_obj, wproperty, 0, &prop, 0, 0);
-        strprop = convert_wstr(prop.bstrVal, CP_UTF8);
-        flb_plg_info(ctx->ins, " %s : %s", wmi_property, strprop);
+        switch(prop.vt) {
+        case VT_I4:
+            val = prop.lVal;
+            break;
+        case VT_BSTR:
+            strprop = convert_wstr(prop.bstrVal, CP_UTF8);
+            wmi_utils_str_to_double(strprop, &val);
+            flb_free(strprop);
+            break;
+        default:
+            break;
+        }
+
+        metric_label_count = 0;
+        for (label_index = 0; label_index < spec->label_property_count; label_index++) {
+            VariantClear(&prop);
+            wlabel = convert_str(spec->label_property_keys[label_index]);
+            hr = class_obj->lpVtbl->Get(class_obj, wlabel, 0, &prop, 0, 0);
+            switch(prop.vt) {
+            case VT_I4:
+                snprintf(buf, 16, "%d", prop.lVal);
+                metric_label_set[label_index] = strdup(buf);
+                metric_label_count++;
+                break;
+            case VT_BSTR:
+                strlabel = convert_wstr(prop.bstrVal, CP_UTF8);
+                metric_label_set[label_index] = strdup(strlabel);
+                metric_label_count++;
+                free(strlabel);
+                break;
+            default:
+                break;
+            }
+            flb_free(wlabel);
+        }
+
+        wmi_update_metric(spec, timestamp, val, metric_label_count, metric_label_set);
+
         flb_free(wproperty);
-        flb_free(strprop);
         VariantClear(&prop);
 
         class_obj->lpVtbl->Release(class_obj);
@@ -219,15 +305,10 @@ static int wmi_exec_query(struct flb_we *ctx, char* wmi_counter, char* wmi_prope
     return 0;
 }
 
-static int wmi_query(struct flb_we *ctx, char* wmi_counter, char* wmi_property)
-{
-    wmi_exec_query(ctx, wmi_counter, wmi_property);
-
-    return 0;
-}
-
 static int wmi_cleanup(struct flb_we *ctx)
 {
+    flb_plg_debug(ctx->ins, "deinitializing WMI instance....");
+
     /* Clean up */
     ctx->service->lpVtbl->Release(ctx->service);
     ctx->locator->lpVtbl->Release(ctx->locator);
@@ -236,23 +317,36 @@ static int wmi_cleanup(struct flb_we *ctx)
     return 0;
 }
 
+static int wmi_query(struct flb_we *ctx, struct wmi_query_spec *spec)
+{
+    if (FAILED(wmi_coinitialize(ctx, NULL))) {
+        return -1;
+    }
+    if (FAILED(wmi_exec_query(ctx, spec))) {
+        return -1;
+    }
+
+    wmi_cleanup(ctx);
+
+    return 0;
+}
+
 int we_wmi_init(struct flb_we *ctx)
 {
-    if (FAILED(wmi_coinitialize(ctx))) {
+
+    return 0;
+}
+
+int we_wmi_query(struct flb_we *ctx, struct wmi_query_specs *spec)
+{
+    if (FAILED(wmi_query(ctx, spec))) {
         return -1;
     }
-
-    if (FAILED(wmi_query(ctx, "Win32_OperatingSystem", "Name"))) {
-        return -1;
-    }
-
     return 0;
 }
 
 int we_wmi_exit(struct flb_we *ctx)
 {
-    wmi_cleanup(ctx);
-
     return 0;
 }
 
