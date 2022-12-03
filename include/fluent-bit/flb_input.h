@@ -134,6 +134,9 @@ struct flb_input_plugin {
     /* Exit */
     int (*cb_exit) (void *, struct flb_config *);
 
+    /* Destroy */
+    void (*cb_destroy) (struct flb_input_plugin *);
+
     void *instance;
 
     struct mk_list _head;
