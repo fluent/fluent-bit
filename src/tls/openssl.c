@@ -429,6 +429,11 @@ static int tls_net_read(struct flb_tls_session *session,
         else if (ret == SSL_ERROR_WANT_WRITE) {
             ret = FLB_TLS_WANT_WRITE;
         }
+        else if (ret == SSL_ERROR_SYSCALL) {
+            flb_errno();
+            ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
+            flb_error("[tls] syscall error: %s", err_buf);
+        }
         else if (ret < 0) {
             ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
             flb_error("[tls] error: %s", err_buf);
@@ -476,6 +481,13 @@ static int tls_net_write(struct flb_tls_session *session,
         }
         else if (ret == SSL_ERROR_WANT_READ) {
             ret = FLB_TLS_WANT_READ;
+        }
+        else if (ret == SSL_ERROR_SYSCALL) {
+            flb_errno();
+            ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
+            flb_error("[tls] syscall error: %s", err_buf);
+
+            ret = -1;
         }
         else {
             ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
