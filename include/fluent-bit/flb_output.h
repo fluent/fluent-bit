@@ -205,6 +205,9 @@ struct flb_output_plugin {
     /* Exit */
     int (*cb_exit) (void *, struct flb_config *);
 
+    /* Destroy */
+    void (*cb_destroy) (struct flb_output_plugin *);
+
     /* Default number of worker threads */
     int workers;
 
