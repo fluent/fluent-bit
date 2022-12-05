@@ -348,6 +348,11 @@ if (FLB_TESTS_OSSFUZZ)
   set(FLB_CONFIG_YAML Off)
 endif()
 
+if (FLB_WASM)
+  # For Linking libedit adjustments on LLVM 15.
+  include(cmake/FindLibEdit.cmake)
+endif()
+
 # Set Fluent Bit dependency libraries path
 include(cmake/libraries.cmake)
 
