@@ -436,10 +436,22 @@ static int wmi_query_fixed_val(struct flb_we *ctx, struct wmi_query_spec *spec)
 
 int we_wmi_init(struct flb_we *ctx)
 {
+    return 0;
+}
+
+int we_wmi_cleanup(struct flb_we *ctx)
+{
+    wmi_cleanup(ctx);
 
     return 0;
 }
 
+int we_wmi_exit(struct flb_we *ctx)
+{
+    return 0;
+}
+
+/* Abstract APIs */
 int we_wmi_query_fixed_val(struct flb_we *ctx, struct wmi_query_specs *spec)
 {
     if (FAILED(wmi_query_fixed_val(ctx, spec))) {
@@ -464,8 +476,38 @@ int we_wmi_query_namespace(struct flb_we *ctx, struct wmi_query_specs *spec, cha
     return 0;
 }
 
-int we_wmi_exit(struct flb_we *ctx)
+/* Concreate APIs */
+int we_wmi_coinitialize(struct flb_we *ctx)
 {
+    if (FAILED(wmi_coinitialize(ctx, NULL))) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int we_wmi_execute_query(struct flb_we *ctx, struct wmi_query_spec *spec, IEnumWbemClassObject **out_enumerator)
+{
+    IEnumWbemClassObject* enumerator = NULL;
+
+    if (FAILED(wmi_execute_query(ctx, spec, &enumerator))) {
+        return -1;
+    }
+
+    *out_enumerator = enumerator;
+
+    return 0;
+}
+
+double we_wmi_get_value(struct flb_we *ctx, struct wmi_query_spec *spec, IWbemClassObject *class_obj)
+{
+    return wmi_get_value(ctx, spec, class_obj);
+}
+
+int we_wmi_update_counters(struct flb_we *ctx, struct wmi_query_spec *spec, uint64_t timestamp, double val, int metric_label_count, char **metric_label_set)
+{
+    wmi_update_counters(spec, timestamp, val, metric_label_count, metric_label_set);
+
     return 0;
 }
 
