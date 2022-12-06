@@ -182,7 +182,7 @@ int wmi_utils_str_to_double(char *str, double *out_val)
     return 0;
 }
 
-static int wmi_update_metric(struct wmi_query_spec *spec, uint64_t timestamp, double val, int metric_label_count, char **metric_label_set)
+static int wmi_update_counters(struct wmi_query_spec *spec, uint64_t timestamp, double val, int metric_label_count, char **metric_label_set)
 {
     val = spec->value_adjuster(val);
 
@@ -200,24 +200,85 @@ static int wmi_update_metric(struct wmi_query_spec *spec, uint64_t timestamp, do
     return 0;
 }
 
-static int wmi_exec_query(struct flb_we *ctx, struct wmi_query_spec *spec)
+static double wmi_get_value(struct flb_we *ctx, struct wmi_query_spec *spec, IWbemClassObject *class_obj)
 {
-    IEnumWbemClassObject* enumerator = NULL;
+    VARIANT prop;
+    char *strprop;
+    double val = 1.0;
     HRESULT hr;
-    char *strprop, *strlabel;
-    int numlabel;
-    wchar_t *wquery, *wproperty, *wlabel, query[256];
+    wchar_t *wproperty;
 
-    IWbemClassObject *class_obj = NULL;
-    ULONG ret = 0;
-    DWORD len;
-    double val = 0;
-    uint64_t timestamp = 0;
+    VariantInit(&prop);
+    // Get the value of the Name property
+    wproperty = convert_str(spec->wmi_property);
+    hr = class_obj->lpVtbl->Get(class_obj, wproperty, 0, &prop, 0, 0);
+    switch(prop.vt) {
+    case VT_I4:
+        val = prop.lVal;
+        break;
+    case VT_BSTR:
+        strprop = convert_wstr(prop.bstrVal, CP_UTF8);
+        wmi_utils_str_to_double(strprop, &val);
+        flb_free(strprop);
+        break;
+    default:
+        break;
+    }
+    VariantClear(&prop);
+    flb_free(wproperty);
+
+    return val;
+}
+
+static inline int wmi_update_metrics(struct flb_we *ctx, struct wmi_query_spec *spec,
+                                     double val, IWbemClassObject *class_obj, uint64_t timestamp)
+{
+
+    VARIANT prop;
+    int label_index = 0;
+    HRESULT hr;
+    char *strlabel;
     char *metric_label_set[WE_WMI_METRIC_LABEL_LIST_SIZE];
     int metric_label_count = 0;
     char buf[16];
+    wchar_t *wlabel;
 
-    timestamp = cfl_time_now();
+    VariantInit(&prop);
+    metric_label_count = 0;
+    for (label_index = 0; label_index < spec->label_property_count; label_index++) {
+        wlabel = convert_str(spec->label_property_keys[label_index]);
+        hr = class_obj->lpVtbl->Get(class_obj, wlabel, 0, &prop, 0, 0);
+        switch(prop.vt) {
+        case VT_I4:
+            snprintf(buf, 16, "%d", prop.lVal);
+            metric_label_set[label_index] = strdup(buf);
+            metric_label_count++;
+            break;
+        case VT_BSTR:
+            strlabel = convert_wstr(prop.bstrVal, CP_UTF8);
+            metric_label_set[label_index] = strdup(strlabel);
+            metric_label_count++;
+            free(strlabel);
+            break;
+        default:
+            break;
+        }
+        VariantClear(&prop);
+        flb_free(wlabel);
+    }
+
+    wmi_update_counters(spec, timestamp, val, metric_label_count, metric_label_set);
+
+    VariantClear(&prop);
+
+    return 0;
+}
+
+static inline int wmi_execute_query(struct flb_we *ctx, struct wmi_query_spec *spec, IEnumWbemClassObject **out_enumerator)
+{
+    HRESULT hr;
+    wchar_t *wquery,  query[256];
+    IEnumWbemClassObject* enumerator = NULL;
 
     snprintf(query, 14 + strlen(spec->wmi_counter), "SELECT * FROM %s", spec->wmi_counter);
     wquery = convert_str(query);
@@ -241,12 +302,29 @@ static int wmi_exec_query(struct flb_we *ctx, struct wmi_query_spec *spec)
         return -1;
     }
 
+    *out_enumerator = enumerator;
+
+    return 0;
+}
+
+static int wmi_exec_query_fixed_val(struct flb_we *ctx, struct wmi_query_spec *spec)
+{
+    IEnumWbemClassObject* enumerator = NULL;
+    HRESULT hr;
+
+    IWbemClassObject *class_obj = NULL;
+    ULONG ret = 0;
+    uint64_t timestamp = 0;
+
+    timestamp = cfl_time_now();
+
+    if (FAILED(wmi_execute_query(ctx, spec, &enumerator))) {
+        return -1;
+    }
+
     while (enumerator)
     {
-        VARIANT prop;
-        int label_index = 0;
-
-        HRESULT hr = enumerator->lpVtbl->Next(enumerator, WBEM_INFINITE, 1,
+        hr = enumerator->lpVtbl->Next(enumerator, WBEM_INFINITE, 1,
             &class_obj, &ret);
 
         if(0 == ret)
@@ -254,53 +332,50 @@ static int wmi_exec_query(struct flb_we *ctx, struct wmi_query_spec *spec)
             break;
         }
 
-        VariantInit(&prop);
-        // Get the value of the Name property
-        wproperty = convert_str(spec->wmi_property);
-        hr = class_obj->lpVtbl->Get(class_obj, wproperty, 0, &prop, 0, 0);
-        switch(prop.vt) {
-        case VT_I4:
-            val = prop.lVal;
-            break;
-        case VT_BSTR:
-            strprop = convert_wstr(prop.bstrVal, CP_UTF8);
-            wmi_utils_str_to_double(strprop, &val);
-            flb_free(strprop);
-            break;
-        default:
-            break;
-        }
-
-        metric_label_count = 0;
-        for (label_index = 0; label_index < spec->label_property_count; label_index++) {
-            VariantClear(&prop);
-            wlabel = convert_str(spec->label_property_keys[label_index]);
-            hr = class_obj->lpVtbl->Get(class_obj, wlabel, 0, &prop, 0, 0);
-            switch(prop.vt) {
-            case VT_I4:
-                snprintf(buf, 16, "%d", prop.lVal);
-                metric_label_set[label_index] = strdup(buf);
-                metric_label_count++;
-                break;
-            case VT_BSTR:
-                strlabel = convert_wstr(prop.bstrVal, CP_UTF8);
-                metric_label_set[label_index] = strdup(strlabel);
-                metric_label_count++;
-                free(strlabel);
-                break;
-            default:
-                break;
-            }
-            flb_free(wlabel);
-        }
-
-        wmi_update_metric(spec, timestamp, val, metric_label_count, metric_label_set);
-
-        flb_free(wproperty);
-        VariantClear(&prop);
+        wmi_update_metrics(ctx, spec, 1.0, class_obj, timestamp);
 
         class_obj->lpVtbl->Release(class_obj);
     }
+
+    enumerator->lpVtbl->Release(enumerator);
+
+    return 0;
+}
+
+static int wmi_exec_query(struct flb_we *ctx, struct wmi_query_spec *spec)
+{
+    IEnumWbemClassObject* enumerator = NULL;
+    HRESULT hr;
+
+    IWbemClassObject *class_obj = NULL;
+    ULONG ret = 0;
+    double val = 0;
+    uint64_t timestamp = 0;
+
+    timestamp = cfl_time_now();
+
+    if (FAILED(wmi_execute_query(ctx, spec, &enumerator))) {
+        return -1;
+    }
+
+    while (enumerator)
+    {
+        hr = enumerator->lpVtbl->Next(enumerator, WBEM_INFINITE, 1,
+            &class_obj, &ret);
+
+        if(0 == ret)
+        {
+            break;
+        }
+
+        val = wmi_get_value(ctx, spec, class_obj);
+
+        wmi_update_metrics(ctx, spec, val, class_obj, timestamp);
+
+        class_obj->lpVtbl->Release(class_obj);
+    }
+
+    enumerator->lpVtbl->Release(enumerator);
 
     return 0;
 }
@@ -331,12 +406,33 @@ static int wmi_query(struct flb_we *ctx, struct wmi_query_spec *spec)
     return 0;
 }
 
+static int wmi_query_fixed_val(struct flb_we *ctx, struct wmi_query_spec *spec)
+{
+    if (FAILED(wmi_coinitialize(ctx, NULL))) {
+        return -1;
+    }
+    if (FAILED(wmi_exec_query_fixed_val(ctx, spec))) {
+        return -1;
+    }
+
+    wmi_cleanup(ctx);
+
+    return 0;
+}
+
 int we_wmi_init(struct flb_we *ctx)
 {
 
     return 0;
 }
 
+int we_wmi_query_fixed_val(struct flb_we *ctx, struct wmi_query_specs *spec)
+{
+    if (FAILED(wmi_query_fixed_val(ctx, spec))) {
+        return -1;
+    }
+    return 0;
+}
 int we_wmi_query(struct flb_we *ctx, struct wmi_query_specs *spec)
 {
     if (FAILED(wmi_query(ctx, spec))) {

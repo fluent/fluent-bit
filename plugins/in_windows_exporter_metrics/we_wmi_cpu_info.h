@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -18,27 +17,13 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_WE_WMI_H
-#define FLB_WE_WMI_H
+#ifndef FLB_WE_WMI_CPU_INFO_H
+#define FLB_WE_WMI_CPU_INFO_H
 
 #include "we.h"
 
-#define WE_WMI_METRIC_LABEL_LIST_SIZE        64
-
-typedef double (*we_wmi_value_adjuster) (double);
-struct wmi_query_spec {
-    void *metric_instance;
-    int type;
-    we_wmi_value_adjuster value_adjuster;
-    char *wmi_counter;
-    char *wmi_property;
-    int label_property_count;
-    char **label_property_keys;
-};
-
-int we_wmi_init(struct flb_we *ctx);
-int we_wmi_query(struct flb_we *ctx, struct wmi_query_specs *spec);
-int we_wmi_query_fixed_val(struct flb_we *ctx, struct wmi_query_specs *spec);
-int we_wmi_exit(struct flb_we *ctx);
+int we_wmi_cpu_info_init(struct flb_we *ctx);
+int we_wmi_cpu_info_exit(struct flb_we *ctx);
+int we_wmi_cpu_info_update(struct flb_we *ctx);
 
 #endif
