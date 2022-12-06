@@ -406,6 +406,20 @@ static int wmi_query(struct flb_we *ctx, struct wmi_query_spec *spec)
     return 0;
 }
 
+static int wmi_query_namespace(struct flb_we *ctx, struct wmi_query_spec *spec, char *namespace)
+{
+    if (FAILED(wmi_coinitialize(ctx, namespace))) {
+        return -1;
+    }
+    if (FAILED(wmi_exec_query(ctx, spec))) {
+        return -1;
+    }
+
+    wmi_cleanup(ctx);
+
+    return 0;
+}
+
 static int wmi_query_fixed_val(struct flb_we *ctx, struct wmi_query_spec *spec)
 {
     if (FAILED(wmi_coinitialize(ctx, NULL))) {
@@ -433,9 +447,18 @@ int we_wmi_query_fixed_val(struct flb_we *ctx, struct wmi_query_specs *spec)
     }
     return 0;
 }
+
 int we_wmi_query(struct flb_we *ctx, struct wmi_query_specs *spec)
 {
     if (FAILED(wmi_query(ctx, spec))) {
+        return -1;
+    }
+    return 0;
+}
+
+int we_wmi_query_namespace(struct flb_we *ctx, struct wmi_query_specs *spec, char *namespace)
+{
+    if (FAILED(wmi_query_namespace(ctx, spec, namespace))) {
         return -1;
     }
     return 0;
