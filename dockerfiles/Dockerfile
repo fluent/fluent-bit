@@ -32,6 +32,8 @@ RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log
 
 ENV DEBIAN_FRONTEND noninteractive
 
+RUN echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/sources.list
+
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -45,7 +47,7 @@ RUN apt-get update && \
     libssl-dev \
     libsasl2-dev \
     pkg-config \
-    libsystemd-dev \
+    libsystemd-dev/bullseye-backports \
     zlib1g-dev \
     libpq-dev \
     postgresql-server-dev-all \
@@ -100,6 +102,8 @@ FROM debian:bullseye-slim as deb-extractor
 COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 
+RUN echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/sources.list
+
 # We download all debs locally then extract them into a directory we can use as the root for distroless.
 # We also include some extra handling for the status files that some tooling uses for scanning, etc.
 WORKDIR /tmp
@@ -110,7 +114,7 @@ RUN apt-get update && \
     libsasl2-2 \
     pkg-config \
     libpq5 \
-    libsystemd0 \
+    libsystemd0/bullseye-backports \
     zlib1g \
     ca-certificates \
     libatomic1 \
@@ -201,6 +205,8 @@ COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 ENV DEBIAN_FRONTEND noninteractive
 
+RUN echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/sources.list
+
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -208,7 +214,7 @@ RUN apt-get update && \
     libsasl2-2 \
     pkg-config \
     libpq5 \
-    libsystemd0 \
+    libsystemd0/bullseye-backports \
     zlib1g \
     ca-certificates \
     libatomic1 \
