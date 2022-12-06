@@ -233,7 +233,7 @@ jobs:
           version: v3.8.1
 
       - name: Set up Kubectl
-        uses: azure/setup-kubectl@v3.0
+        uses: azure/setup-kubectl@v3.1
 
       - name: Run tests
         run:  |
@@ -286,7 +286,7 @@ jobs:
           version: v3.8.1
 
       - name: Set up Kubectl
-        uses: azure/setup-kubectl@v3.0
+        uses: azure/setup-kubectl@v3.1
 
       - name: Get the GKE Kubeconfig
         if: matrix.cloud == 'gke'
