@@ -32,10 +32,9 @@ RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log
 
 ENV DEBIAN_FRONTEND noninteractive
 
-RUN echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/sources.list
-
 # hadolint ignore=DL3008
-RUN apt-get update && \
+RUN echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/sources.list && \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
     curl \
@@ -102,13 +101,12 @@ FROM debian:bullseye-slim as deb-extractor
 COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 
-RUN echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/sources.list
-
 # We download all debs locally then extract them into a directory we can use as the root for distroless.
 # We also include some extra handling for the status files that some tooling uses for scanning, etc.
 WORKDIR /tmp
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-RUN apt-get update && \
+RUN echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/sources.list && \
+    apt-get update && \
     apt-get download \
     libssl1.1 \
     libsasl2-2 \
@@ -205,10 +203,9 @@ COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 ENV DEBIAN_FRONTEND noninteractive
 
-RUN echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/sources.list
-
 # hadolint ignore=DL3008
-RUN apt-get update && \
+RUN echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/sources.list && \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
     libssl1.1 \
     libsasl2-2 \
