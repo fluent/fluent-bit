@@ -1024,7 +1024,8 @@ static flb_sds_t csv_pack_object(flb_sds_t *buf, msgpack_object *o)
     return *buf;
 }
 
-flb_sds_t flb_pack_msgpack_to_csv_format(const char *data, size_t bytes, int add_columns)
+flb_sds_t flb_pack_msgpack_to_csv_format(const char *data, size_t bytes,
+                                         int add_timestamp, int add_columns)
 {
     int i;
     int j;
@@ -1048,13 +1049,17 @@ flb_sds_t flb_pack_msgpack_to_csv_format(const char *data, size_t bytes, int add
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         root = result.data;
-        if (root.type != MSGPACK_OBJECT_ARRAY) {
-
+        if (root.type != MSGPACK_OBJECT_ARRAY && root.type != MSGPACK_OBJECT_MAP) {
             continue;
         }
 
-        flb_time_pop_from_msgpack(&tm, &result, &obj);
-        map = root.via.array.ptr[1];
+        if (root.type == MSGPACK_OBJECT_ARRAY) {
+            flb_time_pop_from_msgpack(&tm, &result, &obj);
+            map = root.via.array.ptr[1];
+        }
+        else {
+            map = root;
+        }
 
         for (i = 0; i < map.via.map.size; i++) {
             val = map.via.map.ptr[i].val;
@@ -1063,7 +1068,9 @@ flb_sds_t flb_pack_msgpack_to_csv_format(const char *data, size_t bytes, int add
             if (record_n == 0 && add_columns) {
                 if (i == 0) {
                     /* add columns starting with timestamp */
-                    flb_sds_cat_safe(&csv_buf, "\"timestamp\",", 12);
+                    if (add_timestamp) {
+                        flb_sds_cat_safe(&csv_buf, "\"timestamp\",", 12);
+                    }
 
                     /* record keys */
                     for (j = 0; j < map.via.map.size; j++) {
@@ -1078,7 +1085,7 @@ flb_sds_t flb_pack_msgpack_to_csv_format(const char *data, size_t bytes, int add
                 }
             }
 
-            if (i == 0) {
+            if (i == 0 && add_timestamp) {
                 /* timestamp */
                 flb_sds_printf(&csv_buf, "\"%lu.%lu\",", tm.tm.tv_sec, tm.tm.tv_nsec);
             }
