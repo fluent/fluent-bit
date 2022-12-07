@@ -33,7 +33,7 @@ public class Config {
      * @return the Fluent-Bit host. This is used by the application logger. If you let Fluent-Bit run somewhere else,
      * you might want to change it.
      */
-    public static String getFluentbitHost() {
+    public static String getFluentBitHost() {
         return Optional.ofNullable(System.getenv("FLUENTBIT_HOST")).orElse("127.0.0.1");
     }
 
@@ -41,7 +41,7 @@ public class Config {
      * @return the Fluent-Bit port. This is used by the application logger. If you let Fluent-Bit run somewhere else,
      * you might want to change it.
      */
-    public static int getFluentbitPort() {
+    public static int getFluentBitPort() {
         return Optional.ofNullable(System.getenv("FLUENTBIT_PORT")).map(Integer::parseInt).orElse(DEFAULT_FLUENTBIT_PORT);
     }
 
@@ -61,11 +61,11 @@ public class Config {
         return Optional.ofNullable(System.getenv("LOG_DEST_PORT")).map(Integer::parseInt).orElse(DEFAULT_LOG_DEST_PORT);
     }
 
-    public static Optional<List<String>> getFluentbitStartCommand() {
+    public static Optional<List<String>> getFluentBitStartCommand() {
         return Optional.ofNullable(System.getenv("FLUENTBIT_COMMAND")).map(x -> Arrays.stream(x.split(" ")).collect(Collectors.toList()));
     }
 
-    public static String getFluentbitDockerImage() {
+    public static String getFluentBitDockerImage() {
         return Optional.ofNullable(System.getenv("FLUENTBIT_DOCKER_IMAGE")).orElse("fluent/fluent-bit:latest");
     }
 }

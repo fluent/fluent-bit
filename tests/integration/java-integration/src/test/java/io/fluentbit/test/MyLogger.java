@@ -44,7 +44,7 @@ public class MyLogger implements AutoCloseable {
         builder.setFlushAttemptIntervalMillis(100);
         builder.setJvmHeapBufferMode(false);
         builder.setMaxBufferSize((long) (64 * 1024 * 1024));
-        fluency = builder.build(Config.getFluentbitHost(), Config.getFluentbitPort());
+        fluency = builder.build(Config.getFluentBitHost(), Config.getFluentBitPort());
     }
 
     public void log(String data) {

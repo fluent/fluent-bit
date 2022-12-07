@@ -42,13 +42,13 @@ public class FluentBit implements AutoCloseable {
         }
 
         try {
-            if (Config.getFluentbitStartCommand().isEmpty()) {
+            if (Config.getFluentBitStartCommand().isEmpty()) {
                 Process dockerPull = new ProcessBuilder()
                         .inheritIO()
                         .command(Arrays.asList(
                                 System.getenv().getOrDefault("CONTAINER_RUNTIME", "docker"),
                                 "pull",
-                                Config.getFluentbitDockerImage()))
+                                Config.getFluentBitDockerImage()))
                         .start();
                 try {
                     dockerPull.waitFor(5, TimeUnit.MINUTES);
@@ -68,7 +68,7 @@ public class FluentBit implements AutoCloseable {
             ProcessBuilder processBuilder = new ProcessBuilder()
                     .inheritIO()
                     .command(
-                            Config.getFluentbitStartCommand()
+                            Config.getFluentBitStartCommand()
                                     .orElse(Arrays.asList(
                                             System.getenv().getOrDefault("CONTAINER_RUNTIME", "docker"),
                                             "run",
@@ -77,7 +77,7 @@ public class FluentBit implements AutoCloseable {
                                             "-e", "LOG_DEST_PORT",
                                             "--network=host",
                                             "-v", config.getPath() + ":/fluentbit.conf",
-                                            Config.getFluentbitDockerImage(),
+                                            Config.getFluentBitDockerImage(),
                                             "/fluent-bit/bin/fluent-bit", "-c", "/fluentbit.conf")));
             processBuilder.environment().put("LOG_DEST_HOST", Config.getLogDestinationHost());
             processBuilder.environment().put("LOG_DEST_PORT", Integer.toString(Config.getLogDestinationPort()));
@@ -88,7 +88,7 @@ public class FluentBit implements AutoCloseable {
 
         try {
             // we give it up to 1 minute to start
-            waitFor(TimeUnit.MINUTES, 1, () -> isPortOpen(Config.getFluentbitHost(), Config.getFluentbitPort()));
+            waitFor(TimeUnit.MINUTES, 1, () -> isPortOpen(Config.getFluentBitHost(), Config.getFluentBitPort()));
             System.out.println("Fluent-Bit started");
         } catch (Throwable t) {
             System.err.println("Fluent-Bit is not starting...");
