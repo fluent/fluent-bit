@@ -17,7 +17,6 @@
  */
 package io.fluentbit.test;
 
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.util.concurrent.CountDownLatch;
@@ -29,9 +28,6 @@ import static io.fluentbit.test.Util.sleep;
 import static io.fluentbit.test.Util.waitFor;
 import static org.junit.Assert.assertTrue;
 
-/**
- * This class runs the actual tests.
- */
 public class IntegrationTest {
 
 
@@ -46,6 +42,7 @@ public class IntegrationTest {
                 try (MyLogger logger = new MyLogger(expectedLogData)) {
                     logger.log("message");
                 }
+                // wait for up to 15 seconds for the message to be processed
                 waitForMessagesProcessed(TimeUnit.SECONDS, 15, expectedLogData);
             }
         }
@@ -65,6 +62,7 @@ public class IntegrationTest {
             sleep(TimeUnit.SECONDS, 15);
 
             try (LoggingDestinationServer loggingDestinationServer = new LoggingDestinationServer(expectedLogData)) {
+                // wait for up to 5 minutes for the message to be processed
                 waitForMessagesProcessed(TimeUnit.MINUTES, 5, expectedLogData);
             }
         }
@@ -76,7 +74,6 @@ public class IntegrationTest {
      * there is a very short pause to be a bit realistic.
      */
     @Test
-    @Ignore("currently broken, see https://github.com/fluent/fluent-bit/issues/3014")
     public void happyPathHighLoad() throws Exception {
         int threads = 25;
         int count = 25_000;
@@ -103,6 +100,7 @@ public class IntegrationTest {
                     assertTrue("Failed to shutdown executorService", executorService.awaitTermination(15, TimeUnit.MINUTES));
                 }
             }
+            // wait for up to 15 minutes for the message to be processed
             waitForMessagesProcessed(TimeUnit.MINUTES, 15, expectedLogData);
         }
     }
@@ -112,7 +110,6 @@ public class IntegrationTest {
      * all the data.
      */
     @Test
-    @Ignore("currently broken, see https://github.com/fluent/fluent-bit/issues/3014")
     public void logDestinationDownHighLoad() throws Exception {
         int threads = 25;
         int count = 25_000;
@@ -138,11 +135,16 @@ public class IntegrationTest {
                 assertTrue("Failed to shutdown executorService", executorService.awaitTermination(15, TimeUnit.MINUTES));
             }
             try (LoggingDestinationServer loggingDestinationServer = new LoggingDestinationServer(expectedLogData)) {
+                // wait for up to 45 minutes for the message to be processed
                 waitForMessagesProcessed(TimeUnit.MINUTES, 45, expectedLogData);
             }
         }
     }
 
+    /**
+     * This methods waits for the messages to be processed. The provided duration is the maximum time. It checks every 5s if the messages
+     * have arrived.
+     */
     private void waitForMessagesProcessed(TimeUnit unit, long duration, ExpectedLogData expectedLogData) {
         waitFor(unit, duration, () -> expectedLogData.get()
                 .entrySet()

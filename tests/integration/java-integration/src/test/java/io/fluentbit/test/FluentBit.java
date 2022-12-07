@@ -42,12 +42,36 @@ public class FluentBit implements AutoCloseable {
         }
 
         try {
+            if (Config.getFluentbitStartCommand().isEmpty()) {
+                Process dockerPull = new ProcessBuilder()
+                        .inheritIO()
+                        .command(Arrays.asList(
+                                System.getenv().getOrDefault("CONTAINER_RUNTIME", "docker"),
+                                "pull",
+                                Config.getFluentbitDockerImage()))
+                        .start();
+                try {
+                    dockerPull.waitFor(5, TimeUnit.MINUTES);
+                } catch (InterruptedException e) {
+                    // if we are interrupted, we just continue
+                }
+                int rc = dockerPull.exitValue();
+                if (rc != 0) {
+                    throw new RuntimeException("Failed to pull docker container, received RC " + rc);
+                }
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to start Fluent-Bit", e);
+        }
+
+        try {
             ProcessBuilder processBuilder = new ProcessBuilder()
                     .inheritIO()
                     .command(
                             Config.getFluentbitStartCommand()
                                     .orElse(Arrays.asList(
-                                            "docker", "run",
+                                            System.getenv().getOrDefault("CONTAINER_RUNTIME", "docker"),
+                                            "run",
                                             "--rm",
                                             "-e", "LOG_DEST_HOST",
                                             "-e", "LOG_DEST_PORT",
@@ -63,8 +87,8 @@ public class FluentBit implements AutoCloseable {
         }
 
         try {
-            // we give it up to 5 minutes, just in case the docker pull takes ages
-            waitFor(TimeUnit.MINUTES, 5, () -> isPortOpen(Config.getFluentbitHost(), Config.getFluentbitPort()));
+            // we give it up to 1 minute to start
+            waitFor(TimeUnit.MINUTES, 1, () -> isPortOpen(Config.getFluentbitHost(), Config.getFluentbitPort()));
             System.out.println("Fluent-Bit started");
         } catch (Throwable t) {
             System.err.println("Fluent-Bit is not starting...");

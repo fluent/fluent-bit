@@ -39,6 +39,7 @@ public class LoggingDestinationServer implements AutoCloseable {
         this.expectedLogData = expectedLogData;
         server = new Server();
         new Thread(server, "logging-dest-server-main").start();
+        // wait for up to 5 seconds for the server to start up
         waitFor(TimeUnit.SECONDS, 5, () -> server.running);
         System.out.println("Logging Destination Started");
     }
