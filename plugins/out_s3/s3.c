@@ -2135,13 +2135,49 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
         chunk_tmp = flb_pack_msgpack_extract_log_key(ctx,
                                                      event_chunk->data,
                                                      event_chunk->size);
+
+        if (!chunk_tmp) {
+            flb_plg_error(ctx->ins, "Could not generate records by using 'log_key' content");
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
+
+        /*
+         * Try to perform formatting: note that the only relevant format here is CSV, since
+         * if the caller specified JSON in the configuration, the output of the call to the
+         * local function flb_pack_msgpack_extract_log_key() already generates a valid JSON
+         * payload.
+         */
+
+        /*
+        if (ctx->format == S3_FORMAT_CSV) {
+            int root_type;
+            char *mp_buf;
+            size_t mp_size;
+
+            ret = flb_pack_json(chunk_tmp, flb_sds_len(chunk_tmp),
+                                &mp_buf, &mp_size, &root_type);
+            if (ret < 0) {
+                flb_plg_error(ctx->ins, "Could not format to CSV using 'log_key' content");
+                flb_sds_destroy(chunk_tmp);
+                FLB_OUTPUT_RETURN(FLB_ERROR);
+            }
+
+            flb_sds_destroy(chunk_tmp);
+            chunk = flb_sds_create_len(mp_buf, mp_size);
+            flb_free(mp_buf);
+        }
+        else {
+            chunk = chunk_tmp;
+        }*/
+        chunk = chunk_tmp;
     }
     else {
         chunk_tmp = flb_sds_create_len(event_chunk->data, event_chunk->size);
 
     }
 
-    if (ctx->format == S3_FORMAT_JSON) {
+    /* JSON format: */
+    if (!ctx->log_key && ctx->format == S3_FORMAT_JSON) {
         chunk = flb_pack_msgpack_to_json_format(chunk_tmp,
                                                 flb_sds_len(chunk_tmp),
                                                 FLB_PACK_JSON_FORMAT_LINES,
@@ -2156,7 +2192,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
          * for hence the formatting of the CSV will happen inside the function
          * s3_store_buffer_put().
          *
-         * For now, we duplicate the buffer for safety reasons.
+         * For now, just reference the duplicated buffer for safety reasons.
          */
         chunk = chunk_tmp;
     }
@@ -2165,6 +2201,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
         flb_plg_error(ctx->ins, "Could not marshal msgpack to output string");
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
+
     chunk_size = flb_sds_len(chunk);
 
     /* Get a file candidate matching the given 'tag' */
