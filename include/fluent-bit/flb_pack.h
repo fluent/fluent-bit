@@ -88,6 +88,8 @@ int flb_pack_json_state(const char *js, size_t len,
                         struct flb_pack_state *state);
 int flb_pack_json_valid(const char *json, size_t len);
 
+flb_sds_t flb_pack_msgpack_to_csv_format(const char *data, size_t bytes, int add_columns);
+
 flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
                                           int json_format, int date_format,
                                           flb_sds_t date_key);
