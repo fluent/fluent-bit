@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_fstore.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_pack.h>
 
 #include "s3.h"
 #include "s3_store.h"
@@ -128,9 +129,12 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
                         char *data, size_t bytes)
 {
     int ret;
+    int created = FLB_FALSE;
+    int csv_add_columns = FLB_FALSE;
     flb_sds_t name;
     struct flb_fstore_file *fsf;
     size_t space_remaining;
+    flb_sds_t csv_chunk = NULL;
 
     if (ctx->store_dir_limit_size > 0 && ctx->current_buffer_size + bytes >= ctx->store_dir_limit_size) {
         flb_plg_error(ctx->ins, "Buffer is full: current_buffer_size=%zu, new_data=%zu, store_dir_limit_size=%zu bytes",
@@ -179,13 +183,60 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
 
         /* Use fstore opaque 'data' reference to keep our context */
         fsf->data = s3_file;
+        created = FLB_TRUE;
     }
     else {
         fsf = s3_file->fsf;
     }
 
-    /* Append data to the target file */
-    ret = flb_fstore_file_append(fsf, data, bytes);
+    /*
+     * Append data to the target file
+     *
+     * If the user desires CSV format, we do the formatting at this level since before this
+     * step we don't know when we will be appending to the beginning of a new file so we can
+     * add the CSV headers.
+     */
+    if (ctx->format == S3_FORMAT_CSV) {
+        if (created && ctx->csv_column_names) {
+            csv_add_columns = FLB_TRUE;
+        }
+
+        if (ctx->log_key) {
+            /*
+             * if log_key option was used, the incoming data is NOT a msgpack object,
+             * likely a JSON string message that we need to convert back so we can
+             * do the CSV formatting.
+             */
+            int root_type;
+            char *mp_buf;
+            size_t mp_size;
+
+            ret = flb_pack_json(data, bytes, &mp_buf, &mp_size, &root_type);
+            if (ret < 0) {
+                return -1;
+            }
+
+            csv_chunk = flb_pack_msgpack_to_csv_format(mp_buf, mp_size,
+                                                       FLB_FALSE, csv_add_columns);
+            flb_free(mp_buf);
+        }
+        else {
+            csv_chunk = flb_pack_msgpack_to_csv_format(data, bytes,
+                                                       FLB_TRUE, csv_add_columns);
+        }
+
+        if (!csv_chunk) {
+            flb_plg_warn(ctx->ins, "Could not format chunk as CSV");
+            return -1;
+        }
+
+        ret = flb_fstore_file_append(fsf, csv_chunk, flb_sds_len(csv_chunk));
+        flb_sds_destroy(csv_chunk);
+    }
+    else {
+        ret = flb_fstore_file_append(fsf, data, bytes);
+    }
+
     if (ret != 0) {
         flb_plg_error(ctx->ins, "error writing data to local s3 file");
         return -1;

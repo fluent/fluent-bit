@@ -768,6 +768,18 @@ static int cb_s3_init(struct flb_output_instance *ins,
         ctx->storage_class = (char *) tmp;
     }
 
+    /* Formatting */
+    ctx->format = S3_FORMAT_JSON;
+    tmp = flb_output_get_property("format", ins);
+    if (tmp) {
+        if (!strcasecmp(tmp, "json")) {
+            ctx->format = S3_FORMAT_JSON;
+        }
+        else if (!strcasecmp(tmp, "csv")) {
+            ctx->format = S3_FORMAT_CSV;
+        }
+    }
+
     if (ctx->insecure == FLB_FALSE) {
         ctx->client_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
                                          ins->tls_verify,
@@ -1679,11 +1691,13 @@ static int buffer_chunk(void *out_context, struct s3_file *upload_file, flb_sds_
 
     ret = s3_store_buffer_put(ctx, upload_file, tag, tag_len, chunk, (size_t) chunk_size);
     flb_sds_destroy(chunk);
+
     if (ret < 0) {
         flb_plg_warn(ctx->ins, "Could not buffer chunk. Data order preservation "
                      "will be compromised");
         return -1;
     }
+
     return 0;
 }
 
@@ -2108,6 +2122,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     int upload_timeout_check = FLB_FALSE;
     int total_file_size_check = FLB_FALSE;
     flb_sds_t chunk = NULL;
+    flb_sds_t chunk_tmp;
     struct s3_file *upload_file = NULL;
     struct flb_s3 *ctx = out_context;
     struct multipart_upload *m_upload_file = NULL;
@@ -2117,17 +2132,35 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
 
     /* Process chunk */
     if (ctx->log_key) {
-        chunk = flb_pack_msgpack_extract_log_key(ctx,
-                                                 event_chunk->data,
-                                                 event_chunk->size);
+        chunk_tmp = flb_pack_msgpack_extract_log_key(ctx,
+                                                     event_chunk->data,
+                                                     event_chunk->size);
     }
     else {
-        chunk = flb_pack_msgpack_to_json_format(event_chunk->data,
-                                                event_chunk->size,
+        chunk_tmp = flb_sds_create_len(event_chunk->data, event_chunk->size);
+
+    }
+
+    if (ctx->format == S3_FORMAT_JSON) {
+        chunk = flb_pack_msgpack_to_json_format(chunk_tmp,
+                                                flb_sds_len(chunk_tmp),
                                                 FLB_PACK_JSON_FORMAT_LINES,
                                                 ctx->json_date_format,
                                                 ctx->date_key);
+        flb_sds_destroy(chunk_tmp);
     }
+    else if (ctx->format == S3_FORMAT_CSV) {
+        /*
+         * CSV is a bit tricky, if the user asked to include the column names
+         * we need to know if the content will be placed in a new object or not,
+         * for hence the formatting of the CSV will happen inside the function
+         * s3_store_buffer_put().
+         *
+         * For now, we duplicate the buffer for safety reasons.
+         */
+        chunk = chunk_tmp;
+    }
+
     if (chunk == NULL) {
         flb_plg_error(ctx->ins, "Could not marshal msgpack to output string");
         FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -2138,6 +2171,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     upload_file = s3_store_file_get(ctx,
                                     event_chunk->tag,
                                     flb_sds_len(event_chunk->tag));
+
 
     /* Specific to unit tests, will not get called normally */
     if (s3_plugin_under_test() == FLB_TRUE) {
@@ -2436,6 +2470,20 @@ static struct flb_config_map config_map[] = {
      "By default, the whole log record will be sent to S3. "
      "If you specify a key name with this option, then only the value of "
      "that key will be sent to S3."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "format", NULL,
+     0, FLB_FALSE, 0,
+     "Specify the output data format, the available options are: json and "
+     "csv. If no value is set the outgoing data is formatted to JSON."
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "csv_column_names", "false",
+     0, FLB_TRUE, offsetof(struct flb_s3, csv_column_names),
+     "When data is formatted to CSV, it add the column names (keys) in the first line of "
+     "the target file."
     },
 
     {
