@@ -909,7 +909,7 @@ static flb_sds_t csv_pack_string(flb_sds_t *buf, char *in_str, size_t in_size)
             flb_sds_cat_safe(&tmp, "\"\"", 2);
         }
         else {
-            flb_sds_cat_safe(&tmp, &in_str[i], 1);
+            flb_sds_cat_safe(&tmp, in_str + i, 1);
         }
     }
 
@@ -926,6 +926,7 @@ static flb_sds_t csv_pack_string(flb_sds_t *buf, char *in_str, size_t in_size)
 static flb_sds_t csv_pack_object_as_json(flb_sds_t *buf, msgpack_object *o)
 {
     int ret;
+    int len;
     size_t out_size = 8192;
     size_t realloc_size = 8192;
     flb_sds_t out_buf;
@@ -955,7 +956,8 @@ static flb_sds_t csv_pack_object_as_json(flb_sds_t *buf, msgpack_object *o)
         }
     }
 
-    csv_pack_string(buf, out_buf, flb_sds_len(out_buf));
+    len = strlen(out_buf);
+    csv_pack_string(buf, out_buf, len);
     flb_sds_destroy(out_buf);
 
     return *buf;
