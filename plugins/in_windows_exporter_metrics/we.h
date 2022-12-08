@@ -118,6 +118,19 @@ struct we_wmi_logon_counters {
     int                    operational;
 };
 
+struct we_os_counters {
+    struct cmt_gauge *info;
+    struct cmt_gauge *users;
+    struct cmt_gauge *physical_memory_free_bytes;
+    struct cmt_gauge *virtual_memory_free_bytes;
+    struct cmt_gauge *processes_limit;
+    struct cmt_gauge *process_memory_limit_bytes;
+    struct cmt_gauge *processes;
+    struct cmt_gauge *virtual_memory_bytes;
+    struct cmt_gauge *visible_memory_bytes;
+    int operational;
+};
+
 struct flb_we {
     /* configuration */
     int scrape_interval;
@@ -140,6 +153,7 @@ struct flb_we {
      */
 
     struct we_cpu_counters cpu;
+    struct we_os_counters *os;
     struct we_wmi_thermal_counters *wmi_thermals;
     struct we_wmi_cpu_info_counters *wmi_cpu_info;
     struct we_wmi_logon_counters *wmi_logon;
