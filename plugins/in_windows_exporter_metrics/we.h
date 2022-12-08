@@ -113,6 +113,11 @@ struct we_wmi_cpu_info_counters {
     int                    operational;
 };
 
+struct we_wmi_logon_counters {
+    struct wmi_query_spec *info;
+    int                    operational;
+};
+
 struct flb_we {
     /* configuration */
     int scrape_interval;
@@ -137,6 +142,7 @@ struct flb_we {
     struct we_cpu_counters cpu;
     struct we_wmi_thermal_counters *wmi_thermals;
     struct we_wmi_cpu_info_counters *wmi_cpu_info;
+    struct we_wmi_logon_counters *wmi_logon;
 
 };
 
