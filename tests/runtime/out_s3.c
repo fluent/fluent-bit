@@ -381,7 +381,7 @@ static void cb_check_format_json_log_key(void *ctx, int ffd,
     TEST_CHECK(ret == FLB_FALSE);
 
     /* check the whole content equals 'last-entry' */
-    ret = strncmp(res_data, "last-entry", res_size);
+    ret = strncmp(res_data, "last-entry\n", res_size);
     TEST_CHECK(ret == 0);
 
     flb_sds_destroy(res_data);
