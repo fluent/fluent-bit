@@ -207,7 +207,6 @@ static double wmi_get_value(struct flb_we *ctx, struct wmi_query_spec *spec, IWb
     wchar_t *wproperty;
 
     VariantInit(&prop);
-    // Get the value of the Name property
     wproperty = convert_str(spec->wmi_property);
     hr = class_obj->lpVtbl->Get(class_obj, wproperty, 0, &prop, 0, 0);
     switch(prop.vt) {
