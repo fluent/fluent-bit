@@ -778,6 +778,10 @@ static int cb_s3_init(struct flb_output_instance *ins,
         else if (!strcasecmp(tmp, "csv")) {
             ctx->format = S3_FORMAT_CSV;
         }
+        else {
+            flb_plg_error(ctx->ins, "Invalid 'format' property '%s'", tmp);
+            return -1;
+        }
     }
 
     if (ctx->insecure == FLB_FALSE) {
