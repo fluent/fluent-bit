@@ -41,8 +41,7 @@ static int wmi_coinitialize(struct flb_we *ctx, char* wmi_namespace)
 
     /* Initialize COM library */
     hr = CoInitializeEx(0, COINIT_MULTITHREADED);
-    if (FAILED(hr))
-    {
+    if (FAILED(hr)) {
         flb_plg_error(ctx->ins, "Failed to initialize COM library. Error code = %x", hr);
         return -1;
     }
@@ -65,8 +64,7 @@ static int wmi_coinitialize(struct flb_we *ctx, char* wmi_namespace)
     /* Create WMI instance */
     hr = CoCreateInstance(&CLSID_WbemLocator, 0,
                           CLSCTX_INPROC_SERVER, &IID_IWbemLocator, (LPVOID *) &locator);
-    if (FAILED(hr))
-    {
+    if (FAILED(hr)) {
         flb_plg_error(ctx->ins, "Failed to create IWbemLocator object. Error code = %x", hr);
         CoUninitialize();
         return hr;
@@ -322,13 +320,11 @@ static int wmi_exec_query_fixed_val(struct flb_we *ctx, struct wmi_query_spec *s
         return -1;
     }
 
-    while (enumerator)
-    {
+    while (enumerator) {
         hr = enumerator->lpVtbl->Next(enumerator, WBEM_INFINITE, 1,
             &class_obj, &ret);
 
-        if(0 == ret)
-        {
+        if(0 == ret) {
             break;
         }
 
@@ -358,13 +354,11 @@ static int wmi_exec_query(struct flb_we *ctx, struct wmi_query_spec *spec)
         return -1;
     }
 
-    while (enumerator)
-    {
+    while (enumerator) {
         hr = enumerator->lpVtbl->Next(enumerator, WBEM_INFINITE, 1,
             &class_obj, &ret);
 
-        if(0 == ret)
-        {
+        if(0 == ret) {
             break;
         }
 
