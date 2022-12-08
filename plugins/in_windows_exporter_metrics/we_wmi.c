@@ -274,11 +274,20 @@ static inline int wmi_update_metrics(struct flb_we *ctx, struct wmi_query_spec *
 static inline int wmi_execute_query(struct flb_we *ctx, struct wmi_query_spec *spec, IEnumWbemClassObject **out_enumerator)
 {
     HRESULT hr;
-    wchar_t *wquery,  query[256];
+    wchar_t *wquery;
+    char *query = NULL;
     IEnumWbemClassObject* enumerator = NULL;
+    size_t size;
 
-    snprintf(query, 14 + strlen(spec->wmi_counter), "SELECT * FROM %s", spec->wmi_counter);
+    size = 14 + strlen(spec->wmi_counter);
+    query = flb_calloc(size, sizeof(char *));
+    if (!query) {
+        flb_errno();
+        return -1;
+    }
+    snprintf(query, size, "SELECT * FROM %s", spec->wmi_counter);
     wquery = convert_str(query);
+    flb_free(query);
 
     hr = ctx->service->lpVtbl->ExecQuery(
             ctx->service,
