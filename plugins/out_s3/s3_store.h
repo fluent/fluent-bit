@@ -50,6 +50,10 @@ int s3_store_file_read(struct flb_s3 *ctx, struct s3_file *s3_file,
                        char **out_buf, size_t *out_size);
 int s3_store_file_upload_read(struct flb_s3 *ctx, struct flb_fstore_file *fsf,
                               char **out_buf, size_t *out_size);
+
+flb_sds_t s3_store_prepare_final_csv(struct flb_s3 *ctx, void *data, size_t bytes,
+                                     int add_columns);
+
 struct flb_fstore_file *s3_store_file_upload_get(struct flb_s3 *ctx,
                                                  char *key, int key_len);
 
