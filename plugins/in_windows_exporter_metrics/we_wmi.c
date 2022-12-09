@@ -237,7 +237,7 @@ static inline int wmi_update_metrics(struct flb_we *ctx, struct wmi_query_spec *
     char *strlabel;
     char *metric_label_set[WE_WMI_METRIC_LABEL_LIST_SIZE];
     int metric_label_count = 0;
-    char buf[16];
+    char buf[16] = {0};
     wchar_t *wlabel;
 
     VariantInit(&prop);
