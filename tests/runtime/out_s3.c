@@ -387,10 +387,25 @@ static void cb_check_format_json_log_key(void *ctx, int ffd,
     flb_sds_destroy(res_data);
 }
 
-
+/* default CSV */
 static void cb_check_format_csv(void *ctx, int ffd,
                                 int res_ret, void *res_data, size_t res_size,
                                 void *data)
+{
+    int ret;
+
+    /* expected output */
+    char *out = "\"1670523584.0\",\"aa\"\"a\",\"bbb\"\n";
+
+    ret = strncmp(res_data, out, res_size);
+    TEST_CHECK(ret == 0);
+    flb_sds_destroy(res_data);
+}
+
+/* CSV with column headers */
+static void cb_check_format_csv_column_names(void *ctx, int ffd,
+                                             int res_ret, void *res_data, size_t res_size,
+                                             void *data)
 {
     int ret;
 
@@ -411,6 +426,17 @@ static void cb_check_format_csv_log_key(void *ctx, int ffd,
      * only difference is that the caller put the content inside a 'message' key.
      */
     cb_check_format_csv(ctx, ffd, res_ret, res_data, res_size, data);
+}
+
+static void cb_check_format_csv_log_key_column_names(void *ctx, int ffd,
+                                                     int res_ret, void *res_data, size_t res_size,
+                                                     void *data)
+{
+    /*
+     * we use the same callback for normal CSV since we are testing the same content. The
+     * only difference is that the caller put the content inside a 'message' key.
+     */
+    cb_check_format_csv_column_names(ctx, ffd, res_ret, res_data, res_size, data);
 }
 
 void flb_test_s3_format_json()
@@ -504,7 +530,7 @@ void flb_test_s3_format_csv()
     int in_ffd;
     int out_ffd;
     flb_ctx_t *ctx;
-    char *fmt_json = "[1670523584, {\"col1\": \"aa\"a\", \"col2\": \"bbb\"}]";
+    char *fmt_json = "[1670523584, {\"col1\": \"aa\\\"a\", \"col2\": \"bbb\"}]";
 
     /* mocks calls- signals that we are in test mode */
     setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
@@ -529,7 +555,6 @@ void flb_test_s3_format_csv()
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
                               cb_check_format_csv,
                               NULL, NULL);
-
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
 
@@ -540,6 +565,49 @@ void flb_test_s3_format_csv()
     flb_destroy(ctx);
 }
 
+void flb_test_s3_format_csv_column_names()
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    flb_ctx_t *ctx;
+    char *fmt_json = "[1670523584, {\"col1\": \"aa\\\"a\", \"col2\": \"bbb\"}]";
+
+    /* mocks calls- signals that we are in test mode */
+    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+
+    out_ffd = flb_output(ctx, (char *) "s3", NULL);
+    TEST_CHECK(out_ffd >= 0);
+
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "retry_limit", "1", NULL);
+
+    /* format as CSV */
+    flb_output_set(ctx, out_ffd, "format", "csv", NULL);
+
+    /* add CSV column headers */
+    flb_output_set(ctx, out_ffd, "csv_column_names", "true", NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_format_csv
+                              NULL, NULL);
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd, (char *) fmt_json, strlen(fmt_json));
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
 
 void flb_test_s3_format_csv_log_key()
 {
@@ -586,6 +654,54 @@ void flb_test_s3_format_csv_log_key()
     flb_destroy(ctx);
 }
 
+void flb_test_s3_format_csv_log_key_column_names()
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    flb_ctx_t *ctx;
+    char *fmt_json = "[1670523584, {\"message\": {\"col1\": \"aa\"a\", \"col2\": \"bbb\"}}]";
+
+    /* mocks calls- signals that we are in test mode */
+    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+
+    out_ffd = flb_output(ctx, (char *) "s3", NULL);
+    TEST_CHECK(out_ffd >= 0);
+
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "retry_limit", "1", NULL);
+
+    /* format as CSV */
+    flb_output_set(ctx, out_ffd, "format", "csv", NULL);
+
+    /* add CSV column headers */
+    flb_output_set(ctx, out_ffd, "csv_column_names", "true", NULL);
+
+    /* only process the content of key 'message' */
+    flb_output_set(ctx, out_ffd,"log_key", "message", NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_format_csv_log_key_column_names,
+                              NULL, NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd, (char *) fmt_json, strlen(fmt_json));
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
     {"multipart_success", flb_test_s3_multipart_success },
@@ -596,10 +712,12 @@ TEST_LIST = {
     {"complete_upload_error", flb_test_s3_complete_upload_error },
 
     /* formatters */
-    {"format_json"        , flb_test_s3_format_json },
-    {"format_json_log_key", flb_test_s3_format_json_log_key },
-    {"format_csv"         , flb_test_s3_format_csv },
-    {"format_csv_log_key" , flb_test_s3_format_csv_log_key },
+    {"format_json"                     , flb_test_s3_format_json },
+    {"format_json_log_key"             , flb_test_s3_format_json_log_key },
+    {"format_csv"                      , flb_test_s3_format_csv },
+    {"format_csv_column_names"         , flb_test_s3_format_csv_column_names },
+    {"format_csv_log_key"              , flb_test_s3_format_csv_log_key },
+    {"format_csv_log_key_column_names" , flb_test_s3_format_csv_log_key_column_names },
 
     {NULL, NULL}
 };
