@@ -2178,6 +2178,7 @@ static int s3_format_test(struct flb_config *config,
                           const void *data, size_t bytes,
                           void **out_data, size_t *out_size)
 {
+    int add_columns;
     int total_records;
     flb_sds_t chunk = NULL;
     flb_sds_t tmp;
@@ -2185,7 +2186,6 @@ static int s3_format_test(struct flb_config *config,
 
     /* Count number of records */
     total_records = flb_mp_count(data, bytes);
-
     chunk = s3_format(ctx, total_records,
                      (char *) tag, tag_len, data, bytes);
     if (chunk == NULL) {
@@ -2199,7 +2199,8 @@ static int s3_format_test(struct flb_config *config,
      * we need to detect if the file will be appended to a new object or not.
      */
     if (ctx->format == S3_FORMAT_CSV) {
-        tmp = s3_store_prepare_final_csv(ctx, chunk, flb_sds_len(chunk), FLB_TRUE);
+        add_columns = ctx->csv_column_names;
+        tmp = s3_store_prepare_final_csv(ctx, chunk, flb_sds_len(chunk), add_columns);
         if (!tmp) {
             flb_sds_destroy(chunk);
             return -1;
