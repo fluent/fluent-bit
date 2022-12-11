@@ -774,9 +774,11 @@ static int cb_s3_init(struct flb_output_instance *ins,
     if (tmp) {
         if (!strcasecmp(tmp, "json")) {
             ctx->format = S3_FORMAT_JSON;
+            flb_plg_debug(ctx->ins, "using 'json' data format");
         }
         else if (!strcasecmp(tmp, "csv")) {
             ctx->format = S3_FORMAT_CSV;
+            flb_plg_debug(ctx->ins, "using 'csv' data format");
         }
         else {
             flb_plg_error(ctx->ins, "Invalid 'format' property '%s'", tmp);
