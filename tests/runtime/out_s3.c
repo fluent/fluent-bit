@@ -597,7 +597,7 @@ void flb_test_s3_format_csv_column_names()
 
     /* Enable test mode */
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_format_csv
+                              cb_check_format_csv_column_names,
                               NULL, NULL);
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
