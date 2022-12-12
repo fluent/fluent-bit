@@ -28,6 +28,7 @@
 #endif
 #include <lm.h>
 #include <psapi.h>
+#include <timezoneapi.h>
 
 #include "we.h"
 #include "we_os.h"
@@ -62,6 +63,14 @@ int we_os_init(struct flb_we *ctx)
         return -1;
     }
     ctx->os->physical_memory_free_bytes = g;
+
+    g = cmt_gauge_create(ctx->cmt, "windows", "os", "timezone",
+                         "Name of Local Timezone",
+                         1, (char *[]) {"timezone"});
+    if (!g) {
+        return -1;
+    }
+    ctx->os->tz = g;
 
     g = cmt_gauge_create(ctx->cmt, "windows", "os", "virtual_memory_bytes",
                          "Total amount of bytes of virtual memory",
@@ -153,6 +162,9 @@ int we_os_update(struct flb_we *ctx)
     DWORD caption_len = sizeof(caption), build_len = sizeof(build_number);
     uint64_t timestamp = 0;
     char label_caption[90];
+    TIME_ZONE_INFORMATION tzi;
+    DWORD tztype = 0;
+    char *displaytz;
 
     if (!ctx->os->operational) {
         flb_plg_error(ctx->ins, "os collector not yet in operational state");
@@ -199,6 +211,28 @@ int we_os_update(struct flb_we *ctx)
         }
         flb_plg_error(ctx->ins, "A system error has occurred: %d\n", status);
         return -1;
+    }
+
+    tztype = GetTimeZoneInformation(&tzi);
+    switch (tztype) {
+    case TIME_ZONE_ID_STANDARD:
+        displaytz = we_convert_wstr(tzi.StandardName, CP_UTF8);
+        cmt_gauge_set(ctx->os->tz, timestamp, 1.0, 1, (char *[]) {displaytz});
+        flb_free(displaytz);
+        break;
+    case TIME_ZONE_ID_DAYLIGHT:
+        displaytz = we_convert_wstr(tzi.DaylightName, CP_UTF8);
+        cmt_gauge_set(ctx->os->tz, timestamp, 1.0, 1, (char *[]) {displaytz});
+        flb_free(displaytz);
+        break;
+    case TIME_ZONE_ID_UNKNOWN:
+        /* The current timezone does not use daylight saving time. */
+        displaytz = we_convert_wstr(tzi.StandardName, CP_UTF8);
+        cmt_gauge_set(ctx->os->tz, timestamp, 1.0, 1, (char *[]) {displaytz});
+        flb_free(displaytz);
+        break;
+    default:
+        flb_plg_error(ctx->ins, "Error to retrieve timezone information with status: %d", GetLastError());
     }
 
     statex.dwLength = sizeof (statex);
