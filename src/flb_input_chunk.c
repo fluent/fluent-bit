@@ -50,8 +50,6 @@
 #define FLB_INPUT_CHUNK_RELEASE_SCOPE_LOCAL  0
 #define FLB_INPUT_CHUNK_RELEASE_SCOPE_GLOBAL 1
 
-#ifdef FLB_HAVE_IN_STORAGE_BACKLOG
-
 struct input_chunk_raw {
     struct flb_input_instance *ins;
     int event_type;
@@ -61,6 +59,7 @@ struct input_chunk_raw {
     size_t buf_size;
 };
 
+#ifdef FLB_HAVE_IN_STORAGE_BACKLOG
 
 extern ssize_t sb_get_releasable_output_queue_space(struct flb_output_instance *output_plugin,
                                                     size_t                      required_space);
