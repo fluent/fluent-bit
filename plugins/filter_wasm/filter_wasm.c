@@ -67,7 +67,7 @@ static int cb_wasm_filter(const void *data, size_t bytes,
     struct flb_time t;
     struct flb_filter_wasm *ctx = filter_context;
 
-    wasm = flb_wasm_instantiate(config, ctx->wasm_path, ctx->accessible_dir_list, -1, -1, -1);
+    wasm = flb_wasm_instantiate(config, ctx->wasm_path, ctx->accessible_dir_list, NULL, -1, -1, -1);
     if (wasm == NULL) {
         flb_plg_debug(ctx->ins, "instantiate wasm [%s] failed", ctx->wasm_path);
         goto on_error;

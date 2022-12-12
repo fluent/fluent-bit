@@ -69,7 +69,10 @@ static int in_exec_wasi_collect(struct flb_input_instance *ins,
         }
     }
 
-    wasm = flb_wasm_instantiate(config, ctx->wasi_path, ctx->accessible_dir_list, -1, fileno(stdoutp), -1);
+    wasm = flb_wasm_instantiate(config, ctx->wasi_path,
+                                ctx->accessible_dir_list, 
+                                ctx->address_pool,
+                                -1, fileno(stdoutp), -1);
     if (wasm == NULL) {
         flb_plg_debug(ctx->ins, "instantiate wasm [%s] failed", ctx->wasi_path);
         goto collect_end;
@@ -239,7 +242,7 @@ static int in_exec_wasi_init(struct flb_input_instance *in,
     int ret = -1;
 
     /* Allocate space for the configuration */
-    ctx = flb_malloc(sizeof(struct flb_exec_wasi));
+    ctx = flb_calloc(1, sizeof(struct flb_exec_wasi));
     if (!ctx) {
         return -1;
     }
@@ -361,6 +364,13 @@ static struct flb_config_map config_map[] = {
       0, FLB_TRUE, offsetof(struct flb_exec_wasi, oneshot),
       "execute the command only once"
     },
+#ifdef FLB_WASI_SOCKETS
+    {
+      FLB_CONFIG_MAP_CLIST, "address_pool", "127.0.0.1",
+      0, FLB_TRUE, offsetof(struct flb_exec_wasi, address_pool),
+      "Address Pool for WASI sockets"
+    },
+#endif
     /* EOF */
     {0}
 };

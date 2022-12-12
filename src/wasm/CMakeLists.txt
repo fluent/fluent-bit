@@ -109,3 +109,7 @@ if (WAMR_BUILD_LIBC_UVWASI)
 else ()
   target_link_libraries(flb-wasm-static vmlib-static ${JEMALLOC_LIBS})
 endif()
+
+if (FLB_WASI_SOCKETS)
+  add_definitions(-DFLB_WASI_SOCKETS=1)
+endif()

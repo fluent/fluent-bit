@@ -26,6 +26,12 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_time.h>
 
+#ifdef __wasi__
+#ifdef FLB_WASI_SOCKETS
+#include <wasi_socket_ext.h>
+#endif // FLB_WASI_SOCKETS
+#endif
+
 /* WASM Context */
 struct flb_wasm {
     wasm_module_t module;
@@ -37,11 +43,15 @@ struct flb_wasm {
     char *buffer;
     void *config;          /* Fluent Bit context      */
     struct mk_list _head;  /* Link to flb_config->wasm */
+#ifdef FLB_WASI_SOCKETS
+    char **addr_pool;
+#endif
 };
 
 void flb_wasm_init(struct flb_config *config);
 struct flb_wasm *flb_wasm_instantiate(struct flb_config *config, const char *wasm_path,
                                       struct mk_list *acessible_dir_list,
+                                      struct mk_list *address_pool,
                                       int stdinfd, int stdoutfd, int stderrfd);
 
 char *flb_wasm_call_function_format_json(struct flb_wasm *fw, const char *function_name,

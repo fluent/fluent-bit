@@ -74,8 +74,39 @@ error:
     return -1;
 }
 
+#ifdef FLB_WASI_SOCKETS
+static int set_address_pool(struct flb_wasm *wasm, wasm_module_t module, struct mk_list *address_pool)
+{
+    char **addr_pool;
+    int i = 0;
+    struct mk_list *head;
+    struct flb_slist_entry *entry;
+
+
+    addr_pool = flb_calloc(mk_list_size(address_pool), sizeof(char *));
+    if (addr_pool == NULL) {
+        return 1;
+    }
+
+    wasm->addr_pool = addr_pool;
+
+    mk_list_foreach(head, address_pool) {
+        entry = mk_list_entry(head, struct flb_slist_entry, _head);
+        addr_pool[i] = entry->str;
+        flb_debug("add %s to the address pool", entry->str);
+        i++;
+    }
+
+    wasm_runtime_set_wasi_addr_pool(module, (const char **)addr_pool, 1);
+
+    flb_debug("succesfully set the address pool");
+    return 0;
+}
+#endif // FLB_WASI_SOCKETS
+
 struct flb_wasm *flb_wasm_instantiate(struct flb_config *config, const char *wasm_path,
                                       struct mk_list *accessible_dir_list,
+                                      struct mk_list *address_pool,
                                       int stdinfd, int stdoutfd, int stderrfd)
 {
     struct flb_wasm *fw;
@@ -96,7 +127,7 @@ struct flb_wasm *flb_wasm_instantiate(struct flb_config *config, const char *was
 
     RuntimeInitArgs wasm_args;
 
-    fw = flb_malloc(sizeof(struct flb_wasm));
+    fw = flb_calloc(1, sizeof(struct flb_wasm));
     if (!fw) {
         flb_errno();
         return NULL;
@@ -138,6 +169,14 @@ struct flb_wasm *flb_wasm_instantiate(struct flb_config *config, const char *was
         flb_error("Load wasm module failed. error: %s", error_buf);
         goto error;
     }
+
+#ifdef FLB_WASI_SOCKETS
+    // the address pool must be set before running wasm_runtime_set_wasi_args_ex
+    // otherwise it will be ignored.
+    if (address_pool) {
+        set_address_pool(fw, module, address_pool);
+    }
+#endif
 
 #if WASM_ENABLE_LIBC_WASI != 0
     wasm_runtime_set_wasi_args_ex(module, wasi_dir_list, accessible_dir_list_size, NULL, 0,
@@ -280,6 +319,11 @@ void flb_wasm_destroy(struct flb_wasm *fw)
     if (fw->buffer) {
         BH_FREE(fw->buffer);
     }
+#ifdef FLB_WASI_SOCKETS
+    if (fw->addr_pool) {
+        flb_free(fw->addr_pool);
+    }
+#endif
     wasm_runtime_destroy();
 
     mk_list_del(&fw->_head);

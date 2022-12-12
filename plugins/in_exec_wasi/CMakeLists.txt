@@ -6,6 +6,10 @@ set(WASM_INCLUDE_DIRS
 set(src
   in_exec_wasi.c)
 
+if (FLB_WASI_SOCKETS)
+  add_definitions(-DFLB_WASI_SOCKETS=1)
+endif()
+
 FLB_PLUGIN(in_exec_wasi "${src}" "")
 target_include_directories(flb-plugin-in_exec_wasi PRIVATE ${WASM_INCLUDE_DIRS})
 target_link_libraries(flb-plugin-in_exec_wasi flb-wasm-static vmlib-static)

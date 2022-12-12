@@ -131,6 +131,7 @@ option(FLB_ARROW               "Build with Apache Arrow support"             No)
 option(FLB_WINDOWS_DEFAULTS    "Build with predefined Windows settings"     Yes)
 option(FLB_WASM                "Build with WASM runtime support"            Yes)
 option(FLB_WAMRC               "Build with WASM AOT compiler executable"    No)
+option(FLB_WASI_SOCKETS        "Build with WASI Sockets support"            No)
 
 # Native Metrics Support (cmetrics)
 option(FLB_METRICS             "Enable metrics support"       Yes)

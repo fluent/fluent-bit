@@ -47,6 +47,7 @@ struct flb_exec_wasi {
     flb_pipefd_t ch_manager[2];
     int interval_sec;
     int interval_nsec;
+    struct mk_list *address_pool;
 };
 
 #endif /* FLB_IN_EXEC_WASI_H */
