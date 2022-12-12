@@ -1678,7 +1678,6 @@ static int send_upload_request(void *out_context, flb_sds_t chunk,
 
     /* Create buffer to upload to S3 */
     ret = construct_request_buffer(ctx, chunk, upload_file, &buffer, &buffer_size);
-    flb_sds_destroy(chunk);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Could not construct request buffer for %s",
                       upload_file->file_path);
@@ -1699,8 +1698,6 @@ static int buffer_chunk(void *out_context, struct s3_file *upload_file, flb_sds_
     struct flb_s3 *ctx = out_context;
 
     ret = s3_store_buffer_put(ctx, upload_file, tag, tag_len, chunk, (size_t) chunk_size);
-    flb_sds_destroy(chunk);
-
     if (ret < 0) {
         flb_plg_warn(ctx->ins, "Could not buffer chunk. Data order preservation "
                      "will be compromised");
