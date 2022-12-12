@@ -64,6 +64,14 @@ int we_os_init(struct flb_we *ctx)
     }
     ctx->os->physical_memory_free_bytes = g;
 
+    g = cmt_gauge_create(ctx->cmt, "windows", "os", "time",
+                         "Value of Local Time",
+                         0, NULL);
+    if (!g) {
+        return -1;
+    }
+    ctx->os->time = g;
+
     g = cmt_gauge_create(ctx->cmt, "windows", "os", "timezone",
                          "Name of Local Timezone",
                          1, (char *[]) {"timezone"});
@@ -212,6 +220,8 @@ int we_os_update(struct flb_we *ctx)
         flb_plg_error(ctx->ins, "A system error has occurred: %d\n", status);
         return -1;
     }
+
+    cmt_gauge_set(ctx->os->time, timestamp, (double)timestamp/1000000000L, 0, NULL);
 
     tztype = GetTimeZoneInformation(&tzi);
     switch (tztype) {

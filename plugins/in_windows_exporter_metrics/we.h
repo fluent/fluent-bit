@@ -122,6 +122,7 @@ struct we_os_counters {
     struct cmt_gauge *info;
     struct cmt_gauge *users;
     struct cmt_gauge *physical_memory_free_bytes;
+    struct cmt_gauge *time;
     struct cmt_gauge *tz;
     struct cmt_gauge *virtual_memory_free_bytes;
     struct cmt_gauge *processes_limit;
