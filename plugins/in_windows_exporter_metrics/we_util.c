@@ -116,3 +116,51 @@ void we_hexdump(uint8_t *buffer, size_t buffer_length, size_t line_length) {
 
     free(printable_line);
 }
+
+char* we_convert_wstr(wchar_t *wstr, UINT codePage)
+{
+    int size = 0;
+    char *buf = NULL;
+
+    size = WideCharToMultiByte(codePage, 0, wstr, -1, NULL, 0, NULL, NULL);
+    if (size == 0) {
+        return NULL;
+    }
+
+    buf = flb_malloc(size);
+    if (buf == NULL) {
+        flb_errno();
+        return NULL;
+    }
+    size = WideCharToMultiByte(codePage, 0, wstr, -1, buf, size, NULL, NULL);
+    if (size == 0) {
+        flb_free(buf);
+        return NULL;
+    }
+
+    return buf;
+}
+
+wchar_t* we_convert_str(char *str)
+{
+    int size = 0;
+    wchar_t *buf = NULL;
+
+    size = MultiByteToWideChar(CP_UTF8, 0, str, -1, NULL, 0);
+    if (size == 0) {
+        return NULL;
+    }
+
+    buf = flb_malloc(sizeof(PWSTR) * size);
+    if (buf == NULL) {
+        flb_errno();
+        return NULL;
+    }
+    size = MultiByteToWideChar(CP_UTF8, 0, str, -1, buf, size);
+    if (size == 0) {
+        flb_free(buf);
+        return NULL;
+    }
+
+    return buf;
+}
