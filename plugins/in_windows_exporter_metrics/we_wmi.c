@@ -25,10 +25,8 @@
 #include <fluent-bit/flb_pack.h>
 
 #include "we.h"
+#include "we_util.h"
 #include "we_wmi.h"
-
-static char* convert_wstr(wchar_t *wstr, UINT codePage);
-static wchar_t* convert_str(char *str);
 
 static int wmi_coinitialize(struct flb_we *ctx, char* wmi_namespace)
 {
@@ -72,10 +70,10 @@ static int wmi_coinitialize(struct flb_we *ctx, char* wmi_namespace)
     ctx->locator = locator;
 
     if (wmi_namespace == NULL) {
-        wnamespace = convert_str("ROOT\\CIMV2");
+        wnamespace = we_convert_str("ROOT\\CIMV2");
     }
     else {
-        wnamespace = convert_str(wmi_namespace);
+        wnamespace = we_convert_str(wmi_namespace);
     }
     /* Connect WMI server */
     hr = locator->lpVtbl->ConnectServer(locator,
@@ -118,53 +116,7 @@ static int wmi_coinitialize(struct flb_we *ctx, char* wmi_namespace)
     return 0;
 }
 
-static char* convert_wstr(wchar_t *wstr, UINT codePage)
-{
-    int size = 0;
-    char *buf = NULL;
 
-    size = WideCharToMultiByte(codePage, 0, wstr, -1, NULL, 0, NULL, NULL);
-    if (size == 0) {
-        return NULL;
-    }
-
-    buf = flb_malloc(size);
-    if (buf == NULL) {
-        flb_errno();
-        return NULL;
-    }
-    size = WideCharToMultiByte(codePage, 0, wstr, -1, buf, size, NULL, NULL);
-    if (size == 0) {
-        flb_free(buf);
-        return NULL;
-    }
-
-    return buf;
-}
-
-static wchar_t* convert_str(char *str)
-{
-    int size = 0;
-    wchar_t *buf = NULL;
-
-    size = MultiByteToWideChar(CP_UTF8, 0, str, -1, NULL, 0);
-    if (size == 0) {
-        return NULL;
-    }
-
-    buf = flb_malloc(sizeof(PWSTR) * size);
-    if (buf == NULL) {
-        flb_errno();
-        return NULL;
-    }
-    size = MultiByteToWideChar(CP_UTF8, 0, str, -1, buf, size);
-    if (size == 0) {
-        flb_free(buf);
-        return NULL;
-    }
-
-    return buf;
-}
 
 int wmi_utils_str_to_double(char *str, double *out_val)
 {
@@ -207,14 +159,14 @@ static double wmi_get_value(struct flb_we *ctx, struct wmi_query_spec *spec, IWb
     wchar_t *wproperty;
 
     VariantInit(&prop);
-    wproperty = convert_str(spec->wmi_property);
+    wproperty = we_convert_str(spec->wmi_property);
     hr = class_obj->lpVtbl->Get(class_obj, wproperty, 0, &prop, 0, 0);
     switch(prop.vt) {
     case VT_I4:
         val = prop.lVal;
         break;
     case VT_BSTR:
-        strprop = convert_wstr(prop.bstrVal, CP_UTF8);
+        strprop = we_convert_wstr(prop.bstrVal, CP_UTF8);
         wmi_utils_str_to_double(strprop, &val);
         flb_free(strprop);
         break;
@@ -243,7 +195,7 @@ static inline int wmi_update_metrics(struct flb_we *ctx, struct wmi_query_spec *
     VariantInit(&prop);
     metric_label_count = 0;
     for (label_index = 0; label_index < spec->label_property_count; label_index++) {
-        wlabel = convert_str(spec->label_property_keys[label_index]);
+        wlabel = we_convert_str(spec->label_property_keys[label_index]);
         hr = class_obj->lpVtbl->Get(class_obj, wlabel, 0, &prop, 0, 0);
         switch(prop.vt) {
         case VT_I4:
@@ -252,7 +204,7 @@ static inline int wmi_update_metrics(struct flb_we *ctx, struct wmi_query_spec *
             metric_label_count++;
             break;
         case VT_BSTR:
-            strlabel = convert_wstr(prop.bstrVal, CP_UTF8);
+            strlabel = we_convert_wstr(prop.bstrVal, CP_UTF8);
             metric_label_set[label_index] = strdup(strlabel);
             metric_label_count++;
             free(strlabel);
@@ -286,7 +238,7 @@ static inline int wmi_execute_query(struct flb_we *ctx, struct wmi_query_spec *s
         return -1;
     }
     snprintf(query, size, "SELECT * FROM %s", spec->wmi_counter);
-    wquery = convert_str(query);
+    wquery = we_convert_str(query);
     flb_free(query);
 
     hr = ctx->service->lpVtbl->ExecQuery(
