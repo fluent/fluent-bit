@@ -96,13 +96,13 @@ static void pipeline_config_add_properties(flb_sds_t *buf, struct mk_list *props
             flb_sds_printf(buf, "    %s ", kv->key);
 
             if (is_sensitive_property(kv->key)) {
-                flb_sds_cat(*buf, "--redacted--", strlen("--redacted--"));
+                flb_sds_cat_safe(*buf, "--redacted--", strlen("--redacted--"));
             }
             else {
-                flb_sds_cat(*buf, kv->val, strlen(kv->val));
+                flb_sds_cat_safe(*buf, kv->val, strlen(kv->val));
             }
 
-            flb_sds_cat(*buf, "\n", 1);
+            flb_sds_cat_safe(*buf, "\n", 1);
         }
     }
 }
