@@ -31,6 +31,7 @@
 /* collectors */
 #include "we_cpu.h"
 #include "we_os.h"
+#include "we_net.h"
 
 static void update_metrics(struct flb_input_instance *ins, struct flb_we *ctx)
 {
@@ -53,6 +54,7 @@ static void update_metrics(struct flb_input_instance *ins, struct flb_we *ctx)
     /* Update our metrics */
     we_cpu_update(ctx);
     we_os_update(ctx);
+    we_net_update(ctx);
     we_wmi_thermalzone_update(ctx);
     we_wmi_cpu_info_update(ctx);
     we_wmi_logon_update(ctx);
@@ -169,6 +171,12 @@ static int in_we_init(struct flb_input_instance *in,
         return -1;
     }
 
+    /* Initialize net metric collectors */
+    ret = we_net_init(ctx);
+    if (ret) {
+        return -1;
+    }
+
     /* Initialize thermalzone metric collectors */
     ret = we_wmi_thermalzone_init(ctx);
     if (ret) {
@@ -202,6 +210,7 @@ static int in_we_exit(void *data, struct flb_config *config)
     we_wmi_cpu_info_exit(ctx);
     we_wmi_logon_exit(ctx);
     we_os_exit(ctx);
+    we_net_exit(ctx);
 
     flb_we_config_destroy(ctx);
 
