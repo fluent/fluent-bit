@@ -479,6 +479,10 @@ static int opensearch_format(struct flb_config *config,
             index = index_formatted;
         }
         else if (ctx->ra_index) {
+            // free any previous ra_index to avoid memory leaks.
+            if (ra_index != NULL) {
+                flb_sds_destroy(ra_index);
+            }
             /* a record accessor pattern exists for the index */
             ra_index = flb_ra_translate(ctx->ra_index,
                                            (char *) tag, tag_len,
@@ -504,11 +508,6 @@ static int opensearch_format(struct flb_config *config,
                                              ctx->action,
                                              index, ctx->type);
             }
-
-            flb_sds_destroy(ra_index);
-            ra_index = NULL;
-            index = NULL;
-
         }
 
         /* Tag Key */
@@ -532,6 +531,9 @@ static int opensearch_format(struct flb_config *config,
             msgpack_sbuffer_destroy(&tmp_sbuf);
             flb_sds_destroy(bulk);
             flb_sds_destroy(j_index);
+            if (ra_index != NULL) {
+                flb_sds_destroy(ra_index);
+            }
             return -1;
         }
 
@@ -589,7 +591,9 @@ static int opensearch_format(struct flb_config *config,
             msgpack_unpacked_destroy(&result);
             flb_sds_destroy(bulk);
             flb_sds_destroy(j_index);
-            flb_sds_destroy(ra_index);
+            if (ra_index != NULL) {
+                flb_sds_destroy(ra_index);
+            }
             return -1;
         }
 
@@ -600,8 +604,10 @@ static int opensearch_format(struct flb_config *config,
             flb_sds_destroy(bulk);
             flb_sds_destroy(j_index);
             flb_sds_destroy(out_buf);
+            if (ra_index != NULL) {
+                flb_sds_destroy(ra_index);
+            }
             return -1;
-
         }
 
         if (strcasecmp(ctx->write_operation, FLB_OS_WRITE_OP_UPDATE) == 0) {
@@ -630,6 +636,9 @@ static int opensearch_format(struct flb_config *config,
             flb_sds_destroy(bulk);
             flb_sds_destroy(j_index);
             flb_sds_destroy(out_buf);
+            if (ra_index != NULL) {
+                flb_sds_destroy(ra_index);
+            }
             return -1;
         }
 
@@ -647,6 +656,9 @@ static int opensearch_format(struct flb_config *config,
     *out_data = bulk;
     *out_size = flb_sds_len(bulk);
 
+    if (ra_index != NULL) {
+        flb_sds_destroy(ra_index);
+    }
     /*
      * Note: we don't destroy the bulk as we need to keep the allocated
      * buffer with the data. Instead we just release the bulk context and
