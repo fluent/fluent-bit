@@ -3,6 +3,7 @@ set(src
   we.c
   we_cpu.c
   we_os.c
+  we_net.c
   we_wmi.c
   we_util.c
   we_metric.c
