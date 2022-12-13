@@ -507,8 +507,6 @@ static int opensearch_format(struct flb_config *config,
 
             flb_sds_destroy(ra_index);
             ra_index = NULL;
-            index = NULL;
-
         }
 
         /* Tag Key */
