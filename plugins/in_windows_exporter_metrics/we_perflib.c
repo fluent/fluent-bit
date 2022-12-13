@@ -750,7 +750,7 @@ static int we_perflib_process_instance(struct we_perflib_context   *context,
 
     offset = 0;
 
-    if (perflib_object->instance_count > 1) {
+    if (perflib_object->instance_count >= 1) {
         perf_instance_definition = (PERF_INSTANCE_DEFINITION *) input_data_block;
 
         if (perf_instance_definition->NameLength > 0) {
