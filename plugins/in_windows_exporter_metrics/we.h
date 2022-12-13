@@ -107,6 +107,14 @@ struct we_net_counters {
     char                            *query;
 };
 
+struct we_logical_disk_counters {
+    struct we_perflib_metric_source *metric_sources;
+    struct we_perflib_metric_spec   *metric_specs;
+    int                              operational;
+    struct flb_hash_table           *metrics;
+    char                            *query;
+};
+
 struct wmi_query_spec;
 
 struct we_wmi_thermal_counters {
@@ -164,6 +172,7 @@ struct flb_we {
 
     struct we_cpu_counters cpu;
     struct we_net_counters net;
+    struct we_logical_disk_counters logical_disk;
     struct we_os_counters *os;
     struct we_wmi_thermal_counters *wmi_thermals;
     struct we_wmi_cpu_info_counters *wmi_cpu_info;

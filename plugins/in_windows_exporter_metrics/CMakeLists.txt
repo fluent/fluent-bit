@@ -4,6 +4,7 @@ set(src
   we_cpu.c
   we_os.c
   we_net.c
+  we_logical_disk.c
   we_wmi.c
   we_util.c
   we_metric.c
