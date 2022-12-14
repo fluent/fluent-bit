@@ -339,8 +339,14 @@ static int wmi_cleanup(struct flb_we *ctx)
     flb_plg_debug(ctx->ins, "deinitializing WMI instance....");
 
     /* Clean up */
-    ctx->service->lpVtbl->Release(ctx->service);
-    ctx->locator->lpVtbl->Release(ctx->locator);
+    if (ctx->service != NULL) {
+        ctx->service->lpVtbl->Release(ctx->service);
+        ctx->service = NULL;
+    }
+    if (ctx->locator != NULL) {
+        ctx->locator->lpVtbl->Release(ctx->locator);
+        ctx->locator = NULL;
+    }
     CoUninitialize();
 
     return 0;
@@ -390,6 +396,9 @@ static int wmi_query_fixed_val(struct flb_we *ctx, struct wmi_query_spec *spec)
 
 int we_wmi_init(struct flb_we *ctx)
 {
+    ctx->locator = NULL;
+    ctx->service = NULL;
+
     return 0;
 }
 
