@@ -149,6 +149,13 @@ struct we_os_counters {
     int operational;
 };
 
+struct we_cs_counters {
+    struct cmt_gauge *logical_processors;
+    struct cmt_gauge *physical_memory_bytes;
+    struct cmt_gauge *hostname;
+    int operational;
+};
+
 struct flb_we {
     /* configuration */
     int scrape_interval;
@@ -173,6 +180,7 @@ struct flb_we {
     struct we_cpu_counters cpu;
     struct we_net_counters net;
     struct we_logical_disk_counters logical_disk;
+    struct we_cs_counters cs;
     struct we_os_counters *os;
     struct we_wmi_thermal_counters *wmi_thermals;
     struct we_wmi_cpu_info_counters *wmi_cpu_info;
