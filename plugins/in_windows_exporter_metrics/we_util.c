@@ -127,7 +127,7 @@ char* we_convert_wstr(wchar_t *wstr, UINT codePage)
         return NULL;
     }
 
-    buf = flb_malloc(size);
+    buf = flb_calloc(1, size);
     if (buf == NULL) {
         flb_errno();
         return NULL;
@@ -151,7 +151,7 @@ wchar_t* we_convert_str(char *str)
         return NULL;
     }
 
-    buf = flb_malloc(sizeof(PWSTR) * size);
+    buf = flb_calloc(1, sizeof(PWSTR) * size);
     if (buf == NULL) {
         flb_errno();
         return NULL;
