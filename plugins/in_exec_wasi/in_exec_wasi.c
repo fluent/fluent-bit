@@ -69,6 +69,12 @@ static int in_exec_wasi_collect(struct flb_input_instance *ins,
         }
     }
 
+#ifndef FLB_WASI_SOCKETS
+    if (ctx->address_pool != NULL) {
+        flb_plg_warn(ctx->ins, "unable to set address pool, WASI sockets are disabled in this build.");
+    }
+#endif
+
     wasm = flb_wasm_instantiate(config, ctx->wasi_path,
                                 ctx->accessible_dir_list, 
                                 ctx->address_pool,
@@ -367,6 +373,14 @@ static struct flb_config_map config_map[] = {
 #ifdef FLB_WASI_SOCKETS
     {
       FLB_CONFIG_MAP_CLIST, "address_pool", "127.0.0.1",
+      0, FLB_TRUE, offsetof(struct flb_exec_wasi, address_pool),
+      "Address Pool for WASI sockets"
+    },
+#else
+    // warn users if they set the address pool and sockets are
+    // not enabled.
+    {
+      FLB_CONFIG_MAP_CLIST, "address_pool", NULL,
       0, FLB_TRUE, offsetof(struct flb_exec_wasi, address_pool),
       "Address Pool for WASI sockets"
     },

@@ -121,6 +121,10 @@ struct flb_wasm *flb_wasm_instantiate(struct flb_config *config, const char *was
     size_t dir_index = 0;
 #endif
 
+#ifdef FLB_WASI_SOCKETS
+    const char **default_address_pool = {"127.0.0.1"};
+#endif
+
     wasm_module_t module = NULL;
     wasm_module_inst_t module_inst = NULL;
     wasm_exec_env_t exec_env = NULL;
@@ -175,6 +179,9 @@ struct flb_wasm *flb_wasm_instantiate(struct flb_config *config, const char *was
     // otherwise it will be ignored.
     if (address_pool) {
         set_address_pool(fw, module, address_pool);
+    } else {
+        flb_warn("setting address pool to default with 127.0.0.1.");
+        wasm_runtime_set_wasi_addr_pool(module, default_address_pool, 1);
     }
 #endif
 
