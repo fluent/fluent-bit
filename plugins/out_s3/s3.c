@@ -1989,7 +1989,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     }
 
     /* Throw error once per chunk if at least one log key was not found */
-    if (log_key_missing == FLB_TRUE) {
+    if (log_key_missing > 0) {
         flb_plg_error(ctx->ins, "Could not find log_key '%s' in %d records",
                       ctx->log_key, log_key_missing);
     }
