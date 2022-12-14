@@ -350,12 +350,7 @@ jobs:
 
   staging-release-images-sign:
     name: Sign container image manifests
-    permissions:
-      contents: read
-      packages: write
-      # This is used to complete the identity challenge
-      # with sigstore/fulcio when running outside of PRs.
-      id-token: write
+    permissions: write-all
     runs-on: ubuntu-latest
     environment: release
     needs: 
@@ -407,7 +402,7 @@ jobs:
         #
         # We use recursive signing on the manifest to cover all the images.
         run: |
-          cosign sign --recursive \
+          cosign sign --yes --recursive \
             -a "repo=${{ github.repository }}" \
             -a "workflow=${{ github.workflow }}" \
             -a "release=${{ github.event.inputs.version }}" \
@@ -417,7 +412,7 @@ jobs:
             "$DH_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}-debug"
         shell: bash
         env:
-          COSIGN_EXPERIMENTAL: "true"
+          COSIGN_EXPERIMENTAL: true
 
   # This will require a sign off so can be done after packages are updated to confirm
   # Until S3 bucket is set up as release will only test what is in the server from a prior release.
