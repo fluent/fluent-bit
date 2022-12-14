@@ -257,7 +257,7 @@ jobs:
 
       - name: Cosign with a key
         # Only run if we have a key defined
-        if: secrets.cosign_private_key != ''
+        if: ${{ env.COSIGN_PRIVATE_KEY }}
         # The key needs to cope with newlines
         run: |
           echo -e "${COSIGN_PRIVATE_KEY}" > /tmp/my_cosign.key
