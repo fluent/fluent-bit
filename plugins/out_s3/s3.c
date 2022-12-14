@@ -2121,8 +2121,13 @@ static void flush_init(void *out_context)
 static flb_sds_t s3_format(struct flb_s3 *ctx,
                            int total_records,
                            const char *tag, int tag_len,
-                           const void *data, size_t bytes)
+                           const void *data, size_t bytes,
+                           int csv_add_columns)
 {
+    int ret;
+    int root_type;
+    char *mp_buf;
+    size_t mp_size;
     flb_sds_t tmp = NULL;
     flb_sds_t chunk = NULL;
 
@@ -2133,36 +2138,38 @@ static flb_sds_t s3_format(struct flb_s3 *ctx,
             flb_plg_error(ctx->ins, "Could not generate records by using 'log_key' content");
             return NULL;
         }
-        chunk = tmp;
+
+        if (ctx->format == S3_FORMAT_CSV) {
+            /*
+             * Since log_key option was used, the incoming data is NOT a msgpack object,
+             * likely a JSON string message that we need to convert back so we can do the CSV formatting.
+             */
+
+            ret = flb_pack_json(data, bytes, &mp_buf, &mp_size, &root_type);
+            if (ret < 0) {
+                return NULL;
+            }
+
+            chunk = flb_pack_msgpack_to_csv_format(mp_buf, mp_size,
+                                                   FLB_FALSE, csv_add_columns);
+            flb_free(mp_buf);
+            flb_free(tmp);
+        }
+        else if (ctx->format == S3_FORMAT_JSON) {
+            chunk = tmp;
+        }
     }
     else {
-        /*
-         * if 'log_key' is not defined we create a temporary copy of the content since
-         * other parts of the plugin might try to 'release' the buffer which could
-         * generate some issues.
-         */
-        chunk = tmp = flb_sds_create_len(data, bytes);
-    }
-
-    /* JSON format: */
-    if (!ctx->log_key && ctx->format == S3_FORMAT_JSON) {
-        chunk = flb_pack_msgpack_to_json_format(tmp,
-                                                flb_sds_len(tmp),
-                                                FLB_PACK_JSON_FORMAT_LINES,
-                                                ctx->json_date_format,
-                                                ctx->date_key);
-        flb_sds_destroy(tmp);
-    }
-    else if (ctx->format == S3_FORMAT_CSV) {
-        /*
-         * CSV is a bit tricky, if the user asked to include the column names
-         * we need to know if the content will be placed in a new object or not,
-         * for hence the formatting of the CSV will happen inside the function
-         * s3_store_buffer_put().
-         *
-         * For now, just reference the duplicated buffer for safety reasons.
-         */
-        chunk = tmp;
+        if (ctx->format == S3_FORMAT_JSON) {
+            chunk = flb_pack_msgpack_to_json_format(data, bytes,
+                                                    FLB_PACK_JSON_FORMAT_LINES,
+                                                    ctx->json_date_format,
+                                                    ctx->date_key);
+        }
+        else if (ctx->format == S3_FORMAT_CSV) {
+            chunk = flb_pack_msgpack_to_csv_format(data, bytes,
+                                                   FLB_TRUE, csv_add_columns);
+        }
     }
 
     return chunk;
@@ -2177,43 +2184,22 @@ static int s3_format_test(struct flb_config *config,
                           const void *data, size_t bytes,
                           void **out_data, size_t *out_size)
 {
-    int add_columns;
     int total_records;
     flb_sds_t chunk = NULL;
-    flb_sds_t tmp;
     struct flb_s3 *ctx = plugin_context;
 
     /* Count number of records */
     total_records = flb_mp_count(data, bytes);
+
     chunk = s3_format(ctx, total_records,
-                     (char *) tag, tag_len, data, bytes);
+                     (char *) tag, tag_len, data, bytes, ctx->csv_column_names);
     if (chunk == NULL) {
         return -1;
     }
 
-    /*
-     * If the caller is using CSV format, we have to mimic the extra formatting done
-     * inside the s3_store.c in s3_store_buffer_put() function. Note that CSV needs
-     * this extra steps because if the user defined to include the CSV column names,
-     * we need to detect if the file will be appended to a new object or not.
-     */
-    if (ctx->format == S3_FORMAT_CSV) {
-        add_columns = ctx->csv_column_names;
-        tmp = s3_store_prepare_final_csv(ctx, chunk, flb_sds_len(chunk), add_columns);
-        if (!tmp) {
-            flb_sds_destroy(chunk);
-            return -1;
-        }
+    *out_data = chunk;
+    *out_size = flb_sds_len(chunk);
 
-        *out_data = tmp;
-        *out_size = flb_sds_len(tmp);
-
-        flb_sds_destroy(chunk);
-    }
-    else {
-        *out_data = chunk;
-        *out_size = flb_sds_len(chunk);
-    }
     return 0;
 }
 
@@ -2227,6 +2213,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     int chunk_size;
     int upload_timeout_check = FLB_FALSE;
     int total_file_size_check = FLB_FALSE;
+    int csv_add_columns = FLB_FALSE;
     flb_sds_t chunk = NULL;
     struct s3_file *upload_file = NULL;
     struct flb_s3 *ctx = out_context;
@@ -2235,10 +2222,21 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     /* Cleanup old buffers and initialize upload timer */
     flush_init(ctx);
 
+    /* Get a file candidate matching the given 'tag' */
+    upload_file = s3_store_file_get(ctx,
+                                    event_chunk->tag,
+                                    flb_sds_len(event_chunk->tag));
+
+
+    if (!upload_file && ctx->csv_column_names) {
+        csv_add_columns = FLB_TRUE;
+    }
+
     chunk = s3_format(ctx,
                       event_chunk->total_events,
                       event_chunk->tag, flb_sds_len(event_chunk->tag),
-                      event_chunk->data, event_chunk->size);
+                      event_chunk->data, event_chunk->size,
+                      csv_add_columns);
 
     if (chunk == NULL) {
         flb_plg_error(ctx->ins, "Could not marshal msgpack to output string");
@@ -2246,12 +2244,6 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     }
 
     chunk_size = flb_sds_len(chunk);
-
-    /* Get a file candidate matching the given 'tag' */
-    upload_file = s3_store_file_get(ctx,
-                                    event_chunk->tag,
-                                    flb_sds_len(event_chunk->tag));
-
 
     /* Specific to unit tests, will not get called normally */
     if (s3_plugin_under_test() == FLB_TRUE) {

@@ -123,57 +123,15 @@ struct s3_file *s3_store_file_get(struct flb_s3 *ctx, const char *tag,
     return fsf->data;
 }
 
-flb_sds_t s3_store_prepare_final_csv(struct flb_s3 *ctx, void *data, size_t bytes,
-                                     int add_columns)
-{
-    int ret;
-    int root_type;
-    char *mp_buf;
-    size_t mp_size;
-    flb_sds_t chunk = NULL;
-
-    if (ctx->log_key) {
-        /*
-         * if log_key option was used, the incoming data is NOT a msgpack object,
-         * likely a JSON string message that we need to convert back so we can
-         * do the CSV formatting.
-         */
-
-        ret = flb_pack_json(data, bytes, &mp_buf, &mp_size, &root_type);
-        if (ret < 0) {
-            return NULL;
-        }
-
-        chunk = flb_pack_msgpack_to_csv_format(mp_buf, mp_size,
-                                               FLB_FALSE, add_columns);
-        flb_free(mp_buf);
-    }
-    else {
-        chunk = flb_pack_msgpack_to_csv_format(data, bytes,
-                                               FLB_TRUE, add_columns);
-    }
-
-    if (!chunk) {
-        flb_plg_warn(ctx->ins, "Could not format chunk as CSV");
-        return NULL;
-    }
-
-    return chunk;
-
-}
-
 /* Append data to a new or existing fstore file */
 int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
                         const char *tag, int tag_len,
                         char *data, size_t bytes)
 {
     int ret;
-    int created = FLB_FALSE;
-    int csv_add_columns = FLB_FALSE;
     flb_sds_t name;
     struct flb_fstore_file *fsf;
     size_t space_remaining;
-    flb_sds_t csv_chunk = NULL;
 
     if (ctx->store_dir_limit_size > 0 && ctx->current_buffer_size + bytes >= ctx->store_dir_limit_size) {
         flb_plg_error(ctx->ins, "Buffer is full: current_buffer_size=%zu, new_data=%zu, store_dir_limit_size=%zu bytes",
@@ -222,7 +180,6 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
 
         /* Use fstore opaque 'data' reference to keep our context */
         fsf->data = s3_file;
-        created = FLB_TRUE;
     }
     else {
         fsf = s3_file->fsf;
@@ -230,30 +187,8 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
 
     /*
      * Append data to the target file
-     *
-     * If the user desires CSV format, we do the formatting at this level since before this
-     * step we don't know when we will be appending to the beginning of a new file so we can
-     * add the CSV headers.
      */
-    if (ctx->format == S3_FORMAT_CSV) {
-        if (created && ctx->csv_column_names) {
-            csv_add_columns = FLB_TRUE;
-        }
-
-        /* finalize CSV formatting */
-        csv_chunk = s3_store_prepare_final_csv(ctx, data, bytes, csv_add_columns);
-        if (!csv_chunk) {
-            return -1;
-        }
-
-        /* append content to object file */
-        ret = flb_fstore_file_append(fsf, csv_chunk, flb_sds_len(csv_chunk));
-        flb_sds_destroy(csv_chunk);
-    }
-    else {
-        ret = flb_fstore_file_append(fsf, data, bytes);
-    }
-
+    ret = flb_fstore_file_append(fsf, data, bytes);
     if (ret != 0) {
         flb_plg_error(ctx->ins, "error writing data to local s3 file");
         return -1;
