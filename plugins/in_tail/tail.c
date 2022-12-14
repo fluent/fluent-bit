@@ -324,20 +324,6 @@ static int in_tail_progress_check_callback(struct flb_input_instance *ins,
     struct stat st;
     (void) config;
 
-    mk_list_foreach_safe(head, tmp, &ctx->files_static) {
-        file = mk_list_entry(head, struct flb_tail_file, _head);
-
-        ret = fstat(file->fd, &st);
-        if (ret == -1) {
-            flb_plg_error(ins, "fstat error");
-            continue;
-        }
-
-        if (file->offset < st.st_size) {
-            flb_tail_file_chunk(file);
-        }
-    }
-
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
 
