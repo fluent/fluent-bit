@@ -754,18 +754,13 @@ static int we_perflib_process_instance(struct we_perflib_context   *context,
         perf_instance_definition = (PERF_INSTANCE_DEFINITION *) input_data_block;
 
         if (perf_instance_definition->NameLength > 0) {
-            perflib_instance->name = (char *) flb_calloc(1,
-                                (perf_instance_definition->NameLength / 2) + 2);
-
+            perflib_instance->name = \
+                    we_convert_wstr(&input_data_block[perf_instance_definition->NameOffset], CP_UTF8);
             if (perflib_instance->name == NULL) {
                 we_perflib_destroy_instance(perflib_instance);
 
                 return -2;
             }
-
-            wcstombs(perflib_instance->name,
-                     &input_data_block[perf_instance_definition->NameOffset],
-                     perf_instance_definition->NameLength / 2);
         }
         else {
             perflib_instance->name = flb_strdup("DEFAULT");
