@@ -602,6 +602,12 @@ int flb_storage_create(struct flb_config *ctx)
     /* always use read/write mode */
     flags = CIO_OPEN;
 
+    /* if explicitly stated any irrecoverably corrupted
+     * chunks will be deleted */
+    if (ctx->storage_del_bad_chunks) {
+        flags |= CIO_DELETE_IRRECOVERABLE;
+    }
+
     /* synchronization mode */
     if (ctx->storage_sync) {
         if (strcasecmp(ctx->storage_sync, "normal") == 0) {
