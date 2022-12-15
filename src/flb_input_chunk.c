@@ -1035,6 +1035,74 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in, in
     return ic;
 }
 
+int flb_input_chunk_destroy_corrupted(struct flb_input_chunk *ic,
+                                      const char *tag_buf, int tag_len,
+                                      int del)
+{
+    int ret;
+    ssize_t bytes;
+    struct mk_list *head;
+    struct flb_output_instance *o_ins;
+
+    mk_list_foreach(head, &ic->in->config->outputs) {
+        o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+
+        if (o_ins->total_limit_size == -1) {
+            continue;
+        }
+
+        bytes = flb_input_chunk_get_real_size(ic);
+        if (bytes == -1) {
+            // no data in the chunk
+            continue;
+        }
+
+        if (flb_routes_mask_get_bit(ic->routes_mask, o_ins->id) != 0) {
+            if (ic->fs_counted == FLB_TRUE) {
+                FS_CHUNK_SIZE_DEBUG_MOD(o_ins, ic, -bytes);
+                o_ins->fs_chunks_size -= bytes;
+                flb_debug("[input chunk] remove chunk %s with %ld bytes from plugin %s, "
+                          "the updated fs_chunks_size is %ld bytes", flb_input_chunk_get_name(ic),
+                          bytes, o_ins->name, o_ins->fs_chunks_size);
+            }
+        }
+    }
+
+    if (del == CIO_TRUE && tag_buf) {
+        /*
+         * "TRY" to delete any reference to this chunk ('ic') from the hash
+         * table. Note that maybe the value is not longer available in the
+         * entries if it was replaced: note that we always keep the last
+         * chunk for a specific Tag.
+         */
+        if (ic->event_type == FLB_INPUT_LOGS) {
+            flb_hash_table_del_ptr(ic->in->ht_log_chunks,
+                                   tag_buf, tag_len, (void *) ic);
+        }
+        else if (ic->event_type == FLB_INPUT_METRICS) {
+            flb_hash_table_del_ptr(ic->in->ht_metric_chunks,
+                                   tag_buf, tag_len, (void *) ic);
+        }
+        else if (ic->event_type == FLB_INPUT_TRACES) {
+            flb_hash_table_del_ptr(ic->in->ht_trace_chunks,
+                                   tag_buf, tag_len, (void *) ic);
+        }
+    }
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+    if (ic->trace != NULL) {
+        flb_chunk_trace_destroy(ic->trace);
+    }
+#endif /* FLB_HAVE_CHUNK_TRACE */
+
+    cio_chunk_close(ic->chunk, del);
+    mk_list_del(&ic->_head);
+    flb_free(ic);
+
+    return 0;
+}
+
+
 int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
 {
     int tag_len;
@@ -1165,9 +1233,27 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
         }
         else if (cio_chunk_is_up(ic->chunk) == CIO_FALSE) {
             ret = cio_chunk_up_force(ic->chunk);
-            if (ret == -1) {
+
+            if (ret == CIO_CORRUPTED) {
+                if (in->config->storage_del_bad_chunks) {
+                    /* If the chunk is corrupted we need to discard it and
+                     * set ic to NULL so the system tries to allocate a new
+                     * chunk.
+                     */
+
+                    flb_error("[input chunk] discarding corrupted chunk");
+                }
+
+                flb_input_chunk_destroy_corrupted(ic,
+                                                  tag, tag_len,
+                                                  in->config->storage_del_bad_chunks);
+
                 ic = NULL;
             }
+            else if (ret != CIO_OK) {
+                ic = NULL;
+            }
+
             *set_down = FLB_TRUE;
         }
     }
