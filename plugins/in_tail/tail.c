@@ -313,33 +313,6 @@ static int in_tail_watcher_callback(struct flb_input_instance *ins,
     return ret;
 }
 
-static int in_tail_progress_check_callback(struct flb_input_instance *ins,
-                                           struct flb_config *config, void *context)
-{
-    int ret = 0;
-    struct mk_list *tmp;
-    struct mk_list *head;
-    struct flb_tail_config *ctx = context;
-    struct flb_tail_file *file;
-    struct stat st;
-    (void) config;
-
-    mk_list_foreach_safe(head, tmp, &ctx->files_event) {
-        file = mk_list_entry(head, struct flb_tail_file, _head);
-
-        ret = fstat(file->fd, &st);
-        if (ret == -1) {
-            flb_plg_error(ins, "fstat error");
-            continue;
-        }
-
-        if (file->offset < st.st_size) {
-            flb_tail_file_chunk(file);
-        }
-    }
-    return 0;
-}
-
 int in_tail_collect_event(void *file, struct flb_config *config)
 {
     int ret;
@@ -430,17 +403,6 @@ static int in_tail_init(struct flb_input_instance *in,
         return -1;
     }
     ctx->coll_fd_watcher = ret;
-
-    /* Register callback to check current tail offsets */
-    ret = flb_input_set_collector_time(in, in_tail_progress_check_callback,
-                                       ctx->progress_check_interval,
-                                       ctx->progress_check_interval_nsec,
-                                       config);
-    if (ret == -1) {
-        flb_tail_config_destroy(ctx);
-        return -1;
-    }
-    ctx->coll_fd_progress_check = ret;
 
     /* Register callback to purge rotated files */
     ret = flb_input_set_collector_time(in, flb_tail_file_purge,
