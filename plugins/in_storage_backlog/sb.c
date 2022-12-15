@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_utils.h>
 #include <chunkio/chunkio.h>
+#include <chunkio/cio_error.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -327,6 +328,7 @@ int sb_segregate_chunks(struct flb_config *config)
     struct mk_list    *tmp;
     struct mk_list    *stream_iterator;
     struct mk_list    *chunk_iterator;
+    int                chunk_error;
     struct flb_sb     *context;
     struct cio_stream *stream;
     struct cio_chunk  *chunk;
@@ -351,6 +353,18 @@ int sb_segregate_chunks(struct flb_config *config)
             if (!cio_chunk_is_up(chunk)) {
                 ret = cio_chunk_up_force(chunk);
                 if (ret == CIO_CORRUPTED) {
+                    if (config->storage_del_bad_chunks) {
+                        chunk_error = cio_error_get(chunk);
+
+                        if (chunk_error == CIO_ERR_BAD_FILE_SIZE ||
+                            chunk_error == CIO_ERR_BAD_LAYOUT)
+                        {
+                            flb_plg_error(context->ins, "discarding irrecoverable chunk %s/%s", stream->name, chunk->name);
+
+                            cio_chunk_close(chunk, CIO_TRUE);
+                        }
+                    }
+
                     continue;
                 }
             }
