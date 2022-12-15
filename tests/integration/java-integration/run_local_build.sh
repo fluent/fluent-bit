@@ -2,11 +2,10 @@
 set -ueo pipefail
 
 SCRIPT_ROOT="$(cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd)"
-cd "$SCRIPT_ROOT"
 
 CONTAINER_RUNTIME=${CONTAINER_RUNTIME:-docker}
 "$CONTAINER_RUNTIME" run \
- -i \
+ -t \
  --rm \
  -e "CONTAINER_RUNTIME=${CONTAINER_RUNTIME}" \
  -e FLUENTBIT_COMMAND="/fluent-bit -c /usr/src/mymaven/src/test/resources/fluentbit.conf" \

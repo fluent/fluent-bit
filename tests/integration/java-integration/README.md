@@ -41,7 +41,3 @@ into the container and uses that.
 You can set environment variable to configure the build further, see `Config.java`.
 
 NOTE: This caches the Java libraries under `$HOME/.m2`.
-
-## Currently broken tests
-
-The `IntegrationTest.java` contains currently two tests with the `@Ignored` annotation. Those are broken due to bugs in Fluent-Bit.
