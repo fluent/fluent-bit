@@ -577,7 +577,6 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *msgpack_map_to_otlp_an
     Opentelemetry__Proto__Common__V1__KeyValue *keyvalue;
     size_t                                      index;
     msgpack_object_kv                          *kv;
-    msgpack_object                              p;
 
     entry_count = o->via.map.size;
     result = otlp_any_value_initialize(MSGPACK_OBJECT_MAP, entry_count);
@@ -596,7 +595,6 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *msgpack_map_to_otlp_an
 
 static inline Opentelemetry__Proto__Common__V1__AnyValue *msgpack_object_to_otlp_any_value(struct msgpack_object *o)
 {
-    size_t                                      array_size;
     Opentelemetry__Proto__Common__V1__AnyValue *result;
 
     switch (o->type) {
@@ -629,6 +627,9 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *msgpack_object_to_otlp
 
         case MSGPACK_OBJECT_MAP:
             result = msgpack_map_to_otlp_any_value(o);
+            break;
+
+        default:
             break;
     }
 
@@ -689,9 +690,12 @@ static int process_logs(struct flb_event_chunk *event_chunk,
                         struct flb_input_instance *ins, void *out_context,
                         struct flb_config *config)
 {
-    Opentelemetry__Proto__Logs__V1__LogRecord *log_record_list[FLB_LOG_RECORD_BATCH_SIZE];
-    Opentelemetry__Proto__Logs__V1__LogRecord log_records[FLB_LOG_RECORD_BATCH_SIZE];
-    Opentelemetry__Proto__Common__V1__AnyValue log_bodies[FLB_LOG_RECORD_BATCH_SIZE];
+    struct opentelemetry_context *ctx;
+    ctx = out_context;
+
+    Opentelemetry__Proto__Logs__V1__LogRecord *log_record_list[ctx->batch_size];
+    Opentelemetry__Proto__Logs__V1__LogRecord log_records[ctx->batch_size];
+    Opentelemetry__Proto__Common__V1__AnyValue log_bodies[ctx->batch_size];
     Opentelemetry__Proto__Common__V1__AnyValue *log_object;
     size_t log_record_count;
     size_t index;
@@ -699,11 +703,10 @@ static int process_logs(struct flb_event_chunk *event_chunk,
     msgpack_object *obj;
     size_t off = 0;
     struct flb_time tm;
-    char *json;
     int res = FLB_OK;
-    struct opentelemetry_context *ctx;
 
-    for(index = 0 ; index < FLB_LOG_RECORD_BATCH_SIZE ; index++) {
+
+    for(index = 0 ; index < ctx->batch_size ; index++) {
         opentelemetry__proto__logs__v1__log_record__init(&log_records[index]);
         opentelemetry__proto__common__v1__any_value__init(&log_bodies[index]);
 
@@ -711,7 +714,6 @@ static int process_logs(struct flb_event_chunk *event_chunk,
         log_record_list[index] = &log_records[index];
     }
 
-    ctx = out_context;
     log_record_count = 0;
 
     msgpack_unpacked_init(&result);
@@ -742,7 +744,7 @@ static int process_logs(struct flb_event_chunk *event_chunk,
 
         log_record_count++;
 
-        if (log_record_count >= FLB_LOG_RECORD_BATCH_SIZE) {
+        if (log_record_count >= ctx->batch_size) {
             res = flush_to_otel(ctx,
                                 event_chunk,
                                 log_record_list,
@@ -1045,6 +1047,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "log_response_payload", "true",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, log_response_payload),
      "Specify if the response paylod should be logged or not"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "batch_size", DEFAULT_LOG_RECORD_BATCH_SIZE,
+      0, FLB_TRUE, offsetof(struct opentelemetry_context, batch_size),
+      "Set the maximum number of log records to be flushed at a time"
     },
     {
      FLB_CONFIG_MAP_STR, "compress", NULL,
