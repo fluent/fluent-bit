@@ -8,9 +8,9 @@ flb_sds_t custom_calyptia_pipeline_config_get(struct flb_config *ctx);
 
 void flb_custom_calyptia_pipeline_config_get_test()
 {
-    const char *cfg_str = "[INPUT]\n    name cpu.0\n[INPUT]\n    name fluentbit_metrics.1\n    tag _calyptia_cloud\n    scrape_on_start true\n    scrape_interval 30\n\n\n[OUTPUT]\n    name  stdout.0\n    match *\n    retry_limit 1\n\n";
+    const char *cfg_str = "[INPUT]\n    name dummy.0\n[INPUT]\n    name fluentbit_metrics.1\n    tag _calyptia_cloud\n    scrape_on_start true\n    scrape_interval 30\n\n\n[OUTPUT]\n    name  stdout.0\n    match *\n    retry_limit 1\n\n";
     flb_ctx_t *ctx;
-    int in_ffd_cpu;
+    int in_ffd_dummy;
     int in_ffd_metrics;
     int out_ffd;
     struct flb_custom_instance *calyptia;
@@ -18,8 +18,8 @@ void flb_custom_calyptia_pipeline_config_get_test()
 
     ctx = flb_create();
 
-    in_ffd_cpu = flb_input(ctx, (char *) "cpu", NULL);
-    TEST_CHECK(in_ffd_cpu >= 0);
+    in_ffd_dummy = flb_input(ctx, (char *) "dummy", NULL);
+    TEST_CHECK(in_ffd_dummy >= 0);
 
     in_ffd_metrics = flb_input(ctx, (char *) "fluentbit_metrics", NULL);
     TEST_CHECK(in_ffd_metrics >= 0);
