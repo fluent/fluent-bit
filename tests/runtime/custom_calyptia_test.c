@@ -17,6 +17,7 @@ void flb_custom_calyptia_pipeline_config_get_test()
     flb_sds_t cfg;
 
     ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
 
     in_ffd_dummy = flb_input(ctx, (char *) "dummy", NULL);
     TEST_CHECK(in_ffd_dummy >= 0);
@@ -44,9 +45,12 @@ void flb_custom_calyptia_pipeline_config_get_test()
 
     cfg = custom_calyptia_pipeline_config_get(ctx->config);
     TEST_CHECK(strcmp(cfg, cfg_str) == 0);
-    flb_sds_destroy(cfg);
+
     flb_start(ctx);
+    sleep(2);
     flb_stop(ctx);
+
+    flb_sds_destroy(cfg);
     flb_destroy(ctx);
 }
 
