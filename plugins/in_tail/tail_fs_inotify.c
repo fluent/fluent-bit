@@ -303,6 +303,12 @@ static int in_tail_progress_check_callback(struct flb_input_instance *ins,
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
 
+        // skip fstat if we know there is still data left to read.
+        if (file->offset < file->size) {
+            flb_tail_file_chunk(file);
+            continue;
+        }
+
         ret = fstat(file->fd, &st);
         if (ret == -1) {
             flb_plg_error(ins, "fstat error");
@@ -310,6 +316,7 @@ static int in_tail_progress_check_callback(struct flb_input_instance *ins,
         }
 
         if (file->offset < st.st_size) {
+            file->size = st.st_size;
             flb_tail_file_chunk(file);
         }
     }
