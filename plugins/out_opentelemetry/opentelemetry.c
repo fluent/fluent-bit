@@ -295,7 +295,10 @@ static void clear_array(Opentelemetry__Proto__Logs__V1__LogRecord **logs,
 
     for (index = 0 ; index < log_count ; index++) {
         otlp_any_value_destroy(logs[index]->body);
+        flb_free(logs[index]);
     }
+
+    flb_free(logs);
 }
 
 static Opentelemetry__Proto__Common__V1__ArrayValue *otlp_array_value_initialize(size_t entry_count)
@@ -693,10 +696,18 @@ static int process_logs(struct flb_event_chunk *event_chunk,
     struct opentelemetry_context *ctx;
     ctx = out_context;
 
-    Opentelemetry__Proto__Logs__V1__LogRecord *log_record_list[ctx->batch_size];
-    Opentelemetry__Proto__Logs__V1__LogRecord log_records[ctx->batch_size];
-    Opentelemetry__Proto__Common__V1__AnyValue log_bodies[ctx->batch_size];
+    /*
+    * These were initially variable length arrays.
+    * However, having a high value for batch_size was causing memory
+    * issues with the event chunk being overwritten. Moving it to the heap
+    * solves these issues but we still do not know the root cause
+    */
+
+    Opentelemetry__Proto__Logs__V1__LogRecord **log_record_list;
+    Opentelemetry__Proto__Logs__V1__LogRecord *log_records;
+    Opentelemetry__Proto__Common__V1__AnyValue *log_bodies;
     Opentelemetry__Proto__Common__V1__AnyValue *log_object;
+
     size_t log_record_count;
     size_t index;
     msgpack_unpacked result;
@@ -705,6 +716,26 @@ static int process_logs(struct flb_event_chunk *event_chunk,
     struct flb_time tm;
     int res = FLB_OK;
 
+    log_record_list = (Opentelemetry__Proto__Logs__V1__LogRecord *) flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Logs__V1__LogRecord *));
+    if (!log_record_list) {
+        flb_errno();
+        return -1;
+    }
+
+    log_records = flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Logs__V1__LogRecord));
+    if (!log_records) {
+        flb_free(log_record_list);
+        flb_errno();
+        return -1;
+    }
+
+    log_bodies = (Opentelemetry__Proto__Common__V1__AnyValue *) flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Common__V1__AnyValue));
+    if (!log_bodies) {
+        flb_free(log_record_list);
+        flb_free(log_records);
+        flb_errno();
+        return -1;
+    }
 
     for(index = 0 ; index < ctx->batch_size ; index++) {
         opentelemetry__proto__logs__v1__log_record__init(&log_records[index]);
@@ -713,7 +744,6 @@ static int process_logs(struct flb_event_chunk *event_chunk,
         log_records[index].body = &log_bodies[index];
         log_record_list[index] = &log_records[index];
     }
-
     log_record_count = 0;
 
     msgpack_unpacked_init(&result);
@@ -771,6 +801,7 @@ static int process_logs(struct flb_event_chunk *event_chunk,
         log_record_count = 0;
     }
 
+    flb_free(log_bodies);
     msgpack_unpacked_destroy(&result);
 
     return res;
@@ -973,6 +1004,10 @@ static int cb_opentelemetry_init(struct flb_output_instance *ins,
     ctx = flb_opentelemetry_context_create(ins, config);
     if (!ctx) {
         return -1;
+    }
+
+    if (ctx->batch_size <= 0){
+        ctx->batch_size = atoi(DEFAULT_LOG_RECORD_BATCH_SIZE);
     }
 
     flb_output_set_context(ins, ctx);
