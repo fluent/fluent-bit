@@ -413,11 +413,20 @@ void flb_test_filter_parser_handle_time_key_with_time_zone()
                   NULL);
 
     /* Parser */
-    parser = flb_parser_create("timestamp", "regex", "^(?<time>.*)$", FLB_TRUE,
-                               "%Y-%m-%dT%H:%M:%S.%L %z",
-                               "time",
-                               NULL, MK_FALSE, MK_TRUE,
-                               NULL, 0, NULL, ctx->config);
+    parser = flb_parser_create("timestamp", // name
+                               "regex", // format
+                               "^(?<time>.*)$", // regex
+                               FLB_TRUE, // skip_empty
+                               "%Y-%m-%dT%H:%M:%S.%L %z", // time_fmt
+                               "time", // time_key
+                               NULL, // time_offset
+                               MK_FALSE, // time_keep
+                               MK_TRUE, // time_strict
+                               MK_FALSE, // logfmt_no_bare_keys
+                               NULL, // types
+                               0, // types_len
+                               NULL, // decoders
+                               ctx->config); // config
     TEST_CHECK(parser != NULL);
 
     /* Filter */
