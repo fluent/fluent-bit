@@ -41,12 +41,12 @@ void flb_custom_calyptia_pipeline_config_get_test()
     flb_custom_set_property(calyptia, "add_label", "pipeline_id 7DDD2941-3ED6-4B8C-9F84-DD04C4A018A4");
     flb_custom_set_property(calyptia, "calyptia_host", "cloud-api.calyptia.com");
     flb_custom_set_property(calyptia, "calyptia_port", "443");
-    flb_custom_set_property(calyptia, "tls", "on");
-    flb_custom_set_property(calyptia, "tls_verify", "on");
 
     cfg = custom_calyptia_pipeline_config_get(ctx->config);
     TEST_CHECK(strcmp(cfg, cfg_str) == 0);
     flb_sds_destroy(cfg);
+    flb_start(ctx);
+    flb_stop(ctx);
     flb_destroy(ctx);
 }
 
