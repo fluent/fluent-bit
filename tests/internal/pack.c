@@ -830,6 +830,66 @@ void test_json_pack_bug5336()
     }
 }
 
+const char input_msgpack[] = {0x92,/* array 2 */
+                            0xd7, 0x00, /* event time*/
+                            0x07, 0x5b, 0xcd, 0x15, /* second = 123456789 = 1973/11/29 21:33:09 */
+                            0x07, 0x5b, 0xcd, 0x15, /* nanosecond = 123456789 */
+                            0x81, 0xa2, 0x61, 0x61, 0xa2, 0x62, 0x62 /* {"aa":"bb"} */
+};
+
+void test_json_date(char* expect, int date_format)
+{
+    flb_sds_t json_key;
+    flb_sds_t ret;
+
+    json_key = flb_sds_create("date");
+    if (!TEST_CHECK(json_key != NULL)) {
+        TEST_MSG("flb_sds_create failed");
+        exit(1);
+    }
+
+    ret = flb_pack_msgpack_to_json_format((const char*)&input_msgpack[0], sizeof(input_msgpack),
+                                          FLB_PACK_JSON_FORMAT_JSON, date_format,
+                                          json_key);
+    if (!TEST_CHECK(ret != NULL)) {
+        TEST_MSG("flb_pack_msgpack_to_json_format failed");
+        flb_sds_destroy(json_key);
+        exit(1);
+    }
+    flb_sds_destroy(json_key);
+
+    if (!TEST_CHECK(strstr(ret, expect) != NULL)) {
+        TEST_MSG("mismatch. Got=%s expect=%s", ret, expect);
+    }
+
+    flb_sds_destroy(ret);
+}
+
+void test_json_date_iso8601()
+{
+    test_json_date("1973-11-29T21:33:09.123456Z", FLB_PACK_JSON_DATE_ISO8601);
+}
+
+void test_json_date_double()
+{
+    test_json_date("123456789.123456", FLB_PACK_JSON_DATE_DOUBLE);
+}
+
+void test_json_date_java_sql()
+{
+    test_json_date("1973-11-29 21:33:09.123456", FLB_PACK_JSON_DATE_JAVA_SQL_TIMESTAMP);
+}
+
+void test_json_date_epoch()
+{
+    test_json_date("123456789", FLB_PACK_JSON_DATE_EPOCH);
+}
+
+void test_json_date_epoch_ms()
+{
+    test_json_date("123456789123", FLB_PACK_JSON_DATE_EPOCH_MS);
+}
+
 TEST_LIST = {
     /* JSON maps iteration */
     { "json_pack"          , test_json_pack },
@@ -842,6 +902,11 @@ TEST_LIST = {
     { "json_pack_bug1278"  , test_json_pack_bug1278},
     { "json_pack_nan"      , test_json_pack_nan},
     { "json_pack_bug5336"  , test_json_pack_bug5336},
+    { "json_date_iso8601" , test_json_date_iso8601},
+    { "json_date_double" , test_json_date_double},
+    { "json_date_java_sql" , test_json_date_java_sql},
+    { "json_date_epoch" , test_json_date_epoch},
+    { "json_date_epoch_ms" , test_json_date_epoch_ms},
 
     /* Mixed bytes, check JSON encoding */
     { "utf8_to_json", test_utf8_to_json},
