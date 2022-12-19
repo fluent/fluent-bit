@@ -134,6 +134,17 @@ struct we_wmi_logon_counters {
     int                    operational;
 };
 
+struct we_wmi_system_counters {
+    struct wmi_query_spec *info;
+    struct cmt_gauge      *context_switches;
+    struct cmt_gauge      *exception_dispatches;
+    struct cmt_gauge      *processor_queue;
+    struct cmt_gauge      *system_calls;
+    struct cmt_gauge      *system_up_time;
+    struct cmt_gauge      *threads;
+    int                    operational;
+};
+
 struct we_os_counters {
     struct cmt_gauge *info;
     struct cmt_gauge *users;
@@ -185,6 +196,7 @@ struct flb_we {
     struct we_wmi_thermal_counters *wmi_thermals;
     struct we_wmi_cpu_info_counters *wmi_cpu_info;
     struct we_wmi_logon_counters *wmi_logon;
+    struct we_wmi_system_counters *wmi_system;
 
 };
 
