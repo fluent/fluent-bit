@@ -58,6 +58,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     struct flb_cloudwatch *ctx = NULL;
     struct cw_flush *buf = NULL;
     int ret;
+    flb_sds_t tmp_sds = NULL;
     (void) config;
     (void) data;
 
@@ -333,7 +334,12 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     ctx->cw_client->proxy = NULL;
     ctx->cw_client->static_headers = &content_type_header;
     ctx->cw_client->static_headers_len = 1;
-    ctx->cw_client->extra_user_agent = (char *) ctx->extra_user_agent;
+    tmp_sds = flb_sds_create(ctx->extra_user_agent);
+    if (!tmp_sds) {
+        flb_errno();
+        goto error;
+    }
+    ctx->cw_client->extra_user_agent = tmp_sds;
     ctx->cw_client->retry_requests = ctx->retry_requests;
 
     struct flb_upstream *upstream = flb_upstream_create(config, ctx->endpoint,
