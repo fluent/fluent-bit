@@ -266,7 +266,7 @@ jobs:
             -a "workflow=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             -a "ref=${{ github.sha }}" \
             -a "release=${{ inputs.version }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-images.outputs.production-digest }}"
+            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-images.outputs.production-digest }}" \
             "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-images.outputs.debug-digest }}"
           rm -f /tmp/my_cosign.key
         shell: bash
