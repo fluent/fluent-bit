@@ -179,6 +179,36 @@ static double wmi_get_value(struct flb_we *ctx, struct wmi_query_spec *spec, IWb
     return val;
 }
 
+static double wmi_get_property_value(struct flb_we *ctx, char *raw_property_key, IWbemClassObject *class_obj)
+{
+    VARIANT prop;
+    char *strprop;
+    double val = 1.0;
+    HRESULT hr;
+    wchar_t *wproperty;
+
+    VariantInit(&prop);
+    wproperty = we_convert_str(raw_property_key);
+    hr = class_obj->lpVtbl->Get(class_obj, wproperty, 0, &prop, 0, 0);
+    switch(prop.vt) {
+    case VT_I4:
+        val = prop.lVal;
+        break;
+    case VT_BSTR:
+        strprop = we_convert_wstr(prop.bstrVal, CP_UTF8);
+        wmi_utils_str_to_double(strprop, &val);
+        flb_free(strprop);
+        break;
+    default:
+        break;
+    }
+    VariantClear(&prop);
+    flb_free(wproperty);
+
+    return val;
+}
+
+
 static inline int wmi_update_metrics(struct flb_we *ctx, struct wmi_query_spec *spec,
                                      double val, IWbemClassObject *class_obj, uint64_t timestamp)
 {
@@ -465,6 +495,11 @@ int we_wmi_execute_query(struct flb_we *ctx, struct wmi_query_spec *spec, IEnumW
 double we_wmi_get_value(struct flb_we *ctx, struct wmi_query_spec *spec, IWbemClassObject *class_obj)
 {
     return wmi_get_value(ctx, spec, class_obj);
+}
+
+double we_wmi_get_property_value(struct flb_we *ctx, char *raw_property_key, IWbemClassObject *class_obj)
+{
+    return wmi_get_property_value(ctx, raw_property_key, class_obj);
 }
 
 int we_wmi_update_counters(struct flb_we *ctx, struct wmi_query_spec *spec, uint64_t timestamp, double val, int metric_label_count, char **metric_label_set)
