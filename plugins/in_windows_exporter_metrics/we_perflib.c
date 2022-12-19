@@ -937,7 +937,7 @@ int we_perflib_update_counters(struct flb_we                   *ctx,
                                             struct flb_hash_table_entry,
                                             _head_parent);
 
-        if (filter_hook(instance_hash_entry->key) == 0) {
+        if (filter_hook(instance_hash_entry->key, ctx) == 0) {
             for (metric_index = 0 ;
                  metric_sources[metric_index].name != NULL ;
                  metric_index++) {

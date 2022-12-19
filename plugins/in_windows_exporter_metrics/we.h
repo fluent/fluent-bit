@@ -175,6 +175,11 @@ struct flb_we {
     struct cmt *cmt;                                  /* cmetrics context */
     struct flb_input_instance *ins;                   /* input instance   */
     struct mk_list *collectors;
+    char *raw_allowing_disk;
+    char *raw_denying_disk;
+
+    struct flb_regex *allowing_disk_regex;
+    struct flb_regex *denying_disk_regex;
 
     struct we_perflib_context perflib_context;
     /* WMI locator and service contexts */
