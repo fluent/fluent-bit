@@ -38,7 +38,7 @@
 #define WE_PERFLIB_WINDOWS_EPOCH                 ((double) 1 / 1e7)
 #define WE_PERFLIB_TICKS_TO_SECONDS_SCALE_FACTOR ((double) 116444736000000000)
 
-typedef int (*we_perflib_instance_filter)(char *);
+typedef int (*we_perflib_instance_filter)(char *, struct flb_we *);
 typedef int (*we_perflib_label_prepend_hook)(char **,
                                              size_t,
                                              size_t *,
