@@ -263,7 +263,7 @@ int we_cpu_exit(struct flb_we *ctx)
     return 0;
 }
 
-int we_cpu_instance_hook(char *instance_name)
+int we_cpu_instance_hook(char *instance_name, struct flb_we *ctx)
 {
     return (strcasestr(instance_name, "Total") != NULL);
 }

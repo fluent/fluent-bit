@@ -214,9 +214,26 @@ int we_logical_disk_exit(struct flb_we *ctx)
     return 0;
 }
 
-int we_logical_disk_instance_hook(char *instance_name)
+static int logical_disk_regex_match(struct flb_regex *regex, char *instance_name)
 {
-    return (strcasestr(instance_name, "Total") != NULL);
+    if (regex == NULL) {
+        return 0;
+    }
+    return flb_regex_match(regex, instance_name, strlen(instance_name));
+}
+
+
+int we_logical_disk_instance_hook(char *instance_name, struct flb_we *ctx)
+{
+    if (strcasestr(instance_name, "Total") != NULL) {
+        return 1;
+    }
+    if (logical_disk_regex_match(ctx->denying_disk_regex, instance_name) ||
+        !logical_disk_regex_match(ctx->allowing_disk_regex, instance_name)) {
+        return 1;
+    }
+
+    return 0;
 }
 
 int we_logical_disk_label_prepend_hook(char                           **label_list,

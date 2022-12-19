@@ -273,6 +273,16 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_we, collectors),
      "Collector to enable."
     },
+    {
+     FLB_CONFIG_MAP_STR, "we.logical_disk.allow_disk_regex", "/.+/",
+     0, FLB_TRUE, offsetof(struct flb_we, raw_allowing_disk),
+     "Specify to be scribable regex for logical disk metrics."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "we.logical_disk.deny_disk_regex", NULL,
+     0, FLB_TRUE, offsetof(struct flb_we, raw_denying_disk),
+     "Specify to be denied regex for logical disk metrics."
+    },
     /* EOF */
     {0}
 };
