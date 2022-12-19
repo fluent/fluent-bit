@@ -62,6 +62,7 @@ static void update_metrics(struct flb_input_instance *ins, struct flb_we *ctx)
     we_wmi_thermalzone_update(ctx);
     we_wmi_cpu_info_update(ctx);
     we_wmi_logon_update(ctx);
+    we_wmi_system_update(ctx);
 }
 
 /*
@@ -211,6 +212,12 @@ static int in_we_init(struct flb_input_instance *in,
         return -1;
     }
 
+    /* Initialize system metric collectors */
+    ret = we_wmi_system_init(ctx);
+    if (ret) {
+        return -1;
+    }
+
     return 0;
 }
 
@@ -225,6 +232,7 @@ static int in_we_exit(void *data, struct flb_config *config)
     we_wmi_thermalzone_exit(ctx);
     we_wmi_cpu_info_exit(ctx);
     we_wmi_logon_exit(ctx);
+    we_wmi_system_exit(ctx);
     we_os_exit(ctx);
     we_net_exit(ctx);
     we_logical_disk_exit(ctx);
