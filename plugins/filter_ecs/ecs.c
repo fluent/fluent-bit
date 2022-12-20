@@ -1376,7 +1376,7 @@ static int is_tag_marked_failed(struct flb_filter_ecs *ctx,
                        tag, tag_len,
                        (void **) &val, &val_size);
     if (ret != -1) {
-        if (*val >= FLB_ECS_FILTER_METADATA_RETRIES) {
+        if (*val >= ctx->agent_endpoint_retries) {
             return FLB_TRUE;
         }
     }
@@ -1417,7 +1417,7 @@ static void mark_tag_failed(struct flb_filter_ecs *ctx,
         flb_plg_info(ctx->ins, "Failed to get ECS Metadata for tag %s %d times. "
                     "This might be because the logs for this tag do not come from an ECS Task Container. "
                     "This plugin will retry metadata requests at most %d times total for this tag.",
-                    tag, *val, FLB_ECS_FILTER_METADATA_RETRIES);
+                    tag, *val, ctx->agent_endpoint_retries);
 
     }
 }
@@ -1467,7 +1467,7 @@ static int cb_ecs_filter(const void *data, size_t bytes,
     if (check == FLB_TRUE) {
         flb_plg_debug(ctx->ins, "Failed to get ECS Metadata for tag %s %d times. "
                       "Will not attempt to retry the metadata request. Will attach cluster metadata only.",
-                      tag, FLB_ECS_FILTER_METADATA_RETRIES);
+                      tag, ctx->agent_endpoint_retries);
     }
 
     if (check == FLB_FALSE && ctx->cluster_metadata_only == FLB_FALSE) {
@@ -1692,6 +1692,15 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_filter_ecs, ecs_port),
      "The port at which the ECS Agent Introspection endpoint is reachable. "
      "Defaults to 51678"
+    },
+
+    {
+     FLB_CONFIG_MAP_INT, "agent_endpoint_retries", FLB_ECS_FILTER_METADATA_RETRIES,
+     0, FLB_TRUE, offsetof(struct flb_filter_ecs, agent_endpoint_retries),
+     "Number of retries for failed metadata requests to ECS Agent Introspection "
+     "endpoint. The most common cause of failed metadata requests is that the "
+     "container the metadata request was made for is not part of an ECS Task. "
+     "Check if you have non-task containers and docker dual logging enabled."
     },
 
     {0}
