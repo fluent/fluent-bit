@@ -504,6 +504,22 @@ static void debug_request_response(struct flb_splunk *ctx,
     }
 }
 
+static inline void print_chunk_error(struct flb_output_instance *ins,
+                                     struct flb_splunk *ctx)
+{
+    struct flb_task *task;
+    struct flb_coro *coro;
+    struct flb_output_coro *out_coro;
+
+    coro = flb_coro_get();
+
+    out_coro = (struct flb_output_coro *) coro->data;
+    task = out_coro->task;
+
+    flb_plg_error(ctx->ins, "could not process chunk '%s'",
+                  flb_input_chunk_get_name(task->ic));
+}
+
 static void cb_splunk_flush(const void *data, size_t bytes,
                             const char *tag, int tag_len,
                             struct flb_input_instance *i_ins,
@@ -663,6 +679,11 @@ static void cb_splunk_flush(const void *data, size_t bytes,
     /* Cleanup */
     flb_http_client_destroy(c);
     flb_upstream_conn_release(u_conn);
+
+    if (ret == FLB_ERROR) {
+        print_chunk_error(ctx->ins, ctx);
+    }
+
     FLB_OUTPUT_RETURN(ret);
 }
 
