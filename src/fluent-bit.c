@@ -241,9 +241,10 @@ static void help_plugin_description(int left_padding, flb_sds_t str)
     }
 }
 
-static msgpack_object *help_get_obj(msgpack_object map, char *key)
+static flb_sds_t help_get_value(msgpack_object map, char *key)
 {
     flb_sds_t k;
+    flb_sds_t val;
     msgpack_object *o;
     struct flb_ra_value *rval = NULL;
     struct flb_record_accessor *ra = NULL;
@@ -262,19 +263,11 @@ static msgpack_object *help_get_obj(msgpack_object map, char *key)
     }
 
     o = &rval->o;
+    val = flb_sds_create_len(o->via.str.ptr, o->via.str.size);
+
     flb_ra_key_value_destroy(rval);
     flb_ra_destroy(ra);
 
-    return o;
-}
-
-static flb_sds_t help_get_value(msgpack_object map, char *key)
-{
-    flb_sds_t val;
-    msgpack_object *o;
-
-    o = help_get_obj(map, key);
-    val = flb_sds_create_len(o->via.str.ptr, o->via.str.size);
     return val;
 }
 
