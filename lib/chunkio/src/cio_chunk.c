@@ -137,6 +137,46 @@ void cio_chunk_close(struct cio_chunk *ch, int delete)
     cio_chunk_counter_total_sub(ctx);
 }
 
+int cio_chunk_delete(struct cio_ctx *ctx, struct cio_stream *st, const char *name)
+{
+    int result;
+
+    if (st == NULL) {
+        cio_log_error(ctx, "[cio chunk] invalid stream");
+
+        return CIO_ERROR;
+    }
+
+    if (name == NULL) {
+        cio_log_error(ctx, "[cio chunk] invalid file name");
+
+        return CIO_ERROR;
+    }
+
+    if (strlen(name) == 0) {
+        cio_log_error(ctx, "[cio chunk] invalid file name");
+
+        return CIO_ERROR;
+    }
+
+#ifndef CIO_HAVE_BACKEND_FILESYSTEM
+    if (st->type == CIO_STORE_FS) {
+        cio_log_error(ctx, "[cio chunk] file system backend not supported");
+
+        return CIO_ERROR;
+    }
+#endif
+
+    if (st->type == CIO_STORE_FS) {
+        result = cio_file_delete(ctx, st, name);
+    }
+    else {
+        result = CIO_ERROR;
+    }
+
+    return result;
+}
+
 /*
  * Write at a specific offset of the content area. Offset must be >= 0 and
  * less than current data length.
