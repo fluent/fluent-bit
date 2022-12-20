@@ -455,7 +455,7 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
         }
         signature = flb_signv4_do(c, normalize_uri, FLB_TRUE, time(NULL),
                                   aws_client->region, aws_client->service,
-                                  aws_client->s3_mode,
+                                  aws_client->s3_mode, NULL,
                                   aws_client->provider);
         if (!signature) {
             if (aws_client->debug_only == FLB_TRUE) {

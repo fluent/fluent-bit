@@ -232,7 +232,7 @@ static int http_post(struct flb_out_http *ctx,
                                   time(NULL),
                                   (char *) ctx->aws_region,
                                   (char *) ctx->aws_service,
-                                  0,
+                                  0, NULL,
                                   ctx->aws_provider);
 
         if (!signature) {

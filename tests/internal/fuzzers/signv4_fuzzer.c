@@ -79,7 +79,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         ret = setenv(AWS_SECRET_ACCESS_KEY, secret_key, 1);
         if (ret >= 0) {
             flb_sds_t signature = flb_signv4_do(http_c, FLB_TRUE, FLB_FALSE, t,
-                        region, service, s3_mode, provider);
+                        region, service, s3_mode, NULL, provider);
             if (signature) {
               flb_sds_destroy(signature);
             }
