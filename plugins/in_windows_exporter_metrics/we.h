@@ -177,9 +177,11 @@ struct flb_we {
     struct mk_list *collectors;
     char *raw_allowing_disk;
     char *raw_denying_disk;
+    char *raw_allowing_nic;
 
     struct flb_regex *allowing_disk_regex;
     struct flb_regex *denying_disk_regex;
+    struct flb_regex *allowing_nic_regex;
 
     struct we_perflib_context perflib_context;
     /* WMI locator and service contexts */

@@ -35,6 +35,7 @@ struct flb_we *flb_we_config_create(struct flb_input_instance *ins,
     ctx->ins = ins;
     ctx->allowing_disk_regex = NULL;
     ctx->denying_disk_regex = NULL;
+    ctx->allowing_nic_regex = NULL;
 
     /* Load the config map */
     ret = flb_input_config_map_set(ins, (void *) ctx);
@@ -50,6 +51,10 @@ struct flb_we *flb_we_config_create(struct flb_input_instance *ins,
 
     if (ctx->raw_denying_disk != NULL) {
         ctx->denying_disk_regex = flb_regex_create(ctx->raw_denying_disk);
+    }
+
+    if (ctx->raw_allowing_nic != NULL) {
+        ctx->allowing_nic_regex = flb_regex_create(ctx->raw_allowing_nic);
     }
 
     ctx->cmt = cmt_create();
@@ -74,6 +79,10 @@ void flb_we_config_destroy(struct flb_we *ctx)
 
     if (ctx->denying_disk_regex != NULL) {
         flb_regex_destroy(ctx->denying_disk_regex);
+    }
+
+    if (ctx->allowing_nic_regex != NULL) {
+        flb_regex_destroy(ctx->allowing_nic_regex);
     }
 
     if (ctx->cmt) {
