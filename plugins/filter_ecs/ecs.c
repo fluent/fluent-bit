@@ -1389,6 +1389,7 @@ static void mark_tag_failed(struct flb_filter_ecs *ctx,
 {
     int ret;
     int *val = NULL;
+    int *new_val = NULL;
     size_t val_size;
 
     ret = flb_hash_get(ctx->failed_metadata_request_tags,
@@ -1409,16 +1410,29 @@ static void mark_tag_failed(struct flb_filter_ecs *ctx,
         /* hash table will contain a copy */
         flb_free(val);
     } else {
+        /* 
+         * val is memory returned from hash table 
+         * if we simply update the value here and call flb_hash_add
+         * it first frees the old memory (which is what we passed it)
+         * then tries to copy over the memory we passed in to a new location
+         * flb_hash stores all entries as if they were strings, so we also
+         * can't simply increment the value returned by flb_hash_get
+         */
+        new_val = flb_malloc(sizeof(int));
+        if (!new_val) {
+            flb_errno();
+            return;
+        }
         /* increment number of failed metadata requests for this tag */
-        *val = *val + 1;
+        *new_val = *val + 1;
         flb_hash_add(ctx->failed_metadata_request_tags,
                      tag, tag_len,
-                     val, sizeof(int));
+                     new_val, sizeof(int));
         flb_plg_info(ctx->ins, "Failed to get ECS Metadata for tag %s %d times. "
                     "This might be because the logs for this tag do not come from an ECS Task Container. "
                     "This plugin will retry metadata requests at most %d times total for this tag.",
-                    tag, *val, ctx->agent_endpoint_retries);
-
+                    tag, *new_val, ctx->agent_endpoint_retries);
+        flb_free(new_val);
     }
 }
 
