@@ -62,8 +62,8 @@ static flb_sds_t add_aws_auth(struct flb_http_client *c,
     flb_http_add_header(c, "User-Agent", 10, "aws-fluent-bit-plugin", 21);
 
     signature = flb_signv4_do(c, FLB_TRUE, FLB_TRUE, time(NULL),
-                              ctx->aws_region, "es",
-                              0, NULL,
+                              ctx->aws_region, ctx->aws_service_name,
+                              S3_MODE_SIGNED_PAYLOAD, ctx->aws_unsigned_headers,
                               ctx->aws_provider);
     if (!signature) {
         flb_plg_error(ctx->ins, "could not sign request with sigv4");
@@ -1010,6 +1010,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "aws_external_id", NULL,
      0, FLB_FALSE, 0,
      "External ID for the AWS IAM Role specified with `aws_role_arn`"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "aws_service_name", "es",
+     0, FLB_TRUE, offsetof(struct flb_elasticsearch, aws_service_name),
+     "AWS Service Name"
     },
 #endif
 
