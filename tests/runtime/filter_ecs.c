@@ -160,6 +160,78 @@ static void flb_test_ecs_filter()
     filter_test_destroy(ctx);
 }
 
+/* 
+ * First release of ECS filter could crash
+ * when saving that it faild to get metadata for a tag
+ */
+static void flb_test_ecs_filter_mark_tag_failed()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+    struct filter_test_result expected = { 0 };
+
+    /* mocks calls- signals that we are in test mode */
+    setenv("FLB_ECS_PLUGIN_UNDER_TEST", "true", 1);
+    setenv("TEST_TASK_ERROR", ERROR_RESPONSE, 1);
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data, "testprefix-79c796ed2a7f");
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "ecs_tag_prefix", "testprefix-",
+                         "ADD", "resource $ClusterName.$TaskID.$ECSContainerName",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    expected.expected_records = 4; /* 4 records with no metadata */
+    expected.expected_pattern = "";
+    expected.expected_pattern_index = 0;
+    cb_data.cb = cb_check_result;
+    cb_data.data = (void *) &expected;
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0, {\"log\":\"error: my error\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+    sleep(1);
+
+    p = "[0, {\"log\":\"error: my error\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+    sleep(1);
+
+    p = "[0, {\"log\":\"error: my error\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+    sleep(1);
+
+    p = "[0, {\"log\":\"error: my error\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+    sleep(2);
+
+    /* check number of outputted records */
+    TEST_CHECK(expected.actual_records == expected.expected_records);
+    filter_test_destroy(ctx);
+}
+
 static void flb_test_ecs_filter_no_prefix()
 {
     int len;
@@ -362,6 +434,7 @@ static void flb_test_ecs_filter_task_error()
 
 TEST_LIST = {
 
+    {"flb_test_ecs_filter_mark_tag_failed"  , flb_test_ecs_filter_mark_tag_failed },
     {"flb_test_ecs_filter"  , flb_test_ecs_filter },
     {"flb_test_ecs_filter_no_prefix"  , flb_test_ecs_filter_no_prefix },
     {"flb_test_ecs_filter_cluster_metadata_only"  , flb_test_ecs_filter_cluster_metadata_only },
