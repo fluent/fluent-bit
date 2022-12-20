@@ -38,11 +38,12 @@
 #define CIO_STORE_MEM       1
 
 /* flags */
-#define CIO_OPEN            1         /* open/create file reference */
-#define CIO_OPEN_RW         CIO_OPEN  /* new name for read/write mode */
-#define CIO_OPEN_RD         2         /* open and read/mmap content if exists */
-#define CIO_CHECKSUM        4         /* enable checksum verification (crc32) */
-#define CIO_FULL_SYNC       8         /* force sync to fs through MAP_SYNC */
+#define CIO_OPEN                 1         /* open/create file reference */
+#define CIO_OPEN_RW              CIO_OPEN  /* new name for read/write mode */
+#define CIO_OPEN_RD              2         /* open and read/mmap content if exists */
+#define CIO_CHECKSUM             4         /* enable checksum verification (crc32) */
+#define CIO_FULL_SYNC            8         /* force sync to fs through MAP_SYNC */
+#define CIO_DELETE_IRRECOVERABLE 16        /* delete irrecoverable chunks from disk */
 
 /* Return status */
 #define CIO_CORRUPTED      -3         /* Indicate that a chunk is corrupted */
@@ -92,6 +93,12 @@ struct cio_ctx {
 
     /* streams */
     struct mk_list streams;
+
+    /* errors */
+    int last_chunk_error; /* this field is necessary to discard irrecoverable
+                           * chunks in cio_scan_stream_files, it's not the
+                           * best approach but the only at the moment.
+                           */
 };
 
 #include <chunkio/cio_stream.h>
