@@ -1,0 +1,14 @@
+# HELP k8s_network_load Network load
+# TYPE k8s_network_load histogram
+k8s_network_load_bucket{le="0.05"} 0 0
+k8s_network_load_bucket{le="5.0"} 1 0
+k8s_network_load_bucket{le="10.0"} 2 0
+k8s_network_load_bucket{le="+Inf"} 3 0
+k8s_network_load_sum 1013 0
+k8s_network_load_count 3 0
+k8s_network_load_bucket{le="0.05",my_label="my_val"} 0 0
+k8s_network_load_bucket{le="5.0",my_label="my_val"} 1 0
+k8s_network_load_bucket{le="10.0",my_label="my_val"} 2 0
+k8s_network_load_bucket{le="+Inf",my_label="my_val"} 3 0
+k8s_network_load_sum{my_label="my_val"} 1013 0
+k8s_network_load_count{my_label="my_val"} 3 0

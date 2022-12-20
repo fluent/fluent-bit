@@ -267,6 +267,13 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
     }
     name = (char *) flb_output_name(ins);
 
+    /* If we are in synchronous mode, flush the next waiting task */
+    if (ins->flags & FLB_OUTPUT_SYNCHRONOUS) {
+        if (ret == FLB_OK || ret == FLB_RETRY || ret == FLB_ERROR) {
+            flb_output_task_singleplex_flush_next(ins->singleplex_queue);
+        }
+    }
+
     /* A task has finished, delete it */
     if (ret == FLB_OK) {
         /* cmetrics */
@@ -349,12 +356,12 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
             flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, task->records, ins->metrics);
 #endif
             /* Notify about this failed retry */
-            flb_warn("[engine] chunk '%s' cannot be retried: "
-                     "task_id=%i, input=%s > output=%s",
-                     flb_input_chunk_get_name(task->ic),
-                     task_id,
-                     flb_input_name(task->i_ins),
-                     flb_output_name(ins));
+            flb_error("[engine] chunk '%s' cannot be retried: "
+                      "task_id=%i, input=%s > output=%s",
+                      flb_input_chunk_get_name(task->ic),
+                      task_id,
+                      flb_input_name(task->i_ins),
+                      flb_output_name(ins));
 
             flb_task_users_dec(task, FLB_TRUE);
             return 0;

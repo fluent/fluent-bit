@@ -52,10 +52,57 @@ static int cb_tcp_init(struct flb_output_instance *ins,
 }
 
 static int compose_payload(struct flb_out_tcp *ctx,
+                           const char *tag, int tag_len,
                            const void *in_data, size_t in_size,
                            void **out_payload, size_t *out_size)
 {
+    int ret;
+    size_t off = 0;
+    flb_sds_t buf = NULL;
     flb_sds_t json = NULL;
+    flb_sds_t str;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object map;
+
+    /* raw message key by using a record accessor */
+    if (ctx->ra_raw_message_key) {
+        buf = flb_sds_create_size(in_size);
+        if (!buf) {
+            return FLB_ERROR;
+        }
+
+        msgpack_unpacked_init(&result);
+        while (msgpack_unpack_next(&result, in_data, in_size, &off) == MSGPACK_UNPACK_SUCCESS) {
+            root = result.data;
+
+            map = root.via.array.ptr[1];
+            str = flb_ra_translate(ctx->ra_raw_message_key, (char *) tag, tag_len, map, NULL);
+            if (!str) {
+                continue;
+            }
+
+            ret = flb_sds_cat_safe(&buf, str, flb_sds_len(str));
+            if (ret != 0) {
+                flb_plg_error(ctx->ins, "failed to compose payload from '%s'", str);
+            }
+            flb_sds_destroy(str);
+
+            /* append a new line */
+            flb_sds_cat_safe(&buf, "\n", 1);
+        }
+
+        msgpack_unpacked_destroy(&result);
+
+        if (flb_sds_len(buf) == 0) {
+            flb_sds_destroy(buf);
+            return FLB_ERROR;
+        }
+
+        *out_payload = buf;
+        *out_size = flb_sds_len(buf);
+        return FLB_OK;
+    }
 
     if (ctx->out_format == FLB_PACK_JSON_FORMAT_NONE) {
         /* nothing to do */
@@ -103,14 +150,20 @@ static void cb_tcp_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    ret = compose_payload(ctx, event_chunk->data, event_chunk->size,
+    ret = compose_payload(ctx,
+                          event_chunk->tag, flb_sds_len(event_chunk->tag),
+                          event_chunk->data, event_chunk->size,
                           &out_payload, &out_size);
     if (ret != FLB_OK) {
         flb_upstream_conn_release(u_conn);
         return FLB_OUTPUT_RETURN(ret);
     }
 
-    if (ctx->out_format == FLB_PACK_JSON_FORMAT_NONE) {
+    if (ctx->ra_raw_message_key) {
+        ret = flb_io_net_write(u_conn, out_payload, out_size, &bytes_sent);
+        flb_sds_destroy(out_payload);
+    }
+    else if (ctx->out_format == FLB_PACK_JSON_FORMAT_NONE) {
         ret = flb_io_net_write(u_conn,
                                event_chunk->data, event_chunk->size,
                                &bytes_sent);
@@ -158,6 +211,12 @@ static struct flb_config_map config_map[] = {
      "Specify the name of the date field in output."
     },
 
+    {
+     FLB_CONFIG_MAP_STR, "raw_message_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_tcp, raw_message_key),
+     "use a raw message key for the message."
+    },
+
     /* EOF */
     {0}
 };
@@ -174,7 +233,7 @@ static int cb_tcp_format_test(struct flb_config *config,
     struct flb_out_tcp *ctx = plugin_context;
     int ret;
 
-    ret = compose_payload(ctx, data, bytes, out_data, out_size);
+    ret = compose_payload(ctx, tag, tag_len, data, bytes, out_data, out_size);
     if (ret != FLB_OK) {
         flb_error("ret=%d", ret);
         return -1;

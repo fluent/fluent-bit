@@ -54,13 +54,17 @@
 #define FLB_COLLECT_FD_SERVER   4
 
 /* Input plugin flag masks */
-#define FLB_INPUT_NET          4   /* input address may set host and port   */
-#define FLB_INPUT_PLUGIN_CORE  0
-#define FLB_INPUT_PLUGIN_PROXY 1
-#define FLB_INPUT_CORO       128   /* plugin requires a thread on callbacks */
-#define FLB_INPUT_PRIVATE    256   /* plugin is not published/exposed       */
-#define FLB_INPUT_NOTAG      512   /* plugin might don't have tags          */
-#define FLB_INPUT_THREADED  1024   /* plugin must run in a separate thread  */
+#define FLB_INPUT_NET           4   /* input address may set host and port   */
+#define FLB_INPUT_PLUGIN_CORE   0
+#define FLB_INPUT_PLUGIN_PROXY  1
+#define FLB_INPUT_CORO        128   /* plugin requires a thread on callbacks */
+#define FLB_INPUT_PRIVATE     256   /* plugin is not published/exposed       */
+#define FLB_INPUT_NOTAG       512   /* plugin might don't have tags          */
+#define FLB_INPUT_THREADED   1024   /* plugin must run in a separate thread  */
+#define FLB_INPUT_NET_SERVER 2048   /* Input address may set host and port.
+                                     * In addition, if TLS is enabled then a
+                                     * private key and certificate are required.
+                                     */
 
 /* Input status */
 #define FLB_INPUT_RUNNING     1
@@ -82,7 +86,6 @@ struct flb_input_plugin {
     void *proxy;
 
     int flags;                /* plugin flags */
-    int event_type;           /* event type to be generated: logs ?, metrics ? */
 
     /* The Input name */
     char *name;
@@ -131,6 +134,9 @@ struct flb_input_plugin {
     /* Exit */
     int (*cb_exit) (void *, struct flb_config *);
 
+    /* Destroy */
+    void (*cb_destroy) (struct flb_input_plugin *);
+
     void *instance;
 
     struct mk_list _head;
@@ -145,7 +151,11 @@ struct flb_input_plugin {
  */
 struct flb_input_instance {
     struct mk_event event;           /* events handler */
-    int event_type;                  /* FLB_INPUT_LOGS, FLB_INPUT_METRICS */
+
+
+    /* DEPRECATED: no logic should be build on top of this flag
+     * int event_type;                   FLB_INPUT_LOGS, FLB_INPUT_METRICS
+     */
 
     /*
      * The instance flags are derived from the fixed plugin flags. This
@@ -674,8 +684,6 @@ int flb_input_name_exists(const char *name, struct flb_config *config);
 void flb_input_net_default_listener(const char *listen, int port,
                                     struct flb_input_instance *ins);
 
-int flb_input_event_type_is_metric(struct flb_input_instance *ins);
-int flb_input_event_type_is_log(struct flb_input_instance *ins);
 int flb_input_log_check(struct flb_input_instance *ins, int l);
 
 struct mk_event_loop *flb_input_event_loop_get(struct flb_input_instance *ins);

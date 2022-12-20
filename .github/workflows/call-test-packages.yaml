@@ -34,7 +34,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        distro: [ amazonlinux2, centos7, centos8, debian10, debian11, ubuntu1804, ubuntu2004 ] #, ubuntu2204 ] TODO: https://github.com/fluent/fluent-bit/issues/5628
+        distro: [ amazonlinux2022, amazonlinux2, centos7, centos8, debian10, debian11, ubuntu1804, ubuntu2004, ubuntu2204 ]
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
@@ -44,7 +44,7 @@ jobs:
       run: |
         curl --fail -LO "$AWS_URL/latest-version.txt"
         VERSION=$(cat latest-version.txt)
-        echo ::set-output name=VERSION::$VERSION
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
       shell: bash
 
     - name: Run package installation tests

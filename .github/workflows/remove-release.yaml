@@ -14,7 +14,7 @@ jobs:
 
   remove-release-packages-s3:
     name: S3 - remove release
-    runs-on: ubuntu-18.04 # no createrepo on Ubuntu 20.04
+    runs-on: ubuntu-22.04 # no createrepo on Ubuntu 20.04
     environment: release
     steps:
     - name: Checkout code
@@ -22,7 +22,7 @@ jobs:
 
     - name: Setup runner
       run: |
-        sudo apt-get install debsigs createrepo aptly rsync
+        sudo apt-get install debsigs createrepo-c aptly rsync
       shell: bash
 
     - name: Import GPG key for signing
@@ -68,7 +68,7 @@ jobs:
   remove-release-packages-server:
     name: fluentbit.io - remove packages
     needs: remove-release-packages-s3
-    runs-on: ubuntu-18.04 # failures with AWS client on latest
+    runs-on: ubuntu-22.04 # failures with AWS client on latest
     environment: release
     steps:
     - name: Checkout code

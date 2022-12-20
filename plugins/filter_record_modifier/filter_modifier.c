@@ -187,7 +187,7 @@ static int cb_modifier_init(struct flb_filter_instance *f_ins,
     struct record_modifier_ctx *ctx = NULL;
 
     /* Create context */
-    ctx = flb_malloc(sizeof(struct record_modifier_ctx));
+    ctx = flb_calloc(1, sizeof(struct record_modifier_ctx));
     if (!ctx) {
         flb_errno();
         return -1;
@@ -276,6 +276,22 @@ static int make_bool_map(struct record_modifier_ctx *ctx, msgpack_object *map,
     return ret;
 }
 
+static int create_uuid(struct record_modifier_ctx *ctx, char *uuid)
+{
+    int ret;
+
+    if (uuid == NULL) {
+        return -1;
+    }
+
+    ret = flb_utils_uuid_v4_gen(uuid);
+    if (ret < 0) {
+                flb_plg_error(ctx->ins, "failed to append uuid");
+        return -1;
+    }
+    return 0;
+}
+
 #define BOOL_MAP_LIMIT 65535
 static int cb_modifier_filter(const void *data, size_t bytes,
                               const char *tag, int tag_len,
@@ -291,6 +307,9 @@ static int cb_modifier_filter(const void *data, size_t bytes,
     int i;
     int removed_map_num  = 0;
     int map_num          = 0;
+    int ret;
+    char uuid[40] = {0};
+    size_t uuid_len = 0;
     bool_map_t *bool_map = NULL;
     (void) f_ins;
     (void) i_ins;
@@ -314,6 +333,7 @@ static int cb_modifier_filter(const void *data, size_t bytes,
     while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         map_num = 0;
         removed_map_num = 0;
+        uuid_len = 0;
         if (bool_map != NULL) {
             flb_free(bool_map);
             bool_map = NULL;
@@ -351,6 +371,14 @@ static int cb_modifier_filter(const void *data, size_t bytes,
         }
 
         removed_map_num += ctx->records_num;
+        if (ctx->uuid_key) {
+            memset(&uuid[0], 0, sizeof(uuid));
+            ret = create_uuid(ctx, &uuid[0]);
+            if (ret == 0) {
+                removed_map_num++;
+                uuid_len = strlen(&uuid[0]);
+            }
+        }
         if (removed_map_num <= 0) {
             continue;
         }
@@ -381,6 +409,16 @@ static int cb_modifier_filter(const void *data, size_t bytes,
                 msgpack_pack_str_body(&tmp_pck,
                                       mod_rec->val, mod_rec->val_len);
             }
+        }
+        if (uuid_len > 0) {
+            is_modified = FLB_TRUE;
+            msgpack_pack_str(&tmp_pck, flb_sds_len(ctx->uuid_key));
+            msgpack_pack_str_body(&tmp_pck,
+                                  ctx->uuid_key, flb_sds_len(ctx->uuid_key));
+            msgpack_pack_str(&tmp_pck, uuid_len);
+            msgpack_pack_str_body(&tmp_pck,
+                                  &uuid[0], uuid_len);
+            
         }
     }
     msgpack_unpacked_destroy(&result);
@@ -432,6 +470,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "whitelist_key", NULL,
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct record_modifier_ctx, whitelist_keys_map),
      "(Alias of allowlist_key)"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "uuid_key", NULL,
+     0, FLB_TRUE, offsetof(struct record_modifier_ctx, uuid_key),
+     "If set, the plugin generates uuid per record."
     },
 
     {0}

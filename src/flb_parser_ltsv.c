@@ -87,7 +87,7 @@ static int ltsv_parser(struct flb_parser *parser,
                        size_t *map_size)
 {
     int ret;
-    struct tm tm = {0};
+    struct flb_tm tm = {0};
     const unsigned char *label = NULL;
     size_t label_len = 0;
     const unsigned char *field = NULL;

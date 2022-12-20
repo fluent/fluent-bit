@@ -241,7 +241,7 @@ static struct flb_upstream_node *create_node(int id,
         key[klen] = '\0';
 
         /* Add the key and value to the hash table */
-        ret = flb_hash_table_add(ht, key, klen, entry->val, vlen);
+        ret = flb_hash_table_add(ht, key, klen, entry->val->data.as_string, vlen);
         if (ret == -1) {
             flb_error("[upstream_ha] cannot add key %s to hash table",
                       entry->key);

@@ -33,10 +33,10 @@ if [[ -n "$CREATE_REPO_CMD" ]]; then
     echo "Using $CREATE_REPO_CMD"
 elif command -v createrepo &> /dev/null; then
     echo "Found createrepo"
-    CREATE_REPO_CMD="createrepo -dvp"
+    CREATE_REPO_CMD="createrepo"
 elif command -v createrepo_c &> /dev/null; then
     echo "Found createrepo_c"
-    CREATE_REPO_CMD="createrepo_c -dvp"
+    CREATE_REPO_CMD="createrepo_c"
 else
     echo "Unable to find a command equivalent to createrepo"
     exit 1
@@ -108,6 +108,16 @@ if ! aptly -config="$APTLY_CONFIG" publish switch -gpg-key="releases@fluentbit.i
     exit 1
 fi
 
+# Debian 12 Bookworm
+echo "Publishing Debian 12 Bookworm"
+find "$SOURCE_DIR/debian/bookworm/" -iname "*-bit_$VERSION*.deb" -exec aptly -config="$APTLY_CONFIG" repo add flb-debian-bookworm {} \;
+aptly -config="$APTLY_CONFIG" snapshot create "fluent-bit-debian-bookworm-${VERSION}" from repo flb-debian-bookworm
+if ! aptly -config="$APTLY_CONFIG" publish switch -gpg-key="releases@fluentbit.io" bookworm filesystem:debian/bookworm:bookworm "fluent-bit-debian-bookworm-${VERSION}"; then
+    # Cleanup snapshot in case we want to retry later
+    aptly -config="$APTLY_CONFIG" snapshot drop "fluent-bit-debian-bookworm-${VERSION}"
+    exit 1
+fi
+
 # Raspbian 10 Buster
 echo "Publishing Raspbian 10 Buster"
 find "$SOURCE_DIR/raspbian/buster/" -iname "*-bit_$VERSION*.deb" -exec aptly -config="$APTLY_CONFIG" repo add flb-raspbian-buster {} \;
@@ -173,19 +183,9 @@ fi
 # Sign YUM repo meta-data
 find "/var/www/apt.fluentbit.io" -name repomd.xml -exec gpg --detach-sign --armor --yes -u "releases@fluentbit.io" {} \;
 
-# Handle the JSON schema by copying in the new versions (if they exist) and then updating the symlinks that point at the latest.
-if compgen -G "$SOURCE_DIR/fluent-bit-schema*.json" > /dev/null; then
-    echo "Updating JSON schema"
-    cp -vf "$SOURCE_DIR"/fluent-bit-schema*.json /var/www/releases.fluentbit.io/releases/"$MAJOR_VERSION/"
-
-    # Simpler than 'ln --relative --target-directory=/var/www/releases.fluentbit.io/releases/"$MAJOR_VERSION"'
-    pushd /var/www/releases.fluentbit.io/releases/"$MAJOR_VERSION"
-        ln -sf "fluent-bit-schema-$VERSION.json" fluent-bit-schema.json
-        ln -sf "fluent-bit-schema-pretty-$VERSION.json" fluent-bit-schema-pretty.json
-    popd
-else
-    echo "Missing JSON schema"
-fi
+# Handle the JSON schema by copying in the new versions (if they exist).
+echo "Updating JSON schema"
+find "$SOURCE_DIR/" -iname "fluent-bit-schema*$VERSION*.json" -exec cp -vf "{}" /var/www/releases.fluentbit.io/releases/"$MAJOR_VERSION/" \;
 
 # Windows - we do want word splitting and ensure some files exist
 if compgen -G "$SOURCE_DIR/windows/*$VERSION*" > /dev/null; then

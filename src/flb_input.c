@@ -126,33 +126,6 @@ void flb_input_net_default_listener(const char *listen, int port,
     }
 }
 
-int flb_input_event_type_is_metric(struct flb_input_instance *ins)
-{
-    if (ins->event_type == FLB_INPUT_METRICS) {
-        return FLB_TRUE;
-    }
-
-    return FLB_FALSE;
-}
-
-int flb_input_event_type_is_trace(struct flb_input_instance *ins)
-{
-    if (ins->event_type == FLB_INPUT_METRICS) {
-        return FLB_TRUE;
-    }
-
-    return FLB_FALSE;
-}
-
-int flb_input_event_type_is_log(struct flb_input_instance *ins)
-{
-    if (ins->event_type == FLB_INPUT_LOGS) {
-        return FLB_TRUE;
-    }
-
-    return FLB_FALSE;
-}
-
 /* Check input plugin's log level.
  * Not for core plugins but for Golang plugins.
  * Golang plugins do not have thread-local flb_worker_ctx information. */
@@ -180,6 +153,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
 /* use for locking the use of the chunk trace context. */
 #ifdef FLB_HAVE_CHUNK_TRACE
     pthread_mutexattr_t attr = {0};
+    pthread_mutexattr_init(&attr);
 #endif
 
     if (!input) {
@@ -243,22 +217,6 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         snprintf(instance->name, sizeof(instance->name) - 1,
                  "%s.%i", plugin->name, id);
 
-        /* set plugin type based on flags: logs or metrics ? */
-        if (plugin->event_type == FLB_INPUT_LOGS) {
-            instance->event_type = FLB_INPUT_LOGS;
-        }
-        else if (plugin->event_type == FLB_INPUT_METRICS) {
-            instance->event_type = FLB_INPUT_METRICS;
-        }
-        else {
-            flb_error("[input] invalid plugin event type %i on '%s'",
-                      plugin->event_type, instance->name);
-            flb_hash_table_destroy(instance->ht_log_chunks);
-            flb_hash_table_destroy(instance->ht_metric_chunks);
-            flb_free(instance);
-            return NULL;
-        }
-
         if (plugin->type == FLB_INPUT_PLUGIN_CORE) {
             instance->context = NULL;
         }
@@ -314,7 +272,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         flb_kv_init(&instance->net_properties);
 
         /* Plugin use networking */
-        if (plugin->flags & FLB_INPUT_NET) {
+        if (plugin->flags & (FLB_INPUT_NET | FLB_INPUT_NET_SERVER)) {
             ret = flb_net_host_set(plugin->name, &instance->host, input);
             if (ret != 0) {
                 flb_free(instance);
@@ -883,7 +841,7 @@ int flb_input_instance_init(struct flb_input_instance *ins,
     struct flb_config *ctx = ins->config;
     struct mk_list *config_map;
     struct flb_input_plugin *p = ins->p;
-    const char *tls_error_message;
+    int tls_session_mode;
 
     if (ins->log_level == -1 && config->log != NULL) {
         ins->log_level = config->log->level;
@@ -1058,39 +1016,45 @@ int flb_input_instance_init(struct flb_input_instance *ins,
 
 #ifdef FLB_HAVE_TLS
     if (ins->use_tls == FLB_TRUE) {
-        if (ins->tls_crt_file == NULL) {
-            tls_error_message = "certificate file missing";
+        if ((p->flags & FLB_INPUT_NET_SERVER) != 0) {
+            if (ins->tls_crt_file == NULL) {
+                flb_error("[input %s] error initializing TLS context "
+                          "(certificate file missing)",
+                          ins->name);
 
-            ins->tls = NULL;
-        }
-        else if (ins->tls_key_file == NULL) {
-            tls_error_message = "private key file missing";
+                flb_input_instance_destroy(ins);
 
-            ins->tls = NULL;
+                return -1;
+            }
+            else if (ins->tls_key_file == NULL) {
+                flb_error("[input %s] error initializing TLS context "
+                          "(private key file missing)",
+                          ins->name);
+
+                flb_input_instance_destroy(ins);
+
+                return -1;
+            }
+
+            tls_session_mode = FLB_TLS_SERVER_MODE;
         }
         else {
-            tls_error_message = NULL;
-
-            ins->tls = flb_tls_create(FLB_TLS_SERVER_MODE,
-                                      ins->tls_verify,
-                                      ins->tls_debug,
-                                      ins->tls_vhost,
-                                      ins->tls_ca_path,
-                                      ins->tls_ca_file,
-                                      ins->tls_crt_file,
-                                      ins->tls_key_file,
-                                      ins->tls_key_passwd);
+            tls_session_mode = FLB_TLS_CLIENT_MODE;
         }
 
+        ins->tls = flb_tls_create(tls_session_mode,
+                                  ins->tls_verify,
+                                  ins->tls_debug,
+                                  ins->tls_vhost,
+                                  ins->tls_ca_path,
+                                  ins->tls_ca_file,
+                                  ins->tls_crt_file,
+                                  ins->tls_key_file,
+                                  ins->tls_key_passwd);
+
         if (ins->tls == NULL) {
-            if (tls_error_message != NULL) {
-                flb_error("[input %s] error initializing TLS context (%s)",
-                          ins->name, tls_error_message);
-            }
-            else {
-                flb_error("[input %s] error initializing TLS context",
-                          ins->name);
-            }
+            flb_error("[input %s] error initializing TLS context",
+                      ins->name);
 
             flb_input_instance_destroy(ins);
 

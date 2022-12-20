@@ -33,7 +33,8 @@ RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log
 ENV DEBIAN_FRONTEND noninteractive
 
 # hadolint ignore=DL3008
-RUN apt-get update && \
+RUN echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/sources.list && \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
     curl \
@@ -45,7 +46,7 @@ RUN apt-get update && \
     libssl-dev \
     libsasl2-dev \
     pkg-config \
-    libsystemd-dev \
+    libsystemd-dev/bullseye-backports \
     zlib1g-dev \
     libpq-dev \
     postgresql-server-dev-all \
@@ -104,13 +105,14 @@ COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 # We also include some extra handling for the status files that some tooling uses for scanning, etc.
 WORKDIR /tmp
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-RUN apt-get update && \
+RUN echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/sources.list && \
+    apt-get update && \
     apt-get download \
     libssl1.1 \
     libsasl2-2 \
     pkg-config \
     libpq5 \
-    libsystemd0 \
+    libsystemd0/bullseye-backports \
     zlib1g \
     ca-certificates \
     libatomic1 \
@@ -202,13 +204,14 @@ COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 ENV DEBIAN_FRONTEND noninteractive
 
 # hadolint ignore=DL3008
-RUN apt-get update && \
+RUN echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/sources.list && \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
     libssl1.1 \
     libsasl2-2 \
     pkg-config \
     libpq5 \
-    libsystemd0 \
+    libsystemd0/bullseye-backports \
     zlib1g \
     ca-certificates \
     libatomic1 \

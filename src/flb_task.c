@@ -483,3 +483,35 @@ void flb_task_destroy(struct flb_task *task, int del)
     }
     flb_free(task);
 }
+
+struct flb_task_queue* flb_task_queue_create() {
+    struct flb_task_queue *tq;
+    tq = flb_malloc(sizeof(struct flb_task_queue));
+    if (!tq) {
+        flb_errno();
+        return NULL;
+    }
+    mk_list_init(&tq->pending);
+    mk_list_init(&tq->in_progress);
+    return tq;
+}
+
+void flb_task_queue_destroy(struct flb_task_queue *queue) {
+    struct flb_task_enqueued *queued_task;
+    struct mk_list *tmp;
+    struct mk_list *head;
+
+    mk_list_foreach_safe(head, tmp, &queue->pending) {
+        queued_task = mk_list_entry(head, struct flb_task_enqueued, _head);
+        mk_list_del(&queued_task->_head);
+        flb_free(queued_task);
+    }
+
+    mk_list_foreach_safe(head, tmp, &queue->in_progress) {
+        queued_task = mk_list_entry(head, struct flb_task_enqueued, _head);
+        mk_list_del(&queued_task->_head);
+        flb_free(queued_task);
+    }
+
+    flb_free(queue);
+}

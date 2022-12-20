@@ -51,7 +51,7 @@ static void cb_results(const char *name, const char *value,
     char tmp[255];
     struct regex_cb_ctx *pcb = data;
     struct flb_parser *parser = pcb->parser;
-    struct tm tm = {0};
+    struct flb_tm tm = {0};
     (void) data;
 
     if (vlen == 0 && parser->skip_empty) {

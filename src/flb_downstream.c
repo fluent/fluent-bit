@@ -257,6 +257,7 @@ struct flb_connection *flb_downstream_conn_get(struct flb_downstream *stream)
     flb_sockfd_t           connection_fd;
     struct flb_connection *connection;
     int                    transport;
+    struct flb_coro       *coroutine;
     int                    result;
 
     transport = stream->base.transport;
@@ -273,11 +274,18 @@ struct flb_connection *flb_downstream_conn_get(struct flb_downstream *stream)
         connection_fd = FLB_INVALID_SOCKET;
     }
 
+    if (flb_downstream_is_async(stream)) {
+        coroutine = flb_coro_get();
+    }
+    else {
+        coroutine = NULL;
+    }
+
     connection = flb_connection_create(connection_fd,
                                        FLB_DOWNSTREAM_CONNECTION,
                                        (void *) stream,
                                        flb_engine_evl_get(),
-                                       flb_coro_get());
+                                       coroutine);
 
     if (connection == NULL) {
         return NULL;
@@ -296,7 +304,7 @@ struct flb_connection *flb_downstream_conn_get(struct flb_downstream *stream)
         transport != FLB_TRANSPORT_UNIX_DGRAM ) {
         flb_connection_reset_connection_timeout(connection);
 
-        result = flb_io_net_accept(connection, flb_coro_get());
+        result = flb_io_net_accept(connection, coroutine);
 
         if (result != 0) {
             flb_connection_reset_connection_timeout(connection);

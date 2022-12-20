@@ -31,9 +31,6 @@
 #include <cmetrics/cmt_variant_utils.h>
 #include <cmetrics/cmt_mpack_utils.h>
 
-#ifndef CMT_SUMMARY_QUANTILE_ELEMENT_LIMIT
-#define CMT_SUMMARY_QUANTILE_ELEMENT_LIMIT 5
-#endif
 
 static int create_counter_instance(struct cmt_map *map)
 {
@@ -442,11 +439,6 @@ static int unpack_summary_quantile(mpack_reader_t *reader, size_t index, void *c
     }
 
     decode_context = (struct cmt_msgpack_decode_context *) context;
-
-    if (index >= CMT_SUMMARY_QUANTILE_ELEMENT_LIMIT) {
-        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
-    }
-
     return cmt_mpack_consume_uint_tag(reader, &decode_context->metric->sum_quantiles[index]);
 }
 
@@ -677,6 +669,7 @@ static int unpack_metric(mpack_reader_t *reader,
 
             return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
         }
+        metric->sum_quantiles_count = summary->quantiles_count;
     }
 
     cfl_list_init(&metric->labels);
@@ -795,6 +788,28 @@ static int unpack_meta_type(mpack_reader_t *reader, size_t index, void *context)
         decode_context->map->type = value;
 
         result = create_metric_instance(decode_context->map);
+    }
+
+    return result;
+}
+
+static int unpack_meta_aggregation_type(mpack_reader_t *reader, size_t index, void *context)
+{
+    uint64_t                           value;
+    int                                result;
+    struct cmt_msgpack_decode_context *decode_context;
+
+    if (NULL == reader ||
+        NULL == context) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+
+    decode_context = (struct cmt_msgpack_decode_context *) context;
+
+    result = cmt_mpack_consume_uint_tag(reader, &value);
+
+    if (CMT_DECODE_MSGPACK_SUCCESS == result) {
+        decode_context->aggregation_type = value;
     }
 
     return result;
@@ -933,6 +948,7 @@ static int unpack_basic_type_meta(mpack_reader_t *reader, size_t index, void *co
     int                                   result;
     struct cmt_summary                   *summary;
     struct cmt_histogram                 *histogram;
+    struct cmt_counter                   *counter;
     struct cmt_msgpack_decode_context    *decode_context;
     struct cmt_mpack_map_entry_callback_t callbacks[] = \
         {
@@ -942,6 +958,7 @@ static int unpack_basic_type_meta(mpack_reader_t *reader, size_t index, void *co
             {"labels",           unpack_meta_labels},
             {"buckets",          unpack_meta_buckets},
             {"quantiles",        unpack_meta_quantiles},
+            {"aggregation_type", unpack_meta_aggregation_type},
             {NULL,               NULL}
         };
 
@@ -976,10 +993,10 @@ static int unpack_basic_type_meta(mpack_reader_t *reader, size_t index, void *co
 
             decode_context->quantile_list = NULL;
             decode_context->quantile_count = 0;
-
-            if (summary->quantiles == NULL) {
-                result = CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
-            }
+        }
+        else if(decode_context->map->type == CMT_COUNTER) {
+            counter = (struct counter *) decode_context->map->parent;
+            counter->aggregation_type = decode_context->aggregation_type;
         }
     }
 

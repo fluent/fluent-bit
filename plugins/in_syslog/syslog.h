@@ -49,6 +49,7 @@ struct flb_syslog {
     flb_sds_t unix_path;
     flb_sds_t unix_perm_str;
     unsigned int unix_perm;
+    size_t receive_buffer_size;
 
     /* UDP buffer, data length and buffer size */
         // char *buffer_data;
@@ -62,6 +63,7 @@ struct flb_syslog {
     /* Configuration */
     flb_sds_t parser_name;
     struct flb_parser *parser;
+    flb_sds_t raw_message_key;
 
     int dgram_mode_flag;
     int collector_id;

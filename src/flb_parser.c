@@ -150,6 +150,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
                                      const char *time_offset,
                                      int time_keep,
                                      int time_strict,
+                                     int logfmt_no_bare_keys,
                                      struct flb_parser_types *types,
                                      int types_len,
                                      struct mk_list *decoders,
@@ -318,6 +319,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
 
     p->time_keep = time_keep;
     p->time_strict = time_strict;
+    p->logfmt_no_bare_keys = logfmt_no_bare_keys;
     p->types = types;
     p->types_len = types_len;
     return p;
@@ -473,6 +475,7 @@ static int parser_conf_file(const char *cfg, struct flb_cf *cf,
     int skip_empty;
     int time_keep;
     int time_strict;
+    int logfmt_no_bare_keys;
     int types_len;
     struct mk_list *head;
     struct mk_list *decoders = NULL;
@@ -549,6 +552,14 @@ static int parser_conf_file(const char *cfg, struct flb_cf *cf,
         /* time_offset (UTC offset) */
         time_offset = get_parser_key(config, cf, s, "time_offset");
 
+        /* logfmt_no_bare_keys */
+        logfmt_no_bare_keys = FLB_FALSE;
+        tmp_str = get_parser_key(config, cf, s, "logfmt_no_bare_keys");
+        if (tmp_str) {
+            logfmt_no_bare_keys = flb_utils_bool(tmp_str);
+            flb_sds_destroy(tmp_str);
+        }
+
         /* types */
         types_str = get_parser_key(config, cf, s, "types");
         if (types_str) {
@@ -564,7 +575,7 @@ static int parser_conf_file(const char *cfg, struct flb_cf *cf,
         /* Create the parser context */
         if (!flb_parser_create(name, format, regex, skip_empty,
                                time_fmt, time_key, time_offset, time_keep, time_strict,
-                               types, types_len, decoders, config)) {
+                               logfmt_no_bare_keys, types, types_len, decoders, config)) {
             goto fconf_error;
         }
 
@@ -973,6 +984,12 @@ int flb_parser_tzone_offset(const char *str, int len, int *tmdiff)
         return -1;
     }
 
+    /* Ensure there is enough data */
+    if (len < 4) {
+        *tmdiff = 0;
+        return -1;
+    }
+
     /* Negative value ? */
     neg = (*p++ == '-');
 
@@ -982,6 +999,11 @@ int flb_parser_tzone_offset(const char *str, int len, int *tmdiff)
     /* Gather hours and minutes */
     hour = ((p[0] - '0') * 10) + (p[1] - '0');
     if (end - p == 5 && p[2] == ':') {
+        /* Ensure there is enough data */
+        if (len < 5) {
+            *tmdiff = 0;
+            return -1;
+        }
         min = ((p[3] - '0') * 10) + (p[4] - '0');
     }
     else {
@@ -1034,7 +1056,7 @@ static int parse_subseconds(char *str, int len, double *subsec)
 int flb_parser_time_lookup(const char *time_str, size_t tsize,
                            time_t now,
                            struct flb_parser *parser,
-                           struct tm *tm, double *ns)
+                           struct flb_tm *tm, double *ns)
 {
     int ret;
     time_t time_now;
@@ -1077,8 +1099,8 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
         gmtime_r(&time_now, &tmy);
 
         /* Make the timestamp default to today */
-        tm->tm_mon = tmy.tm_mon;
-        tm->tm_mday = tmy.tm_mday;
+        tm->tm.tm_mon = tmy.tm_mon;
+        tm->tm.tm_mday = tmy.tm_mday;
 
         uint64_t t = tmy.tm_year + 1900;
 
@@ -1145,11 +1167,9 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
         }
     }
 
-#ifdef FLB_HAVE_GMTOFF
     if (parser->time_with_tz == FLB_FALSE) {
-        tm->tm_gmtoff = parser->time_offset;
+        flb_tm_gmtoff(tm) = parser->time_offset;
     }
-#endif
 
     return 0;
 }

@@ -95,12 +95,6 @@ static int append_options(struct flb_forward *ctx,
     /* options is map, use the dynamic map type */
     flb_mp_map_header_init(&mh, mp_pck);
 
-    /* event type (FLB_EVENT_TYPE_LOGS, FLB_EVENT_TYPE_METRICS, FLB_EVENT_TYPE_TRACES) */
-    flb_mp_map_header_append(&mh);
-    msgpack_pack_str(mp_pck, 13);
-    msgpack_pack_str_body(mp_pck, "fluent_signal", 13);
-    msgpack_pack_int64(mp_pck, event_type);
-
     if (fc->require_ack_response == FLB_TRUE) {
         /*
          * for ack we calculate  sha512 of context, take 16 bytes,
@@ -148,6 +142,12 @@ static int append_options(struct flb_forward *ctx,
         msgpack_pack_str(mp_pck, 4);
         msgpack_pack_str_body(mp_pck, "gzip", 4);
     }
+
+    /* event type (FLB_EVENT_TYPE_LOGS, FLB_EVENT_TYPE_METRICS, FLB_EVENT_TYPE_TRACES) */
+    flb_mp_map_header_append(&mh);
+    msgpack_pack_str(mp_pck, 13);
+    msgpack_pack_str_body(mp_pck, "fluent_signal", 13);
+    msgpack_pack_int64(mp_pck, event_type);
 
     flb_mp_map_header_end(&mh);
 

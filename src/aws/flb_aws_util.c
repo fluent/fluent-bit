@@ -47,6 +47,16 @@
 #define AWS_ECS_METADATA_URI "ECS_CONTAINER_METADATA_URI_V4"
 #define FLB_MAX_AWS_RESP_BUFFER_SIZE 0 /* 0 means unlimited capacity as per requirement */
 
+#ifdef FLB_SYSTEM_WINDOWS
+#define FLB_AWS_BASE_USER_AGENT        "aws-fluent-bit-plugin-windows"
+#define FLB_AWS_BASE_USER_AGENT_FORMAT "aws-fluent-bit-plugin-windows-%s"
+#define FLB_AWS_BASE_USER_AGENT_LEN    29
+#else
+#define FLB_AWS_BASE_USER_AGENT        "aws-fluent-bit-plugin"
+#define FLB_AWS_BASE_USER_AGENT_FORMAT "aws-fluent-bit-plugin-%s"
+#define FLB_AWS_BASE_USER_AGENT_LEN    21
+#endif
+
 struct flb_http_client *request_do(struct flb_aws_client *aws_client,
                                    int method, const char *uri,
                                    const char *body, size_t body_len,
@@ -229,8 +239,7 @@ void flb_aws_client_destroy(struct flb_aws_client *aws_client)
         if (aws_client->upstream) {
             flb_upstream_destroy(aws_client->upstream);
         }
-        if (aws_client->free_user_agent) {
-            /* if user agent was auto-set by code its an SDS string */
+        if (aws_client->extra_user_agent) {
             flb_sds_destroy(aws_client->extra_user_agent);
         }
         flb_free(aws_client);
@@ -362,23 +371,27 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
             goto error;
         }
         aws_client->extra_user_agent = tmp;
-        aws_client->free_user_agent = FLB_TRUE;
         tmp = NULL;
     }
     
     /* Add AWS Fluent Bit user agent header */
     if (strcasecmp(aws_client->extra_user_agent, AWS_USER_AGENT_NONE) == 0) {
         ret = flb_http_add_header(c, "User-Agent", 10,
-                                  "aws-fluent-bit-plugin", 21);
+                                  FLB_AWS_BASE_USER_AGENT, FLB_AWS_BASE_USER_AGENT_LEN);
     }
     else {
         user_agent_prefix = flb_sds_create_size(64);
-        tmp = flb_sds_printf(&user_agent_prefix, "aws-fluent-bit-plugin-%s",
+        if (!user_agent_prefix) {
+            flb_errno();
+            flb_error("[aws_client] failed to create user agent");
+            goto error;
+        }
+        tmp = flb_sds_printf(&user_agent_prefix, FLB_AWS_BASE_USER_AGENT_FORMAT,
                              aws_client->extra_user_agent);
         if (!tmp) {
             flb_errno();
             flb_sds_destroy(user_agent_prefix);
-            flb_error("[aws_client] failed to fetch user agent");
+            flb_error("[aws_client] failed to create user agent");
             goto error;
         }
         user_agent_prefix = tmp;

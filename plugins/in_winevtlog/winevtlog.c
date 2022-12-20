@@ -612,16 +612,14 @@ struct mk_list *winevtlog_open_all(const char *channels, int read_existing_event
     channel = strtok_s(tmp , ",", &state);
     while (channel) {
         ch = winevtlog_subscribe(channel, read_existing_events, NULL);
-        if (ignore_missing_channels) {
-            if (ch) {
-                mk_list_add(&ch->_head, list);
-            }
-            else {
-                flb_debug("[in_winevtlog] channel '%s' does not exist", channel);
-            }             
+        if (ch) {
+            mk_list_add(&ch->_head, list);
         }
         else {
-            if (!ch) {
+            if (ignore_missing_channels) {
+                flb_debug("[in_winevtlog] channel '%s' does not exist", channel);
+            }
+            else {
                 flb_free(tmp);
                 winevtlog_close_all(list);
                 return NULL;
