@@ -1321,7 +1321,7 @@ static int get_metadata_by_id(struct flb_filter_ecs *ctx,
     /* get metadata for this container */
     ret = flb_hash_table_get(ctx->container_hash_table,
                              container_short_id, flb_sds_len(container_short_id),
-                             (void *) metadata_buffer, &size);
+                             (void **) metadata_buffer, &size);
 
     if (ret == -1) {
         /* try fetch metadata */
@@ -1335,7 +1335,7 @@ static int get_metadata_by_id(struct flb_filter_ecs *ctx,
         /* get from hash table */
         ret = flb_hash_table_get(ctx->container_hash_table,
                                  container_short_id, flb_sds_len(container_short_id),
-                                 (void *) metadata_buffer, &size);
+                                 (void **) metadata_buffer, &size);
     }
 
     flb_sds_destroy(container_short_id);
@@ -1365,14 +1365,14 @@ static int is_tag_marked_failed(struct flb_filter_ecs *ctx,
                                 const char *tag, int tag_len)
 {
     int ret;
-    int val = 0;
+    int *val = NULL;
     size_t val_size;
 
     ret = flb_hash_table_get(ctx->failed_metadata_request_tags,
                              tag, tag_len,
-                             (void *) &val, &val_size);
+                             (void **) &val, &val_size);
     if (ret != -1) {
-        if (val >= FLB_ECS_FILTER_METADATA_RETRIES) {
+        if (*val >= FLB_ECS_FILTER_METADATA_RETRIES) {
             return FLB_TRUE;
         }
     }
@@ -1389,7 +1389,7 @@ static void mark_tag_failed(struct flb_filter_ecs *ctx,
 
     ret = flb_hash_table_get(ctx->failed_metadata_request_tags,
                              tag, tag_len,
-                             (void *) val, &val_size);
+                             (void **) &val, &val_size);
 
     if (ret == -1) {
         /* hash table copies memory to new heap block */
