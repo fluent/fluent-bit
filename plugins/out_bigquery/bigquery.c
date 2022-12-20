@@ -260,7 +260,7 @@ static flb_sds_t add_aws_signature(struct flb_http_client *c, struct flb_bigquer
 
     signature = flb_signv4_do(c, FLB_TRUE, FLB_TRUE, time(NULL),
                               ctx->aws_region, "sts",
-                              0, ctx->aws_provider);
+                              0, NULL, ctx->aws_provider);
     if (!signature) {
         flb_plg_error(ctx->ins, "Could not sign the request with AWS SigV4");
         return NULL;
