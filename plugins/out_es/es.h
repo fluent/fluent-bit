@@ -61,6 +61,8 @@ struct flb_elasticsearch {
     /* one for the standard chain provider, one for sts assume role */
     struct flb_tls *aws_sts_tls;
     char *aws_session_name;
+    char *aws_service_name;
+    struct mk_list *aws_unsigned_headers;
 #endif
 
     /* HTTP Client Setup */
