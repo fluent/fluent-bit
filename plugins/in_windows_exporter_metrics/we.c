@@ -283,6 +283,11 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_we, raw_denying_disk),
      "Specify to be denied regex for logical disk metrics."
     },
+    {
+     FLB_CONFIG_MAP_STR, "we.net.allow_nic_regex", "/.+/",
+     0, FLB_TRUE, offsetof(struct flb_we, raw_allowing_nic),
+     "Specify to be scribable regex for net metrics by name of NIC."
+    },
     /* EOF */
     {0}
 };

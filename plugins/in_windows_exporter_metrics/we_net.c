@@ -196,9 +196,25 @@ int we_net_exit(struct flb_we *ctx)
     return 0;
 }
 
+static int net_regex_match(struct flb_regex *regex, char *instance_name)
+{
+    if (regex == NULL) {
+        return 0;
+    }
+    return flb_regex_match(regex, instance_name, strlen(instance_name));
+}
+
 int we_net_instance_hook(char *instance_name, struct flb_we *ctx)
 {
-    return (strcasestr(instance_name, "Total") != NULL);
+    if (strcasestr(instance_name, "Total") != NULL) {
+        return 1;
+    }
+
+    if (!net_regex_match(ctx->allowing_nic_regex, instance_name)) {
+        return 1;
+    }
+
+    return 0;
 }
 
 int we_net_label_prepend_hook(char                           **label_list,
