@@ -80,7 +80,6 @@ struct flb_aws_client {
     char *proxy;
     int flags;
     flb_sds_t extra_user_agent;
-    int free_user_agent;
 
     /*
      * Additional headers which will be added to all requests.
