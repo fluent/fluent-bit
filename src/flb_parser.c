@@ -230,7 +230,17 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
 
     if (time_fmt) {
         p->time_fmt_full = flb_strdup(time_fmt);
+        if (!p->time_fmt_full) {
+            flb_error("[parser:%s] could not duplicate time fmt full", name);
+            flb_interim_parser_destroy(p);
+            return NULL;
+        }
         p->time_fmt = flb_strdup(time_fmt);
+        if (!p->time_fmt) {
+            flb_error("[parser:%s] could not duplicate time fmt", name);
+            flb_interim_parser_destroy(p);
+            return NULL;
+        }
 
         /* Check if the format is considering the year */
         if (strstr(p->time_fmt, "%Y") || strstr(p->time_fmt, "%y")) {
