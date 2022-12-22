@@ -88,6 +88,12 @@ int ctr_span_set_trace_id(struct ctrace_span *span, void *buf, size_t len)
         return -1;
     }
 
+    /* If trace_id is already set, free it first */
+    if (span->trace_id != NULL) {
+        ctr_id_destroy(span->trace_id);
+        span->trace_id = NULL;
+    }
+
     span->trace_id = ctr_id_create(buf, len);
     if (!span->trace_id) {
         return -1;
