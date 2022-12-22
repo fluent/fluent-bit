@@ -310,7 +310,12 @@ struct flb_config *flb_config_init()
 
     /* Multiline core */
     mk_list_init(&config->multiline_parsers);
-    flb_ml_init(config);
+    ret = flb_ml_init(config);
+    if (ret == -1) {
+        flb_error("[config] multiline core initialization failed");
+        flb_config_exit(config);
+        return NULL;
+    }
 
     /* Register static plugins */
     ret = flb_plugins_register(config);
