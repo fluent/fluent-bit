@@ -135,6 +135,9 @@ static void flb_interim_parser_destroy(struct flb_parser *parser)
     if (parser->time_fmt_year) {
         flb_free(parser->time_fmt_year);
     }
+    if (parser->time_fmt_full) {
+        flb_free(parser->time_fmt_full);
+    }
     if (parser->time_key) {
         flb_free(parser->time_key);
     }
