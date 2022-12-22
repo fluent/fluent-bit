@@ -202,13 +202,14 @@ struct flb_config *flb_config_init()
     /* Initialize config_format context */
     cf = flb_cf_create();
     if (!cf) {
+        flb_config_exit(config);
         return NULL;
     }
     config->cf_main = cf;
 
     section = flb_cf_section_create(cf, "service", 0);
     if (!section) {
-        flb_cf_destroy(cf);
+        flb_config_exit(config);
         return NULL;
     }
 
