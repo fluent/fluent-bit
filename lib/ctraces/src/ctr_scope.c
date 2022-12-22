@@ -77,6 +77,11 @@ int ctr_scope_span_set_schema_url(struct ctrace_scope_span *scope_span, char *ur
 void ctr_scope_span_set_instrumentation_scope(struct ctrace_scope_span *scope_span,
                                               struct ctrace_instrumentation_scope *scope)
 {
+    /* Safeguard against leaks */
+    if (scope_span->instrumentation_scope != NULL) {
+        ctr_instrumentation_scope_destroy(scope_span->instrumentation_scope);
+    }
+
     scope_span->instrumentation_scope = scope;
 }
 
