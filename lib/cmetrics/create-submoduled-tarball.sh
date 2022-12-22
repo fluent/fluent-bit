@@ -9,7 +9,7 @@ OS=$(uname -s)
 
 echo "$OS"
 if [ "$OS" == "Darwin" ]; then
-    echo "Using gtar for contatinate option"
+    echo "Using gtar for concatenate option"
     TAR=gtar
 else
     TAR=tar
