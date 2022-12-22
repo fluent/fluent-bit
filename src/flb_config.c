@@ -394,7 +394,9 @@ void flb_config_exit(struct flb_config *config)
         }
     }
 
-    flb_env_destroy(config->env);
+    if (config->env) {
+        flb_env_destroy(config->env);
+    }
 
     /* Program name */
     if (config->program_name) {
@@ -412,7 +414,9 @@ void flb_config_exit(struct flb_config *config)
     }
 
     /* Destroy any DSO context */
-    flb_plugin_destroy(config->dso_plugins);
+    if (config->dso_plugins) {
+        flb_plugin_destroy(config->dso_plugins);
+    }
 
     /* Workers */
     flb_worker_exit(config);
@@ -425,7 +429,9 @@ void flb_config_exit(struct flb_config *config)
     }
 
     /* Release scheduler */
-    flb_sched_destroy(config->sched);
+    if (config->sched) {
+        flb_sched_destroy(config->sched);
+    }
 
 #ifdef FLB_HAVE_HTTP_SERVER
     if (config->http_listen) {
