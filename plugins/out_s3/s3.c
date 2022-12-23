@@ -2389,7 +2389,7 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-     FLB_CONFIG_MAP_BOOL, "preserve_data_ordering", "false",
+     FLB_CONFIG_MAP_BOOL, "preserve_data_ordering", "true",
      0, FLB_TRUE, offsetof(struct flb_s3, preserve_data_ordering),
      "Normally, when an upload request fails, there is a high chance for the last "
      "received chunk to be swapped with a later chunk, resulting in data shuffling. "
