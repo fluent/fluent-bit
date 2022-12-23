@@ -23,13 +23,12 @@
 #include "we.h"
 #include "we_util.h"
 
-double we_get_windows_version()
+int we_get_windows_version(double *version_number)
 {
     LSTATUS result;
     DWORD   data_size;
     HKEY    key_handle;
     char    version_text[8];
-    double  version_number;
 
     data_size = sizeof(version_text);
 
@@ -40,7 +39,7 @@ double we_get_windows_version()
                            &key_handle);
 
     if (result != ERROR_SUCCESS) {
-        return 0;
+        return -1;
     }
 
     result = RegQueryValueExA(key_handle,
@@ -54,10 +53,12 @@ double we_get_windows_version()
 
     if (result != ERROR_SUCCESS)
     {
-        return 0;
+        return -1;
     }
 
-    return strtod(version_text, NULL);
+    *version_number = strtod(version_text, NULL);
+
+    return 0;
 }
 
 void we_hexdump(uint8_t *buffer, size_t buffer_length, size_t line_length) {
