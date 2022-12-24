@@ -257,6 +257,10 @@ int flb_unescape_string(const char *buf, int buf_len, char **unesc_buf)
                     p[j++] = '\r';
                     i++;
                 }
+                else if (n == '0') {
+                    p[j++] = '\0';
+                    i++;
+                }
                 else if (n == '\\') {
                     p[j++] = '\\';
                     i++;
