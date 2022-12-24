@@ -74,7 +74,7 @@ static int cb_count_msgpack(void *record, size_t size, void *data)
     size_t off = 0;
 
     if (!TEST_CHECK(data != NULL)) {
-        flb_error("data is NULL");
+        TEST_MSG("data is NULL");
     }
 
     /* Iterate each item array and apply rules */
@@ -550,12 +550,81 @@ void flb_test_issue_5336()
     test_ctx_destroy(ctx);
 }
 
+/*
+ * Null '\0' separator issue
+ * https://github.com/fluent/fluent-bit/issues/6526
+ */
+void flb_test_issue_6526()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    flb_sockfd_t fd;
+    int ret;
+    int not_used;
+    int num;
+    ssize_t w_size;
+
+    char *buf = "{\"msg\":\"one\"}\0{\"msg\":\"two\"}\0";
+    size_t size = strlen("{\"msg\":\"one\"}") * 2 + 2; /* set static value since null char is contained */
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &not_used;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "format", "none",
+                        "separator", "\\0",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* use default host/port */
+    fd = connect_tcp(NULL, -1);
+    if (!TEST_CHECK(fd >= 0)) {
+        exit(EXIT_FAILURE);
+    }
+
+    w_size = send(fd, buf, size, 0);
+    if (!TEST_CHECK(w_size == size)) {
+        TEST_MSG("failed to send, errno=%d", errno);
+        flb_socket_close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num == 2))  {
+        TEST_MSG("outputs error. got=%d expect=2", num);
+    }
+
+    flb_socket_close(fd);
+    test_ctx_destroy(ctx);
+}
+
 TEST_LIST = {
     {"tcp", flb_test_tcp},
     {"tcp_with_tls", flb_test_tcp_with_tls},
     {"format_none", flb_test_format_none},
     {"format_none_separator", flb_test_format_none_separator},
     {"65535_records_issue_5336", flb_test_issue_5336},
+    {"null separator", flb_test_issue_6526},
     {NULL, NULL}
 };
 
