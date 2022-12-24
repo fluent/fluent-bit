@@ -108,6 +108,27 @@ static ssize_t parse_payload_json(struct tcp_conn *conn)
     return conn->pack_state.last_byte;
 }
 
+static char *strstr_sep(char *buf, char *separator, int buf_len)
+{
+    int i;
+    if (buf == NULL || separator == NULL || buf_len == 0) {
+        return NULL;
+    }
+
+    /* If separator is '\0', strstr always returns buf. */
+    if (separator[0] != '\0') {
+        return strstr(buf, separator);
+    }
+
+    /* seek \0 */
+    for (i=0; i<buf_len; i++) {
+        if (buf[i] == '\0') {
+            return buf + i;
+        }
+    }
+    return NULL;
+}
+
 /*
  * Process a raw text payload, uses the delimited character to split records,
  * return the number of processed bytes
@@ -116,6 +137,7 @@ static ssize_t parse_payload_none(struct tcp_conn *conn)
 {
     int len;
     int sep_len;
+    int buf_len;
     size_t consumed = 0;
     char *buf;
     char *s;
@@ -129,10 +151,9 @@ static ssize_t parse_payload_none(struct tcp_conn *conn)
     /* Initialize local msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
     buf = conn->buf_data;
-
-    while ((s = strstr(buf, separator))) {
+    buf_len = conn->buf_len;
+    while ((s = strstr_sep(buf, separator, buf_len))) {
         len = (s - buf);
         if (len == 0) {
             break;
@@ -147,6 +168,7 @@ static ssize_t parse_payload_none(struct tcp_conn *conn)
             msgpack_pack_str_body(&mp_pck, buf, len);
             consumed += len + 1;
             buf += len + sep_len;
+            buf_len -= (len + sep_len);
         }
         else {
             break;
