@@ -141,6 +141,7 @@ option(FLB_WINDOWS_DEFAULTS    "Build with predefined Windows settings"     Yes)
 option(FLB_WASM                "Build with WASM runtime support"            Yes)
 option(FLB_WAMRC               "Build with WASM AOT compiler executable"    No)
 option(FLB_WASM_STACK_PROTECT  "Build with WASM runtime with strong stack protector flags" No)
+option(FLB_GZIP_LEVEL          "Set default gzip compression level")
 
 # Native Metrics Support (cmetrics)
 option(FLB_METRICS             "Enable metrics support"       Yes)
@@ -378,6 +379,12 @@ endif()
 if (FLB_SYSTEM_MACOS)
   # build tweaks
   include(cmake/macos-setup.cmake)
+endif()
+
+# Special definition to set the gzip compression level
+if(FLB_GZIP_LEVEL)
+  add_definitions(-DFLB_GZIP_LEVEL=${FLB_GZIP_LEVEL})
+  set(FLB_BUILD_FLAGS "${FLB_BUILD_FLAGS}#ifndef FLB_GZIP_LEVEL\n#define FLB_GZIP_LEVEL ${FLB_GZIP_LEVEL}\n#endif\n")
 endif()
 
 # Extract Git commit information for debug output.

@@ -100,7 +100,7 @@ int flb_gzip_compress(void *in_data, size_t in_len,
     strm.total_out = 0;
 
     /* Deflate mode */
-    deflateInit2(&strm, Z_DEFAULT_COMPRESSION,
+    deflateInit2(&strm, FLB_DEFAULT_COMPRESSION,
                  Z_DEFLATED, -Z_DEFAULT_WINDOW_BITS, 9, Z_DEFAULT_STRATEGY);
 
     /*
