@@ -91,6 +91,11 @@ struct flb_firehose {
     int retry_requests;
     int compression;
 
+    /* placeholders for time formatting options */
+    const char *time_key_format_before_nanos;
+    const char *time_key_format_after_nanos;
+    int time_key_format_with_nanos;
+
     /* must be freed on shutdown if custom_endpoint is not set */
     char *endpoint;
 
