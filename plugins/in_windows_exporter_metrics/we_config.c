@@ -33,12 +33,28 @@ struct flb_we *flb_we_config_create(struct flb_input_instance *ins,
         return NULL;
     }
     ctx->ins = ins;
+    ctx->allowing_disk_regex = NULL;
+    ctx->denying_disk_regex = NULL;
+    ctx->allowing_nic_regex = NULL;
 
     /* Load the config map */
     ret = flb_input_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
         flb_free(ctx);
         return NULL;
+    }
+
+    /* Process allow/deny regex rules */
+    if (ctx->raw_allowing_disk != NULL) {
+        ctx->allowing_disk_regex = flb_regex_create(ctx->raw_allowing_disk);
+    }
+
+    if (ctx->raw_denying_disk != NULL) {
+        ctx->denying_disk_regex = flb_regex_create(ctx->raw_denying_disk);
+    }
+
+    if (ctx->raw_allowing_nic != NULL) {
+        ctx->allowing_nic_regex = flb_regex_create(ctx->raw_allowing_nic);
     }
 
     ctx->cmt = cmt_create();
@@ -55,6 +71,18 @@ void flb_we_config_destroy(struct flb_we *ctx)
 {
     if (!ctx) {
         return;
+    }
+
+    if (ctx->allowing_disk_regex != NULL) {
+        flb_regex_destroy(ctx->allowing_disk_regex);
+    }
+
+    if (ctx->denying_disk_regex != NULL) {
+        flb_regex_destroy(ctx->denying_disk_regex);
+    }
+
+    if (ctx->allowing_nic_regex != NULL) {
+        flb_regex_destroy(ctx->allowing_nic_regex);
     }
 
     if (ctx->cmt) {

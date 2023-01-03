@@ -31,7 +31,7 @@
  * log records, and a later batch fails, Fluent Bit will retry ALL the batches,
  * including the ones that succeeded. This is not ideal.
  */
-#define FLB_LOG_RECORD_BATCH_SIZE 1000
+#define DEFAULT_LOG_RECORD_BATCH_SIZE "1000"
 
 /* Plugin context */
 struct opentelemetry_context {
@@ -50,6 +50,9 @@ struct opentelemetry_context {
     char *logs_uri;
     char *host;
     int port;
+
+    /* Number of logs to flush at a time */
+    int batch_size;
 
     /* Log the response paylod */
     int log_response_payload;

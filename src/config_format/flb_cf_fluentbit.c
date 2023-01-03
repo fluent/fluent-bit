@@ -287,6 +287,8 @@ static int local_init(struct local_ctx *ctx, char *file)
         p = realpath(file, path);
 #endif
         if (!p) {
+            flb_errno();
+            flb_error("file=%s", file);
             return -1;
         }
     }

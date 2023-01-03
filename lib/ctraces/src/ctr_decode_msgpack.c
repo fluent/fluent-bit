@@ -109,6 +109,9 @@ static int unpack_instrumentation_scope_attributes(mpack_reader_t *reader, size_
     }
     else {
         attributes = ctr_attributes_create();
+        if (attributes == NULL) {
+            return CTR_DECODE_MSGPACK_VARIANT_DECODE_ERROR;
+        }
 
         cfl_kvlist_destroy(attributes->kv);
 
@@ -117,6 +120,7 @@ static int unpack_instrumentation_scope_attributes(mpack_reader_t *reader, size_
         result = unpack_cfl_kvlist(reader, &attributes->kv);
 
         if (result != 0) {
+            ctr_attributes_destroy(attributes);
             return CTR_DECODE_MSGPACK_VARIANT_DECODE_ERROR;
         }
 

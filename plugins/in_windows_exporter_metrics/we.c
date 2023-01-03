@@ -30,6 +30,10 @@
 
 /* collectors */
 #include "we_cpu.h"
+#include "we_os.h"
+#include "we_net.h"
+#include "we_logical_disk.h"
+#include "we_cs.h"
 
 static void update_metrics(struct flb_input_instance *ins, struct flb_we *ctx)
 {
@@ -51,6 +55,14 @@ static void update_metrics(struct flb_input_instance *ins, struct flb_we *ctx)
 
     /* Update our metrics */
     we_cpu_update(ctx);
+    we_os_update(ctx);
+    we_net_update(ctx);
+    we_logical_disk_update(ctx);
+    we_cs_update(ctx);
+    we_wmi_thermalzone_update(ctx);
+    we_wmi_cpu_info_update(ctx);
+    we_wmi_logon_update(ctx);
+    we_wmi_system_update(ctx);
 }
 
 /*
@@ -158,16 +170,75 @@ static int in_we_init(struct flb_input_instance *in,
         return -1;
     }
 
+    /* Initialize os metric collectors */
+    ret = we_os_init(ctx);
+    if (ret) {
+        return -1;
+    }
+
+    /* Initialize net metric collectors */
+    ret = we_net_init(ctx);
+    if (ret) {
+        return -1;
+    }
+
+    /* Initialize logical_disk metric collectors */
+    ret = we_logical_disk_init(ctx);
+    if (ret) {
+        return -1;
+    }
+
+    /* Initialize cs metric collectors */
+    ret = we_cs_init(ctx);
+    if (ret) {
+        return -1;
+    }
+
+    /* Initialize thermalzone metric collectors */
+    ret = we_wmi_thermalzone_init(ctx);
+    if (ret) {
+        return -1;
+    }
+
+    /* Initialize cpu_info metric collectors */
+    ret = we_wmi_cpu_info_init(ctx);
+    if (ret) {
+        return -1;
+    }
+
+    /* Initialize logon metric collectors */
+    ret = we_wmi_logon_init(ctx);
+    if (ret) {
+        return -1;
+    }
+
+    /* Initialize system metric collectors */
+    ret = we_wmi_system_init(ctx);
+    if (ret) {
+        return -1;
+    }
+
     return 0;
 }
 
 static int in_we_exit(void *data, struct flb_config *config)
 {
+    struct flb_we* ctx = data;
+
     if (data == NULL) {
         return 0;
     }
 
-    flb_we_config_destroy((struct flb_we *) data);
+    we_wmi_thermalzone_exit(ctx);
+    we_wmi_cpu_info_exit(ctx);
+    we_wmi_logon_exit(ctx);
+    we_wmi_system_exit(ctx);
+    we_os_exit(ctx);
+    we_net_exit(ctx);
+    we_logical_disk_exit(ctx);
+    we_cs_exit(ctx);
+
+    flb_we_config_destroy(ctx);
 
     return 0;
 }
@@ -201,6 +272,21 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "enable_collector", NULL,
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_we, collectors),
      "Collector to enable."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "we.logical_disk.allow_disk_regex", "/.+/",
+     0, FLB_TRUE, offsetof(struct flb_we, raw_allowing_disk),
+     "Specify to be scribable regex for logical disk metrics."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "we.logical_disk.deny_disk_regex", NULL,
+     0, FLB_TRUE, offsetof(struct flb_we, raw_denying_disk),
+     "Specify to be denied regex for logical disk metrics."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "we.net.allow_nic_regex", "/.+/",
+     0, FLB_TRUE, offsetof(struct flb_we, raw_allowing_nic),
+     "Specify to be scribable regex for net metrics by name of NIC."
     },
     /* EOF */
     {0}
