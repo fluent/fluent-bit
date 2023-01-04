@@ -46,7 +46,6 @@
 
 pthread_key_t oauth2_type;
 pthread_key_t oauth2_token;
-pthread_key_t oauth2_token_expires;
 
 static void oauth2_cache_exit(void *ptr)
 {
@@ -55,26 +54,17 @@ static void oauth2_cache_exit(void *ptr)
     }
 }
 
-static void oauth2_cache_free_expiration(void *ptr)
-{
-    if (ptr) {
-        flb_free(ptr);
-    }
-}
-
 static void oauth2_cache_init()
 {
     /* oauth2 pthread key */
     pthread_key_create(&oauth2_type, oauth2_cache_exit);
     pthread_key_create(&oauth2_token, oauth2_cache_exit);
-    pthread_key_create(&oauth2_token_expires, oauth2_cache_free_expiration);
 }
 
 /* Set oauth2 type and token in pthread keys */
-static void oauth2_cache_set(char *type, char *token, time_t expires)
+static void oauth2_cache_set(char *type, char *token)
 {
     flb_sds_t tmp;
-    time_t *tmp_expires;
 
     /* oauth2 type */
     tmp = pthread_getspecific(oauth2_type);
@@ -91,29 +81,6 @@ static void oauth2_cache_set(char *type, char *token, time_t expires)
     }
     tmp = flb_sds_create(token);
     pthread_setspecific(oauth2_token, tmp);
-
-    /* oauth2 access token expiration */
-    tmp_expires = pthread_getspecific(oauth2_token_expires);
-    if (tmp_expires) {
-        flb_free(tmp_expires);
-    }
-    tmp_expires = flb_calloc(1, sizeof(time_t));
-    if (!tmp_expires) {
-        flb_errno();
-        return;
-    }
-    *tmp_expires = expires;
-    pthread_setspecific(oauth2_token, tmp_expires);
-}
-
-/* By using pthread keys cached values, compose the authorizatoin token */
-static time_t oauth2_cache_get_expiration()
-{
-    time_t *expires = pthread_getspecific(oauth2_token_expires);
-    if (expires) {
-        return *expires;
-    }
-    return 0;
 }
 
 /* By using pthread keys cached values, compose the authorizatoin token */
@@ -354,7 +321,6 @@ static flb_sds_t get_google_token(struct flb_stackdriver *ctx)
 {
     int ret = 0;
     flb_sds_t output = NULL;
-    time_t cached_expiration = 0;
 
     ret = pthread_mutex_trylock(&ctx->token_mutex);
     if (ret == EBUSY) {
@@ -365,21 +331,9 @@ static flb_sds_t get_google_token(struct flb_stackdriver *ctx)
          * If the routine fails it will return NULL and the caller will just
          * issue a FLB_RETRY.
          */
-        output = oauth2_cache_to_token();
-        cached_expiration = oauth2_cache_get_expiration();
-        if (time(NULL) >= cached_expiration) {
-            return output;
-        } else {
-            /* 
-             * Cached token is expired. Wait on lock to use up-to-date token
-             * by either waiting for it to be refreshed or refresh it ourselves.
-             */
-            flb_plg_info(ctx->ins, "Cached token is expired. Waiting on lock.");
-            ret = pthread_mutex_lock(&ctx->token_mutex);
-        }
+        return oauth2_cache_to_token();
     }
-
-    if (ret != 0) {
+    else if (ret != 0) {
         flb_plg_error(ctx->ins, "error locking mutex");
         return NULL;
     }
@@ -391,7 +345,7 @@ static flb_sds_t get_google_token(struct flb_stackdriver *ctx)
     /* Copy string to prevent race conditions (get_oauth2 can free the string) */
     if (ret == 0) {
         /* Update pthread keys cached values */
-        oauth2_cache_set(ctx->o->token_type, ctx->o->access_token, ctx->o->expires);
+        oauth2_cache_set(ctx->o->token_type, ctx->o->access_token);
 
         /* Compose outgoing buffer using cached values */
         output = oauth2_cache_to_token();
