@@ -347,7 +347,7 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
     ret = flb_http_buffer_size(c, FLB_MAX_AWS_RESP_BUFFER_SIZE);
     if (ret != 0) {
         flb_warn("[aws_http_client] failed to increase max response buffer size");
-    } 
+    }
 
     /* Set AWS Fluent Bit user agent */
     env = aws_client->upstream->base.config->env;
@@ -355,18 +355,18 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
     if (buf == NULL) {
         if (getenv(AWS_ECS_METADATA_URI) != NULL) {
             user_agent = AWS_USER_AGENT_ECS;
-        } 
+        }
         else {
             buf = (char *) flb_env_get(env, AWS_USER_AGENT_K8S);
             if (buf && strcasecmp(buf, "enabled") == 0) {
                 user_agent = AWS_USER_AGENT_K8S;
             }
-        } 
+        }
 
         if (user_agent == NULL) {
             user_agent = AWS_USER_AGENT_NONE;
         }
-        
+
         flb_env_set(env, "FLB_AWS_USER_AGENT", user_agent);
     }
     if (aws_client->extra_user_agent == NULL) {
@@ -379,7 +379,7 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
         aws_client->extra_user_agent = tmp;
         tmp = NULL;
     }
-    
+
     /* Add AWS Fluent Bit user agent header */
     if (strcasecmp(aws_client->extra_user_agent, AWS_USER_AGENT_NONE) == 0) {
         ret = flb_http_add_header(c, "User-Agent", 10,
@@ -882,11 +882,11 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
         flb_free(random_alphanumeric);
         goto error;
     }
-    
+
     if(strlen(tmp_key) > S3_KEY_SIZE){
         flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
     }
-    
+
     flb_sds_destroy(s3_key);
     s3_key = tmp_key;
     tmp_key = NULL;
