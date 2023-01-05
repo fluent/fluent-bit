@@ -87,7 +87,6 @@ static void cache_one_slot()
     int ret_1;
     int ret_2;
     struct flb_log_cache *cache;
-    struct flb_log_cache_entry *entry;
 
     printf("\n");
 
