@@ -1039,7 +1039,6 @@ int flb_input_chunk_destroy_corrupted(struct flb_input_chunk *ic,
                                       const char *tag_buf, int tag_len,
                                       int del)
 {
-    int ret;
     ssize_t bytes;
     struct mk_list *head;
     struct flb_output_instance *o_ins;
