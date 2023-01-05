@@ -115,7 +115,6 @@ int flb_cf_plugin_property_add(struct flb_cf *cf,
                                char *k_buf, size_t k_len,
                                char *v_buf, size_t v_len)
 {
-    int i;
     int ret;
     flb_sds_t key;
     flb_sds_t val;
