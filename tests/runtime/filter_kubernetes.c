@@ -32,7 +32,6 @@ void wait_with_timeout(uint32_t timeout_ms, struct kube_test_result *result, int
     struct flb_time end_time;
     struct flb_time diff_time;
     uint64_t elapsed_time_flb = 0;
-    int64_t ret = 0;
 
     flb_time_get(&start_time);
 
