@@ -87,26 +87,14 @@ static int send_response(struct es_bulk_conn *conn, int http_status, char *messa
         len = 0;
     }
 
-    if (http_status == 201) {
-        flb_sds_printf(&out,
-                       "HTTP/1.1 201 Created \r\n"
-                       "Server: Fluent Bit v%s\r\n"
-                       "Content-Length: 0\r\n\r\n",
-                       FLB_VERSION_STR);
-    }
-    else if (http_status == 200) {
+    if (http_status == 200) {
         flb_sds_printf(&out,
                        "HTTP/1.1 200 OK\r\n"
                        "Server: Fluent Bit v%s\r\n"
-                       "Content-Length: 0\r\n\r\n",
-                       FLB_VERSION_STR);
-    }
-    else if (http_status == 204) {
-        flb_sds_printf(&out,
-                       "HTTP/1.1 204 No Content\r\n"
-                       "Server: Fluent Bit v%s\r\n"
-                       "Content-Length: 0\r\n\r\n",
-                       FLB_VERSION_STR);
+                       "Content-Type: application/json\r\n"
+                       "Content-Length: %i\r\n\r\n%s",
+                       FLB_VERSION_STR,
+                       len, message);
     }
     else if (http_status == 400) {
         flb_sds_printf(&out,
@@ -528,7 +516,7 @@ int es_bulk_prot_handle(struct flb_es_bulk *ctx, struct es_bulk_conn *conn,
 
     ret = process_payload(ctx, conn, tag, session, request);
     flb_sds_destroy(tag);
-    send_response(conn, ctx->successful_response_code, NULL);
+    send_response(conn, 200, "{\"errors\":false,\"items\":[]}");
     return ret;
 }
 

@@ -31,12 +31,10 @@
 #define HTTP_BUFFER_CHUNK_SIZE  "512K"
 
 struct flb_es_bulk {
-    int successful_response_code;
     flb_sds_t listen;
     flb_sds_t tcp_port;
     const char *tag_key;
     const char *meta_key;
-    const char *body_key;
 
     int collector_id;
 
