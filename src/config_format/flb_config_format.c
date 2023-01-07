@@ -512,6 +512,7 @@ struct flb_cf_section *flb_cf_section_create(struct flb_cf *cf, char *name, int 
     /* create a NULL terminated name */
     s->name = flb_sds_create_len(name, len);
     if (!s->name) {
+        flb_free(s->properties);
         flb_free(s);
         return NULL;
     }
