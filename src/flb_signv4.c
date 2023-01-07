@@ -497,6 +497,9 @@ void headers_sanitize(struct mk_list *in_list, struct mk_list *out_list)
         kv = flb_kv_item_create_len(&out_tmp,
                                     kv->key, flb_sds_len(kv->key),
                                     v_start, v_end - v_start);
+        if (kv == NULL) {
+            continue;
+        }
         for (x = 0; x < flb_sds_len(kv->key); x++) {
             kv->key[x] = tolower(kv->key[x]);
         }
