@@ -84,11 +84,12 @@ set(PACKAGE_URL "")
 # Build Options
 option(USE_COMBINATION_EXPLOSION_CHECK "Enable combination explosion check"    No)
 option(USE_CRNL_AS_LINE_TERMINATOR     "Enable CR+NL as line terminator"       No)
-option(ONIGMO_SHARED_LIB               "Enable to build shared library"       Yes)
-option(ONIGMO_CTESTS                   "Enable testing with ctest"            Yes)
-option(ONIGMO_CTESTS_SAMPLE            "Enable testing with ctest on sample"  Yes)
-option(ONIGMO_PYTHON_TESTS             "Enable testing with python tests"     Yes)
-option(ONIGMO_MACOS_DEFAULTS           "Build with predefined macOS settings" Yes)
+option(ONIGMO_RUBY_REGEX_NAMES         "Enable ruby-like named capture groups" No)
+option(ONIGMO_SHARED_LIB               "Enable to build shared library"        Yes)
+option(ONIGMO_CTESTS                   "Enable testing with ctest"             Yes)
+option(ONIGMO_CTESTS_SAMPLE            "Enable testing with ctest on sample"   Yes)
+option(ONIGMO_PYTHON_TESTS             "Enable testing with python tests"      Yes)
+option(ONIGMO_MACOS_DEFAULTS           "Build with predefined macOS settings"  Yes)
 
 if(USE_COMBINATION_EXPLOSION_CHECK)
   add_definitions(-DUSE_COMBINATION_EXPLOSION_CHECK=1)
@@ -265,6 +266,10 @@ if(ONIGMO_SHARED_LIB)
     LIBRARY DESTINATION ${ONIGMO_INSTALL_LIBDIR}
     COMPONENT library
     RUNTIME DESTINATION ${ONIGMO_INSTALL_BINDIR})
+endif()
+
+if(ONIGMO_RUBY_REGEX_NAMES)
+  add_definitions(-DRUBY_CODE_NAME)
 endif()
 
 # Test Source
