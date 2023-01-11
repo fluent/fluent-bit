@@ -25,7 +25,7 @@ fi
 
 mkdir -p "/var/www/apt.fluentbit.io/${DISTRO}/${CODENAME}/"
 
-if ! grep -q "debian/bookworm" "$APTLY_CONFIG"; then
+if ! grep -q "${DISTRO}/${CODENAME}" "$APTLY_CONFIG"; then
     echo "Please update the aptly config file with the following:"
     echo
     echo '   "FileSystemPublishEndpoints": {'
