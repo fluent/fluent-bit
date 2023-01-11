@@ -414,6 +414,35 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: true
 
+  staging-release-upload-cosign-key:
+    name: Upload Cosign public key for verification
+    needs:
+      - staging-release-images-sign
+    permissions:
+      contents: none
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v2
+      
+      - name: Get public key and add to S3 bucket
+        # Only run if we have a key defined
+        if: ${{ env.COSIGN_PRIVATE_KEY }}
+        # The key needs to cope with newlines
+        run: |
+          echo -e "${COSIGN_PRIVATE_KEY}" > /tmp/my_cosign.key
+          cosign public-key --key /tmp/my_cosign.key > ./cosign.pub
+          rm -f /tmp/my_cosign.key
+          cat ./cosign.pub
+          aws s3 cp ./cosign.pub "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/cosign.pub" --no-progress
+        shell: bash
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.cosign_private_key }}
+          COSIGN_PASSWORD: ${{ secrets.cosign_private_key_password }} # optional
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: "us-east-1"
+
   # This will require a sign off so can be done after packages are updated to confirm
   # Until S3 bucket is set up as release will only test what is in the server from a prior release.
   # TODO: https://github.com/fluent/fluent-bit/issues/5098
