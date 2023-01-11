@@ -27,6 +27,9 @@
 #include <monkey/mk_core.h>
 #include "flb_tests_runtime.h"
 
+/* Test data */
+#include "data/in_es_bulk/json_bulk.h" /* NDBULK_JSON */
+
 #define NDJSON_CONTENT_TYPE "application/x-ndjson"
 
 struct es_bulk_client_ctx {
@@ -442,6 +445,80 @@ void flb_test_es_bulk_nonexistent_op()
     flb_test_es_bulk_invalid("nonexistent", 400, "unknown");
 }
 
+void flb_test_es_bulk_multi_ops()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+    int ret;
+    int num;
+    size_t b_sent;
+    char *buf = NDJSON_BULK;
+    char *expected = ":{\"_index\":\"test\",\"_id\":";
+    char *ret_buf = NULL;
+    char *ret_expected = "{\"errors\":true,\"items\":[";
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = expected;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ctx->httpc = es_bulk_client_ctx_create();
+    TEST_CHECK(ctx->httpc != NULL);
+
+    c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/_bulk", buf, strlen(buf),
+                        "127.0.0.1", 9880, NULL, 0);
+    ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE, strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
+                              NDJSON_CONTENT_TYPE, strlen(NDJSON_CONTENT_TYPE));
+    TEST_CHECK(ret == 0);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("es_bulk_client failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_http_do(c, &b_sent);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("ret error. ret=%d\n", ret);
+    }
+    else if (!TEST_CHECK(b_sent > 0)){
+        TEST_MSG("b_sent size error. b_sent = %lu\n", b_sent);
+    }
+    else if (!TEST_CHECK(c->resp.status == 200)) {
+        TEST_MSG("http response code error. expect: 200, got: %d\n", c->resp.status);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+    ret_buf = strstr(c->resp.payload, ret_expected);
+    if (!TEST_CHECK(ret_buf != NULL)) {
+      TEST_MSG("bulk request for multi write ops failed");
+    }
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(ctx->httpc->u_conn);
+    test_ctx_destroy(ctx);
+}
+
 void flb_test_es_bulk_tag_key()
 {
     struct flb_lib_out_cb cb_data;
@@ -522,6 +599,7 @@ TEST_LIST = {
     {"es_bulk_update_op", flb_test_es_bulk_update_op},
     {"es_bulk_delete_op", flb_test_es_bulk_delete_op},
     {"es_bulk_nonexistent_op", flb_test_es_bulk_nonexistent_op},
+    {"es_bulk_multi_ops", flb_test_es_bulk_multi_ops},
     {"tag_key", flb_test_es_bulk_tag_key},
     {NULL, NULL}
 };
