@@ -392,8 +392,8 @@ jobs:
           rm -f /tmp/my_cosign.key
         shell: bash
         env:
-          COSIGN_PRIVATE_KEY: ${{ secrets.cosign_private_key }}
-          COSIGN_PASSWORD: ${{ secrets.cosign_private_key_password }} # optional
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PRIVATE_KEY_PASSWORD }} # optional
 
       - name: Cosign keyless signing using Rektor public transparency log
         # This step uses the identity token to provision an ephemeral certificate
@@ -437,8 +437,8 @@ jobs:
           aws s3 cp ./cosign.pub "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/cosign.pub" --no-progress
         shell: bash
         env:
-          COSIGN_PRIVATE_KEY: ${{ secrets.cosign_private_key }}
-          COSIGN_PASSWORD: ${{ secrets.cosign_private_key_password }} # optional
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PRIVATE_KEY_PASSWORD }} # optional
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: "us-east-1"
