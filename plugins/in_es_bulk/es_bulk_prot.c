@@ -213,18 +213,14 @@ static int count_map_elements(struct flb_es_bulk *ctx, char *buf, size_t size, i
         }
 
         if (result.data.type == MSGPACK_OBJECT_MAP) {
-            if (index % 2 == 1) {
-                obj = &result.data;
-                map_num = obj->via.map.size;
-                break;
-            }
+            obj = &result.data;
+            map_num = obj->via.map.size;
+            break;
         }
         else if (result.data.type == MSGPACK_OBJECT_ARRAY) {
-            if (index % 2 == 1) {
-                obj = &result.data;
-                map_num = obj->via.array.size;
-                break;
-            }
+            obj = &result.data;
+            map_num = obj->via.array.size;
+            break;
         }
     }
     msgpack_unpacked_destroy(&result);
@@ -272,6 +268,7 @@ static int process_ndpack(struct flb_es_bulk *ctx, flb_sds_t tag, char *buf, siz
     flb_sds_t tag_from_record = NULL;
     int map_num  = 0;
     int idx = 0;
+    int cursor = 0;
     flb_sds_t write_op;
     size_t op_str_size = 0;
     int op_ret = FLB_FALSE;
@@ -292,7 +289,7 @@ static int process_ndpack(struct flb_es_bulk *ctx, flb_sds_t tag, char *buf, siz
                 msgpack_pack_array(&mp_pck, 2);
                 flb_time_append_to_msgpack(&tm, &mp_pck, 0);
 
-                map_num = count_map_elements(ctx, buf, size, idx);
+                map_num = count_map_elements(ctx, buf, size, cursor);
 
                 msgpack_pack_map(&mp_pck, map_num + 1);
 
@@ -312,8 +309,15 @@ static int process_ndpack(struct flb_es_bulk *ctx, flb_sds_t tag, char *buf, siz
                         error_op = FLB_TRUE;
                     }
                     else if (flb_sds_cmp(write_op, "delete", op_str_size) == 0) {
-                        flb_sds_cat(bulk_statuses, "{\"delete\":", 10);
+                        flb_sds_cat(bulk_statuses, "{\"delete\":{\"status\":404,\"result\":\"not_found\"}}", 46);
                         error_op = FLB_TRUE;
+                        idx += 1; /* Prepare to adjust to multiple of two in
+                                   * in end of the loop.
+                                   * Due to delete actions include only one line. */
+                        msgpack_sbuffer_destroy(&mp_sbuf);
+                        flb_sds_destroy(write_op);
+
+                        goto proceed;
                     }
                     else {
                         flb_sds_cat(bulk_statuses, "{\"unknown\":", 11);
@@ -363,9 +367,6 @@ static int process_ndpack(struct flb_es_bulk *ctx, flb_sds_t tag, char *buf, siz
                     else if (flb_sds_cmp(write_op, "update", op_str_size) == 0) {
                         flb_sds_cat(bulk_statuses, "{\"status\":403,\"result\":\"forbidden\"}}", 36);
                     }
-                    else if (flb_sds_cmp(write_op, "delete", op_str_size) == 0) {
-                        flb_sds_cat(bulk_statuses, "{\"status\":404,\"result\":\"not_found\"}}", 36);
-                    }
                     else {
                         flb_sds_cat(bulk_statuses, "{\"status\":400,\"result\":\"bad_request\"}}", 38);
                     }
@@ -382,7 +383,9 @@ static int process_ndpack(struct flb_es_bulk *ctx, flb_sds_t tag, char *buf, siz
                 flb_sds_destroy(write_op);
             }
 
+        proceed:
             idx++;
+            cursor++;
         }
         else {
             flb_plg_error(ctx->ins, "skip record from invalid type: %i",
