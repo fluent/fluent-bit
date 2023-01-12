@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_random.h>
 
 #include "es_bulk.h"
 #include "es_bulk_conn.h"
@@ -120,14 +121,14 @@ static int in_es_bulk_init(struct flb_input_instance *ins,
 
     port = (unsigned short int) strtoul(ctx->tcp_port, NULL, 10);
 
-    if (flb_random_bytes(&rand, 16)) {
+    if (flb_random_bytes(rand, 16)) {
         flb_plg_error(ctx->ins, "cannot generate cluster name");
         return -1;
     }
 
     bytes_to_groupname(rand, ctx->cluster_name, 16);
 
-    if (flb_random_bytes(&rand, 12)) {
+    if (flb_random_bytes(rand, 12)) {
         flb_plg_error(ctx->ins, "cannot generate node name");
         return -1;
     }
