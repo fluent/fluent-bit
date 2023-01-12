@@ -164,14 +164,24 @@ jobs:
         AWS_REGION: "us-east-1"
       shell: bash
 
-    - name: Download components from staging and setup
-      run:
+    - name: Get Appveyor binaries
+      continue-on-error: true
+      run: |
+        ./packaging/appveyor-download.sh
+      shell: bash
+      env:
+        TAG: v${{ github.event.inputs.version }}
+        OUTPUT_DIR: appveyor
+
+    - name: Move components from staging and setup
+      run: |
         ./packaging/update-source-packages.sh
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         AWS_REGION: "us-east-1"
         SOURCE_DIR: staging
+        WINDOWS_SOURCE_DIR: appveyor
         TARGET_DIR: release
         VERSION: ${{ github.event.inputs.version }}
         MAJOR_VERSION: ${{ needs.staging-release-version-check.outputs.major-version }}
