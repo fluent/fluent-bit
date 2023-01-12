@@ -204,7 +204,7 @@ jobs:
   # simpler plus tests the whole pipeline.
   # The assumption being we would remove this step eventually anyway.
   staging-release-packages-server:
-    if: inputs.legacy_server
+    if: gitub.event.inputs.legacy-server
     name: fluentbit.io - upload packages
     # Not required if using the staging bucket
     needs: staging-release-packages-s3
