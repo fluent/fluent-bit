@@ -300,10 +300,6 @@ static int process_ndpack(struct flb_es_bulk *ctx, flb_sds_t tag, char *buf, siz
                 msgpack_pack_array(&mp_pck, 2);
                 flb_time_append_to_msgpack(&tm, &mp_pck, 0);
 
-                map_num = count_map_elements(ctx, buf, size, cursor);
-
-                msgpack_pack_map(&mp_pck, map_num + 1);
-
                 op_ret = get_write_op(ctx, &result.data, &write_op, &op_str_size);
 
                 if (op_ret) {
@@ -341,6 +337,10 @@ static int process_ndpack(struct flb_es_bulk *ctx, flb_sds_t tag, char *buf, siz
                 }
 
                 if (error_op == FLB_FALSE) {
+                    /* Prepare map for records */
+                    map_num = count_map_elements(ctx, buf, size, cursor);
+                    msgpack_pack_map(&mp_pck, map_num + 1);
+
                     /* Pack meta */
                     msgpack_pack_str(&mp_pck, strlen(ctx->meta_key));
                     msgpack_pack_str_body(&mp_pck, ctx->meta_key, strlen(ctx->meta_key));
