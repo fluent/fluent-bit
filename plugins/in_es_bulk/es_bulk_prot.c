@@ -69,6 +69,58 @@ static int send_dummy_version_response(struct es_bulk_conn *conn, int http_statu
     return 0;
 }
 
+static int send_dummy_sniffer_response(struct es_bulk_conn *conn, int http_status, struct flb_es_bulk *ctx)
+{
+    size_t    sent;
+    int       len;
+    flb_sds_t out;
+    flb_sds_t resp;
+    flb_sds_t hostname;
+
+    if (ctx->hostname != NULL) {
+        hostname = ctx->hostname;
+    }
+    else {
+        hostname = "localhost";
+    }
+
+    out = flb_sds_create_size(384);
+    if (!out) {
+        return -1;
+    }
+
+    resp = flb_sds_create_size(384);
+    if (!resp) {
+        return -1;
+    }
+
+    flb_sds_printf(&resp,
+                   ES_NODES_TEMPLATE,
+                   ctx->cluster_name, ctx->node_name,
+                   hostname, ctx->tcp_port, ctx->buffer_max_size);
+
+    len = flb_sds_len(resp) ;
+
+    if (http_status == 200) {
+        flb_sds_printf(&out,
+                       "HTTP/1.1 200 OK\r\n"
+                       "Content-Type: application/json\r\n"
+                       "Content-Length: %i\r\n\r\n%s",
+                       len, resp);
+    }
+
+    /* We should check this operations result */
+    flb_io_net_write(conn->connection,
+                     (void *) out,
+                     flb_sds_len(out),
+                     &sent);
+
+    flb_sds_destroy(resp);
+    flb_sds_destroy(out);
+
+    return 0;
+}
+
 static int send_response(struct es_bulk_conn *conn, int http_status, char *message)
 {
     size_t    sent;
@@ -586,8 +638,6 @@ int es_bulk_prot_handle(struct flb_es_bulk *ctx, struct es_bulk_conn *conn,
         }
     }
 
-    mk_mem_free(uri);
-
     /* Check if we have a Host header: Hostname ; port */
     mk_http_point_header(&request->host, &session->parser, MK_HEADER_HOST);
 
@@ -615,26 +665,43 @@ int es_bulk_prot_handle(struct flb_es_bulk *ctx, struct es_bulk_conn *conn,
     }
 
     if (request->method == MK_METHOD_GET) {
+        if (strncmp(uri, "/_nodes/http", 12) == 0) {
+            send_dummy_sniffer_response(conn, 200, ctx);
+        } else {
+            send_dummy_version_response(conn, 200, ES_VERSION_RESPONSE);
+        }
+
         flb_sds_destroy(tag);
-        send_dummy_version_response(conn, 200, ES_VERSION_RESPONSE);
+        mk_mem_free(uri);
 
         return 0;
     }
 
     if (request->method == MK_METHOD_POST) {
-        bulk_statuses = flb_sds_create_size(ctx->buffer_max_size);
-        if (!bulk_statuses) {
-            return -1;
-        }
+        if (strncmp(uri, "/_bulk", 6) == 0) {
+            bulk_statuses = flb_sds_create_size(ctx->buffer_max_size);
+            if (!bulk_statuses) {
+                return -1;
+            }
 
-        bulk_response = flb_sds_create_size(ctx->buffer_max_size);
-        if (!bulk_response) {
+            bulk_response = flb_sds_create_size(ctx->buffer_max_size);
+            if (!bulk_response) {
+                return -1;
+            }
+        } else {
+            flb_sds_destroy(tag);
+            mk_mem_free(uri);
+
+            send_response(conn, 400, "error: invaild HTTP endpoint\n");
+
             return -1;
         }
     }
 
     if (request->method != MK_METHOD_POST) {
         flb_sds_destroy(tag);
+        mk_mem_free(uri);
+
         send_response(conn, 400, "error: invalid HTTP method\n");
         return -1;
     }
@@ -656,6 +723,8 @@ int es_bulk_prot_handle(struct flb_es_bulk *ctx, struct es_bulk_conn *conn,
     flb_sds_cat(bulk_response, bulk_statuses, flb_sds_len(bulk_statuses));
     flb_sds_cat(bulk_response, "]}", 2);
     send_response(conn, 200, bulk_response);
+
+    mk_mem_free(uri);
     flb_sds_destroy(bulk_statuses);
     flb_sds_destroy(bulk_response);
 
