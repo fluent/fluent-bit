@@ -189,31 +189,31 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_SIZE, "buffer_max_size", HTTP_BUFFER_MAX_SIZE,
      0, FLB_TRUE, offsetof(struct flb_es_bulk, buffer_max_size),
-     ""
+     "Set the maximum size of buffer"
     },
 
     {
      FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", HTTP_BUFFER_CHUNK_SIZE,
      0, FLB_TRUE, offsetof(struct flb_es_bulk, buffer_chunk_size),
-     ""
+     "Set the buffer chunk size"
     },
 
     {
      FLB_CONFIG_MAP_STR, "tag_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_es_bulk, tag_key),
-     ""
+     "Specify a key name for extracting as a tag"
     },
 
     {
      FLB_CONFIG_MAP_STR, "meta_key", "@meta",
      0, FLB_TRUE, offsetof(struct flb_es_bulk, meta_key),
-     ""
+     "Specify a key name for meta information"
     },
 
     {
      FLB_CONFIG_MAP_STR, "hostname", "localhost",
      0, FLB_TRUE, offsetof(struct flb_es_bulk, hostname),
-     ""
+     "Specify hostname or FQDN. This parameter is affective for sniffering node information."
     },
 
     /* EOF */
