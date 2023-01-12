@@ -35,6 +35,9 @@ struct flb_es_bulk {
     flb_sds_t tcp_port;
     const char *tag_key;
     const char *meta_key;
+    flb_sds_t hostname;
+    unsigned char cluster_name[16];
+    unsigned char node_name[12];
 
     int collector_id;
 

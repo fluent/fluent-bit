@@ -62,12 +62,38 @@ static int in_es_bulk_collect(struct flb_input_instance *ins,
     return 0;
 }
 
+static void bytes_to_groupname(unsigned char *data, char *buf, size_t len) {
+    int index;
+    char charset[] = "0123456789"
+                     "abcdefghijklmnopqrstuvwxyz"
+                     "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    while (len-- > 0) {
+        index = (int) data[len];
+        index = index % (sizeof(charset) - 1);
+        buf[len] = charset[index];
+    }
+}
+
+static void bytes_to_nodename(unsigned char *data, char *buf, size_t len) {
+    int index;
+    char charset[] = "0123456789"
+                     "abcdefghijklmnopqrstuvwxyz";
+
+    while (len-- > 0) {
+        index = (int) data[len];
+        index = index % (sizeof(charset) - 1);
+        buf[len] = charset[index];
+    }
+}
+
 static int in_es_bulk_init(struct flb_input_instance *ins,
                            struct flb_config *config, void *data)
 {
     unsigned short int  port;
     int                 ret;
     struct flb_es_bulk    *ctx;
+    unsigned char rand[16];
 
     (void) data;
 
@@ -93,6 +119,20 @@ static int in_es_bulk_init(struct flb_input_instance *ins,
     ctx->evl = config->evl;
 
     port = (unsigned short int) strtoul(ctx->tcp_port, NULL, 10);
+
+    if (flb_random_bytes(&rand, 16)) {
+        flb_plg_error(ctx->ins, "cannot generate cluster name");
+        return -1;
+    }
+
+    bytes_to_groupname(rand, ctx->cluster_name, 16);
+
+    if (flb_random_bytes(&rand, 12)) {
+        flb_plg_error(ctx->ins, "cannot generate node name");
+        return -1;
+    }
+
+    bytes_to_nodename(rand, ctx->node_name, 12);
 
     ctx->downstream = flb_downstream_create(FLB_TRANSPORT_TCP,
                                             ins->flags,
@@ -167,6 +207,12 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "meta_key", "@meta",
      0, FLB_TRUE, offsetof(struct flb_es_bulk, meta_key),
+     ""
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "hostname", "localhost",
+     0, FLB_TRUE, offsetof(struct flb_es_bulk, hostname),
      ""
     },
 
