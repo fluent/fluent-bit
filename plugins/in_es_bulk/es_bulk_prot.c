@@ -257,6 +257,17 @@ static int get_write_op(struct flb_es_bulk *ctx, msgpack_object *map, flb_sds_t 
     return check;
 }
 
+static int status_buffer_avail(struct flb_es_bulk *ctx, flb_sds_t bulk_statuses, size_t threshold)
+{
+    if (flb_sds_avail(bulk_statuses) < threshold) {
+        flb_plg_warn(ctx->ins, "left buffer for bulk status(es) is too small");
+
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
 static int process_ndpack(struct flb_es_bulk *ctx, flb_sds_t tag, char *buf, size_t size, flb_sds_t bulk_statuses)
 {
     size_t off = 0;
@@ -311,11 +322,15 @@ static int process_ndpack(struct flb_es_bulk *ctx, flb_sds_t tag, char *buf, siz
                     else if (flb_sds_cmp(write_op, "delete", op_str_size) == 0) {
                         flb_sds_cat(bulk_statuses, "{\"delete\":{\"status\":404,\"result\":\"not_found\"}}", 46);
                         error_op = FLB_TRUE;
-                        idx += 1; /* Prepare to adjust to multiple of two in
-                                   * in end of the loop.
+                        idx += 1; /* Prepare to adjust to multiple of two
+                                   * in the end of the loop.
                                    * Due to delete actions include only one line. */
                         msgpack_sbuffer_destroy(&mp_sbuf);
                         flb_sds_destroy(write_op);
+
+                        if (status_buffer_avail(ctx, bulk_statuses, 50) == FLB_FALSE) {
+                            break;
+                        }
 
                         goto proceed;
                     }
@@ -370,8 +385,7 @@ static int process_ndpack(struct flb_es_bulk *ctx, flb_sds_t tag, char *buf, siz
                     else {
                         flb_sds_cat(bulk_statuses, "{\"status\":400,\"result\":\"bad_request\"}}", 38);
                     }
-                    if (flb_sds_avail(bulk_statuses) < 50) {
-                        flb_plg_warn(ctx->ins, "left buffer for bulk status(es) is too small");
+                    if (status_buffer_avail(ctx, bulk_statuses, 50) == FLB_FALSE) {
                         msgpack_sbuffer_destroy(&mp_sbuf);
                         flb_sds_destroy(write_op);
 
