@@ -19,6 +19,11 @@ on:
         description: Optionally override the image name to push to on Github Container Registry.
         default: fluent/fluent-bit
         required: false
+      legacy-server:
+        type: boolean
+        description: Indicate with a 'yes' that we are using the legacy packages server
+        default: true
+        required: true
 
 # We do not want a new staging build to run whilst we are releasing the current staging build.
 # We also do not want multiples to run for the same version.
@@ -71,7 +76,7 @@ jobs:
   # 5. Upload to release bucket.
   # Note we could resign all packages as well potentially if we wanted to update the key.
   staging-release-packages-s3:
-    name: S3 - create release
+    name: S3 - update packages bucket
     runs-on: ubuntu-22.04 # no createrepo on Ubuntu 20.04
     environment: release
     needs: staging-release-version-check
@@ -136,6 +141,61 @@ jobs:
         AWS_REGION: "us-east-1"
       shell: bash
 
+  staging-release-source-s3:
+    name: S3 - update source bucket
+    runs-on: ubuntu-latest
+    environment: release
+    needs: 
+      - staging-release-version-check
+    permissions:
+      contents: read
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Sync packages from buckets on S3
+      run: |
+        mkdir -p release staging 
+        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE_SOURCES }}" release/ --no-progress
+        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}/source/" staging/ --no-progress
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: "us-east-1"
+      shell: bash
+
+    - name: Get Appveyor binaries
+      continue-on-error: true
+      run: |
+        ./packaging/appveyor-download.sh
+      shell: bash
+      env:
+        TAG: v${{ github.event.inputs.version }}
+        OUTPUT_DIR: appveyor
+
+    - name: Move components from staging and setup
+      run: |
+        ./packaging/update-source-packages.sh
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: "us-east-1"
+        SOURCE_DIR: staging
+        WINDOWS_SOURCE_DIR: appveyor
+        TARGET_DIR: release
+        VERSION: ${{ github.event.inputs.version }}
+        MAJOR_VERSION: ${{ needs.staging-release-version-check.outputs.major-version }}
+      shell: bash
+      
+    - name: Sync to bucket on S3
+      run: |
+        aws s3 sync release/ "s3://${{ secrets.AWS_S3_BUCKET_RELEASE_SOURCES }}" --delete --follow-symlinks --no-progress
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: "us-east-1"
+      shell: bash
+
   # We have two options here:
   # 1. Sync the signed packages direct from the release bucket.
   # 2. Sync the staged packages from the staging bucket, resign on the server.
@@ -144,6 +204,7 @@ jobs:
   # simpler plus tests the whole pipeline.
   # The assumption being we would remove this step eventually anyway.
   staging-release-packages-server:
+    if: github.event.inputs.legacy-server
     name: fluentbit.io - upload packages
     # Not required if using the staging bucket
     needs: staging-release-packages-s3
