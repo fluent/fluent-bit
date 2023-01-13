@@ -122,7 +122,7 @@ struct flb_wasm *flb_wasm_instantiate(struct flb_config *config, const char *was
 #endif
 
 #ifdef FLB_WASI_SOCKETS
-    const char **default_address_pool = {"127.0.0.1"};
+    const char *default_address_pool[] = {"127.0.0.1"};
 #endif
 
     wasm_module_t module = NULL;
