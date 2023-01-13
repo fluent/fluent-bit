@@ -3,7 +3,7 @@ set -e
 
 # Provided primarily to simplify testing for staging, etc.
 RELEASE_URL=${FLUENT_BIT_PACKAGES_URL:-https://packages.fluentbit.io}
-RELEASE_KEY=${FLUENT_BIT_PACKAGES_KEY:-$FLUENT_BIT_PACKAGES_URL/fluentbit.key}
+RELEASE_KEY=${FLUENT_BIT_PACKAGES_KEY:-$RELEASE_URL/fluentbit.key}
 
 echo "================================"
 echo " Fluent Bit Installation Script "
