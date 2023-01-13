@@ -58,8 +58,8 @@ jobs:
       - pr-package-test-build-generate-matrix
     uses: ./.github/workflows/call-build-linux-packages.yaml
     with:
-      version: ${{ needs.pr-package-test-build-get-meta.outputs.branch }}
-      ref: ${{ needs.pr-package-test-build-get-meta.outputs.branch }}
+      version: pr-${{ github.event.number }}
+      ref: ${{ github.ref }}
       build_matrix: ${{ needs.pr-package-test-build-generate-matrix.outputs.build-matrix }}
       environment: pr
       unstable: ${{ needs.pr-package-test-build-get-meta.outputs.date }}
@@ -72,8 +72,8 @@ jobs:
       - pr-package-test-build-get-meta
     uses: ./.github/workflows/call-build-windows.yaml
     with:
-      version: ${{ needs.pr-package-test-build-get-meta.outputs.branch }}
-      ref: ${{ needs.pr-package-test-build-get-meta.outputs.branch }}
+      version: pr-${{ github.event.number }}
+      ref: ${{ github.ref }}
       environment: pr
       unstable: ${{ needs.pr-package-test-build-get-meta.outputs.date }}
     secrets:
@@ -85,8 +85,8 @@ jobs:
       - pr-package-test-build-get-meta
     uses: ./.github/workflows/call-build-macos.yaml
     with:
-      version: ${{ needs.pr-package-test-build-get-meta.outputs.branch }}
-      ref: ${{ needs.pr-package-test-build-get-meta.outputs.branch }}
+      version: pr-${{ github.event.number }}
+      ref: ${{ github.ref }}
       environment: pr-package-test
       unstable: ${{ needs.pr-package-test-build-get-meta.outputs.date }}
     secrets:
