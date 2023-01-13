@@ -28,7 +28,7 @@ else
 fi
 
 SUDO=sudo
-if [[ $(id -u) -eq 0 ]]; then
+if [ "$(id -u)" -eq 0 ]; then
     SUDO=''
 else
     # Clear any previous sudo permission
