@@ -1,0 +1,29 @@
+name: Test install script for all targets
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+    paths:
+      - 'packaging/test-release-packages.sh'
+      - 'install.sh'
+
+  workflow_dispatch:
+jobs:
+  test-install-script:
+    name: Run install tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 30
+    steps:
+      - name: Checkout Fluent Bit code
+        uses: actions/checkout@v3
+
+      - name: Run install tests
+        run: |
+          ./packaging/test-release-packages.sh
+        shell: bash
+        env:
+          INSTALL_SCRIPT: ./install.sh
