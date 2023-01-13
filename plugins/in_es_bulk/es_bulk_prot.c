@@ -345,12 +345,12 @@ static int process_ndpack(struct flb_es_bulk *ctx, flb_sds_t tag, char *buf, siz
             if (idx > 0 && idx % 2 == 0) {
                 flb_sds_cat(bulk_statuses, ",", 1);
             }
+            if (status_buffer_avail(ctx, bulk_statuses, 50) == FLB_FALSE) {
+                break;
+            }
             if (idx % 2 == 0) {
                 msgpack_sbuffer_init(&mp_sbuf);
                 msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
-                msgpack_pack_array(&mp_pck, 2);
-                flb_time_append_to_msgpack(&tm, &mp_pck, 0);
 
                 op_ret = get_write_op(ctx, &result.data, &write_op, &op_str_size);
 
@@ -376,19 +376,24 @@ static int process_ndpack(struct flb_es_bulk *ctx, flb_sds_t tag, char *buf, siz
                         msgpack_sbuffer_destroy(&mp_sbuf);
                         flb_sds_destroy(write_op);
 
-                        if (status_buffer_avail(ctx, bulk_statuses, 50) == FLB_FALSE) {
-                            break;
-                        }
-
                         goto proceed;
                     }
                     else {
                         flb_sds_cat(bulk_statuses, "{\"unknown\":", 11);
                         error_op = FLB_TRUE;
                     }
+                } else {
+                    flb_sds_destroy(write_op);
+                    flb_plg_error(ctx->ins, "meta information line is missing");
+                    error_op = FLB_TRUE;
+
+                    break;
                 }
 
                 if (error_op == FLB_FALSE) {
+                    msgpack_pack_array(&mp_pck, 2);
+                    flb_time_append_to_msgpack(&tm, &mp_pck, 0);
+
                     /* Prepare map for records */
                     map_num = count_map_elements(ctx, buf, size, cursor);
                     msgpack_pack_map(&mp_pck, map_num + 1);
@@ -445,7 +450,6 @@ static int process_ndpack(struct flb_es_bulk *ctx, flb_sds_t tag, char *buf, siz
                     }
                 }
                 msgpack_sbuffer_destroy(&mp_sbuf);
-
                 flb_sds_destroy(write_op);
             }
 
@@ -464,6 +468,8 @@ static int process_ndpack(struct flb_es_bulk *ctx, flb_sds_t tag, char *buf, siz
     if (idx % 2 != 0) {
         flb_plg_warn(ctx->ins, "decode payload of Bulk API is failed");
         msgpack_unpacked_destroy(&result);
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        flb_sds_destroy(write_op);
 
         return -1;
     }
