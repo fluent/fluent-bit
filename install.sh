@@ -28,7 +28,7 @@ else
 fi
 
 SUDO=sudo
-if [[ $(id -u) -eq 0 ]]; then
+if [ "$(id -u)" -eq 0 ]; then
     SUDO=''
 else
     # Clear any previous sudo permission
@@ -48,15 +48,12 @@ cat << EOF > /etc/yum.repos.d/fluent-bit.repo
 name = Fluent Bit
 # Legacy server style
 baseurl = $RELEASE_URL/amazonlinux/VERSION_ARCH_SUBSTR
-# IaC server style
-baseurl = $RELEASE_URL/amazonlinux/VERSION_SUBSTR
 gpgcheck=1
 repo_gpgcheck=1
 gpgkey=$RELEASE_KEY
 enabled=1
 EOF
 sed -i 's|VERSION_ARCH_SUBSTR|\$releasever/\$basearch/|g' /etc/yum.repos.d/fluent-bit.repo
-sed -i 's|VERSION_SUBSTR|\$releasever/|g' /etc/yum.repos.d/fluent-bit.repo
 cat /etc/yum.repos.d/fluent-bit.repo
 yum -y install fluent-bit
 SCRIPT
@@ -69,15 +66,12 @@ cat << EOF > /etc/yum.repos.d/fluent-bit.repo
 name = Fluent Bit
 # Legacy server style
 baseurl = $RELEASE_URL/centos/VERSION_ARCH_SUBSTR
-# IaC server style
-baseurl = $RELEASE_URL/centos/VERSION_SUBSTR
 gpgcheck=1
 repo_gpgcheck=1
 gpgkey=$RELEASE_KEY
 enabled=1
 EOF
 sed -i 's|VERSION_ARCH_SUBSTR|\$releasever/\$basearch/|g' /etc/yum.repos.d/fluent-bit.repo
-sed -i 's|VERSION_SUBSTR|\$releasever/|g' /etc/yum.repos.d/fluent-bit.repo
 cat /etc/yum.repos.d/fluent-bit.repo
 yum -y install fluent-bit
 SCRIPT
