@@ -22,6 +22,12 @@
 #include <cfl/cfl_array.h>
 #include <cfl/cfl_kvlist.h>
 
+#if defined(__MINGW32__) || defined(__MINGW64__)
+#define HEXDUMPFORMAT "%#x"
+#else
+#define HEXDUMPFORMAT "%p"
+#endif
+
 int cfl_variant_print(FILE *fp, struct cfl_variant *val)
 {
     int ret = -1;
@@ -58,7 +64,7 @@ int cfl_variant_print(FILE *fp, struct cfl_variant *val)
         break;
 
     case CFL_VARIANT_REFERENCE:
-        ret = fprintf(fp, "%p", val->data.as_reference);
+        ret = fprintf(fp, HEXDUMPFORMAT, val->data.as_reference);
         break;
     case CFL_VARIANT_ARRAY:
         ret = cfl_array_print(fp, val->data.as_array);

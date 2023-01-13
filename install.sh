@@ -3,7 +3,7 @@ set -e
 
 # Provided primarily to simplify testing for staging, etc.
 RELEASE_URL=${FLUENT_BIT_PACKAGES_URL:-https://packages.fluentbit.io}
-RELEASE_KEY=${FLUENT_BIT_PACKAGES_KEY:-https://packages.fluentbit.io/fluentbit.key}
+RELEASE_KEY=${FLUENT_BIT_PACKAGES_KEY:-$RELEASE_URL/fluentbit.key}
 
 echo "================================"
 echo " Fluent Bit Installation Script "
@@ -27,8 +27,13 @@ else
     OS=$(uname -s)
 fi
 
-# Clear any previous sudo permission
-sudo -k
+SUDO=sudo
+if [ "$(id -u)" -eq 0 ]; then
+    SUDO=''
+else
+    # Clear any previous sudo permission
+    sudo -k
+fi
 
 # Now set up repos and install dependent on OS, version, etc.
 # Will require sudo
@@ -36,11 +41,12 @@ case ${OS} in
     amzn|amazonlinux)
         # We need variable expansion and non-expansion on the URL line to pick up the base URL.
         # Therefore we combine things with sed to handle it.
-        sudo sh <<SCRIPT
+        $SUDO sh <<SCRIPT
 rpm --import $RELEASE_KEY
 cat << EOF > /etc/yum.repos.d/fluent-bit.repo
 [fluent-bit]
 name = Fluent Bit
+# Legacy server style
 baseurl = $RELEASE_URL/amazonlinux/VERSION_ARCH_SUBSTR
 gpgcheck=1
 repo_gpgcheck=1
@@ -53,11 +59,12 @@ yum -y install fluent-bit
 SCRIPT
     ;;
     centos|centoslinux|rhel|redhatenterpriselinuxserver|fedora|rocky|almalinux)
-        sudo sh <<SCRIPT
+        $SUDO sh <<SCRIPT
 rpm --import $RELEASE_KEY
 cat << EOF > /etc/yum.repos.d/fluent-bit.repo
 [fluent-bit]
 name = Fluent Bit
+# Legacy server style
 baseurl = $RELEASE_URL/centos/VERSION_ARCH_SUBSTR
 gpgcheck=1
 repo_gpgcheck=1
@@ -72,7 +79,7 @@ SCRIPT
     ubuntu|debian)
         # Remember apt-key add is deprecated
         # https://wiki.debian.org/DebianRepository/UseThirdParty#OpenPGP_Key_distribution
-        sudo sh <<SCRIPT
+        $SUDO sh <<SCRIPT
 export DEBIAN_FRONTEND=noninteractive
 mkdir -p /usr/share/keyrings/
 curl $RELEASE_KEY | gpg --dearmor > /usr/share/keyrings/fluentbit-keyring.gpg

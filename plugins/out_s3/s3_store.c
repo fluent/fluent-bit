@@ -130,6 +130,13 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
     int ret;
     flb_sds_t name;
     struct flb_fstore_file *fsf;
+    size_t space_remaining;
+
+    if (ctx->store_dir_limit_size > 0 && ctx->current_buffer_size + bytes >= ctx->store_dir_limit_size) {
+        flb_plg_error(ctx->ins, "Buffer is full: current_buffer_size=%zu, new_data=%zu, store_dir_limit_size=%zu bytes",
+                    ctx->current_buffer_size, bytes, ctx->store_dir_limit_size);
+        return -1;
+    }
 
     /* If no target file was found, create a new one */
     if (!s3_file) {
@@ -184,6 +191,17 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
         return -1;
     }
     s3_file->size += bytes;
+    ctx->current_buffer_size += bytes;
+
+    /* if buffer is 95% full, warn user */
+    if (ctx->store_dir_limit_size > 0) {
+        space_remaining = ctx->store_dir_limit_size - ctx->current_buffer_size;
+        if ((space_remaining * 20) < ctx->store_dir_limit_size) {
+            flb_plg_warn(ctx->ins, "Buffer is almost full: current_buffer_size=%zu, store_dir_limit_size=%zu bytes",
+                        ctx->current_buffer_size, ctx->store_dir_limit_size);
+            return -1;
+        }
+    }
 
     return 0;
 }
@@ -397,6 +415,7 @@ int s3_store_file_delete(struct flb_s3 *ctx, struct s3_file *s3_file)
     struct flb_fstore_file *fsf;
 
     fsf = s3_file->fsf;
+    ctx->current_buffer_size -= s3_file->size;
 
     /* permanent deletion */
     flb_fstore_file_delete(ctx->fs, fsf);

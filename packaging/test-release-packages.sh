@@ -11,6 +11,26 @@ fi
 CONTAINER_RUNTIME=${CONTAINER_RUNTIME:-docker}
 INSTALL_SCRIPT=${INSTALL_SCRIPT:-https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh}
 
+INSTALL_CMD="curl $INSTALL_SCRIPT|sh"
+EXTRA_MOUNTS=""
+if [[ -f "$INSTALL_SCRIPT" ]]; then
+    ABSOLUTE_PATH=$(realpath "$INSTALL_SCRIPT")
+    EXTRA_MOUNTS="-v $ABSOLUTE_PATH:/install.sh:ro"
+    INSTALL_CMD="/install.sh"
+fi
+
+# Optional check for specific version
+VERSION_TO_CHECK_FOR=${VERSION_TO_CHECK_FOR:-}
+function check_version() {
+    if [[ -n "$VERSION_TO_CHECK_FOR" ]]; then
+        local LOG_FILE=$1
+        if ! grep -q "$VERSION_TO_CHECK_FOR" "$LOG_FILE"; then
+            echo "WARNING: Not using expected version: $VERSION_TO_CHECK_FOR"
+            exit 1
+        fi
+    fi
+}
+
 APT_TARGETS=("ubuntu:18.04"
     "ubuntu:20.04"
     "ubuntu:22.04"
@@ -23,22 +43,34 @@ YUM_TARGETS=("centos:7"
     "amazonlinux:2"
     "amazonlinux:2022")
 
-for IMAGE in "${APT_TARGETS[@]}"
-do
-    echo "Testing $IMAGE"
-    $CONTAINER_RUNTIME run --rm -t \
-        -e FLUENT_BIT_PACKAGES_URL="${FLUENT_BIT_PACKAGES_URL:-https://packages.fluentbit.io}" \
-        -e FLUENT_BIT_PACKAGES_KEY="${FLUENT_BIT_PACKAGES_KEY:-https://packages.fluentbit.io/fluentbit.key}" \
-        "$IMAGE" \
-        sh -c "apt-get update && apt-get install -y sudo gpg curl;curl $INSTALL_SCRIPT | sh"
-done
-
 for IMAGE in "${YUM_TARGETS[@]}"
 do
     echo "Testing $IMAGE"
+    LOG_FILE=$(mktemp)
+    # We do want word splitting for EXTRA_MOUNTS
+    # shellcheck disable=SC2086
     $CONTAINER_RUNTIME run --rm -t \
         -e FLUENT_BIT_PACKAGES_URL="${FLUENT_BIT_PACKAGES_URL:-https://packages.fluentbit.io}" \
         -e FLUENT_BIT_PACKAGES_KEY="${FLUENT_BIT_PACKAGES_KEY:-https://packages.fluentbit.io/fluentbit.key}" \
+        $EXTRA_MOUNTS \
         "$IMAGE" \
-        sh -c "yum install -y sudo;curl $INSTALL_SCRIPT | sh"
+        sh -c "$INSTALL_CMD && /opt/fluent-bit/bin/fluent-bit --version" | tee "$LOG_FILE"
+    check_version "$LOG_FILE"
+    rm -f "$LOG_FILE"
+done
+
+for IMAGE in "${APT_TARGETS[@]}"
+do
+    echo "Testing $IMAGE"
+    LOG_FILE=$(mktemp)
+    # We do want word splitting for EXTRA_MOUNTS
+    # shellcheck disable=SC2086
+    $CONTAINER_RUNTIME run --rm -t \
+        -e FLUENT_BIT_PACKAGES_URL="${FLUENT_BIT_PACKAGES_URL:-https://packages.fluentbit.io}" \
+        -e FLUENT_BIT_PACKAGES_KEY="${FLUENT_BIT_PACKAGES_KEY:-https://packages.fluentbit.io/fluentbit.key}" \
+        $EXTRA_MOUNTS \
+        "$IMAGE" \
+        sh -c "apt-get update && apt-get install -y gpg curl;$INSTALL_CMD && /opt/fluent-bit/bin/fluent-bit --version" | tee "$LOG_FILE"
+    check_version "$LOG_FILE"
+    rm -f "$LOG_FILE"
 done

@@ -455,6 +455,21 @@ int cio_file_native_close(struct cio_file *cf)
     return CIO_OK;
 }
 
+int cio_file_native_delete_by_path(const char *path)
+{
+    int result;
+
+    result = DeleteFileA(path);
+
+    if (result == 0) {
+        cio_file_native_report_os_error();
+
+        return CIO_ERROR;
+    }
+
+    return CIO_OK;
+}
+
 int cio_file_native_delete(struct cio_file *cf)
 {
     int result;

@@ -160,7 +160,7 @@ static int cb_throttle_init(struct flb_filter_instance *f_ins,
     pthread_mutex_init(&throttle_mut, NULL);
 
     /* Create context */
-    ctx = flb_malloc(sizeof(struct flb_filter_throttle_ctx));
+    ctx = flb_calloc(1, sizeof(struct flb_filter_throttle_ctx));
     if (!ctx) {
         flb_errno();
         return -1;

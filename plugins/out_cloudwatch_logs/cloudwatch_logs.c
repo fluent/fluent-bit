@@ -58,6 +58,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     struct flb_cloudwatch *ctx = NULL;
     struct cw_flush *buf = NULL;
     int ret;
+    flb_sds_t tmp_sds = NULL;
     (void) config;
     (void) data;
 
@@ -336,7 +337,12 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     ctx->cw_client->proxy = NULL;
     ctx->cw_client->static_headers = &content_type_header;
     ctx->cw_client->static_headers_len = 1;
-    ctx->cw_client->extra_user_agent = (char *) ctx->extra_user_agent;
+    tmp_sds = flb_sds_create(ctx->extra_user_agent);
+    if (!tmp_sds) {
+        flb_errno();
+        goto error;
+    }
+    ctx->cw_client->extra_user_agent = tmp_sds;
     ctx->cw_client->retry_requests = ctx->retry_requests;
 
     struct flb_upstream *upstream = flb_upstream_create(config, ctx->endpoint,
@@ -346,13 +352,6 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         flb_plg_error(ctx->ins, "Connection initialization error");
         goto error;
     }
-
-    /*
-     * Remove async flag from upstream
-     * CW output runs in sync mode; because the CW API currently requires
-     * PutLogEvents requests to a log stream to be made serially
-     */
-    flb_stream_disable_async_mode(&upstream->base);
 
     ctx->cw_client->upstream = upstream;
     flb_output_upstream_set(upstream, ctx->ins);
@@ -669,7 +668,12 @@ struct flb_output_plugin out_cloudwatch_logs_plugin = {
     .cb_init      = cb_cloudwatch_init,
     .cb_flush     = cb_cloudwatch_flush,
     .cb_exit      = cb_cloudwatch_exit,
-    .flags        = 0,
+
+    /*
+     * Allow cloudwatch to use async network stack synchronously by opting into
+     * FLB_OUTPUT_SYNCHRONOUS synchronous task scheduler
+     */
+    .flags        = FLB_OUTPUT_SYNCHRONOUS,
     .workers      = 1,
 
     /* Configuration */

@@ -66,7 +66,8 @@ EOF
     fi
 done
 
-DEB_REPO_PATHS=( "debian/bullseye"
+DEB_REPO_PATHS=( "debian/bookworm"
+                 "debian/bullseye"
                  "debian/buster"
                  "ubuntu/xenial"
                  "ubuntu/bionic"

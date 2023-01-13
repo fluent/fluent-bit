@@ -61,7 +61,7 @@ jobs:
           INPUT_VERSION: ${{ inputs.version || github.ref_name }}
 
       # String the 'v' prefix for tags.
-      - uses: frabert/replace-string-action@v2.3
+      - uses: frabert/replace-string-action@v2.4
         id: formatted_version
         with:
           pattern: '[v]*(.*)$'

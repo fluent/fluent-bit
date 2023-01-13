@@ -70,8 +70,11 @@ static int flb_wasm_load_wasm_binary(const char *wasm_path, int8_t **out_buf, ui
     return buffer != NULL;
 
 error:
+    if (buffer != NULL) {
+        BH_FREE(buffer);
+    }
 
-    return -1;
+    return FLB_FALSE;
 }
 
 #ifdef FLB_WASI_SOCKETS
@@ -141,6 +144,7 @@ struct flb_wasm *flb_wasm_instantiate(struct flb_config *config, const char *was
     wasi_dir_list = flb_malloc(sizeof(char *) * accessible_dir_list_size);
     if (!wasi_dir_list) {
         flb_errno();
+        flb_free(fw);
         return NULL;
     }
     mk_list_foreach(head, accessible_dir_list) {
@@ -236,6 +240,9 @@ error:
     }
     if (buffer != NULL) {
         BH_FREE(buffer);
+    }
+    if (fw != NULL) {
+        flb_free(fw);
     }
 
     wasm_runtime_destroy();

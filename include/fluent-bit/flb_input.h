@@ -54,17 +54,17 @@
 #define FLB_COLLECT_FD_SERVER   4
 
 /* Input plugin flag masks */
-#define FLB_INPUT_NET          4   /* input address may set host and port   */
-#define FLB_INPUT_PLUGIN_CORE  0
-#define FLB_INPUT_PLUGIN_PROXY 1
-#define FLB_INPUT_CORO       128   /* plugin requires a thread on callbacks */
-#define FLB_INPUT_PRIVATE    256   /* plugin is not published/exposed       */
-#define FLB_INPUT_NOTAG      512   /* plugin might don't have tags          */
-#define FLB_INPUT_THREADED  1024   /* plugin must run in a separate thread  */
-#define FLB_INPUT_NET_SERVER   8   /* Input address may set host and port.
-                                    * In addition, if TLS is enabled then a
-                                    * private key and certificate are required.
-                                    */
+#define FLB_INPUT_NET           4   /* input address may set host and port   */
+#define FLB_INPUT_PLUGIN_CORE   0
+#define FLB_INPUT_PLUGIN_PROXY  1
+#define FLB_INPUT_CORO        128   /* plugin requires a thread on callbacks */
+#define FLB_INPUT_PRIVATE     256   /* plugin is not published/exposed       */
+#define FLB_INPUT_NOTAG       512   /* plugin might don't have tags          */
+#define FLB_INPUT_THREADED   1024   /* plugin must run in a separate thread  */
+#define FLB_INPUT_NET_SERVER 2048   /* Input address may set host and port.
+                                     * In addition, if TLS is enabled then a
+                                     * private key and certificate are required.
+                                     */
 
 /* Input status */
 #define FLB_INPUT_RUNNING     1
@@ -133,6 +133,9 @@ struct flb_input_plugin {
 
     /* Exit */
     int (*cb_exit) (void *, struct flb_config *);
+
+    /* Destroy */
+    void (*cb_destroy) (struct flb_input_plugin *);
 
     void *instance;
 

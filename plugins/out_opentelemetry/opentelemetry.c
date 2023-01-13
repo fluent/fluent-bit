@@ -28,6 +28,7 @@
 #include <fluent-otel-proto/fluent-otel.h>
 
 #include <cmetrics/cmetrics.h>
+#include <fluent-bit/flb_gzip.h>
 #include <cmetrics/cmt_encode_opentelemetry.h>
 
 #include <ctraces/ctraces.h>
@@ -140,6 +141,9 @@ static int http_post(struct opentelemetry_context *ctx,
     struct flb_config_map_val *mv;
     struct flb_slist_entry *key = NULL;
     struct flb_slist_entry *val = NULL;
+    void *final_body = NULL;
+    size_t final_body_len = 0;
+    int compressed = FLB_FALSE;
 
     /* Get upstream context and connection */
     u = ctx->u;
@@ -149,10 +153,21 @@ static int http_post(struct opentelemetry_context *ctx,
                       u->tcp_host, u->tcp_port);
         return FLB_RETRY;
     }
-
+     if (ctx->compress_gzip == FLB_TRUE) {
+        ret = flb_gzip_compress((void *) body, body_len,
+                                &final_body, &final_body_len);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "cannot gzip payload, disabling compression");
+        } else {
+            compressed = FLB_TRUE;
+        }
+    } else {
+        final_body = body;
+        final_body_len = body_len;
+    }
     /* Create HTTP client context */
     c = flb_http_client(u_conn, FLB_HTTP_POST, uri,
-                        body, body_len,
+                        final_body, final_body_len,
                         ctx->host, ctx->port,
                         ctx->proxy, 0);
 
@@ -192,7 +207,9 @@ static int http_post(struct opentelemetry_context *ctx,
                             key->str, flb_sds_len(key->str),
                             val->str, flb_sds_len(val->str));
     }
-
+    if (compressed == FLB_TRUE) {
+        flb_http_set_content_encoding_gzip(c);
+    }
     ret = flb_http_do(c, &b_sent);
     if (ret == 0) {
         /*
@@ -239,6 +256,13 @@ static int http_post(struct opentelemetry_context *ctx,
         out_ret = FLB_RETRY;
     }
 
+    /*
+     * If the payload buffer is different than incoming records in body, means
+     * we generated a different payload and must be freed.
+     */
+    if (final_body != body) {
+        flb_free(final_body);
+    }
     /* Destroy HTTP client context */
     flb_http_client_destroy(c);
 
@@ -271,7 +295,10 @@ static void clear_array(Opentelemetry__Proto__Logs__V1__LogRecord **logs,
 
     for (index = 0 ; index < log_count ; index++) {
         otlp_any_value_destroy(logs[index]->body);
+        flb_free(logs[index]);
     }
+
+    flb_free(logs);
 }
 
 static Opentelemetry__Proto__Common__V1__ArrayValue *otlp_array_value_initialize(size_t entry_count)
@@ -553,7 +580,6 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *msgpack_map_to_otlp_an
     Opentelemetry__Proto__Common__V1__KeyValue *keyvalue;
     size_t                                      index;
     msgpack_object_kv                          *kv;
-    msgpack_object                              p;
 
     entry_count = o->via.map.size;
     result = otlp_any_value_initialize(MSGPACK_OBJECT_MAP, entry_count);
@@ -572,7 +598,6 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *msgpack_map_to_otlp_an
 
 static inline Opentelemetry__Proto__Common__V1__AnyValue *msgpack_object_to_otlp_any_value(struct msgpack_object *o)
 {
-    size_t                                      array_size;
     Opentelemetry__Proto__Common__V1__AnyValue *result;
 
     switch (o->type) {
@@ -605,6 +630,9 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *msgpack_object_to_otlp
 
         case MSGPACK_OBJECT_MAP:
             result = msgpack_map_to_otlp_any_value(o);
+            break;
+
+        default:
             break;
     }
 
@@ -665,29 +693,57 @@ static int process_logs(struct flb_event_chunk *event_chunk,
                         struct flb_input_instance *ins, void *out_context,
                         struct flb_config *config)
 {
-    Opentelemetry__Proto__Logs__V1__LogRecord *log_record_list[FLB_LOG_RECORD_BATCH_SIZE];
-    Opentelemetry__Proto__Logs__V1__LogRecord log_records[FLB_LOG_RECORD_BATCH_SIZE];
-    Opentelemetry__Proto__Common__V1__AnyValue log_bodies[FLB_LOG_RECORD_BATCH_SIZE];
+    struct opentelemetry_context *ctx;
+    ctx = out_context;
+
+    /*
+    * These were initially variable length arrays.
+    * However, having a high value for batch_size was causing memory
+    * issues with the event chunk being overwritten. Moving it to the heap
+    * solves these issues but we still do not know the root cause
+    */
+
+    Opentelemetry__Proto__Logs__V1__LogRecord **log_record_list;
+    Opentelemetry__Proto__Logs__V1__LogRecord *log_records;
+    Opentelemetry__Proto__Common__V1__AnyValue *log_bodies;
     Opentelemetry__Proto__Common__V1__AnyValue *log_object;
+
     size_t log_record_count;
     size_t index;
     msgpack_unpacked result;
     msgpack_object *obj;
     size_t off = 0;
     struct flb_time tm;
-    char *json;
     int res = FLB_OK;
-    struct opentelemetry_context *ctx;
 
-    for(index = 0 ; index < FLB_LOG_RECORD_BATCH_SIZE ; index++) {
+    log_record_list = (Opentelemetry__Proto__Logs__V1__LogRecord *) flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Logs__V1__LogRecord *));
+    if (!log_record_list) {
+        flb_errno();
+        return -1;
+    }
+
+    log_records = flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Logs__V1__LogRecord));
+    if (!log_records) {
+        flb_free(log_record_list);
+        flb_errno();
+        return -1;
+    }
+
+    log_bodies = (Opentelemetry__Proto__Common__V1__AnyValue *) flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Common__V1__AnyValue));
+    if (!log_bodies) {
+        flb_free(log_record_list);
+        flb_free(log_records);
+        flb_errno();
+        return -1;
+    }
+
+    for(index = 0 ; index < ctx->batch_size ; index++) {
         opentelemetry__proto__logs__v1__log_record__init(&log_records[index]);
         opentelemetry__proto__common__v1__any_value__init(&log_bodies[index]);
 
         log_records[index].body = &log_bodies[index];
         log_record_list[index] = &log_records[index];
     }
-
-    ctx = out_context;
     log_record_count = 0;
 
     msgpack_unpacked_init(&result);
@@ -718,7 +774,7 @@ static int process_logs(struct flb_event_chunk *event_chunk,
 
         log_record_count++;
 
-        if (log_record_count >= FLB_LOG_RECORD_BATCH_SIZE) {
+        if (log_record_count >= ctx->batch_size) {
             res = flush_to_otel(ctx,
                                 event_chunk,
                                 log_record_list,
@@ -745,6 +801,7 @@ static int process_logs(struct flb_event_chunk *event_chunk,
         log_record_count = 0;
     }
 
+    flb_free(log_bodies);
     msgpack_unpacked_destroy(&result);
 
     return res;
@@ -949,6 +1006,10 @@ static int cb_opentelemetry_init(struct flb_output_instance *ins,
         return -1;
     }
 
+    if (ctx->batch_size <= 0){
+        ctx->batch_size = atoi(DEFAULT_LOG_RECORD_BATCH_SIZE);
+    }
+
     flb_output_set_context(ins, ctx);
 
     return 0;
@@ -1021,6 +1082,16 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "log_response_payload", "true",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, log_response_payload),
      "Specify if the response paylod should be logged or not"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "batch_size", DEFAULT_LOG_RECORD_BATCH_SIZE,
+      0, FLB_TRUE, offsetof(struct opentelemetry_context, batch_size),
+      "Set the maximum number of log records to be flushed at a time"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "compress", NULL,
+     0, FLB_FALSE, 0,
+     "Set payload compression mechanism. Option available is 'gzip'"
     },
     /* EOF */
     {0}

@@ -937,6 +937,8 @@ static int parse_histogram_summary_name(
 {
     bool sum_found;
     bool count_found;
+    bool has_buckets;
+    bool is_previous_sum_or_count;
     bool name_matched = false;
     struct cfl_list *head;
     struct cfl_list *tmp;
@@ -962,6 +964,7 @@ static int parse_histogram_summary_name(
 
     sum_found = false;
     count_found = false;
+    has_buckets = false;
 
     cfl_list_foreach_safe(head, tmp, &context->metric.samples) {
         sample = cfl_list_entry(head, struct cmt_decode_prometheus_context_sample, _head);
@@ -974,9 +977,15 @@ static int parse_histogram_summary_name(
                 count_found = true;
                 break;
             default:
+                has_buckets = true;
                 break;
         }
     }
+
+    sample = cfl_list_entry_last(&context->metric.samples,
+            struct cmt_decode_prometheus_context_sample, _head);
+    is_previous_sum_or_count = sample->type == CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_SUM ||
+        sample->type == CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_COUNT;
 
     if (name_matched) {
         if (sum_found && count_found) {
@@ -992,7 +1001,7 @@ static int parse_histogram_summary_name(
 
     /* invalid histogram/summary suffix, treat it as a different metric */
     if (!strcmp(metric_name + parsed_name_len, "_bucket")) {
-        if (sum_found && count_found) {
+        if (sum_found && count_found && has_buckets && is_previous_sum_or_count) {
             /* already found both sum and count, so this is a new metric */
             return finish_duplicate_histogram_summary_sum_count(
                     context,

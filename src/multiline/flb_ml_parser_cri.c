@@ -40,6 +40,7 @@ static struct flb_parser *cri_parser_create(struct flb_config *config)
                           NULL,                    /* time offset */
                           FLB_TRUE,                /* time keep */
                           FLB_FALSE,               /* time strict */
+                          FLB_FALSE,               /* no bare keys */
                           NULL,                    /* parser types */
                           0,                       /* types len */
                           NULL,                    /* decoders */

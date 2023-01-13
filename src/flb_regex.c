@@ -57,29 +57,90 @@ cb_onig_named(const UChar *name, const UChar *name_end,
     return 0;
 }
 
+static OnigOptionType check_option(const char *start, const char *end, char **new_end)
+{
+    char *chr = NULL;
+    OnigOptionType option = ONIG_OPTION_NONE;
+
+    if (start == NULL || end == NULL || new_end == NULL) {
+        return ONIG_OPTION_DEFAULT;
+    } else if (start[0] != '/') {
+        *new_end = NULL;
+        return ONIG_OPTION_DEFAULT;
+    }
+
+    chr = strrchr(start, '/');
+    if (chr == start || chr == end) {
+        *new_end = NULL;
+        return ONIG_OPTION_DEFAULT;
+    }
+    *new_end = chr;
+
+    chr++;
+    while(chr != end && *chr != '\0') {
+        switch (*chr) {
+        case 'm':
+            option |= ONIG_OPTION_MULTILINE;
+            break;
+        case 'i':
+            option |= ONIG_OPTION_IGNORECASE;
+            break;
+        case 'o':
+            flb_debug("[regex:%s]: 'o' option is not supported.", __FUNCTION__);
+            break;
+        case 'x':
+            option |= ONIG_OPTION_EXTEND;
+            break;
+        default:
+            flb_debug("[regex:%s]: unknown option. use default.", __FUNCTION__);
+            *new_end = NULL;
+            return ONIG_OPTION_DEFAULT;
+        }
+        chr++;
+    }
+
+    if (option == ONIG_OPTION_NONE) {
+        *new_end = NULL;
+        option = ONIG_OPTION_DEFAULT;
+    }
+
+    return option;
+}
+
 static int str_to_regex(const char *pattern, OnigRegex *reg)
 {
     int ret;
-    int len;
+    size_t len;
     const char *start;
     const char *end;
+    char *new_end = NULL;
     OnigErrorInfo einfo;
+    OnigOptionType option;
 
     len = strlen(pattern);
     start = pattern;
     end = pattern + len;
+
+    option = check_option(start, end, &new_end);
 
     if (pattern[0] == '/' && pattern[len - 1] == '/') {
         start++;
         end--;
     }
 
+    if (new_end != NULL) {
+        /* pattern is /pat/option. new_end indicates a last '/'. */
+        start++;
+        end = new_end;
+    }
+
     ret = onig_new(reg,
                    (const unsigned char *)start, (const unsigned char *)end,
-                   ONIG_OPTION_DEFAULT,
+                   option,
                    ONIG_ENCODING_UTF8, ONIG_SYNTAX_RUBY, &einfo);
 
     if (ret != ONIG_NORMAL) {
+        printf("ret=%d. start=%s end=%c\n", ret, start, *end);
         return -1;
     }
     return 0;
@@ -104,7 +165,7 @@ struct flb_regex *flb_regex_create(const char *pattern)
     }
 
     /* Compile pattern */
-    ret = str_to_regex(pattern, (OnigRegex *) &r->regex);
+    ret = str_to_regex(pattern, (OnigRegex*)&r->regex);
     if (ret == -1) {
         flb_free(r);
         return NULL;
