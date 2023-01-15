@@ -379,8 +379,13 @@ static int process_ndpack(struct flb_es_bulk *ctx, flb_sds_t tag, char *buf, siz
                         goto proceed;
                     }
                     else {
-                        flb_sds_cat(bulk_statuses, "{\"unknown\":", 11);
+                        flb_sds_cat(bulk_statuses, "{\"unknown\":{\"status\":400,\"result\":\"bad_request\"}}", 49);
                         error_op = FLB_TRUE;
+
+                        msgpack_sbuffer_destroy(&mp_sbuf);
+                        flb_sds_destroy(write_op);
+
+                        break;
                     }
                 } else {
                     flb_sds_destroy(write_op);
@@ -439,9 +444,6 @@ static int process_ndpack(struct flb_es_bulk *ctx, flb_sds_t tag, char *buf, siz
                     else if (flb_sds_cmp(write_op, "update", op_str_size) == 0) {
                         flb_sds_cat(bulk_statuses, "{\"status\":403,\"result\":\"forbidden\"}}", 36);
                     }
-                    else {
-                        flb_sds_cat(bulk_statuses, "{\"status\":400,\"result\":\"bad_request\"}}", 38);
-                    }
                     if (status_buffer_avail(ctx, bulk_statuses, 50) == FLB_FALSE) {
                         msgpack_sbuffer_destroy(&mp_sbuf);
                         flb_sds_destroy(write_op);
@@ -468,8 +470,6 @@ static int process_ndpack(struct flb_es_bulk *ctx, flb_sds_t tag, char *buf, siz
     if (idx % 2 != 0) {
         flb_plg_warn(ctx->ins, "decode payload of Bulk API is failed");
         msgpack_unpacked_destroy(&result);
-        msgpack_sbuffer_destroy(&mp_sbuf);
-        flb_sds_destroy(write_op);
 
         return -1;
     }
