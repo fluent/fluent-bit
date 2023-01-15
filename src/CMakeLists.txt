@@ -70,6 +70,7 @@ set(src
   flb_typecast.c
   flb_event.c
   flb_base64.c
+  flb_event_decoder.c
   flb_ring_buffer.c
   )
 

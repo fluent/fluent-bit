@@ -23,6 +23,7 @@ set(UNIT_TESTS_FILES
   mp.c
   input_chunk.c
   flb_time.c
+  flb_event_decoder.c
   file.c
   csv.c
   multiline.c
