@@ -470,6 +470,13 @@ static int process_ndpack(struct flb_es_bulk *ctx, flb_sds_t tag, char *buf, siz
     if (idx % 2 != 0) {
         flb_plg_warn(ctx->ins, "decode payload of Bulk API is failed");
         msgpack_unpacked_destroy(&result);
+        if (error_op == FLB_FALSE) {
+            /* On lacking of body case in non-error case, there is no
+             * releasing memory code paths. We should proceed to do
+             * it here. */
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            flb_sds_destroy(write_op);
+        }
 
         return -1;
     }
