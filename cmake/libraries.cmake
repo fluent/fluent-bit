@@ -23,6 +23,4 @@ set(FLB_PATH_LIB_CARES       "lib/c-ares-1.18.1")
 set(FLB_PATH_LIB_SNAPPY      "lib/snappy-fef67ac")
 set(FLB_PATH_LIB_RDKAFKA     "lib/librdkafka-1.9.2")
 set(FLB_PATH_LIB_RING_BUFFER "lib/lwrb")
-set(FLB_PATH_LIB_WASM_MICRO_RUNTIME  "lib/wasm-micro-runtime-fast-jit-06-29-2022")
-
-
+set(FLB_PATH_LIB_WASM_MICRO_RUNTIME  "lib/wasm-micro-runtime-WAMR-1.1.1")
