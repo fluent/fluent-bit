@@ -52,6 +52,8 @@ do
     $CONTAINER_RUNTIME run --rm -t \
         -e FLUENT_BIT_PACKAGES_URL="${FLUENT_BIT_PACKAGES_URL:-https://packages.fluentbit.io}" \
         -e FLUENT_BIT_PACKAGES_KEY="${FLUENT_BIT_PACKAGES_KEY:-https://packages.fluentbit.io/fluentbit.key}" \
+        -e FLUENT_BIT_RELEASE_VERSION="${FLUENT_BIT_RELEASE_VERSION:-}" \
+        -e FLUENT_BIT_INSTALL_COMMAND_PREFIX="${FLUENT_BIT_INSTALL_COMMAND_PREFIX:-}" \
         $EXTRA_MOUNTS \
         "$IMAGE" \
         sh -c "$INSTALL_CMD && /opt/fluent-bit/bin/fluent-bit --version" | tee "$LOG_FILE"
@@ -68,6 +70,8 @@ do
     $CONTAINER_RUNTIME run --rm -t \
         -e FLUENT_BIT_PACKAGES_URL="${FLUENT_BIT_PACKAGES_URL:-https://packages.fluentbit.io}" \
         -e FLUENT_BIT_PACKAGES_KEY="${FLUENT_BIT_PACKAGES_KEY:-https://packages.fluentbit.io/fluentbit.key}" \
+        -e FLUENT_BIT_RELEASE_VERSION="${FLUENT_BIT_RELEASE_VERSION:-}" \
+        -e FLUENT_BIT_INSTALL_COMMAND_PREFIX="${FLUENT_BIT_INSTALL_COMMAND_PREFIX:-}" \
         $EXTRA_MOUNTS \
         "$IMAGE" \
         sh -c "apt-get update && apt-get install -y gpg curl;$INSTALL_CMD && /opt/fluent-bit/bin/fluent-bit --version" | tee "$LOG_FILE"
