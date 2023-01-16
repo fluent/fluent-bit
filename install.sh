@@ -5,6 +5,11 @@ set -e
 RELEASE_URL=${FLUENT_BIT_PACKAGES_URL:-https://packages.fluentbit.io}
 RELEASE_KEY=${FLUENT_BIT_PACKAGES_KEY:-$RELEASE_URL/fluentbit.key}
 
+# Optionally specify the version to install
+RELEASE_VERSION=${FLUENT_BIT_RELEASE_VERSION:-}
+# Optionally prefix install commands, e.g. use 'echo ' here to prevent installation after repo set up.
+INSTALL_CMD_PREFIX=${FLUENT_BIT_INSTALL_COMMAND_PREFIX:-}
+
 echo "================================"
 echo " Fluent Bit Installation Script "
 echo "================================"
@@ -35,6 +40,14 @@ else
     sudo -k
 fi
 
+# Set up version pinning
+APT_VERSION=''
+YUM_VERSION=''
+if [[ -n "${RELEASE_VERSION}" ]]; then
+    APT_VERSION="=$RELEASE_VERSION"
+    YUM_VERSION="-$RELEASE_VERSION"
+fi
+
 # Now set up repos and install dependent on OS, version, etc.
 # Will require sudo
 case ${OS} in
@@ -55,7 +68,7 @@ enabled=1
 EOF
 sed -i 's|VERSION_ARCH_SUBSTR|\$releasever/\$basearch/|g' /etc/yum.repos.d/fluent-bit.repo
 cat /etc/yum.repos.d/fluent-bit.repo
-yum -y install fluent-bit
+$INSTALL_CMD_PREFIX yum -y install fluent-bit$YUM_VERSION
 SCRIPT
     ;;
     centos|centoslinux|rhel|redhatenterpriselinuxserver|fedora|rocky|almalinux)
@@ -73,7 +86,7 @@ enabled=1
 EOF
 sed -i 's|VERSION_ARCH_SUBSTR|\$releasever/\$basearch/|g' /etc/yum.repos.d/fluent-bit.repo
 cat /etc/yum.repos.d/fluent-bit.repo
-yum -y install fluent-bit
+$INSTALL_CMD_PREFIX yum -y install fluent-bit$YUM_VERSION
 SCRIPT
     ;;
     ubuntu|debian)
@@ -88,7 +101,7 @@ deb [signed-by=/usr/share/keyrings/fluentbit-keyring.gpg] $RELEASE_URL/${OS}/${C
 EOF
 cat /etc/apt/sources.list.d/fluent-bit.list
 apt-get -y update
-apt-get -y install fluent-bit
+$INSTALL_CMD_PREFIX apt-get -y install fluent-bit$APT_VERSION
 SCRIPT
     ;;
     *)
