@@ -23,21 +23,21 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_random.h>
 
-#include "es_bulk.h"
-#include "es_bulk_conn.h"
-#include "es_bulk_config.h"
+#include "in_elasticsearch.h"
+#include "in_elasticsearch_config.h"
+#include "in_elasticsearch_bulk_conn.h"
 
 /*
  * For a server event, the collection event means a new client have arrived, we
  * accept the connection and create a new TCP instance which will wait for
  * JSON map messages.
  */
-static int in_es_bulk_collect(struct flb_input_instance *ins,
-                              struct flb_config *config, void *in_context)
+static int in_elasticsearch_bulk_collect(struct flb_input_instance *ins,
+                                         struct flb_config *config, void *in_context)
 {
     struct flb_connection *connection;
-    struct es_bulk_conn   *conn;
-    struct flb_es_bulk    *ctx;
+    struct in_elasticsearch_bulk_conn *conn;
+    struct flb_in_elasticsearch    *ctx;
 
     ctx = in_context;
 
@@ -52,7 +52,7 @@ static int in_es_bulk_collect(struct flb_input_instance *ins,
     flb_plg_trace(ctx->ins, "new TCP connection arrived FD=%i",
                   connection->fd);
 
-    conn = es_bulk_conn_add(connection, ctx);
+    conn = in_elasticsearch_bulk_conn_add(connection, ctx);
 
     if (conn == NULL) {
         flb_downstream_conn_release(connection);
@@ -88,18 +88,18 @@ static void bytes_to_nodename(unsigned char *data, char *buf, size_t len) {
     }
 }
 
-static int in_es_bulk_init(struct flb_input_instance *ins,
-                           struct flb_config *config, void *data)
+static int in_elasticsearch_bulk_init(struct flb_input_instance *ins,
+                                      struct flb_config *config, void *data)
 {
     unsigned short int  port;
     int                 ret;
-    struct flb_es_bulk    *ctx;
+    struct flb_in_elasticsearch    *ctx;
     unsigned char rand[16];
 
     (void) data;
 
     /* Create context and basic conf */
-    ctx = es_bulk_config_create(ins);
+    ctx = in_elasticsearch_config_create(ins);
     if (!ctx) {
         return -1;
     }
@@ -110,7 +110,7 @@ static int in_es_bulk_init(struct flb_input_instance *ins,
     ret = flb_input_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "configuration error");
-        es_bulk_config_destroy(ctx);
+        in_elasticsearch_config_destroy(ctx);
         return -1;
     }
 
@@ -148,19 +148,19 @@ static int in_es_bulk_init(struct flb_input_instance *ins,
                       "could not initialize downstream on %s:%s. Aborting",
                       ctx->listen, ctx->tcp_port);
 
-        es_bulk_config_destroy(ctx);
+        in_elasticsearch_config_destroy(ctx);
 
         return -1;
     }
 
     /* Collect upon data available on the standard input */
     ret = flb_input_set_collector_socket(ins,
-                                         in_es_bulk_collect,
+                                         in_elasticsearch_bulk_collect,
                                          ctx->downstream->server_fd,
                                          config);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "Could not set collector for IN_TCP input plugin");
-        es_bulk_config_destroy(ctx);
+        in_elasticsearch_config_destroy(ctx);
 
         return -1;
     }
@@ -170,16 +170,16 @@ static int in_es_bulk_init(struct flb_input_instance *ins,
     return 0;
 }
 
-static int in_es_bulk_exit(void *data, struct flb_config *config)
+static int in_elasticsearch_bulk_exit(void *data, struct flb_config *config)
 {
-    struct flb_es_bulk *ctx;
+    struct flb_in_elasticsearch *ctx;
 
     (void) config;
 
     ctx = data;
 
     if (ctx != NULL) {
-        es_bulk_config_destroy(ctx);
+        in_elasticsearch_config_destroy(ctx);
     }
 
     return 0;
@@ -189,32 +189,32 @@ static int in_es_bulk_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_SIZE, "buffer_max_size", HTTP_BUFFER_MAX_SIZE,
-     0, FLB_TRUE, offsetof(struct flb_es_bulk, buffer_max_size),
+     0, FLB_TRUE, offsetof(struct flb_in_elasticsearch, buffer_max_size),
      "Set the maximum size of buffer"
     },
 
     {
      FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", HTTP_BUFFER_CHUNK_SIZE,
-     0, FLB_TRUE, offsetof(struct flb_es_bulk, buffer_chunk_size),
+     0, FLB_TRUE, offsetof(struct flb_in_elasticsearch, buffer_chunk_size),
      "Set the buffer chunk size"
     },
 
     {
      FLB_CONFIG_MAP_STR, "tag_key", NULL,
-     0, FLB_TRUE, offsetof(struct flb_es_bulk, tag_key),
+     0, FLB_TRUE, offsetof(struct flb_in_elasticsearch, tag_key),
      "Specify a key name for extracting as a tag"
     },
 
     {
      FLB_CONFIG_MAP_STR, "meta_key", "@meta",
-     0, FLB_TRUE, offsetof(struct flb_es_bulk, meta_key),
+     0, FLB_TRUE, offsetof(struct flb_in_elasticsearch, meta_key),
      "Specify a key name for meta information"
     },
 
     {
      FLB_CONFIG_MAP_STR, "hostname", "localhost",
-     0, FLB_TRUE, offsetof(struct flb_es_bulk, hostname),
-     "Specify hostname or FQDN. This parameter is affective for sniffering node information."
+     0, FLB_TRUE, offsetof(struct flb_in_elasticsearch, hostname),
+     "Specify hostname or FQDN. This parameter is effective for sniffering node information."
     },
 
     /* EOF */
@@ -222,16 +222,16 @@ static struct flb_config_map config_map[] = {
 };
 
 /* Plugin reference */
-struct flb_input_plugin in_es_bulk_plugin = {
-    .name         = "es_bulk",
-    .description  = "HTTP Endpoints for Elasticsearch Bulk API",
-    .cb_init      = in_es_bulk_init,
+struct flb_input_plugin in_elasticsearch_plugin = {
+    .name         = "elasticsearch",
+    .description  = "HTTP Endpoints for Elasticsearch (Bulk API)",
+    .cb_init      = in_elasticsearch_bulk_init,
     .cb_pre_run   = NULL,
-    .cb_collect   = in_es_bulk_collect,
+    .cb_collect   = in_elasticsearch_bulk_collect,
     .cb_flush_buf = NULL,
     .cb_pause     = NULL,
     .cb_resume    = NULL,
-    .cb_exit      = in_es_bulk_exit,
+    .cb_exit      = in_elasticsearch_bulk_exit,
     .config_map   = config_map,
     .flags        = FLB_INPUT_NET_SERVER | FLB_IO_OPT_TLS
 };

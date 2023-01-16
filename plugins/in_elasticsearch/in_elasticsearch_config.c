@@ -19,16 +19,16 @@
 
 #include <fluent-bit/flb_input_plugin.h>
 
-#include "es_bulk.h"
-#include "es_bulk_conn.h"
+#include "in_elasticsearch.h"
+#include "in_elasticsearch_bulk_conn.h"
 
-struct flb_es_bulk *es_bulk_config_create(struct flb_input_instance *ins)
+struct flb_in_elasticsearch *in_elasticsearch_config_create(struct flb_input_instance *ins)
 {
     int ret;
     char port[8];
-    struct flb_es_bulk *ctx;
+    struct flb_in_elasticsearch *ctx;
 
-    ctx = flb_calloc(1, sizeof(struct flb_es_bulk));
+    ctx = flb_calloc(1, sizeof(struct flb_in_elasticsearch));
     if (!ctx) {
         flb_errno();
         return NULL;
@@ -61,10 +61,10 @@ struct flb_es_bulk *es_bulk_config_create(struct flb_input_instance *ins)
     return ctx;
 }
 
-int es_bulk_config_destroy(struct flb_es_bulk *ctx)
+int in_elasticsearch_config_destroy(struct flb_in_elasticsearch *ctx)
 {
     /* release all connections */
-    es_bulk_conn_release_all(ctx);
+    in_elasticsearch_bulk_conn_release_all(ctx);
 
     if (ctx->collector_id != -1) {
         flb_input_collector_delete(ctx->collector_id, ctx->ins);
