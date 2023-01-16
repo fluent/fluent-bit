@@ -270,10 +270,8 @@ static int event_decoder_next_mpack(struct flb_event_decoder *dec,
     int i_ret;
 
     event->record.reader.mpack = NULL;
-    if (((void*)dec->decoder.mpack.reader.data - dec->raw_data) >= dec->raw_data_size) {
+    if (((char*)dec->decoder.mpack.reader.data - (char*)dec->raw_data) >= dec->raw_data_size) {
         /* no data */
-        printf("reader=%p raw_data=%p diff=%ld\n", dec->decoder.mpack.reader.data, dec->raw_data,
-               (void*)dec->decoder.mpack.reader.data - dec->raw_data);
         return -1;
     }
 
