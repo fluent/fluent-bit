@@ -25,14 +25,14 @@
 #include <monkey/monkey.h>
 #include <monkey/mk_core.h>
 
-#include "es_bulk.h"
-#include "es_bulk_conn.h"
-#include "es_bulk_prot.h"
+#include "in_elasticsearch.h"
+#include "in_elasticsearch_bulk_conn.h"
+#include "in_elasticsearch_bulk_prot.h"
 
 #define HTTP_CONTENT_JSON   0
 #define HTTP_CONTENT_NDJSON 1
 
-static int send_dummy_version_response(struct es_bulk_conn *conn, int http_status, char *message)
+static int send_dummy_version_response(struct in_elasticsearch_bulk_conn *conn, int http_status, char *message)
 {
     size_t    sent;
     int       len;
@@ -69,7 +69,8 @@ static int send_dummy_version_response(struct es_bulk_conn *conn, int http_statu
     return 0;
 }
 
-static int send_dummy_sniffer_response(struct es_bulk_conn *conn, int http_status, struct flb_es_bulk *ctx)
+static int send_dummy_sniffer_response(struct in_elasticsearch_bulk_conn *conn, int http_status,
+                                       struct flb_in_elasticsearch *ctx)
 {
     size_t    sent;
     int       len;
@@ -121,7 +122,7 @@ static int send_dummy_sniffer_response(struct es_bulk_conn *conn, int http_statu
     return 0;
 }
 
-static int send_response(struct es_bulk_conn *conn, int http_status, char *message)
+static int send_response(struct in_elasticsearch_bulk_conn *conn, int http_status, char *message)
 {
     size_t    sent;
     int       len;
@@ -169,7 +170,7 @@ static int send_response(struct es_bulk_conn *conn, int http_status, char *messa
 }
 
 /* implements functionality to get tag from key in record */
-static flb_sds_t tag_key(struct flb_es_bulk *ctx, msgpack_object *map)
+static flb_sds_t tag_key(struct flb_in_elasticsearch *ctx, msgpack_object *map)
 {
     size_t map_size = map->via.map.size;
     msgpack_object_kv *kv;
@@ -247,7 +248,7 @@ static inline void map_pack_each(msgpack_packer *packer,
     }
 }
 
-static int count_map_elements(struct flb_es_bulk *ctx, char *buf, size_t size, int idx)
+static int count_map_elements(struct flb_in_elasticsearch *ctx, char *buf, size_t size, int idx)
 {
     msgpack_unpacked result;
     int index = 0;
@@ -280,7 +281,7 @@ static int count_map_elements(struct flb_es_bulk *ctx, char *buf, size_t size, i
     return map_num;
 }
 
-static int get_write_op(struct flb_es_bulk *ctx, msgpack_object *map, flb_sds_t *out_write_op, size_t *out_key_size)
+static int get_write_op(struct flb_in_elasticsearch *ctx, msgpack_object *map, flb_sds_t *out_write_op, size_t *out_key_size)
 {
     char *op_str = NULL;
     size_t op_str_size = 0;
@@ -309,7 +310,7 @@ static int get_write_op(struct flb_es_bulk *ctx, msgpack_object *map, flb_sds_t 
     return check;
 }
 
-static int status_buffer_avail(struct flb_es_bulk *ctx, flb_sds_t bulk_statuses, size_t threshold)
+static int status_buffer_avail(struct flb_in_elasticsearch *ctx, flb_sds_t bulk_statuses, size_t threshold)
 {
     if (flb_sds_avail(bulk_statuses) < threshold) {
         flb_plg_warn(ctx->ins, "left buffer for bulk status(es) is too small");
@@ -320,7 +321,7 @@ static int status_buffer_avail(struct flb_es_bulk *ctx, flb_sds_t bulk_statuses,
     return FLB_TRUE;
 }
 
-static int process_ndpack(struct flb_es_bulk *ctx, flb_sds_t tag, char *buf, size_t size, flb_sds_t bulk_statuses)
+static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char *buf, size_t size, flb_sds_t bulk_statuses)
 {
     size_t off = 0;
     msgpack_sbuffer mp_sbuf;
@@ -486,7 +487,7 @@ static int process_ndpack(struct flb_es_bulk *ctx, flb_sds_t tag, char *buf, siz
     return 0;
 }
 
-static ssize_t parse_payload_ndjson(struct flb_es_bulk *ctx, flb_sds_t tag,
+static ssize_t parse_payload_ndjson(struct flb_in_elasticsearch *ctx, flb_sds_t tag,
                                     char *payload, size_t size, flb_sds_t bulk_statuses)
 {
     int ret;
@@ -522,7 +523,7 @@ static ssize_t parse_payload_ndjson(struct flb_es_bulk *ctx, flb_sds_t tag,
     return 0;
 }
 
-static int process_payload(struct flb_es_bulk *ctx, struct es_bulk_conn *conn,
+static int process_payload(struct flb_in_elasticsearch *ctx, struct in_elasticsearch_bulk_conn *conn,
                            flb_sds_t tag,
                            struct mk_http_session *session,
                            struct mk_http_request *request,
@@ -587,9 +588,10 @@ static inline int mk_http_point_header(mk_ptr_t *h,
  * Handle an incoming request. It perform extra checks over the request, if
  * everything is OK, it enqueue the incoming payload.
  */
-int es_bulk_prot_handle(struct flb_es_bulk *ctx, struct es_bulk_conn *conn,
-                        struct mk_http_session *session,
-                        struct mk_http_request *request)
+int in_elasticsearch_bulk_prot_handle(struct flb_in_elasticsearch *ctx,
+                                      struct in_elasticsearch_bulk_conn *conn,
+                                      struct mk_http_session *session,
+                                      struct mk_http_request *request)
 {
     int i;
     int ret;
@@ -747,9 +749,10 @@ int es_bulk_prot_handle(struct flb_es_bulk *ctx, struct es_bulk_conn *conn,
 /*
  * Handle an incoming request which has resulted in an http parser error.
  */
-int es_bulk_prot_handle_error(struct flb_es_bulk *ctx, struct es_bulk_conn *conn,
-                              struct mk_http_session *session,
-                              struct mk_http_request *request)
+int in_elasticsearch_bulk_prot_handle_error(struct flb_in_elasticsearch *ctx,
+                                            struct in_elasticsearch_bulk_conn *conn,
+                                            struct mk_http_session *session,
+                                            struct mk_http_request *request)
 {
     send_response(conn, 400, "error: invalid request\n");
     return -1;

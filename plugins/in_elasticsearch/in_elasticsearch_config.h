@@ -17,13 +17,13 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IN_ES_BULK_CONFIG_H
-#define FLB_IN_ES_BULK_CONFIG_H
+#ifndef FLB_IN_ELASTICSEARCH_CONFIG_H
+#define FLB_IN_ELASTICSEARCH_CONFIG_H
 
 #include <fluent-bit/flb_input_plugin.h>
-#include "es_bulk.h"
+#include "in_elasticsearch.h"
 
-struct flb_es_bulk *es_bulk_config_create(struct flb_input_instance *ins);
-int es_bulk_config_destroy(struct flb_es_bulk *ctx);
+struct flb_in_elasticsearch *in_elasticsearch_config_create(struct flb_input_instance *ins);
+int in_elasticsearch_config_destroy(struct flb_in_elasticsearch *ctx);
 
 #endif

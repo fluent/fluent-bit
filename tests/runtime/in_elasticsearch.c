@@ -28,11 +28,11 @@
 #include "flb_tests_runtime.h"
 
 /* Test data */
-#include "data/in_es_bulk/json_bulk.h" /* NDBULK_JSON */
+#include "data/in_elasticsearch/json_bulk.h" /* NDBULK_JSON */
 
 #define NDJSON_CONTENT_TYPE "application/x-ndjson"
 
-struct es_bulk_client_ctx {
+struct in_elasticsearch_client_ctx {
     struct flb_upstream      *u;
     struct flb_connection    *u_conn;
     struct flb_config        *config;
@@ -44,7 +44,7 @@ struct test_ctx {
     int i_ffd;         /* Input fd  */
     int f_ffd;         /* Filter fd (unused) */
     int o_ffd;         /* Output fd */
-    struct es_bulk_client_ctx *httpc;
+    struct in_elasticsearch_client_ctx *httpc;
 };
 
 
@@ -101,15 +101,15 @@ static int cb_check_result_json(void *record, size_t size, void *data)
     return 0;
 }
 
-struct es_bulk_client_ctx* es_bulk_client_ctx_create()
+struct in_elasticsearch_client_ctx* in_elasticsearch_client_ctx_create()
 {
-    struct es_bulk_client_ctx *ret_ctx = NULL;
+    struct in_elasticsearch_client_ctx *ret_ctx = NULL;
     struct mk_event_loop *evl = NULL;
 
-    ret_ctx = flb_calloc(1, sizeof(struct es_bulk_client_ctx));
+    ret_ctx = flb_calloc(1, sizeof(struct in_elasticsearch_client_ctx));
     if (!TEST_CHECK(ret_ctx != NULL)) {
         flb_errno();
-        TEST_MSG("flb_calloc(es_bulk_client_ctx) failed");
+        TEST_MSG("flb_calloc(in_elasticsearch_client_ctx) failed");
         return NULL;
     }
 
@@ -170,7 +170,7 @@ static struct test_ctx *test_ctx_create(struct flb_lib_out_cb *data)
                     NULL);
 
     /* Input */
-    i_ffd = flb_input(ctx->flb, (char *) "es_bulk", NULL);
+    i_ffd = flb_input(ctx->flb, (char *) "elasticsearch", NULL);
     TEST_CHECK(i_ffd >= 0);
     ctx->i_ffd = i_ffd;
 
@@ -181,7 +181,7 @@ static struct test_ctx *test_ctx_create(struct flb_lib_out_cb *data)
     return ctx;
 }
 
-int es_bulk_client_ctx_destroy(struct es_bulk_client_ctx* ctx)
+int in_elasticsearch_client_ctx_destroy(struct in_elasticsearch_client_ctx* ctx)
 {
     if (!TEST_CHECK(ctx != NULL)) {
         return -1;
@@ -204,7 +204,7 @@ static void test_ctx_destroy(struct test_ctx *ctx)
 {
     TEST_CHECK(ctx != NULL);
     if (ctx->httpc) {
-        es_bulk_client_ctx_destroy(ctx->httpc);
+        in_elasticsearch_client_ctx_destroy(ctx->httpc);
     }
 
     sleep(1);
@@ -213,7 +213,7 @@ static void test_ctx_destroy(struct test_ctx *ctx)
     flb_free(ctx);
 }
 
-void flb_test_es_version()
+void flb_test_in_elasticsearch_version()
 {
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
@@ -239,13 +239,13 @@ void flb_test_es_version()
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
 
-    ctx->httpc = es_bulk_client_ctx_create();
+    ctx->httpc = in_elasticsearch_client_ctx_create();
     TEST_CHECK(ctx->httpc != NULL);
 
     c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_GET, "/", NULL, 0,
                         "127.0.0.1", 9880, NULL, 0);
     if (!TEST_CHECK(c != NULL)) {
-        TEST_MSG("es_bulk_client failed");
+        TEST_MSG("in_elasticsearch_client failed");
         exit(EXIT_FAILURE);
     }
 
@@ -272,7 +272,7 @@ void flb_test_es_version()
     test_ctx_destroy(ctx);
 }
 
-void flb_test_es_bulk(char *write_op)
+void flb_test_in_elasticsearch(char *write_op)
 {
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
@@ -307,7 +307,7 @@ void flb_test_es_bulk(char *write_op)
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
 
-    ctx->httpc = es_bulk_client_ctx_create();
+    ctx->httpc = in_elasticsearch_client_ctx_create();
     TEST_CHECK(ctx->httpc != NULL);
 
     c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/_bulk", buf, strlen(buf),
@@ -316,7 +316,7 @@ void flb_test_es_bulk(char *write_op)
                               NDJSON_CONTENT_TYPE, strlen(NDJSON_CONTENT_TYPE));
     TEST_CHECK(ret == 0);
     if (!TEST_CHECK(c != NULL)) {
-        TEST_MSG("es_bulk_client failed");
+        TEST_MSG("in_elasticsearch_client failed");
         exit(EXIT_FAILURE);
     }
 
@@ -343,17 +343,17 @@ void flb_test_es_bulk(char *write_op)
     test_ctx_destroy(ctx);
 }
 
-void flb_test_es_bulk_index_op()
+void flb_test_in_elasticsearch_index_op()
 {
-    flb_test_es_bulk("index");
+    flb_test_in_elasticsearch("index");
 }
 
-void flb_test_es_bulk_create_op()
+void flb_test_in_elasticsearch_create_op()
 {
-    flb_test_es_bulk("create");
+    flb_test_in_elasticsearch("create");
 }
 
-void flb_test_es_bulk_invalid(char *write_op, int status, char *expected_op)
+void flb_test_in_elasticsearch_invalid(char *write_op, int status, char *expected_op)
 {
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
@@ -389,7 +389,7 @@ void flb_test_es_bulk_invalid(char *write_op, int status, char *expected_op)
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
 
-    ctx->httpc = es_bulk_client_ctx_create();
+    ctx->httpc = in_elasticsearch_client_ctx_create();
     TEST_CHECK(ctx->httpc != NULL);
 
     c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/_bulk", buf, strlen(buf),
@@ -398,7 +398,7 @@ void flb_test_es_bulk_invalid(char *write_op, int status, char *expected_op)
                               NDJSON_CONTENT_TYPE, strlen(NDJSON_CONTENT_TYPE));
     TEST_CHECK(ret == 0);
     if (!TEST_CHECK(c != NULL)) {
-        TEST_MSG("es_bulk_client failed");
+        TEST_MSG("in_elasticsearch_client failed");
         exit(EXIT_FAILURE);
     }
 
@@ -430,22 +430,22 @@ void flb_test_es_bulk_invalid(char *write_op, int status, char *expected_op)
     test_ctx_destroy(ctx);
 }
 
-void flb_test_es_bulk_update_op()
+void flb_test_in_elasticsearch_update_op()
 {
-    flb_test_es_bulk_invalid("update", 403, "update");
+    flb_test_in_elasticsearch_invalid("update", 403, "update");
 }
 
-void flb_test_es_bulk_delete_op()
+void flb_test_in_elasticsearch_delete_op()
 {
-    flb_test_es_bulk_invalid("delete", 404, "delete");
+    flb_test_in_elasticsearch_invalid("delete", 404, "delete");
 }
 
-void flb_test_es_bulk_nonexistent_op()
+void flb_test_in_elasticsearch_nonexistent_op()
 {
-    flb_test_es_bulk_invalid("nonexistent", 400, "unknown");
+    flb_test_in_elasticsearch_invalid("nonexistent", 400, "unknown");
 }
 
-void flb_test_es_bulk_multi_ops()
+void flb_test_in_elasticsearch_multi_ops()
 {
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
@@ -479,7 +479,7 @@ void flb_test_es_bulk_multi_ops()
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
 
-    ctx->httpc = es_bulk_client_ctx_create();
+    ctx->httpc = in_elasticsearch_client_ctx_create();
     TEST_CHECK(ctx->httpc != NULL);
 
     c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/_bulk", buf, strlen(buf),
@@ -488,7 +488,7 @@ void flb_test_es_bulk_multi_ops()
                               NDJSON_CONTENT_TYPE, strlen(NDJSON_CONTENT_TYPE));
     TEST_CHECK(ret == 0);
     if (!TEST_CHECK(c != NULL)) {
-        TEST_MSG("es_bulk_client failed");
+        TEST_MSG("in_elasticsearch_client failed");
         exit(EXIT_FAILURE);
     }
 
@@ -519,7 +519,7 @@ void flb_test_es_bulk_multi_ops()
     test_ctx_destroy(ctx);
 }
 
-void flb_test_es_node_info()
+void flb_test_in_elasticsearch_node_info()
 {
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
@@ -545,13 +545,13 @@ void flb_test_es_node_info()
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
 
-    ctx->httpc = es_bulk_client_ctx_create();
+    ctx->httpc = in_elasticsearch_client_ctx_create();
     TEST_CHECK(ctx->httpc != NULL);
 
     c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_GET, "/_nodes/http", NULL, 0,
                         "127.0.0.1", 9880, NULL, 0);
     if (!TEST_CHECK(c != NULL)) {
-        TEST_MSG("es_bulk_client failed");
+        TEST_MSG("in_elasticsearch_client failed");
         exit(EXIT_FAILURE);
     }
 
@@ -578,7 +578,7 @@ void flb_test_es_node_info()
     test_ctx_destroy(ctx);
 }
 
-void flb_test_es_bulk_tag_key()
+void flb_test_in_elasticsearch_tag_key()
 {
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
@@ -615,7 +615,7 @@ void flb_test_es_bulk_tag_key()
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
 
-    ctx->httpc = es_bulk_client_ctx_create();
+    ctx->httpc = in_elasticsearch_client_ctx_create();
     TEST_CHECK(ctx->httpc != NULL);
 
     c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/_bulk", buf, strlen(buf),
@@ -624,7 +624,7 @@ void flb_test_es_bulk_tag_key()
                               NDJSON_CONTENT_TYPE, strlen(NDJSON_CONTENT_TYPE));
     TEST_CHECK(ret == 0);
     if (!TEST_CHECK(c != NULL)) {
-        TEST_MSG("es_bulk_client failed");
+        TEST_MSG("in_elasticsearch_client failed");
         exit(EXIT_FAILURE);
     }
 
@@ -652,14 +652,14 @@ void flb_test_es_bulk_tag_key()
 }
 
 TEST_LIST = {
-    {"version", flb_test_es_version},
-    {"es_bulk_index_op", flb_test_es_bulk_index_op},
-    {"es_bulk_create_op", flb_test_es_bulk_create_op},
-    {"es_bulk_update_op", flb_test_es_bulk_update_op},
-    {"es_bulk_delete_op", flb_test_es_bulk_delete_op},
-    {"es_bulk_nonexistent_op", flb_test_es_bulk_nonexistent_op},
-    {"es_bulk_multi_ops", flb_test_es_bulk_multi_ops},
-    {"node_info", flb_test_es_node_info},
-    {"tag_key", flb_test_es_bulk_tag_key},
+    {"version", flb_test_in_elasticsearch_version},
+    {"index_op", flb_test_in_elasticsearch_index_op},
+    {"create_op", flb_test_in_elasticsearch_create_op},
+    {"update_op", flb_test_in_elasticsearch_update_op},
+    {"delete_op", flb_test_in_elasticsearch_delete_op},
+    {"nonexistent_op", flb_test_in_elasticsearch_nonexistent_op},
+    {"multi_ops", flb_test_in_elasticsearch_multi_ops},
+    {"node_info", flb_test_in_elasticsearch_node_info},
+    {"tag_key", flb_test_in_elasticsearch_tag_key},
     {NULL, NULL}
 };

@@ -20,14 +20,14 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_engine.h>
 
-#include "es_bulk.h"
-#include "es_bulk_conn.h"
-#include "es_bulk_prot.h"
+#include "in_elasticsearch.h"
+#include "in_elasticsearch_bulk_conn.h"
+#include "in_elasticsearch_bulk_prot.h"
 
-static void es_bulk_conn_request_init(struct mk_http_session *session,
+static void in_elasticsearch_bulk_conn_request_init(struct mk_http_session *session,
                                       struct mk_http_request *request);
 
-static int es_bulk_conn_event(void *data)
+static int in_elasticsearch_bulk_conn_event(void *data)
 {
     int status;
     size_t size;
@@ -37,9 +37,9 @@ static int es_bulk_conn_event(void *data)
     char *request_end;
     size_t request_len;
     struct flb_connection *connection;
-    struct es_bulk_conn *conn;
+    struct in_elasticsearch_bulk_conn *conn;
     struct mk_event *event;
-    struct flb_es_bulk *ctx;
+    struct flb_in_elasticsearch *ctx;
 
     connection = (struct flb_connection *) data;
 
@@ -56,7 +56,7 @@ static int es_bulk_conn_event(void *data)
                 flb_plg_trace(ctx->ins,
                               "fd=%i incoming data exceed limit (%zu KB)",
                               event->fd, (ctx->buffer_max_size / 1024));
-                es_bulk_conn_del(conn);
+                in_elasticsearch_bulk_conn_del(conn);
                 return -1;
             }
 
@@ -81,7 +81,7 @@ static int es_bulk_conn_event(void *data)
 
         if (bytes <= 0) {
             flb_plg_trace(ctx->ins, "fd=%i closed connection", event->fd);
-            es_bulk_conn_del(conn);
+            in_elasticsearch_bulk_conn_del(conn);
             return -1;
         }
 
@@ -95,7 +95,7 @@ static int es_bulk_conn_event(void *data)
 
         if (status == MK_HTTP_PARSER_OK) {
             /* Do more logic parsing and checks for this request */
-            es_bulk_prot_handle(ctx, conn, &conn->session, &conn->request);
+            in_elasticsearch_bulk_prot_handle(ctx, conn, &conn->session, &conn->request);
 
             /* Evict the processed request from the connection buffer and reinitialize
              * the HTTP parser.
@@ -136,11 +136,11 @@ static int es_bulk_conn_event(void *data)
                  */
                 memset(&conn->session.parser, 0, sizeof(mk_http_parser));
                 mk_http_parser_init(&conn->session.parser);
-                es_bulk_conn_request_init(&conn->session, &conn->request);
+                in_elasticsearch_bulk_conn_request_init(&conn->session, &conn->request);
             }
         }
         else if (status == MK_HTTP_PARSER_ERROR) {
-            es_bulk_prot_handle_error(ctx, conn, &conn->session, &conn->request);
+            in_elasticsearch_bulk_prot_handle_error(ctx, conn, &conn->session, &conn->request);
 
             /* Reinitialize the parser so the next request is properly
              * handled, the additional memset intends to wipe any left over data
@@ -148,7 +148,7 @@ static int es_bulk_conn_event(void *data)
              */
             memset(&conn->session.parser, 0, sizeof(mk_http_parser));
             mk_http_parser_init(&conn->session.parser);
-            es_bulk_conn_request_init(&conn->session, &conn->request);
+            in_elasticsearch_bulk_conn_request_init(&conn->session, &conn->request);
         }
 
         /* FIXME: add Protocol handler here */
@@ -157,7 +157,7 @@ static int es_bulk_conn_event(void *data)
 
     if (event->mask & MK_EVENT_CLOSE) {
         flb_plg_trace(ctx->ins, "fd=%i hangup", event->fd);
-        es_bulk_conn_del(conn);
+        in_elasticsearch_bulk_conn_del(conn);
         return -1;
     }
 
@@ -165,7 +165,7 @@ static int es_bulk_conn_event(void *data)
 
 }
 
-static void es_bulk_conn_session_init(struct mk_http_session *session,
+static void in_elasticsearch_bulk_conn_session_init(struct mk_http_session *session,
                                       struct mk_server *server,
                                       int client_fd)
 {
@@ -191,7 +191,7 @@ static void es_bulk_conn_session_init(struct mk_http_session *session,
     mk_http_parser_init(&session->parser);
 }
 
-static void es_bulk_conn_request_init(struct mk_http_session *session,
+static void in_elasticsearch_bulk_conn_request_init(struct mk_http_session *session,
                                       struct mk_http_request *request)
 {
     memset(request, 0, sizeof(struct mk_http_request));
@@ -209,13 +209,13 @@ static void es_bulk_conn_request_init(struct mk_http_session *session,
     request->session = session;
 }
 
-struct es_bulk_conn *es_bulk_conn_add(struct flb_connection *connection,
-                                      struct flb_es_bulk *ctx)
+struct in_elasticsearch_bulk_conn *in_elasticsearch_bulk_conn_add(struct flb_connection *connection,
+                                      struct flb_in_elasticsearch *ctx)
 {
-    struct es_bulk_conn *conn;
+    struct in_elasticsearch_bulk_conn *conn;
     int               ret;
 
-    conn = flb_calloc(1, sizeof(struct es_bulk_conn));
+    conn = flb_calloc(1, sizeof(struct in_elasticsearch_bulk_conn));
     if (!conn) {
         flb_errno();
         return NULL;
@@ -228,7 +228,7 @@ struct es_bulk_conn *es_bulk_conn_add(struct flb_connection *connection,
 
     connection->user_data     = conn;
     connection->event.type    = FLB_ENGINE_EV_CUSTOM;
-    connection->event.handler = es_bulk_conn_event;
+    connection->event.handler = in_elasticsearch_bulk_conn_event;
 
     /* Connection info */
     conn->ctx     = ctx;
@@ -261,12 +261,12 @@ struct es_bulk_conn *es_bulk_conn_add(struct flb_connection *connection,
     }
 
     /* Initialize HTTP Session: this is a custom context for Monkey HTTP */
-    es_bulk_conn_session_init(&conn->session, ctx->server, conn->connection->fd);
+    in_elasticsearch_bulk_conn_session_init(&conn->session, ctx->server, conn->connection->fd);
 
     /* Initialize HTTP Request: this is the initial request and it will be reinitialized
      * automatically after the request is handled so it can be used for the next one.
      */
-    es_bulk_conn_request_init(&conn->session, &conn->request);
+    in_elasticsearch_bulk_conn_request_init(&conn->session, &conn->request);
 
     /* Link connection node to parent context list */
     mk_list_add(&conn->_head, &ctx->connections);
@@ -274,7 +274,7 @@ struct es_bulk_conn *es_bulk_conn_add(struct flb_connection *connection,
     return conn;
 }
 
-int es_bulk_conn_del(struct es_bulk_conn *conn)
+int in_elasticsearch_bulk_conn_del(struct in_elasticsearch_bulk_conn *conn)
 {
     if (conn->session.channel != NULL) {
         mk_channel_release(conn->session.channel);
@@ -293,14 +293,14 @@ int es_bulk_conn_del(struct es_bulk_conn *conn)
     return 0;
 }
 
-void es_bulk_conn_release_all(struct flb_es_bulk *ctx)
+void in_elasticsearch_bulk_conn_release_all(struct flb_in_elasticsearch *ctx)
 {
     struct mk_list *tmp;
     struct mk_list *head;
-    struct es_bulk_conn *conn;
+    struct in_elasticsearch_bulk_conn *conn;
 
     mk_list_foreach_safe(head, tmp, &ctx->connections) {
-        conn = mk_list_entry(head, struct es_bulk_conn, _head);
-        es_bulk_conn_del(conn);
+        conn = mk_list_entry(head, struct in_elasticsearch_bulk_conn, _head);
+        in_elasticsearch_bulk_conn_del(conn);
     }
 }

@@ -17,8 +17,8 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IN_ES_BULK_H
-#define FLB_IN_ES_BULK_H
+#ifndef FLB_IN_ELASTICSEARCH_H
+#define FLB_IN_ELASTICSEARCH_H
 
 #include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_config.h>
@@ -30,7 +30,7 @@
 #define HTTP_BUFFER_MAX_SIZE    "4M"
 #define HTTP_BUFFER_CHUNK_SIZE  "512K"
 
-struct flb_es_bulk {
+struct flb_in_elasticsearch {
     flb_sds_t listen;
     flb_sds_t tcp_port;
     const char *tag_key;

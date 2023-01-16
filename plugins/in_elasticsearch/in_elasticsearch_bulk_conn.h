@@ -17,8 +17,8 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IN_ES_BULK_CONN
-#define FLB_IN_ES_BULK_CONN
+#ifndef FLB_IN_ELASTICSEARCH_BULK_CONN
+#define FLB_IN_ELASTICSEARCH_BULK_CONN
 
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_connection.h>
@@ -27,7 +27,7 @@
 #include <monkey/mk_http_parser.h>
 #include <monkey/mk_utils.h>
 
-struct es_bulk_conn {
+struct in_elasticsearch_bulk_conn {
     /* Buffer */
     char *buf_data;             /* Buffer data                       */
     int  buf_len;               /* Data length                       */
@@ -46,9 +46,10 @@ struct es_bulk_conn {
     struct mk_list _head;       /* link to flb_es_bulk->connections     */
 };
 
-struct es_bulk_conn *es_bulk_conn_add(struct flb_connection *connection, struct flb_es_bulk *ctx);
-int es_bulk_conn_del(struct es_bulk_conn *conn);
-void es_bulk_conn_release_all(struct flb_es_bulk *ctx);
+struct in_elasticsearch_bulk_conn *in_elasticsearch_bulk_conn_add(struct flb_connection *connection,
+                                                                  struct flb_in_elasticsearch *ctx);
+int in_elasticsearch_bulk_conn_del(struct in_elasticsearch_bulk_conn *conn);
+void in_elasticsearch_bulk_conn_release_all(struct flb_in_elasticsearch *ctx);
 
 
 #endif

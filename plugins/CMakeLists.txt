@@ -184,7 +184,7 @@ REGISTER_IN_PLUGIN("in_http")
 REGISTER_IN_PLUGIN("in_collectd")
 REGISTER_IN_PLUGIN("in_statsd")
 REGISTER_IN_PLUGIN("in_opentelemetry")
-REGISTER_IN_PLUGIN("in_es_bulk")
+REGISTER_IN_PLUGIN("in_elasticsearch")
 
 # Test the event loop messaging when used in threaded mode
 REGISTER_IN_PLUGIN("in_event_test")

@@ -17,8 +17,8 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IN_ES_BULK_PROT
-#define FLB_IN_ES_BULK_PROT
+#ifndef FLB_IN_ELASTICSEARCH_BULK_PROT
+#define FLB_IN_ELASTICSEARCH_BULK_PROT
 
 #define ES_VERSION_RESPONSE "{\"version\":{\"number\":\"8.0.0\",\"build_flavor\":\"fluent-bit OSS\"},\"tagline\":\"fluent-bit's Bulk API compatible endpoint\"}"
 
@@ -26,12 +26,14 @@
     "\"nodes\":{\"%s\":{\"name\":\"%s\",\"version\":\"8.0.0\"," \
     "\"http\":{\"publish_address\":\"%s:%s\",\"max_content_length_in_bytes\":%ld}}}}"
 
-int es_bulk_prot_handle(struct flb_es_bulk *ctx, struct es_bulk_conn *conn,
-                        struct mk_http_session *session,
-                        struct mk_http_request *request);
+int in_elasticsearch_bulk_prot_handle(struct flb_in_elasticsearch *ctx,
+                                      struct in_elasticsearch_bulk_conn *conn,
+                                      struct mk_http_session *session,
+                                      struct mk_http_request *request);
 
-int es_bulk_prot_handle_error(struct flb_es_bulk *ctx, struct es_bulk_conn *conn,
-                              struct mk_http_session *session,
-                              struct mk_http_request *request);
+int in_elasticsearch_bulk_prot_handle_error(struct flb_in_elasticsearch *ctx,
+                                            struct in_elasticsearch_bulk_conn *conn,
+                                            struct mk_http_session *session,
+                                            struct mk_http_request *request);
 
 #endif
