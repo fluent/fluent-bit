@@ -24,6 +24,11 @@ VERSION_TO_CHECK_FOR=${VERSION_TO_CHECK_FOR:-}
 function check_version() {
     if [[ -n "$VERSION_TO_CHECK_FOR" ]]; then
         local LOG_FILE=$1
+        if ! grep -q "No package fluent-bit-$VERSION_TO_CHECK_FOR available" "$LOG_FILE"; then
+            echo "WARNING: Unable to install version: $VERSION_TO_CHECK_FOR"
+            exit 1
+        fi
+
         if ! grep -q "$VERSION_TO_CHECK_FOR" "$LOG_FILE"; then
             echo "WARNING: Not using expected version: $VERSION_TO_CHECK_FOR"
             exit 1
