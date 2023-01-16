@@ -23,14 +23,11 @@
 #include <fluent-bit/flb_info.h>
 #include <stdio.h>
 
-#ifdef FLB_GZIP_LEVEL
-#define FLB_DEFAULT_COMPRESSION FLB_GZIP_LEVEL
-#else
-#define FLB_DEFAULT_COMPRESSION Z_DEFAULT_COMPRESSION
-#endif
-
 int flb_gzip_compress(void *in_data, size_t in_len,
                       void **out_data, size_t *out_len);
+int flb_gzip_compress_level(void *in_data, size_t in_len,
+                      void **out_data, size_t *out_len,
+                      int level);
 int flb_gzip_uncompress(void *in_data, size_t in_len,
                         void **out_data, size_t *out_size);
 

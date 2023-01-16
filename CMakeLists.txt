@@ -141,7 +141,6 @@ option(FLB_WINDOWS_DEFAULTS    "Build with predefined Windows settings"     Yes)
 option(FLB_WASM                "Build with WASM runtime support"            Yes)
 option(FLB_WAMRC               "Build with WASM AOT compiler executable"    No)
 option(FLB_WASM_STACK_PROTECT  "Build with WASM runtime with strong stack protector flags" No)
-option(FLB_GZIP_LEVEL          "Set default gzip compression level")
 
 # Native Metrics Support (cmetrics)
 option(FLB_METRICS             "Enable metrics support"       Yes)
@@ -381,11 +380,6 @@ if (FLB_SYSTEM_MACOS)
   include(cmake/macos-setup.cmake)
 endif()
 
-# Special definition to set the gzip compression level
-if(FLB_GZIP_LEVEL)
-  add_definitions(-DFLB_GZIP_LEVEL=${FLB_GZIP_LEVEL})
-  set(FLB_BUILD_FLAGS "${FLB_BUILD_FLAGS}#ifndef FLB_GZIP_LEVEL\n#define FLB_GZIP_LEVEL ${FLB_GZIP_LEVEL}\n#endif\n")
-endif()
 
 # Extract Git commit information for debug output.
 # Note that this is only set when cmake is run, the intent here is to use in CI for verification of releases so is acceptable.
@@ -518,6 +512,16 @@ add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
 
 # Miniz (zip)
 add_subdirectory(${FLB_PATH_LIB_MINIZ} EXCLUDE_FROM_ALL)
+
+# Compression levels: 0-9 are the standard zlib-style
+# levels, 10 is best possible compression (not zlib
+# compatible, and may be very slow), default is equal
+# to MZ_DEFAULT_COMPRESSION (6).
+if(FLB_GZIP_LEVEL)
+  FLB_DEFINITION_VAL(FLB_GZIP_LEVEL ${FLB_GZIP_LEVEL})
+else()
+  FLB_DEFINITION_VAL(FLB_GZIP_LEVEL 6)
+endif()
 
 # ring buffer library
 add_subdirectory(${FLB_PATH_LIB_RING_BUFFER} EXCLUDE_FROM_ALL)

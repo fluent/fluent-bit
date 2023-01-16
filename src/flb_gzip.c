@@ -64,8 +64,9 @@ static inline void gzip_header(void *buf)
     *p++ = 0xFF;
 }
 
-int flb_gzip_compress(void *in_data, size_t in_len,
-                      void **out_data, size_t *out_len)
+int flb_gzip_compress_level(void *in_data, size_t in_len,
+                            void **out_data, size_t *out_len,
+                            int level)
 {
     int flush;
     int status;
@@ -100,8 +101,8 @@ int flb_gzip_compress(void *in_data, size_t in_len,
     strm.total_out = 0;
 
     /* Deflate mode */
-    deflateInit2(&strm, FLB_DEFAULT_COMPRESSION,
-                 Z_DEFLATED, -Z_DEFAULT_WINDOW_BITS, 9, Z_DEFAULT_STRATEGY);
+    deflateInit2(&strm, level, Z_DEFLATED,
+                 -Z_DEFAULT_WINDOW_BITS, 9, Z_DEFAULT_STRATEGY);
 
     /*
      * Miniz don't support GZip format directly, instead we will:
@@ -159,6 +160,14 @@ int flb_gzip_compress(void *in_data, size_t in_len,
     *out_data = out_buf;
 
     return 0;
+}
+
+int flb_gzip_compress(void *in_data, size_t in_len,
+                      void **out_data, size_t *out_len)
+{
+    return flb_gzip_compress_level(in_data, in_len,
+                                   out_data, out_len,
+                                   FLB_GZIP_LEVEL);
 }
 
 /* Uncompress (inflate) GZip data */
