@@ -29,6 +29,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size){
     struct flb_time out_time;
     struct flb_config *fuzz_config;
     struct flb_parser *fuzz_parser;
+    /* Set fuzzer-malloc chance of failure */
+    flb_malloc_mod = 25000;
     flb_malloc_p = 0;
 
     /* json parser */

@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <fluent-bit/flb_mem.h>
 #include <ctraces/ctraces.h>
 #include <ctraces/ctr_decode_msgpack.h>
 
@@ -7,6 +8,10 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size){
     struct ctrace *ctr = NULL;
     size_t msgpack_text_size;
     char *msgpack_text_buffer = NULL;
+
+    /* Set fuzzer-malloc chance of failure */
+    flb_malloc_p = 0;
+    flb_malloc_mod = 25000;
 
     ctr_decode_msgpack_create(&ctr, data, size, &off);
     if (ctr != NULL) {
