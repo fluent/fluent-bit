@@ -37,8 +37,7 @@
 /* Proxies */
 #include "proxy/go/go.h"
 
-#define PROXY_CALLBACK_TIME    0 /* 1 seconds */
-#define PROXY_CALLBACK_TIME_NANOSECS    1000 /* 1000 ns */
+#define PROXY_CALLBACK_TIME    1 /* 1 seconds */
 
 static void proxy_cb_flush(struct flb_event_chunk *event_chunk,
                            struct flb_output_flush *out_flush,
@@ -147,11 +146,9 @@ static int flb_proxy_input_cb_init(struct flb_input_instance *ins,
     flb_input_set_context(ins, ctx);
 
     /* Collect upon data available on timer */
-    /* This will be changed through a different mechanism of deferring
-       the buffer write to the ingest directly a msgpack buffer to the ring buffer */
     ret = flb_input_set_collector_time(ins,
                                        flb_proxy_input_cb_collect,
-                                       PROXY_CALLBACK_TIME, PROXY_CALLBACK_TIME_NANOSECS,
+                                       PROXY_CALLBACK_TIME, 0,
                                        config);
 
     if (ret == -1) {

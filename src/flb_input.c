@@ -64,7 +64,7 @@ pthread_key_t libco_in_param_key;
  * awaiting to be consumed.
  */
 
-#define FLB_INPUT_RING_BUFFER_SIZE   (sizeof(void *) * 1024 * 1024)
+#define FLB_INPUT_RING_BUFFER_SIZE   (sizeof(void *) * 1024)
 #define FLB_INPUT_RING_BUFFER_WINDOW (5)
 
 

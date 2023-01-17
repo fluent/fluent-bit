@@ -78,6 +78,17 @@ volatile sig_atomic_t flb_bin_restarting = FLB_RELOAD_IDLE;
 struct flb_stacktrace flb_st;
 #endif
 
+#ifdef FLB_HAVE_CHUNK_TRACE
+
+#include <fluent-bit/flb_chunk_trace.h>
+
+#define FLB_LONG_TRACE                 (1024 + 1)
+#define FLB_LONG_TRACE_INPUT           (1024 + 2)
+#define FLB_LONG_TRACE_OUTPUT          (1024 + 3)
+#define FLB_LONG_TRACE_OUTPUT_PROPERTY (1024 + 4)
+
+#endif
+
 #define FLB_HELP_TEXT    0
 #define FLB_HELP_JSON    1
 
@@ -138,6 +149,10 @@ static void flb_help(int rc, struct flb_config *config)
 #endif
 #ifdef FLB_HAVE_CHUNK_TRACE
     print_opt("-Z, --enable-chunk-trace", "enable chunk tracing. activating it requires using the HTTP Server API.");
+    print_opt("--trace-input", "input to start tracing on startup.");
+    print_opt("--trace-output", "output to use for tracing on startup.");
+    print_opt("--trace-output-property", "set a property for output tracing on startup.");
+    print_opt("--trace", "setup a trace pipeline on startup. Uses a single line, ie: \"input=dummy.0 output=stdout output.format='json'\"");
 #endif
     print_opt("-w, --workdir", "set the working directory");
 #ifdef FLB_HAVE_HTTP_SERVER
@@ -726,6 +741,164 @@ static struct flb_cf *service_configure(struct flb_cf *cf,
     return cf;
 }
 
+#ifdef FLB_HAVE_CHUNK_TRACE
+static struct flb_input_instance *find_input(flb_ctx_t *ctx, const char *name)
+{
+    struct mk_list *head;
+    struct flb_input_instance *in;
+
+
+    mk_list_foreach(head, &ctx->config->inputs) {
+        in = mk_list_entry(head, struct flb_input_instance, _head);
+        if (strcmp(name, in->name) == 0) {
+            return in;
+        }
+        if (in->alias) {
+            if (strcmp(name, in->alias) == 0) {
+                return in;
+            }
+        }
+    }
+    return NULL;
+}
+
+static int enable_trace_input(flb_ctx_t *ctx, const char *name, const char *prefix, const char *output_name, struct mk_list *props)
+{
+    struct flb_input_instance *in;
+
+
+    in = find_input(ctx, name);
+    if (in == NULL) {
+        return FLB_ERROR;
+    }
+
+    flb_chunk_trace_context_new(in, output_name, prefix, NULL, props);
+    return (in->chunk_trace_ctxt == NULL ? FLB_ERROR : FLB_OK);
+}
+
+static int disable_trace_input(flb_ctx_t *ctx, const char *name)
+{
+    struct flb_input_instance *in;
+    
+
+    in = find_input(ctx, name);
+    if (in == NULL) {
+        return FLB_ERROR;
+    }
+
+    if (in->chunk_trace_ctxt != NULL) {
+        flb_chunk_trace_context_destroy(in);
+    }
+    return FLB_OK;
+}
+
+static int set_trace_property(struct mk_list *props, char *kv)
+{
+    int len;
+    int sep;
+    char *key;
+    char *value;
+
+    len = strlen(kv);
+    sep = mk_string_char_search(kv, '=', len);
+    if (sep == -1) {
+        return -1;
+    }
+
+    key = mk_string_copy_substr(kv, 0, sep);
+    value = kv + sep + 1;
+
+    if (!key) {
+        return -1;
+    }
+
+    flb_kv_item_create_len(props,
+                           (char *)key, strlen(key),
+                           (char *)value, strlen(value));
+
+    mk_mem_free(key);
+    return 0;
+}
+
+static int parse_trace_pipeline_prop(flb_ctx_t *ctx, const char *kv, char **key, char **value)
+{
+    int len;
+    int sep;
+
+    len = strlen(kv);
+    sep = mk_string_char_search(kv, '=', len);
+    if (sep == -1) {
+        return FLB_ERROR;
+    }
+
+    *key = mk_string_copy_substr(kv, 0, sep);
+    if (!key) {
+        return FLB_ERROR;
+    }
+
+    *value = flb_strdup(kv + sep + 1);
+    return FLB_OK;
+}
+
+static int parse_trace_pipeline(flb_ctx_t *ctx, const char *pipeline, char **trace_input, char **trace_output, struct mk_list **props)
+{
+    struct mk_list *parts = NULL;
+    struct mk_list *cur;
+    struct flb_split_entry *part;
+    char *key;
+    char *value;
+    const char *propname;
+    const char *propval;
+
+
+    parts = flb_utils_split(pipeline, (int)' ', 0);
+    if (parts == NULL) {
+        return FLB_ERROR;
+    }
+
+    mk_list_foreach(cur, parts) {
+        part = mk_list_entry(cur, struct flb_split_entry, _head);
+        if (parse_trace_pipeline_prop(ctx, part->value, &key, &value) == FLB_ERROR) {
+            return FLB_ERROR;
+        }
+        if (strcmp(key, "input") == 0) {
+            if (*trace_input != NULL) {
+                flb_free(*trace_input);
+            }
+            *trace_input = flb_strdup(value);
+        }
+        else if (strcmp(key, "output") == 0) {
+            if (*trace_output != NULL) {
+                flb_free(*trace_output);
+            }
+            *trace_output = flb_strdup(value);
+        }
+        else if (strncmp(key, "output.", strlen("output.")) == 0) {
+            propname = mk_string_copy_substr(key, strlen("output."), strlen(key));
+            if (propname == NULL) {
+                return FLB_ERROR;
+            }
+
+            propval = flb_strdup(value);
+            if (propval == NULL) {
+                return FLB_ERROR;
+            }
+
+            if (*props == NULL) {
+                *props = flb_calloc(1, sizeof(struct mk_list));
+                flb_kv_init(*props);
+            }
+
+            flb_kv_item_create_len(*props,
+                                   (char *)propname, strlen(propname),
+                                   (char *)propval, strlen(propval));
+        }
+    }
+
+    return FLB_OK;
+}
+#endif
+
 int flb_main(int argc, char **argv)
 {
     int opt;
@@ -760,6 +933,12 @@ int flb_main(int argc, char **argv)
 
 #ifdef FLB_HAVE_LIBBACKTRACE
     flb_stacktrace_init(argv[0], &flb_st);
+#endif
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+    char *trace_input = NULL;
+    char *trace_output = flb_strdup("stdout");
+    struct mk_list *trace_props = NULL;
 #endif
 
     /* Setup long-options */
@@ -804,6 +983,10 @@ int flb_main(int argc, char **argv)
         { "enable-hot-reload",     no_argument, NULL, 'Y' },
 #ifdef FLB_HAVE_CHUNK_TRACE
         { "enable-chunk-trace",    no_argument, NULL, 'Z' },
+        { "trace",                 required_argument, NULL, FLB_LONG_TRACE },
+        { "trace-input",           required_argument, NULL, FLB_LONG_TRACE_INPUT },
+        { "trace-output",          required_argument, NULL, FLB_LONG_TRACE_OUTPUT },
+        { "trace-output-property", required_argument, NULL, FLB_LONG_TRACE_OUTPUT_PROPERTY },
 #endif
         { "disable-thread-safety-on-hot-reload", no_argument, NULL, 'W' },
         { NULL, 0, NULL, 0 }
@@ -998,6 +1181,28 @@ int flb_main(int argc, char **argv)
         case 'Z':
             flb_cf_section_property_add(cf_opts, service->properties, FLB_CONF_STR_ENABLE_CHUNK_TRACE, 0, "on", 0);
             break;
+        case FLB_LONG_TRACE:
+            parse_trace_pipeline(ctx, optarg, &trace_input, &trace_output, &trace_props);
+            break;
+        case FLB_LONG_TRACE_INPUT:
+            if (trace_input != NULL) {
+                flb_free(trace_input);
+            }
+            trace_input = flb_strdup(optarg);
+            break;
+        case FLB_LONG_TRACE_OUTPUT:
+            if (trace_output != NULL) {
+                flb_free(trace_output);
+            }
+            trace_output = flb_strdup(optarg);
+            break;
+        case FLB_LONG_TRACE_OUTPUT_PROPERTY:
+            if (trace_props == NULL) {
+                trace_props = flb_calloc(1, sizeof(struct mk_list));
+                flb_kv_init(trace_props);
+            }
+            set_trace_property(trace_props, optarg);
+            break;
 #endif /* FLB_HAVE_CHUNK_TRACE */
         default:
             flb_help(EXIT_FAILURE, config);
@@ -1113,6 +1318,12 @@ int flb_main(int argc, char **argv)
      */
     ctx = flb_context_get();
 
+#ifdef FLB_HAVE_CHUNK_TRACE
+    if (trace_input != NULL) {
+        enable_trace_input(ctx, trace_input, NULL /* prefix ... */, trace_output, trace_props);
+    }
+#endif
+
     while (ctx->status == FLB_LIB_OK && exit_signal == 0) {
         sleep(1);
 
@@ -1130,6 +1341,13 @@ int flb_main(int argc, char **argv)
     if (cf_opts != NULL) {
         flb_cf_destroy(cf_opts);
     }
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+     if (trace_input != NULL) {
+        disable_trace_input(ctx, trace_input);
+     }
+#endif
+
     flb_stop(ctx);
     flb_destroy(ctx);
 
