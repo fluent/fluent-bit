@@ -168,7 +168,12 @@ struct flb_aws_test_case cases[] =
 
 void test_b64_truncated_gzip_truncation_multi_rounds()
 {
-struct flb_aws_test_case cases[] =
+// optionally create a struct based on value of FLB_GZIP_LEVEL
+// if level is >= 3, then a struct with the following values
+// should be used. Otherwise, create a new struct with a 4 character
+// larger string in the third field.
+#if FLB_GZIP_LEVEL <= 3
+  struct flb_aws_test_case cases[] =
     {
         {
             "gzip",
@@ -195,6 +200,35 @@ struct flb_aws_test_case cases[] =
         },
         { 0 }
     };
+#else
+  struct flb_aws_test_case cases[] =
+    {
+        {
+            "gzip",
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod temp"
+            "or incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, qui"
+            "s nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequ"
+            "at. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum do"
+            "lore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proiden"
+            "t, sunt in culpa qui officia deserunt mollit anim id est laborum."
+            "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            "", /* First half of the compression is heavy, the second half is light. */
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod temp"
+            "or incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, qui"
+            "s nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequ"
+            "at. Duis aute irure dolor in reprehenderit in voluptate velit esse "
+            "[Truncated...]", /* Bad estimation of resizing, 3 truncation iterations
+                               * needed */
+            0 /* Expected ret */
+        },
+        { 0 }
+    };
+#endif
 
     flb_aws_compress_truncate_b64_test_cases__gzip_decode(cases,
         300);

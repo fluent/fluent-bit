@@ -513,14 +513,25 @@ add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
 # Miniz (zip)
 add_subdirectory(${FLB_PATH_LIB_MINIZ} EXCLUDE_FROM_ALL)
 
-# Compression levels: 0-9 are the standard zlib-style
-# levels, 10 is best possible compression (not zlib
-# compatible, and may be very slow), default is equal
-# to MZ_DEFAULT_COMPRESSION (6).
-if(FLB_GZIP_LEVEL)
+# Compression level
+# =================
+# Sets the default compression level for gzip compression.
+# Valid values are 1-9, with 1 being the fastest and 9 being
+# the most compressed. The default value is 6. Recommended
+# values are taken directly from miniz.h:
+#
+# MZ_BEST_SPEED       = 1
+# MZ_DEFAULT_LEVEL    = 6
+# MZ_BEST_COMPRESSION = 9
+#
+if(DEFINED FLB_GZIP_LEVEL)
   FLB_DEFINITION_VAL(FLB_GZIP_LEVEL ${FLB_GZIP_LEVEL})
 else()
   FLB_DEFINITION_VAL(FLB_GZIP_LEVEL 6)
+endif()
+
+if(FLB_GZIP_LEVEL LESS 1 OR FLB_GZIP_LEVEL GREATER 9)
+  message(FATAL_ERROR "FLB_GZIP_LEVEL must be between 1 and 9")
 endif()
 
 # ring buffer library
