@@ -62,13 +62,13 @@ cat << EOF > /etc/yum.repos.d/fluent-bit.repo
 [fluent-bit]
 name = Fluent Bit
 # Legacy server style
-baseurl = $RELEASE_URL/amazonlinux/VERSION_ARCH_SUBSTR
+baseurl = $RELEASE_URL/amazonlinux/VERSION_SUBSTR
 gpgcheck=1
 repo_gpgcheck=1
 gpgkey=$RELEASE_KEY
 enabled=1
 EOF
-sed -i 's|VERSION_ARCH_SUBSTR|\$releasever/\$basearch/|g' /etc/yum.repos.d/fluent-bit.repo
+sed -i 's|VERSION_SUBSTR|\$releasever/|g' /etc/yum.repos.d/fluent-bit.repo
 cat /etc/yum.repos.d/fluent-bit.repo
 $INSTALL_CMD_PREFIX yum -y install $INSTALL_PACKAGE_NAME$YUM_VERSION
 SCRIPT
@@ -80,13 +80,13 @@ cat << EOF > /etc/yum.repos.d/fluent-bit.repo
 [fluent-bit]
 name = Fluent Bit
 # Legacy server style
-baseurl = $RELEASE_URL/centos/VERSION_ARCH_SUBSTR
+baseurl = $RELEASE_URL/centos/VERSION_SUBSTR
 gpgcheck=1
 repo_gpgcheck=1
 gpgkey=$RELEASE_KEY
 enabled=1
 EOF
-sed -i 's|VERSION_ARCH_SUBSTR|\$releasever/\$basearch/|g' /etc/yum.repos.d/fluent-bit.repo
+sed -i 's|VERSION_SUBSTR|\$releasever/|g' /etc/yum.repos.d/fluent-bit.repo
 cat /etc/yum.repos.d/fluent-bit.repo
 $INSTALL_CMD_PREFIX yum -y install $INSTALL_PACKAGE_NAME$YUM_VERSION
 SCRIPT
