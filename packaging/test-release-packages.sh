@@ -24,7 +24,7 @@ VERSION_TO_CHECK_FOR=${VERSION_TO_CHECK_FOR:-}
 function check_version() {
     if [[ -n "$VERSION_TO_CHECK_FOR" ]]; then
         local LOG_FILE=$1
-        if ! grep -q "No package fluent-bit-$VERSION_TO_CHECK_FOR available" "$LOG_FILE"; then
+        if grep -q "No package ${FLUENT_BIT_INSTALL_PACKAGE_NAME:-fluent-bit}-$VERSION_TO_CHECK_FOR available" "$LOG_FILE"; then
             echo "WARNING: Unable to install version: $VERSION_TO_CHECK_FOR"
             exit 1
         fi
@@ -59,6 +59,7 @@ do
         -e FLUENT_BIT_PACKAGES_KEY="${FLUENT_BIT_PACKAGES_KEY:-https://packages.fluentbit.io/fluentbit.key}" \
         -e FLUENT_BIT_RELEASE_VERSION="${FLUENT_BIT_RELEASE_VERSION:-}" \
         -e FLUENT_BIT_INSTALL_COMMAND_PREFIX="${FLUENT_BIT_INSTALL_COMMAND_PREFIX:-}" \
+        -e FLUENT_BIT_INSTALL_PACKAGE_NAME="${FLUENT_BIT_INSTALL_PACKAGE_NAME:-fluent-bit}" \
         $EXTRA_MOUNTS \
         "$IMAGE" \
         sh -c "$INSTALL_CMD && /opt/fluent-bit/bin/fluent-bit --version" | tee "$LOG_FILE"
@@ -77,6 +78,7 @@ do
         -e FLUENT_BIT_PACKAGES_KEY="${FLUENT_BIT_PACKAGES_KEY:-https://packages.fluentbit.io/fluentbit.key}" \
         -e FLUENT_BIT_RELEASE_VERSION="${FLUENT_BIT_RELEASE_VERSION:-}" \
         -e FLUENT_BIT_INSTALL_COMMAND_PREFIX="${FLUENT_BIT_INSTALL_COMMAND_PREFIX:-}" \
+        -e FLUENT_BIT_INSTALL_PACKAGE_NAME="${FLUENT_BIT_INSTALL_PACKAGE_NAME:-fluent-bit}" \
         $EXTRA_MOUNTS \
         "$IMAGE" \
         sh -c "apt-get update && apt-get install -y gpg curl;$INSTALL_CMD && /opt/fluent-bit/bin/fluent-bit --version" | tee "$LOG_FILE"
