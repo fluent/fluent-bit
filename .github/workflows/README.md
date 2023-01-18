@@ -38,21 +38,23 @@
 * GPG_PRIVATE_KEY_PASSPHRASE
 
 These are only required for Cosign of the container images, will be skipped if not present:
-* COSIGN_PUBLIC_KEY
+
 * COSIGN_PRIVATE_KEY
 * COSIGN_PRIVATE_KEY_PASSWORD - if set otherwise not required
 
 ## Environments
 
 These environments are used:
+
 * `unstable` for all nightly builds
 * `staging` for all staging builds
 * `release` for running the promotion of staging to release, this can have additional approvals added
 
 If an environment is not present then it will be created but this may not have the appropriate permissions then.
+
 ## Pushing to Github Container Registry
 
-Github actions require specific permissions to push to packages, see: https://github.community/t/403-error-on-container-registry-push-from-github-action/173071/39
+Github actions require specific permissions to push to packages, see: <https://github.community/t/403-error-on-container-registry-push-from-github-action/173071/39>
 For some reason this is not automatically done via permission inheritance or similar.
 
 1. Verify you can push with a simple test, e.g. `docker pull alpine && docker tag alpine:latest ghcr.io/<repo>/fluent-bit:latest && docker push ghcr.io/<repo>/fluent-bit:latest`
@@ -74,10 +76,3 @@ Currently the process is as follows:
 2. The [`Deploy to staging`](./staging-build.yaml) workflow will then kick in to build everything and upload it either to the S3 staging bucket (packages) or ghcr.io (containers).
 3. Once this completes, the [`Test staging`](./staging-test.yaml) workflow will then run to carry out smoke tests on these packages and containers.
 4. The [`Release from staging`](./staging-release.yaml) workflow can then be manually initiated to promote staging to release.
-
-### Package releases
-
-The steps above will handle containers and copy them to DockerHub, however it only uploads the packages to the relevant server without doing the final step of making them available directly.
-A maintainer needs to log in and run the publishing scripts using the uploaded binaries which are present in the home directory of the CI user that uploaded them.
-
-The package upload action is here: https://github.com/fluent/fluent-bit/blob/master/.github/actions/release-server-sync/action.yaml
