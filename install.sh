@@ -11,6 +11,9 @@ RELEASE_VERSION=${FLUENT_BIT_RELEASE_VERSION:-}
 INSTALL_CMD_PREFIX=${FLUENT_BIT_INSTALL_COMMAND_PREFIX:-}
 # Optionally set the name of th package to install, e.g. for legacy td-agent-bit.
 INSTALL_PACKAGE_NAME=${FLUENT_BIT_INSTALL_PACKAGE_NAME:-fluent-bit}
+# Optional Apt/Yum additional parameters (e.g. releasever for AL2022)
+APT_PARAMETERS=${FLUENT_BIT_INSTALL_APT_PARAMETERS:-}
+YUM_PARAMETERS=${FLUENT_BIT_INSTALL_YUM_PARAMETERS:-}
 
 echo "================================"
 echo " Fluent Bit Installation Script "
@@ -70,7 +73,7 @@ enabled=1
 EOF
 sed -i 's|VERSION_SUBSTR|\$releasever/|g' /etc/yum.repos.d/fluent-bit.repo
 cat /etc/yum.repos.d/fluent-bit.repo
-$INSTALL_CMD_PREFIX yum -y install $INSTALL_PACKAGE_NAME$YUM_VERSION
+$INSTALL_CMD_PREFIX yum -y $YUM_PARAMETERS install $INSTALL_PACKAGE_NAME$YUM_VERSION
 SCRIPT
     ;;
     centos|centoslinux|rhel|redhatenterpriselinuxserver|fedora|rocky|almalinux)
@@ -88,7 +91,7 @@ enabled=1
 EOF
 sed -i 's|VERSION_SUBSTR|\$releasever/|g' /etc/yum.repos.d/fluent-bit.repo
 cat /etc/yum.repos.d/fluent-bit.repo
-$INSTALL_CMD_PREFIX yum -y install $INSTALL_PACKAGE_NAME$YUM_VERSION
+$INSTALL_CMD_PREFIX yum -y $YUM_PARAMETERS install $INSTALL_PACKAGE_NAME$YUM_VERSION
 SCRIPT
     ;;
     ubuntu|debian)
@@ -103,7 +106,7 @@ deb [signed-by=/usr/share/keyrings/fluentbit-keyring.gpg] $RELEASE_URL/${OS}/${C
 EOF
 cat /etc/apt/sources.list.d/fluent-bit.list
 apt-get -y update
-$INSTALL_CMD_PREFIX apt-get -y install $INSTALL_PACKAGE_NAME$APT_VERSION
+$INSTALL_CMD_PREFIX apt-get -y $APT_PARAMETERS install $INSTALL_PACKAGE_NAME$APT_VERSION
 SCRIPT
     ;;
     *)
