@@ -70,7 +70,7 @@ jobs:
   # 4. Create a full repo configuration using the existing releases as well.
   # 5. Upload to release bucket.
   # Note we could resign all packages as well potentially if we wanted to update the key.
-  staging-release-packages-s3:
+  staging-release-packages:
     name: S3 - update packages bucket
     runs-on: ubuntu-22.04 # no createrepo on Ubuntu 20.04
     environment: release
@@ -469,9 +469,6 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: "us-east-1"
 
-  # This will require a sign off so can be done after packages are updated to confirm
-  # Until S3 bucket is set up as release will only test what is in the server from a prior release.
-  # TODO: https://github.com/fluent/fluent-bit/issues/5098
   staging-release-smoke-test-packages:
     name: Run package smoke tests
     permissions:
@@ -479,7 +476,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     needs:
-      - staging-release-packages-server
+      - staging-release-packages
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -496,6 +493,8 @@ jobs:
         shell: bash
         env:
           VERSION_TO_CHECK_FOR: ${{ github.event.inputs.version }}
+          FLUENT_BIT_PACKAGES_URL: https://${{ secrets.AWS_S3_BUCKET_RELEASE }}
+          FLUENT_BIT_PACKAGES_KEY: https://${{ secrets.AWS_S3_BUCKET_RELEASE }}/fluentbit.key
 
   staging-release-smoke-test-containers:
     name: Run container smoke tests
@@ -521,7 +520,7 @@ jobs:
     name: Create the Github Release once packages and containers are up
     needs:
       - staging-release-images
-      - staging-release-packages-server
+      - staging-release-packages
     permissions:
       contents: write
     environment: release
