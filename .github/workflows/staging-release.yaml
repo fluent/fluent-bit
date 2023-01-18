@@ -19,11 +19,6 @@ on:
         description: Optionally override the image name to push to on Github Container Registry.
         default: fluent/fluent-bit
         required: false
-      legacy-server:
-        type: boolean
-        description: Indicate with a 'yes' that we are using the legacy packages server
-        default: true
-        required: true
 
 # We do not want a new staging build to run whilst we are releasing the current staging build.
 # We also do not want multiples to run for the same version.
@@ -195,36 +190,6 @@ jobs:
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         AWS_REGION: "us-east-1"
       shell: bash
-
-  # We have two options here:
-  # 1. Sync the signed packages direct from the release bucket.
-  # 2. Sync the staged packages from the staging bucket, resign on the server.
-  #
-  # Option 1 may involve more transfer fees as the release bucket grows but is
-  # simpler plus tests the whole pipeline.
-  # The assumption being we would remove this step eventually anyway.
-  staging-release-packages-server:
-    if: github.event.inputs.legacy-server
-    name: fluentbit.io - upload packages
-    # Not required if using the staging bucket
-    needs: staging-release-packages-s3
-    runs-on: ubuntu-22.04 # failures with AWS client on latest
-    environment: release
-    permissions:
-      contents: read
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-
-    - uses: ./.github/actions/release-server-sync
-      with:
-        bucket: ${{ secrets.AWS_S3_BUCKET_RELEASE }}
-        access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        server_hostname: ${{ secrets.FLUENTBITIO_HOST }}
-        server_username: ${{ secrets.FLUENTBITIO_USERNAME }}
-        server_key: ${{ secrets.FLUENTBITIO_SSHKEY }}
-        server_aptly_config: ${{ secrets.FLUENTBITIO_APTLY_CONFIG }}
 
   # Simple skopeo copy jobs to transfer image from staging to release registry with optional GPG key signing.
   # Unfortunately skopeo currently does not support Cosign: https://github.com/containers/skopeo/issues/1533
