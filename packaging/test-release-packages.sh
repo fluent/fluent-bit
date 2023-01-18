@@ -52,6 +52,13 @@ for IMAGE in "${YUM_TARGETS[@]}"
 do
     echo "Testing $IMAGE"
     LOG_FILE=$(mktemp)
+
+    FLUENT_BIT_INSTALL_COMMAND_PREFIX=${FLUENT_BIT_INSTALL_COMMAND_PREFIX:-}
+    # For AL2022 we currently want a fixed 2022 version instead of build timestamps
+    if [[ "$IMAGE" == "amazonlinux:2022" ]]; then
+        FLUENT_BIT_INSTALL_COMMAND_PREFIX="sed -i 's|\$releasever/|2022/|g' /etc/yum.repos.d/fluent-bit.repo;$FLUENT_BIT_INSTALL_COMMAND_PREFIX"
+    fi
+
     # We do want word splitting for EXTRA_MOUNTS
     # shellcheck disable=SC2086
     $CONTAINER_RUNTIME run --rm -t \
@@ -60,6 +67,7 @@ do
         -e FLUENT_BIT_RELEASE_VERSION="${FLUENT_BIT_RELEASE_VERSION:-}" \
         -e FLUENT_BIT_INSTALL_COMMAND_PREFIX="${FLUENT_BIT_INSTALL_COMMAND_PREFIX:-}" \
         -e FLUENT_BIT_INSTALL_PACKAGE_NAME="${FLUENT_BIT_INSTALL_PACKAGE_NAME:-fluent-bit}" \
+        -e FLUENT_BIT_INSTALL_YUM_PARAMETERS="${FLUENT_BIT_INSTALL_YUM_PARAMETERS:-}" \
         $EXTRA_MOUNTS \
         "$IMAGE" \
         sh -c "$INSTALL_CMD && /opt/fluent-bit/bin/fluent-bit --version" | tee "$LOG_FILE"
@@ -79,6 +87,7 @@ do
         -e FLUENT_BIT_RELEASE_VERSION="${FLUENT_BIT_RELEASE_VERSION:-}" \
         -e FLUENT_BIT_INSTALL_COMMAND_PREFIX="${FLUENT_BIT_INSTALL_COMMAND_PREFIX:-}" \
         -e FLUENT_BIT_INSTALL_PACKAGE_NAME="${FLUENT_BIT_INSTALL_PACKAGE_NAME:-fluent-bit}" \
+        -e FLUENT_BIT_INSTALL_APT_PARAMETERS="${FLUENT_BIT_INSTALL_APT_PARAMETERS:-}" \
         $EXTRA_MOUNTS \
         "$IMAGE" \
         sh -c "apt-get update && apt-get install -y gpg curl;$INSTALL_CMD && /opt/fluent-bit/bin/fluent-bit --version" | tee "$LOG_FILE"
