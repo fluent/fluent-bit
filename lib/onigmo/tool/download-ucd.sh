@@ -26,5 +26,5 @@ for i in $files; do
 done | xargs wget
 mv GraphemeBreakProperty.txt auxiliary
 for i in $emoji_files; do
-	echo http://www.unicode.org/Public/emoji/${EMOJI_VERSION}/$i
+	echo http://www.unicode.org/Public/${EMOJI_VERSION}/ucd/emoji/$i
 done | xargs wget

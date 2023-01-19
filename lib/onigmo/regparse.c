@@ -4659,7 +4659,15 @@ parse_char_class(Node** np, Node** asc_np, OnigToken* tok, UChar** src, UChar* e
 	  goto err;
 	}
 
-	len = enclen(env->enc, buf, buf + i);
+	if (env->enc == ONIG_ENCODING_EUC_JP ||
+		env->enc == ONIG_ENCODING_SJIS) {
+	  /* Strict version of enclen does not handle invalid single code
+	   * point for SJIS and EUC-JP...*/
+	  len = enclen_approximate(env->enc, buf, buf + i);
+	}
+	else {
+	  len = enclen(env->enc, buf, buf + i);
+	}
 	if (i < len) {
 	  r = ONIGERR_TOO_SHORT_MULTI_BYTE_STRING;
 	  goto err;
