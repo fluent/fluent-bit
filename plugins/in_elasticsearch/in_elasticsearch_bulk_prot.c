@@ -565,12 +565,12 @@ static int process_payload(struct flb_in_elasticsearch *ctx, struct in_elasticse
         return -1;
     }
 
-    if (header->val.len == 20 &&
+    if (header->val.len >= 20 &&
         strncasecmp(header->val.data, "application/x-ndjson", 20) == 0) {
         type = HTTP_CONTENT_NDJSON;
     }
 
-    if (header->val.len == 16 &&
+    if (header->val.len >= 16 &&
         strncasecmp(header->val.data, "application/json", 16) == 0) {
         type = HTTP_CONTENT_JSON;
     }
@@ -753,7 +753,9 @@ int in_elasticsearch_bulk_prot_handle(struct flb_in_elasticsearch *ctx,
         }
     }
 
-    if (request->method != MK_METHOD_POST) {
+    if (request->method != MK_METHOD_POST &&
+        request->method != MK_METHOD_GET &&
+        request->method != MK_METHOD_HEAD) {
         flb_sds_destroy(tag);
         mk_mem_free(uri);
 
