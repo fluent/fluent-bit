@@ -1429,7 +1429,7 @@ static int is_tag_marked_failed(struct flb_filter_ecs *ctx,
                              tag, tag_len,
                              (void **) &val, &val_size);
     if (ret != -1) {
-        if (*val >= ctx->agent_endpoint_retries) {
+        if (*val > ctx->agent_endpoint_retries) {
             return FLB_TRUE;
         }
     }
