@@ -25,7 +25,7 @@
 #include "in_elasticsearch_bulk_prot.h"
 
 static void in_elasticsearch_bulk_conn_request_init(struct mk_http_session *session,
-                                      struct mk_http_request *request);
+                                                    struct mk_http_request *request);
 
 static int in_elasticsearch_bulk_conn_event(void *data)
 {
@@ -166,8 +166,8 @@ static int in_elasticsearch_bulk_conn_event(void *data)
 }
 
 static void in_elasticsearch_bulk_conn_session_init(struct mk_http_session *session,
-                                      struct mk_server *server,
-                                      int client_fd)
+                                                    struct mk_server *server,
+                                                    int client_fd)
 {
     /* Alloc memory for node */
     session->_sched_init = MK_TRUE;
@@ -192,7 +192,7 @@ static void in_elasticsearch_bulk_conn_session_init(struct mk_http_session *sess
 }
 
 static void in_elasticsearch_bulk_conn_request_init(struct mk_http_session *session,
-                                      struct mk_http_request *request)
+                                                    struct mk_http_request *request)
 {
     memset(request, 0, sizeof(struct mk_http_request));
 
@@ -210,7 +210,7 @@ static void in_elasticsearch_bulk_conn_request_init(struct mk_http_session *sess
 }
 
 struct in_elasticsearch_bulk_conn *in_elasticsearch_bulk_conn_add(struct flb_connection *connection,
-                                      struct flb_in_elasticsearch *ctx)
+                                                                  struct flb_in_elasticsearch *ctx)
 {
     struct in_elasticsearch_bulk_conn *conn;
     int               ret;
