@@ -32,7 +32,34 @@
 #define HTTP_CONTENT_JSON   0
 #define HTTP_CONTENT_NDJSON 1
 
-static int send_dummy_version_response(struct in_elasticsearch_bulk_conn *conn, int http_status, char *message)
+static int send_empty_response(struct in_elasticsearch_bulk_conn *conn, int http_status)
+{
+    size_t    sent;
+    flb_sds_t out;
+
+    out = flb_sds_create_size(256);
+    if (!out) {
+        return -1;
+    }
+
+    if (http_status == 200) {
+        flb_sds_printf(&out,
+                       "HTTP/1.1 200 OK\r\n"
+                       "Content-Type: application/json\r\n\r\n");
+    }
+
+    /* We should check this operations result */
+    flb_io_net_write(conn->connection,
+                     (void *) out,
+                     flb_sds_len(out),
+                     &sent);
+
+    flb_sds_destroy(out);
+
+    return 0;
+}
+
+static int send_json_message_response(struct in_elasticsearch_bulk_conn *conn, int http_status, char *message)
 {
     size_t    sent;
     int       len;
@@ -679,11 +706,24 @@ int in_elasticsearch_bulk_prot_handle(struct flb_in_elasticsearch *ctx,
         request->_content_length.data = NULL;
     }
 
+    if (request->method == MK_METHOD_HEAD) {
+        send_empty_response(conn, 200);
+
+        flb_sds_destroy(tag);
+        mk_mem_free(uri);
+
+        return 0;
+    }
+
     if (request->method == MK_METHOD_GET) {
         if (strncmp(uri, "/_nodes/http", 12) == 0) {
             send_dummy_sniffer_response(conn, 200, ctx);
-        } else {
-            send_dummy_version_response(conn, 200, ES_VERSION_RESPONSE);
+        }
+        else if (strlen(uri) == 1 && strncmp(uri, "/", 1) == 0) {
+            send_json_message_response(conn, 200, ES_VERSION_RESPONSE);
+        }
+        else {
+            send_json_message_response(conn, 200, "{}");
         }
 
         flb_sds_destroy(tag);
