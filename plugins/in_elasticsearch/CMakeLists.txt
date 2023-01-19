@@ -9,4 +9,4 @@ set(src
   in_elasticsearch_bulk_prot.c
   )
 
-FLB_PLUGIN(in_elasticsearch "${src}" "monkey-core-static")
+FLB_PLUGIN(in_elasticsearch "${src}" "")
