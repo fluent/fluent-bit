@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_fstore.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_pack.h>
 
 #include "s3.h"
 #include "s3_store.h"
@@ -184,7 +185,9 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
         fsf = s3_file->fsf;
     }
 
-    /* Append data to the target file */
+    /*
+     * Append data to the target file
+     */
     ret = flb_fstore_file_append(fsf, data, bytes);
     if (ret != 0) {
         flb_plg_error(ctx->ins, "error writing data to local s3 file");

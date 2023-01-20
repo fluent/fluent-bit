@@ -767,6 +767,24 @@ static int cb_s3_init(struct flb_output_instance *ins,
         ctx->storage_class = (char *) tmp;
     }
 
+    /* Formatting */
+    ctx->format = S3_FORMAT_JSON;
+    tmp = flb_output_get_property("format", ins);
+    if (tmp) {
+        if (!strcasecmp(tmp, "json")) {
+            ctx->format = S3_FORMAT_JSON;
+            flb_plg_debug(ctx->ins, "using 'json' data format");
+        }
+        else if (!strcasecmp(tmp, "csv")) {
+            ctx->format = S3_FORMAT_CSV;
+            flb_plg_debug(ctx->ins, "using 'csv' data format");
+        }
+        else {
+            flb_plg_error(ctx->ins, "Invalid 'format' property '%s'", tmp);
+            return -1;
+        }
+    }
+
     if (ctx->insecure == FLB_FALSE) {
         ctx->client_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
                                          ins->tls_verify,
@@ -985,11 +1003,14 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
 
     if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
         /* Map payload */
-        ret = flb_aws_compression_compress(ctx->compression, body, body_size, &payload_buf, &payload_size);
+        ret = flb_aws_compression_compress(ctx->compression,
+                                           body, body_size,
+                                           &payload_buf, &payload_size);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to compress data");
             return FLB_RETRY;
-        } else {
+        }
+        else {
             preCompress_size = body_size;
             body = (void *) payload_buf;
             body_size = payload_size;
@@ -1647,7 +1668,6 @@ static int send_upload_request(void *out_context, flb_sds_t chunk,
 
     /* Create buffer to upload to S3 */
     ret = construct_request_buffer(ctx, chunk, upload_file, &buffer, &buffer_size);
-    flb_sds_destroy(chunk);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Could not construct request buffer for %s",
                       upload_file->file_path);
@@ -1668,12 +1688,12 @@ static int buffer_chunk(void *out_context, struct s3_file *upload_file, flb_sds_
     struct flb_s3 *ctx = out_context;
 
     ret = s3_store_buffer_put(ctx, upload_file, tag, tag_len, chunk, (size_t) chunk_size);
-    flb_sds_destroy(chunk);
     if (ret < 0) {
         flb_plg_warn(ctx->ins, "Could not buffer chunk. Data order preservation "
                      "will be compromised");
         return -1;
     }
+
     return 0;
 }
 
@@ -1843,11 +1863,12 @@ static void cb_s3_upload(struct flb_config *config, void *data)
 
 }
 
-static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char *data,
+static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context,
+                                                  int records,
+                                                  const char *data,
                                                   uint64_t bytes)
 {
     int i;
-    int records = 0;
     int map_size;
     int check = FLB_FALSE;
     int found = FLB_FALSE;
@@ -1868,8 +1889,6 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     msgpack_object key;
     msgpack_object val;
 
-    /* Iterate the original buffer and perform adjustments */
-    records = flb_mp_count(data, bytes);
     if (records <= 0) {
         return NULL;
     }
@@ -2006,8 +2025,10 @@ static void unit_test_flush(void *out_context, struct s3_file *upload_file,
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Could not construct request buffer for %s",
                       upload_file->file_path);
+        flb_sds_destroy(chunk);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
+    flb_sds_destroy(chunk);
 
     ret = upload_data(ctx, upload_file, m_upload_file, buffer, buffer_size, tag, tag_len);
     flb_free(buffer);
@@ -2067,6 +2088,91 @@ static void flush_init(void *out_context)
     }
 }
 
+static flb_sds_t s3_format(struct flb_s3 *ctx,
+                           int total_records,
+                           const char *tag, int tag_len,
+                           const void *data, size_t bytes,
+                           int csv_add_columns)
+{
+    int ret;
+    int root_type;
+    char *mp_buf;
+    size_t mp_size;
+    flb_sds_t tmp = NULL;
+    flb_sds_t chunk = NULL;
+
+    /* Process chunk */
+    if (ctx->log_key) {
+        tmp = flb_pack_msgpack_extract_log_key(ctx, total_records, data, bytes);
+        if (!tmp) {
+            flb_plg_error(ctx->ins, "Could not generate records by using 'log_key' content");
+            return NULL;
+        }
+
+        if (ctx->format == S3_FORMAT_CSV) {
+            /*
+             * Since log_key option was used, the incoming data is NOT a msgpack object,
+             * likely a JSON string message that we need to convert back so we can do the CSV formatting.
+             */
+
+            ret = flb_pack_json(data, bytes, &mp_buf, &mp_size, &root_type);
+            if (ret < 0) {
+                return NULL;
+            }
+
+            chunk = flb_pack_msgpack_to_csv_format(mp_buf, mp_size,
+                                                   FLB_FALSE, csv_add_columns);
+            flb_free(mp_buf);
+            flb_free(tmp);
+        }
+        else if (ctx->format == S3_FORMAT_JSON) {
+            chunk = tmp;
+        }
+    }
+    else {
+        if (ctx->format == S3_FORMAT_JSON) {
+            chunk = flb_pack_msgpack_to_json_format(data, bytes,
+                                                    FLB_PACK_JSON_FORMAT_LINES,
+                                                    ctx->json_date_format,
+                                                    ctx->date_key);
+        }
+        else if (ctx->format == S3_FORMAT_CSV) {
+            chunk = flb_pack_msgpack_to_csv_format(data, bytes,
+                                                   FLB_TRUE, csv_add_columns);
+        }
+    }
+
+    return chunk;
+}
+
+static int s3_format_test(struct flb_config *config,
+                          struct flb_input_instance *ins,
+                          void *plugin_context,
+                          void *flush_ctx,
+                          int event_type,
+                          const char *tag, int tag_len,
+                          const void *data, size_t bytes,
+                          void **out_data, size_t *out_size)
+{
+    int total_records;
+    flb_sds_t chunk = NULL;
+    struct flb_s3 *ctx = plugin_context;
+
+    /* Count number of records */
+    total_records = flb_mp_count(data, bytes);
+
+    chunk = s3_format(ctx, total_records,
+                     (char *) tag, tag_len, data, bytes, ctx->csv_column_names);
+    if (chunk == NULL) {
+        return -1;
+    }
+
+    *out_data = chunk;
+    *out_size = flb_sds_len(chunk);
+
+    return 0;
+}
+
 static void cb_s3_flush(struct flb_event_chunk *event_chunk,
                         struct flb_output_flush *out_flush,
                         struct flb_input_instance *i_ins,
@@ -2077,6 +2183,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     int chunk_size;
     int upload_timeout_check = FLB_FALSE;
     int total_file_size_check = FLB_FALSE;
+    int csv_add_columns = FLB_FALSE;
     flb_sds_t chunk = NULL;
     struct s3_file *upload_file = NULL;
     struct flb_s3 *ctx = out_context;
@@ -2085,29 +2192,28 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     /* Cleanup old buffers and initialize upload timer */
     flush_init(ctx);
 
-    /* Process chunk */
-    if (ctx->log_key) {
-        chunk = flb_pack_msgpack_extract_log_key(ctx,
-                                                 event_chunk->data,
-                                                 event_chunk->size);
-    }
-    else {
-        chunk = flb_pack_msgpack_to_json_format(event_chunk->data,
-                                                event_chunk->size,
-                                                FLB_PACK_JSON_FORMAT_LINES,
-                                                ctx->json_date_format,
-                                                ctx->date_key);
-    }
-    if (chunk == NULL) {
-        flb_plg_error(ctx->ins, "Could not marshal msgpack to output string");
-        FLB_OUTPUT_RETURN(FLB_ERROR);
-    }
-    chunk_size = flb_sds_len(chunk);
-
     /* Get a file candidate matching the given 'tag' */
     upload_file = s3_store_file_get(ctx,
                                     event_chunk->tag,
                                     flb_sds_len(event_chunk->tag));
+
+
+    if (!upload_file && ctx->csv_column_names) {
+        csv_add_columns = FLB_TRUE;
+    }
+
+    chunk = s3_format(ctx,
+                      event_chunk->total_events,
+                      event_chunk->tag, flb_sds_len(event_chunk->tag),
+                      event_chunk->data, event_chunk->size,
+                      csv_add_columns);
+
+    if (chunk == NULL) {
+        flb_plg_error(ctx->ins, "Could not marshal msgpack to output string");
+        FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
+
+    chunk_size = flb_sds_len(chunk);
 
     /* Specific to unit tests, will not get called normally */
     if (s3_plugin_under_test() == FLB_TRUE) {
@@ -2154,6 +2260,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
             ret = buffer_chunk(ctx, upload_file, chunk, chunk_size,
                                event_chunk->tag, flb_sds_len(event_chunk->tag));
             if (ret < 0) {
+                flb_sds_destroy(chunk);
                 FLB_OUTPUT_RETURN(FLB_RETRY);
             }
             s3_store_file_lock(upload_file);
@@ -2162,11 +2269,15 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
             ret = add_to_queue(ctx, upload_file, m_upload_file,
                                event_chunk->tag, flb_sds_len(event_chunk->tag));
             if (ret < 0) {
+                flb_sds_destroy(chunk);
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
 
             /* Go through upload queue and return error if something went wrong */
             s3_upload_queue(config, ctx);
+
+            flb_sds_destroy(chunk);
+
             if (ctx->upload_queue_success == FLB_FALSE) {
                 ctx->upload_queue_success = FLB_TRUE;
                 FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -2178,6 +2289,8 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
             ret = send_upload_request(ctx, chunk, upload_file, m_upload_file,
                                       event_chunk->tag,
                                       flb_sds_len(event_chunk->tag));
+            flb_sds_destroy(chunk);
+
             if (ret < 0) {
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
@@ -2188,6 +2301,9 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     /* Buffer current chunk in filesystem and wait for next chunk from engine */
     ret = buffer_chunk(ctx, upload_file, chunk, chunk_size,
                        event_chunk->tag, flb_sds_len(event_chunk->tag));
+
+    flb_sds_destroy(chunk);
+
     if (ret < 0) {
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
@@ -2405,6 +2521,20 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_STR, "format", NULL,
+     0, FLB_FALSE, 0,
+     "Specify the output data format, the available options are: json and "
+     "csv. If no value is set the outgoing data is formatted to JSON."
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "csv_column_names", "false",
+     0, FLB_TRUE, offsetof(struct flb_s3, csv_column_names),
+     "When data is formatted to CSV, it add the column names (keys) in the first line of "
+     "the target file."
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "external_id", NULL,
      0, FLB_TRUE, offsetof(struct flb_s3, external_id),
      "Specify an external ID for the STS API, can be used with the role_arn parameter if your role "
@@ -2438,6 +2568,10 @@ struct flb_output_plugin out_s3_plugin = {
     .cb_flush     = cb_s3_flush,
     .cb_exit      = cb_s3_exit,
     .workers      = 1,
+
+    /* Test */
+    .test_formatter.callback = s3_format_test,
+
     .flags        = FLB_OUTPUT_NET | FLB_IO_TLS,
     .config_map   = config_map
 };

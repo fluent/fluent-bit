@@ -876,6 +876,239 @@ static int msgpack_pack_formatted_datetime(flb_sds_t out_buf, char time_formatte
     return 0;
 }
 
+static flb_sds_t csv_pack_string(flb_sds_t *buf, char *in_str, size_t in_size)
+{
+    int i;
+    int escapes_needed = 0;
+    flb_sds_t tmp;
+
+    for (i = 0; i < in_size; i++) {
+        if (in_str[i] == '"') {
+            escapes_needed++;
+        }
+    }
+
+    if (escapes_needed == 0) {
+        flb_sds_cat_safe(buf, "\"", 1);
+        flb_sds_cat_safe(buf, in_str, in_size);
+        flb_sds_cat_safe(buf, "\"", 1);
+        return *buf;
+    }
+
+    tmp = flb_sds_create_size(in_size + escapes_needed + 2);
+    if (!tmp) {
+        return NULL;
+    }
+
+    /* beginning of the string */
+    flb_sds_cat_safe(&tmp, "\"", 1);
+
+    /* escape any double quotes */
+    for (i = 0; i < in_size; i++) {
+        if (in_str[i] == '"') {
+            flb_sds_cat_safe(&tmp, "\"\"", 2);
+        }
+        else {
+            flb_sds_cat_safe(&tmp, in_str + i, 1);
+        }
+    }
+
+    /* end of the string */
+    flb_sds_cat_safe(&tmp, "\"", 1);
+
+    flb_sds_cat_safe(buf, tmp, flb_sds_len(tmp));
+    flb_sds_destroy(tmp);
+
+    return *buf;
+}
+
+/* The object is not supported in CSV format, so we use a stringified JSON version */
+static flb_sds_t csv_pack_object_as_json(flb_sds_t *buf, msgpack_object *o)
+{
+    int ret;
+    int len;
+    size_t out_size = 8192;
+    size_t realloc_size = 8192;
+    flb_sds_t out_buf;
+    flb_sds_t tmp_buf;
+
+    out_buf = flb_sds_create_size(out_size);
+    if (!out_buf) {
+        flb_errno();
+        return NULL;
+    }
+
+    while (1) {
+        ret = flb_msgpack_to_json(out_buf, out_size, o);
+        if (ret <= 0) {
+            tmp_buf = flb_sds_increase(out_buf, realloc_size);
+            if (tmp_buf) {
+                out_buf = tmp_buf;
+                out_size += realloc_size;
+            }
+            else {
+                flb_sds_destroy(out_buf);
+                return NULL;
+            }
+        }
+        else {
+            break;
+        }
+    }
+
+    len = strlen(out_buf);
+    csv_pack_string(buf, out_buf, len);
+    flb_sds_destroy(out_buf);
+
+    return *buf;
+}
+
+
+static flb_sds_t csv_pack_object(flb_sds_t *buf, msgpack_object *o)
+{
+    int i;
+
+    switch(o->type) {
+    case MSGPACK_OBJECT_NIL:
+        flb_sds_cat_safe(buf, "\"null\"", 6);
+        break;
+    case MSGPACK_OBJECT_BOOLEAN:
+        if (o->via.boolean) {
+            flb_sds_cat_safe(buf, "\"true\"", 6);
+        }
+        else {
+            flb_sds_cat_safe(buf, "\"false\"", 7);
+        }
+        break;
+    case MSGPACK_OBJECT_POSITIVE_INTEGER:
+        {
+            char temp[32] = {0};
+            i = snprintf(temp, sizeof(temp) - 1, "%" PRIu64, o->via.u64);
+            flb_sds_cat_safe(buf, temp, i);
+        }
+        break;
+    case MSGPACK_OBJECT_NEGATIVE_INTEGER:
+        {
+            char temp[32] = {0};
+            i = snprintf(temp, sizeof(temp) - 1, "%" PRId64, o->via.i64);
+            flb_sds_cat_safe(buf, temp, i);
+        }
+        break;
+    case MSGPACK_OBJECT_FLOAT32:
+    case MSGPACK_OBJECT_FLOAT64:
+        {
+            char temp[512] = {0};
+            if (o->via.f64 == (double)(long long int) o->via.f64) {
+                i = snprintf(temp, sizeof(temp) - 1, "%.1f", o->via.f64);
+            }
+            else if (convert_nan_to_null && isnan(o->via.f64) ) {
+                i = snprintf(temp, sizeof(temp) - 1, "\"null\"");
+            }
+            else {
+                i = snprintf(temp, sizeof(temp) - 1, "%.16g", o->via.f64);
+            }
+            flb_sds_cat_safe(buf, temp, i);
+        }
+        break;
+
+    case MSGPACK_OBJECT_STR:
+        csv_pack_string(buf, (char *) o->via.str.ptr, o->via.str.size);
+        break;
+    /* anything else, becomes a JSON string */
+    case MSGPACK_OBJECT_BIN:
+    case MSGPACK_OBJECT_EXT:
+    case MSGPACK_OBJECT_ARRAY:
+    case MSGPACK_OBJECT_MAP:
+        csv_pack_object_as_json(buf, o);
+        break;
+    }
+
+    return *buf;
+}
+
+flb_sds_t flb_pack_msgpack_to_csv_format(const char *data, size_t bytes,
+                                         int add_timestamp, int add_columns)
+{
+    int i;
+    int j;
+    int record_n = 0;
+    size_t off = 0;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object map;
+    msgpack_object *obj;
+    msgpack_object key;
+    msgpack_object val;
+
+    struct flb_time tm;
+    flb_sds_t csv_buf;
+
+    csv_buf = flb_sds_create_size(bytes);
+    if (!csv_buf) {
+        return NULL;
+    }
+
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+        root = result.data;
+        if (root.type != MSGPACK_OBJECT_ARRAY && root.type != MSGPACK_OBJECT_MAP) {
+            continue;
+        }
+
+        if (root.type == MSGPACK_OBJECT_ARRAY) {
+            flb_time_pop_from_msgpack(&tm, &result, &obj);
+            map = root.via.array.ptr[1];
+        }
+        else {
+            map = root;
+        }
+
+        for (i = 0; i < map.via.map.size; i++) {
+            val = map.via.map.ptr[i].val;
+
+            /* add columns ? */
+            if (record_n == 0 && add_columns) {
+                if (i == 0) {
+                    /* add columns starting with timestamp */
+                    if (add_timestamp) {
+                        flb_sds_cat_safe(&csv_buf, "\"timestamp\",", 12);
+                    }
+
+                    /* record keys */
+                    for (j = 0; j < map.via.map.size; j++) {
+                        key = map.via.map.ptr[j].key;
+                        csv_pack_object(&csv_buf, &key);
+
+                        if (j < map.via.map.size - 1) {
+                            flb_sds_cat_safe(&csv_buf, ",", 1);
+                        }
+                    }
+                    flb_sds_cat_safe(&csv_buf, "\n", 1);
+                }
+            }
+
+            if (i == 0 && add_timestamp) {
+                /* timestamp */
+                flb_sds_printf(&csv_buf, "\"%lu.%lu\",", tm.tm.tv_sec, tm.tm.tv_nsec);
+            }
+
+            /* row values */
+            csv_pack_object(&csv_buf, &val);
+
+            if (i < map.via.map.size - 1) {
+                flb_sds_cat_safe(&csv_buf, ",", 1);
+            }
+            else {
+                flb_sds_cat_safe(&csv_buf, "\n", 1);
+            }
+        }
+        record_n++;
+    }
+
+    msgpack_unpacked_destroy(&result);
+    return csv_buf;
+}
+
 flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
                                           int json_format, int date_format,
                                           flb_sds_t date_key)

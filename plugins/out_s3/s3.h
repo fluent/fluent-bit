@@ -47,6 +47,10 @@
 
 #define DEFAULT_UPLOAD_TIMEOUT 3600
 
+/* data format */
+#define S3_FORMAT_JSON    0
+#define S3_FORMAT_CSV     1
+
 /*
  * If we see repeated errors on an upload/chunk, we will discard it
  * This saves us from scenarios where something goes wrong and an upload can
@@ -173,6 +177,12 @@ struct flb_s3 {
     int key_fmt_has_seq_index;
     flb_sds_t metadata_dir;
     flb_sds_t seq_index_file;
+
+    /* format */
+    int format;
+
+    /* CSV */
+    int csv_column_names;
 
     struct flb_output_instance *ins;
 };
