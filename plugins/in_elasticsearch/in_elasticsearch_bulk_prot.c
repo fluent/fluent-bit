@@ -715,6 +715,15 @@ int in_elasticsearch_bulk_prot_handle(struct flb_in_elasticsearch *ctx,
         return 0;
     }
 
+    if (request->method == MK_METHOD_PUT) {
+        send_json_message_response(conn, 200, "{}");
+
+        flb_sds_destroy(tag);
+        mk_mem_free(uri);
+
+        return 0;
+    }
+
     if (request->method == MK_METHOD_GET) {
         if (strncmp(uri, "/_nodes/http", 12) == 0) {
             send_dummy_sniffer_response(conn, 200, ctx);
@@ -755,7 +764,8 @@ int in_elasticsearch_bulk_prot_handle(struct flb_in_elasticsearch *ctx,
 
     if (request->method != MK_METHOD_POST &&
         request->method != MK_METHOD_GET &&
-        request->method != MK_METHOD_HEAD) {
+        request->method != MK_METHOD_HEAD &&
+        request->method != MK_METHOD_PUT) {
         flb_sds_destroy(tag);
         mk_mem_free(uri);
 
