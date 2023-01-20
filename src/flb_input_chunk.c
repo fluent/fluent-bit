@@ -602,9 +602,9 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
             FS_CHUNK_SIZE_DEBUG_MOD(o_ins, old_ic, -old_ic_bytes);
             o_ins->fs_chunks_size -= old_ic_bytes;
 
-            flb_debug("[input chunk] remove route of chunk %s with size %ld bytes to output plugin %s "
-                      "to place the incoming data with size %ld bytes", flb_input_chunk_get_name(old_ic),
-                      old_ic_bytes, o_ins->name, chunk_size);
+            flb_debug("[input chunk] consider route removal for chunk %s with size %zd bytes from input plugin %s to output plugin %s "
+                      "to place the incoming data with size %zu bytes, total_limit_size=%zu", flb_input_chunk_get_name(old_ic),
+                      old_ic_bytes, ic->in->name, o_ins->name, chunk_size, o_ins->total_limit_size);
 
             if (flb_routes_mask_is_empty(old_ic->routes_mask)) {
                 if (old_ic->task != NULL) {
@@ -615,12 +615,18 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
                     if (old_ic->task->users == 0) {
                         flb_debug("[task] drop task_id %d with no active route from input plugin %s",
                                   old_ic->task->id, ic->in->name);
+                        /* end-user friendly message */
+                        flb_info("[input chunk] remove chunk %s with size %zd bytes from input plugin %s to output plugin %s "
+                                 "to place the incoming data with size %zu bytes, total_limit_size=%zu, task_id=%d",
+                                 flb_input_chunk_get_name(old_ic), old_ic_bytes, ic->in->name, o_ins->name, chunk_size, 
+                                 o_ins->total_limit_size, old_ic->task->id);
                         flb_task_destroy(old_ic->task, FLB_TRUE);
                     }
                 }
                 else {
-                    flb_debug("[input chunk] drop chunk %s with no output route from input plugin %s",
-                              flb_input_chunk_get_name(old_ic), ic->in->name);
+                    flb_info("[input chunk] remove chunk %s with size %zd bytes from input plugin %s to output plugin %s "
+                             "to place the incoming data with size %zu bytes, total_limit_size=%zu", flb_input_chunk_get_name(old_ic),
+                             old_ic_bytes, ic->in->name, o_ins->name, chunk_size, o_ins->total_limit_size);
                     flb_input_chunk_destroy(old_ic, FLB_TRUE);
                 }
             }
