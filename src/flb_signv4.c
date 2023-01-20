@@ -331,6 +331,8 @@ static flb_sds_t url_params_format(char *params)
     ret = flb_slist_split_string(&split, params, '&', -1);
     if (ret == -1) {
         flb_error("[signv4] error processing given query string");
+        flb_slist_destroy(&split);
+        flb_kv_release(&list);
         return NULL;
     }
 
