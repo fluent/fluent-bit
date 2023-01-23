@@ -395,106 +395,255 @@ static int binary_payload_to_msgpack(msgpack_packer *mp_pck,
     return 0;
 }
 
-static int get_token_length(jsmntok_t token){
-    return token.end - token.start;
+static int parse_resource(msgpack_packer *mp_pck,
+                          msgpack_object_map resource)
+{
+    size_t array_index;
+    msgpack_object_array attributes_list;
+
+    if (resource.size != 1 ||
+        resource.ptr[0].key.type != MSGPACK_OBJECT_STR ||
+        strncasecmp("attributes", resource.ptr[0].key.via.str.ptr, resource.ptr[0].key.via.str.size) != 0) {
+        flb_error("[otel] Invalid JSON payload, incorrect resource definition");
+        return -1;
+    }
+
+    if (resource.ptr[0].val.type != MSGPACK_OBJECT_ARRAY) {
+        flb_error("[otel] Invalid JSON payload, attribute list must be an array");
+    }
+
+    attributes_list = resource.ptr[0].val.via.array;
+
+
+    for (array_index = 0;
+         array_index < attributes_list.size;
+         array_index++) {
+
+        }
 }
 
-static char *get_value_from_token(jsmntok_t *tokens,
-                                  const char *body,
-                                  int pos){
-    char *tmp;
-    jsmntok_t token;
-    int token_len;
+static int pack_log_record(msgpack_packer *mp_pck,
+                           msgpack_object_map *resource,
+                           char *schema_url,
+                           msgpack_object_map *scope,
+                           msgpack_object_map *log_record)
+{
+    size_t log_field_index;
 
-    token = tokens[pos];
-    token_len = get_token_length(token);
+    /*
+     * start a new log record here
+     * need confirmation on format [[timestamp, {metadata}], {log record}] or [timestamp, {log record}]
+     * In the meantime, we pack it in the regular format, [timestamp, {log record}]
+     */
 
-    tmp = flb_calloc(1, token_len + 1);
-    tmp =  memcpy(tmp, body+token.start, token_len);
+    for (log_field_index = 0;
+         log_field_index < log_record->size;
+         log_field_index++) {
+            /*
+             * pack fields to msgpack
+             */
+        }
+}
 
-    return tmp;
+static int parse_log_records(msgpack_packer *mp_pck,
+                             msgpack_object_map *resource,
+                             char *schema_url,
+                             msgpack_object_map *scope,
+                             msgpack_object_array log_records)
+{
+    size_t log_records_index;
+    size_t log_record_index;
+    msgpack_object_map *log_record;
+
+    for (log_records_index = 0;
+         log_records_index < log_records.size;
+         log_records_index++) {
+
+            log_record = &log_records.ptr[log_records_index].via.map;
+
+            pack_log_record(mp_pck, resource, schema_url, scope, log_record);
+        }
+}
+
+static int parse_scope_logs(msgpack_packer *mp_pck,
+                            msgpack_object_map *resource,
+                            msgpack_object_array scope_logs)
+{
+    size_t scope_logs_index;
+    size_t scope_log_index;
+    msgpack_object_map scope_log;
+    msgpack_object_map *scope;
+    char *schema_url;
+
+    schema_url = NULL;
+    scope = NULL;
+
+    for (scope_logs_index = 0;
+         scope_logs_index < scope_logs.size;
+         scope_logs_index++) {
+
+        scope_log = scope_logs.ptr[scope_logs_index].via.map;
+
+        if (scope_log.size > 3) {
+            flb_error("[otel] Invalid JSON payload, a scope log can have at most 3 fields: scope, log records, & schema_url");
+            return -1;
+        }
+
+        for (scope_log_index = 0;
+             scope_log_index < scope_log.size;
+             scope_log_index++) {
+
+            if (strncasecmp("schemaurl",
+                            scope_log.ptr[scope_log_index].key.via.str.ptr,
+                            scope_log.ptr[scope_log_index].key.via.str.size) == 0) {
+
+                    memcpy(schema_url,
+                        scope_log.ptr[scope_log_index].val.via.str.ptr,
+                        scope_log.ptr[scope_log_index].val.via.str.size);
+
+                }
+
+            else if (strncasecmp("scope",
+                                  scope_log.ptr[scope_log_index].key.via.str.ptr,
+                                  scope_log.ptr[scope_log_index].key.via.str.size) == 0) {
+
+                    scope = &scope_log.ptr[scope_log_index].val.via.map;
+
+                }
+
+            }
+
+        for (scope_log_index = 0;
+             scope_log_index < scope_log.size;
+             scope_log_index++) {
+
+            if (strncasecmp("logrecords",
+                            scope_log.ptr[scope_log_index].key.via.str.ptr,
+                            scope_log.ptr[scope_log_index].key.via.str.size) == 0) {
+
+                if (scope_log.ptr[scope_log_index].val.type != MSGPACK_OBJECT_ARRAY) {
+                    flb_error("[otel] Invalid JSON payload, log records must be an array");
+                }
+
+                parse_log_records(mp_pck, resource, schema_url, scope, scope_log.ptr[scope_log_index].val.via.array);
+
+            }
+        }
+
+    }
+}
+
+static int parse_resource_logs(msgpack_packer *mp_pck,
+                               msgpack_object_array resource_logs)
+{
+    size_t resource_logs_index;
+    size_t resource_log_index;
+    msgpack_object_map resource_log;
+    msgpack_object_map *resource;
+
+    resource = NULL;
+
+    for (resource_logs_index = 0;
+         resource_logs_index < resource_logs.size;
+         resource_logs_index++) {
+
+        resource_log = resource_logs.ptr[resource_logs_index].via.map;
+
+        if (resource_log.size > 3) {
+            flb_error("[otel] Invalid JSON payload, a resource log can have at most 3 fields: resource, scope logs, & schema_url");
+            return -1;
+        }
+
+        /*
+         * First iterate through the keys and set the values of resource,
+         * because this needs to be propogated to the log records, and JSON can be unordered.
+         * In the next iteration, scan the scope logs and pass these values to it.
+         */
+
+        for (resource_log_index = 0;
+             resource_log_index < resource_log.size;
+             resource_log_index++) {
+                if (strncasecmp("resource",
+                                 resource_log.ptr[resource_log_index].key.via.str.ptr,
+                                 resource_log.ptr[resource_log_index].key.via.str.size) == 0) {
+                    resource = &resource_log.ptr[resource_log_index].val.via.map;
+                }
+            }
+
+        for (resource_log_index = 0;
+             resource_log_index < resource_log.size;
+             resource_log_index++) {
+                if (strncasecmp("scopelogs",
+                                 resource_log.ptr[resource_log_index].key.via.str.ptr,
+                                 resource_log.ptr[resource_log_index].key.via.str.size) == 0) {
+
+                    if (resource_log.ptr[resource_log_index].val.type != MSGPACK_OBJECT_ARRAY) {
+                        flb_error("[otel] Invalid JSON payload, scope logs must be an array");
+                        return -1;
+                    }
+
+                    parse_scope_logs(mp_pck, resource, resource_log.ptr[resource_log_index].val.via.array);
+                }
+            }
+
+    }
+}
+
+/*
+ * Process the JSON payload.
+ * A valid payload must be in the form defined in the OpenTelemetry proto file:
+ * https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/logs/v1/logs.proto
+ */
+static int process_json_export_service_request(msgpack_packer *mp_pck,
+                                               char *buf,
+                                               size_t buf_size)
+{
+    size_t off = 0;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object_map resource_logs_map;
+
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, buf, buf_size, &off) == MSGPACK_UNPACK_SUCCESS) {
+        root = result.data;
+        resource_logs_map = root.via.map;
+
+        if (root.type != MSGPACK_OBJECT_MAP ||
+            resource_logs_map.size != 1 ||
+            strncasecmp(resource_logs_map.ptr[0].key.via.str.ptr, "resourcelogs", resource_logs_map.ptr[0].key.via.str.size)) {
+                flb_error("[otel] Invalid JSON payload");
+                return -1;
+        }
+
+        parse_resource_logs(mp_pck, resource_logs_map.ptr[0].val.via.array);
+    }
 }
 
 static int json_payload_to_msgpack(msgpack_packer *mp_pck,
                                    const char *body,
                                    size_t len)
 {
-    int n_tokens;
-    int token_index;
-    int kv_index;
+    size_t buf_size;
+    int root_type;
     int result;
+    char *buf;
 
-    char *key;
-    char *otel_value_type;
-    char *otel_log_record;
+    /*
+     * Convert the json to msgpack to make parsing easier
+     */
 
-    jsmn_parser parser;
-    jsmntok_t tokens[1024];
-    jsmntok_t token;
-
-    result = 0;
-
-    jsmn_init(&parser);
-    n_tokens = jsmn_parse(&parser, body, len, tokens, 1024);
-
-    if (n_tokens < 0) {
-        flb_error("[otel] Failed to parse JSON payload, jsmn error %d", n_tokens);
+    result = flb_pack_json(body, len, &buf, &buf_size, &root_type);
+    if (result == FLB_ERR_JSON_PART) {
+        printf("data incomplete");
+        return -1;
+    }
+    else if (result == FLB_ERR_JSON_INVAL) {
+        printf("invalid JSON message, skipping");
         return -1;
     }
 
-    // position 0 is the root object, skip it
-    for (token_index = 1; token_index < n_tokens; token_index++) {
-        token = tokens[token_index];
+    process_json_export_service_request(mp_pck, buf, buf_size);
 
-        switch (token.type) {
-
-            case JSMN_OBJECT:
-                for (kv_index=0; kv_index < token.size; kv_index++) {
-                    key = get_value_from_token(tokens, body, token_index+kv_index+1);
-
-                    if (strcmp(key, "body") == 0) {
-                        otel_value_type = get_value_from_token(tokens, body, token_index+kv_index+3);
-                        otel_log_record = get_value_from_token(tokens, body, token_index+kv_index+4);
-
-                        msgpack_pack_array(mp_pck, 2);
-                        flb_pack_time_now(mp_pck);
-
-                        if (strcasecmp(otel_value_type, "stringvalue") == 0) {
-                            result = otel_pack_string(mp_pck, otel_log_record);
-                        }
-
-                        else if (strcasecmp(otel_value_type, "intvalue") == 0) {
-                            result = otel_pack_int(mp_pck, atoi(otel_log_record));
-                        }
-
-                        else if (strcasecmp(otel_value_type, "doublevalue") == 0) {
-                            result = otel_pack_double(mp_pck, atof(otel_log_record));
-                        }
-
-                        else if (strcasecmp(otel_value_type, "boolvalue") == 0) {
-                            if (strcasecmp(otel_log_record, "true") == 0) {
-                                result = otel_pack_bool(mp_pck, true);
-                            } else {
-                                result = otel_pack_bool(mp_pck, false);
-                            }
-                        }
-
-                        else if (strcasecmp(otel_value_type, "bytesvalue") == 0){
-                            result = otel_pack_string(mp_pck, otel_log_record);
-                        }
-
-                        flb_free(otel_value_type);
-                        flb_free(otel_log_record);
-                    }
-
-                    flb_free(key);
-                }
-                break;
-
-            default:
-                break;
-        }
-    }
     return result;
 }
 
