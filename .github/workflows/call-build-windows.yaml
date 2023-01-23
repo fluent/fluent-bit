@@ -47,15 +47,25 @@ jobs:
             arch: x86
             openssl_dir: C:\Program Files (x86)\OpenSSL-Win32
             chocolatey_opt: --x86
+            cmake_additional_opt: ""
+            vcpkg_triplet: x86-windows-static
           - name: "Windows 64bit"
             arch: x64
             openssl_dir: C:\Program Files\OpenSSL-Win64
             chocolatey_opt: --x64
+            cmake_additional_opt: ""
+            vcpkg_triplet: x64-windows-static
+          - name: "Windows 64bit (Arm64)"
+            arch: amd64_arm64
+            openssl_dir: C:\vcpkg\packages\openssl_arm64-windows-static
+            chocolatey_opt: ""
+            cmake_additional_opt: "-DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_VERSION=10.0 -DCMAKE_SYSTEM_PROCESSOR=ARM64"
+            vcpkg_triplet: arm64-windows-static
     permissions:
       contents: read
     # Default environment variables can be overridden below. To prevent library pollution - without this other random libraries may be found on the path leading to failures.
     env:
-      PATH: C:\ProgramData\Chocolatey\bin;c:/Program Files/Git/cmd;c:/Windows/system32;C:/Windows/System32/WindowsPowerShell/v1.0;$ENV:WIX/bin;C:/Program Files/CMake/bin
+      PATH: C:\ProgramData\Chocolatey\bin;c:/Program Files/Git/cmd;c:/Windows/system32;C:/Windows/System32/WindowsPowerShell/v1.0;$ENV:WIX/bin;C:/Program Files/CMake/bin;C:\vcpkg;
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -74,23 +84,31 @@ jobs:
         shell: pwsh
 
       - name: Get dependencies w/ chocolatey
+        if: ${{ matrix.config.arch != 'amd64_arm64' }}
         uses: crazy-max/ghaction-chocolatey@v2
         with:
           args: install ${{ matrix.config.chocolatey_opt }} openssl -y
 
-      - name: Set up Visual Studio shell
-        uses: egor-tensin/vs-shell@v2
+      - name: Set up with Developer Command Prompt for Microsoft Visual C++
+        uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.config.arch }}
 
+      - name: Build openssl with vcpkg
+        if: ${{ matrix.config.arch == 'amd64_arm64' }}
+        run: |
+          C:\vcpkg\vcpkg install --recurse openssl --triplet ${{ matrix.config.vcpkg_triplet }}
+        shell: cmd
+
       - name: Build Fluent Bit packages
         run: |
-          cmake -G "NMake Makefiles" -DFLB_NIGHTLY_BUILD=${{ inputs.unstable }} -DOPENSSL_ROOT_DIR='${{ matrix.config.openssl_dir }}' ../
+          cmake -G "NMake Makefiles" -DFLB_NIGHTLY_BUILD=${{ inputs.unstable }} -DOPENSSL_ROOT_DIR='${{ matrix.config.openssl_dir }}' ${{ matrix.config.cmake_additional_opt }} ../
           cmake --build .
           cpack
         working-directory: build
 
       - name: Upload build packages
+        if: ${{ matrix.config.arch != 'amd64_arm64' }}
         uses: actions/upload-artifact@v3
         with:
           name: windows-packages
