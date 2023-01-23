@@ -295,7 +295,6 @@ static void clear_array(Opentelemetry__Proto__Logs__V1__LogRecord **logs,
 
     for (index = 0 ; index < log_count ; index++) {
         otlp_any_value_destroy(logs[index]->body);
-        flb_free(logs[index]);
     }
 
     flb_free(logs);
@@ -711,18 +710,19 @@ static int process_logs(struct flb_event_chunk *event_chunk,
     size_t log_record_count;
     size_t index;
     msgpack_unpacked result;
-    msgpack_object *obj;
+    msgpack_object obj;
+    msgpack_object *obj_ptr;
     size_t off = 0;
     struct flb_time tm;
     int res = FLB_OK;
 
-    log_record_list = (Opentelemetry__Proto__Logs__V1__LogRecord *) flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Logs__V1__LogRecord *));
+    log_record_list = (Opentelemetry__Proto__Logs__V1__LogRecord **) flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Logs__V1__LogRecord *));
     if (!log_record_list) {
         flb_errno();
         return -1;
     }
 
-    log_records = flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Logs__V1__LogRecord));
+    log_records = (Opentelemetry__Proto__Logs__V1__LogRecord *) flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Logs__V1__LogRecord));
     if (!log_records) {
         flb_free(log_record_list);
         flb_errno();
@@ -761,13 +761,11 @@ static int process_logs(struct flb_event_chunk *event_chunk,
         }
 
         /* unpack the array of [timestamp, map] */
-        flb_time_pop_from_msgpack(&tm, &result, &obj);
+        obj_ptr = &obj;
+        flb_time_pop_from_msgpack(&tm, &result, &obj_ptr);
+        obj = (msgpack_object) *obj_ptr;
 
-        if (obj->type != MSGPACK_OBJECT_MAP) {
-            continue;
-        }
-
-        log_object = msgpack_object_to_otlp_any_value(obj);
+        log_object = msgpack_object_to_otlp_any_value(&obj);
 
         log_records[log_record_count].body = log_object;
         log_records[log_record_count].time_unix_nano = flb_time_to_nanosec(&tm);
@@ -802,6 +800,7 @@ static int process_logs(struct flb_event_chunk *event_chunk,
     }
 
     flb_free(log_bodies);
+    flb_free(log_records);
     msgpack_unpacked_destroy(&result);
 
     return res;
