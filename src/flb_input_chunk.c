@@ -1372,7 +1372,7 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
             in->p->cb_resume(in->context, in->config);
             flb_info("[input] %s resume (storage buf overlimit %d/%d)",
                       in->name,
-                      ((struct flb_storage_input *)in->storage)->cio->total_chunks,
+                      ((struct flb_storage_input *)in->storage)->cio->total_chunks_up,
                       ((struct flb_storage_input *)in->storage)->cio->max_chunks_up);
         }
     }
@@ -1391,7 +1391,7 @@ static inline int flb_input_chunk_protect(struct flb_input_instance *i)
     if (flb_input_chunk_is_storage_overlimit(i) == FLB_TRUE) {
         flb_warn("[input] %s paused (storage buf overlimit %d/%d)",
                  i->name,
-                 storage->cio->total_chunks,
+                 storage->cio->total_chunks_up,
                  storage->cio->max_chunks_up);
         flb_input_pause(i);
         i->storage_buf_status = FLB_INPUT_PAUSED;
