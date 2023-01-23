@@ -510,6 +510,7 @@ add_definitions(-DMPACK_EXTENSIONS=1)
 add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
 
 # Miniz (zip)
+FLB_OPTION(BUILD_SHARED_LIBS OFF)
 add_subdirectory(${FLB_PATH_LIB_MINIZ} EXCLUDE_FROM_ALL)
 
 # ring buffer library
