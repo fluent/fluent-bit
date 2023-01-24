@@ -40,22 +40,32 @@
 #include "ne_vmstat_linux.h"
 #include "ne_netdev.h"
 
+struct flb_ne_callback {
+    char *name;
+    void (*func)(char *, void *, void *);
+};
+
+static int ne_update_cb(struct flb_ne *ctx, char *name);
+
 static void update_metrics(struct flb_input_instance *ins, struct flb_ne *ctx)
 {
-    /* Update our metrics */
+    int ret;
+    struct mk_list *head;
+    struct flb_slist_entry *entry;
 
-    ne_cpu_update(ctx);
-    ne_cpufreq_update(ctx);
-    ne_meminfo_update(ctx);
-    ne_diskstats_update(ctx);
-    ne_filesystem_update(ctx);
-    ne_uname_update(ctx);
-    ne_stat_update(ctx);
-    ne_time_update(ctx);
-    ne_loadavg_update(ctx);
-    ne_vmstat_update(ctx);
-    ne_netdev_update(ctx);
-    ne_filefd_update(ctx);
+    /* Update our metrics */
+    if (ctx->metrics) {
+        mk_list_foreach(head, ctx->metrics) {
+            entry = mk_list_entry(head, struct flb_slist_entry, _head);
+            ret = flb_callback_exists(ctx->callback, entry->str);
+            if (ret == FLB_TRUE) {
+                ne_update_cb(ctx, entry->str);
+            }
+            else {
+                flb_plg_warn(ctx->ins, "Unknown metrics: %s", entry->str);
+            }
+        }
+    }
 }
 
 /*
@@ -79,16 +89,138 @@ static int cb_ne_collect(struct flb_input_instance *ins,
     return 0;
 }
 
+static void ne_cpu_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_ne *ctx = p1;
+
+    ne_cpu_update(ctx);
+}
+
+static void ne_cpufreq_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_ne *ctx = p1;
+
+    ne_cpufreq_update(ctx);
+}
+
+static void ne_meminfo_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_ne *ctx = p1;
+
+    ne_meminfo_update(ctx);
+}
+
+static void ne_diskstats_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_ne *ctx = p1;
+
+    ne_diskstats_update(ctx);
+}
+
+static void ne_filesystem_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_ne *ctx = p1;
+
+    ne_filesystem_update(ctx);
+}
+
+static void ne_uname_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_ne *ctx = p1;
+
+    ne_uname_update(ctx);
+}
+
+static void ne_stat_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_ne *ctx = p1;
+
+    ne_stat_update(ctx);
+}
+
+static void ne_time_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_ne *ctx = p1;
+
+    ne_time_update(ctx);
+}
+
+static void ne_loadavg_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_ne *ctx = p1;
+
+    ne_loadavg_update(ctx);
+}
+
+static void ne_vmstat_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_ne *ctx = p1;
+
+    ne_vmstat_update(ctx);
+}
+
+static void ne_netdev_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_ne *ctx = p1;
+
+    ne_netdev_update(ctx);
+}
+
+static void ne_filefd_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_ne *ctx = p1;
+
+    ne_filefd_update(ctx);
+}
+
+static int ne_update_cb(struct flb_ne *ctx, char *name)
+{
+    int ret;
+
+    ret = flb_callback_do(ctx->callback, name, ctx, NULL);
+    return ret;
+}
+
+/*
+ * Callbacks Table
+ */
+struct flb_ne_callback ne_callbacks[] = {
+    /* metrics */
+    { "cpufreq", ne_cpufreq_update_cb },
+    { "cpu", ne_cpu_update_cb },
+    { "meminfo", ne_meminfo_update_cb },
+    { "diskstats", ne_diskstats_update_cb },
+    { "filesystem", ne_filesystem_update_cb },
+    { "uname", ne_uname_update_cb },
+    { "stat", ne_stat_update_cb },
+    { "time", ne_time_update_cb },
+    { "loadavg", ne_loadavg_update_cb },
+    { "vmstat", ne_vmstat_update_cb },
+    { "netdev", ne_netdev_update_cb },
+    { "filefd", ne_filefd_update_cb },
+    { 0 }
+};
+
 static int in_ne_init(struct flb_input_instance *in,
                       struct flb_config *config, void *data)
 {
     int ret;
+    int metric_idx = 0;
     struct flb_ne *ctx;
+    struct mk_list *head;
+    struct flb_slist_entry *entry;
+    struct flb_ne_callback *cb;
 
     /* Create plugin context */
     ctx = flb_ne_config_create(in, config);
     if (!ctx) {
         flb_errno();
+        return -1;
+    }
+
+    ctx->callback = flb_callback_create(in->name);
+    if (!ctx->callback) {
+        flb_plg_error(ctx->ins, "Create callback failed");
         return -1;
     }
 
@@ -121,6 +253,84 @@ static int in_ne_init(struct flb_input_instance *in,
     ne_netdev_init(ctx);
     ne_filefd_init(ctx);
 
+    /* Check enabled metrics */
+        /* Update our metrics */
+    if (ctx->metrics) {
+        mk_list_foreach(head, ctx->metrics) {
+            entry = mk_list_entry(head, struct flb_slist_entry, _head);
+            ret = flb_callback_exists(ctx->callback, entry->str);
+
+            if (ret == FLB_FALSE) {
+                if (strncmp(entry->str, "cpufreq", 7) == 0) {
+                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                    metric_idx = 0;
+                }
+                else if (strncmp(entry->str, "cpu", 3) == 0) {
+                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                    metric_idx = 1;
+                }
+                else if (strncmp(entry->str, "meminfo", 7) == 0) {
+                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                    metric_idx = 2;
+                }
+                else if (strncmp(entry->str, "diskstats", 9) == 0) {
+                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                    metric_idx = 3;
+                }
+                else if (strncmp(entry->str, "filesystem", 10) == 0) {
+                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                    metric_idx = 4;
+                }
+                else if (strncmp(entry->str, "uname", 5) == 0) {
+                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                    metric_idx = 5;
+                }
+                else if (strncmp(entry->str, "stat", 4) == 0) {
+                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                    metric_idx = 6;
+                }
+                else if (strncmp(entry->str, "time", 4) == 0) {
+                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                    metric_idx = 7;
+                }
+                else if (strncmp(entry->str, "loadavg", 7) == 0) {
+                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                    metric_idx = 8;
+                }
+                else if (strncmp(entry->str, "vmstat", 6) == 0) {
+                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                    metric_idx = 9;
+                }
+                else if (strncmp(entry->str, "netdev", 6) == 0) {
+                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                    metric_idx = 10;
+                }
+                else if (strncmp(entry->str, "filefd", 6) == 0) {
+                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                    metric_idx = 11;
+                }
+                else {
+                    flb_plg_warn(ctx->ins, "Unknown metrics: %s", entry->str);
+                    metric_idx = -1;
+                }
+
+                if (metric_idx >= 0) {
+                    cb = &ne_callbacks[metric_idx];
+                    ret = flb_callback_set(ctx->callback, cb->name, cb->func);
+                    if (ret == -1) {
+                        flb_plg_error(ctx->ins, "error setting up default "
+                                      "callback '%s'", cb->name);
+                    }
+                }
+            }
+        }
+    }
+    else {
+        flb_plg_error(ctx->ins, "No metrics is specified");
+
+        return -1;
+    }
+
     return 0;
 }
 
@@ -139,6 +349,10 @@ static int in_ne_exit(void *data, struct flb_config *config)
     ne_netdev_exit(ctx);
 
     flb_ne_config_destroy(ctx);
+    /* destroy callback context */
+    if (ctx->callback) {
+        flb_callback_destroy(ctx->callback);
+    }
 
     return 0;
 }
@@ -163,6 +377,13 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_TIME, "scrape_interval", "5",
      0, FLB_TRUE, offsetof(struct flb_ne, scrape_interval),
      "scrape interval to collect metrics from the node."
+    },
+
+    {
+     FLB_CONFIG_MAP_CLIST, "metrics",
+     "cpu,cpufreq,meminfo,diskstats,filesystem,uname,stat,time,loadavg,vmstat,netdev,filefd",
+     0, FLB_TRUE, offsetof(struct flb_ne, metrics),
+     "Comma separated list of keys to enable metrics."
     },
 
     {

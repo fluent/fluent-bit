@@ -39,6 +39,8 @@ struct flb_ne {
     int coll_fd;                                      /* collector fd     */
     struct cmt *cmt;                                  /* cmetrics context */
     struct flb_input_instance *ins;                   /* input instance   */
+    struct flb_callback *callback;                    /* metric callback */
+    struct mk_list *metrics;                          /* enabled metrics */
 
     /*
      * Metrics Contexts
