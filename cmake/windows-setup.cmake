@@ -7,6 +7,8 @@ if(FLB_WINDOWS_DEFAULTS)
   message(STATUS "Overriding setttings with windows-setup.cmake")
   set(FLB_REGEX                 Yes)
   set(FLB_BACKTRACE              No)
+  # LuaJIT does not support to work on ARM64 Windows.
+  # See also: https://github.com/LuaJIT/LuaJIT/issues/593
   if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|AARCH64)")
     set(FLB_LUAJIT               No)
   else()
