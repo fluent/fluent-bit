@@ -17,5 +17,5 @@ jobs:
           organization: fluent
           container: fluent-bit/pr-${{ github.event.number }}
           token: ${{ secrets.GITHUB_TOKEN }}
-          untagged: true
+          prune-untagged: true
           keep-last: 0
