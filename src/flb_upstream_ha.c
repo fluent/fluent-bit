@@ -170,18 +170,21 @@ static struct flb_upstream_node *create_node(int id,
     tmp = flb_cf_section_property_get_string(cf, s, "tls");
     if (tmp) {
         tls = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
     }
 
     /* tls.verify */
     tmp = flb_cf_section_property_get_string(cf, s, "tls.verify");
     if (tmp) {
         tls_verify = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
     }
 
     /* tls.debug */
     tmp = flb_cf_section_property_get_string(cf, s, "tls.debug");
     if (tmp) {
         tls_debug = atoi(tmp);
+        flb_sds_destroy(tmp);
     }
 
     /* tls.vhost */
@@ -314,6 +317,7 @@ struct flb_upstream_ha *flb_upstream_ha_from_file(const char *file,
     }
 
     ups = flb_upstream_ha_create(tmp);
+    flb_sds_destroy(tmp);
     if (!ups) {
         flb_error("[upstream_ha] cannot create context");
         flb_cf_destroy(cf);
