@@ -110,7 +110,7 @@ static int in_we_init(struct flb_input_instance *in,
 
     ret = we_get_windows_version(&windows_version);
 
-    if (ret < 0) {
+    if (ret == FLB_FALSE) {
         flb_plg_error(in, "could not get windows version");
 
         return -1;

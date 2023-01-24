@@ -39,7 +39,7 @@ int we_get_windows_version(double *version_number)
                            &key_handle);
 
     if (result != ERROR_SUCCESS) {
-        return -1;
+        return FLB_FALSE;
     }
 
     result = RegQueryValueExA(key_handle,
@@ -53,12 +53,12 @@ int we_get_windows_version(double *version_number)
 
     if (result != ERROR_SUCCESS)
     {
-        return -1;
+        return FLB_FALSE;
     }
 
     *version_number = strtod(version_text, NULL);
 
-    return 0;
+    return FLB_TRUE;
 }
 
 void we_hexdump(uint8_t *buffer, size_t buffer_length, size_t line_length) {
