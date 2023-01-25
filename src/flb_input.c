@@ -600,6 +600,7 @@ int flb_input_set_property(struct flb_input_instance *ins,
     else if (prop_key_check("storage.pause_on_chunks_overlimit", k, len) == 0 && tmp) {
         if (ins->storage_type == FLB_STORAGE_FS) {
             ret = flb_utils_bool(tmp);
+            flb_sds_destroy(tmp);
             if (ret == -1) {
                 return -1;
             }
