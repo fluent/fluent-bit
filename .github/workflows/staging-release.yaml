@@ -487,8 +487,8 @@ jobs:
         shell: bash
         env:
           VERSION_TO_CHECK_FOR: ${{ github.event.inputs.version }}
-          FLUENT_BIT_PACKAGES_URL: https://${{ secrets.AWS_S3_BUCKET_RELEASE }}.s3.amazonaws.com
-          FLUENT_BIT_PACKAGES_KEY: https://${{ secrets.AWS_S3_BUCKET_RELEASE }}.s3.amazonaws.com/fluentbit.key
+          FLUENT_BIT_PACKAGES_URL: http://${{ secrets.AWS_S3_BUCKET_RELEASE }}.s3.amazonaws.com
+          FLUENT_BIT_PACKAGES_KEY: http://${{ secrets.AWS_S3_BUCKET_RELEASE }}.s3.amazonaws.com/fluentbit.key
 
   staging-release-smoke-test-containers:
     name: Run container smoke tests
