@@ -90,6 +90,15 @@ for DEB_REPO in "${DEB_REPO_PATHS[@]}"; do
     APTLY_ROOTDIR=$(mktemp -d)
     APTLY_CONFIG=$(mktemp)
 
+    # The origin and label fields seem to cover the base directory for the repo and codename.
+    # The docs seems to suggest these fields are optional and free-form: https://wiki.debian.org/DebianRepository/Format#Origin
+    # They are security checks to verify if they have changed so we match the legacy server.
+    APTLY_PUBLISH_ARGS="-origin=\". $CODENAME\" -label=\". $CODENAME\""
+    if [[ "$DEB_REPO" == "debian/bullseye" ]]; then
+        # For Bullseye, the legacy server had a slightly different setup we try to reproduce here
+        APTLY_PUBLISH_ARGS='-origin="bullseye bullseye" -label="bullseye bullseye"'
+    fi
+
     cat << EOF > "$APTLY_CONFIG"
 {
     "rootDir": "$APTLY_ROOTDIR/"
@@ -111,9 +120,9 @@ EOF
     fi
     aptly -config="$APTLY_CONFIG" repo show "$APTLY_REPO_NAME"
     if [[ "$DISABLE_SIGNING" != "true" ]]; then
-        aptly -config="$APTLY_CONFIG" publish repo -gpg-key="$GPG_KEY" "$APTLY_REPO_NAME"
+        aptly -config="$APTLY_CONFIG" publish repo -gpg-key="$GPG_KEY" "${APTLY_PUBLISH_ARGS[@]}" "$APTLY_REPO_NAME"
     else
-        aptly -config="$APTLY_CONFIG" publish repo --skip-signing "$APTLY_REPO_NAME"
+        aptly -config="$APTLY_CONFIG" publish repo --skip-signing "${APTLY_PUBLISH_ARGS[@]}" "$APTLY_REPO_NAME"
     fi
     rsync -av "$APTLY_ROOTDIR"/public/* "$REPO_DIR"
     # Remove unnecessary files
