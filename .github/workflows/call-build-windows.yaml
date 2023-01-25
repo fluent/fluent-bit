@@ -108,7 +108,6 @@ jobs:
         working-directory: build
 
       - name: Upload build packages
-        if: ${{ matrix.config.arch != 'amd64_arm64' }}
         uses: actions/upload-artifact@v3
         with:
           name: windows-packages
