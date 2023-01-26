@@ -101,8 +101,28 @@ struct flb_ne {
     struct cmt_gauge *filefd_maximum;
 
     /* filesystem: abbreviation 'fs' */
+    struct cmt_gauge *fs_avail_bytes;
+    struct cmt_gauge *fs_device_error;
+    struct cmt_gauge *fs_files;
+    struct cmt_gauge *fs_files_free;
+    struct cmt_gauge *fs_free_bytes;
+    struct cmt_gauge *fs_readonly;
+    struct cmt_gauge *fs_size_bytes;
+
+    struct flb_regex *fs_regex_read_only;
     struct flb_regex *fs_regex_skip_mount;
     struct flb_regex *fs_regex_skip_fs_types;
+
+    /* systemd */
+
+    struct cmt_gauge *systemd_socket_accepted_connections_total;
+    struct cmt_gauge *systemd_socket_current_connections;
+    struct cmt_gauge *systemd_socket_refused_connections_total;
+    struct cmt_gauge *systemd_system_running;
+    struct cmt_gauge *systemd_timer_last_trigger_seconds;
+    struct cmt_gauge *systemd_unit_state;
+    struct cmt_gauge *systemd_units;
+    struct cmt_gauge *systemd_version;
 };
 
 #endif
