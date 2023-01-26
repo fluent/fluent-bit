@@ -524,6 +524,7 @@ static int tls_net_handshake(struct flb_tls *tls,
         }
         else {
             flb_error("[tls] error: invalid tls mode : %d", tls->mode);
+            pthread_mutex_unlock(&ctx->mutex);
             return -1;
         }
 
