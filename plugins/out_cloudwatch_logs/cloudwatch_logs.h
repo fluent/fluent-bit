@@ -70,7 +70,7 @@ struct cw_event {
 struct log_stream {
     flb_sds_t name;
     flb_sds_t group;
-    flb_sds_t sequence_token;
+
     /*
      * log streams in CloudWatch do not expire; but our internal representations
      * of them are periodically cleaned up if they have been unused for too long
@@ -86,8 +86,6 @@ struct log_stream {
 
     struct mk_list _head;
 };
-
-void log_stream_destroy(struct log_stream *stream);
 
 struct flb_cloudwatch {
     /*
@@ -138,8 +136,6 @@ struct flb_cloudwatch {
     /* stores log streams we're putting to */
     struct mk_list streams;
 
-    /* buffers for data processing and request payload */
-    struct cw_flush *buf;
     /* The namespace to use for the metric */
     flb_sds_t metric_namespace;
 
@@ -154,5 +150,7 @@ struct flb_cloudwatch {
 };
 
 void flb_cloudwatch_ctx_destroy(struct flb_cloudwatch *ctx);
+
+void log_stream_destroy(struct log_stream *stream);
 
 #endif
