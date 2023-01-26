@@ -708,6 +708,11 @@ static int in_ne_exit(void *data, struct flb_config *config)
         }
     }
 
+    /* destroy callback context */
+    if (ctx->callback) {
+        flb_callback_destroy(ctx->callback);
+    }
+
     /* Teardown for timer tied up resources */
     if (ctx->coll_meminfo_fd != -1) {
         ne_meminfo_exit(ctx);
@@ -726,10 +731,6 @@ static int in_ne_exit(void *data, struct flb_config *config)
     }
 
     flb_ne_config_destroy(ctx);
-    /* destroy callback context */
-    if (ctx->callback) {
-        flb_callback_destroy(ctx->callback);
-    }
 
     return 0;
 }
