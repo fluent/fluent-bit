@@ -156,6 +156,8 @@ static int send_ack(struct flb_input_instance *in, struct fw_conn *conn,
                              mp_sbuf.size,
                              &sent);
 
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
     if (bytes == -1) {
         flb_plg_error(in, "cannot send ACK response: %.*s",
                       chunk.via.str.size, chunk.via.str.ptr);
