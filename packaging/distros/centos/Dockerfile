@@ -65,7 +65,8 @@ RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
-    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel && \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
+    libyaml-devel zlib-devel && \
     yum clean all
 
 ARG FLB_OUT_PGSQL=On
@@ -88,7 +89,8 @@ RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
-    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel && \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
+    libyaml-devel zlib-devel && \
     yum clean all
 
 ARG FLB_OUT_PGSQL=On
@@ -106,7 +108,8 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
     dnf -y install rpm-build ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
-    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel && \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
+    libyaml-devel zlib-devel && \
     dnf clean all
 
 ARG FLB_OUT_PGSQL=On
@@ -123,7 +126,8 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
     dnf -y install rpm-build ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
-    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel && \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel  \
+    libyaml-devel zlib-devel && \
     dnf clean all
 
 ARG FLB_OUT_PGSQL=On
