@@ -112,17 +112,6 @@ struct flb_ne {
     struct flb_regex *fs_regex_read_only;
     struct flb_regex *fs_regex_skip_mount;
     struct flb_regex *fs_regex_skip_fs_types;
-
-    /* systemd */
-
-    struct cmt_gauge *systemd_socket_accepted_connections_total;
-    struct cmt_gauge *systemd_socket_current_connections;
-    struct cmt_gauge *systemd_socket_refused_connections_total;
-    struct cmt_gauge *systemd_system_running;
-    struct cmt_gauge *systemd_timer_last_trigger_seconds;
-    struct cmt_gauge *systemd_unit_state;
-    struct cmt_gauge *systemd_units;
-    struct cmt_gauge *systemd_version;
 };
 
 #endif
