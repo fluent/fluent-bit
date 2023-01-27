@@ -101,6 +101,15 @@ struct flb_ne {
     struct cmt_gauge *filefd_maximum;
 
     /* filesystem: abbreviation 'fs' */
+    struct cmt_gauge *fs_avail_bytes;
+    struct cmt_gauge *fs_device_error;
+    struct cmt_gauge *fs_files;
+    struct cmt_gauge *fs_files_free;
+    struct cmt_gauge *fs_free_bytes;
+    struct cmt_gauge *fs_readonly;
+    struct cmt_gauge *fs_size_bytes;
+
+    struct flb_regex *fs_regex_read_only;
     struct flb_regex *fs_regex_skip_mount;
     struct flb_regex *fs_regex_skip_fs_types;
 };
