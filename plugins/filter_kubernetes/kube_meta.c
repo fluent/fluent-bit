@@ -1265,7 +1265,10 @@ static inline int extract_meta(struct flb_kube *ctx,
     }
 
     if (n <= 0) {
-        flb_plg_warn(ctx->ins, "invalid pattern for given tag %s", tag);
+        flb_plg_error(ctx->ins, 
+                      "unable to extract metadata using regular expression "
+                      "pattern from the given tag: %s", 
+                      tag);
         return -1;
     }
 
