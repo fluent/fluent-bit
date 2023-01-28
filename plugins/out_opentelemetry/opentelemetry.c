@@ -295,7 +295,6 @@ static void clear_array(Opentelemetry__Proto__Logs__V1__LogRecord **logs,
 
     for (index = 0 ; index < log_count ; index++) {
         otlp_any_value_destroy(logs[index]->body);
-        flb_free(logs[index]);
     }
 
     flb_free(logs);
@@ -781,6 +780,7 @@ static int process_logs(struct flb_event_chunk *event_chunk,
                                 log_record_count);
 
             clear_array(log_record_list, log_record_count);
+            flb_free(log_records);
 
             log_record_count = 0;
 
@@ -797,6 +797,7 @@ static int process_logs(struct flb_event_chunk *event_chunk,
                             log_record_count);
 
         clear_array(log_record_list, log_record_count);
+        flb_free(log_records);
 
         log_record_count = 0;
     }
