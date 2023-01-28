@@ -27,8 +27,8 @@
 #include <fluent-bit/flb_upstream_node.h>
 
 /* Create a new Upstream Node context */
-struct flb_upstream_node *flb_upstream_node_create(const char *name, const char *host,
-                                                   const char *port,
+struct flb_upstream_node *flb_upstream_node_create(flb_sds_t name, flb_sds_t host,
+                                                   flb_sds_t port,
                                                    int tls, int tls_verify,
                                                    int tls_debug,
                                                    const char *tls_vhost,
@@ -66,18 +66,18 @@ struct flb_upstream_node *flb_upstream_node_create(const char *name, const char 
         node->name = flb_sds_create(tmp);
     }
     else {
-        node->name = flb_sds_create(name);
+        node->name = name;
     }
 
     /* host */
-    node->host = flb_sds_create(host);
+    node->host = host;
     if (!node->host) {
         flb_upstream_node_destroy(node);
         return NULL;
     }
 
     /* port */
-    node->port = flb_sds_create(port);
+    node->port = port;
     if (!node->port) {
         flb_upstream_node_destroy(node);
         return NULL;
