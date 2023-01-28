@@ -199,7 +199,7 @@ struct flb_http_client *flb_aws_client_request(struct flb_aws_client *aws_client
         if (aws_client->has_auth && time(NULL) > aws_client->refresh_limit) {
             if (flb_aws_is_auth_error(c->resp.payload, c->resp.payload_size)
                 == FLB_TRUE) {
-                flb_error("[aws_client] auth error, refreshing creds");
+                flb_info("[aws_client] auth error, refreshing creds");
                 aws_client->refresh_limit = time(NULL)
                                             + FLB_AWS_CREDENTIAL_REFRESH_LIMIT;
                 aws_client->provider->provider_vtable->
