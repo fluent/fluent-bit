@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_scheduler.h>
+#include <fluent-bit/flb_pthread.h>
 #include <fluent-bit/multiline/flb_ml.h>
 #include <fluent-bit/multiline/flb_ml_rule.h>
 #include <fluent-bit/multiline/flb_ml_group.h>
@@ -113,7 +114,9 @@ void flb_ml_flush_parser_instance(struct flb_ml *ml,
         /* Iterate stream groups */
         mk_list_foreach(head_group, &mst->groups) {
             group = mk_list_entry(head_group, struct flb_ml_stream_group, _head);
+            pthread_mutex_lock(&group->pth_mutex);
             flb_ml_flush_stream_group(parser_i->ml_parser, mst, group, forced_flush);
+            pthread_mutex_unlock(&group->pth_mutex);
         }
     }
 }
@@ -227,6 +230,7 @@ static int package_content(struct flb_ml_stream *mst,
 
     /* Get stream group */
     stream_group = flb_ml_stream_group_get(mst->parser, mst, val_group);
+    pthread_mutex_lock(&stream_group->pth_mutex);
     if (!mst->last_stream_group) {
         mst->last_stream_group = stream_group;
     }
@@ -236,6 +240,7 @@ static int package_content(struct flb_ml_stream *mst,
             mst->last_stream_group = stream_group;
         }
     }
+    pthread_mutex_unlock(&stream_group->pth_mutex);
 
     /* Set the parser type */
     type = parser->type;
@@ -254,9 +259,11 @@ static int package_content(struct flb_ml_stream *mst,
 
     }
     if (type == FLB_ML_REGEX) {
+        pthread_mutex_lock(&stream_group->pth_mutex);
         ret = flb_ml_rule_process(parser, mst,
                                   stream_group, full_map, buf, size, tm,
                                   val_content, val_pattern);
+        pthread_mutex_unlock(&stream_group->pth_mutex);
         if (ret == -1) {
             processed = FLB_FALSE;
         }
@@ -276,7 +283,7 @@ static int package_content(struct flb_ml_stream *mst,
             else {
                 rule_match = match_negate(parser, FLB_FALSE);
             }
-
+            pthread_mutex_lock(&stream_group->pth_mutex);
             if (stream_group->mp_sbuf.size == 0) {
                 flb_ml_register_context(stream_group, tm, full_map);
             }
@@ -298,6 +305,7 @@ static int package_content(struct flb_ml_stream *mst,
             if (rule_match) {
                 flb_ml_flush_stream_group(parser, mst, stream_group, FLB_FALSE);
             }
+            pthread_mutex_unlock(&stream_group->pth_mutex);
             processed = FLB_TRUE;
         }
     }
@@ -310,7 +318,7 @@ static int package_content(struct flb_ml_stream *mst,
         else {
             rule_match = match_negate(parser, FLB_FALSE);
         }
-
+        pthread_mutex_lock(&stream_group->pth_mutex);
         if (stream_group->mp_sbuf.size == 0) {
             flb_ml_register_context(stream_group, tm, full_map);
         }
@@ -332,6 +340,7 @@ static int package_content(struct flb_ml_stream *mst,
         if (rule_match) {
             flb_ml_flush_stream_group(parser, mst, stream_group, FLB_FALSE);
         }
+        pthread_mutex_unlock(&stream_group->pth_mutex);
         processed = FLB_TRUE;
     }
 
@@ -342,13 +351,16 @@ static int package_content(struct flb_ml_stream *mst,
      * process it as a raw text generating a single record with the given
      * content.
      */
+
     if (!processed && type == FLB_ML_TYPE_TEXT) {
+        pthread_mutex_lock(&stream_group->pth_mutex);
         flb_ml_flush_stream_group(parser, mst, stream_group, FLB_FALSE);
 
         /* Concatenate value */
         flb_sds_cat_safe(&stream_group->buf, buf, size);
         breakline_prepare(parser_i, stream_group);
         flb_ml_flush_stream_group(parser, mst, stream_group, FLB_FALSE);
+        pthread_mutex_unlock(&stream_group->pth_mutex);
     }
     else {
         return FLB_FALSE;
@@ -762,7 +774,9 @@ int flb_ml_append(struct flb_ml *ml, uint64_t stream_id,
         /* Get stream group */
         st_group = flb_ml_stream_group_get(mst->parser, mst, NULL);
         flb_sds_cat_safe(&st_group->buf, buf, size);
+        pthread_mutex_lock(&st_group->pth_mutex);
         flb_ml_flush_stream_group(parser_i->ml_parser, mst, st_group, FLB_FALSE);
+        pthread_mutex_unlock(&st_group->pth_mutex);
     }
 
     return 0;
@@ -874,7 +888,7 @@ int flb_ml_append_object(struct flb_ml *ml, uint64_t stream_id,
 
         /* Get stream group */
         st_group = flb_ml_stream_group_get(mst->parser, mst, NULL);
-
+        pthread_mutex_lock(&st_group->pth_mutex);
         /* Append record content to group msgpack buffer */
         msgpack_pack_array(&st_group->mp_pck, 2);
 
@@ -892,6 +906,7 @@ int flb_ml_append_object(struct flb_ml *ml, uint64_t stream_id,
 
         /* Update last flush time */
         st_group->last_flush = time_ms_now();
+        pthread_mutex_unlock(&st_group->pth_mutex);
     }
 
     return 0;

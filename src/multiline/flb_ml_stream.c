@@ -63,6 +63,8 @@ static struct flb_ml_stream_group *stream_group_create(struct flb_ml_stream *mst
     /* status */
     group->first_line = FLB_TRUE;
 
+    pthread_mutex_init(&group->pth_mutex, NULL);
+
     /* multiline buffer */
     group->buf = flb_sds_create_size(FLB_ML_BUF_SIZE);
     if (!group->buf) {
