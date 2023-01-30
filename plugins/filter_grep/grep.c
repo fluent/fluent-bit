@@ -85,7 +85,7 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
             continue;
         }
 
-        if (ctx->logical_op != GREP_LOGICAL_OP_NOT_SET && first_rule != GREP_NO_RULE) {
+        if (ctx->logical_op != GREP_LOGICAL_OP_LEGACY && first_rule != GREP_NO_RULE) {
             /* 'AND'/'OR' case */
             if (first_rule != rule->type) {
                 flb_plg_error(ctx->ins, "Both 'regex' and 'exclude' are set.");
@@ -215,7 +215,7 @@ static int cb_grep_init(struct flb_filter_instance *f_ins,
     mk_list_init(&ctx->rules);
     ctx->ins = f_ins;
 
-    ctx->logical_op = GREP_LOGICAL_OP_NOT_SET;
+    ctx->logical_op = GREP_LOGICAL_OP_LEGACY;
     val = flb_filter_get_property("logical_op", f_ins);
     if (val != NULL) {
         len = strlen(val);
@@ -226,6 +226,10 @@ static int cb_grep_init(struct flb_filter_instance *f_ins,
         else if (len == 2 && strncasecmp("OR", val, len) == 0) {
             flb_plg_info(ctx->ins, "OR mode");
             ctx->logical_op = GREP_LOGICAL_OP_OR;
+        }
+        else if (len == 6 && strncasecmp("legacy", val, len) == 0) {
+            flb_plg_info(ctx->ins, "legacy mode");
+            ctx->logical_op = GREP_LOGICAL_OP_LEGACY;
         }
     }
 
@@ -316,7 +320,7 @@ static int cb_grep_filter(const void *data, size_t bytes,
         /* get time and map */
         map  = root.via.array.ptr[1];
 
-        if (ctx->logical_op == GREP_LOGICAL_OP_NOT_SET) {
+        if (ctx->logical_op == GREP_LOGICAL_OP_LEGACY) {
             ret = grep_filter_data(map, ctx);
         }
         else {
@@ -372,9 +376,9 @@ static struct flb_config_map config_map[] = {
      "Exclude records in which the content of KEY matches the regular expression."
     },
     {
-     FLB_CONFIG_MAP_STR, "logical_op", NULL,
+     FLB_CONFIG_MAP_STR, "logical_op", "legacy",
      0, FLB_FALSE, 0,
-     "Specify whether to use logical conjuciton or disjunction. AND and OR are allowed."
+     "Specify whether to use logical conjuciton or disjunction. legacy, AND and OR are allowed."
     },
     {0}
 };
