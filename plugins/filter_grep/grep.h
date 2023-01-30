@@ -35,7 +35,7 @@
 #define GREP_RET_EXCLUDE  1
 
 enum _logical_op{
-    GREP_LOGICAL_OP_NOT_SET,
+    GREP_LOGICAL_OP_LEGACY,
     GREP_LOGICAL_OP_OR,
     GREP_LOGICAL_OP_AND
 } logical_op;
