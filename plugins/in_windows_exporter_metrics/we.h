@@ -190,6 +190,9 @@ struct flb_we {
 
     float windows_version;
 
+    struct flb_callback *callback;                    /* metric callback */
+    struct mk_list *metrics;                          /* enabled metrics */
+
     /*
      * Metrics Contexts
      * ----------------

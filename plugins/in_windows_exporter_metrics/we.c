@@ -35,34 +35,32 @@
 #include "we_logical_disk.h"
 #include "we_cs.h"
 
+struct flb_we_callback {
+    char *name;
+    void (*func)(char *, void *, void *);
+};
+
+static int we_update_cb(struct flb_we *ctx, char *name);
+
 static void update_metrics(struct flb_input_instance *ins, struct flb_we *ctx)
 {
-    struct mk_list *callback_iterator;
-    collector_cb    callback;
-    int             result;
-
-/*
-    mk_list_foreach(callback_iterator, &ctx->collectors) {
-        callback = mk_list_entry(callback_iterator, collector_cb, _head);
-
-        result = callback(ctx);
-
-        if (callback) {
-            flb_plg_error(ins, "collector failed with code %d", result);
-        }
-    }
-*/
+    int ret;
+    struct mk_list *head;
+    struct flb_slist_entry *entry;
 
     /* Update our metrics */
-    we_cpu_update(ctx);
-    we_os_update(ctx);
-    we_net_update(ctx);
-    we_logical_disk_update(ctx);
-    we_cs_update(ctx);
-    we_wmi_thermalzone_update(ctx);
-    we_wmi_cpu_info_update(ctx);
-    we_wmi_logon_update(ctx);
-    we_wmi_system_update(ctx);
+    if (ctx->metrics) {
+        mk_list_foreach(head, ctx->metrics) {
+            entry = mk_list_entry(head, struct flb_slist_entry, _head);
+            ret = flb_callback_exists(ctx->callback, entry->str);
+            if (ret == FLB_TRUE) {
+                we_update_cb(ctx, entry->str);
+            }
+            else {
+                flb_plg_debug(ctx->ins, "Callback for metrics '%s' is not registered", entry->str);
+            }
+        }
+    }
 }
 
 /*
@@ -89,11 +87,103 @@ static int cb_we_collect(struct flb_input_instance *ins,
     return 0;
 }
 
+static void we_cpu_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_we *ctx = p1;
+
+    we_cpu_update(ctx);
+}
+
+static void we_os_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_we *ctx = p1;
+
+    we_os_update(ctx);
+}
+
+static void we_net_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_we *ctx = p1;
+
+    we_net_update(ctx);
+}
+
+static void we_logical_disk_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_we *ctx = p1;
+
+    we_logical_disk_update(ctx);
+}
+
+static void we_cs_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_we *ctx = p1;
+
+    we_cs_update(ctx);
+}
+
+static void we_wmi_thermalzone_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_we *ctx = p1;
+
+    we_wmi_thermalzone_update(ctx);
+}
+
+static void we_wmi_cpu_info_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_we *ctx = p1;
+
+    we_wmi_cpu_info_update(ctx);
+}
+
+static void we_wmi_logon_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_we *ctx = p1;
+
+    we_wmi_logon_update(ctx);
+}
+
+static void we_wmi_system_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_we *ctx = p1;
+
+    we_wmi_system_update(ctx);
+}
+
+static int we_update_cb(struct flb_we *ctx, char *name)
+{
+    int ret;
+
+    ret = flb_callback_do(ctx->callback, name, ctx, NULL);
+    return ret;
+}
+
+/*
+ * Callbacks Table
+ */
+struct flb_we_callback ne_callbacks[] = {
+    /* metrics */
+    { "cpu_info", we_wmi_cpu_info_update_cb },
+    { "cpu", we_cpu_update_cb },
+    { "os", we_os_update_cb },
+    { "net", we_net_update_cb },
+    { "logical_disk", we_logical_disk_update_cb },
+    { "cs", we_cs_update_cb },
+    { "thermalzone", we_wmi_thermalzone_update_cb },
+    { "logon", we_wmi_logon_update_cb },
+    { "system", we_wmi_system_update_cb },
+    { 0 }
+};
+
 static int in_we_init(struct flb_input_instance *in,
                       struct flb_config *config, void *data)
 {
     int            ret;
+    int metric_idx = -1;
     struct flb_we *ctx;
+    struct mk_list *head;
+    struct flb_slist_entry *entry;
+    struct flb_we_callback *cb;
 
     /* Create plugin context */
     ctx = flb_we_config_create(in, config);
@@ -101,6 +191,12 @@ static int in_we_init(struct flb_input_instance *in,
     if (ctx == NULL) {
         flb_errno();
 
+        return -1;
+    }
+
+    ctx->callback = flb_callback_create(in->name);
+    if (!ctx->callback) {
+        flb_plg_error(ctx->ins, "Create callback failed");
         return -1;
     }
 
@@ -131,23 +227,6 @@ static int in_we_init(struct flb_input_instance *in,
         return -1;
     }
 
-    /*
-    {
-        struct mk_list *head;
-        struct flb_config_map_val *mv;
-        fflush(stdout);
-        flb_config_map_foreach(head, mv, ctx->collectors) {
-            if (!strncasecmp(mv->val.str, "cpu")) {
-                ctx->collectors
-            }
-            printf("[%s]\n", mv->val.str);
-        }
-
-        printf("%p\n", ctx->collectors);
-        exit(0);
-    }
-    */
-
     /* Create the collector */
     ret = flb_input_set_collector_time(in,
                                        cb_we_collect,
@@ -163,58 +242,113 @@ static int in_we_init(struct flb_input_instance *in,
 
     ctx->coll_fd = ret;
 
-    /* Initialize node metric collectors */
-    ret = we_cpu_init(ctx);
+    /* Check and initialize enabled metrics */
+    if (ctx->metrics) {
+        mk_list_foreach(head, ctx->metrics) {
+            entry = mk_list_entry(head, struct flb_slist_entry, _head);
+            ret = flb_callback_exists(ctx->callback, entry->str);
 
-    if (ret) {
-        return -1;
+            if (ret == FLB_FALSE) {
+                if (strncmp(entry->str, "cpu_info", 8) == 0) {
+                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                    metric_idx = 0;
+                    /* Initialize cpu info metric collectors */
+                    ret = we_wmi_cpu_info_init(ctx);
+                    if (ret) {
+                        return -1;
+                    }
+                }
+                else if (strncmp(entry->str, "cpu", 3) == 0) {
+                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                    metric_idx = 1;
+                    /* Initialize cpu metric collectors */
+                    ret = we_cpu_init(ctx);
+                    if (ret) {
+                        return -1;
+                    }
+                }
+                else if (strncmp(entry->str, "os", 2) == 0) {
+                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                    metric_idx = 2;
+                    /* Initialize os metric collectors */
+                    ret = we_os_init(ctx);
+                    if (ret) {
+                        return -1;
+                    }
+                }
+                else if (strncmp(entry->str, "net", 3) == 0) {
+                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                    metric_idx = 3;
+                    /* Initialize net metric collectors */
+                    ret = we_net_init(ctx);
+                    if (ret) {
+                        return -1;
+                    }
+                }
+                else if (strncmp(entry->str, "logical_disk", 12) == 0) {
+                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                    metric_idx = 4;
+                    /* Initialize logical_disk metric collectors */
+                    ret = we_logical_disk_init(ctx);
+                    if (ret) {
+                        return -1;
+                    }
+                }
+                else if (strncmp(entry->str, "cs", 2) == 0) {
+                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                    metric_idx = 5;
+                    /* Initialize cs metric collectors */
+                    ret = we_cs_init(ctx);
+                    if (ret) {
+                        return -1;
+                    }
+                }
+                else if (strncmp(entry->str, "thermalzone", 11) == 0) {
+                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                    metric_idx = 6;
+                    /* Initialize thermalzone metric collectors */
+                    ret = we_wmi_thermalzone_init(ctx);
+                    if (ret) {
+                        return -1;
+                    }
+                }
+                else if (strncmp(entry->str, "logon", 5) == 0) {
+                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                    metric_idx = 7;
+                    /* Initialize logon metric collectors */
+                    ret = we_wmi_logon_init(ctx);
+                    if (ret) {
+                        return -1;
+                    }
+                }
+                else if (strncmp(entry->str, "system", 6) == 0) {
+                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                    metric_idx = 8;
+                    /* Initialize system metric collectors */
+                    ret = we_wmi_system_init(ctx);
+                    if (ret) {
+                        return -1;
+                    }
+                }
+                else {
+                    flb_plg_warn(ctx->ins, "Unknown metrics: %s", entry->str);
+                    metric_idx = -1;
+                }
+
+                if (metric_idx >= 0) {
+                    cb = &ne_callbacks[metric_idx];
+                    ret = flb_callback_set(ctx->callback, cb->name, cb->func);
+                    if (ret == -1) {
+                        flb_plg_error(ctx->ins, "error setting up default "
+                                      "callback '%s'", cb->name);
+                    }
+                }
+            }
+        }
     }
+    else {
+        flb_plg_error(ctx->ins, "No metrics is specified");
 
-    /* Initialize os metric collectors */
-    ret = we_os_init(ctx);
-    if (ret) {
-        return -1;
-    }
-
-    /* Initialize net metric collectors */
-    ret = we_net_init(ctx);
-    if (ret) {
-        return -1;
-    }
-
-    /* Initialize logical_disk metric collectors */
-    ret = we_logical_disk_init(ctx);
-    if (ret) {
-        return -1;
-    }
-
-    /* Initialize cs metric collectors */
-    ret = we_cs_init(ctx);
-    if (ret) {
-        return -1;
-    }
-
-    /* Initialize thermalzone metric collectors */
-    ret = we_wmi_thermalzone_init(ctx);
-    if (ret) {
-        return -1;
-    }
-
-    /* Initialize cpu_info metric collectors */
-    ret = we_wmi_cpu_info_init(ctx);
-    if (ret) {
-        return -1;
-    }
-
-    /* Initialize logon metric collectors */
-    ret = we_wmi_logon_init(ctx);
-    if (ret) {
-        return -1;
-    }
-
-    /* Initialize system metric collectors */
-    ret = we_wmi_system_init(ctx);
-    if (ret) {
         return -1;
     }
 
@@ -223,20 +357,60 @@ static int in_we_init(struct flb_input_instance *in,
 
 static int in_we_exit(void *data, struct flb_config *config)
 {
+    int ret;
     struct flb_we* ctx = data;
+    struct mk_list *head;
+    struct flb_slist_entry *entry;
 
     if (data == NULL) {
         return 0;
     }
 
-    we_wmi_thermalzone_exit(ctx);
-    we_wmi_cpu_info_exit(ctx);
-    we_wmi_logon_exit(ctx);
-    we_wmi_system_exit(ctx);
-    we_os_exit(ctx);
-    we_net_exit(ctx);
-    we_logical_disk_exit(ctx);
-    we_cs_exit(ctx);
+        /* Teardown for callback tied up resources */
+    if (ctx->metrics) {
+        mk_list_foreach(head, ctx->metrics) {
+            entry = mk_list_entry(head, struct flb_slist_entry, _head);
+            ret = flb_callback_exists(ctx->callback, entry->str);
+
+            if (ret == FLB_TRUE) {
+                if (strncmp(entry->str, "cpu_info", 8) == 0) {
+                    we_wmi_cpu_info_exit(ctx);
+                }
+                else if (strncmp(entry->str, "cpu", 3) == 0) {
+                    /* nop */
+                }
+                else if (strncmp(entry->str, "os", 2) == 0) {
+                    we_os_exit(ctx);
+                }
+                else if (strncmp(entry->str, "net", 3) == 0) {
+                    we_net_exit(ctx);
+                }
+                else if (strncmp(entry->str, "logical_disk", 12) == 0) {
+                    we_logical_disk_exit(ctx);
+                }
+                else if (strncmp(entry->str, "cs", 2) == 0) {
+                    we_cs_exit(ctx);
+                }
+                else if (strncmp(entry->str, "thermalzone", 11) == 0) {
+                    we_wmi_thermalzone_exit(ctx);
+                }
+                else if (strncmp(entry->str, "logon", 5) == 0) {
+                    we_wmi_logon_exit(ctx);
+                }
+                else if (strncmp(entry->str, "system", 6) == 0) {
+                    we_wmi_system_exit(ctx);
+                }
+                else {
+                    flb_plg_warn(ctx->ins, "Unknown metrics: %s", entry->str);
+                }
+            }
+        }
+    }
+
+    /* destroy callback context */
+    if (ctx->callback) {
+        flb_callback_destroy(ctx->callback);
+    }
 
     flb_we_config_destroy(ctx);
 
@@ -272,6 +446,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "enable_collector", NULL,
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_we, collectors),
      "Collector to enable."
+    },
+    {
+     FLB_CONFIG_MAP_CLIST, "metrics",
+     "cpu,cpu_info,os,net,logical_disk,cs,thermalzone,logon,system",
+     0, FLB_TRUE, offsetof(struct flb_we, metrics),
+     "Comma separated list of keys to enable metrics."
     },
     {
      FLB_CONFIG_MAP_STR, "we.logical_disk.allow_disk_regex", "/.+/",
