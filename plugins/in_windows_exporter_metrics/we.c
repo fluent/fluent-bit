@@ -35,6 +35,96 @@
 #include "we_logical_disk.h"
 #include "we_cs.h"
 
+static int we_timer_cpu_metrics_cb(struct flb_input_instance *ins,
+                                   struct flb_config *config, void *in_context)
+{
+    struct flb_ne *ctx = in_context;
+
+    we_cpu_update(ctx);
+
+    return 0;
+}
+
+static int we_timer_os_metrics_cb(struct flb_input_instance *ins,
+                                  struct flb_config *config, void *in_context)
+{
+    struct flb_ne *ctx = in_context;
+
+    we_os_update(ctx);
+
+    return 0;
+}
+
+static int we_timer_net_metrics_cb(struct flb_input_instance *ins,
+                                   struct flb_config *config, void *in_context)
+{
+    struct flb_ne *ctx = in_context;
+
+    we_net_update(ctx);
+
+    return 0;
+}
+
+static int we_timer_logical_disk_metrics_cb(struct flb_input_instance *ins,
+                                            struct flb_config *config, void *in_context)
+{
+    struct flb_ne *ctx = in_context;
+
+    we_logical_disk_update(ctx);
+
+    return 0;
+}
+
+static int we_timer_cs_metrics_cb(struct flb_input_instance *ins,
+                                  struct flb_config *config, void *in_context)
+{
+    struct flb_ne *ctx = in_context;
+
+    we_cs_update(ctx);
+
+    return 0;
+}
+
+static int we_timer_wmi_thermalzone_metrics_cb(struct flb_input_instance *ins,
+                                               struct flb_config *config, void *in_context)
+{
+    struct flb_ne *ctx = in_context;
+
+    we_wmi_thermalzone_update(ctx);
+
+    return 0;
+}
+
+static int we_timer_wmi_cpu_info_metrics_cb(struct flb_input_instance *ins,
+                                            struct flb_config *config, void *in_context)
+{
+    struct flb_ne *ctx = in_context;
+
+    we_wmi_cpu_info_update(ctx);
+
+    return 0;
+}
+
+static int we_timer_wmi_logon_metrics_cb(struct flb_input_instance *ins,
+                                         struct flb_config *config, void *in_context)
+{
+    struct flb_ne *ctx = in_context;
+
+    we_wmi_logon_update(ctx);
+
+    return 0;
+}
+
+static int we_timer_wmi_system_metrics_cb(struct flb_input_instance *ins,
+                                          struct flb_config *config, void *in_context)
+{
+    struct flb_ne *ctx = in_context;
+
+    we_wmi_system_update(ctx);
+
+    return 0;
+}
+
 struct flb_we_callback {
     char *name;
     void (*func)(char *, void *, void *);
@@ -194,6 +284,17 @@ static int in_we_init(struct flb_input_instance *in,
         return -1;
     }
 
+    /* Initialize fds */
+    ctx->coll_cpu_fd = -1;
+    ctx->coll_net_fd = -1;
+    ctx->coll_logical_disk_fd = -1;
+    ctx->coll_cs_fd = -1;
+    ctx->coll_os_fd = -1;
+    ctx->coll_wmi_thermalzone_fd = -1;
+    ctx->coll_wmi_cpu_info_fd = -1;
+    ctx->coll_wmi_logon_fd = -1;
+    ctx->coll_wmi_system_fd = -1;
+
     ctx->callback = flb_callback_create(in->name);
     if (!ctx->callback) {
         flb_plg_error(ctx->ins, "Create callback failed");
@@ -250,26 +351,73 @@ static int in_we_init(struct flb_input_instance *in,
 
             if (ret == FLB_FALSE) {
                 if (strncmp(entry->str, "cpu_info", 8) == 0) {
-                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
-                    metric_idx = 0;
+                    if (ctx->wmi_cpu_info_scrape_interval == 0) {
+                        flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                        metric_idx = 0;
+                    }
+                    else {
+                        /* Create the cpu_info collector */
+                        ret = flb_input_set_collector_time(in,
+                                                           we_timer_wmi_cpu_info_metrics_cb,
+                                                           ctx->wmi_cpu_info_scrape_interval, 0,
+                                                           config);
+                        if (ret == -1) {
+                            flb_plg_error(ctx->ins,
+                                          "could not set cpu_info collector for Windows Exporter Metrics plugin");
+                            return -1;
+                        }
+                        ctx->coll_wmi_cpu_info_fd = ret;
+                    }
+
                     /* Initialize cpu info metric collectors */
                     ret = we_wmi_cpu_info_init(ctx);
-                    if (ret) {
+                    if (ret == -1) {
                         return -1;
                     }
                 }
                 else if (strncmp(entry->str, "cpu", 3) == 0) {
-                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
-                    metric_idx = 1;
+                    if (ctx->cpu_scrape_interval == 0) {
+                        flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                        metric_idx = 1;
+                    }
+                    else {
+                        /* Create the cpu collector */
+                        ret = flb_input_set_collector_time(in,
+                                                           we_timer_cpu_metrics_cb,
+                                                           ctx->cpu_scrape_interval, 0,
+                                                           config);
+                        if (ret == -1) {
+                            flb_plg_error(ctx->ins,
+                                          "could not set cpu collector for Windows Exporter Metrics plugin");
+                            return -1;
+                        }
+                        ctx->coll_cpu_fd = ret;
+                    }
+
                     /* Initialize cpu metric collectors */
                     ret = we_cpu_init(ctx);
-                    if (ret) {
+                    if (ret < 0) {
                         return -1;
                     }
                 }
                 else if (strncmp(entry->str, "os", 2) == 0) {
-                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
-                    metric_idx = 2;
+                    if (ctx->os_scrape_interval == 0) {
+                        flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                        metric_idx = 2;
+                    } else {
+                        /* Create the os collector */
+                        ret = flb_input_set_collector_time(in,
+                                                           we_timer_os_metrics_cb,
+                                                           ctx->os_scrape_interval, 0,
+                                                           config);
+                        if (ret == -1) {
+                            flb_plg_error(ctx->ins,
+                                          "could not set os collector for Windows Exporter Metrics plugin");
+                            return -1;
+                        }
+                        ctx->coll_os_fd = ret;
+                    }
+
                     /* Initialize os metric collectors */
                     ret = we_os_init(ctx);
                     if (ret) {
@@ -277,8 +425,24 @@ static int in_we_init(struct flb_input_instance *in,
                     }
                 }
                 else if (strncmp(entry->str, "net", 3) == 0) {
-                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
-                    metric_idx = 3;
+                    if (ctx->net_scrape_interval == 0) {
+                        flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                        metric_idx = 3;
+                    }
+                    else {
+                        /* Create the net collector */
+                        ret = flb_input_set_collector_time(in,
+                                                           we_timer_net_metrics_cb,
+                                                           ctx->net_scrape_interval, 0,
+                                                           config);
+                        if (ret == -1) {
+                            flb_plg_error(ctx->ins,
+                                          "could not set net collector for Windows Exporter Metrics plugin");
+                            return -1;
+                        }
+                        ctx->coll_net_fd = ret;
+                    }
+
                     /* Initialize net metric collectors */
                     ret = we_net_init(ctx);
                     if (ret) {
@@ -286,8 +450,24 @@ static int in_we_init(struct flb_input_instance *in,
                     }
                 }
                 else if (strncmp(entry->str, "logical_disk", 12) == 0) {
-                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
-                    metric_idx = 4;
+                    if (ctx->logical_disk_scrape_interval == 0) {
+                        flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                        metric_idx = 4;
+                    }
+                    else {
+                        /* Create the logical_disk collector */
+                        ret = flb_input_set_collector_time(in,
+                                                           we_timer_logical_disk_metrics_cb,
+                                                           ctx->logical_disk_scrape_interval, 0,
+                                                           config);
+                        if (ret == -1) {
+                            flb_plg_error(ctx->ins,
+                                          "could not set logical_disk collector for Windows Exporter Metrics plugin");
+                            return -1;
+                        }
+                        ctx->coll_logical_disk_fd = ret;
+                    }
+
                     /* Initialize logical_disk metric collectors */
                     ret = we_logical_disk_init(ctx);
                     if (ret) {
@@ -295,8 +475,23 @@ static int in_we_init(struct flb_input_instance *in,
                     }
                 }
                 else if (strncmp(entry->str, "cs", 2) == 0) {
-                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
-                    metric_idx = 5;
+                    if (ctx->cs_scrape_interval == 0) {
+                        flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                        metric_idx = 5;
+                    } else {
+                        /* Create the logical_disk collector */
+                        ret = flb_input_set_collector_time(in,
+                                                           we_timer_cs_metrics_cb,
+                                                           ctx->cs_scrape_interval, 0,
+                                                           config);
+                        if (ret == -1) {
+                            flb_plg_error(ctx->ins,
+                                          "could not set cs collector for Windows Exporter Metrics plugin");
+                            return -1;
+                        }
+                        ctx->coll_cs_fd = ret;
+                    }
+
                     /* Initialize cs metric collectors */
                     ret = we_cs_init(ctx);
                     if (ret) {
@@ -304,8 +499,24 @@ static int in_we_init(struct flb_input_instance *in,
                     }
                 }
                 else if (strncmp(entry->str, "thermalzone", 11) == 0) {
-                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
-                    metric_idx = 6;
+                    if (ctx->wmi_thermalzone_scrape_interval == 0) {
+                        flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                        metric_idx = 6;
+                    }
+                    else {
+                        /* Create the thermalzone collector */
+                        ret = flb_input_set_collector_time(in,
+                                                           we_timer_wmi_thermalzone_metrics_cb,
+                                                           ctx->wmi_thermalzone_scrape_interval, 0,
+                                                           config);
+                        if (ret == -1) {
+                            flb_plg_error(ctx->ins,
+                                          "could not set thermalzone collector for Windows Exporter Metrics plugin");
+                            return -1;
+                        }
+                        ctx->coll_wmi_thermalzone_fd = ret;
+                    }
+
                     /* Initialize thermalzone metric collectors */
                     ret = we_wmi_thermalzone_init(ctx);
                     if (ret) {
@@ -313,8 +524,24 @@ static int in_we_init(struct flb_input_instance *in,
                     }
                 }
                 else if (strncmp(entry->str, "logon", 5) == 0) {
-                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
-                    metric_idx = 7;
+                    if (ctx->wmi_logon_scrape_interval == 0) {
+                        flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                        metric_idx = 7;
+                    }
+                    else {
+                        /* Create the logon collector */
+                        ret = flb_input_set_collector_time(in,
+                                                           we_timer_wmi_logon_metrics_cb,
+                                                           ctx->wmi_logon_scrape_interval, 0,
+                                                           config);
+                        if (ret == -1) {
+                            flb_plg_error(ctx->ins,
+                                          "could not set thermalzone collector for Windows Exporter Metrics plugin");
+                            return -1;
+                        }
+                        ctx->coll_wmi_logon_fd = ret;
+                    }
+
                     /* Initialize logon metric collectors */
                     ret = we_wmi_logon_init(ctx);
                     if (ret) {
@@ -322,8 +549,24 @@ static int in_we_init(struct flb_input_instance *in,
                     }
                 }
                 else if (strncmp(entry->str, "system", 6) == 0) {
-                    flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
-                    metric_idx = 8;
+                    if (ctx->wmi_logon_scrape_interval == 0) {
+                        flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                        metric_idx = 8;
+                    }
+                    else {
+                        /* Create the logon collector */
+                        ret = flb_input_set_collector_time(in,
+                                                           we_timer_wmi_system_metrics_cb,
+                                                           ctx->wmi_system_scrape_interval, 0,
+                                                           config);
+                        if (ret == -1) {
+                            flb_plg_error(ctx->ins,
+                                          "could not set system collector for Windows Exporter Metrics plugin");
+                            return -1;
+                        }
+                        ctx->coll_wmi_system_fd = ret;
+                    }
+
                     /* Initialize system metric collectors */
                     ret = we_wmi_system_init(ctx);
                     if (ret) {
@@ -412,6 +655,32 @@ static int in_we_exit(void *data, struct flb_config *config)
         flb_callback_destroy(ctx->callback);
     }
 
+    /* Teardown for timer tied up resources */
+    if (ctx->coll_net_fd != -1) {
+        we_net_exit(ctx);
+    }
+    if (ctx->coll_logical_disk_fd != -1) {
+        we_logical_disk_exit(ctx);
+    }
+    if (ctx->coll_cs_fd != -1) {
+        we_cs_exit(ctx);
+    }
+    if (ctx->coll_os_fd != -1) {
+        we_os_exit(ctx);
+    }
+    if (ctx->coll_wmi_thermalzone_fd != -1) {
+        we_wmi_thermalzone_exit(ctx);
+    }
+    if (ctx->coll_wmi_cpu_info_fd != -1) {
+        we_wmi_cpu_info_exit(ctx);
+    }
+    if (ctx->coll_wmi_logon_fd != -1) {
+        we_wmi_logon_exit(ctx);
+    }
+    if (ctx->coll_wmi_system_fd != -1) {
+        we_wmi_system_exit(ctx);
+    }
+
     flb_we_config_destroy(ctx);
 
     return 0;
@@ -424,6 +693,33 @@ static void in_we_pause(void *data, struct flb_config *config)
     ctx = (struct flb_we *) data;
 
     flb_input_collector_pause(ctx->coll_fd, ctx->ins);
+    if (ctx->coll_cpu_fd != -1) {
+        flb_input_collector_pause(ctx->coll_cpu_fd, ctx->ins);
+    }
+    if (ctx->coll_net_fd != -1) {
+        flb_input_collector_pause(ctx->coll_net_fd, ctx->ins);
+    }
+    if (ctx->coll_logical_disk_fd != -1) {
+        flb_input_collector_pause(ctx->coll_logical_disk_fd, ctx->ins);
+    }
+    if (ctx->coll_cs_fd != -1) {
+        flb_input_collector_pause(ctx->coll_cs_fd, ctx->ins);
+    }
+    if (ctx->coll_os_fd != -1) {
+        flb_input_collector_pause(ctx->coll_os_fd, ctx->ins);
+    }
+    if (ctx->coll_wmi_thermalzone_fd != -1) {
+        flb_input_collector_pause(ctx->coll_wmi_thermalzone_fd, ctx->ins);
+    }
+    if (ctx->coll_wmi_cpu_info_fd != -1) {
+        flb_input_collector_pause(ctx->coll_wmi_cpu_info_fd, ctx->ins);
+    }
+    if (ctx->coll_wmi_logon_fd != -1) {
+        flb_input_collector_pause(ctx->coll_wmi_logon_fd, ctx->ins);
+    }
+    if (ctx->coll_wmi_system_fd != -1) {
+        flb_input_collector_pause(ctx->coll_wmi_system_fd, ctx->ins);
+    }
 }
 
 static void in_we_resume(void *data, struct flb_config *config)
@@ -433,6 +729,33 @@ static void in_we_resume(void *data, struct flb_config *config)
     ctx = (struct flb_we *) data;
 
     flb_input_collector_resume(ctx->coll_fd, ctx->ins);
+    if (ctx->coll_cpu_fd != -1) {
+        flb_input_collector_resume(ctx->coll_cpu_fd, ctx->ins);
+    }
+    if (ctx->coll_net_fd != -1) {
+        flb_input_collector_resume(ctx->coll_net_fd, ctx->ins);
+    }
+    if (ctx->coll_logical_disk_fd != -1) {
+        flb_input_collector_resume(ctx->coll_logical_disk_fd, ctx->ins);
+    }
+    if (ctx->coll_cs_fd != -1) {
+        flb_input_collector_resume(ctx->coll_cs_fd, ctx->ins);
+    }
+    if (ctx->coll_os_fd != -1) {
+        flb_input_collector_resume(ctx->coll_os_fd, ctx->ins);
+    }
+    if (ctx->coll_wmi_thermalzone_fd != -1) {
+        flb_input_collector_resume(ctx->coll_wmi_thermalzone_fd, ctx->ins);
+    }
+    if (ctx->coll_wmi_cpu_info_fd != -1) {
+        flb_input_collector_resume(ctx->coll_wmi_cpu_info_fd, ctx->ins);
+    }
+    if (ctx->coll_wmi_logon_fd != -1) {
+        flb_input_collector_resume(ctx->coll_wmi_logon_fd, ctx->ins);
+    }
+    if (ctx->coll_wmi_system_fd != -1) {
+        flb_input_collector_resume(ctx->coll_wmi_system_fd, ctx->ins);
+    }
 }
 
 /* Configuration properties map */
@@ -446,6 +769,57 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "enable_collector", NULL,
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_we, collectors),
      "Collector to enable."
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "collector.cpu.scrape_interval", "0",
+     0, FLB_TRUE, offsetof(struct flb_we, cpu_scrape_interval),
+     "scrape interval to collect cpu metrics from the node."
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "collector.net.scrape_interval", "0",
+     0, FLB_TRUE, offsetof(struct flb_we, net_scrape_interval),
+     "scrape interval to collect net metrics from the node."
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "collector.logical_disk.scrape_interval", "0",
+     0, FLB_TRUE, offsetof(struct flb_we, logical_disk_scrape_interval),
+     "scrape interval to collect logical_disk metrics from the node."
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "collector.cs.scrape_interval", "0",
+     0, FLB_TRUE, offsetof(struct flb_we, cs_scrape_interval),
+     "scrape interval to collect cs metrics from the node."
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "collector.os.scrape_interval", "0",
+     0, FLB_TRUE, offsetof(struct flb_we, os_scrape_interval),
+     "scrape interval to collect os metrics from the node."
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "collector.thermalzone.scrape_interval", "0",
+     0, FLB_TRUE, offsetof(struct flb_we, wmi_thermalzone_scrape_interval),
+     "scrape interval to collect thermalzone metrics from the node."
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "collector.cpu_info.scrape_interval", "0",
+     0, FLB_TRUE, offsetof(struct flb_we, wmi_cpu_info_scrape_interval),
+     "scrape interval to collect cpu_info metrics from the node."
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "collector.logon.scrape_interval", "0",
+     0, FLB_TRUE, offsetof(struct flb_we, wmi_logon_scrape_interval),
+     "scrape interval to collect logon metrics from the node."
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "collector.system.scrape_interval", "0",
+     0, FLB_TRUE, offsetof(struct flb_we, wmi_system_scrape_interval),
+     "scrape interval to collect system metrics from the node."
     },
     {
      FLB_CONFIG_MAP_CLIST, "metrics",
