@@ -193,6 +193,27 @@ struct flb_we {
     struct flb_callback *callback;                    /* metric callback */
     struct mk_list *metrics;                          /* enabled metrics */
 
+    /* Individual intervals for metrics */
+    int cpu_scrape_interval;
+    int net_scrape_interval;
+    int logical_disk_scrape_interval;
+    int cs_scrape_interval;
+    int os_scrape_interval;
+    int wmi_thermalzone_scrape_interval;
+    int wmi_cpu_info_scrape_interval;
+    int wmi_logon_scrape_interval;
+    int wmi_system_scrape_interval;
+
+    int coll_cpu_fd;                                    /* collector fd (cpu)    */
+    int coll_net_fd;                                    /* collector fd (net)  */
+    int coll_logical_disk_fd;                           /* collector fd (logical_disk) */
+    int coll_cs_fd;                                     /* collector fd (cs) */
+    int coll_os_fd;                                     /* collector fd (os)    */
+    int coll_wmi_thermalzone_fd;                        /* collector fd (wmi_thermalzone) */
+    int coll_wmi_cpu_info_fd;                           /* collector fd (wmi_cpu_info) */
+    int coll_wmi_logon_fd;                              /* collector fd (wmi_logon)    */
+    int coll_wmi_system_fd;                             /* collector fd (wmi_system)    */
+
     /*
      * Metrics Contexts
      * ----------------
