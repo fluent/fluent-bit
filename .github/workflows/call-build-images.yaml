@@ -114,7 +114,7 @@ jobs:
 
       - name: Build the production images
         id: build_push
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v4
         with:
           file: ./dockerfiles/Dockerfile
           context: .
@@ -139,7 +139,7 @@ jobs:
 
       - name: Build the debug multi-arch images
         id: debug_build_push
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v4
         with:
           file: ./dockerfiles/Dockerfile
           context: .
@@ -310,7 +310,7 @@ jobs:
           docker push ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }}
         
         # We cannot use this action as it requires privileged mode
-        # uses: docker/build-push-action@v3
+        # uses: docker/build-push-action@v4
         # with:
         #   file: ./dockerfiles/Dockerfile.windows
         #   context: .
