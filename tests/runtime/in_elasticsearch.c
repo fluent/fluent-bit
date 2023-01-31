@@ -101,7 +101,7 @@ static int cb_check_result_json(void *record, size_t size, void *data)
     return 0;
 }
 
-struct in_elasticsearch_client_ctx* in_elasticsearch_client_ctx_create()
+struct in_elasticsearch_client_ctx* in_elasticsearch_client_ctx_create(int port)
 {
     struct in_elasticsearch_client_ctx *ret_ctx = NULL;
     struct mk_event_loop *evl = NULL;
@@ -131,7 +131,7 @@ struct in_elasticsearch_client_ctx* in_elasticsearch_client_ctx_create()
         return NULL;
     }
 
-    ret_ctx->u = flb_upstream_create(ret_ctx->config, "127.0.0.1", 9880, 0, NULL);
+    ret_ctx->u = flb_upstream_create(ret_ctx->config, "127.0.0.1", port, 0, NULL);
     if (!TEST_CHECK(ret_ctx->u != NULL)) {
         TEST_MSG("flb_upstream_create failed");
         flb_config_exit(ret_ctx->config);
@@ -222,12 +222,21 @@ void flb_test_in_elasticsearch_version()
     size_t b_sent;
     char *expected = "\"version\":{\"number\":\"8.0.0\",\"build_flavor\"";
     char *buf = NULL;
+    int port = 9201;
+    char sport[16];
+
+    snprintf(sport, 16, "%d", port);
 
     ctx = test_ctx_create(&cb_data);
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
     }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "port", sport,
+                        NULL);
+    TEST_CHECK(ret == 0);
 
     ret = flb_output_set(ctx->flb, ctx->o_ffd,
                          "match", "*",
@@ -239,11 +248,11 @@ void flb_test_in_elasticsearch_version()
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
 
-    ctx->httpc = in_elasticsearch_client_ctx_create();
+    ctx->httpc = in_elasticsearch_client_ctx_create(port);
     TEST_CHECK(ctx->httpc != NULL);
 
     c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_GET, "/", NULL, 0,
-                        "127.0.0.1", 9880, NULL, 0);
+                        "127.0.0.1", port, NULL, 0);
     if (!TEST_CHECK(c != NULL)) {
         TEST_MSG("in_elasticsearch_client failed");
         exit(EXIT_FAILURE);
@@ -272,7 +281,7 @@ void flb_test_in_elasticsearch_version()
     test_ctx_destroy(ctx);
 }
 
-void flb_test_in_elasticsearch(char *write_op)
+void flb_test_in_elasticsearch(char *write_op, int port)
 {
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
@@ -282,9 +291,12 @@ void flb_test_in_elasticsearch(char *write_op)
     size_t b_sent;
     char buf[64];
     char expected[64];
+    char sport[16];
 
     snprintf(buf, 64,  "{\"%s\":{\"_index\":\"fluent-bit\",\"_id\":1}}\n{\"test\":\"msg\"}\n", write_op);
     snprintf(expected, 64, "\"@meta\":{\"%s\":{\"_index\":\"fluent-bit\",\"_id\":1}},\"test\":\"msg\"", write_op);
+
+    snprintf(sport, 16, "%d", port);
 
     clear_output_num();
 
@@ -297,6 +309,11 @@ void flb_test_in_elasticsearch(char *write_op)
         exit(EXIT_FAILURE);
     }
 
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "port", sport,
+                        NULL);
+    TEST_CHECK(ret == 0);
+
     ret = flb_output_set(ctx->flb, ctx->o_ffd,
                          "match", "*",
                          "format", "json",
@@ -307,11 +324,11 @@ void flb_test_in_elasticsearch(char *write_op)
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
 
-    ctx->httpc = in_elasticsearch_client_ctx_create();
+    ctx->httpc = in_elasticsearch_client_ctx_create(port);
     TEST_CHECK(ctx->httpc != NULL);
 
     c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/_bulk", buf, strlen(buf),
-                        "127.0.0.1", 9880, NULL, 0);
+                        "127.0.0.1", port, NULL, 0);
     ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE, strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
                               NDJSON_CONTENT_TYPE, strlen(NDJSON_CONTENT_TYPE));
     TEST_CHECK(ret == 0);
@@ -345,15 +362,15 @@ void flb_test_in_elasticsearch(char *write_op)
 
 void flb_test_in_elasticsearch_index_op()
 {
-    flb_test_in_elasticsearch("index");
+    flb_test_in_elasticsearch("index", 9202);
 }
 
 void flb_test_in_elasticsearch_create_op()
 {
-    flb_test_in_elasticsearch("create");
+    flb_test_in_elasticsearch("create", 9203);
 }
 
-void flb_test_in_elasticsearch_invalid(char *write_op, int status, char *expected_op)
+void flb_test_in_elasticsearch_invalid(char *write_op, int status, char *expected_op, int port)
 {
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
@@ -364,9 +381,12 @@ void flb_test_in_elasticsearch_invalid(char *write_op, int status, char *expecte
     char buf[64];
     char expected[64];
     char *ret_buf = NULL;
+    char sport[16];
 
     snprintf(buf, 64,  "{\"%s\":{\"_index\":\"fluent-bit\",\"_id\":1}}\n{\"test\":\"msg\"}\n", write_op);
     snprintf(expected, 64, "{\"%s\":{\"status\":%d", expected_op, status);
+
+    snprintf(sport, 16, "%d", port);
 
     clear_output_num();
 
@@ -379,6 +399,11 @@ void flb_test_in_elasticsearch_invalid(char *write_op, int status, char *expecte
         exit(EXIT_FAILURE);
     }
 
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "port", sport,
+                        NULL);
+    TEST_CHECK(ret == 0);
+
     ret = flb_output_set(ctx->flb, ctx->o_ffd,
                          "match", "*",
                          "format", "json",
@@ -389,11 +414,11 @@ void flb_test_in_elasticsearch_invalid(char *write_op, int status, char *expecte
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
 
-    ctx->httpc = in_elasticsearch_client_ctx_create();
+    ctx->httpc = in_elasticsearch_client_ctx_create(port);
     TEST_CHECK(ctx->httpc != NULL);
 
     c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/_bulk", buf, strlen(buf),
-                        "127.0.0.1", 9880, NULL, 0);
+                        "127.0.0.1", port, NULL, 0);
     ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE, strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
                               NDJSON_CONTENT_TYPE, strlen(NDJSON_CONTENT_TYPE));
     TEST_CHECK(ret == 0);
@@ -432,17 +457,17 @@ void flb_test_in_elasticsearch_invalid(char *write_op, int status, char *expecte
 
 void flb_test_in_elasticsearch_update_op()
 {
-    flb_test_in_elasticsearch_invalid("update", 403, "update");
+    flb_test_in_elasticsearch_invalid("update", 403, "update", 9204);
 }
 
 void flb_test_in_elasticsearch_delete_op()
 {
-    flb_test_in_elasticsearch_invalid("delete", 404, "delete");
+    flb_test_in_elasticsearch_invalid("delete", 404, "delete", 9205);
 }
 
 void flb_test_in_elasticsearch_nonexistent_op()
 {
-    flb_test_in_elasticsearch_invalid("nonexistent", 400, "unknown");
+    flb_test_in_elasticsearch_invalid("nonexistent", 400, "unknown", 9206);
 }
 
 void flb_test_in_elasticsearch_multi_ops()
@@ -452,11 +477,15 @@ void flb_test_in_elasticsearch_multi_ops()
     struct flb_http_client *c;
     int ret;
     int num;
+    int port = 9207;
+    char sport[16];
     size_t b_sent;
     char *buf = NDJSON_BULK;
     char *expected = ":{\"_index\":\"test\",\"_id\":";
     char *ret_buf = NULL;
     char *ret_expected = "{\"errors\":true,\"items\":[";
+
+    snprintf(sport, 16, "%d", port);
 
     clear_output_num();
 
@@ -469,6 +498,11 @@ void flb_test_in_elasticsearch_multi_ops()
         exit(EXIT_FAILURE);
     }
 
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "port", sport,
+                        NULL);
+    TEST_CHECK(ret == 0);
+
     ret = flb_output_set(ctx->flb, ctx->o_ffd,
                          "match", "*",
                          "format", "json",
@@ -479,11 +513,11 @@ void flb_test_in_elasticsearch_multi_ops()
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
 
-    ctx->httpc = in_elasticsearch_client_ctx_create();
+    ctx->httpc = in_elasticsearch_client_ctx_create(port);
     TEST_CHECK(ctx->httpc != NULL);
 
     c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/_bulk", buf, strlen(buf),
-                        "127.0.0.1", 9880, NULL, 0);
+                        "127.0.0.1", port, NULL, 0);
     ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE, strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
                               NDJSON_CONTENT_TYPE, strlen(NDJSON_CONTENT_TYPE));
     TEST_CHECK(ret == 0);
@@ -525,15 +559,24 @@ void flb_test_in_elasticsearch_node_info()
     struct test_ctx *ctx;
     struct flb_http_client *c;
     int ret;
+    int port = 9208;
+    char sport[16];
     size_t b_sent;
     char *expected = "{\"_nodes\":{\"total\":1,\"successful\":1,\"failed\":0},\"nodes\":{\"";
     char *buf = NULL;
+
+    snprintf(sport, 16, "%d", port);
 
     ctx = test_ctx_create(&cb_data);
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
     }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "port", sport,
+                        NULL);
+    TEST_CHECK(ret == 0);
 
     ret = flb_output_set(ctx->flb, ctx->o_ffd,
                          "match", "*",
@@ -545,11 +588,11 @@ void flb_test_in_elasticsearch_node_info()
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
 
-    ctx->httpc = in_elasticsearch_client_ctx_create();
+    ctx->httpc = in_elasticsearch_client_ctx_create(port);
     TEST_CHECK(ctx->httpc != NULL);
 
     c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_GET, "/_nodes/http", NULL, 0,
-                        "127.0.0.1", 9880, NULL, 0);
+                        "127.0.0.1", port, NULL, 0);
     if (!TEST_CHECK(c != NULL)) {
         TEST_MSG("in_elasticsearch_client failed");
         exit(EXIT_FAILURE);
@@ -586,8 +629,12 @@ void flb_test_in_elasticsearch_tag_key()
     int ret;
     int num;
     size_t b_sent;
+    int port = 9209;
+    char sport[16];
 
     char *buf = "{\"index\":{\"_index\":\"fluent-bit\"}}\n{\"test\":\"msg\",\"tag\":\"new_tag\"}\n";
+
+    snprintf(sport, 16, "%d", port);
 
     clear_output_num();
 
@@ -601,6 +648,7 @@ void flb_test_in_elasticsearch_tag_key()
     }
 
     ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "port", sport,
                         "tag_key", "tag",
                         NULL);
     TEST_CHECK(ret == 0);
@@ -615,11 +663,11 @@ void flb_test_in_elasticsearch_tag_key()
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
 
-    ctx->httpc = in_elasticsearch_client_ctx_create();
+    ctx->httpc = in_elasticsearch_client_ctx_create(port);
     TEST_CHECK(ctx->httpc != NULL);
 
     c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/_bulk", buf, strlen(buf),
-                        "127.0.0.1", 9880, NULL, 0);
+                        "127.0.0.1", port, NULL, 0);
     ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE, strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
                               NDJSON_CONTENT_TYPE, strlen(NDJSON_CONTENT_TYPE));
     TEST_CHECK(ret == 0);
