@@ -43,21 +43,30 @@ static int debug_event_mask(struct flb_tail_config *ctx,
                             uint32_t mask)
 {
     flb_sds_t buf;
+    int buf_size = 256;
 
     /* Only enter this function if debug mode is allowed */
     if (flb_log_check(FLB_LOG_DEBUG) == 0) {
         return 0;
     }
 
+    if (file) {
+        buf_size = file->name_len + 64;
+    }
+    
+    if (buf_size < 256) {
+        buf_size = 256;
+    }
+
     /* Create buffer */
-    buf = flb_sds_create_size(256);
+    buf = flb_sds_create_size(buf_size);
     if (!buf) {
         return -1;
     }
 
     /* Print info into sds */
     if (file) {
-        flb_sds_printf(&buf, "inode=%"PRIu64" events: ", file->inode);
+        flb_sds_printf(&buf, "inode=%"PRIu64", %s, events: ", file->name, file->inode);
     }
     else {
         flb_sds_printf(&buf, "events: ");
