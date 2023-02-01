@@ -41,6 +41,7 @@ struct flb_in_random_config {
 
     /* Internal */
     int              samples_count;
+    int              coll_fd;
 
     struct flb_input_instance *ins;
 };
@@ -144,8 +145,23 @@ static int in_random_init(struct flb_input_instance *in,
         flb_free(ctx);
         return -1;
     }
-
+    ctx->coll_fd = ret;
     return 0;
+}
+
+static void in_random_pause(void *data, struct flb_config *config)
+{
+    struct flb_in_random_config *ctx = data;
+
+    flb_input_collector_pause(ctx->coll_fd, ctx->ins);
+
+}
+
+static void in_random_resume(void *data, struct flb_config *config)
+{
+    struct flb_in_random_config *ctx = data;
+
+    flb_input_collector_resume(ctx->coll_fd, ctx->ins);
 }
 
 static int in_random_exit(void *data, struct flb_config *config)
@@ -193,6 +209,8 @@ struct flb_input_plugin in_random_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = in_random_collect,
     .cb_flush_buf = NULL,
+    .cb_pause     = in_random_pause,
+    .cb_resume    = in_random_resume,
     .cb_exit      = in_random_exit,
     .config_map   = config_map
 };

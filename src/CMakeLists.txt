@@ -71,6 +71,7 @@ set(src
   flb_event.c
   flb_base64.c
   flb_ring_buffer.c
+  flb_reload.c
   )
 
 # Config format
