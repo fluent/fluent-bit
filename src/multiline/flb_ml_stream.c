@@ -190,6 +190,7 @@ static struct flb_ml_stream *stream_create(uint64_t id,
     }
     stream->id = id;
     stream->parser = parser;
+    pthread_mutex_init(&stream->pth_mutex, NULL);
 
     /* Flush Callback and opaque data type */
     if (cb_flush) {

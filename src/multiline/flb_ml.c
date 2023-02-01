@@ -110,7 +110,7 @@ void flb_ml_flush_parser_instance(struct flb_ml *ml,
         if (stream_id != 0 && mst->id != stream_id) {
             continue;
         }
-
+        pthread_mutex_lock(&mst->pth_mutex);
         /* Iterate stream groups */
         mk_list_foreach(head_group, &mst->groups) {
             group = mk_list_entry(head_group, struct flb_ml_stream_group, _head);
@@ -118,6 +118,7 @@ void flb_ml_flush_parser_instance(struct flb_ml *ml,
             flb_ml_flush_stream_group(parser_i->ml_parser, mst, group, forced_flush);
             pthread_mutex_unlock(&group->pth_mutex);
         }
+        pthread_mutex_unlock(&mst->pth_mutex);
     }
 }
 
@@ -432,7 +433,9 @@ static int process_append(struct flb_ml_parser_ins *parser_i,
 
     /* Lookup the key */
     if (type == FLB_ML_TYPE_TEXT) {
+        pthread_mutex_lock(&mst->pth_mutex);
         ret = package_content(mst, NULL, buf, size, tm, NULL, NULL, NULL);
+        pthread_mutex_unlock(&mst->pth_mutex);
         if (ret == FLB_FALSE) {
             return -1;
         }
@@ -508,8 +511,10 @@ static int process_append(struct flb_ml_parser_ins *parser_i,
     }
 
     /* Package the content */
+    pthread_mutex_lock(&mst->pth_mutex);
     ret = package_content(mst, full_map, buf, size, tm,
                           val_content, val_pattern, val_group);
+    pthread_mutex_unlock(&mst->pth_mutex);
     if (unpacked) {
         msgpack_unpacked_destroy(&result);
     }

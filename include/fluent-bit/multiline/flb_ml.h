@@ -128,6 +128,8 @@ struct flb_ml_stream {
     /* reference to parent instance */
     struct flb_ml_parser_ins *parser;
 
+    pthread_mutex_t pth_mutex;
+
     struct mk_list _head;
 };
 
