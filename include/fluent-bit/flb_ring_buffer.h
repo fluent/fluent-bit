@@ -21,6 +21,7 @@
 #define FLB_RING_BUFFER_H
 
 #include <fluent-bit/flb_pipe.h>
+#include <fluent-bit/flb_pthread.h>
 
 struct flb_ring_buffer {
     void *ctx;                        /* pointer to backend context */
@@ -30,6 +31,7 @@ struct flb_ring_buffer {
     flb_pipefd_t signal_channels[2];  /* flush request signaling channel */
     uint64_t data_window;             /* 0% - 100% occupancy window flush request */
     uint64_t data_size;               /* ring buffer size */
+    pthread_mutex_t pth_mutex;        /* mutex */
     void *data_buf;                   /* ring buffer */
 };
 
