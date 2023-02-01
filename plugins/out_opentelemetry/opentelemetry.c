@@ -715,7 +715,7 @@ static int process_logs(struct flb_event_chunk *event_chunk,
     struct flb_time tm;
     int res = FLB_OK;
 
-    log_record_list = (Opentelemetry__Proto__Logs__V1__LogRecord *) flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Logs__V1__LogRecord *));
+    log_record_list = flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Logs__V1__LogRecord *));
     if (!log_record_list) {
         flb_errno();
         return -1;
@@ -728,7 +728,7 @@ static int process_logs(struct flb_event_chunk *event_chunk,
         return -1;
     }
 
-    log_bodies = (Opentelemetry__Proto__Common__V1__AnyValue *) flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Common__V1__AnyValue));
+    log_bodies = flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Common__V1__AnyValue));
     if (!log_bodies) {
         flb_free(log_record_list);
         flb_free(log_records);
@@ -761,10 +761,6 @@ static int process_logs(struct flb_event_chunk *event_chunk,
 
         /* unpack the array of [timestamp, map] */
         flb_time_pop_from_msgpack(&tm, &result, &obj);
-
-        if (obj->type != MSGPACK_OBJECT_MAP) {
-            continue;
-        }
 
         log_object = msgpack_object_to_otlp_any_value(obj);
 
