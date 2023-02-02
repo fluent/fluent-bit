@@ -34,7 +34,7 @@ struct test_ctx* test_ctx_create()
         return NULL;
     }
 
-    ret_ctx->u = flb_upstream_create(ret_ctx->config, "127.0.0.1", 80, 0, NULL);
+    ret_ctx->u = flb_upstream_create(ret_ctx->config, "127.0.0.1", 80, FLB_IO_TCP_KA, NULL);
     if (!TEST_CHECK(ret_ctx->u != NULL)) {
         TEST_MSG("flb_upstream_create failed");
         flb_config_exit(ret_ctx->config);
