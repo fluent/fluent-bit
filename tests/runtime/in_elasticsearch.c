@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_gzip.h>
 #include <monkey/mk_core.h>
 #include "flb_tests_runtime.h"
 
@@ -553,6 +554,99 @@ void flb_test_in_elasticsearch_multi_ops()
     test_ctx_destroy(ctx);
 }
 
+void flb_test_in_elasticsearch_multi_ops_gzip()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+    int ret;
+    int num;
+    int port = 9208;
+    char sport[16];
+    size_t b_sent;
+    char *buf = NDJSON_BULK;
+    char *expected = ":{\"_index\":\"test\",\"_id\":";
+    char *ret_buf = NULL;
+    char *ret_expected = "{\"errors\":true,\"items\":[";
+    void *final_data;
+    size_t final_bytes;
+
+    snprintf(sport, 16, "%d", port);
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = expected;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "port", sport,
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ctx->httpc = in_elasticsearch_client_ctx_create(port);
+    TEST_CHECK(ctx->httpc != NULL);
+
+    ret = flb_gzip_compress((void *) buf, strlen(buf), &final_data, &final_bytes);
+    TEST_CHECK(ret != -1);
+
+    c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/_bulk", final_data, final_bytes,
+                        "127.0.0.1", port, NULL, 0);
+    ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE, strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
+                              NDJSON_CONTENT_TYPE, strlen(NDJSON_CONTENT_TYPE));
+    TEST_CHECK(ret == 0);
+    /* Add Content-Encoding: gzip */
+    ret = flb_http_add_header(c, "Content-Encoding", 16, "gzip", 4);
+    TEST_CHECK(ret == 0);
+
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("in_elasticsearch_client failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_http_do(c, &b_sent);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("ret error. ret=%d\n", ret);
+    }
+    else if (!TEST_CHECK(b_sent > 0)){
+        TEST_MSG("b_sent size error. b_sent = %lu\n", b_sent);
+    }
+    else if (!TEST_CHECK(c->resp.status == 200)) {
+        TEST_MSG("http response code error. expect: 200, got: %d\n", c->resp.status);
+    }
+    flb_free(final_data);
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+    ret_buf = strstr(c->resp.payload, ret_expected);
+    if (!TEST_CHECK(ret_buf != NULL)) {
+      TEST_MSG("bulk request for multi write ops failed");
+    }
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(ctx->httpc->u_conn);
+    test_ctx_destroy(ctx);
+}
+
 void flb_test_in_elasticsearch_node_info()
 {
     struct flb_lib_out_cb cb_data;
@@ -707,6 +801,7 @@ TEST_LIST = {
     {"delete_op", flb_test_in_elasticsearch_delete_op},
     {"nonexistent_op", flb_test_in_elasticsearch_nonexistent_op},
     {"multi_ops", flb_test_in_elasticsearch_multi_ops},
+    {"multi_ops_gzip", flb_test_in_elasticsearch_multi_ops_gzip},
     {"node_info", flb_test_in_elasticsearch_node_info},
     {"tag_key", flb_test_in_elasticsearch_tag_key},
     {NULL, NULL}
