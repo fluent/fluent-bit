@@ -380,8 +380,10 @@ void flb_config_exit(struct flb_config *config)
     }
 
     /* Pipe */
-    if (config->ch_data[0]) {
+    if (config->ch_data[0 > 0]) {
         mk_event_closesocket(config->ch_data[0]);
+    }
+    if (config->ch_data[1] > 0) {
         mk_event_closesocket(config->ch_data[1]);
     }
 
