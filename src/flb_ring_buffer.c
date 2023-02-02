@@ -209,4 +209,9 @@ int flb_ring_buffer_read(struct flb_ring_buffer *rb, void *ptr, size_t size)
     return 0;
 }
 
-
+void flb_ring_buffer_set_flush_pending(struct flb_ring_buffer *rb, int bool_val)
+{
+    pthread_mutex_lock(&rb->pth_mutex);
+    rb->flush_pending = bool_val;
+    pthread_mutex_unlock(&rb->pth_mutex);
+}
