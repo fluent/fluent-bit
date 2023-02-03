@@ -15,4 +15,11 @@ set(src
   ne.c
   )
 
+if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+set(src
+    ${src}
+    ne_systemd.c
+   )
+endif()
+
 FLB_PLUGIN(in_node_exporter_metrics "${src}" "")

@@ -39,6 +39,7 @@
 #include "ne_loadavg.h"
 #include "ne_vmstat_linux.h"
 #include "ne_netdev.h"
+#include "ne_systemd.h"
 
 static void update_metrics(struct flb_input_instance *ins, struct flb_ne *ctx)
 {
@@ -56,6 +57,7 @@ static void update_metrics(struct flb_input_instance *ins, struct flb_ne *ctx)
     ne_vmstat_update(ctx);
     ne_netdev_update(ctx);
     ne_filefd_update(ctx);
+    ne_systemd_update(ctx);
 }
 
 /*
@@ -120,6 +122,7 @@ static int in_ne_init(struct flb_input_instance *in,
     ne_vmstat_init(ctx);
     ne_netdev_init(ctx);
     ne_filefd_init(ctx);
+    ne_systemd_init(ctx);
 
     return 0;
 }
@@ -137,9 +140,9 @@ static int in_ne_exit(void *data, struct flb_config *config)
     ne_meminfo_exit(ctx);
     ne_vmstat_exit(ctx);
     ne_netdev_exit(ctx);
+    ne_systemd_exit(ctx);
 
     flb_ne_config_destroy(ctx);
-
     return 0;
 }
 
@@ -175,6 +178,37 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "path.sysfs", "/sys",
      0, FLB_TRUE, offsetof(struct flb_ne, path_sysfs),
      "sysfs mount point"
+    },
+
+    /* Systemd specific settings */
+    {
+     FLB_CONFIG_MAP_BOOL, "systemd_service_restart_metrics", "false",
+     0, FLB_TRUE, offsetof(struct flb_ne, systemd_include_service_restarts),
+     "include systemd service restart metrics"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "systemd_unit_start_time_metrics", "false",
+     0, FLB_TRUE, offsetof(struct flb_ne, systemd_include_unit_start_times),
+     "include systemd unit start time metrics"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "systemd_include_service_task_metrics", "false",
+     0, FLB_TRUE, offsetof(struct flb_ne, systemd_include_service_task_metrics),
+     "include systemd service task metrics"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "systemd_include_pattern", NULL,
+     0, FLB_TRUE, offsetof(struct flb_ne, systemd_regex_include_list_text),
+     "include list regular expression"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "systemd_exclude_pattern", ".+\\.(automount|device|mount|scope|slice)",
+     0, FLB_TRUE, offsetof(struct flb_ne, systemd_regex_exclude_list_text),
+     "exclude list regular expression"
     },
 
     /* EOF */
