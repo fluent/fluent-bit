@@ -43,8 +43,8 @@ struct flb_in_elasticsearch *in_elasticsearch_config_create(struct flb_input_ins
         return NULL;
     }
 
-    /* Listen interface (if not set, defaults to 0.0.0.0:9880) */
-    flb_input_net_default_listener("0.0.0.0", 9880, ins);
+    /* Listen interface (if not set, defaults to 0.0.0.0:9200) */
+    flb_input_net_default_listener("0.0.0.0", 9200, ins);
 
     ctx->listen = flb_strdup(ins->host.listen);
     snprintf(port, sizeof(port) - 1, "%d", ins->host.port);
