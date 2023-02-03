@@ -1365,6 +1365,10 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
         flags |= FLB_IO_TCP_KA;
     }
 
+    if (ins->net_setup.keepalive == FLB_TRUE) {
+        flags |= FLB_IO_TCP_KA;
+    }
+
     /* Set flags */
     flb_stream_enable_flags(&u->base, flags);
 
