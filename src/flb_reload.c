@@ -18,12 +18,14 @@
  */
 
 
+#include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_lib.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_config_format.h>
+#include <fluent-bit/flb_utils.h>
 
 /*
  * Hot reload
@@ -37,27 +39,48 @@
 int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf)
 {
     int ret;
-    flb_sds_t path;
+    flb_sds_t file;
     struct flb_config *config = ctx->config;
     flb_ctx_t *ctx2;
+    struct flb_cf *cf2;
+
     flb_info("reloading instance pid=%lu tid=%i", getpid(), pthread_self());
 
     printf("[PRE STOP DUMP]\n");
     flb_cf_dump(config->cf_main);
 
-    path = flb_sds_create(config->conf_path_file);
+    file = flb_sds_create(config->conf_path_file);
 
     /* FIXME: validate incoming 'cf' is valid before stopping current service */
     flb_info("[reload] stop everything");
     flb_stop(ctx);
     flb_destroy(ctx);
 
-
     /* Create another instance */
     ctx2 = flb_create();
 
     config = ctx2->config;
-    flb_cf_create_from_file(config->cf_main, path);
+
+    /* Create another config format context */
+    if (file) {
+        cf2 = flb_cf_create_from_file(config->cf_main, file);
+    }
+
+    if (!cf2) {
+        flb_sds_destroy(file);
+
+        return -1;
+    }
+
+    ret = flb_config_load_config_format(config, cf2);
+    if (ret != 0) {
+        flb_sds_destroy(file);
+
+        return -1;
+    }
+
+    config->conf_path_file = file;
+    config->cf_main = cf2;
 
     /* FIXME: DEBUG */
     printf("[POS STOP DUMP]\n");

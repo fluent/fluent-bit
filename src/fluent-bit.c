@@ -590,9 +590,11 @@ static void flb_signal_handler(int signal)
         flb_dump(ctx->config);
         break;
     case SIGHUP:
+#ifndef FLB_HAVE_STATIC_CONF
         /* reload by using same config files/path */
         flb_reload(ctx, NULL);
         break;
+#endif
 #endif
     }
 }
