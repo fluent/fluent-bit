@@ -30,196 +30,124 @@
 #include <unistd.h>
 #include <float.h>
 
-#define KNOWN_FIELDS     17
-#define SECTOR_SIZE      512
-#define IGNORED_DEVICES  "^(ram|loop|fd|(h|s|v|xv)d[a-z]|nvme\\d+n\\d+p)\\d+$"
+#define SYSTEMD_UNIT_TYPE_UNDEFINED 0
+#define SYSTEMD_UNIT_TYPE_SERVICE   1
+#define SYSTEMD_UNIT_TYPE_SOCKET    2
+#define SYSTEMD_UNIT_TYPE_MOUNT     3
+#define SYSTEMD_UNIT_TYPE_TIMER     4
 
-int ne_systemd_init(struct flb_ne *ctx)
-{
-    int result;
+struct ne_systemd_unit {
+    char     *name;
+    char     *description;
+    char     *load_state;
+    char     *active_state;
+    char     *sub_state;
+    char     *followed;
+    char     *path;
+    uint32_t  job_id;
+    char     *job_type;
+    char     *object_path;
 
-    ctx->systemd_dbus_handle = NULL;
+    /* not part of the unit list result */
+    uint64_t  start_time;
+    int       unit_type;
+    char     *type;
 
-    result = sd_bus_open_system((sd_bus **) &ctx->systemd_dbus_handle);
+    /* services */
+    uint32_t  restart_count;
+    uint64_t  active_tasks;
+    uint64_t  max_tasks;
 
-    if (result < 0) {
-        return -1;
+    /* sockets */
+    uint32_t  accepted_connections;
+    uint32_t  active_connections;
+    uint32_t  refused_connections;
+
+    /* timers */
+    uint64_t  last_trigger_timestamp;
+};
+
+#define get_system_state(context, output_variable) \
+            get_system_property(context, NULL, "SystemState", \
+                                's', (void *) (output_variable))
+
+#define get_system_version(context, output_variable) \
+            get_system_property(context, NULL, "Version", \
+                                's', (void *) (output_variable))
+
+#define get_service_type(context, unit, output_variable) \
+            get_unit_property(context, unit, NULL, "Type", \
+                              's', (void *) (output_variable))
+
+#define get_service_active_tasks(context, unit, output_variable) \
+            get_unit_property(context, unit, NULL, "TasksCurrent", \
+                              't', (void *) (output_variable))
+
+#define get_service_max_tasks(context, unit, output_variable) \
+            get_unit_property(context, unit, NULL, "TasksMax", \
+                              't', (void *) (output_variable))
+
+#define get_service_restart_count(context, unit, output_variable) \
+            get_unit_property(context, unit, NULL, "NRestarts", \
+                              'u', (void *) (output_variable))
+
+#define get_socket_accepted_connection_count(context, unit, output_variable) \
+            get_unit_property(context, unit, NULL, "NAccepted", \
+                              'u', (void *) (output_variable))
+
+#define get_socket_active_connection_count(context, unit, output_variable) \
+            get_unit_property(context, unit, NULL, "NConnections", \
+                              'u', (void *) (output_variable))
+
+#define get_socket_refused_connection_count(context, unit, output_variable) \
+            get_unit_property(context, unit, NULL, "NRefused", \
+                              'u', (void *) (output_variable))
+
+#define get_timer_last_trigger_timestamp(context, unit, output_variable) \
+            get_unit_property(context, unit, NULL, "LastTriggerUSec", \
+                              't', (void *) (output_variable))
+
+#define get_unit_start_time(context, unit, output_variable) \
+            get_unit_property(context, \
+                              unit, \
+                              "org.freedesktop.systemd1.Unit", \
+                              "ActiveEnterTimestamp", \
+                              't', (void *) (output_variable))
+
+static int str_ends_with(char *haystack, char *needle, int caseless) {
+    size_t haystack_length;
+    size_t trailer_offset;
+    size_t needle_length;
+    int    result;
+
+    haystack_length = strlen(haystack);
+    needle_length = strlen(needle);
+
+    if (needle_length > haystack_length) {
+        return FLB_FALSE;
     }
 
-    ctx->systemd_socket_accepted_connections = cmt_gauge_create(ctx->cmt,
-                                                                "node",
-                                                                "systemd",
-                                                                "socket_accepted_connections_total",
-                                                                "Total number of accepted " \
-                                                                "socket connections.",
-                                                                1,
-                                                                (char *[]) {"name"});
+    trailer_offset = haystack_length - needle_length;
 
-    if (ctx->systemd_socket_accepted_connections == NULL) {
-        return -1;
+    if (caseless) {
+        result = strcasecmp(&haystack[trailer_offset],
+                            needle);
+    }
+    else {
+        result = strcmp(&haystack[trailer_offset],
+                        needle);
     }
 
-    ctx->systemd_socket_active_connections = cmt_gauge_create(ctx->cmt,
-                                                              "node",
-                                                              "systemd",
-                                                              "socket_current_connections",
-                                                              "Current number of socket " \
-                                                              "connections.",
-                                                              1,
-                                                              (char *[]) {"name"});
-
-    if (ctx->systemd_socket_active_connections == NULL) {
-        return -1;
+    if (result == 0) {
+        return FLB_TRUE;
     }
 
-    ctx->systemd_socket_refused_connections = cmt_gauge_create(ctx->cmt,
-                                                               "node",
-                                                               "systemd",
-                                                               "socket_refused_connections_total",
-                                                               "Total number of refused " \
-                                                               "socket connections.",
-                                                               1,
-                                                               (char *[]) {"name"});
-
-    if (ctx->systemd_socket_refused_connections == NULL) {
-        return -1;
-    }
-
-    ctx->systemd_system_running = cmt_gauge_create(ctx->cmt,
-                                                   "node",
-                                                   "systemd",
-                                                   "system_running",
-                                                   "Whether the system is " \
-                                                   "operational (see 'systemctl" \
-                                                   " is-system-running')",
-                                                   0, NULL);
-
-    if (ctx->systemd_system_running == NULL) {
-        return -1;
-    }
-
-    ctx->systemd_timer_last_trigger_seconds = cmt_gauge_create(ctx->cmt,
-                                                               "node",
-                                                               "systemd",
-                                                               "timer_last_trigger_seconds",
-                                                               "Seconds since epoch of " \
-                                                               "last trigger.",
-                                                               1,
-                                                               (char *[]) {"name"});
-
-    if (ctx->systemd_timer_last_trigger_seconds == NULL) {
-        return -1;
-    }
-
-    ctx->systemd_service_restarts = cmt_counter_create(ctx->cmt,
-                                                       "node",
-                                                       "systemd",
-                                                       "service_restart_total",
-                                                       "Service unit count of " \
-                                                       "Restart triggers",
-                                                       1, (char *[]) {"name"});
-
-    if (ctx->systemd_service_restarts == NULL) {
-        return -1;
-    }
-
-    cmt_counter_allow_reset(ctx->systemd_service_restarts);
-
-    ctx->systemd_unit_tasks = cmt_gauge_create(ctx->cmt,
-                                               "node",
-                                               "systemd",
-                                               "unit_tasks_current",
-                                               "Current number of tasks " \
-                                               "per Systemd unit.",
-                                               1, (char *[]) {"name"});
-
-    if (ctx->systemd_unit_tasks == NULL) {
-        return -1;
-    }
-
-    ctx->systemd_unit_tasks_max = cmt_gauge_create(ctx->cmt,
-                                                   "node",
-                                                   "systemd",
-                                                   "unit_tasks_max",
-                                                   "Maximum number of tasks " \
-                                                   "per Systemd unit.",
-                                                   1, (char *[]) {"name"});
-
-    if (ctx->systemd_unit_tasks == NULL) {
-        return -1;
-    }
-
-    ctx->systemd_unit_start_times = cmt_gauge_create(ctx->cmt,
-                                                     "node",
-                                                     "systemd",
-                                                     "unit_start_time_seconds",
-                                                     "Start time of the unit since " \
-                                                     "unix epoch in seconds.",
-                                                     1, (char *[]) {"name"});
-
-    if (ctx->systemd_unit_start_times == NULL) {
-        return -1;
-    }
-
-    ctx->systemd_unit_state = cmt_gauge_create(ctx->cmt,
-                                               "node",
-                                               "systemd",
-                                               "unit_state",
-                                               "Systemd unit",
-                                               3, (char *[]) {"name",
-                                                              "state",
-                                                              "type"});
-
-    if (ctx->systemd_unit_state == NULL) {
-        return -1;
-    }
-
-    ctx->systemd_units = cmt_gauge_create(ctx->cmt,
-                                          "node",
-                                          "systemd",
-                                          "units",
-                                          "Summary of systemd unit states",
-                                          1, (char *[]) {"state"});
-
-    if (ctx->systemd_units == NULL) {
-        return -1;
-    }
-
-    ctx->systemd_version = cmt_gauge_create(ctx->cmt,
-                                            "node",
-                                            "systemd",
-                                            "version",
-                                            "Detected systemd version",
-                                            1, (char *[]) {"version"});
-
-    if (ctx->systemd_version == NULL) {
-        return -1;
-    }
-
-    if (ctx->systemd_regex_include_list_text != NULL) {
-        ctx->systemd_regex_include_list = \
-            flb_regex_create(ctx->systemd_regex_include_list_text);
-
-        if (ctx->systemd_regex_include_list == NULL) {
-            return -1;
-        }
-    }
-
-    if (ctx->systemd_regex_exclude_list_text != NULL) {
-        ctx->systemd_regex_exclude_list = \
-            flb_regex_create(ctx->systemd_regex_exclude_list_text);
-
-        if (ctx->systemd_regex_exclude_list == NULL) {
-            return -1;
-        }
-    }
-
-    return 0;
+    return FLB_FALSE;
 }
+
 
 static void clear_property_variable(char property_type, void *property_value)
 {
-
     if (property_type == 'y') {
         *((uint8_t *) property_value) = 0;
     }
@@ -259,75 +187,6 @@ static void clear_property_variable(char property_type, void *property_value)
     else if (property_type == 'h') {
         *((int32_t *) property_value) = -1;
     }
-}
-
-
-#define SYSTEMD_UNIT_TYPE_UNDEFINED 0
-#define SYSTEMD_UNIT_TYPE_SERVICE   1
-#define SYSTEMD_UNIT_TYPE_SOCKET    2
-#define SYSTEMD_UNIT_TYPE_MOUNT     3
-#define SYSTEMD_UNIT_TYPE_TIMER     4
-
-struct ne_systemd_unit {
-    char     *name;
-    char     *description;
-    char     *load_state;
-    char     *active_state;
-    char     *sub_state;
-    char     *followed;
-    char     *path;
-    uint32_t  job_id;
-    char     *job_type;
-    char     *object_path;
-
-    /* Not part of the unit list result */
-    uint64_t  start_time;
-    int       unit_type;
-    char     *type;
-
-    /* services */
-    uint32_t  restart_count;
-    uint64_t  active_tasks;
-    uint64_t  max_tasks;
-
-    /* sockets */
-    uint32_t  accepted_connections;
-    uint32_t  active_connections;
-    uint32_t  refused_connections;
-
-    /* timers */
-    uint64_t  last_trigger_timestamp;
-};
-
-static int str_ends_with(char *haystack, char *needle, int caseless) {
-    size_t haystack_length;
-    size_t trailer_offset;
-    size_t needle_length;
-    int    result;
-
-    haystack_length = strlen(haystack);
-    needle_length = strlen(needle);
-
-    if (needle_length > haystack_length) {
-        return FLB_FALSE;
-    }
-
-    trailer_offset = haystack_length - needle_length;
-
-    if (caseless) {
-        result = strcasecmp(&haystack[trailer_offset],
-                            needle);
-    }
-    else {
-        result = strcmp(&haystack[trailer_offset],
-                        needle);
-    }
-
-    if (result == 0) {
-        return FLB_TRUE;
-    }
-
-    return FLB_FALSE;
 }
 
 static int get_system_property(struct flb_ne *ctx,
@@ -430,141 +289,6 @@ static int get_unit_property(struct flb_ne *ctx,
 
     return 0;
 }
-
-/*
-static char *get_unit_type(struct flb_ne *ctx,
-                           struct ne_systemd_unit *unit)
-{
-    const char *query_name;
-    char       *unit_type;
-    int         result;
-
-    unit_type = NULL;
-
-    if (unit->unit_type == SYSTEMD_UNIT_TYPE_SERVICE) {
-        query_name = "org.freedesktop.systemd1.Service";
-    }
-    else if (unit->unit_type == SYSTEMD_UNIT_TYPE_MOUNT) {
-        query_name = "org.freedesktop.systemd1.Mount";
-    }
-    else {
-        query_name = NULL;
-    }
-
-    if (query_name != NULL) {
-        result = sd_bus_get_property_string((sd_bus *) ctx->systemd_dbus_handle,
-                                            "org.freedesktop.systemd1",
-                                            unit->path,
-                                            query_name,
-                                            "Type",
-                                            NULL,
-                                            &unit_type);
-
-        if (result < 0) {
-            return NULL;
-        }
-    }
-
-    return unit_type;
-}
-
-static uint32_t get_service_restart_count(struct flb_ne *ctx,
-                                          struct ne_systemd_unit *unit)
-{
-    uint32_t propert_value;
-    int      result;
-
-    propert_value = 0;
-
-    if (unit->unit_type == SYSTEMD_UNIT_TYPE_SERVICE) {
-        result = sd_bus_get_property_trivial((sd_bus *) ctx->systemd_dbus_handle,
-                                             "org.freedesktop.systemd1",
-                                             unit->path,
-                                             "org.freedesktop.systemd1.Service",
-                                             "NRestarts",
-                                             NULL,
-                                             'u',
-                                             (void *) &propert_value);
-    }
-
-    return propert_value;
-}
-
-static int get_socket_property(struct flb_ne *ctx,
-                               struct ne_systemd_unit *unit,
-                               char *property_name,
-                               char property_type,
-                               void *property_value)
-{
-    int result;
-
-    clear_propert_variable(property_type, property_value);
-
-    if (unit->unit_type == SYSTEMD_UNIT_TYPE_SOCKET) {
-        result = sd_bus_get_property_trivial((sd_bus *) ctx->systemd_dbus_handle,
-                                             "org.freedesktop.systemd1",
-                                             unit->path,
-                                             "org.freedesktop.systemd1.Socket",
-                                             property_name,
-                                             NULL,
-                                             property_type,
-                                             property_value);
-
-        if (result < 0) {
-            return -1;
-        }
-    }
-
-    return 0;
-}
-*/
-
-#define get_system_state(context, output_variable) \
-            get_system_property(context, NULL, "SystemState", \
-                                's', (void *) (output_variable))
-
-#define get_system_version(context, output_variable) \
-            get_system_property(context, NULL, "Version", \
-                                's', (void *) (output_variable))
-
-#define get_service_type(context, unit, output_variable) \
-            get_unit_property(context, unit, NULL, "Type", \
-                              's', (void *) (output_variable))
-
-#define get_service_active_tasks(context, unit, output_variable) \
-            get_unit_property(context, unit, NULL, "TasksCurrent", \
-                              't', (void *) (output_variable))
-
-#define get_service_max_tasks(context, unit, output_variable) \
-            get_unit_property(context, unit, NULL, "TasksMax", \
-                              't', (void *) (output_variable))
-
-#define get_service_restart_count(context, unit, output_variable) \
-            get_unit_property(context, unit, NULL, "NRestarts", \
-                              'u', (void *) (output_variable))
-
-#define get_socket_accepted_connection_count(context, unit, output_variable) \
-            get_unit_property(context, unit, NULL, "NAccepted", \
-                              'u', (void *) (output_variable))
-
-#define get_socket_active_connection_count(context, unit, output_variable) \
-            get_unit_property(context, unit, NULL, "NConnections", \
-                              'u', (void *) (output_variable))
-
-#define get_socket_refused_connection_count(context, unit, output_variable) \
-            get_unit_property(context, unit, NULL, "NRefused", \
-                              'u', (void *) (output_variable))
-
-#define get_timer_last_trigger_timestamp(context, unit, output_variable) \
-            get_unit_property(context, unit, NULL, "LastTriggerUSec", \
-                              't', (void *) (output_variable))
-
-#define get_unit_start_time(context, unit, output_variable) \
-            get_unit_property(context, \
-                              unit, \
-                              "org.freedesktop.systemd1.Unit", \
-                              "ActiveEnterTimestamp", \
-                              't', (void *) (output_variable))
 
 static int ne_systemd_update_unit_state(struct flb_ne *ctx)
 {
@@ -928,6 +652,189 @@ static int ne_systemd_update_system_state(struct flb_ne *ctx)
                   0,
                   NULL);
     free(state);
+
+    return 0;
+}
+
+int ne_systemd_init(struct flb_ne *ctx)
+{
+    int result;
+
+    ctx->systemd_dbus_handle = NULL;
+
+    result = sd_bus_open_system((sd_bus **) &ctx->systemd_dbus_handle);
+
+    if (result < 0) {
+        return -1;
+    }
+
+    ctx->systemd_socket_accepted_connections = cmt_gauge_create(ctx->cmt,
+                                                                "node",
+                                                                "systemd",
+                                                                "socket_accepted_connections_total",
+                                                                "Total number of accepted " \
+                                                                "socket connections.",
+                                                                1,
+                                                                (char *[]) {"name"});
+
+    if (ctx->systemd_socket_accepted_connections == NULL) {
+        return -1;
+    }
+
+    ctx->systemd_socket_active_connections = cmt_gauge_create(ctx->cmt,
+                                                              "node",
+                                                              "systemd",
+                                                              "socket_current_connections",
+                                                              "Current number of socket " \
+                                                              "connections.",
+                                                              1,
+                                                              (char *[]) {"name"});
+
+    if (ctx->systemd_socket_active_connections == NULL) {
+        return -1;
+    }
+
+    ctx->systemd_socket_refused_connections = cmt_gauge_create(ctx->cmt,
+                                                               "node",
+                                                               "systemd",
+                                                               "socket_refused_connections_total",
+                                                               "Total number of refused " \
+                                                               "socket connections.",
+                                                               1,
+                                                               (char *[]) {"name"});
+
+    if (ctx->systemd_socket_refused_connections == NULL) {
+        return -1;
+    }
+
+    ctx->systemd_system_running = cmt_gauge_create(ctx->cmt,
+                                                   "node",
+                                                   "systemd",
+                                                   "system_running",
+                                                   "Whether the system is " \
+                                                   "operational (see 'systemctl" \
+                                                   " is-system-running')",
+                                                   0, NULL);
+
+    if (ctx->systemd_system_running == NULL) {
+        return -1;
+    }
+
+    ctx->systemd_timer_last_trigger_seconds = cmt_gauge_create(ctx->cmt,
+                                                               "node",
+                                                               "systemd",
+                                                               "timer_last_trigger_seconds",
+                                                               "Seconds since epoch of " \
+                                                               "last trigger.",
+                                                               1,
+                                                               (char *[]) {"name"});
+
+    if (ctx->systemd_timer_last_trigger_seconds == NULL) {
+        return -1;
+    }
+
+    ctx->systemd_service_restarts = cmt_counter_create(ctx->cmt,
+                                                       "node",
+                                                       "systemd",
+                                                       "service_restart_total",
+                                                       "Service unit count of " \
+                                                       "Restart triggers",
+                                                       1, (char *[]) {"name"});
+
+    if (ctx->systemd_service_restarts == NULL) {
+        return -1;
+    }
+
+    cmt_counter_allow_reset(ctx->systemd_service_restarts);
+
+    ctx->systemd_unit_tasks = cmt_gauge_create(ctx->cmt,
+                                               "node",
+                                               "systemd",
+                                               "unit_tasks_current",
+                                               "Current number of tasks " \
+                                               "per Systemd unit.",
+                                               1, (char *[]) {"name"});
+
+    if (ctx->systemd_unit_tasks == NULL) {
+        return -1;
+    }
+
+    ctx->systemd_unit_tasks_max = cmt_gauge_create(ctx->cmt,
+                                                   "node",
+                                                   "systemd",
+                                                   "unit_tasks_max",
+                                                   "Maximum number of tasks " \
+                                                   "per Systemd unit.",
+                                                   1, (char *[]) {"name"});
+
+    if (ctx->systemd_unit_tasks == NULL) {
+        return -1;
+    }
+
+    ctx->systemd_unit_start_times = cmt_gauge_create(ctx->cmt,
+                                                     "node",
+                                                     "systemd",
+                                                     "unit_start_time_seconds",
+                                                     "Start time of the unit since " \
+                                                     "unix epoch in seconds.",
+                                                     1, (char *[]) {"name"});
+
+    if (ctx->systemd_unit_start_times == NULL) {
+        return -1;
+    }
+
+    ctx->systemd_unit_state = cmt_gauge_create(ctx->cmt,
+                                               "node",
+                                               "systemd",
+                                               "unit_state",
+                                               "Systemd unit",
+                                               3, (char *[]) {"name",
+                                                              "state",
+                                                              "type"});
+
+    if (ctx->systemd_unit_state == NULL) {
+        return -1;
+    }
+
+    ctx->systemd_units = cmt_gauge_create(ctx->cmt,
+                                          "node",
+                                          "systemd",
+                                          "units",
+                                          "Summary of systemd unit states",
+                                          1, (char *[]) {"state"});
+
+    if (ctx->systemd_units == NULL) {
+        return -1;
+    }
+
+    ctx->systemd_version = cmt_gauge_create(ctx->cmt,
+                                            "node",
+                                            "systemd",
+                                            "version",
+                                            "Detected systemd version",
+                                            1, (char *[]) {"version"});
+
+    if (ctx->systemd_version == NULL) {
+        return -1;
+    }
+
+    if (ctx->systemd_regex_include_list_text != NULL) {
+        ctx->systemd_regex_include_list = \
+            flb_regex_create(ctx->systemd_regex_include_list_text);
+
+        if (ctx->systemd_regex_include_list == NULL) {
+            return -1;
+        }
+    }
+
+    if (ctx->systemd_regex_exclude_list_text != NULL) {
+        ctx->systemd_regex_exclude_list = \
+            flb_regex_create(ctx->systemd_regex_exclude_list_text);
+
+        if (ctx->systemd_regex_exclude_list == NULL) {
+            return -1;
+        }
+    }
 
     return 0;
 }
