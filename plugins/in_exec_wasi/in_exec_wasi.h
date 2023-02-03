@@ -49,6 +49,7 @@ struct flb_exec_wasi {
     int interval_sec;
     int interval_nsec;
     struct flb_log_event_encoder log_encoder;
+    int coll_fd;
 };
 
 #endif /* FLB_IN_EXEC_WASI_H */

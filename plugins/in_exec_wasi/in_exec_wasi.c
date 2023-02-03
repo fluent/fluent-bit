@@ -289,7 +289,11 @@ static int in_exec_wasi_init(struct flb_input_instance *in,
     if (!ctx) {
         return -1;
     }
+    ctx->parser = NULL;
     ctx->parser_name = NULL;
+    ctx->wasm = NULL;
+    ctx->wasi_path = NULL;
+    ctx->oneshot = FLB_FALSE;
 
     /* Initialize exec config */
     ret = in_exec_wasi_config_read(ctx, in, config);
@@ -330,6 +334,7 @@ static int in_exec_wasi_init(struct flb_input_instance *in,
         flb_plg_error(in, "could not set collector for exec input plugin");
         goto init_error;
     }
+    ctx->coll_fd = ret;
 
     return 0;
 
@@ -337,6 +342,20 @@ static int in_exec_wasi_init(struct flb_input_instance *in,
     delete_exec_wasi_config(ctx);
 
     return -1;
+}
+
+static void in_exec_wasi_pause(void *data, struct flb_config *config)
+{
+    struct flb_exec_wasi *ctx = data;
+
+    flb_input_collector_pause(ctx->coll_fd, ctx->ins);
+}
+
+static void in_exec_wasi_resume(void *data, struct flb_config *config)
+{
+    struct flb_exec_wasi *ctx = data;
+
+    flb_input_collector_resume(ctx->coll_fd, ctx->ins);
 }
 
 static int in_exec_wasi_prerun(struct flb_input_instance *ins,
@@ -416,6 +435,8 @@ struct flb_input_plugin in_exec_wasi_plugin = {
     .description  = "Exec WASI Input",
     .cb_init      = in_exec_wasi_init,
     .cb_pre_run   = in_exec_wasi_prerun,
+    .cb_pause     = in_exec_wasi_pause,
+    .cb_resume    = in_exec_wasi_resume,
     .cb_collect   = in_exec_wasi_collect,
     .cb_flush_buf = NULL,
     .cb_exit      = in_exec_wasi_exit,
