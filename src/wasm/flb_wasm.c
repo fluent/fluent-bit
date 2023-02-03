@@ -104,6 +104,8 @@ struct flb_wasm *flb_wasm_instantiate(struct flb_config *config, const char *was
         flb_errno();
         return NULL;
     }
+    fw->tag_buffer = 0;
+    fw->record_buffer = 0;
 
 #if WASM_ENABLE_LIBC_WASI != 0
     wasi_dir_list = flb_malloc(sizeof(char *) * accessible_dir_list_size);
@@ -264,10 +266,10 @@ int flb_wasm_call_wasi_main(struct flb_wasm *fw)
 
 void flb_wasm_buffer_free(struct flb_wasm *fw)
 {
-    if (fw->tag_buffer) {
+    if (fw->tag_buffer != 0) {
         wasm_runtime_module_free(fw->module_inst, fw->tag_buffer);
     }
-    if (fw->record_buffer) {
+    if (fw->record_buffer != 0) {
         wasm_runtime_module_free(fw->module_inst, fw->record_buffer);
     }
 }
