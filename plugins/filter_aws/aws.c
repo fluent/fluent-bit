@@ -39,6 +39,7 @@
 #include <msgpack.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <string.h>
 
 #include "aws.h"
 
@@ -251,6 +252,10 @@ void flb_filter_aws_tags_destroy(struct flb_filter_aws *ctx)
         flb_free(ctx->tag_values_len);
     }
     ctx->tag_values_len = NULL;
+    if (ctx->tag_is_enabled) {
+        flb_free(ctx->tag_is_enabled);
+    }
+    ctx->tag_is_enabled = NULL;
     ctx->tags_count = 0;
 }
 
@@ -349,9 +354,6 @@ static int get_ec2_tag_keys(struct flb_filter_aws *ctx)
             tag_key = tags_list + tag_start;
             memcpy(ctx->tag_keys[tag_index], tag_key, tag_key_len);
 
-            flb_plg_debug(ctx->ins, "tag found: %s (len=%zu)", ctx->tag_keys[tag_index],
-                          tag_key_len);
-
             tag_index++;
             tag_start = tag_end + 1;
         }
@@ -429,8 +431,135 @@ static int get_ec2_tag_values(struct flb_filter_aws *ctx)
     return 0;
 }
 
+static int tag_is_present_in_list(struct flb_filter_aws *ctx, flb_sds_t tag,
+        flb_sds_t *tags, int tags_n)
+{
+    int i;
+    for (i = 0; i < tags_n; i++) {
+        if (strcmp(tag, tags[i]) == 0) {
+            return FLB_TRUE;
+        }
+    }
+    return FLB_FALSE;
+}
+
+static int tags_split(char *tags, flb_sds_t **tags_list, int *tags_list_n) {
+    flb_sds_t token;
+    int i;
+    int n;
+    n = 1;
+    for (i = 0; i < strlen(tags); i++) {
+        if (tags[i] == ',') {
+            n++;
+        }
+    }
+
+    *tags_list = flb_calloc(sizeof(flb_sds_t), n);
+    if (*tags_list == NULL) {
+        return -2;
+    }
+
+    token = strtok(tags, ",");
+    i = 0;
+    while (token != NULL) {
+        (*tags_list)[i] = token;
+        i++;
+        token = strtok(NULL, ",");
+    }
+
+    *tags_list_n = n;
+
+    return 0;
+}
+
+static int get_ec2_tag_enabled(struct flb_filter_aws *ctx)
+{
+    const char *tags_include;
+    const char *tags_exclude;
+    char *tags_copy;
+    flb_sds_t *tags;
+    int tags_n;
+    int i;
+    int tag_present;
+    int result;
+
+    /* if there are no tags, there is no need to evaluate which tag is enabled */
+    if (ctx->tags_count == 0) {
+        return 0;
+    }
+
+
+    /* allocate memory for 'tag_is_enabled' for all tags */
+    ctx->tag_is_enabled = flb_calloc(ctx->tags_count, sizeof(int));
+    if (!ctx->tag_is_enabled) {
+        flb_plg_error(ctx->ins, "Failed to allocate memory for tag_is_enabled");
+        return -1;
+    }
+
+    /* if tags_include and tags_exclude are not defined, set all tags as enabled */
+    for (i = 0; i < ctx->tags_count; i++) {
+        ctx->tag_is_enabled[i] = FLB_TRUE;
+    }
+
+    /* apply tags_included configuration */
+    tags_include = flb_filter_get_property("tags_include", ctx->ins);
+    if (tags_include) {
+        /* copy const string in order to use strtok which modifes the string */
+        tags_copy = flb_strdup(tags_include);
+        if (!tags_copy) {
+            return -1;
+        }
+        result = tags_split(tags_copy, &tags, &tags_n);
+        if (result < 0) {
+            free(tags_copy);
+            return result;
+        }
+        for (i = 0; i < ctx->tags_count; i++) {
+            tag_present = tag_is_present_in_list(ctx, ctx->tag_keys[i], tags, tags_n);
+            /* tag is enabled if present in included list */
+            ctx->tag_is_enabled[i] = tag_present;
+        }
+        free(tags_copy);
+        free(tags);
+    }
+
+    /* apply tags_excluded configuration, only if tags_included is not defined */
+    tags_exclude = flb_filter_get_property("tags_exclude", ctx->ins);
+    if (tags_include && tags_exclude) {
+        flb_plg_warn(ctx->ins, "specyfing tags_include and tags_exclude at the same time"
+                " is invalid, ignoring tags_exclude");
+    }
+    if (!tags_include && tags_exclude) {
+        /* copy const string in order to use strtok which modifes the string */
+        tags_copy = flb_strdup(tags_exclude);
+        if (!tags_copy) {
+            return -1;
+        }
+        result = tags_split(tags_copy, &tags, &tags_n);
+        if (result < 0) {
+            free(tags_copy);
+            return result;
+        }
+        for (i = 0; i < ctx->tags_count; i++) {
+            tag_present = tag_is_present_in_list(ctx, ctx->tag_keys[i], tags, tags_n);
+            if (tag_present == FLB_TRUE) {
+                /* tag is excluded, so should be disabled */
+                ctx->tag_is_enabled[i] = FLB_FALSE;
+            } else {
+                /* tag is not excluded, therefore should be enabled */
+                ctx->tag_is_enabled[i] = FLB_TRUE;
+            }
+        }
+        free(tags_copy);
+        free(tags);
+    }
+
+    return 0;
+}
+
 static int get_ec2_tags(struct flb_filter_aws *ctx)
 {
+    int i;
     int ret;
 
     ctx->tags_fetched = FLB_FALSE;
@@ -457,6 +586,18 @@ static int get_ec2_tags(struct flb_filter_aws *ctx)
         return ret;
     }
 
+    ret = get_ec2_tag_enabled(ctx);
+    if (ret < 0) {
+        flb_filter_aws_tags_destroy(ctx);
+        return ret;
+    }
+
+    /* log tags debug information */
+    for (i = 0; i < ctx->tags_count; i++) {
+        flb_plg_debug(ctx->ins, "found tag %s which is included=%d",
+                ctx->tag_keys[i], ctx->tag_is_enabled[i]);
+    }
+
     ctx->tags_fetched = FLB_TRUE;
     return 0;
 }
@@ -468,6 +609,7 @@ static int get_ec2_tags(struct flb_filter_aws *ctx)
 static int get_ec2_metadata(struct flb_filter_aws *ctx)
 {
     int ret;
+    int i;
 
     if (ctx->instance_id_include && !ctx->instance_id) {
         ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_INSTANCE_ID_PATH,
@@ -555,12 +697,16 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
         ctx->new_keys++;
     }
 
-    if (ctx->tags_include && !ctx->tags_fetched) {
+    if (ctx->tags_enabled && !ctx->tags_fetched) {
         ret = get_ec2_tags(ctx);
         if (ret < 0) {
             return -1;
         }
-        ctx->new_keys += ctx->tags_count;
+        for (i = 0; i < ctx->tags_count; i++) {
+            if (ctx->tag_is_enabled[i] == FLB_TRUE) {
+                ctx->new_keys++;
+            }
+        }
     }
 
     ctx->metadata_retrieved = FLB_TRUE;
@@ -719,17 +865,19 @@ static int cb_aws_filter(const void *data, size_t bytes,
                                                ctx->hostname_len));
         }
 
-        if (ctx->tags_include && ctx->tags_fetched) {
+        if (ctx->tags_enabled && ctx->tags_fetched) {
             for (i = 0;
                  i < ctx->tags_count &&
                  ret == FLB_EVENT_ENCODER_SUCCESS;
                  i++) {
-                ret = flb_log_event_encoder_append_body_values(
-                        &log_encoder,
-                        FLB_LOG_EVENT_STRING_VALUE(ctx->tag_keys[i],
-                                                   ctx->tag_keys_len[i]),
-                        FLB_LOG_EVENT_STRING_VALUE(ctx->tag_values[i],
-                                                   ctx->tag_values_len[i]));
+                if (ctx->tag_is_enabled[i] == FLB_TRUE) {
+                    ret = flb_log_event_encoder_append_body_values(
+                            &log_encoder,
+                            FLB_LOG_EVENT_STRING_VALUE(ctx->tag_keys[i],
+                                                       ctx->tag_keys_len[i]),
+                            FLB_LOG_EVENT_STRING_VALUE(ctx->tag_values[i],
+                                                       ctx->tag_values_len[i]));
+                }
             }
         }
 
@@ -877,8 +1025,25 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_BOOL, "tags_enabled", "false",
-     0, FLB_TRUE, offsetof(struct flb_filter_aws, tags_include),
-     "Enable EC2 instance tags"
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, tags_enabled),
+     "Enable EC2 instance tags, "
+     "injects all tags if tags_include and tags_exclude are empty"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "tags_include", "",
+     0, FLB_FALSE, 0,
+     "Defines list of specific EC2 tag keys to inject into the logs; "
+     "tag keys must be separated by \",\" character; "
+     "tags which are not present in this list will be ignored; "
+     "e.g.: \"Name,tag1,tag2\""
+    },
+    {
+     FLB_CONFIG_MAP_STR, "tags_exclude", "",
+     0, FLB_FALSE, 0,
+     "Defines list of specific EC2 tag keys not to inject into the logs; "
+     "tag keys must be separated by \",\" character; "
+     "if both tags_include and tags_exclude are specified, configuration is invalid"
+     " and plugin fails"
     },
     {0}
 };
