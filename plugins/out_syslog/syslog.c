@@ -357,7 +357,8 @@ static flb_sds_t syslog_rfc3164 (flb_sds_t *s, struct flb_time *tms,
     return *s;
 }
 
-static flb_sds_t msgpack_to_sd(flb_sds_t *s, const char *sd, int sd_len,
+static flb_sds_t msgpack_to_sd(struct flb_syslog *ctx,
+                               flb_sds_t *s, const char *sd, int sd_len,
                                msgpack_object *o)
 {
     flb_sds_t tmp;
@@ -379,7 +380,17 @@ static flb_sds_t msgpack_to_sd(flb_sds_t *s, const char *sd, int sd_len,
     *s = tmp;
 
     start_len = flb_sds_len(*s);
-    tmp = flb_sds_cat(*s, sd, sd_len > 32 ? 32 : sd_len);
+    if (ctx->allow_longer_sd_id != FLB_TRUE && sd_len > 32) {
+        /*
+         * RFC5424 defines
+         *   SD-NAME         = 1*32PRINTUSASCII
+         *                     ; except '=', SP, ']', %d34 (")
+         *
+         * https://www.rfc-editor.org/rfc/rfc5424#section-6
+         */
+        sd_len = 32;
+    }
+    tmp = flb_sds_cat(*s, sd, sd_len);
     if (!tmp) {
         return NULL;
     }
@@ -459,7 +470,18 @@ static flb_sds_t msgpack_to_sd(flb_sds_t *s, const char *sd, int sd_len,
             *s = tmp;
 
             start_len = flb_sds_len(*s);
-            tmp = flb_sds_cat(*s, key, key_len > 32 ? 32 : key_len);
+            if (ctx->allow_longer_sd_id != FLB_TRUE && key_len > 32 ) {
+                /*
+                 * RFC5424 defines
+                 *   PARAM-NAME      = SD-NAME
+                 *   SD-NAME         = 1*32PRINTUSASCII
+                 *                     ; except '=', SP, ']', %d34 (")
+                 *
+                 * https://www.rfc-editor.org/rfc/rfc5424#section-6
+                 */
+                key_len = 32;
+            }
+            tmp = flb_sds_cat(*s, key, key_len);
             if (!tmp) {
                 return NULL;
             }
@@ -544,7 +566,7 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
                     flb_config_map_foreach(head, mv, ctx->sd_keys) {
                         if ((key_len == flb_sds_len(mv->val.str)) &&
                             strncmp(key, mv->val.str, flb_sds_len(mv->val.str)) == 0) {
-                            msgpack_to_sd(&(msg->sd), key, key_len, v);
+                            msgpack_to_sd(ctx, &(msg->sd), key, key_len, v);
                             break;
                         }
                     }
@@ -1117,6 +1139,13 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_syslog, message_key),
      "Specify the key name that contains the message to deliver. Note that if "
      "this property is mandatory, otherwise the message will be empty."
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "allow_longer_sd_id", "false",
+     0, FLB_TRUE, offsetof(struct flb_syslog, allow_longer_sd_id),
+     "If true, Fluent-bit allows SD-ID that is longer than 32 characters. "
+     "Such long SD-ID violates RFC 5424."
     },
 
     /* EOF */

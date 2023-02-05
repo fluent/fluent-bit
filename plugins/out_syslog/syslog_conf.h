@@ -46,6 +46,7 @@ struct flb_syslog {
     flb_sds_t procid_key;
     flb_sds_t msgid_key;
     struct mk_list *sd_keys;
+    int allow_longer_sd_id;
     flb_sds_t message_key;
 
     /* Preset */
