@@ -294,6 +294,40 @@ jobs:
         AWS_REGION: "us-east-1"
       shell: bash
 
+    - name: Provide output for documentation PR
+      run: |
+          export WIN_32_EXE_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win32.exe.sha256"|awk '{print $1}')
+          export WIN_32_ZIP_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win32.zip.sha256"|awk '{print $1}')
+          export WIN_64_EXE_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win64.exe.sha256"|awk '{print $1}')
+          export WIN_64_ZIP_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win64.zip.sha256"|awk '{print $1}')
+          cat > windows-part.md < EOF
+          ## Installation Packages
+
+          The latest stable version is ${{ inputs.version }}, each version is available on the Github release as well as at `https://releases.fluentbit.io/<Major Version>/fluent-bit-<Full Version>-win[32|64].[exe|zip]`:
+
+          | INSTALLERS                                                                                       | SHA256 CHECKSUMS                                                 |
+          | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+          | [fluent-bit-${{ inputs.version }}-win32.exe](https://releases.fluentbit.io/${{ needs.staging-release-version-check.outputs.major-version }}/fluent-bit-${{ inputs.version }}-win32.exe) | [$WIN_32_EXE_HASH](https://releases.fluentbit.io/2.0/fluent-bit-${{ inputs.version }}-win32.exe.sha256) |
+          | [fluent-bit-${{ inputs.version }}-win32.zip](https://releases.fluentbit.io/${{ needs.staging-release-version-check.outputs.major-version }}/fluent-bit-${{ inputs.version }}-win32.zip) | [$WIN_32_ZIP_HASH](https://releases.fluentbit.io/2.0/fluent-bit-${{ inputs.version }}-win32.zip.sha256) |
+          | [fluent-bit-${{ inputs.version }}-win64.exe](https://releases.fluentbit.io/${{ needs.staging-release-version-check.outputs.major-version }}/fluent-bit-${{ inputs.version }}-win64.exe) | [$WIN_64_EXE_HASH](https://releases.fluentbit.io/2.0/fluent-bit-${{ inputs.version }}-win64.exe.sha256) |
+          | [fluent-bit-${{ inputs.version }}-win64.zip](https://releases.fluentbit.io/${{ needs.staging-release-version-check.outputs.major-version }}/fluent-bit-${{ inputs.version }}-win64.zip) | [$WIN_64_ZIP_HASH](https://releases.fluentbit.io/2.0/fluent-bit-${{ inputs.version }}-win64.zip.sha256) |
+
+          To check the integrity, use `Get-FileHash` cmdlet on PowerShell.
+
+          ```powershell
+          PS> Get-FileHash fluent-bit-${{ inputs.version }}-win32.exe
+          ```
+          EOF
+      shell: bash
+      env:
+        BASE_DIR: ${{ needs.staging-release-version-check.outputs.major-version }}
+
+    - name: Upload Windows docs
+      uses: actions/upload-artifact@v3
+      with:
+        name: windows-part
+        path: windows-part.md
+
   # Simple skopeo copy jobs to transfer image from staging to release registry with optional GPG key signing.
   # Unfortunately skopeo currently does not support Cosign: https://github.com/containers/skopeo/issues/1533
   staging-release-images:
@@ -638,10 +672,68 @@ jobs:
 
       - name: Release 2.0 and latest
         uses: softprops/action-gh-release@v1
-        if: startsWith(inputs.version, '2.0')
+        if: startsWith(inputs.version, '2.')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
           draft: false
           generate_release_notes: false
           name: "Fluent Bit ${{ inputs.version }}"
           tag_name: v${{ inputs.version }}
+
+  staging-release-create-docs-pr:
+    name: Create docs updates for new release
+    needs: 
+      - staging-release-images
+      - staging-release-source-s3
+    permissions:
+      contents: none
+    environment: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Release 1.9 - not latest
+        if: startsWith(inputs.version, '1.9')
+        uses: actions/checkout@v3
+        with:
+          repo: fluent/fluent-bit-docs
+          ref: 1.9
+
+      - name: Release 2.0 and latest
+        if: startsWith(inputs.version, '2.')
+        uses: actions/checkout@v3
+        with:
+          repo: fluent/fluent-bit-docs
+
+      - name: Update container tags
+        run: |
+          sed -i -e '/| Tag(s).*$/a | ${{ inputs.version }}-debug | x86\_64, arm64v8, arm32v7 | Release [v${{ inputs.version }}](https://fluentbit.io/announcements/v${{ inputs.version }}/) |' installation/docker.md
+          sed -i -e '/| Tag(s).*$/a | ${{ inputs.version }} | x86\_64, arm64v8, arm32v7 | Debug images |' installation/docker.md
+        shell: bash
+
+      - name: Download Windows part
+        uses: actions/download-artifact@v3
+        with:
+          name: windows-part
+
+      - name: Update Windows version
+        run: |
+          # Remove old info
+          sed -i '/## Installation Packages/,/## Installing from ZIP archive/{//p;d;}' installation/windows.md
+          # Add new info (from previous job) at the end for simplicity
+          cat windows-part.md >> installation/windows.md
+        shell: bash
+
+      - name: Raise docs PR
+        uses: peter-evans/create-pull-request@v4
+        with:
+          commit-message: 'release: update to v${{ inputs.version }}'
+          signoff: true
+          delete-branch: true
+          title: 'release: update to v${{ inputs.version }}'
+          # We need workflows permission so have to use the CI_PAT
+          token: ${{ secrets.CI_PAT }}
+          labels: ci,automerge
+          body: |
+            Update release ${{ inputs.version }} version.
+            - Created by ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            - Auto-generated by create-pull-request: https://github.com/peter-evans/create-pull-request
+          draft: false
