@@ -268,7 +268,7 @@ jobs:
           context: .
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          platforms: linux/amd64, linux/arm64, linux/arm/v7
+          platforms: linux/amd64, linux/arm64, linux/arm/v7, linux/ppc64le
           target: production
           push: true
           load: false
@@ -292,7 +292,7 @@ jobs:
           context: .
           tags: ${{ steps.debug-meta.outputs.tags }}
           labels: ${{ steps.debug-meta.outputs.labels }}
-          platforms: linux/amd64, linux/arm64, linux/arm/v7
+          platforms: linux/amd64, linux/arm64, linux/arm/v7, linux/ppc64le
           target: debug
           push: true
           load: false
