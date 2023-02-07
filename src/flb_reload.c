@@ -39,17 +39,20 @@
 int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf)
 {
     int ret;
-    flb_sds_t file;
-    struct flb_config *config = ctx->config;
-    flb_ctx_t *ctx2;
-    struct flb_cf *cf2;
+    flb_sds_t file = NULL;
+    struct flb_config *old_config = ctx->config;
+    struct flb_config *new_config;
+    flb_ctx_t *new_ctx;
+    struct flb_cf *new_cf;
 
     flb_info("reloading instance pid=%lu tid=%i", getpid(), pthread_self());
 
     printf("[PRE STOP DUMP]\n");
-    flb_cf_dump(config->cf_main);
+    flb_cf_dump(old_config->cf_main);
 
-    file = flb_sds_create(config->conf_path_file);
+    if (old_config->conf_path_file) {
+        file = flb_sds_create(old_config->conf_path_file);
+    }
 
     /* FIXME: validate incoming 'cf' is valid before stopping current service */
     flb_info("[reload] stop everything");
@@ -57,40 +60,43 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf)
     flb_destroy(ctx);
 
     /* Create another instance */
-    ctx2 = flb_create();
+    new_ctx = flb_create();
 
-    config = ctx2->config;
+    new_config = new_ctx->config;
+    new_cf = new_config->cf_main;
 
     /* Create another config format context */
-    if (file) {
-        cf2 = flb_cf_create_from_file(config->cf_main, file);
+    if (file != NULL) {
+        new_cf = flb_cf_create_from_file(new_config->cf_main, file);
+
+        if (!new_cf) {
+            flb_sds_destroy(file);
+
+            return -1;
+        }
+
+        ret = flb_config_load_config_format(new_config, new_cf);
+        if (ret != 0) {
+            flb_sds_destroy(file);
+
+            return -1;
+        }
     }
 
-    if (!cf2) {
-        flb_sds_destroy(file);
-
-        return -1;
+    if (file != NULL) {
+        new_config->conf_path_file = file;
     }
-
-    ret = flb_config_load_config_format(config, cf2);
-    if (ret != 0) {
-        flb_sds_destroy(file);
-
-        return -1;
-    }
-
-    config->conf_path_file = file;
-    config->cf_main = cf2;
+    new_config->cf_main = new_cf;
 
     /* FIXME: DEBUG */
     printf("[POS STOP DUMP]\n");
-    flb_cf_dump(config->cf_main);
+    flb_cf_dump(new_config->cf_main);
     flb_info("[reload] start everything");
 
-    ret = flb_start(ctx2);
+    ret = flb_start(new_ctx);
 
 
-    printf("reload ctx2 flb_start() => %i\n", ret);
+    printf("reload new_ctx flb_start() => %i\n", ret);
 
     return 0;
 }
