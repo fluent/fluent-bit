@@ -530,7 +530,7 @@ static int parser_conf_file(const char *cfg, struct flb_cf *cf,
                       name, cfg);
             goto fconf_early_error;
         }
-        
+
         /* skip_empty_values */
         skip_empty = FLB_TRUE;
         tmp_str = get_parser_key(config, cf, s, "skip_empty_values");
@@ -757,6 +757,7 @@ static int multiline_parser_conf_file(const char *cfg, struct flb_cf *cf,
     flb_sds_t parser;
     flb_sds_t tmp;
     int flush_timeout;
+    int max_lines;
     struct flb_parser *parser_ctx = NULL;
     struct mk_list *head;
     struct flb_cf_section *s;
@@ -770,6 +771,7 @@ static int multiline_parser_conf_file(const char *cfg, struct flb_cf *cf,
         match_string = NULL;
         negate = FLB_FALSE;
         key_content = NULL;
+        max_lines = 100;
         key_pattern = NULL;
         key_group = NULL;
         parser = NULL;
@@ -812,6 +814,9 @@ static int multiline_parser_conf_file(const char *cfg, struct flb_cf *cf,
 
         /* key_content */
         key_content = get_parser_key(config, cf, s, "key_content");
+
+        /* key_content */
+        max_lines = get_parser_key(config, cf, s, "max_lines");
 
         /* key_pattern */
         key_pattern = get_parser_key(config, cf, s, "key_pattern");

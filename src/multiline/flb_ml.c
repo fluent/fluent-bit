@@ -222,6 +222,8 @@ static int package_content(struct flb_ml_stream *mst,
     struct flb_ml_parser_ins *parser_i;
     struct flb_ml_stream_group *stream_group;
 
+    flb_info("Maximum number of lines is %d", mst->parser->max_lines);
+
     parser_i = mst->parser;
     parser = parser_i->ml_parser;
 
@@ -293,6 +295,9 @@ static int package_content(struct flb_ml_stream *mst,
             else {
                 flb_sds_cat_safe(&stream_group->buf, buf_data, buf_size);
             }
+
+            stream_group->counter_lines++;
+            flb_info("Count of line is %d", stream_group->counter_lines);
 
             /* on ENDSWITH mode, a rule match means flush the content */
             if (rule_match) {

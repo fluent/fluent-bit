@@ -151,6 +151,14 @@ struct flb_ml_parser {
     flb_sds_t key_content;
 
     /*
+     * The 'key' name that contains the multiline message. For REGEX, ENDSWITH and
+     * EQ types, the conditions are applied to 'key_content' unless 'key_pattern'
+     * is set, on that case 'key_content' is used as a raw buffer and appended
+     * as part of the multiline message.
+     */
+    flb_sds_t max_lines;
+
+    /*
      * Optional: define a 'key' name that matches the pattern to decide if the
      * line is complete or a continuation.
      *
@@ -211,6 +219,13 @@ struct flb_ml_parser_ins {
     flb_sds_t key_content;
     flb_sds_t key_pattern;
     flb_sds_t key_group;
+    /*
+     * The 'key' name that contains the multiline message. For REGEX, ENDSWITH and
+     * EQ types, the conditions are applied to 'key_content' unless 'key_pattern'
+     * is set, on that case 'key_content' is used as a raw buffer and appended
+     * as part of the multiline message.
+     */
+    flb_sds_t max_lines;
 
     /*
      * last stream_id and last_stream_group: keeping a reference of the last

@@ -263,6 +263,12 @@ int flb_ml_parser_instance_set(struct flb_ml_parser_ins *p, char *prop, char *va
         }
         p->key_group = flb_sds_create(val);
     }
+    else if (strcasecmp(prop, "max_lines") == 0) {
+        if (p->max_lines) {
+            flb_sds_destroy(p->max_lines);
+        }
+        p->max_lines = flb_sds_create(val);
+    }
     else {
         return -1;
     }
