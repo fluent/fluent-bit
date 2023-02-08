@@ -70,8 +70,6 @@ extern void win32_started(void);
 
 flb_ctx_t *ctx;
 struct flb_config *config;
-/* Handle config format context from command line */
-struct flb_cf *cf_opts;
 volatile sig_atomic_t exit_signal = 0;
 volatile sig_atomic_t flb_bin_restarting = 0;
 
@@ -502,6 +500,7 @@ static void flb_signal_exit(int signal)
     time_t now;
     struct tm *cur;
     flb_ctx_t *ctx = flb_context_get();
+    struct flb_cf *cf_opts = flb_cf_context_get();
 
     now = time(NULL);
     cur = localtime(&now);
@@ -536,7 +535,9 @@ static void flb_signal_exit(int signal)
     case SIGQUIT:
     case SIGHUP:
 #endif
-        flb_cf_destroy(cf_opts);
+        if (cf_opts != NULL) {
+            flb_cf_destroy(cf_opts);
+        }
         flb_stop(ctx);
         flb_destroy(ctx);
         _exit(EXIT_SUCCESS);
@@ -553,6 +554,7 @@ static void flb_signal_handler(int signal)
     time_t now;
     struct tm *cur;
     flb_ctx_t *ctx = flb_context_get();
+    struct flb_cf *cf_opts = flb_cf_context_get();
 
     now = time(NULL);
     cur = localtime(&now);
@@ -732,6 +734,7 @@ int flb_main(int argc, char **argv)
     struct flb_cf_section *service;
     struct flb_cf_section *s;
     struct flb_cf_section *section;
+    struct flb_cf *cf_opts;
 
     prog_name = argv[0];
 
@@ -1087,6 +1090,9 @@ int flb_main(int argc, char **argv)
         return ret;
     }
 
+    /* Store the current config format context from command line */
+    flb_cf_context_set(cf_opts);
+
     /*
      * Always re-set the original context that was started, note that during a flb_start() a 'reload' could happen so the context
      * will be different. Use flb_context_get() to get the current context.
@@ -1108,7 +1114,11 @@ int flb_main(int argc, char **argv)
     }
     ret = config->exit_status_code;
 
-    flb_cf_destroy(cf_opts);
+    cf_opts = flb_cf_context_get();
+
+    if (cf_opts != NULL) {
+        flb_cf_destroy(cf_opts);
+    }
     flb_stop(ctx);
     flb_destroy(ctx);
 
