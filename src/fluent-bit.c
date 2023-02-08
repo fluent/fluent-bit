@@ -1070,6 +1070,7 @@ int flb_main(int argc, char **argv)
     if (config->dry_run == FLB_TRUE) {
         fprintf(stderr, "configuration test is successful\n");
         flb_cf_destroy(cf_opts);
+        flb_destroy(ctx);
         exit(EXIT_SUCCESS);
     }
 
