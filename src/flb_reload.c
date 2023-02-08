@@ -93,14 +93,14 @@ static int recreate_cf_section(struct flb_cf_section *s, struct flb_cf *cf)
     return 0;
 }
 
-static int flb_reload_reconstruct_cf(struct flb_cf *old_cf, struct flb_cf *new_cf)
+int flb_reload_reconstruct_cf(struct flb_cf *src_cf, struct flb_cf *dest_cf)
 {
     struct mk_list *head;
     struct flb_cf_section *s;
 
-    mk_list_foreach(head, &old_cf->sections) {
+    mk_list_foreach(head, &src_cf->sections) {
         s = mk_list_entry(head, struct flb_cf_section, _head);
-        if (recreate_cf_section(s, new_cf) != 0) {
+        if (recreate_cf_section(s, dest_cf) != 0) {
             return -1;
         }
     }
@@ -108,7 +108,7 @@ static int flb_reload_reconstruct_cf(struct flb_cf *old_cf, struct flb_cf *new_c
     return 0;
 }
 
-int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf)
+int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 {
     int ret;
     flb_sds_t file = NULL;
@@ -136,10 +136,10 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf)
     if (old_config->conf_path_file) {
         file = flb_sds_create(old_config->conf_path_file);
     }
-    else {
+    if (cf_opts != NULL) {
         /* FIXME: How to handle when specifying conf file and
          * arguments case? */
-        if (flb_reload_reconstruct_cf(old_config->cf_main, new_cf) != 0) {
+        if (flb_reload_reconstruct_cf(cf_opts, new_cf) != 0) {
             flb_error("[reload] reconstruct cf failed");
             return -1;
         }
