@@ -131,6 +131,8 @@ static inline void flb_task_users_release(struct flb_task *task)
     flb_debug("Should destroy? task.users: %d - task.retries: %d - task: %p. Task id: %d", task->users, mk_list_size(&task->retries), task, task->id);
     if (task->users == 0 && mk_list_size(&task->retries) == 0) {
         flb_task_destroy(task, FLB_TRUE);
+    } else {
+        flb_debug("Chunk will not be deleted because of pending retry. Task: %p - Task id: %d", task, task->id);
     }
 }
 
