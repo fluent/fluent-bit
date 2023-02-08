@@ -516,8 +516,8 @@ static inline void print_chunk_error(struct flb_output_instance *ins,
     out_coro = (struct flb_output_coro *) coro->data;
     task = out_coro->task;
 
-    flb_plg_error(ctx->ins, "could not process chunk '%s'",
-                  flb_input_chunk_get_name(task->ic));
+    flb_plg_error(ctx->ins, "could not process chunk '%s'. Task: %p. Task id: %d",
+                  flb_input_chunk_get_name(task->ic), task, task->id);
 }
 
 static void cb_splunk_flush(const void *data, size_t bytes,
