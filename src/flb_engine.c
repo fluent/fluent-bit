@@ -274,11 +274,11 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
 #endif
             /* Notify about this failed retry */
             flb_warn("[engine] chunk '%s' cannot be retried: "
-                     "task_id=%i, input=%s > output=%s",
+                     "task_id=%i, input=%s > output=%s, task: %s",
                      flb_input_chunk_get_name(task->ic),
                      task_id,
                      flb_input_name(task->i_ins),
-                     flb_output_name(ins));
+                     flb_output_name(ins), task);
 
             flb_task_users_dec(task, FLB_TRUE);
             return 0;
@@ -329,8 +329,9 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
         }
     }
     else if (ret == FLB_ERROR) {
-        flb_error("[engine] output '%s' could not process chunk '%s'. Chunk will not be retried.",
-                  flb_output_name(ins), flb_input_chunk_get_name(task->ic));
+        flb_error("[engine] output '%s' could not process chunk '%s'. Chunk will not be retried. Task: %s",
+              flb_output_name(ins), flb_input_chunk_get_name(task->ic), task);
+
 
         /* cmetrics */
         cmt_counter_inc(ins->cmt_errors, ts, 1, (char *[]) {name});
