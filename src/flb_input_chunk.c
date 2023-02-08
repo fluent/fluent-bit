@@ -930,7 +930,7 @@ int flb_input_chunk_destroy_corrupted(struct flb_input_chunk *ic, int del)
                 FS_CHUNK_SIZE_DEBUG_MOD(o_ins, ic, -bytes);
                 o_ins->fs_chunks_size -= bytes;
                 flb_debug("[input chunk] remove chunk %s with %ld bytes from plugin %s, "
-                          "the updated fs_chunks_size is %ld bytes. Task: %s", flb_input_chunk_get_name(ic),
+                          "the updated fs_chunks_size is %ld bytes. Task: %p", flb_input_chunk_get_name(ic),
                           bytes, o_ins->name, o_ins->fs_chunks_size, ic->task);
             }
         }
@@ -988,7 +988,7 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
                 FS_CHUNK_SIZE_DEBUG_MOD(o_ins, ic, -bytes);
                 o_ins->fs_chunks_size -= bytes;
                 flb_debug("[input chunk] remove chunk %s with %ld bytes from plugin %s, "
-                          "the updated fs_chunks_size is %ld bytes. Task: %s", flb_input_chunk_get_name(ic),
+                          "the updated fs_chunks_size is %ld bytes. Task: %p", flb_input_chunk_get_name(ic),
                           bytes, o_ins->name, o_ins->fs_chunks_size, ic->task);
             }
         }

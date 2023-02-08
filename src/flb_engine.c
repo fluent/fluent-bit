@@ -274,7 +274,7 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
 #endif
             /* Notify about this failed retry */
             flb_warn("[engine] chunk '%s' cannot be retried: "
-                     "task_id=%i, input=%s > output=%s, task: %s",
+                     "task_id=%i, input=%s > output=%s, task: %p",
                      flb_input_chunk_get_name(task->ic),
                      task_id,
                      flb_input_name(task->i_ins),
@@ -329,7 +329,7 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
         }
     }
     else if (ret == FLB_ERROR) {
-        flb_error("[engine] output '%s' could not process chunk '%s'. Chunk will not be retried. Task: %s",
+        flb_error("[engine] output '%s' could not process chunk '%s'. Chunk will not be retried. Task: %p",
               flb_output_name(ins), flb_input_chunk_get_name(task->ic), task);
 
 

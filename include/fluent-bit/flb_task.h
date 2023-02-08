@@ -129,7 +129,7 @@ struct flb_task *flb_task_chunk_create(uint64_t ref_id,
 static inline void flb_task_users_release(struct flb_task *task)
 {
     if (task->users == 0 && mk_list_size(&task->retries) == 0) {
-        flb_debug("Should destroy? task.users: %d - task.retries: %d - task: %s", task->users, mk_list_size(&task->retries), task);
+        flb_debug("Should destroy? task.users: %d - task.retries: %d - task: %p", task->users, mk_list_size(&task->retries), task);
         flb_task_destroy(task, FLB_TRUE);
     }
 }
