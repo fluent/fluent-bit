@@ -329,8 +329,8 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
         }
     }
     else if (ret == FLB_ERROR) {
-        flb_error("[engine] output '%s' could not process chunk '%s'. Chunk will not be retried. Task: %p",
-              flb_output_name(ins), flb_input_chunk_get_name(task->ic), task);
+        flb_error("[engine] output '%s' could not process chunk '%s'. Chunk will not be retried. Task: %p. Task id: %d",
+              flb_output_name(ins), flb_input_chunk_get_name(task->ic), task, task->id);
 
 
         /* cmetrics */
