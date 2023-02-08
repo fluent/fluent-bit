@@ -156,7 +156,7 @@ struct flb_ml_parser {
      * is set, on that case 'key_content' is used as a raw buffer and appended
      * as part of the multiline message.
      */
-    flb_sds_t max_lines;
+    int max_lines;
 
     /*
      * Optional: define a 'key' name that matches the pattern to decide if the
@@ -225,7 +225,7 @@ struct flb_ml_parser_ins {
      * is set, on that case 'key_content' is used as a raw buffer and appended
      * as part of the multiline message.
      */
-    flb_sds_t max_lines;
+    int max_lines;
 
     /*
      * last stream_id and last_stream_group: keeping a reference of the last

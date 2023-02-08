@@ -192,6 +192,7 @@ static void flb_test_multiline_buffered_two_output_record()
     ret = flb_filter_set(ctx->flb, ctx->f_ffd,
                          "multiline.key_content", "log",
                          "multiline.parser", "go",
+                         "multiline.max_lines", "10",
                          "buffer", "on",
                          "flush_ms", "1500",
                          "debug_flush", "on",
@@ -262,6 +263,7 @@ static void flb_test_multiline_buffered_one_output_record()
     ret = flb_filter_set(ctx->flb, ctx->f_ffd,
                          "multiline.key_content", "log",
                          "multiline.parser", "go",
+                         "multiline.max_lines", "10",
                          "buffer", "on",
                          "debug_flush", "on",
                          NULL);
@@ -334,6 +336,7 @@ static void flb_test_multiline_unbuffered()
     ret = flb_filter_set(ctx->flb, ctx->f_ffd,
                          "multiline.key_content", "log",
                          "multiline.parser", "go",
+                         "multiline.max_lines", "10",
                          "buffer", "off",
                          "debug_flush", "on",
                          NULL);
@@ -407,6 +410,7 @@ static void flb_test_multiline_partial_message_concat()
     ret = flb_filter_set(ctx->flb, ctx->f_ffd,
                          "multiline.key_content", "log",
                          "mode", "partial_message",
+                         "multiline.max_lines", "10",
                          "buffer", "on",
                          "debug_flush", "on",
                          "flush_ms", "666",
@@ -432,7 +436,7 @@ static void flb_test_multiline_partial_message_concat()
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
-    
+
     /* check number of outputted records */
     sleep(2);
     TEST_CHECK(expected.actual_records == expected.expected_records);
@@ -459,6 +463,7 @@ static void flb_test_multiline_partial_message_concat_two_ids()
     ret = flb_filter_set(ctx->flb, ctx->f_ffd,
                          "multiline.key_content", "log",
                          "mode", "partial_message",
+                         "multiline.max_lines", "10",
                          "buffer", "on",
                          "debug_flush", "on",
                          "flush_ms", "666",
@@ -492,7 +497,7 @@ static void flb_test_multiline_partial_message_concat_two_ids()
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
-    
+
     /* check number of outputted records */
     sleep(2);
     TEST_CHECK(expected.actual_records == expected.expected_records);
@@ -564,6 +569,7 @@ static void flb_test_ml_buffered_two_streams()
     ret = flb_filter_set(ctx->flb, ctx->f_ffd,
                          "multiline.key_content", "log",
                          "multiline.parser", "java",
+                         "multiline.max_lines", "10",
                          "buffer", "on",
                          "debug_flush", "on",
                          NULL);
@@ -654,6 +660,7 @@ static void flb_test_ml_buffered_16_streams()
     ret = flb_filter_set(ctx->flb, ctx->f_ffd,
                          "multiline.key_content", "log",
                          "multiline.parser", "java",
+                         "multiline.max_lines", "10",
                          "buffer", "on",
                          "debug_flush", "on",
                          NULL);

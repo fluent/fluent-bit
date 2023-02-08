@@ -118,6 +118,8 @@ static int multiline_load_parsers(struct ml_ctx *ctx)
      * Iterate all 'multiline.parser' entries. Every entry is considered
      * a group which can have multiple multiline parser instances.
      */
+    flb_info("parsers are %s", ctx->multiline_parsers);
+
     flb_config_map_foreach(head, mv, ctx->multiline_parsers) {
         mk_list_foreach(head_p, mv->val.list) {
             val = mk_list_entry(head_p, struct flb_slist_entry, _head);
@@ -142,15 +144,7 @@ static int multiline_load_parsers(struct ml_ctx *ctx)
             flb_info("Maximum number of lines is %d", ctx->max_lines);
 
             /* Always override parent parser values */
-            if (ctx->max_lines) {
-                ret = flb_ml_parser_instance_set(parser_i,
-                                                 "max_lines",
-                                                 ctx->max_lines);
-                if (ret == -1) {
-                    flb_plg_error(ctx->ins, "could not override 'max_lines'");
-                    return -1;
-                }
-            }
+            parser_i->max_lines = ctx->max_lines;
         }
     }
 
@@ -854,7 +848,7 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-     FLB_CONFIG_MAP_STR, "multiline.max_lines", "100",
+     FLB_CONFIG_MAP_INT, "multiline.max_lines", "100",
      0, FLB_TRUE, offsetof(struct ml_ctx, max_lines),
      "specify the maximum number of lines to be concatenated."
     },

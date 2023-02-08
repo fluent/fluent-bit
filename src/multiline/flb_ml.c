@@ -255,7 +255,10 @@ static int package_content(struct flb_ml_stream *mst,
         buf_size = size;
 
     }
-    if (type == FLB_ML_REGEX) {
+/**   if (stream_group->counter_lines > parser->max_lines) {
+        processed = FLB_FALSE;
+    }**/
+        if (type == FLB_ML_REGEX) {
         ret = flb_ml_rule_process(parser, mst,
                                   stream_group, full_map, buf, size, tm,
                                   val_content, val_pattern);
