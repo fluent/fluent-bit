@@ -137,18 +137,11 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
         file = flb_sds_create(old_config->conf_path_file);
     }
     if (cf_opts != NULL) {
-        /* FIXME: How to handle when specifying conf file and
-         * arguments case? */
         if (flb_reload_reconstruct_cf(cf_opts, new_cf) != 0) {
             flb_error("[reload] reconstruct cf failed");
             return -1;
         }
     }
-
-    /* FIXME: validate incoming 'cf' is valid before stopping current service */
-    flb_info("[reload] stop everything");
-    flb_stop(ctx);
-    flb_destroy(ctx);
 
     /* Create another instance */
     new_ctx = flb_create();
@@ -174,6 +167,11 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     ret = flb_config_load_config_format(new_config, new_cf);
     if (ret != 0) {
         flb_sds_destroy(file);
+        flb_cf_destroy(new_cf);
+        flb_stop(new_ctx);
+        flb_destroy(new_ctx);
+
+        flb_error("[reload] reloaded config format is invalid. Reloading is halted");
 
         return -1;
     }
@@ -183,6 +181,10 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
         new_config->conf_path_file = file;
     }
 
+    /* FIXME: validate incoming 'cf' is valid before stopping current service */
+    flb_info("[reload] stop everything of the old context");
+    flb_stop(ctx);
+    flb_destroy(ctx);
 
     /* FIXME: DEBUG */
     printf("[POS STOP DUMP]\n");
