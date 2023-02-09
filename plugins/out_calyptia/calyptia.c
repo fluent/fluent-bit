@@ -939,7 +939,8 @@ static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
     }
     
 #ifdef FLB_HAVE_CHUNK_TRACE
-    if (event_chunk->type == (FLB_EVENT_TYPE_LOGS | FLB_EVENT_TYPE_HAS_TRACE)) {
+    // in_emitter no longer allows us to sent the event type so use the tag instead.
+    if (strcmp(event_chunk->tag, "trace") == 0) {
         json = flb_pack_msgpack_to_json_format(event_chunk->data,
                                                event_chunk->size,
                                                FLB_PACK_JSON_FORMAT_STREAM,
