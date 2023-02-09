@@ -829,6 +829,10 @@ void flb_output_pre_run(struct flb_config *config);
 void flb_output_exit(struct flb_config *config);
 void flb_output_set_context(struct flb_output_instance *ins, void *context);
 int flb_output_instance_destroy(struct flb_output_instance *ins);
+int flb_output_net_property_check(struct flb_output_instance *ins,
+                                  struct flb_config *config);
+int flb_output_plugin_property_check(struct flb_output_instance *ins,
+                                     struct flb_config *config);
 int flb_output_init_all(struct flb_config *config);
 int flb_output_check(struct flb_config *config);
 int flb_output_log_check(struct flb_output_instance *ins, int l);
