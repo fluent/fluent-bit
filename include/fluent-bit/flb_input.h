@@ -702,6 +702,11 @@ void flb_input_instance_exit(struct flb_input_instance *ins,
                              struct flb_config *config);
 void flb_input_instance_destroy(struct flb_input_instance *ins);
 
+int flb_input_net_property_check(struct flb_input_instance *ins,
+                                 struct flb_config *config);
+int flb_input_plugin_property_check(struct flb_input_instance *ins,
+                                    struct flb_config *config);
+
 int flb_input_init_all(struct flb_config *config);
 void flb_input_pre_run_all(struct flb_config *config);
 void flb_input_exit_all(struct flb_config *config);
