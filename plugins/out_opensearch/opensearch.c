@@ -223,6 +223,45 @@ static flb_sds_t os_get_id_value(struct flb_opensearch *ctx,
     return tmp_str;
 }
 
+static int compose_index_header(struct flb_opensearch *ctx,
+                                int index_custom_len,
+                                char *logstash_index, size_t logstash_index_size,
+                                char *separator_str,
+                                struct tm *tm)
+{
+    int ret;
+    int len;
+    char *p;
+    size_t s;
+
+    /* Compose Index header */
+    if (index_custom_len > 0) {
+        p = logstash_index + index_custom_len;
+    } else {
+        p = logstash_index + flb_sds_len(ctx->logstash_prefix);
+    }
+    len = p - logstash_index;
+    ret = snprintf(p, logstash_index_size - len, "%s",
+                   separator_str);
+    if (ret > logstash_index_size - len) {
+        /* exceed limit */
+        return -1;
+    }
+    p += strlen(separator_str);
+    len += strlen(separator_str);
+
+    s = strftime(p, logstash_index_size - len,
+                 ctx->logstash_dateformat, tm);
+    if (s==0) {
+        /* exceed limit */
+        return -1;
+    }
+    p += s;
+    *p++ = '\0';
+
+    return 0;
+}
+
 /*
  * Convert the internal Fluent Bit data representation to the required
  * one by OpenSearch.
@@ -245,7 +284,6 @@ static int opensearch_format(struct flb_config *config,
     flb_sds_t ra_index = NULL;
     size_t s = 0;
     size_t off = 0;
-    char *p;
     char *index = NULL;
     char logstash_index[256];
     char time_formatted[256];
@@ -440,20 +478,15 @@ static int opensearch_format(struct flb_config *config,
 
         index = ctx->index;
         if (ctx->logstash_format == FLB_TRUE) {
-            /* Compose Index header */
-            if (index_custom_len > 0) {
-                p = logstash_index + index_custom_len;
+            ret = compose_index_header(ctx, index_custom_len,
+                                       &logstash_index[0], sizeof(logstash_index),
+                                       ctx->logstash_prefix_separator, &tm);
+            if (ret < 0) {
+                /* retry with default separator */
+                compose_index_header(ctx, index_custom_len,
+                                     &logstash_index[0], sizeof(logstash_index),
+                                     "-", &tm);
             }
-            else {
-                p = logstash_index + flb_sds_len(ctx->logstash_prefix);
-            }
-            *p++ = '-';
-
-            len = p - logstash_index;
-            s = strftime(p, sizeof(logstash_index) - len - 1,
-                         ctx->logstash_dateformat, &tm);
-            p += s;
-            *p++ = '\0';
             index = logstash_index;
             if (ctx->generate_id == FLB_FALSE) {
                 if (ctx->suppress_type_name) {
@@ -1078,6 +1111,11 @@ static struct flb_config_map config_map[] = {
      "and the date, e.g: If Logstash_Prefix is equals to 'mydata' your index will "
      "become 'mydata-YYYY.MM.DD'. The last string appended belongs to the date "
      "when the data is being generated"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "logstash_prefix_separator", "-",
+     0, FLB_TRUE, offsetof(struct flb_opensearch, logstash_prefix_separator),
+     "Set a separator between logstash_prefix and date."
     },
     {
      FLB_CONFIG_MAP_STR, "logstash_prefix_key", NULL,
