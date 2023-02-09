@@ -132,10 +132,9 @@ static int flb_filter_propery_check_all(struct flb_config *config)
             && !ins->match_regex
 #endif
             ) {
-            flb_warn("[filter] NO match rule for %s filter instance, unloading.",
+            flb_error("[filter] NO match rule for %s filter instance, halting to reload.",
                      ins->name);
-            flb_filter_instance_destroy(ins);
-            continue;
+            return -1;
         }
 
         /* Check plugin property */
