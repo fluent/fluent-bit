@@ -943,16 +943,10 @@ int flb_main(int argc, char **argv)
             flb_cf_section_property_add(cf_opts, service->properties, "http_server", 0, "on", 0);
             break;
         case 'L':
-            if (config->http_listen) {
-                flb_free(config->http_listen);
-            }
-            config->http_listen = flb_strdup(optarg);
+            flb_cf_section_property_add(cf_opts, service->properties, FLB_CONF_STR_HTTP_LISTEN, 0, optarg, 0);
             break;
         case 'P':
-            if (config->http_port) {
-                flb_free(config->http_port);
-            }
-            config->http_port = flb_strdup(optarg);
+            flb_cf_section_property_add(cf_opts, service->properties, FLB_CONF_STR_HTTP_PORT, 0, optarg, 0);
             break;
 #endif
         case 'V':
@@ -968,14 +962,14 @@ int flb_main(int argc, char **argv)
             config->verbose = FLB_LOG_OFF;
             break;
         case 's':
-            config->coro_stack_size = (unsigned int) atoi(optarg);
+            flb_cf_section_property_add(cf_opts, service->properties, FLB_CONF_STR_CORO_STACK_SIZE, 0, optarg, 0);
             break;
         case 'S':
             config->support_mode = FLB_TRUE;
             break;
 #ifdef FLB_HAVE_CHUNK_TRACE
         case 'Z':
-            config->enable_chunk_trace = FLB_TRUE;
+            flb_cf_section_property_add(cf_opts, service->properties, FLB_CONF_STR_ENABLE_CHUNK_TRACE, 0, "on", 0);
             break;
 #endif /* FLB_HAVE_CHUNK_TRACE */
         default:
