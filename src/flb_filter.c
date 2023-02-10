@@ -452,6 +452,19 @@ int flb_filter_plugin_property_check(struct flb_filter_instance *ins,
     return 0;
 }
 
+int flb_filter_match_property_existence(struct flb_filter_instance *ins)
+{
+    if (!ins->match
+#ifdef FLB_HAVE_REGEX
+              && !ins->match_regex
+#endif
+        ) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
 int flb_filter_init(struct flb_config *config, struct flb_filter_instance *ins)
 {
     int ret;
@@ -459,11 +472,7 @@ int flb_filter_init(struct flb_config *config, struct flb_filter_instance *ins)
     char *name;
     struct flb_filter_plugin *p;
 
-    if (!ins->match
-#ifdef FLB_HAVE_REGEX
-        && !ins->match_regex
-#endif
-        ) {
+    if (flb_filter_match_property_existence(ins) == FLB_FALSE) {
         flb_warn("[filter] NO match rule for %s filter instance, unloading.",
                  ins->name);
         return -1;
