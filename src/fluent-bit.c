@@ -1037,8 +1037,6 @@ int flb_main(int argc, char **argv)
     cf = tmp;
 #endif
 
-    printf("  conf path = %s\n", config->conf_path_file);
-
     /* Check co-routine stack size */
     if (config->coro_stack_size < getpagesize()) {
         flb_cf_destroy(cf_opts);
@@ -1074,8 +1072,6 @@ int flb_main(int argc, char **argv)
         exit(EXIT_SUCCESS);
     }
 
-    printf("PRE CTX => %p\n", ctx);
-
     /* backup the address */
     ctx_original = ctx;
 
@@ -1101,10 +1097,7 @@ int flb_main(int argc, char **argv)
 
         /* set the context again before checking the status again */
         ctx = flb_context_get();
-        printf("sleep\n");
     }
-
-    printf("exiting here, exit signal = %i\n", exit_signal);
 
     if (exit_signal) {
         flb_signal_exit(exit_signal);
