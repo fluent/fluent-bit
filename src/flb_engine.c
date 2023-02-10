@@ -471,8 +471,6 @@ static FLB_INLINE int flb_engine_handle_event(flb_pipefd_t fd, int mask,
 {
     int ret;
 
-    printf("engine event\n");
-
     /* flb_engine_shutdown was already initiated */
     if (config->is_running == FLB_FALSE) {
         return 0;
