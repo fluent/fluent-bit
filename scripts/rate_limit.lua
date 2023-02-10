@@ -15,7 +15,7 @@ local period = tonumber(os.getenv("PERIOD")) -- Period in seconds. Example: 60
 local limit = tonumber(os.getenv("LOGS_LIMIT")) -- Number of logs that can be allowed for the above mentioned period Example: 6000
 local key = os.getenv("KEY") -- Key based on which the limit applies. Example: docker_id 
 
--- with above values, each and every containers (contianers have unique kubernetes.docker_id value) running on the kubernetes will have a limit of 6000 logs for every 60 seconds 
+-- with above values, each and every containers running on the kubernetes will have a limit of 6000 logs for every 60 seconds since contianers have unique kubernetes.docker_id value
 
 local function get_current_time(timestamp)
     return math.floor(timestamp / period)
