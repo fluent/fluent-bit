@@ -127,11 +127,7 @@ static int flb_filter_propery_check_all(struct flb_config *config)
     mk_list_foreach_safe(head, tmp, &config->filters) {
         ins = mk_list_entry(head, struct flb_filter_instance, _head);
 
-        if (!ins->match
-#ifdef FLB_HAVE_REGEX
-            && !ins->match_regex
-#endif
-            ) {
+        if (flb_filter_match_property_existence(ins) == FLB_FALSE) {
             flb_error("[filter] NO match rule for %s filter instance, halting to reload.",
                      ins->name);
             return -1;
