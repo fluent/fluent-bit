@@ -665,7 +665,8 @@ int flb_start(flb_ctx_t *ctx)
 
     pthread_once(&flb_lib_once, flb_init_env);
 
-    printf("CONTEXT SET => %p\n", ctx);
+    flb_debug("[lib] context set: %p", ctx);
+
     /* set context as the last active one */
     flb_context_set(ctx);
 
@@ -697,7 +698,6 @@ int flb_start(flb_ctx_t *ctx)
             break;
         }
         else if (val == FLB_ENGINE_FAILED) {
-            printf("ENGINE FAILED\n");
             flb_error("[lib] backend failed");
 #if defined(FLB_SYSTEM_MACOS)
             pthread_cancel(tid);
@@ -707,7 +707,7 @@ int flb_start(flb_ctx_t *ctx)
             return -1;
         }
         else {
-            printf("other error\n");
+            flb_error("[lib] other error");
         }
     }
 
@@ -728,7 +728,7 @@ int flb_stop(flb_ctx_t *ctx)
     int ret;
     pthread_t tid;
 
-    printf("CTX stop address: %p, config context=%p\n", ctx, ctx->config);
+    flb_debug("[lib] ctx stop address: %p, config context=%p\n", ctx, ctx->config);
 
     tid = ctx->config->worker;
 

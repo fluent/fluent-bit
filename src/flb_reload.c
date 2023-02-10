@@ -332,9 +332,6 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 
     flb_info("reloading instance pid=%lu tid=%i", getpid(), pthread_self());
 
-    printf("[PRE STOP DUMP]\n");
-    flb_cf_dump(old_config->cf_main);
-
     if (old_config->conf_path_file) {
         file = flb_sds_create(old_config->conf_path_file);
     }
@@ -408,15 +405,9 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     flb_stop(ctx);
     flb_destroy(ctx);
 
-    /* FIXME: DEBUG */
-    printf("[POS STOP DUMP]\n");
-    flb_cf_dump(new_config->cf_main);
     flb_info("[reload] start everything");
 
     ret = flb_start(new_ctx);
-
-
-    printf("reload new_ctx flb_start() => %i\n", ret);
 
     return 0;
 }
