@@ -68,11 +68,13 @@ static int flb_input_propery_check_all(struct flb_config *config)
         /* destroy net config map (will be recreated at flb_start) */
         if (ins->net_config_map) {
             flb_config_map_destroy(ins->net_config_map);
+            ins->net_config_map = NULL;
         }
 
         /* destroy config map (will be recreated at flb_start) */
         if (ins->config_map) {
             flb_config_map_destroy(ins->config_map);
+            ins->config_map = NULL;
         }
     }
 
@@ -105,11 +107,13 @@ static int flb_output_propery_check_all(struct flb_config *config)
         /* destroy net config map (will be recreated at flb_start) */
         if (ins->net_config_map) {
             flb_config_map_destroy(ins->net_config_map);
+            ins->net_config_map = NULL;
         }
 
         /* destroy config map (will be recreated at flb_start) */
         if (ins->config_map) {
             flb_config_map_destroy(ins->config_map);
+            ins->config_map = NULL;
         }
     }
 
@@ -142,6 +146,7 @@ static int flb_filter_propery_check_all(struct flb_config *config)
         /* destroy config map (will be recreated at flb_start) */
         if (ins->config_map) {
             flb_config_map_destroy(ins->config_map);
+            ins->config_map = NULL;
         }
     }
 
@@ -168,6 +173,7 @@ static int flb_custom_propery_check_all(struct flb_config *config)
         /* destroy config map (will be recreated at flb_start) */
         if (ins->config_map) {
             flb_config_map_destroy(ins->config_map);
+            ins->config_map = NULL;
         }
     }
 
@@ -326,12 +332,7 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 
     /* Create another instance */
     new_ctx = flb_create();
-
     new_config = new_ctx->config;
-
-    /* Delete the original context of config format */
-    original_cf = new_config->cf_main;
-    flb_cf_destroy(original_cf);
 
     /* Create another config format context */
     if (file != NULL) {
@@ -369,6 +370,11 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 
         return -1;
     }
+
+    /* Delete the original context of config format before replacing
+     * with the new one. */
+    original_cf = new_config->cf_main;
+    flb_cf_destroy(original_cf);
 
     new_config->cf_main = new_cf;
 
