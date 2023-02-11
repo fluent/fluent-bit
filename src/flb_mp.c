@@ -413,12 +413,6 @@ struct flb_mp_accessor *flb_mp_accessor_create(struct mk_list *slist_patterns)
             flb_mp_accessor_destroy(mpa);
             return NULL;
         }
-
-        /* first time */
-        if (mk_list_size(&mpa->ra_list) == 0) {
-            mk_list_add(&ra->_head, &mpa->ra_list);
-            continue;
-        }
         insert_by_subkey_count(ra, mpa);
     }
 
