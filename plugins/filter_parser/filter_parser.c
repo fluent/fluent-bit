@@ -216,115 +216,113 @@ static int cb_parser_filter(const void *data, size_t bytes,
             continue;
         }
         flb_time_pop_from_msgpack(&tm, &result, &obj);
-        if (obj->type == MSGPACK_OBJECT_MAP) {
-            map_num = obj->via.map.size;
+        if (obj->type != MSGPACK_OBJECT_MAP) {
+            continue;
+        }
+        map_num = obj->via.map.size;
+        if (ctx->reserve_data) {
+            append_arr_len = obj->via.map.size;
+            append_arr = flb_malloc(sizeof(msgpack_object_kv*) * append_arr_len);
+            if (!append_arr) {
+                flb_errno();
+                msgpack_unpacked_destroy(&result);
+                msgpack_sbuffer_destroy(&tmp_sbuf);
+                return FLB_FILTER_NOTOUCH;
+            }
+
+            for (i = 0; i < append_arr_len; i++){
+                append_arr[i] = NULL;
+            }
+        }
+
+        continue_parsing = FLB_TRUE;
+        for (i = 0; i < map_num && continue_parsing; i++) {
+            kv = &obj->via.map.ptr[i];
             if (ctx->reserve_data) {
-                append_arr_len = obj->via.map.size;
-                append_arr = flb_malloc(sizeof(msgpack_object_kv*) * append_arr_len);
-                if (!append_arr) {
-                    flb_errno();
+                append_arr[append_arr_i] = kv;
+                append_arr_i++;
+            }
+            if ( msgpackobj2char(&kv->key, &key_str, &key_len) < 0 ) {
+                /* key is not string */
+                continue;
+            }
+            if (key_len == ctx->key_name_len &&
+                !strncmp(key_str, ctx->key_name, key_len)) {
+                if ( msgpackobj2char(&kv->val, &val_str, &val_len) < 0 ) {
+                    /* val is not string */
+                    continue;
+                }
+
+                /* Lookup parser */
+                mk_list_foreach(head, &ctx->parsers) {
+                    fp = mk_list_entry(head, struct filter_parser, _head);
+
+                    /* Reset time */
+                    flb_time_zero(&parsed_time);
+
+                    parse_ret = flb_parser_do(fp->parser, val_str, val_len,
+                                              (void **) &out_buf, &out_size,
+                                              &parsed_time);
+                    if (parse_ret >= 0) {
+                        /*
+                         * If the parser succeeded we need to check the
+                         * status of the parsed time. If the time was
+                         * parsed successfully 'parsed_time' will be
+                         * different than zero, if so, override the time
+                         * holder with the new value, otherwise keep the
+                         * original.
+                         */
+                        if (flb_time_to_nanosec(&parsed_time) != 0L) {
+                            flb_time_copy(&tm, &parsed_time);
+                        }
+
+                        if (ctx->reserve_data) {
+                            if (!ctx->preserve_key) {
+                                append_arr_i--;
+                                append_arr_len--;
+                                append_arr[append_arr_i] = NULL;
+                            }
+                        }
+                        else {
+                            continue_parsing = FLB_FALSE;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (out_buf != NULL) {
+            msgpack_pack_array(&tmp_pck, 2);
+            flb_time_append_to_msgpack(&tm, &tmp_pck, 0);
+            if (ctx->reserve_data) {
+                char *new_buf = NULL;
+                int  new_size;
+                int ret;
+                ret = flb_msgpack_expand_map(out_buf, out_size,
+                                             append_arr, append_arr_len,
+                                             &new_buf, &new_size);
+                if (ret == -1) {
+                    flb_plg_error(ctx->ins, "cannot expand map");
+                    flb_free(append_arr);
                     msgpack_unpacked_destroy(&result);
-                    msgpack_sbuffer_destroy(&tmp_sbuf);
                     return FLB_FILTER_NOTOUCH;
                 }
 
-                for (i = 0; i < append_arr_len; i++){
-                    append_arr[i] = NULL;
-                }
-            }
-
-            continue_parsing = FLB_TRUE;
-            for (i = 0; i < map_num && continue_parsing; i++) {
-                kv = &obj->via.map.ptr[i];
-                if (ctx->reserve_data) {
-                    append_arr[append_arr_i] = kv;
-                    append_arr_i++;
-                }
-                if ( msgpackobj2char(&kv->key, &key_str, &key_len) < 0 ) {
-                    /* key is not string */
-                    continue;
-                }
-                if (key_len == ctx->key_name_len &&
-                    !strncmp(key_str, ctx->key_name, key_len)) {
-                    if ( msgpackobj2char(&kv->val, &val_str, &val_len) < 0 ) {
-                        /* val is not string */
-                        continue;
-                    }
-
-                    /* Lookup parser */
-                    mk_list_foreach(head, &ctx->parsers) {
-                        fp = mk_list_entry(head, struct filter_parser, _head);
-
-                        /* Reset time */
-                        flb_time_zero(&parsed_time);
-
-                        parse_ret = flb_parser_do(fp->parser, val_str, val_len,
-                                                  (void **) &out_buf, &out_size,
-                                                  &parsed_time);
-                        if (parse_ret >= 0) {
-                            /*
-                             * If the parser succeeded we need to check the
-                             * status of the parsed time. If the time was
-                             * parsed successfully 'parsed_time' will be
-                             * different than zero, if so, override the time
-                             * holder with the new value, otherwise keep the
-                             * original.
-                             */
-                            if (flb_time_to_nanosec(&parsed_time) != 0L) {
-                                flb_time_copy(&tm, &parsed_time);
-                            }
-
-                            if (ctx->reserve_data) {
-                                if (!ctx->preserve_key) {
-                                    append_arr_i--;
-                                    append_arr_len--;
-                                    append_arr[append_arr_i] = NULL;
-                                }
-                            }
-                            else {
-                                continue_parsing = FLB_FALSE;
-                            }
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (out_buf != NULL) {
-                msgpack_pack_array(&tmp_pck, 2);
-                flb_time_append_to_msgpack(&tm, &tmp_pck, 0);
-                if (ctx->reserve_data) {
-                    char *new_buf = NULL;
-                    int  new_size;
-                    int ret;
-                    ret = flb_msgpack_expand_map(out_buf, out_size,
-                                                 append_arr, append_arr_len,
-                                                 &new_buf, &new_size);
-                    if (ret == -1) {
-                        flb_plg_error(ctx->ins, "cannot expand map");
-                        flb_free(append_arr);
-                        msgpack_unpacked_destroy(&result);
-                        return FLB_FILTER_NOTOUCH;
-                    }
-
-                    flb_free(out_buf);
-                    out_buf = new_buf;
-                    out_size = new_size;
-                }
-                msgpack_sbuffer_write(&tmp_sbuf, out_buf, out_size);
                 flb_free(out_buf);
-                ret = FLB_FILTER_MODIFIED;
+                out_buf = new_buf;
+                out_size = new_size;
             }
-            else {
-                /* re-use original data*/
-                msgpack_pack_object(&tmp_pck, result.data);
-            }
-            flb_free(append_arr);
-            append_arr = NULL;
+            msgpack_sbuffer_write(&tmp_sbuf, out_buf, out_size);
+            flb_free(out_buf);
+            ret = FLB_FILTER_MODIFIED;
         }
         else {
-            continue;
+            /* re-use original data*/
+            msgpack_pack_object(&tmp_pck, result.data);
         }
+        flb_free(append_arr);
+        append_arr = NULL;
     }
     msgpack_unpacked_destroy(&result);
 
