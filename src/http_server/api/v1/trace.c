@@ -224,7 +224,6 @@ static int http_enable_trace(mk_request_t *request, void *data, const char *inpu
     struct flb_hs *hs = data;
     flb_sds_t prefix = NULL;
     flb_sds_t output_name = NULL;
-    int toggled_on = -1;
     msgpack_object *key;
     msgpack_object *val;
     struct mk_list *props = NULL;
