@@ -1012,6 +1012,7 @@ static void pack_format_line_value(flb_sds_t *buf, msgpack_object *val)
         else {
             len = snprintf(temp, sizeof(temp)-1, "%.16g", val->via.f64);
         }
+        safe_sds_cat(buf, temp, len);
     }
     else if (val->type == MSGPACK_OBJECT_ARRAY) {
         safe_sds_cat(buf, "\"[", 2);
