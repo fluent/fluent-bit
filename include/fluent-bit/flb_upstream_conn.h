@@ -46,6 +46,9 @@ struct flb_upstream_conn {
     /* Keepalive */
     int ka_count;        /* how many times this connection has been used */
 
+     /* do we need to mk_event_del the keepalive event on clean up*/
+    int ka_dropped_event_added;
+
     /*
      * Custom 'error' for the connection file descriptor. Commonly used to
      * specify a reason for an exception that was generated locally: consider
