@@ -694,14 +694,14 @@ jobs:
         if: startsWith(inputs.version, '1.9')
         uses: actions/checkout@v3
         with:
-          repo: fluent/fluent-bit-docs
+          repository: fluent/fluent-bit-docs
           ref: 1.9
 
       - name: Release 2.0 and latest
         if: startsWith(inputs.version, '2.')
         uses: actions/checkout@v3
         with:
-          repo: fluent/fluent-bit-docs
+          repository: fluent/fluent-bit-docs
 
       - name: Update container tags
         run: |
