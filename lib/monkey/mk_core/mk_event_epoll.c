@@ -139,8 +139,13 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
 
     event->mask = events;
     event->priority = MK_EVENT_PRIORITY_DEFAULT;
-    event->_priority_head.next = NULL;
-    event->_priority_head.prev = NULL;
+
+    /* Remove from priority queue */
+    if (event->_priority_head.next != NULL &&
+        event->_priority_head.prev != NULL) {
+        mk_list_del(&event->_priority_head);
+    }
+
     return ret;
 }
 
