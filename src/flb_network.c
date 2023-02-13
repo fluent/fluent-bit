@@ -438,7 +438,6 @@ static int net_connect_async(int fd,
               fd, host, port);
 
     /* Register the connection socket into the main event loop */
-    MK_EVENT_ZERO(&u_conn->event);
     ret = mk_event_add(u_conn->evl,
                        fd,
                        FLB_ENGINE_EV_THREAD,
