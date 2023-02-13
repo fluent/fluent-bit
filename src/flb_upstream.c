@@ -794,6 +794,7 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
 {
     time_t now;
     int drop;
+    int inject;
     struct mk_list *head;
     struct mk_list *u_head;
     struct mk_list *tmp;
@@ -842,13 +843,21 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
             }
 
             if (drop == FLB_TRUE) {
+                inject = FLB_FALSE;
                 if (u_conn->event.status != MK_EVENT_NONE) {
+                    inject = FLB_TRUE;
+                }
+                u_conn->net_error = ETIMEDOUT;
+                prepare_destroy_conn(u_conn);
+                /* 
+                 * prepare_destroy_conn calls mk_list_del on the event in the 
+                 * priority bucket queue, so for safety, we inject it afterwards
+                 */
+                if (inject == FLB_TRUE) {
                     mk_event_inject(u_conn->evl, &u_conn->event,
                                     MK_EVENT_READ | MK_EVENT_WRITE,
                                     FLB_TRUE);
                 }
-                u_conn->net_error = ETIMEDOUT;
-                prepare_destroy_conn(u_conn);
             }
         }
 
