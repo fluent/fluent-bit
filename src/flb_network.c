@@ -451,8 +451,6 @@ static int net_connect_async(int fd,
               fd, host, port);
 
     /* Register the connection socket into the main event loop */
-    MK_EVENT_ZERO(&u_conn->event);
-
     ret = mk_event_add(u_conn->evl,
                        fd,
                        FLB_ENGINE_EV_THREAD,
@@ -987,6 +985,7 @@ static struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(
     lookup_context->finished = 0;
     lookup_context->dropped = 0;
     lookup_context->dns_ctx = dns_ctx;
+    MK_EVENT_ZERO(&lookup_context->response_event);
 
     ares_set_socket_functions(lookup_context->ares_channel,
                               &lookup_context->ares_socket_functions,
