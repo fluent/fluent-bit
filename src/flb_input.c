@@ -1854,6 +1854,8 @@ int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config)
     struct flb_input_collector *collector = NULL;
     struct flb_input_coro *input_coro;
 
+    printf("input collectors size: %i\n", mk_list_size(&config->inputs));
+
     mk_list_foreach(head, &config->inputs) {
         ins = mk_list_entry(head, struct flb_input_instance, _head);
         mk_list_foreach(head_coll, &ins->collectors) {
