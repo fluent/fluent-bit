@@ -91,6 +91,9 @@ struct flb_config {
     /* if the configuration come from the file system, store the given path */
     flb_sds_t conf_path_file;
 
+    /* if the external plugins come from the file system, store the given paths from command line */
+    struct mk_list external_plugins;
+
     /* Event */
     struct mk_event event_flush;
     struct mk_event event_shutdown;
