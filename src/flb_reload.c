@@ -304,6 +304,7 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     flb_ctx_t *new_ctx;
     struct flb_cf *new_cf;
     struct flb_cf *original_cf;
+    int verbose;
 
     /* Normally, we should create a service section before using this cf
      * context. However, this context of config format will be used
@@ -333,6 +334,10 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     /* Create another instance */
     new_ctx = flb_create();
     new_config = new_ctx->config;
+
+    /* Inherit verbose from the old ctx instance */
+    verbose = ctx->config->verbose;
+    new_config->verbose = verbose;
 
     /* Create another config format context */
     if (file != NULL) {
