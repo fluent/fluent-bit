@@ -295,6 +295,20 @@ int flb_reload_reconstruct_cf(struct flb_cf *src_cf, struct flb_cf *dest_cf)
     return 0;
 }
 
+static int flb_reload_reconstruct_sp(struct flb_config *src, struct flb_config *dest)
+{
+    struct mk_list *head;
+    struct flb_slist_entry *e;
+
+    /* Check for pre-configured Tasks (command line) */
+    mk_list_foreach(head, &src->stream_processor_tasks) {
+        e = mk_list_entry(head, struct flb_slist_entry, _head);
+        flb_slist_add(&dest->stream_processor_tasks, e->str);
+    }
+
+    return 0;
+}
+
 int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 {
     int ret;
@@ -338,6 +352,9 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     /* Inherit verbose from the old ctx instance */
     verbose = ctx->config->verbose;
     new_config->verbose = verbose;
+
+    /* Inherit stream processor definitions from command line */
+    flb_reload_reconstruct_sp(old_config, new_config);
 
     /* Create another config format context */
     if (file != NULL) {
