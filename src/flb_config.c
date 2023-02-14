@@ -276,6 +276,8 @@ struct flb_config *flb_config_init()
     flb_slist_create(&config->stream_processor_tasks);
 #endif
 
+    flb_slist_create(&config->external_plugins);
+
     /* Set default coroutines stack size */
     config->coro_stack_size = FLB_CORO_STACK_SIZE_BYTE;
     if (config->coro_stack_size < getpagesize()) {
@@ -494,6 +496,8 @@ void flb_config_exit(struct flb_config *config)
 
     flb_slist_destroy(&config->stream_processor_tasks);
 #endif
+
+    flb_slist_destroy(&config->external_plugins);
 
     if (config->evl) {
         mk_event_loop_destroy(config->evl);
