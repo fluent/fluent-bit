@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_env.h>
+#include <fluent-bit/flb_meta.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_parser.h>
@@ -424,6 +425,11 @@ void flb_config_exit(struct flb_config *config)
         flb_free(config->conf_path);
     }
 
+    /* conf path file (file system config path) */
+    if (config->conf_path_file) {
+        flb_sds_destroy(config->conf_path_file);
+    }
+
     /* Working directory */
     if (config->workdir) {
         flb_free(config->workdir);
@@ -666,6 +672,237 @@ int flb_config_set_program_name(struct flb_config *config, char *name)
     config->program_name = flb_sds_create(name);
 
     if (!config->program_name) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, enum section_type type)
+{
+    int ret;
+    char *tmp;
+    char *name;
+    char *s_type;
+    struct mk_list *list;
+    struct mk_list *head;
+    struct cfl_list *h_prop;
+    struct cfl_kvpair *kv;
+    struct cfl_variant *val;
+    struct flb_cf_section *s;
+    struct flb_cf_group *processors = NULL;
+    int i;
+    void *ins;
+
+    if (type == FLB_CF_CUSTOM) {
+        s_type = "custom";
+        list = &cf->customs;
+    }
+    else if (type == FLB_CF_INPUT) {
+        s_type = "input";
+        list = &cf->inputs;
+    }
+    else if (type == FLB_CF_FILTER) {
+        s_type = "filter";
+        list = &cf->filters;
+    }
+    else if (type == FLB_CF_OUTPUT) {
+        s_type = "output";
+        list = &cf->outputs;
+    }
+    else {
+        return -1;
+    }
+
+    mk_list_foreach(head, list) {
+        s = mk_list_entry(head, struct flb_cf_section, _head_section);
+        name = flb_cf_section_property_get_string(cf, s, "name");
+        if (!name) {
+            flb_error("[config] section '%s' is missing the 'name' property",
+                      s_type);
+            return -1;
+        }
+
+        /* translate the variable */
+        tmp = flb_env_var_translate(config->env, name);
+
+        /* create an instance of the plugin */
+        ins = NULL;
+        if (type == FLB_CF_CUSTOM) {
+            ins = flb_custom_new(config, tmp, NULL);
+        }
+        else if (type == FLB_CF_INPUT) {
+            ins = flb_input_new(config, tmp, NULL, FLB_TRUE);
+        }
+        else if (type == FLB_CF_FILTER) {
+            ins = flb_filter_new(config, tmp, NULL);
+        }
+        else if (type == FLB_CF_OUTPUT) {
+            ins = flb_output_new(config, tmp, NULL, FLB_TRUE);
+        }
+        flb_sds_destroy(tmp);
+
+        /* validate the instance creation */
+        if (!ins) {
+            flb_error("[config] section '%s' tried to instance a plugin name "
+                      "that don't exists", name);
+            flb_sds_destroy(name);
+            return -1;
+        }
+        flb_sds_destroy(name);
+
+        /*
+         * iterate section properties and populate instance by using specific
+         * api function.
+         */
+        cfl_list_foreach(h_prop, &s->properties->list) {
+            kv = cfl_list_entry(h_prop, struct cfl_kvpair, _head);
+            if (strcasecmp(kv->key, "name") == 0) {
+                continue;
+            }
+
+            if (type == FLB_CF_CUSTOM) {
+                if (kv->val->type == CFL_VARIANT_STRING) {
+                    ret = flb_custom_set_property(ins, kv->key, kv->val->data.as_string);
+                } else if (kv->val->type == CFL_VARIANT_ARRAY) {
+                    for (i = 0; i < kv->val->data.as_array->entry_count; i++) {
+                        val = kv->val->data.as_array->entries[i];
+                        ret = flb_custom_set_property(ins, kv->key, val->data.as_string);
+                    }
+                }
+            }
+            else if (type == FLB_CF_INPUT) {
+                 if (kv->val->type == CFL_VARIANT_STRING) {
+                    ret = flb_input_set_property(ins, kv->key, kv->val->data.as_string);
+                } else if (kv->val->type == CFL_VARIANT_ARRAY) {
+                    for (i = 0; i < kv->val->data.as_array->entry_count; i++) {
+                        val = kv->val->data.as_array->entries[i];
+                        ret = flb_input_set_property(ins, kv->key, val->data.as_string);
+                    }
+                }
+            }
+            else if (type == FLB_CF_FILTER) {
+                 if (kv->val->type == CFL_VARIANT_STRING) {
+                    ret = flb_filter_set_property(ins, kv->key, kv->val->data.as_string);
+                } else if (kv->val->type == CFL_VARIANT_ARRAY) {
+                    for (i = 0; i < kv->val->data.as_array->entry_count; i++) {
+                        val = kv->val->data.as_array->entries[i];
+                        ret = flb_filter_set_property(ins, kv->key, val->data.as_string);
+                    }
+                }
+            }
+            else if (type == FLB_CF_OUTPUT) {
+                 if (kv->val->type == CFL_VARIANT_STRING) {
+                    ret = flb_output_set_property(ins, kv->key, kv->val->data.as_string);
+                } else if (kv->val->type == CFL_VARIANT_ARRAY) {
+                    for (i = 0; i < kv->val->data.as_array->entry_count; i++) {
+                        val = kv->val->data.as_array->entries[i];
+                        ret = flb_output_set_property(ins, kv->key, val->data.as_string);
+                    }
+                }
+            }
+
+            if (ret == -1) {
+                flb_error("[config] could not configure property '%s' on "
+                          "%s plugin with section name '%s'",
+                          kv->key, s_type, name);
+            }
+        }
+
+        /* Processors */
+        processors = flb_cf_group_get(cf, s, "processors");
+        if (processors) {
+            if (type == FLB_CF_INPUT) {
+                flb_processors_load_from_config_format_group(((struct flb_input_instance *) ins)->processor, processors);
+            }
+            else if (type == FLB_CF_OUTPUT) {
+                flb_processors_load_from_config_format_group(((struct flb_output_instance *) ins)->processor, processors);
+            }
+            else {
+                flb_error("[config] section '%s' does not support processors", s_type);
+            }
+        }
+    }
+
+    return 0;
+}
+/* Load a struct flb_config_format context into a flb_config instance */
+int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)
+{
+    int ret;
+    struct flb_kv *kv;
+    struct mk_list *head;
+    struct cfl_kvpair *ckv;
+    struct cfl_list *chead;
+    struct flb_cf_section *s;
+
+    /* Process config environment vars */
+    mk_list_foreach(head, &cf->env) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        ret = flb_env_set(config->env, kv->key, kv->val);
+        if (ret == -1) {
+            flb_error("could not set config environment variable '%s'", kv->key);
+            return -1;
+        }
+    }
+
+    /* Process all meta commands */
+    mk_list_foreach(head, &cf->metas) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        flb_meta_run(config, kv->key, kv->val);
+    }
+
+    /* Validate sections */
+    mk_list_foreach(head, &cf->sections) {
+        s = mk_list_entry(head, struct flb_cf_section, _head);
+
+        if (strcasecmp(s->name, "env") == 0 ||
+            strcasecmp(s->name, "service") == 0 ||
+            strcasecmp(s->name, "custom") == 0 ||
+            strcasecmp(s->name, "input") == 0 ||
+            strcasecmp(s->name, "filter") == 0 ||
+            strcasecmp(s->name, "output") == 0) {
+
+            /* continue on valid sections */
+            continue;
+        }
+
+        /* Extra sanity checks */
+        if (strcasecmp(s->name, "parser") == 0 ||
+            strcasecmp(s->name, "multiline_parser") == 0) {
+            fprintf(stderr,
+                    "Sections 'multiline_parser' and 'parser' are not valid in "
+                    "the main configuration file. It belongs to \n"
+                    "the 'parsers_file' configuration files.\n");
+            return -1;
+        }
+    }
+
+    /* Read main 'service' section */
+    s = cf->service;
+    if (s) {
+        /* Iterate properties */
+        cfl_list_foreach(chead, &s->properties->list) {
+            ckv = cfl_list_entry(chead, struct cfl_kvpair, _head);
+            flb_config_set_property(config, ckv->key, ckv->val->data.as_string);
+        }
+    }
+
+    ret = configure_plugins_type(config, cf, FLB_CF_CUSTOM);
+    if (ret == -1) {
+        return -1;
+    }
+
+    ret = configure_plugins_type(config, cf, FLB_CF_INPUT);
+    if (ret == -1) {
+        return -1;
+    }
+    ret = configure_plugins_type(config, cf, FLB_CF_FILTER);
+    if (ret == -1) {
+        return -1;
+    }
+    ret = configure_plugins_type(config, cf, FLB_CF_OUTPUT);
+    if (ret == -1) {
         return -1;
     }
 

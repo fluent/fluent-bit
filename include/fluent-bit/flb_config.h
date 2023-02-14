@@ -88,6 +88,9 @@ struct flb_config {
      */
     char *conf_path;
 
+    /* if the configuration come from the file system, store the given path */
+    flb_sds_t conf_path_file;
+
     /* Event */
     struct mk_event event_flush;
     struct mk_event event_shutdown;
@@ -279,6 +282,7 @@ const char *flb_config_prop_get(const char *key, struct mk_list *list);
 int flb_config_set_property(struct flb_config *config,
                             const char *k, const char *v);
 int flb_config_set_program_name(struct flb_config *config, char *name);
+int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf);
 
 int set_log_level_from_env(struct flb_config *config);
 #ifdef FLB_HAVE_STATIC_CONF
