@@ -843,6 +843,8 @@ int flb_main(int argc, char **argv)
             if (ret == -1) {
                 exit(EXIT_FAILURE);
             }
+            /* Store the relative file path for external plugin */
+            flb_slist_add(&config->external_plugins, optarg);
             break;
         case 'f':
             flb_cf_section_property_add(cf_opts, service->properties,

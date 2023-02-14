@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_config_format.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_plugin.h>
 
 #include <cfl/cfl.h>
 #include <cfl/cfl_sds.h>
@@ -309,6 +310,27 @@ static int flb_reload_reconstruct_sp(struct flb_config *src, struct flb_config *
     return 0;
 }
 
+static int flb_reload_reinstantiate_external_plugins(struct flb_config *src, struct flb_config *dest)
+{
+    int ret;
+    struct mk_list *head;
+    struct flb_slist_entry *e;
+
+    /* Check for pre-configured Tasks (command line) */
+    mk_list_foreach(head, &src->external_plugins) {
+        e = mk_list_entry(head, struct flb_slist_entry, _head);
+        flb_info("[reload] slist externals %s", e->str);
+        /* Load the new config format context to config context. */
+        ret = flb_plugin_load_router(e->str, dest);
+        if (ret != 0) {
+            return -1;
+        }
+        flb_slist_add(&dest->external_plugins, e->str);
+    }
+
+    return 0;
+}
+
 int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 {
     int ret;
@@ -362,6 +384,22 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 
         if (!new_cf) {
             flb_sds_destroy(file);
+
+            return -1;
+        }
+    }
+
+    /* Load external plugins via command line */
+    if (mk_list_size(&old_config->external_plugins) > 0) {
+        ret = flb_reload_reinstantiate_external_plugins(old_config, new_config);
+        if (ret == -1) {
+            if (file != NULL) {
+                flb_sds_destroy(file);
+            }
+            flb_cf_destroy(new_cf);
+            flb_stop(new_ctx);
+            flb_destroy(new_ctx);
+            flb_error("[reload] reloaded config is invalid. Reloading is halted");
 
             return -1;
         }
