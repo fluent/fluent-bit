@@ -879,10 +879,13 @@ int flb_main(int argc, char **argv)
             break;
 #ifdef FLB_HAVE_PARSER
         case 'R':
-            ret = flb_parser_conf_file(optarg, config);
-            if (ret != 0) {
+            ret = flb_parser_conf_file_stat(optarg, config);
+            if (ret == -1) {
+                flb_cf_destroy(cf_opts);
+                flb_destroy(ctx);
                 exit(EXIT_FAILURE);
             }
+            flb_cf_section_property_add(cf_opts, service->properties, FLB_CONF_STR_PARSERS_FILE, 0, optarg, 0);
             break;
 #endif
         case 'F':
