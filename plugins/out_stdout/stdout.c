@@ -25,6 +25,9 @@
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_metrics.h>
 
+#include <ctraces/ctraces.h>
+#include <ctraces/ctr_decode_msgpack.h>
+
 #include <msgpack.h>
 #include "stdout.h"
 
@@ -101,7 +104,7 @@ static void print_metrics_text(struct flb_output_instance *ins,
 {
     int ret;
     size_t off = 0;
-    cmt_sds_t text;
+    cfl_sds_t text;
     struct cmt *cmt = NULL;
 
     /* get cmetrics context */
@@ -124,6 +127,33 @@ static void print_metrics_text(struct flb_output_instance *ins,
 }
 #endif
 
+static void print_traces_text(struct flb_output_instance *ins,
+                              const void *data, size_t bytes)
+{
+    int ret;
+    size_t off = 0;
+    cfl_sds_t text;
+    struct ctrace *ctr = NULL;
+
+    /* get cmetrics context */
+    ret = ctr_decode_msgpack_create(&ctr, (char *) data, bytes, &off);
+    if (ret != 0) {
+        flb_plg_error(ins, "could not process traces payload (ret=%i)", ret);
+        return;
+    }
+
+    /* convert to text representation */
+    text = ctr_encode_text_create(ctr);
+
+    /* destroy cmt context */
+    ctr_destroy(ctr);
+
+    printf("%s", text);
+    fflush(stdout);
+
+    ctr_encode_text_destroy(text);
+}
+
 static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
                             struct flb_output_flush *out_flush,
                             struct flb_input_instance *i_ins,
@@ -141,13 +171,20 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
 
 #ifdef FLB_HAVE_METRICS
     /* Check if the event type is metrics, handle the payload differently */
-    if (event_chunk->type == FLB_EVENT_TYPE_METRIC) {
+    if (event_chunk->type == FLB_EVENT_TYPE_METRICS) {
         print_metrics_text(ctx->ins, (char *)
                            event_chunk->data,
                            event_chunk->size);
         FLB_OUTPUT_RETURN(FLB_OK);
     }
 #endif
+
+    if (event_chunk->type == FLB_EVENT_TYPE_TRACES) {
+        print_traces_text(ctx->ins, (char *)
+                          event_chunk->data,
+                          event_chunk->size);
+        FLB_OUTPUT_RETURN(FLB_OK);
+    }
 
     /* Assuming data is a log entry...*/
     if (ctx->out_format != FLB_PACK_JSON_FORMAT_NONE) {
@@ -173,11 +210,12 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
         while (msgpack_unpack_next(&result,
                                    event_chunk->data,
                                    event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS) {
-            printf("[%zd] %s: [", cnt++, event_chunk->tag);
-            flb_time_pop_from_msgpack(&tmp, &result, &p);
-            printf("%"PRIu32".%09lu, ", (uint32_t)tmp.tm.tv_sec, tmp.tm.tv_nsec);
-            msgpack_object_print(stdout, *p);
-            printf("]\n");
+            if (flb_time_pop_from_msgpack(&tmp, &result, &p) != -1 ) {
+                printf("[%zd] %s: [", cnt++, event_chunk->tag);
+                printf("%"PRIu32".%09lu, ", (uint32_t)tmp.tm.tv_sec, tmp.tm.tv_nsec);
+                msgpack_object_print(stdout, *p);
+                printf("]\n");
+            }
         }
         msgpack_unpacked_destroy(&result);
         flb_free(buf);
@@ -230,6 +268,6 @@ struct flb_output_plugin out_stdout_plugin = {
     .cb_exit      = cb_stdout_exit,
     .flags        = 0,
     .workers      = 1,
-    .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS,
+    .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS | FLB_OUTPUT_TRACES,
     .config_map   = config_map
 };

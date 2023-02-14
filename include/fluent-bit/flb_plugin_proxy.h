@@ -23,6 +23,7 @@
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_input_thread.h>
 
 /* Plugin Types */
 #define FLB_PROXY_INPUT_PLUGIN     1
@@ -61,12 +62,18 @@ struct flb_plugin_proxy_context {
     struct flb_plugin_proxy *proxy;
 };
 
+struct flb_plugin_input_proxy_context {
+    int coll_fd;
+    /* A proxy ptr is needed to store the proxy type/lang (OUTPUT/GOLANG) */
+    struct flb_plugin_proxy *proxy;
+};
+
 void *flb_plugin_proxy_symbol(struct flb_plugin_proxy *proxy,
                               const char *symbol);
 
-int flb_plugin_proxy_init(struct flb_plugin_proxy *proxy,
-                          struct flb_output_instance *o_ins,
-                          struct flb_config *config);
+int flb_plugin_proxy_output_init(struct flb_plugin_proxy *proxy,
+                                 struct flb_output_instance *o_ins,
+                                 struct flb_config *config);
 
 int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,
                               struct flb_config *config);

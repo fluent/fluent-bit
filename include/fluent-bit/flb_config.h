@@ -47,9 +47,15 @@ struct flb_config {
     int is_shutting_down;     /* is the service shutting down ? */
     int is_running;           /* service running ?              */
     double flush;             /* Flush timeout                  */
-    int grace;                /* Maximum grace time on shutdown */
+
+    /* 
+     * Maximum grace time on shutdown. If set to -1, the engine will 
+     * shutdown when all remaining tasks are flushed
+     */
+    int grace; 
     int grace_count;          /* Count of grace shutdown tries  */
     flb_pipefd_t flush_fd;    /* Timer FD associated to flush   */
+    int convert_nan_to_null;  /* convert null to nan ?          */
 
     int daemon;               /* Run as a daemon ?              */
     flb_pipefd_t shutdown_fd; /* Shutdown FD, 5 seconds         */
@@ -88,7 +94,7 @@ struct flb_config {
     struct mk_event event_thread_init;  /* event to initiate thread in engine */
 
     /* Collectors */
-    struct mk_list collectors;
+    pthread_mutex_t collectors_mutex;
 
     /* Dynamic (dso) plugins context */
     void *dso_plugins;
@@ -207,6 +213,7 @@ struct flb_config {
     int   storage_metrics;          /* enable/disable storage metrics */
     int   storage_checksum;         /* checksum enabled */
     int   storage_max_chunks_up;    /* max number of chunks 'up' in memory */
+    int   storage_del_bad_chunks;   /* delete irrecoverable chunks */
     char *storage_bl_mem_limit;     /* storage backlog memory limit */
     struct flb_storage_metrics *storage_metrics_ctx; /* storage metrics context */
 
@@ -220,6 +227,11 @@ struct flb_config {
     struct mk_list luajit_list;
 #endif
 
+    /* WASM environment's context */
+#ifdef FLB_HAVE_WASM
+    struct mk_list wasm_list;
+#endif
+
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     char *stream_processor_file;            /* SP configuration file */
     void *stream_processor_ctx;             /* SP context */
@@ -231,11 +243,18 @@ struct flb_config {
     struct mk_list stream_processor_tasks;
 #endif
 
+#ifdef FLB_HAVE_CHUNK_TRACE
+    int enable_chunk_trace;
+#endif /* FLB_HAVE_CHUNK_TRACE */
+
     /* Co-routines */
     unsigned int coro_stack_size;
 
     /* Upstream contexts created by plugins */
     struct mk_list upstreams;
+
+    /* Downstream contexts created by plugins */
+    struct mk_list downstreams;
 
     /*
      * Input table-id: table to keep a reference of thread-IDs used by the
@@ -288,6 +307,7 @@ enum conf_type {
 #define FLB_CONF_STR_PARSERS_FILE "Parsers_File"
 #define FLB_CONF_STR_PLUGINS_FILE "Plugins_File"
 #define FLB_CONF_STR_STREAMS_FILE "Streams_File"
+#define FLB_CONF_STR_CONV_NAN     "json.convert_nan_to_null"
 
 /* FLB_HAVE_HTTP_SERVER */
 #ifdef FLB_HAVE_HTTP_SERVER
@@ -299,6 +319,10 @@ enum conf_type {
 #define FLB_CONF_STR_HC_RETRIES_FAILURE_COUNT               "HC_Retry_Failure_Count"
 #define FLB_CONF_STR_HC_PERIOD                              "HC_Period"
 #endif /* !FLB_HAVE_HTTP_SERVER */
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+#define FLB_CONF_STR_ENABLE_CHUNK_TRACE      "Enable_Chunk_Trace"
+#endif /* FLB_HAVE_CHUNK_TRACE */
 
 /* DNS */
 #define FLB_CONF_DNS_MODE              "dns.mode"
@@ -312,6 +336,8 @@ enum conf_type {
 #define FLB_CONF_STORAGE_CHECKSUM      "storage.checksum"
 #define FLB_CONF_STORAGE_BL_MEM_LIMIT  "storage.backlog.mem_limit"
 #define FLB_CONF_STORAGE_MAX_CHUNKS_UP "storage.max_chunks_up"
+#define FLB_CONF_STORAGE_DELETE_IRRECOVERABLE_CHUNKS \
+                                       "storage.delete_irrecoverable_chunks"
 
 /* Coroutines */
 #define FLB_CONF_STR_CORO_STACK_SIZE "Coro_Stack_Size"

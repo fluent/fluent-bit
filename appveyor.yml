@@ -16,11 +16,11 @@ configuration:
 
 skip_commits:
   files:
-    - '.github/**/*'
-    - 'packaging/**/*'
-    - 'dockerfiles/**/*'
-    - '**/*.md'
-    - '**/*.sh'
+    - ".github/**/*"
+    - "packaging/**/*"
+    - "dockerfiles/**/*"
+    - "**/*.md"
+    - "**/*.sh"
 
 install:
   - ps: Invoke-WebRequest -O winflexbison.zip $env:winflexbison
@@ -38,15 +38,11 @@ build_script:
   - powershell ".\ci\do-ut.ps1;exit $LASTEXITCODE"
   - cd build
   - cpack
-  - cmake -G "NMake Makefiles" -D FLB_TD=On ..\
+  - cmake -G "NMake Makefiles" ..\
   - cmake --build .
   - cpack
 
 artifacts:
-  - path: build/td-agent-bit-*.exe
-    name: td-agent-bit
-  - path: build/td-agent-bit-*.zip
-    name: td-agent-bit-zip
   - path: build/fluent-bit-*.exe
     name: fluent-bit-installer
   - path: build/fluent-bit-*.zip

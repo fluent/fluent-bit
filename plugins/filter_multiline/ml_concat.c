@@ -325,11 +325,9 @@ struct split_message_packer *ml_create_packer(const char *tag, char *input_name,
 }
 
 unsigned long long ml_current_timestamp() {
-    struct timeval te; 
-    unsigned long long milliseconds;
-    gettimeofday(&te, NULL); 
-    milliseconds = te.tv_sec*1000LL + te.tv_usec/1000; 
-    return milliseconds;
+    struct flb_time te;
+    flb_time_get(&te);
+    return flb_time_to_nanosec(&te) / 1000000LL;
 }
 
 int ml_split_message_packer_write(struct split_message_packer *packer, 

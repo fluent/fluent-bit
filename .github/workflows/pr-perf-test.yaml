@@ -1,0 +1,97 @@
+name: Build and run performance tests for PR
+on:
+  # We want to run on forks as we protect with a label.
+  # Without this we have no secrets to pass.
+  pull_request_target:
+    branches:
+      - master
+    types:
+      - labeled
+
+jobs:
+
+  pr-perf-test-run:
+    # We only need to test this once as the rest are chained from it.
+    if: contains(github.event.pull_request.labels.*.name, 'ok-to-performance-test')
+    uses: fluent/fluent-bit-ci/.github/workflows/call-run-performance-test.yaml@main
+    with:
+      vm-name: fb-perf-test-pr-${{ github.event.number }}
+      git-branch: ${{ github.head_ref }}
+      test-directory: examples/perf_test
+      duration: 30
+      service: fb-delta
+    secrets:
+      service-account: ${{ secrets.GCP_SA_KEY }}
+
+  pr-perf-test-upload:
+    name: PR - performance test upload
+    # Label check from previous
+    runs-on: ubuntu-latest
+    needs:
+      - pr-perf-test-run
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@v3
+
+      - name: Upload plots to CML
+        run: |
+          docker pull -q dvcorg/cml-py3:latest
+          for FILE in *.png; do
+            echo "Handling $FILE"
+            docker run --rm -t \
+              -v $PWD:/output:rw \
+              dvcorg/cml-py3:latest \
+              /bin/sh -c "cml-publish /output/$FILE --driver=github --repo=${{ github.repository }} --md --title=$FILE >> /output/report.md"
+          done
+        shell: bash
+        working-directory: output
+
+      - name: Dump markdown to variable
+        id: report
+        run: |
+          file_test_newlines=""
+          while read line
+          do
+            file_test_newlines+="  $line"
+          done < report.md
+          echo "report=$file_test_newlines" >> $GITHUB_OUTPUT
+        shell: bash
+        working-directory: output
+
+      - uses: actions/github-script@v6
+        if: github.event_name == 'pull_request'
+        env:
+          REPORT: "Plots\n${{ steps.report.outputs.report }}"
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const output = `#### Performance Test
+            Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            <details><summary>Show Performance Results</summary>
+            ${process.env.REPORT}
+            </details>
+            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
+
+  pr-perf-test-complete:
+    # Only runs on success
+    name: PR - performance test complete
+    # Label check from previous
+    runs-on: ubuntu-latest
+    needs:
+      - pr-perf-test-run
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions-ecosystem/action-add-labels@v1
+        name: Label the PR
+        with:
+          labels: ci/performance-test-ok
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          number: ${{ github.event.pull_request.number }}

@@ -27,7 +27,7 @@ char *td_http_request(void *data, size_t len,
                       size_t *out_len,
                       struct flb_td *ctx, struct flb_config *config);
 
-struct flb_http_client *td_http_client(struct flb_upstream_conn *u_conn,
+struct flb_http_client *td_http_client(struct flb_connection *u_conn,
                                        void *data, size_t len,
                                        char **body,
                                        struct flb_td *ctx,

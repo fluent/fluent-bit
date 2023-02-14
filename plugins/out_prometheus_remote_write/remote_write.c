@@ -35,7 +35,7 @@ static int http_post(struct prometheus_remote_write_context *ctx,
     void *payload_buf = NULL;
     size_t payload_size = 0;
     struct flb_upstream *u;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
     struct mk_list *head;
     struct flb_config_map_val *mv;
@@ -212,7 +212,7 @@ static void cb_prom_flush(struct flb_event_chunk *event_chunk,
     int ok;
     int ret;
     int result;
-    cmt_sds_t encoded_chunk;
+    cfl_sds_t encoded_chunk;
     flb_sds_t buf = NULL;
     size_t diff = 0;
     size_t off = 0;

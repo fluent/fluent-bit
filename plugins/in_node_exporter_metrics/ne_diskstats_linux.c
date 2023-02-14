@@ -117,7 +117,7 @@ static void metric_cache_update(struct flb_ne *ctx, int id, flb_sds_t device,
         return;
     }
 
-    ts = cmt_time_now();
+    ts = cfl_time_now();
 
     if (m->factor > DBL_EPSILON) {
         val *= m->factor;

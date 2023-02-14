@@ -38,7 +38,7 @@ struct CIO_WIN32_DIR {
 /*
  * Guess POSIX flle type from Win32 file attributes.
  */
-static int get_filetype(int dwFileAttributes)
+static unsigned char get_filetype(int dwFileAttributes)
 {
     if (dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
         return DT_DIR;
@@ -46,6 +46,7 @@ static int get_filetype(int dwFileAttributes)
     else if (dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
         return DT_LNK;
     }
+
     return DT_REG;
 }
 
@@ -55,8 +56,8 @@ static int get_filetype(int dwFileAttributes)
 static char *create_pattern(const char *path)
 {
     char *buf;
-    int len = strlen(path);
-    int buflen = len + 3;
+    size_t len = strlen(path);
+    size_t buflen = len + 3;
 
     buf = malloc(buflen);
     if (buf == NULL) {
@@ -89,6 +90,7 @@ struct CIO_WIN32_DIR *cio_win32_opendir(const char *path)
 
     d->pattern = create_pattern(path);
     if (d->pattern == NULL) {
+        free(d);
         return NULL;
     }
 

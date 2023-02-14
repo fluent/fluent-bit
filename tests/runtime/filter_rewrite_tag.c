@@ -505,6 +505,53 @@ static void flb_test_issue_4518()
     filter_test_destroy(ctx);
 }
 
+/* $TAG as a key of rule causes SIGSEGV */
+static void flb_test_issue_5846()
+{
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+    int ret;
+    int not_used = 0;
+    int bytes;
+    char *p = "[0, {\"key\":\"rewrite\"}]";
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &not_used;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+    clear_output_num();
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "Rule", "$TAG ^(rewrite)$ updated false",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Configure output */
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "Match", "updated",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* ingest record */
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+
+    flb_time_msleep(1500); /* waiting flush */
+
+    /* It is OK, if there is no SIGSEGV. */
+
+    filter_test_destroy(ctx);
+}
+
 TEST_LIST = {
     {"matched",          flb_test_matched},
     {"not_matched",      flb_test_not_matched},
@@ -512,5 +559,6 @@ TEST_LIST = {
     {"heavy_input_pause_emitter", flb_test_heavy_input_pause_emitter},
     {"issue_4518", flb_test_issue_4518},
     {"issue_4793", flb_test_issue_4793},
+    {"sigsegv_issue_5846", flb_test_issue_5846},
     {NULL, NULL}
 };

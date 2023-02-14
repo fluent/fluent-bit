@@ -133,6 +133,7 @@ static int schedule_request_now(int seconds,
         return -1;
     }
     request->fd = fd;
+    timer->timer_fd = fd;
 
     /*
      * Note: mk_event_timeout_create() sets a type = MK_EVENT_NOTIFICATION by
@@ -286,8 +287,13 @@ int flb_sched_request_create(struct flb_config *config, void *data, int tries)
     timer->data = request;
     timer->event.mask = MK_EVENT_EMPTY;
 
-    /* Get suggested wait_time for this request */
-    seconds = backoff_full_jitter((int)config->sched_base, (int)config->sched_cap, tries);
+    /* Get suggested wait_time for this request. If shutting down, set to 0. */
+    if (config->is_shutting_down) {
+        seconds = 0;
+    } else {
+        seconds = backoff_full_jitter((int)config->sched_base, (int)config->sched_cap, 
+                                      tries);
+    }
     seconds += 1;
 
     /* Populare request */
@@ -492,17 +498,19 @@ int flb_sched_timer_cb_create(struct flb_sched *sched, int type, int ms,
 /* Disable notifications, used before to destroy the context */
 int flb_sched_timer_cb_disable(struct flb_sched_timer *timer)
 {
-    mk_event_timeout_disable(timer->sched->evl, &timer->event);
-    timer->timer_fd = -1;
+    if (timer->timer_fd != -1) {
+        mk_event_timeout_destroy(timer->sched->evl, &timer->event);
+
+        timer->timer_fd = -1;
+    }
+
     return 0;
 }
 
 int flb_sched_timer_cb_destroy(struct flb_sched_timer *timer)
 {
-    if (timer->timer_fd > 0) {
-        flb_sched_timer_cb_disable(timer);
-    }
     flb_sched_timer_destroy(timer);
+
     return 0;
 }
 
@@ -637,7 +645,7 @@ struct flb_sched_timer *flb_sched_timer_create(struct flb_sched *sched)
 
 void flb_sched_timer_invalidate(struct flb_sched_timer *timer)
 {
-    mk_event_timeout_disable(timer->sched->evl, &timer->event);
+    flb_sched_timer_cb_disable(timer);
 
     timer->active = FLB_FALSE;
 
@@ -648,11 +656,7 @@ void flb_sched_timer_invalidate(struct flb_sched_timer *timer)
 /* Destroy a timer context */
 int flb_sched_timer_destroy(struct flb_sched_timer *timer)
 {
-    mk_event_timeout_destroy(timer->sched->evl, &timer->event);
-
-    if (timer->timer_fd > 0) {
-        flb_sched_timer_cb_disable(timer);
-    }
+    flb_sched_timer_cb_disable(timer);
 
     mk_list_del(&timer->_head);
     flb_free(timer);
@@ -675,4 +679,49 @@ int flb_sched_timer_cleanup(struct flb_sched *sched)
     }
 
     return c;
+}
+
+int flb_sched_retry_now(struct flb_config *config, 
+                        struct flb_task_retry *retry)
+{
+    int ret;
+    struct flb_sched_timer *timer;
+    struct flb_sched_request *request;
+
+    /* Allocate timer context */
+    timer = flb_sched_timer_create(config->sched);
+    if (!timer) {
+        return -1;
+    }
+
+    /* Allocate request node */
+    request = flb_malloc(sizeof(struct flb_sched_request));
+    if (!request) {
+        flb_errno();
+        flb_sched_timer_destroy(timer); 
+        return -1;
+    }
+
+    /* Link timer references */
+    timer->type = FLB_SCHED_TIMER_REQUEST;
+    timer->data = request;
+    timer->event.mask = MK_EVENT_EMPTY;
+
+    /* Populate request */
+    request->fd      = -1;
+    request->created = time(NULL);
+    request->timeout = 0;
+    request->data    = retry;
+    request->timer   = timer;
+
+    ret = schedule_request_now(0 /* seconds */, timer, request, config);
+    if (ret == -1) {
+        flb_error("[sched] 'retry-now request' could not be created. the "
+                  "system might be running out of memory or file "
+                  "descirptors.");
+        flb_sched_timer_destroy(timer);
+        flb_free(request);
+        return -1;
+    }
+    return 0;
 }

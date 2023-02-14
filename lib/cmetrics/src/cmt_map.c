@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -19,9 +19,7 @@
 
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_map.h>
-#include <cmetrics/cmt_sds.h>
 #include <cmetrics/cmt_log.h>
-#include <cmetrics/cmt_hash.h>
 #include <cmetrics/cmt_metric.h>
 #include <cmetrics/cmt_compat.h>
 
@@ -46,9 +44,9 @@ struct cmt_map *cmt_map_create(int type, struct cmt_opts *opts, int count, char 
     map->opts = opts;
     map->parent = parent;
     map->label_count = count;
-    mk_list_init(&map->label_keys);
-    mk_list_init(&map->metrics);
-    mk_list_init(&map->metric.labels);
+    cfl_list_init(&map->label_keys);
+    cfl_list_init(&map->metrics);
+    cfl_list_init(&map->metric.labels);
 
     if (count == 0) {
         map->metric_static_set = 1;
@@ -62,13 +60,13 @@ struct cmt_map *cmt_map_create(int type, struct cmt_opts *opts, int count, char 
         }
 
         name = labels[i];
-        label->name = cmt_sds_create(name);
+        label->name = cfl_sds_create(name);
         if (!label->name) {
             cmt_errno();
             free(label);
             goto error;
         }
-        mk_list_add(&label->_head, &map->label_keys);
+        cfl_list_add(&label->_head, &map->label_keys);
     }
 
     return map;
@@ -80,15 +78,15 @@ struct cmt_map *cmt_map_create(int type, struct cmt_opts *opts, int count, char 
 
 static struct cmt_metric *metric_hash_lookup(struct cmt_map *map, uint64_t hash)
 {
-    struct mk_list *head;
+    struct cfl_list *head;
     struct cmt_metric *metric;
 
     if (hash == 0) {
         return &map->metric;
     }
 
-    mk_list_foreach(head, &map->metrics) {
-        metric = mk_list_entry(head, struct cmt_metric, _head);
+    cfl_list_foreach(head, &map->metrics) {
+        metric = cfl_list_entry(head, struct cmt_metric, _head);
         if (metric->hash == hash) {
             return metric;
         }
@@ -110,7 +108,7 @@ static struct cmt_metric *map_metric_create(uint64_t hash,
         cmt_errno();
         return NULL;
     }
-    mk_list_init(&metric->labels);
+    cfl_list_init(&metric->labels);
     metric->val = 0.0;
     metric->hash = hash;
 
@@ -122,13 +120,13 @@ static struct cmt_metric *map_metric_create(uint64_t hash,
         }
 
         name = labels_val[i];
-        label->name = cmt_sds_create(name);
+        label->name = cfl_sds_create(name);
         if (!label->name) {
             cmt_errno();
             free(label);
             goto error;
         }
-        mk_list_add(&label->_head, &metric->labels);
+        cfl_list_add(&label->_head, &metric->labels);
     }
 
     return metric;
@@ -140,14 +138,14 @@ static struct cmt_metric *map_metric_create(uint64_t hash,
 
 static void map_metric_destroy(struct cmt_metric *metric)
 {
-    struct mk_list *tmp;
-    struct mk_list *head;
+    struct cfl_list *tmp;
+    struct cfl_list *head;
     struct cmt_map_label *label;
 
-    mk_list_foreach_safe(head, tmp, &metric->labels) {
-        label = mk_list_entry(head, struct cmt_map_label, _head);
-        cmt_sds_destroy(label->name);
-        mk_list_del(&label->_head);
+    cfl_list_foreach_safe(head, tmp, &metric->labels) {
+        label = cfl_list_entry(head, struct cmt_map_label, _head);
+        cfl_sds_destroy(label->name);
+        cfl_list_del(&label->_head);
         free(label);
     }
 
@@ -158,7 +156,7 @@ static void map_metric_destroy(struct cmt_metric *metric)
         free(metric->sum_quantiles);
     }
 
-    mk_list_del(&metric->_head);
+    cfl_list_del(&metric->_head);
     free(metric);
 }
 
@@ -170,7 +168,7 @@ struct cmt_metric *cmt_map_metric_get(struct cmt_opts *opts, struct cmt_map *map
     int len;
     char *ptr;
     uint64_t hash;
-    XXH3_state_t state;
+    cfl_hash_state_t state;
     struct cmt_metric *metric = NULL;
 
     /* Enforce zero or exact labels */
@@ -202,20 +200,20 @@ struct cmt_metric *cmt_map_metric_get(struct cmt_opts *opts, struct cmt_map *map
     }
 
     /* Lookup the metric */
-    XXH3_64bits_reset(&state);
-    XXH3_64bits_update(&state, opts->fqname, cmt_sds_len(opts->fqname));
+    cfl_hash_64bits_reset(&state);
+    cfl_hash_64bits_update(&state, opts->fqname, cfl_sds_len(opts->fqname));
     for (i = 0; i < labels_count; i++) {
         ptr = labels_val[i];
         if (!ptr) {
-            XXH3_64bits_update(&state, "_NULL_", 6);
+            cfl_hash_64bits_update(&state, "_NULL_", 6);
         }
         else {
             len = strlen(ptr);
-            XXH3_64bits_update(&state, ptr, len);
+            cfl_hash_64bits_update(&state, ptr, len);
         }
     }
 
-    hash = XXH3_64bits_digest(&state);
+    hash = cfl_hash_64bits_digest(&state);
     metric = metric_hash_lookup(map, hash);
 
     if (metric) {
@@ -235,7 +233,7 @@ struct cmt_metric *cmt_map_metric_get(struct cmt_opts *opts, struct cmt_map *map
     if (!metric) {
         return NULL;
     }
-    mk_list_add(&metric->_head, &map->metrics);
+    cfl_list_add(&metric->_head, &map->metrics);
     return metric;
 }
 
@@ -258,20 +256,20 @@ int cmt_map_metric_get_val(struct cmt_opts *opts, struct cmt_map *map,
 
 void cmt_map_destroy(struct cmt_map *map)
 {
-    struct mk_list *tmp;
-    struct mk_list *head;
+    struct cfl_list *tmp;
+    struct cfl_list *head;
     struct cmt_map_label *label;
     struct cmt_metric *metric;
 
-    mk_list_foreach_safe(head, tmp, &map->label_keys) {
-        label = mk_list_entry(head, struct cmt_map_label, _head);
-        cmt_sds_destroy(label->name);
-        mk_list_del(&label->_head);
+    cfl_list_foreach_safe(head, tmp, &map->label_keys) {
+        label = cfl_list_entry(head, struct cmt_map_label, _head);
+        cfl_sds_destroy(label->name);
+        cfl_list_del(&label->_head);
         free(label);
     }
 
-    mk_list_foreach_safe(head, tmp, &map->metrics) {
-        metric = mk_list_entry(head, struct cmt_metric, _head);
+    cfl_list_foreach_safe(head, tmp, &map->metrics) {
+        metric = cfl_list_entry(head, struct cmt_metric, _head);
         map_metric_destroy(metric);
     }
 
@@ -301,18 +299,18 @@ void cmt_map_destroy(struct cmt_map *map)
  * by the metric structure.
  */
 
-void destroy_label_list(struct mk_list *label_list)
+void destroy_label_list(struct cfl_list *label_list)
 {
-    struct mk_list       *tmp;
-    struct mk_list       *head;
+    struct cfl_list       *tmp;
+    struct cfl_list       *head;
     struct cmt_map_label *label;
 
-    mk_list_foreach_safe(head, tmp, label_list) {
-        label = mk_list_entry(head, struct cmt_map_label, _head);
+    cfl_list_foreach_safe(head, tmp, label_list) {
+        label = cfl_list_entry(head, struct cmt_map_label, _head);
 
-        cmt_sds_destroy(label->name);
+        cfl_sds_destroy(label->name);
 
-        mk_list_del(&label->_head);
+        cfl_list_del(&label->_head);
 
         free(label);
     }

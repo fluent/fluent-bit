@@ -1,0 +1,402 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+name: compilation on macos-latest
+
+on:
+  # will be triggered on PR events
+  pull_request:
+    paths-ignore:
+      - "assembly-script/**"
+      - "ci/**"
+      - "doc/**"
+      - "test-tools/**"
+      - ".github/workflows/compilation_on_macos.yml"
+  # will be triggered on push events
+  push:
+    paths-ignore:
+      - "assembly-script/**"
+      - "ci/**"
+      - "doc/**"
+      - "test-tools/**"
+      - ".github/workflows/compilation_on_macos.yml"
+  # allow to be triggered manually
+  workflow_dispatch:
+
+# Cancel any in-flight jobs for the same PR/branch so there's only one active
+# at a time
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AOT_BUILD_OPTIONS: "-DWAMR_BUILD_AOT=1 -DWAMR_BUILD_FAST_INTERP=0 -DWAMR_BUILD_INTERP=0 -DWAMR_BUILD_JIT=0 -DWAMR_BUILD_LAZY_JIT=0"
+  CLASSIC_INTERP_BUILD_OPTIONS: "-DWAMR_BUILD_AOT=0 -DWAMR_BUILD_FAST_INTERP=0 -DWAMR_BUILD_INTERP=1 -DWAMR_BUILD_JIT=0 -DWAMR_BUILD_LAZY_JIT=0"
+  FAST_INTERP_BUILD_OPTIONS: "-DWAMR_BUILD_AOT=0 -DWAMR_BUILD_FAST_INTERP=1 -DWAMR_BUILD_INTERP=1 -DWAMR_BUILD_JIT=0 -DWAMR_BUILD_LAZY_JIT=0"
+  LAZY_JIT_BUILD_OPTIONS: "-DWAMR_BUILD_AOT=1 -DWAMR_BUILD_FAST_INTERP=0 -DWAMR_BUILD_INTERP=0 -DWAMR_BUILD_JIT=1 -DWAMR_BUILD_LAZY_JIT=1"
+  MC_JIT_BUILD_OPTIONS: "-DWAMR_BUILD_AOT=1 -DWAMR_BUILD_FAST_INTERP=0 -DWAMR_BUILD_INTERP=0 -DWAMR_BUILD_JIT=1 -DWAMR_BUILD_LAZY_JIT=0"
+  LLVM_CACHE_SUFFIX: "build-llvm_libraries_ex"
+
+jobs:
+  # Cancel any in-flight jobs for the same PR/branch so there's only one active
+  # at a time
+  cancel_previous:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest]
+    steps:
+      - name: Cancel Workflow Action
+        uses: styfle/cancel-workflow-action@0.9.1
+        with:
+          access_token: ${{ github.token }}
+
+  # set different traffic lights based on the current repo and the running OS.
+  # according to light colors, the workflow will run different jobs
+  check_repo:
+    needs: cancel_previous
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest]
+    outputs:
+      traffic_light: ${{ steps.do_check.outputs.light }}
+    steps:
+      - name: do_check
+        id: do_check
+        if: ${{ matrix.os == 'macos-latest' }}
+        run: |
+          if [[ ${{ github.repository }} == */wasm-micro-runtime ]]; then
+            echo "::set-output name=light::green"
+          else
+            echo "::set-output name=light::red"
+          fi
+
+  build_llvm_libraries:
+    needs: check_repo
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest]
+        include:
+          - os: macos-latest
+            light: ${{ needs.check_repo.outputs.traffic_light }}
+    steps:
+      - name: light status
+        run: echo "matrix.os=${{ matrix.os }}, light=${{ matrix.light }}"
+
+      - name: checkout
+        if: ${{ matrix.light == 'green' }}
+        uses: actions/checkout@v3
+
+      - name: Cache LLVM libraries
+        id: cache_llvm
+        if: ${{ matrix.light == 'green' }}
+        uses: actions/cache@v3
+        with:
+          path: |
+            ./core/deps/llvm/build/bin
+            ./core/deps/llvm/build/include
+            ./core/deps/llvm/build/lib
+            ./core/deps/llvm/build/libexec
+            ./core/deps/llvm/build/share
+          key: ${{ matrix.os }}-${{ env.LLVM_CACHE_SUFFIX }}
+
+      - name: Build llvm and clang from source
+        id: build_llvm
+        if: ${{ matrix.light == 'green' && steps.cache_llvm.outputs.cache-hit != 'true' }}
+        run: /usr/bin/env python3 ./build_llvm.py --arch X86 WebAssembly
+        working-directory: build-scripts
+
+  build_wamrc:
+    needs: [build_llvm_libraries, check_repo]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest]
+        include:
+          - os: macos-latest
+            light: ${{ needs.check_repo.outputs.traffic_light }}
+    steps:
+      - name: light status
+        run: echo "matrix.os=${{ matrix.os }}, light=${{ matrix.light }}"
+
+      - name: checkout
+        if: ${{ matrix.light == 'green' }}
+        uses: actions/checkout@v3
+
+      - name: Get LLVM libraries
+        id: cache_llvm
+        if: ${{ matrix.light == 'green' }}
+        uses: actions/cache@v3
+        with:
+          path: |
+            ./core/deps/llvm/build/bin
+            ./core/deps/llvm/build/include
+            ./core/deps/llvm/build/lib
+            ./core/deps/llvm/build/libexec
+            ./core/deps/llvm/build/share
+          key: ${{ matrix.os }}-${{ env.LLVM_CACHE_SUFFIX }}
+
+      - name: Quit if cache miss
+        if: ${{ matrix.light == 'green' && steps.cache_llvm.outputs.cache-hit != 'true' }}
+        run: echo "::error::can not get prebuilt llvm libraries" && exit 1
+
+      - name: Build wamrc
+        if: ${{ matrix.light == 'green' }}
+        run: |
+          mkdir build && cd build
+          cmake ..
+          cmake --build . --config Release --parallel 4
+        working-directory: wamr-compiler
+
+  build_iwasm:
+    needs: [build_llvm_libraries, check_repo]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        make_options_run_mode: [
+            # Running mode
+            $AOT_BUILD_OPTIONS,
+            $CLASSIC_INTERP_BUILD_OPTIONS,
+            $FAST_INTERP_BUILD_OPTIONS,
+            $LAZY_JIT_BUILD_OPTIONS,
+            $MC_JIT_BUILD_OPTIONS,
+          ]
+        make_options_feature: [
+            # Features
+            "-DWAMR_BUILD_CUSTOM_NAME_SECTION=1",
+            # doesn't support
+            #"-DWAMR_BUILD_DEBUG_AOT=1",
+            "-DWAMR_BUILD_DEBUG_INTERP=1",
+            "-DWAMR_BUILD_DUMP_CALL_STACK=1",
+            "-DWAMR_BUILD_LIB_PTHREAD=1",
+            "-DWAMR_BUILD_LOAD_CUSTOM_SECTION=1",
+            "-DWAMR_BUILD_MINI_LOADER=1",
+            "-DWAMR_BUILD_MEMORY_PROFILING=1",
+            "-DWAMR_BUILD_MULTI_MODULE=1",
+            "-DWAMR_BUILD_PERF_PROFILING=1",
+            "-DWAMR_BUILD_REF_TYPES=1",
+            "-DWAMR_BUILD_SIMD=1",
+            "-DWAMR_BUILD_TAIL_CALL=1",
+            "-DWAMR_DISABLE_HW_BOUND_CHECK=1",
+          ]
+        os: [macos-latest]
+        platform: [darwin]
+        exclude:
+          # uncompatiable feature and platform
+          # uncompatiable mode and feature
+          # MULTI_MODULE only on INTERP mode
+          - make_options_run_mode: $LAZY_JIT_BUILD_OPTIONS
+            make_options_feature: "-DWAMR_BUILD_MULTI_MODULE=1"
+          - make_options_run_mode: $AOT_BUILD_OPTIONS
+            make_options_feature: "-DWAMR_BUILD_MULTI_MODULE=1"
+          - make_options_run_mode: $MC_JIT_BUILD_OPTIONS
+            make_options_feature: "-DWAMR_BUILD_MULTI_MODULE=1"
+          # SIMD only on JIT/AOT mode
+          - make_options_run_mode: $CLASSIC_INTERP_BUILD_OPTIONS
+            make_options_feature: "-DWAMR_BUILD_SIMD=1"
+          - make_options_run_mode: $FAST_INTERP_BUILD_OPTIONS
+            make_options_feature: "-DWAMR_BUILD_SIMD=1"
+          # DEBUG_INTERP only on CLASSIC INTERP mode
+          - make_options_run_mode: $AOT_BUILD_OPTIONS
+            make_options_feature: "-DWAMR_BUILD_DEBUG_INTERP=1"
+          - make_options_run_mode: $LAZY_JIT_BUILD_OPTIONS
+            make_options_feature: "-DWAMR_BUILD_DEBUG_INTERP=1"
+          - make_options_run_mode: $MC_JIT_BUILD_OPTIONS
+            make_options_feature: "-DWAMR_BUILD_DEBUG_INTERP=1"
+          - make_options_run_mode: $FAST_INTERP_BUILD_OPTIONS
+            make_options_feature: "-DWAMR_BUILD_DEBUG_INTERP=1"
+          # DEBUG_AOT only on JIT/AOT mode
+          - make_options_run_mode: $CLASSIC_INTERP_BUILD_OPTIONS
+            make_options_feature: "-DWAMR_BUILD_DEBUG_AOT=1"
+          - make_options_run_mode: $FAST_INTERP_BUILD_OPTIONS
+            make_options_feature: "-DWAMR_BUILD_DEBUG_AOT=1"
+          # TODO: DEBUG_AOT on JIT
+          - make_options_run_mode: $LAZY_JIT_BUILD_OPTIONS
+            make_options_feature: "-DWAMR_BUILD_DEBUG_AOT=1"
+          - make_options_run_mode: $MC_JIT_BUILD_OPTIONS
+            make_options_feature: "-DWAMR_BUILD_DEBUG_AOT=1"
+          # MINI_LOADER only on INTERP mode
+          - make_options_run_mode: $AOT_BUILD_OPTIONS
+            make_options_feature: "-DWAMR_BUILD_MINI_LOADER=1"
+          - make_options_run_mode: $LAZY_JIT_BUILD_OPTIONS
+            make_options_feature: "-DWAMR_BUILD_MINI_LOADER=1"
+          - make_options_run_mode: $MC_JIT_BUILD_OPTIONS
+            make_options_feature: "-DWAMR_BUILD_MINI_LOADER=1"
+        include:
+          - os: macos-latest
+            light: ${{ needs.check_repo.outputs.traffic_light }}
+    steps:
+      - name: light status
+        run: echo "matrix.os=${{ matrix.os }}, light=${{ matrix.light }}"
+
+      - name: checkout
+        if: ${{ matrix.light == 'green' }}
+        uses: actions/checkout@v3
+
+      # only download llvm cache when needed
+      - name: Get LLVM libraries
+        id: cache_llvm
+        if: (matrix.light == 'green') && (endsWith(matrix.make_options_run_mode, '_JIT_BUILD_OPTIONS'))
+        uses: actions/cache@v3
+        with:
+          path: |
+            ./core/deps/llvm/build/bin
+            ./core/deps/llvm/build/include
+            ./core/deps/llvm/build/lib
+            ./core/deps/llvm/build/libexec
+            ./core/deps/llvm/build/share
+          key: ${{ matrix.os }}-${{ env.LLVM_CACHE_SUFFIX }}
+
+      - name: Quit if cache miss
+        if: (matrix.light == 'green') && (endsWith(matrix.make_options_run_mode, '_JIT_BUILD_OPTIONS')) && (steps.cache_llvm.outputs.cache-hit != 'true')
+        run: echo "::error::can not get prebuilt llvm libraries" && exit 1
+
+      - name: Build iwasm
+        if: ${{ matrix.light == 'green' }}
+        run: |
+          mkdir build && cd build
+          cmake .. ${{ matrix.make_options_run_mode }} ${{ matrix.make_options_feature }}
+          cmake --build . --config Release --parallel 4
+        working-directory: product-mini/platforms/${{ matrix.platform }}
+
+  build_samples_wasm_c_api:
+    needs: [build_iwasm, check_repo]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        make_options: [
+            # Running mode
+            $CLASSIC_INTERP_BUILD_OPTIONS,
+            $FAST_INTERP_BUILD_OPTIONS,
+            # doesn't support
+            #$LAZY_JIT_BUILD_OPTIONS,
+            #$MC_JIT_BUILD_OPTIONS,
+            #$AOT_BUILD_OPTIONS,
+          ]
+        os: [macos-latest]
+        include:
+          - os: macos-latest
+            light: ${{ needs.check_repo.outputs.traffic_light }}
+            wasi_sdk_release: https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-12/wasi-sdk-12.0-macos.tar.gz
+            wabt_release: https://github.com/WebAssembly/wabt/releases/download/1.0.24/wabt-1.0.24-macos.tar.gz
+    steps:
+      - name: light status
+        run: echo "matrix.os=${{ matrix.os }}, light=${{ matrix.light }}"
+
+      - name: checkout
+        if: ${{ matrix.light == 'green' }}
+        uses: actions/checkout@v3
+
+      - name: download and install wabt
+        if: ${{ matrix.light == 'green' }}
+        run: |
+          cd /opt
+          sudo wget ${{ matrix.wabt_release }}
+          sudo tar -xzf wabt-1.0.24-*.tar.gz
+          sudo mv wabt-1.0.24 wabt
+
+      - name: Build Sample [wasm-c-api]
+        if: ${{ matrix.light == 'green' }}
+        run: |
+          mkdir build && cd build
+          cmake .. ${{ matrix.make_options }}
+          cmake --build . --config Release --parallel 4
+          ./callback
+          ./callback_chain
+          ./empty_imports
+          ./global
+          ./hello
+          ./hostref
+          ./memory
+          ./reflect
+          ./table
+          ./trap
+        working-directory: samples/wasm-c-api
+
+  build_samples_others:
+    needs: [build_iwasm, check_repo]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            light: ${{ needs.check_repo.outputs.traffic_light }}
+            wasi_sdk_release: https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-12/wasi-sdk-12.0-macos.tar.gz
+            wabt_release: https://github.com/WebAssembly/wabt/releases/download/1.0.24/wabt-1.0.24-macos.tar.gz
+    steps:
+      - name: light status
+        run: echo "matrix.os=${{ matrix.os }}, light=${{ matrix.light }}"
+
+      - name: checkout
+        if: ${{ matrix.light == 'green' }}
+        uses: actions/checkout@v3
+
+      - name: download and install wasi-sdk
+        if: ${{ matrix.light == 'green' }}
+        run: |
+          cd /opt
+          sudo wget ${{ matrix.wasi_sdk_release }}
+          sudo tar -xzf wasi-sdk-12.0-*.tar.gz
+          sudo mv wasi-sdk-12.0 wasi-sdk
+
+      - name: download and install wabt
+        if: ${{ matrix.light == 'green' }}
+        run: |
+          cd /opt
+          sudo wget ${{ matrix.wabt_release }}
+          sudo tar -xzf wabt-1.0.24-*.tar.gz
+          sudo mv wabt-1.0.24 wabt
+
+      - name: Build Sample [basic]
+        if: ${{ matrix.light == 'green' }}
+        run: |
+          cd samples/basic
+          ./build.sh
+          ./run.sh
+
+      - name: Build Sample [file]
+        if: ${{ matrix.light == 'green' }}
+        run: |
+          cd samples/file
+          mkdir build && cd build
+          cmake ..
+          cmake --build . --config Release --parallel 4
+          ./src/iwasm -f wasm-app/file.wasm -d .
+
+      - name: Build Sample [multi-thread]
+        if: ${{ matrix.light == 'green' }}
+        run: |
+          cd samples/multi-thread
+          mkdir build && cd build
+          cmake ..
+          cmake --build . --config Release --parallel 4
+          ./iwasm wasm-apps/test.wasm
+
+      - name: Build Sample [multi-module]
+        if: ${{ matrix.light == 'green' }}
+        run: |
+          cd samples/multi-module
+          mkdir build && cd build
+          cmake ..
+          cmake --build . --config Release --parallel 4
+          ./multi_module
+
+      - name: Build Sample [spawn-thread]
+        if: ${{ matrix.light == 'green' }}
+        run: |
+          cd samples/spawn-thread
+          mkdir build && cd build
+          cmake ..
+          cmake --build . --config Release --parallel 4
+          ./spawn_thread
+
+      - name: Build Sample [ref-types]
+        if: ${{ matrix.light == 'green' }}
+        run: |
+          cd samples/ref-types
+          mkdir build && cd build
+          cmake ..
+          cmake --build . --config Release --parallel 4
+          ./hello

@@ -29,6 +29,7 @@
 /* Upload data to S3 in 5MB chunks */
 #define MIN_CHUNKED_UPLOAD_SIZE 5242880
 #define MAX_CHUNKED_UPLOAD_SIZE 50000000
+#define MAX_CHUNKED_UPLOAD_COMPRESS_SIZE 5000000000
 
 #define UPLOAD_TIMER_MAX_WAIT 60000
 #define UPLOAD_TIMER_MIN_WAIT 6000
@@ -41,7 +42,8 @@
 #define MAX_FILE_SIZE         50000000000
 #define MAX_FILE_SIZE_STR     "50,000,000,000"
 
-#define MAX_FILE_SIZE_PUT_OBJECT         50000000
+/* Allowed max file size 1 GB for publishing to S3 */
+#define MAX_FILE_SIZE_PUT_OBJECT        1000000000 
 
 #define DEFAULT_UPLOAD_TIMEOUT 3600
 
@@ -118,6 +120,10 @@ struct flb_s3 {
     int compression;
     int port;
     int insecure;
+    size_t store_dir_limit_size;
+
+    /* track the total amount of buffered data */
+    size_t current_buffer_size;
 
     struct flb_aws_provider *provider;
     struct flb_aws_provider *base_provider;

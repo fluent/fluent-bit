@@ -1,0 +1,30 @@
+#
+# Copyright (c) 2021, RT-Thread Development Team
+#
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+#
+
+from building import *
+
+cwd     = GetCurrentDir()
+
+src = Split('''
+wasm_runtime.c
+''')
+
+if GetDepend(['WAMR_BUILD_FAST_INTERP']):
+    src += ["wasm_interp_fast.c"]
+else:
+    src += ["wasm_interp_classic.c"]
+
+if GetDepend(['WAMR_BUILD_MINI_LOADER']):
+    src += ["wasm_mini_loader.c"]
+else:
+    src += ["wasm_loader.c"]
+
+
+CPPPATH = [cwd]
+
+group = DefineGroup('iwasm_interpreter', src, depend = [''], CPPPATH = CPPPATH)
+
+Return('group')

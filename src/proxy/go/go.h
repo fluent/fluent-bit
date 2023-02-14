@@ -36,13 +36,37 @@ struct flbgo_output_plugin {
     int (*cb_exit_ctx)(void *);
 };
 
-int proxy_go_register(struct flb_plugin_proxy *proxy,
-                      struct flb_plugin_proxy_def *def);
+struct flbgo_input_plugin {
+    char *name;
+    void *api;
+    void *i_ins;
+    struct flb_plugin_proxy_context *context;
 
-int proxy_go_init(struct flb_plugin_proxy *proxy);
+    int (*cb_init)();
+    int (*cb_collect)(void **, size_t *);
+    int (*cb_cleanup)(void *);
+    int (*cb_exit)();
+};
 
-int proxy_go_flush(struct flb_plugin_proxy_context *ctx,
-                   const void *data, size_t size,
-                   const char *tag, int tag_len);
-int proxy_go_destroy(void *data);
+int proxy_go_output_register(struct flb_plugin_proxy *proxy,
+                             struct flb_plugin_proxy_def *def);
+
+int proxy_go_output_init(struct flb_plugin_proxy *proxy);
+
+int proxy_go_output_flush(struct flb_plugin_proxy_context *ctx,
+                          const void *data, size_t size,
+                          const char *tag, int tag_len);
+int proxy_go_output_destroy(struct flb_plugin_proxy_context *ctx);
+void proxy_go_output_unregister(void *data);
+
+int proxy_go_input_register(struct flb_plugin_proxy *proxy,
+                            struct flb_plugin_proxy_def *def);
+
+int proxy_go_input_init(struct flb_plugin_proxy *proxy);
+int proxy_go_input_collect(struct flb_plugin_proxy *ctx,
+                           void **collected_data, size_t *len);
+int proxy_go_input_cleanup(struct flb_plugin_proxy *ctx,
+                           void *allocated_data);
+int proxy_go_input_destroy(struct flb_plugin_input_proxy_context *ctx);
+void proxy_go_input_unregister(void *data);
 #endif

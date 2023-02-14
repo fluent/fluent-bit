@@ -25,7 +25,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_filter.h>
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_filter_plugin.h>
@@ -136,15 +136,20 @@ static int delete_list(struct geoip2_ctx *ctx)
     return 0;
 }
 
-static struct flb_hash *prepare_lookup_keys(msgpack_object *map,
-                                            struct geoip2_ctx *ctx)
+static struct flb_hash_table *prepare_lookup_keys(msgpack_object *map,
+                                                 struct geoip2_ctx *ctx)
 {
     msgpack_object_kv *kv;
     msgpack_object *key;
     msgpack_object *val;
     struct mk_list *head;
     struct flb_config_map_val *lookup_key;
-    struct flb_hash *ht = flb_hash_create(FLB_HASH_EVICT_NONE, ctx->lookup_keys_num, -1);
+    struct flb_hash_table *ht;
+
+    ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, ctx->lookup_keys_num, -1);
+    if (!ht) {
+        return NULL;
+    }
 
     kv = map->via.map.ptr;
     for (int i = 0; i < map->via.map.size; i++) {
@@ -160,8 +165,8 @@ static struct flb_hash *prepare_lookup_keys(msgpack_object *map,
         flb_config_map_foreach(head, lookup_key, ctx->lookup_keys) {
             if (strncasecmp(key->via.str.ptr, lookup_key->val.str, 
                 flb_sds_len(lookup_key->val.str)) == 0) {
-                flb_hash_add(ht, lookup_key->val.str, flb_sds_len(lookup_key->val.str),
-                             (void *) val->via.str.ptr, val->via.str.size);
+                flb_hash_table_add(ht, lookup_key->val.str, flb_sds_len(lookup_key->val.str),
+                                   (void *) val->via.str.ptr, val->via.str.size);
             }
         }
     }
@@ -187,7 +192,7 @@ static MMDB_lookup_result_s mmdb_lookup(struct geoip2_ctx *ctx, const char *ip)
 }
 
 static void add_geoip_fields(msgpack_object *map,
-                             struct flb_hash *lookup_keys,
+                             struct flb_hash_table *lookup_keys,
                              struct geoip2_ctx *ctx,
                              msgpack_packer *packer)
 {
@@ -217,8 +222,8 @@ static void add_geoip_fields(msgpack_object *map,
         msgpack_pack_str(packer, record->key_len);
         msgpack_pack_str_body(packer, record->key, record->key_len);
 
-        ret = flb_hash_get(lookup_keys, record->lookup_key, record->lookup_key_len,
-                           (void *) &ip, &ip_size);
+        ret = flb_hash_table_get(lookup_keys, record->lookup_key, record->lookup_key_len,
+                                 (void *) &ip, &ip_size);
         if (ret == -1) {
             msgpack_pack_nil(packer);
             continue;
@@ -382,7 +387,7 @@ static int cb_geoip2_filter(const void *data, size_t bytes,
     msgpack_unpacked unpacked;
     msgpack_object *obj;
     msgpack_object_kv *kv;
-    struct flb_hash *lookup_keys_hash;
+    struct flb_hash_table *lookup_keys_hash;
 
     /* Create temporal msgpack buffer */
     msgpack_sbuffer_init(&sbuffer);
@@ -416,7 +421,7 @@ static int cb_geoip2_filter(const void *data, size_t bytes,
 
         lookup_keys_hash = prepare_lookup_keys(obj, ctx);
         add_geoip_fields(obj, lookup_keys_hash, ctx, &packer);
-        flb_hash_destroy(lookup_keys_hash);
+        flb_hash_table_destroy(lookup_keys_hash);
     }
     msgpack_unpacked_destroy(&unpacked);
 

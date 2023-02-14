@@ -58,6 +58,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     struct flb_cloudwatch *ctx = NULL;
     struct cw_flush *buf = NULL;
     int ret;
+    flb_sds_t tmp_sds = NULL;
     (void) config;
     (void) data;
 
@@ -81,6 +82,11 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     tmp = flb_output_get_property("log_group_name", ins);
     if (tmp) {
         ctx->log_group = tmp;
+        ctx->group_name = flb_sds_create(tmp);
+        if (!ctx->group_name) {
+            flb_plg_error(ctx->ins, "Could not create log group context property");
+            goto error;
+        }
     } else {
         flb_plg_error(ctx->ins, "'log_group_name' is a required field");
         goto error;
@@ -89,6 +95,11 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     tmp = flb_output_get_property("log_stream_name", ins);
     if (tmp) {
         ctx->log_stream_name = tmp;
+        ctx->stream_name = flb_sds_create(tmp);
+        if (!ctx->stream_name) {
+            flb_plg_error(ctx->ins, "Could not create log group context property");
+            goto error;
+        }
     }
 
     tmp = flb_output_get_property("log_stream_prefix", ins);
@@ -106,6 +117,24 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         flb_plg_error(ctx->ins, "Either 'log_stream_name' or 'log_stream_prefix'"
                       " is required");
         goto error;
+    }
+
+    tmp = flb_output_get_property("log_group_template", ins);
+    if (tmp) {
+        ctx->ra_group = flb_ra_create((char *) tmp, FLB_FALSE);
+        if (ctx->ra_group == NULL) {
+            flb_plg_error(ctx->ins, "Could not parse `log_group_template`");
+            goto error;
+        }
+    }
+
+    tmp = flb_output_get_property("log_stream_template", ins);
+    if (tmp) {
+        ctx->ra_stream = flb_ra_create((char *) tmp, FLB_FALSE);
+        if (ctx->ra_stream == NULL) {
+            flb_plg_error(ctx->ins, "Could not parse `log_stream_template`");
+            goto error;
+        }
     }
 
     tmp = flb_output_get_property("log_format", ins);
@@ -184,8 +213,6 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         ctx->sts_endpoint = (char *) tmp;
     }
 
-    ctx->group_created = FLB_FALSE;
-
     /* init log streams */
     if (ctx->log_stream_name) {
         ctx->stream.name = flb_sds_create(ctx->log_stream_name);
@@ -197,7 +224,8 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     }
 
     /* one tls instance for provider, one for cw client */
-    ctx->cred_tls = flb_tls_create(FLB_TRUE,
+    ctx->cred_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                   FLB_TRUE,
                                    ins->tls_debug,
                                    ins->tls_vhost,
                                    ins->tls_ca_path,
@@ -211,7 +239,8 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         goto error;
     }
 
-    ctx->client_tls = flb_tls_create(FLB_TRUE,
+    ctx->client_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                     FLB_TRUE,
                                      ins->tls_debug,
                                      ins->tls_vhost,
                                      ins->tls_ca_path,
@@ -245,7 +274,8 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         }
 
         /* STS provider needs yet another separate TLS instance */
-        ctx->sts_tls = flb_tls_create(FLB_TRUE,
+        ctx->sts_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                      FLB_TRUE,
                                       ins->tls_debug,
                                       ins->tls_vhost,
                                       ins->tls_ca_path,
@@ -307,7 +337,12 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     ctx->cw_client->proxy = NULL;
     ctx->cw_client->static_headers = &content_type_header;
     ctx->cw_client->static_headers_len = 1;
-    ctx->cw_client->extra_user_agent = (char *) ctx->extra_user_agent;
+    tmp_sds = flb_sds_create(ctx->extra_user_agent);
+    if (!tmp_sds) {
+        flb_errno();
+        goto error;
+    }
+    ctx->cw_client->extra_user_agent = tmp_sds;
     ctx->cw_client->retry_requests = ctx->retry_requests;
 
     struct flb_upstream *upstream = flb_upstream_create(config, ctx->endpoint,
@@ -317,13 +352,6 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         flb_plg_error(ctx->ins, "Connection initialization error");
         goto error;
     }
-
-    /*
-     * Remove async flag from upstream
-     * CW output runs in sync mode; because the CW API currently requires
-     * PutLogEvents requests to a log stream to be made serially
-     */
-    upstream->flags &= ~(FLB_IO_ASYNC);
 
     ctx->cw_client->upstream = upstream;
     flb_output_upstream_set(upstream, ctx->ins);
@@ -383,19 +411,10 @@ static void cb_cloudwatch_flush(struct flb_event_chunk *event_chunk,
 {
     struct flb_cloudwatch *ctx = out_context;
     int event_count;
-    struct log_stream *stream = NULL;
     (void) i_ins;
     (void) config;
 
-    ctx->buf->put_events_calls = 0;
-
-    stream = get_log_stream(ctx,
-                            event_chunk->tag, flb_sds_len(event_chunk->tag));
-    if (!stream) {
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
-
-    event_count = process_and_send(ctx, i_ins->p->name, ctx->buf, stream,
+    event_count = process_and_send(ctx, i_ins->p->name, ctx->buf, event_chunk->tag,
                                    event_chunk->data, event_chunk->size);
     if (event_count < 0) {
         flb_plg_error(ctx->ins, "Failed to send events");
@@ -447,6 +466,22 @@ void flb_cloudwatch_ctx_destroy(struct flb_cloudwatch *ctx)
             flb_free(ctx->endpoint);
         }
 
+        if (ctx->ra_group) {
+            flb_ra_destroy(ctx->ra_group);
+        }
+
+        if (ctx->ra_stream) {
+            flb_ra_destroy(ctx->ra_stream);
+        }
+
+        if (ctx->group_name) {
+            flb_sds_destroy(ctx->group_name);
+        }
+
+        if (ctx->stream_name) {
+            flb_sds_destroy(ctx->stream_name);
+        }
+
         if (ctx->log_stream_name) {
             if (ctx->stream.name) {
                 flb_sds_destroy(ctx->stream.name);
@@ -482,6 +517,9 @@ void log_stream_destroy(struct log_stream *stream)
         if (stream->sequence_token) {
             flb_sds_destroy(stream->sequence_token);
         }
+        if (stream->group) {
+            flb_sds_destroy(stream->group);
+        }
         flb_free(stream);
     }
 }
@@ -511,6 +549,20 @@ static struct flb_config_map config_map[] = {
      0, FLB_FALSE, 0,
      "Prefix for CloudWatch Log Stream Name; the tag is appended to the prefix"
      " to form the stream name"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "log_group_template", NULL,
+     0, FLB_FALSE, 0,
+     "Template for CW Log Group name using record accessor syntax. "
+     "Plugin falls back to the log_group_name configured if needed."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "log_stream_template", NULL,
+     0, FLB_FALSE, 0,
+     "Template for CW Log Stream name using record accessor syntax. "
+     "Plugin falls back to the log_stream_name or log_stream_prefix configured if needed."
     },
 
     {
@@ -616,7 +668,12 @@ struct flb_output_plugin out_cloudwatch_logs_plugin = {
     .cb_init      = cb_cloudwatch_init,
     .cb_flush     = cb_cloudwatch_flush,
     .cb_exit      = cb_cloudwatch_exit,
-    .flags        = 0,
+
+    /*
+     * Allow cloudwatch to use async network stack synchronously by opting into
+     * FLB_OUTPUT_SYNCHRONOUS synchronous task scheduler
+     */
+    .flags        = FLB_OUTPUT_SYNCHRONOUS,
     .workers      = 1,
 
     /* Configuration */

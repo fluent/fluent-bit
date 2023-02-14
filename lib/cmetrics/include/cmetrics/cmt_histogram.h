@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@ struct cmt_histogram {
     struct cmt_histogram_buckets *buckets;
     struct cmt_opts opts;
     struct cmt_map *map;
-    struct mk_list _head;
+    struct cfl_list _head;
     struct cmt *cmt;
     int    aggregation_type;
 };

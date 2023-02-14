@@ -143,11 +143,172 @@ static void log_worker_collector(void *data)
     pthread_exit(NULL);
 }
 
+struct flb_log_cache *flb_log_cache_create(int timeout_seconds, int size)
+{
+    int i;
+    struct flb_log_cache *cache;
+    struct flb_log_cache_entry *entry;
+
+    if (size <= 0) {
+        return NULL;
+    }
+
+    cache = flb_calloc(1, sizeof(struct flb_log_cache));
+    if (!cache) {
+        flb_errno();
+        return NULL;
+    }
+    cache->timeout = timeout_seconds;
+    mk_list_init(&cache->entries);
+
+    for (i = 0; i < size; i++) {
+        entry = flb_calloc(1, sizeof(struct flb_log_cache_entry));
+        if (!entry) {
+            flb_errno();
+            flb_log_cache_destroy(cache);
+            return NULL;
+        }
+
+        entry->buf = flb_sds_create_size(FLB_LOG_CACHE_TEXT_BUF_SIZE);
+        if (!entry->buf) {
+            flb_errno();
+            flb_log_cache_destroy(cache);
+        }
+        entry->timestamp = 0; /* unset for now */
+        mk_list_add(&entry->_head, &cache->entries);
+    }
+
+    return cache;
+}
+
+void flb_log_cache_destroy(struct flb_log_cache *cache)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_log_cache_entry *entry;
+
+    if (!cache) {
+        return;
+    }
+
+    mk_list_foreach_safe(head, tmp, &cache->entries) {
+        entry = mk_list_entry(head, struct flb_log_cache_entry, _head);
+        flb_sds_destroy(entry->buf);
+        mk_list_del(&entry->_head);
+        flb_free(entry);
+    }
+    flb_free(cache);
+}
+
+struct flb_log_cache_entry *flb_log_cache_exists(struct flb_log_cache *cache, char *msg_buf, size_t msg_size)
+{
+    size_t size;
+    struct mk_list *head;
+    struct flb_log_cache_entry *entry;
+
+    if (msg_size <= 1) {
+        return NULL;
+    }
+
+    /* number of bytes to compare */
+    size = msg_size / 2;
+
+    mk_list_foreach(head, &cache->entries) {
+        entry = mk_list_entry(head, struct flb_log_cache_entry, _head);
+        if (entry->timestamp == 0) {
+            continue;
+        }
+
+        if (flb_sds_len(entry->buf) < size) {
+            continue;
+        }
+
+        if (strncmp(entry->buf, msg_buf, size) == 0) {
+            return entry;
+        }
+    }
+
+    return NULL;
+}
+
+
+/* returns an unused entry or the oldest one */
+struct flb_log_cache_entry *flb_log_cache_get_target(struct flb_log_cache *cache, uint64_t ts)
+{
+    struct mk_list *head;
+    struct flb_log_cache_entry *entry;
+    struct flb_log_cache_entry *target = NULL;
+
+    mk_list_foreach(head, &cache->entries) {
+        entry = mk_list_entry(head, struct flb_log_cache_entry, _head);
+
+        /* unused entry */
+        if (entry->timestamp == 0) {
+            return entry;
+        }
+
+        /* expired entry */
+        if (entry->timestamp + cache->timeout < ts) {
+            return entry;
+        }
+
+        /* keep a reference to the oldest entry to sacrifice it */
+        if (!target || entry->timestamp < target->timestamp) {
+            target = entry;
+        }
+    }
+
+    return target;
+}
+
+/*
+ * should the incoming message to be suppressed because already one similar exists in
+ * the cache ?
+ *
+ * if no similar message exists, then the incoming message is added to the cache.
+ */
+int flb_log_cache_check_suppress(struct flb_log_cache *cache, char *msg_buf, size_t msg_size)
+{
+    uint64_t now = 0;
+    struct flb_log_cache_entry *entry;
+
+    now = time(NULL);
+    entry = flb_log_cache_exists(cache, msg_buf, msg_size);
+
+    /* if no similar message found, add the incoming message to the cache */
+    if (!entry) {
+        /* look for an unused entry or the oldest one */
+        entry = flb_log_cache_get_target(cache, now);
+
+        /* if no target entry is available just return, do not suppress the message */
+        if (!entry) {
+            return FLB_FALSE;
+        }
+
+        /* add the message to the cache */
+        flb_sds_len_set(entry->buf, 0);
+        entry->buf = flb_sds_copy(entry->buf, msg_buf, msg_size);
+        entry->timestamp = now;
+        return FLB_FALSE;
+    }
+    else {
+        if (entry->timestamp + cache->timeout > now) {
+            return FLB_TRUE;
+        }
+        else {
+            entry->timestamp = now;
+            return FLB_FALSE;
+        }
+    }
+    return FLB_TRUE;
+}
+
 int flb_log_worker_init(struct flb_worker *worker)
 {
     int ret;
     struct flb_config *config = worker->config;
     struct flb_log *log = config->log;
+    struct flb_log_cache *cache;
 
     /* Pipe to communicate Thread with worker log-collector */
     ret = flb_pipe_create(worker->log);
@@ -165,6 +326,14 @@ int flb_log_worker_init(struct flb_worker *worker)
         return -1;
     }
 
+    /* Log cache to reduce noise */
+    cache = flb_log_cache_create(10, FLB_LOG_CACHE_ENTRIES);
+    if (!cache) {
+        close(worker->log[0]);
+        close(worker->log[1]);
+        return -1;
+    }
+    worker->log_cache = cache;
     return 0;
 }
 
@@ -323,8 +492,11 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
     return log;
 }
 
-void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
+int flb_log_construct(struct log_message *msg, int *ret_len,
+                     int type, const char *file, int line, const char *fmt, va_list *args)
 {
+    int body_size;
+    int ret;
     int len;
     int total;
     time_t now;
@@ -334,10 +506,6 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
     const char *reset_color = ANSI_RESET;
     struct tm result;
     struct tm *current;
-    struct log_message msg = {0};
-    va_list args;
-
-    va_start(args, fmt);
 
     switch (type) {
     case FLB_LOG_HELP:
@@ -370,22 +538,27 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
         break;
     }
 
+    #ifdef FLB_LOG_NO_CONTROL_CHARS
+    header_color = "";
+    bold_color = "";
+    reset_color = "";
+    #else
     /* Only print colors to a terminal */
     if (!isatty(STDOUT_FILENO)) {
         header_color = "";
         bold_color = "";
         reset_color = "";
     }
+    #endif // FLB_LOG_NO_CONTROL_CHARS
 
     now = time(NULL);
     current = localtime_r(&now, &result);
 
     if (current == NULL) {
-        va_end(args);
-        return;
+        return -1;
     }
 
-    len = snprintf(msg.msg, sizeof(msg.msg) - 1,
+    len = snprintf(msg->msg, sizeof(msg->msg) - 1,
                    "%s[%s%i/%02i/%02i %02i:%02i:%02i%s]%s [%s%5s%s] ",
                    /*      time     */                    /* type */
 
@@ -402,26 +575,79 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
                    /* type format */
                    header_color, header_title, reset_color);
 
-    total = vsnprintf(msg.msg + len,
-                      (sizeof(msg.msg) - 2) - len,
-                      fmt, args);
+    body_size = (sizeof(msg->msg) - 2) - len;
+    total = vsnprintf(msg->msg + len,
+                      body_size,
+                      fmt, *args);
     if (total < 0) {
-        va_end(args);
-        return;
+        return -1;
+    }
+    ret = total; /* ret means a buffer size need to save log body */
+
+    total = strlen(msg->msg + len) + len;
+    msg->msg[total++] = '\n';
+    msg->msg[total]   = '\0';
+    msg->size = total;
+
+    *ret_len = len;
+
+    if (ret >= body_size) {
+        /* log is truncated */
+        return ret - body_size;
     }
 
-    total = strlen(msg.msg + len) + len;
-    msg.msg[total++] = '\n';
-    msg.msg[total]   = '\0';
-    msg.size = total;
+    return 0;
+}
+
+/**
+ * flb_log_is_truncated tries to construct log and returns that the log is truncated.
+ *
+ * @param same as flb_log_print
+ * @return 0: log is not truncated. -1: some error occurs.
+ *         positive number: truncated log size.
+ *
+ */
+int flb_log_is_truncated(int type, const char *file, int line, const char *fmt, ...)
+{
+    int ret;
+    int len;
+    struct log_message msg = {0};
+    va_list args;
+
+    va_start(args, fmt);
+    ret = flb_log_construct(&msg, &len, type, file, line, fmt, &args);
     va_end(args);
+
+    if (ret < 0) {
+        return -1;
+    }
+
+    return ret;
+}
+
+void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
+{
+    int n;
+    int len;
+    int ret;
+    struct log_message msg = {0};
+    va_list args;
 
     struct flb_worker *w;
 
+    va_start(args, fmt);
+    ret = flb_log_construct(&msg, &len, type, file, line, fmt, &args);
+    va_end(args);
+
+    if (ret < 0) {
+        return;
+    }
+
     w = flb_worker_get();
     if (w) {
-        int n = flb_pipe_write_all(w->log[1], &msg, sizeof(msg));
+        n = flb_pipe_write_all(w->log[1], &msg, sizeof(msg));
         if (n == -1) {
+            fprintf(stderr, "%s", (char *) msg.msg);
             perror("write");
         }
     }
@@ -460,6 +686,9 @@ int flb_log_destroy(struct flb_log *log, struct flb_config *config)
     /* Release resources */
     mk_event_loop_destroy(log->evl);
     flb_pipe_destroy(log->ch_mng);
+    if (log->worker->log_cache) {
+        flb_log_cache_destroy(log->worker->log_cache);
+    }
     flb_free(log->worker);
     flb_free(log);
 

@@ -32,6 +32,7 @@
 #include "ne_cpufreq.h"
 #include "ne_meminfo.h"
 #include "ne_diskstats.h"
+#include "ne_filesystem.h"
 #include "ne_uname.h"
 #include "ne_stat_linux.h"
 #include "ne_time.h"
@@ -42,10 +43,12 @@
 static void update_metrics(struct flb_input_instance *ins, struct flb_ne *ctx)
 {
     /* Update our metrics */
+
     ne_cpu_update(ctx);
     ne_cpufreq_update(ctx);
     ne_meminfo_update(ctx);
     ne_diskstats_update(ctx);
+    ne_filesystem_update(ctx);
     ne_uname_update(ctx);
     ne_stat_update(ctx);
     ne_time_update(ctx);
@@ -109,6 +112,7 @@ static int in_ne_init(struct flb_input_instance *in,
     ne_cpufreq_init(ctx);
     ne_meminfo_init(ctx);
     ne_diskstats_init(ctx);
+    ne_filesystem_init(ctx);
     ne_uname_init(ctx);
     ne_stat_init(ctx);
     ne_time_init(ctx);
@@ -129,11 +133,13 @@ static int in_ne_exit(void *data, struct flb_config *config)
     }
 
     ne_diskstats_exit(ctx);
+    ne_filesystem_exit(ctx);
     ne_meminfo_exit(ctx);
     ne_vmstat_exit(ctx);
     ne_netdev_exit(ctx);
 
     flb_ne_config_destroy(ctx);
+
     return 0;
 }
 
@@ -186,5 +192,5 @@ struct flb_input_plugin in_node_exporter_metrics_plugin = {
     .cb_pause     = in_ne_pause,
     .cb_resume    = in_ne_resume,
     .cb_exit      = in_ne_exit,
-    .event_type   = FLB_INPUT_METRICS
+    .flags        = FLB_INPUT_THREADED
 };

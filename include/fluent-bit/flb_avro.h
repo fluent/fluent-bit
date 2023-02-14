@@ -38,6 +38,7 @@ struct flb_avro_fields {
 void *flb_avro_allocator(void *ud, void *ptr, size_t osize, size_t nsize);
 avro_value_iface_t *flb_avro_init(avro_value_t *aobject, char *json, size_t json_len, avro_schema_t *aschema);
 int flb_msgpack_to_avro(avro_value_t *val, msgpack_object *o);
+bool flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, struct flb_avro_fields *ctx, char *out_buff, size_t *out_size);
 int msgpack2avro(avro_value_t *val, msgpack_object *o);
 
 #endif

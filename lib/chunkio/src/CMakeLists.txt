@@ -1,6 +1,7 @@
 set(src
   cio_os.c
   cio_log.c
+  cio_file.c
   cio_memfs.c
   cio_chunk.c
   cio_meta.c
@@ -27,7 +28,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
 else()
   set(src
     ${src}
-    cio_file.c
+    cio_file_unix.c
     )
 endif()
 

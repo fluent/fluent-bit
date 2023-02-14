@@ -138,7 +138,7 @@ void we_perflib_destroy_counter(struct we_perflib_counter *counter)
 
 void we_perflib_destroy_instance(struct we_perflib_instance *instance)
 {
-    struct flb_hash_entry     *counter_hash_entry;
+    struct flb_hash_table_entry *counter_hash_entry;
     struct mk_list            *counter_iterator;
     struct we_perflib_counter *counter;
     struct mk_list            *tmp;
@@ -147,7 +147,7 @@ void we_perflib_destroy_instance(struct we_perflib_instance *instance)
                          tmp,
                          &instance->counters->entries) {
         counter_hash_entry = mk_list_entry(counter_iterator,
-                                           struct flb_hash_entry,
+                                           struct flb_hash_table_entry,
                                            _head_parent);
 
         counter = (struct we_perflib_counter *) counter_hash_entry->val;
@@ -159,7 +159,7 @@ void we_perflib_destroy_instance(struct we_perflib_instance *instance)
         flb_free(instance->name);
     }
 
-    flb_hash_destroy(instance->counters);
+    flb_hash_table_destroy(instance->counters);
 
     flb_free(instance);
 }
@@ -177,7 +177,7 @@ void we_perflib_destroy_counter_definition(
 void we_perflib_destroy_object(struct we_perflib_object *object)
 {
     struct mk_list                       *definition_iterator;
-    struct flb_hash_entry                *instance_hash_entry;
+    struct flb_hash_table_entry          *instance_hash_entry;
     struct mk_list                       *instance_iterator;
     struct we_perflib_counter_definition *definition;
     struct we_perflib_instance           *instance;
@@ -193,7 +193,7 @@ void we_perflib_destroy_object(struct we_perflib_object *object)
 
     mk_list_foreach_safe(instance_iterator, tmp, &object->instances->entries) {
         instance_hash_entry = mk_list_entry(instance_iterator,
-                                            struct flb_hash_entry,
+                                            struct flb_hash_table_entry,
                                             _head_parent);
 
         instance = (struct we_perflib_instance *) instance_hash_entry->val;
@@ -201,7 +201,7 @@ void we_perflib_destroy_object(struct we_perflib_object *object)
         we_perflib_destroy_instance(instance);
     }
 
-    flb_hash_destroy(object->instances);
+    flb_hash_table_destroy(object->instances);
 
     flb_free(object);
 }
@@ -293,7 +293,7 @@ static int get_number_of_string_entries(uint32_t *result_count)
     return 0;
 }
 
-static int get_text_mapping_table(struct flb_hash **out_mapping_table)
+static int get_text_mapping_table(struct flb_hash_table **out_mapping_table)
 {
     char      *current_counter_string;
     flb_sds_t  counter_strings;
@@ -318,8 +318,8 @@ static int get_text_mapping_table(struct flb_hash **out_mapping_table)
         return -3;
     }
 
-    *out_mapping_table = flb_hash_create(FLB_HASH_EVICT_NONE, 512, string_count * 2);
-
+    *out_mapping_table = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE,
+                                               512, string_count * 2);
     if (*out_mapping_table == NULL) {
         flb_sds_destroy(counter_strings);
 
@@ -343,26 +343,26 @@ static int get_text_mapping_table(struct flb_hash **out_mapping_table)
             break;
         }
 
-        result = flb_hash_add(*out_mapping_table,
-                              counter_name,  strlen(counter_name),
-                              counter_index, strlen(counter_index));
+        result = flb_hash_table_add(*out_mapping_table,
+                                    counter_name,  strlen(counter_name),
+                                    counter_index, strlen(counter_index));
 
         if (result < 0) {
             flb_sds_destroy(counter_strings);
-            flb_hash_destroy(*out_mapping_table);
+            flb_hash_table_destroy(*out_mapping_table);
 
             *out_mapping_table = NULL;
 
             return -5;
         }
 
-        result = flb_hash_add(*out_mapping_table,
-                              counter_index, strlen(counter_index),
-                              counter_name,  strlen(counter_name));
+        result = flb_hash_table_add(*out_mapping_table,
+                                    counter_index, strlen(counter_index),
+                                    counter_name,  strlen(counter_name));
 
         if (result < 0) {
             flb_sds_destroy(counter_strings);
-            flb_hash_destroy(*out_mapping_table);
+            flb_hash_table_destroy(*out_mapping_table);
 
             *out_mapping_table = NULL;
 
@@ -425,24 +425,24 @@ int we_perflib_query_raw_data(struct flb_we *ctx, char *source,
     return 0;
 }
 
-static char *we_perflib_lookup_counter_index(struct flb_hash *mapping_table,
+static char *we_perflib_lookup_counter_index(struct flb_hash_table *mapping_table,
                                              char *name)
 {
-    return flb_hash_get_ptr(mapping_table,
-                            name,
-                            strlen(name));
+    return flb_hash_table_get_ptr(mapping_table,
+                                  name,
+                                  strlen(name));
 }
 
-static char *we_perflib_lookup_counter_name(struct flb_hash *mapping_table,
+static char *we_perflib_lookup_counter_name(struct flb_hash_table *mapping_table,
                                             uint32_t index)
 {
     char hash_table_index[11];
 
     sprintf(hash_table_index, "%" PRIu32, index);
 
-    return flb_hash_get_ptr(mapping_table,
-                            hash_table_index,
-                            strlen(hash_table_index));
+    return flb_hash_table_get_ptr(mapping_table,
+                                  hash_table_index,
+                                  strlen(hash_table_index));
 }
 
 static int we_perflib_process_object_type(
@@ -493,10 +493,10 @@ static int we_perflib_process_object_type(
     perflib_object->instance_count = perf_object->NumInstances;
 
 
-    perflib_object->instances = flb_hash_create(
-                                        FLB_HASH_EVICT_NONE,
-                                        64,
-                                        perflib_object->instance_count + 1);
+    perflib_object->instances = flb_hash_table_create(
+                                                      FLB_HASH_TABLE_EVICT_NONE,
+                                                      64,
+                                                      perflib_object->instance_count + 1);
 
     if (perflib_object->instances == NULL) {
         flb_free(perflib_object);
@@ -683,19 +683,19 @@ static int we_perflib_process_counters(struct we_perflib_context   *context,
         result = -1;
 
         if (counter_definition->name[0]) {
-            result = flb_hash_add(instance->counters,
-                                  counter_definition->name,
-                                  strlen(counter_definition->name),
-                                  perflib_instance_counter,
-                                  0);
+            result = flb_hash_table_add(instance->counters,
+                                        counter_definition->name,
+                                        strlen(counter_definition->name),
+                                        perflib_instance_counter,
+                                        0);
         }
         else
         {
-            result = flb_hash_add(instance->counters,
-                                  counter_definition->name_index_str,
-                                  strlen(counter_definition->name_index_str),
-                                  perflib_instance_counter,
-                                  0);
+            result = flb_hash_table_add(instance->counters,
+                                        counter_definition->name_index_str,
+                                        strlen(counter_definition->name_index_str),
+                                        perflib_instance_counter,
+                                        0);
         }
 
         if (result < 0) {
@@ -719,9 +719,9 @@ static struct we_perflib_instance *we_perflib_create_instance(size_t counter_cou
         return NULL;
     }
 
-    instance->counters = flb_hash_create(FLB_HASH_EVICT_NONE,
-                                         64,
-                                         counter_count + 1);
+    instance->counters = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE,
+                                               64,
+                                               counter_count + 1);
 
     if (instance->counters == NULL) {
         flb_free(instance);
@@ -750,22 +750,17 @@ static int we_perflib_process_instance(struct we_perflib_context   *context,
 
     offset = 0;
 
-    if (perflib_object->instance_count > 1) {
+    if (perflib_object->instance_count >= 1) {
         perf_instance_definition = (PERF_INSTANCE_DEFINITION *) input_data_block;
 
         if (perf_instance_definition->NameLength > 0) {
-            perflib_instance->name = (char *) flb_calloc(1,
-                                (perf_instance_definition->NameLength / 2) + 2);
-
+            perflib_instance->name = \
+                    we_convert_wstr(&input_data_block[perf_instance_definition->NameOffset], CP_UTF8);
             if (perflib_instance->name == NULL) {
                 we_perflib_destroy_instance(perflib_instance);
 
                 return -2;
             }
-
-            wcstombs(perflib_instance->name,
-                     &input_data_block[perf_instance_definition->NameOffset],
-                     perf_instance_definition->NameLength / 2);
         }
         else {
             perflib_instance->name = flb_strdup("DEFAULT");
@@ -820,11 +815,11 @@ static int we_perflib_process_instances(struct we_perflib_context *context,
 
         offset += result;
 
-        result = flb_hash_add(perflib_object->instances,
-                              perflib_instance->name,
-                              strlen(perflib_instance->name),
-                              perflib_instance,
-                              0);
+        result = flb_hash_table_add(perflib_object->instances,
+                                    perflib_instance->name,
+                                    strlen(perflib_instance->name),
+                                    perflib_instance,
+                                    0);
 
         if (result < 0) {
             we_perflib_destroy_instance(perflib_instance);
@@ -916,7 +911,7 @@ int we_perflib_update_counters(struct flb_we                   *ctx,
                                we_perflib_label_prepend_hook    label_prepend_hook)
 {
     char                            *metric_label_list[WE_PERFLIB_METRIC_LABEL_LIST_SIZE];
-    struct flb_hash_entry           *instance_hash_entry;
+    struct flb_hash_table_entry     *instance_hash_entry;
     size_t                           metric_label_count;
     struct mk_list                  *instance_iterator;
     struct we_perflib_metric_source *metric_source;
@@ -929,7 +924,7 @@ int we_perflib_update_counters(struct flb_we                   *ctx,
     int                              result;
 
 
-    timestamp = cmt_time_now();
+    timestamp = cfl_time_now();
 
     result = we_perflib_query(ctx, query, &measurement);
 
@@ -939,10 +934,10 @@ int we_perflib_update_counters(struct flb_we                   *ctx,
 
     mk_list_foreach_r (instance_iterator, &measurement->instances->entries) {
         instance_hash_entry = mk_list_entry(instance_iterator,
-                                            struct flb_hash_entry,
+                                            struct flb_hash_table_entry,
                                             _head_parent);
 
-        if (filter_hook(instance_hash_entry->key) == 0) {
+        if (filter_hook(instance_hash_entry->key, ctx) == 0) {
             for (metric_index = 0 ;
                  metric_sources[metric_index].name != NULL ;
                  metric_index++) {
@@ -1009,17 +1004,17 @@ struct we_perflib_counter *we_perflib_get_counter(struct we_perflib_object *obje
         instance_name = "DEFAULT";
     }
 
-    instance = flb_hash_get_ptr(object->instances,
-                                instance_name,
-                                strlen(instance_name));
+    instance = flb_hash_table_get_ptr(object->instances,
+                                      instance_name,
+                                      strlen(instance_name));
 
     if (instance == NULL) {
         return NULL;
     }
 
-    counter = flb_hash_get_ptr(instance->counters,
-                               counter_name,
-                               strlen(counter_name));
+    counter = flb_hash_table_get_ptr(instance->counters,
+                                     counter_name,
+                                     strlen(counter_name));
 
     return counter;
 }
@@ -1040,8 +1035,7 @@ int we_perflib_init(struct flb_we *ctx)
 int we_perflib_exit(struct flb_we *ctx)
 {
     if (ctx->perflib_context.counter_indexes != NULL) {
-        flb_hash_destroy(ctx->perflib_context.counter_indexes);
-
+        flb_hash_table_destroy(ctx->perflib_context.counter_indexes);
         ctx->perflib_context.counter_indexes = NULL;
     }
 

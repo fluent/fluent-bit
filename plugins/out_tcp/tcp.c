@@ -51,6 +51,81 @@ static int cb_tcp_init(struct flb_output_instance *ins,
     return 0;
 }
 
+static int compose_payload(struct flb_out_tcp *ctx,
+                           const char *tag, int tag_len,
+                           const void *in_data, size_t in_size,
+                           void **out_payload, size_t *out_size)
+{
+    int ret;
+    size_t off = 0;
+    flb_sds_t buf = NULL;
+    flb_sds_t json = NULL;
+    flb_sds_t str;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object map;
+
+    /* raw message key by using a record accessor */
+    if (ctx->ra_raw_message_key) {
+        buf = flb_sds_create_size(in_size);
+        if (!buf) {
+            return FLB_ERROR;
+        }
+
+        msgpack_unpacked_init(&result);
+        while (msgpack_unpack_next(&result, in_data, in_size, &off) == MSGPACK_UNPACK_SUCCESS) {
+            root = result.data;
+
+            map = root.via.array.ptr[1];
+            str = flb_ra_translate(ctx->ra_raw_message_key, (char *) tag, tag_len, map, NULL);
+            if (!str) {
+                continue;
+            }
+
+            ret = flb_sds_cat_safe(&buf, str, flb_sds_len(str));
+            if (ret != 0) {
+                flb_plg_error(ctx->ins, "failed to compose payload from '%s'", str);
+            }
+            flb_sds_destroy(str);
+
+            /* append a new line */
+            flb_sds_cat_safe(&buf, "\n", 1);
+        }
+
+        msgpack_unpacked_destroy(&result);
+
+        if (flb_sds_len(buf) == 0) {
+            flb_sds_destroy(buf);
+            return FLB_ERROR;
+        }
+
+        *out_payload = buf;
+        *out_size = flb_sds_len(buf);
+        return FLB_OK;
+    }
+
+    if (ctx->out_format == FLB_PACK_JSON_FORMAT_NONE) {
+        /* nothing to do */
+        *out_payload = (void*)in_data;
+        *out_size = in_size;
+        return FLB_OK;
+    }
+
+    json = flb_pack_msgpack_to_json_format(in_data,
+                                           in_size,
+                                           ctx->out_format,
+                                           ctx->json_date_format,
+                                           ctx->date_key);
+    if (!json) {
+        flb_plg_error(ctx->ins, "error formatting JSON payload");
+        return FLB_ERROR;
+    }
+    *out_payload = (void*)json;
+    *out_size = flb_sds_len(json);
+
+    return FLB_OK;
+}
+
 static void cb_tcp_flush(struct flb_event_chunk *event_chunk,
                          struct flb_output_flush *out_flush,
                          struct flb_input_instance *i_ins,
@@ -59,10 +134,11 @@ static void cb_tcp_flush(struct flb_event_chunk *event_chunk,
 {
     int ret = FLB_ERROR;
     size_t bytes_sent;
-    flb_sds_t json = NULL;
     struct flb_upstream *u;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_out_tcp *ctx = out_context;
+    void *out_payload = NULL;
+    size_t out_size = 0;
     (void) i_ins;
 
     /* Get upstream context and connection */
@@ -74,26 +150,28 @@ static void cb_tcp_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    if (ctx->out_format == FLB_PACK_JSON_FORMAT_NONE) {
+    ret = compose_payload(ctx,
+                          event_chunk->tag, flb_sds_len(event_chunk->tag),
+                          event_chunk->data, event_chunk->size,
+                          &out_payload, &out_size);
+    if (ret != FLB_OK) {
+        flb_upstream_conn_release(u_conn);
+        return FLB_OUTPUT_RETURN(ret);
+    }
+
+    if (ctx->ra_raw_message_key) {
+        ret = flb_io_net_write(u_conn, out_payload, out_size, &bytes_sent);
+        flb_sds_destroy(out_payload);
+    }
+    else if (ctx->out_format == FLB_PACK_JSON_FORMAT_NONE) {
         ret = flb_io_net_write(u_conn,
                                event_chunk->data, event_chunk->size,
                                &bytes_sent);
     }
     else {
-        json = flb_pack_msgpack_to_json_format(event_chunk->data,
-                                               event_chunk->size,
-                                               ctx->out_format,
-                                               ctx->json_date_format,
-                                               ctx->date_key);
-        if (!json) {
-            flb_plg_error(ctx->ins, "error formatting JSON payload");
-            flb_upstream_conn_release(u_conn);
-            FLB_OUTPUT_RETURN(FLB_ERROR);
-        }
-        ret = flb_io_net_write(u_conn, json, flb_sds_len(json), &bytes_sent);
-        flb_sds_destroy(json);
+        ret = flb_io_net_write(u_conn, out_payload, out_size, &bytes_sent);
+        flb_sds_destroy(out_payload);
     }
-
     if (ret == -1) {
         flb_errno();
         flb_upstream_conn_release(u_conn);
@@ -133,9 +211,36 @@ static struct flb_config_map config_map[] = {
      "Specify the name of the date field in output."
     },
 
+    {
+     FLB_CONFIG_MAP_STR, "raw_message_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_tcp, raw_message_key),
+     "use a raw message key for the message."
+    },
+
     /* EOF */
     {0}
 };
+
+static int cb_tcp_format_test(struct flb_config *config,
+                              struct flb_input_instance *ins,
+                              void *plugin_context,
+                              void *flush_ctx,
+                              int event_type,
+                              const char *tag, int tag_len,
+                              const void *data, size_t bytes,
+                              void **out_data, size_t *out_size)
+{
+    struct flb_out_tcp *ctx = plugin_context;
+    int ret;
+
+    ret = compose_payload(ctx, tag, tag_len, data, bytes, out_data, out_size);
+    if (ret != FLB_OK) {
+        flb_error("ret=%d", ret);
+        return -1;
+    }
+
+    return 0;
+}
 
 /* Plugin reference */
 struct flb_output_plugin out_tcp_plugin = {
@@ -145,6 +250,9 @@ struct flb_output_plugin out_tcp_plugin = {
     .cb_flush       = cb_tcp_flush,
     .cb_exit        = cb_tcp_exit,
     .config_map     = config_map,
+    /* for testing */
+    .test_formatter.callback = cb_tcp_format_test,
+
     .workers        = 2,
     .flags          = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };

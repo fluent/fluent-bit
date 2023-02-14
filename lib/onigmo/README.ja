@@ -92,9 +92,10 @@ http://www.geocities.jp/kosako3/oniguruma/
 
  ケース１: UnixとCygwin環境
 
-   1. ./configure
-   2. make
-   3. make install
+   1. .autogen.sh  (`configure` が存在しなかった場合)
+   2. ./configure
+   3. make
+   4. make install
 
    アンインストール
 

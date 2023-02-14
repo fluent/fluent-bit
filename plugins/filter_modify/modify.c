@@ -161,7 +161,25 @@ static int setup(struct filter_modify_ctx *ctx,
             condition->b_is_regex = false;
             condition->ra_a = NULL;
             condition->raw_k = flb_strndup(kv->key, flb_sds_len(kv->key));
+            if (condition->raw_k == NULL) {
+                flb_errno();
+                flb_plg_error(ctx->ins, "Unable to allocate memory for "
+                              "condition->raw_k");
+                teardown(ctx);
+                condition_free(condition);
+                flb_utils_split_free(split);
+                return -1;
+            }
             condition->raw_v = flb_strndup(kv->val, flb_sds_len(kv->val));
+            if (condition->raw_v == NULL) {
+                flb_errno();
+                flb_plg_error(ctx->ins, "Unable to allocate memory for "
+                              "condition->raw_v");
+                teardown(ctx);
+                condition_free(condition);
+                flb_utils_split_free(split);
+                return -1;
+            }
 
             sentry =
                 mk_list_entry_first(split, struct flb_split_entry, _head);
@@ -230,6 +248,15 @@ static int setup(struct filter_modify_ctx *ctx,
                 sentry =
                     mk_list_entry_last(split, struct flb_split_entry, _head);
                 condition->b = flb_strndup(sentry->value, sentry->len);
+                if (condition->b == NULL) {
+                    flb_errno();
+                    flb_plg_error(ctx->ins, "Unable to allocate memory for "
+                                  "condition->b");
+                    teardown(ctx);
+                    condition_free(condition);
+                    flb_utils_split_free(split);
+                    return -1;
+                }
                 condition->b_len = sentry->len;
             }
             else {
@@ -296,15 +323,53 @@ static int setup(struct filter_modify_ctx *ctx,
             rule->key_is_regex = false;
             rule->val_is_regex = false;
             rule->raw_k = flb_strndup(kv->key, flb_sds_len(kv->key));
+            if (rule->raw_k == NULL) {
+                flb_errno();
+                flb_plg_error(ctx->ins, "Unable to allocate memory for rule->raw_k");
+                teardown(ctx);
+                flb_free(rule);
+                flb_utils_split_free(split);
+                return -1;
+            }
             rule->raw_v = flb_strndup(kv->val, flb_sds_len(kv->val));
+            if (rule->raw_v == NULL) {
+                flb_errno();
+                flb_plg_error(ctx->ins, "Unable to allocate memory for rule->raw_v");
+                teardown(ctx);
+                flb_free(rule->raw_k);
+                flb_free(rule);
+                flb_utils_split_free(split);
+                return -1;
+            }
 
             sentry =
                 mk_list_entry_first(split, struct flb_split_entry, _head);
             rule->key = flb_strndup(sentry->value, sentry->len);
+            if (rule->key == NULL) {
+                flb_errno();
+                flb_plg_error(ctx->ins, "Unable to allocate memory for rule->key");
+                teardown(ctx);
+                flb_free(rule->raw_v);
+                flb_free(rule->raw_k);
+                flb_free(rule);
+                flb_utils_split_free(split);
+                return -1;
+            }
             rule->key_len = sentry->len;
 
             sentry = mk_list_entry_last(split, struct flb_split_entry, _head);
             rule->val = flb_strndup(sentry->value, sentry->len);
+            if (rule->val == NULL) {
+                flb_errno();
+                flb_plg_error(ctx->ins, "Unable to allocate memory for rule->val");
+                teardown(ctx);
+                flb_free(rule->key);
+                flb_free(rule->raw_v);
+                flb_free(rule->raw_k);
+                flb_free(rule);
+                flb_utils_split_free(split);
+                return -1;
+            }
             rule->val_len = sentry->len;
 
             flb_utils_split_free(split);
@@ -319,6 +384,12 @@ static int setup(struct filter_modify_ctx *ctx,
                 else if (strcasecmp(kv->key, "remove_regex") == 0) {
                     rule->ruletype = REMOVE_REGEX;
                     rule->key_is_regex = true;
+                }
+                else if (strcasecmp(kv->key, "move_to_start") == 0) {
+                    rule->ruletype = MOVE_TO_START;
+                }
+                else if (strcasecmp(kv->key, "move_to_end") == 0) {
+                    rule->ruletype = MOVE_TO_END;
                 }
                 else {
                     flb_plg_error(ctx->ins, "Invalid operation %s : %s in "
@@ -1131,6 +1202,50 @@ static inline int apply_rule_REMOVE_REGEX(msgpack_packer * packer,
     }
 }
 
+static inline int apply_rule_MOVE_TO_END(struct filter_modify_ctx *ctx,
+                                         msgpack_packer *packer,
+                                         msgpack_object *map,
+                                         struct modify_rule *rule)
+{
+
+    int match_keys =
+        map_count_keys_matching_wildcard(map, rule->key, rule->key_len);
+
+    if (match_keys == 0) {
+        return FLB_FILTER_NOTOUCH;
+    }
+    else {
+        msgpack_pack_map(packer, map->via.map.size);
+        map_pack_each_fn(packer, map, rule,
+                         kv_key_does_not_match_wildcard_rule_key);
+        map_pack_each_fn(packer, map, rule,
+                         kv_key_matches_wildcard_rule_key);
+        return FLB_FILTER_MODIFIED;
+    }
+}
+
+static inline int apply_rule_MOVE_TO_START(struct filter_modify_ctx *ctx,
+                                           msgpack_packer *packer,
+                                           msgpack_object *map,
+                                           struct modify_rule *rule)
+{
+
+    int match_keys =
+        map_count_keys_matching_wildcard(map, rule->key, rule->key_len);
+
+    if (match_keys == 0) {
+        return FLB_FILTER_NOTOUCH;
+    }
+    else {
+        msgpack_pack_map(packer, map->via.map.size);
+        map_pack_each_fn(packer, map, rule,
+                         kv_key_matches_wildcard_rule_key);
+        map_pack_each_fn(packer, map, rule,
+                         kv_key_does_not_match_wildcard_rule_key);
+        return FLB_FILTER_MODIFIED;
+    }
+}
+
 static inline int apply_modifying_rule(struct filter_modify_ctx *ctx,
                                        msgpack_packer *packer,
                                        msgpack_object *map,
@@ -1155,6 +1270,10 @@ static inline int apply_modifying_rule(struct filter_modify_ctx *ctx,
         return apply_rule_COPY(ctx, packer, map, rule);
     case HARD_COPY:
         return apply_rule_HARD_COPY(ctx, packer, map, rule);
+    case MOVE_TO_START:
+        return apply_rule_MOVE_TO_START(ctx, packer, map, rule);
+    case MOVE_TO_END:
+        return apply_rule_MOVE_TO_END(ctx, packer, map, rule);
     default:
         flb_plg_warn(ctx->ins, "Unknown ruletype for rule with key %s, ignoring",
                      rule->key);
@@ -1380,6 +1499,16 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "Remove_regex", NULL,
      FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
      "Remove all key/value pairs with key matching regexp KEY"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Move_To_Start", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Move key/value pairs with keys matching KEY to the start of the message"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Move_To_End", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Move key/value pairs with keys matching KEY to the end of the message"
     },
     {
      FLB_CONFIG_MAP_STR, "Rename", NULL,

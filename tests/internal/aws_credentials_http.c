@@ -181,22 +181,22 @@ static void test_http_provider()
 
     g_request_count = 0;
 
-    config = flb_calloc(1, sizeof(struct flb_config));
-    if (!config) {
-        flb_errno();
+    config = flb_config_init();
+
+    if (config == NULL) {
         return;
     }
-
-    mk_list_init(&config->upstreams);
 
     host = flb_sds_create("127.0.0.1");
     if (!host) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     path = flb_sds_create("/happy-case");
     if (!path) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
@@ -205,6 +205,7 @@ static void test_http_provider()
 
     if (!provider) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
@@ -212,6 +213,7 @@ static void test_http_provider()
     creds = provider->provider_vtable->get_credentials(provider);
     if (!creds) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     TEST_CHECK(strcmp(ACCESS_KEY_HTTP, creds->access_key_id) == 0);
@@ -223,6 +225,7 @@ static void test_http_provider()
     creds = provider->provider_vtable->get_credentials(provider);
     if (!creds) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     TEST_CHECK(strcmp(ACCESS_KEY_HTTP, creds->access_key_id) == 0);
@@ -243,7 +246,7 @@ static void test_http_provider()
     TEST_CHECK(g_request_count == 2);
 
     flb_aws_provider_destroy(provider);
-    flb_free(config);
+    flb_config_exit(config);
 }
 
 static void test_http_provider_error_case()
@@ -257,22 +260,22 @@ static void test_http_provider_error_case()
 
     g_request_count = 0;
 
-    config = flb_calloc(1, sizeof(struct flb_config));
-    if (!config) {
-        flb_errno();
+    config = flb_config_init();
+
+    if (config == NULL) {
         return;
     }
-
-    mk_list_init(&config->upstreams);
 
     host = flb_sds_create("127.0.0.1");
     if (!host) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     path = flb_sds_create("/error-case");
     if (!path) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
@@ -281,6 +284,7 @@ static void test_http_provider_error_case()
 
     if (!provider) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
@@ -303,7 +307,7 @@ static void test_http_provider_error_case()
     TEST_CHECK(g_request_count == 3);
 
     flb_aws_provider_destroy(provider);
-    flb_free(config);
+    flb_config_exit(config);
 }
 
 static void test_http_provider_malformed_response()
@@ -317,9 +321,9 @@ static void test_http_provider_malformed_response()
 
     g_request_count = 0;
 
-    config = flb_calloc(1, sizeof(struct flb_config));
-    if (!config) {
-        flb_errno();
+    config = flb_config_init();
+
+    if (config == NULL) {
         return;
     }
 
@@ -328,11 +332,13 @@ static void test_http_provider_malformed_response()
     host = flb_sds_create("127.0.0.1");
     if (!host) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     path = flb_sds_create("/malformed");
     if (!path) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
@@ -341,6 +347,7 @@ static void test_http_provider_malformed_response()
 
     if (!provider) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
@@ -363,7 +370,7 @@ static void test_http_provider_malformed_response()
     TEST_CHECK(g_request_count == 3);
 
     flb_aws_provider_destroy(provider);
-    flb_free(config);
+    flb_config_exit(config);
 }
 
 TEST_LIST = {

@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_network.h>
+#include <fluent-bit/flb_downstream.h>
 
 #include "mqtt.h"
 #include "mqtt_prot.h"
@@ -34,19 +35,31 @@ int mqtt_conn_event(void *data)
     int bytes;
     int available;
     struct mk_event *event;
-    struct mqtt_conn *conn = data;
-    struct flb_in_mqtt_config *ctx = conn->ctx;
+    struct mqtt_conn *conn;
+    struct flb_in_mqtt_config *ctx;
+    struct flb_connection *connection;
 
-    event = &conn->event;
+    connection = (struct flb_connection *) data;
+
+    conn = connection->user_data;
+
+    ctx = conn->ctx;
+
+    event = &connection->event;
+
     if (event->mask & MK_EVENT_READ) {
         available = sizeof(conn->buf) - conn->buf_len;
 
-        bytes = read(conn->fd,
-                     conn->buf + conn->buf_len, available);
+        bytes = flb_io_net_read(connection,
+                                (void *) &conn->buf[conn->buf_len],
+                                available);
+
         if (bytes > 0) {
             conn->buf_len += bytes;
             flb_plg_trace(ctx->ins, "[fd=%i] read()=%i bytes",
-                          conn->event.fd, bytes);
+                          connection->fd,
+                          bytes);
+
             ret = mqtt_prot_parser(conn);
             if (ret < 0) {
                 mqtt_conn_del(conn);
@@ -55,7 +68,8 @@ int mqtt_conn_event(void *data)
         }
         else {
             flb_plg_debug(ctx->ins, "[fd=%i] connection closed",
-                      conn->event.fd);
+                          connection->fd);
+
             mqtt_conn_del(conn);
         }
     }
@@ -67,11 +81,11 @@ int mqtt_conn_event(void *data)
 }
 
 /* Create a new mqtt request instance */
-struct mqtt_conn *mqtt_conn_add(int fd, struct flb_in_mqtt_config *ctx)
+struct mqtt_conn *mqtt_conn_add(struct flb_connection *connection,
+                                struct flb_in_mqtt_config *ctx)
 {
-    int ret;
     struct mqtt_conn *conn;
-    struct mk_event *event;
+    int               ret;
 
     conn = flb_malloc(sizeof(struct mqtt_conn));
     if (!conn) {
@@ -79,16 +93,16 @@ struct mqtt_conn *mqtt_conn_add(int fd, struct flb_in_mqtt_config *ctx)
         return NULL;
     }
 
+    conn->connection = connection;
+
     /* Set data for the event-loop */
-    event = &conn->event;
-    event->fd           = fd;
-    event->type         = FLB_ENGINE_EV_CUSTOM;
-    event->mask         = MK_EVENT_EMPTY;
-    event->handler      = mqtt_conn_event;
-    event->status       = MK_EVENT_NONE;
+    MK_EVENT_NEW(&connection->event);
+
+    connection->user_data     = conn;
+    connection->event.type    = FLB_ENGINE_EV_CUSTOM;
+    connection->event.handler = mqtt_conn_event;
 
     /* Connection info */
-    conn->fd      = fd;
     conn->ctx     = ctx;
     conn->buf_pos = 0;
     conn->buf_len = 0;
@@ -96,26 +110,33 @@ struct mqtt_conn *mqtt_conn_add(int fd, struct flb_in_mqtt_config *ctx)
     conn->status  = MQTT_NEW;
 
     /* Register instance into the event loop */
-    ret = mk_event_add(ctx->evl, fd, FLB_ENGINE_EV_CUSTOM, MK_EVENT_READ, conn);
+    ret = mk_event_add(ctx->evl,
+                       connection->fd,
+                       FLB_ENGINE_EV_CUSTOM,
+                       MK_EVENT_READ,
+                       &connection->event);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not register new connection");
-        close(fd);
         flb_free(conn);
+
         return NULL;
     }
 
     mk_list_add(&conn->_head, &ctx->conns);
+
     return conn;
 }
 
 int mqtt_conn_del(struct mqtt_conn *conn)
 {
-    /* Unregister the file descriptior from the event-loop */
-    mk_event_del(conn->ctx->evl, &conn->event);
+    /* The downstream unregisters the file descriptor from the event-loop
+     * so there's nothing to be done by the plugin
+     */
+    flb_downstream_conn_release(conn->connection);
 
     /* Release resources */
-    close(conn->fd);
     mk_list_del(&conn->_head);
+
     flb_free(conn);
 
     return 0;

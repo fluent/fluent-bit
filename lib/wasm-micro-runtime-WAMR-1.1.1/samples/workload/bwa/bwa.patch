@@ -1,0 +1,13 @@
+diff --git a/utils.c b/utils.c
+index 9ceb1be..323299f 100644
+--- a/utils.c
++++ b/utils.c
+@@ -301,6 +301,7 @@ long peakrss(void)
+ #ifdef __linux__
+ 	return r.ru_maxrss * 1024;
+ #else
+-	return r.ru_maxrss;
++	/*return r.ru_maxrss;*/
++	return 0;
+ #endif
+ }

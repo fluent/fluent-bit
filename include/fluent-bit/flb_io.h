@@ -24,8 +24,6 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_coro.h>
-#include <fluent-bit/flb_output.h>
-#include <fluent-bit/flb_upstream.h>
 
 /* Coroutine status 'flb_coro.status' */
 #define FLB_IO_CONNECT     0  /* thread issue a connection request */
@@ -41,13 +39,21 @@
 /* Other features */
 #define FLB_IO_IPV6       32  /* network I/O uses IPv6                  */
 
-int flb_io_net_connect(struct flb_upstream_conn *u_conn,
+struct flb_connection;
+
+int flb_io_net_accept(struct flb_connection *connection,
                        struct flb_coro *th);
 
-int flb_io_net_write(struct flb_upstream_conn *u, const void *data,
+int flb_io_net_connect(struct flb_connection *u_conn,
+                       struct flb_coro *th);
+
+int flb_io_net_write(struct flb_connection *connection, const void *data,
                      size_t len, size_t *out_len);
-ssize_t flb_io_net_read(struct flb_upstream_conn *u, void *buf, size_t len);
+
+ssize_t flb_io_net_read(struct flb_connection *connection, void *buf, size_t len);
+
 int flb_io_fd_write(int fd, const void *data, size_t len, size_t *out_len);
+
 ssize_t flb_io_fd_read(int fd, void *buf, size_t len);
 
 #endif

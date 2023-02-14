@@ -1,3 +1,22 @@
+/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+
+/*  CMetrics
+ *  ========
+ *  Copyright 2021-2022 The CMetrics Authors
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 #include <cmetrics/cmt_mpack_utils.h>
 #include <mpack/mpack.h>
 
@@ -55,7 +74,7 @@ int cmt_mpack_consume_uint_tag(mpack_reader_t *reader, uint64_t *output_buffer)
     return CMT_MPACK_SUCCESS;
 }
 
-int cmt_mpack_consume_string_tag(mpack_reader_t *reader, cmt_sds_t *output_buffer)
+int cmt_mpack_consume_string_tag(mpack_reader_t *reader, cfl_sds_t *output_buffer)
 {
     uint32_t    string_length;
     mpack_tag_t tag;
@@ -89,18 +108,18 @@ int cmt_mpack_consume_string_tag(mpack_reader_t *reader, cmt_sds_t *output_buffe
         return CMT_MPACK_CORRUPT_INPUT_DATA_ERROR;
     }
 
-    *output_buffer = cmt_sds_create_size(string_length + 1);
+    *output_buffer = cfl_sds_create_size(string_length + 1);
 
     if (NULL == *output_buffer) {
         return CMT_MPACK_ALLOCATION_ERROR;
     }
 
-    cmt_sds_set_len(*output_buffer, string_length);
+    cfl_sds_set_len(*output_buffer, string_length);
 
     mpack_read_cstr(reader, *output_buffer, string_length + 1, string_length);
 
     if (mpack_ok != mpack_reader_error(reader)) {
-        cmt_sds_destroy(*output_buffer);
+        cfl_sds_destroy(*output_buffer);
 
         *output_buffer = NULL;
 
@@ -110,7 +129,7 @@ int cmt_mpack_consume_string_tag(mpack_reader_t *reader, cmt_sds_t *output_buffe
     mpack_done_str(reader);
 
     if (mpack_ok != mpack_reader_error(reader)) {
-        cmt_sds_destroy(*output_buffer);
+        cfl_sds_destroy(*output_buffer);
 
         *output_buffer = NULL;
 
@@ -127,7 +146,7 @@ int cmt_mpack_unpack_map(mpack_reader_t *reader,
     struct cmt_mpack_map_entry_callback_t *callback_entry;
     uint32_t                               entry_index;
     uint32_t                               entry_count;
-    cmt_sds_t                              key_name;
+    cfl_sds_t                              key_name;
     int                                    result;
     mpack_tag_t                            tag;
 
@@ -173,7 +192,7 @@ int cmt_mpack_unpack_map(mpack_reader_t *reader,
                 callback_entry++;
             }
 
-            cmt_sds_destroy(key_name);
+            cfl_sds_destroy(key_name);
         }
     }
 

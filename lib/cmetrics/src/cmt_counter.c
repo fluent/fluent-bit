@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -56,7 +56,7 @@ struct cmt_counter *cmt_counter_create(struct cmt *cmt,
         cmt_errno();
         return NULL;
     }
-    mk_list_add(&counter->_head, &cmt->counters);
+    cfl_list_add(&counter->_head, &cmt->counters);
 
     ret = cmt_opts_init(&counter->opts, ns, subsystem, name, help);
     if (ret == -1) {
@@ -73,6 +73,8 @@ struct cmt_counter *cmt_counter_create(struct cmt *cmt,
         cmt_counter_destroy(counter);
         return NULL;
     }
+    /* set default counter aggregation type to cumulative */
+    counter->aggregation_type = CMT_AGGREGATION_TYPE_CUMULATIVE;
 
     counter->cmt = cmt;
     return counter;
@@ -85,7 +87,7 @@ void cmt_counter_allow_reset(struct cmt_counter *counter)
 
 int cmt_counter_destroy(struct cmt_counter *counter)
 {
-    mk_list_del(&counter->_head);
+    cfl_list_del(&counter->_head);
     cmt_opts_exit(&counter->opts);
 
     if (counter->map) {

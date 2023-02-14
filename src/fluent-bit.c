@@ -26,7 +26,10 @@
 #include <signal.h>
 #include <ctype.h>
 
-#include <monkey/mk_core.h>
+#include <cfl/cfl.h>
+#include <cfl/cfl_array.h>
+#include <cfl/cfl_kvlist.h>
+
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_dump.h>
@@ -124,8 +127,11 @@ static void flb_help(int rc, struct flb_config *config)
     print_opt("-T, --sp-task=SQL", "define a stream processor task");
 #endif
     print_opt("-v, --verbose", "increase logging verbosity (default: info)");
-#ifdef FLB_HAVE_TRACE
+#ifdef FLB_TRACE
     print_opt("-vv", "trace mode (available)");
+#endif
+#ifdef FLB_HAVE_CHUNK_TRACE
+    print_opt("-Z, --enable-chunk-trace", "enable chunk tracing. activating it requires using the HTTP Server API.");
 #endif
     print_opt("-w, --workdir", "set the working directory");
 #ifdef FLB_HAVE_HTTP_SERVER
@@ -235,9 +241,10 @@ static void help_plugin_description(int left_padding, flb_sds_t str)
     }
 }
 
-static msgpack_object *help_get_obj(msgpack_object map, char *key)
+static flb_sds_t help_get_value(msgpack_object map, char *key)
 {
     flb_sds_t k;
+    flb_sds_t val;
     msgpack_object *o;
     struct flb_ra_value *rval = NULL;
     struct flb_record_accessor *ra = NULL;
@@ -256,19 +263,11 @@ static msgpack_object *help_get_obj(msgpack_object map, char *key)
     }
 
     o = &rval->o;
+    val = flb_sds_create_len(o->via.str.ptr, o->via.str.size);
+
     flb_ra_key_value_destroy(rval);
     flb_ra_destroy(ra);
 
-    return o;
-}
-
-static flb_sds_t help_get_value(msgpack_object map, char *key)
-{
-    flb_sds_t val;
-    msgpack_object *o;
-
-    o = help_get_obj(map, key);
-    val = flb_sds_create_len(o->via.str.ptr, o->via.str.size);
     return val;
 }
 
@@ -419,7 +418,7 @@ static void flb_help_plugin(int rc, int format,
 
     flb_version_banner();
 
-    name = flb_cf_section_property_get(cf, s, "name");
+    name = flb_cf_section_property_get_string(cf, s, "name");
     if (!name) {
         exit(EXIT_FAILURE);
     }
@@ -605,7 +604,7 @@ static int set_property(struct flb_cf *cf, struct flb_cf_section *s, char *kv)
     int sep;
     char *key;
     char *value;
-    struct flb_kv *tmp;
+    struct cfl_variant *tmp;
 
     len = strlen(kv);
     sep = mk_string_char_search(kv, '=', len);
@@ -620,8 +619,8 @@ static int set_property(struct flb_cf *cf, struct flb_cf_section *s, char *kv)
         return -1;
     }
 
-    tmp = flb_cf_property_add(cf, &s->properties, key, 0, value, 0);
-    if (!tmp) {
+    tmp = flb_cf_section_property_add(cf, s->properties, key, 0, value, 0);
+    if (tmp == NULL) {
         fprintf(stderr, "[error] setting up section '%s' plugin property '%s'\n",
                 s->name, key);
     }
@@ -663,9 +662,11 @@ static int service_configure_plugin(struct flb_config *config,
     char *s_type;
     struct mk_list *list;
     struct mk_list *head;
-    struct mk_list *h_prop;
-    struct flb_kv *kv;
+    struct cfl_list *h_prop;
+    struct cfl_kvpair *kv;
+    struct cfl_variant *val;
     struct flb_cf_section *s;
+    int i;
     void *ins;
 
     if (type == FLB_CF_CUSTOM) {
@@ -690,7 +691,7 @@ static int service_configure_plugin(struct flb_config *config,
 
     mk_list_foreach(head, list) {
         s = mk_list_entry(head, struct flb_cf_section, _head_section);
-        name = flb_cf_section_property_get(cf, s, "name");
+        name = flb_cf_section_property_get_string(cf, s, "name");
         if (!name) {
             flb_error("[config] section '%s' is missing the 'name' property",
                       s_type);
@@ -720,31 +721,60 @@ static int service_configure_plugin(struct flb_config *config,
         if (!ins) {
             flb_error("[config] section '%s' tried to instance a plugin name "
                       "that don't exists", name);
+            flb_sds_destroy(name);
             return -1;
         }
+        flb_sds_destroy(name);
 
         /*
          * iterate section properties and populate instance by using specific
          * api function.
          */
-        mk_list_foreach(h_prop, &s->properties) {
-            kv = mk_list_entry(h_prop, struct flb_kv, _head);
+        cfl_list_foreach(h_prop, &s->properties->list) {
+            kv = cfl_list_entry(h_prop, struct cfl_kvpair, _head);
             if (strcasecmp(kv->key, "name") == 0) {
                 continue;
             }
 
-            ret = -1;
             if (type == FLB_CF_CUSTOM) {
-                ret = flb_custom_set_property(ins, kv->key, kv->val);
+                if (kv->val->type == CFL_VARIANT_STRING) {
+                    ret = flb_custom_set_property(ins, kv->key, kv->val->data.as_string);
+                } else if (kv->val->type == CFL_VARIANT_ARRAY) {
+                    for (i = 0; i < kv->val->data.as_array->entry_count; i++) {
+                        val = kv->val->data.as_array->entries[i];
+                        ret = flb_custom_set_property(ins, kv->key, val->data.as_string);
+                    }
+                }
             }
             else if (type == FLB_CF_INPUT) {
-                ret = flb_input_set_property(ins, kv->key, kv->val);
+                 if (kv->val->type == CFL_VARIANT_STRING) {
+                    ret = flb_input_set_property(ins, kv->key, kv->val->data.as_string);
+                } else if (kv->val->type == CFL_VARIANT_ARRAY) {
+                    for (i = 0; i < kv->val->data.as_array->entry_count; i++) {
+                        val = kv->val->data.as_array->entries[i];
+                        ret = flb_input_set_property(ins, kv->key, val->data.as_string);
+                    }
+                }
             }
             else if (type == FLB_CF_FILTER) {
-                ret = flb_filter_set_property(ins, kv->key, kv->val);
+                 if (kv->val->type == CFL_VARIANT_STRING) {
+                    ret = flb_filter_set_property(ins, kv->key, kv->val->data.as_string);
+                } else if (kv->val->type == CFL_VARIANT_ARRAY) {
+                    for (i = 0; i < kv->val->data.as_array->entry_count; i++) {
+                        val = kv->val->data.as_array->entries[i];
+                        ret = flb_filter_set_property(ins, kv->key, val->data.as_string);
+                    }
+                }
             }
             else if (type == FLB_CF_OUTPUT) {
-                ret = flb_output_set_property(ins, kv->key, kv->val);
+                 if (kv->val->type == CFL_VARIANT_STRING) {
+                    ret = flb_output_set_property(ins, kv->key, kv->val->data.as_string);
+                } else if (kv->val->type == CFL_VARIANT_ARRAY) {
+                    for (i = 0; i < kv->val->data.as_array->entry_count; i++) {
+                        val = kv->val->data.as_array->entries[i];
+                        ret = flb_output_set_property(ins, kv->key, val->data.as_string);
+                    }
+                }
             }
 
             if (ret == -1) {
@@ -765,6 +795,8 @@ static struct flb_cf *service_configure(struct flb_cf *cf,
     struct flb_cf_section *s;
     struct flb_kv *kv;
     struct mk_list *head;
+    struct cfl_kvpair *ckv;
+    struct cfl_list *chead;
 
 #ifdef FLB_HAVE_STATIC_CONF
         cf = flb_config_static_open(file);
@@ -832,9 +864,9 @@ static struct flb_cf *service_configure(struct flb_cf *cf,
     s = cf->service;
     if (s) {
         /* Iterate properties */
-        mk_list_foreach(head, &s->properties) {
-            kv = mk_list_entry(head, struct flb_kv, _head);
-            flb_config_set_property(config, kv->key, kv->val);
+        cfl_list_foreach(chead, &s->properties->list) {
+            ckv = cfl_list_entry(chead, struct cfl_kvpair, _head);
+            flb_config_set_property(config, ckv->key, ckv->val->data.as_string);
         }
     }
 
@@ -925,6 +957,9 @@ int flb_main(int argc, char **argv)
         { "http_listen",     required_argument, NULL, 'L' },
         { "http_port",       required_argument, NULL, 'P' },
 #endif
+#ifdef FLB_HAVE_CHUNK_TRACE
+        { "enable-chunk-trace",    no_argument, NULL, 'Z' },
+#endif
         { NULL, 0, NULL, 0 }
     };
 
@@ -948,21 +983,21 @@ int flb_main(int argc, char **argv)
     /* Parse the command line options */
     while ((opt = getopt_long(argc, argv,
                               "b:c:dDf:C:i:m:o:R:F:p:e:"
-                              "t:T:l:vw:qVhJL:HP:s:S",
+                              "t:T:l:vw:qVhJL:HP:s:SZ",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
         case 'b':
-            flb_cf_property_add(cf, &service->properties,
-                                "storage.path", 0, optarg, 0);
+            flb_cf_section_property_add(cf, service->properties,
+                                        "storage.path", 0, optarg, 0);
             break;
         case 'c':
             cfg_file = flb_strdup(optarg);
             break;
 #ifdef FLB_HAVE_FORK
         case 'd':
-            flb_cf_property_add(cf, &service->properties,
-                                "daemon", 0, "on", 0);
+            flb_cf_section_property_add(cf, service->properties,
+                                        "daemon", 0, "on", 0);
             config->daemon = FLB_TRUE;
             break;
 #endif
@@ -976,15 +1011,15 @@ int flb_main(int argc, char **argv)
             }
             break;
         case 'f':
-            flb_cf_property_add(cf, &service->properties,
-                                "flush", 0, optarg, 0);
+            flb_cf_section_property_add(cf, service->properties,
+                                        "flush", 0, optarg, 0);
             break;
         case 'C':
             s = flb_cf_section_create(cf, "custom", 0);
             if (!s) {
                 flb_utils_error(FLB_ERR_CUSTOM_INVALID);
             }
-            flb_cf_property_add(cf, &s->properties, "name", 0, optarg, 0);
+            flb_cf_section_property_add(cf, s->properties, "name", 0, optarg, 0);
             last_plugin = PLUGIN_CUSTOM;
             break;
         case 'i':
@@ -992,12 +1027,12 @@ int flb_main(int argc, char **argv)
             if (!s) {
                 flb_utils_error(FLB_ERR_INPUT_INVALID);
             }
-            flb_cf_property_add(cf, &s->properties, "name", 0, optarg, 0);
+            flb_cf_section_property_add(cf, s->properties, "name", 0, optarg, 0);
             last_plugin = PLUGIN_INPUT;
             break;
         case 'm':
             if (last_plugin == PLUGIN_FILTER || last_plugin == PLUGIN_OUTPUT) {
-                flb_cf_property_add(cf, &s->properties, "match", 0, optarg, 0);
+                flb_cf_section_property_add(cf, s->properties, "match", 0, optarg, 0);
             }
             break;
         case 'o':
@@ -1005,7 +1040,7 @@ int flb_main(int argc, char **argv)
             if (!s) {
                 flb_utils_error(FLB_ERR_OUTPUT_INVALID);
             }
-            flb_cf_property_add(cf, &s->properties, "name", 0, optarg, 0);
+            flb_cf_section_property_add(cf, s->properties, "name", 0, optarg, 0);
             last_plugin = PLUGIN_OUTPUT;
             break;
 #ifdef FLB_HAVE_PARSER
@@ -1021,11 +1056,11 @@ int flb_main(int argc, char **argv)
             if (!s) {
                 flb_utils_error(FLB_ERR_FILTER_INVALID);
             }
-            flb_cf_property_add(cf, &s->properties, "name", 0, optarg, 0);
+            flb_cf_section_property_add(cf, s->properties, "name", 0, optarg, 0);
             last_plugin = PLUGIN_FILTER;
             break;
         case 'l':
-            flb_cf_property_add(cf, &service->properties,
+            flb_cf_section_property_add(cf, service->properties,
                                 "log_file", 0, optarg, 0);
             break;
         case 'p':
@@ -1035,7 +1070,7 @@ int flb_main(int argc, char **argv)
             break;
         case 't':
             if (s) {
-                flb_cf_property_add(cf, &s->properties, "tag", 0, optarg, 0);
+                flb_cf_section_property_add(cf, s->properties, "tag", 0, optarg, 0);
             }
             break;
 #ifdef FLB_HAVE_STREAM_PROCESSOR
@@ -1062,7 +1097,7 @@ int flb_main(int argc, char **argv)
 
                 printf("%s\n", json);
                 flb_sds_destroy(json);
-                exit(0);
+                exit(EXIT_SUCCESS);
             }
             else {
                 flb_help_plugin(EXIT_SUCCESS, FLB_HELP_JSON, config,
@@ -1071,7 +1106,7 @@ int flb_main(int argc, char **argv)
             break;
 #ifdef FLB_HAVE_HTTP_SERVER
         case 'H':
-            flb_cf_property_add(cf, &service->properties, "http_server", 0, "on", 0);
+            flb_cf_section_property_add(cf, service->properties, "http_server", 0, "on", 0);
             break;
         case 'L':
             if (config->http_listen) {
@@ -1104,6 +1139,11 @@ int flb_main(int argc, char **argv)
         case 'S':
             config->support_mode = FLB_TRUE;
             break;
+#ifdef FLB_HAVE_CHUNK_TRACE
+        case 'Z':
+            config->enable_chunk_trace = FLB_TRUE;
+            break;
+#endif /* FLB_HAVE_CHUNK_TRACE */
         default:
             flb_help(EXIT_FAILURE, config);
         }

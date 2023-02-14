@@ -11,31 +11,86 @@ fi
 CONTAINER_RUNTIME=${CONTAINER_RUNTIME:-docker}
 INSTALL_SCRIPT=${INSTALL_SCRIPT:-https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh}
 
+INSTALL_CMD="curl $INSTALL_SCRIPT|sh"
+EXTRA_MOUNTS=""
+if [[ -f "$INSTALL_SCRIPT" ]]; then
+    ABSOLUTE_PATH=$(realpath "$INSTALL_SCRIPT")
+    EXTRA_MOUNTS="-v $ABSOLUTE_PATH:/install.sh:ro"
+    INSTALL_CMD="/install.sh"
+fi
+
+# Optional check for specific version
+VERSION_TO_CHECK_FOR=${VERSION_TO_CHECK_FOR:-}
+function check_version() {
+    if [[ -n "$VERSION_TO_CHECK_FOR" ]]; then
+        local LOG_FILE=$1
+        if grep -q "No package ${FLUENT_BIT_INSTALL_PACKAGE_NAME:-fluent-bit}-$VERSION_TO_CHECK_FOR available" "$LOG_FILE"; then
+            echo "WARNING: Unable to install version: $VERSION_TO_CHECK_FOR"
+            exit 1
+        fi
+
+        if ! grep -q "$VERSION_TO_CHECK_FOR" "$LOG_FILE"; then
+            echo "WARNING: Not using expected version: $VERSION_TO_CHECK_FOR"
+            exit 1
+        fi
+    fi
+}
+
 APT_TARGETS=("ubuntu:18.04"
     "ubuntu:20.04"
+    "ubuntu:22.04"
     "debian:10"
     "debian:11")
 
 YUM_TARGETS=("centos:7"
     "rockylinux:8"
-    "amazonlinux:2")
-
-for IMAGE in "${APT_TARGETS[@]}"
-do
-    echo "Testing $IMAGE"
-    $CONTAINER_RUNTIME run --rm -it \
-        -e FLUENT_BIT_PACKAGES_URL="${FLUENT_BIT_PACKAGES_URL:-https://packages.fluentbit.io}" \
-        -e FLUENT_BIT_PACKAGES_KEY="${FLUENT_BIT_PACKAGES_KEY:-https://packages.fluentbit.io/fluentbit.key}" \
-        "$IMAGE" \
-        sh -c "apt-get update && apt-get install -y sudo gpg curl;curl $INSTALL_SCRIPT | sh"
-done
+    "quay.io/centos/centos:stream9"
+    "amazonlinux:2"
+    "amazonlinux:2022")
 
 for IMAGE in "${YUM_TARGETS[@]}"
 do
     echo "Testing $IMAGE"
-    $CONTAINER_RUNTIME run --rm -it \
+    LOG_FILE=$(mktemp)
+
+    UPDATED_FLUENT_BIT_INSTALL_COMMAND_PREFIX=${FLUENT_BIT_INSTALL_COMMAND_PREFIX:-}
+    # For AL2022 we currently want a fixed 2022 version instead of build timestamps
+    if [[ "$IMAGE" == "amazonlinux:2022" ]]; then
+        UPDATED_FLUENT_BIT_INSTALL_COMMAND_PREFIX="sed -i 's|\$releasever/|2022/|g' /etc/yum.repos.d/fluent-bit.repo;${FLUENT_BIT_INSTALL_COMMAND_PREFIX:-}"
+    fi
+
+    # We do want word splitting for EXTRA_MOUNTS
+    # shellcheck disable=SC2086
+    $CONTAINER_RUNTIME run --rm -t \
         -e FLUENT_BIT_PACKAGES_URL="${FLUENT_BIT_PACKAGES_URL:-https://packages.fluentbit.io}" \
         -e FLUENT_BIT_PACKAGES_KEY="${FLUENT_BIT_PACKAGES_KEY:-https://packages.fluentbit.io/fluentbit.key}" \
+        -e FLUENT_BIT_RELEASE_VERSION="${FLUENT_BIT_RELEASE_VERSION:-}" \
+        -e FLUENT_BIT_INSTALL_COMMAND_PREFIX="$UPDATED_FLUENT_BIT_INSTALL_COMMAND_PREFIX" \
+        -e FLUENT_BIT_INSTALL_PACKAGE_NAME="${FLUENT_BIT_INSTALL_PACKAGE_NAME:-fluent-bit}" \
+        -e FLUENT_BIT_INSTALL_YUM_PARAMETERS="${FLUENT_BIT_INSTALL_YUM_PARAMETERS:-}" \
+        $EXTRA_MOUNTS \
         "$IMAGE" \
-        sh -c "yum install -y curl sudo;curl $INSTALL_SCRIPT | sh"
+        sh -c "$INSTALL_CMD && /opt/fluent-bit/bin/fluent-bit --version" | tee "$LOG_FILE"
+    check_version "$LOG_FILE"
+    rm -f "$LOG_FILE"
+done
+
+for IMAGE in "${APT_TARGETS[@]}"
+do
+    echo "Testing $IMAGE"
+    LOG_FILE=$(mktemp)
+    # We do want word splitting for EXTRA_MOUNTS
+    # shellcheck disable=SC2086
+    $CONTAINER_RUNTIME run --rm -t \
+        -e FLUENT_BIT_PACKAGES_URL="${FLUENT_BIT_PACKAGES_URL:-https://packages.fluentbit.io}" \
+        -e FLUENT_BIT_PACKAGES_KEY="${FLUENT_BIT_PACKAGES_KEY:-https://packages.fluentbit.io/fluentbit.key}" \
+        -e FLUENT_BIT_RELEASE_VERSION="${FLUENT_BIT_RELEASE_VERSION:-}" \
+        -e FLUENT_BIT_INSTALL_COMMAND_PREFIX="${FLUENT_BIT_INSTALL_COMMAND_PREFIX:-}" \
+        -e FLUENT_BIT_INSTALL_PACKAGE_NAME="${FLUENT_BIT_INSTALL_PACKAGE_NAME:-fluent-bit}" \
+        -e FLUENT_BIT_INSTALL_APT_PARAMETERS="${FLUENT_BIT_INSTALL_APT_PARAMETERS:-}" \
+        $EXTRA_MOUNTS \
+        "$IMAGE" \
+        sh -c "apt-get update && apt-get install -y gpg curl;$INSTALL_CMD && /opt/fluent-bit/bin/fluent-bit --version" | tee "$LOG_FILE"
+    check_version "$LOG_FILE"
+    rm -f "$LOG_FILE"
 done

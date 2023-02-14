@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -56,7 +56,7 @@ struct cmt_gauge *cmt_gauge_create(struct cmt *cmt,
         cmt_errno();
         return NULL;
     }
-    mk_list_add(&gauge->_head, &cmt->gauges);
+    cfl_list_add(&gauge->_head, &cmt->gauges);
 
     /* Initialize options */
     ret = cmt_opts_init(&gauge->opts, ns, subsystem, name, help);
@@ -82,7 +82,7 @@ struct cmt_gauge *cmt_gauge_create(struct cmt *cmt,
 
 int cmt_gauge_destroy(struct cmt_gauge *gauge)
 {
-    mk_list_del(&gauge->_head);
+    cfl_list_del(&gauge->_head);
     cmt_opts_exit(&gauge->opts);
     if (gauge->map) {
         cmt_map_destroy(gauge->map);

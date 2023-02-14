@@ -51,10 +51,11 @@
  * Return 1 or 0 based on a probability.
  */
 int flb_malloc_p;
+int flb_malloc_mod;
 
 static inline int flb_fuzz_get_probability(int val) {
   flb_malloc_p += 1;
-  flb_malloc_p = flb_malloc_p % 25000;
+  flb_malloc_p = flb_malloc_p % flb_malloc_mod;
   if (val > flb_malloc_p) {
     return 1;
   }
@@ -84,6 +85,12 @@ void *flb_calloc(size_t n, const size_t size) {
     if (size == 0) {
         return NULL;
     }
+#ifdef FLB_HAVE_TESTS_OSSFUZZ
+   // Add chance of failure. Used by fuzzing to test error-handling code.
+   if (flb_fuzz_get_probability(1)) {
+     return NULL;
+   }
+#endif
 
     return calloc(n, size);
 }

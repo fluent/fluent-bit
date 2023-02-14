@@ -382,8 +382,14 @@ static void test_sts_uri()
 static void test_process_sts_response()
 {
     struct flb_aws_credentials *creds;
+    struct flb_config *config;
     time_t expiration;
 
+    config = flb_config_init();
+
+    if (config == NULL) {
+        return;
+    }
     creds = flb_parse_sts_resp(STS_RESPONSE_EKS, &expiration);
 
     TEST_CHECK(strcmp(EKS_ACCESS_KEY, creds->access_key_id) == 0);
@@ -391,7 +397,7 @@ static void test_process_sts_response()
     TEST_CHECK(strcmp(EKS_TOKEN, creds->session_token) == 0);
 
     flb_aws_credentials_destroy(creds);
-
+    flb_config_exit(config);
 }
 
 static void test_eks_provider() {
@@ -402,28 +408,29 @@ static void test_eks_provider() {
 
     g_request_count = 0;
 
-    config = flb_calloc(1, sizeof(struct flb_config));
-    if (!config) {
-        flb_errno();
+    config = flb_config_init();
+
+    if (config == NULL) {
         return;
     }
-
-    mk_list_init(&config->upstreams);
 
     /* set env vars */
     ret = setenv(ROLE_ARN_ENV_VAR, "arn:aws:iam::123456789012:role/test1", 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     ret = setenv(SESSION_NAME_ENV_VAR, "session_name", 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     ret = setenv(TOKEN_FILE_ENV_VAR, WEB_TOKEN_FILE, 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
@@ -435,6 +442,7 @@ static void test_eks_provider() {
     creds = provider->provider_vtable->get_credentials(provider);
     if (!creds) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     TEST_CHECK(strcmp(EKS_ACCESS_KEY, creds->access_key_id) == 0);
@@ -446,6 +454,7 @@ static void test_eks_provider() {
     creds = provider->provider_vtable->get_credentials(provider);
     if (!creds) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     TEST_CHECK(strcmp(EKS_ACCESS_KEY, creds->access_key_id) == 0);
@@ -467,7 +476,7 @@ static void test_eks_provider() {
 
     flb_aws_provider_destroy(provider);
     unsetenv_eks();
-    flb_free(config);
+    flb_config_exit(config);
 }
 
 static void test_eks_provider_random_session_name() {
@@ -478,13 +487,11 @@ static void test_eks_provider_random_session_name() {
 
     g_request_count = 0;
 
-    config = flb_calloc(1, sizeof(struct flb_config));
-    if (!config) {
-        flb_errno();
+    config = flb_config_init();
+
+    if (config == NULL) {
         return;
     }
-
-    mk_list_init(&config->upstreams);
 
     /* set env vars - session name is not set */
     unsetenv_eks();
@@ -492,11 +499,13 @@ static void test_eks_provider_random_session_name() {
                  "arn:aws:iam::123456789012:role/randomsession", 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     ret = setenv(TOKEN_FILE_ENV_VAR, WEB_TOKEN_FILE, 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
@@ -508,6 +517,7 @@ static void test_eks_provider_random_session_name() {
     creds = provider->provider_vtable->get_credentials(provider);
     if (!creds) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     TEST_CHECK(strcmp(EKS_ACCESS_KEY, creds->access_key_id) == 0);
@@ -519,6 +529,7 @@ static void test_eks_provider_random_session_name() {
     creds = provider->provider_vtable->get_credentials(provider);
     if (!creds) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     TEST_CHECK(strcmp(EKS_ACCESS_KEY, creds->access_key_id) == 0);
@@ -540,7 +551,7 @@ static void test_eks_provider_random_session_name() {
 
     flb_aws_provider_destroy(provider);
     unsetenv_eks();
-    flb_free(config);
+    flb_config_exit(config);
 }
 
 /* unexpected output test- see description for STS_RESPONSE_MALFORMED */
@@ -552,24 +563,24 @@ static void test_eks_provider_unexpected_api_response() {
 
     g_request_count = 0;
 
-    config = flb_calloc(1, sizeof(struct flb_config));
-    if (!config) {
-        flb_errno();
+    config = flb_config_init();
+
+    if (config == NULL) {
         return;
     }
-
-    mk_list_init(&config->upstreams);
 
     unsetenv_eks();
     ret = setenv(ROLE_ARN_ENV_VAR, "arn:aws:iam::123456789012:role/"
                  "unexpected_api_response", 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     ret = setenv(TOKEN_FILE_ENV_VAR, WEB_TOKEN_FILE, 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
@@ -597,7 +608,7 @@ static void test_eks_provider_unexpected_api_response() {
 
     flb_aws_provider_destroy(provider);
     unsetenv_eks();
-    flb_free(config);
+    flb_config_exit(config);
 }
 
 static void test_eks_provider_api_error() {
@@ -608,24 +619,24 @@ static void test_eks_provider_api_error() {
 
     g_request_count = 0;
 
-    config = flb_calloc(1, sizeof(struct flb_config));
-    if (!config) {
-        flb_errno();
+    config = flb_config_init();
+
+    if (config == NULL) {
         return;
     }
-
-    mk_list_init(&config->upstreams);
 
     unsetenv_eks();
     ret = setenv(ROLE_ARN_ENV_VAR, "arn:aws:iam::123456789012:role/apierror",
                  1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     ret = setenv(TOKEN_FILE_ENV_VAR, WEB_TOKEN_FILE, 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
@@ -653,7 +664,7 @@ static void test_eks_provider_api_error() {
 
     flb_aws_provider_destroy(provider);
     unsetenv_eks();
-    flb_free(config);
+    flb_config_exit(config);
 }
 
 static void test_sts_provider() {
@@ -665,35 +676,37 @@ static void test_sts_provider() {
 
     g_request_count = 0;
 
-    config = flb_calloc(1, sizeof(struct flb_config));
-    if (!config) {
-        flb_errno();
+    config = flb_config_init();
+
+    if (config == NULL) {
         return;
     }
-
-    mk_list_init(&config->upstreams);
 
     /* use the env provider as the base provider */
     /* set environment */
     ret = setenv(AWS_ACCESS_KEY_ID, "base_akid", 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     ret = setenv(AWS_SECRET_ACCESS_KEY, "base_skid", 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     ret = setenv(AWS_SESSION_TOKEN, "base_token", 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
     base_provider = flb_aws_env_provider_create();
     if (!base_provider) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
@@ -704,6 +717,7 @@ static void test_sts_provider() {
                                         NULL, generator_in_test());
     if (!provider) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
@@ -711,6 +725,7 @@ static void test_sts_provider() {
     creds = provider->provider_vtable->get_credentials(provider);
     if (!creds) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     TEST_CHECK(strcmp(STS_ACCESS_KEY, creds->access_key_id) == 0);
@@ -722,6 +737,7 @@ static void test_sts_provider() {
     creds = provider->provider_vtable->get_credentials(provider);
     if (!creds) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     TEST_CHECK(strcmp(STS_ACCESS_KEY, creds->access_key_id) == 0);
@@ -743,7 +759,7 @@ static void test_sts_provider() {
 
     flb_aws_provider_destroy(base_provider);
     flb_aws_provider_destroy(provider);
-    flb_free(config);
+    flb_config_exit(config);
 }
 
 static void test_sts_provider_api_error() {
@@ -755,35 +771,37 @@ static void test_sts_provider_api_error() {
 
     g_request_count = 0;
 
-    config = flb_calloc(1, sizeof(struct flb_config));
-    if (!config) {
-        flb_errno();
+    config = flb_config_init();
+
+    if (config == NULL) {
         return;
     }
-
-    mk_list_init(&config->upstreams);
 
     /* use the env provider as the base provider */
     /* set environment */
     ret = setenv(AWS_ACCESS_KEY_ID, "base_akid", 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     ret = setenv(AWS_SECRET_ACCESS_KEY, "base_skid", 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     ret = setenv(AWS_SESSION_TOKEN, "base_token", 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
     base_provider = flb_aws_env_provider_create();
     if (!base_provider) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
@@ -795,6 +813,7 @@ static void test_sts_provider_api_error() {
                                 generator_in_test());
     if (!provider) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
@@ -818,7 +837,7 @@ static void test_sts_provider_api_error() {
 
     flb_aws_provider_destroy(base_provider);
     flb_aws_provider_destroy(provider);
-    flb_free(config);
+    flb_config_exit(config);
 }
 
 /* unexpected output test- see description for STS_RESPONSE_MALFORMED */
@@ -831,35 +850,37 @@ static void test_sts_provider_unexpected_api_response() {
 
     g_request_count = 0;
 
-    config = flb_calloc(1, sizeof(struct flb_config));
-    if (!config) {
-        flb_errno();
+    config = flb_config_init();
+
+    if (config == NULL) {
         return;
     }
-
-    mk_list_init(&config->upstreams);
 
     /* use the env provider as the base provider */
     /* set environment */
     ret = setenv(AWS_ACCESS_KEY_ID, "base_akid", 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     ret = setenv(AWS_SECRET_ACCESS_KEY, "base_skid", 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     ret = setenv(AWS_SESSION_TOKEN, "base_token", 1);
     if (ret < 0) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
     base_provider = flb_aws_env_provider_create();
     if (!base_provider) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
@@ -872,6 +893,7 @@ static void test_sts_provider_unexpected_api_response() {
                                        generator_in_test());
     if (!provider) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
 
@@ -895,7 +917,7 @@ static void test_sts_provider_unexpected_api_response() {
 
     flb_aws_provider_destroy(base_provider);
     flb_aws_provider_destroy(provider);
-    flb_free(config);
+    flb_config_exit(config);
 }
 
 

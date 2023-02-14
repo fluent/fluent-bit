@@ -174,6 +174,125 @@ void flb_output_coro_add(struct flb_output_instance *ins, struct flb_coro *coro)
 }
 
 /*
+ * Queue a task to be flushed at a later time
+ * Deletes retry context if enqueue fails
+ */
+static int flb_output_task_queue_enqueue(struct flb_task_queue *queue,
+                                         struct flb_task_retry *retry,
+                                         struct flb_task *task,
+                                         struct flb_output_instance *out_ins,
+                                         struct flb_config *config)
+{
+    struct flb_task_enqueued *queued_task;
+
+    queued_task = flb_malloc(sizeof(struct flb_task_enqueued));
+    if (!queued_task) {
+        flb_errno();
+        if (retry) {
+            flb_task_retry_destroy(retry);
+        }
+        return -1;
+    }
+    queued_task->retry = retry;
+    queued_task->out_instance = out_ins;
+    queued_task->task = task;
+    queued_task->config = config;
+
+    mk_list_add(&queued_task->_head, &queue->pending);
+    return 0;
+}
+
+/*
+ * Pop task from pending queue and flush it
+ * Will delete retry context if flush fails
+ */
+static int flb_output_task_queue_flush_one(struct flb_task_queue *queue)
+{
+    struct flb_task_enqueued *queued_task;
+    int ret;
+    int is_empty;
+
+    is_empty = mk_list_is_empty(&queue->pending) == 0;
+    if (is_empty) {
+        flb_error("Attempting to flush task from an empty in_progress queue");
+        return -1;
+    }
+
+    queued_task = mk_list_entry_first(&queue->pending, struct flb_task_enqueued, _head);
+    mk_list_del(&queued_task->_head);
+    mk_list_add(&queued_task->_head, &queue->in_progress);
+    ret = flb_output_task_flush(queued_task->task,
+                                queued_task->out_instance,
+                                queued_task->config);
+
+    /* Destroy retry context if needed */
+    if (ret == -1) {
+        if (queued_task->retry) {
+            flb_task_retry_destroy(queued_task->retry);
+        }
+        /* Flush the next task */
+        flb_output_task_singleplex_flush_next(queue);
+        return -1;
+    }
+
+    return ret;
+}
+
+/*
+ * Will either run or queue running a single task
+ * Deletes retry context if enqueue fails
+ */
+int flb_output_task_singleplex_enqueue(struct flb_task_queue *queue,
+                                       struct flb_task_retry *retry,
+                                       struct flb_task *task,
+                                       struct flb_output_instance *out_ins,
+                                       struct flb_config *config)
+{
+    int ret;
+    int is_empty;
+
+    /* Enqueue task */
+    ret = flb_output_task_queue_enqueue(queue, retry, task, out_ins, config);
+    if (ret == -1) {
+        return -1;
+    }
+
+    /* Launch task if nothing is running */
+    is_empty = mk_list_is_empty(&out_ins->singleplex_queue->in_progress) == 0;
+    if (is_empty) {
+        return flb_output_task_queue_flush_one(out_ins->singleplex_queue);
+    }
+    
+    return 0;
+}
+
+/*
+ * Clear in progress task and flush a single queued task if exists
+ * Deletes retry context on next flush if flush fails
+ */
+int flb_output_task_singleplex_flush_next(struct flb_task_queue *queue)
+{
+    int is_empty;
+    struct flb_task_enqueued *ended_task;
+
+    /* Remove in progress task */
+    is_empty = mk_list_is_empty(&queue->in_progress) == 0;
+    if (!is_empty) {
+        ended_task = mk_list_entry_first(&queue->in_progress,
+                                        struct flb_task_enqueued, _head);
+        mk_list_del(&ended_task->_head);
+        flb_free(ended_task);
+    }
+    
+    /* Flush if there is a pending task queued */
+    is_empty = mk_list_is_empty(&queue->pending) == 0;
+    if (!is_empty) {
+        return flb_output_task_queue_flush_one(queue);
+    }
+    return 0;
+}
+
+/*
  * Flush a task through the output plugin, either using a worker thread + coroutine
  * or a simple co-routine in the current thread.
  */
@@ -191,6 +310,11 @@ int flb_output_task_flush(struct flb_task *task,
         ret = flb_output_thread_pool_flush(task, out_ins, config);
         if (ret == -1) {
             flb_task_users_dec(task, FLB_FALSE);
+
+            /* If we are in synchronous mode, flush one waiting task */
+            if (out_ins->flags & FLB_OUTPUT_SYNCHRONOUS) {
+                flb_output_task_singleplex_flush_next(out_ins->singleplex_queue);
+            }
         }
     }
     else {
@@ -208,6 +332,14 @@ int flb_output_task_flush(struct flb_task *task,
                         sizeof(struct flb_output_flush*));
         if (ret == -1) {
             flb_errno();
+            flb_output_flush_destroy(out_flush);
+            flb_task_users_dec(task, FLB_FALSE);
+
+            /* If we are in synchronous mode, flush one waiting task */
+            if (out_ins->flags & FLB_OUTPUT_SYNCHRONOUS) {
+                flb_output_task_singleplex_flush_next(out_ins->singleplex_queue);
+            }
+
             return -1;
         }
     }
@@ -285,6 +417,11 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
     /* release properties */
     flb_output_free_properties(ins);
 
+    /* free singleplex queue */
+    if (ins->flags & FLB_OUTPUT_SYNCHRONOUS) {
+        flb_task_queue_destroy(ins->singleplex_queue);
+    }
+
     mk_list_del(&ins->_head);
     flb_free(ins);
 
@@ -311,12 +448,7 @@ void flb_output_exit(struct flb_config *config)
 
         /* Check a exit callback */
         if (p->cb_exit) {
-            if (!p->proxy) {
-                p->cb_exit(ins->context, config);
-            }
-            else {
-                p->cb_exit(p, ins->context);
-            }
+            p->cb_exit(ins->context, config);
         }
         flb_output_instance_destroy(ins);
     }
@@ -448,6 +580,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     }
     instance->config = config;
     instance->log_level = -1;
+    instance->log_suppress_interval = -1;
     instance->test_mode = FLB_FALSE;
     instance->is_threaded = FLB_FALSE;
     instance->tp_workers = plugin->workers;
@@ -461,6 +594,9 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->p = plugin;
     instance->callback = flb_callback_create(instance->name);
     if (!instance->callback) {
+        if (instance->flags & FLB_OUTPUT_SYNCHRONOUS) {
+            flb_task_queue_destroy(instance->singleplex_queue);
+        }
         flb_free(instance);
         return NULL;
     }
@@ -474,6 +610,9 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         ctx = flb_calloc(1, sizeof(struct flb_plugin_proxy_context));
         if (!ctx) {
             flb_errno();
+            if (instance->flags & FLB_OUTPUT_SYNCHRONOUS) {
+                flb_task_queue_destroy(instance->singleplex_queue);
+            }
             flb_free(instance);
             return NULL;
         }
@@ -527,7 +666,21 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     if (plugin->flags & FLB_OUTPUT_NET) {
         ret = flb_net_host_set(plugin->name, &instance->host, output);
         if (ret != 0) {
+            if (instance->flags & FLB_OUTPUT_SYNCHRONOUS) {
+                flb_task_queue_destroy(instance->singleplex_queue);
+            }
             flb_free(instance);
+            return NULL;
+        }
+    }
+
+    /* Create singleplex queue if SYNCHRONOUS mode is used */
+    instance->singleplex_queue = NULL;
+    if (instance->flags & FLB_OUTPUT_SYNCHRONOUS) {
+        instance->singleplex_queue = flb_task_queue_create();
+        if (!instance->singleplex_queue) {
+            flb_free(instance);
+            flb_errno();
             return NULL;
         }
     }
@@ -598,6 +751,14 @@ int flb_output_set_property(struct flb_output_instance *ins,
             return -1;
         }
         ins->log_level = ret;
+    }
+    else if (prop_key_check("log_suppress_interval", k, len) == 0 && tmp) {
+        ret = flb_utils_time_to_seconds(tmp);
+        flb_sds_destroy(tmp);
+        if (ret == -1) {
+            return -1;
+        }
+        ins->log_suppress_interval = ret;
     }
     else if (prop_key_check("host", k, len) == 0) {
         ins->host.name = tmp;
@@ -807,6 +968,13 @@ const char *flb_output_get_property(const char *key, struct flb_output_instance 
     return flb_config_prop_get(key, &ins->properties);
 }
 
+#ifdef FLB_HAVE_METRICS
+void *flb_output_get_cmt_instance(struct flb_output_instance *ins)
+{
+    return (void *)ins->cmt;
+}
+#endif
+
 /* Trigger the output plugins setup callbacks to prepare them. */
 int flb_output_init_all(struct flb_config *config)
 {
@@ -857,7 +1025,7 @@ int flb_output_init_all(struct flb_config *config)
         name = (char *) flb_output_name(ins);
 
         /* get timestamp */
-        ts = cmt_time_now();
+        ts = cfl_time_now();
 
         /* CMetrics */
         ins->cmt = cmt_create();
@@ -948,7 +1116,7 @@ int flb_output_init_all(struct flb_config *config)
 #ifdef FLB_HAVE_PROXY_GO
         /* Proxy plugins have their own initialization */
         if (p->type == FLB_OUTPUT_PLUGIN_PROXY) {
-            ret = flb_plugin_proxy_init(p->proxy, ins, config);
+            ret = flb_plugin_proxy_output_init(p->proxy, ins, config);
             if (ret == -1) {
                 flb_output_instance_destroy(ins);
                 return -1;
@@ -968,7 +1136,8 @@ int flb_output_init_all(struct flb_config *config)
 
 #ifdef FLB_HAVE_TLS
         if (ins->use_tls == FLB_TRUE) {
-            ins->tls = flb_tls_create(ins->tls_verify,
+            ins->tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                      ins->tls_verify,
                                       ins->tls_debug,
                                       ins->tls_vhost,
                                       ins->tls_ca_path,
@@ -1098,6 +1267,18 @@ int flb_output_check(struct flb_config *config)
     return 0;
 }
 
+/* Check output plugin's log level.
+ * Not for core plugins but for Golang plugins.
+ * Golang plugins do not have thread-local flb_worker_ctx information. */
+int flb_output_log_check(struct flb_output_instance *ins, int l)
+{
+    if (ins->log_level < l) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
 /*
  * Output plugins might have enabled certain features that have not been passed
  * directly to the upstream context. In order to avoid let plugins validate specific
@@ -1130,19 +1311,21 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
     }
 
     /* Set flags */
-    u->flags |= flags;
+    flb_stream_enable_flags(&u->base, flags);
 
     /*
      * If the output plugin flush callbacks will run in multiple threads, enable
      * the thread safe mode for the Upstream context.
      */
     if (ins->tp_workers > 0) {
-        flb_upstream_thread_safe(u);
-        mk_list_add(&u->_head, &ins->upstreams);
+        flb_stream_enable_thread_safety(&u->base);
+
+        mk_list_add(&u->base._head, &ins->upstreams);
     }
 
     /* Set networking options 'net.*' received through instance properties */
-    memcpy(&u->net, &ins->net_setup, sizeof(struct flb_net_setup));
+    memcpy(&u->base.net, &ins->net_setup, sizeof(struct flb_net_setup));
+
     return 0;
 }
 

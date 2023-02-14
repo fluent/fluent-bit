@@ -18,7 +18,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_input_plugin.h>
 
@@ -44,7 +44,7 @@ static int meminfo_configure(struct flb_ne *ctx)
     flb_sds_t metric_desc;
 
     /* Initialize hash table */
-    ctx->meminfo_ht = flb_hash_create(FLB_HASH_EVICT_NONE, 16, 0);
+    ctx->meminfo_ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 16, 0);
     if (!ctx->meminfo_ht) {
         return -1;
     }
@@ -58,14 +58,14 @@ static int meminfo_configure(struct flb_ne *ctx)
     }
     metric_name = flb_sds_create_size(128);
     if (!metric_name) {
-        flb_hash_destroy(ctx->meminfo_ht);
+        flb_hash_table_destroy(ctx->meminfo_ht);
         flb_slist_destroy(&list);
         return -1;
     }
 
     metric_desc = flb_sds_create_size(256);
     if (!metric_desc) {
-        flb_hash_destroy(ctx->meminfo_ht);
+        flb_hash_table_destroy(ctx->meminfo_ht);
         flb_slist_destroy(&list);
         return -1;
     }
@@ -139,8 +139,8 @@ static int meminfo_configure(struct flb_ne *ctx)
          * of the number of parts in the list, if it contains the extra 'kB'
          * the metric name gets appended the '_bytes' string.
          */
-        ret = flb_hash_add(ctx->meminfo_ht,
-                           metric_name, flb_sds_len(metric_name), g, 0);
+        ret = flb_hash_table_add(ctx->meminfo_ht,
+                                 metric_name, flb_sds_len(metric_name), g, 0);
         if (ret == -1) {
             flb_plg_error(ctx->ins,
                           "could not add hash for metric: %s", metric_name);
@@ -185,7 +185,7 @@ static int meminfo_update(struct flb_ne *ctx)
         return -1;
     }
 
-    ts = cmt_time_now();
+    ts = cfl_time_now();
 
     mk_list_foreach(head, &list) {
         line = mk_list_entry(head, struct flb_slist_entry, _head);
@@ -225,9 +225,9 @@ static int meminfo_update(struct flb_ne *ctx)
         g = NULL;
         if (parts == 2) {
             /* Metric name is the same, no extra bytes */
-            ret = flb_hash_get(ctx->meminfo_ht,
-                               metric_name, flb_sds_len(metric_name) - 1,
-                               (void *) &g, &out_size);
+            ret = flb_hash_table_get(ctx->meminfo_ht,
+                                     metric_name, flb_sds_len(metric_name) - 1,
+                                     (void *) &g, &out_size);
         }
         else if (parts == 3) {
             /* Compose new metric name */
@@ -236,9 +236,9 @@ static int meminfo_update(struct flb_ne *ctx)
             flb_sds_cat_safe(&tmp, "_bytes", 6);
 
             /* Get metric context */
-            ret = flb_hash_get(ctx->meminfo_ht,
-                               tmp, flb_sds_len(tmp),
-                               (void *) &g, &out_size);
+            ret = flb_hash_table_get(ctx->meminfo_ht,
+                                     tmp, flb_sds_len(tmp),
+                                     (void *) &g, &out_size);
             flb_sds_destroy(tmp);
 
             /* Value is in kB, convert to bytes */
@@ -277,7 +277,7 @@ int ne_meminfo_update(struct flb_ne *ctx)
 int ne_meminfo_exit(struct flb_ne *ctx)
 {
     if (ctx->meminfo_ht) {
-        flb_hash_destroy(ctx->meminfo_ht);
+        flb_hash_table_destroy(ctx->meminfo_ht);
     }
     return 0;
 }

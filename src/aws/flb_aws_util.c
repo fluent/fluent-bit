@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_jsmn.h>
+#include <fluent-bit/flb_env.h>
 
 #include <stdlib.h>
 #include <sys/types.h>
@@ -40,7 +41,27 @@
 #define S3_KEY_SIZE 1024
 #define RANDOM_STRING "$UUID"
 #define INDEX_STRING "$INDEX"
+#define AWS_USER_AGENT_NONE "none"
+#define AWS_USER_AGENT_ECS "ecs"
+#define AWS_USER_AGENT_K8S "k8s"
+#define AWS_ECS_METADATA_URI "ECS_CONTAINER_METADATA_URI_V4"
 #define FLB_MAX_AWS_RESP_BUFFER_SIZE 0 /* 0 means unlimited capacity as per requirement */
+
+#ifdef FLB_SYSTEM_WINDOWS
+#define FLB_AWS_BASE_USER_AGENT        "aws-fluent-bit-plugin-windows"
+#define FLB_AWS_BASE_USER_AGENT_FORMAT "aws-fluent-bit-plugin-windows-%s"
+#define FLB_AWS_BASE_USER_AGENT_LEN    29
+#else
+#define FLB_AWS_BASE_USER_AGENT        "aws-fluent-bit-plugin"
+#define FLB_AWS_BASE_USER_AGENT_FORMAT "aws-fluent-bit-plugin-%s"
+#define FLB_AWS_BASE_USER_AGENT_LEN    21
+#endif
+
+#define FLB_AWS_MILLISECOND_FORMATTER_LENGTH 3
+#define FLB_AWS_NANOSECOND_FORMATTER_LENGTH 9
+#define FLB_AWS_MILLISECOND_FORMATTER "%3N"
+#define FLB_AWS_NANOSECOND_FORMATTER_N "%9N"
+#define FLB_AWS_NANOSECOND_FORMATTER_L "%L"
 
 struct flb_http_client *request_do(struct flb_aws_client *aws_client,
                                    int method, const char *uri,
@@ -178,7 +199,7 @@ struct flb_http_client *flb_aws_client_request(struct flb_aws_client *aws_client
         if (aws_client->has_auth && time(NULL) > aws_client->refresh_limit) {
             if (flb_aws_is_auth_error(c->resp.payload, c->resp.payload_size)
                 == FLB_TRUE) {
-                flb_error("[aws_client] auth error, refreshing creds");
+                flb_info("[aws_client] auth error, refreshing creds");
                 aws_client->refresh_limit = time(NULL)
                                             + FLB_AWS_CREDENTIAL_REFRESH_LIMIT;
                 aws_client->provider->provider_vtable->
@@ -223,6 +244,9 @@ void flb_aws_client_destroy(struct flb_aws_client *aws_client)
     if (aws_client) {
         if (aws_client->upstream) {
             flb_upstream_destroy(aws_client->upstream);
+        }
+        if (aws_client->extra_user_agent) {
+            flb_sds_destroy(aws_client->extra_user_agent);
         }
         flb_free(aws_client);
     }
@@ -280,7 +304,7 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
 {
     size_t b_sent;
     int ret;
-    struct flb_upstream_conn *u_conn = NULL;
+    struct flb_connection *u_conn = NULL;
     flb_sds_t signature = NULL;
     int i;
     int normalize_uri;
@@ -288,6 +312,9 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
     struct flb_http_client *c = NULL;
     flb_sds_t tmp;
     flb_sds_t user_agent_prefix;
+    flb_sds_t user_agent = NULL;
+    char *buf;
+    struct flb_env *env;
 
     u_conn = flb_upstream_conn_get(aws_client->upstream);
     if (!u_conn) {
@@ -320,21 +347,57 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
     ret = flb_http_buffer_size(c, FLB_MAX_AWS_RESP_BUFFER_SIZE);
     if (ret != 0) {
         flb_warn("[aws_http_client] failed to increase max response buffer size");
-    } 
+    }
 
-    /* Add AWS Fluent Bit user agent */
+    /* Set AWS Fluent Bit user agent */
+    env = aws_client->upstream->base.config->env;
+    buf = (char *) flb_env_get(env, "FLB_AWS_USER_AGENT");
+    if (buf == NULL) {
+        if (getenv(AWS_ECS_METADATA_URI) != NULL) {
+            user_agent = AWS_USER_AGENT_ECS;
+        }
+        else {
+            buf = (char *) flb_env_get(env, AWS_USER_AGENT_K8S);
+            if (buf && strcasecmp(buf, "enabled") == 0) {
+                user_agent = AWS_USER_AGENT_K8S;
+            }
+        }
+
+        if (user_agent == NULL) {
+            user_agent = AWS_USER_AGENT_NONE;
+        }
+
+        flb_env_set(env, "FLB_AWS_USER_AGENT", user_agent);
+    }
     if (aws_client->extra_user_agent == NULL) {
+        buf = (char *) flb_env_get(env, "FLB_AWS_USER_AGENT");
+        tmp = flb_sds_create(buf);
+        if (!tmp) {
+            flb_errno();
+            goto error;
+        }
+        aws_client->extra_user_agent = tmp;
+        tmp = NULL;
+    }
+
+    /* Add AWS Fluent Bit user agent header */
+    if (strcasecmp(aws_client->extra_user_agent, AWS_USER_AGENT_NONE) == 0) {
         ret = flb_http_add_header(c, "User-Agent", 10,
-                                  "aws-fluent-bit-plugin", 21);
+                                  FLB_AWS_BASE_USER_AGENT, FLB_AWS_BASE_USER_AGENT_LEN);
     }
     else {
         user_agent_prefix = flb_sds_create_size(64);
-        tmp = flb_sds_printf(&user_agent_prefix, "aws-fluent-bit-plugin-%s",
+        if (!user_agent_prefix) {
+            flb_errno();
+            flb_error("[aws_client] failed to create user agent");
+            goto error;
+        }
+        tmp = flb_sds_printf(&user_agent_prefix, FLB_AWS_BASE_USER_AGENT_FORMAT,
                              aws_client->extra_user_agent);
         if (!tmp) {
             flb_errno();
             flb_sds_destroy(user_agent_prefix);
-            flb_error("[aws_client] failed to fetch user agent");
+            flb_error("[aws_client] failed to create user agent");
             goto error;
         }
         user_agent_prefix = tmp;
@@ -649,6 +712,23 @@ static char* replace_uri_tokens(const char* original_string, const char* current
     return result;
 }
 
+/*
+ * Linux has strtok_r as the concurrent safe version
+ * Windows has strtok_s
+ */
+char* strtok_concurrent(
+    char* str,
+    char* delimiters,
+    char** context
+)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    return strtok_s(str, delimiters, context);
+#else
+    return strtok_r(str, delimiters, context);
+#endif
+}
+
 /* Constructs S3 object key as per the format. */
 flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
                          char *tag_delimiter, uint64_t seq_index)
@@ -660,13 +740,15 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
     char *key;
     char *random_alphanumeric;
     char *seq_index_str;
+    /* concurrent safe strtok_r requires a tracking ptr */
+    char *strtok_saveptr;
     int len;
     flb_sds_t tmp = NULL;
     flb_sds_t buf = NULL;
     flb_sds_t s3_key = NULL;
     flb_sds_t tmp_key = NULL;
     flb_sds_t tmp_tag = NULL;
-    struct tm *gmt = NULL;
+    struct tm gmt = {0};
 
     if (strlen(format) > S3_KEY_SIZE){
         flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
@@ -705,7 +787,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
     tmp = NULL;
 
     /* Split the string on the delimiters */
-    tag_token = strtok(tmp_tag, tag_delimiter);
+    tag_token = strtok_concurrent(tmp_tag, tag_delimiter, &strtok_saveptr);
 
     /* Find all occurences of $TAG[*] and
      * replaces it with the right token from tag.
@@ -736,7 +818,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
         s3_key = tmp_key;
         tmp_key = NULL;
 
-        tag_token = strtok(NULL, tag_delimiter);
+        tag_token = strtok_concurrent(NULL, tag_delimiter, &strtok_saveptr);
         i++;
     }
 
@@ -800,17 +882,20 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
         flb_free(random_alphanumeric);
         goto error;
     }
-    
+
     if(strlen(tmp_key) > S3_KEY_SIZE){
         flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
     }
-    
+
     flb_sds_destroy(s3_key);
     s3_key = tmp_key;
     tmp_key = NULL;
     flb_free(random_alphanumeric);
 
-    gmt = gmtime(&time);
+    if (!gmtime_r(&time, &gmt)) {
+        flb_error("[s3_key] Failed to create timestamp.");
+        goto error;
+    }
 
     flb_sds_destroy(tmp);
     tmp = NULL;
@@ -821,7 +906,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
         goto error;
     }
 
-    ret = strftime(key, S3_KEY_SIZE, s3_key, gmt);
+    ret = strftime(key, S3_KEY_SIZE, s3_key, &gmt);
     if(ret == 0){
         flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
     }
@@ -860,4 +945,95 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
             flb_sds_destroy(tmp_key);
         }
         return NULL;
+}
+
+/*
+ * This function is an extension to strftime which can support milliseconds with %3N,
+ * support nanoseconds with %9N or %L. The return value is the length of formatted
+ * time string.
+ */
+size_t flb_aws_strftime_precision(char **out_buf, const char *time_format,
+                                  struct flb_time *tms)
+{
+    char millisecond_str[FLB_AWS_MILLISECOND_FORMATTER_LENGTH+1];
+    char nanosecond_str[FLB_AWS_NANOSECOND_FORMATTER_LENGTH+1];
+    char *tmp_parsed_time_str;
+    char *buf;
+    size_t out_size;
+    size_t tmp_parsed_time_str_len;
+    size_t time_format_len;
+    struct tm timestamp;
+    struct tm *tmp;
+    int i;
+
+    /*
+     * Guess the max length needed for tmp_parsed_time_str and tmp_out_buf. The
+     * upper bound is 12*strlen(time_format) because the worst scenario will be only
+     * %c in time_format, and %c will be transfer to 24 chars long by function strftime().
+     */
+    time_format_len = strlen(time_format);
+    tmp_parsed_time_str_len = 12*time_format_len;
+
+    /*
+     * Use tmp_parsed_time_str to buffer when replace %3N with milliseconds, replace
+     * %9N and %L with nanoseconds in time_format.
+     */
+    tmp_parsed_time_str = (char *)flb_calloc(1, tmp_parsed_time_str_len*sizeof(char));
+    if (!tmp_parsed_time_str) {
+        flb_errno();
+        return 0;
+    }
+
+    buf = (char *)flb_calloc(1, tmp_parsed_time_str_len*sizeof(char));
+    if (!buf) {
+        flb_errno();
+        flb_free(tmp_parsed_time_str);
+        return 0;
+    }
+
+    /* Replace %3N to millisecond, %9N and %L to nanosecond in time_format. */
+    snprintf(millisecond_str, FLB_AWS_MILLISECOND_FORMATTER_LENGTH+1,
+             "%" PRIu64, (uint64_t) tms->tm.tv_nsec / 1000000);
+    snprintf(nanosecond_str, FLB_AWS_NANOSECOND_FORMATTER_LENGTH+1,
+             "%" PRIu64, (uint64_t) tms->tm.tv_nsec);
+    for (i = 0; i < time_format_len; i++) {
+        if (strncmp(time_format+i, FLB_AWS_MILLISECOND_FORMATTER, 3) == 0) {
+            strncat(tmp_parsed_time_str, millisecond_str,
+                    FLB_AWS_MILLISECOND_FORMATTER_LENGTH+1);
+            i += 2;
+        }
+        else if (strncmp(time_format+i, FLB_AWS_NANOSECOND_FORMATTER_N, 3) == 0) {
+            strncat(tmp_parsed_time_str, nanosecond_str,
+                    FLB_AWS_NANOSECOND_FORMATTER_LENGTH+1);
+            i += 2;
+        }
+        else if (strncmp(time_format+i, FLB_AWS_NANOSECOND_FORMATTER_L, 2) == 0) {
+            strncat(tmp_parsed_time_str, nanosecond_str,
+                    FLB_AWS_NANOSECOND_FORMATTER_LENGTH+1);
+            i += 1;
+        }
+        else {
+            strncat(tmp_parsed_time_str,time_format+i,1);
+        }
+    }
+
+    tmp = gmtime_r(&tms->tm.tv_sec, &timestamp);
+    if (!tmp) {
+        return 0;
+    }
+
+    out_size = strftime(buf, tmp_parsed_time_str_len,
+                        tmp_parsed_time_str, &timestamp);
+
+    /* Check whether tmp_parsed_time_str_len is enough for tmp_out_buff */
+    if (out_size == 0) {
+        flb_free(tmp_parsed_time_str);
+        flb_free(buf);
+        return 0;
+    }
+
+    *out_buf = buf;
+    flb_free(tmp_parsed_time_str);
+
+    return out_size;
 }

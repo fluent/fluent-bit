@@ -73,16 +73,16 @@ static int nginx_parse_stub_status(flb_sds_t buf, struct nginx_status *status)
         goto error;
     }
 
-    rc = sscanf(lines[0], "Active connections: %lu \n", &status->active);
+    rc = sscanf(lines[0], "Active connections: %" PRIu64 " \n", &status->active);
     if (rc != 1) {
         goto error;
     }
-    rc = sscanf(lines[2], " %lu %lu %lu \n",
+    rc = sscanf(lines[2], " %" PRIu64 " %" PRIu64 " %" PRIu64 " \n",
            &status->accepts, &status->handled, &status->requests);
     if (rc != 3) {
         goto error;
     }
-    rc = sscanf(lines[3], "Reading: %lu Writing: %lu Waiting: %lu \n",
+    rc = sscanf(lines[3], "Reading: %" PRIu64 " Writing: %" PRIu64 " Waiting: %" PRIu64 " \n",
             &status->reading, &status->writing, &status->waiting);
     if (rc != 3) {
         goto error;
@@ -109,7 +109,7 @@ static int nginx_collect_stub_status(struct flb_input_instance *ins,
                          struct flb_config *config, void *in_context)
 {
     struct nginx_ctx *ctx = (struct nginx_ctx *)in_context;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *client;
     struct nginx_status status;
     flb_sds_t data;
@@ -117,7 +117,7 @@ static int nginx_collect_stub_status(struct flb_input_instance *ins,
     size_t b_sent;
     int ret = -1;
     int rc = -1;
-    uint64_t ts = cmt_time_now();
+    uint64_t ts = cfl_time_now();
 
 
     u_conn = flb_upstream_conn_get(ctx->upstream);
@@ -359,7 +359,7 @@ static ssize_t parse_payload_json(struct nginx_ctx *nginx, void *ctx, uint64_t t
 static int nginx_collect_plus_connections(struct flb_input_instance *ins,
                          struct flb_config *config, struct nginx_ctx *ctx, uint64_t ts)
 {
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *client;
     char url[1024];
     size_t b_sent;
@@ -423,7 +423,7 @@ conn_error:
 static int nginx_collect_plus_ssl(struct flb_input_instance *ins,
                          struct flb_config *config, struct nginx_ctx *ctx, uint64_t ts)
 {
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *client;
     char url[1024];
     size_t b_sent;
@@ -486,7 +486,7 @@ conn_error:
 static int nginx_collect_plus_http_requests(struct flb_input_instance *ins,
                          struct flb_config *config, struct nginx_ctx *ctx, uint64_t ts)
 {
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *client;
     char url[1024];
     size_t b_sent;
@@ -1007,7 +1007,7 @@ static ssize_t parse_payload_json_table(struct nginx_ctx *ctx, int64_t ts,
 static int nginx_collect_plus_server_zones(struct flb_input_instance *ins,
                          struct flb_config *config, struct nginx_ctx *ctx, uint64_t ts)
 {
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *client;
     char url[1024];
     size_t b_sent;
@@ -1070,7 +1070,7 @@ conn_error:
 static int nginx_collect_plus_location_zones(struct flb_input_instance *ins,
                          struct flb_config *config, struct nginx_ctx *ctx, uint64_t ts)
 {
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *client;
     char url[1024];
     size_t b_sent;
@@ -1133,7 +1133,7 @@ conn_error:
 static int nginx_collect_plus_upstreams(struct flb_input_instance *ins,
                          struct flb_config *config, struct nginx_ctx *ctx, uint64_t ts)
 {
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *client;
     char url[1024];
     size_t b_sent;
@@ -1196,7 +1196,7 @@ conn_error:
 static int nginx_collect_plus_stream_server_zones(struct flb_input_instance *ins,
                          struct flb_config *config, struct nginx_ctx *ctx, uint64_t ts)
 {
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *client;
     char url[1024];
     size_t b_sent;
@@ -1260,7 +1260,7 @@ static int nginx_collect_plus_stream_upstreams(struct flb_input_instance *ins,
                                                struct flb_config *config,
                                                struct nginx_ctx *ctx, uint64_t ts)
 {
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *client;
     char url[1024];
     size_t b_sent;
@@ -1323,7 +1323,7 @@ static int nginx_plus_get_version(struct flb_input_instance *ins,
                                   struct flb_config *config,
                                   struct nginx_ctx *ctx)
 {
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *client;
     char url[1024];
     size_t b_sent;
@@ -1433,7 +1433,7 @@ static int nginx_collect_plus(struct flb_input_instance *ins,
     struct nginx_ctx *ctx = (struct nginx_ctx *)in_context;
     int rc = -1;
     int ret = -1;
-    uint64_t ts = cmt_time_now();
+    uint64_t ts = cfl_time_now();
 
 
     version = nginx_plus_get_version(ins, config, in_context);
@@ -1505,6 +1505,7 @@ struct nginx_ctx *nginx_ctx_init(struct flb_input_instance *ins,
                                         struct flb_config *config)
 {
     int ret;
+    int upstream_flags;
     struct nginx_ctx *ctx;
     struct flb_upstream *upstream;
 
@@ -1538,8 +1539,15 @@ struct nginx_ctx *nginx_ctx_init(struct flb_input_instance *ins,
         return NULL;
     }
 
+    upstream_flags = FLB_IO_TCP;
+
+    if (ins->use_tls) {
+        upstream_flags |= FLB_IO_TLS;
+    }
+
     upstream = flb_upstream_create(config, ins->host.name, ins->host.port,
-                                   FLB_IO_TCP, NULL);
+                                   upstream_flags, ins->tls);
+
     if (!upstream) {
         flb_plg_error(ins, "upstream initialization error");
         return NULL;
@@ -2342,5 +2350,4 @@ struct flb_input_plugin in_nginx_exporter_metrics_plugin = {
     .cb_exit      = nginx_exit,
     .config_map   = config_map,
     .flags        = FLB_INPUT_NET|FLB_INPUT_CORO,
-    .event_type   = FLB_INPUT_METRICS
 };

@@ -1,9 +1,10 @@
 .idea
+.vscode
+.clang-format
 .DS_Store
 *~
 _book/
 lib/jemalloc
-lib/onigmo
 tests/internal/flb_tests_internal.h
 tests/runtime/flb_tests_runtime.h
 build/*
@@ -11,12 +12,13 @@ include/fluent-bit/flb_info.h
 include/fluent-bit/flb_plugins.h
 include/fluent-bit/flb_version.h
 include/fluent-bit/conf/*.h
+include/fluent-bit/tls/flb_tls_info.h
 init/fluent-bit.service
 lib/chunkio/include/chunkio/cio_version.h
 lib/monkey/monkey.service
 lib/monkey/include/monkey/mk_core/mk_core_info.h
-src/tls/mbedtls.c
 
+packaging/.env
 packaging/packages
 packaging/distros/**/sources/
 packaging/releases
@@ -33,3 +35,9 @@ compile_commands.json
 
 workflow/
 .kitchen/
+
+.vagrant/
+# examples
+examples/wasi_serde_json/target/
+# WASM test data
+tests/runtime/wasm/go/*.wasm

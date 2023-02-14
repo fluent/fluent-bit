@@ -88,7 +88,7 @@ static int in_exec_collect(struct flb_input_instance *ins,
                 flb_time_append_to_msgpack(&out_time, &mp_pck, 0);
                 msgpack_sbuffer_write(&mp_sbuf, out_buf, out_size);
 
-                flb_input_chunk_append_raw(ins, NULL, 0,
+                flb_input_log_append(ins, NULL, 0,
                                            mp_sbuf.data, mp_sbuf.size);
                 msgpack_sbuffer_destroy(&mp_sbuf);
                 flb_free(out_buf);
@@ -121,7 +121,7 @@ static int in_exec_collect(struct flb_input_instance *ins,
             msgpack_pack_str_body(&mp_pck,
                                   ctx->buf, str_len);
 
-            flb_input_chunk_append_raw(ins, NULL, 0,
+            flb_input_log_append(ins, NULL, 0,
                                        mp_sbuf.data, mp_sbuf.size);
             msgpack_sbuffer_destroy(&mp_sbuf);
         }
@@ -219,7 +219,7 @@ static int in_exec_init(struct flb_input_instance *in,
     int ret = -1;
 
     /* Allocate space for the configuration */
-    ctx = flb_malloc(sizeof(struct flb_exec));
+    ctx = flb_calloc(1, sizeof(struct flb_exec));
     if (!ctx) {
         return -1;
     }
@@ -329,7 +329,7 @@ static struct flb_config_map config_map[] = {
       "Set the buffer size"
     },
     {
-      FLB_CONFIG_MAP_BOOL, "bool", "false",
+      FLB_CONFIG_MAP_BOOL, "oneshot", "false",
       0, FLB_TRUE, offsetof(struct flb_exec, oneshot),
       "execute the command only once"
     },

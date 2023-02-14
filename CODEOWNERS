@@ -30,9 +30,14 @@
 /src/flb_signv4.c        @pettitwesley
 /src/flb_lib.c           @edsiper @niedbalski
 
-@ Core: AWS Auth & Utils
+# Core: AWS Auth & Utils
 # ------------
 /src/aws                 @pettitwesley
+
+# AWS header files
+/include/aws                   @pettitwesley
+/include/flb_aws_credentials.h @pettitwesley
+/include/flb_aws_util.h        @pettitwesley
 
 # Core: Stream Processor
 # ----------------
@@ -51,10 +56,11 @@
 # Filter Plugins
 # --------------
 /plugins/filter_aws      @pettitwesley
+/plugins/filter_ecs      @pettitwesley
 
 # Output Plugins
 # --------------
-/plugins/out_datadog     @clamoriniere
+/plugins/out_datadog     @nokute78 @edsiper
 /plugins/out_es          @pettitwesley @edsiper
 /plugins/out_pgsql       @sxd
 # AWS Plugins 
@@ -62,3 +68,14 @@
 /plugins/out_cloudwatch_logs  @pettitwesley
 /plugins/out_kinesis_firehose @pettitwesley
 /plugins/out_kinesis_streams  @pettitwesley
+/plugins/out_opensearch       @pettitwesley @edsiper
+
+# AWS test code
+/tests/internal/aws             @pettitwesley
+/tests/internal/aws_*           @pettitwesley
+/tests/runtime/filter_ecs.c     @pettitwesley
+/tests/runtime/out_cloudwatch.c @pettitwesley
+/tests/runtime/out_firehose.c   @pettitwesley
+/tests/runtime/out_kinesis.c    @pettitwesley
+/tests/runtime/out_opensearch.c @pettitwesley @edsiper
+/tests/runtime/out_s3.c         @pettitwesley

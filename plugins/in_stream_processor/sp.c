@@ -71,7 +71,7 @@ static int cb_chunks_append(struct flb_input_instance *in,
 
     mk_list_foreach_safe(head, tmp, &ctx->chunks) {
         chunk = mk_list_entry(head, struct sp_chunk, _head);
-        flb_input_chunk_append_raw(in,
+        flb_input_log_append(in,
                                    ctx->tag, flb_sds_len(ctx->tag),
                                    chunk->buf_data, chunk->buf_size);
         flb_free(chunk->buf_data);

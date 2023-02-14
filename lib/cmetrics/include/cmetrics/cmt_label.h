@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -23,13 +23,13 @@
 #include <cmetrics/cmetrics.h>
 
 struct cmt_label {
-    cmt_sds_t key;             /* Label key */
-    cmt_sds_t val;             /* Label value */
-    struct mk_list _head;      /* Link to list cmt_labels->list */
+    cfl_sds_t key;             /* Label key */
+    cfl_sds_t val;             /* Label value */
+    struct cfl_list _head;      /* Link to list cmt_labels->list */
 };
 
 struct cmt_labels {
-    struct mk_list list;
+    struct cfl_list list;
 };
 
 struct cmt_labels *cmt_labels_create();

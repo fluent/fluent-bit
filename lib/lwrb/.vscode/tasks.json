@@ -1,0 +1,73 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+        {
+            "type": "cppbuild",
+            "label": "Build project",
+            "command": "cmake",
+            "args": ["--build", "${command:cmake.buildDirectory}", "-j", "8"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": ["$gcc"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "type": "shell",
+            "label": "Re-build project",
+            "command": "cmake",
+            "args": ["--build", "${command:cmake.buildDirectory}", "--clean-first", "-v", "-j", "8"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": ["$gcc"],
+        },
+        {
+            "type": "shell",
+            "label": "Clean project",
+            "command": "cmake",
+            "args": ["--build", "${command:cmake.buildDirectory}", "--target", "clean"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "type": "shell",
+            "label": "Run application",
+            "command": "${command:cmake.launchTargetPath}",
+            "args": [],
+            "problemMatcher": [],
+        },
+        {
+            "label": "Docs: Install python plugins from requirements.txt file",
+            "type": "shell",
+            "command": "python -m pip install -r requirements.txt",
+            "options": {
+                "cwd": "${workspaceFolder}/docs"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Docs: Generate html",
+            "type": "shell",
+            "command": ".\\make html",
+            "options": {
+                "cwd": "${workspaceFolder}/docs"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Docs: Clean build directory",
+            "type": "shell",
+            "command": ".\\make clean",
+            "options": {
+                "cwd": "${workspaceFolder}/docs"
+            },
+            "problemMatcher": []
+        },
+    ]
+}

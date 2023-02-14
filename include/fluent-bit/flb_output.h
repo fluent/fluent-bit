@@ -59,13 +59,15 @@
 #define FLB_OUTPUT_NET            32  /* output address may set host and port */
 #define FLB_OUTPUT_PLUGIN_CORE     0
 #define FLB_OUTPUT_PLUGIN_PROXY    1
-#define FLB_OUTPUT_NO_MULTIPLEX  512
+#define FLB_OUTPUT_NO_MULTIPLEX  512  /* run one task at a time, one task per flush */
 #define FLB_OUTPUT_PRIVATE      1024
+#define FLB_OUTPUT_SYNCHRONOUS  2048  /* run one task at a time, no flush cycle limit */
 
 
 /* Event type handlers */
 #define FLB_OUTPUT_LOGS        1
 #define FLB_OUTPUT_METRICS     2
+#define FLB_OUTPUT_TRACES      4
 
 #define FLB_OUTPUT_FLUSH_COMPAT_OLD_18()                 \
     const void *data   = event_chunk->data;              \
@@ -135,6 +137,7 @@ struct flb_test_out_formatter {
                      struct flb_input_instance *,
                      void *,         /* plugin instance context */
                      void *,         /* optional flush context */
+                     int,            /* event type */
                      const char *,   /* tag        */
                      int,            /* tag length */
                      const void *,   /* incoming msgpack data */
@@ -202,6 +205,9 @@ struct flb_output_plugin {
     /* Exit */
     int (*cb_exit) (void *, struct flb_config *);
 
+    /* Destroy */
+    void (*cb_destroy) (struct flb_output_plugin *);
+
     /* Default number of worker threads */
     int workers;
 
@@ -235,6 +241,7 @@ struct flb_output_instance {
     int event_type;
     int id;                              /* instance id                  */
     int log_level;                       /* instance log level           */
+    int log_suppress_interval;           /* log suppression interval     */
     char name[32];                       /* numbered name (cpu -> cpu.0) */
     char *alias;                         /* alias name for the instance  */
     int flags;                           /* inherit flags from plugin    */
@@ -357,6 +364,7 @@ struct flb_output_instance {
      * loaded (in backlog)
      */
     size_t fs_backlog_chunks_size;
+
     /*
      * Buffer limit: optional limit set by configuration so this output instance
      * cannot buffer more than total_limit_size (bytes unit).
@@ -366,6 +374,9 @@ struct flb_output_instance {
      * filesystem as buffer type.
      */
     size_t total_limit_size;
+
+    /* Queue for singleplexed tasks */
+    struct flb_task_queue *singleplex_queue;
 
     /* Thread Pool: this is optional for the caller */
     int tp_workers;
@@ -721,6 +732,12 @@ struct flb_output_instance *flb_output_get_instance(struct flb_config *config,
                                                     int out_id);
 int flb_output_flush_finished(struct flb_config *config, int out_id);
 
+int flb_output_task_singleplex_enqueue(struct flb_task_queue *queue,
+                                       struct flb_task_retry *retry,
+                                       struct flb_task *task,
+                                       struct flb_output_instance *out_ins,
+                                       struct flb_config *config);
+int flb_output_task_singleplex_flush_next(struct flb_task_queue *queue);
 struct flb_output_instance *flb_output_new(struct flb_config *config,
                                            const char *output, void *data,
                                            int public_only);
@@ -728,6 +745,9 @@ const char *flb_output_name(struct flb_output_instance *in);
 int flb_output_set_property(struct flb_output_instance *out,
                             const char *k, const char *v);
 const char *flb_output_get_property(const char *key, struct flb_output_instance *ins);
+#ifdef FLB_HAVE_METRICS
+void *flb_output_get_cmt_instance(struct flb_output_instance *ins);
+#endif
 void flb_output_net_default(const char *host, int port,
                             struct flb_output_instance *ins);
 const char *flb_output_name(struct flb_output_instance *ins);
@@ -737,6 +757,7 @@ void flb_output_set_context(struct flb_output_instance *ins, void *context);
 int flb_output_instance_destroy(struct flb_output_instance *ins);
 int flb_output_init_all(struct flb_config *config);
 int flb_output_check(struct flb_config *config);
+int flb_output_log_check(struct flb_output_instance *ins, int l);
 
 int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *ins);
 int flb_output_upstream_ha_set(void *ha, struct flb_output_instance *ins);

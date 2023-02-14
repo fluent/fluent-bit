@@ -1,0 +1,113 @@
+<?xml version="1.0"?>
+
+<?include "cpack_variables.wxi"?>
+
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi" xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
+    <Product Id="$(var.CPACK_WIX_PRODUCT_GUID)"
+        Name="$(var.CPACK_PACKAGE_NAME)"
+        Language="1033"
+        Version="$(var.CPACK_PACKAGE_VERSION)"
+        Manufacturer="$(var.CPACK_PACKAGE_VENDOR)"
+        UpgradeCode="$(var.CPACK_WIX_UPGRADE_GUID)">
+
+        <Package InstallerVersion="301" InstallPrivileges="elevated"
+                 Compressed="yes" InstallScope="perMachine" />
+
+        <Media Id="1" Cabinet="Project.cab" EmbedCab="yes" CompressionLevel="high" />
+
+        <MajorUpgrade
+            Schedule="afterInstallInitialize"
+            AllowSameVersionUpgrades="yes"
+            DowngradeErrorMessage="A newer version of [ProductName] is already installed. Setup will now exit."/>
+
+        <Property Id="FOUNDNSISINSTALLER">
+            <RegistrySearch Id="FOUNDNSISINSTALLER_REGSEARCH"
+                Root="HKLM"
+                Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$(var.CPACK_PACKAGE_NAME)"
+                Name="UninstallString"
+                Type="raw"
+                Win64="no" />
+        </Property>
+        <Condition Message="An old version of $(var.CPACK_PACKAGE_NAME) has been detected. Please uninstall it manually before running this installer.">
+            <![CDATA[NOT FOUNDNSISINSTALLER]]>
+        </Condition>
+
+        <WixVariable Id="WixUILicenseRtf" Value="$(var.CPACK_WIX_LICENSE_RTF)"/>
+        <Property Id="WIXUI_INSTALLDIR" Value="INSTALL_ROOT"/>
+
+        <!-- PropertyRef of the account users for setting InstallDir permission explicitly -->
+        <PropertyRef Id="WIX_ACCOUNT_LOCALSYSTEM" />
+        <PropertyRef Id="WIX_ACCOUNT_USERS" />
+        <PropertyRef Id="WIX_ACCOUNT_ADMINISTRATORS" />
+
+        <DirectoryRef Id="INSTALL_ROOT">
+            <!-- Create component for setting the install directory permission explicitly -->
+            <Component Id="FluentBitAcl" Guid="{6779b04e-70a5-4973-888d-06865155e9f5}">
+                <CreateFolder>
+                    <!--
+                        Read/Execute: Builtin Users
+                        All:: Builtin Administrators, Service, System account(by default)
+                    -->
+                    <Permission User="[WIX_ACCOUNT_USERS]" GenericExecute="yes" GenericRead="yes" Traverse="yes"/>
+                    <Permission User="[WIX_ACCOUNT_ADMINISTRATORS]" GenericAll="yes" Traverse="yes"/>
+                    <Permission User="[WIX_ACCOUNT_LOCALSYSTEM]" GenericAll="yes" Traverse="yes"/>
+                </CreateFolder>
+            </Component>
+        </DirectoryRef>
+
+        <?ifdef CPACK_WIX_PRODUCT_ICON?>
+        <Property Id="ARPPRODUCTICON">ProductIcon.ico</Property>
+        <Icon Id="ProductIcon.ico" SourceFile="$(var.CPACK_WIX_PRODUCT_ICON)"/>
+        <?endif?>
+
+        <?ifdef CPACK_WIX_UI_BANNER?>
+        <WixVariable Id="WixUIBannerBmp" Value="$(var.CPACK_WIX_UI_BANNER)"/>
+        <?endif?>
+
+        <?ifdef CPACK_WIX_UI_DIALOG?>
+        <WixVariable Id="WixUIDialogBmp" Value="$(var.CPACK_WIX_UI_DIALOG)"/>
+        <?endif?>
+
+        <FeatureRef Id="ProductFeature">
+            <ComponentRef Id="FluentBitAcl"/>
+        </FeatureRef>
+
+        <UIRef Id="$(var.CPACK_WIX_UI_REF)" />
+
+        <?include "properties.wxi"?>
+        <?include "product_fragment.wxi"?>
+
+        <Property Id="LAUNCHSERVICE" Value="1"/>
+        <SetProperty Id="LAUNCHSERVICE" Value="0" After="LaunchConditions" Sequence="first">
+          <![CDATA[%NOT_FLB_SVC_LAUNCH <> ""]]>
+        </SetProperty>
+
+        <Property Id="CreateFluentBitWinSvc" Value=" "/>
+        <CustomAction Id="SetCreateFluentBitWinSvcCommand" Property="CreateFluentBitWinSvc" Value="&quot;sc.exe&quot; create @FLB_OUT_NAME@ binpath= &quot;\&quot;[INSTALL_ROOT]bin\@FLB_OUT_NAME@.exe\&quot; -c \&quot;[INSTALL_ROOT]conf\@FLB_OUT_NAME@.conf\&quot;&quot; start= delayed-auto" Execute="immediate" />
+        <CustomAction Id="CreateFluentBitWinSvc" BinaryKey="WixCA" DllEntry="CAQuietExec" Execute="deferred" Return="ignore" Impersonate="no" />
+
+        <Property Id="LaunchFluentBitWinSvc" Value=" "/>
+        <CustomAction Id="SetLaunchFluentBitWinSvcCommand" Property="LaunchFluentBitWinSvc" Value="&quot;sc.exe&quot; start @FLB_OUT_NAME@" Execute="immediate" />
+        <CustomAction Id="LaunchFluentBitWinSvc" BinaryKey="WixCA" DllEntry="CAQuietExec" Execute="deferred" Return="ignore" Impersonate="no" />
+
+        <Property Id="StopFluentBitWinSvc" Value=" "/>
+        <CustomAction Id="SetStopFluentBitWinSvcCommand" Property="StopFluentBitWinSvc" Value="&quot;sc.exe&quot; stop @FLB_OUT_NAME@" Execute="immediate" />
+        <CustomAction Id="StopFluentBitWinSvc" BinaryKey="WixCA" DllEntry="CAQuietExec" Execute="deferred" Return="ignore" Impersonate="no" />
+
+        <Property Id="DeleteFluentBitWinSvc" Value=" "/>
+        <CustomAction Id="SetDeleteFluentBitWinSvcCommand" Property="DeleteFluentBitWinSvc" Value="&quot;sc.exe&quot; delete @FLB_OUT_NAME@" Execute="immediate" />
+        <CustomAction Id="DeleteFluentBitWinSvc" BinaryKey="WixCA" DllEntry="CAQuietExec" Execute="deferred" Return="ignore" Impersonate="no" />
+
+        <InstallExecuteSequence>
+            <Custom Action="SetCreateFluentBitWinSvcCommand" After="InstallFiles">NOT Installed</Custom>
+            <Custom Action="CreateFluentBitWinSvc" After="SetCreateFluentBitWinSvcCommand">NOT Installed</Custom>
+            <Custom Action="SetLaunchFluentBitWinSvcCommand" After="CreateFluentBitWinSvc">LAUNCHSERVICE="1" AND NOT Installed</Custom>
+            <Custom Action="LaunchFluentBitWinSvc" After="SetLaunchFluentBitWinSvcCommand">LAUNCHSERVICE="1" AND NOT Installed</Custom>
+
+            <Custom Action="SetStopFluentBitWinSvcCommand" After="InstallInitialize">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
+            <Custom Action="StopFluentBitWinSvc" After="SetStopFluentBitWinSvcCommand">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
+            <Custom Action="SetDeleteFluentBitWinSvcCommand" After="StopFluentBitWinSvc">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
+            <Custom Action="DeleteFluentBitWinSvc" After="SetDeleteFluentBitWinSvcCommand">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
+        </InstallExecuteSequence>
+    </Product>
+</Wix>

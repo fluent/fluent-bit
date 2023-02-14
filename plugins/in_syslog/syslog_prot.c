@@ -31,11 +31,92 @@ static inline void consume_bytes(char *buf, int bytes, int length)
     memmove(buf, buf + bytes, length - bytes);
 }
 
-static inline int pack_line(struct flb_syslog *ctx,
-                            struct flb_time *time, char *data, size_t data_size)
+static int append_raw_message_to_record_data(char **result_buffer,
+                                             size_t *result_size,
+                                             flb_sds_t raw_message_key_name,
+                                             char *base_object_buffer,
+                                             size_t base_object_size,
+                                             char *raw_message_buffer,
+                                             size_t raw_message_size)
 {
-    msgpack_packer mp_pck;
+    int                i;
+    int                result;
+    size_t             unpacker_offset;
+    msgpack_sbuffer    mp_sbuf;
+    msgpack_packer     mp_pck;
+    msgpack_unpacked   unpacked_buffer;
+    *result_buffer = NULL;
+    *result_size = 0;
+
+    unpacker_offset = 0;
+    msgpack_unpacked_init(&unpacked_buffer);
+    result = msgpack_unpack_next(&unpacked_buffer,
+                                 base_object_buffer,
+                                 base_object_size,
+                                 &unpacker_offset);
+
+    if (result != MSGPACK_UNPACK_SUCCESS) {
+        return -1;
+    }
+
+    if (unpacker_offset != base_object_size) {
+        msgpack_unpacked_destroy(&unpacked_buffer);
+        return -2;
+    }
+
+    if (unpacked_buffer.data.type != MSGPACK_OBJECT_MAP) {
+        msgpack_unpacked_destroy(&unpacked_buffer);
+        return -3;
+    }
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_map(&mp_pck, unpacked_buffer.data.via.map.size + 1);
+
+    for (i = 0; i < unpacked_buffer.data.via.map.size; i++) {
+        msgpack_pack_object(&mp_pck, unpacked_buffer.data.via.map.ptr[i].key);
+        msgpack_pack_object(&mp_pck, unpacked_buffer.data.via.map.ptr[i].val);
+    }
+
+    msgpack_pack_str(&mp_pck, flb_sds_len(raw_message_key_name));
+    msgpack_pack_str_body(&mp_pck, raw_message_key_name, flb_sds_len(raw_message_key_name));
+    msgpack_pack_str(&mp_pck, raw_message_size);
+    msgpack_pack_str_body(&mp_pck, raw_message_buffer, raw_message_size);
+
+    *result_buffer = mp_sbuf.data;
+    *result_size = mp_sbuf.size;
+
+    msgpack_unpacked_destroy(&unpacked_buffer);
+    return result;
+}
+
+static inline int pack_line(struct flb_syslog *ctx,
+                            struct flb_time *time,
+                            char *data, size_t data_size,
+                            char *raw_data, size_t raw_data_size)
+{
+    char           *modified_data_buffer;
+    size_t          modified_data_size;
     msgpack_sbuffer mp_sbuf;
+    msgpack_packer  mp_pck;
+    int             result;
+
+    modified_data_buffer = NULL;
+
+    if (ctx->raw_message_key != NULL) {
+        result = append_raw_message_to_record_data(&modified_data_buffer,
+                                                   &modified_data_size,
+                                                   ctx->raw_message_key,
+                                                   data,
+                                                   data_size,
+                                                   raw_data,
+                                                   raw_data_size);
+
+        if (result != 0) {
+            flb_plg_debug(ctx->ins, "error appending raw message : %d", result);
+        }
+    }
 
     /* Initialize local msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -43,10 +124,20 @@ static inline int pack_line(struct flb_syslog *ctx,
 
     msgpack_pack_array(&mp_pck, 2);
     flb_time_append_to_msgpack(time, &mp_pck, 0);
-    msgpack_sbuffer_write(&mp_sbuf, data, data_size);
 
-    flb_input_chunk_append_raw(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    if (modified_data_buffer != NULL) {
+        msgpack_sbuffer_write(&mp_sbuf, modified_data_buffer, modified_data_size);
+    }
+    else {
+        msgpack_sbuffer_write(&mp_sbuf, data, data_size);
+    }
+
+    flb_input_log_append(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
+
+    if (modified_data_buffer != NULL) {
+        flb_free(modified_data_buffer);
+    }
 
     return 0;
 }
@@ -102,7 +193,9 @@ int syslog_prot_process(struct syslog_conn *conn)
             if (flb_time_to_nanosec(&out_time) == 0L) {
                 flb_time_get(&out_time);
             }
-            pack_line(ctx, &out_time, out_buf, out_size);
+            pack_line(ctx, &out_time,
+                      out_buf, out_size,
+                      p, len);
             flb_free(out_buf);
         }
         else {
@@ -139,7 +232,9 @@ int syslog_prot_process_udp(char *buf, size_t size, struct flb_syslog *ctx)
         if (flb_time_to_double(&out_time) == 0) {
             flb_time_get(&out_time);
         }
-        pack_line(ctx, &out_time, out_buf, out_size);
+        pack_line(ctx, &out_time,
+                  out_buf, out_size,
+                  buf, size);
         flb_free(out_buf);
     }
     else {

@@ -116,7 +116,7 @@ static int http_post(struct flb_out_http *ctx,
     void *payload_buf = NULL;
     size_t payload_size = 0;
     struct flb_upstream *u;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
     struct mk_list *head;
     struct flb_config_map_val *mv;
@@ -402,11 +402,11 @@ static int compose_payload(struct flb_out_http *ctx,
     else if (ctx->out_format == FLB_HTTP_OUT_GELF) {
         return compose_payload_gelf(ctx, in_body, in_size, out_body, out_size);
     }
-    /*
-       Nothing to do, if the format is msgpack
     else {
+        /* Nothing to do, if the format is msgpack */
+        *out_body = (void *)in_body;
+        *out_size = in_size;
     }
-    */
 
     return FLB_OK;
 }
@@ -737,6 +737,7 @@ static int cb_http_format_test(struct flb_config *config,
                                struct flb_input_instance *ins,
                                void *plugin_context,
                                void *flush_ctx,
+                               int event_type,
                                const char *tag, int tag_len,
                                const void *data, size_t bytes,
                                void **out_data, size_t *out_size)

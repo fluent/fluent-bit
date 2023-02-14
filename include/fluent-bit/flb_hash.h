@@ -1,8 +1,6 @@
-/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2019-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,71 +15,75 @@
  *  limitations under the License.
  */
 
+/*
+ * A wrapper for the OpenSSL SHA512 functions if OpenSSL is available.
+ * Otherwise, the functions in this header file provide
+ * the following public domain sha512 hash implementation.
+ *
+ * This is based on the musl libc SHA512 implementation. Follow the
+ * link for the original source code.
+ * https://git.musl-libc.org/cgit/musl/tree/src/crypt/crypt_sha512.c?h=v1.1.22
+ *
+ * Here is how to use it:
+ *
+ * #include <fluent-bit/flb_crypto.h>
+ *
+ * void main(void)
+ * {
+ *     char buf[64];
+ *
+ *     result = flb_hash_simple(FLB_CRYPTO_SHA256,
+ *                                (unsigned char *) "aiueo", 5,
+ *                                buf, sizeof(buf));
+ *
+ *     if (result != FLB_CRYPTO_SUCCESS) {
+ *         printf("error\n");
+ *         return NULL;
+ *     }
+ * }
+ */
+
 #ifndef FLB_HASH_H
 #define FLB_HASH_H
 
-#include <fluent-bit/flb_info.h>
-#include <monkey/mk_core.h>
+#include <stdint.h>
+#include <openssl/err.h>
+#include <openssl/sha.h>
+#include <openssl/evp.h>
+#include <openssl/hmac.h>
+#include <openssl/engine.h>
+#include <fluent-bit/flb_crypto_constants.h>
 
-#include <stdio.h>
-#include <stdlib.h>
-
-/* Eviction modes when the table reach full capacity (if any) */
-#define FLB_HASH_EVICT_NONE       0
-#define FLB_HASH_EVICT_OLDER      1
-#define FLB_HASH_EVICT_LESS_USED  2
-#define FLB_HASH_EVICT_RANDOM     3
-
-struct flb_hash_entry {
-    time_t created;
-    uint64_t hits;
-    uint64_t hash;
-    char *key;
-    size_t key_len;
-    void *val;
-    ssize_t val_size;
-    struct flb_hash_table *table; /* link to parent flb_hash_table */
-    struct mk_list _head;         /* link to flb_hash_table->chains */
-    struct mk_list _head_parent;  /* link to flb_hash->entries */
-};
-
-struct flb_hash_table {
-    int count;
-    struct mk_list chains;
-};
 
 struct flb_hash {
-    int evict_mode;
-    int max_entries;
-    int total_count;
-    int cache_ttl;
-    size_t size;
-    struct mk_list entries;
-    struct flb_hash_table *table;
+    EVP_MD_CTX   *backend_context;
+    size_t        digest_size;
+    unsigned long last_error;
 };
 
-struct flb_hash *flb_hash_create(int evict_mode, size_t size, int max_entries);
-struct flb_hash *flb_hash_create_with_ttl(int cache_ttl, int evict_mode, 
-                                          size_t size, int max_entries);
-void flb_hash_destroy(struct flb_hash *ht);
+int flb_hash_init(struct flb_hash *context, int digest_type);
 
-int flb_hash_add(struct flb_hash *ht,
-                 const char *key, int key_len,
-                 void *val, ssize_t val_size);
-int flb_hash_get(struct flb_hash *ht,
-                 const char *key, int key_len,
-                 void **out_buf, size_t *out_size);
+int flb_hash_cleanup(struct flb_hash *context);
 
-int flb_hash_exists(struct flb_hash *ht, uint64_t hash);
-int flb_hash_get_by_id(struct flb_hash *ht, int id,
-                       const char *key,
-                       const char **out_buf, size_t *out_size);
+int flb_hash_finalize(struct flb_hash *context, 
+                      unsigned char *digest_buffer,
+                      size_t digest_buffer_size);
 
-void *flb_hash_get_ptr(struct flb_hash *ht, const char *key, int key_len);
+int flb_hash_update(struct flb_hash *context, 
+                    unsigned char *data, 
+                    size_t data_length);
 
-int flb_hash_del(struct flb_hash *ht, const char *key);
+int flb_hash_simple_batch(int hash_type,
+                          size_t entry_count,
+                          unsigned char **data_entries,
+                          size_t *length_entries,
+                          unsigned char *digest_buffer,
+                          size_t digest_buffer_size);
 
-int flb_hash_del_ptr(struct flb_hash *ht, const char *key, int key_len,
-                     void *ptr);
+int flb_hash_simple(int hash_type,
+                    unsigned char *data, 
+                    size_t data_length,
+                    unsigned char *digest_buffer, 
+                    size_t digest_buffer_size);
 
 #endif

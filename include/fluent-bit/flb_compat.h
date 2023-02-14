@@ -139,4 +139,8 @@ static inline int usleep(LONGLONG usec)
 #define FLB_DIRCHAR '/'
 #endif
 
+#ifdef FLB_HAVE_UNIX_SOCKET
+#include <sys/un.h>
+#endif
+
 #endif

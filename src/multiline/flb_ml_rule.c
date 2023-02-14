@@ -253,7 +253,7 @@ static int try_flushing_buffer(struct flb_ml_parser *ml_parser,
     rule = group->rule_to_state;
     if (!rule) {
         if (flb_sds_len(group->buf) > 0) {
-            flb_ml_flush_stream_group(ml_parser, mst, group);
+            flb_ml_flush_stream_group(ml_parser, mst, group, FLB_FALSE);
             group->first_line = FLB_TRUE;
         }
         return 0;
@@ -269,7 +269,7 @@ static int try_flushing_buffer(struct flb_ml_parser *ml_parser,
     }
 
     if (next_start && flb_sds_len(group->buf) > 0) {
-        flb_ml_flush_stream_group(ml_parser, mst, group);
+        flb_ml_flush_stream_group(ml_parser, mst, group, FLB_FALSE);
         group->first_line = FLB_TRUE;
     }
 
@@ -395,7 +395,7 @@ int flb_ml_rule_process(struct flb_ml_parser *ml_parser,
         if (rule) {
             /* if the group buffer has any previous data just flush it */
             if (flb_sds_len(group->buf) > 0) {
-                flb_ml_flush_stream_group(ml_parser, mst, group);
+                flb_ml_flush_stream_group(ml_parser, mst, group, FLB_FALSE);
             }
 
             /* set the rule state */

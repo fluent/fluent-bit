@@ -17,13 +17,21 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_OPENTELEMETRY_H
-#define FLB_OPENTELEMETRY_H
+#ifndef FLB_OUT_OPENTELEMETRY_H
+#define FLB_OUT_OPENTELEMETRY_H
 
 #include <fluent-bit/flb_output_plugin.h>
 
 #define FLB_OPENTELEMETRY_CONTENT_TYPE_HEADER_NAME "Content-Type"
 #define FLB_OPENTELEMETRY_MIME_PROTOBUF_LITERAL    "application/x-protobuf"
+
+/*
+ * This lets you send log records in batches instead of a request per log record
+ * It might be removed in furthur versions since if we have a large number of
+ * log records, and a later batch fails, Fluent Bit will retry ALL the batches,
+ * including the ones that succeeded. This is not ideal.
+ */
+#define DEFAULT_LOG_RECORD_BATCH_SIZE "1000"
 
 /* Plugin context */
 struct opentelemetry_context {
@@ -37,9 +45,14 @@ struct opentelemetry_context {
     int proxy_port;
 
     /* HTTP URI */
-    char *uri;
+    char *traces_uri;
+    char *metrics_uri;
+    char *logs_uri;
     char *host;
     int port;
+
+    /* Number of logs to flush at a time */
+    int batch_size;
 
     /* Log the response paylod */
     int log_response_payload;
@@ -59,6 +72,9 @@ struct opentelemetry_context {
 
     /* instance context */
     struct flb_output_instance *ins;
+
+    /* Compression mode (gzip) */
+    int compress_gzip;
 };
 
 #endif

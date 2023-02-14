@@ -57,6 +57,10 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, grace)},
 
+    {FLB_CONF_STR_CONV_NAN,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, convert_nan_to_null)},
+
     {FLB_CONF_STR_DAEMON,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, daemon)},
@@ -139,6 +143,9 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STORAGE_MAX_CHUNKS_UP,
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, storage_max_chunks_up)},
+    {FLB_CONF_STORAGE_DELETE_IRRECOVERABLE_CHUNKS,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, storage_del_bad_chunks)},
 
     /* Coroutines */
     {FLB_CONF_STR_CORO_STACK_SIZE,
@@ -157,6 +164,12 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STR_STREAMS_FILE,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, stream_processor_file)},
+#endif
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+    {FLB_CONF_STR_ENABLE_CHUNK_TRACE,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, enable_chunk_trace)},
 #endif
 
     {NULL, FLB_CONF_TYPE_OTHER, 0} /* end of array */
@@ -189,6 +202,7 @@ struct flb_config *flb_config_init()
     /* Initialize config_format context */
     cf = flb_cf_create();
     if (!cf) {
+        flb_free(config);
         return NULL;
     }
     config->cf_main = cf;
@@ -196,6 +210,7 @@ struct flb_config *flb_config_init()
     section = flb_cf_section_create(cf, "service", 0);
     if (!section) {
         flb_cf_destroy(cf);
+        flb_free(config);
         return NULL;
     }
 
@@ -208,6 +223,9 @@ struct flb_config *flb_config_init()
     config->grace        = 5;
     config->grace_count  = 0;
     config->exit_status_code = 0;
+
+    /* json */
+    config->convert_nan_to_null = FLB_FALSE;
 
 #ifdef FLB_HAVE_HTTP_SERVER
     config->http_ctx                     = NULL;
@@ -240,6 +258,7 @@ struct flb_config *flb_config_init()
     config->cio          = NULL;
     config->storage_path = NULL;
     config->storage_input_plugin = NULL;
+    config->storage_metrics = FLB_TRUE;
 
     config->sched_cap  = FLB_SCHED_CAP;
     config->sched_base = FLB_SCHED_BASE;
@@ -264,8 +283,10 @@ struct flb_config *flb_config_init()
         config->coro_stack_size = (unsigned int)getpagesize();
     }
 
+    /* collectors */
+    pthread_mutex_init(&config->collectors_mutex, NULL);
+
     /* Initialize linked lists */
-    mk_list_init(&config->collectors);
     mk_list_init(&config->custom_plugins);
     mk_list_init(&config->custom_plugins);
     mk_list_init(&config->in_plugins);
@@ -280,6 +301,7 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->proxies);
     mk_list_init(&config->workers);
     mk_list_init(&config->upstreams);
+    mk_list_init(&config->downstreams);
     mk_list_init(&config->cmetrics);
     mk_list_init(&config->cf_parsers_list);
 
@@ -290,7 +312,12 @@ struct flb_config *flb_config_init()
 
     /* Multiline core */
     mk_list_init(&config->multiline_parsers);
-    flb_ml_init(config);
+    ret = flb_ml_init(config);
+    if (ret == -1) {
+        flb_error("[config] multiline core initialization failed");
+        flb_config_exit(config);
+        return NULL;
+    }
 
     /* Register static plugins */
     ret = flb_plugins_register(config);
@@ -325,7 +352,6 @@ void flb_config_exit(struct flb_config *config)
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_cf *cf;
-    struct flb_input_collector *collector;
 
     if (config->log_file) {
         flb_free(config->log_file);
@@ -375,25 +401,9 @@ void flb_config_exit(struct flb_config *config)
         }
     }
 
-    /* Collectors */
-    mk_list_foreach_safe(head, tmp, &config->collectors) {
-        collector = mk_list_entry(head, struct flb_input_collector, _head);
-
-        if (collector->type == FLB_COLLECT_TIME) {
-            if (collector->fd_timer > 0) {
-                mk_event_timeout_destroy(config->evl, &collector->event);
-                mk_event_closesocket(collector->fd_timer);
-            }
-        }
-        else {
-            mk_event_del(config->evl, &collector->event);
-        }
-
-        mk_list_del(&collector->_head);
-        flb_free(collector);
+    if (config->env) {
+        flb_env_destroy(config->env);
     }
-
-    flb_env_destroy(config->env);
 
     /* Program name */
     if (config->program_name) {
@@ -411,19 +421,24 @@ void flb_config_exit(struct flb_config *config)
     }
 
     /* Destroy any DSO context */
-    flb_plugin_destroy(config->dso_plugins);
+    if (config->dso_plugins) {
+        flb_plugin_destroy(config->dso_plugins);
+    }
 
     /* Workers */
     flb_worker_exit(config);
 
     /* Event flush */
     if (config->evl) {
-        mk_event_del(config->evl, &config->event_flush);
+        if (config->event_flush.status != MK_EVENT_NONE) {
+            mk_event_timeout_destroy(config->evl, &config->event_flush);
+        }
     }
-    mk_event_closesocket(config->flush_fd);
 
     /* Release scheduler */
-    flb_sched_destroy(config->sched);
+    if (config->sched) {
+        flb_sched_destroy(config->sched);
+    }
 
 #ifdef FLB_HAVE_HTTP_SERVER
     if (config->http_listen) {

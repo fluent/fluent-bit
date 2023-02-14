@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_jsmn.h>
+#include <fluent-bit/flb_config.h>
 
 #include <msgpack.h>
 
@@ -39,6 +40,7 @@
 #define FLB_PACK_JSON_DATE_ISO8601               1
 #define FLB_PACK_JSON_DATE_EPOCH                 2
 #define FLB_PACK_JSON_DATE_JAVA_SQL_TIMESTAMP    3
+#define FLB_PACK_JSON_DATE_EPOCH_MS              4
 
 /* Specific ISO8601 format */
 #define FLB_PACK_JSON_DATE_ISO8601_FMT "%Y-%m-%dT%H:%M:%S"
@@ -70,6 +72,7 @@ struct flb_pack_state {
     size_t buf_len;       /* temporary buffer length    */
 };
 
+int flb_pack_init(struct flb_config *config);
 int flb_json_tokenise(const char *js, size_t len, struct flb_pack_state *state);
 
 

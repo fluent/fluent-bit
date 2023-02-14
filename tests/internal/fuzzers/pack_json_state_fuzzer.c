@@ -6,7 +6,13 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size){
     int out_size= 0;
     char *out_buf = NULL;
     struct flb_pack_state state;
+    /* Set fuzzer-malloc chance of failure */
+    flb_malloc_mod = 25000;
     flb_malloc_p = 0;
+
+    /* Exit early to avoid timeouts due to excessive size */
+    if (size > 4096)
+        return 0;
 
     /* Target json packer */
     flb_pack_state_init(&state);

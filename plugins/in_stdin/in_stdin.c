@@ -159,7 +159,7 @@ static int in_stdin_collect(struct flb_input_instance *ins,
 
             flb_free(pack);
 
-            flb_input_chunk_append_raw(ins, NULL, 0,
+            flb_input_log_append(ins, NULL, 0,
                                        mp_sbuf.data, mp_sbuf.size);
             msgpack_sbuffer_destroy(&mp_sbuf);
             return 0;
@@ -178,7 +178,7 @@ static int in_stdin_collect(struct flb_input_instance *ins,
                 pack_regex(&mp_sbuf, &mp_pck,
                            ctx, &out_time, out_buf, out_size);
                 flb_free(out_buf);
-                flb_input_chunk_append_raw(ins, NULL, 0,
+                flb_input_log_append(ins, NULL, 0,
                                            mp_sbuf.data, mp_sbuf.size);
                 msgpack_sbuffer_clear(&mp_sbuf);
             }

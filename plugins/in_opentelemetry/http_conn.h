@@ -29,7 +29,6 @@
 
 struct http_conn {
     struct mk_event event;      /* Built-in event data for mk_events */
-    int fd;                     /* socket connection */
 
     /* Buffer */
     char *buf_data;             /* Buffer data                       */
@@ -43,12 +42,14 @@ struct http_conn {
     struct mk_http_parser parser;
     struct mk_http_request request;
     struct mk_http_session session;
+    struct flb_connection *connection;
 
     void *ctx;                  /* Plugin parent context             */
     struct mk_list _head;       /* link to flb_opentelemetry->connections     */
 };
 
-struct http_conn *opentelemetry_conn_add(int fd, struct flb_opentelemetry *ctx);
+struct http_conn *opentelemetry_conn_add(struct flb_connection *connection,
+                                         struct flb_opentelemetry *ctx);
 int opentelemetry_conn_del(struct http_conn *conn);
 void opentelemetry_conn_release_all(struct flb_opentelemetry *ctx);
 

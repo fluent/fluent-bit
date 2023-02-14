@@ -41,7 +41,7 @@ struct flush {
     size_t data_size;
 
     /* log records- each of these has a pointer to their message in tmp_buf */
-    struct event *events;
+    struct firehose_event *events;
     int events_capacity;
     /* current event */
     int event_index;
@@ -58,7 +58,7 @@ struct flush {
     int records_processed;
 };
 
-struct event {
+struct firehose_event {
     char *json;
     size_t len;
     struct timespec timestamp;

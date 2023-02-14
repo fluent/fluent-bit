@@ -367,12 +367,12 @@ static struct flb_config_map config_map[] = {
      "Multiple Parser entries are allowed (one per line)."
     },
     {
-     FLB_CONFIG_MAP_BOOL, "Preserve_Key", FLB_FALSE,
+     FLB_CONFIG_MAP_BOOL, "Preserve_Key", "false",
      0, FLB_TRUE, offsetof(struct filter_parser_ctx, preserve_key),
      "Keep original Key_Name field in the parsed result. If false, the field will be removed."
     },
     {
-     FLB_CONFIG_MAP_BOOL, "Reserve_Data", FLB_FALSE,
+     FLB_CONFIG_MAP_BOOL, "Reserve_Data", "false",
      0, FLB_TRUE, offsetof(struct filter_parser_ctx, reserve_data),
      "Keep all other original fields in the parsed result. "
      "If false, all other original fields will be removed."

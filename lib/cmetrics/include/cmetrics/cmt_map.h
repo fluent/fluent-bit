@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -25,23 +25,23 @@
 #include <cmetrics/cmt_metric.h>
 
 struct cmt_map_label {
-    cmt_sds_t name;             /* Label key name */
-    struct mk_list _head;       /* Link to list cmt_labels_map->labels */
+    cfl_sds_t name;             /* Label key name */
+    struct cfl_list _head;       /* Link to list cmt_labels_map->labels */
 };
 
 struct cmt_map {
     int type;                   /* Metric type */
     struct cmt_opts *opts;      /* Reference to parent 'opts' */
-    cmt_sds_t unit;             /* Metric unit */
+    cfl_sds_t unit;             /* Metric unit */
 
     /* A map without label keys, uses direct access to the static metric ctx */
     int metric_static_set;      /* is the static metric set ? */
     struct cmt_metric metric;
 
     /* Used when labels are set */
-    struct mk_list metrics;     /* List of metrics */
+    struct cfl_list metrics;     /* List of metrics */
     int label_count;            /* Number of labels */
-    struct mk_list label_keys;  /* Linked list of labels */
+    struct cfl_list label_keys;  /* Linked list of labels */
     void *parent;
 };
 
@@ -56,6 +56,6 @@ int cmt_map_metric_get_val(struct cmt_opts *opts, struct cmt_map *map,
                            int labels_count, char **labels_val,
                            double *out_val);
 
-void destroy_label_list(struct mk_list *label_list);
+void destroy_label_list(struct cfl_list *label_list);
 
 #endif

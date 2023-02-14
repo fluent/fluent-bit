@@ -41,7 +41,14 @@ static void test_profile_default()
 {
     struct flb_aws_provider *provider;
     struct flb_aws_credentials*creds;
+    struct flb_config *config;
     int ret;
+
+    config = flb_config_init();
+
+    if (config == NULL) {
+        return;
+    }
 
     TEST_CHECK(unset_profile_env() == 0);
 
@@ -75,6 +82,7 @@ static void test_profile_default()
     TEST_CHECK(ret == 0);
 
     flb_aws_provider_destroy(provider);
+    flb_config_exit(config);
 
     TEST_CHECK(unset_profile_env() == 0);
 }
@@ -83,7 +91,14 @@ static void test_profile_non_default()
 {
     struct flb_aws_provider *provider;
     struct flb_aws_credentials*creds;
+    struct flb_config *config;
     int ret;
+
+    config = flb_config_init();
+
+    if (config == NULL) {
+        return;
+    }
 
     TEST_CHECK(unset_profile_env() == 0);
 
@@ -120,6 +135,7 @@ static void test_profile_non_default()
     TEST_CHECK(ret == 0);
 
     flb_aws_provider_destroy(provider);
+    flb_config_exit(config);
 
     TEST_CHECK(unset_profile_env() == 0);
 }
@@ -128,7 +144,14 @@ static void test_profile_no_space()
 {
     struct flb_aws_provider *provider;
     struct flb_aws_credentials*creds;
+    struct flb_config *config;
     int ret;
+
+    config = flb_config_init();
+
+    if (config == NULL) {
+        return;
+    }
 
     TEST_CHECK(unset_profile_env() == 0);
 
@@ -165,6 +188,7 @@ static void test_profile_no_space()
     TEST_CHECK(ret == 0);
 
     flb_aws_provider_destroy(provider);
+    flb_config_exit(config);
 
     TEST_CHECK(unset_profile_env() == 0);
 }
@@ -173,7 +197,14 @@ static void test_profile_weird_whitespace()
 {
     struct flb_aws_provider *provider;
     struct flb_aws_credentials*creds;
+    struct flb_config *config;
     int ret;
+
+    config = flb_config_init();
+
+    if (config == NULL) {
+        return;
+    }
 
     TEST_CHECK(unset_profile_env() == 0);
 
@@ -190,6 +221,7 @@ static void test_profile_weird_whitespace()
     creds = provider->provider_vtable->get_credentials(provider);
     if (!creds) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     TEST_CHECK(strcmp(AKID_WEIRDWHITESPACE_PROFILE, creds->access_key_id) == 0);
@@ -202,6 +234,7 @@ static void test_profile_weird_whitespace()
     creds = provider->provider_vtable->get_credentials(provider);
     if (!creds) {
         flb_errno();
+        flb_config_exit(config);
         return;
     }
     TEST_CHECK(strcmp(AKID_WEIRDWHITESPACE_PROFILE, creds->access_key_id) == 0);
@@ -216,6 +249,7 @@ static void test_profile_weird_whitespace()
     TEST_CHECK(ret == 0);
 
     flb_aws_provider_destroy(provider);
+    flb_config_exit(config);
 
     TEST_CHECK(unset_profile_env() == 0);
 }
@@ -224,7 +258,14 @@ static void test_profile_missing()
 {
     struct flb_aws_provider *provider;
     struct flb_aws_credentials*creds;
+    struct flb_config *config;
     int ret;
+
+    config = flb_config_init();
+
+    if (config == NULL) {
+        return;
+    }
 
     TEST_CHECK(unset_profile_env() == 0);
 
@@ -253,6 +294,7 @@ static void test_profile_missing()
     TEST_CHECK(ret < 0);
 
     flb_aws_provider_destroy(provider);
+    flb_config_exit(config);
 
     TEST_CHECK(unset_profile_env() == 0);
 }
@@ -261,7 +303,14 @@ static void test_profile_nodefault()
 {
     struct flb_aws_provider *provider;
     struct flb_aws_credentials*creds;
+    struct flb_config *config;
     int ret;
+
+    config = flb_config_init();
+
+    if (config == NULL) {
+        return;
+    }
 
     TEST_CHECK(unset_profile_env() == 0);
 
@@ -287,6 +336,7 @@ static void test_profile_nodefault()
     TEST_CHECK(ret < 0);
 
     flb_aws_provider_destroy(provider);
+    flb_config_exit(config);
 
     TEST_CHECK(unset_profile_env() == 0);
 }

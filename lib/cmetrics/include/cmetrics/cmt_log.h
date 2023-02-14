@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -37,28 +37,28 @@ void cmt_log_print(void *ctx, int level, const char *file, int line,
                      const char *fmt, ...);
 int cmt_errno_print(int errnum, const char *file, int line);
 
-#define cmt_log_error(ctx, fmt, ...)                    \
-    cmt_log_print(ctx, CMT_LOG_ERROR, __FILENAME__,     \
+#define cmt_log_error(ctx, fmt, ...)                        \
+    cmt_log_print(ctx, CMT_LOG_ERROR, __CMT_FILENAME__,     \
                   __LINE__, fmt, ##__VA_ARGS__)
 
-#define cmt_log_warn(ctx, fmt, ...)                 \
-    cmt_log_print(ctx, CMT_LOG_WARN, __FILENAME__,  \
+#define cmt_log_warn(ctx, fmt, ...)                         \
+    cmt_log_print(ctx, CMT_LOG_WARN, __CMT_FILENAME__,      \
                   __LINE__, fmt, ##__VA_ARGS__)
 
-#define cmt_log_info(ctx, fmt, ...)                 \
-    cmt_log_print(ctx, CMT_LOG_INFO, __FILENAME__,  \
+#define cmt_log_info(ctx, fmt, ...)                         \
+    cmt_log_print(ctx, CMT_LOG_INFO, __CMT_FILENAME__,      \
                   __LINE__, fmt, ##__VA_ARGS__)
 
-#define cmt_log_debug(ctx, fmt, ...)                \
-    cmt_log_print(ctx, CMT_LOG_DEBUG, __FILENAME__, \
+#define cmt_log_debug(ctx, fmt, ...)                        \
+    cmt_log_print(ctx, CMT_LOG_DEBUG, __CMT_FILENAME__,     \
                   __LINE__, fmt, ##__VA_ARGS__)
 
-#define cmt_log_trace(ctx, fmt, ...)                \
-    cmt_log_print(ctx, CMT_LOG_TRACE, __FILENAME__, \
+#define cmt_log_trace(ctx, fmt, ...)                        \
+    cmt_log_print(ctx, CMT_LOG_TRACE, __CMT_FILENAME__,     \
                   __LINE__, fmt, ##__VA_ARGS__)
 
-#ifdef __FILENAME__
-#define cmt_errno() cmt_errno_print(errno, __FILENAME__, __LINE__)
+#ifdef __CMT_FILENAME__
+#define cmt_errno() cmt_errno_print(errno, __CMT_FILENAME__, __LINE__)
 #else
 #define cmt_errno() cmt_errno_print(errno, __FILE__, __LINE__)
 #endif

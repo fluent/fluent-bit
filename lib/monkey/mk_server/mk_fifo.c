@@ -152,8 +152,8 @@ int mk_fifo_queue_create(struct mk_fifo *ctx, char *name,
 
     /* queue name might need to be truncated if is too long */
     len = strlen(name);
-    if (len > (int) sizeof(name) - 1) {
-        len = sizeof(name) - 1;
+    if (len > (int) sizeof(q->name) - 1) {
+        len = sizeof(q->name) - 1;
     }
 
     /* Validate that name is not a duplicated */

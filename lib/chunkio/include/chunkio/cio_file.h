@@ -40,9 +40,8 @@ struct cio_file {
     char *path;               /* root path + stream   */
     char *map;                /* map of data          */
 #ifdef _WIN32
-    void *h;
-    crc_t crc_be;
-    int map_synced;
+    HANDLE backing_file;
+    HANDLE backing_mapping;
 #endif
     /* cached addr */
     char *st_content;
@@ -58,10 +57,11 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
                                size_t size,
                                int *err);
 void cio_file_close(struct cio_chunk *ch, int delete);
+int cio_file_delete(struct cio_ctx *ctx, struct cio_stream *st, const char *name);
 int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count);
 int cio_file_write_metadata(struct cio_chunk *ch, char *buf, size_t size);
 int cio_file_sync(struct cio_chunk *ch);
-int cio_file_fs_size_change(struct cio_file *cf, size_t new_size);
+int cio_file_resize(struct cio_file *cf, size_t new_size);
 char *cio_file_hash(struct cio_file *cf);
 void cio_file_hash_print(struct cio_file *cf);
 void cio_file_calculate_checksum(struct cio_file *cf, crc_t *out);
@@ -77,5 +77,9 @@ int cio_file_up(struct cio_chunk *ch);
 int cio_file_up_force(struct cio_chunk *ch);
 int cio_file_lookup_user(char *user, void **result);
 int cio_file_lookup_group(char *group, void **result);
+int cio_file_update_size(struct cio_file *cf);
+
+#define cio_file_report_runtime_error() { cio_file_native_report_runtime_error(); }
+#define cio_file_report_os_error() { cio_file_native_report_os_error(); }
 
 #endif

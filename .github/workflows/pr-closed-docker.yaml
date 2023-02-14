@@ -8,9 +8,14 @@ jobs:
   cleanup:
     name: PR - cleanup pr-${{ github.event.number }} images
     runs-on: ubuntu-latest
+    permissions:
+      # We may need a specific token here with `packages:admin` privileges which is not available to GITHUB_TOKEN
+      packages: write
     steps:
-      - uses: bots-house/ghcr-delete-image-action@v1.0.1
+      - uses: vlaurin/action-ghcr-prune@v0.5.0
         with:
-          owner: fluent
-          name: fluent-bit/pr-${{ github.event.number }}
+          organization: fluent
+          container: fluent-bit/pr-${{ github.event.number }}
           token: ${{ secrets.GITHUB_TOKEN }}
+          prune-untagged: true
+          keep-last: 0

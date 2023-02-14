@@ -55,16 +55,33 @@ static inline void flb_version()
 
 static inline void flb_version_banner()
 {
+    const char *copyright_color = ANSI_BOLD ANSI_YELLOW;
+    const char *bold_color = ANSI_BOLD;
+    const char *reset_color = ANSI_RESET;
+
+    #ifdef FLB_LOG_NO_CONTROL_CHARS
+    copyright_color = "";
+    bold_color = "";
+    reset_color = "";
+    #else
+    /* Only print colors to a terminal */
+    if (!isatty(STDOUT_FILENO)) {
+        copyright_color = "";
+        bold_color = "";
+        reset_color = "";
+    }
+    #endif // FLB_LOG_NO_CONTROL_CHARS
+
 #ifdef FLB_NIGHTLY_BUILD
     fprintf(stderr,
             "%sFluent Bit v%s | NIGHTLY_BUILD=%s - DO NOT USE IN PRODUCTION!"
-            "%s\n", ANSI_BOLD, FLB_VERSION_STR, STR(FLB_NIGHTLY_BUILD), ANSI_RESET);
+            "%s\n", bold_color, FLB_VERSION_STR, STR(FLB_NIGHTLY_BUILD), reset_color);
 #else
     fprintf(stderr,
-            "%sFluent Bit v%s%s\n", ANSI_BOLD, FLB_VERSION_STR, ANSI_RESET);
+            "%sFluent Bit v%s%s\n", bold_color, FLB_VERSION_STR, reset_color);
 #endif
     fprintf(stderr, "* %sCopyright (C) 2015-2022 The Fluent Bit Authors%s\n",
-            ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
+            copyright_color, reset_color);
     fprintf(stderr, "* Fluent Bit is a CNCF sub-project under the "
             "umbrella of Fluentd\n");
     fprintf(stderr, "* https://fluentbit.io\n\n");

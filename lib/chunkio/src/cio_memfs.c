@@ -33,6 +33,11 @@ struct cio_memfs *cio_memfs_open(struct cio_ctx *ctx, struct cio_stream *st,
 {
     struct cio_memfs *mf;
 
+    (void) flags;
+    (void) ctx;
+    (void) ch;
+    (void) st;
+
     mf = calloc(1, sizeof(struct cio_memfs));
     if (!mf) {
         cio_errno();
@@ -134,12 +139,14 @@ void cio_memfs_scan_dump(struct cio_ctx *ctx, struct cio_stream *st)
     struct cio_memfs *mf;
     struct cio_chunk *ch;
 
+    (void) ctx;
+
     mk_list_foreach(head, &st->chunks) {
         ch = mk_list_entry(head, struct cio_chunk, _head);
         mf = ch->backend;
 
         snprintf(tmp, sizeof(tmp) -1, "%s/%s", ch->st->name, ch->name);
         printf("        %-60s", tmp);
-        printf("meta_len=%i, data_size=%lu\n", mf->meta_len, mf->buf_len);
+        printf("meta_len=%i, data_size=%zu\n", mf->meta_len, mf->buf_len);
     }
 }

@@ -8,7 +8,6 @@ if (CMT_BUILD_PROMETHEUS_DECODER)
     add_flex_bison_dependency(cmt_decode_prometheus_lexer cmt_decode_prometheus_parser)
 endif()
 
-
 set(src
   cmt_gauge.c
   cmt_counter.c
@@ -22,28 +21,20 @@ set(src
   cmt_opts.c
   cmt_time.c
   cmt_label.c
-  cmt_kvlist.c
-  cmt_array.c
-  cmt_variant.c
   cmt_cat.c
-  cmt_sds.c
   cmetrics.c
   cmt_encode_opentelemetry.c
   cmt_decode_opentelemetry.c
   cmt_encode_prometheus.c
   cmt_encode_prometheus_remote_write.c
+  cmt_encode_splunk_hec.c
   cmt_encode_text.c
   cmt_encode_influx.c
   cmt_encode_msgpack.c
   cmt_decode_msgpack.c
   cmt_mpack_utils.c
-  external/protobuf-c.c
   external/remote.pb-c.c
   external/types.pb-c.c
-  external/opentelemetry_common.pb-c.c
-  external/opentelemetry_metrics.pb-c.c
-  external/opentelemetry_resource.pb-c.c
-  external/opentelemetry_metrics_service.pb-c.c
   )
 
 if (${CMAKE_C_COMPILER_ID} STREQUAL "Clang")
@@ -72,7 +63,7 @@ endif()
 
 # Static Library
 add_library(cmetrics-static STATIC ${src})
-target_link_libraries(cmetrics-static xxhash mpack-static)
+target_link_libraries(cmetrics-static mpack-static cfl-static fluent-otel-proto)
 
 # Install Library
 if(MSVC)

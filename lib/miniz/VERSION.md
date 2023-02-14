@@ -1,9 +1,10 @@
 === Miniz Version ===
 
-commit b43f8a0c22d6bae6b5416264232f57a2aca539fe 
-Merge: 17d6763 1e8c7ce
+commit ca0cdfc52d193bf738e59e47c5206812a3315bcd 
+Merge: 7b9bcf7 a203b9a
 Author: Martin Raiber <martin@urbackup.org>
-Date:   Sun Feb 7 22:03:46 2021 +0100
+Date:   Thu Aug 25 22:03:10 2022 +0200
 
-    Merge pull request #147 from andiwand/write-with-dynamic-size
-    write with dynamic size
+    Merge pull request #252 from JonLiu1993/vcpkg-instructions
+
+    Add vcpkg installation instructions

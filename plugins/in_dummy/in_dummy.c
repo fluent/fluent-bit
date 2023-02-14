@@ -44,7 +44,8 @@ static int set_dummy_timestamp(msgpack_packer *mp_pck, struct flb_dummy *ctx)
         ctx->base_timestamp = flb_malloc(sizeof(struct flb_time));
         flb_time_get(ctx->base_timestamp);
         ret = flb_time_append_to_msgpack(ctx->dummy_timestamp, mp_pck, 0);
-    } else {
+    }
+    else {
         flb_time_get(&t);
         flb_time_diff(&t, ctx->base_timestamp, &diff);
         flb_time_add(ctx->dummy_timestamp, &diff, &dummy_time);
@@ -54,34 +55,37 @@ static int set_dummy_timestamp(msgpack_packer *mp_pck, struct flb_dummy *ctx)
     return ret;
 }
 
-static int gen_msg(struct flb_input_instance *ins, void *in_context, msgpack_sbuffer *mp_sbuf)
+static int init_msg(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck)
+{
+    /* Initialize local msgpack buffer */
+    msgpack_sbuffer_init(mp_sbuf);
+    msgpack_packer_init(mp_pck, mp_sbuf, msgpack_sbuffer_write);
+    return 0;
+}
+
+static int gen_msg(struct flb_input_instance *ins, void *in_context, msgpack_packer *mp_pck)
 {
     size_t off = 0;
     size_t start = 0;
     char *pack;
     int pack_size;
     msgpack_unpacked result;
-    msgpack_packer mp_pck;
     struct flb_dummy *ctx = in_context;
 
     pack = ctx->ref_msgpack;
     pack_size = ctx->ref_msgpack_size;
     msgpack_unpacked_init(&result);
 
-    /* Initialize local msgpack buffer */
-    msgpack_sbuffer_init(mp_sbuf);
-    msgpack_packer_init(&mp_pck, mp_sbuf, msgpack_sbuffer_write);
-
     while (msgpack_unpack_next(&result, pack, pack_size, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type == MSGPACK_OBJECT_MAP) {
             /* { map => val, map => val, map => val } */
-            msgpack_pack_array(&mp_pck, 2);
+            msgpack_pack_array(mp_pck, 2);
             if (ctx->dummy_timestamp != NULL){
-                set_dummy_timestamp(&mp_pck, ctx);
+                set_dummy_timestamp(mp_pck, ctx);
             } else {
-                flb_pack_time_now(&mp_pck);
+                flb_pack_time_now(mp_pck);
             }
-            msgpack_pack_str_body(&mp_pck, pack + start, off - start);
+            msgpack_pack_str_body(mp_pck, pack + start, off - start);
         }
         start = off;
     }
@@ -96,18 +100,24 @@ static int in_dummy_collect(struct flb_input_instance *ins,
 {
     struct flb_dummy *ctx = in_context;
     msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+    int i;
+
 
     if (ctx->samples > 0 && (ctx->samples_count >= ctx->samples)) {
         return -1;
     }
 
     if (ctx->fixed_timestamp == FLB_FALSE) {
-        msgpack_sbuffer_init(&mp_sbuf);
-        gen_msg(ins, in_context, &mp_sbuf);
-        flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+        init_msg(&mp_sbuf, &mp_pck);
+        for (i = 0; i < ctx->copies; i++) {
+            gen_msg(ins, in_context, &mp_pck);
+        }
+        flb_input_log_append(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
         msgpack_sbuffer_destroy(&mp_sbuf);
-    } else {
-        flb_input_chunk_append_raw(ins, NULL, 0, ctx->mp_sbuf.data, ctx->mp_sbuf.size);
+    }
+    else {
+        flb_input_log_append(ins, NULL, 0, ctx->mp_sbuf.data, ctx->mp_sbuf.size);
     }
 
     if (ctx->samples > 0) {
@@ -139,8 +149,10 @@ static int configure(struct flb_dummy *ctx,
     struct flb_time dummy_time;
     const char *msg;
     int dummy_time_enabled = FLB_FALSE;
+    msgpack_packer mp_pck;
     int root_type;
-    int  ret = -1;
+    int ret = -1;
+    int i;
 
     ctx->dummy_message = NULL;
     ctx->dummy_message_len = 0;
@@ -191,7 +203,8 @@ static int configure(struct flb_dummy *ctx,
     if (ret == 0) {
         ctx->dummy_message = flb_strdup(msg);
         ctx->dummy_message_len = strlen(msg);
-    } else {
+    }
+    else {
         flb_plg_warn(ctx->ins, "data is incomplete. Use default string.");
 
         ctx->dummy_message = flb_strdup(DEFAULT_DUMMY_MESSAGE);
@@ -208,7 +221,10 @@ static int configure(struct flb_dummy *ctx,
     }
 
     if (ctx->fixed_timestamp == FLB_TRUE) {
-        gen_msg(in, ctx, &ctx->mp_sbuf);
+        init_msg(&ctx->mp_sbuf, &mp_pck);
+        for (i = 0; i < ctx->copies; i++) {
+            gen_msg(in, ctx, &mp_pck);
+        }
     }
 
     return 0;
@@ -248,8 +264,23 @@ static int in_dummy_init(struct flb_input_instance *in,
         config_destroy(ctx);
         return -1;
     }
+    ctx->coll_fd = ret;
 
     return 0;
+}
+
+static void in_dummy_pause(void *data, struct flb_config *config)
+{
+    struct flb_dummy *ctx = data;
+
+    flb_input_collector_pause(ctx->coll_fd, ctx->ins);
+}
+
+static void in_dummy_resume(void *data, struct flb_config *config)
+{
+    struct flb_dummy *ctx = data;
+
+    flb_input_collector_resume(ctx->coll_fd, ctx->ins);
 }
 
 static int in_dummy_exit(void *data, struct flb_config *config)
@@ -280,6 +311,11 @@ static struct flb_config_map config_map[] = {
     "set a number of events per second."
    },
    {
+    FLB_CONFIG_MAP_INT, "copies", "1",
+    0, FLB_TRUE, offsetof(struct flb_dummy, copies),
+    "set the number of copies to generate per collectd."
+   },
+   {
     FLB_CONFIG_MAP_INT, "start_time_sec", "-1",
     0, FLB_TRUE, offsetof(struct flb_dummy, start_time_sec),
     "set a dummy base timestamp in seconds."
@@ -306,5 +342,7 @@ struct flb_input_plugin in_dummy_plugin = {
     .cb_collect   = in_dummy_collect,
     .cb_flush_buf = NULL,
     .config_map   = config_map,
+    .cb_pause     = in_dummy_pause,
+    .cb_resume    = in_dummy_resume,
     .cb_exit      = in_dummy_exit
 };

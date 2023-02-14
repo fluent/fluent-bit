@@ -18,7 +18,9 @@
  */
 
 #include <fluent-bit/flb_input_plugin.h>
+#include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_upstream.h>
+
 #include <cmetrics/cmt_decode_prometheus.h>
 
 #include "prom_scrape.h"
@@ -27,6 +29,7 @@ static struct prom_scrape *prom_scrape_create(struct flb_input_instance *ins,
                                               struct flb_config *config)
 {
     int ret;
+    int upstream_flags;
     struct prom_scrape *ctx;
     struct flb_upstream *upstream;
 
@@ -51,8 +54,15 @@ static struct prom_scrape *prom_scrape_create(struct flb_input_instance *ins,
         return NULL;
     }
 
+    upstream_flags = FLB_IO_TCP;
+
+    if (ins->use_tls) {
+        upstream_flags |= FLB_IO_TLS;
+    }
+
     upstream = flb_upstream_create(config, ins->host.name, ins->host.port,
-                                   FLB_IO_TCP, NULL);
+                                   upstream_flags, ins->tls);
+
     if (!upstream) {
         flb_plg_error(ins, "upstream initialization error");
         return NULL;
@@ -68,7 +78,7 @@ static int collect_metrics(struct prom_scrape *ctx)
     char errbuf[1024];
     size_t b_sent;
     struct flb_http_client *c;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct cmt *cmt = NULL;
     struct cmt_decode_prometheus_parse_opts opts = {0};
 
@@ -108,7 +118,7 @@ static int collect_metrics(struct prom_scrape *ctx)
     }
 
     /* configure prometheus decoder options */
-    opts.default_timestamp = cmt_time_now();
+    opts.default_timestamp = cfl_time_now();
     opts.errbuf = errbuf;
     opts.errbuf_size = sizeof(errbuf);
 
@@ -217,5 +227,4 @@ struct flb_input_plugin in_prometheus_scrape_plugin = {
     .cb_exit      = cb_prom_scrape_exit,
     .config_map   = config_map,
     .flags        = FLB_INPUT_NET | FLB_INPUT_CORO,
-    .event_type   = FLB_INPUT_METRICS
 };

@@ -48,6 +48,8 @@ struct flb_in_kmsg_config {
     int fd;                    /* descriptor -> FLB_KMSG_DEV */
     struct timeval boot_time;  /* System boot time           */
 
+    int prio_level;
+
     /* Line processing */
     int buffer_id;
 

@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@
 
 #include <stdbool.h>
 
-#include "monkey/mk_core/mk_list.h"
 #include <cmetrics/cmetrics.h>
 #include <stdint.h>
 
@@ -48,36 +47,41 @@ struct cmt_decode_prometheus_context_sample {
     char value1[64];
     char value2[64];
     int type;
-    cmt_sds_t label_values[CMT_DECODE_PROMETHEUS_MAX_LABEL_COUNT];
+    cfl_sds_t label_values[CMT_DECODE_PROMETHEUS_MAX_LABEL_COUNT];
 
-    struct mk_list _head;
+    struct cfl_list _head;
 };
 
 struct cmt_decode_prometheus_context_metric {
-    cmt_sds_t name_orig;
+    cfl_sds_t name_orig;
     char *ns;
     char *subsystem;
     char *name;
     int type;
     int current_sample_type;
-    cmt_sds_t docstring;
+    cfl_sds_t docstring;
     size_t label_count;
-    cmt_sds_t labels[CMT_DECODE_PROMETHEUS_MAX_LABEL_COUNT];
-    struct mk_list samples;
+    cfl_sds_t labels[CMT_DECODE_PROMETHEUS_MAX_LABEL_COUNT];
+    struct cfl_list samples;
 };
 
 struct cmt_decode_prometheus_parse_opts {
     int start_token;
     uint64_t default_timestamp;
+    uint64_t override_timestamp;
     char *errbuf;
     size_t errbuf_size;
 };
 
 struct cmt_decode_prometheus_context {
+    union {
+        struct cmt_summary *summary;
+        struct cmt_histogram *histogram;
+    } current;
     struct cmt *cmt;
     struct cmt_decode_prometheus_parse_opts opts;
     int errcode;
-    cmt_sds_t strbuf;
+    cfl_sds_t strbuf;
     struct cmt_decode_prometheus_context_metric metric;
 };
 

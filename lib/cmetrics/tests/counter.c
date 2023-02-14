@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -39,7 +39,7 @@ static struct cmt *generate_encoder_test_data()
     c = cmt_counter_create(cmt, "kubernetes", "network", "load", "Network load",
                            2, (char *[]) {"hostname", "app"});
 
-    ts = cmt_time_now();
+    ts = cfl_time_now();
 
     cmt_counter_get_val(c, 0, NULL, &val);
     cmt_counter_inc(c, ts, 0, NULL);
@@ -95,7 +95,7 @@ void test_msgpack()
 void test_prometheus()
 {
     struct cmt *cmt = NULL;
-    cmt_sds_t   prom = NULL;
+    cfl_sds_t   prom = NULL;
 
     cmt_initialize();
 
@@ -113,7 +113,7 @@ void test_prometheus()
 void test_text()
 {
     struct cmt *cmt = NULL;
-    cmt_sds_t   text = NULL;
+    cfl_sds_t   text = NULL;
 
     cmt_initialize();
 
@@ -147,7 +147,7 @@ void test_counter()
     TEST_CHECK(c != NULL);
 
     /* Timestamp */
-    ts = cmt_time_now();
+    ts = cfl_time_now();
 
     /* Default value */
     ret = cmt_counter_get_val(c, 0, NULL, &val);
@@ -188,7 +188,7 @@ void test_labels()
     TEST_CHECK(c != NULL);
 
     /* Timestamp */
-    ts = cmt_time_now();
+    ts = cfl_time_now();
 
     /*
      * Test 1: hash zero (no labels)

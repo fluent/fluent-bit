@@ -56,6 +56,9 @@ struct flb_tail_config {
     /* Static files processor */
     size_t static_batch_size;
 
+    /* Event files processor */
+    size_t event_batch_size;
+
     /* Collectors */
     int coll_fd_static;
     int coll_fd_scan;
@@ -65,6 +68,7 @@ struct flb_tail_config {
     int coll_fd_inactive;
     int coll_fd_dmode_flush;
     int coll_fd_mult_flush;
+    int coll_fd_progress_check;
 
     /* Backend collectors */
     int coll_fd_fs1;           /* used by fs_inotify & fs_stat */
@@ -88,6 +92,9 @@ struct flb_tail_config {
     int   skip_long_lines;     /* skip long lines              */
     int   skip_empty_lines;    /* skip empty lines (off)       */
     int   exit_on_eof;         /* exit fluent-bit on EOF, test */
+
+    int progress_check_interval;      /* watcher interval             */
+    int progress_check_interval_nsec; /* watcher interval             */
 
 #ifdef FLB_HAVE_INOTIFY
     int   inotify_watcher;     /* enable/disable inotify monitor */
@@ -144,8 +151,8 @@ struct flb_tail_config {
     struct cmt_counter *cmt_files_rotated;
 
     /* Hash: hash tables for quick acess to registered files */
-    struct flb_hash *static_hash;
-    struct flb_hash *event_hash;
+    struct flb_hash_table *static_hash;
+    struct flb_hash_table *event_hash;
 
     struct flb_config *config;
 };

@@ -1,0 +1,38 @@
+version: "3.4"
+
+services:
+
+  fb-baseline:
+    image: ${FB_BASELINE_IMAGE}
+    volumes:
+      - log-volume:/logs:ro
+      - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+
+  fb-delta:
+    build:
+      context: ../..
+      dockerfile: dockerfiles/Dockerfile
+      target: production
+    volumes:
+      - log-volume:/logs:ro
+      - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+    ports:
+      - "2020:2020"
+
+  data-generator:
+    image: fluentbitdev/fluent-bit-ci:benchmark
+    command: bash /scripts/entrypoint.sh
+    volumes:
+      - log-volume:/logs:rw
+      - ./scripts:/scripts:ro
+    environment:
+      LOG_PREFIX: ${LOG_PREFIX}
+      LOG_COUNT: ${LOG_COUNT}
+      LOG_SIZE: ${LOG_SIZE}
+      # For multiline set this to >0
+      LINE_COUNT: ${LINE_COUNT}
+      # For multiline set this to the sleep period between log entries rather than the rate
+      LOG_RATE: ${LOG_RATE}
+
+volumes:
+  log-volume:

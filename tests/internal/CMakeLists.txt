@@ -6,7 +6,10 @@ set(UNIT_TESTS_FILES
   pack.c
   pipe.c
   sds.c
-  sha512.c
+  sds_list.c
+  hmac.c
+  crypto.c
+  hash.c
   slist.c
   router.c
   network.c
@@ -24,10 +27,17 @@ set(UNIT_TESTS_FILES
   csv.c
   multiline.c
   typecast.c
-  timeout.c
   base64.c
   bucket_queue.c
   flb_event_loop.c
+  ring_buffer.c
+  regex.c
+  parser_json.c
+  parser_ltsv.c
+  parser_regex.c
+  parser_logfmt.c
+  env.c
+  log.c
   )
 
 # Config format
@@ -128,6 +138,8 @@ if(FLB_LUAJIT)
 endif()
 
 set(UNIT_TESTS_DATA
+  data/tls/certificate.pem
+  data/tls/private_key.pem
   data/pack/json_single_map_001.json
   data/pack/json_single_map_002.json
   data/parser/json.conf
@@ -179,7 +191,7 @@ function(prepare_unit_tests TEST_PREFIX SOURCEFILES)
         target_link_libraries(${source_file_we} flb-sp)
       endif()
 
-      target_link_libraries(${source_file_we} fluent-bit-static)
+      target_link_libraries(${source_file_we} fluent-bit-static cfl-static)
 
       if(FLB_AVRO_ENCODER)
         target_link_libraries(${source_file_we} avro-static jansson)

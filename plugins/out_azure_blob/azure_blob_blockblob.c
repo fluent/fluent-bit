@@ -18,9 +18,9 @@
  */
 
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_sds.h>
-#include <mbedtls/base64.h>
 
 #include <math.h>
 
@@ -131,8 +131,8 @@ char *azb_block_blob_id(uint64_t *ms)
     }
 
     /* base64 encode block id */
-    ret = mbedtls_base64_encode((unsigned char *) b64, size, &o_len,
-                                (unsigned char *) tmp, len);
+    ret = flb_base64_encode((unsigned char *) b64, size, &o_len,
+                            (unsigned char *) tmp, len);
     if (ret != 0) {
         flb_free(b64);
         return NULL;
@@ -148,7 +148,7 @@ int azb_block_blob_commit(struct flb_azure_blob *ctx, char *blockid, char *tag,
     flb_sds_t uri = NULL;
     flb_sds_t payload;
     struct flb_http_client *c;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);

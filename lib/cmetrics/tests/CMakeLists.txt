@@ -35,16 +35,17 @@ foreach(source_file ${UNIT_TESTS_FILES})
     ${source_file_we}
     ${source_file}
     util.c
+    encode_output.c
     )
 
-  target_link_libraries(${source_file_we} cmetrics-static)
+  target_link_libraries(${source_file_we} cmetrics-static cfl-static fluent-otel-proto)
 
 if(NOT CMT_SYSTEM_WINDOWS)
   target_link_libraries(${source_file_we} pthread)
 endif()
 
   add_test(NAME ${source_file_we}
-    COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we}
+    COMMAND ${CMAKE_BINARY_DIR}/tests/${source_file_we}
     WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/tests)
   set_tests_properties(${source_file_we} PROPERTIES LABELS "internal")
 endforeach()

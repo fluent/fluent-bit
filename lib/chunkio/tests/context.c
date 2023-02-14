@@ -25,7 +25,7 @@
 int log_check;
 
 /* Logging callback, once called it just turn on the log_check flag */
-static int log_cb(struct cio_ctx *ctx, const char *file, int line,
+static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
                   char *str)
 {
     (void) ctx;

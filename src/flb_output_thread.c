@@ -116,7 +116,7 @@ static int upstream_thread_create(struct flb_out_thread_instance *th_ins,
     struct flb_upstream *th_u;
 
     mk_list_foreach(head, &ins->upstreams) {
-        u = mk_list_entry(head, struct flb_upstream, _head);
+        u = mk_list_entry(head, struct flb_upstream, base._head);
 
         th_u = flb_calloc(1, sizeof(struct flb_upstream));
         if (!th_u) {
@@ -125,7 +125,7 @@ static int upstream_thread_create(struct flb_out_thread_instance *th_ins,
         }
         th_u->parent_upstream = u;
         flb_upstream_queue_init(&th_u->queue);
-        mk_list_add(&th_u->_head, &th_ins->upstreams);
+        mk_list_add(&th_u->base._head, &th_ins->upstreams);
     }
 
     return 0;
@@ -138,7 +138,7 @@ int count_upstream_busy_connections(struct flb_out_thread_instance *th_ins)
     struct flb_upstream *u;
 
     mk_list_foreach(head, &th_ins->upstreams) {
-        u = mk_list_entry(head, struct flb_upstream, _head);
+        u = mk_list_entry(head, struct flb_upstream, base._head);
         c += mk_list_size(&u->queue.busy_queue);
     }
 
@@ -152,7 +152,7 @@ static void upstream_thread_destroy(struct flb_out_thread_instance *th_ins)
     struct flb_upstream *th_u;
 
     mk_list_foreach_safe(head, tmp, &th_ins->upstreams) {
-        th_u = mk_list_entry(head, struct flb_upstream, _head);
+        th_u = mk_list_entry(head, struct flb_upstream, base._head);
         flb_upstream_destroy(th_u);
     }
 }
@@ -176,7 +176,7 @@ static void output_thread(void *data)
     struct mk_event *event;
     struct flb_sched *sched;
     struct flb_task *task;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_output_instance *ins;
     struct flb_output_flush *out_flush;
     struct flb_out_thread_instance *th_ins = data;
@@ -302,10 +302,11 @@ static void output_thread(void *data)
                  * Check if we have some co-routine associated to this event,
                  * if so, resume the co-routine
                  */
-                u_conn = (struct flb_upstream_conn *) event;
-                if (u_conn->coro) {
-                    flb_trace("[engine] resuming coroutine=%p", u_conn->coro);
-                    flb_coro_resume(u_conn->coro);
+                u_conn = (struct flb_connection *) event;
+
+                if (u_conn->coroutine) {
+                    flb_trace("[engine] resuming coroutine=%p", u_conn->coroutine);
+                    flb_coro_resume(u_conn->coroutine);
                 }
             }
             else if (event->type == FLB_ENGINE_EV_OUTPUT) {

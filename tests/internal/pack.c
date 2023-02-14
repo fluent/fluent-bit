@@ -12,6 +12,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <math.h> /* for NAN */
 
 
 #include "flb_tests_internal.h"
@@ -634,6 +635,53 @@ void test_json_pack_bug1278()
     }
 }
 
+void test_json_pack_nan()
+{
+    int ret;
+    char json_str[128] = {0};
+    char *p = NULL;
+    struct flb_config config;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+    msgpack_object obj;
+    msgpack_zone mempool;
+
+    config.convert_nan_to_null = FLB_TRUE;
+
+    // initialize msgpack
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_double(&mp_pck, NAN);
+    msgpack_zone_init(&mempool, 2048);
+    msgpack_unpack(mp_sbuf.data, mp_sbuf.size, NULL, &mempool, &obj);
+    msgpack_zone_destroy(&mempool);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    // convert msgpack to json
+    ret = flb_msgpack_to_json(&json_str[0], sizeof(json_str), &obj);
+    TEST_CHECK(ret >= 0);
+
+    p = strstr(&json_str[0], "nan");
+    if (!TEST_CHECK(p != NULL)) {
+        TEST_MSG("json should be nan. json_str=%s", json_str);
+    }
+
+    // convert. nan -> null
+    memset(&json_str[0], 0, sizeof(json_str));
+    flb_pack_init(&config);
+    ret = flb_msgpack_to_json(&json_str[0], sizeof(json_str), &obj);
+    TEST_CHECK(ret >= 0);
+
+    p = strstr(&json_str[0], "null");
+    if (!TEST_CHECK(p != NULL)) {
+        TEST_MSG("json should be null. json_str=%s", json_str);
+    }
+
+    // clear setting
+    config.convert_nan_to_null = FLB_FALSE;
+    flb_pack_init(&config);
+}
+
 static int check_msgpack_val(msgpack_object obj, int expected_type, char *expected_val)
 {
     int len;
@@ -782,6 +830,66 @@ void test_json_pack_bug5336()
     }
 }
 
+const char input_msgpack[] = {0x92,/* array 2 */
+                            0xd7, 0x00, /* event time*/
+                            0x07, 0x5b, 0xcd, 0x15, /* second = 123456789 = 1973/11/29 21:33:09 */
+                            0x07, 0x5b, 0xcd, 0x15, /* nanosecond = 123456789 */
+                            0x81, 0xa2, 0x61, 0x61, 0xa2, 0x62, 0x62 /* {"aa":"bb"} */
+};
+
+void test_json_date(char* expect, int date_format)
+{
+    flb_sds_t json_key;
+    flb_sds_t ret;
+
+    json_key = flb_sds_create("date");
+    if (!TEST_CHECK(json_key != NULL)) {
+        TEST_MSG("flb_sds_create failed");
+        exit(1);
+    }
+
+    ret = flb_pack_msgpack_to_json_format((const char*)&input_msgpack[0], sizeof(input_msgpack),
+                                          FLB_PACK_JSON_FORMAT_JSON, date_format,
+                                          json_key);
+    if (!TEST_CHECK(ret != NULL)) {
+        TEST_MSG("flb_pack_msgpack_to_json_format failed");
+        flb_sds_destroy(json_key);
+        exit(1);
+    }
+    flb_sds_destroy(json_key);
+
+    if (!TEST_CHECK(strstr(ret, expect) != NULL)) {
+        TEST_MSG("mismatch. Got=%s expect=%s", ret, expect);
+    }
+
+    flb_sds_destroy(ret);
+}
+
+void test_json_date_iso8601()
+{
+    test_json_date("1973-11-29T21:33:09.123456Z", FLB_PACK_JSON_DATE_ISO8601);
+}
+
+void test_json_date_double()
+{
+    test_json_date("123456789.123456", FLB_PACK_JSON_DATE_DOUBLE);
+}
+
+void test_json_date_java_sql()
+{
+    test_json_date("1973-11-29 21:33:09.123456", FLB_PACK_JSON_DATE_JAVA_SQL_TIMESTAMP);
+}
+
+void test_json_date_epoch()
+{
+    test_json_date("123456789", FLB_PACK_JSON_DATE_EPOCH);
+}
+
+void test_json_date_epoch_ms()
+{
+    test_json_date("123456789123", FLB_PACK_JSON_DATE_EPOCH_MS);
+}
+
 TEST_LIST = {
     /* JSON maps iteration */
     { "json_pack"          , test_json_pack },
@@ -792,7 +900,13 @@ TEST_LIST = {
     { "json_dup_keys"      , test_json_dup_keys},
     { "json_pack_bug342"   , test_json_pack_bug342},
     { "json_pack_bug1278"  , test_json_pack_bug1278},
+    { "json_pack_nan"      , test_json_pack_nan},
     { "json_pack_bug5336"  , test_json_pack_bug5336},
+    { "json_date_iso8601" , test_json_date_iso8601},
+    { "json_date_double" , test_json_date_double},
+    { "json_date_java_sql" , test_json_date_java_sql},
+    { "json_date_epoch" , test_json_date_epoch},
+    { "json_date_epoch_ms" , test_json_date_epoch_ms},
 
     /* Mixed bytes, check JSON encoding */
     { "utf8_to_json", test_utf8_to_json},

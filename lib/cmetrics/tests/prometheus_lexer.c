@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -23,7 +23,6 @@
 #include <cmetrics/cmt_encode_prometheus_remote_write.h>
 #include <stdio.h>
 
-#include "cmetrics/cmt_sds.h"
 #include "cmt_decode_prometheus_parser.h"
 #include "cmt_tests.h"
 
@@ -69,11 +68,11 @@ void test_help()
 
     TEST_CHECK(lex(f) == HELP);
     TEST_CHECK(strcmp(f->lval.str, "cmt_labels_test") == 0);
-    cmt_sds_destroy(f->lval.str);
+    cfl_sds_destroy(f->lval.str);
 
     TEST_CHECK(lex(f) == METRIC_DOC);
     TEST_CHECK(strcmp(f->lval.str, "Static \\labels\n test") == 0);
-    cmt_sds_destroy(f->lval.str);
+    cfl_sds_destroy(f->lval.str);
 
     destroy(f);
 
@@ -81,11 +80,11 @@ void test_help()
 
     TEST_CHECK(lex(f) == HELP);
     TEST_CHECK(strcmp(f->lval.str, "cmt_labels_test") == 0);
-    cmt_sds_destroy(f->lval.str);
+    cfl_sds_destroy(f->lval.str);
 
     TEST_CHECK(lex(f) == METRIC_DOC);
     TEST_CHECK(strcmp(f->lval.str, "Static \\labels\n test") == 0);
-    cmt_sds_destroy(f->lval.str);
+    cfl_sds_destroy(f->lval.str);
 
     destroy(f);
 }
@@ -96,7 +95,7 @@ void test_type()
 
     TEST_CHECK(lex(f) == TYPE);
     TEST_CHECK(strcmp(f->lval.str, "metric_name") == 0);
-    cmt_sds_destroy(f->lval.str);
+    cfl_sds_destroy(f->lval.str);
 
     TEST_CHECK(lex(f) == GAUGE);
 
@@ -116,21 +115,21 @@ void test_simple()
 
     TEST_CHECK(lex(f) == HELP);
     TEST_CHECK(strcmp(f->lval.str, "cmt_labels_test") == 0);
-    cmt_sds_destroy(f->lval.str);
+    cfl_sds_destroy(f->lval.str);
 
     TEST_CHECK(lex(f) == METRIC_DOC);
     TEST_CHECK(strcmp(f->lval.str, "Static labels test") == 0);
-    cmt_sds_destroy(f->lval.str);
+    cfl_sds_destroy(f->lval.str);
 
     TEST_CHECK(lex(f) == TYPE);
     TEST_CHECK(strcmp(f->lval.str, "cmt_labels_test") == 0);
-    cmt_sds_destroy(f->lval.str);
+    cfl_sds_destroy(f->lval.str);
 
     TEST_CHECK(lex(f) == COUNTER);
 
     TEST_CHECK(lex(f) == IDENTIFIER);
     TEST_CHECK(strcmp(f->lval.str, "cmt_labels_test") == 0);
-    cmt_sds_destroy(f->lval.str);
+    cfl_sds_destroy(f->lval.str);
 
     TEST_CHECK(lex(f) == NUMSTR);
     TEST_CHECK(strcmp(f->lval.numstr, "1") == 0);
@@ -140,31 +139,31 @@ void test_simple()
 
     TEST_CHECK(lex(f) == IDENTIFIER);
     TEST_CHECK(strcmp(f->lval.str, "metric2") == 0);
-    cmt_sds_destroy(f->lval.str);
+    cfl_sds_destroy(f->lval.str);
 
     TEST_CHECK(lex(f) == '{');
 
     TEST_CHECK(lex(f) == IDENTIFIER);
     TEST_CHECK(strcmp(f->lval.str, "host") == 0);
-    cmt_sds_destroy(f->lval.str);
+    cfl_sds_destroy(f->lval.str);
 
     TEST_CHECK(lex(f) == '=');
 
     TEST_CHECK(lex(f) == QUOTED);
     TEST_CHECK(strcmp(f->lval.str, "calyptia.com") == 0);
-    cmt_sds_destroy(f->lval.str);
+    cfl_sds_destroy(f->lval.str);
 
     TEST_CHECK(lex(f) == ',');
 
     TEST_CHECK(lex(f) == IDENTIFIER);
     TEST_CHECK(strcmp(f->lval.str, "app") == 0);
-    cmt_sds_destroy(f->lval.str);
+    cfl_sds_destroy(f->lval.str);
 
     TEST_CHECK(lex(f) == '=');
 
     TEST_CHECK(lex(f) == QUOTED);
     TEST_CHECK(strcmp(f->lval.str, "cmetrics \n \\ \"") == 0);
-    cmt_sds_destroy(f->lval.str);
+    cfl_sds_destroy(f->lval.str);
 
     TEST_CHECK(lex(f) == '}');
 
@@ -176,27 +175,27 @@ void test_simple()
 
     TEST_CHECK(lex(f) == HELP);
     TEST_CHECK(strcmp(f->lval.str, "metric1") == 0);
-    cmt_sds_destroy(f->lval.str);
+    cfl_sds_destroy(f->lval.str);
 
     TEST_CHECK(lex(f) == METRIC_DOC);
     TEST_CHECK(strcmp(f->lval.str, "Second HELP tag") == 0);
-    cmt_sds_destroy(f->lval.str);
+    cfl_sds_destroy(f->lval.str);
 
     TEST_CHECK(lex(f) == IDENTIFIER);
     TEST_CHECK(strcmp(f->lval.str, "metric1") == 0);
-    cmt_sds_destroy(f->lval.str);
+    cfl_sds_destroy(f->lval.str);
 
     TEST_CHECK(lex(f) == '{');
 
     TEST_CHECK(lex(f) == IDENTIFIER);
     TEST_CHECK(strcmp(f->lval.str, "escapes") == 0);
-    cmt_sds_destroy(f->lval.str);
+    cfl_sds_destroy(f->lval.str);
 
     TEST_CHECK(lex(f) == '=');
 
     TEST_CHECK(lex(f) == QUOTED);
     TEST_CHECK(strcmp(f->lval.str, "\n \\ \"") == 0);
-    cmt_sds_destroy(f->lval.str);
+    cfl_sds_destroy(f->lval.str);
 
     TEST_CHECK(lex(f) == '}');
 

@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -32,6 +32,7 @@
 #include <cmetrics/cmt_encode_opentelemetry.h>
 #include <cmetrics/cmt_encode_text.h>
 #include <cmetrics/cmt_encode_influx.h>
+#include <cmetrics/cmt_encode_splunk_hec.h>
 
 #include "cmt_tests.h"
 
@@ -143,7 +144,7 @@ static struct cmt *generate_encoder_test_data()
     quantiles[3] = 4.4;
     quantiles[4] = 5.5;
 
-    cmt_summary_set_default(s1, ts, quantiles, 10, 51.612894511314444, 0, NULL);
+    cmt_summary_set_default(s1, ts, quantiles, 51.612894511314444, 10, 0, NULL);
 
     quantiles[0] = 11.11;
     quantiles[1] = 0;
@@ -151,7 +152,7 @@ static struct cmt *generate_encoder_test_data()
     quantiles[3] = 44.44;
     quantiles[4] = 55.55;
 
-    cmt_summary_set_default(s1, ts, quantiles, 10, 51.612894511314444, 1, (char *[]) {"my_val"});
+    cmt_summary_set_default(s1, ts, quantiles, 51.612894511314444, 10, 1, (char *[]) {"my_val"});
 
     return cmt;
 }
@@ -298,12 +299,12 @@ void test_cmt_to_msgpack_integrity()
     /* CMT1 -> Text */
     text1_buf = cmt_encode_text_create(cmt1);
     TEST_CHECK(text1_buf != NULL);
-    text1_size = cmt_sds_len(text1_buf);
+    text1_size = cfl_sds_len(text1_buf);
 
     /* CMT2 -> Text */
     text2_buf = cmt_encode_text_create(cmt2);
     TEST_CHECK(text2_buf != NULL);
-    text2_size = cmt_sds_len(text2_buf);
+    text2_size = cfl_sds_len(text2_buf);
 
     /* Compare msgpacks */
     TEST_CHECK(text1_size == text2_size);
@@ -332,7 +333,7 @@ void test_cmt_msgpack_partial_processing()
     double current_counter_value = 0;
     size_t expected_counter_count = 0;
     struct cmt_counter *first_counter = NULL;
-    cmt_sds_t serialized_data_buffer = NULL;
+    cfl_sds_t serialized_data_buffer = NULL;
     size_t serialized_data_buffer_length = 0;
 
     /* Generate an encoder context with more than one counter */
@@ -344,14 +345,14 @@ void test_cmt_msgpack_partial_processing()
      * next phase are individual ones and not just a glitch
      */
 
-    first_counter = mk_list_entry_first(&cmt1->counters, struct cmt_counter, _head);
+    first_counter = cfl_list_entry_first(&cmt1->counters, struct cmt_counter, _head);
     TEST_CHECK(NULL != first_counter);
 
     ret = cmt_counter_get_val(first_counter, 0, NULL, &base_counter_value);
     TEST_CHECK(0 == ret);
 
-    expected_counter_count = mk_list_size(&cmt1->counters);
-    expected_gauge_count = mk_list_size(&cmt1->gauges);
+    expected_counter_count = cfl_list_size(&cmt1->counters);
+    expected_gauge_count = cfl_list_size(&cmt1->gauges);
 
     /* Since we are modifying the counter on each iteration we have to re-encode it */
     for (iteration = 0 ;
@@ -365,11 +366,11 @@ void test_cmt_msgpack_partial_processing()
         TEST_CHECK(0 == ret);
 
         if (NULL == serialized_data_buffer) {
-            serialized_data_buffer = cmt_sds_create_len(mp1_buf, mp1_size);
+            serialized_data_buffer = cfl_sds_create_len(mp1_buf, mp1_size);
             TEST_CHECK(NULL != serialized_data_buffer);
         }
         else {
-            cmt_sds_cat_safe(&serialized_data_buffer, mp1_buf, mp1_size);
+            cfl_sds_cat_safe(&serialized_data_buffer, mp1_buf, mp1_size);
             /* TEST_CHECK(0 == ret); */
         }
 
@@ -388,7 +389,7 @@ void test_cmt_msgpack_partial_processing()
     ret = 0;
     offset = 0;
     iteration = 0;
-    serialized_data_buffer_length = cmt_sds_len(serialized_data_buffer);
+    serialized_data_buffer_length = cfl_sds_len(serialized_data_buffer);
 
     while (CMT_DECODE_MSGPACK_SUCCESS == ret) {
         ret = cmt_decode_msgpack_create(&cmt2, serialized_data_buffer,
@@ -403,7 +404,7 @@ void test_cmt_msgpack_partial_processing()
 
         TEST_CHECK(0 == ret);
 
-        first_counter = mk_list_entry_first(&cmt2->counters, struct cmt_counter, _head);
+        first_counter = cfl_list_entry_first(&cmt2->counters, struct cmt_counter, _head);
         TEST_CHECK(NULL != first_counter);
 
         ret = cmt_counter_get_val(first_counter, 0, NULL, &current_counter_value);
@@ -411,8 +412,8 @@ void test_cmt_msgpack_partial_processing()
 
         TEST_CHECK(base_counter_value == (current_counter_value - iteration - 1));
 
-        TEST_CHECK(expected_counter_count == mk_list_size(&cmt2->counters));
-        TEST_CHECK(expected_gauge_count == mk_list_size(&cmt2->gauges));
+        TEST_CHECK(expected_counter_count == cfl_list_size(&cmt2->counters));
+        TEST_CHECK(expected_gauge_count == cfl_list_size(&cmt2->gauges));
 
         cmt_decode_msgpack_destroy(cmt2);
 
@@ -421,7 +422,7 @@ void test_cmt_msgpack_partial_processing()
 
     TEST_CHECK(MSGPACK_PARTIAL_PROCESSING_ELEMENT_COUNT == iteration);
 
-    cmt_sds_destroy(serialized_data_buffer);
+    cfl_sds_destroy(serialized_data_buffer);
 }
 
 void test_cmt_to_msgpack_stability()
@@ -462,7 +463,7 @@ void test_cmt_to_msgpack_labels()
     size_t mp2_size = 2;
     struct cmt *cmt1 = NULL;
     struct cmt *cmt2 = NULL;
-    cmt_sds_t text_result;
+    cfl_sds_t text_result;
     const char expected_text[] = "1970-01-01T00:00:00.000000000Z kubernetes_network_load{dev=\"Calyptia\",lang=\"C\"} = 3\n" \
                                  "1970-01-01T00:00:00.000000000Z kubernetes_network_load{dev=\"Calyptia\",lang=\"C\",hostname=\"localhost\",app=\"cmetrics\"} = 1\n" \
                                  "1970-01-01T00:00:00.000000000Z kubernetes_network_load{dev=\"Calyptia\",lang=\"C\",hostname=\"localhost\",app=\"test\"} = 12.15\n";
@@ -507,7 +508,7 @@ void test_cmt_to_msgpack_labels()
 void test_prometheus_remote_write()
 {
     struct cmt *cmt;
-    cmt_sds_t   payload;
+    cfl_sds_t   payload;
     FILE       *sample_file;
 
     cmt_initialize();
@@ -533,7 +534,7 @@ curl -v 'http://localhost:9090/receive' -H 'Content-Type: application/x-protobuf
 
     sample_file = fopen("prometheus_remote_write_payload.bin", "wb+");
 
-    fwrite(payload, 1, cmt_sds_len(payload), sample_file);
+    fwrite(payload, 1, cfl_sds_len(payload), sample_file);
 
     fclose(sample_file);
 
@@ -544,7 +545,7 @@ curl -v 'http://localhost:9090/receive' -H 'Content-Type: application/x-protobuf
 
 void test_opentelemetry()
 {
-    cmt_sds_t payload;
+    cfl_sds_t payload;
     struct cmt *cmt;
     FILE *sample_file;
 
@@ -569,7 +570,7 @@ curl -v 'http://localhost:9090/v1/metrics' -H 'Content-Type: application/x-proto
 
     sample_file = fopen("opentelemetry_payload.bin", "wb+");
 
-    fwrite(payload, 1, cmt_sds_len(payload), sample_file);
+    fwrite(payload, 1, cfl_sds_len(payload), sample_file);
 
     fclose(sample_file);
 
@@ -581,7 +582,7 @@ curl -v 'http://localhost:9090/v1/metrics' -H 'Content-Type: application/x-proto
 void test_prometheus()
 {
     uint64_t ts;
-    cmt_sds_t text;
+    cfl_sds_t text;
     struct cmt *cmt;
     struct cmt_counter *c;
 
@@ -632,7 +633,7 @@ void test_prometheus()
 void test_text()
 {
     uint64_t ts;
-    cmt_sds_t text;
+    cfl_sds_t text;
     struct cmt *cmt;
     struct cmt_counter *c;
 
@@ -678,7 +679,7 @@ void test_text()
 void test_influx()
 {
     uint64_t ts;
-    cmt_sds_t text;
+    cfl_sds_t text;
     struct cmt *cmt;
     struct cmt_counter *c1;
     struct cmt_counter *c2;
@@ -727,6 +728,314 @@ void test_influx()
     cmt_destroy(cmt);
 }
 
+void test_splunk_hec()
+{
+    uint64_t ts;
+    cfl_sds_t text;
+    struct cmt *cmt;
+    struct cmt_counter *c1;
+    struct cmt_counter *c2;
+    const char *host = "localhost", *index = "fluent-bit-metrics", *source = "fluent-bit-cmetrics", *source_type = "cmetrics";
+
+    char *out1 = \
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:labels.test\":1.0}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:labels.test\":2.0,\"host\":\"calyptia.com\",\"app\":\"cmetrics\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:nosubsystem\":1.0,\"host\":\"aaa\",\"app\":\"bbb\"}}";
+
+    char *out2 = \
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"fields\":{\"metric_name:labels.test\":1.0,\"dev\":\"Calyptia\",\"lang\":\"C\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"fields\":{\"metric_name:labels.test\":2.0,\"dev\":\"Calyptia\",\"lang\":\"C\",\"host\":\"calyptia.com\",\"app\":\"cmetrics\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"fields\":{\"metric_name:nosubsystem\":1.0,\"dev\":\"Calyptia\",\"lang\":\"C\",\"host\":\"aaa\",\"app\":\"bbb\"}}";
+
+    cmt = cmt_create();
+    TEST_CHECK(cmt != NULL);
+
+    c1 = cmt_counter_create(cmt, "cmt", "labels", "test", "Static labels test",
+                            2, (char *[]) {"host", "app"});
+
+    ts = 1435658235000000123;
+    cmt_counter_inc(c1, ts, 0, NULL);
+    cmt_counter_inc(c1, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
+    cmt_counter_inc(c1, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
+
+    c2 = cmt_counter_create(cmt, "cmt", "", "nosubsystem", "No subsystem",
+                            2, (char *[]) {"host", "app"});
+
+    cmt_counter_inc(c2, ts, 2, (char *[]) {"aaa", "bbb"});
+
+    /* Encode to splunk hec (no static labels) */
+    text = cmt_encode_splunk_hec_create(cmt, host, index, source, source_type);
+    printf("%s\n", text);
+    TEST_CHECK(strcmp(text, out1) == 0);
+    cmt_encode_splunk_hec_destroy(text);
+
+    /* append static labels */
+    cmt_label_add(cmt, "dev", "Calyptia");
+    cmt_label_add(cmt, "lang", "C");
+
+    text = cmt_encode_splunk_hec_create(cmt, host, index, NULL, NULL);
+    printf("%s\n", text);
+    TEST_CHECK(strcmp(text, out2) == 0);
+    cmt_encode_splunk_hec_destroy(text);
+
+    cmt_destroy(cmt);
+}
+
+
+void test_splunk_hec_floating_point()
+{
+    uint64_t ts;
+    cfl_sds_t text;
+    struct cmt *cmt;
+    struct cmt_counter *c1;
+    struct cmt_counter *c2;
+    const char *host = "localhost", *index = "fluent-bit-metrics", *source = "fluent-bit-cmetrics", *source_type = "cmetrics";
+
+    char *out1 = \
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:labels.test\":0.0}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:labels.test\":2.340000e+12,\"host\":\"calyptia.com\",\"app\":\"cmetrics\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:nosubsystem\":0.0}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:nosubsystem\":5.000000e+15,\"host\":\"aaa\",\"app\":\"bbb\"}}";
+    char *out2 = \
+       "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"fields\":{\"metric_name:labels.test\":0.0,\"dev\":\"Calyptia\",\"lang\":\"C\"}}"
+       "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"fields\":{\"metric_name:labels.test\":2.340000e+12,\"dev\":\"Calyptia\",\"lang\":\"C\",\"host\":\"calyptia.com\",\"app\":\"cmetrics\"}}"
+       "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"fields\":{\"metric_name:nosubsystem\":0.0,\"dev\":\"Calyptia\",\"lang\":\"C\"}}"
+       "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"fields\":{\"metric_name:nosubsystem\":5.000000e+15,\"dev\":\"Calyptia\",\"lang\":\"C\",\"host\":\"aaa\",\"app\":\"bbb\"}}";
+
+    cmt = cmt_create();
+    TEST_CHECK(cmt != NULL);
+
+    c1 = cmt_counter_create(cmt, "cmt", "labels", "test", "Static labels test",
+                            2, (char *[]) {"host", "app"});
+
+    ts = 1435658235000000123;
+    cmt_counter_set(c1, ts, 0, 0, NULL);
+    cmt_counter_add(c1, ts, 2e+10, 2, (char *[]) {"calyptia.com", "cmetrics"});
+    cmt_counter_add(c1, ts, 2.32e+12, 2, (char *[]) {"calyptia.com", "cmetrics"});
+
+    c2 = cmt_counter_create(cmt, "cmt", "", "nosubsystem", "No subsystem",
+                            2, (char *[]) {"host", "app"});
+
+    cmt_counter_set(c2, ts, 0, 0, NULL);
+    cmt_counter_add(c2, ts, 5e+15, 2, (char *[]) {"aaa", "bbb"});
+
+    /* Encode to splunk hec (no static labels) */
+    text = cmt_encode_splunk_hec_create(cmt, host, index, source, source_type);
+    printf("%s\n", text);
+    TEST_CHECK(strcmp(text, out1) == 0);
+    cmt_encode_splunk_hec_destroy(text);
+
+    /* append static labels */
+    cmt_label_add(cmt, "dev", "Calyptia");
+    cmt_label_add(cmt, "lang", "C");
+
+    text = cmt_encode_splunk_hec_create(cmt, host, index, NULL, NULL);
+    printf("%s\n", text);
+    TEST_CHECK(strcmp(text, out2) == 0);
+    cmt_encode_splunk_hec_destroy(text);
+
+    cmt_destroy(cmt);
+}
+
+/* values to observe in a histogram */
+double hist_observe_values[10] = {
+                                  0.0 , 1.02, 2.04, 3.06,
+                                  4.08, 5.10, 6.12, 7.14,
+                                  8.16, 9.18
+                                 };
+
+static int histogram_observe_all(struct cmt_histogram *h,
+                                 uint64_t timestamp,
+                                 int labels_count, char **labels_vals)
+{
+    int i;
+    double val;
+
+    for (i = 0; i < sizeof(hist_observe_values)/(sizeof(double)); i++) {
+        val = hist_observe_values[i];
+        cmt_histogram_observe(h, timestamp, val, labels_count, labels_vals);
+    }
+
+    return i;
+}
+
+void test_splunk_hec_histogram()
+{
+    uint64_t ts;
+    cfl_sds_t text;
+    struct cmt *cmt;
+    struct cmt_histogram *h;
+    struct cmt_histogram_buckets *buckets;
+    const char *host = "localhost", *index = "fluent-bit-metrics", *source = "fluent-bit-cmetrics", *source_type = "cmetrics";
+
+    char *out1 =
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":1.0,\"le\":\"0.005\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":1.0,\"le\":\"0.01\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":1.0,\"le\":\"0.025\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":1.0,\"le\":\"0.05\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":1.0,\"le\":\"0.1\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":1.0,\"le\":\"0.25\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":1.0,\"le\":\"0.5\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":1.0,\"le\":\"1.0\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":3.0,\"le\":\"2.5\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":5.0,\"le\":\"5.0\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":10.0,\"le\":\"10.0\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":10.0,\"le\":\"+Inf\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_sum\":45.0,\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_count\":10.0,\"metric_type\":\"Histogram\"}}";
+    char *out2 =
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":1.0,\"le\":\"0.005\",\"static\":\"test\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":1.0,\"le\":\"0.01\",\"static\":\"test\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":1.0,\"le\":\"0.025\",\"static\":\"test\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":1.0,\"le\":\"0.05\",\"static\":\"test\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":1.0,\"le\":\"0.1\",\"static\":\"test\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":1.0,\"le\":\"0.25\",\"static\":\"test\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":1.0,\"le\":\"0.5\",\"static\":\"test\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":1.0,\"le\":\"1.0\",\"static\":\"test\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":3.0,\"le\":\"2.5\",\"static\":\"test\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":5.0,\"le\":\"5.0\",\"static\":\"test\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":10.0,\"le\":\"10.0\",\"static\":\"test\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":10.0,\"le\":\"+Inf\",\"static\":\"test\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_sum\":45.0,\"static\":\"test\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_count\":10.0,\"static\":\"test\",\"metric_type\":\"Histogram\"}}";
+
+    cmt_initialize();
+
+    /* CMetrics context */
+    cmt = cmt_create();
+    TEST_CHECK(cmt != NULL);
+
+    /* Timestamp */
+    ts = 1435658235000000123;
+
+    /* Create buckets */
+    buckets = cmt_histogram_buckets_create(11,
+                                           0.005, 0.01, 0.025, 0.05,
+                                           0.1, 0.25, 0.5, 1.0, 2.5,
+                                           5.0, 10.0);
+    TEST_CHECK(buckets != NULL);
+
+    /* Create a gauge metric type */
+    h = cmt_histogram_create(cmt,
+                             "k8s", "network", "load", "Network load",
+                             buckets,
+                             1, (char *[]) {"my_label"});
+    TEST_CHECK(h != NULL);
+
+    /* no labels */
+    histogram_observe_all(h, ts, 0, NULL);
+    text = cmt_encode_splunk_hec_create(cmt, host, index, source, source_type);
+    printf("%s\n", text);
+    TEST_CHECK(strcmp(text, out1) == 0);
+    cmt_encode_splunk_hec_destroy(text);
+
+    /* static label: register static label for the context */
+    cmt_label_add(cmt, "static", "test");
+    text = cmt_encode_splunk_hec_create(cmt, host, index, source, source_type);
+    printf("%s\n", text);
+    TEST_CHECK(strcmp(text, out2) == 0);
+    cmt_encode_splunk_hec_destroy(text);
+
+    /* defined labels: add a custom label value */
+    histogram_observe_all(h, ts, 1, (char *[]) {"val"});
+    text = cmt_encode_splunk_hec_create(cmt, host, index, source, source_type);
+    printf("%s\n", text);
+    cmt_encode_splunk_hec_destroy(text);
+
+    cmt_destroy(cmt);
+}
+
+void test_splunk_hec_summary()
+{
+    double sum;
+    uint64_t count;
+    uint64_t ts;
+    double q[6];
+    double r[6];
+    cfl_sds_t text;
+    struct cmt *cmt;
+    struct cmt_summary *s;
+    const char *host = "localhost", *index = "fluent-bit-metrics", *source = "fluent-bit-cmetrics", *source_type = "cmetrics";
+
+    char *out1 =
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_sum\":51.0,\"metric_type\":\"Summary\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_count\":10.0,\"metric_type\":\"Summary\"}}";
+    char *out2 =
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load\":1.0,\"qt\":\"0.1\",\"metric_type\":\"Summary\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load\":2.0,\"qt\":\"0.2\",\"metric_type\":\"Summary\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load\":3.0,\"qt\":\"0.3\",\"metric_type\":\"Summary\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load\":4.0,\"qt\":\"0.4\",\"metric_type\":\"Summary\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load\":5.0,\"qt\":\"0.5\",\"metric_type\":\"Summary\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load\":6.0,\"qt\":\"1.0\",\"metric_type\":\"Summary\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_sum\":51.0,\"metric_type\":\"Summary\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_count\":10.0,\"metric_type\":\"Summary\"}}";
+    char *out3 =
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load\":1.0,\"qt\":\"0.1\",\"static\":\"test\",\"metric_type\":\"Summary\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load\":2.0,\"qt\":\"0.2\",\"static\":\"test\",\"metric_type\":\"Summary\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load\":3.0,\"qt\":\"0.3\",\"static\":\"test\",\"metric_type\":\"Summary\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load\":4.0,\"qt\":\"0.4\",\"static\":\"test\",\"metric_type\":\"Summary\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load\":5.0,\"qt\":\"0.5\",\"static\":\"test\",\"metric_type\":\"Summary\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load\":6.0,\"qt\":\"1.0\",\"static\":\"test\",\"metric_type\":\"Summary\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_sum\":51.0,\"static\":\"test\",\"metric_type\":\"Summary\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_count\":10.0,\"static\":\"test\",\"metric_type\":\"Summary\"}}";
+
+    cmt_initialize();
+
+    /* Timestamp */
+    ts = 1435658235000000123;
+
+    /* CMetrics context */
+    cmt = cmt_create();
+    TEST_CHECK(cmt != NULL);
+
+    /* set quantiles, no labels */
+    q[0] = 0.1;
+    q[1] = 0.2;
+    q[2] = 0.3;
+    q[3] = 0.4;
+    q[4] = 0.5;
+    q[5] = 1.0;
+
+    r[0] = 1;
+    r[1] = 2;
+    r[2] = 3;
+    r[3] = 4;
+    r[4] = 5;
+    r[5] = 6;
+
+    /* Create a gauge metric type */
+    s = cmt_summary_create(cmt,
+                           "k8s", "network", "load", "Network load",
+                           6, q,
+                           1, (char *[]) {"my_label"});
+    TEST_CHECK(s != NULL);
+
+    count = 10;
+    sum   = 51.612894511314444;
+
+    /* no quantiles, no labels */
+    cmt_summary_set_default(s, ts, NULL, sum, count, 0, NULL);
+    text = cmt_encode_splunk_hec_create(cmt, host, index, source, source_type);
+    printf("%s\n", text);
+    TEST_CHECK(strcmp(text, out1) == 0);
+    cmt_encode_splunk_hec_destroy(text);
+
+    cmt_summary_set_default(s, ts, r, sum, count, 0, NULL);
+    text = cmt_encode_splunk_hec_create(cmt, host, index, source, source_type);
+    printf("%s\n", text);
+    TEST_CHECK(strcmp(text, out2) == 0);
+    cmt_encode_splunk_hec_destroy(text);
+
+    /* static label: register static label for the context */
+    cmt_label_add(cmt, "static", "test");
+    text = cmt_encode_splunk_hec_create(cmt, host, index, source, source_type);
+    printf("%s\n", text);
+    TEST_CHECK(strcmp(text, out3) == 0);
+    cmt_encode_splunk_hec_destroy(text);
+
+    cmt_destroy(cmt);
+}
+
 TEST_LIST = {
     {"cmt_msgpack_cleanup_on_error",   test_cmt_to_msgpack_cleanup_on_error},
     {"cmt_msgpack_partial_processing", test_cmt_msgpack_partial_processing},
@@ -739,5 +1048,9 @@ TEST_LIST = {
     {"prometheus",                     test_prometheus},
     {"text",                           test_text},
     {"influx",                         test_influx},
+    {"splunk_hec",                     test_splunk_hec},
+    {"splunk_hec_floating_point",      test_splunk_hec_floating_point},
+    {"splunk_hec_histogram",           test_splunk_hec_histogram},
+    {"splunk_hec_summary",             test_splunk_hec_summary},
     { 0 }
 };

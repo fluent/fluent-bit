@@ -1,0 +1,154 @@
+name: Build containers for a specific branch of 1.8
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: The code to build so a commit, branch, etc. The container image will be ghcr.io/fluent/fluent-bit/test/<this value>.
+        required: true
+        default: "1.8"
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository }}/test/${{ github.event.inputs.ref }}
+
+jobs:
+  build-legacy-branch-meta:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Check this is a 1.8 type build
+        run: |
+          if [[ -f "dockerfiles/Dockerfile" ]]; then
+            echo "Invalid branch as contains Dockerfile: ${{ inputs.ref }}"
+            exit 1
+          fi
+        shell: bash
+
+  # For 1.8 builds it is a little more complex so we have this build matrix to handle it.
+  # This creates separate images for each architecture.
+  # The later step then creates a multi-arch manifest for all of these.
+  build-legacy-images-matrix:
+    name: Build single arch legacy images
+    runs-on: ubuntu-latest
+    needs:
+      - build-legacy-branch-meta
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64, arm/v7]
+        include:
+          - arch: amd64
+            suffix: x86_64
+          - arch: arm/v7
+            suffix: arm32v7
+          - arch: arm64
+            suffix: arm64v8
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout the docker build repo for legacy builds
+        uses: actions/checkout@v3
+        with:
+          repository: fluent/fluent-bit-docker-image
+          ref: "1.8" # Fixed to this branch
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: debug-meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            raw,${{ inputs.ref }}-debug
+
+      - name: Build the legacy x86_64 debug image
+        if: matrix.arch == 'amd64'
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.x86_64.debug
+          context: .
+          tags: ${{ steps.debug-meta.outputs.tags }}
+          labels: ${{ steps.debug-meta.outputs.labels }}
+          platforms: linux/amd64
+          push: true
+          load: false
+          build-args: |
+            FLB_TARBALL=https://github.com/fluent/fluent-bit/tarball/${{ inputs.ref }}
+
+      - name: Extract metadata from Github
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            raw,${{ matrix.suffix }}-${{ inputs.ref }}
+
+      - name: Build the legacy ${{ matrix.arch }} image
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.${{ matrix.suffix }}
+          context: .
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          load: false
+          build-args: |
+            FLB_TARBALL=https://github.com/fluent/fluent-bit/tarball/${{ inputs.ref }}
+
+  # Create a multi-arch manifest for the separate 1.8 images.
+  build-legacy-image-manifests:
+    name: Deploy multi-arch container image manifests
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    needs:
+      - build-legacy-branch-meta
+      - build-legacy-images-matrix
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull all the images
+        # Use platform to trigger warnings on invalid image metadata
+        run: |
+          docker pull --platform=linux/amd64  ${{ env.IMAGE_NAME }}:x86_64-${{ inputs.ref }}
+          docker pull --platform=linux/arm64  ${{ env.IMAGE_NAME }}:arm64v8-${{ inputs.ref }}
+          docker pull --platform=linux/arm/v7 ${{ env.IMAGE_NAME }}:arm32v7-${{ inputs.ref }}
+        shell: bash
+
+      - name: Create manifests for images
+        run: |
+          docker manifest create ${{ env.IMAGE_NAME }}:${{ inputs.ref }} \
+            --amend ${{ env.IMAGE_NAME }}:x86_64-${{ inputs.ref }} \
+            --amend ${{ env.IMAGE_NAME }}:arm64v8-${{ inputs.ref }} \
+            --amend ${{ env.IMAGE_NAME }}:arm32v7-${{ inputs.ref }}
+          docker manifest push --purge ${{ env.IMAGE_NAME }}:${{ inputs.ref }}
+        env:
+          DOCKER_CLI_EXPERIMENTAL: enabled
+        shell: bash

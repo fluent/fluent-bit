@@ -28,6 +28,14 @@
 #include <fcntl.h>
 #include "flb_tests_runtime.h"
 
+#define DEFAULT_IO_TIMEOUT 10
+#define DEFAULT_HOST       "127.0.0.1"
+#define DEFAULT_PORT       5170
+
+#define TLS_CERTIFICATE_HOSTNAME "leo.vcap.me"
+#define TLS_CERTIFICATE_FILENAME FLB_TESTS_DATA_PATH "/data/tls/certificate.pem"
+#define TLS_PRIVATE_KEY_FILENAME FLB_TESTS_DATA_PATH "/data/tls/private_key.pem"
+
 struct test_ctx {
     flb_ctx_t *flb;    /* Fluent Bit library context */
     int i_ffd;         /* Input fd  */
@@ -154,8 +162,6 @@ static void test_ctx_destroy(struct test_ctx *ctx)
     flb_free(ctx);
 }
 
-#define DEFAULT_HOST "127.0.0.1"
-#define DEFAULT_PORT 5170
 static flb_sockfd_t connect_tcp(char *in_host, int in_port)
 {
     int port = in_port;
@@ -247,6 +253,108 @@ void flb_test_tcp()
 
     flb_socket_close(fd);
     test_ctx_destroy(ctx);
+}
+
+void flb_test_tcp_with_tls()
+{
+    struct flb_connection *client_connection;
+    struct flb_upstream   *upstream;
+    struct flb_lib_out_cb  cb_data;
+    size_t                 sent;
+    struct test_ctx       *ctx;
+    int                    ret;
+    int                    num;
+    struct flb_tls        *tls;
+
+    char *buf = "{\"test\":\"msg\"}";
+    size_t size = strlen(buf);
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "\"test\":\"msg\"";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "tls",          "on",
+                        "tls.verify",   "no",
+                        "tls.vhost",    TLS_CERTIFICATE_HOSTNAME,
+                        "tls.crt_file", TLS_CERTIFICATE_FILENAME,
+                        "tls.key_file", TLS_PRIVATE_KEY_FILENAME,
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_tls_init();
+    TEST_CHECK(ret == 0);
+
+    tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                         FLB_FALSE,
+                         FLB_TRUE,
+                         TLS_CERTIFICATE_HOSTNAME,
+                         NULL,
+                         NULL,
+                         NULL,
+                         NULL,
+                         NULL);
+
+    TEST_CHECK(tls != NULL);
+
+    upstream = flb_upstream_create(ctx->flb->config,
+                                   DEFAULT_HOST,
+                                   DEFAULT_PORT,
+                                   FLB_IO_TCP | FLB_IO_TLS,
+                                   tls);
+
+    TEST_CHECK(upstream != NULL);
+
+    flb_stream_disable_async_mode(&upstream->base);
+
+    upstream->base.net.io_timeout = DEFAULT_IO_TIMEOUT;
+
+    client_connection = flb_upstream_conn_get(upstream);
+
+    TEST_CHECK(client_connection != NULL);
+
+    if (client_connection != NULL) {
+        ret = flb_io_net_write(client_connection,
+                               (void *) buf,
+                                size,
+                                &sent);
+
+        TEST_CHECK(ret > 0);
+
+        /* waiting to flush */
+        flb_time_msleep(1500);
+    }
+
+    num = get_output_num();
+
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+
+    sleep(1);
+
+    flb_stop(ctx->flb);
+    flb_upstream_destroy(upstream);
+    flb_tls_destroy(tls);
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
 }
 
 void flb_test_format_none()
@@ -444,6 +552,7 @@ void flb_test_issue_5336()
 
 TEST_LIST = {
     {"tcp", flb_test_tcp},
+    {"tcp_with_tls", flb_test_tcp_with_tls},
     {"format_none", flb_test_format_none},
     {"format_none_separator", flb_test_format_none_separator},
     {"65535_records_issue_5336", flb_test_issue_5336},

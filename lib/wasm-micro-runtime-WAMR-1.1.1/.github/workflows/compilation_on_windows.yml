@@ -1,0 +1,115 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+name: compilation on windows-latest
+
+on:
+  # will be triggered on PR events
+  pull_request:
+    paths-ignore:
+      - "assembly-script/**"
+      - "ci/**"
+      - "doc/**"
+      - "test-tools/**"
+      - ".github/workflows/compilation_on_windows.yml"
+  # will be triggered on push events
+  push:
+    paths-ignore:
+      - "assembly-script/**"
+      - "ci/**"
+      - "doc/**"
+      - "test-tools/**"
+      - ".github/workflows/compilation_on_windows.yml"
+  # allow to be triggered manually
+  workflow_dispatch:
+
+# Cancel any in-flight jobs for the same PR/branch so there's only one active
+# at a time
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Cancel any in-flight jobs for the same PR/branch so there's only one active
+  # at a time
+  cancel_previous:
+    runs-on: windows-latest
+    steps:
+      - name: Cancel Workflow Action
+        uses: styfle/cancel-workflow-action@0.9.1
+        with:
+          access_token: ${{ github.token }}
+
+  build:
+    needs: cancel_previous
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: clone uvwasi library
+        run: |
+          cd core/deps
+          git clone https://github.com/nodejs/uvwasi.git
+      - name: Build iwasm [default]
+        run: |
+          cd product-mini/platforms/windows
+          mkdir build && cd build
+          cmake ..
+          cmake --build . --config Release --parallel 4
+          cd .. && rm -force -r build
+      - name: Build iwasm [aot only]
+        run: |
+          cd product-mini/platforms/windows
+          mkdir build && cd build
+          cmake .. -DWAMR_BUILD_AOT=1 -DWAMR_BUILD_INTERP=0
+          cmake --build . --config Release --parallel 4
+          cd .. && rm -force -r build
+      - name: Build iwasm [interp only]
+        run: |
+          cd product-mini/platforms/windows
+          mkdir build && cd build
+          cmake .. -DWAMR_BUILD_AOT=0
+          cmake --build . --config Release --parallel 4
+          cd .. && rm -force -r build
+      - name: Build iwasm [tail call]
+        run: |
+          cd product-mini/platforms/windows
+          mkdir build && cd build
+          cmake .. -DWAMR_BUILD_TAIL_CALL=1
+          cmake --build . --config Release --parallel 4
+          cd .. && rm -force -r build
+      - name: Build iwasm [custom name section]
+        run: |
+          cd product-mini/platforms/windows
+          mkdir build && cd build
+          cmake .. -DWAMR_BUILD_CUSTOM_NAME_SECTION=1
+          cmake --build . --config Release --parallel 4
+          cd .. && rm -force -r build
+      - name: Build iwasm [disable hardware boundary check]
+        run: |
+          cd product-mini/platforms/windows
+          mkdir build && cd build
+          cmake .. -DWAMR_DISABLE_HW_BOUND_CHECK=1
+          cmake --build . --config Release --parallel 4
+          cd .. && rm -force -r build
+      - name: Build iwasm [reference types]
+        run: |
+          cd product-mini/platforms/windows
+          mkdir build && cd build
+          cmake .. -DWAMR_BUILD_REF_TYPES=1
+          cmake --build . --config Release --parallel 4
+          cd .. && rm -force -r build
+      - name: Build iwasm [128-bit SIMD]
+        run: |
+          cd product-mini/platforms/windows
+          mkdir build && cd build
+          cmake .. -DWAMR_BUILD_SIMD=1
+          cmake --build . --config Release --parallel 4
+          cd .. && rm -force -r build
+      - name: Build iwasm [source debugger]
+        run: |
+          cd product-mini/platforms/windows
+          mkdir build && cd build
+          cmake .. -DWAMR_BUILD_DEBUG_INTERP=1
+          cmake --build . --config Release --parallel 4
+          cd .. && rm -force -r build

@@ -465,7 +465,7 @@ int scan_log(struct flb_filter_nightfall *ctx, msgpack_object *data,
              char **to_redact, size_t *to_redact_size, char *is_sensitive) 
 {        
     struct flb_http_client *client;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
 
     flb_sds_t body;
     int ret;

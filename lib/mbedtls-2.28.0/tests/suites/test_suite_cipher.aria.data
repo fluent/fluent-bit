@@ -1,3 +1,0 @@
-Aria CBC Decrypt empty buffer
-depends_on:MBEDTLS_ARIA_C:MBEDTLS_CIPHER_MODE_CBC
-dec_empty_buf:MBEDTLS_CIPHER_ARIA_128_CBC:0:0

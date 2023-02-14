@@ -21,12 +21,14 @@
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_sds.h>
+#include <fluent-bit/tls/flb_tls.h>
+#include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_upstream_node.h>
 
 /* Create a new Upstream Node context */
-struct flb_upstream_node *flb_upstream_node_create(const char *name, const char *host,
-                                                   const char *port,
+struct flb_upstream_node *flb_upstream_node_create(flb_sds_t name, flb_sds_t host,
+                                                   flb_sds_t port,
                                                    int tls, int tls_verify,
                                                    int tls_debug,
                                                    const char *tls_vhost,
@@ -35,7 +37,7 @@ struct flb_upstream_node *flb_upstream_node_create(const char *name, const char 
                                                    const char *tls_crt_file,
                                                    const char *tls_key_file,
                                                    const char *tls_key_passwd,
-                                                   struct flb_hash *ht,
+                                                   struct flb_hash_table *ht,
                                                    struct flb_config *config)
 {
     int i_port;
@@ -64,18 +66,18 @@ struct flb_upstream_node *flb_upstream_node_create(const char *name, const char 
         node->name = flb_sds_create(tmp);
     }
     else {
-        node->name = flb_sds_create(name);
+        node->name = name;
     }
 
     /* host */
-    node->host = flb_sds_create(host);
+    node->host = host;
     if (!node->host) {
         flb_upstream_node_destroy(node);
         return NULL;
     }
 
     /* port */
-    node->port = flb_sds_create(port);
+    node->port = port;
     if (!node->port) {
         flb_upstream_node_destroy(node);
         return NULL;
@@ -125,7 +127,8 @@ struct flb_upstream_node *flb_upstream_node_create(const char *name, const char 
 #ifdef FLB_HAVE_TLS
     /* TLS setup */
     if (tls == FLB_TRUE) {
-        node->tls = flb_tls_create(tls_verify,
+        node->tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                   tls_verify,
                                    tls_debug,
                                    tls_vhost,
                                    tls_ca_path,
@@ -175,7 +178,7 @@ const char *flb_upstream_node_get_property(const char *prop,
 
     len = strlen(prop);
 
-    ret = flb_hash_get(node->ht, prop, len, &value, &size);
+    ret = flb_hash_table_get(node->ht, prop, len, &value, &size);
     if (ret == -1) {
         return NULL;
     }
@@ -189,6 +192,11 @@ void flb_upstream_node_destroy(struct flb_upstream_node *node)
     flb_sds_destroy(node->host);
     flb_sds_destroy(node->port);
 
+    flb_hash_table_destroy(node->ht);
+    if (node->u) {
+        flb_upstream_destroy(node->u);
+    }
+
 #ifdef FLB_HAVE_TLS
     flb_sds_destroy(node->tls_ca_path);
     flb_sds_destroy(node->tls_ca_file);
@@ -199,11 +207,6 @@ void flb_upstream_node_destroy(struct flb_upstream_node *node)
         flb_tls_destroy(node->tls);
     }
 #endif
-
-    flb_hash_destroy(node->ht);
-    if (node->u) {
-        flb_upstream_destroy(node->u);
-    }
 
     /* note: node link must be handled by the caller before this call */
     flb_free(node);

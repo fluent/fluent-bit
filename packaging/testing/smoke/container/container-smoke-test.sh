@@ -18,6 +18,8 @@ SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 # Simple smoke test script of each local container architecture that runs up and then
 # ensure we can access the web server.
 
+CONTAINER_NAME=${CONTAINER_NAME:-smoke-test}
+
 # Ensure the container name is valid as we need this to retrieve the exposed ports.
 CONTAINER_NAME=${CONTAINER_NAME//\//-}
 CONTAINER_ARCH=${CONTAINER_ARCH:-linux/amd64}

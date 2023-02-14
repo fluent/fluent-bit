@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -36,17 +36,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
-#include <monkey/mk_core/mk_list.h>
+
+#include <cfl/cfl.h>
 
 #include <cmetrics/cmt_info.h>
+#include <cmetrics/cmt_log.h>
 #include <cmetrics/cmt_compat.h>
 #include <cmetrics/cmt_math.h>
 #include <cmetrics/cmt_time.h>
-#include <cmetrics/cmt_sds.h>
 #include <cmetrics/cmt_label.h>
-#include <cmetrics/cmt_array.h>
-#include <cmetrics/cmt_kvlist.h>
-#include <cmetrics/cmt_variant.h>
 #include <cmetrics/cmt_version.h>
 
 struct cmt {
@@ -55,20 +53,23 @@ struct cmt {
     void (*log_cb)(void *, int, const char *, int, const char *);
 
     /* cmetrics metadata */
-    struct cmt_kvlist *internal_metadata;
+    struct cfl_kvlist *internal_metadata;
 
     /* third party metadata (ie. otlp resource & instrumentation library) */
-    struct cmt_kvlist *external_metadata;
+    struct cfl_kvlist *external_metadata;
 
     /* static labels */
     struct cmt_labels *static_labels;
 
     /* Metrics list */
-    struct mk_list counters;
-    struct mk_list gauges;
-    struct mk_list histograms;
-    struct mk_list summaries;
-    struct mk_list untypeds;
+    struct cfl_list counters;
+    struct cfl_list gauges;
+    struct cfl_list histograms;
+    struct cfl_list summaries;
+    struct cfl_list untypeds;
+
+    /* Only used by the otlp decoder */
+    struct cfl_list _head;
 };
 
 void cmt_initialize();

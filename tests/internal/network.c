@@ -6,6 +6,7 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_socket.h>
+#include <fluent-bit/flb_time.h>
 
 #include <time.h>
 #include "flb_tests_internal.h"
@@ -62,6 +63,10 @@ static void test_client_server(int is_ipv6)
 
     /* Create client and server sockets */
     fd_client = flb_net_socket_create(family, FLB_TRUE);
+    if (errno == EAFNOSUPPORT) {
+        TEST_MSG("This protocol is not supported in this platform");
+        return;
+    }
     TEST_CHECK(fd_client != -1);
 
     fd_server = flb_net_server(TEST_PORT, host);
@@ -85,8 +90,18 @@ static void test_client_server(int is_ipv6)
     TEST_CHECK(ret == -1);
     TEST_CHECK(errno == EINPROGRESS);
 
+#ifdef FLB_SYSTEM_MACOS
+    /* On macOS, its internal timer's is inacccurate without waiting code.
+     * We need to proceed its timer tick for processing events. */
+    flb_time_msleep(50);
+#endif
+
     /* Event loop */
     while (1) {
+        /* Break immediately for invalid status */
+        if (fd_client == -1 || fd_server == -1) {
+            break;
+        }
         mk_event_wait(evl);
         mk_event_foreach(e_item, evl) {
             if (e_item->type == TEST_EV_CLIENT) {

@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -18,38 +18,8 @@
  */
 
 #include <cmetrics/cmt_info.h>
-
-/* MacOS */
-#ifdef CMT_HAVE_CLOCK_GET_TIME
-#include <mach/clock.h>
-#include <mach/mach.h>
-#endif
-
 #include <inttypes.h>
 #include <time.h>
-
-uint64_t cmt_time_now()
-{
-    struct timespec tm = {0};
-
-#if defined CMT_HAVE_TIMESPEC_GET
-    /* C11 supported */
-    timespec_get(&tm, TIME_UTC);
-#elif defined CMT_HAVE_CLOCK_GET_TIME
-    /* MacOS */
-    clock_serv_t cclock;
-    mach_timespec_t mts;
-    host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &cclock);
-    clock_get_time(cclock, &mts);
-    tm.tv_sec = mts.tv_sec;
-    tm.tv_nsec = mts.tv_nsec;
-    mach_port_deallocate(mach_task_self(), cclock);
-#else /* __STDC_VERSION__ */
-    clock_gettime(CLOCK_REALTIME, &tm);
-#endif
-
-    return (((uint64_t) tm.tv_sec * 1000000000L) + tm.tv_nsec);
-}
 
 void cmt_time_from_ns(struct timespec *tm, uint64_t ns)
 {

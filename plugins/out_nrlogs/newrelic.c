@@ -356,7 +356,7 @@ static void cb_newrelic_flush(struct flb_event_chunk *event_chunk,
     void *payload_buf = NULL;
     size_t payload_size = 0;
     struct flb_newrelic *ctx = out_context;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_http_client *c;
 
     /* Format the data to the expected Newrelic Payload */

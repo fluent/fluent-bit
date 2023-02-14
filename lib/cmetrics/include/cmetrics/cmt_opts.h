@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -23,15 +23,15 @@
 #include <cmetrics/cmetrics.h>
 
 struct cmt_opts {
-    cmt_sds_t ns;            /* namespace */
-    cmt_sds_t subsystem;     /* subsystem */
-    cmt_sds_t name;          /* metric name */
+    cfl_sds_t ns;            /* namespace */
+    cfl_sds_t subsystem;     /* subsystem */
+    cfl_sds_t name;          /* metric name */
 
     /* Help string: what's the metric about */
-    cmt_sds_t description;
+    cfl_sds_t description;
 
     /* Formatted full qualified name: namespace_subsystem_name */
-    cmt_sds_t fqname;
+    cfl_sds_t fqname;
 
     /* Resource index is only used by opentelemtry */
     int resource_index;

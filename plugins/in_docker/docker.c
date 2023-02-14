@@ -740,7 +740,7 @@ static void flush_snapshot(struct flb_input_instance *i_ins,
     flb_trace("[in_docker] ID %s CPU %lu MEMORY %ld", snapshot->id,
               snapshot->cpu->used, snapshot->mem->used);
 
-    flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    flb_input_log_append(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 }
 

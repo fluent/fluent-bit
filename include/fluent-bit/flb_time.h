@@ -30,6 +30,19 @@ struct flb_time {
     struct timespec tm;
 };
 
+struct flb_tm {
+    struct tm tm;
+#ifndef FLB_HAVE_GMTOFF
+    long int tm_gmtoff;
+#endif
+};
+
+#ifndef FLB_HAVE_GMTOFF
+#define flb_tm_gmtoff(x) (x)->tm_gmtoff
+#else
+#define flb_tm_gmtoff(x) (x)->tm.tm_gmtoff
+#endif
+
 /*
    to represent eventtime of fluentd
    see also
@@ -76,6 +89,7 @@ int flb_time_get(struct flb_time *tm);
 int flb_time_msleep(uint32_t ms);
 double flb_time_to_double(struct flb_time *tm);
 uint64_t flb_time_to_nanosec(struct flb_time *tm);
+uint64_t flb_time_to_millisec(struct flb_time *tm);
 int flb_time_add(struct flb_time *base, struct flb_time *duration,
                  struct flb_time *result);
 int flb_time_diff(struct flb_time *time1,

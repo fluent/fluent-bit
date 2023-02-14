@@ -31,7 +31,7 @@
 
 #define TD_HTTP_HEADER_SIZE  512
 
-struct flb_http_client *td_http_client(struct flb_upstream_conn *u_conn,
+struct flb_http_client *td_http_client(struct flb_connection *u_conn,
                                        void *data, size_t len,
                                        char **body,
                                        struct flb_td *ctx,

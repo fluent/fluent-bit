@@ -5,6 +5,8 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_socket.h>
+#include <fluent-bit/flb_stream.h>
+#include <fluent-bit/flb_connection.h>
 #include <fluent-bit/flb_http_client.h>
 
 #include "flb_fuzz_header.h"
@@ -14,9 +16,12 @@ extern int fuzz_check_connection(struct flb_http_client *c);
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
+    /* Set fuzzer-malloc chance of failure */
     flb_malloc_p = 0;
+    flb_malloc_mod = 25000;
+
     struct flb_upstream *u;
-    struct flb_upstream_conn *u_conn = NULL;
+    struct flb_connection *u_conn = NULL;
     struct flb_http_client *c;
     struct flb_config *config;
     char *uri = NULL;
@@ -31,10 +36,16 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     }
 
     u = flb_upstream_create(config, "127.0.0.1", 8001, 0, NULL);
-    u_conn = flb_malloc(sizeof(struct flb_upstream_conn));
-    if (u_conn == NULL)
+
+    u_conn = flb_connection_create(-1,
+                                   FLB_TRANSPORT_TCP,
+                                   (void *) u,
+                                   NULL,
+                                   NULL);
+
+    if (u_conn == NULL) {
         return 0;
-    u_conn->u = u;
+    }
 
     char *proxy = NULL;
     if (GET_MOD_EQ(2,1)) {
@@ -91,7 +102,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     /* Now try the http_client_proxy_connect function. */
     flb_http_client_proxy_connect(u_conn);
 
-    flb_free(u_conn);
+    flb_connection_destroy(u_conn);
     flb_upstream_destroy(u);
     flb_config_exit(config);
     if (uri != NULL) {

@@ -16,6 +16,11 @@ install(FILES ${headers}
     COMPONENT headers
     PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
 
+file(GLOB headers "fluent-bit/wasm/*.h")
+install(FILES ${headers}
+    DESTINATION ${FLB_INSTALL_INCLUDEDIR}/fluent-bit/wasm/
+    COMPONENT headers
+    PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
 
 install(FILES "../lib/monkey/include/monkey/mk_core.h"
     DESTINATION ${FLB_INSTALL_INCLUDEDIR}/monkey/

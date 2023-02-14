@@ -25,6 +25,8 @@
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/aws/flb_aws_compress.h>
+#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_crypto.h>
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_gzip.h>
@@ -32,7 +34,6 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 
-#include <mbedtls/md5.h>
 #include <msgpack.h>
 
 #include "s3.h"
@@ -45,7 +46,7 @@ static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
                                     struct s3_file *chunk,
                                     char **out_buf, size_t *out_size);
 
-static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time,
+static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_log_time,
                          char *body, size_t body_size);
 
 static int put_all_chunks(struct flb_s3 *ctx);
@@ -56,7 +57,8 @@ static struct multipart_upload *get_upload(struct flb_s3 *ctx,
                                            const char *tag, int tag_len);
 
 static struct multipart_upload *create_upload(struct flb_s3 *ctx,
-                                              const char *tag, int tag_len);
+                                              const char *tag, int tag_len,
+                                              time_t file_first_log_time);
 
 static void remove_from_queue(struct upload_queue *entry);
 
@@ -138,7 +140,7 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
     if (ctx->content_type != NULL) {
         headers_len++;
     }
-    if (ctx->compression == FLB_AWS_COMPRESS_GZIP && multipart_upload == FLB_FALSE) {
+    if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
         headers_len++;
     }
     if (ctx->canned_acl != NULL) {
@@ -168,7 +170,7 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
         s3_headers[n].val_len = strlen(ctx->content_type);
         n++;
     }
-    if (ctx->compression == FLB_AWS_COMPRESS_GZIP && multipart_upload == FLB_FALSE) {
+    if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
         s3_headers[n] = content_encoding_header;
         n++;
     }
@@ -505,8 +507,6 @@ static int cb_s3_init(struct flb_output_instance *ins,
 {
     int ret;
     flb_sds_t tmp_sds;
-    int async_flags;
-    int len;
     char *role_arn = NULL;
     char *session_name;
     const char *tmp;
@@ -540,6 +540,15 @@ static int cb_s3_init(struct flb_output_instance *ins,
         return -1;
     }
 
+    /* the check against -1 is works here because size_t is unsigned
+     * and (int) -1 == unsigned max value
+     * Fluent Bit uses -1 (which becomes max value) to indicate undefined
+     */
+    if (ctx->ins->total_limit_size != -1) {
+        flb_plg_warn(ctx->ins, "Please use 'store_dir_limit_size' with s3 output instead of 'storage.total_limit_size'. "
+                     "S3 has its own buffer files located in the store_dir.");
+    }
+
     /* Date key */
     ctx->date_key = ctx->json_date_key;
     tmp = flb_output_get_property("json_date_key", ins);
@@ -568,15 +577,6 @@ static int cb_s3_init(struct flb_output_instance *ins,
     if (!tmp) {
         flb_plg_error(ctx->ins, "'bucket' is a required parameter");
         return -1;
-    }
-
-    tmp = flb_output_get_property("chunk_buffer_dir", ins);
-    if (tmp) {
-        len = strlen(tmp);
-        if (tmp[len - 1] == '/' || tmp[len - 1] == '\\') {
-            flb_plg_error(ctx->ins, "'chunk_buffer_dir' can not end in a / or \\");
-            return -1;
-        }
     }
 
     /*
@@ -637,6 +637,25 @@ static int cb_s3_init(struct flb_output_instance *ins,
             ctx->use_put_object = FLB_TRUE;
     }
 
+    tmp = flb_output_get_property("compression", ins);
+    if (tmp) {
+        ret = flb_aws_compression_get_type(tmp);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "unknown compression: %s", tmp);
+            return -1;
+        }
+        if (ctx->use_put_object == FLB_FALSE && ctx->compression == FLB_AWS_COMPRESS_ARROW) {
+            flb_plg_error(ctx->ins,
+                          "use_put_object must be enabled when Apache Arrow is enabled");
+            return -1;
+        }
+        ctx->compression = ret;
+    }
+
+    tmp = flb_output_get_property("content_type", ins);
+    if (tmp) {
+        ctx->content_type = (char *) tmp;
+    }
     if (ctx->use_put_object == FLB_FALSE) {
         /* upload_chunk_size */
         if (ctx->upload_chunk_size <= 0) {
@@ -652,9 +671,16 @@ static int cb_s3_init(struct flb_output_instance *ins,
             flb_plg_error(ctx->ins, "upload_chunk_size must be at least 5,242,880 bytes");
             return -1;
         }
-        if (ctx->upload_chunk_size > MAX_CHUNKED_UPLOAD_SIZE) {
-            flb_plg_error(ctx->ins, "Max upload_chunk_size is 50M");
-            return -1;
+        if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+            if(ctx->upload_chunk_size > MAX_CHUNKED_UPLOAD_COMPRESS_SIZE) {
+                flb_plg_error(ctx->ins, "upload_chunk_size in compressed multipart upload cannot exceed 5GB");
+                return -1;
+            }
+        } else {
+            if (ctx->upload_chunk_size > MAX_CHUNKED_UPLOAD_SIZE) {
+                flb_plg_error(ctx->ins, "Max upload_chunk_size is 50MB");
+                return -1;
+            }
         }
     }
 
@@ -737,33 +763,14 @@ static int cb_s3_init(struct flb_output_instance *ins,
         ctx->canned_acl = (char *) tmp;
     }
 
-    tmp = flb_output_get_property("compression", ins);
-    if (tmp) {
-        if (ctx->use_put_object == FLB_FALSE) {
-            flb_plg_error(ctx->ins,
-                          "use_put_object must be enabled when compression is enabled");
-            return -1;
-        }
-        ret = flb_aws_compression_get_type(tmp);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "unknown compression: %s", tmp);
-            return -1;
-        }
-        ctx->compression = ret;
-    }
-
-    tmp = flb_output_get_property("content_type", ins);
-    if (tmp) {
-        ctx->content_type = (char *) tmp;
-    }
-
     tmp = flb_output_get_property("storage_class", ins);
     if (tmp) {
         ctx->storage_class = (char *) tmp;
     }
 
     if (ctx->insecure == FLB_FALSE) {
-        ctx->client_tls = flb_tls_create(ins->tls_verify,
+        ctx->client_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                         ins->tls_verify,
                                          ins->tls_debug,
                                          ins->tls_vhost,
                                          ins->tls_ca_path,
@@ -778,7 +785,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
     }
 
     /* AWS provider needs a separate TLS instance */
-    ctx->provider_tls = flb_tls_create(FLB_TRUE,
+    ctx->provider_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                       FLB_TRUE,
                                        ins->tls_debug,
                                        ins->tls_vhost,
                                        ins->tls_ca_path,
@@ -810,7 +818,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
         role_arn = (char *) tmp;
 
         /* STS provider needs yet another separate TLS instance */
-        ctx->sts_provider_tls = flb_tls_create(FLB_TRUE,
+        ctx->sts_provider_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                               FLB_TRUE,
                                                ins->tls_debug,
                                                ins->tls_vhost,
                                                ins->tls_ca_path,
@@ -908,9 +917,13 @@ static int cb_s3_init(struct flb_output_instance *ins,
         ctx->timer_ms = UPLOAD_TIMER_MIN_WAIT;
     }
 
-    /* init must use sync mode */
-    async_flags = ctx->s3_client->upstream->flags;
-    ctx->s3_client->upstream->flags &= ~(FLB_IO_ASYNC);
+    /* 
+     * S3 must ALWAYS use sync mode 
+     * In the timer thread we do a mk_list_foreach_safe on the queue of uplaods and chunks
+     * Iterating over those lists is not concurrent safe. If a flush call ran at the same time
+     * And deleted an item from the list, this could cause a crash/corruption. 
+     */
+    flb_stream_disable_async_mode(&ctx->s3_client->upstream->base);
 
     /* clean up any old buffers found on startup */
     if (ctx->has_old_buffers == FLB_TRUE) {
@@ -944,17 +957,6 @@ static int cb_s3_init(struct flb_output_instance *ins,
          cb_s3_upload(config, ctx);
     }
 
-    if (ctx->use_put_object == FLB_TRUE) {
-        /*
-         * Run S3 in async mode.
-         * Multipart uploads don't work with async mode right now in high throughput
-         * cases. Its not clear why. Realistically, the performance of sync mode
-         * will be sufficient for most users, and long term we can do the work
-         * to enable async if needed.
-         */
-        ctx->s3_client->upstream->flags = async_flags;
-    }
-
     /* this is done last since in the previous block we make calls to AWS */
     ctx->provider->provider_vtable->upstream_set(ctx->provider, ctx->ins);
 
@@ -976,8 +978,34 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
     int size_check = FLB_FALSE;
     int part_num_check = FLB_FALSE;
     int timeout_check = FLB_FALSE;
-    time_t create_time;
     int ret;
+    void *payload_buf = NULL;
+    size_t payload_size = 0;
+    size_t preCompress_size = 0;
+    time_t file_first_log_time = time(NULL);
+
+    /*
+     * When chunk does not exist, file_first_log_time will be the current time.
+     * This is only for unit tests and prevents unit tests from segfaulting when chunk is
+     * NULL because if so chunk->first_log_time will be NULl either and will cause
+     * segfault during the process of put_object upload or mutipart upload.
+     */
+    if (chunk != NULL) {
+        file_first_log_time = chunk->first_log_time;
+    }
+
+    if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+        /* Map payload */
+        ret = flb_aws_compression_compress(ctx->compression, body, body_size, &payload_buf, &payload_size);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "Failed to compress data");
+            return FLB_RETRY;
+        } else {
+            preCompress_size = body_size;
+            body = (void *) payload_buf;
+            body_size = payload_size;
+        }
+    }
 
     if (ctx->use_put_object == FLB_TRUE) {
         goto put_object;
@@ -1009,6 +1037,10 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
             goto multipart;
         }
         else {
+            if (ctx->use_put_object == FLB_FALSE && ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+                flb_plg_info(ctx->ins, "Pre-compression upload_chunk_size= %d, After compression, chunk is only %d bytes, "
+                                       "the chunk was too small, using PutObject to upload", preCompress_size, body_size);
+            }
             goto put_object;
         }
     }
@@ -1024,17 +1056,12 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
 put_object:
 
     /*
-     * remove chunk from buffer list- needed for async http so that the
-     * same chunk won't be sent more than once
+     * remove chunk from buffer list
      */
-    if (chunk) {
-        create_time = chunk->create_time;
+    ret = s3_put_object(ctx, tag, file_first_log_time, body, body_size);
+    if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+        flb_free(payload_buf);
     }
-    else {
-        create_time = time(NULL);
-    }
-
-    ret = s3_put_object(ctx, tag, create_time, body, body_size);
     if (ret < 0) {
         /* re-add chunk to list */
         if (chunk) {
@@ -1053,11 +1080,14 @@ put_object:
 multipart:
 
     if (init_upload == FLB_TRUE) {
-        m_upload = create_upload(ctx, tag, tag_len);
+        m_upload = create_upload(ctx, tag, tag_len, file_first_log_time);
         if (!m_upload) {
             flb_plg_error(ctx->ins, "Could not find or create upload for tag %s", tag);
             if (chunk) {
                 s3_store_file_unlock(chunk);
+            }
+            if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+                flb_free(payload_buf);
             }
             return FLB_RETRY;
         }
@@ -1070,6 +1100,9 @@ multipart:
             if (chunk) {
                 s3_store_file_unlock(chunk);
             }
+            if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+                flb_free(payload_buf);
+            }
             return FLB_RETRY;
         }
         m_upload->upload_state = MULTIPART_UPLOAD_STATE_CREATED;
@@ -1077,6 +1110,9 @@ multipart:
 
     ret = upload_part(ctx, m_upload, body, body_size);
     if (ret < 0) {
+        if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+            flb_free(payload_buf);
+        }
         m_upload->upload_errors += 1;
         /* re-add chunk to list */
         if (chunk) {
@@ -1095,13 +1131,14 @@ multipart:
         return FLB_RETRY;
     }
     m_upload->part_number += 1;
-
     /* data was sent successfully- delete the local buffer */
     if (chunk) {
         s3_store_file_delete(ctx, chunk);
         chunk = NULL;
     }
-
+    if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+        flb_free(payload_buf);
+    }
     if (m_upload->bytes >= ctx->file_size) {
         size_check = FLB_TRUE;
         flb_plg_info(ctx->ins, "Will complete upload for %s because uploaded data is greater"
@@ -1144,6 +1181,8 @@ static int put_all_chunks(struct flb_s3 *ctx)
     struct mk_list *f_head;
     struct flb_fstore_file *fsf;
     struct flb_fstore_stream *fs_stream;
+    void *payload_buf = NULL;
+    size_t payload_size = 0;
     char *buffer = NULL;
     size_t buffer_size;
     int ret;
@@ -1184,6 +1223,18 @@ static int put_all_chunks(struct flb_s3 *ctx)
                               "Could not construct request buffer for %s",
                               chunk->file_path);
                 return -1;
+            }
+
+            if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
+                /* Map payload */
+                ret = flb_aws_compression_compress(ctx->compression, buffer, buffer_size, &payload_buf, &payload_size);
+                if (ret == -1) {
+                    flb_plg_error(ctx->ins, "Failed to compress data, uploading uncompressed data instead to prevent data loss");
+                } else {
+                    flb_plg_info(ctx->ins, "Pre-compression chunk size is %d, After compression, chunk is %d bytes", buffer_size, payload_size);
+                    buffer = (void *) payload_buf;
+                    buffer_size = payload_size;
+                }
             }
 
             ret = s3_put_object(ctx, (const char *)
@@ -1233,8 +1284,7 @@ static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
         }
 
         /*
-         * lock the chunk from buffer list- needed for async http so that the
-         * same chunk won't be sent more than once.
+         * lock the chunk from buffer list
          */
         s3_store_file_lock(chunk);
         body = buffered_data;
@@ -1268,7 +1318,7 @@ static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
     return 0;
 }
 
-static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time,
+static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_log_time,
                          char *body, size_t body_size)
 {
     flb_sds_t s3_key = NULL;
@@ -1283,13 +1333,10 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
     char *final_key;
     flb_sds_t uri;
     flb_sds_t tmp;
-    void *compressed_body;
-    char *final_body;
-    size_t final_body_size;
     char final_body_md5[25];
 
-    s3_key = flb_get_s3_key(ctx->s3_key_format, create_time, tag, ctx->tag_delimiters,
-                            ctx->seq_index);
+    s3_key = flb_get_s3_key(ctx->s3_key_format, file_first_log_time, tag,
+                            ctx->tag_delimiters, ctx->seq_index);
     if (!s3_key) {
         flb_plg_error(ctx->ins, "Failed to construct S3 Object Key for %s", tag);
         return -1;
@@ -1332,24 +1379,9 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
     flb_sds_destroy(s3_key);
     uri = tmp;
 
-    if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
-        ret = flb_aws_compression_compress(ctx->compression, body, body_size,
-                                          &compressed_body, &final_body_size);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "Failed to compress data");
-            flb_sds_destroy(uri);
-            return -1;
-        }
-        final_body = (char *) compressed_body;
-    }
-    else {
-        final_body = body;
-        final_body_size = body_size;
-    }
-
     memset(final_body_md5, 0, sizeof(final_body_md5));
     if (ctx->send_content_md5 == FLB_TRUE) {
-        ret = get_md5_base64(final_body, final_body_size,
+        ret = get_md5_base64(body, body_size,
                              final_body_md5, sizeof(final_body_md5));
         if (ret != 0) {
             flb_plg_error(ctx->ins, "Failed to create Content-MD5 header");
@@ -1383,11 +1415,8 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
             goto decrement_index;
         }
         c = s3_client->client_vtable->request(s3_client, FLB_HTTP_PUT,
-                                              uri, final_body, final_body_size,
+                                              uri, body, body_size,
                                               headers, num_headers);
-        if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
-             flb_free(compressed_body);
-        }
         flb_free(headers);
     }
     if (c) {
@@ -1435,13 +1464,16 @@ int get_md5_base64(char *buf, size_t buf_size, char *md5_str, size_t md5_str_siz
     size_t olen;
     int ret;
 
-    ret = mbedtls_md5_ret((unsigned char*) buf, buf_size, md5_bin);
-    if (ret != 0) {
-        return ret;
+    ret = flb_hash_simple(FLB_HASH_MD5,
+                          (unsigned char *) buf, buf_size,
+                          md5_bin, sizeof(md5_bin));
+
+    if (ret != FLB_CRYPTO_SUCCESS) {
+        return -1;
     }
 
-    ret = flb_base64_encode((unsigned char*) md5_str, md5_str_size, &olen, md5_bin,
-                                sizeof(md5_bin));
+    ret = flb_base64_encode((unsigned char*) md5_str, md5_str_size,
+                            &olen, md5_bin, sizeof(md5_bin));
     if (ret != 0) {
         return ret;
     }
@@ -1478,8 +1510,8 @@ static struct multipart_upload *get_upload(struct flb_s3 *ctx,
     return m_upload;
 }
 
-static struct multipart_upload *create_upload(struct flb_s3 *ctx,
-                                              const char *tag, int tag_len)
+static struct multipart_upload *create_upload(struct flb_s3 *ctx, const char *tag,
+                                              int tag_len, time_t file_first_log_time)
 {
     int ret;
     struct multipart_upload *m_upload = NULL;
@@ -1492,8 +1524,8 @@ static struct multipart_upload *create_upload(struct flb_s3 *ctx,
         flb_errno();
         return NULL;
     }
-    s3_key = flb_get_s3_key(ctx->s3_key_format, time(NULL), tag, ctx->tag_delimiters,
-                            ctx->seq_index);
+    s3_key = flb_get_s3_key(ctx->s3_key_format, file_first_log_time, tag,
+                            ctx->tag_delimiters, ctx->seq_index);
     if (!s3_key) {
         flb_plg_error(ctx->ins, "Failed to construct S3 Object Key for %s", tag);
         flb_free(m_upload);
@@ -1633,13 +1665,16 @@ static int send_upload_request(void *out_context, flb_sds_t chunk,
     return ret;
 }
 
-static int buffer_chunk(void *out_context, struct s3_file *upload_file, flb_sds_t chunk,
-                        int chunk_size, const char *tag, int tag_len)
+static int buffer_chunk(void *out_context, struct s3_file *upload_file,
+                        flb_sds_t chunk, int chunk_size,
+                        const char *tag, int tag_len,
+                        time_t file_first_log_time)
 {
     int ret;
     struct flb_s3 *ctx = out_context;
 
-    ret = s3_store_buffer_put(ctx, upload_file, tag, tag_len, chunk, (size_t) chunk_size);
+    ret = s3_store_buffer_put(ctx, upload_file, tag,
+                              tag_len, chunk, (size_t) chunk_size, file_first_log_time);
     flb_sds_destroy(chunk);
     if (ret < 0) {
         flb_plg_warn(ctx->ins, "Could not buffer chunk. Data order preservation "
@@ -1653,7 +1688,6 @@ static int buffer_chunk(void *out_context, struct s3_file *upload_file, flb_sds_
 static void s3_upload_queue(struct flb_config *config, void *out_context)
 {
     int ret;
-    int async_flags;
     time_t now;
     struct upload_queue *upload_contents;
     struct flb_s3 *ctx = out_context;
@@ -1667,12 +1701,6 @@ static void s3_upload_queue(struct flb_config *config, void *out_context)
         flb_plg_debug(ctx->ins, "No files found in upload_queue. Scanning for timed "
                       "out chunks");
         cb_s3_upload(config, out_context);
-    }
-
-    /* upload timer must use sync mode */
-    if (ctx->use_put_object == FLB_TRUE) {
-        async_flags = ctx->s3_client->upstream->flags;
-        ctx->s3_client->upstream->flags &= ~(FLB_IO_ASYNC);
     }
 
     /* Iterate through each file in upload queue */
@@ -1724,10 +1752,7 @@ static void s3_upload_queue(struct flb_config *config, void *out_context)
     }
 
 exit:
-    /* re-enable async mode */
-    if (ctx->use_put_object == FLB_TRUE) {
-        ctx->s3_client->upstream->flags = async_flags;
-    }
+    return;
 }
 
 static void cb_s3_upload(struct flb_config *config, void *data)
@@ -1743,15 +1768,8 @@ static void cb_s3_upload(struct flb_config *config, void *data)
     int complete;
     int ret;
     time_t now;
-    int async_flags;
 
     flb_plg_debug(ctx->ins, "Running upload timer callback (cb_s3_upload)..");
-
-    /* upload timer must use sync mode */
-    if (ctx->use_put_object == FLB_TRUE) {
-        async_flags = ctx->s3_client->upstream->flags;
-        ctx->s3_client->upstream->flags &= ~(FLB_IO_ASYNC);
-    }
 
     now = time(NULL);
 
@@ -1830,9 +1848,6 @@ static void cb_s3_upload(struct flb_config *config, void *data)
         }
     }
 
-    if (ctx->use_put_object == FLB_TRUE) {
-        ctx->s3_client->upstream->flags = async_flags;
-    }
 }
 
 static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char *data,
@@ -1958,7 +1973,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     }
 
     /* Throw error once per chunk if at least one log key was not found */
-    if (log_key_missing == FLB_TRUE) {
+    if (log_key_missing > 0) {
         flb_plg_error(ctx->ins, "Could not find log_key '%s' in %d records",
                       ctx->log_key, log_key_missing);
     }
@@ -1986,14 +2001,16 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
 
 static void unit_test_flush(void *out_context, struct s3_file *upload_file,
                             const char *tag, int tag_len, flb_sds_t chunk,
-                            int chunk_size, struct multipart_upload *m_upload_file)
+                            int chunk_size, struct multipart_upload *m_upload_file,
+                            time_t file_first_log_time)
 {
     int ret;
     char *buffer;
     size_t buffer_size;
     struct flb_s3 *ctx = out_context;
 
-    s3_store_buffer_put(ctx, upload_file, tag, tag_len, chunk, (size_t) chunk_size);
+    s3_store_buffer_put(ctx, upload_file, tag, tag_len,
+                        chunk, (size_t) chunk_size, file_first_log_time);
     ret = construct_request_buffer(ctx, chunk, upload_file, &buffer, &buffer_size);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Could not construct request buffer for %s",
@@ -2073,6 +2090,11 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     struct s3_file *upload_file = NULL;
     struct flb_s3 *ctx = out_context;
     struct multipart_upload *m_upload_file = NULL;
+    msgpack_unpacked result;
+    msgpack_object *obj;
+    size_t off = 0;
+    struct flb_time tms;
+    time_t file_first_log_time = 0;
 
     /* Cleanup old buffers and initialize upload timer */
     flush_init(ctx);
@@ -2101,11 +2123,38 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
                                     event_chunk->tag,
                                     flb_sds_len(event_chunk->tag));
 
+    if (upload_file == NULL) {
+        /* unpack msgpack */
+        msgpack_unpacked_init(&result);
+
+        /* Get the first record timestamp */
+        while (msgpack_unpack_next(&result,
+                                   event_chunk->data,
+                                   event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS) {
+            flb_time_pop_from_msgpack(&tms, &result, &obj);
+            if (&tms.tm.tv_sec != 0) {
+                file_first_log_time = tms.tm.tv_sec;
+                break;
+            }
+        }
+
+        msgpack_unpacked_destroy(&result);
+    }
+    else {
+        /* Get file_first_log_time from upload_file */
+        file_first_log_time = upload_file->first_log_time;
+    }
+
+    if (file_first_log_time == 0) {
+        file_first_log_time = time(NULL);
+    }
+
     /* Specific to unit tests, will not get called normally */
     if (s3_plugin_under_test() == FLB_TRUE) {
         unit_test_flush(ctx, upload_file,
                         event_chunk->tag, flb_sds_len(event_chunk->tag),
-                        chunk, chunk_size, m_upload_file);
+                        chunk, chunk_size,
+                        m_upload_file, file_first_log_time);
     }
 
     /* Discard upload_file if it has failed to upload MAX_UPLOAD_ERRORS times */
@@ -2139,12 +2188,14 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
         total_file_size_check = FLB_TRUE;
     }
 
-    /* File is ready for upload */
-    if (upload_timeout_check == FLB_TRUE || total_file_size_check == FLB_TRUE) {
+    /* File is ready for upload, upload_file != NULL prevents from segfaulting. */
+    if ((upload_file != NULL) && (upload_timeout_check == FLB_TRUE || total_file_size_check == FLB_TRUE)) {
         if (ctx->preserve_data_ordering == FLB_TRUE) {
             /* Buffer last chunk in file and lock file to prevent further changes */
             ret = buffer_chunk(ctx, upload_file, chunk, chunk_size,
-                               event_chunk->tag, flb_sds_len(event_chunk->tag));
+                               event_chunk->tag, flb_sds_len(event_chunk->tag),
+                               file_first_log_time);
+
             if (ret < 0) {
                 FLB_OUTPUT_RETURN(FLB_RETRY);
             }
@@ -2179,7 +2230,9 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
 
     /* Buffer current chunk in filesystem and wait for next chunk from engine */
     ret = buffer_chunk(ctx, upload_file, chunk, chunk_size,
-                       event_chunk->tag, flb_sds_len(event_chunk->tag));
+                       event_chunk->tag, flb_sds_len(event_chunk->tag),
+                       file_first_log_time);
+
     if (ret < 0) {
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
@@ -2199,10 +2252,6 @@ static int cb_s3_exit(void *data, struct flb_config *config)
     }
 
     if (s3_store_has_data(ctx) == FLB_TRUE) {
-        if (ctx->use_put_object == FLB_TRUE) {
-            /* exit must run in sync mode  */
-            ctx->s3_client->upstream->flags &= ~(FLB_IO_ASYNC);
-        }
         flb_plg_info(ctx->ins, "Sending all locally buffered data to S3");
         ret = put_all_chunks(ctx);
         if (ret < 0) {
@@ -2332,6 +2381,15 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_SIZE, "store_dir_limit_size", (char *) NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, store_dir_limit_size),
+     "S3 plugin has its own buffering system with files in the `store_dir`. "
+     "Use the `store_dir_limit_size` to limit the amount of data S3 buffers in "
+     "the `store_dir` to limit disk usage. If the limit is reached, "
+     "data will be discarded. Default is 0 which means unlimited."
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "s3_key_format", "/fluent-bit-logs/$TAG/%Y/%m/%d/%H/%M/%S",
      0, FLB_TRUE, offsetof(struct flb_s3, s3_key_format),
     "Format string for keys in S3. This option supports strftime time formatters "
@@ -2376,7 +2434,7 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-     FLB_CONFIG_MAP_BOOL, "preserve_data_ordering", "false",
+     FLB_CONFIG_MAP_BOOL, "preserve_data_ordering", "true",
      0, FLB_TRUE, offsetof(struct flb_s3, preserve_data_ordering),
      "Normally, when an upload request fails, there is a high chance for the last "
      "received chunk to be swapped with a later chunk, resulting in data shuffling. "

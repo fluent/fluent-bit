@@ -38,6 +38,7 @@
 #define FLB_TAIL_REFRESH                 60   /* refresh every 60 seconds */
 #define FLB_TAIL_ROTATE_WAIT             "5"  /* time to monitor after rotation */
 #define FLB_TAIL_STATIC_BATCH_SIZE      "50M" /* static batch size */
+#define FLB_TAIL_EVENT_BATCH_SIZE       "50M" /* event batch size */
 
 int in_tail_collect_event(void *file, struct flb_config *config);
 

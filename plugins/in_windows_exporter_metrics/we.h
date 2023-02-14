@@ -23,11 +23,14 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input_plugin.h>
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_metrics.h>
 
 #include <monkey/mk_core/mk_list.h>
 #include <fluent-bit/flb_sds.h>
+
+#include <windows.h>
+#include <wbemidl.h>
 
 #include "we_metric.h"
 
@@ -68,7 +71,7 @@ struct we_perflib_counter {
 struct we_perflib_instance {
     char                     *name;
     struct we_perflib_object *parent;
-    struct flb_hash          *counters;
+    struct flb_hash_table    *counters;
     struct mk_list            _head;
 };
 
@@ -79,21 +82,89 @@ struct we_perflib_object {
     int64_t           hundred_ns_time;
     size_t            counter_count;
     size_t            instance_count;
-    struct flb_hash  *instances;
+    struct flb_hash_table *instances;
     struct mk_list    counter_definitions;
 };
 
 
 struct we_perflib_context {
-    struct flb_hash *counter_indexes;
+    struct flb_hash_table *counter_indexes;
 };
 
 struct we_cpu_counters {
     struct we_perflib_metric_source *metric_sources;
     struct we_perflib_metric_spec   *metric_specs;
     int                              operational;
-    struct flb_hash                 *metrics;
+    struct flb_hash_table           *metrics;
     char                            *query;
+};
+
+struct we_net_counters {
+    struct we_perflib_metric_source *metric_sources;
+    struct we_perflib_metric_spec   *metric_specs;
+    int                              operational;
+    struct flb_hash_table           *metrics;
+    char                            *query;
+};
+
+struct we_logical_disk_counters {
+    struct we_perflib_metric_source *metric_sources;
+    struct we_perflib_metric_spec   *metric_specs;
+    int                              operational;
+    struct flb_hash_table           *metrics;
+    char                            *query;
+};
+
+struct wmi_query_spec;
+
+struct we_wmi_thermal_counters {
+    struct wmi_query_spec *temperature_celsius;
+    struct wmi_query_spec *percent_passive_limit;
+    struct wmi_query_spec *throttle_reasons;
+    int                    operational;
+};
+
+struct we_wmi_cpu_info_counters {
+    struct wmi_query_spec *info;
+    int                    operational;
+};
+
+struct we_wmi_logon_counters {
+    struct wmi_query_spec *info;
+    int                    operational;
+};
+
+struct we_wmi_system_counters {
+    struct wmi_query_spec *info;
+    struct cmt_gauge      *context_switches;
+    struct cmt_gauge      *exception_dispatches;
+    struct cmt_gauge      *processor_queue;
+    struct cmt_gauge      *system_calls;
+    struct cmt_gauge      *system_up_time;
+    struct cmt_gauge      *threads;
+    int                    operational;
+};
+
+struct we_os_counters {
+    struct cmt_gauge *info;
+    struct cmt_gauge *users;
+    struct cmt_gauge *physical_memory_free_bytes;
+    struct cmt_gauge *time;
+    struct cmt_gauge *tz;
+    struct cmt_gauge *virtual_memory_free_bytes;
+    struct cmt_gauge *processes_limit;
+    struct cmt_gauge *process_memory_limit_bytes;
+    struct cmt_gauge *processes;
+    struct cmt_gauge *virtual_memory_bytes;
+    struct cmt_gauge *visible_memory_bytes;
+    int operational;
+};
+
+struct we_cs_counters {
+    struct cmt_gauge *logical_processors;
+    struct cmt_gauge *physical_memory_bytes;
+    struct cmt_gauge *hostname;
+    int operational;
 };
 
 struct flb_we {
@@ -104,8 +175,18 @@ struct flb_we {
     struct cmt *cmt;                                  /* cmetrics context */
     struct flb_input_instance *ins;                   /* input instance   */
     struct mk_list *collectors;
+    char *raw_allowing_disk;
+    char *raw_denying_disk;
+    char *raw_allowing_nic;
+
+    struct flb_regex *allowing_disk_regex;
+    struct flb_regex *denying_disk_regex;
+    struct flb_regex *allowing_nic_regex;
 
     struct we_perflib_context perflib_context;
+    /* WMI locator and service contexts */
+    IWbemLocator *locator;
+    IWbemServices *service;
 
     float windows_version;
 
@@ -115,6 +196,14 @@ struct flb_we {
      */
 
     struct we_cpu_counters cpu;
+    struct we_net_counters net;
+    struct we_logical_disk_counters logical_disk;
+    struct we_cs_counters cs;
+    struct we_os_counters *os;
+    struct we_wmi_thermal_counters *wmi_thermals;
+    struct we_wmi_cpu_info_counters *wmi_cpu_info;
+    struct we_wmi_logon_counters *wmi_logon;
+    struct we_wmi_system_counters *wmi_system;
 
 };
 

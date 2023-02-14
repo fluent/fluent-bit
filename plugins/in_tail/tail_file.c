@@ -21,6 +21,10 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <time.h>
+#ifdef FLB_SYSTEM_FREEBSD
+#include <sys/user.h>
+#include <libutil.h>
+#endif
 
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
@@ -28,7 +32,7 @@
 #include <fluent-bit/flb_parser.h>
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_hash_table.h>
 #endif
 
 #include "tail.h"
@@ -44,7 +48,7 @@
 #include "win32.h"
 #endif
 
-#include <xxhash.h>
+#include <cfl/cfl.h>
 
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
@@ -71,9 +75,9 @@ static int stat_to_hash_bits(struct flb_tail_config *ctx, struct stat *st,
     st_dev = stat_get_st_dev(st);
 
     len = snprintf(tmp, sizeof(tmp) - 1, "%" PRIu64 ":%" PRIu64,
-                   st_dev, st->st_ino);
+                   st_dev, (uint64_t)st->st_ino);
 
-    *out_hash = XXH3_64bits(tmp, len);
+    *out_hash = cfl_hash_64bits(tmp, len);
     return 0;
 }
 
@@ -91,7 +95,7 @@ static int stat_to_hash_key(struct flb_tail_config *ctx, struct stat *st,
 
     st_dev = stat_get_st_dev(st);
     tmp = flb_sds_printf(&buf, "%" PRIu64 ":%" PRIu64,
-                         st_dev, st->st_ino);
+                         st_dev, (uint64_t)st->st_ino);
     if (!tmp) {
         flb_sds_destroy(buf);
         return -1;
@@ -159,8 +163,8 @@ static int record_append_custom_keys(struct flb_tail_file *file,
             msgpack_pack_str_body(&mp_pck, file->config->path_key, len);
 
             /* val */
-            msgpack_pack_str(&mp_pck, file->name_len);
-            msgpack_pack_str_body(&mp_pck, file->name, file->name_len);
+            msgpack_pack_str(&mp_pck, file->orig_name_len);
+            msgpack_pack_str_body(&mp_pck, file->orig_name, file->orig_name_len);
         }
 
         /* offset_key */
@@ -340,6 +344,24 @@ int flb_tail_file_pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     return 0;
 }
 
+static int ml_stream_buffer_append(struct flb_tail_file *file, char *buf_data, size_t buf_size)
+{
+    msgpack_sbuffer_write(&file->ml_sbuf, buf_data, buf_size);
+    return 0;
+}
+
+static int ml_stream_buffer_flush(struct flb_tail_config *ctx, struct flb_tail_file *file)
+{
+    if (file->ml_sbuf.size > 0) {
+        flb_input_log_append(ctx->ins,
+                                   file->tag_buf,
+                                   file->tag_len,
+                                   file->ml_sbuf.data, file->ml_sbuf.size);
+        file->ml_sbuf.size = 0;
+    }
+    return 0;
+}
+
 static int process_content(struct flb_tail_file *file, size_t *bytes)
 {
     size_t len;
@@ -513,7 +535,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
 #else
         flb_time_get(&out_time);
         flb_tail_file_pack_line(out_sbuf, out_pck, &out_time,
-                                line, line_len, file);
+                                line, line_len, file, processed_bytes);
 #endif
 
     go_next:
@@ -533,19 +555,24 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         *bytes = processed_bytes;
 
         if (out_sbuf->size > 0) {
-            flb_input_chunk_append_raw2(ctx->ins,
-                                        lines,
-                                        file->tag_buf,
-                                        file->tag_len,
-                                        out_sbuf->data,
-                                        out_sbuf->size);
+            flb_input_log_append_records(ctx->ins,
+                                         lines,
+                                         file->tag_buf,
+                                         file->tag_len,
+                                         out_sbuf->data,
+                                         out_sbuf->size);
         }
+
     }
     else if (file->skip_next) {
         *bytes = file->buf_len;
     }
     else {
         *bytes = processed_bytes;
+    }
+
+    if (ctx->ml_ctx) {
+        ml_stream_buffer_flush(ctx, file);
     }
 
     msgpack_sbuffer_destroy(out_sbuf);
@@ -563,13 +590,13 @@ static inline void drop_bytes(char *buf, size_t len, int pos, int bytes)
 static void cb_results(const char *name, const char *value,
                        size_t vlen, void *data)
 {
-    struct flb_hash *ht = data;
+    struct flb_hash_table *ht = data;
 
     if (vlen == 0) {
         return;
     }
 
-    flb_hash_add(ht, name, strlen(name), (void *) value, vlen);
+    flb_hash_table_add(ht, name, strlen(name), (void *) value, vlen);
 }
 #endif
 
@@ -589,7 +616,7 @@ static int tag_compose(char *tag, char *fname, char *out_buf, size_t *out_size,
 #ifdef FLB_HAVE_REGEX
     ssize_t n;
     struct flb_regex_search result;
-    struct flb_hash *ht;
+    struct flb_hash_table *ht;
     char *beg;
     char *end;
     int ret;
@@ -606,7 +633,8 @@ static int tag_compose(char *tag, char *fname, char *out_buf, size_t *out_size,
             return -1;
         }
         else {
-            ht = flb_hash_create(FLB_HASH_EVICT_NONE, FLB_HASH_TABLE_SIZE, FLB_HASH_TABLE_SIZE);
+            ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE,
+                                       FLB_HASH_TABLE_SIZE, FLB_HASH_TABLE_SIZE);
             flb_regex_parse(tag_regex, &result, cb_results, ht);
 
             for (p = tag, beg = p; (beg = strchr(p, '<')); p = end + 2) {
@@ -623,7 +651,7 @@ static int tag_compose(char *tag, char *fname, char *out_buf, size_t *out_size,
                     end--;
 
                     len = end - beg + 1;
-                    ret = flb_hash_get(ht, beg, len, (void *) &tmp, &tmp_s);
+                    ret = flb_hash_table_get(ht, beg, len, (void *) &tmp, &tmp_s);
                     if (ret != -1) {
                         memcpy(out_buf + buf_s, tmp, tmp_s);
                         buf_s += tmp_s;
@@ -637,13 +665,12 @@ static int tag_compose(char *tag, char *fname, char *out_buf, size_t *out_size,
                     flb_plg_error(ctx->ins,
                                   "missing closing angle bracket in tag %s "
                                   "at position %lu", tag, beg - tag);
-                    flb_hash_destroy(ht);
+                    flb_hash_table_destroy(ht);
                     return -1;
                 }
             }
 
-            flb_hash_destroy(ht);
-
+            flb_hash_table_destroy(ht);
             if (*p) {
                 len = strlen(p);
                 memcpy(out_buf + buf_s, p, len);
@@ -720,31 +747,6 @@ static int tag_compose(char *tag, char *fname, char *out_buf, size_t *out_size,
     return 0;
 }
 
-static inline int flb_tail_file_exists_old(struct stat *st,
-                                       struct flb_tail_config *ctx)
-{
-    struct mk_list *head;
-    struct flb_tail_file *file;
-
-    /* Iterate static list */
-    mk_list_foreach(head, &ctx->files_static) {
-        file = mk_list_entry(head, struct flb_tail_file, _head);
-        if (file->inode == st->st_ino) {
-            return FLB_TRUE;
-        }
-    }
-
-    /* Iterate dynamic list */
-    mk_list_foreach(head, &ctx->files_event) {
-        file = mk_list_entry(head, struct flb_tail_file, _head);
-        if (file->inode == st->st_ino) {
-            return FLB_TRUE;
-        }
-    }
-
-    return FLB_FALSE;
-}
-
 static inline int flb_tail_file_exists(struct stat *st,
                                        struct flb_tail_config *ctx)
 {
@@ -757,12 +759,12 @@ static inline int flb_tail_file_exists(struct stat *st,
     }
 
     /* static hash */
-    if (flb_hash_exists(ctx->static_hash, hash)) {
+    if (flb_hash_table_exists(ctx->static_hash, hash)) {
         return FLB_TRUE;
     }
 
     /* event hash */
-    if (flb_hash_exists(ctx->event_hash, hash)) {
+    if (flb_hash_table_exists(ctx->event_hash, hash)) {
         return FLB_TRUE;
     }
 
@@ -823,7 +825,6 @@ static int set_file_position(struct flb_tail_config *ctx,
     return 0;
 }
 
-
 /* Multiline flush callback: invoked every time some content is complete */
 static int ml_flush_callback(struct flb_ml_parser *parser,
                              struct flb_ml_stream *mst,
@@ -835,24 +836,22 @@ static int ml_flush_callback(struct flb_ml_parser *parser,
     struct flb_tail_config *ctx = file->config;
 
     if (ctx->path_key == NULL && ctx->offset_key == NULL) {
-        flb_input_chunk_append_raw(ctx->ins,
-                                   file->tag_buf,
-                                   file->tag_len,
-                                   buf_data, buf_size);
+        ml_stream_buffer_append(file, buf_data, buf_size);
     }
     else {
         /* adjust the records in a new buffer */
         record_append_custom_keys(file,
-                                  file->mult_sbuf.data,
-                                  file->mult_sbuf.size,
+                                  buf_data,
+                                  buf_size,
                                   &mult_buf, &mult_size);
 
-        flb_input_chunk_append_raw(ctx->ins,
-                                   file->tag_buf,
-                                   file->tag_len,
-                                   mult_buf,
-                                   mult_size);
+        ml_stream_buffer_append(file, mult_buf, mult_size);
         flb_free(mult_buf);
+    }
+
+
+    if (mst->forced_flush) {
+        ml_stream_buffer_flush(ctx, file);
     }
 
     return 0;
@@ -958,6 +957,16 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         goto error;
     }
 
+    /* We keep a copy of the initial filename in orig_name. This is required
+     * for path_key to continue working after rotation. */
+    file->orig_name = flb_strdup(file->name);
+    if (!file->orig_name) {
+        flb_free(file->name);
+        flb_errno();
+        goto error;
+    }
+    file->orig_name_len = file->name_len;
+
     /* multiline msgpack buffers */
     file->mult_records = 0;
     msgpack_sbuffer_init(&file->mult_sbuf);
@@ -982,12 +991,13 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
          * Create inode str to get stream_id.
          *
          * If stream_id is created by filename,
-         * it will be same after file rotation and it causes invalid destruction.
-         * https://github.com/fluent/fluent-bit/issues/4190
+         * it will be same after file rotation and it causes invalid destruction:
          *
+         *  - https://github.com/fluent/fluent-bit/issues/4190
          */
         inode_str = flb_sds_create_size(64);
         flb_sds_printf(&inode_str, "%"PRIu64, file->inode);
+
         /* Create a stream for this file */
         ret = flb_ml_stream_create(ctx->ml_ctx,
                                    inode_str, flb_sds_len(inode_str),
@@ -1002,6 +1012,18 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         }
         file->ml_stream_id = stream_id;
         flb_sds_destroy(inode_str);
+
+        /*
+         * Multiline core file buffer: the multiline core functionality invokes a callback everytime a message is ready
+         * to be processed by the caller, this can be a multiline message or a message that is considered 'complete'. In
+         * the previous version of Tail, when it received a message this message was automatically ingested into the pipeline
+         * without any previous buffering which leads to performance degradation.
+         *
+         * The msgpack buffer 'ml_sbuf' keeps all ML provided records and it's flushed just when the file processor finish
+         * processing the "read() bytes".
+         */
+        msgpack_sbuffer_init(&file->ml_sbuf);
+        msgpack_packer_init(&file->ml_pck, &file->ml_sbuf, msgpack_sbuffer_write);
     }
 
     /* Local buffer */
@@ -1049,14 +1071,14 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     if (mode == FLB_TAIL_STATIC) {
         mk_list_add(&file->_head, &ctx->files_static);
         ctx->files_static_count++;
-        flb_hash_add(ctx->static_hash, file->hash_key, flb_sds_len(file->hash_key),
-                     file, sizeof(file));
+        flb_hash_table_add(ctx->static_hash, file->hash_key, flb_sds_len(file->hash_key),
+                           file, sizeof(file));
         tail_signal_manager(file->config);
     }
     else if (mode == FLB_TAIL_EVENT) {
         mk_list_add(&file->_head, &ctx->files_event);
-        flb_hash_add(ctx->event_hash, file->hash_key, flb_sds_len(file->hash_key),
-                     file, sizeof(file));
+        flb_hash_table_add(ctx->event_hash, file->hash_key, flb_sds_len(file->hash_key),
+                           file, sizeof(file));
 
         /* Register this file into the fs_event monitoring */
         ret = flb_tail_fs_add(ctx, file);
@@ -1078,7 +1100,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
 
 #ifdef FLB_HAVE_METRICS
     name = (char *) flb_input_name(ctx->ins);
-    ts = cmt_time_now();
+    ts = cfl_time_now();
     cmt_counter_inc(ctx->cmt_files_opened, ts, 1, (char *[]) {name});
 
     /* Old api */
@@ -1118,7 +1140,11 @@ void flb_tail_file_remove(struct flb_tail_file *file)
 
     /* remove the multiline.core stream */
     if (ctx->ml_ctx && file->ml_stream_id > 0) {
+        /* destroy ml stream */
         flb_ml_stream_id_destroy_all(ctx->ml_ctx, file->ml_stream_id);
+
+        /* destroy local msgpack buffer */
+        msgpack_sbuffer_destroy(&file->ml_sbuf);
     }
 
     if (file->rotated > 0) {
@@ -1150,17 +1176,18 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     }
 
     /* remove any potential entry from the hash tables */
-    flb_hash_del(ctx->static_hash, file->hash_key);
-    flb_hash_del(ctx->event_hash, file->hash_key);
+    flb_hash_table_del(ctx->static_hash, file->hash_key);
+    flb_hash_table_del(ctx->event_hash, file->hash_key);
 
     flb_free(file->buf_data);
     flb_free(file->name);
+    flb_free(file->orig_name);
     flb_free(file->real_name);
     flb_sds_destroy(file->hash_key);
 
 #ifdef FLB_HAVE_METRICS
     name = (char *) flb_input_name(ctx->ins);
-    ts = cmt_time_now();
+    ts = cfl_time_now();
     cmt_counter_inc(ctx->cmt_files_closed, ts, 1, (char *[]) {name});
 
     /* old api */
@@ -1240,7 +1267,6 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
     size_t capacity;
     size_t processed_bytes;
     ssize_t bytes;
-    struct stat st;
     struct flb_tail_config *ctx;
 
     /* Check if we the engine issued a pause */
@@ -1331,15 +1357,9 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         }
 #endif
 
-        ret = fstat(file->fd, &st);
-        if (ret == -1) {
-            flb_errno();
-            return FLB_TAIL_ERROR;
-        }
-        else {
-            /* adjust file counters, returns FLB_TAIL_OK or FLB_TAIL_ERROR */
-            ret = adjust_counters(ctx, file);
-        }
+        /* adjust file counters, returns FLB_TAIL_OK or FLB_TAIL_ERROR */
+        ret = adjust_counters(ctx, file);
+
         /* Data was consumed but likely some bytes still remain */
         return ret;
     }
@@ -1474,11 +1494,11 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
     /* List swap: change from 'static' to 'event' list */
     mk_list_del(&file->_head);
     ctx->files_static_count--;
-    flb_hash_del(ctx->static_hash, file->hash_key);
+    flb_hash_table_del(ctx->static_hash, file->hash_key);
 
     mk_list_add(&file->_head, &file->config->files_event);
-    flb_hash_add(ctx->event_hash, file->hash_key, flb_sds_len(file->hash_key),
-                 file, sizeof(file));
+    flb_hash_table_add(ctx->event_hash, file->hash_key, flb_sds_len(file->hash_key),
+                       file, sizeof(file));
 
     file->tail_mode = FLB_TAIL_EVENT;
 
@@ -1500,6 +1520,10 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     char path[PATH_MAX];
 #elif defined(FLB_SYSTEM_WINDOWS)
     HANDLE h;
+#elif defined(FLB_SYSTEM_FREEBSD)
+    struct kinfo_file *file_entries;
+    int file_count;
+    int file_index;
 #endif
 
     buf = flb_malloc(PATH_MAX);
@@ -1560,6 +1584,20 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     if (strstr(buf, "\\\\?\\")) {
         memmove(buf, buf + 4, len + 1);
     }
+#elif defined(FLB_SYSTEM_FREEBSD)
+    if ((file_entries = kinfo_getfile(getpid(), &file_count)) == NULL) {
+        flb_free(buf);
+        return NULL;
+    }
+
+    for (file_index=0; file_index < file_count; file_index++) {
+        if (file_entries[file_index].kf_fd == file->fd) {
+            strncpy(buf, file_entries[file_index].kf_path, PATH_MAX - 1);
+            buf[PATH_MAX - 1] = 0;
+            break;
+        }
+    }
+    free(file_entries);
 #endif
     return buf;
 }
@@ -1630,7 +1668,7 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
 
 #ifdef FLB_HAVE_METRICS
         i_name = (char *) flb_input_name(ctx->ins);
-        ts = cmt_time_now();
+        ts = cfl_time_now();
         cmt_counter_inc(ctx->cmt_files_rotated, ts, 1, (char *[]) {i_name});
 
         /* OLD api */
@@ -1724,7 +1762,7 @@ int flb_tail_file_purge(struct flb_input_instance *ins,
                 flb_plg_debug(ctx->ins,
                               "inode=%"PRIu64" purge rotated file %s " \
                               "(offset=%"PRId64" / size = %"PRIu64")",
-                              file->inode, file->name, file->offset, st.st_size);
+                              file->inode, file->name, file->offset, (uint64_t)st.st_size);
                 if (file->pending_bytes > 0 && flb_input_buf_paused(ins)) {
                     flb_plg_warn(ctx->ins, "purged rotated file while data "
                                  "ingestion is paused, consider increasing "

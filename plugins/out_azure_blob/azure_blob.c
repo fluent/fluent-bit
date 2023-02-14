@@ -24,8 +24,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_gzip.h>
-#include <mbedtls/sha256.h>
-#include <mbedtls/base64.h>
+#include <fluent-bit/flb_base64.h>
 
 #include <msgpack.h>
 
@@ -42,6 +41,7 @@ static int azure_blob_format(struct flb_config *config,
                              struct flb_input_instance *ins,
                              void *plugin_context,
                              void *flush_ctx,
+                             int event_type,
                              const char *tag, int tag_len,
                              const void *data, size_t bytes,
                              void **out_data, size_t *out_size)
@@ -80,7 +80,7 @@ static int send_blob(struct flb_config *config,
     void *payload_buf;
     size_t payload_size;
     struct flb_http_client *c;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
 
     if (ctx->btype == AZURE_BLOB_APPENDBLOB) {
         uri = azb_append_blob_uri(ctx, tag);
@@ -112,6 +112,7 @@ static int send_blob(struct flb_config *config,
     /* Format the data */
     ret = azure_blob_format(config, i_ins,
                             ctx, NULL,
+                            FLB_EVENT_TYPE_LOGS,
                             tag, tag_len,
                             data, bytes,
                             &out_buf, &out_size);
@@ -225,7 +226,7 @@ static int create_blob(struct flb_azure_blob *ctx, char *name)
     size_t b_sent;
     flb_sds_t uri = NULL;
     struct flb_http_client *c;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
 
     uri = azb_uri_create_blob(ctx, name);
     if (!uri) {
@@ -295,7 +296,7 @@ static int create_container(struct flb_azure_blob *ctx, char *name)
     size_t b_sent;
     flb_sds_t uri;
     struct flb_http_client *c;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
@@ -374,7 +375,7 @@ static int ensure_container(struct flb_azure_blob *ctx)
     size_t b_sent;
     flb_sds_t uri;
     struct flb_http_client *c;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
 
     uri = azb_uri_ensure_or_create_container(ctx);
     if (!uri) {

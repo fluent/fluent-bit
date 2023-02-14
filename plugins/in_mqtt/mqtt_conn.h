@@ -20,6 +20,8 @@
 #ifndef FLB_MQTT_CONN_H
 #define FLB_MQTT_CONN_H
 
+#include <fluent-bit/flb_connection.h>
+
 enum {
     MQTT_NEW        = 1,  /* it's a new connection                */
     MQTT_CONNECTED  = 2,  /* MQTT connection per protocol spec OK */
@@ -28,8 +30,6 @@ enum {
 
 /* This structure respresents a MQTT connection */
 struct mqtt_conn {
-    struct mk_event event;           /* Built-in event data for mk_events */
-    int fd;                          /* Socket file descriptor            */
     int status;                      /* Connection status                 */
     int packet_type;                 /* MQTT packet type                  */
     int packet_length;
@@ -38,10 +38,11 @@ struct mqtt_conn {
     int  buf_len;                    /* Buffer content length             */
     unsigned char buf[1024];         /* Buffer data                       */
     struct flb_in_mqtt_config *ctx;  /* Plugin configuration context      */
+    struct flb_connection *connection;
     struct mk_list _head;            /* Link to flb_in_mqtt_config->conns */
 };
 
-struct mqtt_conn *mqtt_conn_add(int fd, struct flb_in_mqtt_config *ctx);
+struct mqtt_conn *mqtt_conn_add(struct flb_connection *connection, struct flb_in_mqtt_config *ctx);
 int mqtt_conn_del(struct mqtt_conn *conn);
 int mqtt_conn_destroy_all(struct flb_in_mqtt_config *ctx);
 

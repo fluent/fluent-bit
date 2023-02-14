@@ -22,7 +22,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sqldb.h>
-#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_record_accessor.h>
 
 #define LINE_SIZE   2048
@@ -44,7 +44,7 @@ struct checklist {
     struct flb_sqldb *db;
     sqlite3_stmt *stmt_insert;
     sqlite3_stmt *stmt_check;
-    struct flb_hash *ht;
+    struct flb_hash_table *ht;
     struct flb_record_accessor *ra_lookup_key;
     struct flb_filter_instance *ins;
     struct flb_config *config;

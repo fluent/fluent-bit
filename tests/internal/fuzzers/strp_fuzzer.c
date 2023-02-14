@@ -19,6 +19,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         return 0;
     }
 
+    /* Set fuzzer-malloc chance of failure */
+    flb_malloc_mod = 25000;
     flb_malloc_p = 0;
 
     char *fmt = get_null_terminated(size - 30, &data, &size);

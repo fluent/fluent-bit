@@ -85,10 +85,8 @@ source_group(Avro FILES ${AVRO_SRC})
 string(REPLACE ":" "." LIBAVRO_DOT_VERSION ${LIBAVRO_VERSION})
 
 add_library(avro-static STATIC ${AVRO_SRC})
-target_link_libraries(avro-static jansson)
-#find_library(JANSSON_PATH NAMES jansson PATHS ${CMAKE_SOURCE_DIR}/lib)
-#target_link_libraries(avro-static ${JANSSON_LIBRARIES} ${CODEC_LIBRARIES} ${THREADS_LIBRARIES} ${JANSSON_PATH})
-set_target_properties(avro-static PROPERTIES OUTPUT_NAME avro-static)
+target_link_libraries(avro-static ${JANSSON_LIBRARIES} ${CODEC_LIBRARIES} ${THREADS_LIBRARIES})
+set_target_properties(avro-static PROPERTIES OUTPUT_NAME avro)
 
 if (NOT WIN32)
 # TODO: Create Windows DLLs. See https://www.cmake.org/Wiki/BuildingWinDLL
@@ -108,6 +106,7 @@ install(DIRECTORY
         DESTINATION include
         FILES_MATCHING PATTERN "*.h")
 
+# updated by edsiper, avro version 77692d8c1
 # added by mcqueen to get the headers into the fluent-bit build root 07OCT2020
 file (COPY ${CMAKE_CURRENT_SOURCE_DIR}/avro.h
            DESTINATION ${CMAKE_BINARY_DIR}/include/)
@@ -139,21 +138,21 @@ configure_file(avro-c.pc.in avro-c.pc)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/avro-c.pc
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
-#add_executable(avrocat avrocat.c)
-#target_link_libraries(avrocat avro-static)
-#install(TARGETS avrocat RUNTIME DESTINATION bin)
+add_executable(avrocat avrocat.c)
+target_link_libraries(avrocat avro-static)
+install(TARGETS avrocat RUNTIME DESTINATION bin)
 
-#add_executable(avroappend avroappend.c)
-#target_link_libraries(avroappend avro-static)
-#install(TARGETS avroappend RUNTIME DESTINATION bin)
+add_executable(avroappend avroappend.c)
+target_link_libraries(avroappend avro-static)
+install(TARGETS avroappend RUNTIME DESTINATION bin)
 
 if (NOT WIN32)
 #TODO: Port getopt() to Windows to compile avropipe.c and avromod.c
-#add_executable(avropipe avropipe.c)
-#target_link_libraries(avropipe avro-static)
-#install(TARGETS avropipe RUNTIME DESTINATION bin)
+add_executable(avropipe avropipe.c)
+target_link_libraries(avropipe avro-static)
+install(TARGETS avropipe RUNTIME DESTINATION bin)
 
-#add_executable(avromod avromod.c)
-#target_link_libraries(avromod avro-static)
-#install(TARGETS avromod RUNTIME DESTINATION bin)
+add_executable(avromod avromod.c)
+target_link_libraries(avromod avro-static)
+install(TARGETS avromod RUNTIME DESTINATION bin)
 endif(NOT WIN32)

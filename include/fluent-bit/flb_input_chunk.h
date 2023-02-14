@@ -22,7 +22,9 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_routes_mask.h>
+
 #include <monkey/mk_core.h>
 #include <msgpack.h>
 
@@ -44,15 +46,20 @@
 #define FLB_INPUT_CHUNK_MAGIC_BYTE_0  (unsigned char) 0xF1
 #define FLB_INPUT_CHUNK_MAGIC_BYTE_1  (unsigned char) 0x77
 
-/* Chunk types: Log and Metrics are supported */
-#define FLB_INPUT_CHUNK_TYPE_LOG      0
-#define FLB_INPUT_CHUNK_TYPE_METRIC   1
+/* Chunk types: Log, Metrics and Traces are supported */
+#define FLB_INPUT_CHUNK_TYPE_LOGS      0
+#define FLB_INPUT_CHUNK_TYPE_METRICS   1
+#define FLB_INPUT_CHUNK_TYPE_TRACES    2
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+#define FLB_INPUT_CHUNK_HAS_TRACE     1 << 31
+#endif /* FLB_HAVE_CHUNK_TRACE */
 
 /* Max length for Tag */
 #define FLB_INPUT_CHUNK_TAG_MAX        (65535 - FLB_INPUT_CHUNK_META_HEADER)
 
 struct flb_input_chunk {
-    int  event_type;                 /* chunk type: logs or metrics */
+    int  event_type;                 /* chunk type: logs, metrics or traces */
     bool fs_counted;
     int  busy;                       /* buffer is being flushed  */
     int  fs_backlog;                 /* chunk originated from fs backlog */
@@ -66,15 +73,21 @@ struct flb_input_chunk {
     msgpack_packer mp_pck;          /* msgpack packer */
     struct flb_input_instance *in;  /* reference to parent input instance */
     struct flb_task *task;          /* reference to the outgoing task */
+#ifdef FLB_HAVE_CHUNK_TRACE
+    struct flb_chunk_trace *trace;
+#endif /* FLB_HAVE_CHUNK_TRACE */
     uint64_t routes_mask
         [FLB_ROUTES_MASK_ELEMENTS]; /* track the output plugins the chunk routes to */
     struct mk_list _head;
 };
 
-struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
+struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in, int event_type,
                                                const char *tag, int tag_len);
 int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del);
 void flb_input_chunk_destroy_all(struct flb_input_instance *in);
+int flb_input_chunk_destroy_corrupted(struct flb_input_chunk *ic,
+                                      const char *tag_buf, int tag_len,
+                                      int del);
 int flb_input_chunk_write(void *data, const char *buf, size_t len);
 int flb_input_chunk_write_at(void *data, off_t offset,
                              const char *buf, size_t len);
@@ -82,12 +95,10 @@ int flb_input_chunk_append_obj(struct flb_input_instance *in,
                                const char *tag, int tag_len,
                                msgpack_object data);
 int flb_input_chunk_append_raw(struct flb_input_instance *in,
+                               int event_type,
+                               size_t records,
                                const char *tag, size_t tag_len,
                                const void *buf, size_t buf_size);
-int flb_input_chunk_append_raw2(struct flb_input_instance *in,
-                                size_t records,
-                                const char *tag, size_t tag_len,
-                                const void *buf, size_t buf_size);
 
 const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size);
 int flb_input_chunk_release_lock(struct flb_input_chunk *ic);
@@ -96,6 +107,7 @@ int flb_input_chunk_get_event_type(struct flb_input_chunk *ic);
 
 int flb_input_chunk_get_tag(struct flb_input_chunk *ic,
                             const char **tag_buf, int *tag_len);
+void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data);
 ssize_t flb_input_chunk_get_size(struct flb_input_chunk *ic);
 size_t flb_input_chunk_set_limits(struct flb_input_instance *in);
 size_t flb_input_chunk_total_size(struct flb_input_instance *in);

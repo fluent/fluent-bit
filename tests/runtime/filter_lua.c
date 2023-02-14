@@ -26,6 +26,7 @@
 #include "flb_tests_runtime.h"
 
 #define TMP_LUA_PATH "a.lua"
+#define FLUSH_INTERVAL "1.0"
 
 pthread_mutex_t result_mutex = PTHREAD_MUTEX_INITIALIZER;
 char *output = NULL;
@@ -130,6 +131,38 @@ int create_script(char *script_body, size_t body_size)
     return 0;
 }
 
+void wait_with_timeout(uint32_t timeout_ms, char **out_result)
+{
+    struct flb_time start_time;
+    struct flb_time end_time;
+    struct flb_time diff_time;
+    uint64_t elapsed_time_flb = 0;
+    char *output = NULL;
+
+    flb_time_get(&start_time);
+
+    while (true) {
+        output = get_output();
+
+        if (output != NULL) {
+            *out_result = output;
+            break;
+        }
+
+        flb_time_msleep(100);
+        flb_time_get(&end_time);
+        flb_time_diff(&end_time, &start_time, &diff_time);
+        elapsed_time_flb = flb_time_to_nanosec(&diff_time) / 1000000;
+
+        if (elapsed_time_flb > timeout_ms) {
+            flb_warn("[timeout] elapsed_time: %ld", elapsed_time_flb);
+            // Reached timeout.
+            break;
+        }
+    }
+}
+
+
 void flb_test_type_int_key(void)
 {
     int ret;
@@ -151,7 +184,7 @@ void flb_test_type_int_key(void)
 
     /* Create context, flush every second (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", FLUSH_INTERVAL, "grace", "1", NULL);
 
     /* Prepare output callback context*/
     cb_data.cb = callback_test;
@@ -186,8 +219,7 @@ void flb_test_type_int_key(void)
     TEST_CHECK(ret==0);
 
     flb_lib_push(ctx, in_ffd, input, strlen(input));
-    sleep(1);
-    output = get_output();
+    wait_with_timeout(2000, &output);
     result = strstr(output, "\"lua_int\":10.");
     if(!TEST_CHECK(result == NULL)) {
         TEST_MSG("output:%s\n", output);
@@ -227,7 +259,7 @@ void flb_test_type_int_key_multi(void)
 
     /* Create context, flush every second (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", FLUSH_INTERVAL, "grace", "1", NULL);
 
     /* Prepare output callback context*/
     cb_data.cb = callback_test;
@@ -262,8 +294,7 @@ void flb_test_type_int_key_multi(void)
     TEST_CHECK(ret==0);
 
     flb_lib_push(ctx, in_ffd, input, strlen(input));
-    sleep(1);
-    output = get_output();
+    wait_with_timeout(2000, &output);
 
     /* check if float */
     result = strstr(output, "\"lua_int_1\":10.");
@@ -315,7 +346,7 @@ void flb_test_append_tag(void)
 
     /* Create context, flush every second (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", FLUSH_INTERVAL, "grace", "1", NULL);
 
     /* Prepare output callback context*/
     cb_data.cb = callback_test;
@@ -349,8 +380,7 @@ void flb_test_append_tag(void)
     TEST_CHECK(ret==0);
 
     flb_lib_push(ctx, in_ffd, input, strlen(input));
-    sleep(1);
-    output = get_output();
+    wait_with_timeout(2000, &output);
     result = strstr(output, "\"tag\":\"test\"");
     TEST_CHECK(result != NULL);
 
@@ -379,7 +409,7 @@ void flb_test_helloworld(void)
 
     /* Create context, flush every second (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", FLUSH_INTERVAL, "grace", "1", NULL);
 
     ret = create_script(script_body, strlen(script_body));
     TEST_CHECK(ret == 0);
@@ -435,7 +465,7 @@ void flb_test_type_array_key(void)
 
     /* Create context, flush every second (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", FLUSH_INTERVAL, "grace", "1", NULL);
 
     /* Prepare output callback context*/
     cb_data.cb = callback_test;
@@ -470,8 +500,7 @@ void flb_test_type_array_key(void)
     TEST_CHECK(ret==0);
 
     flb_lib_push(ctx, in_ffd, input, strlen(input));
-    sleep(1);
-    output = get_output();
+    wait_with_timeout(2000, &output);
     result = strstr(output, "\"lua_array\":[]");
     if(!TEST_CHECK(result != NULL)) {
         TEST_MSG("output:%s\n", output);
@@ -511,7 +540,7 @@ void flb_test_array_contains_null(void)
 
     /* Create context, flush every second (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", FLUSH_INTERVAL, "grace", "1", NULL);
 
     /* Prepare output callback context*/
     cb_data.cb = callback_test;
@@ -545,8 +574,7 @@ void flb_test_array_contains_null(void)
     TEST_CHECK(ret==0);
 
     flb_lib_push(ctx, in_ffd, input, strlen(input));
-    sleep(1);
-    output = get_output();
+    wait_with_timeout(2000, &output);
     result = strstr(output, "[1,null,\"world\"]");
     if(!TEST_CHECK(result != NULL)) {
         TEST_MSG("output:%s\n", output);
@@ -585,7 +613,7 @@ void flb_test_drop_all_records(void)
 
     /* Create context, flush every second (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", FLUSH_INTERVAL, "grace", "1", NULL);
 
     /* Prepare output callback context*/
     cb_data.cb = cb_count_msgpack_events;
@@ -659,7 +687,7 @@ void flb_test_split_record(void)
 
     /* Create context, flush every second (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", FLUSH_INTERVAL, "grace", "1", NULL);
 
     /* Prepare output callback context*/
     cb_data.cb = callback_cat;
@@ -693,7 +721,7 @@ void flb_test_split_record(void)
     TEST_CHECK(ret==0);
 
     flb_lib_push(ctx, in_ffd, input, strlen(input));
-    sleep(1);
+    wait_with_timeout(2000, &output);
     if (!TEST_CHECK(!strcmp(outbuf, expected))) {
         TEST_MSG("expected:\n%s\ngot:\n%s\n", expected, outbuf);
     }

@@ -38,7 +38,7 @@ static int fetch_metadata(struct flb_stackdriver *ctx,
     int ret;
     int ret_code;
     size_t b_sent;
-    struct flb_upstream_conn *metadata_conn;
+    struct flb_connection *metadata_conn;
     struct flb_http_client *c;
 
     /* If runtime test mode is enabled, add test data */

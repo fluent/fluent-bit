@@ -35,8 +35,6 @@ struct fw_conn_stream {
 
 /* Respresents a connection */
 struct fw_conn {
-    struct mk_event event;           /* Built-in event data for mk_events */
-    int fd;                          /* Socket file descriptor            */
     int status;                      /* Connection status                 */
 
     /* Buffer */
@@ -47,11 +45,12 @@ struct fw_conn {
 
     struct flb_input_instance *in;   /* Parent plugin instance            */
     struct flb_in_fw_config *ctx;    /* Plugin configuration context      */
+    struct flb_connection *connection;
 
     struct mk_list _head;
 };
 
-struct fw_conn *fw_conn_add(int fd, struct flb_in_fw_config *ctx);
+struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_config *ctx);
 int fw_conn_del(struct fw_conn *conn);
 int fw_conn_del_all(struct flb_in_fw_config *ctx);
 

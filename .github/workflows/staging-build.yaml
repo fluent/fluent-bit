@@ -16,6 +16,11 @@ on:
         description: Only build a specific Linux target, intended for debug/test/quick builds only.
         required: false
         default: ""
+      ignore_failing_targets:
+        description: Optionally ignore any failing builds in the matrix and continue.
+        type: boolean
+        required: false
+        default: false
 
 # We do not want a new staging build to run whilst we are releasing the current staging build.
 # We also do not want multiples to run for the same version.
@@ -33,7 +38,7 @@ jobs:
     steps:
 
       - run: |
-          echo "Version: ${{ github.event.inputs.version || github.ref_name }}"
+          echo "Version: ${{ inputs.version || github.ref_name }}"
         shell: bash
 
       # This step is to consolidate the three different triggers into a single "version"
@@ -48,15 +53,15 @@ jobs:
               echo "Defaulting to master"
               VERSION=master
             fi
-            echo ::set-output name=VERSION::$VERSION
+            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
         shell: bash
         env:
           # Use the dispatch variable in preference, if empty use the context ref_name which should
           # only ever be a tag or the master branch for cron builds.
-          INPUT_VERSION: ${{ github.event.inputs.version || github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version || github.ref_name }}
 
       # String the 'v' prefix for tags.
-      - uses: frabert/replace-string-action@v2.0
+      - uses: frabert/replace-string-action@v2.4
         id: formatted_version
         with:
           pattern: '[v]*(.*)$'
@@ -66,10 +71,10 @@ jobs:
 
   staging-build-images:
     needs: staging-build-get-meta
-    uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@master
+    uses: ./.github/workflows/call-build-images.yaml
     with:
       version: ${{ needs.staging-build-get-meta.outputs.version }}
-      ref: ${{ github.event.inputs.version || github.ref_name }}
+      ref: ${{ inputs.version || github.ref_name }}
       registry: ghcr.io
       username: ${{ github.actor }}
       image: ${{ github.repository }}/staging
@@ -123,19 +128,20 @@ jobs:
       - uses: ./.github/actions/generate-package-build-matrix
         id: set-matrix
         with:
-          ref: ${{ github.event.inputs.version || github.ref_name }}
-          target: ${{ github.event.inputs.target || '' }}
+          ref: ${{ inputs.version || github.ref_name }}
+          target: ${{ inputs.target || '' }}
 
   staging-build-packages:
     needs:
       - staging-build-get-meta
       - staging-build-generate-matrix
-    uses: fluent/fluent-bit/.github/workflows/call-build-linux-packages.yaml@master
+    uses: ./.github/workflows/call-build-linux-packages.yaml
     with:
       version: ${{ needs.staging-build-get-meta.outputs.version }}
-      ref: ${{ github.event.inputs.version || github.ref_name }}
+      ref: ${{ inputs.version || github.ref_name }}
       build_matrix: ${{ needs.staging-build-generate-matrix.outputs.build-matrix }}
       environment: staging
+      ignore_failing_targets: ${{ inputs.ignore_failing_targets || false }}
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
       bucket: ${{ secrets.AWS_S3_BUCKET_STAGING }}
@@ -147,10 +153,10 @@ jobs:
   staging-build-windows-packages:
     needs:
       - staging-build-get-meta
-    uses: fluent/fluent-bit/.github/workflows/call-build-windows.yaml@master
+    uses: ./.github/workflows/call-build-windows.yaml
     with:
       version: ${{ needs.staging-build-get-meta.outputs.version }}
-      ref: ${{ github.event.inputs.version || github.ref_name }}
+      ref: ${{ inputs.version || github.ref_name }}
       environment: staging
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
@@ -161,10 +167,10 @@ jobs:
   staging-build-macos-packages:
     needs:
       - staging-build-get-meta
-    uses: fluent/fluent-bit/.github/workflows/call-build-macos.yaml@master
+    uses: ./.github/workflows/call-build-macos.yaml
     with:
       version: ${{ needs.staging-build-get-meta.outputs.version }}
-      ref: ${{ github.event.inputs.version || github.ref_name }}
+      ref: ${{ inputs.version || github.ref_name }}
       environment: staging
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}

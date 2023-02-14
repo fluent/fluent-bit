@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #include <fluent-bit.h>
 #include "es_bulk.h"
@@ -65,9 +66,10 @@ int es_bulk_append(struct es_bulk *bulk, char *index, int i_len,
     int available;
     int append_size;
     int required;
+    int remaining_size;
     char *ptr;
 
-    required = j_len + ES_BULK_HEADER + 1;
+    required = i_len + j_len + ES_BULK_HEADER + 1;
     available = (bulk->size - bulk->len);
 
     if (available < required) {
@@ -77,13 +79,14 @@ int es_bulk_append(struct es_bulk *bulk, char *index, int i_len,
          *    1. rest of msgpack data size
          *    2. ratio from bulk json size and processed msgpack size.
          */
+        append_size = required - available;
         if (converted_size == 0) {
             /* converted_size = 0 causes div/0 */
             flb_debug("[out_es] converted_size is 0");
-            append_size = required - available;
         } else {
-            append_size = (whole_size - converted_size) /* rest of size to convert */
-                        * (bulk->size / converted_size); /* = json size / msgpack size */
+            remaining_size = ceil((whole_size - converted_size) /* rest of size to convert */
+                * ((double)bulk->size / converted_size));       /* = json size / msgpack size */
+            append_size = fmax(append_size, remaining_size);
         }
         if (append_size < ES_BULK_CHUNK) {
             /* append at least ES_BULK_CHUNK size */

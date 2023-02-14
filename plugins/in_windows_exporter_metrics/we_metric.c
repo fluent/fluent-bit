@@ -115,14 +115,14 @@ static int we_expand_perflib_metric_spec_labels(
 }
 
 static int we_match_perflib_metric_source_to_parent(
-    struct flb_hash                 *lookup_table,
+    struct flb_hash_table           *lookup_table,
     struct we_perflib_metric_source *source)
 {
     struct we_perflib_metric_spec *spec;
 
-    spec = flb_hash_get_ptr(lookup_table,
-                            source->parent_name,
-                            strlen(source->parent_name));
+    spec = flb_hash_table_get_ptr(lookup_table,
+                                  source->parent_name,
+                                  strlen(source->parent_name));
 
     if (spec == NULL) {
         return -1;
@@ -135,7 +135,7 @@ static int we_match_perflib_metric_source_to_parent(
 
 static int we_create_perflib_metric_instance(
     struct cmt                    *context,
-    struct flb_hash               *lookup_table,
+    struct flb_hash_table         *lookup_table,
     char                          *namespace,
     char                          *subsystem,
     struct we_perflib_metric_spec *spec)
@@ -172,11 +172,11 @@ static int we_create_perflib_metric_instance(
         return -3;
     }
 
-    result = flb_hash_add(lookup_table,
-                          spec->name,
-                          strlen(spec->name),
-                          spec,
-                          0);
+    result = flb_hash_table_add(lookup_table,
+                                spec->name,
+                                strlen(spec->name),
+                                spec,
+                                0);
 
     if (result < 0) {
         if (spec->type == CMT_COUNTER) {
@@ -209,7 +209,7 @@ void we_deinitialize_perflib_metric_sources(struct we_perflib_metric_source *sou
 }
 
 int we_initialize_perflib_metric_sources(
-    struct flb_hash                  *lookup_table,
+    struct flb_hash_table            *lookup_table,
     struct we_perflib_metric_source **out_sources,
     struct we_perflib_metric_source  *in_sources)
 {
@@ -293,7 +293,7 @@ void we_deinitialize_perflib_metric_specs(struct we_perflib_metric_spec *specs)
 
 int we_initialize_perflib_metric_specs(
     struct cmt                     *context,
-    struct flb_hash                *lookup_table,
+    struct flb_hash_table          *lookup_table,
     char                           *namespace,
     char                           *subsystem,
     struct we_perflib_metric_spec **out_specs,

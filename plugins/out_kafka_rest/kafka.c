@@ -256,7 +256,7 @@ static void cb_kafka_flush(struct flb_event_chunk *event_chunk,
     size_t js_size;
     size_t b_sent;
     struct flb_http_client *c;
-    struct flb_upstream_conn *u_conn;
+    struct flb_connection *u_conn;
     struct flb_kafka_rest *ctx = out_context;
     (void) i_ins;
 

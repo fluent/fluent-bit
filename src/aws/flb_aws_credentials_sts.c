@@ -22,10 +22,9 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_aws_util.h>
+#include <fluent-bit/flb_random.h>
 #include <fluent-bit/flb_jsmn.h>
 
-#include <mbedtls/ctr_drbg.h>
-#include "mbedtls/entropy.h"
 #include <stdlib.h>
 #include <time.h>
 #include <string.h>
@@ -201,7 +200,7 @@ void sync_fn_sts(struct flb_aws_provider *provider) {
 
     flb_debug("[aws_credentials] Sync called on the STS provider");
     /* Remove async flag */
-    implementation->sts_client->upstream->flags &= ~(FLB_IO_ASYNC);
+    flb_stream_disable_async_mode(&implementation->sts_client->upstream->base);
 
     /* we also need to call sync on the base_provider */
     base_provider->provider_vtable->sync(base_provider);
@@ -213,7 +212,7 @@ void async_fn_sts(struct flb_aws_provider *provider) {
 
     flb_debug("[aws_credentials] Async called on the STS provider");
     /* Add async flag */
-    implementation->sts_client->upstream->flags |= FLB_IO_ASYNC;
+    flb_stream_enable_async_mode(&implementation->sts_client->upstream->base);
 
     /* we also need to call async on the base_provider */
     base_provider->provider_vtable->async(base_provider);
@@ -343,7 +342,7 @@ struct flb_aws_provider *flb_sts_provider_create(struct flb_config *config,
         goto error;
     }
 
-    upstream->net.connect_timeout = FLB_AWS_CREDENTIAL_NET_TIMEOUT;
+    upstream->base.net.connect_timeout = FLB_AWS_CREDENTIAL_NET_TIMEOUT;
 
     implementation->sts_client->upstream = upstream;
     implementation->sts_client->host = implementation->endpoint;
@@ -492,14 +491,14 @@ void sync_fn_eks(struct flb_aws_provider *provider) {
     struct flb_aws_provider_eks *implementation = provider->implementation;
     flb_debug("[aws_credentials] Sync called on the EKS provider");
     /* remove async flag */
-    implementation->sts_client->upstream->flags &= ~(FLB_IO_ASYNC);
+    flb_stream_disable_async_mode(&implementation->sts_client->upstream->base);
 }
 
 void async_fn_eks(struct flb_aws_provider *provider) {
     struct flb_aws_provider_eks *implementation = provider->implementation;
     flb_debug("[aws_credentials] Async called on the EKS provider");
     /* add async flag */
-    implementation->sts_client->upstream->flags |= FLB_IO_ASYNC;
+    flb_stream_enable_async_mode(&implementation->sts_client->upstream->base);
 }
 
 void upstream_set_fn_eks(struct flb_aws_provider *provider,
@@ -638,7 +637,7 @@ struct flb_aws_provider *flb_eks_provider_create(struct flb_config *config,
         goto error;
     }
 
-    upstream->net.connect_timeout = FLB_AWS_CREDENTIAL_NET_TIMEOUT;
+    upstream->base.net.connect_timeout = FLB_AWS_CREDENTIAL_NET_TIMEOUT;
 
     implementation->sts_client->upstream = upstream;
     implementation->sts_client->host = implementation->endpoint;
@@ -653,67 +652,30 @@ error:
 
 /* Generates string which can serve as a unique session name */
 char *flb_sts_session_name() {
-    mbedtls_ctr_drbg_context ctr_drbg;
-    mbedtls_entropy_context entropy;
-    char *personalization = NULL;
-    time_t now;
-    unsigned char *random_data = NULL;
+    unsigned char *random_data[SESSION_NAME_RANDOM_BYTE_LEN];
     char *session_name = NULL;
     int ret;
 
-    personalization = flb_malloc(sizeof(char) * 27);
-    if (!personalization) {
-        goto error;
-    }
+    ret = flb_random_bytes(random_data, SESSION_NAME_RANDOM_BYTE_LEN);
 
-    now = time(NULL);
-    ctime_r(&now, personalization);
-
-    mbedtls_entropy_init(&entropy);
-    mbedtls_ctr_drbg_init(&ctr_drbg);
-
-    ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
-                                (const unsigned char *) personalization,
-                                strlen(personalization));
     if (ret != 0) {
-        goto error;
-    }
+        flb_errno();
 
-    random_data = flb_malloc(sizeof(unsigned char) *
-                             SESSION_NAME_RANDOM_BYTE_LEN);
-    if (!random_data) {
-        goto error;
-    }
-
-    ret = mbedtls_ctr_drbg_random(&ctr_drbg, random_data,
-                                  SESSION_NAME_RANDOM_BYTE_LEN);
-    if (ret != 0) {
-        goto error;
+        return NULL;
     }
 
     session_name = flb_malloc(sizeof(char) *
                               (SESSION_NAME_RANDOM_BYTE_LEN + 1));
     if (!session_name) {
-        goto error;
+        flb_errno();
+
+        return NULL;
     }
 
     bytes_to_string(random_data, session_name, SESSION_NAME_RANDOM_BYTE_LEN);
     session_name[SESSION_NAME_RANDOM_BYTE_LEN] = '\0';
 
-    flb_free(random_data);
-    flb_free(personalization);
-
     return session_name;
-
-error:
-    flb_errno();
-    if (personalization) {
-        flb_free(personalization);
-    }
-    if (random_data) {
-        flb_free(random_data);
-    }
-    return NULL;
 }
 
 /* converts random bytes to a string we can safely put in a URL */

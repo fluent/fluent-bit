@@ -37,13 +37,19 @@
 #endif
 
 #define USE_INVALID_CODE_SCHEME
+/* #define USE_UTF8_31BITS */
 
 #ifdef USE_INVALID_CODE_SCHEME
 /* virtual codepoint values for invalid encoding byte 0xfe and 0xff */
 # define INVALID_CODE_FE  0xfffffffe
 # define INVALID_CODE_FF  0xffffffff
 #endif
+
+#ifndef USE_UTF8_31BITS
 #define VALID_CODE_LIMIT  0x0010ffff
+#else
+#define VALID_CODE_LIMIT  0x7fffffff
+#endif
 
 #define utf8_islead(c)     ((UChar )((c) & 0xc0) != 0x80)
 
@@ -63,14 +69,19 @@ static const int EncLen_UTF8[] = {
   2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
   2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
   3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+#ifndef USE_UTF8_31BITS
   4, 4, 4, 4, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+#else
+  4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 1, 1
+#endif
 };
 
 typedef enum {
   FAILURE = -2,
   ACCEPT,
   S0, S1, S2, S3,
-  S4, S5, S6, S7
+  S4, S5, S6, S7,
+  S8, S9,S10,S11,
 } state_t;
 #define A ACCEPT
 #define F FAILURE
@@ -91,7 +102,11 @@ static const signed char trans[][0x100] = {
     /* c */ F, F, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
     /* d */ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
     /* e */ 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 3, 3,
+#ifndef USE_UTF8_31BITS
     /* f */ 5, 6, 6, 6, 7, F, F, F, F, F, F, F, F, F, F, F
+#else
+    /* f */ 5, 6, 6, 6, 6, 6, 6, 6, 8, 9, 9, 9,10,11, F, F
+#endif
   },
   { /* S1   0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f */
     /* 0 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
@@ -219,6 +234,80 @@ static const signed char trans[][0x100] = {
     /* e */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
     /* f */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F
   },
+#ifdef USE_UTF8_31BITS
+  { /* S8   0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f */
+    /* 0 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 1 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 2 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 3 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 4 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 5 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 6 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 7 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 8 */ F, F, F, F, F, F, F, F, 6, 6, 6, 6, 6, 6, 6, 6,
+    /* 9 */ 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
+    /* a */ 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
+    /* b */ 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
+    /* c */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* d */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* e */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* f */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F
+  },
+  { /* S9   0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f */
+    /* 0 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 1 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 2 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 3 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 4 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 5 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 6 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 7 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 8 */ 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
+    /* 9 */ 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
+    /* a */ 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
+    /* b */ 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
+    /* c */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* d */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* e */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* f */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F
+  },
+  { /* S10  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f */
+    /* 0 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 1 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 2 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 3 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 4 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 5 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 6 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 7 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 8 */ F, F, F, F, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+    /* 9 */ 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+    /* a */ 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+    /* b */ 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+    /* c */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* d */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* e */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* f */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F
+  },
+  { /* S11  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f */
+    /* 0 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 1 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 2 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 3 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 4 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 5 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 6 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 7 */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* 8 */ 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+    /* 9 */ 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+    /* a */ 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+    /* b */ 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+    /* c */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* d */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* e */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+    /* f */ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F
+  },
+#endif // USE_UTF8_31BITS
 };
 #undef A
 #undef F
@@ -244,8 +333,24 @@ mbc_enc_len(const UChar* p, const UChar* e, OnigEncoding enc ARG_UNUSED)
 
   if (p == e) return ONIGENC_CONSTRUCT_MBCLEN_NEEDMORE(EncLen_UTF8[firstbyte]-3);
   s = trans[s][*p++];
+
+#ifndef USE_UTF8_31BITS
   return s == ACCEPT ? ONIGENC_CONSTRUCT_MBCLEN_CHARFOUND(4) :
                        ONIGENC_CONSTRUCT_MBCLEN_INVALID();
+#else
+  if (s < 0) return s == ACCEPT ? ONIGENC_CONSTRUCT_MBCLEN_CHARFOUND(4) :
+                                  ONIGENC_CONSTRUCT_MBCLEN_INVALID();
+
+  if (p == e) return ONIGENC_CONSTRUCT_MBCLEN_NEEDMORE(EncLen_UTF8[firstbyte]-4);
+  s = trans[s][*p++];
+  if (s < 0) return s == ACCEPT ? ONIGENC_CONSTRUCT_MBCLEN_CHARFOUND(5) :
+                                  ONIGENC_CONSTRUCT_MBCLEN_INVALID();
+
+  if (p == e) return ONIGENC_CONSTRUCT_MBCLEN_NEEDMORE(EncLen_UTF8[firstbyte]-5);
+  s = trans[s][*p++];
+  return s == ACCEPT ? ONIGENC_CONSTRUCT_MBCLEN_CHARFOUND(6) :
+                       ONIGENC_CONSTRUCT_MBCLEN_INVALID();
+#endif
 }
 
 static int
@@ -304,7 +409,13 @@ code_to_mbclen(OnigCodePoint code, OnigEncoding enc ARG_UNUSED)
   if      ((code & 0xffffff80) == 0) return 1;
   else if ((code & 0xfffff800) == 0) return 2;
   else if ((code & 0xffff0000) == 0) return 3;
+#ifndef USE_UTF8_31BITS
   else if (code <= VALID_CODE_LIMIT) return 4;
+#else
+  else if ((code & 0xffe00000) == 0) return 4;
+  else if ((code & 0xfc000000) == 0) return 5;
+  else if (code <= VALID_CODE_LIMIT) return 6;
+#endif
 #ifdef USE_INVALID_CODE_SCHEME
   else if (code == INVALID_CODE_FE) return 1;
   else if (code == INVALID_CODE_FF) return 1;
@@ -333,11 +444,33 @@ code_to_mbc(OnigCodePoint code, UChar *buf, OnigEncoding enc ARG_UNUSED)
       *p++ = (UChar )(((code>>12) & 0x0f) | 0xe0);
       *p++ = UTF8_TRAILS(code, 6);
     }
+#ifndef USE_UTF8_31BITS
     else if (code <= VALID_CODE_LIMIT) {
       *p++ = (UChar )(((code>>18) & 0x07) | 0xf0);
       *p++ = UTF8_TRAILS(code, 12);
       *p++ = UTF8_TRAILS(code,  6);
     }
+#else
+    else if ((code & 0xffe00000) == 0) {
+        *p++ = (UChar )(((code>>18) & 0x07) | 0xf0);
+        *p++ = UTF8_TRAILS(code, 12);
+        *p++ = UTF8_TRAILS(code,  6);
+    }
+    else if ((code & 0xfc000000) == 0) {
+        *p++ = (UChar )(((code>>24) & 0x03) | 0xf8);
+        *p++ = UTF8_TRAILS(code, 18);
+        *p++ = UTF8_TRAILS(code, 12);
+        *p++ = UTF8_TRAILS(code,  6);
+    }
+    else if (code <= VALID_CODE_LIMIT) {
+        *p++ = (UChar )(((code>>30) & 0x01) | 0xfc);
+        *p++ = UTF8_TRAILS(code, 24);
+        *p++ = UTF8_TRAILS(code, 18);
+        *p++ = UTF8_TRAILS(code, 12);
+        *p++ = UTF8_TRAILS(code,  6);
+    }
+#endif
+
 #ifdef USE_INVALID_CODE_SCHEME
     else if (code == INVALID_CODE_FE) {
       *p = 0xfe;
@@ -417,7 +550,11 @@ get_case_fold_codes_by_str(OnigCaseFoldType flag,
 OnigEncodingDefine(utf_8, UTF_8) = {
   mbc_enc_len,
   "UTF-8",     /* name */
+#ifndef USE_UTF8_31BITS
+  4,           /* max byte length */
+#else
   6,           /* max byte length */
+#endif
   1,           /* min byte length */
   is_mbc_newline,
   mbc_to_code,
@@ -431,7 +568,11 @@ OnigEncodingDefine(utf_8, UTF_8) = {
   get_ctype_code_range,
   left_adjust_char_head,
   onigenc_always_true_is_allowed_reverse_match,
+#ifdef USE_CASE_MAP_API
   onigenc_unicode_case_map,
+#else
+  NULL,
+#endif
   ENCINDEX_UTF_8,
   ONIGENC_FLAG_UNICODE,
 };

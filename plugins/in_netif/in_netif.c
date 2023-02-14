@@ -184,7 +184,7 @@ static inline uint64_t calc_diff(struct netif_entry *entry)
 }
 
 #define LINE_LEN 256
-static read_proc_file_linux(struct flb_in_netif_config *ctx)
+static int read_proc_file_linux(struct flb_in_netif_config *ctx)
 {
     FILE *fp = NULL;
     char line[LINE_LEN] = {0};
@@ -255,7 +255,7 @@ static int in_netif_collect_linux(struct flb_input_instance *i_ins,
             }
         }
 
-        flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+        flb_input_log_append(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
         msgpack_sbuffer_destroy(&mp_sbuf);
     }
 

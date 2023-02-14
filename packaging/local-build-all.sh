@@ -14,12 +14,8 @@ SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 # aarch64
 #
 
-# Ensure this is updated for new targets
-# We do the arm64 targets at the end as ideally the amd64 ones trigger any issues with dependencies.
-declare -a TARGETS=("amazonlinux/2"
-"centos/7" "centos/8" "debian/buster" "debian/bullseye" "raspbian/buster" "raspbian/bullseye" "ubuntu/16.04" "ubuntu/18.04" "ubuntu/20.04"
-"amazonlinux/2.arm64v8" "centos/7.arm64v8" "centos/8.arm64v8" "debian/buster.arm64v8" "debian/bullseye.arm64v8" "ubuntu/18.04.arm64v8" "ubuntu/20.04.arm64v8"
-)
+# The local file with all the supported build configs in
+JSON_FILE_NAME=${JSON_FILE_NAME:-$SCRIPT_DIR/build-config.json}
 
 # Output checks are easier plus do not want to fill up git
 PACKAGING_OUTPUT_DIR=${PACKAGING_OUTPUT_DIR:-test}
@@ -28,7 +24,7 @@ rm -rf "${PACKAGING_OUTPUT_DIR:?}/*"
 
 # Iterate over each target and attempt to build it.
 # Verify that an RPM or DEB is created.
-for DISTRO in "${TARGETS[@]}"
+jq -cr '.linux_targets[]' "$JSON_FILE_NAME" | while read -r DISTRO
 do
     echo "$DISTRO"
     FLB_OUT_DIR="$PACKAGING_OUTPUT_DIR" /bin/bash "$SCRIPT_DIR"/build.sh -d "$DISTRO" "$@"

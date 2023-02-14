@@ -846,6 +846,15 @@ static struct flb_config_map config_map[] = {
      "use kubelet to get metadata instead of kube-server"
     },
     /*
+     * The kubelet host for /pods endpoint, default is 127.0.0.1
+     * Will only check when "use_kubelet" config is set to true
+     */
+    {
+     FLB_CONFIG_MAP_STR, "kubelet_host", "127.0.0.1",
+     0, FLB_TRUE, offsetof(struct flb_kube, kubelet_host),
+     "kubelet host to connect with when using kubelet"
+    },
+    /*
      * The kubelet port for /pods endpoint, default is 10250
      * Will only check when "use_kubelet" config is set to true
      */

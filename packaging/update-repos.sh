@@ -15,7 +15,25 @@ if [[ "$DISABLE_SIGNING" != "true" ]]; then
     rpm -q gpg-pubkey --qf '%{name}-%{version}-%{release} --> %{summary}\n'
 fi
 
-RPM_REPO_PATHS=("amazonlinux/2" "centos/7" "centos/8")
+# Handle Ubuntu 18/22 differences - no support on Ubuntu 20
+CREATE_REPO_CMD=${CREATE_REPO_CMD:-}
+CREATE_REPO_ARGS=${CREATE_REPO_ARGS:--dvp}
+
+# Assume if set we want to use it
+if [[ -n "$CREATE_REPO_CMD" ]]; then
+    echo "Using $CREATE_REPO_CMD"
+elif command -v createrepo &> /dev/null; then
+    echo "Found createrepo"
+    CREATE_REPO_CMD="createrepo"
+elif command -v createrepo_c &> /dev/null; then
+    echo "Found createrepo_c"
+    CREATE_REPO_CMD="createrepo_c"
+else
+    echo "Unable to find a command equivalent to createrepo"
+    exit 1
+fi
+
+RPM_REPO_PATHS=("amazonlinux/2" "amazonlinux/2022" "centos/7" "centos/8" "centos/9")
 
 for RPM_REPO in "${RPM_REPO_PATHS[@]}"; do
     echo "Updating $RPM_REPO"
@@ -23,11 +41,11 @@ for RPM_REPO in "${RPM_REPO_PATHS[@]}"; do
     [[ ! -d "$REPO_DIR" ]] && continue
 
     if [[ "$DISABLE_SIGNING" != "true" ]]; then
-        # Sign all RPMs created for this target, cover both fluent-bit and td-agent-bit packages
+        # Sign all RPMs created for this target, cover both fluent-bit and legacy packages for 1.9 branch
         find "$REPO_DIR" -name "*-bit-*.rpm" -exec rpm --define "_gpg_name $GPG_KEY" --addsign {} \;
     fi
     # Create full metadata for all RPMs in the directory
-    createrepo -dvp "$REPO_DIR"
+    "$CREATE_REPO_CMD" "$CREATE_REPO_ARGS" "$REPO_DIR"
 
     # Set up repo info
     if [[ -n "${AWS_S3_BUCKET:-}" ]]; then
@@ -48,11 +66,13 @@ EOF
     fi
 done
 
-DEB_REPO_PATHS=( "debian/bullseye"
+DEB_REPO_PATHS=( "debian/bookworm"
+                 "debian/bullseye"
                  "debian/buster"
                  "ubuntu/xenial"
                  "ubuntu/bionic"
                  "ubuntu/focal"
+                 "ubuntu/jammy"
                  "raspbian/buster"
                  "raspbian/bullseye" )
 
@@ -69,6 +89,17 @@ for DEB_REPO in "${DEB_REPO_PATHS[@]}"; do
     APTLY_REPO_NAME="debify-$CODENAME"
     APTLY_ROOTDIR=$(mktemp -d)
     APTLY_CONFIG=$(mktemp)
+
+    # The origin and label fields seem to cover the base directory for the repo and codename.
+    # The docs seems to suggest these fields are optional and free-form: https://wiki.debian.org/DebianRepository/Format#Origin
+    # They are security checks to verify if they have changed so we match the legacy server.
+    APTLY_ORIGIN=". $CODENAME"
+    APTLY_LABEL=". $CODENAME"
+    if [[ "$DEB_REPO" == "debian/bullseye" ]]; then
+        # For Bullseye, the legacy server had a slightly different setup we try to reproduce here
+        APTLY_ORIGIN="bullseye bullseye"
+        APTLY_LABEL="bullseye bullseye"
+    fi
 
     cat << EOF > "$APTLY_CONFIG"
 {
@@ -91,9 +122,9 @@ EOF
     fi
     aptly -config="$APTLY_CONFIG" repo show "$APTLY_REPO_NAME"
     if [[ "$DISABLE_SIGNING" != "true" ]]; then
-        aptly -config="$APTLY_CONFIG" publish repo -gpg-key="$GPG_KEY" "$APTLY_REPO_NAME"
+        aptly -config="$APTLY_CONFIG" publish repo -gpg-key="$GPG_KEY" -origin="$APTLY_ORIGIN" -label="$APTLY_LABEL" "$APTLY_REPO_NAME"
     else
-        aptly -config="$APTLY_CONFIG" publish repo --skip-signing "$APTLY_REPO_NAME"
+        aptly -config="$APTLY_CONFIG" publish repo --skip-signing -origin="$APTLY_ORIGIN" -label="$APTLY_LABEL" "$APTLY_REPO_NAME"
     fi
     rsync -av "$APTLY_ROOTDIR"/public/* "$REPO_DIR"
     # Remove unnecessary files

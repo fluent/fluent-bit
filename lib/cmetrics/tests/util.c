@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -19,13 +19,13 @@
 
 #include <stdio.h>
 
-#include <cmetrics/cmt_sds.h>
+#include <cmetrics/cmetrics.h>
 
-cmt_sds_t read_file(const char *path)
+cfl_sds_t read_file(const char *path)
 {
     long flen;
     FILE *f = NULL;
-    cmt_sds_t result = NULL;
+    cfl_sds_t result = NULL;
 
     f = fopen(path, "rb");
     if (!f) {
@@ -45,7 +45,7 @@ cmt_sds_t read_file(const char *path)
         goto err;
     }
 
-    result = cmt_sds_create_size(flen);
+    result = cfl_sds_create_size(flen);
     if (!result) {
         goto err;
     }
@@ -54,14 +54,14 @@ cmt_sds_t read_file(const char *path)
         goto err;
     }
 
-    cmt_sds_set_len(result, flen);
+    cfl_sds_set_len(result, flen);
     fclose(f);
     return result;
 
 err:
     fclose(f);
     if (result) {
-        cmt_sds_destroy(result);
+        cfl_sds_destroy(result);
     }
     return NULL;
 }

@@ -42,7 +42,7 @@ static int scrape_metrics(struct flb_config *config, struct flb_in_metrics *ctx)
     struct cmt *cmt;
 
     /* Update internal metric */
-    ts = cmt_time_now();
+    ts = cfl_time_now();
     name = (char *) flb_input_name(ctx->ins);
     cmt_counter_inc(ctx->c, ts, 1, (char *[]) {name});
 
@@ -198,5 +198,4 @@ struct flb_input_plugin in_fluentbit_metrics_plugin = {
     .cb_pause     = in_metrics_pause,
     .cb_resume    = in_metrics_resume,
     .cb_exit      = in_metrics_exit,
-    .event_type   = FLB_INPUT_METRICS
 };

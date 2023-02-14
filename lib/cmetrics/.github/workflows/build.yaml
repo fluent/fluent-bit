@@ -1,5 +1,6 @@
 name: Build PR(s) and master branch.
 on:
+  workflow_dispatch:
   push:
     branches:
       - master
@@ -15,8 +16,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, windows-2019]
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: true
+
       - name: Build on ${{ matrix.os }} with vs-2019
         run: |
           .\scripts\win_build.bat
@@ -28,24 +34,29 @@ jobs:
     name: CentOS 7 build to confirm no issues once used downstream
     runs-on: ubuntu-latest
     container: centos:7
+    permissions:
+      contents: read
     steps:
       - name: Set up base image dependencies
         run: |
           yum -y update && \
-          yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
-                        wget unzip systemd-devel wget flex bison \
-                        cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
-                        postgresql-libs postgresql-devel postgresql-server postgresql && \
+          yum install -y ca-certificates cmake gcc gcc-c++ git make wget && \
           wget http://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm && \
           rpm -ivh epel-release-latest-7.noarch.rpm && \
           yum install -y cmake3
+        shell: bash
 
-      - uses: actions/checkout@v3
+      - name: Clone repo with submodules (1.8.3 version of Git)
+        run: |
+          git clone --recursive https://github.com/calyptia/cmetrics.git
+        shell: bash
 
       - name: Run compilation
         run: |
           cmake3 -DCMT_TESTS=on -DCMT_DEV=on .
           make
+        shell: bash
+        working-directory: cmetrics
 
   build-unix-arm64:
     name: Build sources on arm64 for ${{ matrix.os }} - ${{ matrix.compiler }}
@@ -55,10 +66,15 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         compiler: [ gcc, clang ]
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: true
+
       - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
-        uses: uraimo/run-on-arch-action@v2.1.1
+        uses: uraimo/run-on-arch-action@v2.3.0
         with:
           arch: aarch64
           distro: ubuntu20.04
@@ -68,13 +84,14 @@ jobs:
             build-essential \
             cmake \
             file \
-            make 
+            make
             export CC=${{ env.compiler }}
             cmake -DCMT_TESTS=On .
             make all
             CTEST_OUTPUT_ON_FAILURE=1 make test
         env:
           CC: ${{ matrix.compiler }}
+
   build-unix-amd64:
     name: Build sources on amd64 for ${{ matrix.os }} - ${{ matrix.compiler }}
     runs-on: ${{ matrix.os }}
@@ -83,8 +100,13 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
         compiler: [ gcc, clang ]
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: true
+
       - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
         run: |
           echo "CC = $CC, CXX = $CXX"
@@ -93,3 +115,30 @@ jobs:
           CTEST_OUTPUT_ON_FAILURE=1 make test
         env:
           CC: ${{ matrix.compiler }}
+
+  build-analysis-tests:
+    name: Build with various code analysis tools
+    strategy:
+      fail-fast: false
+      matrix:
+        preset:
+          - clang-sanitize-address
+          - clang-sanitize-memory
+          - clang-sanitize-undefined
+          - clang-sanitize-dataflow
+          - clang-sanitize-safe-stack
+          - valgrind
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - uses: docker://lpenz/ghaction-cmake:0.19
+        with:
+          preset: ${{ matrix.preset }}
+          # dependencies_debian: ''
+          cmakeflags: '-DCMT_TESTS=On -DCMT_DEV=on .'
+          build_command: make all

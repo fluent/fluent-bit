@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,25 +26,25 @@ int cmt_opts_init(struct cmt_opts *opts,
                   char *description)
 {
     int len;
-    cmt_sds_t tmp;
+    cfl_sds_t tmp;
 
     if (!name) {
         return -1;
     }
 
     if (ns) {
-        opts->ns = cmt_sds_create(ns);
+        opts->ns = cfl_sds_create(ns);
         if (!opts->ns) {
             return -1;
         }
 
-        opts->fqname = cmt_sds_create(ns);
+        opts->fqname = cfl_sds_create(ns);
         if (!opts->fqname) {
             return -1;
         }
 
         if (strlen(ns) > 0) {
-            tmp = cmt_sds_cat(opts->fqname, "_", 1);
+            tmp = cfl_sds_cat(opts->fqname, "_", 1);
             if (!tmp) {
                 return -1;
             }
@@ -54,22 +54,22 @@ int cmt_opts_init(struct cmt_opts *opts,
     }
 
     if (subsystem) {
-        opts->subsystem = cmt_sds_create(subsystem);
+        opts->subsystem = cfl_sds_create(subsystem);
         if (!opts->subsystem) {
             return -1;
         }
 
         if (strlen(opts->subsystem) > 0) {
-            tmp = cmt_sds_cat(opts->fqname,
-                              opts->subsystem, cmt_sds_len(opts->subsystem));
+            tmp = cfl_sds_cat(opts->fqname,
+                              opts->subsystem, cfl_sds_len(opts->subsystem));
             if (!tmp) {
                 return -1;
                 }
             opts->fqname = tmp;
 
-            len = cmt_sds_len(opts->fqname);
+            len = cfl_sds_len(opts->fqname);
             if (opts->fqname[len - 1] != '_') {
-                tmp = cmt_sds_cat(opts->fqname, "_", 1);
+                tmp = cfl_sds_cat(opts->fqname, "_", 1);
                 if (!tmp) {
                     return -1;
                 }
@@ -78,14 +78,14 @@ int cmt_opts_init(struct cmt_opts *opts,
         }
     }
 
-    opts->name = cmt_sds_create(name);
-    opts->description = cmt_sds_create(description);
+    opts->name = cfl_sds_create(name);
+    opts->description = cfl_sds_create(description);
 
     if (!opts->name || !opts->description) {
         return -1;
     }
 
-    tmp = cmt_sds_cat(opts->fqname, opts->name, cmt_sds_len(opts->name));
+    tmp = cfl_sds_cat(opts->fqname, opts->name, cfl_sds_len(opts->name));
     if (!tmp) {
         return -1;
     }
@@ -97,22 +97,22 @@ int cmt_opts_init(struct cmt_opts *opts,
 void cmt_opts_exit(struct cmt_opts *opts)
 {
     if (opts->ns) {
-        cmt_sds_destroy(opts->ns);
+        cfl_sds_destroy(opts->ns);
     }
 
     if (opts->subsystem) {
-        cmt_sds_destroy(opts->subsystem);
+        cfl_sds_destroy(opts->subsystem);
     }
 
     if (opts->name) {
-        cmt_sds_destroy(opts->name);
+        cfl_sds_destroy(opts->name);
     }
 
     if (opts->description) {
-        cmt_sds_destroy(opts->description);
+        cfl_sds_destroy(opts->description);
     }
 
     if (opts->fqname) {
-        cmt_sds_destroy(opts->fqname);
+        cfl_sds_destroy(opts->fqname);
     }
 }

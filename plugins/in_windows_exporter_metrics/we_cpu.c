@@ -24,6 +24,8 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_pack.h>
 
+#include <float.h>
+
 #include "we.h"
 #include "we_cpu.h"
 #include "we_util.h"
@@ -200,7 +202,7 @@ int we_cpu_init(struct flb_we *ctx)
 
     ctx->cpu.operational = FLB_FALSE;
 
-    ctx->cpu.metrics = flb_hash_create(FLB_HASH_EVICT_NONE, 64, 128);
+    ctx->cpu.metrics = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 64, 128);
 
     if (ctx->cpu.metrics == NULL) {
         flb_plg_error(ctx->ins, "could not create metrics hash table");
@@ -221,7 +223,7 @@ int we_cpu_init(struct flb_we *ctx)
         return -2;
     }
 
-    if (ctx->windows_version >= 6.05) {
+    if (fabsf(ctx->windows_version - 6.05) > FLT_EPSILON) {
         metric_sources = full_metric_sources;
         ctx->cpu.query = (char *) "Processor Information";
     }
@@ -261,7 +263,7 @@ int we_cpu_exit(struct flb_we *ctx)
     return 0;
 }
 
-int we_cpu_instance_hook(char *instance_name)
+int we_cpu_instance_hook(char *instance_name, struct flb_we *ctx)
 {
     return (strcasestr(instance_name, "Total") != NULL);
 }

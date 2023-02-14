@@ -108,7 +108,7 @@ static void cb_null_flush(struct flb_event_chunk *event_chunk,
 
 #ifdef FLB_HAVE_METRICS
     /* Check if the event type is metrics, just return */
-    if (event_chunk->type == FLB_EVENT_TYPE_METRIC) {
+    if (event_chunk->type == FLB_EVENT_TYPE_METRICS) {
         FLB_OUTPUT_RETURN(FLB_OK);
     }
 #endif

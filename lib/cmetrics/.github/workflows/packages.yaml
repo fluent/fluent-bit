@@ -18,8 +18,11 @@ jobs:
       matrix:
         format: [ rpm, deb ]
     steps:
-      - uses: actions/checkout@v2
-      - uses: uraimo/run-on-arch-action@v2.1.1
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - uses: uraimo/run-on-arch-action@v2.3.0
         name: Build the ${{matrix.format}} packages
         with:
           arch: aarch64
@@ -31,12 +34,12 @@ jobs:
             cmake \
             file \
             rpm \
-            make 
+            make
             cmake .
             echo ${{ matrix.format }} | awk '{print toupper($0)}' | xargs -I{} cpack -G {}
 
       - name: Store the master package artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ matrix.format }}-arm64
           path: |
@@ -48,17 +51,19 @@ jobs:
       fail-fast: true
       matrix:
         format: [ rpm, deb ]
-
-    runs-on: [ ubuntu-latest ]
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+
       - name: Build the ${{matrix.format}} packages
         run:  |
           cmake .
           echo ${{ matrix.format }} | awk '{print toupper($0)}' | xargs -I{} cpack -G {}
 
       - name: Store the master package artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ matrix.format }}-amd64
           path: |
@@ -74,7 +79,7 @@ jobs:
       contents: write
     steps:
       - name: Download all artefacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: artifacts/
 
@@ -85,9 +90,11 @@ jobs:
 
       - name: Unstable release on push to master to make it easier to download
         uses: pyTooling/Actions/releaser@r0
+        continue-on-error: true
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag: 'unstable'
+          rm: true
           files: |
             artifacts/**/*
 
@@ -96,5 +103,6 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           generate_release_notes: true
+          draft: false
           files: |
             artifacts/**/*

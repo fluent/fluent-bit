@@ -31,6 +31,7 @@ struct winevtlog_config {
     int read_existing_events;
     int render_event_as_xml;
     int use_ansi;
+    int ignore_missing_channels;
 
     struct mk_list *active_channel;
     struct flb_sqldb *db;
@@ -80,7 +81,7 @@ int winevtlog_read(struct winevtlog_channel *ch, msgpack_packer *mp_pck,
  *
  * "channels" are comma-separated names like "Setup,Security".
  */
-struct mk_list *winevtlog_open_all(const char *channels, int read_exising_events);
+struct mk_list *winevtlog_open_all(const char *channels, int read_exising_events, int ignore_missing_channels);
 void winevtlog_close_all(struct mk_list *list);
 
 void winevtlog_pack_xml_event(msgpack_packer *mp_pck, WCHAR *system_xml, WCHAR *message,

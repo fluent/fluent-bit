@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -41,7 +41,7 @@ static struct cmt *generate_encoder_test_data()
     u = cmt_untyped_create(cmt, "kubernetes", "network", "load", "Network load",
                            2, (char *[]) {"hostname", "app"});
 
-    ts = cmt_time_now();
+    ts = cfl_time_now();
 
     ret = cmt_untyped_get_val(u, 0, NULL, &val);
     TEST_CHECK(ret == -1);
@@ -61,7 +61,7 @@ static struct cmt *generate_encoder_test_data()
 void test_prometheus()
 {
     struct cmt *cmt = NULL;
-    cmt_sds_t   prom = NULL;
+    cfl_sds_t   prom = NULL;
 
     cmt_initialize();
 
@@ -79,7 +79,7 @@ void test_prometheus()
 void test_text()
 {
     struct cmt *cmt = NULL;
-    cmt_sds_t   text = NULL;
+    cfl_sds_t   text = NULL;
 
     cmt_initialize();
 
@@ -98,7 +98,7 @@ void test_text()
 void test_influx()
 {
     struct cmt *cmt = NULL;
-    cmt_sds_t   text = NULL;
+    cfl_sds_t   text = NULL;
 
     cmt_initialize();
 

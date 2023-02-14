@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@
  */
 
 #include <cmetrics/cmetrics.h>
-#include <cmetrics/cmt_sds.h>
 #include <cmetrics/cmt_label.h>
 
 /*
@@ -36,25 +35,25 @@ struct cmt_labels *cmt_labels_create()
         cmt_errno();
         return NULL;
     }
-    mk_list_init(&l->list);
+    cfl_list_init(&l->list);
     return l;
 }
 
 void cmt_labels_destroy(struct cmt_labels *labels)
 {
-    struct mk_list *tmp;
-    struct mk_list *head;
+    struct cfl_list *tmp;
+    struct cfl_list *head;
     struct cmt_label *l;
 
-    mk_list_foreach_safe(head, tmp, &labels->list) {
-        l = mk_list_entry(head, struct cmt_label, _head);
+    cfl_list_foreach_safe(head, tmp, &labels->list) {
+        l = cfl_list_entry(head, struct cmt_label, _head);
         if (l->key) {
-            cmt_sds_destroy(l->key);
+            cfl_sds_destroy(l->key);
         }
         if (l->val) {
-            cmt_sds_destroy(l->val);
+            cfl_sds_destroy(l->val);
         }
-        mk_list_del(&l->_head);
+        cfl_list_del(&l->_head);
         free(l);
     }
 
@@ -71,29 +70,29 @@ int cmt_labels_add_kv(struct cmt_labels *labels, char *key, char *val)
         return -1;
     }
 
-    l->key = cmt_sds_create(key);
+    l->key = cfl_sds_create(key);
     if (!l->key) {
         free(l);
         return -1;
     }
 
-    l->val = cmt_sds_create(val);
+    l->val = cfl_sds_create(val);
     if (!l->val) {
-        cmt_sds_destroy(l->key);
+        cfl_sds_destroy(l->key);
         free(l);
         return -1;
     }
 
-    mk_list_add(&l->_head, &labels->list);
+    cfl_list_add(&l->_head, &labels->list);
     return 0;
 }
 
 int cmt_labels_count(struct cmt_labels *labels)
 {
     int c = 0;
-    struct mk_list *head;
+    struct cfl_list *head;
 
-    mk_list_foreach(head, &labels->list) {
+    cfl_list_foreach(head, &labels->list) {
         c++;
     }
 

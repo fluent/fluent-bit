@@ -49,7 +49,7 @@ static int read_file(const char *file, char *buf, size_t size)
 {
     char *p = buf;
     size_t total = 0;
-    size_t nb;
+    ssize_t nb;
 
     int fd = open(file, O_RDONLY);
     if (fd == -1)

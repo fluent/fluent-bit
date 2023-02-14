@@ -13,7 +13,7 @@
 %}
 
 %union {
-    cmt_sds_t str;
+    cfl_sds_t str;
     char numstr[64];
     int integer;
 }
@@ -28,7 +28,7 @@
 %type <numstr> value
 
 %destructor {
-    cmt_sds_destroy($$);
+    cfl_sds_destroy($$);
 } <str>
 
 %start start;
@@ -40,7 +40,7 @@ start:
   | START_LABELS labels
   | START_SAMPLES samples
   | metrics {
-    if (finish_metric(context)) {
+    if (finish_metric(context, true, NULL)) {
         YYABORT;
     }
   }
@@ -54,6 +54,7 @@ metrics:
 metric:
     header samples
   | samples
+  | header
 ;
 
 header:
@@ -65,14 +66,18 @@ header:
 
 help:
     HELP METRIC_DOC {
-        parse_metric_name(context, $1);
+        if (parse_metric_name(context, $1)) {
+            YYABORT;
+        }
         context->metric.docstring = $2;
     }
 ;
 
 type:
     TYPE metric_type {
-        parse_metric_name(context, $1);
+        if (parse_metric_name(context, $1)) {
+            YYABORT;
+        }
         context->metric.type = $2;
     }
 ;
@@ -103,7 +108,8 @@ sample:
 ;
 
 sample_data:
-    '{' labels '}' values
+    '{' '}' values
+  | '{' labels '}' values
   | values
 ;
 

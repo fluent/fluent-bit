@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,8 +22,8 @@
 #define CMT_DECODE_OPENTELEMETRY_H
 
 #include <cmetrics/cmetrics.h>
-#include <opentelemetry/metrics.pb-c.h>
-#include <opentelemetry/metrics_service.pb-c.h>
+#include <opentelemetry/proto/metrics/v1/metrics.pb-c.h>
+#include <opentelemetry/proto/collector/metrics/v1/metrics_service.pb-c.h>
 
 #define CMT_DECODE_OPENTELEMETRY_SUCCESS                0
 #define CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR       1
@@ -39,8 +39,10 @@ struct cmt_opentelemetry_decode_context {
     char             **subsystem_identifiers;
 };
 
-int cmt_decode_opentelemetry_create(struct cmt **out_cmt, char *in_buf, size_t in_size,
+int cmt_decode_opentelemetry_create(struct cfl_list *result_context_list,
+                                    char *in_buf, size_t in_size,
                                     size_t *offset);
-void cmt_decode_opentelemetry_destroy(struct cmt *cmt);
+
+void cmt_decode_opentelemetry_destroy(struct cfl_list *context_list);
 
 #endif

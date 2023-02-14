@@ -1,0 +1,13 @@
+diff --git a/expected/wasm32-wasi/predefined-macros.txt b/expected/wasm32-wasi/predefined-macros.txt
+index c1bb19e..954f3b5 100644
+--- a/expected/wasm32-wasi/predefined-macros.txt
++++ b/expected/wasm32-wasi/predefined-macros.txt
+@@ -3002,6 +3002,8 @@
+ #define __alignof_is_defined 1
+ #define __bitop(x,i,o) ((x)[(i)/8] o (1<<(i)%8))
+ #define __bool_true_false_are_defined 1
++#define __clang_literal_encoding__ "UTF-8"
++#define __clang_wide_literal_encoding__ "UTF-32"
+ #define __inline inline
+ #define __restrict restrict
+ #define __tg_complex(fun,x) (__RETCAST_CX(x)( __FLTCX((x)+I) && __IS_FP(x) ? fun ## f (x) : __LDBLCX((x)+I) ? fun ## l (x) : fun(x) ))

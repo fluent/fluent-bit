@@ -232,7 +232,7 @@ class CaseMapping
     @version = nil
     IO.foreach(File.join(mapping_directory, 'UnicodeData.txt'), mode: "rb") do |line|
       next if line =~ /^</
-      code, _1,_2,_3,_4,_5,_6,_7,_8,_9,_10,_11, upper, lower, title = line.chomp.split ';'
+      code, __1,__2,__3,__4,__5,__6,__7,__8,__9,__10,__11, upper, lower, title = line.chomp.split ';'
       unless upper and lower and title and (upper+lower+title)==''
         @mappings[code] = MapItem.new(code, upper, lower, title)
       end
@@ -264,7 +264,6 @@ class CaseMapping
     from = Array(from).map {|i| "%04X" % i}.join(" ")
     to   = Array(to).map {|i| "%04X" % i}.join(" ")
     item = map(from)
-    specials_index = nil
     specials = []
     case type
     when 'CaseFold_11'
@@ -309,7 +308,7 @@ class CaseMapping
         end
         unless item.upper == item.title
           if item.code == item.title
-            raise "Unpredicted case 1 in enc/unicode/case_folding.rb. Please contact https://bugs.ruby-lang.org/."
+            flags += '|IT'   # was unpredicted case 1
           elsif item.title==to[1]
             flags += '|ST'
           else
@@ -410,8 +409,8 @@ if $0 == __FILE__
     s = f.string
   end
   if dest
-    open(dest, "wb") do |f|
-      f.print(s)
+    open(dest, "wb") do |file|
+      file.print(s)
     end
   else
     STDOUT.print(s)

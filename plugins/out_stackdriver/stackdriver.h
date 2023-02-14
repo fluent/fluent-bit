@@ -128,7 +128,6 @@ struct flb_stackdriver {
     flb_sds_t pod_name;
     flb_sds_t container_name;
     flb_sds_t node_name;
-    bool is_k8s_resource_type;
 
     flb_sds_t local_resource_id;
     flb_sds_t tag_prefix;
@@ -138,12 +137,19 @@ struct flb_stackdriver {
     /* labels */
     flb_sds_t labels_key;
     struct mk_list *labels;
-    struct mk_list config_labels; 
+    struct mk_list config_labels;
+
+    /* resource type flag */
+    int resource_type;
+
+    /* resource labels api */
+    struct mk_list *resource_labels;
+    struct mk_list resource_labels_kvs;
+    int should_skip_resource_labels_api;
 
     /* generic resources */
     flb_sds_t location;
     flb_sds_t namespace_id;
-    bool is_generic_resource_type;
 
     /* generic_node specific */
     flb_sds_t node_id;

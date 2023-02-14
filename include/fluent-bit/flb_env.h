@@ -27,7 +27,7 @@
 
 struct flb_env {
     int warn_unused;        /* warn about unused environment variable */
-    struct flb_hash *ht;
+    struct flb_hash_table *ht;
 };
 
 static inline void flb_env_warn_unused(struct flb_env *env, int warn)

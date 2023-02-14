@@ -171,6 +171,9 @@ static struct flb_expect *context_create(struct flb_filter_instance *ins,
         else if (strcasecmp(tmp, "exit") == 0) {
             ctx->action = FLB_EXP_EXIT;
         }
+        else if (strcasecmp(tmp, "result_key") == 0) {
+            ctx->action = FLB_EXP_RESULT_KEY;
+        }
         else {
             flb_plg_error(ctx->ins, "unexpected 'action' value '%s'", tmp);
             flb_free(ctx);
@@ -191,6 +194,11 @@ static struct flb_expect *context_create(struct flb_filter_instance *ins,
 
         /* Validate the type of the rule */
         type = key_to_type(kv->key);
+        if (strcasecmp(kv->key, "result_key") == 0) {
+            /* skip */
+            continue;
+        }
+
         if (type == -1 && strcasecmp(kv->key, "action") != 0) {
             flb_plg_error(ctx->ins, "unknown configuration rule '%s'", kv->key);
             context_destroy(ctx);
@@ -287,7 +295,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map)
                           "exception on rule #%i 'key_exists', key '%s' "
                           "not found. Record content:\n%s",
                           n, rule->value, json);
-            free(json);
+            flb_free(json);
             return FLB_FALSE;
         }
         else if (rule->type == FLB_EXP_KEY_NOT_EXISTS) {
@@ -300,7 +308,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map)
                           "exception on rule #%i 'key_not_exists', key '%s' "
                           "exists. Record content:\n%s",
                           n, rule->value, json);
-            free(json);
+            flb_free(json);
             flb_ra_key_value_destroy(val);
             return FLB_FALSE;
         }
@@ -311,7 +319,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map)
                               "exception on rule #%i 'key_val_is_null', "
                               "key '%s' not found. Record content:\n%s",
                               n, rule->value, json);
-                free(json);
+                flb_free(json);
                 return FLB_FALSE;
             }
             if (val->type != FLB_RA_NULL) {
@@ -322,7 +330,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map)
                               "Record content:\n%s",
                               n, rule->value,
                               ra_value_type_to_str(val), json);
-                free(json);
+                flb_free(json);
                 flb_ra_key_value_destroy(val);
                 return FLB_FALSE;
             }
@@ -335,7 +343,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map)
                               "exception on rule #%i 'key_val_is_not_null', "
                               "key '%s' not found. Record content:\n%s",
                               n, rule->value, json);
-                free(json);
+                flb_free(json);
                 return FLB_FALSE;
             }
             if (val->type == FLB_RA_NULL) {
@@ -346,7 +354,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map)
                               "Record content:\n%s",
                               n, rule->value,
                               ra_value_type_to_str(val), json);
-                free(json);
+                flb_free(json);
                 flb_ra_key_value_destroy(val);
                 return FLB_FALSE;
             }
@@ -359,7 +367,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map)
                               "exception on rule #%i 'key_val_is_null', "
                               "key '%s' not found. Record content:\n%s",
                               n, rule->value, json);
-                free(json);
+                flb_free(json);
                 return FLB_FALSE;
             }
 
@@ -372,7 +380,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map)
                                   "key value '%s' is different than "
                                   "expected: '%s'. Record content:\n%s",
                                   n, val->val.string, rule->expect, json);
-                    free(json);
+                    flb_free(json);
                     flb_ra_key_value_destroy(val);
                     return FLB_FALSE;
                 }
@@ -405,6 +413,14 @@ static int cb_expect_filter(const void *data, size_t bytes,
     msgpack_object root;
     struct flb_expect *ctx = filter_context;
 
+    int i;
+    int rule_matched = FLB_TRUE;
+    struct flb_time tm;
+    msgpack_object *obj;
+    msgpack_sbuffer tmp_sbuf;
+    msgpack_packer tmp_pck;
+    msgpack_object_kv *kv;
+
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         root = result.data;
@@ -422,10 +438,52 @@ static int cb_expect_filter(const void *data, size_t bytes,
             else if (ctx->action == FLB_EXP_EXIT) {
                 flb_engine_exit_status(config, 255);
             }
+            else if (ctx->action == FLB_EXP_RESULT_KEY) {
+                rule_matched = FLB_FALSE;
+            }
             break;
         }
     }
     msgpack_unpacked_destroy(&result);
+
+    /* Append result key when action is "result_key"*/
+    if (ctx->action == FLB_EXP_RESULT_KEY) {
+        off = 0;
+        msgpack_unpacked_init(&result);
+
+        /* Create temporary msgpack buffer */
+        msgpack_sbuffer_init(&tmp_sbuf);
+        msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
+
+        while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+            flb_time_pop_from_msgpack(&tm, &result, &obj);
+            msgpack_pack_array(&tmp_pck, 2);
+            flb_time_append_to_msgpack(&tm, &tmp_pck, 0);
+
+            msgpack_pack_map(&tmp_pck, obj->via.map.size + 1);
+            msgpack_pack_str(&tmp_pck, flb_sds_len(ctx->result_key));
+            msgpack_pack_str_body(&tmp_pck, ctx->result_key,
+                                  flb_sds_len(ctx->result_key));
+            if (rule_matched) {
+                msgpack_pack_true(&tmp_pck);
+            }
+            else {
+                msgpack_pack_false(&tmp_pck);
+            }
+
+            kv = obj->via.map.ptr;
+            for (i=0; i<map.via.map.size; i++) {
+                msgpack_pack_object(&tmp_pck, (kv+i)->key);
+                msgpack_pack_object(&tmp_pck, (kv+i)->val);
+            }
+        }
+        msgpack_unpacked_destroy(&result);
+
+        *out_buf   = tmp_sbuf.data;
+        *out_bytes = tmp_sbuf.size;
+
+        return FLB_FILTER_MODIFIED;
+    }
 
     return FLB_FILTER_NOTOUCH;
 }
@@ -485,7 +543,13 @@ static struct flb_config_map config_map[] =
     {
       FLB_CONFIG_MAP_STR, "action", "warn",
       0, FLB_FALSE, 0,
-      "action to take when a rule does not match: 'warn' or 'exit'"
+      "action to take when a rule does not match: 'warn', 'exit' or 'result_key'."
+    },
+    {
+      FLB_CONFIG_MAP_STR, "result_key", "matched",
+      0, FLB_TRUE, offsetof(struct flb_expect, result_key),
+      "specify the key name to append a boolean that indicates rule is matched or not. "
+      "This key is to be used only when 'action' is 'result_key'."
     },
 
     /* EOF */

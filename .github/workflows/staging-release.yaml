@@ -7,7 +7,7 @@ on:
     inputs:
       version:
         type: string
-        description: The version we want to release from staging.
+        description: The version we want to release from staging, ensure this is numeric without the v prefix for the tag.
         required: true
       docker-image:
         type: string
@@ -24,6 +24,9 @@ on:
 # We also do not want multiples to run for the same version.
 concurrency: staging-build-release
 
+env:
+  STAGING_IMAGE_NAME: ghcr.io/${{ github.repository }}/staging
+
 jobs:
 
   staging-release-version-check:
@@ -32,6 +35,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       major-version: ${{ steps.get_major_version.outputs.value }}
+    permissions:
+      contents: none
     steps:
     - name: Get the version on staging
       run: |
@@ -54,7 +59,7 @@ jobs:
         if [[ $RELEASE_VERSION =~ ^[0-9]+\.[0-9]+ ]]; then
           MAJOR_VERSION="${BASH_REMATCH[0]}"
         fi
-        echo "::set-output name=value::$MAJOR_VERSION"
+        echo "value=$MAJOR_VERSION" >> $GITHUB_OUTPUT
       shell: bash
       env:
         RELEASE_VERSION: ${{ github.event.inputs.version }}
@@ -65,18 +70,21 @@ jobs:
   # 4. Create a full repo configuration using the existing releases as well.
   # 5. Upload to release bucket.
   # Note we could resign all packages as well potentially if we wanted to update the key.
-  staging-release-packages-s3:
-    name: S3 - create release
-    runs-on: ubuntu-18.04 # no createrepo on Ubuntu 20.04
+  staging-release-packages:
+    name: S3 - update packages bucket
+    runs-on: ubuntu-22.04 # no createrepo on Ubuntu 20.04
     environment: release
     needs: staging-release-version-check
+    permissions:
+      contents: read
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
 
     - name: Setup runner
       run: |
-        sudo apt-get install debsigs createrepo aptly rsync
+        sudo apt-get update
+        sudo apt-get install -y debsigs createrepo-c aptly rsync
       shell: bash
 
     - name: Import GPG key for signing
@@ -99,6 +107,7 @@ jobs:
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: "us-east-1"
       shell: bash
 
     - name: GPG set up keys for signing
@@ -124,45 +133,72 @@ jobs:
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: "us-east-1"
       shell: bash
 
-  # We have two options here:
-  # 1. Sync the signed packages direct from the release bucket.
-  # 2. Sync the staged packages from the staging bucket, resign on the server.
-  #
-  # Option 1 may involve more transfer fees as the release bucket grows but is
-  # simpler plus tests the whole pipeline.
-  # The assumption being we would remove this step eventually anyway.
-  staging-release-packages-server:
-    name: fluentbit.io - upload packages
-    # Not required if using the staging bucket
-    needs: staging-release-packages-s3
-    runs-on: ubuntu-18.04 # failures with AWS client on latest
+  staging-release-source-s3:
+    name: S3 - update source bucket
+    runs-on: ubuntu-latest
     environment: release
+    needs: 
+      - staging-release-version-check
+    permissions:
+      contents: read
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
 
-    - uses: ./.github/actions/release-server-sync
-      with:
-        bucket: ${{ secrets.AWS_S3_BUCKET_RELEASE }}
-        access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        server_hostname: ${{ secrets.FLUENTBITIO_HOST }}
-        server_username: ${{ secrets.FLUENTBITIO_USERNAME }}
-        server_key: ${{ secrets.FLUENTBITIO_SSHKEY }}
-        server_aptly_config: ${{ secrets.FLUENTBITIO_APTLY_CONFIG }}
+    - name: Sync packages from buckets on S3
+      run: |
+        mkdir -p release staging 
+        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE_SOURCES }}" release/ --no-progress
+        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}/source/" staging/ --no-progress
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: "us-east-1"
+      shell: bash
+
+    - name: Get Appveyor binaries
+      continue-on-error: true
+      run: |
+        ./packaging/appveyor-download.sh
+      shell: bash
+      env:
+        TAG: v${{ github.event.inputs.version }}
+        OUTPUT_DIR: appveyor
+
+    - name: Move components from staging and setup
+      run: |
+        ./packaging/update-source-packages.sh
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: "us-east-1"
+        SOURCE_DIR: staging
+        WINDOWS_SOURCE_DIR: appveyor
+        TARGET_DIR: release
+        VERSION: ${{ github.event.inputs.version }}
+        MAJOR_VERSION: ${{ needs.staging-release-version-check.outputs.major-version }}
+      shell: bash
+      
+    - name: Sync to bucket on S3
+      run: |
+        aws s3 sync release/ "s3://${{ secrets.AWS_S3_BUCKET_RELEASE_SOURCES }}" --delete --follow-symlinks --no-progress
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: "us-east-1"
+      shell: bash
 
   # Simple skopeo copy jobs to transfer image from staging to release registry with optional GPG key signing.
   # Unfortunately skopeo currently does not support Cosign: https://github.com/containers/skopeo/issues/1533
   staging-release-images:
-    name: Release ${{ matrix.tag }} container images
+    name: Release ${{ matrix.tag }} Linux container images
     runs-on: ubuntu-latest
     needs:
       - staging-release-version-check
     environment: release
-    env:
-      STAGING_IMAGE_NAME: ghcr.io/${{ github.repository }}/staging
     strategy:
       fail-fast: false
       matrix:
@@ -170,11 +206,73 @@ jobs:
         tag: [
           "${{ github.event.inputs.version }}",
           "${{ needs.staging-release-version-check.outputs.major-version }}",
-          "latest",
           "${{ github.event.inputs.version }}-debug",
           "${{ needs.staging-release-version-check.outputs.major-version }}-debug",
+        ]
+    permissions:
+      packages: write
+    steps:
+      # Primarily because the skopeo errors are hard to parse and non-obvious
+      - name: Check the image exists
+        run: |
+          docker pull "$STAGING_IMAGE_NAME:$TAG"
+        env:
+          TAG: ${{ matrix.tag }}
+        shell: bash
+
+      # Use the container to prevent any rootless issues and we do not need to use GPG signing as DockerHub does not support it.
+      - name: Promote container images from staging to Dockerhub
+        run: |
+          docker run --rm  \
+            quay.io/skopeo/stable:latest \
+            copy \
+              --all \
+              --retry-times 10 \
+              --src-no-creds \
+              --dest-creds "$RELEASE_CREDS" \
+              "docker://$STAGING_IMAGE_NAME:$TAG" \
+              "docker://$RELEASE_IMAGE_NAME:$TAG"
+        env:
+          RELEASE_IMAGE_NAME: docker.io/${{ github.event.inputs.docker-image || secrets.DOCKERHUB_ORGANIZATION }}
+          RELEASE_CREDS: ${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }}
+          TAG: ${{ matrix.tag }}
+        shell: bash
+
+      - name: Promote container images from staging to GHCR.io
+        if: ${{ startsWith(github.event.inputs.version, '2.0') || ! startsWith(matrix.tag, 'latest') }}
+        run: |
+          docker run --rm  \
+            quay.io/skopeo/stable:latest \
+            copy \
+              --all \
+              --retry-times 10 \
+              --src-no-creds \
+              --dest-creds "$RELEASE_CREDS" \
+              "docker://$STAGING_IMAGE_NAME:$TAG" \
+              "docker://$RELEASE_IMAGE_NAME:$TAG"
+        env:
+          RELEASE_IMAGE_NAME: ghcr.io/${{ github.event.inputs.github-image || github.repository }}
+          RELEASE_CREDS: ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ matrix.tag }}
+        shell: bash
+
+  staging-release-images-latest-tags:
+    # Only update latest tags for 2.0 releases
+    if: startsWith(github.event.inputs.version, '2.0') 
+    name: Release latest Linux container images
+    runs-on: ubuntu-latest
+    needs:
+      - staging-release-images
+    environment: release
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: [
+          "latest",
           "latest-debug"
         ]
+    permissions:
+      packages: write
     steps:
       # Primarily because the skopeo errors are hard to parse and non-obvious
       - name: Check the image exists
@@ -219,23 +317,76 @@ jobs:
           TAG: ${{ matrix.tag }}
         shell: bash
 
+  staging-release-images-windows:
+    name: Release Windows images
+    # Cannot be done by Skopeo on a Linux runner unfortunately
+    runs-on: windows-latest
+    needs:
+      - staging-release-version-check
+    environment: release
+    permissions:
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: [
+          "windows-2019-${{ github.event.inputs.version }}",
+          "windows-2022-${{ github.event.inputs.version }}"
+        ]
+    steps:
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check the image exists
+        run: |
+          docker pull "$STAGING_IMAGE_NAME:$TAG"
+        env:
+          TAG: ${{ matrix.tag }}
+        shell: bash
+
+      - name: Promote container images from staging to GHCR.io
+        run: |
+          docker tag "$STAGING_IMAGE_NAME:$TAG" "$RELEASE_IMAGE_NAME:$TAG"
+          docker push "$RELEASE_IMAGE_NAME:$TAG"
+        env:
+          RELEASE_IMAGE_NAME: ghcr.io/${{ github.event.inputs.github-image || github.repository }}
+          RELEASE_CREDS: ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ matrix.tag }}
+        shell: bash
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Promote container images from staging to Dockerhub
+        run: |
+          docker tag "$STAGING_IMAGE_NAME:$TAG" "$RELEASE_IMAGE_NAME:$TAG"
+          docker push "$RELEASE_IMAGE_NAME:$TAG"
+        env:
+          RELEASE_IMAGE_NAME: docker.io/${{ github.event.inputs.docker-image || secrets.DOCKERHUB_ORGANIZATION }}
+          RELEASE_CREDS: ${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }}
+          TAG: ${{ matrix.tag }}
+        shell: bash
+
   staging-release-images-sign:
     name: Sign container image manifests
-    permissions:
-      contents: read
-      packages: write
-      # This is used to complete the identity challenge
-      # with sigstore/fulcio when running outside of PRs.
-      id-token: write
+    permissions: write-all
     runs-on: ubuntu-latest
     environment: release
-    needs: staging-release-images
+    needs: 
+      - staging-release-images
     env:
       DH_RELEASE_IMAGE_NAME: docker.io/${{ github.event.inputs.docker-image || secrets.DOCKERHUB_ORGANIZATION }}
       GHCR_RELEASE_IMAGE_NAME: ghcr.io/${{ github.event.inputs.github-image || github.repository }}
     steps:
       - name: Install cosign
-        uses: sigstore/cosign-installer@main
+        uses: sigstore/cosign-installer@v2
 
       - name: Login to Docker Hub
         uses: docker/login-action@v2
@@ -262,17 +413,13 @@ jobs:
             -a "release=${{ github.event.inputs.version }}" \
             "$GHCR_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}" \
             "$GHCR_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}-debug" \
-            "$GHCR_RELEASE_IMAGE_NAME:latest" \
-            "$GHCR_RELEASE_IMAGE_NAME:latest-debug" \
             "$DH_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}" \
-            "$DH_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}-debug" \
-            "$DH_RELEASE_IMAGE_NAME:latest" \
-            "$DH_RELEASE_IMAGE_NAME:latest-debug"
+            "$DH_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}-debug" 
           rm -f /tmp/my_cosign.key
         shell: bash
         env:
-          COSIGN_PRIVATE_KEY: ${{ secrets.cosign_private_key }}
-          COSIGN_PASSWORD: ${{ secrets.cosign_private_key_password }} # optional
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PRIVATE_KEY_PASSWORD }} # optional
 
       - name: Cosign keyless signing using Rektor public transparency log
         # This step uses the identity token to provision an ephemeral certificate
@@ -281,32 +428,55 @@ jobs:
         #
         # We use recursive signing on the manifest to cover all the images.
         run: |
-          cosign sign --recursive \
+          cosign sign --yes --recursive \
             -a "repo=${{ github.repository }}" \
             -a "workflow=${{ github.workflow }}" \
             -a "release=${{ github.event.inputs.version }}" \
             "$GHCR_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}" \
             "$GHCR_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}-debug" \
-            "$GHCR_RELEASE_IMAGE_NAME:latest" \
-            "$GHCR_RELEASE_IMAGE_NAME:latest-debug" \
             "$DH_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}" \
-            "$DH_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}-debug" \
-            "$DH_RELEASE_IMAGE_NAME:latest" \
-            "$DH_RELEASE_IMAGE_NAME:latest-debug"
+            "$DH_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}-debug"
         shell: bash
         env:
-          COSIGN_EXPERIMENTAL: "true"
+          COSIGN_EXPERIMENTAL: true
 
-  # This will require a sign off so can be done after packages are updated to confirm
-  staging-release-smoke-test:
-    name: Run smoke tests on release artefacts
+  staging-release-upload-cosign-key:
+    name: Upload Cosign public key for verification
+    needs:
+      - staging-release-images-sign
+    permissions:
+      contents: none
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v2
+      
+      - name: Get public key and add to S3 bucket
+        # Only run if we have a key defined
+        if: ${{ env.COSIGN_PRIVATE_KEY }}
+        # The key needs to cope with newlines
+        run: |
+          echo -e "${COSIGN_PRIVATE_KEY}" > /tmp/my_cosign.key
+          cosign public-key --key /tmp/my_cosign.key > ./cosign.pub
+          rm -f /tmp/my_cosign.key
+          cat ./cosign.pub
+          aws s3 cp ./cosign.pub "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/cosign.pub" --no-progress
+        shell: bash
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PRIVATE_KEY_PASSWORD }} # optional
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: "us-east-1"
+
+  staging-release-smoke-test-packages:
+    name: Run package smoke tests
     permissions:
       contents: read
     runs-on: ubuntu-latest
     environment: release
     needs:
-      - staging-release-packages-server
-      - staging-release-images
+      - staging-release-packages
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -315,6 +485,23 @@ jobs:
         run: |
           ./packaging/test-release-packages.sh
         shell: bash
+        env:
+          VERSION_TO_CHECK_FOR: ${{ github.event.inputs.version }}
+          FLUENT_BIT_PACKAGES_URL: http://${{ secrets.AWS_S3_BUCKET_RELEASE }}.s3.amazonaws.com
+          FLUENT_BIT_PACKAGES_KEY: http://${{ secrets.AWS_S3_BUCKET_RELEASE }}.s3.amazonaws.com/fluentbit.key
+
+  staging-release-smoke-test-containers:
+    name: Run container smoke tests
+    permissions:
+      contents: read
+      packages: read
+    runs-on: ubuntu-latest
+    environment: release
+    needs:
+      - staging-release-images
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
       - name: Test containers
         run: |
@@ -322,3 +509,34 @@ jobs:
         shell: bash
         env:
           IMAGE_TAG: ${{ github.event.inputs.version }}
+
+  staging-release-create-release:
+    name: Create the Github Release once packages and containers are up
+    needs:
+      - staging-release-images
+      - staging-release-packages
+    permissions:
+      contents: write
+    environment: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Release 1.9 - not latest
+        uses: softprops/action-gh-release@v1
+        if: startsWith(inputs.version, '1.9')
+        with:
+          body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          draft: false
+          generate_release_notes: false
+          name: "Fluent Bit ${{ inputs.version }}"
+          tag_name: v${{ inputs.version }}
+          target_commitish: '1.9'
+
+      - name: Release 2.0 and latest
+        uses: softprops/action-gh-release@v1
+        if: startsWith(inputs.version, '2.0')
+        with:
+          body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          draft: false
+          generate_release_notes: false
+          name: "Fluent Bit ${{ inputs.version }}"
+          tag_name: v${{ inputs.version }}

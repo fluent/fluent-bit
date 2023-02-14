@@ -21,6 +21,22 @@
 #ifndef FLB_TEST_INTERNAL_H
 #define FLB_TEST_INTERNAL_H
 
+#ifdef FLB_TEST_INIT_NOP
+static inline void init_nop() {};
+#define TEST_INIT { init_nop(); }
+#else
+#include "../include/flb_tests_initialize_tls.h"
+#define TEST_INIT { flb_test_env_config_init(); }
+#endif
+
+#ifdef FLB_TEST_FINI_NOP
+static inline void fini_nop() {};
+#define TEST_FINI { fini_nop(); }
+#else
+#include "../include/flb_tests_initialize_tls.h"
+#define TEST_FINI { flb_test_env_config_destroy(); }
+#endif
+
 #include "../lib/acutest/acutest.h"
 #define FLB_TESTS_DATA_PATH "@FLB_TESTS_DATA_PATH@"
 

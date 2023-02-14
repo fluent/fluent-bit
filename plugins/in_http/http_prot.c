@@ -32,7 +32,8 @@
 
 static int send_response(struct http_conn *conn, int http_status, char *message)
 {
-    int len;
+    size_t    sent;
+    int       len;
     flb_sds_t out;
 
     out = flb_sds_create_size(256);
@@ -77,8 +78,14 @@ static int send_response(struct http_conn *conn, int http_status, char *message)
                        len, message);
     }
 
-    write(conn->fd, out, flb_sds_len(out));
+    /* We should check this operations result */
+    flb_io_net_write(conn->connection,
+                     (void *) out,
+                     flb_sds_len(out),
+                     &sent);
+
     flb_sds_destroy(out);
+
     return 0;
 }
 
@@ -181,22 +188,19 @@ int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
 
             /* Ingest record into the engine */
             if (tag_from_record) {
-                flb_input_chunk_append_raw(ctx->ins, tag_from_record, flb_sds_len(tag_from_record),
+                flb_input_log_append(ctx->ins, tag_from_record, flb_sds_len(tag_from_record),
                                         mp_sbuf.data, mp_sbuf.size);
                 flb_sds_destroy(tag_from_record);
             }
             else if (tag) {
-                flb_input_chunk_append_raw(ctx->ins, tag, flb_sds_len(tag),
+                flb_input_log_append(ctx->ins, tag, flb_sds_len(tag),
                                         mp_sbuf.data, mp_sbuf.size);
             }
             else {
                 /* use default plugin Tag (it internal name, e.g: http.0 */
-                flb_input_chunk_append_raw(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+                flb_input_log_append(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
             }
             msgpack_sbuffer_destroy(&mp_sbuf);
-
-            break;
-    
         } 
         else if (result.data.type == MSGPACK_OBJECT_ARRAY) {
             obj = &result.data;
@@ -218,17 +222,17 @@ int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
 
                 /* Ingest record into the engine */
                 if (tag_from_record) {
-                    flb_input_chunk_append_raw(ctx->ins, tag_from_record, flb_sds_len(tag_from_record),
+                    flb_input_log_append(ctx->ins, tag_from_record, flb_sds_len(tag_from_record),
                                             mp_sbuf.data, mp_sbuf.size);
                     flb_sds_destroy(tag_from_record);
                 }
                 else if (tag) {
-                    flb_input_chunk_append_raw(ctx->ins, tag, flb_sds_len(tag),
+                    flb_input_log_append(ctx->ins, tag, flb_sds_len(tag),
                                                mp_sbuf.data, mp_sbuf.size);
                 }
                 else {
                     /* use default plugin Tag (it internal name, e.g: http.0 */
-                    flb_input_chunk_append_raw(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+                    flb_input_log_append(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
                 }
 
                 msgpack_sbuffer_destroy(&mp_sbuf);

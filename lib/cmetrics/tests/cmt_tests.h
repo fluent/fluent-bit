@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,8 +26,10 @@
 #define MSGPACK_PARTIAL_PROCESSING_ELEMENT_COUNT 20
 
 #include "tests/cmt_tests_config.h"
-#include <cmetrics/cmt_sds.h>
+#include "encode_output.h"
 
-cmt_sds_t read_file(const char *path);
+#include <cmetrics/cmetrics.h>
+
+cfl_sds_t read_file(const char *path);
 
 #endif

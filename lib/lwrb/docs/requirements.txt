@@ -1,0 +1,8 @@
+breathe>=4.9.1
+colorama
+docutils==0.16
+sphinx>=3.5.1
+sphinx_rtd_theme>=1.0.0
+sphinx-tabs
+sphinxcontrib-svg2pdfconverter
+sphinx-sitemap

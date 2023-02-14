@@ -21,10 +21,12 @@
 #define FLB_FILTER_EXPECT_H
 
 #include <fluent-bit/flb_filter_plugin.h>
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_record_accessor.h>
 
 #define FLB_EXP_WARN              0
 #define FLB_EXP_EXIT              1
+#define FLB_EXP_RESULT_KEY        2
 
 /* Rule types */
 #define FLB_EXP_KEY_EXISTS        0   /* key exists */
@@ -43,6 +45,7 @@ struct flb_expect_rule {
 
 struct flb_expect {
     int action;
+    flb_sds_t result_key;
     struct mk_list rules;
     struct flb_filter_instance *ins;
 };
