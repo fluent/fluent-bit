@@ -296,7 +296,7 @@ struct tcp_conn *tcp_conn_add(struct flb_connection *connection,
     conn->connection = connection;
 
     /* Set data for the event-loop */
-    MK_EVENT_NEW(&connection->event);
+    MK_EVENT_ZERO(&connection->event);
 
     connection->user_data     = conn;
     connection->event.type    = FLB_ENGINE_EV_CUSTOM;
