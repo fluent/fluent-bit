@@ -127,6 +127,7 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
     conn->connection = connection;
 
     /* Set data for the event-loop */
+    MK_EVENT_ZERO(&connection->event);
     connection->user_data     = conn;
     connection->event.type    = FLB_ENGINE_EV_CUSTOM;
     connection->event.handler = fw_conn_event;
