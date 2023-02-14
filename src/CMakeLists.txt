@@ -76,6 +76,7 @@ set(src
   flb_log_event_encoder_primitives.c
   flb_log_event_encoder_dynamic_field.c
   flb_processor.c
+  flb_reload.c
   )
 
 # Config format

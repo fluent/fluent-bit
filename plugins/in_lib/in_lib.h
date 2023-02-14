@@ -25,7 +25,11 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
+#include <pthread.h>
+
 #define LIB_BUF_CHUNK   65536
+
+pthread_key_t flb_active_lib_context;
 
 /* Library input configuration & context */
 struct flb_in_lib_config {
