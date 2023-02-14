@@ -62,7 +62,7 @@ static int msgpack_object_to_ra_value(msgpack_object o,
         }
         return 0;
     }
-    else if (o.type == MSGPACK_OBJECT_MAP) {
+    else if (o.type == MSGPACK_OBJECT_MAP || o.type == MSGPACK_OBJECT_ARRAY) {
         /* return boolean 'true', just denoting the existence of the key */
         result->type = FLB_RA_BOOL;
         result->val.boolean = true;
