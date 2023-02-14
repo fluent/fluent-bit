@@ -23,9 +23,10 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_error.h>
 
 #include <cfl/cfl.h>
-#include <fluent-otel-proto/fluent-otel.h>
 
 #include <cmetrics/cmetrics.h>
 #include <fluent-bit/flb_gzip.h>
@@ -60,6 +61,19 @@ static inline void otlp_kvpair_destroy(Opentelemetry__Proto__Common__V1__KeyValu
 
         flb_free(kvpair);
     }
+}
+
+static inline void otlp_kvpair_list_destroy(Opentelemetry__Proto__Common__V1__KeyValue **kvpair_list, size_t n_attrs)
+{
+    size_t arr_index;
+
+    if (kvpair_list != NULL) {
+        for (arr_index = 0; arr_index < n_attrs; arr_index++) {
+            otlp_kvpair_destroy(kvpair_list[arr_index]);
+        }
+    }
+
+    flb_free(kvpair_list);
 }
 
 static inline void otlp_kvlist_destroy(Opentelemetry__Proto__Common__V1__KeyValueList *kvlist)
@@ -124,6 +138,16 @@ static inline void otlp_any_value_destroy(Opentelemetry__Proto__Common__V1__AnyV
         flb_free(value);
         value = NULL;
     }
+}
+
+static inline void otlp_resource_destroy(Opentelemetry__Proto__Resource__V1__Resource *resource)
+{
+    if (resource == NULL) {
+        return;
+    }
+
+    otlp_kvpair_list_destroy(resource->attributes, resource->n_attributes);
+    flb_free(resource);
 }
 
 static int http_post(struct opentelemetry_context *ctx,
@@ -294,10 +318,30 @@ static void clear_array(Opentelemetry__Proto__Logs__V1__LogRecord **logs,
     }
 
     for (index = 0 ; index < log_count ; index++) {
+        printf("clear array: %p", logs[index]->body);
         otlp_any_value_destroy(logs[index]->body);
+        otlp_kvpair_list_destroy(logs[index]->attributes, logs[index]->n_attributes);
+        flb_free(logs[index]->severity_text);
+        flb_free(logs[index]->trace_id.data);
+        flb_free(logs[index]->span_id.data);
     }
 
     flb_free(logs);
+}
+
+static inline Opentelemetry__Proto__Common__V1__KeyValue **otlp_kvpair_list_initialize(size_t entry_count)
+{
+    Opentelemetry__Proto__Common__V1__KeyValue **result;
+
+    result = \
+        calloc(entry_count, sizeof(Opentelemetry__Proto__Common__V1__KeyValue *));
+
+    if (result == NULL) {
+        ctr_errno();
+        return NULL;
+    }
+
+    return result;
 }
 
 static Opentelemetry__Proto__Common__V1__ArrayValue *otlp_array_value_initialize(size_t entry_count)
@@ -632,6 +676,7 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *msgpack_object_to_otlp
             break;
 
         default:
+            result = NULL;
             break;
     }
 
@@ -641,7 +686,8 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *msgpack_object_to_otlp
 static int flush_to_otel(struct opentelemetry_context *ctx,
                          struct flb_event_chunk *event_chunk,
                          Opentelemetry__Proto__Logs__V1__LogRecord **logs,
-                         size_t log_count)
+                         size_t log_count,
+                         Opentelemetry__Proto__Resource__V1__Resource *resource)
 {
     Opentelemetry__Proto__Collector__Logs__V1__ExportLogsServiceRequest export_logs;
     Opentelemetry__Proto__Logs__V1__ScopeLogs scope_log;
@@ -663,6 +709,10 @@ static int flush_to_otel(struct opentelemetry_context *ctx,
     resource_log.scope_logs =  scope_logs;
     resource_log.n_scope_logs = 1;
     resource_logs[0] = &resource_log;
+
+    if (resource != NULL) {
+        resource_log.resource = resource;
+    }
 
     export_logs.resource_logs = resource_logs;
     export_logs.n_resource_logs = 1;
@@ -687,6 +737,394 @@ static int flush_to_otel(struct opentelemetry_context *ctx,
     return res;
 }
 
+static struct otel_kvpair_list process_attributes_from_msgpack(char *buf,
+                                                               size_t buf_size)
+{
+    size_t off = 0;
+    int ret;
+    int arr_index;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object_array attr_list;
+    struct otel_kvpair_list kvlist_val = {0};
+
+    Opentelemetry__Proto__Common__V1__KeyValue **kvlist;
+    Opentelemetry__Proto__Common__V1__KeyValue *kv;
+
+    msgpack_unpacked_init(&result);
+
+    ret = msgpack_unpack_next(&result, buf, buf_size, &off);
+    if (ret == MSGPACK_UNPACK_PARSE_ERROR) {
+        msgpack_unpacked_destroy(&result);
+        return kvlist_val;
+    }
+
+    root = result.data;
+    if (root.type != MSGPACK_OBJECT_ARRAY) {
+        return kvlist_val;
+    }
+
+    attr_list = root.via.array;
+    kvlist_val.n_attributes = attr_list.size;
+
+    kvlist = otlp_kvpair_list_initialize(attr_list.size);
+
+    if (kvlist != NULL) {
+
+        for (arr_index = 0;
+             arr_index < attr_list.size;
+             arr_index++) {
+
+            kv = msgpack_kv_to_otlp_any_value(&attr_list.ptr[arr_index].via.map.ptr[0]);
+
+            if (kv == NULL) {
+                kvlist = NULL;
+                break;
+            }
+
+            kvlist[arr_index] = kv;
+        }
+    }
+
+    kvlist_val.kvlist = kvlist;
+    msgpack_unpacked_destroy(&result);
+
+    return kvlist_val;
+}
+
+static struct otel_kvpair_list process_attributes(flb_sds_t attribute_string)
+{
+    char *buf;
+    size_t buf_size;
+    int ret;
+    int root_type;
+    struct otel_kvpair_list result = {0};
+
+    ret = flb_pack_json(attribute_string, flb_sds_len(attribute_string), &buf, &buf_size, &root_type);
+    if (ret == FLB_ERR_JSON_PART) {
+        flb_error("data incomplete in attributes field");
+        return result;
+    }
+    else if (ret == FLB_ERR_JSON_INVAL) {
+        flb_error("invalid JSON message attributes field, skipping");
+        return result;
+    }
+
+    result = process_attributes_from_msgpack(buf, buf_size);
+    flb_free(buf);
+
+    return result;
+}
+
+static flb_sds_t get_ra_field_value(struct flb_record_accessor *field,
+                                    struct opentelemetry_context *ctx,
+                                    struct flb_event_chunk *event_chunk,
+                                    msgpack_object *obj)
+{
+    flb_sds_t value;
+
+    value = flb_ra_translate(field, event_chunk->tag, flb_sds_len(event_chunk->tag), *obj, NULL);
+    if (!value || flb_sds_len(value) == 0) {
+        flb_plg_error(ctx->ins,
+                      "empty record accessor key translation for pattern: %s",
+                      field->pattern);
+        flb_sds_destroy(value);
+        return NULL;
+    }
+
+    return value;
+}
+
+static int set_ra_attributes(struct opentelemetry_context *ctx,
+                             struct flb_event_chunk *event_chunk,
+                             Opentelemetry__Proto__Logs__V1__LogRecord *log,
+                             msgpack_object *obj)
+{
+    flb_sds_t attributes;
+    struct otel_kvpair_list result;
+
+    attributes = get_ra_field_value(ctx->ra_attributes_key, ctx, event_chunk, obj);
+    if (attributes == NULL) {
+        return -1;
+    }
+
+    result = process_attributes(attributes);
+
+    log->n_attributes = result.n_attributes;
+    log->attributes = result.kvlist;
+
+    flb_sds_destroy(attributes);
+
+    return 0;
+}
+
+static Opentelemetry__Proto__Resource__V1__Resource *
+    get_resource_val(struct opentelemetry_context *ctx,
+                     struct flb_event_chunk *event_chunk,
+                     msgpack_object *obj)
+{
+    Opentelemetry__Proto__Resource__V1__Resource *resource;
+    flb_sds_t resource_string;
+    struct otel_kvpair_list result;
+
+    /*
+     * The resource field can be extracted in 2 ways:
+     * From the record accessor field or the metadata field
+     * in the new format once migration is complete - [{timestamp, metadata}, log_record]
+     * For now, extract it from record accessor pattern.
+     */
+
+    if (!ctx->resource_key) {
+        return NULL;
+    }
+
+    resource = flb_calloc(1, sizeof(Opentelemetry__Proto__Resource__V1__Resource));
+    if (resource == NULL) {
+        flb_plg_error(ctx->ins, "failed to initialize resource");
+        return NULL;
+    }
+
+    opentelemetry__proto__resource__v1__resource__init(resource);
+
+    resource_string = get_ra_field_value(ctx->ra_resource_key, ctx, event_chunk, obj);
+    if (resource_string == NULL) {
+        return NULL;
+    }
+
+    result = process_attributes(resource_string);
+
+    resource->attributes = result.kvlist;
+    resource->n_attributes = result.n_attributes;
+
+    flb_sds_destroy(resource_string);
+
+    return resource;
+}
+
+static uint8_t *hex_id_to_array(flb_sds_t val)
+{
+    size_t hex_len;
+    size_t bin_len;
+    size_t arr_index;
+    uint8_t *id;
+    uint8_t high_nibble;
+    uint8_t low_nibble;
+
+    hex_len = strlen(val);
+    bin_len = hex_len/2;
+
+    id = flb_calloc(1, bin_len);
+
+    /*
+     * The 6th bit is set in uppercase letters, but not in lowercase letters,
+     * so we convert the lowercase letter to uppercase with &0xdf
+     */
+
+    for (arr_index = 0; arr_index < hex_len; arr_index+=2) {
+        high_nibble = (val[arr_index] <= '9') ? val[arr_index] - '0' : (val[arr_index] & 0xdf) - 'A' + 10;
+        low_nibble = (val[arr_index+1] <= '9') ? val[arr_index+1] - '0' : (val[arr_index+1] & 0xdf) - 'A' + 10;
+        id[arr_index/2] = (high_nibble << 4) | low_nibble;
+    }
+
+    return id;
+}
+
+static int set_ra_trace_id(struct opentelemetry_context *ctx,
+                           struct flb_event_chunk *event_chunk,
+                           Opentelemetry__Proto__Logs__V1__LogRecord *log,
+                           msgpack_object *obj)
+{
+    flb_sds_t trace_id;
+    uint8_t *trace_id_bin;
+
+    trace_id = get_ra_field_value(ctx->ra_trace_id_key, ctx, event_chunk, obj);
+    if (trace_id == NULL) {
+        return -1;
+    }
+
+    if (flb_sds_len(trace_id) != 32) {
+        flb_plg_error(ctx->ins,
+                        "incorrect length for trace-id: %d",
+                        flb_sds_len(trace_id));
+        flb_sds_destroy(trace_id);
+        return -1;
+    }
+
+    trace_id_bin = hex_id_to_array(trace_id);
+
+    log->trace_id.data = trace_id_bin;
+    log->trace_id.len = 16;
+
+    flb_sds_destroy(trace_id);
+
+    return 0;
+}
+
+static int set_ra_span_id(struct opentelemetry_context *ctx,
+                          struct flb_event_chunk *event_chunk,
+                          Opentelemetry__Proto__Logs__V1__LogRecord *log,
+                          msgpack_object *obj)
+{
+    flb_sds_t span_id;
+    uint8_t *span_id_bin;
+
+    span_id = get_ra_field_value(ctx->ra_span_id_key, ctx, event_chunk, obj);
+    if (span_id == NULL) {
+        return -1;
+    }
+
+    if (flb_sds_len(span_id) != 16) {
+        flb_plg_error(ctx->ins,
+                      "incorrect length for span-id: %d",
+                      flb_sds_len(span_id));
+        flb_sds_destroy(span_id);
+        return -1;
+    }
+
+    span_id_bin = hex_id_to_array(span_id);
+
+    log->span_id.len = 8;
+    log->span_id.data = span_id_bin;
+
+    flb_sds_destroy(span_id);
+
+    return 0;
+}
+
+static int set_ra_severity_text(struct opentelemetry_context *ctx,
+                                struct flb_event_chunk *event_chunk,
+                                Opentelemetry__Proto__Logs__V1__LogRecord *log,
+                                msgpack_object *obj)
+{
+    flb_sds_t severity_text;
+
+    severity_text = get_ra_field_value(ctx->ra_severity_text_key, ctx, event_chunk, obj);
+    if (severity_text == NULL) {
+        return -1;
+    }
+
+    log->severity_text = flb_strdup(severity_text);
+
+    flb_sds_destroy(severity_text);
+
+    return 0;
+}
+
+static int set_ra_severity_number(struct opentelemetry_context *ctx,
+                                  struct flb_event_chunk *event_chunk,
+                                  Opentelemetry__Proto__Logs__V1__LogRecord *log,
+                                  msgpack_object *obj)
+{
+    flb_sds_t severity_number;
+
+    severity_number = get_ra_field_value(ctx->ra_severity_number_key, ctx, event_chunk, obj);
+    if (severity_number == NULL) {
+        return -1;
+    }
+
+    log->severity_number = atoi(severity_number);
+
+    flb_sds_destroy(severity_number);
+
+    return 0;
+}
+
+static Opentelemetry__Proto__Common__V1__AnyValue *
+       log_string_to_any_value(flb_sds_t body_string)
+{
+    char *buf;
+    size_t buf_size;
+    size_t off = 0;
+    int ret;
+    int root_type;
+    msgpack_unpacked result;
+    Opentelemetry__Proto__Common__V1__AnyValue *body;
+
+    ret = flb_pack_json(body_string, flb_sds_len(body_string), &buf, &buf_size, &root_type);
+    if (ret == FLB_ERR_JSON_PART) {
+        flb_error("data incomplete in attributes field");
+        return NULL;
+    }
+    else if (ret == FLB_ERR_JSON_INVAL) {
+        flb_error("invalid JSON message attributes field, skipping");
+        return NULL;
+    }
+
+    msgpack_unpacked_init(&result);
+    ret = msgpack_unpack_next(&result, buf, buf_size, &off);
+    if (ret == MSGPACK_UNPACK_PARSE_ERROR) {
+        flb_errno();
+        return NULL;
+    }
+
+    body = msgpack_object_to_otlp_any_value(&result.data);
+    msgpack_unpacked_destroy(&result);
+    flb_free(buf);
+
+    return body;
+}
+
+static Opentelemetry__Proto__Common__V1__AnyValue *
+       get_ra_body(struct opentelemetry_context *ctx,
+                   struct flb_event_chunk *event_chunk,
+                   msgpack_object *obj)
+{
+    flb_sds_t body_string;
+    Opentelemetry__Proto__Common__V1__AnyValue *body;
+
+    body_string = get_ra_field_value(ctx->ra_body_key, ctx, event_chunk, obj);
+    if (body_string == NULL) {
+        return NULL;
+    }
+
+    body = log_string_to_any_value(body_string);
+    flb_sds_destroy(body_string);
+
+    return body;
+}
+
+static int set_ra_fields(struct opentelemetry_context *ctx,
+                         struct flb_event_chunk *event_chunk,
+                         Opentelemetry__Proto__Logs__V1__LogRecord *log,
+                         msgpack_object *obj)
+{
+    int ret = 0;
+
+    if (ctx->trace_id_key && ret == 0){
+        ret = set_ra_trace_id(ctx, event_chunk, log, obj);
+    }
+
+    if (ctx->span_id_key && ret == 0){
+        ret = set_ra_span_id(ctx, event_chunk, log, obj);
+    }
+
+    if (ctx->severity_text_key && ret == 0){
+        ret = set_ra_severity_text(ctx, event_chunk, log, obj);
+    }
+
+    if (ctx->severity_number_key && ret == 0){
+        ret = set_ra_severity_number(ctx, event_chunk, log, obj);
+    }
+
+    if (ctx->attributes_key && ret == 0){
+        ret = set_ra_attributes(ctx, event_chunk, log, obj);
+    }
+
+    return ret;
+}
+
+static Opentelemetry__Proto__Common__V1__AnyValue *
+       get_body_val(struct opentelemetry_context *ctx,
+                     struct flb_event_chunk *event_chunk,
+                     msgpack_object *obj)
+{
+    if (!ctx->body_key){
+        return msgpack_object_to_otlp_any_value(obj);
+    }
+
+    return get_ra_body(ctx, event_chunk, obj);
+}
+
 static int process_logs(struct flb_event_chunk *event_chunk,
                         struct flb_output_flush *out_flush,
                         struct flb_input_instance *ins, void *out_context,
@@ -706,6 +1144,7 @@ static int process_logs(struct flb_event_chunk *event_chunk,
     Opentelemetry__Proto__Logs__V1__LogRecord *log_records;
     Opentelemetry__Proto__Common__V1__AnyValue *log_bodies;
     Opentelemetry__Proto__Common__V1__AnyValue *log_object;
+    Opentelemetry__Proto__Resource__V1__Resource *resource;
 
     size_t log_record_count;
     size_t index;
@@ -714,8 +1153,9 @@ static int process_logs(struct flb_event_chunk *event_chunk,
     size_t off = 0;
     struct flb_time tm;
     int res = FLB_OK;
+    int retcode;
 
-    log_record_list = (Opentelemetry__Proto__Logs__V1__LogRecord *) flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Logs__V1__LogRecord *));
+    log_record_list = flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Logs__V1__LogRecord *));
     if (!log_record_list) {
         flb_errno();
         return -1;
@@ -728,7 +1168,7 @@ static int process_logs(struct flb_event_chunk *event_chunk,
         return -1;
     }
 
-    log_bodies = (Opentelemetry__Proto__Common__V1__AnyValue *) flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Common__V1__AnyValue));
+    log_bodies = flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Common__V1__AnyValue));
     if (!log_bodies) {
         flb_free(log_record_list);
         flb_free(log_records);
@@ -762,11 +1202,15 @@ static int process_logs(struct flb_event_chunk *event_chunk,
         /* unpack the array of [timestamp, map] */
         flb_time_pop_from_msgpack(&tm, &result, &obj);
 
-        if (obj->type != MSGPACK_OBJECT_MAP) {
-            continue;
+        retcode = set_ra_fields(ctx, event_chunk, &log_records[log_record_count], obj);
+        if (retcode != 0) {
+            flb_plg_error(ctx->ins, "Error setting fields from record accessor");
+            return FLB_ERROR;
         }
 
-        log_object = msgpack_object_to_otlp_any_value(obj);
+        resource = get_resource_val(ctx, event_chunk, obj);
+
+        log_object = get_body_val(ctx, event_chunk, obj);
 
         log_records[log_record_count].body = log_object;
         log_records[log_record_count].time_unix_nano = flb_time_to_nanosec(&tm);
@@ -777,9 +1221,11 @@ static int process_logs(struct flb_event_chunk *event_chunk,
             res = flush_to_otel(ctx,
                                 event_chunk,
                                 log_record_list,
-                                log_record_count);
+                                log_record_count,
+                                resource);
 
             clear_array(log_record_list, log_record_count);
+            otlp_resource_destroy(resource);
             flb_free(log_records);
 
             log_record_count = 0;
@@ -794,9 +1240,11 @@ static int process_logs(struct flb_event_chunk *event_chunk,
         res = flush_to_otel(ctx,
                             event_chunk,
                             log_record_list,
-                            log_record_count);
+                            log_record_count,
+                            resource);
 
         clear_array(log_record_list, log_record_count);
+        otlp_resource_destroy(resource);
         flb_free(log_records);
 
         log_record_count = 0;
@@ -1093,6 +1541,46 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "compress", NULL,
      0, FLB_FALSE, 0,
      "Set payload compression mechanism. Option available is 'gzip'"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "trace_id_key", NULL,
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, trace_id_key),
+     "Specify the key name that will be used to extract the trace id."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "span_id_key", NULL,
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, span_id_key),
+     "Specify the key name that will be used to extract the span id."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "severity_text_key", NULL,
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, severity_text_key),
+     "Specify the key name that will be used to extract the severity text."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "severity_number_key", NULL,
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, severity_number_key),
+     "Specify the key name that will be used to extract the severity number."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "time_unix_nano_key", NULL,
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, time_unix_nano_key),
+     "Specify the key name that will be used to extract the timestamp."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "attributes_key", NULL,
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, attributes_key),
+     "Specify the key name that will be used to extract the attributes."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "body_key", NULL,
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, body_key),
+     "Specify the key name that will be used to extract the body."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "resource_key", NULL,
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, resource_key),
+     "Specify the key name that will be used to extract the resource."
     },
     /* EOF */
     {0}
