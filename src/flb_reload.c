@@ -337,6 +337,9 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     }
     if (cf_opts != NULL) {
         if (flb_reload_reconstruct_cf(cf_opts, new_cf) != 0) {
+            if (file != NULL) {
+                flb_sds_destroy(file);
+            }
             flb_error("[reload] reconstruct cf failed");
             return -1;
         }
