@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.12)
-project(fluent-bit)
+project(fluent-bit C)
 
 # CMP0069 ensures that LTO is enabled for all compilers
 cmake_policy(SET CMP0069 NEW)
@@ -7,8 +7,8 @@ set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  2)
-set(FLB_VERSION_MINOR  0)
-set(FLB_VERSION_PATCH  9)
+set(FLB_VERSION_MINOR  1)
+set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)

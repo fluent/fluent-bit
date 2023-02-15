@@ -85,6 +85,12 @@ void *flb_calloc(size_t n, const size_t size) {
     if (size == 0) {
         return NULL;
     }
+#ifdef FLB_HAVE_TESTS_OSSFUZZ
+   // Add chance of failure. Used by fuzzing to test error-handling code.
+   if (flb_fuzz_get_probability(1)) {
+     return NULL;
+   }
+#endif
 
     return calloc(n, size);
 }

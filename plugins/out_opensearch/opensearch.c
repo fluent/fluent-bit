@@ -856,9 +856,9 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
                                 struct flb_input_instance *ins, void *out_context,
                                 struct flb_config *config)
 {
-    int ret;
+    int ret = -1;
     size_t pack_size;
-    char *pack;
+    flb_sds_t pack;
     void *out_buf;
     size_t out_size;
     size_t b_sent;
@@ -874,12 +874,24 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
     }
 
     /* Convert format */
-    ret = opensearch_format(config, ins,
-                               ctx, NULL,
-                               event_chunk->type,
-                               event_chunk->tag, flb_sds_len(event_chunk->tag),
-                               event_chunk->data, event_chunk->size,
-                               &out_buf, &out_size);
+    if (event_chunk->type == FLB_EVENT_TYPE_TRACES) {
+        pack = flb_msgpack_raw_to_json_sds(event_chunk->data, event_chunk->size);
+        if (pack) {
+            ret = 0;
+        }
+        else {
+            ret = -1;
+        }
+    }
+    else if (event_chunk->type == FLB_EVENT_TYPE_LOGS) {
+        ret = opensearch_format(config, ins,
+                                   ctx, NULL,
+                                   event_chunk->type,
+                                   event_chunk->tag, flb_sds_len(event_chunk->tag),
+                                   event_chunk->data, event_chunk->size,
+                                   &out_buf, &out_size);
+    }
+
     if (ret != 0) {
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -1204,6 +1216,9 @@ struct flb_output_plugin out_opensearch_plugin = {
 
     /* Configuration */
     .config_map     = config_map,
+
+    /* Events supported */
+    .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_TRACES,
 
     /* Test */
     .test_formatter.callback = opensearch_format,

@@ -12,6 +12,9 @@ set(src
 # api/v1
 add_subdirectory(api/v1)
 
+# api/v2
+add_subdirectory(api/v2)
+
 include_directories(${MONKEY_INCLUDE_DIR})
 add_library(flb-http-server STATIC ${src})
-target_link_libraries(flb-http-server monkey-core-static api-v1)
+target_link_libraries(flb-http-server monkey-core-static api-v1 api-v2)

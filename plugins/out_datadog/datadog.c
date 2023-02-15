@@ -179,8 +179,9 @@ static int datadog_format(struct flb_config *config,
                     msgpack_unpacked_destroy(&result);
                     return -1;
                 }
-            } else if (flb_sds_len(remapped_tags) < byte_cnt) {
-                tmp = flb_sds_increase(remapped_tags, flb_sds_len(remapped_tags) - byte_cnt);
+            }
+            else if (flb_sds_len(remapped_tags) < byte_cnt) {
+                tmp = flb_sds_increase(remapped_tags, byte_cnt - flb_sds_len(remapped_tags));
                 if (!tmp) {
                     flb_errno();
                     flb_sds_destroy(remapped_tags);
