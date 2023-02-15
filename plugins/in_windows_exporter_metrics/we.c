@@ -271,6 +271,7 @@ static int in_we_init(struct flb_input_instance *in,
     int            ret;
     int metric_idx = -1;
     struct flb_we *ctx;
+    double windows_version = 0.0;
     struct mk_list *head;
     struct flb_slist_entry *entry;
     struct flb_we_callback *cb;
@@ -304,14 +305,14 @@ static int in_we_init(struct flb_input_instance *in,
     /* Associate context with the instance */
     flb_input_set_context(in, ctx);
 
-    ctx->windows_version = we_get_windows_version();
+    ret = we_get_windows_version(&windows_version);
 
-    if (ctx->windows_version == 0) {
+    if (ret == FLB_FALSE) {
         flb_plg_error(in, "could not get windows version");
 
         return -1;
     }
-
+    ctx->windows_version = windows_version;
 
     ret = we_perflib_init(ctx);
 

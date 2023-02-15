@@ -18,7 +18,7 @@ on:
 
 jobs:
   pr-windows-build:
-    uses: fluent/fluent-bit/.github/workflows/call-build-windows.yaml@master
+    uses: ./.github/workflows/call-build-windows.yaml
     with:
       version: ${{ github.sha }}
       ref: ${{ github.sha }}
