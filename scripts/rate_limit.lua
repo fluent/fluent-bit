@@ -11,14 +11,14 @@
 
 local counter = {}
 local time = 0
-local period = tonumber(os.getenv("PERIOD")) -- Period in seconds. Example: 60
-local limit = tonumber(os.getenv("LOGS_LIMIT")) -- Number of logs that can be allowed for the above mentioned period Example: 6000
-local key = os.getenv("KEY") -- Key based on which the limit applies. Example: docker_id 
+local group_key = os.getenv("GROUP_KEY") -- Used to group logs. Groups are rate limited independently. Example: docker_id
+local group_bucket_period_s = tonumber(os.getenv("GROUP_BUCKET_PERIOD_S")) -- This is the period of of time in seconds over which group_bucket_limit applies. Example: 60
+local group_bucket_limit = tonumber(os.getenv("GROUP_BUCKET_LIMIT")) -- Maximum number logs allowed per groups over the period of group_bucket_period_s. Example: 6000 
 
 -- with above values, each and every containers running on the kubernetes will have a limit of 6000 logs for every 60 seconds since contianers have unique kubernetes.docker_id value
 
 local function get_current_time(timestamp)
-    return math.floor(timestamp / period)
+    return math.floor(timestamp / group_bucket_period_s)
 end
 
 function rate_limit(tag, timestamp, record)
@@ -28,13 +28,13 @@ function rate_limit(tag, timestamp, record)
         time = current_time
         counter = {} -- reset the counter
     end
-    local counter_key = record["kubernetes"][key]
+    local counter_key = record["kubernetes"][group_key]
     local logs_count = counter[counter_key]
     if logs_count == nil then
         counter[counter_key] = 1
     else
         counter[counter_key] = logs_count + 1
-        if counter[counter_key] > limit then -- check if the number of logs is greater than logs limit
+        if counter[counter_key] > group_bucket_limit then -- check if the number of logs is greater than group_bucket_limit
             return -1, 0, 0 -- drop the log
         end
     end
