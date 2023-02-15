@@ -296,6 +296,7 @@ int flb_reload_reconstruct_cf(struct flb_cf *src_cf, struct flb_cf *dest_cf)
     return 0;
 }
 
+#ifdef FLB_HAVE_STREAM_PROCESSOR
 static int flb_reload_reconstruct_sp(struct flb_config *src, struct flb_config *dest)
 {
     struct mk_list *head;
@@ -309,6 +310,7 @@ static int flb_reload_reconstruct_sp(struct flb_config *src, struct flb_config *
 
     return 0;
 }
+#endif
 
 static int flb_reload_reinstantiate_external_plugins(struct flb_config *src, struct flb_config *dest)
 {
@@ -375,8 +377,10 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     verbose = ctx->config->verbose;
     new_config->verbose = verbose;
 
+#ifdef FLB_HAVE_STREAM_PROCESSOR
     /* Inherit stream processor definitions from command line */
     flb_reload_reconstruct_sp(old_config, new_config);
+#endif
 
     /* Create another config format context */
     if (file != NULL) {
