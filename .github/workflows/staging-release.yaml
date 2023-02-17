@@ -64,19 +64,49 @@ jobs:
       env:
         RELEASE_VERSION: ${{ github.event.inputs.version }}
 
+  staging-release-generate-package-matrix:
+    name: Get package matrix
+    runs-on: ubuntu-latest
+    outputs:
+      deb-build-matrix: ${{ steps.get-matrix.outputs.deb-build-matrix }}
+      rpm-build-matrix: ${{ steps.get-matrix.outputs.rpm-build-matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup runner
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+        shell: bash
+        
+      # Cope with 1.9 as well as 2.0
+      - uses: ./.github/actions/generate-package-build-matrix
+        id: get-matrix
+        with:
+          ref: v${{ inputs.version }}
+      
+      # Now annotate with whether it is Yum or Apt based
+
   # 1. Take packages from the staging bucket
   # 2. Sign them with the release GPG key
   # 3. Also take existing release packages from the release bucket.
   # 4. Create a full repo configuration using the existing releases as well.
   # 5. Upload to release bucket.
   # Note we could resign all packages as well potentially if we wanted to update the key.
-  staging-release-packages:
-    name: S3 - update packages bucket
+  staging-release-yum-packages:
+    name: S3 - update YUM packages bucket
     runs-on: ubuntu-22.04 # no createrepo on Ubuntu 20.04
     environment: release
-    needs: staging-release-version-check
+    needs: 
+      - staging-release-version-check
+      - staging-release-generate-package-matrix
     permissions:
       contents: read
+    strategy:
+      matrix:
+        distro: ${{ fromJSON(needs.staging-release-generate-package-matrix.outputs.rpm-build-matrix) }}
+      fail-fast: false
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
@@ -84,7 +114,7 @@ jobs:
     - name: Setup runner
       run: |
         sudo apt-get update
-        sudo apt-get install -y debsigs createrepo-c aptly rsync
+        sudo apt-get install -y createrepo-c
       shell: bash
 
     - name: Import GPG key for signing
@@ -101,13 +131,84 @@ jobs:
 
     - name: Sync packages from buckets on S3
       run: |
-        mkdir -p packaging/releases
-        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}" packaging/releases/ --no-progress
-        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}" packaging/releases/ --no-progress
+        mkdir -p "packaging/releases/$DISTRO"
+        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
+        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         AWS_REGION: "us-east-1"
+        DISTRO: ${{ matrix.distro }}
+      shell: bash
+
+    - name: GPG set up keys for signing
+      run: |
+        gpg --export -a "${{ steps.import_gpg.outputs.name }}" > packaging/releases/fluentbit.key
+        rpm --import packaging/releases/fluentbit.key
+      shell: bash
+
+    - name: Update repo info and remove any staging details
+      run: |
+        packaging/update-yum-repo.sh
+      env:
+        GPG_KEY: ${{ steps.import_gpg.outputs.name }}
+        AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_RELEASE }}
+        VERSION: ${{ github.event.inputs.version }}
+        BASE_PATH: "packaging/releases"
+        RPM_REPO: ${{ matrix.distro }}
+      shell: bash
+
+    - name: Sync to release bucket on S3
+      run: |
+        aws s3 sync "packaging/releases/$DISTRO" "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/$DISTRO" --delete --follow-symlinks --no-progress
+        aws s3 sync "packaging/releases/*.repo" "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/" --no-progress
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: "us-east-1"
+        DISTRO: ${{ matrix.distro }}
+      shell: bash
+
+  staging-release-apt-packages:
+    name: S3 - update APT packages bucket
+    runs-on: ubuntu-latest
+    environment: release
+    needs: 
+      - staging-release-version-check
+      - staging-release-generate-package-matrix
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        distro: ${{ fromJSON(needs.staging-release-generate-package-matrix.outputs.deb-build-matrix) }}
+      fail-fast: false
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Setup runner
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y debsigs aptly rsync
+      shell: bash
+
+    - name: Import GPG key for signing
+      id: import_gpg
+      uses: crazy-max/ghaction-import-gpg@v5
+      with:
+        gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+        passphrase: ${{ secrets.GPG_PRIVATE_KEY_PASSPHRASE }}
+
+    - name: Sync packages from buckets on S3
+      run: |
+        mkdir -p "packaging/releases/$DISTRO"
+        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
+        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: "us-east-1"
+        DISTRO: ${{ matrix.distro }}
       shell: bash
 
     - name: GPG set up keys for signing
@@ -119,21 +220,23 @@ jobs:
     - name: Update repo info and remove any staging details
       run: |
         rm -f packaging/releases/*.repo
-        rm -f packaging/releases/latest-version.txt
-        packaging/update-repos.sh packaging/releases/
+        packaging/update-apt-repo.sh
       env:
         GPG_KEY: ${{ steps.import_gpg.outputs.name }}
         AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_RELEASE }}
         VERSION: ${{ github.event.inputs.version }}
+        BASE_PATH: "packaging/releases"
+        DEB_REPO: ${{ matrix.distro }}
       shell: bash
 
     - name: Sync to release bucket on S3
       run: |
-        aws s3 sync packaging/releases/ "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}" --delete --follow-symlinks --no-progress
+        aws s3 sync "packaging/releases/$DISTRO" "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/$DISTRO" --delete --follow-symlinks --no-progress
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         AWS_REGION: "us-east-1"
+        DISTRO: ${{ matrix.distro }}
       shell: bash
 
   staging-release-source-s3:
@@ -190,6 +293,40 @@ jobs:
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         AWS_REGION: "us-east-1"
       shell: bash
+
+    - name: Provide output for documentation PR
+      run: |
+          export WIN_32_EXE_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win32.exe.sha256"|awk '{print $1}')
+          export WIN_32_ZIP_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win32.zip.sha256"|awk '{print $1}')
+          export WIN_64_EXE_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win64.exe.sha256"|awk '{print $1}')
+          export WIN_64_ZIP_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win64.zip.sha256"|awk '{print $1}')
+          cat > windows-part.md < EOF
+          ## Installation Packages
+
+          The latest stable version is ${{ inputs.version }}, each version is available on the Github release as well as at `https://releases.fluentbit.io/<Major Version>/fluent-bit-<Full Version>-win[32|64].[exe|zip]`:
+
+          | INSTALLERS                                                                                       | SHA256 CHECKSUMS                                                 |
+          | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+          | [fluent-bit-${{ inputs.version }}-win32.exe](https://releases.fluentbit.io/${{ needs.staging-release-version-check.outputs.major-version }}/fluent-bit-${{ inputs.version }}-win32.exe) | [$WIN_32_EXE_HASH](https://releases.fluentbit.io/2.0/fluent-bit-${{ inputs.version }}-win32.exe.sha256) |
+          | [fluent-bit-${{ inputs.version }}-win32.zip](https://releases.fluentbit.io/${{ needs.staging-release-version-check.outputs.major-version }}/fluent-bit-${{ inputs.version }}-win32.zip) | [$WIN_32_ZIP_HASH](https://releases.fluentbit.io/2.0/fluent-bit-${{ inputs.version }}-win32.zip.sha256) |
+          | [fluent-bit-${{ inputs.version }}-win64.exe](https://releases.fluentbit.io/${{ needs.staging-release-version-check.outputs.major-version }}/fluent-bit-${{ inputs.version }}-win64.exe) | [$WIN_64_EXE_HASH](https://releases.fluentbit.io/2.0/fluent-bit-${{ inputs.version }}-win64.exe.sha256) |
+          | [fluent-bit-${{ inputs.version }}-win64.zip](https://releases.fluentbit.io/${{ needs.staging-release-version-check.outputs.major-version }}/fluent-bit-${{ inputs.version }}-win64.zip) | [$WIN_64_ZIP_HASH](https://releases.fluentbit.io/2.0/fluent-bit-${{ inputs.version }}-win64.zip.sha256) |
+
+          To check the integrity, use `Get-FileHash` cmdlet on PowerShell.
+
+          ```powershell
+          PS> Get-FileHash fluent-bit-${{ inputs.version }}-win32.exe
+          ```
+          EOF
+      shell: bash
+      env:
+        BASE_DIR: ${{ needs.staging-release-version-check.outputs.major-version }}
+
+    - name: Upload Windows docs
+      uses: actions/upload-artifact@v3
+      with:
+        name: windows-part
+        path: windows-part.md
 
   # Simple skopeo copy jobs to transfer image from staging to release registry with optional GPG key signing.
   # Unfortunately skopeo currently does not support Cosign: https://github.com/containers/skopeo/issues/1533
@@ -476,7 +613,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     needs:
-      - staging-release-packages
+      - staging-release-apt-packages
+      - staging-release-yum-packages
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -514,7 +652,8 @@ jobs:
     name: Create the Github Release once packages and containers are up
     needs:
       - staging-release-images
-      - staging-release-packages
+      - staging-release-apt-packages
+      - staging-release-yum-packages
     permissions:
       contents: write
     environment: release
@@ -533,10 +672,68 @@ jobs:
 
       - name: Release 2.0 and latest
         uses: softprops/action-gh-release@v1
-        if: startsWith(inputs.version, '2.0')
+        if: startsWith(inputs.version, '2.')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
           draft: false
           generate_release_notes: false
           name: "Fluent Bit ${{ inputs.version }}"
           tag_name: v${{ inputs.version }}
+
+  staging-release-create-docs-pr:
+    name: Create docs updates for new release
+    needs: 
+      - staging-release-images
+      - staging-release-source-s3
+    permissions:
+      contents: none
+    environment: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Release 1.9 - not latest
+        if: startsWith(inputs.version, '1.9')
+        uses: actions/checkout@v3
+        with:
+          repository: fluent/fluent-bit-docs
+          ref: 1.9
+
+      - name: Release 2.0 and latest
+        if: startsWith(inputs.version, '2.')
+        uses: actions/checkout@v3
+        with:
+          repository: fluent/fluent-bit-docs
+
+      - name: Update container tags
+        run: |
+          sed -i -e '/| Tag(s).*$/a | ${{ inputs.version }}-debug | x86\_64, arm64v8, arm32v7 | Release [v${{ inputs.version }}](https://fluentbit.io/announcements/v${{ inputs.version }}/) |' installation/docker.md
+          sed -i -e '/| Tag(s).*$/a | ${{ inputs.version }} | x86\_64, arm64v8, arm32v7 | Debug images |' installation/docker.md
+        shell: bash
+
+      - name: Download Windows part
+        uses: actions/download-artifact@v3
+        with:
+          name: windows-part
+
+      - name: Update Windows version
+        run: |
+          # Remove old info
+          sed -i '/## Installation Packages/,/## Installing from ZIP archive/{//p;d;}' installation/windows.md
+          # Add new info (from previous job) at the end for simplicity
+          cat windows-part.md >> installation/windows.md
+        shell: bash
+
+      - name: Raise docs PR
+        uses: peter-evans/create-pull-request@v4
+        with:
+          commit-message: 'release: update to v${{ inputs.version }}'
+          signoff: true
+          delete-branch: true
+          title: 'release: update to v${{ inputs.version }}'
+          # We need workflows permission so have to use the CI_PAT
+          token: ${{ secrets.CI_PAT }}
+          labels: ci,automerge
+          body: |
+            Update release ${{ inputs.version }} version.
+            - Created by ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            - Auto-generated by create-pull-request: https://github.com/peter-evans/create-pull-request
+          draft: false
