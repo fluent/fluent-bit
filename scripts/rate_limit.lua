@@ -4,16 +4,16 @@
    sample configuration:
     [FILTER]
      Name lua
-     Match kubernetes.*
+     Match kube.*
      script rate_limit.lua
      call rate_limit
 ]]
 
 local counter = {}
 local time = 0
-local group_key = os.getenv("GROUP_KEY") -- Used to group logs. Groups are rate limited independently. Example: docker_id
-local group_bucket_period_s = tonumber(os.getenv("GROUP_BUCKET_PERIOD_S")) -- This is the period of of time in seconds over which group_bucket_limit applies. Example: 60
-local group_bucket_limit = tonumber(os.getenv("GROUP_BUCKET_LIMIT")) -- Maximum number logs allowed per groups over the period of group_bucket_period_s. Example: 6000 
+local group_key = "docker_id" -- Used to group logs. Groups are rate limited independently.
+local group_bucket_period_s = 60 -- This is the period of of time in seconds over which group_bucket_limit applies.
+local group_bucket_limit = 6000 -- Maximum number logs allowed per groups over the period of group_bucket_period_s.
 
 -- with above values, each and every containers running on the kubernetes will have a limit of 6000 logs for every 60 seconds since contianers have unique kubernetes.docker_id value
 
