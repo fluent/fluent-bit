@@ -92,6 +92,9 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
         ctx->db_table = flb_sds_create(FLB_PGSQL_TABLE);
     }
 
+    /* connection options */
+    ctx->conn_options = flb_output_get_property("connection_options", ins);
+
     if (!ctx->db_table) {
         flb_errno();
         pgsql_conf_destroy(ctx);

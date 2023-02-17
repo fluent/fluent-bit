@@ -54,9 +54,12 @@ void *pgsql_create_connection(struct flb_pgsql_config *ctx)
         flb_errno();
         return NULL;
     }
+
+    flb_plg_debug(ctx->ins, "connection_options: %s", ctx->conn_options);
     conn->conn = PQsetdbLogin(ctx->db_hostname,
                               ctx->db_port,
-                              NULL, NULL,
+                              ctx->conn_options,
+                              NULL,
                               ctx->db_name,
                               ctx->db_user,
                               ctx->db_passwd);
