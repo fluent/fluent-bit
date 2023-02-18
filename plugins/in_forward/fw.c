@@ -127,7 +127,9 @@ static int in_fw_collect(struct flb_input_instance *ins,
 
     ctx = in_context;
 
+    pthread_mutex_lock(&ctx->connections_mutex);
     connection = flb_downstream_conn_get(ctx->downstream);
+    pthread_mutex_unlock(&ctx->connections_mutex);
 
     if (connection == NULL) {
         flb_plg_error(ctx->ins, "could not accept new connection");
@@ -136,7 +138,9 @@ static int in_fw_collect(struct flb_input_instance *ins,
     }
 
     if (!config->is_ingestion_active) {
+        pthread_mutex_lock(&ctx->connections_mutex);
         flb_downstream_conn_release(connection);
+        pthread_mutex_unlock(&ctx->connections_mutex);
 
         return -1;
     }

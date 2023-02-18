@@ -51,7 +51,7 @@ struct fw_conn {
 };
 
 struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_config *ctx);
-int fw_conn_del(struct fw_conn *conn);
+int fw_conn_del(struct flb_in_fw_config *ctx, struct fw_conn *conn);
 int fw_conn_del_all(struct flb_in_fw_config *ctx);
 
 #endif

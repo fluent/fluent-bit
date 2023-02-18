@@ -56,7 +56,7 @@ int fw_conn_event(void *data)
             if (conn->buf_size >= ctx->buffer_max_size) {
                 flb_plg_warn(ctx->ins, "fd=%i incoming data exceed limit (%lu bytes)",
                              event->fd, (ctx->buffer_max_size));
-                fw_conn_del(conn);
+                fw_conn_del(ctx, conn);
                 return -1;
             }
             else if (conn->buf_size + ctx->buffer_chunk_size > ctx->buffer_max_size) {
@@ -91,21 +91,21 @@ int fw_conn_event(void *data)
 
             ret = fw_prot_process(ctx->ins, conn);
             if (ret == -1) {
-                fw_conn_del(conn);
+                fw_conn_del(ctx, conn);
                 return -1;
             }
             return bytes;
         }
         else {
             flb_plg_trace(ctx->ins, "fd=%i closed connection", event->fd);
-            fw_conn_del(conn);
+            fw_conn_del(ctx, conn);
             return -1;
         }
     }
 
     if (event->mask & MK_EVENT_CLOSE) {
         flb_plg_trace(ctx->ins, "fd=%i hangup", event->fd);
-        fw_conn_del(conn);
+        fw_conn_del(ctx, conn);
         return -1;
     }
     return 0;
@@ -162,14 +162,16 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
 
         return NULL;
     }
-
+    pthread_mutex_lock(&ctx->connections_mutex);
     mk_list_add(&conn->_head, &ctx->connections);
+    pthread_mutex_unlock(&ctx->connections_mutex);
 
     return conn;
 }
 
-int fw_conn_del(struct fw_conn *conn)
+int fw_conn_del(struct flb_in_fw_config *ctx, struct fw_conn *conn)
 {
+    pthread_mutex_lock(&ctx->connections_mutex);
     /* The downstream unregisters the file descriptor from the event-loop
      * so there's nothing to be done by the plugin
      */
@@ -177,6 +179,8 @@ int fw_conn_del(struct fw_conn *conn)
 
     /* Release resources */
     mk_list_del(&conn->_head);
+
+    pthread_mutex_unlock(&ctx->connections_mutex);
 
     flb_free(conn->buf);
     flb_free(conn);
@@ -192,7 +196,7 @@ int fw_conn_del_all(struct flb_in_fw_config *ctx)
 
     mk_list_foreach_safe(head, tmp, &ctx->connections) {
         conn = mk_list_entry(head, struct fw_conn, _head);
-        fw_conn_del(conn);
+        fw_conn_del(ctx, conn);
     }
 
     return 0;

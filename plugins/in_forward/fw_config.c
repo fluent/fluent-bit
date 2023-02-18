@@ -65,6 +65,7 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
         flb_debug("[in_fw] Listen='%s' TCP_Port=%s",
                   config->listen, config->tcp_port);
     }
+    pthread_mutex_init(&config->connections_mutex, NULL);
     return config;
 }
 
