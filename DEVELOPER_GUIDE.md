@@ -7,6 +7,9 @@ changes to Fluent Bit.
 
 - [Beginners Guide to Contributing to Fluent Bit](#beginners-guide-to-contributing-to-fluent-bit)
   - [Table of Contents](#table-of-contents)
+  - [Development Environment](#development-environment)
+    - [Devcontainer](#devcontainer)
+    - [Vagrant](#vagrant)
   - [Libraries](#libraries)
     - [Memory Management](#memory-management)
     - [Strings](#strings)
@@ -26,6 +29,50 @@ changes to Fluent Bit.
   - [Testing](#testing)
     - [Valgrind](#valgrind)
   - [Need more help?](#need-more-help)
+
+## Development Environment
+
+Development environments allow to work without any dependency locally.
+
+### Devcontainer
+
+A Development Container (or Dev Container for short) allows you to use a container as a full-featured development environment.
+
+Thanks to [Visual Studio Code integration](https://code.visualstudio.com/docs/devcontainers/containers), devcontainers are managed easily.
+
+#### Prerequirements
+- [docker](https://www.docker.com)
+- [visual studio code](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) [optional]
+- [devcontainer](https://github.com/devcontainers/cli) [optional]
+
+#### Using without optional tools
+
+```shell
+docker run \
+    --name devcontainer-fluent-bit \
+    --publish 2020:2020 \
+    --volume $PWD/:/workspaces/fluent-bit \
+    --tty \
+    --detach \
+    mcr.microsoft.com/devcontainers/base:jammy
+docker exec -it --user vscode devcontainer-fluent-bit bash
+cd /workspaces/fluent-bit
+sudo bash .devcontainer/install-dev-tools.sh
+```
+
+### Vagrant
+Vagrant enables the creation and configuration of lightweight, reproducible, and portable development environments.
+
+#### Prerequirements
+- [vagrant](https://www.vagrantup.com)
+- [vagrant providers](https://developer.hashicorp.com/vagrant/docs/providers)
+
+#### Using
+
+```shell
+vagrant up
+vagrant ssh
+```
 
 ## Libraries
 
