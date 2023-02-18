@@ -104,6 +104,8 @@ int flb_downstream_setup(struct flb_downstream *stream,
     mk_list_init(&stream->busy_queue);
     mk_list_init(&stream->destroy_queue);
 
+    pthread_mutex_init(&stream->busy_queue_mutex, NULL);
+
     snprintf(port_string, sizeof(port_string), "%u", port);
 
     if (transport == FLB_TRANSPORT_TCP) {
@@ -296,7 +298,9 @@ struct flb_connection *flb_downstream_conn_get(struct flb_downstream *stream)
     flb_stream_acquire_lock(&stream->base, FLB_TRUE);
 
     /* Link new connection to the busy queue */
+    pthread_mutex_lock(&stream->busy_queue_mutex);
     mk_list_add(&connection->_head, &stream->busy_queue);
+    pthread_mutex_unlock(&stream->busy_queue_mutex);
 
     flb_stream_release_lock(&stream->base);
 
@@ -415,6 +419,7 @@ int flb_downstream_conn_timeouts(struct mk_list *list)
         flb_stream_acquire_lock(&stream->base, FLB_TRUE);
 
         /* Iterate every busy connection */
+        pthread_mutex_lock(&stream->busy_queue_mutex);
         mk_list_foreach_safe(s_head, tmp, &stream->busy_queue) {
             connection = mk_list_entry(s_head, struct flb_connection, _head);
 
@@ -468,6 +473,7 @@ int flb_downstream_conn_timeouts(struct mk_list *list)
                 prepare_destroy_conn(connection);
             }
         }
+        pthread_mutex_unlock(&stream->busy_queue_mutex);
 
         flb_stream_release_lock(&stream->base);
     }

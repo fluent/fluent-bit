@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_stream.h>
+#include <fluent-bit/flb_pthread.h>
 
 struct flb_connection;
 
@@ -40,6 +41,7 @@ struct flb_downstream {
     flb_sockfd_t           server_fd;
     struct flb_connection *dgram_connection;
 
+    pthread_mutex_t        busy_queue_mutex;
     struct mk_list         busy_queue;
     struct mk_list         destroy_queue;
 };
