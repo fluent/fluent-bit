@@ -159,7 +159,7 @@ static int in_elasticsearch_bulk_init(struct flb_input_instance *ins,
                                          ctx->downstream->server_fd,
                                          config);
     if (ret == -1) {
-        flb_plg_error(ctx->ins, "Could not set collector for IN_TCP input plugin");
+        flb_plg_error(ctx->ins, "Could not set collector for IN_ELASTICSEARCH input plugin");
         in_elasticsearch_config_destroy(ctx);
 
         return -1;
