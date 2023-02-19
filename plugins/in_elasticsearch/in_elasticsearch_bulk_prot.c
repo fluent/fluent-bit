@@ -663,8 +663,8 @@ int in_elasticsearch_bulk_prot_handle(struct flb_in_elasticsearch *ctx,
     off_t diff;
     flb_sds_t tag;
     struct mk_http_header *header;
-    flb_sds_t bulk_statuses;
-    flb_sds_t bulk_response;
+    flb_sds_t bulk_statuses = NULL;
+    flb_sds_t bulk_response = NULL;
     char *error_str = NULL;
 
     if (request->uri.data[0] != '/') {
@@ -780,11 +780,16 @@ int in_elasticsearch_bulk_prot_handle(struct flb_in_elasticsearch *ctx,
         if (strncmp(uri, "/_bulk", 6) == 0) {
             bulk_statuses = flb_sds_create_size(ctx->buffer_max_size);
             if (!bulk_statuses) {
+                flb_sds_destroy(tag);
+                mk_mem_free(uri);
                 return -1;
             }
 
             bulk_response = flb_sds_create_size(ctx->buffer_max_size);
             if (!bulk_response) {
+                flb_sds_destroy(bulk_statuses);
+                flb_sds_destroy(tag);
+                mk_mem_free(uri);
                 return -1;
             }
         } else {
@@ -801,6 +806,14 @@ int in_elasticsearch_bulk_prot_handle(struct flb_in_elasticsearch *ctx,
         request->method != MK_METHOD_GET &&
         request->method != MK_METHOD_HEAD &&
         request->method != MK_METHOD_PUT) {
+
+        if (bulk_statuses) {
+            flb_sds_destroy(bulk_statuses);
+        }
+        if (bulk_response) {
+            flb_sds_destroy(bulk_response);
+        }
+
         flb_sds_destroy(tag);
         mk_mem_free(uri);
 
