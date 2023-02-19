@@ -46,9 +46,9 @@ struct flb_in_elasticsearch *in_elasticsearch_config_create(struct flb_input_ins
     /* Listen interface (if not set, defaults to 0.0.0.0:9200) */
     flb_input_net_default_listener("0.0.0.0", 9200, ins);
 
-    ctx->listen = flb_strdup(ins->host.listen);
+    ctx->listen = flb_sds_create(ins->host.listen);
     snprintf(port, sizeof(port) - 1, "%d", ins->host.port);
-    ctx->tcp_port = flb_strdup(port);
+    ctx->tcp_port = flb_sds_create(port);
 
     /* HTTP Server specifics */
     ctx->server = flb_calloc(1, sizeof(struct mk_server));
@@ -79,8 +79,8 @@ int in_elasticsearch_config_destroy(struct flb_in_elasticsearch *ctx)
     if (ctx->server) {
         flb_free(ctx->server);
     }
-    flb_free(ctx->listen);
-    flb_free(ctx->tcp_port);
+    flb_sds_destroy(ctx->listen);
+    flb_sds_destroy(ctx->tcp_port);
     flb_free(ctx);
     return 0;
 }
