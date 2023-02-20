@@ -44,11 +44,11 @@ Create fluent-bit configuration file as follows:
 
 [INPUT]
     Name dummy
-    Tag dummy.local
+    Tag  dummy.local
 
 [FILTER]
-    Name wasm
-    Tag  dummy.*
+    Name   wasm
+    match  dummy.*
     WASM_Path /path/to/filter_rust.wasm
     Function_Name rust_filter
     accessible_paths .,/path/to/fluent-bit
