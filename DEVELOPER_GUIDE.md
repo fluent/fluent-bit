@@ -50,14 +50,25 @@ Thanks to [Visual Studio Code integration](https://code.visualstudio.com/docs/de
 ```shell
 docker run \
     --name devcontainer-fluent-bit \
-    --publish 2020:2020 \
     --volume $PWD/:/workspaces/fluent-bit \
     --tty \
     --detach \
-    mcr.microsoft.com/devcontainers/base:jammy
-docker exec -it --user vscode devcontainer-fluent-bit bash
+    fluent/fluent-bit:latest-debug
+docker exec devcontainer-fluent-bit addgroup --system --gid 1000 fluent-bit
+docker exec devcontainer-fluent-bit useradd --create-home --system --uid 1000 --gid 1000 fluent-bit
+docker exec devcontainer-fluent-bit sh -c 'echo "fluent-bit   ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/fluent-bit'
+docker exec -it --user fluent-bit devcontainer-fluent-bit bash
 cd /workspaces/fluent-bit
-sudo bash .devcontainer/install-dev-tools.sh
+sudo bash scripts/install-dev-tools.sh
+```
+
+If local applications need to access fluent-bit server or tcp/udp inputs, the ports must be publish with --publish flag. ex:
+
+```text
+docker run \
+--publish 2020:2020 \
+--publish 80:80 \
+...
 ```
 
 ### Vagrant

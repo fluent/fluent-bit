@@ -1,9 +1,18 @@
 {
 	"name": "devcontainer-fluent-bit",
-	"image": "mcr.microsoft.com/devcontainers/base:jammy",
+	"image": "fluent/fluent-bit:latest-debug",
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	"features": {
+		// add non-root user. it is similar your local user.
+		"ghcr.io/devcontainers/features/common-utils": {
+			"version": "latest",
+			"username": "fluent-bit",
+			"userUid": 1000,
+			"userGid": 1000
+		},
+
+		// docker-in-docker allows you to run Docker commands inside the dev container. Thus, it supports to build docker build in the environment.
 		"ghcr.io/devcontainers/features/docker-in-docker:2": {
 			"version": "latest",
 			"moby": true,
@@ -12,12 +21,14 @@
 	},
 
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+	// The ports are useful while sending data over tcp/udp from local applications.
 	"forwardPorts": [
-		2020
+		// 2020  // fluent metrics etc.
+		// 80    // http input etc.
 	],
 
 	// Use 'postCreateCommand' to run commands after the container is created.
-	"postCreateCommand": "sudo bash .devcontainer/install-dev-tools.sh",
+	"postCreateCommand": "sudo bash scripts/install-dev-tools.sh",
 	"customizations": {
 		"vscode": {
 			"extensions": [
@@ -27,5 +38,5 @@
 		}
 	},
 
-	"remoteUser": "vscode"
+	"remoteUser": "fluent-bit"
 }

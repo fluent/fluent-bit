@@ -81,4 +81,4 @@
 /tests/runtime/out_s3.c         @pettitwesley
 
 # Devcontainer
-/.devcontainer                  @bkayranci
+/.devcontainer                  @patrick-stephens @niedbalski @edsiper
