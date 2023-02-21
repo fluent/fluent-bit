@@ -79,7 +79,7 @@ jobs:
       - name: Install dependencies
         run: |
           brew update
-          brew install bison flex libyaml openssl || true
+          brew pkgconfig install bison flex libyaml openssl || true
 
       - name: Build Fluent Bit packages
         run: |
