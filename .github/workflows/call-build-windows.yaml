@@ -88,12 +88,6 @@ jobs:
             chocolatey_opt: ""
             cmake_additional_opt: "-DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_VERSION=10.0 -DCMAKE_SYSTEM_PROCESSOR=ARM64"
             vcpkg_triplet: arm64-windows-static
-        # If we are using 2.0.* or earlier we need to exclude the ARM64 build as the dependencies fail to compile.
-        hasArmSupport:
-          - ${{ needs.call-build-windows-get-meta.outputs.armSupported }}
-        exclude:
-          - hasArmSupport: false
-            arch: amd64_arm64
     permissions:
       contents: read
     # Default environment variables can be overridden below. To prevent library pollution - without this other random libraries may be found on the path leading to failures.
@@ -134,6 +128,8 @@ jobs:
         shell: cmd
 
       - name: Build Fluent Bit packages
+        # If we are using 2.0.* or earlier we need to exclude the ARM64 build as the dependencies fail to compile.
+        if: ${{ matrix.config.arch != 'amd64_arm64' || needs.call-build-windows-get-meta.outputs.armSupported == 'true' }}
         run: |
           cmake -G "NMake Makefiles" -DFLB_NIGHTLY_BUILD=${{ inputs.unstable }} -DOPENSSL_ROOT_DIR='${{ matrix.config.openssl_dir }}' ${{ matrix.config.cmake_additional_opt }} ../
           cmake --build .
@@ -141,6 +137,7 @@ jobs:
         working-directory: build
 
       - name: Upload build packages
+        if: ${{ matrix.config.arch != 'amd64_arm64' || needs.call-build-windows-get-meta.outputs.armSupported == 'true' }}
         uses: actions/upload-artifact@v3
         with:
           name: windows-packages
