@@ -54,7 +54,7 @@ jobs:
       - name: 2.0 run
         if: github.event_name == 'schedule' && github.event.schedule=='0 12 * * *'
         run: |
-          echo "cron_branch=1.9" >> $GITHUB_ENV
+          echo "cron_branch=2.0" >> $GITHUB_ENV
         shell: bash
 
       - name: Output the branch to use
