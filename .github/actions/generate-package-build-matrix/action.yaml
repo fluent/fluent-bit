@@ -49,9 +49,9 @@ runs:
         matrix=$(echo '{ "distro" : '$(jq -cr '.linux_targets|map(.target)' packaging/build-config.json)'}'|jq -c .)
         echo "MATRIX=$matrix" >> $GITHUB_ENV
 
-        deb-matrix = =$(echo '{ "distro" : '$(jq -cr '[.linux_targets[] |select(.type=="deb")|.target ]' packaging/build-config.json)'}'|jq -c .)
+        deb-matrix = $(echo '{ "distro" : '$(jq -cr '[.linux_targets[] |select(.type=="deb")|.target ]' packaging/build-config.json)'}'|jq -c .)
         echo "DEB_MATRIX=$deb-matrix" >> $GITHUB_ENV
-        rpm-matrix = =$(echo '{ "distro" : '$(jq -cr '[.linux_targets[] |select(.type=="rpm")|.target ]' packaging/build-config.json)'}'|jq -c .)
+        rpm-matrix = $(echo '{ "distro" : '$(jq -cr '[.linux_targets[] |select(.type=="rpm")|.target ]' packaging/build-config.json)'}'|jq -c .)
         echo "RPM_MATRIX=$rpm-matrix" >> $GITHUB_ENV
       shell: bash
 
