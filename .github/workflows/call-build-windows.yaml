@@ -36,9 +36,36 @@ on:
         required: false
 
 jobs:
+
+  call-build-windows-get-meta:
+    name: Determine build info
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      armSupported: ${{ steps.armcheck.outputs.armSupported }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Determine if we are doing a build with ARM support
+        id: armcheck
+        # Check for new contents from https://github.com/fluent/fluent-bit/pull/6621
+        run: |
+          if grep -q "winarm64" CMakeLists.txt ; then
+            echo "armSupported=true" >> $GITHUB_OUTPUT
+          else
+            echo "armSupported=false" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
   call-build-windows-package:
     runs-on: windows-latest
     environment: ${{ inputs.environment }}
+    needs:
+      - call-build-windows-get-meta
     strategy:
       fail-fast: false
       matrix:
@@ -61,6 +88,12 @@ jobs:
             chocolatey_opt: ""
             cmake_additional_opt: "-DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_VERSION=10.0 -DCMAKE_SYSTEM_PROCESSOR=ARM64"
             vcpkg_triplet: arm64-windows-static
+        # If we are using 2.0.* or earlier we need to exclude the ARM64 build as the dependencies fail to compile.
+        hasArmSupport:
+          - ${{ needs.call-build-windows-get-meta.outputs.armSupported }}
+        exclude:
+          - hasArmSupport: 'false'
+            name: "Windows 64bit (Arm64)"
     permissions:
       contents: read
     # Default environment variables can be overridden below. To prevent library pollution - without this other random libraries may be found on the path leading to failures.

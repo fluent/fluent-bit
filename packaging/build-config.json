@@ -96,5 +96,10 @@
           "target": "debian/raspbian/bullseye",
           "type": "deb"
         }
+      ],
+      "windows_targets" : [
+        "x86",
+        "x64",
+        "amd64_arm64"
       ]
 }
