@@ -18,10 +18,10 @@ outputs:
     value: ${{ steps.set-matrix.outputs.matrix }}
   deb-build-matrix:
     description: The targets that provide DEB artefacts.
-    value: ${{ steps.set-matrix.outputs.deb-matrix }}
+    value: ${{ steps.set-matrix.outputs.debmatrix }}
   rpm-build-matrix:
     description: The targets that provide RPN artefacts.
-    value: ${{ steps.set-matrix.outputs.rpm-matrix }}
+    value: ${{ steps.set-matrix.outputs.rpmmatrix }}
 runs:
   using: "composite"
   steps:
@@ -49,10 +49,13 @@ runs:
         matrix=$(echo '{ "distro" : '$(jq -cr '.linux_targets|map(.target)' packaging/build-config.json)'}'|jq -c .)
         echo "MATRIX=$matrix" >> $GITHUB_ENV
 
-        deb-matrix = $(echo '{ "distro" : '$(jq -cr '[.linux_targets[] |select(.type=="deb")|.target ]' packaging/build-config.json)'}'|jq -c .)
-        echo "DEB_MATRIX=$deb-matrix" >> $GITHUB_ENV
-        rpm-matrix = $(echo '{ "distro" : '$(jq -cr '[.linux_targets[] |select(.type=="rpm")|.target ]' packaging/build-config.json)'}'|jq -c .)
-        echo "RPM_MATRIX=$rpm-matrix" >> $GITHUB_ENV
+        debtargets=$(jq -cr '[.linux_targets[] |select(.type=="deb")|.target ]' packaging/build-config.json)
+        debmatrix=$(echo "{ \"distro\" : $debtargets }"|jq -c .)
+        echo "DEB_MATRIX=$debmatrix" >> $GITHUB_ENV
+
+        rpmtargets=$(jq -cr '[.linux_targets[] |select(.type=="rpm")|.target ]' packaging/build-config.json)
+        rpmmatrix=$(echo "{ \"distro\" : $rpmtargets}"|jq -c .)
+        echo "RPM_MATRIX=$rpmmatrix" >> $GITHUB_ENV
       shell: bash
 
     - name: 1.9 targets
@@ -69,7 +72,7 @@ runs:
           echo ']}'
         ) | jq -c .)
         echo "MATRIX=$matrix" >> $GITHUB_ENV
-        deb-matrix=$((
+        debmatrix=$((
           echo '{ "distro" : ['
           echo '"debian/buster", "debian/buster.arm64v8", "debian/bullseye", "debian/bullseye.arm64v8",'
           echo '"ubuntu/16.04", "ubuntu/18.04", "ubuntu/20.04", "ubuntu/22.04",'
@@ -77,14 +80,14 @@ runs:
           echo '"raspbian/buster", "raspbian/bullseye"'
           echo ']}'
         ) | jq -c .)
-        echo "DEB_MATRIX=$deb-matrix" >> $GITHUB_ENV
-        rpm-matrix=$((
+        echo "DEB_MATRIX=$debmatrix" >> $GITHUB_ENV
+        rpmmatrix=$((
           echo '{ "distro" : ['
           echo '"amazonlinux/2", "amazonlinux/2.arm64v8",'
           echo '"centos/7", "centos/7.arm64v8", "centos/8", "centos/8.arm64v8"'
           echo ']}'
         ) | jq -c .)
-        echo "RPM_MATRIX=$rpm-matrix" >> $GITHUB_ENV
+        echo "RPM_MATRIX=$rpmmatrix" >> $GITHUB_ENV
       shell: bash
 
     - name: Manual override of target
@@ -108,8 +111,8 @@ runs:
         echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
         echo $DEB_MATRIX
         echo $DEB_MATRIX| jq .
-        echo "deb-matrix=$DEB_MATRIX" >> $GITHUB_OUTPUT
+        echo "debmatrix=$DEB_MATRIX" >> $GITHUB_OUTPUT
         echo $RPM_MATRIX
         echo $RPM_MATRIX| jq .
-        echo "rpm-matrix=$RPM_MATRIX" >> $GITHUB_OUTPUT
+        echo "rpmmatrix=$RPM_MATRIX" >> $GITHUB_OUTPUT
       shell: bash
