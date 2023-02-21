@@ -129,14 +129,17 @@ jobs:
 
       - name: Build Fluent Bit packages
         # If we are using 2.0.* or earlier we need to exclude the ARM64 build as the dependencies fail to compile.
+        # Trying to do via an exclude for the job triggers linting errors.
+        # This is only supposed to be a workaround for now so can be easily removed later.
         if: ${{ matrix.config.arch != 'amd64_arm64' || needs.call-build-windows-get-meta.outputs.armSupported == 'true' }}
         run: |
-          cmake -G "NMake Makefiles" -DFLB_NIGHTLY_BUILD=${{ inputs.unstable }} -DOPENSSL_ROOT_DIR='${{ matrix.config.openssl_dir }}' ${{ matrix.config.cmake_additional_opt }} ../
+          cmake -G "NMake Makefiles" -DFLB_NIGHTLY_BUILD='${{ inputs.unstable }}' -DOPENSSL_ROOT_DIR='${{ matrix.config.openssl_dir }}' ${{ matrix.config.cmake_additional_opt }} ../
           cmake --build .
           cpack
         working-directory: build
 
       - name: Upload build packages
+        # Skip upload if we skipped build.
         if: ${{ matrix.config.arch != 'amd64_arm64' || needs.call-build-windows-get-meta.outputs.armSupported == 'true' }}
         uses: actions/upload-artifact@v3
         with:
