@@ -92,8 +92,8 @@ jobs:
         hasArmSupport:
           - ${{ needs.call-build-windows-get-meta.outputs.armSupported }}
         exclude:
-          - hasArmSupport: 'false'
-            name: "Windows 64bit (Arm64)"
+          - hasArmSupport: false
+            arch: amd64_arm64
     permissions:
       contents: read
     # Default environment variables can be overridden below. To prevent library pollution - without this other random libraries may be found on the path leading to failures.
