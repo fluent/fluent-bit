@@ -52,10 +52,10 @@ struct flb_aws_error_reporter *error_reporter;
 static pthread_once_t flb_lib_once = PTHREAD_ONCE_INIT;
 
 /* reference to the last 'flb_lib_ctx' context started through flb_start() */
-static pthread_key_t flb_lib_active_context;
+FLB_TLS_DEFINE(flb_ctx_t, flb_lib_active_context);
 
 /* reference to the last 'flb_cf' context started through flb_start() */
-static pthread_key_t flb_lib_active_cf_context;
+FLB_TLS_DEFINE(struct flb_cf, flb_lib_active_cf_context);
 
 #ifdef FLB_SYSTEM_WINDOWS
 static inline int flb_socket_init_win32(void)
@@ -128,8 +128,8 @@ void flb_init_env()
     flb_downstream_init();
     flb_output_prepare();
 
-    pthread_key_create(&flb_lib_active_context, NULL);
-    pthread_key_create(&flb_lib_active_cf_context, NULL);
+    FLB_TLS_INIT(flb_lib_active_context);
+    FLB_TLS_INIT(flb_lib_active_cf_context);
 
     /* libraries */
     cmt_initialize();
@@ -771,26 +771,26 @@ int flb_stop(flb_ctx_t *ctx)
 
 void flb_context_set(flb_ctx_t *ctx)
 {
-    pthread_setspecific(flb_lib_active_context, ctx);
+    FLB_TLS_SET(flb_lib_active_context, ctx);
 }
 
 flb_ctx_t *flb_context_get()
 {
     flb_ctx_t *ctx;
 
-    ctx = (flb_ctx_t *) pthread_getspecific(flb_lib_active_context);
+    ctx = FLB_TLS_GET(flb_lib_active_context);
     return ctx;
 }
 
 void flb_cf_context_set(struct flb_cf *cf)
 {
-    pthread_setspecific(flb_lib_active_cf_context, cf);
+    FLB_TLS_SET(flb_lib_active_cf_context, cf);
 }
 
 struct flb_cf *flb_cf_context_get()
 {
     struct flb_cf *cf;
 
-    cf = (struct flb_cf *) pthread_getspecific(flb_lib_active_cf_context);
+    cf = FLB_TLS_GET(flb_lib_active_cf_context);
     return cf;
 }
