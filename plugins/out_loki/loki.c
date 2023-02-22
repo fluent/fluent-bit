@@ -47,7 +47,7 @@ static inline void safe_sds_cat(flb_sds_t *buf, const char *str, int len)
     }
 }
 
-static inline void normalize_cat(struct flb_ra_parser *rp, flb_sds_t name)
+static inline void normalize_cat(struct flb_ra_parser *rp, flb_sds_t *name)
 {
     int sub;
     int len;
@@ -59,12 +59,12 @@ static inline void normalize_cat(struct flb_ra_parser *rp, flb_sds_t name)
     /* Iterate record accessor keys */
     key = rp->key;
     if (rp->type == FLB_RA_PARSER_STRING) {
-        safe_sds_cat(&name, key->name, flb_sds_len(key->name));
+        safe_sds_cat(name, key->name, flb_sds_len(key->name));
     }
     else if (rp->type == FLB_RA_PARSER_KEYMAP) {
-        safe_sds_cat(&name, key->name, flb_sds_len(key->name));
+        safe_sds_cat(name, key->name, flb_sds_len(key->name));
         if (mk_list_size(key->subkeys) > 0) {
-            safe_sds_cat(&name, "_", 1);
+            safe_sds_cat(name, "_", 1);
         }
 
         sub = 0;
@@ -72,15 +72,15 @@ static inline void normalize_cat(struct flb_ra_parser *rp, flb_sds_t name)
             entry = mk_list_entry(s_head, struct flb_ra_subentry, _head);
 
             if (sub > 0) {
-                safe_sds_cat(&name, "_", 1);
+                safe_sds_cat(name, "_", 1);
             }
             if (entry->type == FLB_RA_PARSER_STRING) {
-                safe_sds_cat(&name, entry->str, flb_sds_len(entry->str));
+                safe_sds_cat(name, entry->str, flb_sds_len(entry->str));
             }
             else if (entry->type == FLB_RA_PARSER_ARRAY_ID) {
                 len = snprintf(tmp, sizeof(tmp) -1, "%d",
                                entry->array_id);
-                safe_sds_cat(&name, tmp, len);
+                safe_sds_cat(name, tmp, len);
             }
             sub++;
         }
@@ -105,7 +105,7 @@ static flb_sds_t normalize_ra_key_name(struct flb_loki *ctx,
         if (c > 0) {
             flb_sds_cat(name, "_", 1);
         }
-        normalize_cat(rp, name);
+        normalize_cat(rp, &name);
         c++;
     }
 
@@ -972,7 +972,7 @@ static void pack_timestamp(msgpack_packer *mp_pck, struct flb_time *tms)
 }
 
 
-static void pack_format_line_value(flb_sds_t buf, msgpack_object *val)
+static void pack_format_line_value(flb_sds_t *buf, msgpack_object *val)
 {
     int i;
     int len;
@@ -981,28 +981,28 @@ static void pack_format_line_value(flb_sds_t buf, msgpack_object *val)
     msgpack_object v;
 
     if (val->type == MSGPACK_OBJECT_STR) {
-        safe_sds_cat(&buf, "\"", 1);
-        safe_sds_cat(&buf, val->via.str.ptr, val->via.str.size);
-        safe_sds_cat(&buf, "\"", 1);
+        safe_sds_cat(buf, "\"", 1);
+        safe_sds_cat(buf, val->via.str.ptr, val->via.str.size);
+        safe_sds_cat(buf, "\"", 1);
     }
     else if (val->type == MSGPACK_OBJECT_NIL) {
-        safe_sds_cat(&buf, "null", 4);
+        safe_sds_cat(buf, "null", 4);
     }
     else if (val->type == MSGPACK_OBJECT_BOOLEAN) {
         if (val->via.boolean) {
-            safe_sds_cat(&buf, "true", 4);
+            safe_sds_cat(buf, "true", 4);
         }
         else {
-            safe_sds_cat(&buf, "false", 5);
+            safe_sds_cat(buf, "false", 5);
         }
     }
     else if (val->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
         len = snprintf(temp, sizeof(temp)-1, "%"PRIu64, val->via.u64);
-        safe_sds_cat(&buf, temp, len);
+        safe_sds_cat(buf, temp, len);
     }
     else if (val->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
         len = snprintf(temp, sizeof(temp)-1, "%"PRId64, val->via.i64);
-        safe_sds_cat(&buf, temp, len);
+        safe_sds_cat(buf, temp, len);
     }
     else if (val->type == MSGPACK_OBJECT_FLOAT32 ||
              val->type == MSGPACK_OBJECT_FLOAT64) {
@@ -1014,18 +1014,18 @@ static void pack_format_line_value(flb_sds_t buf, msgpack_object *val)
         }
     }
     else if (val->type == MSGPACK_OBJECT_ARRAY) {
-        safe_sds_cat(&buf, "\"[", 2);
+        safe_sds_cat(buf, "\"[", 2);
         for (i = 0; i < val->via.array.size; i++) {
             v = val->via.array.ptr[i];
             if (i > 0) {
-                safe_sds_cat(&buf, " ", 1);
+                safe_sds_cat(buf, " ", 1);
             }
             pack_format_line_value(buf, &v);
         }
-        safe_sds_cat(&buf, "]\"", 2);
+        safe_sds_cat(buf, "]\"", 2);
     }
     else if (val->type == MSGPACK_OBJECT_MAP) {
-        safe_sds_cat(&buf, "\"map[", 5);
+        safe_sds_cat(buf, "\"map[", 5);
 
         for (i = 0; i < val->via.map.size; i++) {
             k = val->via.map.ptr[i].key;
@@ -1036,14 +1036,14 @@ static void pack_format_line_value(flb_sds_t buf, msgpack_object *val)
             }
 
             if (i > 0) {
-                safe_sds_cat(&buf, " ", 1);
+                safe_sds_cat(buf, " ", 1);
             }
 
-            safe_sds_cat(&buf, k.via.str.ptr, k.via.str.size);
-            safe_sds_cat(&buf, ":", 1);
+            safe_sds_cat(buf, k.via.str.ptr, k.via.str.size);
+            safe_sds_cat(buf, ":", 1);
             pack_format_line_value(buf, &v);
         }
-        safe_sds_cat(&buf, "]\"", 2);
+        safe_sds_cat(buf, "]\"", 2);
     }
     else {
 
@@ -1163,7 +1163,7 @@ static int pack_record(struct flb_loki *ctx,
                     }
                     return -1;
                 }
-                pack_format_line_value(buf, &val);
+                pack_format_line_value(&buf, &val);
                 msgpack_pack_str(mp_pck, flb_sds_len(buf));
                 msgpack_pack_str_body(mp_pck, buf, flb_sds_len(buf));
                 flb_sds_destroy(buf);
@@ -1225,7 +1225,7 @@ static int pack_record(struct flb_loki *ctx,
 
             safe_sds_cat(&buf, key.via.str.ptr, key.via.str.size);
             safe_sds_cat(&buf, "=", 1);
-            pack_format_line_value(buf, &val);
+            pack_format_line_value(&buf, &val);
         }
 
         msgpack_pack_str(mp_pck, flb_sds_len(buf));
