@@ -41,6 +41,13 @@ static void cb_reload(mk_request_t *request, void *data)
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
 
+    if (request->method != MK_METHOD_POST &&
+        request->method != MK_METHOD_PUT) {
+        mk_http_status(request, 400);
+        mk_http_done(request);
+        return;
+    }
+
     /* initialize buffers */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
