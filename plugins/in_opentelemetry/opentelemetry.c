@@ -107,9 +107,9 @@ static int in_opentelemetry_init(struct flb_input_instance *ins,
         return -1;
     }
 
-    flb_plg_info(ctx->ins, "listening on %s:%s", ctx->listen, ctx->tcp_port);
+    flb_input_downstream_set(ctx->downstream, ctx->ins);
 
-    ctx->evl = config->evl;
+    flb_plg_info(ctx->ins, "listening on %s:%s", ctx->listen, ctx->tcp_port);
 
     if (ctx->successful_response_code != 200 &&
         ctx->successful_response_code != 201 &&
