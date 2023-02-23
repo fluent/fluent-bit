@@ -309,6 +309,11 @@ struct flb_config *flb_config_init()
 
     /* Environment */
     config->env = flb_env_create();
+    if (!config->env) {
+        flb_error("[config] environment creation failed");
+        flb_config_exit(config);
+        return NULL;
+    }
 
     /* Multiline core */
     mk_list_init(&config->multiline_parsers);
