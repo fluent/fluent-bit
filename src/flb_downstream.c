@@ -399,6 +399,7 @@ int flb_downstream_conn_timeouts(struct mk_list *list)
     struct mk_list        *s_head;
     struct mk_list        *head;
     int                    drop;
+    int                  inject;
     struct mk_list        *tmp;
     time_t                 now;
 
@@ -456,16 +457,18 @@ int flb_downstream_conn_timeouts(struct mk_list *list)
                     }
                 }
 
+                inject = FLB_FALSE;
                 if (connection->event.status != MK_EVENT_NONE) {
+                    inject = FLB_TRUE;
+                }
+                connection->net_error = ETIMEDOUT;
+                prepare_destroy_conn(connection);
+                if (inject == FLB_TRUE) {
                     mk_event_inject(connection->evl,
                                     &connection->event,
                                     connection->event.mask,
                                     FLB_TRUE);
                 }
-
-                connection->net_error = ETIMEDOUT;
-
-                prepare_destroy_conn(connection);
             }
         }
 
