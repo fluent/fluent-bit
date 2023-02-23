@@ -123,6 +123,8 @@ static int in_syslog_init(struct flb_input_instance *in,
         return -1;
     }
 
+    flb_input_downstream_set(ctx->downstream, ctx->ins);
+
     if (ctx->dgram_mode_flag) {
         connection = flb_downstream_conn_get(ctx->downstream);
 
