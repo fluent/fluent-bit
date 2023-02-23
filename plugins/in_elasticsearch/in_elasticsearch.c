@@ -117,8 +117,6 @@ static int in_elasticsearch_bulk_init(struct flb_input_instance *ins,
     /* Set the context */
     flb_input_set_context(ins, ctx);
 
-    ctx->evl = config->evl;
-
     port = (unsigned short int) strtoul(ctx->tcp_port, NULL, 10);
 
     if (flb_random_bytes(rand, 16)) {
@@ -152,6 +150,8 @@ static int in_elasticsearch_bulk_init(struct flb_input_instance *ins,
 
         return -1;
     }
+
+    flb_input_downstream_set(ctx->downstream, ctx->ins);
 
     /* Collect upon data available on the standard input */
     ret = flb_input_set_collector_socket(ins,
