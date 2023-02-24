@@ -2213,14 +2213,6 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
                         m_upload_file, file_first_log_time);
     }
 
-    /* Discard upload_file if it has failed to upload ctx->ins->retry_limit times */
-    if (upload_file != NULL && upload_file->failures > ctx->ins->retry_limit) {
-        s3_retry_warn(ctx, event_chunk->tag, out_flush->task->i_ins->name,
-                      upload_file->create_time, FLB_FALSE);
-        s3_store_file_delete(ctx, upload_file);
-        upload_file = NULL;
-    }
-
     /* If upload_timeout has elapsed, upload file */
     if (upload_file != NULL && time(NULL) >
         (upload_file->create_time + ctx->upload_timeout)) {
