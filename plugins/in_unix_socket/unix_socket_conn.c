@@ -347,7 +347,7 @@ struct unix_socket_conn *unix_socket_conn_add(struct flb_connection *connection,
     }
 
     /* Register instance into the event loop */
-    ret = mk_event_add(ctx->evl,
+    ret = mk_event_add(flb_engine_evl_get(),
                        connection->fd,
                        FLB_ENGINE_EV_CUSTOM,
                        MK_EVENT_READ,
