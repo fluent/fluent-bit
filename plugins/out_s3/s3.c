@@ -1123,7 +1123,6 @@ put_object:
             }
             else {
                 s3_retry_warn(ctx, tag, chunk->input_name, file_first_log_time, FLB_TRUE);
-                s3_store_file_unlock(chunk);
                 return -1;
             }
         }
@@ -1141,9 +1140,6 @@ multipart:
         m_upload = create_upload(ctx, tag, tag_len, file_first_log_time);
         if (!m_upload) {
             flb_plg_error(ctx->ins, "Could not find or create upload for tag %s", tag);
-            if (chunk) {
-                s3_store_file_unlock(chunk);
-            }
             if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
                 flb_free(payload_buf);
             }
@@ -1155,9 +1151,6 @@ multipart:
         ret = create_multipart_upload(ctx, m_upload);
         if (ret < 0) {
             flb_plg_error(ctx->ins, "Could not initiate multipart upload");
-            if (chunk) {
-                s3_store_file_unlock(chunk);
-            }
             if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
                 flb_free(payload_buf);
             }
@@ -1200,7 +1193,6 @@ multipart:
             else {
                 s3_retry_warn(ctx, (char *) chunk->fsf->meta_buf, m_upload->input_name,
                               chunk->create_time, FLB_TRUE);
-                s3_store_file_unlock(chunk);
                 return -1;
             }
         }
@@ -1276,11 +1268,6 @@ static int put_all_chunks(struct flb_s3 *ctx, int is_startup)
             fsf = mk_list_entry(f_head, struct flb_fstore_file, _head);
             chunk = fsf->data;
 
-            /* Locked chunks are being processed, skip */
-            if (chunk->locked == FLB_TRUE) {
-                continue;
-            }
-
             ret = construct_request_buffer(ctx, NULL, chunk,
                                            &buffer, &buffer_size);
             if (ret < 0) {
@@ -1321,7 +1308,6 @@ static int put_all_chunks(struct flb_s3 *ctx, int is_startup)
                     else {
                         s3_retry_warn(ctx, (char *) fsf->meta_buf, NULL,
                                       chunk->create_time, FLB_TRUE);
-                        s3_store_file_unlock(chunk);
                         return -1;
                     }
                 }
@@ -1370,11 +1356,6 @@ static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
             return -1;
         }
 
-        /*
-         * lock the chunk from buffer list- needed for async http so that the
-         * same chunk won't be sent more than once.
-         */
-        s3_store_file_lock(chunk);
         body = buffered_data;
         body_size = buffer_size;
     }
@@ -1390,9 +1371,6 @@ static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
         if (!tmp) {
             flb_errno();
             flb_free(buffered_data);
-            if (chunk) {
-                s3_store_file_unlock(chunk);
-            }
             return -1;
         }
         body = buffered_data = tmp;
@@ -1839,11 +1817,6 @@ static void cb_s3_upload(struct flb_config *config, void *data)
             continue; /* Only send chunks which have timed out */
         }
 
-        /* Locked chunks are being processed, skip */
-        if (chunk->locked == FLB_TRUE) {
-            continue;
-        }
-
         m_upload = get_upload(ctx, (const char *) fsf->meta_buf, fsf->meta_size);
 
         ret = construct_request_buffer(ctx, NULL, chunk, &buffer, &buffer_size);
@@ -2251,7 +2224,6 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
             if (ret < 0) {
                 FLB_OUTPUT_RETURN(FLB_RETRY);
             }
-            s3_store_file_lock(upload_file);
 
             /* Add chunk file to upload queue */
             ret = add_to_queue(ctx, upload_file, m_upload_file,

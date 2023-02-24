@@ -24,7 +24,7 @@
 #include <fluent-bit/flb_fstore.h>
 
 struct s3_file {
-    int locked;                      /* locked chunk is busy, cannot write to it */
+    int locked;                      /* locked = no appends to this chunk */
     int failures;                    /* delivery failures */
     char *input_name;                /* for s3_retry_warn output message gets input name */
     size_t size;                     /* file size */
