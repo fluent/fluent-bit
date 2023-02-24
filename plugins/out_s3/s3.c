@@ -1281,13 +1281,6 @@ static int put_all_chunks(struct flb_s3 *ctx, int is_startup)
                 continue;
             }
 
-            if (chunk->failures > ctx->ins->retry_limit) {
-                s3_retry_warn(ctx, (char *) fsf->meta_buf,
-                              NULL, chunk->create_time, FLB_FALSE);
-                flb_fstore_file_delete(ctx->fs, fsf);
-                continue;
-            }
-
             ret = construct_request_buffer(ctx, NULL, chunk,
                                            &buffer, &buffer_size);
             if (ret < 0) {
@@ -1319,9 +1312,18 @@ static int put_all_chunks(struct flb_s3 *ctx, int is_startup)
             if (ret < 0) {
                 chunk->failures += 1;
                 if (is_startup == FLB_TRUE) {
-                    s3_retry_warn(ctx, (char *) fsf->meta_buf, NULL,
-                                  chunk->create_time, FLB_TRUE);
-                    s3_store_file_unlock(chunk);
+                    if (chunk->failures > ctx->ins->retry_limit){
+                        s3_retry_warn(ctx, (char *) fsf->meta_buf, NULL,
+                                      chunk->create_time, FLB_FALSE);
+                        s3_store_file_delete(ctx, chunk);
+                        return -1;
+                    }
+                    else {
+                        s3_retry_warn(ctx, (char *) fsf->meta_buf, NULL,
+                                      chunk->create_time, FLB_TRUE);
+                        s3_store_file_unlock(chunk);
+                        return -1;
+                    }
                 }
                 else {
                     flb_plg_error(ctx->ins, "Failed to flush chunk tag=%s, "
