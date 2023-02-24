@@ -45,7 +45,6 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
         return NULL;
     }
 
-    ctx->evl = config->evl;
     ctx->ins = ins;
 
     mk_list_init(&ctx->connections);
