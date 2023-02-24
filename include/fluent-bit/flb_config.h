@@ -78,6 +78,8 @@ struct flb_config {
 
     /* main configuration */
     struct flb_cf *cf_main;
+    /* command line configuration (handled by fluent-bit bin) */
+    struct flb_cf *cf_opts;
     struct mk_list cf_parsers_list;
 
     flb_sds_t program_name;      /* argv[0] */
