@@ -337,12 +337,19 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 {
     int ret;
     flb_sds_t file = NULL;
-    struct flb_config *old_config = ctx->config;
+    struct flb_config *old_config;
     struct flb_config *new_config;
     flb_ctx_t *new_ctx;
     struct flb_cf *new_cf;
     struct flb_cf *original_cf;
     int verbose;
+
+    if (ctx == NULL) {
+        flb_error("[reload] given flb context is NULL");
+        return -2;
+    }
+
+    old_config = ctx->config;
 
     /* Normally, we should create a service section before using this cf
      * context. However, this context of config format will be used
