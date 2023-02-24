@@ -46,7 +46,6 @@ struct flb_in_elasticsearch {
 
     struct flb_downstream *downstream; /* Client manager */
     struct mk_list connections;        /* linked list of connections */
-    struct mk_event_loop *evl;         /* Event loop context */
 
     struct mk_server *server;
     struct flb_input_instance *ins;

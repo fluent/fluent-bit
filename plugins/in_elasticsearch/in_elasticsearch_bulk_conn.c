@@ -246,7 +246,7 @@ struct in_elasticsearch_bulk_conn *in_elasticsearch_bulk_conn_add(struct flb_con
     conn->buf_size = ctx->buffer_chunk_size;
 
     /* Register instance into the event loop */
-    ret = mk_event_add(ctx->evl,
+    ret = mk_event_add(flb_engine_evl_get(),
                        connection->fd,
                        FLB_ENGINE_EV_CUSTOM,
                        MK_EVENT_READ,
