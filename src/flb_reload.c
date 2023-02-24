@@ -441,6 +441,7 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     flb_cf_destroy(original_cf);
 
     new_config->cf_main = new_cf;
+    new_config->cf_opts = cf_opts;
 
     if (file != NULL) {
         new_config->conf_path_file = file;

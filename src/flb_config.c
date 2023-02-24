@@ -512,6 +512,11 @@ void flb_config_exit(struct flb_config *config)
         flb_cf_destroy(config->cf_main);
     }
 
+    /* cf_opts' lifetime should differ from config's lifetime.
+     * This member should be storing just for the cf_opts reference.
+     * Don't destroy it here.
+     */
+
     /* remove parsers */
     mk_list_foreach_safe(head, tmp, &config->cf_parsers_list) {
         cf = mk_list_entry(head, struct flb_cf, _head);

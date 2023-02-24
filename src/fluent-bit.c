@@ -812,6 +812,9 @@ int flb_main(int argc, char **argv)
     cf = config->cf_main;
     service = cf_opts->service;
 
+    /* Add reference for cf_opts */
+    config->cf_opts = cf_opts;
+
 #ifndef FLB_HAVE_STATIC_CONF
 
     /* Parse the command line options */
