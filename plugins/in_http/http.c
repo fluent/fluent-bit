@@ -90,8 +90,6 @@ static int in_http_init(struct flb_input_instance *ins,
     /* Set the context */
     flb_input_set_context(ins, ctx);
 
-    ctx->evl = config->evl;
-
     port = (unsigned short int) strtoul(ctx->tcp_port, NULL, 10);
 
     ctx->downstream = flb_downstream_create(FLB_TRANSPORT_TCP,
@@ -111,6 +109,8 @@ static int in_http_init(struct flb_input_instance *ins,
 
         return -1;
     }
+
+    flb_input_downstream_set(ctx->downstream, ctx->ins);
 
     if (ctx->successful_response_code != 200 &&
         ctx->successful_response_code != 201 &&
