@@ -1114,7 +1114,6 @@ put_object:
         flb_free(payload_buf);
     }
     if (ret < 0) {
-        /* re-add chunk to list */
         if (chunk) {
             chunk->failures += 1;
             if (chunk->failures > ctx->ins->retry_limit){
@@ -1173,7 +1172,6 @@ multipart:
             flb_free(payload_buf);
         }
 
-        /* re-add chunk to list */
         if (chunk) {
             chunk->failures += 1;
             if (chunk->failures > ctx->ins->retry_limit) {
