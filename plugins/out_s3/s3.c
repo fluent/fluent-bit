@@ -59,7 +59,6 @@ static struct multipart_upload *create_upload(struct flb_s3 *ctx,
                                               const char *tag, int tag_len,
                                               time_t file_first_log_time);
 
-static void remove_from_queue(struct upload_queue *entry);
 
 static struct flb_aws_header content_encoding_header = {
     .key = "Content-Encoding",
@@ -489,7 +488,6 @@ static void s3_context_destroy(struct flb_s3 *ctx)
     struct mk_list *head;
     struct mk_list *tmp;
     struct multipart_upload *m_upload;
-    struct upload_queue *upload_contents;
     if (!ctx) {
         return;
     }
@@ -541,13 +539,6 @@ static void s3_context_destroy(struct flb_s3 *ctx)
         multipart_upload_destroy(m_upload);
     }
 
-    mk_list_foreach_safe(head, tmp, &ctx->upload_queue) {
-        upload_contents = mk_list_entry(head, struct upload_queue, _head);
-        s3_store_file_delete(ctx, upload_contents->upload_file);
-        multipart_upload_destroy(upload_contents->m_upload_file);
-        remove_from_queue(upload_contents);
-    }
-
     flb_free(ctx);
 }
 
@@ -575,9 +566,6 @@ static int cb_s3_init(struct flb_output_instance *ins,
     }
     ctx->ins = ins;
     mk_list_init(&ctx->uploads);
-    mk_list_init(&ctx->upload_queue);
-
-    ctx->upload_queue_success = FLB_FALSE;
 
     /* Export context */
     flb_output_set_context(ins, ctx);
@@ -966,7 +954,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
 
     /* 
      * S3 must ALWAYS use sync mode 
-     * In the timer thread we do a mk_list_foreach_safe on the queue of uplaods and chunks
+     * In the timer thread we do a mk_list_foreach_safe on the queue of uploads and chunks
      * Iterating over those lists is not concurrent safe. If a flush call ran at the same time
      * And deleted an item from the list, this could cause a crash/corruption. 
      */
@@ -1610,83 +1598,6 @@ static struct multipart_upload *create_upload(struct flb_s3 *ctx, const char *ta
     return m_upload;
 }
 
-/* Adds an entry to upload queue */
-static int add_to_queue(struct flb_s3 *ctx, struct s3_file *upload_file,
-                 struct multipart_upload *m_upload_file, const char *tag, int tag_len)
-{
-    struct upload_queue *upload_contents;
-    char *tag_cpy;
-
-    /* Create upload contents object and add to upload queue */
-    upload_contents = flb_malloc(sizeof(struct upload_queue));
-    if (upload_contents == NULL) {
-        flb_plg_error(ctx->ins, "Error allocating memory for upload_queue entry");
-        flb_errno();
-        return -1;
-    }
-    upload_contents->upload_file = upload_file;
-    upload_contents->m_upload_file = m_upload_file;
-    upload_contents->tag_len = tag_len;
-    upload_contents->upload_time = -1;
-
-    /* Necessary to create separate string for tag to prevent corruption */
-    tag_cpy = flb_malloc(tag_len);
-    if (tag_cpy == NULL) {
-        flb_free(upload_contents);
-        flb_plg_error(ctx->ins, "Error allocating memory for tag in add_to_queue");
-        flb_errno();
-        return -1;
-    }
-    strncpy(tag_cpy, tag, tag_len);
-    upload_contents->tag = tag_cpy;
-
-    /* Add entry to upload queue */
-    mk_list_add(&upload_contents->_head, &ctx->upload_queue);
-    return 0;
-}
-
-/* Removes an entry from upload_queue */
-void remove_from_queue(struct upload_queue *entry)
-{
-    mk_list_del(&entry->_head);
-    flb_free(entry->tag);
-    flb_free(entry);
-    return;
-}
-
-/* Validity check for upload queue object */
-static int upload_queue_valid(struct upload_queue *upload_contents, time_t now,
-                              void *out_context)
-{
-    struct flb_s3 *ctx = out_context;
-
-    if (upload_contents == NULL) {
-        flb_plg_error(ctx->ins, "Error getting entry from upload_queue");
-        return -1;
-    }
-    if (upload_contents->_head.next == NULL || upload_contents->_head.prev == NULL) {
-        flb_plg_debug(ctx->ins, "Encountered previously deleted entry in "
-                      "upload_queue. Deleting invalid entry");
-        mk_list_del(&upload_contents->_head);
-        return -1;
-    }
-    if (upload_contents->upload_file->locked == FLB_FALSE) {
-        flb_plg_debug(ctx->ins, "Encountered unlocked file in upload_queue. "
-                      "Exiting");
-        return -1;
-    }
-    if (upload_contents->upload_file->size <= 0) {
-        flb_plg_debug(ctx->ins, "Encountered empty chunk file in upload_queue. "
-                      "Deleting empty chunk file");
-        remove_from_queue(upload_contents);
-        return -1;
-    }
-    if (now < upload_contents->upload_time) {
-        flb_plg_debug(ctx->ins, "Found valid chunk file but not ready to upload");
-        return -1;
-    }
-    return 0;
-}
 
 static int send_upload_request(void *out_context, flb_sds_t chunk,
                                struct s3_file *upload_file,
@@ -1733,62 +1644,6 @@ static int buffer_chunk(void *out_context, struct s3_file *upload_file,
     return 0;
 }
 
-/* Uploads all chunk files in queue synchronously */
-static void s3_upload_queue(struct flb_config *config, void *out_context)
-{
-    int ret;
-    time_t now;
-    struct upload_queue *upload_contents;
-    struct flb_s3 *ctx = out_context;
-    struct mk_list *tmp;
-    struct mk_list *head;
-
-    flb_plg_debug(ctx->ins, "Running upload timer callback (upload_queue)..");
-
-    /* No chunks in upload queue. Scan for timed out chunks. */
-    if (mk_list_size(&ctx->upload_queue) == 0) {
-        flb_plg_debug(ctx->ins, "No files found in upload_queue. Scanning for timed "
-                      "out chunks");
-        cb_s3_upload(config, out_context);
-    }
-
-    /* Iterate through each file in upload queue */
-    mk_list_foreach_safe(head, tmp, &ctx->upload_queue) {
-        upload_contents = mk_list_entry(head, struct upload_queue, _head);
-
-        now = time(NULL);
-
-        /* Checks if upload_contents is valid */
-        ret = upload_queue_valid(upload_contents, now, ctx);
-        if (ret < 0) {
-            goto exit;
-        }
-
-        /* Try to upload file. Return value can be 0, -1, -2. */
-        ret = send_upload_request(ctx, NULL, upload_contents->upload_file,
-                                  upload_contents->m_upload_file,
-                                  upload_contents->tag, upload_contents->tag_len);
-
-        if (ret == 0) {
-            remove_from_queue(upload_contents);
-            ctx->upload_queue_success = FLB_TRUE;
-        }
-        else {
-            ctx->upload_queue_success = FLB_FALSE;
-
-            /* If retry limit was reached, remove file from queue */
-            if (ret == -2) {
-                remove_from_queue(upload_contents);
-                continue;
-            }
-
-            break;
-        }
-    }
-
-exit:
-    return;
-}
 
 static void cb_s3_upload(struct flb_config *config, void *data)
 {
@@ -2091,14 +1946,9 @@ static void flush_init(void *out_context)
 
         sched = flb_sched_ctx_get();
 
-        if (ctx->preserve_data_ordering) {
-            ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_PERM,
-                                            ctx->timer_ms, s3_upload_queue, ctx, NULL);
-        }
-        else {
-            ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_PERM,
-                                            ctx->timer_ms, cb_s3_upload, ctx, NULL);
-        }
+        ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_PERM,
+                                        ctx->timer_ms, cb_s3_upload, ctx, NULL);
+
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to create upload timer");
             FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -2225,19 +2075,6 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
                 FLB_OUTPUT_RETURN(FLB_RETRY);
             }
 
-            /* Add chunk file to upload queue */
-            ret = add_to_queue(ctx, upload_file, m_upload_file,
-                               event_chunk->tag, flb_sds_len(event_chunk->tag));
-            if (ret < 0) {
-                FLB_OUTPUT_RETURN(FLB_ERROR);
-            }
-
-            /* Go through upload queue and return error if something went wrong */
-            s3_upload_queue(config, ctx);
-            if (ctx->upload_queue_success == FLB_FALSE) {
-                ctx->upload_queue_success = FLB_TRUE;
-                FLB_OUTPUT_RETURN(FLB_ERROR);
-            }
             FLB_OUTPUT_RETURN(FLB_OK);
         }
         else {
