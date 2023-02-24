@@ -1699,7 +1699,7 @@ static void cb_s3_upload(struct flb_config *config, void *data)
         if (m_upload->complete_errors > ctx->ins->retry_limit) {
             flb_plg_error(ctx->ins,
                           "Multipart Upload for %s has failed "
-                          "s3: CompleteMultipartUpload more than configured retry_limit, "
+                          "s3:CompleteMultipartUpload more than configured retry_limit, "
                           "output will give up ", m_upload->s3_key);
             mk_list_del(&m_upload->_head);
             multipart_upload_destroy(m_upload);
@@ -2048,13 +2048,6 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
 
     m_upload_file = get_upload(ctx,
                                event_chunk->tag, flb_sds_len(event_chunk->tag));
-
-    if (m_upload_file != NULL && time(NULL) >
-        (m_upload_file->init_time + ctx->upload_timeout)) {
-        upload_timeout_check = FLB_TRUE;
-        flb_plg_info(ctx->ins, "upload_timeout reached for %s", event_chunk->tag);
-        m_upload_file->input_name = out_flush->task->i_ins->name;
-    }
 
     /* If total_file_size has been reached, upload file */
     if ((upload_file && upload_file->size + chunk_size > ctx->upload_chunk_size) ||
