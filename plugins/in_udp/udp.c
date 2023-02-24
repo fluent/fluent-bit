@@ -89,7 +89,7 @@ static int in_udp_init(struct flb_input_instance *in,
         return -1;
     }
 
-    ctx->evl = config->evl;
+    flb_input_downstream_set(ctx->downstream, ctx->ins);
 
     connection = flb_downstream_conn_get(ctx->downstream);
 
