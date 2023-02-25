@@ -5,11 +5,9 @@
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	"features": {
 		// add non-root user. it is similar your local user.
-		"ghcr.io/devcontainers/features/common-utils": {
+		"ghcr.io/devcontainers/features/common-utils:2": {
 			"version": "latest",
-			"username": "fluent-bit",
-			"userUid": 1000,
-			"userGid": 1000
+			"username": "fluent-bit"
 		},
 
 		// docker-in-docker allows you to run Docker commands inside the dev container. Thus, it supports to build docker build in the environment.
@@ -27,8 +25,6 @@
 		// 80    // http input etc.
 	],
 
-	// Use 'postCreateCommand' to run commands after the container is created.
-	"postCreateCommand": "sudo bash scripts/install-dev-tools.sh",
 	"customizations": {
 		"vscode": {
 			"extensions": [

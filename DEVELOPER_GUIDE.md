@@ -41,9 +41,8 @@ A Development Container (or Dev Container for short) allows you to use a contain
 Thanks to [Visual Studio Code integration](https://code.visualstudio.com/docs/devcontainers/containers), devcontainers are managed easily.
 
 #### Prerequirements
-- [docker](https://www.docker.com)
-- [visual studio code](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) [optional]
-- [devcontainer](https://github.com/devcontainers/cli) [optional]
+
+Please refer to the [devcontainer documentation](https://code.visualstudio.com/docs/devcontainers/containers#_system-requirements) for full details on pre-requisites and installation.
 
 #### Using without optional tools
 
@@ -51,15 +50,17 @@ Thanks to [Visual Studio Code integration](https://code.visualstudio.com/docs/de
 docker run \
     --name devcontainer-fluent-bit \
     --volume $PWD/:/workspaces/fluent-bit \
+    --user $UID:$GID \
     --tty \
     --detach \
     fluent/fluent-bit:latest-debug
-docker exec devcontainer-fluent-bit addgroup --system --gid 1000 fluent-bit
-docker exec devcontainer-fluent-bit useradd --create-home --system --uid 1000 --gid 1000 fluent-bit
-docker exec devcontainer-fluent-bit sh -c 'echo "fluent-bit   ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/fluent-bit'
-docker exec -it --user fluent-bit devcontainer-fluent-bit bash
+
+docker exec --user root devcontainer-fluent-bit addgroup --system --gid $GID fluent-bit
+docker exec --user root devcontainer-fluent-bit useradd --create-home --system --uid $UID --gid $GID fluent-bit
+docker exec --user root devcontainer-fluent-bit sh -c 'mkdir -p /etc/sudoers.d; echo "fluent-bit   ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/fluent-bit'
+docker exec -it devcontainer-fluent-bit bash
+
 cd /workspaces/fluent-bit
-sudo bash scripts/install-dev-tools.sh
 ```
 
 If local applications need to access fluent-bit server or tcp/udp inputs, the ports must be publish with --publish flag. ex:
