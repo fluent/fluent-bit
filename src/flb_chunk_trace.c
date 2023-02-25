@@ -98,23 +98,6 @@ static struct flb_output_instance *find_calyptia_output_instance(struct flb_conf
     return NULL;
 }
 
-static void log_cb(void *ctx, int level, const char *file, int line,
-                   const char *str)
-{
-    if (level == CIO_LOG_ERROR) {
-        flb_error("[trace] %s", str);
-    }
-    else if (level == CIO_LOG_WARN) {
-        flb_warn("[trace] %s", str);
-    }
-    else if (level == CIO_LOG_INFO) {
-        flb_info("[trace] %s", str);
-    }
-    else if (level == CIO_LOG_DEBUG) {
-        flb_debug("[trace] %s", str);
-    }
-}
-
 static void trace_chunk_context_destroy(struct flb_chunk_trace_context *ctxt)
 {
     int i;
