@@ -1912,8 +1912,6 @@ int flb_input_upstream_set(struct flb_upstream *u, struct flb_input_instance *in
 int flb_input_downstream_set(struct flb_downstream *stream,
                              struct flb_input_instance *ins)
 {
-    int flags = 0;
-
     if (stream == NULL) {
         return -1;
     }
