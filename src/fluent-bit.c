@@ -681,11 +681,6 @@ static struct flb_cf *service_configure(struct flb_cf *cf,
                                         struct flb_config *config, char *file)
 {
     int ret = -1;
-    struct flb_cf_section *s;
-    struct flb_kv *kv;
-    struct mk_list *head;
-    struct cfl_kvpair *ckv;
-    struct cfl_list *chead;
 
 #ifdef FLB_HAVE_STATIC_CONF
         cf = flb_config_static_open(file);
@@ -725,8 +720,6 @@ int flb_main(int argc, char **argv)
 
     /* local variables to handle config options */
     char *cfg_file = NULL;
-
-    void *ctx_original;
 
     /* config format context */
     struct flb_cf *cf;
@@ -1076,9 +1069,6 @@ int flb_main(int argc, char **argv)
         flb_destroy(ctx);
         exit(EXIT_SUCCESS);
     }
-
-    /* backup the address */
-    ctx_original = ctx;
 
     /* start Fluent Bit library */
     ret = flb_start(ctx);
