@@ -120,8 +120,8 @@ int flb_log_get_level_str(char *str);
 int flb_log_set_file(struct flb_config *config, char *out);
 
 int flb_log_destroy(struct flb_log *log, struct flb_config *config);
-void flb_log_print(int type, const char *file, int line, const char *fmt, ...);
-int flb_log_is_truncated(int type, const char *file, int line, const char *fmt, ...);
+void flb_log_print(int type, const char *file, int line, const char *fmt, ...) FLB_FORMAT_PRINTF(4, 5);
+int flb_log_is_truncated(int type, const char *file, int line, const char *fmt, ...) FLB_FORMAT_PRINTF(4, 5);
 
 struct flb_log_cache *flb_log_cache_create(int timeout_seconds, int size);
 void flb_log_cache_destroy(struct flb_log_cache *cache);
