@@ -47,17 +47,6 @@
 
 #define DEFAULT_UPLOAD_TIMEOUT 3600
 
-struct upload_queue {
-    struct s3_file *upload_file;
-    struct multipart_upload *m_upload_file;
-    char *tag;
-    int tag_len;
-
-    time_t upload_time;
-
-    struct mk_list _head;
-};
-
 struct multipart_upload {
     flb_sds_t s3_key;
     flb_sds_t tag;
@@ -140,9 +129,10 @@ struct flb_s3 {
 
     struct mk_list uploads;
 
-    int preserve_data_ordering;
-    int upload_queue_success;
+    /* list of locked chunks that are ready to send */
     struct mk_list upload_queue;
+
+    int preserve_data_ordering;
 
     size_t file_size;
     size_t upload_chunk_size;

@@ -24,7 +24,7 @@
 #include <fluent-bit/flb_fstore.h>
 
 struct s3_file {
-    int locked;                      /* locked chunk is busy, cannot write to it */
+    int locked;                      /* locked = no appends to this chunk */
     int failures;                    /* delivery failures */
     char *input_name;                /* for s3_retry_warn output message gets input name */
     size_t size;                     /* file size */
@@ -32,12 +32,14 @@ struct s3_file {
     time_t first_log_time;           /* first log time */
     flb_sds_t file_path;             /* file path */
     struct flb_fstore_file *fsf;     /* reference to parent flb_fstore_file */
+    struct mk_list _head;
 };
 
 int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
                         const char *tag, int tag_len,
                         char *data, size_t bytes,
-                        time_t file_first_log_time);
+                        time_t file_first_log_time,
+                        char *input_name);
 
 int s3_store_init(struct flb_s3 *ctx);
 int s3_store_exit(struct flb_s3 *ctx);
