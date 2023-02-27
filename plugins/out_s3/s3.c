@@ -567,6 +567,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
     }
     ctx->ins = ins;
     mk_list_init(&ctx->uploads);
+    mk_list_init(&ctx->upload_queue);
+
 
     /* Export context */
     flb_output_set_context(ins, ctx);
@@ -1109,7 +1111,6 @@ put_object:
             chunk->failures += 1;
             if (chunk->failures > ctx->ins->retry_limit){
                 s3_retry_warn(ctx, tag, chunk->input_name, file_first_log_time, FLB_FALSE);
-                s3_store_file_delete(ctx, chunk);
                 return -2;
             }
             else {
@@ -1119,10 +1120,6 @@ put_object:
         }
     }
 
-    /* data was sent successfully- delete the local buffer */
-    if (chunk) {
-        s3_store_file_delete(ctx, chunk);
-    }
     return 0;
 
 multipart:
@@ -1161,7 +1158,6 @@ multipart:
             if (chunk->failures > ctx->ins->retry_limit) {
                 s3_retry_warn(ctx, (char *) chunk->fsf->meta_buf, m_upload->input_name,
                               chunk->create_time, FLB_FALSE);
-                s3_store_file_delete(ctx, chunk);
                 /*
                  * part_number initializes with 1, if the number still is 1 which means
                  * no data is uploaded and this upload file can be deleted , else set
@@ -1188,12 +1184,8 @@ multipart:
             }
         }
     }
+
     m_upload->part_number += 1;
-    /* data was sent successfully- delete the local buffer */
-    if (chunk) {
-        s3_store_file_delete(ctx, chunk);
-        chunk = NULL;
-    }
     if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
         flb_free(payload_buf);
     }
@@ -1293,6 +1285,12 @@ static int put_all_chunks(struct flb_s3 *ctx, int is_startup)
                     if (chunk->failures > ctx->ins->retry_limit){
                         s3_retry_warn(ctx, (char *) fsf->meta_buf, NULL,
                                       chunk->create_time, FLB_FALSE);
+                        if (chunk->locked == FLB_TRUE) {
+                            /* remove from upload_queue */
+                            if (chunk->_head.next != NULL && chunk->_head.prev != NULL) {
+                                mk_list_del(&chunk->_head);
+                            }
+                        }
                         s3_store_file_delete(ctx, chunk);
                         return -1;
                     }
@@ -1312,6 +1310,12 @@ static int put_all_chunks(struct flb_s3 *ctx, int is_startup)
             }
 
             /* data was sent successfully- delete the local buffer */
+            if (chunk->locked == FLB_TRUE) {
+                /* remove from upload_queue */
+                if (chunk->_head.next != NULL && chunk->_head.prev != NULL) {
+                    mk_list_del(&chunk->_head);
+                }
+            }
             s3_store_file_delete(ctx, chunk);
         }
     }
@@ -1605,33 +1609,6 @@ static struct multipart_upload *create_upload(struct flb_s3 *ctx, const char *ta
     return m_upload;
 }
 
-
-static int send_upload_request(void *out_context, flb_sds_t chunk,
-                               struct s3_file *upload_file,
-                               struct multipart_upload *m_upload_file,
-                               const char *tag, int tag_len)
-{
-    int ret;
-    char *buffer;
-    size_t buffer_size;
-    struct flb_s3 *ctx = out_context;
-
-    /* Create buffer to upload to S3 */
-    ret = construct_request_buffer(ctx, chunk, upload_file, &buffer, &buffer_size);
-    flb_sds_destroy(chunk);
-    if (ret < 0) {
-        flb_plg_error(ctx->ins, "Could not construct request buffer for %s",
-                      upload_file->file_path);
-        return -1;
-    }
-
-    /* Upload to S3 */
-    ret = upload_data(ctx, upload_file, m_upload_file, buffer, buffer_size, tag, tag_len);
-    flb_free(buffer);
-
-    return ret;
-}
-
 static int buffer_chunk(void *out_context, struct s3_file *upload_file,
                         flb_sds_t chunk, int chunk_size,
                         const char *tag, int tag_len,
@@ -1665,20 +1642,13 @@ static void cb_s3_upload(struct flb_config *config, void *data)
     struct mk_list *head;
     int complete;
     int ret;
-    time_t now;
 
     flb_plg_debug(ctx->ins, "Running upload timer callback (cb_s3_upload)..");
 
-    now = time(NULL);
-
-    /* Check all chunks and see if any have timed out */
-    mk_list_foreach_safe(head, tmp, &ctx->stream_active->files) {
-        fsf = mk_list_entry(head, struct flb_fstore_file, _head);
-        chunk = fsf->data;
-
-        if (now < (chunk->create_time + ctx->upload_timeout)) {
-            continue; /* Only send chunks which have timed out */
-        }
+    /* send any chunks that are ready */
+    mk_list_foreach_safe(head, tmp, &ctx->upload_queue) {
+        chunk = mk_list_entry(head, struct s3_file, _head);
+        fsf = chunk->fsf;
 
         m_upload = get_upload(ctx, (const char *) fsf->meta_buf, fsf->meta_size);
 
@@ -1686,16 +1656,26 @@ static void cb_s3_upload(struct flb_config *config, void *data)
         if (ret < 0) {
             flb_plg_error(ctx->ins, "Could not construct request buffer for %s",
                           chunk->file_path);
-            continue;
+            if (ctx->preserve_data_ordering == FLB_TRUE) {
+                break; /* if preserve_data_ordering send in the queue order, do not skip over chunks */
+            } else {
+                continue;
+            }
         }
 
-        /* FYI: if construct_request_buffer() succeedeed, the s3_file is locked */
         ret = upload_data(ctx, chunk, m_upload, buffer, buffer_size,
                           (const char *) fsf->meta_buf, fsf->meta_size);
         flb_free(buffer);
-        if (ret != 0) {
-            flb_plg_error(ctx->ins, "Could not send chunk with tag %s",
-                          (char *) fsf->meta_buf);
+        if (ret == -2 || ret == 0) {
+            /* if we succeeded or retries expired, delete chunk file and remove from queue */
+            mk_list_del(&chunk->_head);
+            s3_store_file_delete(ctx, chunk);
+        }
+
+        if (ret < 0) {
+            if (ctx->preserve_data_ordering == FLB_TRUE) {
+                    break; /* if preserve_data_ordering send in the queue order, do not skip over chunks */
+            }
         }
     }
 
@@ -2047,6 +2027,18 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
                         m_upload_file, file_first_log_time, out_flush->task->i_ins->name);
     }
 
+    /* 
+     * Buffer new data in chunk in filesystem and wait for next data from engine 
+     * If successful, data ordering is preserved to be the same as the engine sent us
+     */
+    ret = buffer_chunk(ctx, upload_file, chunk, chunk_size,
+                       event_chunk->tag, flb_sds_len(event_chunk->tag),
+                       file_first_log_time, out_flush->task->i_ins->name);
+
+    if (ret < 0) {
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
     /* If upload_timeout has elapsed, upload file */
     if (upload_file != NULL && time(NULL) >
         (upload_file->create_time + ctx->upload_timeout)) {
@@ -2064,41 +2056,13 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
         total_file_size_check = FLB_TRUE;
     }
 
-    /* File is ready for upload, upload_file != NULL prevents from segfaulting. */
+    /* lock chunk file so new new appends. Its ready to be sent. */
     if ((upload_file != NULL) && (upload_timeout_check == FLB_TRUE || total_file_size_check == FLB_TRUE)) {
-        upload_file->input_name = out_flush->task->i_ins->name;
-        if (ctx->preserve_data_ordering == FLB_TRUE) {
-            /* Buffer last chunk in file and lock file to prevent further changes */
-            ret = buffer_chunk(ctx, upload_file, chunk, chunk_size,
-                               event_chunk->tag, flb_sds_len(event_chunk->tag),
-                               file_first_log_time, out_flush->task->i_ins->name);
-
-            if (ret < 0) {
-                FLB_OUTPUT_RETURN(FLB_RETRY);
-            }
-
-            FLB_OUTPUT_RETURN(FLB_OK);
-        }
-        else {
-            /* Send upload directly without upload queue */
-            ret = send_upload_request(ctx, chunk, upload_file, m_upload_file,
-                                      event_chunk->tag,
-                                      flb_sds_len(event_chunk->tag));
-            if (ret < 0) {
-                FLB_OUTPUT_RETURN(FLB_RETRY);
-            }
-            FLB_OUTPUT_RETURN(FLB_OK);
-        }
+        s3_store_file_lock(upload_file);
+        /* sends only happen from upload timer callback which iterates over queue */
+        mk_list_add(&upload_file->_head, &ctx->upload_queue);
     }
 
-    /* Buffer current chunk in filesystem and wait for next chunk from engine */
-    ret = buffer_chunk(ctx, upload_file, chunk, chunk_size,
-                       event_chunk->tag, flb_sds_len(event_chunk->tag),
-                       file_first_log_time, out_flush->task->i_ins->name);
-
-    if (ret < 0) {
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 

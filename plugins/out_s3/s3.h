@@ -129,6 +129,9 @@ struct flb_s3 {
 
     struct mk_list uploads;
 
+    /* list of locked chunks that are ready to send */
+    struct mk_list upload_queue;
+
     int preserve_data_ordering;
 
     size_t file_size;

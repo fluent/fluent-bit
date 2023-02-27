@@ -32,6 +32,7 @@ struct s3_file {
     time_t first_log_time;           /* first log time */
     flb_sds_t file_path;             /* file path */
     struct flb_fstore_file *fsf;     /* reference to parent flb_fstore_file */
+    struct mk_list _head;
 };
 
 int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
