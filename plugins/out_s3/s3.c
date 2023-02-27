@@ -57,7 +57,8 @@ static struct multipart_upload *get_upload(struct flb_s3 *ctx,
 
 static struct multipart_upload *create_upload(struct flb_s3 *ctx,
                                               const char *tag, int tag_len,
-                                              time_t file_first_log_time);
+                                              time_t file_first_log_time,
+                                              char *input_name);
 
 
 static struct flb_aws_header content_encoding_header = {
@@ -1020,6 +1021,7 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
     size_t payload_size = 0;
     size_t preCompress_size = 0;
     time_t file_first_log_time = time(NULL);
+    char* input_name = NULL;
 
     /*
      * When chunk does not exist, file_first_log_time will be the current time.
@@ -1029,6 +1031,7 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
      */
     if (chunk != NULL) {
         file_first_log_time = chunk->first_log_time;
+        input_name = chunk->input_name;
     }
 
     if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
@@ -1125,7 +1128,7 @@ put_object:
 multipart:
 
     if (init_upload == FLB_TRUE) {
-        m_upload = create_upload(ctx, tag, tag_len, file_first_log_time);
+        m_upload = create_upload(ctx, tag, tag_len, file_first_log_time, input_name);
         if (!m_upload) {
             flb_plg_error(ctx->ins, "Could not find or create upload for tag %s", tag);
             if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
@@ -1549,7 +1552,8 @@ static struct multipart_upload *get_upload(struct flb_s3 *ctx,const char *tag, i
 }
 
 static struct multipart_upload *create_upload(struct flb_s3 *ctx, const char *tag,
-                                              int tag_len, time_t file_first_log_time)
+                                              int tag_len, time_t file_first_log_time,
+                                              char *input_name)
 {
     int ret;
     struct multipart_upload *m_upload = NULL;
@@ -1580,6 +1584,9 @@ static struct multipart_upload *create_upload(struct flb_s3 *ctx, const char *ta
     m_upload->upload_state = MULTIPART_UPLOAD_STATE_NOT_CREATED;
     m_upload->part_number = 1;
     m_upload->init_time = time(NULL);
+    if (input_name != NULL) {
+        m_upload->input_name = input_name;
+    }
     mk_list_add(&m_upload->_head, &ctx->uploads);
 
     /* Update file and increment index value right before request */
