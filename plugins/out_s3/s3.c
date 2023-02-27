@@ -1628,13 +1628,14 @@ static int send_upload_request(void *out_context, flb_sds_t chunk,
 static int buffer_chunk(void *out_context, struct s3_file *upload_file,
                         flb_sds_t chunk, int chunk_size,
                         const char *tag, int tag_len,
-                        time_t file_first_log_time)
+                        time_t file_first_log_time,
+                        char *input_name)
 {
     int ret;
     struct flb_s3 *ctx = out_context;
 
     ret = s3_store_buffer_put(ctx, upload_file, tag,
-                              tag_len, chunk, (size_t) chunk_size, file_first_log_time);
+                              tag_len, chunk, (size_t) chunk_size, file_first_log_time, input_name);
     flb_sds_destroy(chunk);
     if (ret < 0) {
         flb_plg_warn(ctx->ins, "Could not buffer chunk. Data order preservation "
@@ -1888,7 +1889,8 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
 static void unit_test_flush(void *out_context, struct s3_file *upload_file,
                             const char *tag, int tag_len, flb_sds_t chunk,
                             int chunk_size, struct multipart_upload *m_upload_file,
-                            time_t file_first_log_time)
+                            time_t file_first_log_time,
+                            char *input_name)
 {
     int ret;
     char *buffer;
@@ -1896,7 +1898,7 @@ static void unit_test_flush(void *out_context, struct s3_file *upload_file,
     struct flb_s3 *ctx = out_context;
 
     s3_store_buffer_put(ctx, upload_file, tag, tag_len,
-                        chunk, (size_t) chunk_size, file_first_log_time);
+                        chunk, (size_t) chunk_size, file_first_log_time, input_name);
     ret = construct_request_buffer(ctx, chunk, upload_file, &buffer, &buffer_size);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Could not construct request buffer for %s",
@@ -2035,7 +2037,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
         unit_test_flush(ctx, upload_file,
                         event_chunk->tag, flb_sds_len(event_chunk->tag),
                         chunk, chunk_size,
-                        m_upload_file, file_first_log_time);
+                        m_upload_file, file_first_log_time, out_flush->task->i_ins->name);
     }
 
     /* If upload_timeout has elapsed, upload file */
@@ -2062,7 +2064,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
             /* Buffer last chunk in file and lock file to prevent further changes */
             ret = buffer_chunk(ctx, upload_file, chunk, chunk_size,
                                event_chunk->tag, flb_sds_len(event_chunk->tag),
-                               file_first_log_time);
+                               file_first_log_time, out_flush->task->i_ins->name);
 
             if (ret < 0) {
                 FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -2085,7 +2087,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     /* Buffer current chunk in filesystem and wait for next chunk from engine */
     ret = buffer_chunk(ctx, upload_file, chunk, chunk_size,
                        event_chunk->tag, flb_sds_len(event_chunk->tag),
-                       file_first_log_time);
+                       file_first_log_time, out_flush->task->i_ins->name);
 
     if (ret < 0) {
         FLB_OUTPUT_RETURN(FLB_RETRY);
