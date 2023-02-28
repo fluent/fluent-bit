@@ -339,7 +339,7 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     flb_sds_t file = NULL;
     struct flb_config *old_config;
     struct flb_config *new_config;
-    flb_ctx_t *new_ctx;
+    flb_ctx_t *new_ctx = NULL;
     struct flb_cf *new_cf;
     struct flb_cf *original_cf;
     int verbose;
@@ -378,6 +378,16 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 
     /* Create another instance */
     new_ctx = flb_create();
+    if (new_ctx == NULL) {
+        if (file != NULL) {
+            flb_sds_destroy(file);
+        }
+        flb_cf_destroy(new_cf);
+        flb_error("[reload] creating flb context is failed. Reloading is halted");
+
+        return -1;
+    }
+
     new_config = new_ctx->config;
 
     /* Inherit verbose from the old ctx instance */
