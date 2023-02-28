@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_custom.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_config_format.h>
+#include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_plugin.h>
 
@@ -285,12 +286,24 @@ int flb_reload_reconstruct_cf(struct flb_cf *src_cf, struct flb_cf *dest_cf)
 {
     struct mk_list *head;
     struct flb_cf_section *s;
+    struct flb_kv *kv;
 
     mk_list_foreach(head, &src_cf->sections) {
         s = mk_list_entry(head, struct flb_cf_section, _head);
         if (recreate_cf_section(s, dest_cf) != 0) {
             return -1;
         }
+    }
+
+    /* Copy and store metas. (For old fluent-bit cf.) */
+    mk_list_foreach(head, &src_cf->metas) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        if (!flb_kv_item_create_len(&dest_cf->metas,
+                                    kv->key, cfl_sds_len(kv->key),
+                                    kv->val, cfl_sds_len(kv->val))) {
+            return -1;
+        }
+
     }
 
     return 0;
