@@ -295,6 +295,17 @@ int flb_reload_reconstruct_cf(struct flb_cf *src_cf, struct flb_cf *dest_cf)
         }
     }
 
+    /* Copy and store env. (For yaml cf.) */
+    mk_list_foreach(head, &src_cf->env) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        if (!flb_cf_env_property_add(dest_cf,
+                                     kv->key, cfl_sds_len(kv->key),
+                                     kv->val, cfl_sds_len(kv->val))) {
+            return -1;
+        }
+
+    }
+
     /* Copy and store metas. (For old fluent-bit cf.) */
     mk_list_foreach(head, &src_cf->metas) {
         kv = mk_list_entry(head, struct flb_kv, _head);
