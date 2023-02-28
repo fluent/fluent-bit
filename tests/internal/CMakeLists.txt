@@ -60,6 +60,7 @@ if (NOT WIN32)
     ${UNIT_TESTS_FILES}
     gelf.c
     fstore.c
+    reload.c
     )
 endif()
 
