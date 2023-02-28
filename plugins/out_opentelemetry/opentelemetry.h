@@ -21,6 +21,7 @@
 #define FLB_OUT_OPENTELEMETRY_H
 
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-otel-proto/fluent-otel.h>
 
 #define FLB_OPENTELEMETRY_CONTENT_TYPE_HEADER_NAME "Content-Type"
 #define FLB_OPENTELEMETRY_MIME_PROTOBUF_LITERAL    "application/x-protobuf"
@@ -32,6 +33,11 @@
  * including the ones that succeeded. This is not ideal.
  */
 #define DEFAULT_LOG_RECORD_BATCH_SIZE "1000"
+
+struct otel_kvpair_list {
+    size_t n_attributes;
+    Opentelemetry__Proto__Common__V1__KeyValue **kvlist;
+};
 
 /* Plugin context */
 struct opentelemetry_context {
@@ -50,6 +56,38 @@ struct opentelemetry_context {
     char *logs_uri;
     char *host;
     int port;
+
+    /* trace id key */
+    flb_sds_t trace_id_key;
+    struct flb_record_accessor *ra_trace_id_key;
+
+    /* span id key */
+    flb_sds_t span_id_key;
+    struct flb_record_accessor *ra_span_id_key;
+
+    /* severity text key */
+    flb_sds_t severity_text_key;
+    struct flb_record_accessor *ra_severity_text_key;
+
+    /* severity number key */
+    flb_sds_t severity_number_key;
+    struct flb_record_accessor *ra_severity_number_key;
+
+    /* time_unix_nano key */
+    flb_sds_t time_unix_nano_key;
+    struct flb_record_accessor *ra_time_unix_nano_key;
+
+    /* attributes key */
+    flb_sds_t attributes_key;
+    struct flb_record_accessor *ra_attributes_key;
+
+    /* resource key */
+    flb_sds_t resource_key;
+    struct flb_record_accessor *ra_resource_key;
+
+    /* body key */
+    flb_sds_t body_key;
+    struct flb_record_accessor *ra_body_key;
 
     /* Number of logs to flush at a time */
     int batch_size;

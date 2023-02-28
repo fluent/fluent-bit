@@ -544,8 +544,8 @@ static flb_sds_t ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf,
 
     /* Based on data type, convert to it string representation */
     if (v->type == FLB_RA_BOOL) {
-        /* Check if is a map or a real bool */
-        if (v->o.type == MSGPACK_OBJECT_MAP) {
+        /* Check if is a map/array or a real bool */
+        if (v->o.type == MSGPACK_OBJECT_MAP || v->o.type == MSGPACK_OBJECT_ARRAY) {
             /* Convert msgpack map to JSON string */
             js = flb_msgpack_to_json_str(1024, &v->o);
             if (js) {
@@ -607,7 +607,7 @@ flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
  *
  * For safety, the function returns a newly created string that needs
  * to be destroyed by the caller.
- * 
+ *
  * Returns NULL if `check` is FLB_TRUE and any key lookup in the record failed
  */
 flb_sds_t flb_ra_translate_check(struct flb_record_accessor *ra,

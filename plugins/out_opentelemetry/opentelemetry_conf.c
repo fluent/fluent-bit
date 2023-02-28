@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_record_accessor.h>
 
 #include "opentelemetry.h"
 #include "opentelemetry_conf.h"
@@ -117,6 +118,229 @@ static char *sanitize_uri(char *uri){
     /* This function could return NULL if flb_calloc fails */
 
     return uri;
+}
+
+static int set_trace_id_key(struct opentelemetry_context *ctx)
+{
+
+    ctx->ra_trace_id_key = flb_ra_create(ctx->trace_id_key, FLB_TRUE);
+
+    if (!ctx->ra_trace_id_key) {
+        flb_plg_error(ctx->ins,
+                        "cannot create record accessor for trace_id_key pattern: '%s'",
+                        ctx->trace_id_key);
+        flb_opentelemetry_context_destroy(ctx);
+        return -1;
+    }
+
+    return 0;
+}
+
+static int set_span_id_key(struct opentelemetry_context *ctx)
+{
+
+    ctx->ra_span_id_key = flb_ra_create(ctx->span_id_key, FLB_TRUE);
+
+    if (!ctx->ra_span_id_key) {
+        flb_plg_error(ctx->ins,
+                        "cannot create record accessor for span_id_key pattern: '%s'",
+                        ctx->span_id_key);
+        flb_opentelemetry_context_destroy(ctx);
+        return -1;
+    }
+
+    return 0;
+}
+
+static int set_severity_text_key(struct opentelemetry_context *ctx)
+{
+
+    ctx->ra_severity_text_key = flb_ra_create(ctx->severity_text_key, FLB_TRUE);
+
+    if (!ctx->ra_severity_text_key) {
+        flb_plg_error(ctx->ins,
+                        "cannot create record accessor for severity_text_key pattern: '%s'",
+                        ctx->severity_text_key);
+        flb_opentelemetry_context_destroy(ctx);
+        return -1;
+    }
+
+    return 0;
+}
+
+static int set_severity_number_key(struct opentelemetry_context *ctx)
+{
+
+    ctx->ra_severity_number_key = flb_ra_create(ctx->severity_number_key, FLB_TRUE);
+
+    if (!ctx->ra_severity_number_key) {
+        flb_plg_error(ctx->ins,
+                        "cannot create record accessor for severity_number_key pattern: '%s'",
+                        ctx->severity_number_key);
+        flb_opentelemetry_context_destroy(ctx);
+        return -1;
+    }
+
+    return 0;
+}
+
+static int set_attributes_key(struct opentelemetry_context *ctx)
+{
+
+    ctx->ra_attributes_key = flb_ra_create(ctx->attributes_key, FLB_TRUE);
+
+    if (!ctx->ra_attributes_key) {
+        flb_plg_error(ctx->ins,
+                        "cannot create record accessor for attributes_key pattern: '%s'",
+                        ctx->attributes_key);
+        flb_opentelemetry_context_destroy(ctx);
+        return -1;
+    }
+
+    return 0;
+}
+
+static int set_body_key(struct opentelemetry_context *ctx)
+{
+
+    ctx->ra_body_key = flb_ra_create(ctx->body_key, FLB_TRUE);
+
+    if (!ctx->ra_body_key) {
+        flb_plg_error(ctx->ins,
+                        "cannot create record accessor for body_key pattern: '%s'",
+                        ctx->body_key);
+        flb_opentelemetry_context_destroy(ctx);
+        return -1;
+    }
+
+    return 0;
+}
+
+static int set_resource_key(struct opentelemetry_context *ctx)
+{
+
+    ctx->ra_resource_key = flb_ra_create(ctx->resource_key, FLB_TRUE);
+
+    if (!ctx->ra_resource_key) {
+        flb_plg_error(ctx->ins,
+                        "cannot create record accessor for resource_key pattern: '%s'",
+                        ctx->resource_key);
+        flb_opentelemetry_context_destroy(ctx);
+        return -1;
+    }
+
+    return 0;
+}
+
+static int set_time_unix_nano_key(struct opentelemetry_context *ctx)
+{
+
+    ctx->ra_time_unix_nano_key = flb_ra_create(ctx->time_unix_nano_key, FLB_TRUE);
+
+    if (!ctx->ra_time_unix_nano_key) {
+        flb_plg_error(ctx->ins,
+                        "cannot create record accessor for time_unix_nano_key pattern: '%s'",
+                        ctx->time_unix_nano_key);
+        flb_opentelemetry_context_destroy(ctx);
+        return -1;
+    }
+
+    return 0;
+}
+
+static int set_ra_fields(struct opentelemetry_context *ctx)
+{
+    int ret = 0;
+
+    if (ctx->trace_id_key && ret == 0) {
+
+        if (ctx->trace_id_key[0] != '$') {
+            flb_plg_error(ctx->ins,
+                            "invalid trace_id_key pattern, it must start with '$'");
+            flb_opentelemetry_context_destroy(ctx);
+            return -1;
+        }
+        ret = set_trace_id_key(ctx);
+    }
+
+    if (ctx->span_id_key && ret == 0) {
+
+        if (ctx->span_id_key[0] != '$') {
+            flb_plg_error(ctx->ins,
+                            "invalid span_id_key pattern, it must start with '$'");
+            flb_opentelemetry_context_destroy(ctx);
+            return -1;
+        }
+        ret = set_span_id_key(ctx);
+    }
+
+    if (ctx->severity_text_key && ret == 0) {
+
+        if (ctx->severity_text_key[0] != '$') {
+            flb_plg_error(ctx->ins,
+                            "invalid severity_text_key pattern, it must start with '$'");
+            flb_opentelemetry_context_destroy(ctx);
+            return -1;
+        }
+        ret = set_severity_text_key(ctx);
+    }
+
+    if (ctx->severity_number_key && ret == 0) {
+
+        if (ctx->severity_number_key[0] != '$') {
+            flb_plg_error(ctx->ins,
+                            "invalid severity_number_key pattern, it must start with '$'");
+            flb_opentelemetry_context_destroy(ctx);
+            return -1;
+        }
+        ret = set_severity_number_key(ctx);
+    }
+
+    if (ctx->time_unix_nano_key && ret == 0) {
+
+        if (ctx->time_unix_nano_key[0] != '$') {
+            flb_plg_error(ctx->ins,
+                            "invalid time_unix_nano_key pattern, it must start with '$'");
+            flb_opentelemetry_context_destroy(ctx);
+            return -1;
+        }
+        ret = set_time_unix_nano_key(ctx);
+    }
+
+    if (ctx->attributes_key && ret == 0) {
+
+        if (ctx->attributes_key[0] != '$') {
+            flb_plg_error(ctx->ins,
+                            "invalid attributes_key pattern, it must start with '$'");
+            flb_opentelemetry_context_destroy(ctx);
+            return -1;
+        }
+        ret = set_attributes_key(ctx);
+    }
+
+    if (ctx->body_key && ret == 0) {
+
+        if (ctx->body_key[0] != '$') {
+            flb_plg_error(ctx->ins,
+                            "invalid body_key pattern, it must start with '$'");
+            flb_opentelemetry_context_destroy(ctx);
+            return -1;
+        }
+        ret = set_body_key(ctx);
+    }
+
+    if (ctx->resource_key && ret == 0) {
+
+        if (ctx->resource_key[0] != '$') {
+            flb_plg_error(ctx->ins,
+                            "invalid resource_key pattern, it must start with '$'");
+            flb_opentelemetry_context_destroy(ctx);
+            return -1;
+        }
+        ret = set_resource_key(ctx);
+    }
+
+    return ret;
 }
 
 struct opentelemetry_context *flb_opentelemetry_context_create(
@@ -229,6 +453,10 @@ struct opentelemetry_context *flb_opentelemetry_context_create(
         ctx->metrics_uri = metrics_uri;
     }
 
+    ret = set_ra_fields(ctx);
+    if (ret < 0) {
+        return NULL;
+    }
 
     /* Set instance flags into upstream */
     flb_output_upstream_set(ctx->u, ins);
@@ -255,6 +483,39 @@ void flb_opentelemetry_context_destroy(
 
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);
+    }
+
+    if (ctx->ra_trace_id_key) {
+        flb_ra_destroy(ctx->ra_trace_id_key);
+    }
+
+    if (ctx->ra_span_id_key) {
+        flb_ra_destroy(ctx->ra_span_id_key);
+    }
+
+    if (ctx->ra_severity_text_key) {
+        flb_ra_destroy(ctx->ra_severity_text_key);
+    }
+
+
+    if (ctx->ra_severity_number_key) {
+        flb_ra_destroy(ctx->ra_severity_number_key);
+    }
+
+    if (ctx->ra_time_unix_nano_key) {
+        flb_ra_destroy(ctx->ra_time_unix_nano_key);
+    }
+
+    if (ctx->ra_body_key) {
+        flb_ra_destroy(ctx->ra_body_key);
+    }
+
+    if (ctx->ra_resource_key) {
+        flb_ra_destroy(ctx->ra_resource_key);
+    }
+
+    if (ctx->ra_attributes_key) {
+        flb_ra_destroy(ctx->ra_attributes_key);
     }
 
     flb_free(ctx->proxy_host);
