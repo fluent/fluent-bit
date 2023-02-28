@@ -20,13 +20,18 @@
 #include <fluent-bit/flb_input_plugin.h>
 
 #include "http.h"
+#include "http_config.h"
 #include "http_conn.h"
 
 struct flb_http *http_config_create(struct flb_input_instance *ins)
 {
-    int ret;
-    char port[8];
-    struct flb_http *ctx;
+    struct mk_list            *header_iterator;
+    struct flb_slist_entry    *header_value;
+    struct flb_slist_entry    *header_name;
+    struct flb_config_map_val *header_pair;
+    char                       port[8];
+    int                        ret;
+    struct flb_http           *ctx;
 
     ctx = flb_calloc(1, sizeof(struct flb_http));
     if (!ctx) {
@@ -58,6 +63,52 @@ struct flb_http *http_config_create(struct flb_input_instance *ins)
      * moment so we want to make sure that it stays that way!
      */
 
+    ctx->success_headers_str = flb_sds_create_size(1);
+
+    if (ctx->success_headers_str == NULL) {
+        http_config_destroy(ctx);
+
+        return NULL;
+    }
+
+    flb_config_map_foreach(header_iterator, header_pair, ctx->success_headers) {
+        header_name = mk_list_entry_first(header_pair->val.list,
+                                          struct flb_slist_entry,
+                                          _head);
+
+        header_value = mk_list_entry_last(header_pair->val.list,
+                                          struct flb_slist_entry,
+                                          _head);
+
+        ret = flb_sds_cat_safe(&ctx->success_headers_str,
+                               header_name->str,
+                               flb_sds_len(header_name->str));
+
+        if (ret == 0) {
+            ret = flb_sds_cat_safe(&ctx->success_headers_str,
+                                   ": ",
+                                   2);
+        }
+
+        if (ret == 0) {
+            ret = flb_sds_cat_safe(&ctx->success_headers_str,
+                                   header_value->str,
+                                   flb_sds_len(header_value->str));
+        }
+
+        if (ret == 0) {
+            ret = flb_sds_cat_safe(&ctx->success_headers_str,
+                                   "\r\n",
+                                   2);
+        }
+
+        if (ret != 0) {
+            http_config_destroy(ctx);
+
+            return NULL;
+        }
+    }
+
     return ctx;
 }
 
@@ -79,6 +130,12 @@ int http_config_destroy(struct flb_http *ctx)
     if (ctx->server) {
         flb_free(ctx->server);
     }
+
+    if (ctx->success_headers_str != NULL) {
+        flb_sds_destroy(ctx->success_headers_str);
+    }
+
+
     flb_free(ctx->listen);
     flb_free(ctx->tcp_port);
     flb_free(ctx);
