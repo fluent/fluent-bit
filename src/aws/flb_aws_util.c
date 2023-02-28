@@ -812,8 +812,12 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
             flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
         }
 
+        if (buf != tmp) {
+            flb_sds_destroy(buf);
+        }
         flb_sds_destroy(tmp);
         tmp = NULL;
+        buf = NULL;
         flb_sds_destroy(s3_key);
         s3_key = tmp_key;
         tmp_key = NULL;
@@ -935,7 +939,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
         if (s3_key){
             flb_sds_destroy(s3_key);
         }
-        if (buf){
+        if (buf && buf != tmp){
             flb_sds_destroy(buf);
         }
         if (tmp){
