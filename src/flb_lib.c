@@ -205,7 +205,7 @@ flb_ctx_t *flb_create()
                                   ctx->event_channel);
     if (ret != 0) {
         flb_error("[lib] could not create notification channels");
-        flb_config_exit(ctx->config);
+        flb_stop(ctx);
         flb_destroy(ctx);
         return NULL;
     }
