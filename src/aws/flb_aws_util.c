@@ -863,7 +863,8 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
         sprintf(seq_index_str, "%"PRIu64, seq_index);
         seq_index_str[seq_index_len] = '\0';
         tmp_key = replace_uri_tokens(s3_key, INDEX_STRING, seq_index_str);
-        if (!tmp_key) {
+        if (tmp_key == NULL) {
+            flb_free(seq_index_str);
             goto error;
         }
         if (strlen(tmp_key) > S3_KEY_SIZE) {
