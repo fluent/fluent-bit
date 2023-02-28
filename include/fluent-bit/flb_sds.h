@@ -33,12 +33,6 @@
 
 #define FLB_SDS_HEADER_SIZE (sizeof(uint64_t) + sizeof(uint64_t))
 
-#if defined(__GNUC__) || defined(__clang__)
-#define FLB_SDS_FORMAT_PRINTF __attribute__ ((format (printf, 2, 3)))
-#else
-#define FLB_SDS_FORMAT_PRINTF
-#endif
-
 typedef char *flb_sds_t;
 
 #pragma pack(push, 1)
@@ -113,7 +107,7 @@ int flb_sds_cat_safe(flb_sds_t *buf, const char *str, int len);
 flb_sds_t flb_sds_increase(flb_sds_t s, size_t len);
 flb_sds_t flb_sds_copy(flb_sds_t s, const char *str, int len);
 void flb_sds_destroy(flb_sds_t s);
-flb_sds_t flb_sds_printf(flb_sds_t *sds, const char *fmt, ...) FLB_SDS_FORMAT_PRINTF;
-int flb_sds_snprintf(flb_sds_t *str, size_t size, const char *fmt, ...);
+flb_sds_t flb_sds_printf(flb_sds_t *sds, const char *fmt, ...) FLB_FORMAT_PRINTF(2, 3);
+int flb_sds_snprintf(flb_sds_t *str, size_t size, const char *fmt, ...) FLB_FORMAT_PRINTF(3, 4);
 
 #endif
