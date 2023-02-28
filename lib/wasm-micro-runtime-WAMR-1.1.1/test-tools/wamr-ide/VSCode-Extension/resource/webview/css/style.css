@@ -1,0 +1,70 @@
+/*
+ * Copyright (C) 2019 Intel Corporation.  All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+ */
+
+.box_wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.form_heading {
+    text-align: left;
+}
+
+.form_heading vscode-divider,
+.config_form_heading vscode-divider,
+.form_bottom vscode-divider,
+.config_form_bottom vscode-divider {
+    padding-bottom: 0.5rem;
+}
+
+.form_body,
+.config_form_body {
+    display: grid;
+    grid-row-gap: 1rem;
+    padding-bottom: 0.5rem;
+}
+
+.config_form_body div,
+.config_submit_btn_wrapper {
+    display: grid;
+    grid-template-columns: 4fr 8fr;
+    grid-column-gap: 0.5rem;
+}
+
+.form_heading,
+.form_body,
+.form_bottom {
+    width: 400px;
+}
+
+.config_form_body,
+.config_form_heading,
+.config_form_bottom {
+    width: 550px;
+}
+
+#btn_submit {
+    border-radius: 5px;
+}
+
+#select_div,
+#text_filed_div,
+.proj_submit_btn_wrapper {
+    display: grid;
+    grid-template-columns: 3fr 9fr;
+    grid-column-gap: 0.5rem;
+}
+
+#ipt_projName,
+#select_dropdown,
+.config_form_body vscode-text-field,
+.config_form_body vscode-text-area {
+    width: 100%;
+}
+
+#btn {
+    text-align: center;
+}

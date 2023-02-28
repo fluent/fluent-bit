@@ -23,13 +23,12 @@
 #include "we.h"
 #include "we_util.h"
 
-double we_get_windows_version()
+int we_get_windows_version(double *version_number)
 {
     LSTATUS result;
     DWORD   data_size;
     HKEY    key_handle;
     char    version_text[8];
-    double  version_number;
 
     data_size = sizeof(version_text);
 
@@ -40,7 +39,7 @@ double we_get_windows_version()
                            &key_handle);
 
     if (result != ERROR_SUCCESS) {
-        return 0;
+        return FLB_FALSE;
     }
 
     result = RegQueryValueExA(key_handle,
@@ -54,10 +53,12 @@ double we_get_windows_version()
 
     if (result != ERROR_SUCCESS)
     {
-        return 0;
+        return FLB_FALSE;
     }
 
-    return strtod(version_text, NULL);
+    *version_number = strtod(version_text, NULL);
+
+    return FLB_TRUE;
 }
 
 void we_hexdump(uint8_t *buffer, size_t buffer_length, size_t line_length) {
@@ -115,4 +116,52 @@ void we_hexdump(uint8_t *buffer, size_t buffer_length, size_t line_length) {
     }
 
     free(printable_line);
+}
+
+char* we_convert_wstr(wchar_t *wstr, UINT codePage)
+{
+    int size = 0;
+    char *buf = NULL;
+
+    size = WideCharToMultiByte(codePage, 0, wstr, -1, NULL, 0, NULL, NULL);
+    if (size == 0) {
+        return NULL;
+    }
+
+    buf = flb_calloc(1, size);
+    if (buf == NULL) {
+        flb_errno();
+        return NULL;
+    }
+    size = WideCharToMultiByte(codePage, 0, wstr, -1, buf, size, NULL, NULL);
+    if (size == 0) {
+        flb_free(buf);
+        return NULL;
+    }
+
+    return buf;
+}
+
+wchar_t* we_convert_str(char *str)
+{
+    int size = 0;
+    wchar_t *buf = NULL;
+
+    size = MultiByteToWideChar(CP_UTF8, 0, str, -1, NULL, 0);
+    if (size == 0) {
+        return NULL;
+    }
+
+    buf = flb_calloc(1, sizeof(PWSTR) * size);
+    if (buf == NULL) {
+        flb_errno();
+        return NULL;
+    }
+    size = MultiByteToWideChar(CP_UTF8, 0, str, -1, buf, size);
+    if (size == 0) {
+        flb_free(buf);
+        return NULL;
+    }
+
+    return buf;
 }

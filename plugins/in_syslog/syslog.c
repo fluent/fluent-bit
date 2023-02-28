@@ -123,6 +123,8 @@ static int in_syslog_init(struct flb_input_instance *in,
         return -1;
     }
 
+    flb_input_downstream_set(ctx->downstream, ctx->ins);
+
     if (ctx->dgram_mode_flag) {
         connection = flb_downstream_conn_get(ctx->downstream);
 
@@ -227,6 +229,18 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_syslog, parser_name),
      "Set the parser"
     },
+    {
+      FLB_CONFIG_MAP_SIZE, "receive_buffer_size", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_syslog, receive_buffer_size),
+      "Set the socket receiving buffer size"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "raw_message_key", (char *) NULL,
+     0, FLB_TRUE, offsetof(struct flb_syslog, raw_message_key),
+     "Key where the raw message will be preserved"
+    },
+
+
     /* EOF */
     {0}
 };
@@ -240,5 +254,5 @@ struct flb_input_plugin in_syslog_plugin = {
     .cb_flush_buf = NULL,
     .cb_exit      = in_syslog_exit,
     .config_map   = config_map,
-    .flags        = FLB_INPUT_NET
+    .flags        = FLB_INPUT_NET_SERVER | FLB_IO_OPT_TLS
 };

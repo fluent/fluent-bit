@@ -39,6 +39,35 @@ struct flb_ne {
     int coll_fd;                                      /* collector fd     */
     struct cmt *cmt;                                  /* cmetrics context */
     struct flb_input_instance *ins;                   /* input instance   */
+    struct flb_callback *callback;                    /* metric callback */
+    struct mk_list *metrics;                          /* enabled metrics */
+
+    /* Individual intervals for metrics */
+    int cpu_scrape_interval;
+    int cpufreq_scrape_interval;
+    int meminfo_scrape_interval;
+    int diskstats_scrape_interval;
+    int filesystem_scrape_interval;
+    int uname_scrape_interval;
+    int stat_scrape_interval;
+    int time_scrape_interval;
+    int loadavg_scrape_interval;
+    int vmstat_scrape_interval;
+    int netdev_scrape_interval;
+    int filefd_scrape_interval;
+
+    int coll_cpu_fd;                                    /* collector fd (cpu)    */
+    int coll_cpufreq_fd;                                /* collector fd (cpufreq)  */
+    int coll_meminfo_fd;                                /* collector fd (meminfo)  */
+    int coll_diskstats_fd;                              /* collector fd (diskstat) */
+    int coll_filesystem_fd;                             /* collector fd (filesystem) */
+    int coll_uname_fd;                                  /* collector fd (uname)    */
+    int coll_stat_fd;                                   /* collector fd (stat)    */
+    int coll_time_fd;                                   /* collector fd (time)    */
+    int coll_loadavg_fd;                                /* collector fd (loadavg)    */
+    int coll_vmstat_fd;                                 /* collector fd (vmstat)    */
+    int coll_netdev_fd;                                 /* collector fd (netdev)    */
+    int coll_filefd_fd;                                 /* collector fd (filefd)    */
 
     /*
      * Metrics Contexts
@@ -101,6 +130,15 @@ struct flb_ne {
     struct cmt_gauge *filefd_maximum;
 
     /* filesystem: abbreviation 'fs' */
+    struct cmt_gauge *fs_avail_bytes;
+    struct cmt_gauge *fs_device_error;
+    struct cmt_gauge *fs_files;
+    struct cmt_gauge *fs_files_free;
+    struct cmt_gauge *fs_free_bytes;
+    struct cmt_gauge *fs_readonly;
+    struct cmt_gauge *fs_size_bytes;
+
+    struct flb_regex *fs_regex_read_only;
     struct flb_regex *fs_regex_skip_mount;
     struct flb_regex *fs_regex_skip_fs_types;
 };

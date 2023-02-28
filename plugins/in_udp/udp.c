@@ -89,7 +89,7 @@ static int in_udp_init(struct flb_input_instance *in,
         return -1;
     }
 
-    ctx->evl = config->evl;
+    flb_input_downstream_set(ctx->downstream, ctx->ins);
 
     connection = flb_downstream_conn_get(ctx->downstream);
 
@@ -188,5 +188,5 @@ struct flb_input_plugin in_udp_plugin = {
     .cb_flush_buf = NULL,
     .cb_exit      = in_udp_exit,
     .config_map   = config_map,
-    .flags        = FLB_INPUT_NET,
+    .flags        = FLB_INPUT_NET_SERVER,
 };

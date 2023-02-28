@@ -63,6 +63,10 @@ static void test_client_server(int is_ipv6)
 
     /* Create client and server sockets */
     fd_client = flb_net_socket_create(family, FLB_TRUE);
+    if (errno == EAFNOSUPPORT) {
+        TEST_MSG("This protocol is not supported in this platform");
+        return;
+    }
     TEST_CHECK(fd_client != -1);
 
     fd_server = flb_net_server(TEST_PORT, host);
@@ -94,6 +98,10 @@ static void test_client_server(int is_ipv6)
 
     /* Event loop */
     while (1) {
+        /* Break immediately for invalid status */
+        if (fd_client == -1 || fd_server == -1) {
+            break;
+        }
         mk_event_wait(evl);
         mk_event_foreach(e_item, evl) {
             if (e_item->type == TEST_EV_CLIENT) {

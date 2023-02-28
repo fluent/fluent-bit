@@ -750,22 +750,17 @@ static int we_perflib_process_instance(struct we_perflib_context   *context,
 
     offset = 0;
 
-    if (perflib_object->instance_count > 1) {
+    if (perflib_object->instance_count >= 1) {
         perf_instance_definition = (PERF_INSTANCE_DEFINITION *) input_data_block;
 
         if (perf_instance_definition->NameLength > 0) {
-            perflib_instance->name = (char *) flb_calloc(1,
-                                (perf_instance_definition->NameLength / 2) + 2);
-
+            perflib_instance->name = \
+                    we_convert_wstr(&input_data_block[perf_instance_definition->NameOffset], CP_UTF8);
             if (perflib_instance->name == NULL) {
                 we_perflib_destroy_instance(perflib_instance);
 
                 return -2;
             }
-
-            wcstombs(perflib_instance->name,
-                     &input_data_block[perf_instance_definition->NameOffset],
-                     perf_instance_definition->NameLength / 2);
         }
         else {
             perflib_instance->name = flb_strdup("DEFAULT");
@@ -942,7 +937,7 @@ int we_perflib_update_counters(struct flb_we                   *ctx,
                                             struct flb_hash_table_entry,
                                             _head_parent);
 
-        if (filter_hook(instance_hash_entry->key) == 0) {
+        if (filter_hook(instance_hash_entry->key, ctx) == 0) {
             for (metric_index = 0 ;
                  metric_sources[metric_index].name != NULL ;
                  metric_index++) {

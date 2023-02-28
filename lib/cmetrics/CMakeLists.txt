@@ -8,6 +8,32 @@ include(cmake/macros.cmake)
 include(CheckCSourceCompiles)
 include(GNUInstallDirs)
 
+# On macOS, search Homebrew for keg-only versions of Bison and Flex. Xcode does
+# not provide new enough versions for us to use.
+if (CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
+    execute_process(
+        COMMAND brew --prefix bison
+        RESULT_VARIABLE BREW_BISON
+        OUTPUT_VARIABLE BREW_BISON_PREFIX
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    if (BREW_BISON EQUAL 0 AND EXISTS "${BREW_BISON_PREFIX}")
+        message(STATUS "Found Bison keg installed by Homebrew at ${BREW_BISON_PREFIX}")
+        set(BISON_EXECUTABLE "${BREW_BISON_PREFIX}/bin/bison")
+    endif()
+
+    execute_process(
+        COMMAND brew --prefix flex
+        RESULT_VARIABLE BREW_FLEX
+        OUTPUT_VARIABLE BREW_FLEX_PREFIX
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    if (BREW_FLEX EQUAL 0 AND EXISTS "${BREW_FLEX_PREFIX}")
+        message(STATUS "Found Flex keg installed by Homebrew at ${BREW_FLEX_PREFIX}")
+        set(FLEX_EXECUTABLE "${BREW_FLEX_PREFIX}/bin/flex")
+    endif()
+endif()
+
 # Define macro to identify Windows system (without Cygwin)
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")
   set(CMT_SYSTEM_WINDOWS On)
@@ -31,7 +57,7 @@ endif()
 # CMetrics Version
 set(CMT_VERSION_MAJOR  0)
 set(CMT_VERSION_MINOR  5)
-set(CMT_VERSION_PATCH  2)
+set(CMT_VERSION_PATCH  8)
 set(CMT_VERSION_STR "${CMT_VERSION_MAJOR}.${CMT_VERSION_MINOR}.${CMT_VERSION_PATCH}")
 
 # Define __CMT_FILENAME__ consistently across Operating Systems
@@ -208,6 +234,29 @@ if (NOT CMT_HAVE_CFL)
   add_subdirectory(lib/cfl)
   CMT_DEFINITION(CMT_HAVE_CFL)
   CMT_DEFINITION(CMT_HAVE_CFL_INTERNAL)
+  if (CMT_INSTALL_TARGETS)
+    file(GLOB bundledCFLHeaders "lib/cfl/include/cfl/*.h")
+    install(FILES ${bundledCFLHeaders}
+      DESTINATION ${CMT_INSTALL_INCLUDEDIR}/cfl
+      COMPONENT headers
+      PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
+
+    # xxHash
+    install(FILES lib/cfl/lib/xxhash/xxh3.h
+      DESTINATION ${CMT_INSTALL_INCLUDEDIR}
+      COMPONENT headers
+      PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
+    install(FILES lib/cfl/lib/xxhash/xxhash.h
+      DESTINATION ${CMT_INSTALL_INCLUDEDIR}
+      COMPONENT headers
+      PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
+
+    install(TARGETS xxhash
+      RUNTIME DESTINATION ${CMT_INSTALL_BINDIR}
+      LIBRARY DESTINATION ${CMT_INSTALL_LIBDIR}
+      ARCHIVE DESTINATION ${CMT_INSTALL_LIBDIR}
+      COMPONENT library)
+  endif()
 endif()
 
 # fluent-otel-proto
@@ -218,6 +267,19 @@ if (NOT CMT_HAVE_FLUENT_OTEL_PROTO)
   add_subdirectory(lib/fluent-otel-proto)
   CMT_DEFINITION(CMT_HAVE_FLUENT_OTEL_PROTO)
   CMT_DEFINITION(CMT_HAVE_FLUENT_OTEL_PROTO_INTERNAL)
+  if (CMT_INSTALL_TARGETS)
+    file(GLOB bundledOTELProtoHeaders "lib/fluent-otel-proto/include/fluent-otel-proto/*.h")
+    install(FILES ${bundledOTELProtoHeaders}
+      DESTINATION ${CMT_INSTALL_INCLUDEDIR}/fluent-otel-proto
+      COMPONENT headers
+      PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
+
+    install(TARGETS fluent-otel-proto
+      RUNTIME DESTINATION ${CMT_INSTALL_BINDIR}
+      LIBRARY DESTINATION ${CMT_INSTALL_LIBDIR}
+      ARCHIVE DESTINATION ${CMT_INSTALL_LIBDIR}
+      COMPONENT library)
+  endif()
 endif()
 
 # Source code
@@ -288,7 +350,7 @@ set(CPACK_RPM_PACKAGE_GROUP "System Environment/Daemons")
 set(CPACK_RPM_PACKAGE_LICENSE "Apache v2.0")
 set(CPACK_RPM_PACKAGE_RELEASE ${CPACK_PACKAGE_RELEASE})
 set(CPACK_PACKAGE_DESCRIPTION_FILE "${PROJECT_SOURCE_DIR}/cpack/description")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Fast data collector for Linux")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "A standalone library to create and manipulate metrics in C")
 set(CPACK_RPM_SPEC_MORE_DEFINE "%define ignore \#")
 set(CPACK_RPM_USER_FILELIST
   "%ignore /lib"

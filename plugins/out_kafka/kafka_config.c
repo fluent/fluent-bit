@@ -124,6 +124,9 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         if (strcasecmp(ctx->timestamp_format_str, "iso8601") == 0) {
             ctx->timestamp_format = FLB_JSON_DATE_ISO8601;
         }
+        else if (strcasecmp(ctx->timestamp_format_str, "iso8601_ns") == 0) {
+            ctx->timestamp_format = FLB_JSON_DATE_ISO8601_NS;
+        }
     }
 
     /* set number of retries: note that if the number is zero, means forever */

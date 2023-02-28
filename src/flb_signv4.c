@@ -331,6 +331,8 @@ static flb_sds_t url_params_format(char *params)
     ret = flb_slist_split_string(&split, params, '&', -1);
     if (ret == -1) {
         flb_error("[signv4] error processing given query string");
+        flb_slist_destroy(&split);
+        flb_kv_release(&list);
         return NULL;
     }
 
@@ -497,6 +499,9 @@ void headers_sanitize(struct mk_list *in_list, struct mk_list *out_list)
         kv = flb_kv_item_create_len(&out_tmp,
                                     kv->key, flb_sds_len(kv->key),
                                     v_start, v_end - v_start);
+        if (kv == NULL) {
+            continue;
+        }
         for (x = 0; x < flb_sds_len(kv->key); x++) {
             kv->key[x] = tolower(kv->key[x]);
         }
@@ -569,14 +574,18 @@ static flb_sds_t flb_signv4_canonical_request(struct flb_http_client *c,
                                               char *amzdate,
                                               char *security_token,
                                               int s3_mode,
+                                              struct mk_list *excluded_headers,
                                               flb_sds_t *signed_headers)
 {
     int i;
     int len;
     int items;
+    int all_items;
+    int excluded_items;
     int post_params = FLB_FALSE;
     int result;
     size_t size;
+    int skip_header;
     char *val;
     struct flb_kv **arr;
     flb_sds_t cr;
@@ -587,6 +596,8 @@ static flb_sds_t flb_signv4_canonical_request(struct flb_http_client *c,
     struct flb_kv *kv;
     struct mk_list list_tmp;
     struct mk_list *head;
+    struct mk_list *head_2;
+    struct flb_slist_entry *sle;
     unsigned char sha256_buf[64] = {0};
 
     /* Size hint */
@@ -811,8 +822,9 @@ static flb_sds_t flb_signv4_canonical_request(struct flb_http_client *c,
      * For every header registered, append it to the temporal array so we can sort them
      * later.
      */
-    items = mk_list_size(&list_tmp);
-    size = (sizeof(struct flb_kv *) * items);
+    all_items = mk_list_size(&list_tmp);
+    excluded_items = 0;
+    size = (sizeof(struct flb_kv *) * (all_items));
     arr = flb_malloc(size);
     if (!arr) {
         flb_errno();
@@ -826,9 +838,31 @@ static flb_sds_t flb_signv4_canonical_request(struct flb_http_client *c,
     i = 0;
     mk_list_foreach(head, &list_tmp) {
         kv = mk_list_entry(head, struct flb_kv, _head);
+
+        /* Skip excluded headers */
+        if (excluded_headers) {
+            skip_header = FLB_FALSE;
+            mk_list_foreach(head_2, excluded_headers) {
+                sle = mk_list_entry(head_2, struct flb_slist_entry, _head);
+                if (flb_sds_casecmp(kv->key, sle->str, flb_sds_len(sle->str)) == 0) {
+
+                    /* Skip header */
+                    excluded_items++;
+                    skip_header = FLB_TRUE;
+                    break;
+                }
+            }
+            if (skip_header) {
+                continue;
+            }
+        }
+
         arr[i] = kv;
         i++;
     }
+
+    /* Count items */
+    items = all_items - excluded_items;
 
     /* Sort the headers from the temporal array */
     qsort(arr, items, sizeof(struct flb_kv *), kv_key_cmp);
@@ -1110,6 +1144,7 @@ flb_sds_t flb_signv4_do(struct flb_http_client *c, int normalize_uri,
                         time_t t_now,
                         char *region, char *service,
                         int s3_mode,
+                        struct mk_list *unsigned_headers,
                         struct flb_aws_provider *provider)
 {
     char amzdate[32];
@@ -1158,6 +1193,7 @@ flb_sds_t flb_signv4_do(struct flb_http_client *c, int normalize_uri,
     cr = flb_signv4_canonical_request(c, normalize_uri,
                                       amz_date_header, amzdate,
                                       creds->session_token, s3_mode,
+                                      unsigned_headers,
                                       &signed_headers);
     if (!cr) {
         flb_error("[signv4] failed canonical request");

@@ -1,9 +1,13 @@
 cmake_minimum_required(VERSION 3.12)
-project(fluent-bit)
+project(fluent-bit C)
+
+# CMP0069 ensures that LTO is enabled for all compilers
+cmake_policy(SET CMP0069 NEW)
+set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  2)
-set(FLB_VERSION_MINOR  0)
+set(FLB_VERSION_MINOR  1)
 set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
@@ -50,6 +54,15 @@ if (MSVC)
   add_compile_options(/MT)
 else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
+  # The following flags are to enhance security, but it may impact performance,
+  # we disable them by default.
+  if (FLB_WASM_STACK_PROTECT)
+    if (WAMR_BUILD_TARGET MATCHES "X86_.*" OR WAMR_BUILD_TARGET STREQUAL "AMD_64")
+      set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ftrapv -D_FORTIFY_SOURCE=2")
+    endif ()
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fstack-protector-strong --param ssp-buffer-size=4")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wl,-z,noexecstack,-z,relro,-z,now")
+  endif()
 endif()
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FLB_FILENAME__=__FILE__")
@@ -63,6 +76,12 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "FreeBSD")
   add_definitions(-DFLB_SYSTEM_FREEBSD)
   set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -lutil")
   set(CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS} -lutil")
+endif()
+
+# *BSD is not supported platform for wasm-micro-runtime. Now, we should be disabled for these platforms.
+if(${CMAKE_SYSTEM_NAME} MATCHES "BSD")
+  message(STATUS "This platform is not supported for WASM feature so disabled.")
+  set(FLB_WASM OFF)
 endif()
 
 include(GNUInstallDirs)
@@ -83,6 +102,8 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
 option(FLB_ALL                 "Enable all features"                         No)
 option(FLB_DEBUG               "Build with debug mode (-g)"                 Yes)
 option(FLB_RELEASE             "Build with release mode (-O2 -g -DNDEBUG)"   No)
+set(FLB_IPO "ReleaseOnly" CACHE STRING "Build with interprocedural optimization")
+set_property(CACHE FLB_IPO PROPERTY STRINGS "On;Off;ReleaseOnly")
 option(FLB_SMALL               "Optimise for small size"       No)
 option(FLB_COVERAGE            "Build with code-coverage"      No)
 option(FLB_JEMALLOC            "Build with Jemalloc support"   No)
@@ -119,6 +140,7 @@ option(FLB_ARROW               "Build with Apache Arrow support"             No)
 option(FLB_WINDOWS_DEFAULTS    "Build with predefined Windows settings"     Yes)
 option(FLB_WASM                "Build with WASM runtime support"            Yes)
 option(FLB_WAMRC               "Build with WASM AOT compiler executable"    No)
+option(FLB_WASM_STACK_PROTECT  "Build with WASM runtime with strong stack protector flags" No)
 
 # Native Metrics Support (cmetrics)
 option(FLB_METRICS             "Enable metrics support"       Yes)
@@ -177,6 +199,7 @@ option(FLB_IN_EMITTER                  "Enable emitter input plugin"            
 option(FLB_IN_NODE_EXPORTER_METRICS    "Enable node exporter metrics input plugin"    Yes)
 option(FLB_IN_WINDOWS_EXPORTER_METRICS "Enable windows exporter metrics input plugin" Yes)
 option(FLB_IN_OPENTELEMETRY            "Enable OpenTelemetry input plugin"            Yes)
+option(FLB_IN_ELASTICSEARCH            "Enable Elasticsearch (Bulk API) input plugin" Yes)
 option(FLB_OUT_AZURE                   "Enable Azure output plugin"                   Yes)
 option(FLB_OUT_AZURE_BLOB              "Enable Azure output plugin"                   Yes)
 option(FLB_OUT_AZURE_KUSTO             "Enable Azure Kusto output plugin"             Yes)
@@ -194,6 +217,7 @@ option(FLB_OUT_NATS                    "Enable NATS output plugin"              
 option(FLB_OUT_NRLOGS                  "Enable New Relic output plugin"               Yes)
 option(FLB_OUT_OPENSEARCH              "Enable OpenSearch output plugin"              Yes)
 option(FLB_OUT_TCP                     "Enable TCP output plugin"                     Yes)
+option(FLB_OUT_UDP                     "Enable UDP output plugin"                     Yes)
 option(FLB_OUT_PLOT                    "Enable Plot output plugin"                    Yes)
 option(FLB_OUT_FILE                    "Enable file output plugin"                    Yes)
 option(FLB_OUT_TD                      "Enable Treasure Data output plugin"           Yes)
@@ -222,6 +246,7 @@ option(FLB_OUT_S3                      "Enable AWS S3 output plugin"            
 option(FLB_OUT_WEBSOCKET               "Enable Websocket output plugin"               Yes)
 option(FLB_FILTER_ALTER_SIZE           "Enable alter_size filter"                     Yes)
 option(FLB_FILTER_AWS                  "Enable aws filter"                            Yes)
+option(FLB_FILTER_ECS                  "Enable AWS ECS filter"                        Yes)
 option(FLB_FILTER_CHECKLIST            "Enable checklist filter"                      Yes)
 option(FLB_FILTER_EXPECT               "Enable expect filter"                         Yes)
 option(FLB_FILTER_GREP                 "Enable grep filter"                           Yes)
@@ -242,6 +267,7 @@ option(FLB_FILTER_TENSORFLOW           "Enable tensorflow filter"               
 option(FLB_FILTER_GEOIP2               "Enable geoip2 filter"                         Yes)
 option(FLB_FILTER_NIGHTFALL            "Enable Nightfall filter"                      Yes)
 option(FLB_FILTER_WASM                 "Enable WASM filter"                           Yes)
+
 
 if(DEFINED FLB_NIGHTLY_BUILD AND NOT "${FLB_NIGHTLY_BUILD}" STREQUAL "")
   FLB_DEFINITION_VAL(FLB_NIGHTLY_BUILD ${FLB_NIGHTLY_BUILD})
@@ -315,7 +341,7 @@ if(FLB_TRACE)
 endif()
 
 if(FLB_CHUNK_TRACE)
-  add_definitions(-DFLB_HAVE_CHUNK_TRACE=1)
+  FLB_DEFINITION(FLB_HAVE_CHUNK_TRACE)
 endif()
 
 # SSL/TLS: add encryption support
@@ -331,6 +357,11 @@ if (FLB_TESTS_OSSFUZZ)
   FLB_DEFINITION(FLB_HAVE_TESTS_OSSFUZZ)
   # Disable for fuzz testing
   set(FLB_CONFIG_YAML Off)
+endif()
+
+if (FLB_WASM)
+  # For Linking libedit adjustments on LLVM 15.
+  include(cmake/FindLibEdit.cmake)
 endif()
 
 # Set Fluent Bit dependency libraries path
@@ -392,6 +423,17 @@ elseif(FLB_DEBUG)
   set(CMAKE_BUILD_TYPE "Debug")
 elseif(FLB_RELEASE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
+endif()
+
+if(FLB_IPO STREQUAL "On" OR (FLB_IPO STREQUAL "ReleaseOnly" AND FLB_RELEASE))
+  include(CheckIPOSupported)
+  check_ipo_supported(RESULT ipo_supported)
+  # IPO in GCC versions smaller v8 is broken
+  if(ipo_supported AND NOT (CMAKE_COMPILER_IS_GNUCC AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8))
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+  else()
+    message(Warning "IPO is not supported on this platform")
+  endif()
 endif()
 
 if(FLB_PARSER)
@@ -1081,7 +1123,9 @@ set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CP
 if(FLB_SYSTEM_WINDOWS)
   set(CPACK_GENERATOR "NSIS" "ZIP" "WIX")
 
-  if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+  if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|AARCH64)")
+    set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-winarm64")
+  elseif(CMAKE_SIZEOF_VOID_P EQUAL 8)
     set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-win64")
   else()
     set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-win32")
@@ -1114,7 +1158,7 @@ if(DPKG_PROGRAM)
   set(CPACK_DEBIAN_RUNTIME_PACKAGE_NAME "${CPACK_PACKAGE_NAME}")
   set(CPACK_DEBIAN_RUNTIME_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
   set(CPACK_DEBIAN_RUNTIME_PACKAGE_CONTROL_EXTRA
-    ${CMAKE_CURRENT_SOURCE_DIR}/debian/conffiles
+    ${PROJECT_SOURCE_DIR}/cpack/debian/conffiles
     )
 
   if(FLB_RUN_LDCONFIG)

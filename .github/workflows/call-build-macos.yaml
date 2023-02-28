@@ -59,7 +59,7 @@ jobs:
             BUILD_TYPE="modern"
           fi
           echo "Detected type: $BUILD_TYPE"
-          echo ::set-output name=BUILD_TYPE::$BUILD_TYPE
+          echo "BUILD_TYPE=$BUILD_TYPE" >> $GITHUB_OUTPUT
         shell: bash
 
   call-build-macos-package:
@@ -79,7 +79,7 @@ jobs:
       - name: Install dependencies
         run: |
           brew update
-          brew install bison flex libyaml openssl || true
+          brew install bison flex libyaml openssl pkgconfig || true
 
       - name: Build Fluent Bit packages
         run: |

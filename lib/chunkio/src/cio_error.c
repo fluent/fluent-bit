@@ -46,6 +46,10 @@ int cio_error_get(struct cio_chunk *ch)
 void cio_error_set(struct cio_chunk *ch, int status)
 {
     ch->error_n = status;
+
+    if (ch->ctx != NULL) {
+        ch->ctx->last_chunk_error = status;
+    }
 }
 
 /* Reset the error number in a chunk */

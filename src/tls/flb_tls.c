@@ -86,6 +86,43 @@ struct mk_list *flb_tls_get_config_map(struct flb_config *config)
     return config_map;
 }
 
+
+static inline void io_tls_backup_event(struct flb_connection *connection,
+                                       struct mk_event *backup)
+{
+    if (connection != NULL && backup != NULL) {
+        memcpy(backup, &connection->event, sizeof(struct mk_event));
+    }
+}
+
+static inline void io_tls_restore_event(struct flb_connection *connection,
+                                        struct mk_event *backup)
+{
+    int result;
+
+    if (connection != NULL && backup != NULL) {
+        if (MK_EVENT_IS_REGISTERED((&connection->event))) {
+            result = mk_event_del(connection->evl, &connection->event);
+
+            assert(result == 0);
+        }
+
+        if (MK_EVENT_IS_REGISTERED(backup)) {
+            connection->event.priority = backup->priority;
+            connection->event.handler = backup->handler;
+
+            result = mk_event_add(connection->evl,
+                                  connection->fd,
+                                  backup->type,
+                                  backup->mask,
+                                  &connection->event);
+
+            assert(result == 0);
+        }
+    }
+}
+
+
 static inline int io_tls_event_switch(struct flb_tls_session *session,
                                       int mask)
 {
@@ -231,15 +268,23 @@ int flb_tls_net_read_async(struct flb_coro *co,
                            struct flb_tls_session *session,
                            void *buf, size_t len)
 {
-    int ret;
+    int             event_restore_needed;
+    struct mk_event event_backup;
     struct flb_tls *tls;
+    int             ret;
 
     tls = session->tls;
+
+    event_restore_needed = FLB_FALSE;
+
+    io_tls_backup_event(session->connection, &event_backup);
 
  retry_read:
     ret = tls->api->net_read(session, buf, len);
 
     if (ret == FLB_TLS_WANT_READ) {
+        event_restore_needed = FLB_TRUE;
+
         session->connection->coroutine = co;
 
         io_tls_event_switch(session, MK_EVENT_READ);
@@ -248,11 +293,13 @@ int flb_tls_net_read_async(struct flb_coro *co,
         goto retry_read;
     }
     else if (ret == FLB_TLS_WANT_WRITE) {
+        event_restore_needed = FLB_TRUE;
+
         session->connection->coroutine = co;
 
         io_tls_event_switch(session, MK_EVENT_WRITE);
         flb_coro_yield(co, FLB_FALSE);
-        
+
         goto retry_read;
     }
     else
@@ -262,12 +309,23 @@ int flb_tls_net_read_async(struct flb_coro *co,
          */
         session->connection->coroutine = NULL;
 
-        if (ret < 0) {
-            return -1;
+        if (ret <= 0) {
+            ret = -1;
         }
-        else if (ret == 0) {
-            return -1;
-        }
+    }
+
+    if (event_restore_needed) {
+        /* If we enter here it means we registered this connection
+         * in the event loop, in which case we need to unregister it
+         * and restore the original registration if there was one.
+         *
+         * We do it conditionally because in those cases in which
+         * send succeeds on the first try we don't touch the event
+         * and it wouldn't make sense to unregister and register for
+         * the same event.
+         */
+
+        io_tls_restore_event(session->connection, &event_backup);
     }
 
     return ret;
@@ -316,12 +374,18 @@ int flb_tls_net_write_async(struct flb_coro *co,
                             struct flb_tls_session *session,
                             const void *data, size_t len, size_t *out_len)
 {
+    int             event_restore_needed;
+    struct mk_event event_backup;
     size_t          total;
     int             ret;
     struct flb_tls *tls;
 
     total = 0;
     tls = session->tls;
+
+    event_restore_needed = FLB_FALSE;
+
+    io_tls_backup_event(session->connection, &event_backup);
 
 retry_write:
     session->connection->coroutine = co;
@@ -331,6 +395,8 @@ retry_write:
                               len - total);
 
     if (ret == FLB_TLS_WANT_WRITE) {
+        event_restore_needed = FLB_TRUE;
+
         io_tls_event_switch(session, MK_EVENT_WRITE);
 
         flb_coro_yield(co, FLB_FALSE);
@@ -338,6 +404,8 @@ retry_write:
         goto retry_write;
     }
     else if (ret == FLB_TLS_WANT_READ) {
+        event_restore_needed = FLB_TRUE;
+
         io_tls_event_switch(session, MK_EVENT_READ);
 
         flb_coro_yield(co, FLB_FALSE);
@@ -351,6 +419,8 @@ retry_write:
 
         session->connection->coroutine = NULL;
         *out_len = total;
+
+        io_tls_restore_event(session->connection, &event_backup);
 
         return -1;
     }
@@ -374,7 +444,19 @@ retry_write:
 
     *out_len = total;
 
-    mk_event_del(session->connection->evl, &session->connection->event);
+    if (event_restore_needed) {
+        /* If we enter here it means we registered this connection
+         * in the event loop, in which case we need to unregister it
+         * and restore the original registration if there was one.
+         *
+         * We do it conditionally because in those cases in which
+         * send succeeds on the first try we don't touch the event
+         * and it wouldn't make sense to unregister and register for
+         * the same event.
+         */
+
+        io_tls_restore_event(session->connection, &event_backup);
+    }
 
     return total;
 }
@@ -398,6 +480,8 @@ int flb_tls_session_create(struct flb_tls *tls,
                            struct flb_connection *connection,
                            struct flb_coro *co)
 {
+    int                     event_restore_needed;
+    struct mk_event         event_backup;
     struct flb_tls_session *session;
     int                     result;
     char                   *vhost;
@@ -435,9 +519,11 @@ int flb_tls_session_create(struct flb_tls *tls,
     session->tls = tls;
     session->connection = connection;
 
-    connection->tls_session = session;
-
     result = 0;
+
+    event_restore_needed = FLB_FALSE;
+
+    io_tls_backup_event(session->connection, &event_backup);
 
  retry_handshake:
     result = tls->api->net_handshake(tls, vhost, session->ptr);
@@ -491,6 +577,8 @@ int flb_tls_session_create(struct flb_tls *tls,
             goto retry_handshake;
         }
 
+        event_restore_needed = FLB_TRUE;
+
         /*
          * FIXME: if we need multiple reads we are invoking the same
          * system call multiple times.
@@ -518,16 +606,36 @@ int flb_tls_session_create(struct flb_tls *tls,
 
         connection->coroutine = NULL;
 
-        goto retry_handshake;
+        /* This check's purpose is to abort when a timeout is detected.
+         */
+        if (connection->net_error == -1) {
+            goto retry_handshake;
+        }
+        else {
+            result = -1;
+        }
     }
 
 cleanup:
-    if (connection->event.status & MK_EVENT_REGISTERED) {
-        mk_event_del(connection->evl, &connection->event);
+    if (event_restore_needed) {
+        /* If we enter here it means we registered this connection
+         * in the event loop, in which case we need to unregister it
+         * and restore the original registration if there was one.
+         *
+         * We do it conditionally because in those cases in which
+         * send succeeds on the first try we don't touch the event
+         * and it wouldn't make sense to unregister and register for
+         * the same event.
+         */
+
+        io_tls_restore_event(session->connection, &event_backup);
     }
 
     if (result != 0) {
         flb_tls_session_destroy(session);
+    }
+    else {
+        connection->tls_session = session;
     }
 
     return result;

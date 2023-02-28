@@ -196,7 +196,7 @@ static void format_span(cfl_sds_t *buf, struct ctrace *ctx, struct ctrace_span *
         id_hex = ctr_id_to_lower_base16(span->trace_id);
     }
     else {
-        id_hex = cfl_sds_create(CTR_ID_DEFAULT);
+        id_hex = cfl_sds_create(CTR_ID_TRACE_DEFAULT);
     }
     snprintf(tmp, sizeof(tmp) - 1, "%*s- trace_id                : %s\n", min, "", id_hex);
     sds_cat_safe(buf, tmp);
@@ -207,7 +207,7 @@ static void format_span(cfl_sds_t *buf, struct ctrace *ctx, struct ctrace_span *
         id_hex = ctr_id_to_lower_base16(span->span_id);
     }
     else {
-        id_hex = cfl_sds_create(CTR_ID_DEFAULT);
+        id_hex = cfl_sds_create(CTR_ID_SPAN_DEFAULT);
     }
     snprintf(tmp, sizeof(tmp) - 1, "%*s- span_id                 : %s\n", min, "", id_hex);
     sds_cat_safe(buf, tmp);
@@ -299,7 +299,7 @@ static void format_span(cfl_sds_t *buf, struct ctrace *ctx, struct ctrace_span *
             id_hex = ctr_id_to_lower_base16(link->trace_id);
         }
         else {
-            id_hex = cfl_sds_create(CTR_ID_DEFAULT);
+            id_hex = cfl_sds_create(CTR_ID_TRACE_DEFAULT);
         }
         snprintf(tmp, sizeof(tmp) - 1, "%*s- trace_id             : %s\n", off, "", id_hex);
         sds_cat_safe(buf, tmp);
@@ -310,7 +310,7 @@ static void format_span(cfl_sds_t *buf, struct ctrace *ctx, struct ctrace_span *
             id_hex = ctr_id_to_lower_base16(link->span_id);
         }
         else {
-            id_hex = cfl_sds_create(CTR_ID_DEFAULT);
+            id_hex = cfl_sds_create(CTR_ID_SPAN_DEFAULT);
         }
         snprintf(tmp, sizeof(tmp) - 1, "%*s- span_id              : %s\n", off, "", id_hex);
         sds_cat_safe(buf, tmp);

@@ -73,6 +73,8 @@ struct cmt_counter *cmt_counter_create(struct cmt *cmt,
         cmt_counter_destroy(counter);
         return NULL;
     }
+    /* set default counter aggregation type to cumulative */
+    counter->aggregation_type = CMT_AGGREGATION_TYPE_CUMULATIVE;
 
     counter->cmt = cmt;
     return counter;

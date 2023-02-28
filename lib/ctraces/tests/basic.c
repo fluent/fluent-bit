@@ -26,6 +26,8 @@ void test_basic()
 {
     struct ctrace *ctx;
 
+    printf("version => '%s'", ctr_version());
+
     ctx = ctr_create(NULL);
     TEST_CHECK(ctx != NULL);
 

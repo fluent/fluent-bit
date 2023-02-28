@@ -31,6 +31,13 @@ set(UNIT_TESTS_FILES
   bucket_queue.c
   flb_event_loop.c
   ring_buffer.c
+  regex.c
+  parser_json.c
+  parser_ltsv.c
+  parser_regex.c
+  parser_logfmt.c
+  env.c
+  log.c
   )
 
 # Config format

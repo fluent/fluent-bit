@@ -135,6 +135,7 @@ static int in_health_init(struct flb_input_instance *in,
                           struct flb_config *config, void *data)
 {
     int ret;
+    int upstream_flags;
     struct flb_in_health_config *ctx;
     (void) data;
 
@@ -166,8 +167,15 @@ static int in_health_init(struct flb_input_instance *in,
         return -1;
     }
 
+    upstream_flags = FLB_IO_TCP;
+
+    if (in->use_tls) {
+        upstream_flags |= FLB_IO_TLS;
+    }
+
     ctx->u = flb_upstream_create(config, in->host.name, in->host.port,
-                                 FLB_IO_TCP, NULL);
+                                 upstream_flags, in->tls);
+
     if (!ctx->u) {
         flb_plg_error(ctx->ins, "could not initialize upstream");
         flb_free(ctx);

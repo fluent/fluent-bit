@@ -387,7 +387,6 @@ static int tls_session_destroy(void *session)
 
     if (flb_socket_error(ptr->fd) == 0) {
         SSL_shutdown(ptr->ssl);
-        SSL_shutdown(ptr->ssl);
     }
     SSL_free(ptr->ssl);
     flb_free(ptr);
@@ -429,6 +428,11 @@ static int tls_net_read(struct flb_tls_session *session,
         }
         else if (ret == SSL_ERROR_WANT_WRITE) {
             ret = FLB_TLS_WANT_WRITE;
+        }
+        else if (ret == SSL_ERROR_SYSCALL) {
+            flb_errno();
+            ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
+            flb_error("[tls] syscall error: %s", err_buf);
         }
         else if (ret < 0) {
             ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
@@ -478,6 +482,13 @@ static int tls_net_write(struct flb_tls_session *session,
         else if (ret == SSL_ERROR_WANT_READ) {
             ret = FLB_TLS_WANT_READ;
         }
+        else if (ret == SSL_ERROR_SYSCALL) {
+            flb_errno();
+            ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
+            flb_error("[tls] syscall error: %s", err_buf);
+
+            ret = -1;
+        }
         else {
             ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
             flb_error("[tls] error: %s", err_buf);
@@ -513,6 +524,7 @@ static int tls_net_handshake(struct flb_tls *tls,
         }
         else {
             flb_error("[tls] error: invalid tls mode : %d", tls->mode);
+            pthread_mutex_unlock(&ctx->mutex);
             return -1;
         }
 

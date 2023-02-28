@@ -747,31 +747,6 @@ static int tag_compose(char *tag, char *fname, char *out_buf, size_t *out_size,
     return 0;
 }
 
-static inline int flb_tail_file_exists_old(struct stat *st,
-                                       struct flb_tail_config *ctx)
-{
-    struct mk_list *head;
-    struct flb_tail_file *file;
-
-    /* Iterate static list */
-    mk_list_foreach(head, &ctx->files_static) {
-        file = mk_list_entry(head, struct flb_tail_file, _head);
-        if (file->inode == st->st_ino) {
-            return FLB_TRUE;
-        }
-    }
-
-    /* Iterate dynamic list */
-    mk_list_foreach(head, &ctx->files_event) {
-        file = mk_list_entry(head, struct flb_tail_file, _head);
-        if (file->inode == st->st_ino) {
-            return FLB_TRUE;
-        }
-    }
-
-    return FLB_FALSE;
-}
-
 static inline int flb_tail_file_exists(struct stat *st,
                                        struct flb_tail_config *ctx)
 {
@@ -866,8 +841,8 @@ static int ml_flush_callback(struct flb_ml_parser *parser,
     else {
         /* adjust the records in a new buffer */
         record_append_custom_keys(file,
-                                  file->mult_sbuf.data,
-                                  file->mult_sbuf.size,
+                                  buf_data,
+                                  buf_size,
                                   &mult_buf, &mult_size);
 
         ml_stream_buffer_append(file, mult_buf, mult_size);
@@ -1292,7 +1267,6 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
     size_t capacity;
     size_t processed_bytes;
     ssize_t bytes;
-    struct stat st;
     struct flb_tail_config *ctx;
 
     /* Check if we the engine issued a pause */
@@ -1383,15 +1357,9 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         }
 #endif
 
-        ret = fstat(file->fd, &st);
-        if (ret == -1) {
-            flb_errno();
-            return FLB_TAIL_ERROR;
-        }
-        else {
-            /* adjust file counters, returns FLB_TAIL_OK or FLB_TAIL_ERROR */
-            ret = adjust_counters(ctx, file);
-        }
+        /* adjust file counters, returns FLB_TAIL_OK or FLB_TAIL_ERROR */
+        ret = adjust_counters(ctx, file);
+
         /* Data was consumed but likely some bytes still remain */
         return ret;
     }

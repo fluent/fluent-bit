@@ -175,8 +175,24 @@ static void pack_instrumentation_scope(mpack_writer_t *writer, struct ctrace_ins
 
 static void pack_id(mpack_writer_t *writer, struct ctrace_id *id)
 {
+    cfl_sds_t encoded_id;
+
+
     if (id) {
-        mpack_write_bin(writer, id->buf, cfl_sds_len(id->buf));
+        encoded_id = ctr_id_to_lower_base16(id);
+
+        if (encoded_id != NULL) {
+            mpack_write_cstr(writer, encoded_id);
+
+            cfl_sds_destroy(encoded_id);
+        }
+        else {
+            /* we should be able to report this but at the moment
+             * we are not.
+             */
+
+            mpack_write_nil(writer);
+        }
     }
     else {
         mpack_write_nil(writer);

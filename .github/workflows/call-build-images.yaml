@@ -62,7 +62,7 @@ jobs:
       # E.g. if we build version 1.9.2 we want to tag with 1.9.2 and 1.9.
       - name: Determine major version tag
         id: determine-major-version
-        uses: frabert/replace-string-action@v2.2
+        uses: frabert/replace-string-action@v2.4
         with:
           pattern: '^(\d+\.\d+).*$'
           string: ${{ inputs.version }}
@@ -80,6 +80,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      production-digest: ${{ steps.build_push.outputs.digest }}
+      debug-digest: ${{ steps.debug_build_push.outputs.digest }}
     steps:
       - name: Checkout code for modern style builds
         uses: actions/checkout@v3
@@ -110,7 +113,8 @@ jobs:
             raw,latest
 
       - name: Build the production images
-        uses: docker/build-push-action@v3
+        id: build_push
+        uses: docker/build-push-action@v4
         with:
           file: ./dockerfiles/Dockerfile
           context: .
@@ -134,7 +138,8 @@ jobs:
             raw,latest-debug
 
       - name: Build the debug multi-arch images
-        uses: docker/build-push-action@v3
+        id: debug_build_push
+        uses: docker/build-push-action@v4
         with:
           file: ./dockerfiles/Dockerfile
           context: .
@@ -239,17 +244,16 @@ jobs:
         run: |
           cosign sign --recursive \
             -a "repo=${{ github.repository }}" \
-            -a "workflow=${{ github.workflow }}" \
+            -a "workflow=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             -a "ref=${{ github.sha }}" \
             -a "release=${{ inputs.version }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}:${{ needs.call-build-images-meta.outputs.major-version }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}:latest"
+            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-images.outputs.production-digest }}" \
+            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-images.outputs.debug-digest }}"
         shell: bash
         # Ensure we move on to key-based signing as well
         continue-on-error: true
         env:
-          COSIGN_EXPERIMENTAL: "true"
+          COSIGN_EXPERIMENTAL: true
 
       - name: Cosign with a key
         # Only run if we have a key defined
@@ -259,25 +263,31 @@ jobs:
           echo -e "${COSIGN_PRIVATE_KEY}" > /tmp/my_cosign.key
           cosign sign --key /tmp/my_cosign.key --recursive \
             -a "repo=${{ github.repository }}" \
-            -a "workflow=${{ github.workflow }}" \
+            -a "workflow=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             -a "ref=${{ github.sha }}" \
             -a "release=${{ inputs.version }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}:${{ needs.call-build-images-meta.outputs.major-version }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}:latest"
+            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-images.outputs.production-digest }}" \
+            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-images.outputs.debug-digest }}"
           rm -f /tmp/my_cosign.key
         shell: bash
+        continue-on-error: true
         env:
           COSIGN_PRIVATE_KEY: ${{ secrets.cosign_private_key }}
           COSIGN_PASSWORD: ${{ secrets.cosign_private_key_password }} # optional
 
   # This takes a long time...
   call-build-windows-container:
-    name: Windows container image
-    runs-on: windows-2019
+    name: Windows container images
+    runs-on: windows-${{ matrix.windows-base-version }}
     environment: ${{ inputs.environment }}
     needs:
       - call-build-images-meta
+    strategy:
+      fail-fast: true
+      matrix:
+        windows-base-version: 
+          - '2019'
+          - '2022'
     permissions:
       contents: read
       packages: write
@@ -296,10 +306,11 @@ jobs:
 
       - name: Build the production images
         run: |
-          docker build -t ${{ inputs.registry }}/${{ inputs.image }}:windows-2019-${{ inputs.version }} --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc2019 -f ./dockerfiles/Dockerfile.windows .
-          docker push ${{ inputs.registry }}/${{ inputs.image }}:windows-2019-${{ inputs.version }}
+          docker build -t ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }} --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/Dockerfile.windows .
+          docker push ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }}
+        
         # We cannot use this action as it requires privileged mode
-        # uses: docker/build-push-action@v3
+        # uses: docker/build-push-action@v4
         # with:
         #   file: ./dockerfiles/Dockerfile.windows
         #   context: .

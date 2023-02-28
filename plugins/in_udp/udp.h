@@ -45,7 +45,6 @@ struct flb_in_udp_config {
     int collector_id;                  /* Listener collector id       */
     struct flb_downstream *downstream; /* Client manager              */
     struct udp_conn *dummy_conn;       /* Datagram dummy connection   */
-    struct mk_event_loop *evl;         /* Event loop file descriptor  */
     struct flb_input_instance *ins;    /* Input plugin instace        */
 };
 

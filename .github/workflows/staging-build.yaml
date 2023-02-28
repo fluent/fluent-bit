@@ -53,7 +53,7 @@ jobs:
               echo "Defaulting to master"
               VERSION=master
             fi
-            echo ::set-output name=VERSION::$VERSION
+            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
         shell: bash
         env:
           # Use the dispatch variable in preference, if empty use the context ref_name which should
@@ -61,7 +61,7 @@ jobs:
           INPUT_VERSION: ${{ inputs.version || github.ref_name }}
 
       # String the 'v' prefix for tags.
-      - uses: frabert/replace-string-action@v2.2
+      - uses: frabert/replace-string-action@v2.4
         id: formatted_version
         with:
           pattern: '[v]*(.*)$'
@@ -164,17 +164,16 @@ jobs:
       access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
       secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-  # MacOS is currently not officially supported and under "flux" so do not fail a build for it
-  # staging-build-macos-packages:
-  #   needs:
-  #     - staging-build-get-meta
-  #   uses: ./.github/workflows/call-build-macos.yaml
-  #   with:
-  #     version: ${{ needs.staging-build-get-meta.outputs.version }}
-  #     ref: ${{ inputs.version || github.ref_name }}
-  #     environment: staging
-  #   secrets:
-  #     token: ${{ secrets.GITHUB_TOKEN }}
-  #     bucket: ${{ secrets.AWS_S3_BUCKET_STAGING }}
-  #     access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  #     secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  staging-build-macos-packages:
+    needs:
+      - staging-build-get-meta
+    uses: ./.github/workflows/call-build-macos.yaml
+    with:
+      version: ${{ needs.staging-build-get-meta.outputs.version }}
+      ref: ${{ inputs.version || github.ref_name }}
+      environment: staging
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+      bucket: ${{ secrets.AWS_S3_BUCKET_STAGING }}
+      access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

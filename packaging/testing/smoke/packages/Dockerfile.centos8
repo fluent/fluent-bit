@@ -1,11 +1,11 @@
 # For staging upgrade we use the 'staging-upgrade-prep' as the base
-ARG STAGING_BASE=dokken/centos-8
+ARG STAGING_BASE=docker.io/dokken/centos-8
 
 ARG RELEASE_URL=https://packages.fluentbit.io
 ARG RELEASE_KEY=https://packages.fluentbit.io/fluentbit.key
 
 # hadolint ignore=DL3006
-FROM dokken/centos-8 as official-install
+FROM docker.io/dokken/centos-8 as official-install
 # CentOS is now EOL so have to use the vault repos
 RUN sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-* && \
     sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*

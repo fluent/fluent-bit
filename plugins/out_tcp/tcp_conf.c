@@ -67,6 +67,16 @@ struct flb_out_tcp *flb_tcp_conf_create(struct flb_output_instance *ins,
         io_flags |= FLB_IO_IPV6;
     }
 
+    /* raw message key mode */
+    if (ctx->raw_message_key) {
+        ctx->ra_raw_message_key = flb_ra_create(ctx->raw_message_key, FLB_TRUE);
+        if (!ctx->ra_raw_message_key) {
+            flb_plg_error(ctx->ins, "could not create record accessor for raw_message_key");
+            flb_free(ctx);
+            return NULL;
+        }
+    }
+
     /* Upstream context */
     upstream = flb_upstream_create(config,
                                    ins->host.name,
@@ -129,6 +139,10 @@ void flb_tcp_conf_destroy(struct flb_out_tcp *ctx)
 {
     if (!ctx) {
         return;
+    }
+
+    if (ctx->ra_raw_message_key) {
+        flb_ra_destroy(ctx->ra_raw_message_key);
     }
 
     if (ctx->u) {

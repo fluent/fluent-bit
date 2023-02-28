@@ -226,3 +226,48 @@ Generally a PR will target the default `master` branch so the changes will go in
 Once merged, this does not mean they will automatically go into the next minor release of the current series.
 
 A particular set of changes might want to be applied to the current or previous releases so please also submit a PR targeting the branch for the particular release series you want or think it should be applied to, e.g. if a change should go into a 1.8.X release then target the `1.8` branch.
+
+## Unit Tests
+
+Fluent bit uses ctest for unit testing. 
+
+These tests are separated by internal and runtime tests which are in the `tests/internal` and `tests/runtime` directories respecitively. 
+
+To enable these tests they must be enabled using cmake.
+
+To enable the runtime tests:
+
+```shell
+$ cd build ; cmake .. -DFLB_TESTS_RUNTIME=On
+```
+
+To enable the internal tests:
+
+```shell
+$ cd build ; cmake .. -DFLB_TESTS_INTERNAL=On
+```
+
+To enable both a combination of both `-DFLB_TESTS_RUNTIME` and `-DFLB_TESTS_INTERNAL` can be used.
+
+These tests will be compiled along with the main fluent bit binary.
+
+They can be run all at once by running `make test` or individually by running the relevant tests binary from the `build/bin` directory, ie:
+
+```shell
+build$ ./bin/flb-it-core-timeout
+...
+build$ ./bin/flb-rt-out_http
+...
+```
+
+Individual tests can be run by passing the name of the test to the corresponding test binary:
+
+```shell
+build$ ./bin/flb-rt-filter_kubernetes kube_core_unescaping_json
+...
+```
+
+If you have an extremely fast machine with multiple cores and/or threads it is also possible to execute all the tests in parallel using ctest:
+
+```shell
+build$ ctest -j${NUM_PROC}

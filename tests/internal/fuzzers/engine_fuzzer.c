@@ -15,9 +15,12 @@ struct flb_parser *parser;
 int filter_ffd;
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-    if (size < 100) { 
+    if (size < 100) {
         return 0;
     }
+    /* Set fuzzer-malloc chance of failure */
+    flb_malloc_p = 0;
+    flb_malloc_mod = 25000;
 
     uint8_t ud = data[0];
     MOVE_INPUT(1);
@@ -85,7 +88,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                             flb_input_chunk_flush(ic, &flushed);
                         }
                     }
-                } 
+                }
             }
             break;
         case 6:
@@ -122,9 +125,12 @@ struct flb_lib_out_cb cb;
 
 
 int LLVMFuzzerInitialize(int *argc, char ***argv) {
+    /* Set fuzzer-malloc chance of failure */
     flb_malloc_p = 0;
+    flb_malloc_mod = 25000;
+
     ctx = flb_create();
-    flb_service_set(ctx, "Flush", "0", "Grace", 
+    flb_service_set(ctx, "Flush", "0", "Grace",
                     "0", "Log_Level", "debug", NULL);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -136,7 +142,7 @@ int LLVMFuzzerInitialize(int *argc, char ***argv) {
     flb_input_set(ctx, in_ffd, (char *) "A", NULL);
 
     parser = flb_parser_create("timestamp", "regex", "^(?<time>.*)$", FLB_TRUE,
-                                "%s.%L", "time", NULL, MK_FALSE, 0,
+                                "%s.%L", "time", NULL, MK_FALSE, 0, FLB_FALSE,
                                NULL, 0, NULL, ctx->config);
     filter_ffd = flb_filter(ctx, (char *) "parser", NULL);
     int ret;

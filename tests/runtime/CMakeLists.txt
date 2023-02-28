@@ -43,6 +43,7 @@ if(FLB_OUT_LIB)
   FLB_RT_TEST(FLB_IN_HEAD          "in_head.c")
   FLB_RT_TEST(FLB_IN_DUMMY         "in_dummy.c")
   FLB_RT_TEST(FLB_IN_HTTP          "in_http.c")
+  FLB_RT_TEST(FLB_IN_ELASTICSEARCH "in_elasticsearch.c")
   FLB_RT_TEST(FLB_IN_RANDOM        "in_random.c")
   FLB_RT_TEST(FLB_IN_STATSD        "in_statsd.c")
   FLB_RT_TEST(FLB_IN_SYSLOG        "in_syslog.c")
@@ -54,6 +55,7 @@ endif()
 
 # Filter Plugins
 if(FLB_IN_LIB AND FLB_OUT_LIB)
+  FLB_RT_TEST(FLB_FILTER_AWS             "filter_aws.c")
   FLB_RT_TEST(FLB_FILTER_CHECKLIST       "filter_checklist.c")
   FLB_RT_TEST(FLB_FILTER_EXPECT          "filter_expect.c")
   FLB_RT_TEST(FLB_FILTER_STDOUT          "filter_stdout.c")
@@ -72,6 +74,7 @@ if(FLB_IN_LIB AND FLB_OUT_LIB)
   if (FLB_FILTER_WASM)
     FLB_RT_TEST(FLB_FILTER_WASM            "filter_wasm.c")
   endif ()
+  FLB_RT_TEST(FLB_FILTER_ECS       "filter_ecs.c")
 endif()
 
 
@@ -112,6 +115,11 @@ if(FLB_IN_LIB)
   endif()
   FLB_RT_TEST(FLB_OUT_S3                "out_s3.c")
   FLB_RT_TEST(FLB_OUT_TD                "out_td.c")
+
+endif()
+
+if (FLB_CUSTOM_CALYPTIA)
+  FLB_RT_TEST(FLB_CUSTOM_CALYPTIA "custom_calyptia_test.c")
 endif()
 
 

@@ -155,41 +155,58 @@ struct flb_config_map *configs[] = {config_map_mult, config_map};
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
+    /* Set flb_malloc_mod to be fuzzer-data dependent */
+    if (size < 4) {
+        return 0;
+    }
     flb_malloc_p = 0;
+    flb_malloc_mod = *(int*)data;
+    data += 4;
+    size -= 4;
+
+    /* Avoid division by zero for modulo operations */
+    if (flb_malloc_mod == 0) {
+        flb_malloc_mod = 1;
+    }
+
     if (size < 40) {
         return 0;
     }
 
+    struct mk_list *map = NULL;
+    struct flb_config *config = NULL;
     struct context ctx;
-    struct mk_list *map;
+    bzero(&ctx, sizeof(struct context));
     struct mk_list prop;
-    struct flb_config *config;
+    bzero(&prop, sizeof(struct mk_list));
 
-    char *null_terminated1 = get_null_terminated(15, &data, &size);
-    char *null_terminated2 = get_null_terminated(15, &data, &size);
-    char *null_terminated3 = get_null_terminated(size, &data, &size);
+    char *fuzz_str1 = get_null_terminated(15, &data, &size);
+    char *fuzz_str2 = get_null_terminated(15, &data, &size);
+    char *fuzz_str3 = get_null_terminated(size, &data, &size);
 
     for (int i = 0; i < 2; i++) {
         config = flb_config_init();
-        if (!config) {
-            return 0;
+        if (config) {
+            memset(&ctx, '\0', sizeof(struct context));
+
+            flb_kv_init(&prop);
+            if (flb_kv_item_create(&prop, fuzz_str1, fuzz_str2) != NULL) {
+                /* Assign one of the config maps */
+                map = flb_config_map_create(config, configs[i]);
+                if (map) {
+                    if (flb_config_map_set(&prop, map, &ctx) != -1) {
+                        flb_config_map_properties_check(fuzz_str3, &prop, map);
+                    }
+                    flb_config_map_destroy(map);
+                }
+            }
+            flb_kv_release(&prop);
+            flb_config_exit(config);
         }
-        memset(&ctx, '\0', sizeof(struct context));
-
-        flb_kv_init(&prop);
-        flb_kv_item_create(&prop, null_terminated1, null_terminated2);
-
-        /* Assign one of the config maps */
-        map = flb_config_map_create(config, configs[i]);
-        flb_config_map_set(&prop, map,&ctx);
-        flb_config_map_properties_check(null_terminated3, &prop, map);
-        flb_config_map_destroy(map);
-        flb_kv_release(&prop);
-        flb_config_exit(config);
     }
 
-    flb_free(null_terminated1);
-    flb_free(null_terminated2);
-    flb_free(null_terminated3);
+    flb_free(fuzz_str1);
+    flb_free(fuzz_str2);
+    flb_free(fuzz_str3);
     return 0;
 }

@@ -43,7 +43,7 @@ static int vmstat_configure(struct flb_ne *ctx)
     struct mk_list split_list;
     struct flb_slist_entry *line;
     struct flb_slist_entry *key;
-    struct cmt_untyped *u;
+    struct cmt_counter *c;
 
     /* Initialize regex for skipped devices */
     ctx->vml_regex_fields = flb_regex_create(VMSTAT_ENTRIES);
@@ -96,16 +96,16 @@ static int vmstat_configure(struct flb_ne *ctx)
 
         snprintf(tmp, sizeof(tmp) - 1,
                  "/proc/vmstat information field %s.", key->str);
-        u = cmt_untyped_create(ctx->cmt, "node", "vmstat", key->str,
+        c = cmt_counter_create(ctx->cmt, "node", "vmstat", key->str,
                                tmp, 0, NULL);
-        if (!u) {
+        if (!c) {
             flb_slist_destroy(&split_list);
             flb_slist_destroy(&list);
             return -1;
         }
 
         ret = flb_hash_table_add(ctx->vml_ht,
-                                 key->str, flb_sds_len(key->str), u, 0);
+                                 key->str, flb_sds_len(key->str), c, 0);
         if (ret == -1) {
             flb_plg_error(ctx->ins,
                           "could not add hash for vmstat metric: %s", key->str);

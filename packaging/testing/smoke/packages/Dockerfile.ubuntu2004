@@ -1,11 +1,11 @@
 # For staging upgrade we use the 'official-install' as the base
-ARG STAGING_BASE=dokken/ubuntu-20.04
+ARG STAGING_BASE=docker.io/dokken/ubuntu-20.04
 
 ARG RELEASE_URL=https://packages.fluentbit.io
 ARG RELEASE_KEY=https://packages.fluentbit.io/fluentbit.key
 
 # hadolint ignore=DL3006
-FROM dokken/ubuntu-20.04 as official-install
+FROM docker.io/dokken/ubuntu-20.04 as official-install
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ARG RELEASE_URL

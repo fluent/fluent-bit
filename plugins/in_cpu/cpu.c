@@ -135,7 +135,7 @@ static inline double proc_cpu_load(int cpus, struct cpu_stats *cstats)
                 fmt = " %s %lu %lu %lu %lu %lu";
                 ret = sscanf(line,
                              fmt,
-                             &s->v_cpuid,
+                             s->v_cpuid,
                              &s->v_user,
                              &s->v_nice,
                              &s->v_system,

@@ -214,6 +214,7 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
      * performance degradation. */
     EV_SET(&ke, fd, EVFILT_TIMER, EV_ADD, 0, (sec * 1000) + (nsec / 1000000) , event);
 #endif
+
     ret = kevent(ctx->kfd, &ke, 1, NULL, 0, NULL);
     if (ret < 0) {
         close(fd);
@@ -226,6 +227,7 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
      * to confirm how it behave on native OSX.
      */
     event->mask = MK_EVENT_READ;
+
     return fd;
 }
 
@@ -257,6 +259,7 @@ static inline int _mk_event_timeout_destroy(struct mk_event_ctx *ctx, void *data
     }
 
     close(event->fd);
+
     MK_EVENT_NEW(event);
 
     return 0;

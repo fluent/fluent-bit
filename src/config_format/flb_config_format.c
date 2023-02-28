@@ -115,7 +115,6 @@ int flb_cf_plugin_property_add(struct flb_cf *cf,
                                char *k_buf, size_t k_len,
                                char *v_buf, size_t v_len)
 {
-    int i;
     int ret;
     flb_sds_t key;
     flb_sds_t val;
@@ -513,6 +512,7 @@ struct flb_cf_section *flb_cf_section_create(struct flb_cf *cf, char *name, int 
     /* create a NULL terminated name */
     s->name = flb_sds_create_len(name, len);
     if (!s->name) {
+        flb_free(s->properties);
         flb_free(s);
         return NULL;
     }

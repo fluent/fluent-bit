@@ -19,6 +19,7 @@
 
 #include <cfl/cfl.h>
 #include <cfl/cfl_array.h>
+#include <cfl/cfl_variant.h>
 
 struct cfl_array *cfl_array_create(size_t slot_count)
 {
@@ -343,4 +344,32 @@ cfl_kvlist *value)
     }
 
     return 0;
+}
+
+
+int cfl_array_print(FILE *fp, struct cfl_array *array)
+{
+    size_t size;
+    size_t i;
+    int ret;
+
+    if (fp == NULL || array == NULL) {
+        return -1;
+    }
+
+    size = array->entry_count;
+    if (size == 0) {
+        fputs("[]", fp);
+        return 0;
+    }
+
+    fputs("[", fp);
+    for (i=0; i<size-1; i++) {
+        ret = cfl_variant_print(fp, array->entries[i]);
+        fputs(",", fp);
+    }
+    ret = cfl_variant_print(fp, array->entries[size-1]);
+    fputs("]", fp);
+
+    return ret;
 }

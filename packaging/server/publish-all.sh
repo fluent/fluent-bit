@@ -26,16 +26,17 @@ fi
 
 # Handle Ubuntu 18/22 differences - no support on Ubuntu 20
 CREATE_REPO_CMD=${CREATE_REPO_CMD:-}
+CREATE_REPO_ARGS=${CREATE_REPO_ARGS:--dvp}
 
 # Assume if set we want to use it
 if [[ -n "$CREATE_REPO_CMD" ]]; then
     echo "Using $CREATE_REPO_CMD"
 elif command -v createrepo &> /dev/null; then
     echo "Found createrepo"
-    CREATE_REPO_CMD="createrepo -dvp"
+    CREATE_REPO_CMD="createrepo"
 elif command -v createrepo_c &> /dev/null; then
     echo "Found createrepo_c"
-    CREATE_REPO_CMD="createrepo_c -dvp"
+    CREATE_REPO_CMD="createrepo_c"
 else
     echo "Unable to find a command equivalent to createrepo"
     exit 1
@@ -46,44 +47,44 @@ if [[ -d "$SOURCE_DIR/amazonlinux/2022/" ]]; then
     echo "Publishing AmazonLinux 2022"
     mkdir -p /var/www/apt.fluentbit.io/amazonlinux/2022/x86_64 /var/www/apt.fluentbit.io/amazonlinux/2022/aarch64
     find "$SOURCE_DIR/amazonlinux/2022" -iname "*-bit-$VERSION-*x86_64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/amazonlinux/2022/x86_64" \;
-    "$CREATE_REPO_CMD" "/var/www/apt.fluentbit.io/amazonlinux/2022/x86_64"
+    "$CREATE_REPO_CMD" "$CREATE_REPO_ARGS" "/var/www/apt.fluentbit.io/amazonlinux/2022/x86_64"
 
     find "$SOURCE_DIR/amazonlinux/2022" -iname "*-bit-$VERSION-*aarch64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/amazonlinux/2022/aarch64" \;
-    "$CREATE_REPO_CMD" "/var/www/apt.fluentbit.io/amazonlinux/2022/aarch64"
+    "$CREATE_REPO_CMD" "$CREATE_REPO_ARGS" "/var/www/apt.fluentbit.io/amazonlinux/2022/aarch64"
 fi
 
 # Amazon Linux 2
 echo "Publishing AmazonLinux 2"
 find "$SOURCE_DIR/amazonlinux/2" -iname "*-bit-$VERSION-*aarch64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/amazonlinux/2/aarch64" \;
-"$CREATE_REPO_CMD" "/var/www/apt.fluentbit.io/amazonlinux/2/aarch64"
+"$CREATE_REPO_CMD" "$CREATE_REPO_ARGS" "/var/www/apt.fluentbit.io/amazonlinux/2/aarch64"
 
 find "$SOURCE_DIR/amazonlinux/2" -iname "*-bit-$VERSION-*x86_64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/amazonlinux/2/x86_64" \;
-"$CREATE_REPO_CMD" "/var/www/apt.fluentbit.io/amazonlinux/2/x86_64"
+"$CREATE_REPO_CMD" "$CREATE_REPO_ARGS" "/var/www/apt.fluentbit.io/amazonlinux/2/x86_64"
 
 # Centos 7
 echo "Publishing Centos 7"
 find "$SOURCE_DIR/centos/7/" -iname "*-bit-$VERSION-*aarch64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/centos/7/aarch64" \;
-"$CREATE_REPO_CMD" "/var/www/apt.fluentbit.io/centos/7/aarch64"
+"$CREATE_REPO_CMD" "$CREATE_REPO_ARGS" "/var/www/apt.fluentbit.io/centos/7/aarch64"
 
 find "$SOURCE_DIR/centos/7/" -iname "*-bit-$VERSION-*x86_64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/centos/7/x86_64" \;
-"$CREATE_REPO_CMD" "/var/www/apt.fluentbit.io/centos/7/x86_64"
+"$CREATE_REPO_CMD" "$CREATE_REPO_ARGS" "/var/www/apt.fluentbit.io/centos/7/x86_64"
 
 # Centos 8
 echo "Publishing Centos 8"
 find "$SOURCE_DIR/centos/8/" -iname "*-bit-$VERSION-*aarch64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/centos/8/aarch64" \;
-"$CREATE_REPO_CMD" "/var/www/apt.fluentbit.io/centos/8/aarch64"
+"$CREATE_REPO_CMD" "$CREATE_REPO_ARGS" "/var/www/apt.fluentbit.io/centos/8/aarch64"
 
 find "$SOURCE_DIR/centos/8/" -iname "*-bit-$VERSION-*x86_64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/centos/8/x86_64" \;
-"$CREATE_REPO_CMD" "/var/www/apt.fluentbit.io/centos/8/x86_64"
+"$CREATE_REPO_CMD" "$CREATE_REPO_ARGS" "/var/www/apt.fluentbit.io/centos/8/x86_64"
 
 # Centos 9
 if [[ -d "$SOURCE_DIR/centos/9/" ]]; then
     echo "Publishing Centos 9"
     find "$SOURCE_DIR/centos/9/" -iname "*-bit-$VERSION-*aarch64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/centos/9/aarch64" \;
-    "$CREATE_REPO_CMD" "/var/www/apt.fluentbit.io/centos/9/aarch64"
+    "$CREATE_REPO_CMD" "$CREATE_REPO_ARGS" "/var/www/apt.fluentbit.io/centos/9/aarch64"
 
     find "$SOURCE_DIR/centos/9/" -iname "*-bit-$VERSION-*x86_64*.rpm" -exec cp -fv {} "/var/www/apt.fluentbit.io/centos/9/x86_64" \;
-    "$CREATE_REPO_CMD" "/var/www/apt.fluentbit.io/centos/9/x86_64"
+    "$CREATE_REPO_CMD" "$CREATE_REPO_ARGS" "/var/www/apt.fluentbit.io/centos/9/x86_64"
 fi
 
 # Debian 10 Buster
@@ -104,6 +105,16 @@ aptly -config="$APTLY_CONFIG" snapshot create "fluent-bit-debian-bullseye-${VERS
 if ! aptly -config="$APTLY_CONFIG" publish switch -gpg-key="releases@fluentbit.io" bullseye filesystem:debian/bullseye:bullseye "fluent-bit-debian-bullseye-${VERSION}"; then
     # Cleanup snapshot in case we want to retry later
     aptly -config="$APTLY_CONFIG" snapshot drop "fluent-bit-debian-bullseye-${VERSION}"
+    exit 1
+fi
+
+# Debian 12 Bookworm
+echo "Publishing Debian 12 Bookworm"
+find "$SOURCE_DIR/debian/bookworm/" -iname "*-bit_$VERSION*.deb" -exec aptly -config="$APTLY_CONFIG" repo add flb-debian-bookworm {} \;
+aptly -config="$APTLY_CONFIG" snapshot create "fluent-bit-debian-bookworm-${VERSION}" from repo flb-debian-bookworm
+if ! aptly -config="$APTLY_CONFIG" publish switch -gpg-key="releases@fluentbit.io" bookworm filesystem:debian/bookworm: "fluent-bit-debian-bookworm-${VERSION}"; then
+    # Cleanup snapshot in case we want to retry later
+    aptly -config="$APTLY_CONFIG" snapshot drop "fluent-bit-debian-bookworm-${VERSION}"
     exit 1
 fi
 
@@ -172,19 +183,9 @@ fi
 # Sign YUM repo meta-data
 find "/var/www/apt.fluentbit.io" -name repomd.xml -exec gpg --detach-sign --armor --yes -u "releases@fluentbit.io" {} \;
 
-# Handle the JSON schema by copying in the new versions (if they exist) and then updating the symlinks that point at the latest.
-if compgen -G "$SOURCE_DIR/fluent-bit-schema*.json" > /dev/null; then
-    echo "Updating JSON schema"
-    cp -vf "$SOURCE_DIR"/fluent-bit-schema*.json /var/www/releases.fluentbit.io/releases/"$MAJOR_VERSION/"
-
-    # Simpler than 'ln --relative --target-directory=/var/www/releases.fluentbit.io/releases/"$MAJOR_VERSION"'
-    pushd /var/www/releases.fluentbit.io/releases/"$MAJOR_VERSION"
-        ln -sf "fluent-bit-schema-$VERSION.json" fluent-bit-schema.json
-        ln -sf "fluent-bit-schema-pretty-$VERSION.json" fluent-bit-schema-pretty.json
-    popd
-else
-    echo "Missing JSON schema"
-fi
+# Handle the JSON schema by copying in the new versions (if they exist).
+echo "Updating JSON schema"
+find "$SOURCE_DIR/" -iname "fluent-bit-schema*$VERSION*.json" -exec cp -vf "{}" /var/www/releases.fluentbit.io/releases/"$MAJOR_VERSION/" \;
 
 # Windows - we do want word splitting and ensure some files exist
 if compgen -G "$SOURCE_DIR/windows/*$VERSION*" > /dev/null; then

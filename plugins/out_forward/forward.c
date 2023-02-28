@@ -40,6 +40,206 @@
 
 #define SECURED_BY "Fluent Bit"
 
+pthread_once_t uds_connection_tls_slot_init_once_control = PTHREAD_ONCE_INIT;
+FLB_TLS_DEFINE(struct flb_forward_uds_connection, uds_connection);
+
+void initialize_uds_connection_tls_slot()
+{
+    FLB_TLS_INIT(uds_connection);
+}
+
+#ifdef FLB_HAVE_UNIX_SOCKET
+static flb_sockfd_t forward_unix_connect(struct flb_forward_config *config,
+                                         struct flb_forward *ctx)
+{
+    flb_sockfd_t fd = -1;
+    struct sockaddr_un address;
+
+    if (sizeof(address.sun_path) <= flb_sds_len(config->unix_path)) {
+        flb_plg_error(ctx->ins, "unix_path is too long");
+        return -1;
+    }
+
+    memset(&address, 0, sizeof(struct sockaddr_un));
+
+    fd = flb_net_socket_create(AF_UNIX, FLB_FALSE);
+    if (fd < 0) {
+        flb_plg_error(ctx->ins, "flb_net_socket_create error");
+        return -1;
+    }
+
+    address.sun_family = AF_UNIX;
+    strncpy(address.sun_path, config->unix_path, flb_sds_len(config->unix_path));
+
+    if(connect(fd, (const struct sockaddr*) &address, sizeof(address)) < 0) {
+        flb_errno();
+        close(fd);
+
+        return -1;
+    }
+
+    return fd;
+}
+
+static flb_sockfd_t forward_uds_get_conn(struct flb_forward_config *config,
+                                         struct flb_forward *ctx)
+{
+    struct flb_forward_uds_connection *connection_entry;
+    flb_sockfd_t                       connection;
+
+    connection_entry = FLB_TLS_GET(uds_connection);
+
+    /* We need to allow the code to try to get the value from the TLS
+     * regardless of if it's provided with a config and context because
+     * when we establish the connection we do have both of them but those
+     * are not passed along to the functions in charge of doing IO.
+     */
+
+    if (connection_entry == NULL) {
+        if (config == NULL ||
+            ctx == NULL) {
+            return -1;
+        }
+
+        connection_entry = flb_calloc(1, sizeof(struct flb_forward_uds_connection));
+
+        if (connection_entry == NULL) {
+            flb_errno();
+
+            return -1;
+        }
+
+        connection = forward_unix_connect(config, ctx);
+
+        if (connection == -1) {
+            flb_free(connection_entry);
+
+            return -1;
+        }
+
+        connection_entry->descriptor = connection;
+
+        pthread_mutex_lock(&ctx->uds_connection_list_mutex);
+
+        cfl_list_add(&connection_entry->_head, &ctx->uds_connection_list);
+
+        pthread_mutex_unlock(&ctx->uds_connection_list_mutex);
+
+        FLB_TLS_SET(uds_connection, connection_entry);
+    }
+
+    return connection_entry->descriptor;
+}
+
+static void forward_uds_drop_conn(struct flb_forward *ctx,
+                                  flb_sockfd_t connection)
+{
+    struct flb_forward_uds_connection *connection_entry;
+
+    if (ctx != NULL) {
+        connection_entry = FLB_TLS_GET(uds_connection);
+
+        if (connection_entry != NULL) {
+            pthread_mutex_lock(&ctx->uds_connection_list_mutex);
+
+            if (connection == connection_entry->descriptor) {
+                close(connection);
+
+                if (!cfl_list_entry_is_orphan(&connection_entry->_head)) {
+                    cfl_list_del(&connection_entry->_head);
+                }
+
+                free(connection_entry);
+
+                FLB_TLS_SET(uds_connection, NULL);
+            }
+
+            pthread_mutex_unlock(&ctx->uds_connection_list_mutex);
+        }
+    }
+}
+
+static void forward_uds_drop_all(struct flb_forward *ctx)
+{
+    struct flb_forward_uds_connection *connection_entry;
+    struct cfl_list                   *head;
+    struct cfl_list                   *tmp;
+
+    if (ctx != NULL) {
+        pthread_mutex_lock(&ctx->uds_connection_list_mutex);
+
+        cfl_list_foreach_safe(head, tmp, &ctx->uds_connection_list) {
+            connection_entry = cfl_list_entry(head,
+                                              struct flb_forward_uds_connection,
+                                              _head);
+
+            if (connection_entry->descriptor != -1) {
+                close(connection_entry->descriptor);
+
+                connection_entry->descriptor = -1;
+            }
+
+            if (!cfl_list_entry_is_orphan(&connection_entry->_head)) {
+                cfl_list_del(&connection_entry->_head);
+            }
+
+            free(connection_entry);
+        }
+
+        pthread_mutex_unlock(&ctx->uds_connection_list_mutex);
+    }
+}
+
+/* In these functions forward_uds_get_conn
+ * should not return -1 because it should have been
+ * called earlier with a proper context and it should
+ * have saved a file descriptor to the TLS.
+ */
+
+static int io_unix_write(struct flb_connection *unused, int deprecated_fd, const void* data,
+                         size_t len, size_t *out_len)
+{
+    flb_sockfd_t uds_conn;
+
+    uds_conn = forward_uds_get_conn(NULL, NULL);
+
+    return flb_io_fd_write(uds_conn, data, len, out_len);
+}
+
+static int io_unix_read(struct flb_connection *unused, int deprecated_fd, void* buf,size_t len)
+{
+    flb_sockfd_t uds_conn;
+
+    uds_conn = forward_uds_get_conn(NULL, NULL);
+
+    return flb_io_fd_read(uds_conn, buf, len);
+}
+
+#else
+
+static flb_sockfd_t forward_uds_get_conn(struct flb_forward_config *config,
+                                         struct flb_forward *ctx)
+{
+    (void) config;
+    (void) ctx;
+
+    return -1;
+}
+
+static void forward_uds_drop_conn(struct flb_forward *ctx,
+                                  flb_sockfd_t connection)
+{
+    (void) ctx;
+    (void) connection;
+}
+
+static void forward_uds_drop_all(struct flb_forward *ctx)
+{
+    (void) ctx;
+}
+
+#endif
+
 #ifdef FLB_HAVE_TLS
 
 static int io_net_write(struct flb_connection *conn, int unused_fd,
@@ -525,7 +725,7 @@ static int forward_read_ack(struct flb_forward *ctx,
         goto error;
     }
 
-    flb_plg_debug(ctx->ins, "protocol: received ACK %s", ack);
+    flb_plg_debug(ctx->ins, "protocol: received ACK %.*s", ack_len, ack);
     msgpack_unpacked_destroy(&result);
     return 0;
 
@@ -785,53 +985,6 @@ static int forward_config_ha(const char *upstream_file,
 
     return 0;
 }
-#ifdef FLB_HAVE_UNIX_SOCKET
-static int forward_unix_create(struct flb_forward_config *config,
-                               struct flb_forward *ctx)
-{
-    flb_sockfd_t fd = -1;
-    struct sockaddr_un address;
-
-    if (sizeof(address.sun_path) <= flb_sds_len(config->unix_path)) {
-        flb_plg_error(ctx->ins, "unix_path is too long");
-        return -1;
-    }
-
-    memset(&address, 0, sizeof(struct sockaddr_un));
-
-    fd = flb_net_socket_create(AF_UNIX, FLB_TRUE);
-    if (fd < 0) {
-        flb_plg_error(ctx->ins, "flb_net_socket_create error");
-        return -1;
-    }
-    config->unix_fd = fd;
-
-    address.sun_family = AF_UNIX;
-    strncpy(address.sun_path, config->unix_path, flb_sds_len(config->unix_path));
-
-    if(connect(fd, (const struct sockaddr*) &address, sizeof(address)) < 0) {
-        flb_errno();
-        close(fd);
-        return -1;
-    }
-
-    flb_net_socket_nonblocking(config->unix_fd);
-
-    return 0;
-}
-
-static int io_unix_write(struct flb_connection *unused, int fd, const void* data,
-                         size_t len, size_t *out_len)
-{
-    return flb_io_fd_write(fd, data, len, out_len);
-}
-
-static int io_unix_read(struct flb_connection *unused, int fd, void* buf,size_t len)
-{
-    return flb_io_fd_read(fd, buf, len);
-}
-
-#endif
 
 static int forward_config_simple(struct flb_forward *ctx,
                                  struct flb_output_instance *ins,
@@ -882,11 +1035,18 @@ static int forward_config_simple(struct flb_forward *ctx,
 
     if (fc->unix_path) {
 #ifdef FLB_HAVE_UNIX_SOCKET
-        if(forward_unix_create(fc, ctx) < 0) {
-            flb_free(fc);
-            flb_free(ctx);
-            return -1;
-        }
+        /* In older versions if the UDS server was not up
+         * at this point fluent-bit would fail because it
+         * would not be able to establish the conntection.
+         *
+         * With the concurrency fixes we moved the connection
+         * to a later stage which will cause fluent-bit to
+         * properly launch but if the UDS server is not
+         * available at flush time then an error similar to
+         * the one we would get for a network based output
+         * plugin will be logged and FLB_RETRY will be returned.
+         */
+
         fc->io_write = io_unix_write;
         fc->io_read  = io_unix_read;
 #else
@@ -940,9 +1100,32 @@ static int cb_forward_init(struct flb_output_instance *ins,
         flb_errno();
         return -1;
     }
+
+    ret = pthread_once(&uds_connection_tls_slot_init_once_control,
+                       initialize_uds_connection_tls_slot);
+
+    if (ret != 0) {
+        flb_errno();
+        flb_free(ctx);
+
+        return -1;
+    }
+
+    ret = pthread_mutex_init(&ctx->uds_connection_list_mutex, NULL);
+
+    if (ret != 0) {
+        flb_errno();
+        flb_free(ctx);
+
+        return -1;
+    }
+
+    cfl_list_init(&ctx->uds_connection_list);
+
     ctx->ins = ins;
     mk_list_init(&ctx->configs);
     flb_output_set_context(ins, ctx);
+
 
     /* Configure HA or simple mode ? */
     tmp = flb_output_get_property("upstream", ins);
@@ -1049,6 +1232,22 @@ static int flush_message_mode(struct flb_forward *ctx,
     return FLB_OK;
 }
 
+/* pack payloads of cmetrics or ctraces with Fluentd compat format */
+static int pack_metricses_payload(msgpack_packer *mp_pck, const void *data, size_t bytes) {
+    int entries;
+    struct flb_time tm;
+
+    /* Format with event stream format of entries: [[time, [{entries map}]]] */
+    msgpack_pack_array(mp_pck, 1);
+    msgpack_pack_array(mp_pck, 2);
+    flb_time_get(&tm);
+    flb_time_append_to_msgpack(&tm, mp_pck, 0);
+    entries = flb_mp_count(data, bytes);
+    msgpack_pack_array(mp_pck, entries);
+
+    return 0;
+}
+
 #include <fluent-bit/flb_pack.h>
 /*
  * Forward Mode: this is the generic mechanism used in Fluent Bit, it takes
@@ -1116,7 +1315,12 @@ static int flush_forward_mode(struct flb_forward *ctx,
         }
         else {
             /* FLB_EVENT_TYPE_METRICS and FLB_EVENT_TYPE_TRACES */
-            msgpack_pack_bin(&mp_pck, bytes);
+            if (fc->fluentd_compat) {
+                pack_metricses_payload(&mp_pck, data, bytes);
+            }
+            else {
+                msgpack_pack_bin(&mp_pck, bytes);
+            }
         }
     }
 
@@ -1261,6 +1465,8 @@ static void cb_forward_flush(struct flb_event_chunk *event_chunk,
     struct flb_connection *u_conn = NULL;
     struct flb_upstream_node *node = NULL;
     struct flb_forward_flush *flush_ctx;
+    flb_sockfd_t uds_conn;
+
     (void) i_ins;
     (void) config;
 
@@ -1313,6 +1519,30 @@ static void cb_forward_flush(struct flb_event_chunk *event_chunk,
             flb_free(flush_ctx);
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
+
+        uds_conn = -1;
+    }
+    else {
+        uds_conn = forward_uds_get_conn(fc, ctx);
+
+        if (uds_conn == -1) {
+            flb_plg_error(ctx->ins, "no unix socket connection available");
+
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            if (fc->time_as_integer == FLB_TRUE) {
+                flb_free(out_buf);
+            }
+            flb_free(flush_ctx);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+
+        /* This is a hack, because the rest of the code is written to use
+         * the shared forward config unix_fd field so at this point we need
+         * to ensure that we either have a working connection or we can
+         * establish one regardless of not passing it along.
+         *
+         * Later on we will get the file descriptor from the TLS.
+        */
     }
 
     /*
@@ -1325,6 +1555,11 @@ static void cb_forward_flush(struct flb_event_chunk *event_chunk,
             if (u_conn) {
                 flb_upstream_conn_release(u_conn);
             }
+
+            if (uds_conn != -1) {
+                forward_uds_drop_conn(ctx, uds_conn);
+            }
+
             msgpack_sbuffer_destroy(&mp_sbuf);
             if (fc->time_as_integer == FLB_TRUE) {
                 flb_free(out_buf);
@@ -1366,6 +1601,23 @@ static void cb_forward_flush(struct flb_event_chunk *event_chunk,
     if (u_conn) {
         flb_upstream_conn_release(u_conn);
     }
+
+    if (ret != FLB_OK) {
+        /* Since UDS connections have been used as permanent
+         * connections up to this point we only release the
+         * connection in case of error.
+         *
+         * There could be a logical error in here but what
+         * I think at the moment is, if something goes wrong
+         * we can just drop the connection and let the worker
+         * establish a new one the next time a flush happens.
+         */
+
+        if (uds_conn != -1) {
+            forward_uds_drop_conn(ctx, uds_conn);
+        }
+    }
+
     flb_free(flush_ctx);
     FLB_OUTPUT_RETURN(ret);
 }
@@ -1385,12 +1637,12 @@ static int cb_forward_exit(void *data, struct flb_config *config)
     /* Destroy forward_config contexts */
     mk_list_foreach_safe(head, tmp, &ctx->configs) {
         fc = mk_list_entry(head, struct flb_forward_config, _head);
-        if (fc->unix_path && fc->unix_fd > 0) {
-            close(fc->unix_fd);
-        }
+
         mk_list_del(&fc->_head);
         forward_config_destroy(fc);
     }
+
+    forward_uds_drop_all(ctx);
 
     if (ctx->ha_mode == FLB_TRUE) {
         if (ctx->ha) {
@@ -1402,6 +1654,8 @@ static int cb_forward_exit(void *data, struct flb_config *config)
             flb_upstream_destroy(ctx->u);
         }
     }
+
+    pthread_mutex_destroy(&ctx->uds_connection_list_mutex);
 
     flb_free(ctx);
 
@@ -1469,6 +1723,12 @@ static struct flb_config_map config_map[] = {
      0, FLB_FALSE, 0,
      "Compression mode"
     },
+    {
+     FLB_CONFIG_MAP_BOOL, "fluentd_compat", "false",
+     0, FLB_TRUE, offsetof(struct flb_forward_config, fluentd_compat),
+     "Send cmetrics and ctreaces with Fluentd compatible format"
+    },
+
     /* EOF */
     {0}
 };

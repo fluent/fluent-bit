@@ -20,6 +20,7 @@
 
 #include <fluent-bit.h>
 #include <fluent-bit/flb_time.h>
+#include <msgpack.h>
 #include "flb_tests_runtime.h"
 #include "data/common/json_long.h"    /* JSON_LONG    */
 
@@ -27,6 +28,7 @@ struct filter_test {
     flb_ctx_t *flb;    /* Fluent Bit library context */
     int i_ffd;         /* Input fd  */
     int f_ffd;         /* Filter fd */
+    int o_ffd;         /* Output fd */
 };
 
 struct expect_str {
@@ -119,8 +121,8 @@ static struct filter_test *filter_test_create(struct flb_lib_out_cb *data)
     TEST_CHECK(o_ffd >= 0);
     flb_output_set(ctx->flb, o_ffd,
                    "match", "test",
-                   "format", "json",
                    NULL);
+    ctx->o_ffd = o_ffd;
 
     return ctx;
 }
@@ -158,6 +160,11 @@ static void flb_records()
     ret = flb_filter_set(ctx->flb, ctx->f_ffd,
                          "record", "new_key new_val",
                          "record", "add_key add_val",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
                          NULL);
     TEST_CHECK(ret == 0);
 
@@ -203,6 +210,62 @@ static void flb_allowlist_keys()
     ret = flb_filter_set(ctx->flb, ctx->f_ffd,
                          "allowlist_key", "aaa",
                          "allowlist_key", "bbb",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = &expect;
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    /* The pair "ccc":"removed" should be removed */
+    p = "[0, {\"aaa\":\"ok\",\"ccc\":\"removed\",\"bbb\":\"ok\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
+static void flb_whitelist_keys()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+    struct expect_str expect[] = {
+      {"\"aaa\":\"ok\"", FLB_TRUE},
+      {"\"bbb\":\"ok\"", FLB_TRUE},
+      {"\"ccc\":\"removed\"", FLB_FALSE},
+      {NULL, FLB_TRUE}
+    };
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "whitelist_key", "aaa",
+                         "whitelist_key", "bbb",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
                          NULL);
     TEST_CHECK(ret == 0);
 
@@ -253,6 +316,11 @@ static void flb_remove_keys()
                          NULL);
     TEST_CHECK(ret == 0);
 
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
     /* Prepare output callback with expected result */
     cb_data.cb = cb_check_result;
     cb_data.data = &expect;
@@ -297,6 +365,11 @@ static void flb_multiple()
                          "record",     "new_key new_val",
                          "allowlist_key", "new_key",
                          "allowlist_key", "aaa",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
                          NULL);
     TEST_CHECK(ret == 0);
 
@@ -397,9 +470,116 @@ void flb_exclusive_setting()
     /* It should be error since "allowlist_key" and "remove_key" are exclusive */
     TEST_CHECK(ret != 0);
 
-     flb_stop(ctx);
+    flb_stop(ctx);
     flb_destroy(ctx);
 }
+
+#define UUID_KEY_NAME "uuid"
+static int cb_check_uuid(void *record, size_t size, void *data)
+{
+    char uuid[256] = {0};
+    msgpack_unpacked result;
+    msgpack_object obj;
+    size_t off = 0;
+    int ret;
+    int i_map;
+    int map_size;
+    int uuid_found = FLB_FALSE;
+    char uuid_part[5][16];
+
+#ifndef FLB_HAVE_OPENSSL
+    if (!TEST_CHECK(1 == 0)) {
+        /* flb_utils_uuid_v4_gen function needs openssl */
+        TEST_MSG("uuid_key needs OpenSSL");
+        return -1;
+    }
+#endif
+
+    if (!TEST_CHECK(record != NULL)) {
+        TEST_MSG("data is null");
+        return -1;
+    }
+
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, record, size, &off) == MSGPACK_UNPACK_SUCCESS) {
+        obj = result.data;
+        /*
+        msgpack_object_print(stdout, obj);
+        */
+        if (!TEST_CHECK(obj.type == MSGPACK_OBJECT_ARRAY && obj.via.array.size == 2)) {
+            TEST_MSG("array error. type = %d", obj.type);
+            continue;
+        }
+        obj = obj.via.array.ptr[1];
+        if (!TEST_CHECK(obj.type == MSGPACK_OBJECT_MAP)) {
+            TEST_MSG("map error. type = %d", obj.type);
+            continue;
+        }
+        map_size = obj.via.map.size;
+        for (i_map=0; i_map<map_size; i_map++) {
+            if (obj.via.map.ptr[i_map].key.type != MSGPACK_OBJECT_STR) {
+                continue;
+            }
+            if (strncmp(UUID_KEY_NAME, obj.via.map.ptr[i_map].key.via.str.ptr, strlen(UUID_KEY_NAME)) == 0) {
+                memcpy(&uuid[0], obj.via.map.ptr[i_map].val.via.str.ptr, obj.via.map.ptr[i_map].val.via.str.size);
+                ret = sscanf(&uuid[0], "%8s-%4s-%4s-%4s-%12s", &uuid_part[0][0], &uuid_part[1][0], &uuid_part[2][0], &uuid_part[3][0], &uuid_part[4][0]);
+                if (!TEST_CHECK(ret == 5)) {
+                    TEST_MSG("ret should be 5. ret=%d", ret);
+                }
+                uuid_found = FLB_TRUE;
+            }
+        }
+    }
+
+    if (!TEST_CHECK(uuid_found == FLB_TRUE)) {
+        TEST_MSG("uuid not found");
+    }
+
+    msgpack_unpacked_destroy(&result);
+    flb_free(record);
+
+    return 0;
+}
+
+static void flb_uuid_key()
+{
+    int len;
+    int ret;
+    int bytes;
+    int not_used;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_uuid;
+    cb_data.data = &not_used;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "uuid_key", UUID_KEY_NAME,
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0, {\"key_name\":\"sample\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
 
 /* test list */
 TEST_LIST = {
@@ -407,7 +587,9 @@ TEST_LIST = {
     {"remove_keys"         , flb_remove_keys},
     {"records"             , flb_records},
     {"allowlist_keys"      , flb_allowlist_keys},
+    {"whitelist_keys"      , flb_whitelist_keys},
     {"multiple"            , flb_multiple},
     {"exclusive_setting"   , flb_exclusive_setting},
+    {"uuid_key"            , flb_uuid_key},
     {NULL, NULL}
 };

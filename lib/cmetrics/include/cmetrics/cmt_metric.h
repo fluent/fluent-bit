@@ -34,6 +34,7 @@ struct cmt_metric {
     /* summary */
     int sum_quantiles_set;     /* specify if quantive values has been set */
     uint64_t *sum_quantiles;   /* 0, 0.25, 0.5, 0.75 and 1 */
+    size_t sum_quantiles_count;
     uint64_t sum_count;
     uint64_t sum_sum;
 

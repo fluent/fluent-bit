@@ -14,7 +14,7 @@ jobs:
 
   remove-release-packages-s3:
     name: S3 - remove release
-    runs-on: ubuntu-18.04 # no createrepo on Ubuntu 20.04
+    runs-on: ubuntu-22.04 # no createrepo on Ubuntu 20.04
     environment: release
     steps:
     - name: Checkout code
@@ -22,7 +22,7 @@ jobs:
 
     - name: Setup runner
       run: |
-        sudo apt-get install debsigs createrepo aptly rsync
+        sudo apt-get install debsigs createrepo-c aptly rsync
       shell: bash
 
     - name: Import GPG key for signing
@@ -62,22 +62,3 @@ jobs:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       shell: bash
-
-  # This removes the package from the set sync'd to the server but some manual work is required on the server
-  # to republish it without the packages.
-  remove-release-packages-server:
-    name: fluentbit.io - remove packages
-    needs: remove-release-packages-s3
-    runs-on: ubuntu-18.04 # failures with AWS client on latest
-    environment: release
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-    - uses: ./.github/actions/release-server-sync
-      with:
-        bucket: ${{ secrets.AWS_S3_BUCKET_RELEASE }}
-        access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        server_hostname: ${{ secrets.FLUENTBITIO_HOST }}
-        server_username: ${{ secrets.FLUENTBITIO_USERNAME }}
-        server_key: ${{ secrets.FLUENTBITIO_SSHKEY }}

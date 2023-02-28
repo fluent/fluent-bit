@@ -47,7 +47,6 @@ struct flb_in_unix_socket_config {
     struct flb_downstream *downstream; /* Client manager              */
     struct unix_socket_conn *dummy_conn;/* Datagram dummy connection   */
     struct mk_list connections;        /* List of active connections  */
-    struct mk_event_loop *evl;         /* Event loop file descriptor  */
     struct flb_input_instance *ins;    /* Input plugin instace        */
 };
 
