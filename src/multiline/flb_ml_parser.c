@@ -340,11 +340,6 @@ void flb_ml_parser_destroy_all(struct mk_list *list)
     struct mk_list *head;
     struct flb_ml_parser *parser;
 
-    /* Ensure list is initialized */
-    if (list->next == NULL) {
-        return;
-    }
-
     mk_list_foreach_safe(head, tmp, list) {
         parser = mk_list_entry(head, struct flb_ml_parser, _head);
         flb_ml_parser_destroy(parser);
