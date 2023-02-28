@@ -78,7 +78,6 @@ struct flb_loki {
     struct mk_list remove_keys_derived; /* remove_keys with label RAs */
     struct flb_mp_accessor *remove_mpa; /* remove_keys multi-pattern accessor */
     struct flb_record_accessor *ra_tenant_id_key; /* dynamic tenant id key */
-    flb_sds_t dynamic_tenant_id; /* temporary buffer for tenant id */
 
     /* Upstream Context */
     struct flb_upstream *u;
