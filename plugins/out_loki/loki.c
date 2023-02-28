@@ -839,10 +839,6 @@ static void loki_config_destroy(struct flb_loki *ctx)
     }
     if (ctx->ra_tenant_id_key) {
         flb_ra_destroy(ctx->ra_tenant_id_key);
-        if (ctx->dynamic_tenant_id) {
-            flb_sds_destroy(ctx->dynamic_tenant_id);
-            ctx->dynamic_tenant_id = NULL;
-        }
     }
 
     if (ctx->remove_mpa) {
@@ -905,7 +901,6 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
             flb_plg_error(ctx->ins,
                           "could not create record accessor for Tenant ID");
         }
-        ctx->dynamic_tenant_id = NULL;
     }
 
     /* Line Format */
@@ -1051,8 +1046,9 @@ static void pack_format_line_value(flb_sds_t *buf, msgpack_object *val)
     }
 }
 
-// seek tenant id from map and set it to ctx->dynamic_tenant_id
-static int get_tenant_id_from_record(struct flb_loki *ctx, msgpack_object *map)
+// seek tenant id from map and set it to dynamic_tenant_id
+static int get_tenant_id_from_record(struct flb_loki *ctx, msgpack_object *map,
+                                     flb_sds_t *dynamic_tenant_id)
 {
     struct flb_ra_value *rval = NULL;
     flb_sds_t tmp_str;
@@ -1081,30 +1077,35 @@ static int get_tenant_id_from_record(struct flb_loki *ctx, msgpack_object *map)
     }
 
     // check if already dynamic_tenant_id is set.
-    if (ctx->dynamic_tenant_id) {
-        cmp_len = flb_sds_len(ctx->dynamic_tenant_id);
+    if (*dynamic_tenant_id != NULL) {
+        cmp_len = flb_sds_len(*dynamic_tenant_id);
+
         if ((rval->o.via.str.size == cmp_len) &&
-            flb_sds_cmp(tmp_str, ctx->dynamic_tenant_id, cmp_len) == 0) {
+            flb_sds_cmp(tmp_str, *dynamic_tenant_id, cmp_len) == 0) {
             // tenant_id is same. nothing to do.
             flb_ra_key_value_destroy(rval);
             flb_sds_destroy(tmp_str);
+
             return 0;
         }
+
         flb_plg_warn(ctx->ins, "Tenant ID is overwritten %s -> %s",
-                     ctx->dynamic_tenant_id, tmp_str);
-        flb_sds_destroy(ctx->dynamic_tenant_id);
+                     *dynamic_tenant_id, tmp_str);
+
+        flb_sds_destroy(*dynamic_tenant_id);
     }
 
     // this sds will be released after setting http header.
-    ctx->dynamic_tenant_id = tmp_str;
-    flb_plg_debug(ctx->ins, "Tenant ID is %s", ctx->dynamic_tenant_id);
+    *dynamic_tenant_id = tmp_str;
+    flb_plg_debug(ctx->ins, "Tenant ID is %s", *dynamic_tenant_id);
 
     flb_ra_key_value_destroy(rval);
     return 0;
 }
 
 static int pack_record(struct flb_loki *ctx,
-                       msgpack_packer *mp_pck, msgpack_object *rec)
+                       msgpack_packer *mp_pck, msgpack_object *rec,
+                       flb_sds_t *dynamic_tenant_id)
 {
     int i;
     int skip = 0;
@@ -1125,7 +1126,7 @@ static int pack_record(struct flb_loki *ctx,
      * https://github.com/fluent/fluent-bit/issues/6207
      */
     if (ctx->ra_tenant_id_key && rec->type == MSGPACK_OBJECT_MAP) {
-        get_tenant_id_from_record(ctx, rec);
+        get_tenant_id_from_record(ctx, rec, dynamic_tenant_id);
     }
 
     /* Remove keys in remove_keys */
@@ -1269,7 +1270,8 @@ static int cb_loki_init(struct flb_output_instance *ins,
 static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
                                       int total_records,
                                       char *tag, int tag_len,
-                                      const void *data, size_t bytes)
+                                      const void *data, size_t bytes,
+                                      flb_sds_t *dynamic_tenant_id)
 {
     int mp_ok = MSGPACK_UNPACK_SUCCESS;
     size_t off = 0;
@@ -1343,7 +1345,7 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
 
              /* Append the timestamp */
              pack_timestamp(&mp_pck, &tms);
-             pack_record(ctx, &mp_pck, obj);
+             pack_record(ctx, &mp_pck, obj, dynamic_tenant_id);
          }
     }
     else {
@@ -1378,7 +1380,7 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
 
              /* Append the timestamp */
              pack_timestamp(&mp_pck, &tms);
-             pack_record(ctx, &mp_pck, obj);
+             pack_record(ctx, &mp_pck, obj, dynamic_tenant_id);
          }
     }
 
@@ -1403,15 +1405,24 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
     struct flb_loki *ctx = out_context;
     struct flb_connection *u_conn;
     struct flb_http_client *c;
+    flb_sds_t dynamic_tenant_id;
+
+    dynamic_tenant_id = NULL;
 
     /* Format the data to the expected Newrelic Payload */
     payload = loki_compose_payload(ctx,
                                    event_chunk->total_events,
                                    (char *) event_chunk->tag,
                                    flb_sds_len(event_chunk->tag),
-                                   event_chunk->data, event_chunk->size);
+                                   event_chunk->data, event_chunk->size,
+                                   &dynamic_tenant_id);
     if (!payload) {
         flb_plg_error(ctx->ins, "cannot compose request payload");
+
+        if (dynamic_tenant_id != NULL) {
+            flb_sds_destroy(dynamic_tenant_id);
+        }
+
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -1419,7 +1430,13 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
         flb_plg_error(ctx->ins, "no upstream connections available");
+
+        if (dynamic_tenant_id != NULL) {
+            flb_sds_destroy(dynamic_tenant_id);
+        }
+
         flb_sds_destroy(payload);
+
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -1430,8 +1447,14 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
                         NULL, 0);
     if (!c) {
         flb_plg_error(ctx->ins, "cannot create HTTP client context");
+
+        if (dynamic_tenant_id != NULL) {
+            flb_sds_destroy(dynamic_tenant_id);
+        }
+
         flb_sds_destroy(payload);
         flb_upstream_conn_release(u_conn);
+
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -1453,13 +1476,13 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
                         FLB_LOKI_CT_JSON, sizeof(FLB_LOKI_CT_JSON) - 1);
 
     /* Add X-Scope-OrgID header */
-    if (ctx->dynamic_tenant_id) {
+    if (dynamic_tenant_id != NULL) {
         flb_http_add_header(c,
                             FLB_LOKI_HEADER_SCOPE, sizeof(FLB_LOKI_HEADER_SCOPE) - 1,
-                            ctx->dynamic_tenant_id,
-                            flb_sds_len(ctx->dynamic_tenant_id));
-        flb_sds_destroy(ctx->dynamic_tenant_id);
-        ctx->dynamic_tenant_id = NULL; // clear for next flush
+                            dynamic_tenant_id,
+                            flb_sds_len(dynamic_tenant_id));
+        flb_sds_destroy(dynamic_tenant_id);
+        dynamic_tenant_id = NULL; // clear for next flush
     }
     else if (ctx->tenant_id) {
         flb_http_add_header(c,
@@ -1633,14 +1656,22 @@ static int cb_loki_format_test(struct flb_config *config,
 {
     int total_records;
     flb_sds_t payload = NULL;
+    flb_sds_t dynamic_tenant_id;
     struct flb_loki *ctx = plugin_context;
+
+    dynamic_tenant_id = NULL;
 
     /* Count number of records */
     total_records = flb_mp_count(data, bytes);
 
     payload = loki_compose_payload(ctx, total_records,
-                                   (char *) tag, tag_len, data, bytes);
+                                   (char *) tag, tag_len, data, bytes,
+                                   &dynamic_tenant_id);
     if (payload == NULL) {
+        if (dynamic_tenant_id != NULL) {
+            flb_sds_destroy(dynamic_tenant_id);
+        }
+
         return -1;
     }
 
