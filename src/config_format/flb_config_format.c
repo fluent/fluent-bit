@@ -706,6 +706,40 @@ static void dump_section(struct flb_cf_section *s)
     }
 }
 
+static void dump_env(struct mk_list *list)
+{
+    struct mk_list *head;
+    struct flb_kv *kv;
+
+    if (mk_list_size(list) == 0) {
+        return;
+    }
+
+    printf("> env:\n");
+
+    mk_list_foreach(head, list) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        printf("    - %-15s: %s\n", kv->key, kv->val);
+    }
+}
+
+static void dump_metas(struct mk_list *list)
+{
+    struct mk_list *head;
+    struct flb_kv *kv;
+
+    if (mk_list_size(list) == 0) {
+        return;
+    }
+
+    printf("> metas:\n");
+
+    mk_list_foreach(head, list) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        printf("    - %-15s: %s\n", kv->key, kv->val);
+    }
+}
+
 static void dump_section_list(struct mk_list *list)
 {
     struct mk_list *head;
@@ -719,6 +753,8 @@ static void dump_section_list(struct mk_list *list)
 
 void flb_cf_dump(struct flb_cf *cf)
 {
+    dump_metas(&cf->metas);
+    dump_env(&cf->env);
     dump_section_list(&cf->sections);
 }
 
