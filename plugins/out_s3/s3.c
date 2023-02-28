@@ -1118,12 +1118,12 @@ put_object:
         if (chunk) {
             chunk->failures += 1;
             if (chunk->failures > ctx->ins->retry_limit){
-                s3_retry_warn(ctx, tag, chunk->input_name, create_time, FLB_FALSE);
+                s3_retry_warn(ctx, tag, chunk->input_name, chunk->create_time, FLB_FALSE);
                 s3_store_file_delete(ctx, chunk);
                 return -2;
             }
             else {
-                s3_retry_warn(ctx, tag, chunk->input_name, create_time, FLB_TRUE);
+                s3_retry_warn(ctx, tag, chunk->input_name, chunk->create_time, FLB_TRUE);
                 s3_store_file_unlock(chunk);
                 return -1;
             }
