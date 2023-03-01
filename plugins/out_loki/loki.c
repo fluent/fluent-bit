@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_ra_key.h>
+#include <fluent-bit/flb_thread_storage.h>
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
 #include <fluent-bit/flb_mp.h>
 
@@ -31,6 +32,52 @@
 #include <sys/stat.h>
 
 #include "loki.h"
+
+struct flb_loki_dynamic_tenant_id_entry {
+    flb_sds_t value;
+    struct cfl_list _head;
+};
+
+pthread_once_t initialization_guard = PTHREAD_ONCE_INIT;
+
+FLB_TLS_DEFINE(struct flb_loki_dynamic_tenant_id_entry,
+               thread_local_tenant_id);
+
+void initialize_thread_local_storage()
+{
+    FLB_TLS_INIT(thread_local_tenant_id);
+}
+
+static struct flb_loki_dynamic_tenant_id_entry *dynamic_tenant_id_create() {
+    struct flb_loki_dynamic_tenant_id_entry *entry;
+
+    entry = (struct flb_loki_dynamic_tenant_id_entry *) \
+        flb_calloc(1, sizeof(struct flb_loki_dynamic_tenant_id_entry));
+
+    if (entry != NULL) {
+        entry->value = NULL;
+
+        cfl_list_entry_init(&entry->_head);
+    }
+
+    return entry;
+}
+
+static void dynamic_tenant_id_destroy(struct flb_loki_dynamic_tenant_id_entry *entry) {
+    if (entry != NULL) {
+        if (entry->value != NULL) {
+            flb_sds_destroy(entry->value);
+
+            entry->value = NULL;
+        }
+
+        if (!cfl_list_entry_is_orphan(&entry->_head)) {
+            cfl_list_del(&entry->_head);
+        }
+
+        flb_free(entry);
+    }
+}
 
 static void flb_loki_kv_init(struct mk_list *list)
 {
@@ -1247,6 +1294,7 @@ static int pack_record(struct flb_loki *ctx,
 static int cb_loki_init(struct flb_output_instance *ins,
                         struct flb_config *config, void *data)
 {
+    int              result;
     struct flb_loki *ctx;
 
     /* Create plugin context */
@@ -1255,6 +1303,33 @@ static int cb_loki_init(struct flb_output_instance *ins,
         flb_plg_error(ins, "cannot initialize configuration");
         return -1;
     }
+
+    result = pthread_mutex_init(&ctx->dynamic_tenant_list_lock, NULL);
+
+    if (result != 0) {
+        flb_errno();
+
+        flb_plg_error(ins, "cannot initialize dynamic tenant id list lock");
+
+        loki_config_destroy(ctx);
+
+        return -1;
+    }
+
+    result = pthread_once(&initialization_guard,
+                          initialize_thread_local_storage);
+
+    if (result != 0) {
+        flb_errno();
+
+        flb_plg_error(ins, "cannot initialize thread local storage");
+
+        loki_config_destroy(ctx);
+
+        return -1;
+    }
+
+    cfl_list_init(&ctx->dynamic_tenant_list);
 
     /*
      * This plugin instance uses the HTTP client interface, let's register
@@ -1406,9 +1481,28 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
     struct flb_loki *ctx = out_context;
     struct flb_connection *u_conn;
     struct flb_http_client *c;
-    flb_sds_t dynamic_tenant_id;
+    struct flb_loki_dynamic_tenant_id_entry *dynamic_tenant_id;
 
-    dynamic_tenant_id = NULL;
+    dynamic_tenant_id = FLB_TLS_GET(thread_local_tenant_id);
+
+    if (dynamic_tenant_id == NULL) {
+        dynamic_tenant_id = dynamic_tenant_id_create();
+
+        if (dynamic_tenant_id == NULL) {
+            flb_errno();
+            flb_plg_error(ctx->ins, "cannot allocate dynamic tenant id");
+
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+
+        FLB_TLS_SET(thread_local_tenant_id, dynamic_tenant_id);
+
+        pthread_mutex_lock(&ctx->dynamic_tenant_list_lock);
+
+        cfl_list_add(&dynamic_tenant_id->_head, &ctx->dynamic_tenant_list);
+
+        pthread_mutex_unlock(&ctx->dynamic_tenant_list_lock);
+    }
 
     /* Format the data to the expected Newrelic Payload */
     payload = loki_compose_payload(ctx,
@@ -1416,13 +1510,9 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
                                    (char *) event_chunk->tag,
                                    flb_sds_len(event_chunk->tag),
                                    event_chunk->data, event_chunk->size,
-                                   &dynamic_tenant_id);
+                                   &dynamic_tenant_id->value);
     if (!payload) {
         flb_plg_error(ctx->ins, "cannot compose request payload");
-
-        if (dynamic_tenant_id != NULL) {
-            flb_sds_destroy(dynamic_tenant_id);
-        }
 
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
@@ -1431,10 +1521,6 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
         flb_plg_error(ctx->ins, "no upstream connections available");
-
-        if (dynamic_tenant_id != NULL) {
-            flb_sds_destroy(dynamic_tenant_id);
-        }
 
         flb_sds_destroy(payload);
 
@@ -1449,16 +1535,11 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
     if (!c) {
         flb_plg_error(ctx->ins, "cannot create HTTP client context");
 
-        if (dynamic_tenant_id != NULL) {
-            flb_sds_destroy(dynamic_tenant_id);
-        }
-
         flb_sds_destroy(payload);
         flb_upstream_conn_release(u_conn);
 
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
-
 
     /* Set callback context to the HTTP client context */
     flb_http_set_callback_context(c, ctx->ins->callback);
@@ -1477,13 +1558,11 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
                         FLB_LOKI_CT_JSON, sizeof(FLB_LOKI_CT_JSON) - 1);
 
     /* Add X-Scope-OrgID header */
-    if (dynamic_tenant_id != NULL) {
+    if (dynamic_tenant_id->value != NULL) {
         flb_http_add_header(c,
                             FLB_LOKI_HEADER_SCOPE, sizeof(FLB_LOKI_HEADER_SCOPE) - 1,
-                            dynamic_tenant_id,
-                            flb_sds_len(dynamic_tenant_id));
-        flb_sds_destroy(dynamic_tenant_id);
-        dynamic_tenant_id = NULL; // clear for next flush
+                            dynamic_tenant_id->value,
+                            flb_sds_len(dynamic_tenant_id->value));
     }
     else if (ctx->tenant_id) {
         flb_http_add_header(c,
@@ -1551,7 +1630,23 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
 
     flb_http_client_destroy(c);
     flb_upstream_conn_release(u_conn);
+
     FLB_OUTPUT_RETURN(out_ret);
+}
+
+static void release_dynamic_tenant_ids(struct cfl_list *dynamic_tenant_list)
+{
+    struct cfl_list                         *iterator;
+    struct cfl_list                         *backup;
+    struct flb_loki_dynamic_tenant_id_entry *entry;
+
+    cfl_list_foreach_safe(iterator, backup, dynamic_tenant_list) {
+        entry = cfl_list_entry(iterator,
+                               struct flb_loki_dynamic_tenant_id_entry,
+                               _head);
+
+        dynamic_tenant_id_destroy(entry);
+    }
 }
 
 static int cb_loki_exit(void *data, struct flb_config *config)
@@ -1562,7 +1657,14 @@ static int cb_loki_exit(void *data, struct flb_config *config)
         return 0;
     }
 
+    pthread_mutex_lock(&ctx->dynamic_tenant_list_lock);
+
+    release_dynamic_tenant_ids(&ctx->dynamic_tenant_list);
+
+    pthread_mutex_unlock(&ctx->dynamic_tenant_list_lock);
+
     loki_config_destroy(ctx);
+
     return 0;
 }
 
