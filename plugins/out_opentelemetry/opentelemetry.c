@@ -102,7 +102,6 @@ static inline void otlp_any_value_destroy(Opentelemetry__Proto__Common__V1__AnyV
         if (value->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE) {
             if (value->string_value != NULL) {
                 flb_free(value->string_value);
-                value->string_value = NULL;
             }
         }
         else if (value->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_ARRAY_VALUE) {
@@ -120,6 +119,8 @@ static inline void otlp_any_value_destroy(Opentelemetry__Proto__Common__V1__AnyV
                 flb_free(value->bytes_value.data);
             }
         }
+
+        value->string_value = NULL;
 
         flb_free(value);
     }
@@ -323,7 +324,10 @@ static void clear_array(Opentelemetry__Proto__Logs__V1__LogRecord **logs,
     }
 
     for (index = 0 ; index < log_count ; index++) {
-        otlp_any_value_destroy(logs[index]->body);
+        if (logs[index]->body != NULL) {
+            otlp_any_value_destroy(logs[index]->body);
+            logs[index]->body = NULL;
+        }
     }
 }
 
@@ -411,6 +415,9 @@ static Opentelemetry__Proto__Common__V1__AnyValue *otlp_any_value_initialize(int
     if (data_type == MSGPACK_OBJECT_STR) {
         value->value_case = OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE;
     }
+    else if (data_type == MSGPACK_OBJECT_NIL) {
+        value->value_case = OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE__NOT_SET;
+    }
     else if (data_type == MSGPACK_OBJECT_BOOLEAN) {
         value->value_case = OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_BOOL_VALUE;
     }
@@ -426,6 +433,7 @@ static Opentelemetry__Proto__Common__V1__AnyValue *otlp_any_value_initialize(int
 
         if (value->array_value == NULL) {
             flb_free(value);
+
             value = NULL;
         }
     }
@@ -515,6 +523,19 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *msgpack_string_to_otlp
     return result;
 }
 
+static inline Opentelemetry__Proto__Common__V1__AnyValue *msgpack_nil_to_otlp_any_value(struct msgpack_object *o)
+{
+    Opentelemetry__Proto__Common__V1__AnyValue *result;
+
+    result = otlp_any_value_initialize(MSGPACK_OBJECT_NIL, 0);
+
+    if (result != NULL) {
+        result->string_value = NULL;
+    }
+
+    return result;
+}
+
 static inline Opentelemetry__Proto__Common__V1__AnyValue *msgpack_bin_to_otlp_any_value(struct msgpack_object *o)
 {
     Opentelemetry__Proto__Common__V1__AnyValue *result;
@@ -578,6 +599,7 @@ static inline Opentelemetry__Proto__Common__V1__KeyValue *msgpack_kv_to_otlp_any
     kv = otlp_kvpair_value_initialize();
     if (kv == NULL) {
         flb_errno();
+
         return NULL;
     }
 
@@ -585,14 +607,15 @@ static inline Opentelemetry__Proto__Common__V1__KeyValue *msgpack_kv_to_otlp_any
     if (kv->key == NULL) {
         flb_errno();
         flb_free(kv);
+
         return NULL;
     }
 
     kv->value = msgpack_object_to_otlp_any_value(&input_pair->val);
     if (kv->value == NULL) {
-        flb_errno();
         flb_free(kv->key);
         flb_free(kv);
+
         return NULL;
     }
 
@@ -626,7 +649,12 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *msgpack_object_to_otlp
 {
     Opentelemetry__Proto__Common__V1__AnyValue *result;
 
+    result = NULL;
+
     switch (o->type) {
+        case MSGPACK_OBJECT_NIL:
+            result = msgpack_nil_to_otlp_any_value(o);
+            break;
 
         case MSGPACK_OBJECT_BOOLEAN:
             result = msgpack_boolean_to_otlp_any_value(o);
@@ -646,6 +674,10 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *msgpack_object_to_otlp
             result = msgpack_string_to_otlp_any_value(o);
             break;
 
+        case MSGPACK_OBJECT_MAP:
+            result = msgpack_map_to_otlp_any_value(o);
+            break;
+
         case MSGPACK_OBJECT_BIN:
             result = msgpack_bin_to_otlp_any_value(o);
             break;
@@ -654,13 +686,13 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *msgpack_object_to_otlp
             result = msgpack_array_to_otlp_any_value(o);
             break;
 
-        case MSGPACK_OBJECT_MAP:
-            result = msgpack_map_to_otlp_any_value(o);
-            break;
-
         default:
             break;
     }
+
+    /* This function will fail if it receives an object with
+     * type MSGPACK_OBJECT_EXT
+     */
 
     return result;
 }
@@ -722,7 +754,6 @@ static int process_logs(struct flb_event_chunk *event_chunk,
     size_t                                      log_record_count;
     Opentelemetry__Proto__Logs__V1__LogRecord **log_record_list;
     Opentelemetry__Proto__Logs__V1__LogRecord  *log_records;
-    Opentelemetry__Proto__Common__V1__AnyValue *log_bodies;
     Opentelemetry__Proto__Common__V1__AnyValue *log_object;
     msgpack_unpacked                            result;
     size_t                                      index;
@@ -756,24 +787,7 @@ static int process_logs(struct flb_event_chunk *event_chunk,
         return -2;
     }
 
-    log_bodies = (Opentelemetry__Proto__Common__V1__AnyValue *) \
-        flb_calloc(ctx->batch_size,
-                   sizeof(Opentelemetry__Proto__Common__V1__AnyValue));
-
-    if (log_bodies == NULL) {
-        flb_errno();
-
-        flb_free(log_record_list);
-        flb_free(log_records);
-
-        return -3;
-    }
-
     for(index = 0 ; index < ctx->batch_size ; index++) {
-        opentelemetry__proto__logs__v1__log_record__init(&log_records[index]);
-        opentelemetry__proto__common__v1__any_value__init(&log_bodies[index]);
-
-        log_records[index].body = &log_bodies[index];
         log_record_list[index] = &log_records[index];
     }
 
@@ -805,6 +819,14 @@ static int process_logs(struct flb_event_chunk *event_chunk,
 
         log_object = msgpack_object_to_otlp_any_value(obj);
 
+        if (log_object == NULL) {
+            flb_plg_error(ins, "log event conversion failure");
+            res = FLB_ERROR;
+            continue;
+        }
+
+        opentelemetry__proto__logs__v1__log_record__init(&log_records[log_record_count]);
+
         log_records[log_record_count].body = log_object;
         log_records[log_record_count].time_unix_nano = flb_time_to_nanosec(&tm);
 
@@ -829,12 +851,12 @@ static int process_logs(struct flb_event_chunk *event_chunk,
                             log_record_list,
                             log_record_count);
 
-        clear_array(log_record_list, log_record_count);
     }
+
+    clear_array(log_record_list, log_record_count);
 
     flb_free(log_record_list);
     flb_free(log_records);
-    flb_free(log_bodies);
 
     msgpack_unpacked_destroy(&result);
 
