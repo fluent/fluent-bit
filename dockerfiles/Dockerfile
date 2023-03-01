@@ -224,6 +224,8 @@ RUN echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/
     net-tools mtr netcat-openbsd bridge-utils iperf ngrep \
     openssl \
     htop atop strace iotop sysstat ncdu logrotate hdparm pciutils psmisc tree pv \
+    cmake make tar flex bison \
+    libssl-dev libsasl2-dev libsystemd-dev/bullseye-backports zlib1g-dev libpq-dev libyaml-dev postgresql-server-dev-all \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

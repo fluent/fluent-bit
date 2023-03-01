@@ -79,3 +79,6 @@
 /tests/runtime/out_kinesis.c    @pettitwesley
 /tests/runtime/out_opensearch.c @pettitwesley @edsiper
 /tests/runtime/out_s3.c         @pettitwesley
+
+# Devcontainer
+/.devcontainer                  @patrick-stephens @niedbalski @edsiper
