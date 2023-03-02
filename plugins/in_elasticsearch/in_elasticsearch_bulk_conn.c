@@ -64,6 +64,7 @@ static int in_elasticsearch_bulk_conn_event(void *data)
             tmp = flb_realloc(conn->buf_data, size);
             if (!tmp) {
                 flb_errno();
+                in_elasticsearch_bulk_conn_del(conn);
                 return -1;
             }
             flb_plg_trace(ctx->ins, "fd=%i buffer realloc %i -> %zu",

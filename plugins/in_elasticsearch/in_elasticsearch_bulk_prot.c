@@ -120,6 +120,7 @@ static int send_dummy_sniffer_response(struct in_elasticsearch_bulk_conn *conn, 
 
     resp = flb_sds_create_size(384);
     if (!resp) {
+        flb_sds_destroy(out);
         return -1;
     }
 
@@ -737,6 +738,7 @@ int in_elasticsearch_bulk_prot_handle(struct flb_in_elasticsearch *ctx,
     /* HTTP/1.1 needs Host header */
     if (!request->host.data && request->protocol == MK_HTTP_PROTOCOL_11) {
         flb_sds_destroy(tag);
+        mk_mem_free(uri);
         return -1;
     }
 
