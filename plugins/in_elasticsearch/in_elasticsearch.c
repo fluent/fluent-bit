@@ -121,6 +121,7 @@ static int in_elasticsearch_bulk_init(struct flb_input_instance *ins,
 
     if (flb_random_bytes(rand, 16)) {
         flb_plg_error(ctx->ins, "cannot generate cluster name");
+        in_elasticsearch_config_destroy(ctx);
         return -1;
     }
 
@@ -128,6 +129,7 @@ static int in_elasticsearch_bulk_init(struct flb_input_instance *ins,
 
     if (flb_random_bytes(rand, 12)) {
         flb_plg_error(ctx->ins, "cannot generate node name");
+        in_elasticsearch_config_destroy(ctx);
         return -1;
     }
 
