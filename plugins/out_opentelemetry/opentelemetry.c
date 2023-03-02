@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_log_event.h>
 
 #include <cfl/cfl.h>
 #include <fluent-otel-proto/fluent-otel.h>
@@ -43,9 +44,26 @@ extern void cmt_encode_opentelemetry_destroy(cfl_sds_t text);
 static inline Opentelemetry__Proto__Common__V1__AnyValue *msgpack_object_to_otlp_any_value(struct msgpack_object *o);
 
 static inline void otlp_any_value_destroy(Opentelemetry__Proto__Common__V1__AnyValue *value);
+static inline void otlp_kvarray_destroy(Opentelemetry__Proto__Common__V1__KeyValue **kvarray, size_t entry_count);
 static inline void otlp_kvpair_destroy(Opentelemetry__Proto__Common__V1__KeyValue *kvpair);
 static inline void otlp_kvlist_destroy(Opentelemetry__Proto__Common__V1__KeyValueList *kvlist);
 static inline void otlp_array_destroy(Opentelemetry__Proto__Common__V1__ArrayValue *array);
+
+static inline void otlp_kvarray_destroy(Opentelemetry__Proto__Common__V1__KeyValue **kvarray, size_t entry_count)
+{
+    size_t index;
+
+    if (kvarray != NULL) {
+        for (index = 0 ; index < entry_count ; index++) {
+            if (kvarray[index] != NULL) {
+                otlp_kvpair_destroy(kvarray[index]);
+                kvarray[index] = NULL;
+            }
+        }
+
+        flb_free(kvarray);
+    }
+}
 
 static inline void otlp_kvpair_destroy(Opentelemetry__Proto__Common__V1__KeyValue *kvpair)
 {
@@ -162,7 +180,7 @@ static int http_post(struct opentelemetry_context *ctx,
             compressed = FLB_TRUE;
         }
     } else {
-        final_body = body;
+        final_body = (void *) body;
         final_body_len = body_len;
     }
     /* Create HTTP client context */
@@ -295,9 +313,9 @@ static void clear_array(Opentelemetry__Proto__Logs__V1__LogRecord **logs,
 
     for (index = 0 ; index < log_count ; index++) {
         otlp_any_value_destroy(logs[index]->body);
+        otlp_kvarray_destroy(logs[index]->attributes,
+                             logs[index]->n_attributes);
     }
-
-    flb_free(logs);
 }
 
 static Opentelemetry__Proto__Common__V1__ArrayValue *otlp_array_value_initialize(size_t entry_count)
@@ -572,6 +590,28 @@ static inline Opentelemetry__Proto__Common__V1__KeyValue *msgpack_kv_to_otlp_any
     return kv;
 }
 
+static inline Opentelemetry__Proto__Common__V1__KeyValue **msgpack_map_to_otlp_kvarray(struct msgpack_object *o, size_t *entry_count)
+{
+    Opentelemetry__Proto__Common__V1__KeyValue **result;
+    size_t                                       index;
+    msgpack_object_kv                           *kv;
+
+    *entry_count = o->via.map.size;
+    result = flb_calloc(*entry_count, sizeof(Opentelemetry__Proto__Common__V1__KeyValue *));
+
+    if (result != NULL) {
+        for (index = 0; index < *entry_count; index++) {
+            kv = &o->via.map.ptr[index];
+            result[index] = msgpack_kv_to_otlp_any_value(kv);
+        }
+    }
+    else {
+        *entry_count = 0;
+    }
+
+    return result;
+}
+
 static inline Opentelemetry__Proto__Common__V1__AnyValue *msgpack_map_to_otlp_any_value(struct msgpack_object *o)
 {
     size_t                                      entry_count;
@@ -692,8 +732,12 @@ static int process_logs(struct flb_event_chunk *event_chunk,
                         struct flb_input_instance *ins, void *out_context,
                         struct flb_config *config)
 {
-    struct opentelemetry_context *ctx;
-    ctx = out_context;
+    size_t                         log_record_count;
+    struct flb_log_event_decoder  *decoder;
+    size_t                         index;
+    struct flb_log_event           event;
+    int                            res;
+    struct opentelemetry_context  *ctx;
 
     /*
     * These were initially variable length arrays.
@@ -707,15 +751,10 @@ static int process_logs(struct flb_event_chunk *event_chunk,
     Opentelemetry__Proto__Common__V1__AnyValue *log_bodies;
     Opentelemetry__Proto__Common__V1__AnyValue *log_object;
 
-    size_t log_record_count;
-    size_t index;
-    msgpack_unpacked result;
-    msgpack_object *obj;
-    size_t off = 0;
-    struct flb_time tm;
-    int res = FLB_OK;
 
-    log_record_list = (Opentelemetry__Proto__Logs__V1__LogRecord *) flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Logs__V1__LogRecord *));
+    ctx = out_context;
+
+    log_record_list = (Opentelemetry__Proto__Logs__V1__LogRecord **) flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Logs__V1__LogRecord *));
     if (!log_record_list) {
         flb_errno();
         return -1;
@@ -743,33 +782,34 @@ static int process_logs(struct flb_event_chunk *event_chunk,
         log_records[index].body = &log_bodies[index];
         log_record_list[index] = &log_records[index];
     }
+
+    decoder = flb_log_event_decoder_create(event_chunk->data,
+                                           event_chunk->size);
+
+    if (decoder == NULL) {
+        flb_plg_error(ctx->ins, "could not initialize record decoder");
+
+        flb_free(log_record_list);
+        flb_free(log_records);
+        flb_free(log_bodies);
+
+        return -1;
+    }
+
     log_record_count = 0;
 
-    msgpack_unpacked_init(&result);
+    res = FLB_OK;
 
-    while (msgpack_unpack_next(&result,
-                                event_chunk->data,
-                                event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS) {
+    while (flb_log_event_decoder_next(decoder, &event) == 0 &&
+           res == FLB_OK) {
+        log_records[log_record_count].attributes = \
+            msgpack_map_to_otlp_kvarray(event.metadata,
+                                        &log_records[log_record_count].n_attributes);
 
-        if (result.data.type != MSGPACK_OBJECT_ARRAY) {
-            continue;
-        }
-
-        if (result.data.via.array.size != 2){
-            continue;
-        }
-
-        /* unpack the array of [timestamp, map] */
-        flb_time_pop_from_msgpack(&tm, &result, &obj);
-
-        if (obj->type != MSGPACK_OBJECT_MAP) {
-            continue;
-        }
-
-        log_object = msgpack_object_to_otlp_any_value(obj);
+        log_object = msgpack_object_to_otlp_any_value(event.body);
 
         log_records[log_record_count].body = log_object;
-        log_records[log_record_count].time_unix_nano = flb_time_to_nanosec(&tm);
+        log_records[log_record_count].time_unix_nano = flb_time_to_nanosec(&event.timestamp);
 
         log_record_count++;
 
@@ -780,30 +820,26 @@ static int process_logs(struct flb_event_chunk *event_chunk,
                                 log_record_count);
 
             clear_array(log_record_list, log_record_count);
-            flb_free(log_records);
 
             log_record_count = 0;
-
-            if (res != FLB_OK) {
-                return res;
-            }
         }
     }
 
-    if (log_record_count >= 0) {
+    flb_log_event_decoder_destroy(decoder);
+
+    if (log_record_count >= 0 &&
+        res == FLB_OK) {
         res = flush_to_otel(ctx,
                             event_chunk,
                             log_record_list,
                             log_record_count);
 
         clear_array(log_record_list, log_record_count);
-        flb_free(log_records);
-
-        log_record_count = 0;
     }
 
+    flb_free(log_record_list);
+    flb_free(log_records);
     flb_free(log_bodies);
-    msgpack_unpacked_destroy(&result);
 
     return res;
 }

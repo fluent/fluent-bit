@@ -423,20 +423,43 @@ int flb_pack_json_state(const char *js, size_t len,
     return 0;
 }
 
+int flb_metadata_pop_from_msgpack(msgpack_object **metadata, msgpack_unpacked *upk,
+                                  msgpack_object **map)
+{
+    if (metadata == NULL || upk == NULL) {
+        return -1;
+    }
+
+    if (upk->data.type != MSGPACK_OBJECT_ARRAY) {
+        return -1;
+    }
+
+    *metadata = &upk->data.via.array.ptr[0].via.array.ptr[1];
+    *map = &upk->data.via.array.ptr[1];
+
+    return 0;
+}
+
 static int pack_print_fluent_record(size_t cnt, msgpack_unpacked result)
 {
-    msgpack_object o;
-    msgpack_object *obj;
-    msgpack_object root;
-    struct flb_time tms;
+    msgpack_object  *metadata;
+    msgpack_object   root;
+    msgpack_object  *obj;
+    struct flb_time  tms;
+    msgpack_object   o;
 
     root = result.data;
     if (root.type != MSGPACK_OBJECT_ARRAY) {
         return -1;
     }
 
-    /* decode expected timestamp only (integer, float or ext) */
     o = root.via.array.ptr[0];
+    if (o.type != MSGPACK_OBJECT_ARRAY) {
+        return -1;
+    }
+
+    /* decode expected timestamp only (integer, float or ext) */
+    o = o.via.array.ptr[0];
     if (o.type != MSGPACK_OBJECT_POSITIVE_INTEGER &&
         o.type != MSGPACK_OBJECT_FLOAT &&
         o.type != MSGPACK_OBJECT_EXT) {
@@ -445,10 +468,17 @@ static int pack_print_fluent_record(size_t cnt, msgpack_unpacked result)
 
     /* This is a Fluent Bit record, just do the proper unpacking/printing */
     flb_time_pop_from_msgpack(&tms, &result, &obj);
+    flb_metadata_pop_from_msgpack(&metadata, &result, &obj);
 
     fprintf(stdout, "[%zd] [%"PRIu32".%09lu, ", cnt,
             (uint32_t) tms.tm.tv_sec, tms.tm.tv_nsec);
+
+    msgpack_object_print(stdout, *metadata);
+
+    fprintf(stdout, ", ");
+
     msgpack_object_print(stdout, *obj);
+
     fprintf(stdout, "]\n");
 
     return 0;

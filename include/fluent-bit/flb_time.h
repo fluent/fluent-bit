@@ -54,6 +54,12 @@ enum flb_time_eventtime_fmt {
     FLB_TIME_ETFMT_V0,        /* EventTime (v0) */
     FLB_TIME_ETFMT_V1_EXT,    /* EventTime (v1 ext) */
     FLB_TIME_ETFMT_V1_FIXEXT, /* EventTime (v1 fixext) */
+    FLB_TIME_FMT_PRECISION_NS,/* EventTime (v1 fixext) minus the
+                               * implicit wrapper array and empty
+                               * metadata map.
+                               * This is only meant to be used as a
+                               * stop gap until everything is updated.
+                               */
     FLB_TIME_ETFMT_OTHER,
 };
 

@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_version.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_log_event.h>
 
 #include <monkey/monkey.h>
 #include <monkey/mk_core.h>
@@ -237,6 +238,30 @@ static int otel_pack_double(msgpack_packer *mp_pck, double val)
     return msgpack_pack_double(mp_pck, val);
 }
 
+static int otel_pack_kvarray(msgpack_packer *mp_pck,
+                             Opentelemetry__Proto__Common__V1__KeyValue **kv_array,
+                             size_t kv_count)
+{
+    int result;
+    int index;
+
+    result = msgpack_pack_map(mp_pck, kv_count);
+
+    if (result != 0) {
+        return result;
+    }
+
+    for (index = 0; index < kv_count && result == 0; index++) {
+        result = otel_pack_string(mp_pck, kv_array[index]->key);
+
+        if(result == 0) {
+           result = otlp_pack_any_value(mp_pck, kv_array[index]->value);
+        }
+    }
+
+    return result;
+}
+
 static int otel_pack_kvlist(msgpack_packer *mp_pck,
                             Opentelemetry__Proto__Common__V1__KeyValueList *kv_list)
 {
@@ -270,9 +295,16 @@ static int otel_pack_array(msgpack_packer *mp_pck,
     int ret;
     int array_index;
 
+    ret = msgpack_pack_array(mp_pck, array->n_values);
+
+    if (ret != 0) {
+        return ret;
+    }
+
     for (array_index = 0; array_index < array->n_values && ret == 0; array_index++) {
         ret = otlp_pack_any_value(mp_pck, array->values[array_index]);
     }
+
     return ret;
 }
 
@@ -330,7 +362,48 @@ static int otlp_pack_any_value(msgpack_packer *mp_pck,
     return result;
 }
 
-static int binary_payload_to_msgpack(msgpack_packer *mp_pck,
+
+static int binary_metadata_callback(struct flb_log_event_encoder *context,
+                                    void *user_data)
+{
+    Opentelemetry__Proto__Logs__V1__LogRecord *log_record;
+    int                                        result;
+
+    log_record = (Opentelemetry__Proto__Logs__V1__LogRecord *) user_data;
+
+    result = otel_pack_kvarray(&context->packer,
+                               log_record->attributes,
+                               log_record->n_attributes);
+
+    if (result != 0) {
+        flb_error("[otel] Failed to convert log record attributes");
+
+        return -1;
+    }
+
+    return 0;
+}
+
+static int binary_body_callback(struct flb_log_event_encoder *context,
+                                void *user_data)
+{
+    Opentelemetry__Proto__Logs__V1__LogRecord *log_record;
+    int                                        result;
+
+    log_record = (Opentelemetry__Proto__Logs__V1__LogRecord *) user_data;
+
+    result = otlp_pack_any_value(&context->packer, log_record->body);
+
+    if (result != 0) {
+        flb_error("[otel] Failed to convert log record body");
+
+        return -1;
+    }
+
+    return 0;
+}
+
+static int binary_payload_to_msgpack(struct flb_log_event_encoder *encoder,
                                      uint8_t *in_buf,
                                      size_t in_size)
 {
@@ -378,20 +451,21 @@ static int binary_payload_to_msgpack(msgpack_packer *mp_pck,
             }
 
             for (log_record_index=0; log_record_index < scope_log->n_log_records; log_record_index++) {
-                msgpack_pack_array(mp_pck, 2);
-                flb_pack_time_now(mp_pck);
-
-                log_record = log_records[log_record_index];
-
-                ret = otlp_pack_any_value(mp_pck, log_record->body);
+                ret = flb_log_event_encoder_append_ex(encoder,
+                                                      NULL,
+                                                      binary_metadata_callback,
+                                                      binary_body_callback,
+                                                      (void *) log_records[log_record_index]);
 
                 if (ret != 0) {
-                    flb_error("[otel] Failed to convert log record body");
+                    flb_error("[otel] marshalling error");
+
                     return -1;
                 }
             }
         }
     }
+
     return 0;
 }
 
@@ -503,11 +577,16 @@ static int process_payload_logs(struct flb_opentelemetry *ctx, struct http_conn 
                                 struct mk_http_session *session,
                                 struct mk_http_request *request)
 {
-    int ret;
-    char *out_buf = NULL;
+    struct flb_log_event_encoder *encoder;
+    msgpack_sbuffer               mp_sbuf;
+    msgpack_packer                mp_pck;
+    int                           ret;
 
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
+    encoder = flb_log_event_encoder_create();
+
+    if (encoder == NULL) {
+        return -1;
+    }
 
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
@@ -521,21 +600,28 @@ static int process_payload_logs(struct flb_opentelemetry *ctx, struct http_conn 
     else if (strncasecmp(request->content_type.data,
                          "application/x-protobuf",
                          request->content_type.len) == 0) {
-        ret =  binary_payload_to_msgpack(&mp_pck, (uint8_t *)request->data.data, request->data.len);
+        ret = binary_payload_to_msgpack(encoder, (uint8_t *) request->data.data, request->data.len);
+
+        if (ret == 0) {
+            ret = flb_input_log_append(ctx->ins,
+                                       tag,
+                                       flb_sds_len(tag),
+                                       encoder->output_buffer,
+                                       encoder->output_length);
+        }
     }
     else {
         flb_error("[otel] Unsupported content type %.*s", request->content_type.len, request->content_type.data);
-        ret = -1;
-    }
 
-    /* release 'out_buf' if it was allocated */
-    if (out_buf) {
-        flb_free(out_buf);
+        ret = -1;
     }
 
     flb_input_log_append(ctx->ins, tag, flb_sds_len(tag), mp_sbuf.data, mp_sbuf.size);
 
     msgpack_sbuffer_destroy(&mp_sbuf);
+
+    flb_log_event_encoder_destroy(encoder);
+
     return ret;
 }
 

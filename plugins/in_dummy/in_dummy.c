@@ -29,9 +29,24 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_log_event.h>
 
 #include "in_dummy.h"
 
+struct dummy_entry {
+    struct flb_dummy *context;
+    char             *body_buffer;
+    size_t            body_length;
+};
+
+static int init_msg(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck)
+{
+    /* Initialize local msgpack buffer */
+    msgpack_sbuffer_init(mp_sbuf);
+    msgpack_packer_init(mp_pck, mp_sbuf, msgpack_sbuffer_write);
+
+    return 0;
+}
 
 static int set_dummy_timestamp(msgpack_packer *mp_pck, struct flb_dummy *ctx)
 {
@@ -43,55 +58,131 @@ static int set_dummy_timestamp(msgpack_packer *mp_pck, struct flb_dummy *ctx)
     if (ctx->base_timestamp == NULL) {
         ctx->base_timestamp = flb_malloc(sizeof(struct flb_time));
         flb_time_get(ctx->base_timestamp);
-        ret = flb_time_append_to_msgpack(ctx->dummy_timestamp, mp_pck, 0);
+        ret = flb_time_append_to_msgpack(ctx->dummy_timestamp,
+                                         mp_pck,
+                                         FLB_TIME_FMT_PRECISION_NS);
     }
     else {
         flb_time_get(&t);
         flb_time_diff(&t, ctx->base_timestamp, &diff);
         flb_time_add(ctx->dummy_timestamp, &diff, &dummy_time);
-        ret = flb_time_append_to_msgpack(&dummy_time, mp_pck, 0);
+        ret = flb_time_append_to_msgpack(&dummy_time,
+                                         mp_pck,
+                                         FLB_TIME_FMT_PRECISION_NS);
     }
 
     return ret;
 }
 
-static int init_msg(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck)
+static int timestamp_callback(struct flb_log_event_encoder *context,
+                              void *user_data)
 {
-    /* Initialize local msgpack buffer */
-    msgpack_sbuffer_init(mp_sbuf);
-    msgpack_packer_init(mp_pck, mp_sbuf, msgpack_sbuffer_write);
+    struct dummy_entry *entry;
+    int                 result;
+
+    entry = (struct dummy_entry *) user_data;
+
+    if (entry->context->dummy_timestamp != NULL){
+        set_dummy_timestamp(&context->packer,
+                            entry->context);
+    } else {
+        result = flb_time_append_to_msgpack(NULL,
+                                            &context->packer,
+                                            FLB_TIME_FMT_PRECISION_NS);
+
+        if (result != 0) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static int metadata_callback(struct flb_log_event_encoder *context,
+                             void *user_data)
+{
+    msgpack_pack_map(&context->packer, 1);
+    msgpack_pack_str_with_body(&context->packer, "test attribute", 15);
+    msgpack_pack_str_with_body(&context->packer, "value", 6);
+
+    return 0;
+}
+
+static int body_callback(struct flb_log_event_encoder *context,
+                         void *user_data)
+{
+    struct dummy_entry *entry;
+
+    entry = (struct dummy_entry *) user_data;
+
+    msgpack_pack_str_body(&context->packer,
+                          entry->body_buffer,
+                          entry->body_length);
+
     return 0;
 }
 
 static int gen_msg(struct flb_input_instance *ins, void *in_context, msgpack_packer *mp_pck)
 {
-    size_t off = 0;
-    size_t start = 0;
-    char *pack;
-    int pack_size;
-    msgpack_unpacked result;
-    struct flb_dummy *ctx = in_context;
+    int                            pack_size;
+    struct flb_log_event_encoder  *encoder;
+    msgpack_unpacked               result;
+    struct dummy_entry             entry;
+    size_t                         start;
+    char                          *pack;
+    int                            ret;
+    size_t                         off;
+    struct flb_dummy              *ctx;
+
+    ctx = (struct flb_dummy *) in_context;
 
     pack = ctx->ref_msgpack;
     pack_size = ctx->ref_msgpack_size;
+
+    encoder = flb_log_event_encoder_create();
+
+    if (encoder == NULL) {
+        flb_plg_error(ins, "could not initialize event encoder");
+
+        return -1;
+    }
+
+    entry.context = ctx;
+
     msgpack_unpacked_init(&result);
 
-    while (msgpack_unpack_next(&result, pack, pack_size, &off) == MSGPACK_UNPACK_SUCCESS) {
+    start = 0;
+    off = 0;
+    ret = 0;
+
+    while (msgpack_unpack_next(&result, pack,
+                               pack_size, &off) == MSGPACK_UNPACK_SUCCESS &&
+           ret == 0) {
         if (result.data.type == MSGPACK_OBJECT_MAP) {
-            /* { map => val, map => val, map => val } */
-            msgpack_pack_array(mp_pck, 2);
-            if (ctx->dummy_timestamp != NULL){
-                set_dummy_timestamp(mp_pck, ctx);
-            } else {
-                flb_pack_time_now(mp_pck);
-            }
-            msgpack_pack_str_body(mp_pck, pack + start, off - start);
+            entry.body_buffer = pack + start;
+            entry.body_length = off - start;
+
+            ret = flb_log_event_encoder_append_ex(encoder,
+                                                  timestamp_callback,
+                                                  metadata_callback,
+                                                  body_callback,
+                                                  (void *) &entry);
         }
+
         start = off;
     }
+
     msgpack_unpacked_destroy(&result);
 
-    return 0;
+    if (ret == 0) {
+        msgpack_pack_str_body(mp_pck,
+                              encoder->output_buffer,
+                              encoder->output_length);
+    }
+
+    flb_log_event_encoder_destroy(encoder);
+
+    return ret;
 }
 
 /* cb_collect callback */
@@ -102,7 +193,6 @@ static int in_dummy_collect(struct flb_input_instance *ins,
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     int i;
-
 
     if (ctx->samples > 0 && (ctx->samples_count >= ctx->samples)) {
         return -1;
@@ -198,6 +288,7 @@ static int configure(struct flb_dummy *ctx,
     if (msg == NULL) {
         msg = DEFAULT_DUMMY_MESSAGE;
     }
+
     ret = flb_pack_json(msg, strlen(msg), &ctx->ref_msgpack,
                         &ctx->ref_msgpack_size, &root_type);
     if (ret == 0) {

@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_metrics.h>
+#include <fluent-bit/flb_log_event.h>
 
 #include <ctraces/ctraces.h>
 #include <ctraces/ctr_decode_msgpack.h>
@@ -160,14 +161,14 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
                             void *out_context,
                             struct flb_config *config)
 {
-    msgpack_unpacked result;
-    size_t off = 0, cnt = 0;
-    struct flb_stdout *ctx = out_context;
+    struct flb_stdout *ctx;
     flb_sds_t json;
-    char *buf = NULL;
+    size_t cnt;
+
     (void) config;
-    struct flb_time tmp;
-    msgpack_object *p;
+
+    ctx = (struct flb_stdout *) out_context;
+    cnt = 0;
 
 #ifdef FLB_HAVE_METRICS
     /* Check if the event type is metrics, handle the payload differently */
@@ -206,20 +207,36 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
         fflush(stdout);
     }
     else {
-        msgpack_unpacked_init(&result);
-        while (msgpack_unpack_next(&result,
-                                   event_chunk->data,
-                                   event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS) {
-            if (flb_time_pop_from_msgpack(&tmp, &result, &p) != -1 ) {
-                printf("[%zd] %s: [", cnt++, event_chunk->tag);
-                printf("%"PRIu32".%09lu, ", (uint32_t)tmp.tm.tv_sec, tmp.tm.tv_nsec);
-                msgpack_object_print(stdout, *p);
-                printf("]\n");
-            }
+        struct flb_log_event_decoder *decoder;
+        struct flb_log_event          event;
+
+        decoder = flb_log_event_decoder_create(event_chunk->data,
+                                               event_chunk->size);
+
+        if (decoder == NULL) {
+            printf("ERROR INITIALIZING UNPACKER\n");
+            exit(0);
         }
-        msgpack_unpacked_destroy(&result);
-        flb_free(buf);
+
+        while (flb_log_event_decoder_next(decoder, &event) == 0) {
+            printf("[%zd] %s: [[", cnt++, event_chunk->tag);
+
+            printf("%"PRIu32".%09lu, ",
+                   (uint32_t)event.timestamp.tm.tv_sec,
+                   event.timestamp.tm.tv_nsec);
+
+            msgpack_object_print(stdout, *event.metadata);
+
+            printf("], ");
+
+            msgpack_object_print(stdout, *event.body);
+
+            printf("]\n");
+        }
+
+        flb_log_event_decoder_destroy(decoder);
     }
+
     fflush(stdout);
 
     FLB_OUTPUT_RETURN(FLB_OK);
