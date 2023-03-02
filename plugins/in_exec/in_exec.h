@@ -40,6 +40,7 @@ struct flb_exec {
     size_t buf_size;
     struct flb_input_instance *ins;
     int oneshot;
+    int exit;
     flb_pipefd_t ch_manager[2];
     int interval_sec;
     int interval_nsec;
