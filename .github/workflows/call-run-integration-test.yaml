@@ -216,10 +216,16 @@ jobs:
           ref: ${{ inputs.ref }}
           repository: fluent/fluent-bit-ci
 
+      - name: Configure system for Opensearch
+        run: |
+          sudo sysctl -w vm.max_map_count=262144
+          sysctl -p
+        shell: bash
+
       - name: Setup BATS
         uses: mig4/setup-bats@v1
         with:
-          bats-version: 1.7.0
+          bats-version: 1.9.0
 
       - name: Create k8s Kind Cluster
         uses: helm/kind-action@v1.5.0
@@ -236,6 +242,7 @@ jobs:
         uses: azure/setup-kubectl@v3.2
 
       - name: Run tests
+        timeout-minutes: 60
         run:  |
           kind load docker-image ${{ inputs.image_name }}:${{ inputs.image_tag }}
           ./run-tests.sh
@@ -278,7 +285,7 @@ jobs:
       - name: Setup BATS
         uses: mig4/setup-bats@v1
         with:
-          bats-version: 1.7.0
+          bats-version: 1.9.0
 
       - name: Set up Helm
         uses: azure/setup-helm@v3.5
@@ -291,6 +298,7 @@ jobs:
       - name: Get the GKE Kubeconfig
         if: matrix.cloud == 'gke'
         run: |
+          gcloud components install gke-gcloud-auth-plugin || sudo apt-get install google-cloud-sdk-gke-gcloud-auth-plugin
           gcloud info
           gcloud container clusters get-credentials "$GKE_CLUSTER_NAME" --zone "$GKE_ZONE"
         shell: bash
@@ -321,8 +329,7 @@ jobs:
         shell: bash
 
       - name: Run tests
-        # https://github.com/fluent/fluent-bit-ci/issues/80
-        continue-on-error: ${{ matrix.cloud == 'gke' }}
+        timeout-minutes: 60
         run:  |
           ./run-tests.sh
         shell: bash
