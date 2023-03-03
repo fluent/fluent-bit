@@ -525,7 +525,7 @@ static int create_label_map_entry(struct flb_loki *ctx,
 
         break;
     default:
-        flb_plg_error(ctx->ins, "[%s] value type is not str or map. type=%d", val->type);
+        flb_plg_error(ctx->ins, "[%s] value type is not str or map. type=%d", __FUNCTION__, val->type);
         return -1;
     }
     return 0;
