@@ -400,7 +400,7 @@ static int init_seq_index(void *context) {
             return -1;
         }
         flb_plg_info(ctx->ins, "Successfully recovered index. "
-                     "Continuing at index=%d", ctx->seq_index);
+                     "Continuing at index=%"PRIu64, ctx->seq_index);
     }
     return 0;
 }
@@ -1038,7 +1038,7 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
         }
         else {
             if (ctx->use_put_object == FLB_FALSE && ctx->compression == FLB_AWS_COMPRESS_GZIP) {
-                flb_plg_info(ctx->ins, "Pre-compression upload_chunk_size= %d, After compression, chunk is only %d bytes, "
+                flb_plg_info(ctx->ins, "Pre-compression upload_chunk_size= %zu, After compression, chunk is only %zu bytes, "
                                        "the chunk was too small, using PutObject to upload", preCompress_size, body_size);
             }
             goto put_object;
@@ -1231,7 +1231,7 @@ static int put_all_chunks(struct flb_s3 *ctx)
                 if (ret == -1) {
                     flb_plg_error(ctx->ins, "Failed to compress data, uploading uncompressed data instead to prevent data loss");
                 } else {
-                    flb_plg_info(ctx->ins, "Pre-compression chunk size is %d, After compression, chunk is %d bytes", buffer_size, payload_size);
+                    flb_plg_info(ctx->ins, "Pre-compression chunk size is %zu, After compression, chunk is %zu bytes", buffer_size, payload_size);
                     buffer = (void *) payload_buf;
                     buffer_size = payload_size;
                 }
