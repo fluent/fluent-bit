@@ -2349,12 +2349,12 @@ static void update_retry_metric(struct flb_stackdriver *ctx,
                                  uint64_t ts,
                                  int http_status, int ret_code)
 {
+    char tmp[32]; 
+    char *name = (char *) flb_output_name(ctx->ins);
+
     if (ret_code != FLB_RETRY) {
         return;
     }
-
-    char tmp[32]; 
-    char *name = (char *) flb_output_name(ctx->ins);
 
     /* convert status to string format */
     snprintf(tmp, sizeof(tmp) - 1, "%i", http_status);
