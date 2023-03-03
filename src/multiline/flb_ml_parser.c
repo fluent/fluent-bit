@@ -226,7 +226,7 @@ struct flb_ml_parser_ins *flb_ml_parser_instance_create(struct flb_ml *ml,
     ret = flb_ml_group_add_parser(ml, ins);
     if (ret != 0) {
         flb_error("[multiline] could not register parser '%s' on "
-                  "multiline '%s 'group", ml->name);
+                  "multiline '%s 'group", name, ml->name);
         flb_free(ins);
         return NULL;
     }

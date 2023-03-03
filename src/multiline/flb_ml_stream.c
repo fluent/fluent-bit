@@ -253,7 +253,7 @@ int flb_ml_stream_create(struct flb_ml *ml,
             if (!mst) {
                 flb_error("[multiline] could not create stream_id=%" PRIu64
                           "for stream '%s' on parser '%s'",
-                          stream_id, name, parser->ml_parser->name);
+                          *stream_id, name, parser->ml_parser->name);
                 return -1;
             }
         }
