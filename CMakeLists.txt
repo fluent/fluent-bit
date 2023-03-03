@@ -198,6 +198,7 @@ option(FLB_IN_STORAGE_BACKLOG          "Enable storage backlog input plugin"    
 option(FLB_IN_EMITTER                  "Enable emitter input plugin"                  Yes)
 option(FLB_IN_NODE_EXPORTER_METRICS    "Enable node exporter metrics input plugin"    Yes)
 option(FLB_IN_WINDOWS_EXPORTER_METRICS "Enable windows exporter metrics input plugin" Yes)
+option(FLB_IN_PODMAN_METRICS           "Enable Podman Metrics input plugin"           Yes)
 option(FLB_IN_OPENTELEMETRY            "Enable OpenTelemetry input plugin"            Yes)
 option(FLB_IN_ELASTICSEARCH            "Enable Elasticsearch (Bulk API) input plugin" Yes)
 option(FLB_OUT_AZURE                   "Enable Azure output plugin"                   Yes)
