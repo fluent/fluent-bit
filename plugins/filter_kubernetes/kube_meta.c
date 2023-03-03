@@ -166,7 +166,7 @@ static int get_http_auth_header(struct flb_kube *ctx)
         if (ret == -1) {
             flb_plg_warn(ctx->ins, "cannot open %s", FLB_KUBE_TOKEN);
         }
-        flb_plg_info(ctx->ins, " token updated", FLB_KUBE_TOKEN);
+        flb_plg_info(ctx->ins, " token updated");
     }
     ctx->kube_token_create = time(NULL);
 
