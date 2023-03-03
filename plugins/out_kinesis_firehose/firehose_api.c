@@ -318,7 +318,7 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
                                                        &size); /* evaluate size */
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Unable to compress record, discarding, "
-                                    "%s", written + 1, ctx->delivery_stream);
+                                    "%s", ctx->delivery_stream);
             return 2;
         }
         flb_free(buf->event_buf);
