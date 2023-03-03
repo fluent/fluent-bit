@@ -451,11 +451,11 @@ static int binary_payload_to_msgpack(struct flb_log_event_encoder *encoder,
             }
 
             for (log_record_index=0; log_record_index < scope_log->n_log_records; log_record_index++) {
-                ret = flb_log_event_encoder_append_ex(encoder,
-                                                      NULL,
-                                                      binary_metadata_callback,
-                                                      binary_body_callback,
-                                                      (void *) log_records[log_record_index]);
+                ret = flb_log_event_encoder_append(encoder,
+                                                   NULL,
+                                                   binary_metadata_callback,
+                                                   binary_body_callback,
+                                                   (void *) log_records[log_record_index]);
 
                 if (ret != 0) {
                     flb_error("[otel] marshalling error");
@@ -582,7 +582,7 @@ static int process_payload_logs(struct flb_opentelemetry *ctx, struct http_conn 
     msgpack_packer                mp_pck;
     int                           ret;
 
-    encoder = flb_log_event_encoder_create();
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
 
     if (encoder == NULL) {
         return -1;

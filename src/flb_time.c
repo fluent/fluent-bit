@@ -134,7 +134,7 @@ int flb_time_diff(struct flb_time *time1,
         }
         else if(result->tm.tv_sec == 0){
             /* underflow */
-            return -1;
+            return -2;
         }
         else{
             result->tm.tv_nsec = ONESEC_IN_NSEC
@@ -144,7 +144,7 @@ int flb_time_diff(struct flb_time *time1,
     }
     else {
         /* underflow */
-        return -1;
+        return -3;
     }
     return 0;
 }

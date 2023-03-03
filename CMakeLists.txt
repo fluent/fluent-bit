@@ -608,6 +608,61 @@ if(FLB_METRICS)
   FLB_DEFINITION(FLB_HAVE_METRICS)
 endif()
 
+# Byte swapping macro detection
+check_c_source_compiles("
+  #include <stdint.h>
+  #include <intrin.h>
+
+  int main() {
+    uint64_t source;
+    uint64_t destination;
+
+    source = 42;
+    destination = _byteswap_uint64(source);
+
+    return 0;
+  }" FLB_HAVE_CLANG_BYTESWAP)
+
+if(FLB_HAVE_CLANG_BYTESWAP)
+  FLB_DEFINITION(FLB_HAVE_CLANG_BYTESWAP)
+endif()
+
+check_c_source_compiles("
+  #include <stdint.h>
+  #include <stdlib.h>
+
+  int main() {
+    uint64_t source;
+    uint64_t destination;
+
+    source = 42;
+    destination = _byteswap_uint64(source);
+
+    return 0;
+  }" FLB_HAVE_WIN32_BYTESWAP)
+
+if(FLB_HAVE_WIN32_BYTESWAP)
+  FLB_DEFINITION(FLB_HAVE_WIN32_BYTESWAP)
+endif()
+
+check_c_source_compiles("
+  #include <byteswap.h>
+  #include <stdint.h>
+
+  int main() {
+    uint64_t source;
+    uint64_t destination;
+
+    source = 42;
+    destination = bswap_64(source);
+
+    return 0;
+  }" FLB_HAVE_POSIX_BYTESWAP)
+
+if(FLB_HAVE_POSIX_BYTESWAP)
+  FLB_DEFINITION(FLB_HAVE_POSIX_BYTESWAP)
+endif()
+
 # WASM
 if(FLB_WASM)
   if (FLB_SYSTEM_LINUX)
