@@ -297,14 +297,10 @@ jobs:
 
       - name: Get the GKE Kubeconfig
         if: matrix.cloud == 'gke'
-        run: |
-          gcloud components install gke-gcloud-auth-plugin || sudo apt-get install google-cloud-sdk-gke-gcloud-auth-plugin
-          gcloud info
-          gcloud container clusters get-credentials "$GKE_CLUSTER_NAME" --zone "$GKE_ZONE"
-        shell: bash
-        env:
-          GKE_CLUSTER_NAME: ${{ needs.call-run-terraform-setup.outputs.gke-cluster-name }}
-          GKE_ZONE: ${{ needs.call-run-terraform-setup.outputs.gke-cluster-zone }}
+        uses: 'google-github-actions/get-gke-credentials@v1'
+        with:
+          cluster_name: ${{ needs.call-run-terraform-setup.outputs.gke-cluster-name }}
+          location: ${{ needs.call-run-terraform-setup.outputs.gke-cluster-zone }}
 
       - name: Get the AKS Kubeconfig
         if: matrix.cloud == 'aks'
