@@ -28,7 +28,8 @@
 #include "http.h"
 #include "http_conn.h"
 
-#define HTTP_CONTENT_JSON  0
+#define HTTP_CONTENT_JSON       0
+#define HTTP_CONTENT_URLENCODED 1
 
 static int send_response(struct http_conn *conn, int http_status, char *message)
 {
@@ -289,6 +290,95 @@ static ssize_t parse_payload_json(struct flb_http *ctx, flb_sds_t tag,
     return 0;
 }
 
+static ssize_t parse_payload_urlencoded(struct flb_http *ctx, flb_sds_t tag,
+                                  char *payload, size_t size)
+{
+    struct mk_list *kvs;
+    struct mk_list *head = NULL;
+    struct flb_split_entry *cur = NULL;
+    char **keys = NULL;
+    char **vals = NULL;
+    char *sep;
+    char *start;
+    int idx = 0;
+    int ret = -1;
+    msgpack_packer pck;
+    msgpack_sbuffer sbuf;
+
+
+    /* initialize buffers */
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
+
+    kvs = flb_utils_split(payload, '&', -1 );
+    if (kvs == NULL) {
+    	goto split_error;
+    }
+
+    keys = flb_calloc(mk_list_size(kvs), sizeof(char *));
+    if (keys == NULL) {
+    	goto keys_calloc_error;
+    }
+
+    vals = flb_calloc(mk_list_size(kvs), sizeof(char *));
+    if (vals == NULL) {
+    	goto vals_calloc_error;
+    }
+
+    mk_list_foreach(head, kvs) {
+    	cur = mk_list_entry(head, struct flb_split_entry, _head);
+    	if (cur->value[0] == '\n') {
+    	    start = &cur->value[1];
+    	} else {
+    	    start = cur->value;
+	}
+	sep = strchr(start, '=');
+	if (sep == NULL) {
+	    vals[idx] = NULL;
+	    continue;
+	}
+	*sep++ = '\0';
+        
+        keys[idx] = flb_sds_create_len(start, strlen(start));
+	vals[idx] = flb_sds_create_len(sep, strlen(sep));
+
+	flb_sds_trim(keys[idx]);
+	flb_sds_trim(vals[idx]);
+	idx++;
+    }
+
+    msgpack_pack_map(&pck, mk_list_size(kvs));
+    for (idx = 0; idx < mk_list_size(kvs); idx++) {
+        msgpack_pack_str(&pck, flb_sds_len(keys[idx]));
+        msgpack_pack_str_body(&pck, keys[idx], flb_sds_len(keys[idx]));
+
+        msgpack_pack_str(&pck, flb_sds_len(vals[idx]));
+        msgpack_pack_str_body(&pck, vals[idx], flb_sds_len(vals[idx]));
+    }
+
+    process_pack(ctx, tag, sbuf.data, sbuf.size);
+    msgpack_sbuffer_destroy(&sbuf);
+
+    ret = 0;
+
+
+    for (idx = 0; idx < mk_list_size(kvs); idx++) {
+        if (keys[idx]) {
+            flb_sds_destroy(keys[idx]);
+        }
+        if (vals[idx]) {
+            flb_sds_destroy(vals[idx]);
+        }
+    }
+    flb_free(vals);
+vals_calloc_error:
+    flb_free(keys);
+keys_calloc_error:
+    flb_utils_split_free(kvs);
+split_error:
+    return ret;
+}
+
 static int process_payload(struct flb_http *ctx, struct http_conn *conn,
                            flb_sds_t tag,
                            struct mk_http_session *session,
@@ -308,6 +398,11 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
         type = HTTP_CONTENT_JSON;
     }
 
+    if (header->val.len == 33 &&
+        strncasecmp(header->val.data, "application/x-www-form-urlencoded", 33) == 0) {
+        type = HTTP_CONTENT_URLENCODED;
+    }
+
     if (type == -1) {
         send_response(conn, 400, "error: invalid 'Content-Type'\n");
         return -1;
@@ -320,6 +415,8 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
 
     if (type == HTTP_CONTENT_JSON) {
         parse_payload_json(ctx, tag, request->data.data, request->data.len);
+    } else if (type == HTTP_CONTENT_URLENCODED) {
+        parse_payload_urlencoded(ctx, tag, request->data.data, request->data.len);
     }
 
     return 0;
