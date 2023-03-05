@@ -235,6 +235,7 @@ struct flb_config {
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     char *stream_processor_file;            /* SP configuration file */
     void *stream_processor_ctx;             /* SP context */
+    int  stream_processor_str_conv;         /* SP enable converting from string to number */
 
     /*
      * Temporal list to hold tasks defined before the SP context is created
@@ -307,6 +308,7 @@ enum conf_type {
 #define FLB_CONF_STR_PARSERS_FILE "Parsers_File"
 #define FLB_CONF_STR_PLUGINS_FILE "Plugins_File"
 #define FLB_CONF_STR_STREAMS_FILE "Streams_File"
+#define FLB_CONF_STR_STREAMS_STR_CONV "sp.convert_from_str_to_num"
 #define FLB_CONF_STR_CONV_NAN     "json.convert_nan_to_null"
 
 /* FLB_HAVE_HTTP_SERVER */

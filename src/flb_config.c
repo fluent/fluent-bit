@@ -164,6 +164,9 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STR_STREAMS_FILE,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, stream_processor_file)},
+    {FLB_CONF_STR_STREAMS_STR_CONV,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, stream_processor_str_conv)},
 #endif
 
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -273,6 +276,7 @@ struct flb_config *flb_config_init()
 
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     flb_slist_create(&config->stream_processor_tasks);
+    config->stream_processor_str_conv = FLB_TRUE;
 #endif
 
     /* Set default coroutines stack size */
