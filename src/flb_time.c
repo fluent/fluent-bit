@@ -164,10 +164,6 @@ int flb_time_append_to_mpack(mpack_writer_t *writer, struct flb_time *tm, int fm
 #endif
     }
 
-    if (fmt != FLB_TIME_FMT_PRECISION_NS) {
-        mpack_start_array(writer, 2);
-    }
-
     if (tm == NULL) {
       if (fmt == FLB_TIME_ETFMT_INT) {
          l_time.tm.tv_sec = time(NULL);
@@ -202,17 +198,6 @@ int flb_time_append_to_mpack(mpack_writer_t *writer, struct flb_time *tm, int fm
         ret = -1;
     }
 
-    if (ret != -1) {
-        if (fmt != FLB_TIME_FMT_PRECISION_NS) {
-            mpack_start_map(writer, 0);
-            mpack_finish_map(writer);
-        }
-        else
-        {
-            mpack_finish_array(writer);
-        }
-    }
-
     return ret;
 }
 
@@ -229,10 +214,6 @@ int flb_time_append_to_msgpack(struct flb_time *tm, msgpack_packer *pk, int fmt)
 #else
         fmt = FLB_TIME_ETFMT_V1_FIXEXT;
 #endif
-    }
-
-    if (fmt != FLB_TIME_FMT_PRECISION_NS) {
-        msgpack_pack_array(pk, 2);
     }
 
     if (tm == NULL) {
@@ -268,12 +249,6 @@ int flb_time_append_to_msgpack(struct flb_time *tm, msgpack_packer *pk, int fmt)
 
     default:
         ret = -1;
-    }
-
-    if (ret != -1) {
-        if (fmt != FLB_TIME_FMT_PRECISION_NS) {
-            msgpack_pack_map(pk, 0);
-        }
     }
 
     return ret;
@@ -328,10 +303,13 @@ int flb_time_pop_from_mpack(struct flb_time *time, mpack_reader_t *reader)
     uint32_t tmp;
     char extbuf[8];
     size_t ext_len;
+    int header_detected;
 
     if (time == NULL) {
         return -1;
     }
+
+    header_detected = FLB_FALSE;
 
     /* consume the record array */
     tag = mpack_read_tag(reader);
@@ -342,17 +320,30 @@ int flb_time_pop_from_mpack(struct flb_time *time, mpack_reader_t *reader)
         return -1;
     }
 
-    /* consume the header array (timestamp and metadata) */
+    /* consume the header array or the timestamp
+     * depending on the chunk encoding
+     */
     tag = mpack_read_tag(reader);
 
-    if (mpack_reader_error(reader) != mpack_ok ||
-        mpack_tag_type(&tag) != mpack_type_array ||
-        mpack_tag_array_count(&tag) == 0) {
+    if (mpack_reader_error(reader) != mpack_ok) {
         return -1;
     }
 
-    /* consume the timestamp element */
-    tag = mpack_read_tag(reader);
+    if (mpack_tag_type(&tag) == mpack_type_array) {
+        if(mpack_tag_array_count(&tag) != 2) {
+            return -1;
+        }
+
+        /* consume the timestamp element */
+        tag = mpack_read_tag(reader);
+
+        if (mpack_reader_error(reader) != mpack_ok) {
+            return -1;
+        }
+
+        header_detected = FLB_TRUE;
+    }
+
     switch (mpack_tag_type(&tag)) {
         case mpack_type_int:
             i = mpack_tag_int_value(&tag);
@@ -393,8 +384,11 @@ int flb_time_pop_from_mpack(struct flb_time *time, mpack_reader_t *reader)
             return -1;
     }
 
-    /* discard the metadata map */
-    mpack_discard(reader);
+    /* discard the metadata map if present */
+
+    if (header_detected) {
+        mpack_discard(reader);
+    }
 
     return 0;
 }
@@ -413,7 +407,16 @@ int flb_time_pop_from_msgpack(struct flb_time *time, msgpack_unpacked *upk,
         return -1;
     }
 
-    obj = upk->data.via.array.ptr[0].via.array.ptr[0];
+    obj = upk->data.via.array.ptr[0];
+
+    if (obj.type == MSGPACK_OBJECT_ARRAY) {
+        if (obj.via.array.size != 2) {
+            return -1;
+        }
+
+        obj = obj.via.array.ptr[0];
+    }
+
     *map = &upk->data.via.array.ptr[1];
 
     ret = flb_time_msgpack_to_time(time, &obj);

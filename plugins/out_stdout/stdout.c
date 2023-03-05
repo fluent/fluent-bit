@@ -161,9 +161,12 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
                             void *out_context,
                             struct flb_config *config)
 {
-    struct flb_stdout *ctx;
-    flb_sds_t json;
-    size_t cnt;
+    struct flb_log_event_decoder decoder;
+    int                          result;
+    struct flb_log_event         event;
+    flb_sds_t                    json;
+    struct flb_stdout           *ctx;
+    size_t                       cnt;
 
     (void) config;
 
@@ -207,18 +210,18 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
         fflush(stdout);
     }
     else {
-        struct flb_log_event_decoder *decoder;
-        struct flb_log_event          event;
+        result = flb_log_event_decoder_init(&decoder,
+                                            (char *) event_chunk->data,
+                                            event_chunk->size);
 
-        decoder = flb_log_event_decoder_create(event_chunk->data,
-                                               event_chunk->size);
+        if (result != FLB_EVENT_DECODER_SUCCESS) {
+            flb_plg_error(ctx->ins, "decoder initialization failure");
 
-        if (decoder == NULL) {
-            printf("ERROR INITIALIZING UNPACKER\n");
-            exit(0);
+            FLB_OUTPUT_RETURN(FLB_ERROR);
         }
 
-        while (flb_log_event_decoder_next(decoder, &event) == 0) {
+        while ((result = flb_log_event_decoder_next(&decoder, &event)) ==
+               FLB_EVENT_DECODER_SUCCESS) {
             printf("[%zd] %s: [[", cnt++, event_chunk->tag);
 
             printf("%"PRIu32".%09lu, ",
@@ -234,10 +237,18 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
             printf("]\n");
         }
 
-        flb_log_event_decoder_destroy(decoder);
+        if (result != FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA) {
+            flb_plg_error(ctx->ins, "decoder error : %d", result);
+        }
+
+        flb_log_event_decoder_destroy(&decoder);
     }
 
     fflush(stdout);
+
+    if (result != FLB_EVENT_DECODER_SUCCESS) {
+        FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
 
     FLB_OUTPUT_RETURN(FLB_OK);
 }

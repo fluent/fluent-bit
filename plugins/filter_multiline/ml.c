@@ -741,7 +741,6 @@ static int cb_ml_filter(const void *data, size_t bytes,
         return FLB_FILTER_NOTOUCH;
     
     } else { /* buffered mode */
-        
         stream = get_or_create_stream(ctx, i_ins, tag, tag_len);
 
         if (!stream) {
@@ -752,8 +751,8 @@ static int cb_ml_filter(const void *data, size_t bytes,
         /* process records */
         msgpack_unpacked_init(&result);
         while (msgpack_unpack_next(&result, data, bytes, &off) == ok) {
-            flb_time_pop_from_msgpack(&tm, &result, &obj);
-            ret = flb_ml_append_object(ctx->m, stream->stream_id, &tm, obj);
+            ret = flb_ml_append_object(ctx->m, stream->stream_id, NULL, &result.data);
+
             if (ret != 0) {
                 flb_plg_debug(ctx->ins,
                             "could not append object from tag: %s", tag);

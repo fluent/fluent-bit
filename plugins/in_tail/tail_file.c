@@ -111,86 +111,90 @@ static int record_append_custom_keys(struct flb_tail_file *file,
                                      char **out_data, size_t *out_size)
 {
     int i;
-    int ok = MSGPACK_UNPACK_SUCCESS;
-    int len;
     int records = 0;
-    size_t off = 0;
-    size_t total;
-    msgpack_unpacked result;
-    msgpack_object time;
-    msgpack_object map;
     msgpack_object k;
     msgpack_object v;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
-    struct flb_mp_map_header mh;
     struct flb_tail_config *ctx = file->config;
+    int ret;
 
-    /* init new buffers */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    struct flb_log_event_encoder encoder;
+    struct flb_log_event_decoder decoder;
+    struct flb_log_event event;
 
-    /* Some extra content will be added... */
-    msgpack_unpacked_init(&result);
-    while ((msgpack_unpack_next(&result, in_data, in_size, &off) == ok)) {
-        time = result.data.via.array.ptr[0];
-        map = result.data.via.array.ptr[1];
+    ret = flb_log_event_decoder_init(&decoder, in_data, in_size);
 
-        msgpack_pack_array(&mp_pck, 2);
-        msgpack_pack_object(&mp_pck, time);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        return -1;
+    }
 
-        /* pack map */
-        flb_mp_map_header_init(&mh, &mp_pck);
+    ret = flb_log_event_encoder_init(&encoder, FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_decoder_destroy(&decoder);
+
+        return -2;
+    }
+
+    while (flb_log_event_decoder_next(&decoder, &event) ==
+            FLB_EVENT_DECODER_SUCCESS) {
+
+        flb_log_event_encoder_record_start(&encoder);
+        flb_log_event_encoder_record_timestamp_set(&encoder, &event.timestamp);
 
         /* append previous map keys */
-        for (i = 0; i < map.via.map.size; i++) {
-            k = map.via.map.ptr[i].key;
-            v = map.via.map.ptr[i].val;
+        for (i = 0; i < event.body->via.map.size; i++) {
+            k = event.body->via.map.ptr[i].key;
+            v = event.body->via.map.ptr[i].val;
 
-            flb_mp_map_header_append(&mh);
-            msgpack_pack_object(&mp_pck, k);
-            msgpack_pack_object(&mp_pck, v);
+            flb_log_event_encoder_record_body_append_msgpack_object(
+                &encoder,
+                &k);
+
+            flb_log_event_encoder_record_body_append_msgpack_object(
+                &encoder,
+                &v);
         }
 
         /* path_key */
         if (ctx->path_key) {
-            len = flb_sds_len(file->config->path_key);
+            flb_log_event_encoder_record_body_append_string(
+                &encoder,
+                file->config->path_key);
 
-            flb_mp_map_header_append(&mh);
-
-            /* key */
-            msgpack_pack_str(&mp_pck, len);
-            msgpack_pack_str_body(&mp_pck, file->config->path_key, len);
-
-            /* val */
-            msgpack_pack_str(&mp_pck, file->orig_name_len);
-            msgpack_pack_str_body(&mp_pck, file->orig_name, file->orig_name_len);
+            flb_log_event_encoder_record_body_append_string(
+                &encoder,
+                file->orig_name);
         }
 
         /* offset_key */
         if (ctx->offset_key) {
-            len = flb_sds_len(file->config->offset_key);
+            flb_log_event_encoder_record_body_append_string(
+                &encoder,
+                file->config->offset_key);
 
-            flb_mp_map_header_append(&mh);
-
-            /* key */
-            msgpack_pack_str(&mp_pck, len);
-            msgpack_pack_str_body(&mp_pck, file->config->offset_key, len);
-
-            /* val */
-            total = file->offset + file->last_processed_bytes;
-            msgpack_pack_uint64(&mp_pck, total);
+            flb_log_event_encoder_record_body_append_uint64(
+                &encoder,
+                file->offset +
+                file->last_processed_bytes);
         }
 
-        /* finalize map */
-        flb_mp_map_header_end(&mh);
+        flb_log_event_encoder_record_commit(&encoder);
 
         /* counter */
         records++;
     }
 
-    *out_data = mp_sbuf.data;
-    *out_size = mp_sbuf.size;
+    *out_data = encoder.output_buffer;
+    *out_size = encoder.output_length;
+
+    /* This function transfers ownership of the internal memory allocated by
+     * sbuffer using msgpack_sbuffer_release which means the caller is
+     * responsible for releasing the memory.
+     */
+    flb_log_event_encoder_claim_internal_buffer_ownership(&encoder);
+
+    flb_log_event_decoder_destroy(&decoder);
+    flb_log_event_encoder_destroy(&encoder);
 
     return records;
 }
@@ -269,19 +273,11 @@ static int append_record_to_map(char **data, size_t *data_size,
     return 0;
 }
 
-int flb_tail_pack_line_map(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
-                           struct flb_time *time, char **data,
+int flb_tail_pack_line_map(struct flb_time *time, char **data,
                            size_t *data_size, struct flb_tail_file *file,
                            size_t processed_bytes)
 {
-    int map_num = 1;
-
-    if (file->config->path_key != NULL) {
-        map_num++; /* to append path_key */
-    }
-    if (file->config->offset_key != NULL) {
-        map_num++; /* to append offset_key */
-    }
+    int result;
 
     if (file->config->path_key != NULL) {
         append_record_to_map(data, data_size,
@@ -296,69 +292,165 @@ int flb_tail_pack_line_map(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                              NULL, 0, file->offset + processed_bytes);
     }
 
-    msgpack_pack_array(mp_pck, 2);
-    flb_time_append_to_msgpack(time, mp_pck, 0);
-    msgpack_sbuffer_write(mp_sbuf, *data, *data_size);
+    result = flb_log_event_encoder_append_msgpack_raw(file->sl_log_event_encoder,
+                                                      time,
+                                                      NULL,
+                                                      0,
+                                                      *data,
+                                                      *data_size);
+
+    if (result != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(file->config->ins, "error packing event");
+
+        return -1;
+    }
 
     return 0;
 }
 
-int flb_tail_file_pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
-                            struct flb_time *time, char *data, size_t data_size,
+struct tail_log_event_components {
+    struct flb_tail_file *file;
+    uint64_t offset;
+    struct flb_time *time;
+    char *data;
+    size_t data_size;
+};
+
+static int flb_tail_file_pack_line_timestamp(
+    struct flb_log_event_encoder *context,
+    void *user_data)
+{
+    struct tail_log_event_components *components;
+
+    components = (struct tail_log_event_components *) user_data;
+
+    return flb_log_event_encoder_pack_timestamp(context, components->time);
+}
+
+static int flb_tail_file_pack_line_body(
+    struct flb_log_event_encoder *context,
+    void *user_data)
+{
+    struct tail_log_event_components *components;
+    int                               map_size;
+    struct flb_tail_config           *config;
+    int                               result;
+
+    components = (struct tail_log_event_components *) user_data;
+
+    config = (struct flb_tail_config *) components->file->config;
+
+    map_size = 1;
+
+    if (config->path_key != NULL) {
+        map_size++; /* to append path_key */
+    }
+
+    if (config->offset_key != NULL) {
+        map_size++; /* to append offset_key */
+    }
+
+    result = flb_log_event_encoder_pack_map(context, map_size);
+
+    if (config->path_key != NULL) {
+        /* append path_key */
+        if (result == FLB_EVENT_ENCODER_SUCCESS) {
+            result = flb_log_event_encoder_pack_string(context,
+                                                       config->path_key);
+        }
+
+        if (result == FLB_EVENT_ENCODER_SUCCESS) {
+            result = flb_log_event_encoder_pack_string(context,
+                                                       components->file->name);
+        }
+    }
+
+    if (config->offset_key != NULL) {
+        /* append offset_key */
+        if (result == FLB_EVENT_ENCODER_SUCCESS) {
+            result = flb_log_event_encoder_pack_string(context,
+                                                       config->offset_key);
+        }
+
+        if (result == FLB_EVENT_ENCODER_SUCCESS) {
+            result = flb_log_event_encoder_pack_uint64(context,
+                                                       components->offset);
+        }
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_pack_string(context,
+                                                   config->key);
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_pack_string_with_length(context,
+                                                               components->data,
+                                                               components->data_size);
+    }
+
+    return result;
+}
+
+
+int flb_tail_file_pack_line(struct flb_time *time, char *data, size_t data_size,
                             struct flb_tail_file *file, size_t processed_bytes)
 {
-    int map_num = 1;
-    struct flb_tail_config *ctx = file->config;
+    struct tail_log_event_components components;
+    int                              result;
 
-    if (file->config->path_key != NULL) {
-        map_num++; /* to append path_key */
-    }
-    if (file->config->offset_key != NULL) {
-        map_num++; /* to append offset_key */
-    }
-    msgpack_pack_array(mp_pck, 2);
-    flb_time_append_to_msgpack(time, mp_pck, 0);
-    msgpack_pack_map(mp_pck, map_num);
+    components.file = file;
+    components.time = time;
+    components.data = data;
+    components.offset = file->offset + processed_bytes;
+    components.data_size = data_size;
 
-    if (file->config->path_key != NULL) {
-        /* append path_key */
-        msgpack_pack_str(mp_pck, flb_sds_len(file->config->path_key));
-        msgpack_pack_str_body(mp_pck, file->config->path_key,
-                              flb_sds_len(file->config->path_key));
-        msgpack_pack_str(mp_pck, file->name_len);
-        msgpack_pack_str_body(mp_pck, file->name, file->name_len);
-    }
-    if (file->config->offset_key != NULL) {
-        /* append offset_key */
-        msgpack_pack_str(mp_pck, flb_sds_len(file->config->offset_key));
-        msgpack_pack_str_body(mp_pck, file->config->offset_key,
-                              flb_sds_len(file->config->offset_key));
-        msgpack_pack_uint64(mp_pck, file->offset + processed_bytes);
-    }
+    result = flb_log_event_encoder_append(file->sl_log_event_encoder,
+                                          flb_tail_file_pack_line_timestamp,
+                                          NULL,
+                                          flb_tail_file_pack_line_body,
+                                          (void *) &components);
 
-    msgpack_pack_str(mp_pck, flb_sds_len(ctx->key));
-    msgpack_pack_str_body(mp_pck, ctx->key, flb_sds_len(ctx->key));
-    msgpack_pack_str(mp_pck, data_size);
-    msgpack_pack_str_body(mp_pck, data, data_size);
+    if (result != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(file->config->ins, "error packing event");
+
+        return -1;
+    }
 
     return 0;
 }
 
 static int ml_stream_buffer_append(struct flb_tail_file *file, char *buf_data, size_t buf_size)
 {
-    msgpack_sbuffer_write(&file->ml_sbuf, buf_data, buf_size);
+    int result;
+
+    result = flb_log_event_encoder_pack_raw_msgpack(file->ml_log_event_encoder,
+                                                    buf_data,
+                                                    buf_size);
+
+    if (result != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(file->config->ins,
+                      "log event raw append error : %d",
+                      result);
+
+        return -1;
+    }
+
     return 0;
 }
 
 static int ml_stream_buffer_flush(struct flb_tail_config *ctx, struct flb_tail_file *file)
 {
-    if (file->ml_sbuf.size > 0) {
+    if (file->ml_log_event_encoder->output_length > 0) {
         flb_input_log_append(ctx->ins,
-                                   file->tag_buf,
-                                   file->tag_len,
-                                   file->ml_sbuf.data, file->ml_sbuf.size);
-        file->ml_sbuf.size = 0;
+                             file->tag_buf,
+                             file->tag_len,
+                             file->ml_log_event_encoder->output_buffer,
+                             file->ml_log_event_encoder->output_length);
+
+        flb_log_event_encoder_reset(file->ml_log_event_encoder);
     }
+
     return 0;
 }
 
@@ -380,17 +472,9 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     size_t repl_line_len;
     time_t now = time(NULL);
     struct flb_time out_time = {0};
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
-    msgpack_sbuffer *out_sbuf;
-    msgpack_packer *out_pck;
-    struct flb_tail_config *ctx = file->config;
+    struct flb_tail_config *ctx;
 
-    /* Create a temporary msgpack buffer */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-    out_sbuf = &mp_sbuf;
-    out_pck  = &mp_pck;
+    ctx = (struct flb_tail_config *) file->config;
 
     /* Parse the data content */
     data = file->buf_data;
@@ -461,7 +545,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         else if (ctx->docker_mode) {
             ret = flb_tail_dmode_process_content(now, line, line_len,
                                                  &repl_line, &repl_line_len,
-                                                 file, ctx, out_sbuf, out_pck);
+                                                 file, ctx);
             if (ret >= 0) {
                 if (repl_line == line) {
                     repl_line = NULL;
@@ -474,7 +558,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
                 goto go_next;
             }
             else {
-                flb_tail_dmode_flush(out_sbuf, out_pck, file, ctx);
+                flb_tail_dmode_flush(file, ctx);
             }
         }
 
@@ -490,33 +574,31 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
 
                 /* If multiline is enabled, flush any buffered data */
                 if (ctx->multiline == FLB_TRUE) {
-                    flb_tail_mult_flush(out_sbuf, out_pck, file, ctx);
+                    flb_tail_mult_flush(file, ctx);
                 }
 
-                flb_tail_pack_line_map(out_sbuf, out_pck, &out_time,
+                flb_tail_pack_line_map(&out_time,
                                        (char**) &out_buf, &out_size, file,
                                        processed_bytes);
+
                 flb_free(out_buf);
             }
             else {
                 /* Parser failed, pack raw text */
-                flb_time_get(&out_time);
-                flb_tail_file_pack_line(out_sbuf, out_pck, &out_time,
-                                        data, len, file, processed_bytes);
+                flb_tail_file_pack_line(NULL, data, len, file, processed_bytes);
             }
         }
         else if (ctx->multiline == FLB_TRUE) {
+printf("OLD MULTILINE\n");
             ret = flb_tail_mult_process_content(now,
                                                 line, line_len,
                                                 file, ctx, processed_bytes);
 
             /* No multiline */
             if (ret == FLB_TAIL_MULT_NA) {
+                flb_tail_mult_flush(file, ctx);
 
-                flb_tail_mult_flush(out_sbuf, out_pck, file, ctx);
-
-                flb_time_get(&out_time);
-                flb_tail_file_pack_line(out_sbuf, out_pck, &out_time,
+                flb_tail_file_pack_line(NULL,
                                         line, line_len, file, processed_bytes);
             }
             else if (ret == FLB_TAIL_MULT_MORE) {
@@ -528,13 +610,11 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
             }
         }
         else {
-            flb_time_get(&out_time);
-            flb_tail_file_pack_line(out_sbuf, out_pck, &out_time,
+            flb_tail_file_pack_line(NULL,
                                     line, line_len, file, processed_bytes);
         }
 #else
-        flb_time_get(&out_time);
-        flb_tail_file_pack_line(out_sbuf, out_pck, &out_time,
+        flb_tail_file_pack_line(NULL,
                                 line, line_len, file, processed_bytes);
 #endif
 
@@ -554,15 +634,14 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         /* Append buffer content to a chunk */
         *bytes = processed_bytes;
 
-        if (out_sbuf->size > 0) {
-            flb_input_log_append_records(ctx->ins,
-                                         lines,
-                                         file->tag_buf,
-                                         file->tag_len,
-                                         out_sbuf->data,
-                                         out_sbuf->size);
-        }
+        flb_input_log_append_records(ctx->ins,
+                                     lines,
+                                     file->tag_buf,
+                                     file->tag_len,
+                                     file->sl_log_event_encoder->output_buffer,
+                                     file->sl_log_event_encoder->output_length);
 
+        flb_log_event_encoder_reset(file->sl_log_event_encoder);
     }
     else if (file->skip_next) {
         *bytes = file->buf_len;
@@ -571,11 +650,12 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         *bytes = processed_bytes;
     }
 
+    printf("ctx->ml_ctx = %p\n", ctx->ml_ctx);
     if (ctx->ml_ctx) {
+        printf("FLUSHING MULTILINE\n");
         ml_stream_buffer_flush(ctx, file);
     }
 
-    msgpack_sbuffer_destroy(out_sbuf);
     return lines;
 }
 
@@ -830,6 +910,7 @@ static int ml_flush_callback(struct flb_ml_parser *parser,
                              struct flb_ml_stream *mst,
                              void *data, char *buf_data, size_t buf_size)
 {
+    int result;
     size_t mult_size = 0;
     char *mult_buf = NULL;
     struct flb_tail_file *file = data;
@@ -840,15 +921,20 @@ static int ml_flush_callback(struct flb_ml_parser *parser,
     }
     else {
         /* adjust the records in a new buffer */
-        record_append_custom_keys(file,
-                                  buf_data,
-                                  buf_size,
-                                  &mult_buf, &mult_size);
+        result = record_append_custom_keys(file,
+                                           buf_data,
+                                           buf_size,
+                                           &mult_buf, &mult_size);
 
-        ml_stream_buffer_append(file, mult_buf, mult_size);
-        flb_free(mult_buf);
+        if (result < 0) {
+            ml_stream_buffer_append(file, buf_data, buf_size);
+        }
+        else {
+            ml_stream_buffer_append(file, mult_buf, mult_size);
+
+            flb_free(mult_buf);
+        }
     }
-
 
     if (mst->forced_flush) {
         ml_stream_buffer_flush(ctx, file);
@@ -1022,8 +1108,6 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
          * The msgpack buffer 'ml_sbuf' keeps all ML provided records and it's flushed just when the file processor finish
          * processing the "read() bytes".
          */
-        msgpack_sbuffer_init(&file->ml_sbuf);
-        msgpack_packer_init(&file->ml_pck, &file->ml_sbuf, msgpack_sbuffer_write);
     }
 
     /* Local buffer */
@@ -1107,6 +1191,24 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     flb_metrics_sum(FLB_TAIL_METRIC_F_OPENED, 1, ctx->ins->metrics);
 #endif
 
+    file->sl_log_event_encoder = flb_log_event_encoder_create(
+                                    FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (file->sl_log_event_encoder == NULL) {
+        flb_tail_file_remove(file);
+
+        goto error;
+    }
+
+    file->ml_log_event_encoder = flb_log_event_encoder_create(
+                                    FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (file->ml_log_event_encoder == NULL) {
+        flb_tail_file_remove(file);
+
+        goto error;
+    }
+
     flb_plg_debug(ctx->ins,
                   "inode=%"PRIu64" with offset=%"PRId64" appended as %s",
                   file->inode, file->offset, path);
@@ -1138,13 +1240,18 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     flb_plg_debug(ctx->ins, "inode=%"PRIu64" removing file name %s",
                   file->inode, file->name);
 
+    if (file->sl_log_event_encoder != NULL) {
+        flb_log_event_encoder_destroy(file->sl_log_event_encoder);
+    }
+
+    if (file->ml_log_event_encoder != NULL) {
+        flb_log_event_encoder_destroy(file->ml_log_event_encoder);
+    }
+
     /* remove the multiline.core stream */
     if (ctx->ml_ctx && file->ml_stream_id > 0) {
         /* destroy ml stream */
         flb_ml_stream_id_destroy_all(ctx->ml_ctx, file->ml_stream_id);
-
-        /* destroy local msgpack buffer */
-        msgpack_sbuffer_destroy(&file->ml_sbuf);
     }
 
     if (file->rotated > 0) {
