@@ -2372,21 +2372,26 @@ static int stackdriver_format_test(struct flb_config *config,
 static void update_http_metrics(struct flb_stackdriver *ctx,
                                 struct flb_event_chunk *event_chunk,
                                 uint64_t ts,
-                                int http_status)
+                                int http_status,
+                                char *input_name,
+                                char *output_name)
 {
     char tmp[32];
 
     /* convert status to string format */
     snprintf(tmp, sizeof(tmp) - 1, "%i", http_status);
-    char *name = (char *) flb_output_name(ctx->ins);
 
     /* processed records total */
     cmt_counter_add(ctx->cmt_proc_records_total, ts, event_chunk->total_events,
-                    2, (char *[]) {tmp, name});
+                    2, (char *[]) {tmp, output_name});
+    
+    /* processed records total by group */
+    cmt_counter_add(ctx->cmt_proc_records_total_by_group, ts, event_chunk->total_events,
+                    3, (char *[]) {tmp, input_name, output_name});
 
     /* HTTP status */
     if (http_status != STACKDRIVER_NET_ERROR) {
-        cmt_counter_inc(ctx->cmt_requests_total, ts, 2, (char *[]) {tmp, name});
+        cmt_counter_inc(ctx->cmt_requests_total, ts, 2, (char *[]) {tmp, output_name});
     }
 }
 #endif
@@ -2397,7 +2402,6 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
                                  void *out_context,
                                  struct flb_config *config)
 {
-    (void) i_ins;
     (void) config;
     int ret;
     int ret_code = FLB_RETRY;
@@ -2409,7 +2413,14 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     struct flb_connection *u_conn;
     struct flb_http_client *c;
 #ifdef FLB_HAVE_METRICS
-    char *name = (char *) flb_output_name(ctx->ins);
+    char *output_name = (char *) flb_output_name(ctx->ins);
+    char *input_name;
+    if (i_ins->alias) {
+        input_name = i_ins->alias;
+    }
+    else {
+        input_name = i_ins->name;
+    }    
     uint64_t ts = cfl_time_now();
 #endif
 
@@ -2418,12 +2429,12 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     if (!u_conn) {
 #ifdef FLB_HAVE_METRICS
         cmt_counter_inc(ctx->cmt_failed_requests,
-                        ts, 1, (char *[]) {name});
+                        ts, 1, (char *[]) {output_name});
 
         /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
 
-        update_http_metrics(ctx, event_chunk, ts, STACKDRIVER_NET_ERROR);
+        update_http_metrics(ctx, event_chunk, ts, STACKDRIVER_NET_ERROR, input_name, output_name);
 #endif
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
@@ -2436,7 +2447,7 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     if (!payload_buf) {
 #ifdef FLB_HAVE_METRICS
         cmt_counter_inc(ctx->cmt_failed_requests,
-                        ts, 1, (char *[]) {name});
+                        ts, 1, (char *[]) {output_name});
 
         /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
@@ -2454,7 +2465,7 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
         flb_sds_destroy(payload_buf);
 #ifdef FLB_HAVE_METRICS
         cmt_counter_inc(ctx->cmt_failed_requests,
-                        ts, 1, (char *[]) {name});
+                        ts, 1, (char *[]) {output_name});
 
         /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
@@ -2488,7 +2499,7 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
         flb_plg_warn(ctx->ins, "http_do=%i", ret);
         ret_code = FLB_RETRY;
 #ifdef FLB_HAVE_METRICS
-        update_http_metrics(ctx, event_chunk, ts, STACKDRIVER_NET_ERROR);
+        update_http_metrics(ctx, event_chunk, ts, STACKDRIVER_NET_ERROR, input_name, output_name);
 #endif
     }
     else {
@@ -2520,14 +2531,14 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
 #ifdef FLB_HAVE_METRICS
     if (ret_code == FLB_OK) {
         cmt_counter_inc(ctx->cmt_successful_requests,
-                        ts, 1, (char *[]) {name});
+                        ts, 1, (char *[]) {output_name});
 
         /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_SUCCESSFUL_REQUESTS, 1, ctx->ins->metrics);
     }
     else {
         cmt_counter_inc(ctx->cmt_failed_requests,
-                        ts, 1, (char *[]) {name});
+                        ts, 1, (char *[]) {output_name});
 
         /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
@@ -2535,7 +2546,7 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
 
     /* Update metrics counter by using labels/http status code */
     if (ret == 0) {
-        update_http_metrics(ctx, event_chunk, ts, c->resp.status);
+        update_http_metrics(ctx, event_chunk, ts, c->resp.status, input_name, output_name);
     }
 #endif
 

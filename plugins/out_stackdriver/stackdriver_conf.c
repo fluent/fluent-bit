@@ -546,6 +546,13 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
                                                      "Total number of processed records.",
                                                      2, (char *[]) {"status", "name"});
 
+    ctx->cmt_proc_records_total_by_group = cmt_counter_create(ins->cmt,
+                                                     "fluentbit",
+                                                     "stackdriver",
+                                                     "proc_records_total_by_group",
+                                                     "Total number of processed records by group.",
+                                                     3, (char *[]) {"status", "input_name", "output_name"});
+
     ctx->cmt_retried_records_total = cmt_counter_create(ins->cmt,
                                                         "fluentbit",
                                                         "stackdriver",
