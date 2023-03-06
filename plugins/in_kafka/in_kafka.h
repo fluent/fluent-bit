@@ -30,7 +30,6 @@
 struct flb_in_kafka_config {
     struct flb_kafka kafka;
     struct flb_input_instance *ins;
-    struct flb_input_thread it;
     struct flb_log_event_encoder *log_encoder;
 };
 
