@@ -71,7 +71,8 @@ set(src
   flb_event.c
   flb_base64.c
   flb_ring_buffer.c
-  flb_log_event.c
+  flb_log_event_decoder.c
+  flb_log_event_encoder.c
   )
 
 # Config format

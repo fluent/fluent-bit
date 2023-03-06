@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_mp.h>
+#include <cfl/cfl_list.h>
 #include <msgpack.h>
 
 #define FLB_EVENT_DECODER_SUCCESS                        0
@@ -40,9 +41,10 @@
 #define FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA       -12
 
 #define FLB_EVENT_ENCODER_SUCCESS                        0
-#define FLB_EVENT_ENCODER_ERROR_INVALID_CONTEXT         -1
-#define FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT        -2
-#define FLB_EVENT_ENCODER_ERROR_SERIALIZATION_FAILURE   -3
+#define FLB_EVENT_ENCODER_ERROR_ALLOCATION_ERROR        -1
+#define FLB_EVENT_ENCODER_ERROR_INVALID_CONTEXT         -2
+#define FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT        -3
+#define FLB_EVENT_ENCODER_ERROR_SERIALIZATION_FAILURE   -4
 
 #define FLB_LOG_EVENT_EXPECTED_ROOT_ELEMENT_COUNT        2
 #define FLB_LOG_EVENT_EXPECTED_HEADER_ELEMENT_COUNT      2
@@ -76,6 +78,12 @@ struct flb_log_event_decoder {
     size_t            length;
 };
 
+struct flb_log_event_encoder_dynamic_field_scope {
+    size_t                   offset;
+    struct flb_mp_map_header header;
+    int                      type;
+    struct cfl_list          _head;
+};
 
 struct flb_log_event_encoder_dynamic_field {
     int                      initialized;
@@ -83,6 +91,9 @@ struct flb_log_event_encoder_dynamic_field {
     size_t                   data_offset;
     msgpack_packer           packer;
     msgpack_sbuffer          buffer;
+    struct cfl_list          scopes;
+
+    // struct flb_mp_map_header header;
     char                    *data;
     size_t                   size;
     int                      type;
@@ -277,8 +288,16 @@ int flb_log_event_encoder_record_reset(struct flb_log_event_encoder *context);
 int flb_log_event_encoder_record_rollback(struct flb_log_event_encoder *context);
 int flb_log_event_encoder_record_start(struct flb_log_event_encoder *context);
 int flb_log_event_encoder_record_commit(struct flb_log_event_encoder *context);
+
 int flb_log_event_encoder_record_timestamp_set(struct flb_log_event_encoder *context,
                                                struct flb_time *timestamp);
+
+int flb_log_event_encoder_record_metadata_set_msgpack_object(struct flb_log_event_encoder *context,
+                                                             msgpack_object *value);
+
+int flb_log_event_encoder_record_metadata_set_msgpack_raw(struct flb_log_event_encoder *context,
+                                                          char *value_buffer,
+                                                          size_t value_size);
 
 int flb_log_event_encoder_record_metadata_append_string(struct flb_log_event_encoder *context,
                                                         char *value);
@@ -290,6 +309,21 @@ int flb_log_event_encoder_record_metadata_append_msgpack_object(struct flb_log_e
 int flb_log_event_encoder_record_metadata_append_msgpack_raw(struct flb_log_event_encoder *context,
                                                              char *value_buffer,
                                                              size_t value_size);
+
+int flb_log_event_encoder_record_metadata_start_map(struct flb_log_event_encoder *context);
+int flb_log_event_encoder_record_metadata_commit_map(struct flb_log_event_encoder *context);
+int flb_log_event_encoder_record_metadata_rollback_map(struct flb_log_event_encoder *context);
+
+int flb_log_event_encoder_record_metadata_start_array(struct flb_log_event_encoder *context);
+int flb_log_event_encoder_record_metadata_commit_array(struct flb_log_event_encoder *context);
+int flb_log_event_encoder_record_metadata_rollback_array(struct flb_log_event_encoder *context);
+
+int flb_log_event_encoder_record_body_set_msgpack_object(struct flb_log_event_encoder *context,
+                                                         msgpack_object *value);
+
+int flb_log_event_encoder_record_body_set_msgpack_raw(struct flb_log_event_encoder *context,
+                                                      char *value_buffer,
+                                                      size_t value_size);
 
 int flb_log_event_encoder_record_body_append_string(struct flb_log_event_encoder *context,
                                                     char *value);
@@ -304,10 +338,51 @@ int flb_log_event_encoder_record_body_append_msgpack_raw(struct flb_log_event_en
                                                          char *value_buffer,
                                                          size_t value_size);
 
-void flb_log_event_encoder_dynamic_field_append(
+
+int flb_log_event_encoder_record_body_start_map(struct flb_log_event_encoder *context);
+int flb_log_event_encoder_record_body_commit_map(struct flb_log_event_encoder *context);
+int flb_log_event_encoder_record_body_rollback_map(struct flb_log_event_encoder *context);
+
+int flb_log_event_encoder_record_body_start_array(struct flb_log_event_encoder *context);
+int flb_log_event_encoder_record_body_commit_array(struct flb_log_event_encoder *context);
+int flb_log_event_encoder_record_body_rollback_array(struct flb_log_event_encoder *context);
+
+struct flb_log_event_encoder_dynamic_field_scope *
+    flb_log_event_encoder_dynamic_field_scope_current(
+        struct flb_log_event_encoder_dynamic_field *field);
+
+int flb_log_event_encoder_dynamic_field_scope_enter(
+    struct flb_log_event_encoder_dynamic_field *field,
+    int type);
+
+int flb_log_event_encoder_dynamic_field_scope_leave(
+    struct flb_log_event_encoder_dynamic_field *field,
+    struct flb_log_event_encoder_dynamic_field_scope *scope,
+    int commit);
+
+int flb_log_event_encoder_dynamic_field_start_map(
     struct flb_log_event_encoder_dynamic_field *field);
 
-void flb_log_event_encoder_dynamic_field_flush(
+int flb_log_event_encoder_dynamic_field_start_array(
+    struct flb_log_event_encoder_dynamic_field *field);
+
+int flb_log_event_encoder_dynamic_field_commit_map(
+    struct flb_log_event_encoder_dynamic_field *field);
+
+int flb_log_event_encoder_dynamic_field_commit_array(
+    struct flb_log_event_encoder_dynamic_field *field);
+
+int flb_log_event_encoder_dynamic_field_rollback_map(
+    struct flb_log_event_encoder_dynamic_field *field);
+
+int flb_log_event_encoder_dynamic_field_rollback_array(
+    struct flb_log_event_encoder_dynamic_field *field);
+
+
+int flb_log_event_encoder_dynamic_field_append(
+    struct flb_log_event_encoder_dynamic_field *field);
+
+int flb_log_event_encoder_dynamic_field_flush(
     struct flb_log_event_encoder_dynamic_field *field);
 
 int flb_log_event_encoder_dynamic_field_reset(
@@ -342,12 +417,8 @@ static inline int flb_msgpack_dump(char *buffer, size_t length)
         printf("MSGPACK ERROR %d\n\n", result);
     }
 
-    // flb_hex_dump(buffer, length, 40);
-    // printf("\n\n");
-
     msgpack_unpacked_destroy(&context);
 
     return result;
 }
-
 #endif

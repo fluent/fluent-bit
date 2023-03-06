@@ -71,6 +71,7 @@ static int generate_event(struct flb_dummy *ctx)
 {
     size_t           chunk_offset;
     size_t           body_length;
+    char            *body_buffer;
     size_t           body_start;
     struct flb_time  timestamp;
     msgpack_unpacked object;
@@ -84,21 +85,34 @@ static int generate_event(struct flb_dummy *ctx)
 
     msgpack_unpacked_init(&object);
 
-    while (msgpack_unpack_next(&object,
+    while (result == FLB_EVENT_ENCODER_SUCCESS &&
+           msgpack_unpack_next(&object,
                                ctx->ref_body_msgpack,
                                ctx->ref_body_msgpack_size,
-                               &chunk_offset) == MSGPACK_UNPACK_SUCCESS &&
-           result == FLB_EVENT_ENCODER_SUCCESS) {
+                               &chunk_offset) == MSGPACK_UNPACK_SUCCESS) {
+        body_buffer = &ctx->ref_body_msgpack[body_start];
         body_length = chunk_offset - body_start;
 
         if (object.data.type == MSGPACK_OBJECT_MAP) {
-            result = flb_log_event_encoder_append_msgpack_raw(
+            flb_log_event_encoder_record_start(ctx->encoder);
+
+            flb_log_event_encoder_record_timestamp_set(ctx->encoder, &timestamp);
+
+            result = flb_log_event_encoder_record_metadata_set_msgpack_raw(
                         ctx->encoder,
-                        &timestamp,
                         ctx->ref_metadata_msgpack,
-                        ctx->ref_metadata_msgpack_size,
-                        &ctx->ref_body_msgpack[body_start],
-                        body_length);
+                        ctx->ref_metadata_msgpack_size);
+
+            if (result == FLB_EVENT_ENCODER_SUCCESS) {
+                result = flb_log_event_encoder_record_body_set_msgpack_raw(
+                            ctx->encoder,
+                            body_buffer,
+                            body_length);
+            }
+
+            if (result == FLB_EVENT_ENCODER_SUCCESS) {
+                result = flb_log_event_encoder_record_commit(ctx->encoder);
+            }
         }
 
         body_start = chunk_offset;
@@ -280,6 +294,9 @@ static int configure(struct flb_dummy *ctx,
 
     return 0;
 }
+
+
+
 
 /* Initialize plugin */
 static int in_dummy_init(struct flb_input_instance *in,

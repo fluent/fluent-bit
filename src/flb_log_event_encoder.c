@@ -20,256 +20,6 @@
 #include <fluent-bit/flb_log_event.h>
 #include <fluent-bit/flb_byteswap.h>
 
-static int create_empty_map(struct flb_log_event_decoder *context) {
-    msgpack_packer  packer;
-    msgpack_sbuffer buffer;
-    int             result;
-    size_t          offset;
-
-    result = FLB_EVENT_DECODER_SUCCESS;
-
-    context->empty_map = NULL;
-
-    msgpack_sbuffer_init(&buffer);
-    msgpack_packer_init(&packer, &buffer, msgpack_sbuffer_write);
-
-    result = msgpack_pack_map(&packer, 0);
-
-    if (result != 0) {
-        result = FLB_EVENT_DECODER_ERROR_INITIALIZATION_FAILURE;
-    }
-    else {
-        offset = 0;
-
-        msgpack_unpacked_init(&context->unpacked_empty_map);
-
-        result = msgpack_unpack_next(&context->unpacked_empty_map,
-                                     buffer.data,
-                                     buffer.size,
-                                     &offset);
-
-        if (result != MSGPACK_UNPACK_SUCCESS) {
-            result = FLB_EVENT_DECODER_ERROR_INITIALIZATION_FAILURE;
-        }
-        else {
-            context->empty_map = &context->unpacked_empty_map.data;
-
-            result = FLB_EVENT_DECODER_SUCCESS;
-        }
-    }
-
-    msgpack_sbuffer_destroy(&buffer);
-
-    return result;
-}
-
-void flb_log_event_decoder_reset(struct flb_log_event_decoder *context,
-                                 char *input_buffer,
-                                 size_t input_length)
-{
-    context->buffer = input_buffer;
-    context->length = input_length;
-
-    msgpack_unpacked_destroy(&context->unpacked_event);
-    msgpack_unpacked_init(&context->unpacked_event);
-
-}
-
-int flb_log_event_decoder_init(struct flb_log_event_decoder *context,
-                               char *input_buffer,
-                               size_t input_length)
-{
-    if (context == NULL) {
-        return FLB_EVENT_DECODER_ERROR_INVALID_CONTEXT;
-    }
-
-    memset(context, 0, sizeof(struct flb_log_event_decoder));
-
-    context->dynamically_allocated = FLB_FALSE;
-
-    flb_log_event_decoder_reset(context, input_buffer, input_length);
-
-    return create_empty_map(context);
-}
-
-struct flb_log_event_decoder *flb_log_event_decoder_create(
-    char *input_buffer,
-    size_t input_length)
-{
-    struct flb_log_event_decoder *context;
-    int                           result;
-
-    context = (struct flb_log_event_decoder *) \
-        flb_calloc(1, sizeof(struct flb_log_event_decoder));
-
-    result = flb_log_event_decoder_init(context,
-                                        input_buffer,
-                                        input_length);
-
-    if (result == FLB_EVENT_DECODER_SUCCESS) {
-        context->dynamically_allocated = FLB_TRUE;
-    }
-    else if (context != NULL) {
-        flb_log_event_decoder_destroy(context);
-
-        context = NULL;
-    }
-
-    return context;
-}
-
-void flb_log_event_decoder_destroy(struct flb_log_event_decoder *context)
-{
-    if (context != NULL) {
-        msgpack_unpacked_destroy(&context->unpacked_empty_map);
-        msgpack_unpacked_destroy(&context->unpacked_event);
-
-        if (context->dynamically_allocated) {
-            free(context);
-        }
-    }
-}
-
-int flb_log_event_decoder_unpack_timestamp(msgpack_object *input,
-                                           struct flb_time *output)
-{
-    flb_time_zero(output);
-
-    if (input->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-        output->tm.tv_sec  = input->via.u64;
-    }
-    else if(input->type == MSGPACK_OBJECT_FLOAT) {
-        output->tm.tv_sec  = input->via.f64;
-        output->tm.tv_nsec = ((input->via.f64 - output->tm.tv_sec) * 1000000000);
-    }
-    else if(input->type == MSGPACK_OBJECT_EXT) {
-        if (input->via.ext.type != 0 || input->via.ext.size != 8) {
-            return FLB_EVENT_DECODER_ERROR_WRONG_TIMESTAMP_TYPE;
-        }
-
-        output->tm.tv_sec  = FLB_BSWAP_32(*((uint32_t *) &input->via.ext.ptr[0]));
-        output->tm.tv_nsec = FLB_BSWAP_32(*((uint32_t *) &input->via.ext.ptr[4]));
-    }
-    else {
-        return FLB_EVENT_DECODER_ERROR_WRONG_TIMESTAMP_TYPE;
-    }
-
-    return FLB_EVENT_DECODER_SUCCESS;
-}
-
-int flb_event_decoder_decode_object(struct flb_log_event_decoder *context,
-                                    struct flb_log_event *event,
-                                    msgpack_object *input)
-{
-    msgpack_object *timestamp;
-    msgpack_object *metadata;
-    int             result;
-    int             format;
-    msgpack_object *header;
-    msgpack_object *body;
-    msgpack_object *root;
-
-    memset(event, 0, sizeof(struct flb_log_event));
-
-    /* Ensure that the root element is a 2 element array*/
-    root = input;
-
-    if (root->type != MSGPACK_OBJECT_ARRAY) {
-        return FLB_EVENT_DECODER_ERROR_WRONG_ROOT_TYPE;
-    }
-
-    if (root->via.array.size != \
-        FLB_LOG_EVENT_EXPECTED_ROOT_ELEMENT_COUNT) {
-        return FLB_EVENT_DECODER_ERROR_WRONG_ROOT_SIZE;
-    }
-
-    header = &root->via.array.ptr[0];
-
-    /* Determine if the first element is the header or
-     * a legacy timestamp (int, float or ext).
-     */
-    if (header->type == MSGPACK_OBJECT_ARRAY) {
-        if (header->via.array.size != \
-            FLB_LOG_EVENT_EXPECTED_HEADER_ELEMENT_COUNT) {
-            return FLB_EVENT_DECODER_ERROR_WRONG_HEADER_SIZE;
-        }
-
-        timestamp = &header->via.array.ptr[0];
-        metadata = &header->via.array.ptr[1];
-
-        format = FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2;
-    }
-    else {
-        header = NULL;
-        timestamp = &root->via.array.ptr[0];
-        metadata = context->empty_map;
-
-        format = FLB_LOG_EVENT_FORMAT_FORWARD;
-    }
-
-    if (timestamp->type != MSGPACK_OBJECT_POSITIVE_INTEGER &&
-        timestamp->type != MSGPACK_OBJECT_FLOAT &&
-        timestamp->type != MSGPACK_OBJECT_EXT) {
-        return FLB_EVENT_DECODER_ERROR_WRONG_TIMESTAMP_TYPE;
-    }
-
-    if (metadata->type != MSGPACK_OBJECT_MAP) {
-        return FLB_EVENT_DECODER_ERROR_WRONG_METADATA_TYPE;
-    }
-
-    body = &root->via.array.ptr[1];
-
-    if (body->type != MSGPACK_OBJECT_MAP) {
-        return FLB_EVENT_DECODER_ERROR_WRONG_BODY_TYPE;
-    }
-
-    result = flb_log_event_decoder_unpack_timestamp(timestamp, &event->timestamp);
-
-    if (result != FLB_EVENT_DECODER_SUCCESS) {
-        return result;
-    }
-
-    event->raw_timestamp = timestamp;
-    event->metadata = metadata;
-    event->format = format;
-    event->body = body;
-
-    return FLB_EVENT_DECODER_SUCCESS;
-}
-
-int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
-                               struct flb_log_event *event)
-{
-    int result;
-
-    if (context == NULL) {
-        return FLB_EVENT_DECODER_ERROR_INVALID_CONTEXT;
-    }
-
-    if (event == NULL) {
-        return FLB_EVENT_DECODER_ERROR_INVALID_ARGUMENT;
-    }
-
-    memset(event, 0, sizeof(struct flb_log_event));
-
-    result = msgpack_unpack_next(&context->unpacked_event,
-                                 context->buffer,
-                                 context->length,
-                                 &context->offset);
-
-    if (result == MSGPACK_UNPACK_CONTINUE) {
-        return FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA;
-    }
-    else if (result != MSGPACK_UNPACK_SUCCESS) {
-        return FLB_EVENT_DECODER_ERROR_DESERIALIZATION_FAILURE;
-    }
-
-    return flb_event_decoder_decode_object(context,
-                                           event,
-                                           &context->unpacked_event.data);
-
-}
-
 void flb_log_event_encoder_reset(struct flb_log_event_encoder *context)
 {
     msgpack_sbuffer_clear(&context->buffer);
@@ -834,10 +584,6 @@ static int flb_log_event_encoder_produce_empty_body(
 }
 
 
-
-
-
-
 int flb_log_event_encoder_append(struct flb_log_event_encoder *context,
                                  flb_event_encoder_callback timestamp_callback,
                                  flb_event_encoder_callback metadata_callback,
@@ -915,11 +661,13 @@ static int flb_log_event_encoder_produce_msgpack_component_timestamp(
     }
 
     if (components->timestamp == NULL) {
-        result = flb_log_event_encoder_produce_current_timestamp(context, NULL);
+        result = flb_log_event_encoder_produce_current_timestamp(
+                    context, NULL);
     }
     else {
-        result = flb_log_event_encoder_produce_timestamp(context,
-                                                         components->timestamp);
+        result = flb_log_event_encoder_produce_timestamp(
+                    context,
+                    components->timestamp);
     }
 
     return result;
@@ -977,10 +725,11 @@ static int flb_log_event_encoder_produce_msgpack_component_body(
     return result;
 }
 
-int flb_log_event_encoder_append_msgpack_object(struct flb_log_event_encoder *context,
-                                                struct flb_time *timestamp,
-                                                msgpack_object *metadata,
-                                                msgpack_object *body)
+int flb_log_event_encoder_append_msgpack_object(
+        struct flb_log_event_encoder *context,
+        struct flb_time *timestamp,
+        msgpack_object *metadata,
+        msgpack_object *body)
 
 {
     struct flb_log_event_encoder_msgpack_components components;
@@ -989,11 +738,12 @@ int flb_log_event_encoder_append_msgpack_object(struct flb_log_event_encoder *co
     components.metadata = metadata;
     components.body = body;
 
-    return flb_log_event_encoder_append(context,
-                                        flb_log_event_encoder_produce_msgpack_component_timestamp,
-                                        flb_log_event_encoder_produce_msgpack_component_metadata,
-                                        flb_log_event_encoder_produce_msgpack_component_body,
-                                        (void *) &components);
+    return flb_log_event_encoder_append(
+                context,
+                flb_log_event_encoder_produce_msgpack_component_timestamp,
+                flb_log_event_encoder_produce_msgpack_component_metadata,
+                flb_log_event_encoder_produce_msgpack_component_body,
+                (void *) &components);
 }
 
 static int flb_log_event_encoder_produce_raw_msgpack_component_timestamp(
@@ -1008,18 +758,20 @@ static int flb_log_event_encoder_produce_raw_msgpack_component_timestamp(
     }
 
     components = (struct flb_log_event_encoder_raw_msgpack_components *) \
-        user_data;
+                    user_data;
 
     if (components == NULL) {
         return FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT;
     }
 
     if (components->timestamp == NULL) {
-        result = flb_log_event_encoder_produce_current_timestamp(context, NULL);
+        result = flb_log_event_encoder_produce_current_timestamp(
+                    context, NULL);
     }
     else {
-        result = flb_log_event_encoder_produce_timestamp(context,
-                                                         components->timestamp);
+        result = flb_log_event_encoder_produce_timestamp(
+                    context,
+                    components->timestamp);
     }
 
     return result;
@@ -1064,7 +816,7 @@ static int flb_log_event_encoder_produce_raw_msgpack_component_body(
     }
 
     components = (struct flb_log_event_encoder_raw_msgpack_components *) \
-        user_data;
+                    user_data;
 
     if (components == NULL) {
         return FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT;
@@ -1079,12 +831,13 @@ static int flb_log_event_encoder_produce_raw_msgpack_component_body(
     return result;
 }
 
-int flb_log_event_encoder_append_msgpack_raw(struct flb_log_event_encoder *context,
-                                             struct flb_time *timestamp,
-                                             const char *metadata_buffer,
-                                             size_t metadata_length,
-                                             const char *body_buffer,
-                                             size_t body_length)
+int flb_log_event_encoder_append_msgpack_raw(
+        struct flb_log_event_encoder *context,
+        struct flb_time *timestamp,
+        const char *metadata_buffer,
+        size_t metadata_length,
+        const char *body_buffer,
+        size_t body_length)
 {
     struct flb_log_event_encoder_raw_msgpack_components components;
 
@@ -1094,18 +847,21 @@ int flb_log_event_encoder_append_msgpack_raw(struct flb_log_event_encoder *conte
     components.body_length = body_length;
     components.timestamp = timestamp;
 
-    return flb_log_event_encoder_append(context,
-                                        flb_log_event_encoder_produce_raw_msgpack_component_timestamp,
-                                        flb_log_event_encoder_produce_raw_msgpack_component_metadata,
-                                        flb_log_event_encoder_produce_raw_msgpack_component_body,
-                                        (void *) &components);
+    return flb_log_event_encoder_append(
+                context,
+                flb_log_event_encoder_produce_raw_msgpack_component_timestamp,
+                flb_log_event_encoder_produce_raw_msgpack_component_metadata,
+                flb_log_event_encoder_produce_raw_msgpack_component_body,
+                (void *) &components);
 }
-
 
 int flb_log_event_encoder_record_reset(struct flb_log_event_encoder *context)
 {
     flb_log_event_encoder_dynamic_field_reset(&context->metadata);
     flb_log_event_encoder_dynamic_field_reset(&context->body);
+
+    flb_log_event_encoder_record_metadata_start_map(context);
+    flb_log_event_encoder_record_body_start_map(context);
 
     flb_time_zero(&context->timestamp);
 
@@ -1126,32 +882,79 @@ int flb_log_event_encoder_record_commit(struct flb_log_event_encoder *context)
 {
     int result;
 
-    flb_log_event_encoder_dynamic_field_flush(&context->metadata);
-    flb_log_event_encoder_dynamic_field_flush(&context->body);
+    result = flb_log_event_encoder_dynamic_field_flush(&context->metadata);
 
-    result = flb_log_event_encoder_append_msgpack_raw(
-                context,
-                &context->timestamp,
-                context->metadata.data,
-                context->metadata.size,
-                context->body.data,
-                context->body.size);
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_dynamic_field_flush(&context->body);
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_append_msgpack_raw(
+                    context,
+                    &context->timestamp,
+                    context->metadata.data,
+                    context->metadata.size,
+                    context->body.data,
+                    context->body.size);
+    }
 
     flb_log_event_encoder_record_reset(context);
 
     return result;
 }
 
-int flb_log_event_encoder_record_timestamp_set(struct flb_log_event_encoder *context,
-                                               struct flb_time *timestamp)
+int flb_log_event_encoder_record_timestamp_set(
+        struct flb_log_event_encoder *context,
+        struct flb_time *timestamp)
 {
-    flb_time_copy(&context->timestamp, timestamp);
+    if (timestamp != NULL) {
+        flb_time_copy(&context->timestamp, timestamp);
+    }
+    else {
+        flb_time_get(&context->timestamp);
+    }
 
     return FLB_EVENT_ENCODER_SUCCESS;
 }
 
-int flb_log_event_encoder_record_metadata_append_string(struct flb_log_event_encoder *context,
-                                                        char *value)
+int flb_log_event_encoder_record_metadata_set_msgpack_object(
+        struct flb_log_event_encoder *context,
+        msgpack_object *value)
+{
+    int result;
+
+    result = flb_log_event_encoder_dynamic_field_reset(&context->metadata);
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_record_metadata_append_msgpack_object(
+                    context, value);
+    }
+
+    return result;
+}
+
+int flb_log_event_encoder_record_metadata_set_msgpack_raw(
+    struct flb_log_event_encoder *context,
+    char *value_buffer,
+    size_t value_size)
+{
+    int result;
+
+    result = flb_log_event_encoder_dynamic_field_reset(&context->metadata);
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_record_metadata_append_msgpack_raw(
+                    context,
+                    value_buffer,
+                    value_size);
+    }
+
+    return result;
+}
+
+int flb_log_event_encoder_record_metadata_append_string(
+    struct flb_log_event_encoder *context,
+    char *value)
 {
     flb_log_event_encoder_dynamic_field_append(&context->metadata);
 
@@ -1164,8 +967,9 @@ int flb_log_event_encoder_record_metadata_append_string(struct flb_log_event_enc
     return FLB_EVENT_ENCODER_SUCCESS;
 }
 
-int flb_log_event_encoder_record_metadata_append_msgpack_object(struct flb_log_event_encoder *context,
-                                                                msgpack_object *value)
+int flb_log_event_encoder_record_metadata_append_msgpack_object(
+    struct flb_log_event_encoder *context,
+    msgpack_object *value)
 {
     flb_log_event_encoder_dynamic_field_append(&context->metadata);
 
@@ -1177,9 +981,10 @@ int flb_log_event_encoder_record_metadata_append_msgpack_object(struct flb_log_e
     return FLB_EVENT_ENCODER_SUCCESS;
 }
 
-int flb_log_event_encoder_record_metadata_append_msgpack_raw(struct flb_log_event_encoder *context,
-                                                             char *value_buffer,
-                                                             size_t value_size)
+int flb_log_event_encoder_record_metadata_append_msgpack_raw(
+    struct flb_log_event_encoder *context,
+    char *value_buffer,
+    size_t value_size)
 {
     flb_log_event_encoder_dynamic_field_append(&context->metadata);
 
@@ -1192,8 +997,84 @@ int flb_log_event_encoder_record_metadata_append_msgpack_raw(struct flb_log_even
     return FLB_EVENT_ENCODER_SUCCESS;
 }
 
-int flb_log_event_encoder_record_body_append_string(struct flb_log_event_encoder *context,
-                                                    char *value)
+int flb_log_event_encoder_record_metadata_start_map(
+        struct flb_log_event_encoder *context)
+{
+    return flb_log_event_encoder_dynamic_field_start_map(
+                &context->metadata);
+}
+
+int flb_log_event_encoder_record_metadata_commit_map(
+        struct flb_log_event_encoder *context)
+{
+    return flb_log_event_encoder_dynamic_field_commit_map(
+                &context->metadata);
+}
+
+int flb_log_event_encoder_record_metadata_rollback_map(
+        struct flb_log_event_encoder *context)
+{
+    return flb_log_event_encoder_dynamic_field_rollback_map(
+                &context->metadata);
+}
+
+int flb_log_event_encoder_record_metadata_start_array(
+        struct flb_log_event_encoder *context)
+{
+    return flb_log_event_encoder_dynamic_field_start_array(
+                &context->metadata);
+}
+
+int flb_log_event_encoder_record_metadata_commit_array(
+        struct flb_log_event_encoder *context)
+{
+    return flb_log_event_encoder_dynamic_field_commit_array(
+                &context->metadata);
+}
+
+int flb_log_event_encoder_record_metadata_rollback_array(
+        struct flb_log_event_encoder *context)
+{
+    return flb_log_event_encoder_dynamic_field_rollback_array(
+                &context->metadata);
+}
+
+int flb_log_event_encoder_record_body_set_msgpack_object(
+        struct flb_log_event_encoder *context,
+        msgpack_object *value)
+{
+    int result;
+
+    result = flb_log_event_encoder_dynamic_field_reset(&context->body);
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_record_body_append_msgpack_object(context, value);
+    }
+
+    return result;
+}
+
+int flb_log_event_encoder_record_body_set_msgpack_raw(
+        struct flb_log_event_encoder *context,
+        char *value_buffer,
+        size_t value_size)
+{
+    int result;
+
+    result = flb_log_event_encoder_dynamic_field_reset(&context->body);
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_record_body_append_msgpack_raw(context,
+                                                                      value_buffer,
+                                                                      value_size);
+    }
+
+    return result;
+}
+
+int flb_log_event_encoder_record_body_append_string(
+        struct flb_log_event_encoder *context,
+        char *value)
 {
     flb_log_event_encoder_dynamic_field_append(&context->body);
 
@@ -1206,8 +1087,9 @@ int flb_log_event_encoder_record_body_append_string(struct flb_log_event_encoder
     return FLB_EVENT_ENCODER_SUCCESS;
 }
 
-int flb_log_event_encoder_record_body_append_uint64(struct flb_log_event_encoder *context,
-                                                    uint64_t value)
+int flb_log_event_encoder_record_body_append_uint64(
+        struct flb_log_event_encoder *context,
+        uint64_t value)
 {
     flb_log_event_encoder_dynamic_field_append(&context->body);
 
@@ -1219,8 +1101,9 @@ int flb_log_event_encoder_record_body_append_uint64(struct flb_log_event_encoder
     return FLB_EVENT_ENCODER_SUCCESS;
 }
 
-int flb_log_event_encoder_record_body_append_msgpack_object(struct flb_log_event_encoder *context,
-                                                            msgpack_object *value)
+int flb_log_event_encoder_record_body_append_msgpack_object(
+    struct flb_log_event_encoder *context,
+    msgpack_object *value)
 {
     flb_log_event_encoder_dynamic_field_append(&context->body);
 
@@ -1232,9 +1115,10 @@ int flb_log_event_encoder_record_body_append_msgpack_object(struct flb_log_event
     return FLB_EVENT_ENCODER_SUCCESS;
 }
 
-int flb_log_event_encoder_record_body_append_msgpack_raw(struct flb_log_event_encoder *context,
-                                                         char *value_buffer,
-                                                         size_t value_size)
+int flb_log_event_encoder_record_body_append_msgpack_raw(
+        struct flb_log_event_encoder *context,
+        char *value_buffer,
+        size_t value_size)
 {
     flb_log_event_encoder_dynamic_field_append(&context->body);
 
@@ -1247,49 +1131,243 @@ int flb_log_event_encoder_record_body_append_msgpack_raw(struct flb_log_event_en
     return FLB_EVENT_ENCODER_SUCCESS;
 }
 
-
-
-
-void flb_log_event_encoder_dynamic_field_append(
-    struct flb_log_event_encoder_dynamic_field *field)
+int flb_log_event_encoder_record_body_start_map(
+    struct flb_log_event_encoder *context)
 {
-    field->entry_count++;
+    return flb_log_event_encoder_dynamic_field_start_map(&context->body);
 }
 
-void flb_log_event_encoder_dynamic_field_flush(
+int flb_log_event_encoder_record_body_commit_map(
+    struct flb_log_event_encoder *context)
+{
+    return flb_log_event_encoder_dynamic_field_commit_map(&context->body);
+}
+
+int flb_log_event_encoder_record_body_rollback_map(
+    struct flb_log_event_encoder *context)
+{
+    return flb_log_event_encoder_dynamic_field_rollback_map(&context->body);
+}
+
+int flb_log_event_encoder_record_body_start_array(
+    struct flb_log_event_encoder *context)
+{
+    return flb_log_event_encoder_dynamic_field_start_array(&context->body);
+}
+
+int flb_log_event_encoder_record_body_commit_array(
+    struct flb_log_event_encoder *context)
+{
+    return flb_log_event_encoder_dynamic_field_commit_array(&context->body);
+}
+
+int flb_log_event_encoder_record_body_rollback_array(
+    struct flb_log_event_encoder *context)
+{
+    return flb_log_event_encoder_dynamic_field_rollback_array(&context->body);
+}
+
+struct flb_log_event_encoder_dynamic_field_scope *
+    flb_log_event_encoder_dynamic_field_scope_current(
     struct flb_log_event_encoder_dynamic_field *field)
 {
-    size_t final_header_offset;
-    size_t new_header_offset;
-    size_t new_header_size;
-    size_t data_size;
-
-    data_size = field->buffer.size - field->data_offset;
-
-    new_header_offset = field->buffer.size;
-
-    /* entry_count is implicitly incremented by each append
-     * which means for means for maps we need to divide it
-     * by two.
-     */
-
-    if (field->type == MSGPACK_OBJECT_MAP) {
-        msgpack_pack_map(&field->packer, field->entry_count / 2);
-    }
-    else if (field->type == MSGPACK_OBJECT_ARRAY) {
-        msgpack_pack_array(&field->packer, field->entry_count);
+    if (cfl_list_is_empty(&field->scopes)) {
+        return NULL;
     }
 
-    new_header_size = field->buffer.size - new_header_offset;
+    return cfl_list_entry_first(
+                &field->scopes,
+                struct flb_log_event_encoder_dynamic_field_scope,
+                _head);
+}
 
-    final_header_offset = field->data_offset - new_header_size;
+int flb_log_event_encoder_dynamic_field_scope_enter(
+    struct flb_log_event_encoder_dynamic_field *field,
+    int type)
+{
+    struct flb_log_event_encoder_dynamic_field_scope *scope;
 
-    memcpy(&field->buffer.data[final_header_offset],
-           &field->buffer.data[new_header_offset],
-           new_header_size);
+    if (type != MSGPACK_OBJECT_MAP &&
+        type == MSGPACK_OBJECT_ARRAY) {
+        return FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT;
+    }
 
-    field->data = &field->buffer.data[final_header_offset];
-    field->size = data_size + new_header_size;
+    scope = flb_calloc(1,
+                       sizeof(struct flb_log_event_encoder_dynamic_field_scope));
+
+    if (scope == NULL) {
+        return FLB_EVENT_ENCODER_ERROR_ALLOCATION_ERROR;
+    }
+
+    cfl_list_entry_init(&scope->_head);
+
+    scope->type = type;
+    scope->offset = field->buffer.size;
+
+    cfl_list_prepend(&scope->_head, &field->scopes);
+
+    if (type == MSGPACK_OBJECT_MAP) {
+        flb_mp_map_header_init(&scope->header, &field->packer);
+    }
+    else if (type == MSGPACK_OBJECT_ARRAY) {
+        flb_mp_array_header_init(&scope->header, &field->packer);
+    }
+
+    return FLB_EVENT_ENCODER_SUCCESS;
+}
+
+int flb_log_event_encoder_dynamic_field_scope_leave(
+    struct flb_log_event_encoder_dynamic_field *field,
+    struct flb_log_event_encoder_dynamic_field_scope *scope,
+    int commit)
+{
+    if (scope == NULL) {
+        return FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (commit) {
+        /* We increment the entry count on each append because
+         * we don't discriminate based on the scope type so
+         * we need to divide the entry count by two for maps
+         * to ensure the entry count matches the kv pair count
+         */
+
+        if (field->type == MSGPACK_OBJECT_MAP) {
+            scope->header.entries /= 2;
+        }
+
+        flb_mp_map_header_end(&scope->header);
+    }
+    else {
+        field->buffer.size = scope->offset;
+    }
+
+    cfl_list_del(&scope->_head);
+
+    flb_free(scope);
+
+    return FLB_EVENT_ENCODER_SUCCESS;
+}
+
+int flb_log_event_encoder_dynamic_field_start_map(
+    struct flb_log_event_encoder_dynamic_field *field)
+{
+    return flb_log_event_encoder_dynamic_field_scope_enter(field,
+                                                           MSGPACK_OBJECT_MAP);
+}
+
+int flb_log_event_encoder_dynamic_field_start_array(
+    struct flb_log_event_encoder_dynamic_field *field)
+{
+    return flb_log_event_encoder_dynamic_field_scope_enter(field,
+                                                           MSGPACK_OBJECT_ARRAY);
+}
+
+int flb_log_event_encoder_dynamic_field_commit_map(
+    struct flb_log_event_encoder_dynamic_field *field)
+{
+    struct flb_log_event_encoder_dynamic_field_scope *scope;
+
+    scope = flb_log_event_encoder_dynamic_field_scope_current(field);
+
+    return flb_log_event_encoder_dynamic_field_scope_leave(field,
+                                                           scope,
+                                                           FLB_TRUE);
+}
+
+int flb_log_event_encoder_dynamic_field_commit_array(
+    struct flb_log_event_encoder_dynamic_field *field)
+{
+    struct flb_log_event_encoder_dynamic_field_scope *scope;
+
+    scope = flb_log_event_encoder_dynamic_field_scope_current(field);
+
+    return flb_log_event_encoder_dynamic_field_scope_leave(field,
+                                                           scope,
+                                                           FLB_TRUE);
+}
+
+int flb_log_event_encoder_dynamic_field_rollback_map(
+    struct flb_log_event_encoder_dynamic_field *field)
+{
+    struct flb_log_event_encoder_dynamic_field_scope *scope;
+
+    scope = flb_log_event_encoder_dynamic_field_scope_current(field);
+
+    return flb_log_event_encoder_dynamic_field_scope_leave(field,
+                                                           scope,
+                                                           FLB_FALSE);
+}
+
+int flb_log_event_encoder_dynamic_field_rollback_array(
+    struct flb_log_event_encoder_dynamic_field *field)
+{
+    struct flb_log_event_encoder_dynamic_field_scope *scope;
+
+    scope = flb_log_event_encoder_dynamic_field_scope_current(field);
+
+    return flb_log_event_encoder_dynamic_field_scope_leave(field,
+                                                           scope,
+                                                           FLB_TRUE);
+}
+
+int flb_log_event_encoder_dynamic_field_append(
+    struct flb_log_event_encoder_dynamic_field *field)
+{
+    struct flb_log_event_encoder_dynamic_field_scope *scope;
+
+    scope = flb_log_event_encoder_dynamic_field_scope_current(field);
+
+    if (scope == NULL) {
+        if (cfl_list_is_empty(&field->scopes)) {
+            return FLB_EVENT_ENCODER_SUCCESS;
+        }
+
+        return FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT;
+    }
+
+    flb_mp_map_header_append(&scope->header);
+
+    return FLB_EVENT_ENCODER_SUCCESS;
+}
+
+
+static int flb_log_event_encoder_dynamic_field_flush_scopes(
+    struct flb_log_event_encoder_dynamic_field *field,
+    int commit)
+{
+    int                                               result;
+    struct flb_log_event_encoder_dynamic_field_scope *scope;
+
+    result = FLB_EVENT_ENCODER_SUCCESS;
+
+    do {
+        scope = flb_log_event_encoder_dynamic_field_scope_current(field);
+
+        if (scope != NULL) {
+            result = flb_log_event_encoder_dynamic_field_scope_leave(field,
+                                                                     scope,
+                                                                     commit);
+        }
+    } while (scope != NULL &&
+             result == FLB_EVENT_ENCODER_SUCCESS);
+
+    return result;
+}
+
+int flb_log_event_encoder_dynamic_field_flush(
+    struct flb_log_event_encoder_dynamic_field *field)
+{
+    int result;
+
+    result = flb_log_event_encoder_dynamic_field_flush_scopes(field, FLB_TRUE);
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        field->data = field->buffer.data;
+        field->size = field->buffer.size;
+    }
+
+    return result;
 }
 
 int flb_log_event_encoder_dynamic_field_reset(
@@ -1297,16 +1375,7 @@ int flb_log_event_encoder_dynamic_field_reset(
 {
     msgpack_sbuffer_clear(&field->buffer);
 
-    if (field->type == MSGPACK_OBJECT_MAP) {
-        msgpack_pack_map(&field->packer, UINT32_MAX);
-    }
-    else if (field->type == MSGPACK_OBJECT_ARRAY) {
-        msgpack_pack_array(&field->packer, UINT32_MAX);
-    }
-
-    field->data_offset = field->buffer.size;
-
-    field->entry_count = 0;
+    flb_log_event_encoder_dynamic_field_flush_scopes(field, FLB_FALSE);
 
     field->data = NULL;
     field->size = 0;
@@ -1326,6 +1395,7 @@ int flb_log_event_encoder_dynamic_field_init(
     field->initialized = FLB_TRUE;
     field->type = type;
 
+    cfl_list_init(&field->scopes);
     flb_log_event_encoder_dynamic_field_reset(field);
 
     return FLB_EVENT_ENCODER_SUCCESS;
