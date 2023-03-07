@@ -2389,6 +2389,25 @@ static void update_http_metrics(struct flb_stackdriver *ctx,
         cmt_counter_inc(ctx->cmt_requests_total, ts, 2, (char *[]) {tmp, name});
     }
 }
+
+static void update_retry_metric(struct flb_stackdriver *ctx,
+                                 struct flb_event_chunk *event_chunk,
+                                 uint64_t ts,
+                                 int http_status, int ret_code)
+{
+    char tmp[32]; 
+    char *name = (char *) flb_output_name(ctx->ins);
+
+    if (ret_code != FLB_RETRY) {
+        return;
+    }
+
+    /* convert status to string format */
+    snprintf(tmp, sizeof(tmp) - 1, "%i", http_status);
+    cmt_counter_add(ctx->cmt_retried_records_total,
+                    ts, event_chunk->total_events, 2, (char *[]) {tmp, name});
+
+}
 #endif
 
 static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
@@ -2424,6 +2443,7 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
 
         update_http_metrics(ctx, event_chunk, ts, STACKDRIVER_NET_ERROR);
+        update_retry_metric(ctx, event_chunk, ts, STACKDRIVER_NET_ERROR, FLB_RETRY);
 #endif
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
@@ -2537,6 +2557,9 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     if (ret == 0) {
         update_http_metrics(ctx, event_chunk, ts, c->resp.status);
     }
+
+    /* Update retry count if necessary */
+    update_retry_metric(ctx, event_chunk, ts, c->resp.status, ret_code);
 #endif
 
     /* Cleanup */
