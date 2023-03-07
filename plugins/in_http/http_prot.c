@@ -312,39 +312,39 @@ static ssize_t parse_payload_urlencoded(struct flb_http *ctx, flb_sds_t tag,
 
     kvs = flb_utils_split(payload, '&', -1 );
     if (kvs == NULL) {
-    	goto split_error;
+        goto split_error;
     }
 
     keys = flb_calloc(mk_list_size(kvs), sizeof(char *));
     if (keys == NULL) {
-    	goto keys_calloc_error;
+        goto keys_calloc_error;
     }
 
     vals = flb_calloc(mk_list_size(kvs), sizeof(char *));
     if (vals == NULL) {
-    	goto vals_calloc_error;
+        goto vals_calloc_error;
     }
 
     mk_list_foreach(head, kvs) {
-    	cur = mk_list_entry(head, struct flb_split_entry, _head);
-    	if (cur->value[0] == '\n') {
-    	    start = &cur->value[1];
-    	} else {
-    	    start = cur->value;
-	}
-	sep = strchr(start, '=');
-	if (sep == NULL) {
-	    vals[idx] = NULL;
-	    continue;
-	}
-	*sep++ = '\0';
-        
-        keys[idx] = flb_sds_create_len(start, strlen(start));
-	vals[idx] = flb_sds_create_len(sep, strlen(sep));
+        cur = mk_list_entry(head, struct flb_split_entry, _head);
+        if (cur->value[0] == '\n') {
+            start = &cur->value[1];
+        } else {
+            start = cur->value;
+        }
+        sep = strchr(start, '=');
+        if (sep == NULL) {
+            vals[idx] = NULL;
+            continue;
+        }
+        *sep++ = '\0';
 
-	flb_sds_trim(keys[idx]);
-	flb_sds_trim(vals[idx]);
-	idx++;
+        keys[idx] = flb_sds_create_len(start, strlen(start));
+        vals[idx] = flb_sds_create_len(sep, strlen(sep));
+
+        flb_sds_trim(keys[idx]);
+        flb_sds_trim(vals[idx]);
+        idx++;
     }
 
     msgpack_pack_map(&pck, mk_list_size(kvs));
