@@ -51,7 +51,7 @@ static int debug_event_mask(struct flb_tail_config *ctx,
     }
 
     if (file) {
-        buf_size = file->name_len + 64;
+        buf_size = file->name_len + 128;
     }
     
     if (buf_size < 256) {
