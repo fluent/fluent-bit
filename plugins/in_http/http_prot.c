@@ -31,6 +31,48 @@
 #define HTTP_CONTENT_JSON       0
 #define HTTP_CONTENT_URLENCODED 1
 
+static inline char hex2nibble(char c)
+{
+    if ((c >= 0x30) && (c <= '9')) {
+        return c - 0x30;
+    }
+    // 0x30-0x39 are digits, 0x41-0x46 A-F,
+    // so there is a gap at 0x40
+    if ((c >= 'A') && (c <= 'F')) {
+        return (c - 'A') + 10;
+    }
+    if ((c >= 'a') && (c <= 'f')) {
+        return (c - 'a') + 10;
+    }
+    return 0;
+}
+
+static int sds_uri_decode(flb_sds_t s)
+{
+    char buf[1024];
+    char *optr;
+    char *iptr;
+
+
+    for (optr = buf, iptr = s; iptr < s + flb_sds_len(s) && optr-buf < sizeof(buf); iptr++) {
+        if (*iptr == '%') {
+            if (iptr+2 > (s + flb_sds_len(s))) {
+                return -1;
+            }
+            *optr++ = hex2nibble(*(iptr+1)) << 4 | hex2nibble(*(iptr+2));
+            iptr+=2;
+        } else {
+            *optr++ = *iptr;
+        }
+    }
+
+    memcpy(s, buf, optr-buf);
+    s[optr-buf] = '\0';
+    flb_sds_len_set(s, (optr-buf));
+
+    return 0;
+}
+
 static int send_response(struct http_conn *conn, int http_status, char *message)
 {
     size_t    sent;
@@ -352,16 +394,17 @@ static ssize_t parse_payload_urlencoded(struct flb_http *ctx, flb_sds_t tag,
         msgpack_pack_str(&pck, flb_sds_len(keys[idx]));
         msgpack_pack_str_body(&pck, keys[idx], flb_sds_len(keys[idx]));
 
-        msgpack_pack_str(&pck, flb_sds_len(vals[idx]));
-        msgpack_pack_str_body(&pck, vals[idx], flb_sds_len(vals[idx]));
+        if (sds_uri_decode(vals[idx]) != 0) {
+            goto decode_error;
+        } else {
+            msgpack_pack_str(&pck, flb_sds_len(vals[idx]));
+            msgpack_pack_str_body(&pck, vals[idx], strlen(vals[idx]));            
+        }
     }
 
-    process_pack(ctx, tag, sbuf.data, sbuf.size);
-    msgpack_sbuffer_destroy(&sbuf);
+    ret = process_pack(ctx, tag, sbuf.data, sbuf.size);
 
-    ret = 0;
-
-
+decode_error:
     for (idx = 0; idx < mk_list_size(kvs); idx++) {
         if (keys[idx]) {
             flb_sds_destroy(keys[idx]);
@@ -376,6 +419,7 @@ vals_calloc_error:
 keys_calloc_error:
     flb_utils_split_free(kvs);
 split_error:
+    msgpack_sbuffer_destroy(&sbuf);
     return ret;
 }
 
