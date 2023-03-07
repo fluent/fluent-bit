@@ -61,6 +61,8 @@ static int sds_uri_decode(flb_sds_t s)
             }
             *optr++ = hex2nibble(*(iptr+1)) << 4 | hex2nibble(*(iptr+2));
             iptr+=2;
+        } else if (*iptr == '+') {
+            *optr++ = ' ';
         } else {
             *optr++ = *iptr;
         }
