@@ -1763,6 +1763,7 @@ int flb_tail_file_purge(struct flb_input_instance *ins,
                               "inode=%"PRIu64" purge rotated file %s " \
                               "(offset=%"PRId64" / size = %"PRIu64")",
                               file->inode, file->name, file->offset, (uint64_t)st.st_size);
+                flb_plg_info(ctx->ins, "name: %s \n real name: %s \n orig name: %s \n", file->name, file->real_name, file->orig_name);
                 if (file->pending_bytes > 0 && flb_input_buf_paused(ins)) {
                     flb_plg_warn(ctx->ins, "purged rotated file while data "
                                  "ingestion is paused, consider increasing "
