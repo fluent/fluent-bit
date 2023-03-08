@@ -74,6 +74,24 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
             if (s3_key_format) {
                 flb_sds_destroy(s3_key_format);
             }
+            if (size > 200) {
+                char *json_val = get_null_terminated(100, &data, &size);
+                if (json_val != NULL) {
+                    flb_sds_t s1 = flb_aws_error(json_val, strlen(json_val));
+                    if (s1 != NULL) {
+                        flb_sds_destroy(s1);
+                    }
+                    flb_free(json_val);
+                }
+                char *xml_val = get_null_terminated(100, &data, &size);
+                if (xml_val != NULL) {
+                    flb_sds_t s2 = flb_aws_xml_error(xml_val, strlen(xml_val));
+                    if (s2 != NULL) {
+                        flb_sds_destroy(s2);
+                    }
+                    flb_free(xml_val);
+                }
+            }
         }
     }
     if (format) {
