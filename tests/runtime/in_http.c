@@ -33,7 +33,6 @@ struct http_client_ctx {
     struct flb_upstream      *u;
     struct flb_connection    *u_conn;
     struct flb_config        *config;
-    struct mk_event_loop     *evl;
 };
 
 struct test_ctx {
@@ -101,7 +100,6 @@ static int cb_check_result_json(void *record, size_t size, void *data)
 struct http_client_ctx* http_client_ctx_create()
 {
     struct http_client_ctx *ret_ctx = NULL;
-    struct mk_event_loop *evl = NULL;
 
     ret_ctx = flb_calloc(1, sizeof(struct http_client_ctx));
     if (!TEST_CHECK(ret_ctx != NULL)) {
@@ -110,29 +108,20 @@ struct http_client_ctx* http_client_ctx_create()
         return NULL;
     }
 
-    evl = mk_event_loop_create(16);
-    if (!TEST_CHECK(evl != NULL)) {
-        TEST_MSG("mk_event_loop failed");
-        flb_free(ret_ctx);
-        return NULL;
-    }
-    ret_ctx->evl = evl;
-    flb_engine_evl_init();
-    flb_engine_evl_set(evl);
-
     ret_ctx->config = flb_config_init();
     if(!TEST_CHECK(ret_ctx->config != NULL)) {
         TEST_MSG("flb_config_init failed");
-        mk_event_loop_destroy(evl);
         flb_free(ret_ctx);
         return NULL;
     }
+
+    /* Event Loop needn't set up here because flb_start() already
+     * assigns its instance. */
 
     ret_ctx->u = flb_upstream_create(ret_ctx->config, "127.0.0.1", 9880, 0, NULL);
     if (!TEST_CHECK(ret_ctx->u != NULL)) {
         TEST_MSG("flb_upstream_create failed");
         flb_config_exit(ret_ctx->config);
-        mk_event_loop_destroy(evl);
         flb_free(ret_ctx);
         return NULL;
     }
@@ -188,9 +177,6 @@ int http_client_ctx_destroy(struct http_client_ctx* ctx)
     }
     if (ctx->config) {
         flb_config_exit(ctx->config);
-    }
-    if (ctx->evl) {
-        mk_event_loop_destroy(ctx->evl);
     }
 
     flb_free(ctx);
