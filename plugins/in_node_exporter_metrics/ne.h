@@ -34,6 +34,7 @@ struct flb_ne {
     /* configuration */
     flb_sds_t path_procfs;
     flb_sds_t path_sysfs;
+    flb_sds_t path_textfile;
     int scrape_interval;
 
     int coll_fd;                                      /* collector fd     */
@@ -55,6 +56,7 @@ struct flb_ne {
     int vmstat_scrape_interval;
     int netdev_scrape_interval;
     int filefd_scrape_interval;
+    int textfile_scrape_interval;
 
     int coll_cpu_fd;                                    /* collector fd (cpu)    */
     int coll_cpufreq_fd;                                /* collector fd (cpufreq)  */
@@ -68,6 +70,7 @@ struct flb_ne {
     int coll_vmstat_fd;                                 /* collector fd (vmstat)    */
     int coll_netdev_fd;                                 /* collector fd (netdev)    */
     int coll_filefd_fd;                                 /* collector fd (filefd)    */
+    int coll_textfile_fd;                               /* collector fd (textfile)  */
 
     /*
      * Metrics Contexts
@@ -141,6 +144,9 @@ struct flb_ne {
     struct flb_regex *fs_regex_read_only;
     struct flb_regex *fs_regex_skip_mount;
     struct flb_regex *fs_regex_skip_fs_types;
+
+    /* testfile */
+    struct cmt_counter *load_errors;
 };
 
 #endif
