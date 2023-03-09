@@ -700,7 +700,7 @@ static char* replace_uri_tokens(const char* original_string, const char* current
     i = 0;
     while (*original_string) {
         if (strstr(original_string, current_word) == original_string) {
-            strcpy(&result[i], new_word);
+            strncpy(&result[i], new_word, new_word_len);
             i += new_word_len;
             original_string += old_word_len;
         }
