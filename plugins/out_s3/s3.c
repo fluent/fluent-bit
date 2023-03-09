@@ -1565,7 +1565,7 @@ static int add_to_queue(struct flb_s3 *ctx, struct s3_file *upload_file,
                  struct multipart_upload *m_upload_file, const char *tag, int tag_len)
 {
     struct upload_queue *upload_contents;
-    char *tag_cpy;
+    flb_sds_t tag_cpy;
 
     /* Create upload contents object and add to upload queue */
     upload_contents = flb_calloc(1, sizeof(struct upload_queue));
@@ -1581,15 +1581,14 @@ static int add_to_queue(struct flb_s3 *ctx, struct s3_file *upload_file,
     upload_contents->upload_time = -1;
 
     /* Necessary to create separate string for tag to prevent corruption */
-    tag_cpy = flb_malloc(tag_len);
-    if (tag_cpy == NULL) {
-        flb_free(upload_contents);
-        flb_plg_error(ctx->ins, "Error allocating memory for tag in add_to_queue");
+    tag_cpy = flb_sds_create_len(tag, tag_len);
+    if (!tag_cpy) {
         flb_errno();
+        flb_free(upload_contents);
         return -1;
     }
-    strncpy(tag_cpy, tag, tag_len);
     upload_contents->tag = tag_cpy;
+
 
     /* Add entry to upload queue */
     mk_list_add(&upload_contents->_head, &ctx->upload_queue);
@@ -1600,7 +1599,7 @@ static int add_to_queue(struct flb_s3 *ctx, struct s3_file *upload_file,
 void remove_from_queue(struct upload_queue *entry)
 {
     mk_list_del(&entry->_head);
-    flb_free(entry->tag);
+    flb_sds_destroy(entry->tag);
     flb_free(entry);
     return;
 }
