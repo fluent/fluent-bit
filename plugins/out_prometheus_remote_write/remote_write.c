@@ -22,6 +22,13 @@
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_kv.h>
 
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+#include <fluent-bit/flb_aws_credentials.h>
+#include <fluent-bit/flb_signv4.h>
+#endif
+#endif
+
 #include "remote_write.h"
 #include "remote_write_conf.h"
 
@@ -41,6 +48,7 @@ static int http_post(struct prometheus_remote_write_context *ctx,
     struct flb_config_map_val *mv;
     struct flb_slist_entry *key = NULL;
     struct flb_slist_entry *val = NULL;
+    flb_sds_t signature = NULL;
 
     /* Get upstream context and connection */
     u = ctx->u;
@@ -112,6 +120,30 @@ static int http_post(struct prometheus_remote_write_context *ctx,
                             val->str, flb_sds_len(val->str));
     }
 
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+    /* AWS SigV4 headers */
+    if (ctx->has_aws_auth == FLB_TRUE) {
+        flb_plg_debug(ctx->ins, "signing request with AWS Sigv4");
+        signature = flb_signv4_do(c,
+                                  FLB_TRUE,  /* normalize URI ? */
+                                  FLB_TRUE,  /* add x-amz-date header ? */
+                                  time(NULL),
+                                  (char *) ctx->aws_region,
+                                  (char *) ctx->aws_service,
+                                  0, NULL,
+                                  ctx->aws_provider);
+
+        if (!signature) {
+            flb_plg_error(ctx->ins, "could not sign request with sigv4");
+            out_ret = FLB_RETRY;
+            goto cleanup;
+        }
+        flb_sds_destroy(signature);
+    }
+#endif
+#endif
+
     ret = flb_http_do(c, &b_sent);
     if (ret == 0) {
         /*
@@ -158,6 +190,7 @@ static int http_post(struct prometheus_remote_write_context *ctx,
         out_ret = FLB_RETRY;
     }
 
+cleanup:
     /*
      * If the payload buffer is different than incoming records in body, means
      * we generated a different payload and must be freed.
@@ -332,6 +365,21 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct prometheus_remote_write_context, http_passwd),
      "Set HTTP auth password"
     },
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+    {
+     FLB_CONFIG_MAP_BOOL, "aws_auth", "false",
+     0, FLB_TRUE, offsetof(struct prometheus_remote_write_context, has_aws_auth),
+     "Enable AWS SigV4 authentication"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "aws_service", "aps",
+     0, FLB_TRUE, offsetof(struct prometheus_remote_write_context, aws_service),
+     "AWS destination service code, used by SigV4 authentication"
+    },
+    FLB_AWS_CREDENTIAL_BASE_CONFIG_MAP(FLB_PROMETHEUS_REMOTE_WRITE_CREDENTIAL_PREFIX),
+#endif
+#endif
     {
      FLB_CONFIG_MAP_SLIST_1, "header", NULL,
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct prometheus_remote_write_context, headers),
