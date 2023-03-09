@@ -191,12 +191,9 @@ static const uint32_t libco_ppc_code[1024] = {
 /* function call goes directly to code */
 #define CO_SWAP_ASM(x, y) ((void (*)(cothread_t, cothread_t))(uintptr_t)libco_ppc_code)(x, y)
 
-static uint64_t* co_create_(unsigned size, uintptr_t entry) {
-  (void)entry;
-
-  uint64_t* t = (uint64_t*)malloc(size);
-
-  return t;
+cothread_t co_active() {
+  if(!co_active_handle) co_active_handle = (uint64_t*)malloc(state_size);
+  return co_active_handle;
 }
 
 cothread_t co_create(unsigned int size, void (*entry_)(void),
@@ -204,17 +201,16 @@ cothread_t co_create(unsigned int size, void (*entry_)(void),
 
   uintptr_t entry = (uintptr_t)entry_;
   uint64_t* t = 0;
+  uintptr_t sp;
+  int shift;
 
   /* be sure main thread was successfully allocated */
   if(co_active()) {
     size += state_size + above_stack + stack_align;
-    t = co_create_(size, entry);
+    t = (uint64_t*)malloc(size);
   }
 
   if(t) {
-    uintptr_t sp;
-    int shift;
-
     /* save current registers into new thread, so that any special ones will have proper values when thread is begun */
     CO_SWAP_ASM(t, t);
 
@@ -233,16 +229,6 @@ cothread_t co_create(unsigned int size, void (*entry_)(void),
 
 void co_delete(cothread_t t) {
   free(t);
-}
-
-static void co_init_(void) {
-  co_active_handle = co_create_(state_size, (uintptr_t)&co_switch);
-}
-
-cothread_t co_active() {
-  if(!co_active_handle) co_init_();
-
-  return co_active_handle;
 }
 
 void co_switch(cothread_t t) {
