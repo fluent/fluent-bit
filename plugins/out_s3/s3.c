@@ -104,7 +104,7 @@ static char *mock_error_response(char *error_env_var)
 
     err_val = getenv(error_env_var);
     if (err_val != NULL && strlen(err_val) > 0) {
-        error = flb_malloc(strlen(err_val) + sizeof(char));
+        error = flb_calloc(strlen(err_val) + 1, sizeof(char));
         if (error == NULL) {
             flb_errno();
             return NULL;
@@ -196,7 +196,7 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
         return 0;
     }
 
-    s3_headers = flb_malloc(sizeof(struct flb_aws_header) * headers_len);
+    s3_headers = flb_calloc(headers_len, sizeof(struct flb_aws_header));
     if (s3_headers == NULL) {
         flb_errno();
         return -1;
@@ -281,7 +281,7 @@ struct flb_http_client *mock_s3_call(char *error_env_var, char *api)
                               "Server: AmazonS3";
             /* since etag is in the headers, this code uses resp.data */
             len = strlen(resp);
-            c->resp.data = flb_malloc(len + 1);
+            c->resp.data = flb_calloc(len + 1, sizeof(char));
             if (!c->resp.data) {
                 flb_errno();
                 return NULL;
@@ -1640,7 +1640,7 @@ static int add_to_queue(struct flb_s3 *ctx, struct s3_file *upload_file,
     char *tag_cpy;
 
     /* Create upload contents object and add to upload queue */
-    upload_contents = flb_malloc(sizeof(struct upload_queue));
+    upload_contents = flb_calloc(1, sizeof(struct upload_queue));
     if (upload_contents == NULL) {
         flb_plg_error(ctx->ins, "Error allocating memory for upload_queue entry");
         flb_errno();
@@ -1940,7 +1940,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     }
 
     /* Allocate buffer to store log_key contents */
-    val_buf = flb_malloc(msgpack_size);
+    val_buf = flb_calloc(1, msgpack_size);
     if (val_buf == NULL) {
         flb_plg_error(ctx->ins, "Could not allocate enough "
                       "memory to read record");
