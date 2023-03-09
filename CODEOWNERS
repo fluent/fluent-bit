@@ -13,8 +13,8 @@
 
 # Build System & Portability
 # --------------------------
-/CMakeLists.txt          @fujimotos @niedbalski
-/cmake/                  @fujimotos @niedbalski
+/CMakeLists.txt          @fujimotos @niedbalski @patrick-stephens
+/cmake/                  @fujimotos @niedbalski @patrick-stephens
 
 # CI 
 # -------------------------
