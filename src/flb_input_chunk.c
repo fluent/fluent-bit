@@ -1310,10 +1310,13 @@ static inline int flb_input_chunk_is_mem_overlimit(struct flb_input_instance *i)
 
 static inline int flb_input_chunk_is_storage_overlimit(struct flb_input_instance *i)
 {
+    printf("flb_input_chunk_is_storage_overlimit\n");
     struct flb_storage_input *storage = (struct flb_storage_input *)i->storage;
 
     if (storage->type == FLB_STORAGE_FS) {
+        printf("storage type is filesystem\n");
         if (i->storage_pause_on_chunks_overlimit == FLB_TRUE) {
+            printf("storage_pause_on_chunks_overlimit\n");
             if (storage->cio->total_chunks_up >= storage->cio->max_chunks_up) {
                 return FLB_TRUE;
             }
