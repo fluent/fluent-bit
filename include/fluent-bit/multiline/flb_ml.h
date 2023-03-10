@@ -28,7 +28,8 @@
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_parser.h>
-#include <fluent-bit/flb_log_event.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 /* Types available */
 #define FLB_ML_REGEX     1    /* pattern is a regular expression    */
@@ -282,15 +283,28 @@ int flb_ml_destroy(struct flb_ml *ml);
 int flb_ml_register_context(struct flb_ml_stream_group *group,
                             struct flb_time *tm, msgpack_object *map);
 
-int flb_ml_append(struct flb_ml *ml, uint64_t stream_id,
-                  int type,
-                  struct flb_time *tm, void *buf, size_t size);
+int flb_ml_append_text(struct flb_ml *ml,
+                  uint64_t stream_id,
+                  struct flb_time *tm,
+                  void *buf,
+                  size_t size);
 
-int flb_ml_append_object(struct flb_ml *ml, uint64_t stream_id,
-                         struct flb_time *tm, msgpack_object *obj);
+int flb_ml_append_object(struct flb_ml *ml,
+                         uint64_t stream_id,
+                         struct flb_time *tm,
+                         msgpack_object *metadata,
+                         msgpack_object *obj);
 
-int flb_ml_append_log_event(struct flb_ml *ml, uint64_t stream_id,
-                            struct flb_log_event *event);
+int flb_ml_append_event(struct flb_ml *ml,
+                        uint64_t stream_id,
+                        struct flb_log_event *event);
+
+
+// int flb_ml_append_object(struct flb_ml *ml, uint64_t stream_id,
+//                          struct flb_time *tm, msgpack_object *obj);
+
+// int flb_ml_append_log_event(struct flb_ml *ml, uint64_t stream_id,
+//                             struct flb_log_event *event);
 
 int flb_ml_parsers_init(struct flb_config *ctx);
 

@@ -24,7 +24,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_metrics.h>
-#include <fluent-bit/flb_log_event.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 
 #include <ctraces/ctraces.h>
 #include <ctraces/ctr_decode_msgpack.h>

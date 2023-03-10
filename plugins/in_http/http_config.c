@@ -21,6 +21,7 @@
 
 #include "http.h"
 #include "http_conn.h"
+#include "http_config.h"
 
 struct flb_http *http_config_create(struct flb_input_instance *ins)
 {
@@ -58,6 +59,17 @@ struct flb_http *http_config_create(struct flb_input_instance *ins)
      * moment so we want to make sure that it stays that way!
      */
 
+    ret = flb_log_event_encoder_init(&ctx->log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins, "error initializing event encoder : %d", ret);
+
+        http_config_destroy(ctx);
+
+        ctx = NULL;
+    }
+
     return ctx;
 }
 
@@ -65,6 +77,8 @@ int http_config_destroy(struct flb_http *ctx)
 {
     /* release all connections */
     http_conn_release_all(ctx);
+
+    flb_log_event_encoder_destroy(&ctx->log_encoder);
 
     if (ctx->collector_id != -1) {
         flb_input_collector_delete(ctx->collector_id, ctx->ins);

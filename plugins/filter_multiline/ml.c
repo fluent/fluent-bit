@@ -669,18 +669,18 @@ static int cb_ml_filter(const void *data, size_t bytes,
                         void *filter_context,
                         struct flb_config *config)
 {
-    int ret;
-    int ok = MSGPACK_UNPACK_SUCCESS;
-    size_t off = 0;
+    size_t                       tmp_size;
+    char                        *tmp_buf;
+    struct flb_log_event_decoder decoder;
+    struct ml_stream            *stream;
+    struct flb_log_event         event;
+    int                          ret;
+    struct ml_ctx               *ctx;
+
     (void) f_ins;
     (void) config;
-    msgpack_unpacked result;
-    msgpack_object *obj;
-    char *tmp_buf;
-    size_t tmp_size;
-    struct ml_ctx *ctx = filter_context;
-    struct flb_time tm;
-    struct ml_stream *stream;
+
+    ctx = (struct ml_ctx *) filter_context;
 
     if (i_ins == ctx->ins_emitter) {
         flb_plg_trace(ctx->ins, "not processing records from the emitter");
@@ -701,16 +701,19 @@ static int cb_ml_filter(const void *data, size_t bytes,
         ctx->mp_sbuf.size = 0;
 
         /* process records */
-        msgpack_unpacked_init(&result);
-        while (msgpack_unpack_next(&result, data, bytes, &off) == ok) {
-            flb_time_pop_from_msgpack(&tm, &result, &obj);
-            ret = flb_ml_append_object(ctx->m, ctx->stream_id, &tm, obj);
+        flb_log_event_decoder_init(&decoder, (char *) data, bytes);
+
+        while (flb_log_event_decoder_next(&decoder, &event) ==
+               FLB_EVENT_DECODER_SUCCESS) {
+            ret = flb_ml_append_event(ctx->m, ctx->stream_id, &event);
+
             if (ret != 0) {
                 flb_plg_debug(ctx->ins,
-                            "could not append object from tag: %s", tag);
+                              "could not append object from tag: %s", tag);
             }
         }
-        msgpack_unpacked_destroy(&result);
+
+        flb_log_event_decoder_destroy(&decoder);
 
         /* flush all pending data (there is no auto-flush when unbuffered) */
         flb_ml_flush_pending_now(ctx->m);
@@ -749,16 +752,19 @@ static int cb_ml_filter(const void *data, size_t bytes,
         }
 
         /* process records */
-        msgpack_unpacked_init(&result);
-        while (msgpack_unpack_next(&result, data, bytes, &off) == ok) {
-            ret = flb_ml_append_object(ctx->m, stream->stream_id, NULL, &result.data);
+        flb_log_event_decoder_init(&decoder, (char *) data, bytes);
+
+        while (flb_log_event_decoder_next(&decoder, &event) ==
+               FLB_EVENT_DECODER_SUCCESS) {
+            ret = flb_ml_append_event(ctx->m, stream->stream_id, &event);
 
             if (ret != 0) {
                 flb_plg_debug(ctx->ins,
-                            "could not append object from tag: %s", tag);
+                              "could not append object from tag: %s", tag);
             }
         }
-        msgpack_unpacked_destroy(&result);
+
+        flb_log_event_decoder_destroy(&decoder);
 
         /* 
          * always returned modified, which will be 0 records, since the emitter takes

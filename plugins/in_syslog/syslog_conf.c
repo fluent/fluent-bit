@@ -47,6 +47,15 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
 
     ctx->ins = ins;
 
+    ctx->log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ctx->log_encoder == NULL) {
+        flb_plg_error(ins, "could not initialize event encoder");
+        syslog_conf_destroy(ctx);
+
+        return NULL;
+    }
+
     mk_list_init(&ctx->connections);
 
     ret = flb_input_config_map_set(ins, (void *)ctx);
@@ -146,6 +155,10 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
 
 int syslog_conf_destroy(struct flb_syslog *ctx)
 {
+    if (ctx->log_encoder != NULL) {
+        flb_log_event_encoder_destroy(ctx->log_encoder);
+    }
+
     syslog_server_destroy(ctx);
 
     flb_free(ctx);

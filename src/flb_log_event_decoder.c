@@ -17,7 +17,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_log_event.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_byteswap.h>
 
 static int create_empty_map(struct flb_log_event_decoder *context) {
@@ -86,6 +86,7 @@ int flb_log_event_decoder_init(struct flb_log_event_decoder *context,
     memset(context, 0, sizeof(struct flb_log_event_decoder));
 
     context->dynamically_allocated = FLB_FALSE;
+    context->initialized = FLB_TRUE;
 
     flb_log_event_decoder_reset(context, input_buffer, input_length);
 
@@ -106,13 +107,14 @@ struct flb_log_event_decoder *flb_log_event_decoder_create(
                                         input_buffer,
                                         input_length);
 
-    if (result == FLB_EVENT_DECODER_SUCCESS) {
+    if (context != NULL) {
         context->dynamically_allocated = FLB_TRUE;
-    }
-    else if (context != NULL) {
-        flb_log_event_decoder_destroy(context);
 
-        context = NULL;
+        if (result != FLB_EVENT_DECODER_SUCCESS) {
+            flb_log_event_decoder_destroy(context);
+
+            context = NULL;
+        }
     }
 
     return context;
@@ -121,8 +123,12 @@ struct flb_log_event_decoder *flb_log_event_decoder_create(
 void flb_log_event_decoder_destroy(struct flb_log_event_decoder *context)
 {
     if (context != NULL) {
-        msgpack_unpacked_destroy(&context->unpacked_empty_map);
-        msgpack_unpacked_destroy(&context->unpacked_event);
+        if (context->initialized) {
+            msgpack_unpacked_destroy(&context->unpacked_empty_map);
+            msgpack_unpacked_destroy(&context->unpacked_event);
+
+            context->initialized = FLB_FALSE;
+        }
 
         if (context->dynamically_allocated) {
             free(context);
@@ -130,7 +136,7 @@ void flb_log_event_decoder_destroy(struct flb_log_event_decoder *context)
     }
 }
 
-int flb_log_event_decoder_unpack_timestamp(msgpack_object *input,
+int flb_log_event_decoder_decode_timestamp(msgpack_object *input,
                                            struct flb_time *output)
 {
     flb_time_zero(output);
@@ -223,7 +229,7 @@ int flb_event_decoder_decode_object(struct flb_log_event_decoder *context,
         return FLB_EVENT_DECODER_ERROR_WRONG_BODY_TYPE;
     }
 
-    result = flb_log_event_decoder_unpack_timestamp(timestamp, &event->timestamp);
+    result = flb_log_event_decoder_decode_timestamp(timestamp, &event->timestamp);
 
     if (result != FLB_EVENT_DECODER_SUCCESS) {
         return result;

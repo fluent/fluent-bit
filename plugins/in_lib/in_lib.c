@@ -31,8 +31,6 @@
 #include <fluent-bit/flb_error.h>
 #include "in_lib.h"
 
-#include <msgpack.h>
-
 static int in_lib_collect(struct flb_input_instance *ins,
                           struct flb_config *config, void *in_context)
 {
@@ -88,9 +86,42 @@ static int in_lib_collect(struct flb_input_instance *ins,
     }
     ctx->buf_len = 0;
 
-    /* Pack data */
-    flb_input_log_append(ctx->ins, NULL, 0, pack, out_size);
+    ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_current_timestamp(
+                &ctx->log_encoder);
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_body_from_raw_msgpack(
+                &ctx->log_encoder,
+                pack,
+                out_size);
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        flb_input_log_append(ctx->ins, NULL, 0,
+                             ctx->log_encoder.output_buffer,
+                             ctx->log_encoder.output_length);
+
+        ret = 0;
+    }
+    else {
+        flb_plg_error(ctx->ins, "Error encoding record : %d", ret);
+
+        ret = -1;
+    }
+
+    flb_log_event_encoder_reset(&ctx->log_encoder);
+
+    /* Reset the state */
     flb_free(pack);
+
     flb_pack_state_reset(&ctx->state);
     flb_pack_state_init(&ctx->state);
 
@@ -143,15 +174,31 @@ static int in_lib_init(struct flb_input_instance *in,
         return -1;
     }
 
+    ret = flb_log_event_encoder_init(&ctx->log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins, "error initializing event encoder : %d", ret);
+
+        flb_free(ctx->buf_data);
+        flb_free(ctx);
+
+        return -1;
+    }
+
     flb_pack_state_init(&ctx->state);
+
     return 0;
 }
 
 static int in_lib_exit(void *data, struct flb_config *config)
 {
-    (void) config;
     struct flb_in_lib_config *ctx = data;
     struct flb_pack_state *s;
+
+    (void) config;
+
+    flb_log_event_encoder_destroy(&ctx->log_encoder);
 
     if (ctx->buf_data) {
         flb_free(ctx->buf_data);

@@ -73,6 +73,9 @@ static struct flb_ml_stream_group *stream_group_create(struct flb_ml_stream *mst
     }
 
     /* msgpack buffer */
+    msgpack_sbuffer_init(&group->mp_md_sbuf);
+    msgpack_packer_init(&group->mp_md_pck, &group->mp_md_sbuf, msgpack_sbuffer_write);
+
     msgpack_sbuffer_init(&group->mp_sbuf);
     msgpack_packer_init(&group->mp_pck, &group->mp_sbuf, msgpack_sbuffer_write);
 
@@ -135,6 +138,9 @@ static void stream_group_destroy(struct flb_ml_stream_group *group)
     if (group->buf) {
         flb_sds_destroy(group->buf);
     }
+
+    msgpack_sbuffer_destroy(&group->mp_md_sbuf);
+    msgpack_sbuffer_destroy(&group->mp_sbuf);
 
     mk_list_del(&group->_head);
     flb_free(group);

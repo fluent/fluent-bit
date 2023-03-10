@@ -468,5 +468,6 @@ int flb_tail_config_destroy(struct flb_tail_config *config)
     }
 
     flb_free(config);
+
     return 0;
 }

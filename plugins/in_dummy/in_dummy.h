@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #define DEFAULT_DUMMY_MESSAGE  "{\"message\":\"dummy\"}"
 #define DEFAULT_DUMMY_METADATA "{}"

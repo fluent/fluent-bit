@@ -73,6 +73,8 @@ set(src
   flb_ring_buffer.c
   flb_log_event_decoder.c
   flb_log_event_encoder.c
+  flb_log_event_encoder_primitives.c
+  flb_log_event_encoder_dynamic_field.c
   )
 
 # Config format

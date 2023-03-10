@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #include <ctraces/ctraces.h>
 
@@ -66,34 +67,58 @@ static struct ctrace_id *create_random_span_id()
 
 static int send_logs(struct flb_input_instance *ins)
 {
-    int ret;
-    struct flb_time tm;
+    struct flb_log_event_encoder log_encoder;
+    int                          ret;
 
-    flb_time_get(&tm);
+    ret = flb_log_event_encoder_init(&log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
 
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ins, "error initializing event encoder : %d", ret);
 
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+        return -1;
+    }
 
-    msgpack_pack_array(&mp_pck, 2);
-    flb_time_append_to_msgpack(&tm, &mp_pck, 0);
+    ret = flb_log_event_encoder_begin_record(&log_encoder);
 
-    msgpack_pack_map(&mp_pck, 1);
-    msgpack_pack_str(&mp_pck, 10);
-    msgpack_pack_str_body(&mp_pck, "event_type", 10);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_current_timestamp(
+                &log_encoder);
+    }
 
-    msgpack_pack_str(&mp_pck, 9);
-    msgpack_pack_str_body(&mp_pck, "some logs", 9);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_append_body_cstring(
+                &log_encoder, "event_type");
+    }
 
-    flb_pack_print(mp_sbuf.data, mp_sbuf.size);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_append_body_cstring(
+                &log_encoder, "some logs");
+    }
 
-    ret = flb_input_log_append(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_commit_record(&log_encoder);
+    }
 
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        flb_pack_print(log_encoder.output_buffer,
+                       log_encoder.output_length);
 
-    return ret;
+        flb_input_log_append(ins, NULL, 0,
+                             log_encoder.output_buffer,
+                             log_encoder.output_length);
+
+        ret = 0;
+    }
+    else {
+        flb_plg_error(ins, "Error encoding record : %d", ret);
+
+        ret = -1;
+    }
+
+    flb_log_event_encoder_destroy(&log_encoder);
+
+    return 0;
 }
 
 static int send_metrics(struct flb_input_instance *ins)

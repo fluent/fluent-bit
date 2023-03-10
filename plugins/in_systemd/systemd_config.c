@@ -240,6 +240,16 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
     }
 #endif
 
+    ctx->log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ctx->log_encoder == NULL) {
+        flb_plg_error(ctx->ins, "could not initialize event encoder");
+        flb_systemd_config_destroy(ctx);
+
+        return NULL;
+    }
+
+
     sd_journal_get_data_threshold(ctx->j, &size);
     flb_plg_debug(ctx->ins,
                   "sd_journal library may truncate values "

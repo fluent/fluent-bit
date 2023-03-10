@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 
 #define CURRENT_DIR           "."
@@ -72,6 +73,7 @@ struct flb_docker {
     struct mk_list *whitelist;  /* dockers to monitor */
     struct mk_list *blacklist;  /* dockers to exclude */
     struct flb_input_instance *ins;
+    struct flb_log_event_encoder log_encoder;
 };
 
 int in_docker_collect(struct flb_input_instance *i_ins,

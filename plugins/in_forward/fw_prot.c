@@ -172,6 +172,67 @@ static int send_ack(struct flb_input_instance *in, struct fw_conn *conn,
 
 }
 
+static size_t get_options_metadata(msgpack_object *arr, int expected, size_t *idx)
+{
+    size_t i;
+    msgpack_object *options;
+    msgpack_object k;
+    msgpack_object v;
+
+    if (arr->type != MSGPACK_OBJECT_ARRAY) {
+        return -1;
+    }
+
+    /* Make sure the 'expected' entry position is valid for the array size */
+    if (expected >= arr->via.array.size) {
+        return 0;
+    }
+
+    options = &arr->via.array.ptr[expected];
+    if (options->type == MSGPACK_OBJECT_NIL) {
+        /*
+         * Old Docker 18.x sends a NULL options parameter, just be friendly and
+         * let it pass.
+         */
+        return 0;
+    }
+
+    if (options->type != MSGPACK_OBJECT_MAP) {
+        return -1;
+    }
+
+    if (options->via.map.size <= 0) {
+        return 0;
+    }
+
+    for (i = 0; i < options->via.map.size; i++) {
+        k = options->via.map.ptr[i].key;
+        v = options->via.map.ptr[i].val;
+
+        if (k.type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
+
+        if (k.via.str.size != 8) {
+            continue;
+        }
+
+        if (strncmp(k.via.str.ptr, "metadata", 8) != 0) {
+            continue;
+        }
+
+        if (v.type != MSGPACK_OBJECT_MAP) {
+            return -1;
+        }
+
+        *idx = i;
+
+        return 0;
+    }
+
+    return 0;
+}
+
 static size_t get_options_chunk(msgpack_object *arr, int expected, size_t *idx)
 {
     size_t i;
@@ -232,35 +293,50 @@ static size_t get_options_chunk(msgpack_object *arr, int expected, size_t *idx)
     return 0;
 }
 
-static int fw_process_array(struct flb_input_instance *in,
-                            struct fw_conn *conn,
-                            const char *tag, int tag_len,
-                            msgpack_object *root, msgpack_object *arr, int chunk_id)
+static int fw_process_format_1_entry(
+                struct flb_input_instance *in,
+                struct fw_conn *conn,
+                const char *tag, int tag_len,
+                msgpack_object *root, msgpack_object *arr,
+                int chunk_id)
 {
-    int i;
-    msgpack_object entry;
-    msgpack_object options;
-    msgpack_object chunk;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
+    msgpack_object       options;
+    int                  result;
+    msgpack_object       chunk;
+    struct flb_log_event event;
 
-    /*
-     * This process is not quite optimal from a performance perspective,
-     * we need to fix it later, likely using the offset of the original
-     * msgpack buffer.
-     *
-     * For now we iterate the array and append each entry into a chunk
-     */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    result = flb_event_decoder_decode_object(conn->ctx->log_decoder,
+                                             &event,
+                                             arr);
 
-    for (i = 0; i < arr->via.array.size; i++) {
-        entry = arr->via.array.ptr[i];
-        msgpack_pack_object(&mp_pck, entry);
+    if (result != FLB_EVENT_DECODER_SUCCESS) {
+        return -1;
     }
 
-    flb_input_log_append(in, tag, tag_len, mp_sbuf.data, mp_sbuf.size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    result = flb_log_event_encoder_begin_record(conn->ctx->log_encoder);
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_set_timestamp(conn->ctx->log_encoder,
+                                                     &event.timestamp);
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_set_body_from_msgpack_object(
+                    conn->ctx->log_encoder,
+                    event.body);
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_commit_record(conn->ctx->log_encoder);
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        flb_input_log_append(in, tag, tag_len,
+                             conn->ctx->log_encoder->output_buffer,
+                             conn->ctx->log_encoder->output_length);
+    }
+
+    flb_log_event_encoder_reset(conn->ctx->log_encoder);
 
     if (chunk_id != -1) {
         options = root->via.array.ptr[2];
@@ -268,7 +344,75 @@ static int fw_process_array(struct flb_input_instance *in,
         send_ack(in, conn, chunk);
     }
 
-    return i;
+    return 0;
+}
+
+static int fw_process_format_2_entry(
+                struct flb_input_instance *in,
+                struct fw_conn *conn,
+                const char *tag, int tag_len,
+                msgpack_object *root,
+                msgpack_object *ts,
+                msgpack_object *body,
+                int chunk_id, int metadata_id)
+{
+    struct flb_time      timestamp;
+    msgpack_object      *metadata;
+    msgpack_object       options;
+    int                  result;
+    msgpack_object       chunk;
+
+    if (chunk_id != -1 || metadata_id != -1) {
+        options = root->via.array.ptr[3];
+
+        if (metadata_id != -1) {
+            metadata = &options.via.map.ptr[metadata_id].val;
+        }
+    }
+
+    result = flb_log_event_decoder_decode_timestamp(ts, &timestamp);
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_begin_record(conn->ctx->log_encoder);
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_set_timestamp(conn->ctx->log_encoder,
+                                                     &timestamp);
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        if (metadata != NULL) {
+            result = flb_log_event_encoder_set_metadata_from_msgpack_object(
+                        conn->ctx->log_encoder,
+                        metadata);
+        }
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_set_body_from_msgpack_object(
+                    conn->ctx->log_encoder,
+                    body);
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_commit_record(conn->ctx->log_encoder);
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        flb_input_log_append(in, tag, tag_len,
+                             conn->ctx->log_encoder->output_buffer,
+                             conn->ctx->log_encoder->output_length);
+    }
+
+    flb_log_event_encoder_reset(conn->ctx->log_encoder);
+
+    if (chunk_id != -1) {
+        chunk = options.via.map.ptr[chunk_id].val;
+        send_ack(in, conn, chunk);
+    }
+
+    return 0;
 }
 
 static size_t receiver_recv(struct fw_conn *conn, char *buf, size_t try_size) {
@@ -314,6 +458,7 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
     int contain_options = FLB_FALSE;
     size_t off = 0;
     size_t chunk_id = -1;
+    size_t metadata_id = -1;
     const char *stag;
     flb_sds_t out_tag = NULL;
     size_t bytes;
@@ -328,8 +473,6 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
     msgpack_unpacked result;
     msgpack_unpacker *unp;
     size_t all_used = 0;
-    struct msgpack_sbuffer mp_sbuf;
-    struct msgpack_packer mp_pck;
     struct flb_in_fw_config *ctx = conn->ctx;
     struct cmt *cmt;
     struct ctrace *ctr;
@@ -477,7 +620,7 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                 }
 
                 /* Process array */
-                fw_process_array(conn->in, conn,
+                fw_process_format_1_entry(conn->in, conn,
                                  out_tag, flb_sds_len(out_tag),
                                  &root, &entry, chunk_id);
             }
@@ -507,26 +650,23 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                     return -1;
                 }
 
-                /* Compose the new array */
-                msgpack_sbuffer_init(&mp_sbuf);
-                msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
-                msgpack_pack_array(&mp_pck, 2);
-                msgpack_pack_object(&mp_pck, entry);
-                msgpack_pack_object(&mp_pck, map);
-
-                /* Register data object */
-                flb_input_log_append(conn->in,
-                                     out_tag, flb_sds_len(out_tag),
-                                     mp_sbuf.data, mp_sbuf.size);
-                msgpack_sbuffer_destroy(&mp_sbuf);
-                c++;
-
-                /* Handle ACK response */
-                if (chunk_id != -1) {
-                    chunk = root.via.array.ptr[3].via.map.ptr[chunk_id].val;
-                    send_ack(ctx->ins, conn, chunk);
+                metadata_id = -1;
+                ret = get_options_metadata(&root, 3, &metadata_id);
+                if (ret == -1) {
+                    flb_plg_debug(ctx->ins, "invalid options field");
+                    msgpack_unpacked_destroy(&result);
+                    msgpack_unpacker_free(unp);
+                    flb_sds_destroy(out_tag);
+                    return -1;
                 }
+
+                /* Process map */
+                fw_process_format_2_entry(conn->in, conn,
+                                          out_tag, flb_sds_len(out_tag),
+                                          &root, &entry, &map, chunk_id,
+                                          metadata_id);
+
+                c++;
             }
             else if (entry.type == MSGPACK_OBJECT_STR ||
                      entry.type == MSGPACK_OBJECT_BIN) {

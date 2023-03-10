@@ -30,8 +30,6 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-#include <msgpack.h>
-
 #include "docker.h"
 
 static int cb_docker_collect(struct flb_input_instance *i_ins,
@@ -680,79 +678,99 @@ static int cb_docker_init(struct flb_input_instance *in,
                                        ctx->interval_nsec, config);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "Could not set collector for Docker input plugin");
+        flb_free(ctx);
         return -1;
     }
     ctx->coll_fd = ret;
+
+    ret = flb_log_event_encoder_init(&ctx->log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins, "error initializing event encoder : %d", ret);
+        flb_free(ctx);
+        return -1;
+    }
 
     return ret;
 }
 
 /* Flush snapshot as a message for output. */
-static void flush_snapshot(struct flb_input_instance *i_ins,
+static void flush_snapshot(struct flb_docker *ctx,
+                           struct flb_input_instance *i_ins,
                            docker_snapshot *snapshot)
 {
-    int name_len;
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
+    int result;
 
     if (!snapshot) {
         return;
     }
 
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    result = flb_log_event_encoder_begin_record(&ctx->log_encoder);
 
-    /* Timestamp */
-    msgpack_pack_array(&mp_pck, 2);
-    flb_pack_time_now(&mp_pck);
-    msgpack_pack_map(&mp_pck, 5);
-
-    /* Docker ID [12 chars] */
-    msgpack_pack_str(&mp_pck, 2);
-    msgpack_pack_str_body(&mp_pck, "id", 2);
-    msgpack_pack_str(&mp_pck, DOCKER_SHORT_ID_LEN);
-    msgpack_pack_str_body(&mp_pck, snapshot->id, DOCKER_SHORT_ID_LEN);
-
-    /* Docker Name */
-    if (snapshot->name != NULL) {
-        name_len = strlen(snapshot->name);
-        msgpack_pack_str(&mp_pck, 4);
-        msgpack_pack_str_body(&mp_pck, "name", 4);
-        msgpack_pack_str(&mp_pck, name_len);
-        msgpack_pack_str_body(&mp_pck, snapshot->name, name_len);
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_set_current_timestamp(
+                    &ctx->log_encoder);
     }
 
-    /* CPU used [nanoseconds] */
-    msgpack_pack_str(&mp_pck, 8);
-    msgpack_pack_str_body(&mp_pck, "cpu_used", 8);
-    msgpack_pack_unsigned_long(&mp_pck, snapshot->cpu->used);
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_append_body_values(
+                    &ctx->log_encoder,
+                    FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
 
-    /* Memory used [bytes] */
-    msgpack_pack_str(&mp_pck, 8);
-    msgpack_pack_str_body(&mp_pck, "mem_used", 8);
-    msgpack_pack_unsigned_long(&mp_pck, snapshot->mem->used);
+                    /* Docker ID [12 chars] */
+                    FLB_LOG_EVENT_CSTRING_VALUE("id"),
+                    FLB_LOG_EVENT_STRING_VALUE(snapshot->id, DOCKER_SHORT_ID_LEN),
 
-    /* Memory limit [bytes] */
-    msgpack_pack_str(&mp_pck, 9);
-    msgpack_pack_str_body(&mp_pck, "mem_limit", 9);
-    msgpack_pack_uint64(&mp_pck, snapshot->mem->limit);
+                    /* Docker Name */
+                    FLB_LOG_EVENT_CSTRING_VALUE("name"),
+                    FLB_LOG_EVENT_CSTRING_VALUE(snapshot->name),
+
+                    /* CPU used [nanoseconds] */
+                    FLB_LOG_EVENT_CSTRING_VALUE("cpu_used"),
+                    FLB_LOG_EVENT_UINT32_VALUE(snapshot->cpu->used),
+
+                    /* Memory used [bytes] */
+                    FLB_LOG_EVENT_CSTRING_VALUE("mem_used"),
+                    FLB_LOG_EVENT_UINT32_VALUE(snapshot->mem->used),
+
+                    /* Memory limit [bytes] */
+                    FLB_LOG_EVENT_CSTRING_VALUE("mem_limit"),
+                    FLB_LOG_EVENT_UINT64_VALUE(snapshot->mem->limit),
+
+                    FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+    }
 
     flb_trace("[in_docker] ID %s CPU %lu MEMORY %ld", snapshot->id,
               snapshot->cpu->used, snapshot->mem->used);
 
-    flb_input_log_append(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        flb_input_log_append(i_ins, NULL, 0,
+                             ctx->log_encoder.output_buffer,
+                             ctx->log_encoder.output_length);
+
+    }
+    else {
+        flb_plg_error(i_ins, "Error encoding record : %d", result);
+    }
+
+    flb_log_event_encoder_reset(&ctx->log_encoder);
 }
 
-static void flush_snapshots(struct flb_input_instance *i_ins,
-                     struct mk_list *snapshots)
+static void flush_snapshots(struct flb_docker *ctx,
+                            struct flb_input_instance *i_ins,
+                            struct mk_list *snapshots)
 {
     struct mk_list *head;
     docker_snapshot *snapshot;
 
     mk_list_foreach(head, snapshots) {
         snapshot = mk_list_entry(head, docker_snapshot, _head);
-        flush_snapshot(i_ins, snapshot);
+        flush_snapshot(ctx, i_ins, snapshot);
     }
 }
 
@@ -827,7 +845,7 @@ static int cb_docker_collect(struct flb_input_instance *ins,
         return 0;
     }
 
-    flush_snapshots(ins, snaps);
+    flush_snapshots(ctx, ins, snaps);
 
     free_snapshots(snaps);
     free_docker_list(active);
@@ -857,6 +875,8 @@ static int cb_docker_exit(void *data, struct flb_config *config)
     struct flb_docker *ctx = data;
 
     /* done */
+    flb_log_event_encoder_destroy(&ctx->log_encoder);
+
     free_docker_list(ctx->whitelist);
     free_docker_list(ctx->blacklist);
     flb_free(ctx);

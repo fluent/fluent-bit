@@ -103,7 +103,7 @@ static inline void cfl_list_add_after(struct cfl_list *_new,
 {
     struct cfl_list *next;
 
-    if (_new == NULL || next == NULL || head == NULL) {
+    if (_new == NULL || prev == NULL || head == NULL) {
         return;
     }
 

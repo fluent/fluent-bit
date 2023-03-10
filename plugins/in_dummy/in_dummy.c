@@ -94,24 +94,24 @@ static int generate_event(struct flb_dummy *ctx)
         body_length = chunk_offset - body_start;
 
         if (object.data.type == MSGPACK_OBJECT_MAP) {
-            flb_log_event_encoder_record_start(ctx->encoder);
+            flb_log_event_encoder_begin_record(ctx->encoder);
 
-            flb_log_event_encoder_record_timestamp_set(ctx->encoder, &timestamp);
+            flb_log_event_encoder_set_timestamp(ctx->encoder, &timestamp);
 
-            result = flb_log_event_encoder_record_metadata_set_msgpack_raw(
+            result = flb_log_event_encoder_set_metadata_from_raw_msgpack(
                         ctx->encoder,
                         ctx->ref_metadata_msgpack,
                         ctx->ref_metadata_msgpack_size);
 
             if (result == FLB_EVENT_ENCODER_SUCCESS) {
-                result = flb_log_event_encoder_record_body_set_msgpack_raw(
+                result = flb_log_event_encoder_set_body_from_raw_msgpack(
                             ctx->encoder,
                             body_buffer,
                             body_length);
             }
 
             if (result == FLB_EVENT_ENCODER_SUCCESS) {
-                result = flb_log_event_encoder_record_commit(ctx->encoder);
+                result = flb_log_event_encoder_commit_record(ctx->encoder);
             }
         }
 
@@ -322,7 +322,7 @@ static int in_dummy_init(struct flb_input_instance *in,
         return -1;
     }
 
-    ctx->encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+    ctx->encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
 
     if (ctx->encoder == NULL) {
         flb_plg_error(in, "could not initialize event encoder");

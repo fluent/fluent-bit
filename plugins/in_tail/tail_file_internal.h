@@ -24,7 +24,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
-#include <fluent-bit/flb_log_event.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #ifdef FLB_HAVE_PARSER
 #include <fluent-bit/multiline/flb_ml.h>
