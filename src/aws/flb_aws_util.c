@@ -94,7 +94,7 @@ char *flb_aws_endpoint(char* service, char* region)
     len += strlen(region);
     len++; /* null byte */
 
-    endpoint = flb_malloc(len);
+    endpoint = flb_calloc(len, sizeof(char));
     if (!endpoint) {
         flb_errno();
         return NULL;
@@ -136,7 +136,7 @@ int flb_read_file(const char *path, char **out_buf, size_t *out_size)
         return -1;
     }
 
-    buf = flb_malloc(st.st_size + sizeof(char));
+    buf = flb_calloc(st.st_size + 1, sizeof(char));
     if (!buf) {
         flb_errno();
         close(fd);
@@ -700,7 +700,7 @@ static char* replace_uri_tokens(const char* original_string, const char* current
     i = 0;
     while (*original_string) {
         if (strstr(original_string, current_word) == original_string) {
-            strcpy(&result[i], new_word);
+            strncpy(&result[i], new_word, new_word_len);
             i += new_word_len;
             original_string += old_word_len;
         }
@@ -851,7 +851,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
     /* Find all occurences of $INDEX and replace with the appropriate index. */
     if (strstr((char *) format, INDEX_STRING)) {
         seq_index_len = snprintf(NULL, 0, "%"PRIu64, seq_index);
-        seq_index_str = flb_malloc(seq_index_len + 1);
+        seq_index_str = flb_calloc(seq_index_len + 1, sizeof(char));
         if (seq_index_str == NULL) {
             goto error;
         }
