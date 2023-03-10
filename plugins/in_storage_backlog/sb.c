@@ -537,8 +537,10 @@ static int cb_queue_chunks(struct flb_input_instance *in,
                 ret = cio_chunk_is_up(chunk_instance->chunk);
 
                 if (ret == CIO_FALSE) {
+                    flb_plg_info(ctx->ins, "will try to force the chunk up %s:%s", chunk_instance->stream->name, chunk_instance->chunk->name);
                     ret = cio_chunk_up_force(chunk_instance->chunk);
-
+                    flb_plg_info(ctx->ins, "chunks up: %d, Chunks down: %d", mk_list_size(&chunk_instance->stream->chunks_up ), mk_list_size(&chunk_instance->stream->chunks_down ));
+                    flb_plg_info(ctx->ins, "Total mem: %zu, limit set: %zu", total, ctx->mem_limit);
                     if (ret == CIO_CORRUPTED) {
                         flb_plg_error(ctx->ins, "removing corrupted chunk from the "
                                       "queue %s:%s",
