@@ -409,6 +409,9 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         root = result.data;
+        if (result.data.type != MSGPACK_OBJECT_ARRAY) {
+            continue;
+        }
         map = root.via.array.ptr[1];
         is_matched = FLB_FALSE;
         /*
