@@ -463,7 +463,7 @@ int flb_log_event_encoder_append_msgpack_object(
 
     return flb_log_event_encoder_append_value(context, target_field,
                                               FLB_TRUE, value_type,
-                                              (char *) &value, 0);
+                                              (char *) value, 0);
 }
 
 int flb_log_event_encoder_append_raw_msgpack(

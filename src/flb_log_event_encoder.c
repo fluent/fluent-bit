@@ -130,46 +130,58 @@ int flb_log_event_encoder_emit_record(struct flb_log_event_encoder *context)
 
     result = FLB_EVENT_ENCODER_SUCCESS;
 
-    result = flb_log_event_encoder_root_begin_array(context);
+    /* This function needs to be improved and optimized to avoid excessive
+     * memory copying operations.
+     */
 
-    if (context->format == FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2) {
-        if (result == FLB_EVENT_ENCODER_SUCCESS) {
-            result = flb_log_event_encoder_root_begin_array(context);
+    /* This conditional accounts for external raw record emission as
+     * performed by some filters using either
+     * flb_log_event_encoder_set_root_from_raw_msgpack
+     * or
+     * flb_log_event_encoder_set_root_from_msgpack_object
+     */
+    if (context->root.size == 0) {
+        result = flb_log_event_encoder_root_begin_array(context);
+
+        if (context->format == FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2) {
+            if (result == FLB_EVENT_ENCODER_SUCCESS) {
+                result = flb_log_event_encoder_root_begin_array(context);
+            }
         }
-    }
 
-    if (result == FLB_EVENT_ENCODER_SUCCESS) {
-        result = flb_log_event_encoder_append_root_timestamp(
-                    context, &context->timestamp);
-    }
+        if (result == FLB_EVENT_ENCODER_SUCCESS) {
+            result = flb_log_event_encoder_append_root_timestamp(
+                        context, &context->timestamp);
+        }
 
-    if (context->format == FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2) {
+        if (context->format == FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2) {
+            if (result == FLB_EVENT_ENCODER_SUCCESS) {
+                result = flb_log_event_encoder_append_root_raw_msgpack(
+                            context,
+                            context->metadata.data,
+                            context->metadata.size);
+            }
+
+            /* We need to explicitly commit the current array (which
+             * holds the timestamp and metadata elements so we leave
+             * that scope and go back to the root scope where we can
+             * append the body element.
+             */
+            if (result == FLB_EVENT_ENCODER_SUCCESS) {
+                result = flb_log_event_encoder_root_commit_array(context);
+            }
+        }
+
         if (result == FLB_EVENT_ENCODER_SUCCESS) {
             result = flb_log_event_encoder_append_root_raw_msgpack(
                         context,
-                        context->metadata.data,
-                        context->metadata.size);
+                        context->body.data,
+                        context->body.size);
         }
 
-        /* We need to explicitly commit the current array (which
-         * holds the timestamp and metadata elements so we leave
-         * that scope and go back to the root scope where we can
-         * append the body element.
-         */
         if (result == FLB_EVENT_ENCODER_SUCCESS) {
-            result = flb_log_event_encoder_root_commit_array(context);
+            result = flb_log_event_encoder_dynamic_field_flush(&context->root);
         }
-    }
-
-    if (result == FLB_EVENT_ENCODER_SUCCESS) {
-        result = flb_log_event_encoder_append_root_raw_msgpack(
-                    context,
-                    context->body.data,
-                    context->body.size);
-    }
-
-    if (result == FLB_EVENT_ENCODER_SUCCESS) {
-        result = flb_log_event_encoder_dynamic_field_flush(&context->root);
     }
 
     if (result == FLB_EVENT_ENCODER_SUCCESS) {

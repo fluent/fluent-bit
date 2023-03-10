@@ -131,12 +131,22 @@ int flb_log_event_encoder_set_root_from_msgpack_object(
     int result;
 
     result = flb_log_event_encoder_dynamic_field_reset(&context->metadata);
-    result = flb_log_event_encoder_dynamic_field_reset(&context->body);
-    result = flb_log_event_encoder_dynamic_field_reset(&context->root);
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_dynamic_field_reset(&context->body);
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_dynamic_field_reset(&context->root);
+    }
 
     if (result == FLB_EVENT_ENCODER_SUCCESS) {
         result = flb_log_event_encoder_append_root_msgpack_object(
                     context, value);
+
+        if (result == FLB_EVENT_ENCODER_SUCCESS) {
+            result = flb_log_event_encoder_dynamic_field_flush(&context->root);
+        }
     }
 
     return result;
@@ -151,14 +161,24 @@ int flb_log_event_encoder_set_root_from_raw_msgpack(
     int result;
 
     result = flb_log_event_encoder_dynamic_field_reset(&context->metadata);
-    result = flb_log_event_encoder_dynamic_field_reset(&context->body);
-    result = flb_log_event_encoder_dynamic_field_reset(&context->root);
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_dynamic_field_reset(&context->body);
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_dynamic_field_reset(&context->root);
+    }
 
     if (result == FLB_EVENT_ENCODER_SUCCESS) {
         result = flb_log_event_encoder_append_root_raw_msgpack(
                     context,
                     value_buffer,
                     value_size);
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_dynamic_field_flush(&context->root);
     }
 
     return result;

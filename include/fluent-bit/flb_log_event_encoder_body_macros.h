@@ -137,6 +137,10 @@ int flb_log_event_encoder_set_body_from_msgpack_object(
                     context, value);
     }
 
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_dynamic_field_flush(&context->body);
+    }
+
     return result;
 }
 
@@ -155,6 +159,10 @@ int flb_log_event_encoder_set_body_from_raw_msgpack(
                     context,
                     value_buffer,
                     value_size);
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_dynamic_field_flush(&context->body);
     }
 
     return result;

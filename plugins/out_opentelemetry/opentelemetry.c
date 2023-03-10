@@ -23,7 +23,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_pack.h>
-#include <fluent-bit/flb_log_event.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 
 #include <cfl/cfl.h>
 #include <fluent-otel-proto/fluent-otel.h>

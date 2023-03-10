@@ -239,6 +239,7 @@ int flb_event_decoder_decode_object(struct flb_log_event_decoder *context,
     event->metadata = metadata;
     event->format = format;
     event->body = body;
+    event->root = root;
 
     return FLB_EVENT_DECODER_SUCCESS;
 }

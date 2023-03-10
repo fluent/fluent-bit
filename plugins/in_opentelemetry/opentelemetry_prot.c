@@ -21,6 +21,9 @@
 #include <fluent-bit/flb_version.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_snappy.h>
+#include <fluent-bit/flb_log_event_debug.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
 #include <monkey/monkey.h>
@@ -452,10 +455,21 @@ static int binary_payload_to_msgpack(struct flb_log_event_encoder *encoder,
                         ret = FLB_EVENT_ENCODER_ERROR_SERIALIZATION_FAILURE;
                     }
                     else {
-                        ret = flb_log_event_encoder_set_metadata_from_raw_msgpack(
-                                encoder,
-                                buffer.data,
-                                buffer.size);
+                        if (log_records[log_record_index]->body->value_case ==
+                            OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_KVLIST_VALUE) {
+                            ret = flb_log_event_encoder_set_body_from_raw_msgpack(
+                                    encoder,
+                                    buffer.data,
+                                    buffer.size);
+                        }
+                        else {
+                            ret = flb_log_event_encoder_append_body_values(
+                                    encoder,
+                                    FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
+                                    FLB_LOG_EVENT_CSTRING_VALUE("raw_value"),
+                                    FLB_LOG_EVENT_MSGPACK_RAW_VALUE(buffer.data, buffer.size),
+                                    FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
+                        }
                     }
                 }
 
@@ -662,6 +676,159 @@ static inline int mk_http_point_header(mk_ptr_t *h,
     return -1;
 }
 
+static \
+int uncompress_zlib(char **output_buffer,
+                    size_t *output_size,
+                    char *input_buffer,
+                    size_t input_size)
+{
+    flb_error("[opentelemetry] unsupported compression format");
+
+    return -1;
+}
+
+static \
+int uncompress_zstd(char **output_buffer,
+                    size_t *output_size,
+                    char *input_buffer,
+                    size_t input_size)
+{
+    flb_error("[opentelemetry] unsupported compression format");
+
+    return -1;
+}
+
+static \
+int uncompress_deflate(char **output_buffer,
+                       size_t *output_size,
+                       char *input_buffer,
+                       size_t input_size)
+{
+    flb_error("[opentelemetry] unsupported compression format");
+
+    return -1;
+}
+
+static \
+int uncompress_snappy(char **output_buffer,
+                      size_t *output_size,
+                      char *input_buffer,
+                      size_t input_size)
+{
+    int ret;
+
+    /* otel-collector sends this as a framed
+     * snappy payload which is not supported
+     * by snappy-c.
+     * This is a very crude proof of concept.
+     */
+
+    if (input_buffer[0] == ((char) 0xff) &&
+        input_buffer[1] == 6) {
+        input_buffer = &input_buffer[10];
+        input_size -= 10;
+    }
+
+    if (input_buffer[0] == 0) {
+        input_buffer = &input_buffer[8];
+        input_size -= 8;
+    }
+
+    ret = flb_snappy_uncompress(input_buffer,
+                                input_size,
+                                (void *) output_buffer,
+                                output_size);
+
+    if (ret != 0) {
+        flb_error("[opentelemetry] snappy decompression failed");
+
+        return -1;
+    }
+
+    return 1;
+}
+
+static \
+int uncompress_gzip(char **output_buffer,
+                    size_t *output_size,
+                    char *input_buffer,
+                    size_t input_size)
+{
+    int ret;
+
+    ret = flb_gzip_uncompress(input_buffer,
+                              input_size,
+                              (void *) output_buffer,
+                              output_size);
+
+    if (ret == -1) {
+        flb_error("[opentelemetry] gzip decompression failed");
+
+        return -1;
+    }
+
+    return 1;
+}
+
+int opentelemetry_prot_uncompress(struct mk_http_session *session,
+                                  struct mk_http_request *request,
+                                  char **output_buffer,
+                                  size_t *output_size)
+{
+    struct mk_http_header *header;
+    size_t                 index;
+
+    *output_buffer = NULL;
+    *output_size = 0;
+
+    for (index = 0;
+         index < session->parser.headers_extra_count;
+         index++) {
+        header = &session->parser.headers_extra[index];
+
+        if (strncasecmp(header->key.data, "Content-Encoding", 16) == 0) {
+            if (strncasecmp(header->val.data, "gzip", 4) == 0) {
+                return uncompress_gzip(output_buffer,
+                                       output_size,
+                                       request->data.data,
+                                       request->data.len);
+            }
+            else if (strncasecmp(header->val.data, "zlib", 4) == 0) {
+                return uncompress_zlib(output_buffer,
+                                       output_size,
+                                       request->data.data,
+                                       request->data.len);
+            }
+            else if (strncasecmp(header->val.data, "zstd", 4) == 0) {
+                return uncompress_zstd(output_buffer,
+                                       output_size,
+                                       request->data.data,
+                                       request->data.len);
+            }
+            else if (strncasecmp(header->val.data, "snappy", 6) == 0) {
+                printf("DECOMPRESSING SNAPPY\n");
+
+                return uncompress_snappy(output_buffer,
+                                         output_size,
+                                         request->data.data,
+                                         request->data.len);
+            }
+            else if (strncasecmp(header->val.data, "deflate", 4) == 0) {
+                return uncompress_deflate(output_buffer,
+                                          output_size,
+                                          request->data.data,
+                                          request->data.len);
+            }
+            else {
+                return -2;
+            }
+        }
+    }
+
+    return 0;
+}
+
+
 /*
  * Handle an incoming request. It perform extra checks over the request, if
  * everything is OK, it enqueue the incoming payload.
@@ -678,6 +845,10 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
     off_t diff;
     flb_sds_t tag;
     struct mk_http_header *header;
+    char *original_data;
+    size_t original_data_size;
+    char *uncompressed_data;
+    size_t uncompressed_data_size;
 
     if (request->uri.data[0] != '/') {
         send_response(conn, 400, "error: invalid request\n");
@@ -773,6 +944,29 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
         return -1;
     }
 
+    original_data = request->data.data;
+    original_data_size = request->data.len;
+
+    FLB_DUMP_BINARY("COMPRESSED.BIN", request->data.data, request->data.len);
+
+    ret = opentelemetry_prot_uncompress(session, request,
+                                        &uncompressed_data,
+                                        &uncompressed_data_size);
+
+    if (ret > 0) {
+        request->data.data = uncompressed_data;
+        request->data.len = uncompressed_data_size;
+
+        FLB_DUMP_BINARY("UNCOMPRESSED.BIN", request->data.data, request->data.len);
+    }
+
+
+    printf("opentelemetry_prot_uncompress = %d\n", ret);
+    printf("request->data.data = %p\n", request->data.data);
+    printf("request->data.len  = %zu\n", request->data.len);
+
+    flb_hex_dump((uint8_t *) request->data.data, request->data.len, 40);
+
     if (strcmp(uri, "/v1/metrics") == 0) {
         ret = process_payload_metrics(ctx, conn, tag, session, request);
     }
@@ -782,6 +976,13 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
     else if (strcmp(uri, "/v1/logs") == 0) {
         ret = process_payload_logs(ctx, conn, tag, session, request);
     }
+
+    if (uncompressed_data != NULL) {
+        flb_free(uncompressed_data);
+    }
+
+    request->data.data = original_data;
+    request->data.len = original_data_size;
 
     mk_mem_free(uri);
     flb_sds_destroy(tag);

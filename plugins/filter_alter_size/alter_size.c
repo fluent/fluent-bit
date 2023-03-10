@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_log_event_debug.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
@@ -138,6 +139,10 @@ static int cb_alter_size_filter(const void *data, size_t bytes,
                         FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
             }
         }
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_commit_record(ctx->log_encoder);
+        }
     }
     else if (ctx->remove > 0) {
         flb_plg_debug(ins, "remove %i records", ctx->remove);
@@ -163,7 +168,7 @@ static int cb_alter_size_filter(const void *data, size_t bytes,
             if (ret == FLB_EVENT_ENCODER_SUCCESS) {
                 ret = flb_log_event_encoder_set_root_from_msgpack_object(
                         ctx->log_encoder,
-                        &ctx->log_decoder->unpacked_event.data);
+                        event.root);
             }
 
             if (ret == FLB_EVENT_ENCODER_SUCCESS) {

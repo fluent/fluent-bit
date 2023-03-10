@@ -39,6 +39,7 @@ struct flb_log_event {
     msgpack_object  *metadata;
     int              format;
     msgpack_object  *body;
+    msgpack_object  *root;
 };
 
 #endif

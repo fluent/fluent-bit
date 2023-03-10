@@ -79,8 +79,6 @@ static inline void flb_hex_dump(uint8_t *buffer, size_t buffer_length, size_t li
 
 }
 
-
-
 static inline int flb_msgpack_dump(char *buffer, size_t length)
 {
     msgpack_unpacked context;
@@ -98,15 +96,23 @@ static inline int flb_msgpack_dump(char *buffer, size_t length)
     while ((result = msgpack_unpack_next(&context, buffer, length, &offset) ==
            MSGPACK_UNPACK_SUCCESS)) {
 
+        // printf("ITERATION\n");
+        // printf("MSGPACK ERROR L %zu\n\n", length);
+        // printf("MSGPACK ERROR O %zu\n\n", offset);
         msgpack_object_print(stdout, context.data);
         printf("\n\n");
     }
 
     if (result != MSGPACK_UNPACK_SUCCESS) {
-        printf("MSGPACK ERROR %d\n\n", result);
+        printf("MSGPACK ERROR %d\n\n",  result);
+        // printf("MSGPACK ERROR R %d\n\n",  result);
+        // printf("MSGPACK ERROR L %zu\n\n", length);
+        // printf("MSGPACK ERROR O %zu\n\n", offset);
     }
 
     msgpack_unpacked_destroy(&context);
 
     return result;
 }
+
+#endif
