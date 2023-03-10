@@ -484,10 +484,12 @@ int cio_file_content_copy(struct cio_chunk *ch,
  */
 static inline int open_and_up(struct cio_ctx *ctx)
 {
+    printf("Calling open_and_up\n");
     if (ctx->total_chunks_up >= ctx->max_chunks_up) {
+        printf("CIO_FALSE %zu - %zu \n", ctx->total_chunks_up, ctx->max_chunks_up);
         return CIO_FALSE;
     }
-
+    printf("CIO_TRUE %zu - %zu \n", ctx->total_chunks_up, ctx->max_chunks_up);
     return CIO_TRUE;
 }
 
@@ -608,6 +610,7 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
 #endif
 
     /* Should we open and put this file up ? */
+    printf("call1\n");
     ret = open_and_up(ctx);
 
     if (ret == CIO_FALSE) {
@@ -744,6 +747,7 @@ static int _cio_file_up(struct cio_chunk *ch, int enforced)
      * pre-set limits.
      */
     if (enforced == CIO_TRUE) {
+        printf("enforced\n");
         ret = open_and_up(ch->ctx);
         if (ret == CIO_FALSE) {
             return CIO_ERROR;
@@ -797,6 +801,7 @@ static int _cio_file_up(struct cio_chunk *ch, int enforced)
  */
 int cio_file_up(struct cio_chunk *ch)
 {
+    printf("loading file enforced\n");
     return _cio_file_up(ch, CIO_TRUE);
 }
 
