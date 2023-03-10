@@ -820,7 +820,7 @@ static int process_logs(struct flb_event_chunk *event_chunk,
         log_object = msgpack_object_to_otlp_any_value(obj);
 
         if (log_object == NULL) {
-            flb_plg_error(ins, "log event conversion failure");
+            flb_plg_error(ctx->ins, "log event conversion failure");
             res = FLB_ERROR;
             continue;
         }
