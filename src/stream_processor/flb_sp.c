@@ -339,7 +339,8 @@ static int string_to_number(const char *str, int len, int64_t *i, double *d)
  *
  * This function aims to take care of strings representing a value too.
  */
-static int object_to_number(msgpack_object obj, int64_t *i, double *d)
+static int object_to_number(msgpack_object obj, int64_t *i, double *d,
+                            int convert_str_to_num)
 {
     int ret;
     int64_t i_out;
@@ -356,7 +357,7 @@ static int object_to_number(msgpack_object obj, int64_t *i, double *d)
         *d = obj.via.f64;
         return FLB_STR_FLOAT;
     }
-    else if (obj.type == MSGPACK_OBJECT_STR) {
+    else if (obj.type == MSGPACK_OBJECT_STR && convert_str_to_num == FLB_TRUE) {
         /* A numeric representation of a string should not exceed 19 chars */
         if (obj.via.str.size > 19) {
             return -1;
@@ -1220,7 +1221,8 @@ next:
 }
 
 static struct aggregate_node * sp_process_aggregate_data(struct flb_sp_task *task,
-                                                         msgpack_object map)
+                                                         msgpack_object map,
+                                                         int convert_str_to_num)
 {
     int i;
     int ret;
@@ -1279,7 +1281,7 @@ static struct aggregate_node * sp_process_aggregate_data(struct flb_sp_task *tas
                 values_found++;
 
                 /* Convert string to number if that is possible */
-                ret = object_to_number(sval->o, &ival, &dval);
+                ret = object_to_number(sval->o, &ival, &dval, convert_str_to_num);
                 if (ret == -1) {
                     if (sval->o.type == MSGPACK_OBJECT_STR) {
                         gb_nums[key_id].type = FLB_SP_STRING;
@@ -1376,7 +1378,8 @@ static struct aggregate_node * sp_process_aggregate_data(struct flb_sp_task *tas
 int sp_process_data_aggr(const char *buf_data, size_t buf_size,
                          const char *tag, int tag_len,
                          struct flb_sp_task *task,
-                         struct flb_sp *sp)
+                         struct flb_sp *sp,
+                         int convert_str_to_num)
 {
     int i;
     int ok;
@@ -1435,7 +1438,7 @@ int sp_process_data_aggr(const char *buf_data, size_t buf_size,
             }
         }
 
-        aggr_node = sp_process_aggregate_data(task, map);
+        aggr_node = sp_process_aggregate_data(task, map, convert_str_to_num);
         if (!aggr_node)
         {
             continue;
@@ -1491,7 +1494,7 @@ int sp_process_data_aggr(const char *buf_data, size_t buf_size,
                 ival = 0;
                 dval = 0.0;
                 if (ckey->aggr_func != FLB_SP_NOP) {
-                    ret = object_to_number(sval->o, &ival, &dval);
+                    ret = object_to_number(sval->o, &ival, &dval, convert_str_to_num);
                     if (ret == -1) {
                         /* Value cannot be represented as a number */
                         key_id++;
@@ -1981,7 +1984,7 @@ int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
         if (task->aggregate_keys == FLB_TRUE) {
             ret = sp_process_data_aggr(buf_data, buf_size,
                                        tag, tag_len,
-                                       task, sp);
+                                       task, sp, in->config->stream_processor_str_conv);
 
             if (ret == -1) {
                 flb_error("[sp] error processing records for '%s'",

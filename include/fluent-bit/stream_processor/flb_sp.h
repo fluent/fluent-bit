@@ -171,7 +171,7 @@ int sp_process_data(const char *tag, int tag_len,
 int sp_process_data_aggr(const char *buf_data, size_t buf_size,
                          const char *tag, int tag_len,
                          struct flb_sp_task *task,
-                         struct flb_sp *sp);
+                         struct flb_sp *sp, int convert_str_to_num);
 void package_results(const char *tag, int tag_len,
                      char **out_buf, size_t *out_size,
                      struct flb_sp_task *task);
