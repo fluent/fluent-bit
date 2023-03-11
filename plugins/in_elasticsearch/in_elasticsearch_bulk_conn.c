@@ -224,7 +224,7 @@ struct in_elasticsearch_bulk_conn *in_elasticsearch_bulk_conn_add(struct flb_con
     conn->connection = connection;
 
     /* Set data for the event-loop */
-    MK_EVENT_NEW(&connection->event);
+    MK_EVENT_ZERO(&connection->event);
 
     connection->user_data     = conn;
     connection->event.type    = FLB_ENGINE_EV_CUSTOM;
