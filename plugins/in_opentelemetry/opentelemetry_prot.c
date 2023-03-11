@@ -717,27 +717,10 @@ int uncompress_snappy(char **output_buffer,
 {
     int ret;
 
-    /* otel-collector sends this as a framed
-     * snappy payload which is not supported
-     * by snappy-c.
-     * This is a very crude proof of concept.
-     */
-
-    if (input_buffer[0] == ((char) 0xff) &&
-        input_buffer[1] == 6) {
-        input_buffer = &input_buffer[10];
-        input_size -= 10;
-    }
-
-    if (input_buffer[0] == 0) {
-        input_buffer = &input_buffer[8];
-        input_size -= 8;
-    }
-
-    ret = flb_snappy_uncompress(input_buffer,
-                                input_size,
-                                (void *) output_buffer,
-                                output_size);
+    ret = flb_snappy_uncompress_framed_data(input_buffer,
+                                            input_size,
+                                            output_buffer,
+                                            output_size);
 
     if (ret != 0) {
         flb_error("[opentelemetry] snappy decompression failed");
@@ -806,8 +789,6 @@ int opentelemetry_prot_uncompress(struct mk_http_session *session,
                                        request->data.len);
             }
             else if (strncasecmp(header->val.data, "snappy", 6) == 0) {
-                printf("DECOMPRESSING SNAPPY\n");
-
                 return uncompress_snappy(output_buffer,
                                          output_size,
                                          request->data.data,
@@ -947,8 +928,6 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
     original_data = request->data.data;
     original_data_size = request->data.len;
 
-    FLB_DUMP_BINARY("COMPRESSED.BIN", request->data.data, request->data.len);
-
     ret = opentelemetry_prot_uncompress(session, request,
                                         &uncompressed_data,
                                         &uncompressed_data_size);
@@ -956,16 +935,7 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
     if (ret > 0) {
         request->data.data = uncompressed_data;
         request->data.len = uncompressed_data_size;
-
-        FLB_DUMP_BINARY("UNCOMPRESSED.BIN", request->data.data, request->data.len);
     }
-
-
-    printf("opentelemetry_prot_uncompress = %d\n", ret);
-    printf("request->data.data = %p\n", request->data.data);
-    printf("request->data.len  = %zu\n", request->data.len);
-
-    flb_hex_dump((uint8_t *) request->data.data, request->data.len, 40);
 
     if (strcmp(uri, "/v1/metrics") == 0) {
         ret = process_payload_metrics(ctx, conn, tag, session, request);
@@ -986,7 +956,9 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
 
     mk_mem_free(uri);
     flb_sds_destroy(tag);
+
     send_response(conn, ctx->successful_response_code, NULL);
+
     return ret;
 }
 

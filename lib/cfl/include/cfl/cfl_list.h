@@ -177,10 +177,10 @@ static inline int cfl_list_entry_is_orphan(struct cfl_list *entry)
 {
     if (entry->next != NULL &&
         entry->prev != NULL) {
-        return CFL_FALSE;
+        return 0;
     }
 
-    return CFL_TRUE;
+    return 1;
 }
 
 static inline void cfl_list_cat(struct cfl_list *list, struct cfl_list *head)

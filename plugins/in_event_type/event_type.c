@@ -250,6 +250,8 @@ static int send_traces(struct flb_input_instance *ins)
     resource = ctr_resource_span_get_resource(resource_span);
     ctr_resource_set_dropped_attr_count(resource, 5);
 
+    ctr_attributes_set_string(resource->attr, "service.name", "Fluent Bit Test Service");
+
     /* scope span */
     scope_span = ctr_scope_span_create(resource_span);
     ctr_scope_span_set_schema_url(scope_span, "https://ctraces/scope_span_schema_url");

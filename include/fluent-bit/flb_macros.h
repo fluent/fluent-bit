@@ -38,6 +38,29 @@
 
 #define FLB_EXPORT MK_EXPORT
 
+#define FLB_DEBUG_TRACE() fprintf(stderr, "DEBUG TRACE : %s - %s - %d\n", __FILE__, __FUNCTION__, __LINE__);
+
+#define FLB_DUMP_BINARY_SEQ(filename_format, buffer, length)    {                                                                            \
+                                                                    static size_t flb_fn_idx = 0;                                            \
+                                                                    char flb_fn_tmp[255];                                                    \
+                                                                    snprintf(flb_fn_tmp, sizeof(flb_fn_tmp), filename_format, flb_fn_idx++); \
+                                                                    FLB_DUMP_BINARY(flb_fn_tmp, buffer, length);                             \
+                                                                }
+
+#define FLB_DUMP_BINARY(filename, buffer, length)   {                                                                                             \
+                                                        size_t flb_db_wtn;                                                                        \
+                                                        FILE *flb_db_tmp;                                                                         \
+                                                        flb_db_tmp = fopen(filename, "wb+");                                                      \
+                                                        if (flb_db_tmp == NULL) {                                                                 \
+                                                            printf(stderr, "DLB_DUMP_BINARY : could not open %s\n", filename);                    \
+                                                        }                                                                                         \
+                                                        else {                                                                                    \
+                                                            flb_db_wtn = fwrite(buffer, sizeof(typeof(*buffer)), length, flb_db_tmp);             \
+                                                            fprintf(stderr, "FLB_DUMP_BINARY : written %zu bytes to %s\n", flb_db_wtn, filename); \
+                                                            fclose(flb_db_tmp);                                                                   \
+                                                        }                                                                                         \
+                                                    }
+
 #define flb_unlikely(x) mk_unlikely(x)
 #define flb_likely(x)   mk_likely(x)
 
