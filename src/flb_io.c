@@ -413,7 +413,7 @@ retry:
                     return -1;
                 }
 
-                MK_EVENT_NEW(&connection->event);
+                MK_EVENT_ZERO(&connection->event);
 
                 goto retry;
             }
