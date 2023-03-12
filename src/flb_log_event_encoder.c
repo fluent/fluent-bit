@@ -19,6 +19,7 @@
 
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_log_event_encoder_primitives.h>
+#include <stdarg.h>
 
 void flb_log_event_encoder_reset(struct flb_log_event_encoder *context)
 {
