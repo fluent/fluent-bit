@@ -1214,7 +1214,7 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
 
     if (tag_len > FLB_INPUT_CHUNK_TAG_MAX) {
         flb_plg_warn(in,
-                     "Tag set exceeds limit, truncating from %lu to %lu bytes",
+                     "Tag set exceeds limit, truncating from %i to %i bytes",
                      tag_len, FLB_INPUT_CHUNK_TAG_MAX);
         tag_len = FLB_INPUT_CHUNK_TAG_MAX;
     }
@@ -1376,7 +1376,7 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
         in->storage_buf_status = FLB_INPUT_RUNNING;
         if (in->p->cb_resume) {
             in->p->cb_resume(in->context, in->config);
-            flb_info("[input] %s resume (storage buf overlimit %d/%d)",
+            flb_info("[input] %s resume (storage buf overlimit %zu/%zu)",
                       in->name,
                       ((struct flb_storage_input *)in->storage)->cio->total_chunks_up,
                       ((struct flb_storage_input *)in->storage)->cio->max_chunks_up);
@@ -1395,7 +1395,7 @@ static inline int flb_input_chunk_protect(struct flb_input_instance *i)
     struct flb_storage_input *storage = i->storage;
 
     if (flb_input_chunk_is_storage_overlimit(i) == FLB_TRUE) {
-        flb_warn("[input] %s paused (storage buf overlimit %d/%d)",
+        flb_warn("[input] %s paused (storage buf overlimit %zu/%zu)",
                  i->name,
                  storage->cio->total_chunks_up,
                  storage->cio->max_chunks_up);
@@ -1808,7 +1808,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     real_size = flb_input_chunk_get_real_size(ic);
     real_diff = real_size - pre_real_size;
     if (real_diff != 0) {
-        flb_debug("[input chunk] update output instances with new chunk size diff=%d",
+        flb_debug("[input chunk] update output instances with new chunk size diff=%zu",
                   real_diff);
         flb_input_chunk_update_output_instances(ic, real_diff);
     }

@@ -331,7 +331,7 @@ static int in_stdin_config_init(struct flb_in_stdin_config *ctx,
         return -1;
     }
     else if (ctx->buf_size < DEFAULT_BUF_SIZE) {
-        flb_plg_error(ctx->ins, "buffer_size '%d' must be at least %i bytes",
+        flb_plg_error(ctx->ins, "buffer_size '%zu' must be at least %i bytes",
                       ctx->buf_size, DEFAULT_BUF_SIZE);
         return -1;
     }

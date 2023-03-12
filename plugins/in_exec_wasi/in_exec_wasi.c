@@ -247,7 +247,7 @@ static int in_exec_wasi_config_read(struct flb_exec_wasi *ctx,
         return -1;
     }
 
-    flb_plg_debug(in, "interval_sec=%d interval_nsec=%d oneshot=%i buf_size=%d",
+    flb_plg_debug(in, "interval_sec=%d interval_nsec=%d oneshot=%i buf_size=%zu",
               ctx->interval_sec, ctx->interval_nsec, ctx->oneshot, ctx->buf_size);
 
     return 0;

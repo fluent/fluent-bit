@@ -172,12 +172,40 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         flb_config_map_foreach(head, mv, ctx->systemd_filters) {
             flb_plg_debug(ctx->ins, "add filter: %s (%s)", mv->val.str,
                 journal_filter_is_and ? "and" : "or");
-            sd_journal_add_match(ctx->j, mv->val.str, 0);
+            ret = sd_journal_add_match(ctx->j, mv->val.str, 0);
+            if (ret < 0) {
+                if (ret == -EINVAL) {
+                    flb_plg_error(ctx->ins,
+                                  "systemd_filter error: invalid input '%s'",
+                                  mv->val.str);
+                }
+                else {
+                    flb_plg_error(ctx->ins,
+                                  "systemd_filter error: status=%d input '%s'",
+                                  ret, mv->val.str);
+                }
+                flb_systemd_config_destroy(ctx);
+                return NULL;
+            }
             if (journal_filter_is_and) {
-                sd_journal_add_conjunction(ctx->j);
+                ret = sd_journal_add_conjunction(ctx->j);
+                if (ret < 0) {
+                    flb_plg_error(ctx->ins,
+                                  "sd_journal_add_conjunction failed. ret=%d",
+                                  ret);
+                    flb_systemd_config_destroy(ctx);
+                    return NULL;
+                }
             }
             else {
-                sd_journal_add_disjunction(ctx->j);
+                ret = sd_journal_add_disjunction(ctx->j);
+                if (ret < 0) {
+                    flb_plg_error(ctx->ins,
+                                  "sd_journal_add_disjunction failed. ret=%d",
+                                  ret);
+                    flb_systemd_config_destroy(ctx);
+                    return NULL;
+                }
             }
         }
     }

@@ -175,7 +175,7 @@ static flb_sds_t build_request_body(struct flb_filter_nightfall *ctx,
                 key_val_str = flb_sds_create_size(pl->key_to_scan_with->via.str.size + 
                                                   num_str_len + 2);
                 num_str_len = flb_sds_snprintf(&num_str, flb_sds_alloc(num_str), 
-                                               "%lld", pl->obj->via.i64);
+                                               "%"PRIi64, pl->obj->via.i64);
                 key_val_str_len = flb_sds_snprintf(&key_val_str, 
                                                    flb_sds_alloc(key_val_str), 
                                                    "%s %s", key_str, num_str);
@@ -185,7 +185,7 @@ static flb_sds_t build_request_body(struct flb_filter_nightfall *ctx,
             }
             else {
                 num_str_len = flb_sds_snprintf(&num_str, flb_sds_alloc(num_str), 
-                                               "%lld", pl->obj->via.i64);
+                                               "%"PRIi64, pl->obj->via.i64);
                 msgpack_pack_str_with_body(&req_pk, num_str, num_str_len);
             }
         }
