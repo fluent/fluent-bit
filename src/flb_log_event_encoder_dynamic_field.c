@@ -92,7 +92,7 @@ int flb_log_event_encoder_dynamic_field_scope_leave(
          * to ensure the entry count matches the kv pair count
          */
 
-        if (field->type == MSGPACK_OBJECT_MAP) {
+        if (scope->type == MSGPACK_OBJECT_MAP) {
             scope->header.entries /= 2;
             flb_mp_map_header_end(&scope->header);
         }

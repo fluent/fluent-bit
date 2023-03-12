@@ -31,28 +31,6 @@ int translate_msgpack_encoder_result(int value)
     return FLB_EVENT_ENCODER_SUCCESS;
 }
 
-static inline \
-int flb_log_event_encoder_get_field(
-        struct flb_log_event_encoder *context,
-        int target_field,
-        struct flb_log_event_encoder_dynamic_field **field)
-{
-    if (target_field == FLB_LOG_EVENT_METADATA) {
-        *field = &context->metadata;
-    }
-    else if (target_field == FLB_LOG_EVENT_BODY) {
-        *field = &context->body;
-    }
-    else if (target_field == FLB_LOG_EVENT_ROOT) {
-        *field = &context->root;
-    }
-    else {
-        return FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT;
-    }
-
-    return FLB_EVENT_ENCODER_SUCCESS;
-}
-
 int flb_log_event_encoder_append_value(
         struct flb_log_event_encoder *context,
         int target_field,

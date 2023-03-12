@@ -175,4 +175,128 @@ int flb_log_event_encoder_append_fluent_bit_v2_timestamp(
     int target_field,
     struct flb_time *value);
 
+static inline \
+int flb_log_event_encoder_get_field(
+        struct flb_log_event_encoder *context,
+        int target_field,
+        struct flb_log_event_encoder_dynamic_field **field)
+{
+    if (target_field == FLB_LOG_EVENT_METADATA) {
+        *field = &context->metadata;
+    }
+    else if (target_field == FLB_LOG_EVENT_BODY) {
+        *field = &context->body;
+    }
+    else if (target_field == FLB_LOG_EVENT_ROOT) {
+        *field = &context->root;
+    }
+    else {
+        return FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT;
+    }
+
+    return FLB_EVENT_ENCODER_SUCCESS;
+}
+
+static inline \
+int flb_log_event_encoder_begin_map(
+        struct flb_log_event_encoder *context,
+        int target_field)
+{
+    struct flb_log_event_encoder_dynamic_field *field;
+    int                                         result;
+
+    result = flb_log_event_encoder_get_field(context, target_field, &field);
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_dynamic_field_begin_map(field);
+    }
+
+    return result;
+}
+
+static inline \
+int flb_log_event_encoder_commit_map(
+        struct flb_log_event_encoder *context,
+        int target_field)
+{
+    struct flb_log_event_encoder_dynamic_field *field;
+    int                                         result;
+
+    result = flb_log_event_encoder_get_field(context, target_field, &field);
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_dynamic_field_commit_map(field);
+    }
+
+    return result;
+}
+
+static inline \
+int flb_log_event_encoder_rollback_map(
+        struct flb_log_event_encoder *context,
+        int target_field)
+{
+    struct flb_log_event_encoder_dynamic_field *field;
+    int                                         result;
+
+    result = flb_log_event_encoder_get_field(context, target_field, &field);
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_dynamic_field_rollback_map(field);
+    }
+
+    return result;
+}
+
+static inline \
+int flb_log_event_encoder_begin_array(
+        struct flb_log_event_encoder *context,
+        int target_field)
+{
+    struct flb_log_event_encoder_dynamic_field *field;
+    int                                         result;
+
+    result = flb_log_event_encoder_get_field(context, target_field, &field);
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_dynamic_field_begin_array(field);
+    }
+
+    return result;
+}
+
+static inline \
+int flb_log_event_encoder_commit_array(
+        struct flb_log_event_encoder *context,
+        int target_field)
+{
+    struct flb_log_event_encoder_dynamic_field *field;
+    int                                         result;
+
+    result = flb_log_event_encoder_get_field(context, target_field, &field);
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_dynamic_field_commit_array(field);
+    }
+
+    return result;
+}
+
+static inline \
+int flb_log_event_encoder_rollback_array(
+        struct flb_log_event_encoder *context,
+        int target_field)
+{
+    struct flb_log_event_encoder_dynamic_field *field;
+    int                                         result;
+
+    result = flb_log_event_encoder_get_field(context, target_field, &field);
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_dynamic_field_rollback_array(field);
+    }
+
+    return result;
+}
+
 #endif
