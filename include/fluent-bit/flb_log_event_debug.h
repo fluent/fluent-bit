@@ -115,4 +115,29 @@ static inline int flb_msgpack_dump(char *buffer, size_t length)
     return result;
 }
 
+static inline int flb_msgpack_dump_object(msgpack_object *object)
+{
+    msgpack_unpacked context;
+    size_t           offset;
+    int              result;
+    msgpack_packer   packer;
+    msgpack_sbuffer  buffer;
+
+    msgpack_sbuffer_init(&buffer);
+    msgpack_packer_init(&packer, &buffer, msgpack_sbuffer_write);
+
+    result = msgpack_pack_object(&packer, *object);
+
+    if (result != 0) {
+        printf("ERROR PACKING :%d\n", result);
+        return -1;
+    }
+
+    result = flb_msgpack_dump(buffer.data, buffer.size);
+
+    msgpack_sbuffer_destroy(&buffer);
+
+    return result;
+}
+
 #endif
