@@ -797,28 +797,17 @@ static int process_logs(struct flb_event_chunk *event_chunk,
                         struct flb_input_instance *ins, void *out_context,
                         struct flb_config *config)
 {
-    size_t                         log_record_count;
-    struct flb_log_event_decoder  *decoder;
-    size_t                         index;
-    struct flb_log_event           event;
-    int                            res;
-    struct opentelemetry_context  *ctx;
-
-    /*
-    * These were initially variable length arrays.
-    * However, having a high value for batch_size was causing memory
-    * issues with the event chunk being overwritten. Moving it to the heap
-    * solves these issues but we still do not know the root cause
-    */
-
+    size_t                                      log_record_count;
     Opentelemetry__Proto__Logs__V1__LogRecord **log_record_list;
     Opentelemetry__Proto__Logs__V1__LogRecord  *log_records;
     Opentelemetry__Proto__Common__V1__AnyValue *log_object;
+    struct flb_log_event_decoder               *decoder;
     msgpack_unpacked                            result;
+    struct flb_log_event                        event;
     size_t                                      index;
-    struct opentelemetry_context               *ctx;
     msgpack_object                             *obj;
     size_t                                      off;
+    struct opentelemetry_context               *ctx;
     int                                         res;
     struct flb_time                             tm;
 
@@ -858,7 +847,6 @@ static int process_logs(struct flb_event_chunk *event_chunk,
 
         flb_free(log_record_list);
         flb_free(log_records);
-        flb_free(log_bodies);
 
         return -1;
     }

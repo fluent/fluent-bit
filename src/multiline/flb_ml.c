@@ -28,6 +28,7 @@
 #include <fluent-bit/multiline/flb_ml_rule.h>
 #include <fluent-bit/multiline/flb_ml_group.h>
 
+#include <stdarg.h>
 #include <math.h>
 
 static inline int match_negate(struct flb_ml_parser *ml_parser, int matched)
