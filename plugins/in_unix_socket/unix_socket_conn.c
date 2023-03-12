@@ -39,9 +39,9 @@ static inline int process_pack(struct unix_socket_conn *conn,
     size_t off = 0;
     msgpack_unpacked result;
     msgpack_object entry;
-    struct flb_in_udp_config *ctx;
+    struct flb_in_unix_socket_config *ctx;
 
-    ctx = conn->ctx;
+    ctx = (struct flb_in_unix_socket_config *) conn->ctx;
 
     /* First pack the results, iterate concatenated messages */
     msgpack_unpacked_init(&result);
@@ -142,9 +142,9 @@ static ssize_t parse_payload_none(struct unix_socket_conn *conn)
     char *buf;
     char *s;
     char *separator;
-    struct flb_in_udp_config *ctx;
+    struct flb_in_unix_socket_config *ctx;
 
-    ctx = conn->ctx;
+    ctx = (struct flb_in_unix_socket_config *) conn->ctx;
 
     separator = conn->ctx->separator;
     sep_len = flb_sds_len(conn->ctx->separator);

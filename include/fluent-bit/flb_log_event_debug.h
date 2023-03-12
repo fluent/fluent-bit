@@ -117,11 +117,9 @@ static inline int flb_msgpack_dump(char *buffer, size_t length)
 
 static inline int flb_msgpack_dump_object(msgpack_object *object)
 {
-    msgpack_unpacked context;
-    size_t           offset;
-    int              result;
-    msgpack_packer   packer;
-    msgpack_sbuffer  buffer;
+    int             result;
+    msgpack_packer  packer;
+    msgpack_sbuffer buffer;
 
     msgpack_sbuffer_init(&buffer);
     msgpack_packer_init(&packer, &buffer, msgpack_sbuffer_write);
