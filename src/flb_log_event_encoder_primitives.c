@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_log_event_encoder_primitives.h>
 #include <fluent-bit/flb_byteswap.h>
+#include <stdarg.h>
 
 static inline \
 int translate_msgpack_encoder_result(int value)
