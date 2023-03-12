@@ -139,7 +139,7 @@ static int in_winevtlog_read_channel(struct flb_input_instance *ins,
 {
     unsigned int read;
 
-    if (winevtlog_read(ch, &mp_pck, ctx, &read)) {
+    if (winevtlog_read(ch, ctx, &read)) {
         flb_plg_error(ctx->ins, "failed to read '%s'", ch->name);
         return -1;
     }

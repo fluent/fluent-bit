@@ -261,7 +261,7 @@ static int pack_filetime(struct winevtlog_config *ctx, ULONGLONG filetime)
     return 0;
 }
 
-static int pack_sid(struct winevtlog_config *ctx, PSID sid, struct winevtlog_config *ctx)
+static int pack_sid(struct winevtlog_config *ctx, PSID sid)
 {
     size_t size;
     LPWSTR wide_sid = NULL;
@@ -280,8 +280,6 @@ static int pack_sid(struct winevtlog_config *ctx, PSID sid, struct winevtlog_con
 static void pack_string_inserts(struct winevtlog_config *ctx, PEVT_VARIANT values, DWORD count)
 {
     int i;
-
-    msgpack_pack_array(mp_pck, count);
 
     for (i = 0; i < count; i++) {
         if (values[i].Type & EVT_VARIANT_TYPE_ARRAY) {
