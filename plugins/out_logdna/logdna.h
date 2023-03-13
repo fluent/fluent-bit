@@ -38,6 +38,7 @@ struct flb_logdna {
     flb_sds_t ip_addr;
     flb_sds_t file;
     flb_sds_t app;
+    flb_sds_t log_key;
     struct mk_list *tags;
 
     /* Internal */
