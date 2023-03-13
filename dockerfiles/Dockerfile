@@ -55,6 +55,7 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     flex \
     bison \
     libyaml-dev \
+    libsnmp-dev \
     && apt-get satisfy -y cmake "cmake (<< 4.0)" \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
