@@ -230,9 +230,8 @@ static char *get_config_file(char *id)
     return path;
 }
 
-static char *extract_name(char *line, char *start)
+static char *extract_name(char *line, char *start, int skip)
 {
-    int skip = 9;
     int len = 0;
     char *name;
     char buff[256];
@@ -283,7 +282,7 @@ static char *get_container_name(struct flb_docker *ctx, char *id)
     while ((line = read_line(f))) {
         char *index = strstr(line, DOCKER_NAME_ARG);
         if (index != NULL) {
-            container_name = extract_name(line, index);
+            container_name = extract_name(line, index, sizeof(DOCKER_NAME_ARG)-1);
             flb_free(line);
             break;
         }
