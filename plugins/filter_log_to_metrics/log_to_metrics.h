@@ -17,8 +17,8 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_FILTER_GREP_METRICS_H
-#define FLB_FILTER_GREP_METRICS_H
+#ifndef FLB_FILTER_LOG_TO_METRICS_H
+#define FLB_FILTER_LOG_TO_METRICS_H
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_filter.h>
@@ -37,10 +37,13 @@
 #define FLB_LOG_TO_METRICS_COUNTER_STR "counter"
 #define FLB_LOG_TO_METRICS_GAUGE_STR "gauge"
 #define FLB_LOG_TO_METRICS_SUM_STR "sum"
+#define FLB_LOG_TO_METRICS_HISTOGRAM_STR "histogram"
+
 
 #define FLB_LOG_TO_METRICS_COUNTER 0
 #define FLB_LOG_TO_METRICS_GAUGE 1
 #define FLB_LOG_TO_METRICS_SUM 2
+#define FLB_LOG_TO_METRICS_HISTOGRAM 3
 
 #define NUMBER_OF_KUBERNETES_LABELS 5
 #define MAX_LABEL_LENGTH 253
@@ -60,10 +63,14 @@ struct log_to_metrics_ctx
     flb_sds_t value_field;
     struct cmt_counter *c;
     struct cmt_gauge *g;
+    struct cmt_histogram *h;
+    struct cmt_histogram_buckets *histogram_buckets;
     char **label_keys;
     int *label_counter;
     bool kubernetes_mode;
     flb_sds_t tag;
+    int *bucket_counter;
+    double *buckets;
 };
 
 struct grep_rule

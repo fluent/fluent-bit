@@ -30,6 +30,10 @@
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_utils.h>
+#include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_gauge.h>
+#include <cmetrics/cmt_counter.h>
+#include <cmetrics/cmt_histogram.h>
 #include <msgpack.h>
 #include <stdio.h>
 #include <sys/types.h>
@@ -60,10 +64,14 @@ static void delete_rules(struct log_to_metrics_ctx *ctx)
     }
 }
 
-static int log_to_metrics_destroy(struct log_to_metrics_ctx *ctx){
+static int log_to_metrics_destroy(struct log_to_metrics_ctx *ctx)
+{
     int i;
     if (!ctx) {
         return 0;
+    }
+    if(ctx->histogram_buckets){
+        cmt_histogram_buckets_destroy(ctx->histogram_buckets);
     }
 
     if (ctx->cmt) {
@@ -78,6 +86,8 @@ static int log_to_metrics_destroy(struct log_to_metrics_ctx *ctx){
         }
         flb_free(ctx->label_keys);
     }
+    flb_free(ctx->buckets);
+    flb_free(ctx->bucket_counter);
     flb_free(ctx->label_counter);
     flb_free(ctx);
     return 0;
@@ -252,6 +262,87 @@ static int set_labels(struct log_to_metrics_ctx *ctx,
     return counter;
 }
 
+static int convert_double(char *str, double *value)
+{
+    char *endptr = str;
+    int valid = 1;
+    int i = 0;
+    /* input validation */
+    for (i = 0; str[i] != '\0'; i++) {
+        if (!(str[i]>='0') && !(str[i] <= '9') && str[i] != '.'
+                        && str[i] != '-' && str[i] != '+') {
+            valid = 0;
+            break;
+        }
+    }
+    /* convert to double */
+    if (valid) {
+        *value = strtod(str, &endptr);
+        if (str == endptr) {
+            valid = 0;
+        }
+    }
+    return valid;
+}
+
+static void sort_doubles_ascending(double *arr, int size)
+{
+    int i, j;
+    double tmp;
+
+    for (i = 0; i < size - 1; i++) {
+        for (j = 0; j < size - i - 1; j++) {
+            if (arr[j] > arr[j + 1]) {
+                tmp = arr[j];
+                arr[j] = arr[j + 1];
+                arr[j + 1] = tmp;
+            }
+        }
+    }
+}
+static int set_buckets(struct log_to_metrics_ctx *ctx,
+                      struct flb_filter_instance *f_ins)
+{
+
+    struct mk_list *head;
+    struct flb_kv *kv;
+    double parsed_double = 0.0;
+    int counter = 0;
+    int valid = 1;
+
+    /* Iterate filter properties to get count of buckets to allocate memory */
+    mk_list_foreach(head, &f_ins->properties) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+
+        if (strcasecmp(kv->key, "bucket") != 0) {
+            continue;
+        }
+        counter++;
+    }
+    /* Allocate the memory for buckets */
+    ctx->buckets = (double *) flb_malloc(counter * sizeof(double));
+    /* Set the buckets */
+    counter = 0;
+    mk_list_foreach(head, &f_ins->properties) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+
+        if (strcasecmp(kv->key, "bucket") != 0) {
+            continue;
+        }
+        valid = convert_double(kv->val, &parsed_double);
+        if(!valid){
+            flb_error("Error during conversion");
+            return -1;
+        }
+        else{
+            ctx->buckets[counter++] = parsed_double;
+        }
+    }
+    *ctx->bucket_counter = counter;
+    sort_doubles_ascending(ctx->buckets, counter);
+    return 0;
+}
+
 static int fill_labels(struct log_to_metrics_ctx *ctx, char **label_values,
             char kubernetes_label_values
                 [NUMBER_OF_KUBERNETES_LABELS][MAX_LABEL_LENGTH],
@@ -357,11 +448,25 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
     /* Set the context */
     flb_filter_set_context(f_ins, ctx);
 
+    /* Set buckets for histogram */
+    ctx->bucket_counter = NULL;
+    ctx->histogram_buckets = NULL;
+    ctx->buckets = NULL;
+    ctx->bucket_counter = flb_malloc(sizeof(int));
+    if(set_buckets(ctx, f_ins) != 0)
+    {
+        flb_plg_error(f_ins, "Setting buckets failed");
+        log_to_metrics_destroy(ctx);
+        return -1;
+    }
+
     /* Set label keys */
+    ctx->label_keys = NULL;
     ctx->label_keys = (char **) flb_malloc(MAX_LABEL_COUNT * sizeof(char *));
     for (i = 0; i < MAX_LABEL_COUNT; i++) {
         ctx->label_keys[i] = flb_malloc(MAX_LABEL_LENGTH * sizeof(char));
     }
+    ctx->label_counter = NULL;
     ctx->label_counter = flb_malloc(sizeof(int));
     label_count = set_labels(ctx, ctx->label_keys, ctx->label_counter, f_ins);
     if (label_count < 0){
@@ -389,10 +494,14 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
         else if (strcasecmp(tmp, FLB_LOG_TO_METRICS_SUM_STR) == 0) {
             ctx->mode = FLB_LOG_TO_METRICS_SUM;
         }
+        else if (strcasecmp(tmp, FLB_LOG_TO_METRICS_HISTOGRAM_STR) == 0) {
+            ctx->mode = FLB_LOG_TO_METRICS_HISTOGRAM;
+        }
         else {
             flb_plg_error(f_ins,
                           "invalid 'mode' value. Only "
-                          "'counter', 'gauge' or 'sum' types are allowed");
+                          "'counter', 'gauge' or 'sum' or "
+                          "'histogram' types are allowed");
             log_to_metrics_destroy(ctx);
             return -1;
         }
@@ -421,7 +530,7 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
     snprintf(metric_description, sizeof(metric_description) - 1, "%s",
              ctx->metric_description);
 
-    /* Value field only needed for modes gauge and sum */
+    /* Value field only needed for modes gauge, sum and histogram */
     if (ctx->mode > 0) {
         if (ctx->value_field == NULL || strlen(ctx->value_field) == 0) {
             flb_plg_error(f_ins, "value_field is not set");
@@ -432,14 +541,31 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
                     ctx->value_field);
     }
 
+
+    /* Check if buckets are defined for histogram, if not assume defaults */
+    if (ctx->mode == FLB_LOG_TO_METRICS_HISTOGRAM ){
+        if (ctx->bucket_counter == 0){
+            flb_plg_error(f_ins,
+                "buckets are not set for histogram."
+                "Will use defaults: 0.005, 0.01, 0.025, "
+                "0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0");
+            ctx->histogram_buckets = cmt_histogram_buckets_default_create();
+        }
+        else{
+            ctx->histogram_buckets = cmt_histogram_buckets_create_size(
+                                        ctx->buckets, *ctx->bucket_counter);
+        }
+    }
+
+
     /* create the metric */
+    ctx->cmt = NULL;
     ctx->cmt = cmt_create();
 
     /* Depending on mode create different types of cmetrics metrics */
     switch (ctx->mode) {
         case FLB_LOG_TO_METRICS_COUNTER:
-            ctx->c =
-                cmt_counter_create(ctx->cmt, "log_metric", "counter",
+            ctx->c = cmt_counter_create(ctx->cmt, "log_metric", "counter",
                                    metric_name, metric_description, 
                                    label_count, ctx->label_keys);
             break;
@@ -449,9 +575,14 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
                                       label_count, ctx->label_keys);
             break;
         case FLB_LOG_TO_METRICS_SUM:
-            ctx->c =
-                cmt_counter_create(ctx->cmt, "log_metric", "counter",
+            ctx->c = cmt_counter_create(ctx->cmt, "log_metric", "counter",
                                    metric_name, metric_description, 
+                                   label_count, ctx->label_keys);
+            break;
+        case FLB_LOG_TO_METRICS_HISTOGRAM:
+            ctx->h = cmt_histogram_create(ctx->cmt, "log_metric", "histogram",
+                                   metric_name, metric_description,
+                                   ctx->histogram_buckets,
                                    label_count, ctx->label_keys);
             break;
         default:
@@ -517,8 +648,9 @@ static int cb_log_to_metrics_filter(const void *data, size_t bytes,
     char **label_values = NULL;
     int label_count = 0;
     int i;
-    double gaugevalue = 0;
-    double countervalue;
+    double gauge_value = 0;
+    double add_value;
+    double histogram_value = 0;
     char kubernetes_label_values
         [NUMBER_OF_KUBERNETES_LABELS][MAX_LABEL_LENGTH];
 
@@ -618,13 +750,13 @@ static int cb_log_to_metrics_filter(const void *data, size_t bytes,
                         break;
                     }
                     if (rval->type == FLB_RA_STRING) {
-                        sscanf(rval->val.string, "%lf", &gaugevalue);
+                        sscanf(rval->val.string, "%lf", &gauge_value);
                     }
                     else if (rval->type == FLB_RA_FLOAT) {
-                        gaugevalue = rval->val.f64;
+                        gauge_value = rval->val.f64;
                     }
                     else if (rval->type == FLB_RA_INT) {
-                        gaugevalue = (double)rval->val.i64;
+                        gauge_value = (double)rval->val.i64;
                     }
                     else {
                         flb_plg_error(f_ins, 
@@ -632,7 +764,7 @@ static int cb_log_to_metrics_filter(const void *data, size_t bytes,
                         break;
                     }
                     
-                    ret = cmt_gauge_set(ctx->g, ts, gaugevalue, 
+                    ret = cmt_gauge_set(ctx->g, ts, gauge_value,
                                     label_count, label_values);
                     if (rval) {
                         flb_ra_key_value_destroy(rval);
@@ -658,20 +790,20 @@ static int cb_log_to_metrics_filter(const void *data, size_t bytes,
                         break;
                     }
                     if (rval->type == FLB_RA_STRING) {
-                        sscanf(rval->val.string, "%lf", &countervalue);
+                        sscanf(rval->val.string, "%lf", &add_value);
                     }
                     else if (rval->type == FLB_RA_FLOAT) {
-                        countervalue = rval->val.f64;
+                        add_value = rval->val.f64;
                     }
                     else if (rval->type == FLB_RA_INT) {
-                        countervalue = (double)rval->val.i64;
+                        add_value = (double)rval->val.i64;
                     }
                     else {
                         flb_plg_error(f_ins, 
                                     "cannot convert given value to metric");
                         break;
                     }
-                    ret = cmt_counter_add(ctx->c, ts, countervalue, 
+                    ret = cmt_counter_add(ctx->c, ts, add_value,
                                     label_count, label_values);
                     if (rval) {
                         flb_ra_key_value_destroy(rval);
@@ -681,6 +813,45 @@ static int cb_log_to_metrics_filter(const void *data, size_t bytes,
                         flb_ra_destroy(ra);
                         ra = NULL;
                     }                    
+                    break;
+                case FLB_LOG_TO_METRICS_HISTOGRAM:
+                    ra = flb_ra_create(ctx->value_field, FLB_TRUE);
+                    if (!ra) {
+                        flb_error("invalid record accessor key, aborting");
+                        break;
+                    }
+
+                    rval = flb_ra_get_value_object(ra, map);
+
+                    if (!rval) {
+                        flb_warn("given value field is empty or not existent");
+                        break;
+                    }
+                    if (rval->type == FLB_RA_STRING) {
+                        sscanf(rval->val.string, "%lf", &histogram_value);
+                    }
+                    else if (rval->type == FLB_RA_FLOAT) {
+                        histogram_value = rval->val.f64;
+                    }
+                    else if (rval->type == FLB_RA_INT) {
+                        histogram_value = (double)rval->val.i64;
+                    }
+                    else {
+                        flb_plg_error(f_ins,
+                                    "cannot convert given value to metric");
+                        break;
+                    }
+
+                    ret = cmt_histogram_observe(ctx->h, ts, histogram_value,
+                                    label_count, label_values);
+                    if (rval) {
+                        flb_ra_key_value_destroy(rval);
+                        rval = NULL;
+                    }
+                    if (ra) {
+                        flb_ra_destroy(ra);
+                        ra = NULL;
+                    }
                     break;
                 default:
                     flb_plg_error(f_ins, "unsupported mode");
@@ -742,13 +913,13 @@ static struct flb_config_map config_map[] = {
      FLB_FALSE, FLB_TRUE,
      offsetof(struct log_to_metrics_ctx, mode),
      "Mode selector. Values counter, gauge,"
-     " sum."
+     " sum or histogram. Summary is not supported"
     },
     {
      FLB_CONFIG_MAP_STR, "value_field", NULL, 
      FLB_FALSE, FLB_TRUE,
      offsetof(struct log_to_metrics_ctx, value_field),
-     "Numeric field to use for gauge or sum mode"
+     "Numeric field to use for gauge, sum or histogram"
     },
     {
      FLB_CONFIG_MAP_STR, "metric_name", NULL, 
@@ -771,6 +942,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "label_field", NULL, 
      FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
      "Specify message field that should be included in the metric"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "bucket", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Specify bucket for histogram metric"
     },
     {
      FLB_CONFIG_MAP_STR, "tag", NULL,
