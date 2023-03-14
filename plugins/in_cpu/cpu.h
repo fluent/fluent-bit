@@ -85,11 +85,6 @@ struct flb_cpu {
                                  IN_CPU_KEY_LEN,                    \
                                  "cpu%i.p_%s", i - 1, #key)
 
-#define CPU_PACK_SNAP(s, key)                                           \
-    msgpack_pack_str(&mp_pck, s->k_##key.length);                       \
-    msgpack_pack_str_body(&mp_pck, s->k_##key.name, s->k_##key.length); \
-    msgpack_pack_double(&mp_pck, s->p_##key)
-
 #define ULL_ABS(a, b)  (a > b) ? a - b : b - a
 
 /*
