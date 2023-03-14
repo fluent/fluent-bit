@@ -384,6 +384,7 @@ static void pack_string_inserts(msgpack_packer *mp_pck, PEVT_VARIANT values, DWO
             if (pack_binary(mp_pck, values[i].BinaryVal, values[i].Count)) {
                 pack_nullstr(mp_pck);
             }
+            break;
         default:
             msgpack_pack_str(mp_pck, 1);
             msgpack_pack_str_body(mp_pck, "?", 1);
