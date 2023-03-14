@@ -550,17 +550,193 @@ static int find_map_entry_by_key(msgpack_object_map *map,
     return -1;
 }
 
+static int json_payload_get_wrapped_value(msgpack_object *wrapper,
+                                          msgpack_object **value,
+                                          int            *type)
+{
+    int                 internal_type;
+    msgpack_object     *kv_value;
+    msgpack_object_str *kv_key;
+    msgpack_object_map *map;
+
+    if (wrapper->type != MSGPACK_OBJECT_MAP) {
+        return -1;
+    }
+
+    map = &wrapper->via.map;
+    kv_value = NULL;
+    internal_type = -1;
+
+    if (map->size == 1) {
+        if (map->ptr[0].key.type == MSGPACK_OBJECT_STR) {
+            kv_value = &map->ptr[0].val;
+            kv_key = &map->ptr[0].key.via.str;
+
+            if (strncasecmp(kv_key->ptr, "stringValue",  kv_key->size) == 0 ||
+                strncasecmp(kv_key->ptr, "string_value", kv_key->size) == 0) {
+                internal_type = MSGPACK_OBJECT_STR;
+            }
+            else if (strncasecmp(kv_key->ptr, "boolValue",  kv_key->size) == 0 ||
+                     strncasecmp(kv_key->ptr, "bool_value", kv_key->size) == 0) {
+                internal_type = MSGPACK_OBJECT_BOOLEAN;
+            }
+            else if (strncasecmp(kv_key->ptr, "intValue",  kv_key->size) == 0 ||
+                     strncasecmp(kv_key->ptr, "int_value", kv_key->size) == 0) {
+                internal_type = MSGPACK_OBJECT_POSITIVE_INTEGER;
+            }
+            else if (strncasecmp(kv_key->ptr, "doubleValue",  kv_key->size) == 0 ||
+                     strncasecmp(kv_key->ptr, "double_value", kv_key->size) == 0) {
+                internal_type = MSGPACK_OBJECT_FLOAT;
+            }
+            else if (strncasecmp(kv_key->ptr, "bytesValue",  kv_key->size) == 0 ||
+                     strncasecmp(kv_key->ptr, "bytes_value", kv_key->size) == 0) {
+                internal_type = MSGPACK_OBJECT_BIN;
+            }
+            else if (strncasecmp(kv_key->ptr, "arrayValue",  kv_key->size) == 0 ||
+                     strncasecmp(kv_key->ptr, "array_value", kv_key->size) == 0) {
+                internal_type = MSGPACK_OBJECT_ARRAY;
+            }
+            else if (strncasecmp(kv_key->ptr, "kvlistValue",  kv_key->size) == 0 ||
+                     strncasecmp(kv_key->ptr, "kvlist_value", kv_key->size) == 0) {
+                internal_type = MSGPACK_OBJECT_MAP;
+            }
+        }
+    }
+
+    if (internal_type != -1) {
+        if (type != NULL) {
+            *type  = internal_type;
+        }
+
+        if (value != NULL) {
+            *value = kv_value;
+        }
+
+        if (kv_value->type == MSGPACK_OBJECT_MAP) {
+            map = &kv_value->via.map;
+
+            if (map->size == 1) {
+                kv_value = &map->ptr[0].val;
+                kv_key = &map->ptr[0].key.via.str;
+
+                if (strncasecmp(kv_key->ptr, "values", kv_key->size) == 0) {
+                    if (value != NULL) {
+                        *value = kv_value;
+                    }
+                }
+                else {
+                    return -3;
+                }
+            }
+        }
+    }
+    else {
+        return -2;
+    }
+
+    return 0;
+}
+
+static int json_payload_append_unwrapped_value(
+            struct flb_log_event_encoder *encoder,
+            int target_field,
+            msgpack_object *object,
+            int *encoder_result)
+{
+    char            temporary_buffer[33];
+    int             unwrap_value;
+    int             result;
+    msgpack_object *value;
+    int             type;
+
+    result = json_payload_get_wrapped_value(object,
+                                            &value,
+                                            &type);
+
+    if (result == 0) {
+        unwrap_value = FLB_FALSE;
+
+        if (type == MSGPACK_OBJECT_STR) {
+            unwrap_value = FLB_TRUE;
+        }
+        else if (type == MSGPACK_OBJECT_BOOLEAN) {
+            unwrap_value = FLB_TRUE;
+        }
+        else if (type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+            if (value->type == MSGPACK_OBJECT_STR) {
+                memset(temporary_buffer, 0, sizeof(temporary_buffer));
+
+                if (value->via.str.size < sizeof(temporary_buffer)) {
+                    strncpy(temporary_buffer,
+                            value->via.str.ptr,
+                            value->via.str.size);
+                }
+                else {
+                    strncpy(temporary_buffer,
+                            value->via.str.ptr,
+                            sizeof(temporary_buffer) - 1);
+                }
+
+                result = flb_log_event_encoder_append_int64(
+                            encoder,
+                            target_field,
+                            strtoll(temporary_buffer, NULL, 10));
+            }
+            else {
+                unwrap_value = FLB_TRUE;
+            }
+        }
+        else if (type == MSGPACK_OBJECT_FLOAT) {
+            unwrap_value = FLB_TRUE;
+        }
+        else if (type == MSGPACK_OBJECT_BIN) {
+            unwrap_value = FLB_TRUE;
+        }
+        else if (type == MSGPACK_OBJECT_ARRAY) {
+            result = json_payload_append_converted_array(encoder,
+                                                         target_field,
+                                                         value);
+        }
+        else if (type == MSGPACK_OBJECT_MAP) {
+            result = json_payload_append_converted_kvlist(encoder,
+                                                          target_field,
+                                                          value);
+        }
+        else {
+            return -2;
+        }
+
+        if (unwrap_value) {
+            result = json_payload_append_converted_value(encoder,
+                                                         target_field,
+                                                         value);
+        }
+
+        *encoder_result = result;
+
+        return 0;
+    }
+    else {
+        return -1;
+    }
+
+    return -1;
+}
+
+
 static int json_payload_append_converted_map(
             struct flb_log_event_encoder *encoder,
             int target_field,
             msgpack_object *object)
 {
     char                temporary_buffer[33];
+    int                 encoder_result;
     int                 unwrap_value;
     msgpack_object_str *inner_key;
     int                 result;
     size_t              index;
     msgpack_object     *value;
+    int                 type;
     msgpack_object_str *key;
     msgpack_object_map *map;
 
@@ -568,88 +744,15 @@ static int json_payload_append_converted_map(
 
     unwrap_value = FLB_FALSE;
 
-    if (map->size == 1) {
-        if (map->ptr[0].key.type == MSGPACK_OBJECT_STR) {
-            value = &map->ptr[0].val;
-            key   = &map->ptr[0].key.via.str;
 
-            if (strncasecmp(key->ptr, "stringValue",  key->size) == 0 ||
-                     strncasecmp(key->ptr, "string_value", key->size) == 0) {
-                unwrap_value = FLB_TRUE;
-            }
-            else if (strncasecmp(key->ptr, "boolValue",  key->size) == 0 ||
-                     strncasecmp(key->ptr, "bool_value", key->size) == 0) {
-                unwrap_value = FLB_TRUE;
-            }
-            else if (strncasecmp(key->ptr, "intValue",  key->size) == 0 ||
-                     strncasecmp(key->ptr, "int_value", key->size) == 0) {
+    result = json_payload_append_unwrapped_value(
+                encoder,
+                target_field,
+                object,
+                &encoder_result);
 
-                if (value->type == MSGPACK_OBJECT_STR) {
-                    memset(temporary_buffer, 0, sizeof(temporary_buffer));
-
-                    if (value->via.str.size < sizeof(temporary_buffer)) {
-                        strncpy(temporary_buffer,
-                                value->via.str.ptr,
-                                value->via.str.size);
-                    }
-                    else {
-                        strncpy(temporary_buffer,
-                                value->via.str.ptr,
-                                sizeof(temporary_buffer) - 1);
-                    }
-
-                    return flb_log_event_encoder_append_int64(
-                                encoder,
-                                target_field,
-                                strtoll(temporary_buffer, NULL, 10));
-                }
-                else {
-                    unwrap_value = FLB_TRUE;
-                }
-            }
-            else if (strncasecmp(key->ptr, "doubleValue",  key->size) == 0 ||
-                     strncasecmp(key->ptr, "double_value", key->size) == 0) {
-                unwrap_value = FLB_TRUE;
-            }
-            else if (strncasecmp(key->ptr, "bytesValue",  key->size) == 0 ||
-                     strncasecmp(key->ptr, "bytes_value", key->size) == 0) {
-                unwrap_value = FLB_TRUE;
-            }
-            else if (strncasecmp(key->ptr, "arrayValue",  key->size) == 0 ||
-                     strncasecmp(key->ptr, "array_value", key->size) == 0) {
-                if (map->ptr[0].val.via.map.size == 1) {
-                    inner_key = &map->ptr[0].val.via.map.ptr[0].key.via.str;
-                    if (strncasecmp(inner_key->ptr,
-                                    "values",
-                                    inner_key->size) == 0) {
-                        return json_payload_append_converted_array(
-                                    encoder,
-                                    target_field,
-                                    &map->ptr[0].val.via.map.ptr[0].val);
-                    }
-                }
-            }
-            else if (strncasecmp(key->ptr, "kvlistValue",  key->size) == 0 ||
-                     strncasecmp(key->ptr, "kvlist_value", key->size) == 0) {
-                if (map->ptr[0].val.via.map.size == 1) {
-                    inner_key = &map->ptr[0].val.via.map.ptr[0].key.via.str;
-                    if (strncasecmp(inner_key->ptr,
-                                    "values",
-                                    inner_key->size) == 0) {
-                        return json_payload_append_converted_kvlist(
-                                encoder,
-                                target_field,
-                                &map->ptr[0].val.via.map.ptr[0].val);
-                    }
-                }
-            }
-        }
-
-        if (unwrap_value) {
-            return json_payload_append_converted_value(encoder,
-                                                       target_field,
-                                                       &map->ptr[0].val);
-        }
+    if (result == 0 && encoder_result == FLB_EVENT_ENCODER_SUCCESS) {
+        return result;
     }
 
     result = flb_log_event_encoder_begin_map(encoder, target_field);
@@ -869,6 +972,7 @@ static int process_json_payload_log_records_entry(
     uint64_t            timestamp_uint64;
     msgpack_object     *metadata_object;
     msgpack_object     *body_object;
+    int                 body_type;
     struct flb_time     timestamp;
     int                 result;
     size_t              index;
@@ -884,44 +988,53 @@ static int process_json_payload_log_records_entry(
     result = find_map_entry_by_key(log_records_entry, "timeUnixNano", 0, FLB_TRUE);
 
     if (result == -1) {
-
         result = find_map_entry_by_key(log_records_entry, "time_unix_nano", 0, FLB_TRUE);
+    }
 
-        if (result == -1) {
-            flb_plg_error(ctx->ins, "timeUnixNano missing");
+    if (result == -1) {
+        result = find_map_entry_by_key(log_records_entry, "observedTimeUnixNano", 0, FLB_TRUE);
+    }
+
+    if (result == -1) {
+        result = find_map_entry_by_key(log_records_entry, "observed_time_unix_nano", 0, FLB_TRUE);
+    }
+
+    if (result == -1) {
+        flb_plg_info(ctx->ins, "neither timeUnixNano nor observedTimeUnixNano found");
+
+        flb_time_get(&timestamp);
+    }
+    else {
+        timestamp_object = &log_records_entry->ptr[result].val;
+
+        if (timestamp_object->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+            timestamp_uint64 = timestamp_object->via.u64;
+        }
+        else if (timestamp_object->type == MSGPACK_OBJECT_STR) {
+            memset(timestamp_str, 0, sizeof(timestamp_str));
+
+            if (timestamp_object->via.str.size < sizeof(timestamp_str)) {
+                strncpy(timestamp_str,
+                        timestamp_object->via.str.ptr,
+                        timestamp_object->via.str.size);
+            }
+            else {
+                strncpy(timestamp_str,
+                        timestamp_object->via.str.ptr,
+                        sizeof(timestamp_str) - 1);
+            }
+
+            timestamp_uint64 = strtoul(timestamp_str, NULL, 10);
+        }
+        else {
+            flb_plg_error(ctx->ins, "unexpected timeUnixNano type");
 
             return -4;
         }
+
+        flb_time_from_uint64(&timestamp, timestamp_uint64);
     }
 
-    timestamp_object = &log_records_entry->ptr[result].val;
-
-    if (timestamp_object->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-        timestamp_uint64 = timestamp_object->via.u64;
-    }
-    else if (timestamp_object->type == MSGPACK_OBJECT_STR) {
-        memset(timestamp_str, 0, sizeof(timestamp_str));
-
-        if (timestamp_object->via.str.size < sizeof(timestamp_str)) {
-            strncpy(timestamp_str,
-                    timestamp_object->via.str.ptr,
-                    timestamp_object->via.str.size);
-        }
-        else {
-            strncpy(timestamp_str,
-                    timestamp_object->via.str.ptr,
-                    sizeof(timestamp_str) - 1);
-        }
-
-        timestamp_uint64 = strtoul(timestamp_str, NULL, 10);
-    }
-    else {
-        flb_plg_error(ctx->ins, "unexpected timeUnixNano type");
-
-        return -4;
-    }
-
-    flb_time_from_uint64(&timestamp, timestamp_uint64);
 
     result = find_map_entry_by_key(log_records_entry, "attributes", 0, FLB_TRUE);
 
@@ -975,7 +1088,17 @@ static int process_json_payload_log_records_entry(
 
     if (result == FLB_EVENT_ENCODER_SUCCESS &&
         body_object != NULL) {
-        flb_log_event_encoder_dynamic_field_reset(&encoder->body);
+        result = json_payload_get_wrapped_value(body_object, NULL, &body_type);
+
+        if (result != 0 || body_type == MSGPACK_OBJECT_MAP) {
+            flb_log_event_encoder_dynamic_field_reset(&encoder->body);
+        }
+        else {
+            flb_log_event_encoder_append_cstring(
+                 encoder,
+                 FLB_LOG_EVENT_BODY,
+                 "log");
+        }
 
         result = json_payload_append_converted_value(
                     encoder,

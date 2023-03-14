@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_log_event_debug.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 
 #include <cfl/cfl.h>
@@ -857,6 +858,7 @@ static int process_logs(struct flb_event_chunk *event_chunk,
 
     while (flb_log_event_decoder_next(decoder, &event) == 0 &&
            res == FLB_OK) {
+        opentelemetry__proto__logs__v1__log_record__init(&log_records[log_record_count]);
         log_records[log_record_count].attributes = \
             msgpack_map_to_otlp_kvarray(event.metadata,
                                         &log_records[log_record_count].n_attributes);
@@ -869,7 +871,6 @@ static int process_logs(struct flb_event_chunk *event_chunk,
             continue;
         }
 
-        opentelemetry__proto__logs__v1__log_record__init(&log_records[log_record_count]);
 
         log_records[log_record_count].body = log_object;
         log_records[log_record_count].time_unix_nano = flb_time_to_nanosec(&event.timestamp);
