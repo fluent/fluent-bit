@@ -47,6 +47,39 @@ static inline int do_glob(const char *pattern, int flags,
     return ret;
 }
 
+static char *error_reason(int cmt_error)
+{
+    static char *reason = NULL;
+
+    switch(cmt_error) {
+    case CMT_DECODE_PROMETHEUS_SYNTAX_ERROR:
+        reason = "syntax error";
+        break;
+    case CMT_DECODE_PROMETHEUS_ALLOCATION_ERROR:
+        reason = "allocation error";
+        break;
+    case CMT_DECODE_PROMETHEUS_MAX_LABEL_COUNT_EXCEEDED:
+        reason = "max label count exceeded";
+        break;
+    case CMT_DECODE_PROMETHEUS_CMT_SET_ERROR:
+        reason = "cmt set error";
+        break;
+    case CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR:
+        reason = "cmt create error";
+        break;
+    case CMT_DECODE_PROMETHEUS_PARSE_VALUE_FAILED:
+        reason = "parse value failed";
+        break;
+    case CMT_DECODE_PROMETHEUS_PARSE_TIMESTAMP_FAILED:
+        reason = "parse timestamp failed";
+        break;
+    default:
+        reason = "unknown reason";
+    }
+
+    return reason;
+}
+
 static int textfile_update(struct flb_ne *ctx)
 {
     int i;
@@ -57,7 +90,6 @@ static int textfile_update(struct flb_ne *ctx)
     flb_sds_t contents;
     struct cmt_decode_prometheus_parse_opts opts;
     uint64_t timestamp;
-    char *error_reason;
     struct cmt *cmt;
     char *ext;
 
@@ -136,32 +168,7 @@ static int textfile_update(struct flb_ne *ctx)
             else {
                 flb_plg_debug(ctx->ins, "parse a payload of prometheus: dismissed: %s, inode %li, error: %d",
                               globbuf.gl_pathv[i], st.st_ino, ret);
-                switch(ret) {
-                case CMT_DECODE_PROMETHEUS_SYNTAX_ERROR:
-                    error_reason = "syntax error";
-                    break;
-                case CMT_DECODE_PROMETHEUS_ALLOCATION_ERROR:
-                    error_reason = "allocation error";
-                    break;
-                case CMT_DECODE_PROMETHEUS_MAX_LABEL_COUNT_EXCEEDED:
-                    error_reason = "max label count exceeded";
-                    break;
-                case CMT_DECODE_PROMETHEUS_CMT_SET_ERROR:
-                    error_reason = "cmt set error";
-                    break;
-                case CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR:
-                    error_reason = "cmt create error";
-                    break;
-                case CMT_DECODE_PROMETHEUS_PARSE_VALUE_FAILED:
-                    error_reason = "parse value failed";
-                    break;
-                case CMT_DECODE_PROMETHEUS_PARSE_TIMESTAMP_FAILED:
-                    error_reason = "parse timestamp failed";
-                    break;
-                default:
-                    error_reason = "unknown reason";
-                }
-                cmt_counter_set(ctx->load_errors, timestamp, 1.0, 1,  (char*[]){error_reason});
+                cmt_counter_set(ctx->load_errors, timestamp, 1.0, 1,  (char*[]){error_reason(ret)});
             }
             flb_sds_destroy(contents);
             cmt_decode_prometheus_destroy(cmt);
