@@ -35,18 +35,6 @@
 #include <cmetrics/cmt_decode_prometheus.h>
 #include "cmt_decode_prometheus_parser.h"
 
-static inline int do_glob(const char *pattern, int flags,
-                          void *not_used, glob_t *pglob)
-{
-    int ret;
-    (void) not_used;
-
-    /* invoke glob with parameters */
-    ret = glob(pattern, flags, NULL, pglob);
-
-    return ret;
-}
-
 static char *error_reason(int cmt_error)
 {
     static char *reason = NULL;
@@ -82,16 +70,20 @@ static char *error_reason(int cmt_error)
 
 static int textfile_update(struct flb_ne *ctx)
 {
-    int i;
     int ret;
-    glob_t globbuf;
     char errbuf[256];
-    struct stat st;
     flb_sds_t contents;
     struct cmt_decode_prometheus_parse_opts opts;
     uint64_t timestamp;
     struct cmt *cmt;
+    struct mk_list *head;
+    struct mk_list list;
+    struct flb_slist_entry *entry;
+    const char *nop_pattern = "";
+    const char *dir_pattern = "/*.prom";
     char *ext;
+    struct stat st;
+    int use_directory_pattern = FLB_FALSE;
 
     timestamp = cfl_time_now();
 
@@ -102,84 +94,78 @@ static int textfile_update(struct flb_ne *ctx)
 
     flb_plg_debug(ctx->ins, "scanning path %s", ctx->path_textfile);
 
-    /* Safe reset for globfree() */
-    globbuf.gl_pathv = NULL;
-
     if (ctx->path_textfile == NULL) {
         flb_plg_warn(ctx->ins, "No valid path for textfile metric is registered");
     }
 
-    /* Scan the given path */
-    ret = do_glob(ctx->path_textfile, GLOB_TILDE | GLOB_ERR, NULL, &globbuf);
-    if (ret != 0) {
-        switch (ret) {
-        case GLOB_NOSPACE:
-            flb_plg_error(ctx->ins, "no memory space available");
-            return -1;
-        case GLOB_ABORTED:
-            flb_plg_error(ctx->ins, "read error, check permissions: %s", ctx->path_textfile);
-            return -1;
-        case GLOB_NOMATCH:
+    ext = strrchr(ctx->path_textfile, '.');
+    if (ext != NULL) {
+        if (strncmp(ext, ".prom", 5) == 0) {
+            flb_plg_debug(ctx->ins, "specified path %s has \".prom\" extension",
+                          ctx->path_textfile);
+            use_directory_pattern = FLB_FALSE;
+        }
+        else {
             ret = stat(ctx->path_textfile, &st);
-            if (ret == -1) {
-                flb_plg_debug(ctx->ins, "cannot read info from: %s", ctx->path_textfile);
+            if (ret != 0) {
+                flb_plg_warn(ctx->ins, "specified path %s is not accesible",
+                             ctx->path_textfile);
             }
-            else {
-                ret = access(ctx->path_textfile, R_OK);
-                if (ret == -1 && errno == EACCES) {
-                    flb_plg_error(ctx->ins, "NO read access for path: %s", ctx->path_textfile);
-                }
-                else {
-                    flb_plg_debug(ctx->ins, "NO matches for path: %s", ctx->path_textfile);
-                }
+            if (S_ISREG(st.st_mode)) {
+                flb_plg_warn(ctx->ins, "specified path %s does not have \".prom\" extension. Assuming directory",
+                             ctx->path_textfile);
+                use_directory_pattern = FLB_TRUE;
             }
-            return 0;
+        }
+    }
+    else {
+        flb_plg_debug(ctx->ins, "specified file path %s does not have extension part. Globbing directory with \"%s\" suffix",
+                      ctx->path_textfile, dir_pattern);
+        use_directory_pattern = FLB_TRUE;
+    }
+
+    if (use_directory_pattern == FLB_TRUE) {
+        /* Scan the given directory path */
+        ret = ne_utils_path_scan(ctx, ctx->path_textfile, dir_pattern, NE_SCAN_FILE, &list);
+        if (ret != 0) {
+            return -1;
+        }
+    }
+    else {
+        /* Scan the given file path */
+        ret = ne_utils_path_scan(ctx, ctx->path_textfile, nop_pattern, NE_SCAN_FILE, &list);
+        if (ret != 0) {
+            return -1;
         }
     }
 
-    for (i = 0; i < globbuf.gl_pathc; i++) {
-        ret = stat(globbuf.gl_pathv[i], &st);
-        if (ret == 0 && S_ISREG(st.st_mode)) {
-            ext = strrchr(globbuf.gl_pathv[i], '.');
-            if (ext == NULL) {
-                flb_plg_warn(ctx->ins, "globbed file %s does not have extension part",
-                             globbuf.gl_pathv[i]);
-                continue;
-            }
-            if (strncmp(ext, ".prom", 5) != 0) {
-                flb_plg_warn(ctx->ins, "globbed file %s does not have \".prom\" extension",
-                             globbuf.gl_pathv[i]);
-                continue;
-            }
-            /* Update metrics from text file */
-            contents = flb_file_read(globbuf.gl_pathv[i]);
-            if (flb_sds_len(contents) == 0) {
-                flb_plg_debug(ctx->ins, "skip empty payload of prometheus: %s, inode %li",
-                              globbuf.gl_pathv[i], st.st_ino);
-                continue;
-            }
+    /* Process entries */
+    mk_list_foreach(head, &list) {
+        entry = mk_list_entry(head, struct flb_slist_entry, _head);
+        /* Update metrics from text file */
+        contents = flb_file_read(entry->str);
+        if (flb_sds_len(contents) == 0) {
+            flb_plg_debug(ctx->ins, "skip empty payload of prometheus: %s",
+                          entry->str);
+            continue;
+        }
 
-            ret = cmt_decode_prometheus_create(&cmt, contents, 0, &opts);
-            if (ret == 0) {
-                flb_plg_debug(ctx->ins, "parse a payload of prometheus: %s, inode %li",
-                              globbuf.gl_pathv[i], st.st_ino);
-                cmt_cat(ctx->cmt, cmt);
-            }
-            else {
-                flb_plg_debug(ctx->ins, "parse a payload of prometheus: dismissed: %s, inode %li, error: %d",
-                              globbuf.gl_pathv[i], st.st_ino, ret);
-                cmt_counter_set(ctx->load_errors, timestamp, 1.0, 1,  (char*[]){error_reason(ret)});
-            }
-            flb_sds_destroy(contents);
+        ret = cmt_decode_prometheus_create(&cmt, contents, 0, &opts);
+        if (ret == 0) {
+            flb_plg_debug(ctx->ins, "parse a payload of prometheus: %s",
+                          entry->str);
+            cmt_cat(ctx->cmt, cmt);
             cmt_decode_prometheus_destroy(cmt);
         }
         else {
-            flb_plg_debug(ctx->ins, "skip (invalid) entry=%s",
-                          globbuf.gl_pathv[i]);
+            flb_plg_debug(ctx->ins, "parse a payload of prometheus: dismissed: %s, error: %d",
+                          entry->str, ret);
+            cmt_counter_set(ctx->load_errors, timestamp, 1.0, 1,  (char*[]){error_reason(ret)});
         }
+        flb_sds_destroy(contents);
     }
+    flb_slist_destroy(&list);
 
-    globfree(&globbuf);
     return 0;
 }
 

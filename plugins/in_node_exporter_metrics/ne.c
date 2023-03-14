@@ -966,7 +966,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "collector.textfile.path", NULL,
      0, FLB_TRUE, offsetof(struct flb_ne, path_textfile),
-     "Specify path to collect textfile metrics from the node."
+     "Specify file path or directory to collect textfile metrics from the node."
     },
 
     {
