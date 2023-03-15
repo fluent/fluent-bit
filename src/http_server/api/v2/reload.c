@@ -40,6 +40,8 @@ static void cb_reload(mk_request_t *request, void *data)
     size_t out_size;
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
+    struct flb_hs *hs = data;
+    struct flb_config *config = hs->config;
 
     if (request->method != MK_METHOD_POST &&
         request->method != MK_METHOD_PUT) {
@@ -65,18 +67,28 @@ static void cb_reload(mk_request_t *request, void *data)
     msgpack_pack_str_body(&mp_pck, "status", 6);
     msgpack_pack_int64(&mp_pck, ret);
 #else
-    ret = kill(getpid(), SIGHUP);
-    if (ret != 0) {
-        mk_http_status(request, 500);
-        mk_http_done(request);
-        return;
+    if (config->enable_hot_reload != FLB_TRUE) {
+        msgpack_pack_str(&mp_pck, 11);
+        msgpack_pack_str_body(&mp_pck, "not enabled", 11);
+        msgpack_pack_str(&mp_pck, 6);
+        msgpack_pack_str_body(&mp_pck, "status", 6);
+        msgpack_pack_int64(&mp_pck, -1);
+    }
+    else {
+        ret = kill(getpid(), SIGHUP);
+        if (ret != 0) {
+            mk_http_status(request, 500);
+            mk_http_done(request);
+            return;
+        }
+
+        msgpack_pack_str(&mp_pck, 4);
+        msgpack_pack_str_body(&mp_pck, "done", 4);
+        msgpack_pack_str(&mp_pck, 6);
+        msgpack_pack_str_body(&mp_pck, "status", 6);
+        msgpack_pack_int64(&mp_pck, ret);
     }
 
-    msgpack_pack_str(&mp_pck, 4);
-    msgpack_pack_str_body(&mp_pck, "done", 4);
-    msgpack_pack_str(&mp_pck, 6);
-    msgpack_pack_str_body(&mp_pck, "status", 6);
-    msgpack_pack_int64(&mp_pck, ret);
 #endif
 
     /* Export to JSON */
