@@ -220,6 +220,7 @@ void test_reload()
     TEST_CHECK(cf != NULL);
 
     ctx->config->conf_path_file = flb_sds_create(FLB_CLASSIC);
+    ctx->config->enable_hot_reload = FLB_TRUE;
 
     status = flb_config_load_config_format(ctx->config, cf);
     TEST_CHECK(status == 0);
