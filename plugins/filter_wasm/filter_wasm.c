@@ -116,6 +116,12 @@ static int cb_wasm_filter(const void *data, size_t bytes,
             continue;
         }
 
+        if (strlen(ret_val) == 0) { /* Skip record */
+            flb_plg_debug(ctx->ins, "WASM function returned empty string. Skip.");
+            flb_free(ret_val);
+            continue;
+        }
+
         /* main array */
         msgpack_pack_array(&tmp_pck, 2);
 
