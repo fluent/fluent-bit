@@ -29,7 +29,6 @@
 #include <float.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <glob.h>
 
 /* Prometheus decoder */
 #include <cmetrics/cmt_decode_prometheus.h>
