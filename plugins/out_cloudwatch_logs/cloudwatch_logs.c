@@ -240,7 +240,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     }
 
     ctx->client_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
-                                     FLB_TRUE,
+                                     ins->tls_verify,
                                      ins->tls_debug,
                                      ins->tls_vhost,
                                      ins->tls_ca_path,
@@ -332,8 +332,8 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     ctx->cw_client->provider = ctx->aws_provider;
     ctx->cw_client->region = (char *) ctx->region;
     ctx->cw_client->service = "logs";
-    ctx->cw_client->port = 443;
-    ctx->cw_client->flags = 0;
+    ctx->cw_client->port = (ins->host.port != 0) ? ins->host.port : 443;
+    ctx->cw_client->flags = (ins->use_tls) ? FLB_IO_TLS : FLB_IO_TCP;
     ctx->cw_client->proxy = NULL;
     ctx->cw_client->static_headers = &content_type_header;
     ctx->cw_client->static_headers_len = 1;
@@ -346,7 +346,8 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     ctx->cw_client->retry_requests = ctx->retry_requests;
 
     struct flb_upstream *upstream = flb_upstream_create(config, ctx->endpoint,
-                                                        443, FLB_IO_TLS,
+                                                        ctx->cw_client->port,
+                                                        ctx->cw_client->flags,
                                                         ctx->client_tls);
     if (!upstream) {
         flb_plg_error(ctx->ins, "Connection initialization error");
