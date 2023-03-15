@@ -245,6 +245,10 @@ char *flb_wasm_call_function_format_json(struct flb_wasm *fw, const char *functi
     }
     func_result = wasm_runtime_addr_app_to_native(fw->module_inst, func_args[0]);
 
+    if (func_result == NULL) {
+        return NULL;
+    }
+
     return (char *)flb_strdup(func_result);
 }
 
