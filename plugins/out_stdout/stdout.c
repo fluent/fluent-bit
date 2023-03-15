@@ -161,9 +161,9 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
                             void *out_context,
                             struct flb_config *config)
 {
-    struct flb_log_event_decoder decoder;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event         log_event;
     int                          result;
-    struct flb_log_event         event;
     flb_sds_t                    json;
     struct flb_stdout           *ctx;
     size_t                       cnt;
@@ -210,29 +210,31 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
         fflush(stdout);
     }
     else {
-        result = flb_log_event_decoder_init(&decoder,
+        result = flb_log_event_decoder_init(&log_decoder,
                                             (char *) event_chunk->data,
                                             event_chunk->size);
 
         if (result != FLB_EVENT_DECODER_SUCCESS) {
-            flb_plg_error(ctx->ins, "decoder initialization failure");
+            flb_plg_error(ctx->ins,
+                          "Log event decoder initialization error : %d", result);
 
-            FLB_OUTPUT_RETURN(FLB_ERROR);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
         }
 
-        while ((result = flb_log_event_decoder_next(&decoder, &event)) ==
-               FLB_EVENT_DECODER_SUCCESS) {
+        while ((result = flb_log_event_decoder_next(
+                            &log_decoder,
+                            &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
             printf("[%zd] %s: [[", cnt++, event_chunk->tag);
 
             printf("%"PRIu32".%09lu, ",
-                   (uint32_t)event.timestamp.tm.tv_sec,
-                   event.timestamp.tm.tv_nsec);
+                   (uint32_t)log_event.timestamp.tm.tv_sec,
+                   log_event.timestamp.tm.tv_nsec);
 
-            msgpack_object_print(stdout, *event.metadata);
+            msgpack_object_print(stdout, *log_event.metadata);
 
             printf("], ");
 
-            msgpack_object_print(stdout, *event.body);
+            msgpack_object_print(stdout, *log_event.body);
 
             printf("]\n");
         }
@@ -241,7 +243,7 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
             flb_plg_error(ctx->ins, "decoder error : %d", result);
         }
 
-        flb_log_event_decoder_destroy(&decoder);
+        flb_log_event_decoder_destroy(&log_decoder);
     }
 
     fflush(stdout);

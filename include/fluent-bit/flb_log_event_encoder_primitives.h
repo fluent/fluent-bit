@@ -20,7 +20,7 @@
 #ifndef FLB_LOG_EVENT_ENCODER_PRIMITIVES_H
 #define FLB_LOG_EVENT_ENCODER_PRIMITIVES_H
 
-int flb_log_event_encoder_append_values(
+int flb_log_event_encoder_append_values_unsafe(
         struct flb_log_event_encoder *context,
         int field,
         ssize_t value_count,
@@ -139,6 +139,10 @@ int flb_log_event_encoder_append_cstring(
         int target_field,
         char *value);
 
+int flb_log_event_encoder_append_null(
+        struct flb_log_event_encoder *context,
+        int target_field);
+
 int flb_log_event_encoder_append_msgpack_object(
     struct flb_log_event_encoder *context,
     int target_field,
@@ -174,6 +178,14 @@ int flb_log_event_encoder_append_fluent_bit_v2_timestamp(
     struct flb_log_event_encoder *context,
     int target_field,
     struct flb_time *value);
+
+#define flb_log_event_encoder_append_values(context,  field, value_count, ...) \
+                flb_log_event_encoder_append_values_unsafe( \
+                        context, \
+                        field, \
+                        value_count, \
+                        __VA_ARGS__, \
+                        FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
 
 static inline \
 int flb_log_event_encoder_get_field(

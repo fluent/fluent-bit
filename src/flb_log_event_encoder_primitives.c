@@ -86,6 +86,9 @@ int flb_log_event_encoder_append_value(
                                                    value_buffer,
                                                    value_length);
                 }
+                else if (value_type == FLB_LOG_EVENT_NULL_VALUE_TYPE) {
+                    result = msgpack_pack_nil(&field->packer);
+                }
                 else if (value_type == FLB_LOG_EVENT_CHAR_VALUE_TYPE) {
                     result = msgpack_pack_char(&field->packer,
                                                *((char *) value_buffer));
@@ -178,7 +181,6 @@ int flb_log_event_encoder_append_binary_body(
             FLB_LOG_EVENT_BINARY_BODY_VALUE_TYPE,
             value, length);
 }
-
 
 int flb_log_event_encoder_append_ext_length(
         struct flb_log_event_encoder *context,
@@ -334,6 +336,16 @@ int flb_log_event_encoder_append_boolean(
             context, target_field, FLB_TRUE,
             FLB_LOG_EVENT_BOOLEAN_VALUE_TYPE,
             (char *) &value, 0);
+}
+
+int flb_log_event_encoder_append_null(
+        struct flb_log_event_encoder *context,
+        int target_field)
+{
+    return flb_log_event_encoder_append_value(
+            context, target_field, FLB_TRUE,
+            FLB_LOG_EVENT_NULL_VALUE_TYPE,
+            NULL, 0);
 }
 
 int flb_log_event_encoder_append_character(
@@ -534,7 +546,7 @@ int flb_log_event_encoder_append_fluent_bit_v2_timestamp(
                                                                 value);
 }
 
-int flb_log_event_encoder_append_values(
+int flb_log_event_encoder_append_values_unsafe(
         struct flb_log_event_encoder *context,
         int target_field,
         ssize_t value_count,
@@ -603,6 +615,10 @@ int flb_log_event_encoder_append_values(
                         target_field,
                         buffer_address,
                         va_arg(arguments, size_t));
+        }
+        else if (value_type == FLB_LOG_EVENT_NULL_VALUE_TYPE) {
+            result = flb_log_event_encoder_append_null(context,
+                        target_field);
         }
         else if (value_type == FLB_LOG_EVENT_CHAR_VALUE_TYPE) {
             result = flb_log_event_encoder_append_character(context,

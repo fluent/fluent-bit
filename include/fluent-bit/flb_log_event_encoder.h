@@ -44,24 +44,25 @@
 #define FLB_LOG_EVENT_BINARY_BODY_VALUE_TYPE             4
 #define FLB_LOG_EVENT_EXT_LENGTH_VALUE_TYPE              5
 #define FLB_LOG_EVENT_EXT_BODY_VALUE_TYPE                6
-#define FLB_LOG_EVENT_CHAR_VALUE_TYPE                    7
-#define FLB_LOG_EVENT_INT8_VALUE_TYPE                    8
-#define FLB_LOG_EVENT_INT16_VALUE_TYPE                   9
-#define FLB_LOG_EVENT_INT32_VALUE_TYPE                   10
-#define FLB_LOG_EVENT_INT64_VALUE_TYPE                   11
-#define FLB_LOG_EVENT_UINT8_VALUE_TYPE                   12
-#define FLB_LOG_EVENT_UINT16_VALUE_TYPE                  13
-#define FLB_LOG_EVENT_UINT32_VALUE_TYPE                  14
-#define FLB_LOG_EVENT_UINT64_VALUE_TYPE                  15
-#define FLB_LOG_EVENT_DOUBLE_VALUE_TYPE                  16
-#define FLB_LOG_EVENT_BOOLEAN_VALUE_TYPE                 17
-#define FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE_TYPE          18
-#define FLB_LOG_EVENT_MSGPACK_RAW_VALUE_TYPE             19
-#define FLB_LOG_EVENT_TIMESTAMP_VALUE_TYPE               20
-#define FLB_LOG_EVENT_LEGACY_TIMESTAMP_VALUE_TYPE        21
-#define FLB_LOG_EVENT_FORWARD_V1_TIMESTAMP_VALUE_TYPE    22
-#define FLB_LOG_EVENT_FLUENT_BIT_V1_TIMESTAMP_VALUE_TYPE 23
-#define FLB_LOG_EVENT_FLUENT_BIT_V2_TIMESTAMP_VALUE_TYPE 24
+#define FLB_LOG_EVENT_NULL_VALUE_TYPE                    7
+#define FLB_LOG_EVENT_CHAR_VALUE_TYPE                    8
+#define FLB_LOG_EVENT_INT8_VALUE_TYPE                    9
+#define FLB_LOG_EVENT_INT16_VALUE_TYPE                   10
+#define FLB_LOG_EVENT_INT32_VALUE_TYPE                   11
+#define FLB_LOG_EVENT_INT64_VALUE_TYPE                   12
+#define FLB_LOG_EVENT_UINT8_VALUE_TYPE                   13
+#define FLB_LOG_EVENT_UINT16_VALUE_TYPE                  14
+#define FLB_LOG_EVENT_UINT32_VALUE_TYPE                  15
+#define FLB_LOG_EVENT_UINT64_VALUE_TYPE                  16
+#define FLB_LOG_EVENT_DOUBLE_VALUE_TYPE                  17
+#define FLB_LOG_EVENT_BOOLEAN_VALUE_TYPE                 18
+#define FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE_TYPE          19
+#define FLB_LOG_EVENT_MSGPACK_RAW_VALUE_TYPE             20
+#define FLB_LOG_EVENT_TIMESTAMP_VALUE_TYPE               21
+#define FLB_LOG_EVENT_LEGACY_TIMESTAMP_VALUE_TYPE        22
+#define FLB_LOG_EVENT_FORWARD_V1_TIMESTAMP_VALUE_TYPE    23
+#define FLB_LOG_EVENT_FLUENT_BIT_V1_TIMESTAMP_VALUE_TYPE 24
+#define FLB_LOG_EVENT_FLUENT_BIT_V2_TIMESTAMP_VALUE_TYPE 25
 
 #define FLB_LOG_EVENT_STRING_MIN_VALUE_TYPE              FLB_LOG_EVENT_STRING_LENGTH_VALUE_TYPE
 #define FLB_LOG_EVENT_STRING_MAX_VALUE_TYPE              FLB_LOG_EVENT_FLUENT_BIT_V2_TIMESTAMP_VALUE_TYPE
@@ -118,6 +119,9 @@
 #define FLB_LOG_EVENT_FLUENT_BIT_V1_TIMESTAMP_VALUE(value) \
             FLB_LOG_EVENT_FLUENT_BIT_V1_TIMESTAMP_VALUE_TYPE, \
             value
+
+#define FLB_LOG_EVENT_NULL_VALUE() \
+            FLB_LOG_EVENT_NULL_VALUE_TYPE
 
 #define FLB_LOG_EVENT_CHAR_VALUE(value) \
             FLB_LOG_EVENT_CHAR_VALUE_TYPE, \
@@ -229,21 +233,41 @@ int flb_log_event_encoder_set_timestamp(
 int flb_log_event_encoder_set_current_timestamp(
         struct flb_log_event_encoder *context);
 
-
-int flb_log_event_encoder_append_metadata_values(
+int flb_log_event_encoder_append_metadata_values_unsafe(
         struct flb_log_event_encoder *context,
         ssize_t value_count,
         ...);
 
-int flb_log_event_encoder_append_body_values(
+int flb_log_event_encoder_append_body_values_unsafe(
         struct flb_log_event_encoder *context,
         ssize_t value_count,
         ...);
 
-int flb_log_event_encoder_append_root_values(
+int flb_log_event_encoder_append_root_values_unsafe(
         struct flb_log_event_encoder *context,
         ssize_t value_count,
         ...);
+
+#define flb_log_event_encoder_append_metadata_values(context,  value_count, ...) \
+                flb_log_event_encoder_append_metadata_values_unsafe( \
+                        context, \
+                        value_count, \
+                        __VA_ARGS__, \
+                        FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
+
+#define flb_log_event_encoder_append_body_values(context,  value_count, ...) \
+                flb_log_event_encoder_append_body_values_unsafe( \
+                        context, \
+                        value_count, \
+                        __VA_ARGS__, \
+                        FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
+
+#define flb_log_event_encoder_append_root_values(context,  value_count, ...) \
+                flb_log_event_encoder_append_root_values_unsafe( \
+                        context, \
+                        value_count, \
+                        __VA_ARGS__, \
+                        FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
 
 #include <fluent-bit/flb_log_event_encoder_primitives.h>
 #include <fluent-bit/flb_log_event_encoder_root_macros.h>

@@ -83,6 +83,9 @@
 #define flb_log_event_encoder_append_metadata_cstring(context, value) \
             flb_log_event_encoder_append_cstring(context, FLB_LOG_EVENT_METADATA, value)
 
+#define flb_log_event_encoder_append_metadata_null(context) \
+            flb_log_event_encoder_append_null(context, FLB_LOG_EVENT_METADATA)
+
 #define flb_log_event_encoder_append_metadata_msgpack_object(context, value) \
             flb_log_event_encoder_append_msgpack_object(context, FLB_LOG_EVENT_METADATA, value)
 

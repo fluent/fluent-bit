@@ -83,6 +83,9 @@
 #define flb_log_event_encoder_append_body_cstring(context, value) \
             flb_log_event_encoder_append_cstring(context, FLB_LOG_EVENT_BODY, value)
 
+#define flb_log_event_encoder_append_body_null(context) \
+            flb_log_event_encoder_append_null(context, FLB_LOG_EVENT_BODY)
+
 #define flb_log_event_encoder_append_body_msgpack_object(context, value) \
             flb_log_event_encoder_append_msgpack_object(context, FLB_LOG_EVENT_BODY, value)
 

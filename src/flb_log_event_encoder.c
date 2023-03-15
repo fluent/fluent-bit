@@ -270,7 +270,7 @@ int flb_log_event_encoder_set_current_timestamp(
     return flb_log_event_encoder_set_timestamp(context, NULL);
 }
 
-int flb_log_event_encoder_append_metadata_values(
+int flb_log_event_encoder_append_metadata_values_unsafe(
         struct flb_log_event_encoder *context,
         ssize_t value_count,
         ...)
@@ -280,7 +280,7 @@ int flb_log_event_encoder_append_metadata_values(
 
     va_start(arguments, value_count);
 
-    result = flb_log_event_encoder_append_values(
+    result = flb_log_event_encoder_append_values_unsafe(
             context,
             FLB_LOG_EVENT_METADATA,
             value_count,
@@ -291,7 +291,7 @@ int flb_log_event_encoder_append_metadata_values(
     return result;
 }
 
-int flb_log_event_encoder_append_body_values(
+int flb_log_event_encoder_append_body_values_unsafe(
         struct flb_log_event_encoder *context,
         ssize_t value_count,
         ...)
@@ -301,7 +301,7 @@ int flb_log_event_encoder_append_body_values(
 
     va_start(arguments, value_count);
 
-    result = flb_log_event_encoder_append_values(
+    result = flb_log_event_encoder_append_values_unsafe(
             context,
             FLB_LOG_EVENT_BODY,
             value_count,
@@ -312,7 +312,7 @@ int flb_log_event_encoder_append_body_values(
     return result;
 }
 
-int flb_log_event_encoder_append_root_values(
+int flb_log_event_encoder_append_root_values_unsafe(
         struct flb_log_event_encoder *context,
         ssize_t value_count,
         ...)
@@ -322,7 +322,7 @@ int flb_log_event_encoder_append_root_values(
 
     va_start(arguments, value_count);
 
-    result = flb_log_event_encoder_append_values(
+    result = flb_log_event_encoder_append_values_unsafe(
             context,
             FLB_LOG_EVENT_ROOT,
             value_count,

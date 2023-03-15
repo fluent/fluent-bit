@@ -67,6 +67,7 @@ void flb_log_event_decoder_reset(struct flb_log_event_decoder *context,
                                  char *input_buffer,
                                  size_t input_length)
 {
+    context->offset = 0;
     context->buffer = input_buffer;
     context->length = input_length;
 
@@ -126,9 +127,17 @@ void flb_log_event_decoder_destroy(struct flb_log_event_decoder *context)
         if (context->initialized) {
             msgpack_unpacked_destroy(&context->unpacked_empty_map);
             msgpack_unpacked_destroy(&context->unpacked_event);
-
-            context->initialized = FLB_FALSE;
         }
+
+        memset(context, 0, sizeof(struct flb_log_event_decoder));
+
+        /* This might look silly and with most of the codebase including
+         * this module as context it might be but just in case we choose
+         * to stray away from the assumption of FLB_FALSE being zero and
+         * FLB_TRUE being one in favor of explicitly comparing variables to
+         * the the constants I will leave this here.
+         */
+        context->initialized = FLB_FALSE;
 
         if (context->dynamically_allocated) {
             free(context);
