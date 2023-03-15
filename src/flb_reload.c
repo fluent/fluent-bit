@@ -367,6 +367,7 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     struct flb_cf *new_cf;
     struct flb_cf *original_cf;
     int verbose;
+    int enable_reloading;
 
     if (ctx == NULL) {
         flb_error("[reload] given flb context is NULL");
@@ -374,6 +375,10 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     }
 
     old_config = ctx->config;
+    if (old_config->enable_hot_reload != FLB_TRUE) {
+        flb_warn("[reload] hot reloading is not enabled");
+        return -3;
+    }
 
     /* Normally, we should create a service section before using this cf
      * context. However, this context of config format will be used
@@ -417,6 +422,8 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     /* Inherit verbose from the old ctx instance */
     verbose = ctx->config->verbose;
     new_config->verbose = verbose;
+    enable_reloading = ctx->config->enable_hot_reload;
+    new_config->enable_hot_reload = enable_reloading;
 
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     /* Inherit stream processor definitions from command line */

@@ -255,6 +255,8 @@ struct flb_config {
     int enable_chunk_trace;
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
+    int enable_hot_reload;
+
     /* Co-routines */
     unsigned int coro_stack_size;
 
