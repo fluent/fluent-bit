@@ -147,6 +147,7 @@ static void flb_help(int rc, struct flb_config *config)
                 config->coro_stack_size);
     print_opt("-q, --quiet", "quiet mode");
     print_opt("-S, --sosreport", "support report for Enterprise customers");
+    print_opt("-Y, --enable-hot-reloading", "enable for hot reloading");
     print_opt("-V, --version", "show version number");
     print_opt("-h, --help", "print this help");
 
@@ -784,6 +785,7 @@ int flb_main(int argc, char **argv)
         { "http_listen",     required_argument, NULL, 'L' },
         { "http_port",       required_argument, NULL, 'P' },
 #endif
+        { "enable-hot-reload",     no_argument, NULL, 'Y' },
 #ifdef FLB_HAVE_CHUNK_TRACE
         { "enable-chunk-trace",    no_argument, NULL, 'Z' },
 #endif
@@ -813,7 +815,7 @@ int flb_main(int argc, char **argv)
     /* Parse the command line options */
     while ((opt = getopt_long(argc, argv,
                               "b:c:dDf:C:i:m:o:R:F:p:e:"
-                              "t:T:l:vw:qVhJL:HP:s:SZ",
+                              "t:T:l:vw:qVhJL:HP:s:SYZ",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -967,6 +969,9 @@ int flb_main(int argc, char **argv)
             break;
         case 'S':
             config->support_mode = FLB_TRUE;
+            break;
+        case 'Y':
+            config->enable_hot_reload = FLB_TRUE;
             break;
 #ifdef FLB_HAVE_CHUNK_TRACE
         case 'Z':
