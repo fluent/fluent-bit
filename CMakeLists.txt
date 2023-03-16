@@ -380,7 +380,6 @@ if (FLB_SYSTEM_MACOS)
   include(cmake/macos-setup.cmake)
 endif()
 
-
 # Extract Git commit information for debug output.
 # Note that this is only set when cmake is run, the intent here is to use in CI for verification of releases so is acceptable.
 # For a better solution see https://jonathanhamberg.com/post/cmake-embedding-git-hash/ but this is simple and easy.
