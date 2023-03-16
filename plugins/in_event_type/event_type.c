@@ -87,8 +87,6 @@ static int send_logs(struct flb_input_instance *ins)
     msgpack_pack_str(&mp_pck, 9);
     msgpack_pack_str_body(&mp_pck, "some logs", 9);
 
-    flb_pack_print(mp_sbuf.data, mp_sbuf.size);
-
     ret = flb_input_log_append(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
 
     msgpack_sbuffer_destroy(&mp_sbuf);
