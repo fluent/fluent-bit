@@ -707,6 +707,13 @@ static int flush_to_otel(struct opentelemetry_context *ctx,
     Opentelemetry__Proto__Logs__V1__ResourceLogs resource_log;
     Opentelemetry__Proto__Logs__V1__ResourceLogs *resource_logs[1];
     Opentelemetry__Proto__Logs__V1__ScopeLogs *scope_logs[1];
+    Opentelemetry__Proto__Common__V1__KeyValue **attributes_list;
+    Opentelemetry__Proto__Common__V1__KeyValue *attributes;
+    size_t kv_size;
+    size_t kv_index;
+    struct mk_list *kv_head;
+    struct flb_kv *kv;
+
     void *body;
     unsigned len;
     int res;
@@ -722,6 +729,37 @@ static int flush_to_otel(struct opentelemetry_context *ctx,
     resource_log.scope_logs =  scope_logs;
     resource_log.n_scope_logs = 1;
     resource_logs[0] = &resource_log;
+
+    kv_size = mk_list_size(&(ctx->kv_labels));
+    attributes_list = flb_calloc(kv_size, sizeof(Opentelemetry__Proto__Common__V1__KeyValue *));
+    if (attributes_list == NULL) {
+            flb_errno();
+            return -1;
+    }
+    attributes = flb_calloc(kv_size, sizeof(Opentelemetry__Proto__Common__V1__KeyValue));
+    if (attributes == NULL) {
+            flb_errno();
+            return -1;
+    }
+    for(int index = 0; index < kv_size; index++) {
+            attributes_list[index] = &attributes[index];
+    }
+
+
+    kv_index = 0;
+    mk_list_foreach(kv_head, &ctx->kv_labels) {
+        kv = mk_list_entry(kv_head, struct flb_kv, _head);
+        opentelemetry__proto__common__v1__key_value__init(&attributes[kv_index]);
+        attributes[kv_index].key = kv->key;
+        attributes[kv_index].value = otlp_any_value_initialize(MSGPACK_OBJECT_STR, 0);
+	attributes[kv_index].value->string_value = kv->val;
+        kv_index++;
+    }
+
+    resource_log.resource = flb_calloc(1, sizeof(Opentelemetry__Proto__Resource__V1__Resource));
+    opentelemetry__proto__resource__v1__resource__init(resource_log.resource);
+    resource_log.resource->n_attributes = kv_size;
+    resource_log.resource->attributes = attributes_list;
 
     export_logs.resource_logs = resource_logs;
     export_logs.n_resource_logs = 1;
@@ -742,6 +780,12 @@ static int flush_to_otel(struct opentelemetry_context *ctx,
                     ctx->logs_uri);
 
     flb_free(body);
+    flb_free(resource_log.resource);
+    for (int index = 0; index < kv_size; index++) {
+        flb_free(attributes[index].value);
+    }
+    flb_free(attributes);
+    flb_free(attributes_list);
 
     return res;
 }
