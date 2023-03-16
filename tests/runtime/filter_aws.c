@@ -689,9 +689,6 @@ void flb_test_aws_ec2_tags_include() {
     TEST_CHECK(ret == 0);
     ret = flb_filter_set(ctx, filter_ffd, "tags_include", "Namee,MyTag,Name", NULL);
     TEST_CHECK(ret == 0);
-    /* if tags_include and tags_exclude are defined, the tags_exclude has no effect */
-    ret = flb_filter_set(ctx, filter_ffd, "tags_exclude", "Name", NULL);
-    TEST_CHECK(ret == 0);
 
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);

@@ -191,12 +191,13 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
     /* Retrieve metadata */
     ret = get_ec2_metadata(ctx);
     if (ret < 0) {
-        /*
-         * If metadata fails, just print the error. Every flush will try to
-         * retrieve it if needed.
-         */
-        flb_plg_error(ctx->ins, "Could not retrieve ec2 metadata from IMDS "
-                      "on initialization");
+        /* If the metadata fetch fails, the plugin continues to work. */
+        /* Every flush will attempt to fetch ec2 metadata, if needed. */
+        /* In the error is unrecoverable (-3), it exits and does not retry. */
+        if (ret == -3) {
+            flb_free(ctx);
+            return -1;
+        }
     }
     else {
         expose_aws_meta(ctx);
@@ -512,7 +513,7 @@ static int get_ec2_tag_enabled(struct flb_filter_aws *ctx)
         result = tags_split(tags_copy, &tags, &tags_n);
         if (result < 0) {
             free(tags_copy);
-            return result;
+            return -1;
         }
         for (i = 0; i < ctx->tags_count; i++) {
             tag_present = tag_is_present_in_list(ctx, ctx->tag_keys[i], tags, tags_n);
@@ -526,8 +527,9 @@ static int get_ec2_tag_enabled(struct flb_filter_aws *ctx)
     /* apply tags_excluded configuration, only if tags_included is not defined */
     tags_exclude = flb_filter_get_property("tags_exclude", ctx->ins);
     if (tags_include && tags_exclude) {
-        flb_plg_warn(ctx->ins, "specyfing tags_include and tags_exclude at the same time"
-                " is invalid, ignoring tags_exclude");
+        flb_plg_error(ctx->ins, "configuration is invalid, both tags_include"
+                " and tags_exclude are specified at the same time");
+        return -3;
     }
     if (!tags_include && tags_exclude) {
         /* copy const string in order to use strtok which modifes the string */
@@ -538,7 +540,7 @@ static int get_ec2_tag_enabled(struct flb_filter_aws *ctx)
         result = tags_split(tags_copy, &tags, &tags_n);
         if (result < 0) {
             free(tags_copy);
-            return result;
+            return -1;
         }
         for (i = 0; i < ctx->tags_count; i++) {
             tag_present = tag_is_present_in_list(ctx, ctx->tag_keys[i], tags, tags_n);
@@ -671,6 +673,7 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
                            &ctx->ami_id, &ctx->ami_id_len);
 
         if (ret < 0) {
+            flb_plg_error(ctx->ins, "Failed to get AMI ID");
             return -1;
         }
         ctx->new_keys++;
@@ -682,6 +685,7 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
                                   "accountId");
 
         if (ret < 0) {
+            flb_plg_error(ctx->ins, "Failed to get Account ID");
             return -1;
         }
         ctx->new_keys++;
@@ -692,6 +696,7 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
                            &ctx->hostname, &ctx->hostname_len);
 
         if (ret < 0) {
+            flb_plg_error(ctx->ins, "Failed to get Hostname");
             return -1;
         }
         ctx->new_keys++;
@@ -700,7 +705,8 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
     if (ctx->tags_enabled && !ctx->tags_fetched) {
         ret = get_ec2_tags(ctx);
         if (ret < 0) {
-            return -1;
+            flb_plg_error(ctx->ins, "Failed to get instance EC2 Tags");
+            return ret;
         }
         for (i = 0; i < ctx->tags_count; i++) {
             if (ctx->tag_is_enabled[i] == FLB_TRUE) {
@@ -738,8 +744,6 @@ static int cb_aws_filter(const void *data, size_t bytes,
     if (!ctx->metadata_retrieved) {
         ret = get_ec2_metadata(ctx);
         if (ret < 0) {
-            flb_plg_error(ctx->ins, "Could not retrieve ec2 metadata "
-                          "from IMDS");
             return FLB_FILTER_NOTOUCH;
         }
         expose_aws_meta(ctx);
