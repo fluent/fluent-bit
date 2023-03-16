@@ -126,7 +126,6 @@ struct flb_filter_aws {
 
 struct flb_filter_aws_init_options {
     struct flb_aws_client_generator *client_generator;
-    flb_sds_t name;
 };
 
 #endif

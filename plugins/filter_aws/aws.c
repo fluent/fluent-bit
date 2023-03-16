@@ -140,7 +140,6 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
     struct flb_aws_client_generator *generator;
     if (options && options->client_generator) {
         generator = options->client_generator;
-        flb_plg_info(ctx->ins, "options: %s", options->name);
     } else {
         generator = flb_aws_client_generator();
     }
