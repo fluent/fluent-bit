@@ -149,7 +149,7 @@ static int textfile_update(struct flb_ne *ctx)
             continue;
         }
 
-        ret = cmt_decode_prometheus_create(&cmt, contents, 0, &opts);
+        ret = cmt_decode_prometheus_create(&cmt, contents, flb_sds_len(contents), &opts);
         if (ret == 0) {
             flb_plg_debug(ctx->ins, "parse a payload of prometheus: %s",
                           entry->str);
