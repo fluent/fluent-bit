@@ -53,7 +53,6 @@ void flb_test_aws_ec2_tags_present() {
     struct flb_lib_out_cb cb_data;
     struct flb_aws_client_generator *client_generator;
     struct flb_filter_aws_init_options *ops;
-    flb_sds_t name;
     struct flb_aws_client_mock_request_chain *request_chain;
     char *output = NULL;
     char *result;
@@ -166,7 +165,6 @@ void flb_test_aws_ec2_tags_present() {
     flb_stop(ctx);
     flb_aws_client_mock_destroy_generator();
     flb_destroy(ctx);
-    flb_sds_destroy(name);
     flb_free(ops);
 
     set_output(NULL);
@@ -183,7 +181,6 @@ void flb_test_aws_ec2_tags_404() {
     struct flb_lib_out_cb cb_data;
     struct flb_aws_client_generator *client_generator;
     struct flb_filter_aws_init_options *ops;
-    flb_sds_t name;
     struct flb_aws_client_mock_request_chain *request_chain;
     char *output = NULL;
     char *result;
@@ -205,7 +202,6 @@ void flb_test_aws_ec2_tags_404() {
         return;
     }
     ops->client_generator = client_generator;
-    ops->name = name;
 
     ctx = flb_create();
 
@@ -270,7 +266,6 @@ void flb_test_aws_ec2_tags_404() {
     flb_stop(ctx);
     flb_aws_client_mock_destroy_generator();
     flb_destroy(ctx);
-    flb_sds_destroy(name);
     flb_free(ops);
 
     set_output(NULL);
@@ -287,7 +282,6 @@ void flb_test_aws_ec2_tags_list_500() {
     struct flb_lib_out_cb cb_data;
     struct flb_aws_client_generator *client_generator;
     struct flb_filter_aws_init_options *ops;
-    flb_sds_t name;
     struct flb_aws_client_mock_request_chain *request_chain;
     char *output = NULL;
     char *result;
@@ -314,7 +308,6 @@ void flb_test_aws_ec2_tags_list_500() {
         return;
     }
     ops->client_generator = client_generator;
-    ops->name = name;
 
     ctx = flb_create();
 
@@ -371,7 +364,6 @@ void flb_test_aws_ec2_tags_list_500() {
     flb_stop(ctx);
     flb_aws_client_mock_destroy_generator();
     flb_destroy(ctx);
-    flb_sds_destroy(name);
     flb_free(ops);
 
     set_output(NULL);
@@ -388,7 +380,6 @@ void flb_test_aws_ec2_tags_value_404() {
     struct flb_lib_out_cb cb_data;
     struct flb_aws_client_generator *client_generator;
     struct flb_filter_aws_init_options *ops;
-    flb_sds_t name;
     struct flb_aws_client_mock_request_chain *request_chain;
     char *output = NULL;
     char *result;
@@ -429,7 +420,6 @@ void flb_test_aws_ec2_tags_value_404() {
         return;
     }
     ops->client_generator = client_generator;
-    ops->name = name;
 
     ctx = flb_create();
 
@@ -486,7 +476,6 @@ void flb_test_aws_ec2_tags_value_404() {
     flb_stop(ctx);
     flb_aws_client_mock_destroy_generator();
     flb_destroy(ctx);
-    flb_sds_destroy(name);
     flb_free(ops);
 
     set_output(NULL);
@@ -503,7 +492,6 @@ void flb_test_aws_ec2_tags_value_500() {
     struct flb_lib_out_cb cb_data;
     struct flb_aws_client_generator *client_generator;
     struct flb_filter_aws_init_options *ops;
-    flb_sds_t name;
     struct flb_aws_client_mock_request_chain *request_chain;
     char *output = NULL;
     char *result;
@@ -544,7 +532,6 @@ void flb_test_aws_ec2_tags_value_500() {
         return;
     }
     ops->client_generator = client_generator;
-    ops->name = name;
 
     ctx = flb_create();
 
@@ -601,7 +588,6 @@ void flb_test_aws_ec2_tags_value_500() {
     flb_stop(ctx);
     flb_aws_client_mock_destroy_generator();
     flb_destroy(ctx);
-    flb_sds_destroy(name);
     flb_free(ops);
 
     set_output(NULL);
@@ -618,7 +604,6 @@ void flb_test_aws_ec2_tags_include() {
     struct flb_lib_out_cb cb_data;
     struct flb_aws_client_generator *client_generator;
     struct flb_filter_aws_init_options *ops;
-    flb_sds_t name;
     struct flb_aws_client_mock_request_chain *request_chain;
     char *output = NULL;
     char *result;
@@ -656,7 +641,6 @@ void flb_test_aws_ec2_tags_include() {
         return;
     }
     ops->client_generator = client_generator;
-    ops->name = name;
 
     ctx = flb_create();
 
@@ -724,7 +708,6 @@ void flb_test_aws_ec2_tags_include() {
     flb_stop(ctx);
     flb_aws_client_mock_destroy_generator();
     flb_destroy(ctx);
-    flb_sds_destroy(name);
     flb_free(ops);
 
     set_output(NULL);
@@ -741,7 +724,6 @@ void flb_test_aws_ec2_tags_exclude() {
     struct flb_lib_out_cb cb_data;
     struct flb_aws_client_generator *client_generator;
     struct flb_filter_aws_init_options *ops;
-    flb_sds_t name;
     struct flb_aws_client_mock_request_chain *request_chain;
     char *output = NULL;
     char *result;
@@ -779,7 +761,6 @@ void flb_test_aws_ec2_tags_exclude() {
         return;
     }
     ops->client_generator = client_generator;
-    ops->name = name;
 
     ctx = flb_create();
 
@@ -847,7 +828,6 @@ void flb_test_aws_ec2_tags_exclude() {
     flb_stop(ctx);
     flb_aws_client_mock_destroy_generator();
     flb_destroy(ctx);
-    flb_sds_destroy(name);
     flb_free(ops);
 
     set_output(NULL);
