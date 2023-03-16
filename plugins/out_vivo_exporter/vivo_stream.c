@@ -101,7 +101,8 @@ static void vivo_stream_entry_destroy(struct vivo_stream *vs, struct vivo_stream
 {
     mk_list_del(&e->_head);
     vs->current_bytes_size -= flb_sds_len(e->data);
-    free(e);
+    flb_sds_destroy(e->data);
+    flb_free(e);
 }
 
 /* NOTE: this function must run inside a stream_lock()/stream_unlock() protection */
