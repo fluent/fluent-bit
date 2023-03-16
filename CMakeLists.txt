@@ -243,6 +243,7 @@ option(FLB_OUT_OPENTELEMETRY           "Enable OpenTelemetry plugin"            
 option(FLB_OUT_PROMETHEUS_EXPORTER     "Enable Prometheus exporter plugin"            Yes)
 option(FLB_OUT_PROMETHEUS_REMOTE_WRITE "Enable Prometheus remote write plugin"        Yes)
 option(FLB_OUT_S3                      "Enable AWS S3 output plugin"                  Yes)
+option(FLB_OUT_VIVO_EXPORTER           "Enabel Vivo exporter output plugin"           Yes)
 option(FLB_OUT_WEBSOCKET               "Enable Websocket output plugin"               Yes)
 option(FLB_FILTER_ALTER_SIZE           "Enable alter_size filter"                     Yes)
 option(FLB_FILTER_AWS                  "Enable aws filter"                            Yes)
