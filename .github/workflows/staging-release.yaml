@@ -360,7 +360,7 @@ jobs:
           export WIN_32_ZIP_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win32.zip.sha256"|awk '{print $1}')
           export WIN_64_EXE_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win64.exe.sha256"|awk '{print $1}')
           export WIN_64_ZIP_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win64.zip.sha256"|awk '{print $1}')
-          cat > windows-part.md < EOF
+          cat > windows-part.md << EOF
           ## Installation Packages
 
           The latest stable version is ${{ inputs.version }}, each version is available on the Github release as well as at `https://releases.fluentbit.io/<Major Version>/fluent-bit-<Full Version>-win[32|64].[exe|zip]`:
