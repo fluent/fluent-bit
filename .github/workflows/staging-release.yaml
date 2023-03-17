@@ -300,7 +300,7 @@ jobs:
       run: |
         aws s3 sync "s3://${AWS_STAGING_S3_BUCKET}/${VERSION}" "s3://${AWS_RELEASE_S3_BUCKET}/${VERSION}" --no-progress
       env:
-          VERSION: "${{ needs.staging-build-get-meta.outputs.version }}"
+          VERSION: ${{ github.event.inputs.version }}
           AWS_REGION: "us-east-1"
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
