@@ -4,6 +4,8 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 # Wrapper script around the actual ones used in CI
 # Intended only for legacy/manual use in event of failure in CI
+# Ensure to add dependencies, e.g. for Ubuntu 22.04: awscli git createrepo-c debsigs aptly rsync
+
 export BASE_PATH=${BASE_PATH:-$1}
 export DISABLE_SIGNING=${DISABLE_SIGNING:-false}
 export CREATE_REPO_CMD=${CREATE_REPO_CMD:-}

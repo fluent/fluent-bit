@@ -114,7 +114,7 @@ jobs:
     - name: Setup runner
       run: |
         sudo apt-get update
-        sudo apt-get install -y createrepo-c
+        sudo apt-get install -y createrepo-c rpm
       shell: bash
 
     - name: Import GPG key for signing
