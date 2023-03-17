@@ -34,17 +34,17 @@ runs:
     - name: Determine target type
       id: determine-build-type
       run: |
-        BUILD_TYPE="1.9"
+        BUILD_TYPE="legacy"
         if [[ -f "packaging/build-config.json" ]]; then
-          BUILD_TYPE="2.0"
+          BUILD_TYPE="modern"
         fi
         echo "Detected type: $BUILD_TYPE"
         echo "BUILD_TYPE=$BUILD_TYPE" >> $GITHUB_OUTPUT
       shell: bash
       working-directory: version-check
 
-    - name: 2.0 targets
-      if: steps.determine-build-type.outputs.BUILD_TYPE == '2.0'
+    - name: 2.0+ targets
+      if: steps.determine-build-type.outputs.BUILD_TYPE == 'modern'
       run: |
         matrix=$(echo '{ "distro" : '$(jq -cr '.linux_targets|map(.target)' packaging/build-config.json)'}'|jq -c .)
         echo "MATRIX=$matrix" >> $GITHUB_ENV
@@ -59,7 +59,7 @@ runs:
       shell: bash
 
     - name: 1.9 targets
-      if: steps.determine-build-type.outputs.BUILD_TYPE == '1.9'
+      if: steps.determine-build-type.outputs.BUILD_TYPE == 'legacy'
       run: |
         matrix=$((
           echo '{ "distro" : ['

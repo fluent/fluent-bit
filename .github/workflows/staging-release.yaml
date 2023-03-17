@@ -286,7 +286,7 @@ jobs:
         gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
         passphrase: ${{ secrets.GPG_PRIVATE_KEY_PASSPHRASE }}
 
-    - name: GPG set up keys for signing
+    - name: GPG public key
       run: |
         gpg --export -a "${{ steps.import_gpg.outputs.name }}" > ./fluentbit.key
         aws s3 cp ./fluentbit.key s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/fluentbit.key --no-progress
@@ -294,6 +294,18 @@ jobs:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         AWS_REGION: "us-east-1"
+      shell: bash
+
+    - name: JSON schema
+      run: |
+        aws s3 sync "s3://${AWS_STAGING_S3_BUCKET}/${VERSION}" "s3://${AWS_RELEASE_S3_BUCKET}/${VERSION}" --no-progress
+      env:
+          VERSION: "${{ needs.staging-build-get-meta.outputs.version }}"
+          AWS_REGION: "us-east-1"
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_STAGING_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_STAGING }}
+          AWS_RELEASE_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_RELEASE }}
       shell: bash
 
   staging-release-source-s3:
