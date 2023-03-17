@@ -3,7 +3,7 @@ set -eux
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 # Wrapper script around the actual ones used in CI
-
+# Intended only for legacy/manual use in event of failure in CI
 export BASE_PATH=${BASE_PATH:-$1}
 export DISABLE_SIGNING=${DISABLE_SIGNING:-false}
 export CREATE_REPO_CMD=${CREATE_REPO_CMD:-}
@@ -48,7 +48,12 @@ DEB_REPO_PATHS=( "debian/bookworm"
 for DEB_REPO in "${DEB_REPO_PATHS[@]}"; do
     export DEB_REPO
     if [[ "${AWS_SYNC:-false}" != "false" ]]; then
-        aws s3 sync s3://"${AWS_S3_BUCKET_STAGING:?}/$RPM_REPO" "${BASE_PATH:?}/$RPM_REPO"
+        aws s3 sync s3://"${AWS_S3_BUCKET_STAGING:?}/$DEB_REPO" "${BASE_PATH:?}/$DEB_REPO"
     fi
     /bin/bash "$SCRIPT_DIR/update-apt-repo.sh"
 done
+
+if [[ "${AWS_SYNC:-false}" != "false" ]]; then
+    # Final review, do not push until checked manually
+    aws s3 sync "${BASE_PATH:?}" s3://"${AWS_S3_BUCKET_STAGING:?}" --exact-timestamps --dryrun
+fi
