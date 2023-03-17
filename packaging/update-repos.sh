@@ -5,6 +5,11 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 # Wrapper script around the actual ones used in CI
 # Intended only for legacy/manual use in event of failure in CI
 # Ensure to add dependencies, e.g. for Ubuntu 22.04: awscli git createrepo-c debsigs aptly rsync gnupg2
+# Following that there are a few things to do:
+# Import the signing key (if signing)
+# gpg --import <private key>
+# gpg --export -a "$GPG_KEY" > /tmp/fluentbit.key
+# rpm --import /tmp/fluentbit.key 
 
 export BASE_PATH=${BASE_PATH:-$1}
 if [[ ! -d "$BASE_PATH" ]]; then
