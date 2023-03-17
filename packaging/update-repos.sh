@@ -65,7 +65,11 @@ for DEB_REPO in "${DEB_REPO_PATHS[@]}"; do
     /bin/bash -eux "$SCRIPT_DIR/update-apt-repo.sh"
 done
 
+# Other OS now
 if [[ "${AWS_SYNC:-false}" != "false" ]]; then
+    aws s3 sync s3://"${AWS_S3_BUCKET_STAGING:?}/macos" "${BASE_PATH:?}/macos"
+    aws s3 sync s3://"${AWS_S3_BUCKET_STAGING:?}/windows" "${BASE_PATH:?}/windows"
+
     # Final review, do not push until checked manually
-    aws s3 sync "${BASE_PATH:?}" s3://"${AWS_S3_BUCKET_STAGING:?}" --exact-timestamps --dryrun
+    aws s3 sync "${BASE_PATH:?}" s3://"${AWS_S3_BUCKET_RELEASE:?}" --exact-timestamps --dryrun
 fi
