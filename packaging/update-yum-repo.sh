@@ -15,7 +15,7 @@ fi
 DISABLE_SIGNING=${DISABLE_SIGNING:-false}
 if [[ "$DISABLE_SIGNING" != "true" ]]; then
     echo "INFO: RPM signing configuration"
-    rpm --show-rc|grep gpg
+    rpm --showrc|grep gpg
     rpm -q gpg-pubkey --qf '%{name}-%{version}-%{release} --> %{summary}\n'
 fi
 
