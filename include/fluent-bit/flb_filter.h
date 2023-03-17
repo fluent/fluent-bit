@@ -80,6 +80,7 @@ struct flb_filter_instance {
     int event_type;                /* Event type: logs, metrics, traces */
     int id;                        /* instance id              */
     int log_level;                 /* instance log level       */
+    int log_suppress_interval;     /* log suppression interval     */
     char name[32];                 /* numbered name            */
     char *alias;                   /* alias name               */
     char *match;                   /* match rule based on Tags */

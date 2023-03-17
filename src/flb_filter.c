@@ -288,6 +288,14 @@ int flb_filter_set_property(struct flb_filter_instance *ins,
         }
         ins->log_level = ret;
     }
+    else if (prop_key_check("log_suppress_interval", k, len) == 0 && tmp) {
+        ret = flb_utils_time_to_seconds(tmp);
+        flb_sds_destroy(tmp);
+        if (ret == -1) {
+            return -1;
+        }
+        ins->log_suppress_interval = ret;
+    }
     else {
         /*
          * Create the property, we don't pass the value since we will
@@ -400,6 +408,7 @@ struct flb_filter_instance *flb_filter_new(struct flb_config *config,
     instance->match_regex = NULL;
 #endif
     instance->log_level = -1;
+    instance->log_suppress_interval = -1;
 
     mk_list_init(&instance->properties);
     mk_list_add(&instance->_head, &config->filters);
