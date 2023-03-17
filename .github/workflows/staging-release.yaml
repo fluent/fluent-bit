@@ -232,6 +232,43 @@ jobs:
         DISTRO: ${{ matrix.distro }}
       shell: bash
 
+  staging-release-update-non-linux-s3:
+    name: Update Windows and macOS packages
+    runs-on: ubuntu-22.04
+    environment: release
+    needs: 
+      - staging-release-version-check
+    permissions:
+      contents: none
+    strategy:
+      matrix:
+        distro:
+          - macos
+          - windows
+      fail-fast: false
+    steps:
+    - name: Sync packages from buckets on S3
+      run: |
+        mkdir -p "packaging/releases/$DISTRO"
+        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
+        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: "us-east-1"
+        DISTRO: ${{ matrix.distro }}
+      shell: bash
+
+    - name: Sync to release bucket on S3
+      run: |
+        aws s3 sync "packaging/releases/$DISTRO" "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/$DISTRO" --delete --follow-symlinks --no-progress
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: "us-east-1"
+        DISTRO: ${{ matrix.distro }}
+      shell: bash
+
   staging-release-update-base-s3:
     name: Update top-level bucket info
     runs-on: ubuntu-22.04
