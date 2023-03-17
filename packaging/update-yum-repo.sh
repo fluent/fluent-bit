@@ -39,7 +39,7 @@ fi
 echo "INFO: updating $RPM_REPO"
 
 REPO_DIR=$( realpath -sm "$BASE_PATH/$RPM_REPO" )
-if [[ -d "$REPO_DIR" ]] ; then
+if [[ ! -d "$REPO_DIR" ]] ; then
     echo "ERROR: missing $REPO_DIR"
     exit 1
 fi
