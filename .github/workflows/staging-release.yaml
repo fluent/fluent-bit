@@ -297,6 +297,7 @@ jobs:
       shell: bash
 
     - name: JSON schema
+      continue-on-error: true
       run: |
         aws s3 sync "s3://${AWS_STAGING_S3_BUCKET}/${VERSION}" "s3://${AWS_RELEASE_S3_BUCKET}/${VERSION}" --no-progress
       env:
