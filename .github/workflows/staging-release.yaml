@@ -104,8 +104,7 @@ jobs:
     permissions:
       contents: read
     strategy:
-      matrix:
-        distro: ${{ fromJSON(needs.staging-release-generate-package-matrix.outputs.rpm-build-matrix) }}
+      matrix: ${{ fromJSON(needs.staging-release-generate-package-matrix.outputs.rpm-build-matrix) }}
       fail-fast: false
     steps:
     - name: Checkout code
@@ -179,8 +178,7 @@ jobs:
     permissions:
       contents: read
     strategy:
-      matrix:
-        distro: ${{ fromJSON(needs.staging-release-generate-package-matrix.outputs.deb-build-matrix) }}
+      matrix: ${{ fromJSON(needs.staging-release-generate-package-matrix.outputs.deb-build-matrix) }}
       fail-fast: false
     steps:
     - name: Checkout code
