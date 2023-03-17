@@ -352,7 +352,10 @@ jobs:
       shell: bash
 
     - name: Provide output for documentation PR
+      # do not fail the build for this
+      continue-on-error: true
       run: |
+          ls -l $BASE_DIR/
           export WIN_32_EXE_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win32.exe.sha256"|awk '{print $1}')
           export WIN_32_ZIP_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win32.zip.sha256"|awk '{print $1}')
           export WIN_64_EXE_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win64.exe.sha256"|awk '{print $1}')
@@ -377,7 +380,7 @@ jobs:
           EOF
       shell: bash
       env:
-        BASE_DIR: ${{ needs.staging-release-version-check.outputs.major-version }}
+        BASE_DIR: release/${{ needs.staging-release-version-check.outputs.major-version }}
 
     - name: Upload Windows docs
       uses: actions/upload-artifact@v3
