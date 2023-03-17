@@ -173,6 +173,7 @@ struct flb_input_instance {
     pthread_mutex_t chunk_trace_lock;
 #endif /* FLB_HAVE_CHUNK_TRACE */
     int log_level;                       /* log level for this plugin    */
+    int log_suppress_interval;           /* log suppression interval     */
     flb_pipefd_t channel[2];             /* pipe(2) channel              */
     int runs_in_coroutine;               /* instance runs in coroutine ? */
     char name[32];                       /* numbered name (cpu -> cpu.0) */

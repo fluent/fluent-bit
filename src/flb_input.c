@@ -249,6 +249,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->storage  = NULL;
         instance->storage_type = -1;
         instance->log_level = -1;
+        instance->log_suppress_interval = -1;
         instance->runs_in_coroutine = FLB_FALSE;
 
         /* net */
@@ -484,6 +485,14 @@ int flb_input_set_property(struct flb_input_instance *ins,
             return -1;
         }
         ins->log_level = ret;
+    }
+    else if (prop_key_check("log_suppress_interval", k, len) == 0 && tmp) {
+        ret = flb_utils_time_to_seconds(tmp);
+        flb_sds_destroy(tmp);
+        if (ret == -1) {
+            return -1;
+        }
+        ins->log_suppress_interval = ret;
     }
     else if (prop_key_check("routable", k, len) == 0 && tmp) {
         ins->routable = flb_utils_bool(tmp);
