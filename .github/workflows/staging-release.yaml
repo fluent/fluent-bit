@@ -143,8 +143,8 @@ jobs:
 
     - name: GPG set up keys for signing
       run: |
-        gpg --export -a "${{ steps.import_gpg.outputs.name }}" > packaging/releases/fluentbit.key
-        rpm --import packaging/releases/fluentbit.key
+        gpg --export -a "${{ steps.import_gpg.outputs.name }}" > /tmp/fluentbit.key
+        rpm --import /tmp/fluentbit.key
       shell: bash
 
     - name: Update repo info and remove any staging details
@@ -211,15 +211,8 @@ jobs:
         DISTRO: ${{ matrix.distro }}
       shell: bash
 
-    - name: GPG set up keys for signing
-      run: |
-        gpg --export -a "${{ steps.import_gpg.outputs.name }}" > packaging/releases/fluentbit.key
-        rpm --import packaging/releases/fluentbit.key
-      shell: bash
-
     - name: Update repo info and remove any staging details
       run: |
-        rm -f packaging/releases/*.repo
         packaging/update-apt-repo.sh
       env:
         GPG_KEY: ${{ steps.import_gpg.outputs.name }}
@@ -237,6 +230,33 @@ jobs:
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         AWS_REGION: "us-east-1"
         DISTRO: ${{ matrix.distro }}
+      shell: bash
+
+  staging-release-update-base-s3:
+    name: Update top-level bucket info
+    runs-on: ubuntu-22.04
+    environment: release
+    needs: 
+      - staging-release-apt-packages
+      - staging-release-yum-packages
+    permissions:
+      contents: none
+    steps:
+    - name: Import GPG key for signing
+      id: import_gpg
+      uses: crazy-max/ghaction-import-gpg@v5
+      with:
+        gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+        passphrase: ${{ secrets.GPG_PRIVATE_KEY_PASSPHRASE }}
+
+    - name: GPG set up keys for signing
+      run: |
+        gpg --export -a "${{ steps.import_gpg.outputs.name }}" > ./fluentbit.key
+        aws s3 cp ./fluentbit.key s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/fluentbit.key --no-progress
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: "us-east-1"
       shell: bash
 
   staging-release-source-s3:
