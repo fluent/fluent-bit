@@ -227,13 +227,9 @@ static int cb_grep_filter(const void *data, size_t bytes,
     int ret;
     int old_size = 0;
     int new_size = 0;
-    // msgpack_unpacked result;
     msgpack_object map;
-    msgpack_object root;
     size_t record_begining = 0;
     size_t record_end = 0;
-    // msgpack_sbuffer tmp_sbuf;
-    // msgpack_packer tmp_pck;
     struct flb_log_event_encoder log_encoder;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
@@ -281,10 +277,10 @@ static int cb_grep_filter(const void *data, size_t bytes,
             ret = flb_log_event_encoder_begin_record(&log_encoder);
 
             if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                ret = flb_log_event_encoder_set_body_from_raw_msgpack(
+                ret = flb_log_event_encoder_set_root_from_raw_msgpack(
                         &log_encoder,
-                        data + record_beginning
-                        record_end - record_beginning);
+                        &((char *) data)[record_begining],
+                        record_end - record_begining);
             }
 
             if (ret == FLB_EVENT_ENCODER_SUCCESS) {
@@ -300,7 +296,7 @@ static int cb_grep_filter(const void *data, size_t bytes,
             /* Do nothing */
         }
 
-        record_beginning = record_end;
+        record_begining = record_end;
     }
 
     flb_log_event_decoder_destroy(&log_decoder);

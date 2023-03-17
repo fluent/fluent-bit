@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_crypto.h>
 #include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 
 #include "forward.h"
 

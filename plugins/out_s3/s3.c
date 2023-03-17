@@ -1868,7 +1868,6 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     size_t msgpack_size = bytes + bytes / 4;
     size_t val_offset = 0;
     flb_sds_t out_buf;
-    msgpack_object root;
     msgpack_object map;
     msgpack_object key;
     msgpack_object val;
@@ -1898,7 +1897,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
 
         flb_free(val_buf);
 
-        return -1;
+        return NULL;
     }
 
 
@@ -2096,7 +2095,6 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     struct s3_file *upload_file = NULL;
     struct flb_s3 *ctx = out_context;
     struct multipart_upload *m_upload_file = NULL;
-    struct flb_time tms;
     time_t file_first_log_time = 0;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;

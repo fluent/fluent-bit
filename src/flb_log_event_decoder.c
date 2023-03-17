@@ -256,7 +256,10 @@ int flb_event_decoder_decode_object(struct flb_log_event_decoder *context,
 int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
                                struct flb_log_event *event)
 {
-    int result;
+    size_t previous_offset;
+    int    result;
+
+    context->record_length = 0;
 
     if (context == NULL) {
         return FLB_EVENT_DECODER_ERROR_INVALID_CONTEXT;
@@ -267,6 +270,8 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
     }
 
     memset(event, 0, sizeof(struct flb_log_event));
+
+    previous_offset = context->offset;
 
     result = msgpack_unpack_next(&context->unpacked_event,
                                  context->buffer,
@@ -279,6 +284,9 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
     else if (result != MSGPACK_UNPACK_SUCCESS) {
         return FLB_EVENT_DECODER_ERROR_DESERIALIZATION_FAILURE;
     }
+
+    context->previous_offset = previous_offset;
+    context->record_length = context->previous_offset - context->offset;
 
     return flb_event_decoder_decode_object(context,
                                            event,

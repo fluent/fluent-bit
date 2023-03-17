@@ -26,6 +26,8 @@
 #include <fluent-bit/multiline/flb_ml.h>
 #include <fluent-bit/multiline/flb_ml_parser.h>
 #include <fluent-bit/flb_scheduler.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #include "ml.h"
 #include "ml_concat.h"
@@ -515,18 +517,44 @@ static void partial_timer_cb(struct flb_config *config, void *data)
         mk_list_del(&packer->_head);
         ml_split_message_packer_complete(packer);
         /* re-emit record with original tag */
-        flb_plg_trace(ctx->ins, "emitting from %s to %s", packer->input_name, packer->tag);
-        ret = in_emitter_add_record(packer->tag, flb_sds_len(packer->tag), 
-                                    packer->mp_sbuf.data, packer->mp_sbuf.size,
-                                    ctx->ins_emitter);
-        if (ret < 0) {
-            /* this shouldn't happen in normal execution */
-            flb_plg_warn(ctx->ins, "Couldn't send concatenated record of size %zu bytes to in_emitter %s",
-                         packer->mp_sbuf.size, ctx->ins_emitter->name);
+        if (packer->log_encoder.output_buffer != NULL &&
+            packer->log_encoder.output_length > 0) {
+
+            flb_plg_trace(ctx->ins, "emitting from %s to %s", packer->input_name, packer->tag);
+            ret = in_emitter_add_record(packer->tag, flb_sds_len(packer->tag),
+                                        packer->log_encoder.output_buffer,
+                                        packer->log_encoder.output_length,
+                                        ctx->ins_emitter);
+            if (ret < 0) {
+                /* this shouldn't happen in normal execution */
+                flb_plg_warn(ctx->ins,
+                             "Couldn't send concatenated record of size %zu "
+                             "bytes to in_emitter %s",
+                             packer->log_encoder.output_length,
+                             ctx->ins_emitter->name);
+            }
         }
         ml_split_message_packer_destroy(packer);
     }
+}
 
+static int repack_raw(struct flb_log_event_encoder *log_encoder,
+                      char *data, size_t bytes)
+{
+    int ret;
+
+    ret = flb_log_event_encoder_begin_record(log_encoder);
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_root_from_raw_msgpack(
+                log_encoder, data, bytes);
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_commit_record(log_encoder);
+    }
+
+    return ret;
 }
 
 static int ml_filter_partial(const void *data, size_t bytes,
@@ -538,14 +566,7 @@ static int ml_filter_partial(const void *data, size_t bytes,
                              struct flb_config *config)
 {
     int ret;
-    int ok = MSGPACK_UNPACK_SUCCESS;
-    size_t off = 0;
-    (void) f_ins;
-    (void) config;
-    msgpack_unpacked result;
-    msgpack_object *obj;
     struct ml_ctx *ctx = filter_context;
-    struct flb_time tm;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
     int partial_records = 0;
@@ -557,6 +578,35 @@ static int ml_filter_partial(const void *data, size_t bytes,
     char *partial_id_str = NULL;
     size_t partial_id_size = 0;
     struct flb_sched *sched;
+    struct flb_log_event_encoder log_encoder;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    size_t record_begining;
+    size_t record_end;
+
+    (void) f_ins;
+    (void) config;
+
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    ret = flb_log_event_encoder_init(&log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder initialization error : %d", ret);
+
+        flb_log_event_decoder_destroy(&log_decoder);
+
+        return FLB_FILTER_NOTOUCH;
+    }
 
     /*
      * create a timer that will run periodically and check if pending buffers
@@ -587,15 +637,17 @@ static int ml_filter_partial(const void *data, size_t bytes,
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == ok) {
+    record_begining = 0;
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        record_end = log_decoder.offset;
         total_records++;
-        flb_time_pop_from_msgpack(&tm, &result, &obj);
-        
-        partial = ml_is_partial(obj);
+
+        partial = ml_is_partial(log_event.body);
         if (partial == FLB_TRUE) {
             partial_records++;
-            ret = ml_get_partial_id(obj, &partial_id_str, &partial_id_size);
+            ret = ml_get_partial_id(log_event.body, &partial_id_str, &partial_id_size);
             if (ret == -1) {
                 flb_plg_warn(ctx->ins, "Could not find partial_id but partial_message key is FLB_TRUE for record with tag %s", tag);
                 /* handle this record as non-partial */
@@ -607,7 +659,7 @@ static int ml_filter_partial(const void *data, size_t bytes,
             if (packer == NULL) {
                 flb_plg_trace(ctx->ins, "Found new partial record with tag %s", tag);
                 packer = ml_create_packer(tag, i_ins->name, partial_id_str, partial_id_size,
-                                          obj, ctx->key_content, &tm);
+                                          log_event.body, ctx->key_content, &log_event.timestamp);
                 if (packer == NULL) {
                     flb_plg_warn(ctx->ins, "Could not create packer for partial record with tag %s", tag);
                     /* handle this record as non-partial */
@@ -616,19 +668,19 @@ static int ml_filter_partial(const void *data, size_t bytes,
                 }
                 mk_list_add(&packer->_head, &ctx->split_message_packers);
             }
-            ret = ml_split_message_packer_write(packer, obj, ctx->key_content);
+            ret = ml_split_message_packer_write(packer, log_event.body, ctx->key_content);
             if (ret < 0) {
                 flb_plg_warn(ctx->ins, "Could not append content for partial record with tag %s", tag);
                 /* handle this record as non-partial */
                 partial_records--;
                 goto pack_non_partial;
             }
-            is_last_partial = ml_is_partial_last(obj);
+            is_last_partial = ml_is_partial_last(log_event.body);
             if (is_last_partial == FLB_TRUE) {
                 /* emit the record in this filter invocation */
                 return_records++;
                 ml_split_message_packer_complete(packer);
-                ml_append_complete_record(packer->mp_sbuf.data, packer->mp_sbuf.size, &tmp_pck);
+                ml_append_complete_record(packer, &log_encoder);
                 mk_list_del(&packer->_head);
                 ml_split_message_packer_destroy(packer);
             }
@@ -637,27 +689,57 @@ static int ml_filter_partial(const void *data, size_t bytes,
 pack_non_partial:
             return_records++;
             /* record passed from filter as-is */
-            msgpack_pack_array(&tmp_pck, 2);
-            flb_time_append_to_msgpack(&tm, &tmp_pck, 0);
-            msgpack_pack_object(&tmp_pck, *obj);
+
+            ret = repack_raw(&log_encoder,
+                             &((char *) data)[record_begining],
+                             record_end - record_begining);
+
+            if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                flb_plg_error(ctx->ins,
+                              "Log event encoder initialization error : %d", ret);
+            }
         }
 
+        record_begining = record_end;
     }
-
-    msgpack_unpacked_destroy(&result);
 
     if (partial_records == 0) {
         /* if no records were partial, we didn't modify the chunk */
+        flb_log_event_decoder_destroy(&log_decoder);
+        flb_log_event_encoder_destroy(&log_encoder);
+
         msgpack_sbuffer_destroy(&tmp_sbuf);
+
         return FLB_FILTER_NOTOUCH;
     } else if (return_records > 0) {
         /* some new records can be returned now, return a new buffer */
-        *out_buf  = tmp_sbuf.data;
-        *out_bytes = tmp_sbuf.size;
+        if (log_encoder.output_length > 0) {
+            *out_buf   = log_encoder.output_buffer;
+            *out_bytes = log_encoder.output_length;
+
+            ret = FLB_FILTER_MODIFIED;
+
+            flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
+        }
+        else {
+            flb_plg_error(ctx->ins,
+                          "Log event encoder error : %d", ret);
+
+            ret = FLB_FILTER_NOTOUCH;
+        }
+
+        flb_log_event_decoder_destroy(&log_decoder);
+        flb_log_event_encoder_destroy(&log_encoder);
+
+        return ret;
     } else {
         /* no records to return right now, free buffer */
+        flb_log_event_decoder_destroy(&log_decoder);
+        flb_log_event_encoder_destroy(&log_encoder);
+
         msgpack_sbuffer_destroy(&tmp_sbuf);
     }
+
     return FLB_FILTER_MODIFIED;
 }
 

@@ -47,7 +47,9 @@
 struct flb_log_event_decoder {
     int               dynamically_allocated;
     msgpack_unpacked  unpacked_empty_map;
+    size_t            previous_offset;
     msgpack_unpacked  unpacked_event;
+    size_t            record_length;
     int               initialized;
     msgpack_object   *empty_map;
     const char       *buffer;
