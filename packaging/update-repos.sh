@@ -7,6 +7,11 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 # Ensure to add dependencies, e.g. for Ubuntu 22.04: awscli git createrepo-c debsigs aptly rsync
 
 export BASE_PATH=${BASE_PATH:-$1}
+if [[ ! -d "$BASE_PATH" ]]; then
+    echo "Specified BASE_PATH is not a directory: $BASE_PATH"
+    exit 1
+fi
+
 export DISABLE_SIGNING=${DISABLE_SIGNING:-false}
 export CREATE_REPO_CMD=${CREATE_REPO_CMD:-}
 export CREATE_REPO_ARGS=${CREATE_REPO_ARGS:--dvp}
