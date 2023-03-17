@@ -39,7 +39,7 @@ for RPM_REPO in "${RPM_REPO_PATHS[@]}"; do
         aws s3 sync s3://"${AWS_S3_BUCKET_STAGING:?}/$RPM_REPO" "${BASE_PATH:?}/$RPM_REPO"
     fi
 
-    /bin/bash "$SCRIPT_DIR/update-yum-repo.sh"
+    /bin/bash -eux "$SCRIPT_DIR/update-yum-repo.sh"
 done
 
 DEB_REPO_PATHS=( "debian/bookworm"
@@ -57,7 +57,7 @@ for DEB_REPO in "${DEB_REPO_PATHS[@]}"; do
     if [[ "${AWS_SYNC:-false}" != "false" ]]; then
         aws s3 sync s3://"${AWS_S3_BUCKET_STAGING:?}/$DEB_REPO" "${BASE_PATH:?}/$DEB_REPO"
     fi
-    /bin/bash "$SCRIPT_DIR/update-apt-repo.sh"
+    /bin/bash -eux "$SCRIPT_DIR/update-apt-repo.sh"
 done
 
 if [[ "${AWS_SYNC:-false}" != "false" ]]; then
