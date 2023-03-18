@@ -253,7 +253,6 @@ static int in_netif_collect_linux(struct flb_input_instance *i_ins,
 
                 ret = flb_log_event_encoder_append_body_values(
                         ctx->log_encoder,
-                        2,
                         FLB_LOG_EVENT_CSTRING_VALUE(key_name),
                         FLB_LOG_EVENT_UINT64_VALUE(calc_diff(&ctx->entry[i])));
 

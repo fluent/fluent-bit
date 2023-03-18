@@ -716,8 +716,6 @@ static void flush_snapshot(struct flb_docker *ctx,
     if (result == FLB_EVENT_ENCODER_SUCCESS) {
         result = flb_log_event_encoder_append_body_values(
                     &ctx->log_encoder,
-                    FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
-
                     /* Docker ID [12 chars] */
                     FLB_LOG_EVENT_CSTRING_VALUE("id"),
                     FLB_LOG_EVENT_STRING_VALUE(snapshot->id, DOCKER_SHORT_ID_LEN),
@@ -736,9 +734,7 @@ static void flush_snapshot(struct flb_docker *ctx,
 
                     /* Memory limit [bytes] */
                     FLB_LOG_EVENT_CSTRING_VALUE("mem_limit"),
-                    FLB_LOG_EVENT_UINT64_VALUE(snapshot->mem->limit),
-
-                    FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
+                    FLB_LOG_EVENT_UINT64_VALUE(snapshot->mem->limit));
     }
 
     if (result == FLB_EVENT_ENCODER_SUCCESS) {

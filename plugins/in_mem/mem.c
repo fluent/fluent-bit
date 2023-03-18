@@ -214,7 +214,6 @@ static int in_mem_collect(struct flb_input_instance *i_ins,
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         ret = flb_log_event_encoder_append_body_values(
                 &ctx->log_encoder,
-                FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                 FLB_LOG_EVENT_CSTRING_VALUE("Mem.total"),
                 FLB_LOG_EVENT_UINT64_VALUE(info.mem_total),
 
@@ -231,10 +230,7 @@ static int in_mem_collect(struct flb_input_instance *i_ins,
                 FLB_LOG_EVENT_UINT64_VALUE(info.swap_used),
 
                 FLB_LOG_EVENT_CSTRING_VALUE("Swap.free"),
-                FLB_LOG_EVENT_UINT64_VALUE(info.swap_free),
-
-                FLB_LOG_EVENT_VALUE_LIST_TERMINATOR()
-                );
+                FLB_LOG_EVENT_UINT64_VALUE(info.swap_free));
     }
 
     if (task != NULL &&
@@ -243,7 +239,6 @@ static int in_mem_collect(struct flb_input_instance *i_ins,
 
         ret = flb_log_event_encoder_append_body_values(
                 &ctx->log_encoder,
-                2,
                 FLB_LOG_EVENT_CSTRING_VALUE("proc_bytes"),
                 FLB_LOG_EVENT_UINT64_VALUE(task->proc_rss),
 

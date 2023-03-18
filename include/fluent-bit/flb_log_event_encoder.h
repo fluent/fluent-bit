@@ -71,6 +71,8 @@
 #define FLB_LOG_EVENT_METADATA                           2
 #define FLB_LOG_EVENT_BODY                               3
 
+#define FLB_EVENT_ENCODER_VALUE_LIMIT                    64
+
 #define FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR            -1
 
 #define FLB_LOG_EVENT_VALUE_LIST_TERMINATOR() \
@@ -235,37 +237,31 @@ int flb_log_event_encoder_set_current_timestamp(
 
 int flb_log_event_encoder_append_metadata_values_unsafe(
         struct flb_log_event_encoder *context,
-        ssize_t value_count,
         ...);
 
 int flb_log_event_encoder_append_body_values_unsafe(
         struct flb_log_event_encoder *context,
-        ssize_t value_count,
         ...);
 
 int flb_log_event_encoder_append_root_values_unsafe(
         struct flb_log_event_encoder *context,
-        ssize_t value_count,
         ...);
 
-#define flb_log_event_encoder_append_metadata_values(context,  value_count, ...) \
+#define flb_log_event_encoder_append_metadata_values(context,  ...) \
                 flb_log_event_encoder_append_metadata_values_unsafe( \
                         context, \
-                        value_count, \
                         __VA_ARGS__, \
                         FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
 
-#define flb_log_event_encoder_append_body_values(context,  value_count, ...) \
+#define flb_log_event_encoder_append_body_values(context,  ...) \
                 flb_log_event_encoder_append_body_values_unsafe( \
                         context, \
-                        value_count, \
                         __VA_ARGS__, \
                         FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
 
-#define flb_log_event_encoder_append_root_values(context,  value_count, ...) \
+#define flb_log_event_encoder_append_root_values(context,  ...) \
                 flb_log_event_encoder_append_root_values_unsafe( \
                         context, \
-                        value_count, \
                         __VA_ARGS__, \
                         FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
 

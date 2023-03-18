@@ -169,7 +169,6 @@ static int mqtt_data_append(char *topic, size_t topic_len,
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         ret = flb_log_event_encoder_append_body_values(
                 ctx->log_encoder,
-                2,
                 FLB_LOG_EVENT_CSTRING_VALUE("topic"),
                 FLB_LOG_EVENT_STRING_VALUE(topic, topic_len));
     }
@@ -181,7 +180,6 @@ static int mqtt_data_append(char *topic, size_t topic_len,
          i++) {
         ret = flb_log_event_encoder_append_body_values(
                 ctx->log_encoder,
-                2,
                 FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(root.via.map.ptr[i].key),
                 FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(root.via.map.ptr[i].val));
     }

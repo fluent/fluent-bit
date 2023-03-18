@@ -1536,7 +1536,6 @@ static int cb_ecs_filter(const void *data, size_t bytes,
             i++) {
             ret = flb_log_event_encoder_append_body_values(
                     &log_encoder,
-                    FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                     FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(kv[i].key),
                     FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(kv[i].val));
         }
@@ -1558,7 +1557,6 @@ static int cb_ecs_filter(const void *data, size_t bytes,
 
             ret = flb_log_event_encoder_append_body_values(
                     &log_encoder,
-                    FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                     FLB_LOG_EVENT_STRING_VALUE(metadata_key->key,
                                                flb_sds_len(metadata_key->key)),
                     FLB_LOG_EVENT_STRING_VALUE(val, flb_sds_len(val)));

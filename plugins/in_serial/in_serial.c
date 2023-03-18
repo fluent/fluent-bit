@@ -56,7 +56,6 @@ static inline int process_line(const char *line, int len,
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         ret = flb_log_event_encoder_append_body_values(
                 ctx->log_encoder,
-                2,
                 FLB_LOG_EVENT_CSTRING_VALUE("msg"),
                 FLB_LOG_EVENT_STRING_VALUE(line, len));
     }
@@ -101,7 +100,6 @@ static inline int process_pack(struct flb_in_serial_config *ctx,
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     ctx->log_encoder,
-                    2,
                     FLB_LOG_EVENT_CSTRING_VALUE("msg"),
                     FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&entry));
         }

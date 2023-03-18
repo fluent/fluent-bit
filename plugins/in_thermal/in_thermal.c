@@ -261,8 +261,6 @@ int in_thermal_collect(struct flb_input_instance *i_ins,
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     ctx->log_encoder,
-                    FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
-
                     FLB_LOG_EVENT_CSTRING_VALUE("name"),
                     FLB_LOG_EVENT_CSTRING_VALUE(info[i].name),
 
@@ -270,9 +268,7 @@ int in_thermal_collect(struct flb_input_instance *i_ins,
                     FLB_LOG_EVENT_CSTRING_VALUE(info[i].type),
 
                     FLB_LOG_EVENT_CSTRING_VALUE("temp"),
-                    FLB_LOG_EVENT_DOUBLE_VALUE(info[i].temp),
-
-                    FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
+                    FLB_LOG_EVENT_DOUBLE_VALUE(info[i].temp));
         }
 
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {

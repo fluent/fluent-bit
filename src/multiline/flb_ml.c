@@ -1337,7 +1337,6 @@ int flb_ml_flush_metadata_buffer(struct flb_ml_stream *mst,
                 if (ret == FLB_EVENT_ENCODER_SUCCESS) {
                     ret = flb_log_event_encoder_append_metadata_values(
                             &mst->ml->log_event_encoder,
-                            2,
                             FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&key),
                             FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&value));
                 }

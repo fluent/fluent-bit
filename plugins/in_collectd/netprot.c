@@ -132,7 +132,6 @@ static int netprot_pack_value(char *ptr, int size, struct netprot_header *hdr,
         result == FLB_EVENT_ENCODER_SUCCESS) {
         result = flb_log_event_encoder_append_body_values(
                     encoder,
-                    2,
                     FLB_LOG_EVENT_CSTRING_VALUE("type"),
                     FLB_LOG_EVENT_CSTRING_VALUE(hdr->type));
     }
@@ -141,7 +140,6 @@ static int netprot_pack_value(char *ptr, int size, struct netprot_header *hdr,
         result == FLB_EVENT_ENCODER_SUCCESS) {
         result = flb_log_event_encoder_append_body_values(
                     encoder,
-                    2,
                     FLB_LOG_EVENT_CSTRING_VALUE("type_instance"),
                     FLB_LOG_EVENT_CSTRING_VALUE(hdr->type_instance));
     }
@@ -150,7 +148,6 @@ static int netprot_pack_value(char *ptr, int size, struct netprot_header *hdr,
         result == FLB_EVENT_ENCODER_SUCCESS) {
         result = flb_log_event_encoder_append_body_values(
                     encoder,
-                    2,
                     FLB_LOG_EVENT_CSTRING_VALUE("time"),
                     FLB_LOG_EVENT_DOUBLE_VALUE(hdr->time));
     }
@@ -159,7 +156,6 @@ static int netprot_pack_value(char *ptr, int size, struct netprot_header *hdr,
         result == FLB_EVENT_ENCODER_SUCCESS) {
         result = flb_log_event_encoder_append_body_values(
                     encoder,
-                    2,
                     FLB_LOG_EVENT_CSTRING_VALUE("interval"),
                     FLB_LOG_EVENT_DOUBLE_VALUE(hdr->interval));
     }
@@ -168,7 +164,6 @@ static int netprot_pack_value(char *ptr, int size, struct netprot_header *hdr,
         result == FLB_EVENT_ENCODER_SUCCESS) {
         result = flb_log_event_encoder_append_body_values(
                     encoder,
-                    2,
                     FLB_LOG_EVENT_CSTRING_VALUE("plugin"),
                     FLB_LOG_EVENT_CSTRING_VALUE(hdr->plugin));
     }
@@ -177,7 +172,6 @@ static int netprot_pack_value(char *ptr, int size, struct netprot_header *hdr,
         result == FLB_EVENT_ENCODER_SUCCESS) {
         result = flb_log_event_encoder_append_body_values(
                     encoder,
-                    2,
                     FLB_LOG_EVENT_CSTRING_VALUE("plugin_instance"),
                     FLB_LOG_EVENT_CSTRING_VALUE(hdr->plugin_instance));
     }
@@ -186,7 +180,6 @@ static int netprot_pack_value(char *ptr, int size, struct netprot_header *hdr,
         result == FLB_EVENT_ENCODER_SUCCESS) {
         result = flb_log_event_encoder_append_body_values(
                     encoder,
-                    2,
                     FLB_LOG_EVENT_CSTRING_VALUE("host"),
                     FLB_LOG_EVENT_CSTRING_VALUE(hdr->host));
     }

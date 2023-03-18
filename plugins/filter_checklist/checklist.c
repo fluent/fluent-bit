@@ -360,7 +360,6 @@ static int set_record(struct checklist *ctx,
 
         ret = flb_log_event_encoder_append_body_values(
                 log_encoder,
-                FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                 FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&k),
                 FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&v));
 

@@ -272,18 +272,16 @@ int flb_log_event_encoder_set_current_timestamp(
 
 int flb_log_event_encoder_append_metadata_values_unsafe(
         struct flb_log_event_encoder *context,
-        ssize_t value_count,
         ...)
 {
     va_list arguments;
     int     result;
 
-    va_start(arguments, value_count);
+    va_start(arguments, context);
 
     result = flb_log_event_encoder_append_values_unsafe(
             context,
             FLB_LOG_EVENT_METADATA,
-            value_count,
             arguments);
 
     va_end(arguments);
@@ -293,18 +291,16 @@ int flb_log_event_encoder_append_metadata_values_unsafe(
 
 int flb_log_event_encoder_append_body_values_unsafe(
         struct flb_log_event_encoder *context,
-        ssize_t value_count,
         ...)
 {
     va_list arguments;
     int     result;
 
-    va_start(arguments, value_count);
+    va_start(arguments, context);
 
     result = flb_log_event_encoder_append_values_unsafe(
             context,
             FLB_LOG_EVENT_BODY,
-            value_count,
             arguments);
 
     va_end(arguments);
@@ -314,18 +310,16 @@ int flb_log_event_encoder_append_body_values_unsafe(
 
 int flb_log_event_encoder_append_root_values_unsafe(
         struct flb_log_event_encoder *context,
-        ssize_t value_count,
         ...)
 {
     va_list arguments;
     int     result;
 
-    va_start(arguments, value_count);
+    va_start(arguments, context);
 
     result = flb_log_event_encoder_append_values_unsafe(
             context,
             FLB_LOG_EVENT_ROOT,
-            value_count,
             arguments);
 
     va_end(arguments);

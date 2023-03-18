@@ -357,12 +357,8 @@ static int flb_tail_mult_pack_line_body(
 
     result = flb_log_event_encoder_append_body_values(
                 context,
-                FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
-
                 FLB_LOG_EVENT_CSTRING_VALUE(config->path_key),
-                FLB_LOG_EVENT_CSTRING_VALUE(file->name),
-
-                FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
+                FLB_LOG_EVENT_CSTRING_VALUE(file->name));
 
     msgpack_unpacked_init(&current_object);
     msgpack_unpacked_init(&adjacent_object);

@@ -184,8 +184,6 @@ static inline int process_line(const char *line,
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         ret = flb_log_event_encoder_append_body_values(
                 &ctx->log_encoder,
-                FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
-
                 FLB_LOG_EVENT_CSTRING_VALUE("priority"),
                 FLB_LOG_EVENT_CHAR_VALUE(priority),
 
@@ -199,9 +197,7 @@ static inline int process_line(const char *line,
                 FLB_LOG_EVENT_UINT64_VALUE(tv.tv_usec),
 
                 FLB_LOG_EVENT_CSTRING_VALUE("msg"),
-                FLB_LOG_EVENT_STRING_VALUE((char *) p, line_len - 1),
-
-                FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
+                FLB_LOG_EVENT_STRING_VALUE((char *) p, line_len - 1));
     }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {

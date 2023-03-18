@@ -133,10 +133,8 @@ static int cb_alter_size_filter(const void *data, size_t bytes,
             if (ret == FLB_EVENT_ENCODER_SUCCESS) {
                 ret = flb_log_event_encoder_append_body_values(
                         ctx->log_encoder,
-                        FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                         FLB_LOG_EVENT_CSTRING_VALUE("key"),
-                        FLB_LOG_EVENT_STRING_VALUE(tmp, len),
-                        FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
+                        FLB_LOG_EVENT_STRING_VALUE(tmp, len));
             }
         }
 

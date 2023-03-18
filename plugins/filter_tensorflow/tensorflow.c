@@ -431,7 +431,6 @@ static int cb_tensorflow_filter(const void *data, size_t bytes,
                      j++) {
                     ret = flb_log_event_encoder_append_body_values(
                             &log_encoder,
-                            FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                             FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&map.via.map.ptr[j].key),
                             FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&map.via.map.ptr[j].val));
                 }
@@ -440,7 +439,6 @@ static int cb_tensorflow_filter(const void *data, size_t bytes,
             if (ret == FLB_EVENT_ENCODER_SUCCESS) {
                 ret = flb_log_event_encoder_append_body_values(
                         &log_encoder,
-                        FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                         FLB_LOG_EVENT_CSTRING_VALUE("inference_time"),
                         FLB_LOG_EVENT_DOUBLE_VALUE(inference_time),
 

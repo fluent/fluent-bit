@@ -354,7 +354,6 @@ static int pack_map_content(struct flb_log_event_encoder *log_encoder,
                 if (merge_status == MERGE_NONE || merge_status == MERGE_PARSED){
                     ret = flb_log_event_encoder_append_body_values(
                             log_encoder,
-                            FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                             FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&k),
                             FLB_LOG_EVENT_STRING_VALUE(ctx->unesc_buf,
                                                        ctx->unesc_buf_len));
@@ -374,7 +373,6 @@ static int pack_map_content(struct flb_log_event_encoder *log_encoder,
         if (append_original_objects) {
             ret = flb_log_event_encoder_append_body_values(
                     log_encoder,
-                    FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                     FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&k),
                     FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&v));
         }
@@ -479,7 +477,6 @@ static int pack_map_content(struct flb_log_event_encoder *log_encoder,
 
                 ret = flb_log_event_encoder_append_body_values(
                         log_encoder,
-                        FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                         FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&k),
                         FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&v));
             }

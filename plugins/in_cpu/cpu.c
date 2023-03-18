@@ -383,8 +383,6 @@ static int cpu_collect_system(struct flb_input_instance *ins,
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         ret = flb_log_event_encoder_append_body_values(
                 &ctx->log_encoder,
-                FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
-
                 FLB_LOG_EVENT_CSTRING_VALUE("cpu_p"),
                 FLB_LOG_EVENT_DOUBLE_VALUE(s[0].p_cpu),
 
@@ -392,9 +390,7 @@ static int cpu_collect_system(struct flb_input_instance *ins,
                 FLB_LOG_EVENT_DOUBLE_VALUE(s[0].p_user),
 
                 FLB_LOG_EVENT_CSTRING_VALUE("system_p"),
-                FLB_LOG_EVENT_DOUBLE_VALUE(s[0].p_system),
-
-                FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
+                FLB_LOG_EVENT_DOUBLE_VALUE(s[0].p_system));
     }
 
     for (i = 1;
@@ -405,8 +401,6 @@ static int cpu_collect_system(struct flb_input_instance *ins,
 
         ret = flb_log_event_encoder_append_body_values(
                 &ctx->log_encoder,
-                FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
-
                 FLB_LOG_EVENT_CSTRING_VALUE(e->k_cpu.name),
                 FLB_LOG_EVENT_DOUBLE_VALUE(e->p_cpu),
 
@@ -414,9 +408,7 @@ static int cpu_collect_system(struct flb_input_instance *ins,
                 FLB_LOG_EVENT_DOUBLE_VALUE(e->p_user),
 
                 FLB_LOG_EVENT_CSTRING_VALUE(e->k_system.name),
-                FLB_LOG_EVENT_DOUBLE_VALUE(e->p_system),
-
-                FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
+                FLB_LOG_EVENT_DOUBLE_VALUE(e->p_system));
     }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
@@ -473,8 +465,6 @@ static int cpu_collect_pid(struct flb_input_instance *ins,
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         ret = flb_log_event_encoder_append_body_values(
                 &ctx->log_encoder,
-                FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
-
                 FLB_LOG_EVENT_CSTRING_VALUE("cpu_p"),
                 FLB_LOG_EVENT_DOUBLE_VALUE(s->p_cpu),
 
@@ -482,9 +472,7 @@ static int cpu_collect_pid(struct flb_input_instance *ins,
                 FLB_LOG_EVENT_DOUBLE_VALUE(s->p_user),
 
                 FLB_LOG_EVENT_CSTRING_VALUE("system_p"),
-                FLB_LOG_EVENT_DOUBLE_VALUE(s->p_system),
-
-                FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
+                FLB_LOG_EVENT_DOUBLE_VALUE(s->p_system));
     }
 
     snapshots_switch(cstats);

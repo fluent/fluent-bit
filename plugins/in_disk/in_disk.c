@@ -178,15 +178,11 @@ static int in_disk_collect(struct flb_input_instance *i_ins,
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     &ctx->log_encoder,
-                    FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
-
                     FLB_LOG_EVENT_CSTRING_VALUE(STR_KEY_READ),
                     FLB_LOG_EVENT_UINT64_VALUE(read_total),
 
                     FLB_LOG_EVENT_CSTRING_VALUE(STR_KEY_WRITE),
-                    FLB_LOG_EVENT_UINT64_VALUE(write_total),
-
-                    FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
+                    FLB_LOG_EVENT_UINT64_VALUE(write_total));
         }
 
 

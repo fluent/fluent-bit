@@ -478,7 +478,6 @@ static int cb_expect_filter(const void *data, size_t bytes,
             if (ret == FLB_EVENT_ENCODER_SUCCESS) {
                 ret = flb_log_event_encoder_append_body_values(
                         &log_encoder,
-                        FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                         FLB_LOG_EVENT_STRING_VALUE(ctx->result_key, flb_sds_len(ctx->result_key)),
                         FLB_LOG_EVENT_BOOLEAN_VALUE(rule_matched));
             }
@@ -490,7 +489,6 @@ static int cb_expect_filter(const void *data, size_t bytes,
                  i++) {
                 ret = flb_log_event_encoder_append_body_values(
                         &log_encoder,
-                        FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                         FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(kv[i].key),
                         FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(kv[i].val));
             }

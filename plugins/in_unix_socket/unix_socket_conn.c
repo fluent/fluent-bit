@@ -64,7 +64,6 @@ static inline int process_pack(struct unix_socket_conn *conn,
             else if (entry.type == MSGPACK_OBJECT_ARRAY) {
                 ret = flb_log_event_encoder_append_body_values(
                         ctx->log_encoder,
-                        2,
                         FLB_LOG_EVENT_CSTRING_VALUE("msg"),
                         FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&entry));
             }
@@ -166,7 +165,6 @@ static ssize_t parse_payload_none(struct unix_socket_conn *conn)
             if (ret == FLB_EVENT_ENCODER_SUCCESS) {
                 ret = flb_log_event_encoder_append_body_values(
                         ctx->log_encoder,
-                        2,
                         FLB_LOG_EVENT_CSTRING_VALUE("log"),
                         FLB_LOG_EVENT_STRING_VALUE(buf, len));
             }

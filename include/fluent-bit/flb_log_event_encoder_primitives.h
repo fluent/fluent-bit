@@ -23,7 +23,6 @@
 int flb_log_event_encoder_append_values_unsafe(
         struct flb_log_event_encoder *context,
         int field,
-        ssize_t value_count,
         va_list arguments);
 
 int flb_log_event_encoder_append_binary_length(
@@ -179,11 +178,10 @@ int flb_log_event_encoder_append_fluent_bit_v2_timestamp(
     int target_field,
     struct flb_time *value);
 
-#define flb_log_event_encoder_append_values(context,  field, value_count, ...) \
+#define flb_log_event_encoder_append_values(context,  field, ...) \
                 flb_log_event_encoder_append_values_unsafe( \
                         context, \
                         field, \
-                        value_count, \
                         __VA_ARGS__, \
                         FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
 

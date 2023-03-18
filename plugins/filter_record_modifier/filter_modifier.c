@@ -416,7 +416,6 @@ static int cb_modifier_filter(const void *data, size_t bytes,
             if (bool_map[i] == TO_BE_REMAINED) {
                 ret = flb_log_event_encoder_append_body_values(
                         &log_encoder,
-                        FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                         FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].key),
                         FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].val));
             }
@@ -432,7 +431,6 @@ static int cb_modifier_filter(const void *data, size_t bytes,
 
                 ret = flb_log_event_encoder_append_body_values(
                         &log_encoder,
-                        FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                         FLB_LOG_EVENT_STRING_VALUE(mod_rec->key, mod_rec->key_len),
                         FLB_LOG_EVENT_STRING_VALUE(mod_rec->val, mod_rec->val_len));
 
@@ -447,7 +445,6 @@ static int cb_modifier_filter(const void *data, size_t bytes,
 
             ret = flb_log_event_encoder_append_body_values(
                     &log_encoder,
-                    FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                     FLB_LOG_EVENT_STRING_VALUE(ctx->uuid_key, flb_sds_len(ctx->uuid_key)),
                     FLB_LOG_EVENT_STRING_VALUE(&uuid[0], uuid_len));
         }

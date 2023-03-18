@@ -301,7 +301,6 @@ struct split_message_packer *ml_create_packer(const char *tag, char *input_name,
 
         ret = flb_log_event_encoder_append_body_values(
                 &packer->log_encoder,
-                FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                 FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].key),
                 FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].val));
     }

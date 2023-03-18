@@ -138,7 +138,6 @@ static int single_value_per_record(struct flb_input_instance *i_ins,
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         ret = flb_log_event_encoder_append_body_values(
                 &ctx->log_encoder,
-                2,
                 FLB_LOG_EVENT_CSTRING_VALUE(ctx->key),
                 FLB_LOG_EVENT_STRING_VALUE(ctx->buf, ctx->buf_len));
 
@@ -148,7 +147,6 @@ static int single_value_per_record(struct flb_input_instance *i_ins,
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     &ctx->log_encoder,
-                    2,
                     FLB_LOG_EVENT_CSTRING_VALUE("path"),
                     FLB_LOG_EVENT_STRING_VALUE(ctx->filepath, ctx->path_len));
         }
@@ -210,7 +208,6 @@ static int split_lines_per_record(struct flb_input_instance *i_ins,
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     &ctx->log_encoder,
-                    2,
                     FLB_LOG_EVENT_CSTRING_VALUE("path"),
                     FLB_LOG_EVENT_STRING_VALUE(ctx->filepath, ctx->path_len));
         }
@@ -235,7 +232,6 @@ static int split_lines_per_record(struct flb_input_instance *i_ins,
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     &ctx->log_encoder,
-                    2,
                     FLB_LOG_EVENT_CSTRING_VALUE(key_str),
                     FLB_LOG_EVENT_STRING_VALUE(ctx->buf, ctx->buf_len));
         }

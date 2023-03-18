@@ -76,7 +76,6 @@ static int in_random_collect(struct flb_input_instance *ins,
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         ret = flb_log_event_encoder_append_body_values(
                 ctx->log_encoder,
-                2,
                 FLB_LOG_EVENT_CSTRING_VALUE("rand_value"),
                 FLB_LOG_EVENT_UINT64_VALUE(val));
     }

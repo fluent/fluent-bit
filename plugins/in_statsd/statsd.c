@@ -93,7 +93,6 @@ static int statsd_process_message(struct flb_statsd *ctx,
         case STATSD_TYPE_COUNTER:
             ret = flb_log_event_encoder_append_body_values(
                     ctx->log_encoder,
-                    FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
 
                     FLB_LOG_EVENT_CSTRING_VALUE("type"),
                     FLB_LOG_EVENT_CSTRING_VALUE("counter"),
@@ -102,15 +101,12 @@ static int statsd_process_message(struct flb_statsd *ctx,
                     FLB_LOG_EVENT_CSTRING_VALUE("value"),
                     FLB_LOG_EVENT_DOUBLE_VALUE(strtod(m->value, NULL)),
                     FLB_LOG_EVENT_CSTRING_VALUE("sample_rate"),
-                    FLB_LOG_EVENT_DOUBLE_VALUE(m->sample_rate),
-
-                    FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
+                    FLB_LOG_EVENT_DOUBLE_VALUE(m->sample_rate));
 
             break;
         case STATSD_TYPE_GAUGE:
             ret = flb_log_event_encoder_append_body_values(
                     ctx->log_encoder,
-                    FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
 
                     FLB_LOG_EVENT_CSTRING_VALUE("type"),
                     FLB_LOG_EVENT_CSTRING_VALUE("gauge"),
@@ -119,14 +115,11 @@ static int statsd_process_message(struct flb_statsd *ctx,
                     FLB_LOG_EVENT_CSTRING_VALUE("value"),
                     FLB_LOG_EVENT_DOUBLE_VALUE(strtod(m->value, NULL)),
                     FLB_LOG_EVENT_CSTRING_VALUE("incremental"),
-                    FLB_LOG_EVENT_INT64_VALUE(is_incremental(m->value)),
-
-                    FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
+                    FLB_LOG_EVENT_INT64_VALUE(is_incremental(m->value)));
             break;
         case STATSD_TYPE_TIMER:
             ret = flb_log_event_encoder_append_body_values(
                     ctx->log_encoder,
-                    FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
 
                     FLB_LOG_EVENT_CSTRING_VALUE("type"),
                     FLB_LOG_EVENT_CSTRING_VALUE("timer"),
@@ -135,23 +128,18 @@ static int statsd_process_message(struct flb_statsd *ctx,
                     FLB_LOG_EVENT_CSTRING_VALUE("value"),
                     FLB_LOG_EVENT_DOUBLE_VALUE(strtod(m->value, NULL)),
                     FLB_LOG_EVENT_CSTRING_VALUE("sample_rate"),
-                    FLB_LOG_EVENT_DOUBLE_VALUE(m->sample_rate),
-
-                    FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
+                    FLB_LOG_EVENT_DOUBLE_VALUE(m->sample_rate));
 
         case STATSD_TYPE_SET:
             ret = flb_log_event_encoder_append_body_values(
                     ctx->log_encoder,
-                    FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
 
                     FLB_LOG_EVENT_CSTRING_VALUE("type"),
                     FLB_LOG_EVENT_CSTRING_VALUE("set"),
                     FLB_LOG_EVENT_CSTRING_VALUE("bucket"),
                     FLB_LOG_EVENT_STRING_VALUE(m->bucket, m->bucket_len),
                     FLB_LOG_EVENT_CSTRING_VALUE("value"),
-                    FLB_LOG_EVENT_STRING_VALUE(m->value, m->value_len),
-
-                    FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
+                    FLB_LOG_EVENT_STRING_VALUE(m->value, m->value_len));
             break;
         }
     }

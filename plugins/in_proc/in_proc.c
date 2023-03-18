@@ -208,7 +208,6 @@ static int generate_record_linux(struct flb_input_instance *i_ins,
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         ret = flb_log_event_encoder_append_body_values(
                 ctx->log_encoder,
-                6,
                 FLB_LOG_EVENT_CSTRING_VALUE("alive"),
                 FLB_LOG_EVENT_BOOLEAN_VALUE(ctx->alive),
                 /* proc name */
@@ -232,7 +231,6 @@ static int generate_record_linux(struct flb_input_instance *i_ins,
 
             ret = flb_log_event_encoder_append_body_values(
                     ctx->log_encoder,
-                    2,
                     FLB_LOG_EVENT_CSTRING_VALUE(str),
                     FLB_LOG_EVENT_UINT64_VALUE(*val));
         }
@@ -243,7 +241,6 @@ static int generate_record_linux(struct flb_input_instance *i_ins,
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     ctx->log_encoder,
-                    2,
                     FLB_LOG_EVENT_CSTRING_VALUE("fd"),
                     FLB_LOG_EVENT_UINT64_VALUE(fds));
         }

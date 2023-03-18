@@ -549,7 +549,6 @@ int flb_log_event_encoder_append_fluent_bit_v2_timestamp(
 int flb_log_event_encoder_append_values_unsafe(
         struct flb_log_event_encoder *context,
         int target_field,
-        ssize_t value_count,
         va_list arguments)
 {
     int8_t  current_ext_type;
@@ -558,15 +557,11 @@ int flb_log_event_encoder_append_values_unsafe(
     int     value_type;
     int     result;
 
-    if (value_count == FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR) {
-        value_count = INT64_MAX;
-    }
-
     processed_values = 0;
     result = FLB_EVENT_ENCODER_SUCCESS;
 
     for (processed_values = 0 ;
-         processed_values < value_count &&
+         processed_values < FLB_EVENT_ENCODER_VALUE_LIMIT &&
          result == FLB_EVENT_ENCODER_SUCCESS ;
          processed_values++) {
         value_type = va_arg(arguments, int);
@@ -716,6 +711,10 @@ int flb_log_event_encoder_append_values_unsafe(
         else {
             result = FLB_EVENT_ENCODER_ERROR_INVALID_VALUE_TYPE;
         }
+    }
+
+    if (processed_values >= FLB_EVENT_ENCODER_VALUE_LIMIT) {
+        flb_error("Log event encoder : value count limit exceeded");
     }
 
     return result;

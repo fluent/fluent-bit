@@ -642,7 +642,6 @@ static int cb_aws_filter(const void *data, size_t bytes,
             i++) {
             ret = flb_log_event_encoder_append_body_values(
                     &log_encoder,
-                    FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                     FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(kv[i].key),
                     FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(kv[i].val));
         }
@@ -652,7 +651,6 @@ static int cb_aws_filter(const void *data, size_t bytes,
             ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     &log_encoder,
-                    FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                     FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_AVAILABILITY_ZONE_KEY),
                     FLB_LOG_EVENT_STRING_VALUE(ctx->availability_zone,
                                                ctx->availability_zone_len));
@@ -662,7 +660,6 @@ static int cb_aws_filter(const void *data, size_t bytes,
             ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     &log_encoder,
-                    FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                     FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_INSTANCE_ID_KEY),
                     FLB_LOG_EVENT_STRING_VALUE(ctx->instance_id,
                                                ctx->instance_id_len));
@@ -672,7 +669,6 @@ static int cb_aws_filter(const void *data, size_t bytes,
             ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     &log_encoder,
-                    FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                     FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_INSTANCE_TYPE_KEY),
                     FLB_LOG_EVENT_STRING_VALUE(ctx->instance_type,
                                                ctx->instance_type_len));
@@ -682,7 +678,6 @@ static int cb_aws_filter(const void *data, size_t bytes,
             ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     &log_encoder,
-                    FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                     FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_PRIVATE_IP_KEY),
                     FLB_LOG_EVENT_STRING_VALUE(ctx->private_ip,
                                                ctx->private_ip_len));
@@ -692,7 +687,6 @@ static int cb_aws_filter(const void *data, size_t bytes,
             ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     &log_encoder,
-                    FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                     FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_VPC_ID_KEY),
                     FLB_LOG_EVENT_STRING_VALUE(ctx->vpc_id,
                                                ctx->vpc_id_len));
@@ -702,7 +696,6 @@ static int cb_aws_filter(const void *data, size_t bytes,
             ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     &log_encoder,
-                    FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                     FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_AMI_ID_KEY),
                     FLB_LOG_EVENT_STRING_VALUE(ctx->ami_id,
                                                ctx->ami_id_len));
@@ -712,7 +705,6 @@ static int cb_aws_filter(const void *data, size_t bytes,
             ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     &log_encoder,
-                    FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                     FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_ACCOUNT_ID_KEY),
                     FLB_LOG_EVENT_STRING_VALUE(ctx->account_id,
                                                ctx->account_id_len));
@@ -722,7 +714,6 @@ static int cb_aws_filter(const void *data, size_t bytes,
             ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     &log_encoder,
-                    FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                     FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_HOSTNAME_KEY),
                     FLB_LOG_EVENT_STRING_VALUE(ctx->hostname,
                                                ctx->hostname_len));
@@ -735,7 +726,6 @@ static int cb_aws_filter(const void *data, size_t bytes,
                  i++) {
                 ret = flb_log_event_encoder_append_body_values(
                         &log_encoder,
-                        FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                         FLB_LOG_EVENT_STRING_VALUE(ctx->tag_keys[i],
                                                    ctx->tag_keys_len[i]),
                         FLB_LOG_EVENT_STRING_VALUE(ctx->tag_values[i],

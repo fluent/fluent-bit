@@ -93,7 +93,6 @@ static int in_health_collect(struct flb_input_instance *ins,
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         ret = flb_log_event_encoder_append_body_values(
                 &ctx->log_encoder,
-                2,
                 FLB_LOG_EVENT_CSTRING_VALUE("alive"),
                 FLB_LOG_EVENT_BOOLEAN_VALUE(alive));
     }
@@ -103,7 +102,6 @@ static int in_health_collect(struct flb_input_instance *ins,
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     &ctx->log_encoder,
-                    2,
                     FLB_LOG_EVENT_CSTRING_VALUE("hostname"),
                     FLB_LOG_EVENT_CSTRING_VALUE(ctx->hostname));
         }
@@ -114,7 +112,6 @@ static int in_health_collect(struct flb_input_instance *ins,
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     &ctx->log_encoder,
-                    2,
                     FLB_LOG_EVENT_CSTRING_VALUE("port"),
                     FLB_LOG_EVENT_INT32_VALUE(ctx->port));
         }

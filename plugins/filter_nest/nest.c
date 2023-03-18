@@ -200,7 +200,6 @@ static void helper_pack_string_add_prefix(struct flb_log_event_encoder *log_enco
 {
     flb_log_event_encoder_append_body_values(
         log_encoder,
-        FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
         FLB_LOG_EVENT_STRING_LENGTH_VALUE(ctx->prefix_len + len),
         FLB_LOG_EVENT_STRING_BODY_VALUE(ctx->prefix, ctx->prefix_len),
         FLB_LOG_EVENT_STRING_BODY_VALUE(str, len));
@@ -223,7 +222,6 @@ static inline void map_pack_each_fn(struct flb_log_event_encoder *log_encoder,
         if ((*f) (&map->via.map.ptr[i], ctx)) {
             ret = flb_log_event_encoder_append_body_values(
                     log_encoder,
-                    FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                     FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(
                         &map->via.map.ptr[i].key),
                     FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(

@@ -263,7 +263,6 @@ static int cb_type_converter_filter(const void *data, size_t bytes,
              i++) {
             ret = flb_log_event_encoder_append_body_values(
                     &log_encoder,
-                    FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
                     FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&obj->via.map.ptr[i].key),
                     FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&obj->via.map.ptr[i].val));
         }

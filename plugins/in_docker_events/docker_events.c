@@ -260,12 +260,8 @@ static int in_de_collect(struct flb_input_instance *ins,
             if (ret == FLB_EVENT_ENCODER_SUCCESS) {
                 ret = flb_log_event_encoder_append_body_values(
                         &ctx->log_encoder,
-                        FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR,
-
                         FLB_LOG_EVENT_CSTRING_VALUE(ctx->key),
-                        FLB_LOG_EVENT_STRING_VALUE(ctx->buf, str_len),
-
-                        FLB_LOG_EVENT_VALUE_LIST_TERMINATOR());
+                        FLB_LOG_EVENT_STRING_VALUE(ctx->buf, str_len));
             }
 
             if (ret == FLB_EVENT_ENCODER_SUCCESS) {

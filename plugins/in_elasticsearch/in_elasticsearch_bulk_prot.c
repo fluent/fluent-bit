@@ -401,7 +401,6 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
                         ret = flb_log_event_encoder_append_body_values(
                                 &ctx->log_encoder,
-                                2,
                                 FLB_LOG_EVENT_CSTRING_VALUE((char *) ctx->meta_key),
                                 FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&result.data));
                     }
@@ -427,7 +426,6 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
 
                         ret = flb_log_event_encoder_append_body_values(
                                 &ctx->log_encoder,
-                                2,
                                 FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&map_copy_entry->key),
                                 FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&map_copy_entry->val));
                     }
