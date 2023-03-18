@@ -293,7 +293,7 @@ static size_t get_options_chunk(msgpack_object *arr, int expected, size_t *idx)
     return 0;
 }
 
-static int fw_process_format_1_entry(
+static int fw_process_forward_mode_entry(
                 struct flb_input_instance *in,
                 struct fw_conn *conn,
                 const char *tag, int tag_len,
@@ -318,6 +318,12 @@ static int fw_process_format_1_entry(
     if (result == FLB_EVENT_ENCODER_SUCCESS) {
         result = flb_log_event_encoder_set_timestamp(conn->ctx->log_encoder,
                                                      &event.timestamp);
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_set_metadata_from_msgpack_object(
+                    conn->ctx->log_encoder,
+                    event.metadata);
     }
 
     if (result == FLB_EVENT_ENCODER_SUCCESS) {
@@ -347,7 +353,7 @@ static int fw_process_format_1_entry(
     return 0;
 }
 
-static int fw_process_format_2_entry(
+static int fw_process_message_mode_entry(
                 struct flb_input_instance *in,
                 struct fw_conn *conn,
                 const char *tag, int tag_len,
@@ -356,11 +362,13 @@ static int fw_process_format_2_entry(
                 msgpack_object *body,
                 int chunk_id, int metadata_id)
 {
-    struct flb_time      timestamp;
-    msgpack_object      *metadata;
-    msgpack_object       options;
-    int                  result;
-    msgpack_object       chunk;
+    struct flb_time  timestamp;
+    msgpack_object  *metadata;
+    msgpack_object   options;
+    int              result;
+    msgpack_object   chunk;
+
+    metadata = NULL;
 
     if (chunk_id != -1 || metadata_id != -1) {
         options = root->via.array.ptr[3];
@@ -620,9 +628,10 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                 }
 
                 /* Process array */
-                fw_process_format_1_entry(conn->in, conn,
-                                 out_tag, flb_sds_len(out_tag),
-                                 &root, &entry, chunk_id);
+                fw_process_forward_mode_entry(
+                    conn->in, conn,
+                    out_tag, flb_sds_len(out_tag),
+                    &root, &entry, chunk_id);
             }
             else if (entry.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
                      entry.type == MSGPACK_OBJECT_EXT) {
@@ -661,10 +670,11 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                 }
 
                 /* Process map */
-                fw_process_format_2_entry(conn->in, conn,
-                                          out_tag, flb_sds_len(out_tag),
-                                          &root, &entry, &map, chunk_id,
-                                          metadata_id);
+                fw_process_message_mode_entry(
+                    conn->in, conn,
+                    out_tag, flb_sds_len(out_tag),
+                    &root, &entry, &map, chunk_id,
+                    metadata_id);
 
                 c++;
             }
