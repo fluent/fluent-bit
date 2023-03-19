@@ -453,9 +453,6 @@ void flb_test_drop_all_records(void)
         TEST_MSG("error. got %d expect 0", ret);
     }
 
-    /* clean up */
-    flb_lib_free(output);
-
     flb_stop(ctx);
     flb_destroy(ctx);
 }
