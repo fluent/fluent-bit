@@ -96,7 +96,7 @@ static int cb_count_msgpack_events(void *record, size_t size, void *data)
 int callback_test(void* data, size_t size, void* cb_data)
 {
     if (size > 0) {
-        flb_debug("[test_filter_lua] received message: %s", data);
+        flb_debug("[test_filter_wasm] received message: %s", (char*)data);
         set_output(data); /* success */
     }
     return 0;
