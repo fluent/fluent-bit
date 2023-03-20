@@ -26,8 +26,15 @@
 #include <fluent-bit/flb_record_accessor.h>
 
 /* rule types */
-#define GREP_REGEX    1
-#define GREP_EXCLUDE  2
+#define GREP_REGEX                         1
+#define GREP_EXCLUDE                       2
+#define GREP_NUMBER_EQUAL                  3
+#define GREP_NUMBER_NOT_EQUAL              4
+#define GREP_NUMBER_LESS_THAN              5
+#define GREP_NUMBER_LESS_THAN_OR_EQUAL     6
+#define GREP_NUMBER_GREATER_THAN           7
+#define GREP_NUMBER_GREATER_THAN_OR_EQUAL  8
+
 
 /* actions */
 #define GREP_RET_KEEP     0
@@ -42,6 +49,7 @@ struct grep_rule {
     int type;
     flb_sds_t field;
     char *regex_pattern;
+    double numeric_value;
     struct flb_regex *regex;
     struct flb_record_accessor *ra;
     struct mk_list _head;
