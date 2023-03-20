@@ -37,6 +37,45 @@ static void test_sds_printf()
     flb_sds_destroy(s);
 }
 
+static void test_sds_printf_larger()
+{
+    flb_sds_t buf;
+    int len = 69;
+    char *str = "This is a text string that is exactly 69 (sixty-nine) characters long";
+
+    /* Test 1: buffer larger than copied string */
+    buf = flb_sds_create_size(len + 2);
+    buf = flb_sds_printf(&buf, "%s", str);
+    TEST_CHECK(buf[len - 1] == 'g');
+    flb_sds_destroy(buf);
+}
+
+static void test_sds_printf_smaller()
+{
+    flb_sds_t buf;
+    int len = 69;
+    char *str = "This is a text string that is exactly 69 (sixty-nine) characters long";
+
+    /* Test 2: buffer smaller than copied string */
+    buf = flb_sds_create_size(len - 2);
+    buf = flb_sds_printf(&buf, "%s", str);
+    TEST_CHECK(buf[len - 1] == 'g');
+    flb_sds_destroy(buf);
+}
+
+static void test_sds_printf_exact()
+{
+    flb_sds_t buf;
+    int len = 69;
+    char *str = "This is a text string that is exactly 69 (sixty-nine) characters long";
+
+    /* Test 3: buffer same size as copied string */
+    buf = flb_sds_create_size(len);
+    buf = flb_sds_printf(&buf, "%s", str);
+    TEST_CHECK(buf[len - 1] == 'g');
+    flb_sds_destroy(buf);
+}
+
 static void test_sds_cat_utf8()
 {
     flb_sds_t s;
@@ -50,8 +89,11 @@ static void test_sds_cat_utf8()
 }
 
 TEST_LIST = {
-    { "sds_usage" , test_sds_usage},
-    { "sds_printf", test_sds_printf},
-    { "sds_cat_utf8", test_sds_cat_utf8},
+    { "sds_usage" , test_sds_usage },
+    { "sds_printf", test_sds_printf },
+    { "sds_printf_larger", test_sds_printf_larger },
+    { "sds_printf_smaller", test_sds_printf_smaller },
+    { "sds_printf_exact", test_sds_printf_exact },
+    { "sds_cat_utf8", test_sds_cat_utf8 },
     { 0 }
 };
