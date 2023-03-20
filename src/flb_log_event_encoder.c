@@ -21,6 +21,13 @@
 #include <fluent-bit/flb_log_event_encoder_primitives.h>
 #include <stdarg.h>
 
+void static inline flb_log_event_encoder_update_internal_state(
+    struct flb_log_event_encoder *context)
+{
+    context->output_buffer = context->buffer.data;
+    context->output_length = context->buffer.size;
+}
+
 void flb_log_event_encoder_reset(struct flb_log_event_encoder *context)
 {
     flb_log_event_encoder_dynamic_field_reset(&context->metadata);
@@ -28,6 +35,8 @@ void flb_log_event_encoder_reset(struct flb_log_event_encoder *context)
     flb_log_event_encoder_dynamic_field_reset(&context->root);
 
     msgpack_sbuffer_clear(&context->buffer);
+
+    flb_log_event_encoder_update_internal_state(context);
 }
 
 int flb_log_event_encoder_init(struct flb_log_event_encoder *context, int format)
@@ -85,13 +94,6 @@ struct flb_log_event_encoder *flb_log_event_encoder_create(int format)
     }
 
     return context;
-}
-
-void static inline flb_log_event_encoder_update_internal_state(
-    struct flb_log_event_encoder *context)
-{
-    context->output_buffer = context->buffer.data;
-    context->output_length = context->buffer.size;
 }
 
 void flb_log_event_encoder_destroy(struct flb_log_event_encoder *context)

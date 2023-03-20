@@ -141,19 +141,27 @@ static int cb_serial_collect(struct flb_input_instance *in,
 
     flb_log_event_encoder_reset(ctx->log_encoder);
 
+    ret = 0;
 
     while (1) {
         available = (sizeof(ctx->buf_data) -1) - ctx->buf_len;
         if (available > 1) {
             bytes = read(ctx->fd, ctx->buf_data + ctx->buf_len, available);
+
             if (bytes == -1) {
                 if (errno == EPIPE || errno == EINTR) {
-                    return -1;
+                    ret = -1;
                 }
-                return 0;
+                else {
+                    ret = 0;
+                }
+
+                break;
             }
             else if (bytes == 0) {
-                return 0;
+                ret = 0;
+
+                break;
             }
         }
         ctx->buf_len += bytes;
@@ -210,7 +218,9 @@ static int cb_serial_collect(struct flb_input_instance *in,
             if (hits == 0 && available <= 1) {
                 flb_debug("[in_serial] no separator found, no more space");
                 ctx->buf_len = 0;
-                return 0;
+                ret = 0;
+
+                break;
             }
         }
         else if (ctx->format == FLB_SERIAL_FORMAT_JSON) {
@@ -222,14 +232,20 @@ static int cb_serial_collect(struct flb_input_instance *in,
                                       &pack, &out_size, &ctx->pack_state);
             if (ret == FLB_ERR_JSON_PART) {
                 flb_debug("[in_serial] JSON incomplete, waiting for more data...");
-                return 0;
+
+                ret = 0;
+
+                break;
             }
             else if (ret == FLB_ERR_JSON_INVAL) {
                 flb_debug("[in_serial] invalid JSON message, skipping");
                 flb_pack_state_reset(&ctx->pack_state);
                 flb_pack_state_init(&ctx->pack_state);
                 ctx->pack_state.multiple = FLB_TRUE;
-                return -1;
+
+                ret = -1;
+
+                break;
             }
 
             /*
@@ -262,7 +278,7 @@ static int cb_serial_collect(struct flb_input_instance *in,
 
     flb_log_event_encoder_reset(ctx->log_encoder);
 
-    return 0;
+    return ret;
 }
 
 /* Cleanup serial input */
