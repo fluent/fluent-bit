@@ -489,8 +489,8 @@ static int cb_expect_filter(const void *data, size_t bytes,
                  i++) {
                 ret = flb_log_event_encoder_append_body_values(
                         &log_encoder,
-                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(kv[i].key),
-                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(kv[i].val));
+                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].key),
+                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].val));
             }
 
             if (ret == FLB_EVENT_ENCODER_SUCCESS) {

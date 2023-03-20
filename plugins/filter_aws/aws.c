@@ -642,8 +642,8 @@ static int cb_aws_filter(const void *data, size_t bytes,
             i++) {
             ret = flb_log_event_encoder_append_body_values(
                     &log_encoder,
-                    FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(kv[i].key),
-                    FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(kv[i].val));
+                    FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].key),
+                    FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].val));
         }
 
         /* append new keys */

@@ -23,9 +23,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
-
 #include <msgpack.h>
-
 
 #include "mqtt.h"
 #include "mqtt_prot.h"
@@ -180,8 +178,8 @@ static int mqtt_data_append(char *topic, size_t topic_len,
          i++) {
         ret = flb_log_event_encoder_append_body_values(
                 ctx->log_encoder,
-                FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(root.via.map.ptr[i].key),
-                FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(root.via.map.ptr[i].val));
+                FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&root.via.map.ptr[i].key),
+                FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&root.via.map.ptr[i].val));
     }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
