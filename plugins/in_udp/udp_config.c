@@ -119,6 +119,8 @@ struct flb_in_udp_config *udp_config_init(struct flb_input_instance *ins)
         ctx->buffer_size  = (atoi(ctx->buffer_size_str) * 1024);
     }
 
+    ctx->log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+
     if (ctx->log_encoder == NULL) {
         flb_plg_error(ctx->ins, "could not initialize event encoder");
         udp_config_destroy(ctx);

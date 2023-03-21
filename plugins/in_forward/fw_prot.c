@@ -27,6 +27,7 @@
 
 #include <fluent-bit/flb_input_metric.h>
 #include <fluent-bit/flb_input_trace.h>
+#include <fluent-bit/flb_log_event_debug.h>
 
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_decode_msgpack.h>
@@ -294,26 +295,20 @@ static size_t get_options_chunk(msgpack_object *arr, int expected, size_t *idx)
 }
 
 static int fw_process_forward_mode_entry(
-                struct flb_input_instance *in,
                 struct fw_conn *conn,
                 const char *tag, int tag_len,
-                msgpack_object *root, msgpack_object *arr,
+                msgpack_object *entry,
                 int chunk_id)
 {
-    msgpack_object       options;
     int                  result;
-    msgpack_object       chunk;
     struct flb_log_event event;
 
     result = flb_event_decoder_decode_object(conn->ctx->log_decoder,
-                                             &event,
-                                             arr);
+                                             &event, entry);
 
-    if (result != FLB_EVENT_DECODER_SUCCESS) {
-        return -1;
+    if (result == FLB_EVENT_DECODER_SUCCESS) {
+        result = flb_log_event_encoder_begin_record(conn->ctx->log_encoder);
     }
-
-    result = flb_log_event_encoder_begin_record(conn->ctx->log_encoder);
 
     if (result == FLB_EVENT_ENCODER_SUCCESS) {
         result = flb_log_event_encoder_set_timestamp(conn->ctx->log_encoder,
@@ -337,17 +332,17 @@ static int fw_process_forward_mode_entry(
     }
 
     if (result == FLB_EVENT_ENCODER_SUCCESS) {
-        flb_input_log_append(in, tag, tag_len,
+        flb_input_log_append(conn->ctx->ins, tag, tag_len,
                              conn->ctx->log_encoder->output_buffer,
                              conn->ctx->log_encoder->output_length);
     }
 
     flb_log_event_encoder_reset(conn->ctx->log_encoder);
 
-    if (chunk_id != -1) {
-        options = root->via.array.ptr[2];
-        chunk = options.via.map.ptr[chunk_id].val;
-        send_ack(in, conn, chunk);
+    if (result != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_warn(conn->ctx->ins, "Event decoder failure : %d", result);
+
+        return -1;
     }
 
     return 0;
@@ -464,6 +459,7 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
     int c = 0;
     int event_type;
     int contain_options = FLB_FALSE;
+    size_t index = 0;
     size_t off = 0;
     size_t chunk_id = -1;
     size_t metadata_id = -1;
@@ -513,6 +509,7 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                 conn->buf_len -= all_used;
             }
             flb_sds_destroy(out_tag);
+
             return 0;
         }
 
@@ -572,6 +569,7 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                 msgpack_unpacked_destroy(&result);
                 msgpack_unpacker_free(unp);
                 flb_sds_destroy(out_tag);
+
                 return -1;
             }
 
@@ -581,6 +579,7 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                 msgpack_unpacked_destroy(&result);
                 msgpack_unpacker_free(unp);
                 flb_sds_destroy(out_tag);
+
                 return -1;
             }
 
@@ -624,18 +623,36 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                     msgpack_unpacked_destroy(&result);
                     msgpack_unpacker_free(unp);
                     flb_sds_destroy(out_tag);
+
                     return -1;
                 }
 
                 /* Process array */
-                fw_process_forward_mode_entry(
-                    conn->in, conn,
-                    out_tag, flb_sds_len(out_tag),
-                    &root, &entry, chunk_id);
+                ret = 0;
+
+                for(index = 0 ;
+                    index < entry.via.array.size &&
+                    ret == 0 ;
+                    index++) {
+                    ret = fw_process_forward_mode_entry(
+                            conn,
+                            out_tag, flb_sds_len(out_tag),
+                            &entry.via.array.ptr[index],
+                            chunk_id);
+                }
+
+                if (chunk_id != -1) {
+                    msgpack_object options;
+                    msgpack_object chunk;
+
+                    options = root.via.array.ptr[2];
+                    chunk = options.via.map.ptr[chunk_id].val;
+
+                    send_ack(conn->in, conn, chunk);
+                }
             }
             else if (entry.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
                      entry.type == MSGPACK_OBJECT_EXT) {
-
                 /*
                  * Forward format 2 (message mode) : [tag, time, map, ...]
                  */
