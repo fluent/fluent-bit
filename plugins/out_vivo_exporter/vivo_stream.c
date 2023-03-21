@@ -135,6 +135,7 @@ void vivo_stream_destroy(struct vivo_stream *vs)
 }
 
 flb_sds_t vivo_stream_get_content(struct vivo_stream *vs, int64_t from, int64_t to,
+                                  int64_t limit,
                                   int64_t *stream_start_id, int64_t *stream_end_id)
 {
     int64_t count = 0;
@@ -169,6 +170,10 @@ flb_sds_t vivo_stream_get_content(struct vivo_stream *vs, int64_t from, int64_t 
 
         *stream_end_id = e->id;
         count++;
+
+        if (limit > 0 && count >= limit) {
+            break;
+        }
     }
 
     if (ctx->empty_stream_on_read) {
