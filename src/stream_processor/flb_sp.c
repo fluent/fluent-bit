@@ -59,8 +59,8 @@ static int sp_config_file(struct flb_config *config, struct flb_sp *sp,
                           const char *file)
 {
     int ret;
-    char *name;
-    char *exec;
+    flb_sds_t name;
+    flb_sds_t exec;
     char *cfg = NULL;
     char tmp[PATH_MAX + 1];
     struct stat st;
@@ -125,12 +125,22 @@ static int sp_config_file(struct flb_config *config, struct flb_sp *sp,
         if (!task) {
             goto fconf_error;
         }
+        flb_sds_destroy(name);
+        flb_sds_destroy(exec);
+        name = NULL;
+        exec = NULL;
     }
 
     flb_cf_destroy(cf);
     return 0;
 
 fconf_error:
+    if (name) {
+        flb_sds_destroy(name);
+    }
+    if (exec) {
+        flb_sds_destroy(exec);
+    }
     flb_cf_destroy(cf);
     return -1;
 }
