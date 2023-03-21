@@ -29,13 +29,15 @@
 #define VIVO_STREAM_START_ID    "Vivo-Stream-Start-ID"
 #define VIVO_STREAM_END_ID      "Vivo-Stream-End-ID"
 
-static int stream_get_range(mk_request_t *request, int64_t *from, int64_t *to)
+static int stream_get_uri_properties(mk_request_t *request,
+                                     int64_t *from, int64_t *to, int64_t *limit)
 {
     char *ptr;
     flb_sds_t buf;
 
     *from = -1;
     *to = -1;
+    *limit = -1;
 
     buf = flb_sds_create_len(request->query_string.data, request->query_string.len);
     if (!buf) {
@@ -52,6 +54,11 @@ static int stream_get_range(mk_request_t *request, int64_t *from, int64_t *to)
         *to = atol(ptr + 3);
     }
 
+    ptr = strstr(buf, "limit=");
+    if (ptr) {
+        *limit = atol(ptr + 6);
+    }
+
     flb_sds_destroy(buf);
 
     return 0;
@@ -61,6 +68,7 @@ static void serve_content(mk_request_t *request, struct vivo_stream *vs)
 {
     int64_t from = -1;
     int64_t to = -1;
+    int64_t limit = -1;
     int64_t stream_start_id = -1;
     int64_t stream_end_id = -1;
     flb_sds_t payload;
@@ -68,10 +76,11 @@ static void serve_content(mk_request_t *request, struct vivo_stream *vs)
     flb_sds_t str_end;
 
     if (request->query_string.len > 0) {
-        stream_get_range(request, &from, &to);
+        stream_get_uri_properties(request, &from, &to, &limit);
     }
 
-    payload = vivo_stream_get_content(vs, from, to, &stream_start_id, &stream_end_id);
+    payload = vivo_stream_get_content(vs, from, to, limit,
+                                      &stream_start_id, &stream_end_id);
     if (!payload) {
         mk_http_status(request, 500);
         return;
