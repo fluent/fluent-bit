@@ -346,6 +346,7 @@ static int flb_tail_mult_pack_line_body(
     struct flb_tail_config *config;
     int                     result;
 
+    result = FLB_EVENT_ENCODER_SUCCESS;
     config = (struct flb_tail_config *) file->config;
 
     /* New Map size */
@@ -353,12 +354,13 @@ static int flb_tail_mult_pack_line_body(
 
     if (file->config->path_key != NULL) {
         map_size++;
+
+        result = flb_log_event_encoder_append_body_values(
+                    context,
+                    FLB_LOG_EVENT_CSTRING_VALUE(config->path_key),
+                    FLB_LOG_EVENT_CSTRING_VALUE(file->name));
     }
 
-    result = flb_log_event_encoder_append_body_values(
-                context,
-                FLB_LOG_EVENT_CSTRING_VALUE(config->path_key),
-                FLB_LOG_EVENT_CSTRING_VALUE(file->name));
 
     msgpack_unpacked_init(&current_object);
     msgpack_unpacked_init(&adjacent_object);
@@ -527,7 +529,7 @@ int flb_tail_mult_flush(struct flb_tail_file *file, struct flb_tail_config *ctx)
         result = 0;
     }
     else {
-        flb_plg_error(file->config->ins, "error packing event");
+        flb_plg_error(file->config->ins, "error packing event : %d", result);
 
         result = -1;
     }
