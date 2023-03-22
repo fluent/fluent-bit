@@ -141,8 +141,11 @@ static inline int flb_log_suppress_check(int log_suppress_interval, const char *
     struct flb_worker *w;
 
     if (log_suppress_interval <= 0) {
+        printf("No log_supress_interval");
         return FLB_FALSE;
     }
+
+    printf("Log_supress_interval: %d", log_suppress_interval);
 
     va_start(args, fmt);
     size = vsnprintf(buf, sizeof(buf) - 1, fmt, args);

@@ -275,8 +275,11 @@ int flb_log_cache_check_suppress(struct flb_log_cache *cache, char *msg_buf, siz
     now = time(NULL);
     entry = flb_log_cache_exists(cache, msg_buf, msg_size);
 
+    flb_info("flb_log_cache_check_suppress");
+
     /* if no similar message found, add the incoming message to the cache */
     if (!entry) {
+        flb_info("No similar message found");
         /* look for an unused entry or the oldest one */
         entry = flb_log_cache_get_target(cache, now);
 
@@ -292,10 +295,13 @@ int flb_log_cache_check_suppress(struct flb_log_cache *cache, char *msg_buf, siz
         return FLB_FALSE;
     }
     else {
+        flb_info("Similar message found");
         if (entry->timestamp + cache->timeout > now) {
+            flb_info("Timeout reached. ts: %llu, to: %d", entry->timestamp, cache->timeout);
             return FLB_TRUE;
         }
         else {
+            flb_info("setting timestamp to now");
             entry->timestamp = now;
             return FLB_FALSE;
         }
