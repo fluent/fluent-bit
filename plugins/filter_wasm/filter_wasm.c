@@ -139,7 +139,7 @@ static int cb_wasm_filter(const void *data, size_t bytes,
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
             /* Convert JSON payload to msgpack */
             ret = flb_pack_json(ret_val, strlen(ret_val),
-                                &json_buf, &json_size, &root_type);
+                                &json_buf, &json_size, &root_type, NULL);
 
             if (ret == 0 && root_type == JSMN_OBJECT) {
                 /* JSON found, pack it msgpack representation */

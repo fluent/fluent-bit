@@ -69,7 +69,8 @@ static int create_sample_map(char *template,
                            strlen(template),
                            raw_msgpack_buffer,
                            raw_msgpack_size,
-                           &root_type);
+                           &root_type,
+                           NULL);
 
     if (result != 0) {
         result = FLB_EVENT_DECODER_ERROR_INITIALIZATION_FAILURE;

@@ -208,7 +208,6 @@ static int in_stdin_collect(struct flb_input_instance *ins,
     ctx->buf_len += bytes;
     ctx->buf[ctx->buf_len] = '\0';
 
-
     while (ctx->buf_len > 0) {
         /* Try built-in JSON parser */
         if (!ctx->parser) {
@@ -258,6 +257,7 @@ static int in_stdin_collect(struct flb_input_instance *ins,
             /* Use the defined parser */
             ret = flb_parser_do(ctx->parser, ctx->buf, ctx->buf_len,
                                 &out_buf, &out_size, &out_time);
+
             if (ret >= 0) {
                 if (flb_time_to_nanosec(&out_time) == 0L) {
                     flb_time_get(&out_time);
@@ -275,7 +275,7 @@ static int in_stdin_collect(struct flb_input_instance *ins,
             }
             else {
                 /* we need more data ? */
-                flb_plg_trace(ctx->ins, "data mismatch or incomplete");
+                flb_plg_trace(ctx->ins, "data mismatch or incomplete : %d", ret);
                 return 0;
             }
         }

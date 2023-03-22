@@ -440,7 +440,7 @@ static int get_ecs_cluster_metadata(struct flb_filter_ecs *ctx)
     }
 
     ret = flb_pack_json(c->resp.payload, c->resp.payload_size,
-                        &buffer, &size, &root_type);
+                        &buffer, &size, &root_type, NULL);
 
     if (ret < 0) {
         flb_plg_warn(ctx->ins, "Could not parse response from %s; response=\n%s", 
@@ -1041,7 +1041,7 @@ static int get_task_metadata(struct flb_filter_ecs *ctx, char* short_id)
     }
 
     ret = flb_pack_json(c->resp.payload, c->resp.payload_size,
-                        &buffer, &size, &root_type);
+                        &buffer, &size, &root_type, NULL);
 
     if (ret < 0) {
         flb_plg_warn(ctx->ins, "Could not parse response from %s; response=\n%s", 

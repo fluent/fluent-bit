@@ -248,7 +248,8 @@ static int configure(struct flb_dummy *ctx,
                         strlen(msg),
                         &ctx->ref_body_msgpack,
                         &ctx->ref_body_msgpack_size,
-                        &root_type);
+                        &root_type,
+                        NULL);
 
     if (ret != 0) {
         flb_plg_warn(ctx->ins, "data is incomplete. Use default string.");
@@ -257,7 +258,8 @@ static int configure(struct flb_dummy *ctx,
                             strlen(DEFAULT_DUMMY_MESSAGE),
                             &ctx->ref_body_msgpack,
                             &ctx->ref_body_msgpack_size,
-                            &root_type);
+                            &root_type,
+                            NULL);
         if (ret != 0) {
             flb_plg_error(ctx->ins, "unexpected error");
             return -1;
@@ -275,7 +277,8 @@ static int configure(struct flb_dummy *ctx,
                         strlen(msg),
                         &ctx->ref_metadata_msgpack,
                         &ctx->ref_metadata_msgpack_size,
-                        &root_type);
+                        &root_type,
+                        NULL);
 
     if (ret != 0) {
         flb_plg_warn(ctx->ins, "data is incomplete. Use default string.");
@@ -284,7 +287,8 @@ static int configure(struct flb_dummy *ctx,
                             strlen(DEFAULT_DUMMY_METADATA),
                             &ctx->ref_metadata_msgpack,
                             &ctx->ref_metadata_msgpack_size,
-                            &root_type);
+                            &root_type,
+                            NULL);
 
         if (ret != 0) {
             flb_plg_error(ctx->ins, "unexpected error");

@@ -153,7 +153,7 @@ static int merge_log_handler(msgpack_object o,
     else { /* Default JSON parser */
         ret = flb_pack_json_recs(ctx->unesc_buf, ctx->unesc_buf_len,
                                  (char **) out_buf, out_size, &root_type,
-                                 &records);
+                                 &records, NULL);
         if (ret == 0 && root_type != FLB_PACK_JSON_OBJECT) {
             flb_plg_debug(ctx->ins, "could not merge JSON, root_type=%i",
                       root_type);

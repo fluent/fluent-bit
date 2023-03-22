@@ -645,7 +645,7 @@ static int read_label_map_path_file(struct flb_output_instance *ins, flb_sds_t p
         return -1;
     }
 
-    ret = flb_pack_json(buf, file_size, &msgp_buf, &ret_size, &root_type);
+    ret = flb_pack_json(buf, file_size, &msgp_buf, &ret_size, &root_type, NULL);
     if (ret < 0) {
         flb_plg_error(ins, "flb_pack_json failed");
         fclose(fp);

@@ -247,7 +247,8 @@ static int http_enable_trace(mk_request_t *request, void *data, const char *inpu
     }
 
     msgpack_unpacked_init(&result);
-    rc = flb_pack_json(request->data.data, request->data.len, &buf, &buf_size, &root_type);
+    rc = flb_pack_json(request->data.data, request->data.len, &buf, &buf_size,
+                       &root_type, NULL);
     if (rc == -1) {
         ret = 503;
         flb_error("unable to parse json parameters");
@@ -477,7 +478,8 @@ static void cb_traces(mk_request_t *request, void *data)
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     msgpack_unpacked_init(&result);
-    ret = flb_pack_json(request->data.data, request->data.len, &buf, &buf_size, &root_type);
+    ret = flb_pack_json(request->data.data, request->data.len, &buf, &buf_size,
+                        &root_type, NULL);
     if (ret == -1) {
         goto unpack_error;
     }

@@ -239,7 +239,8 @@ static char *tokens_to_msgpack(struct flb_pack_state *state,
  * JSON messages.
  */
 static int pack_json_to_msgpack(const char *js, size_t len, char **buffer,
-                                size_t *size, int *root_type, int *records)
+                                size_t *size, int *root_type, int *records,
+                                size_t *consumed)
 {
     int ret = -1;
     int n_records;
@@ -273,6 +274,11 @@ static int pack_json_to_msgpack(const char *js, size_t len, char **buffer,
     *size = out;
     *buffer = buf;
     *records = n_records;
+
+    if (consumed != NULL) {
+        *consumed = last;
+    }
+
     ret = 0;
 
  flb_pack_json_end:
@@ -282,11 +288,11 @@ static int pack_json_to_msgpack(const char *js, size_t len, char **buffer,
 
 /* Pack unlimited serialized JSON messages into msgpack */
 int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
-                  int *root_type)
+                  int *root_type, size_t *consumed)
 {
     int records;
 
-    return pack_json_to_msgpack(js, len, buffer, size, root_type, &records);
+    return pack_json_to_msgpack(js, len, buffer, size, root_type, &records, consumed);
 }
 
 /*
@@ -294,9 +300,9 @@ int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
  * 'out_records' the number of messages.
  */
 int flb_pack_json_recs(const char *js, size_t len, char **buffer, size_t *size,
-                       int *root_type, int *out_records)
+                       int *root_type, int *out_records, size_t *consumed)
 {
-    return pack_json_to_msgpack(js, len, buffer, size, root_type, out_records);
+    return pack_json_to_msgpack(js, len, buffer, size, root_type, out_records, consumed);
 }
 
 /* Initialize a JSON packer state */

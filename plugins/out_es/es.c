@@ -632,7 +632,7 @@ static int elasticsearch_error_check(struct flb_elasticsearch *ctx,
      */
     /* Convert JSON payload to msgpack */
     ret = flb_pack_json(c->resp.payload, c->resp.payload_size,
-                        &out_buf, &out_size, &root_type);
+                        &out_buf, &out_size, &root_type, NULL);
     if (ret == -1) {
         /* Is this an incomplete HTTP Request ? */
         if (c->resp.payload_size <= 0) {

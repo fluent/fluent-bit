@@ -678,7 +678,7 @@ static int process_api_response(struct flb_kinesis *ctx,
 
     /* Convert JSON payload to msgpack */
     ret = flb_pack_json(c->resp.payload, c->resp.payload_size,
-                        &out_buf, &out_size, &root_type);
+                        &out_buf, &out_size, &root_type, NULL);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not pack/validate JSON API response\n%s",
                       c->resp.payload);

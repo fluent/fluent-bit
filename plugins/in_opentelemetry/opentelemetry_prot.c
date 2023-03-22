@@ -196,7 +196,8 @@ static int process_payload_raw_traces(struct flb_opentelemetry *ctx, struct http
     flb_pack_time_now(&mp_pck);
 
     /* Check if the incoming payload is a valid JSON message and convert it to msgpack */
-    ret = flb_pack_json(request->data.data, request->data.len, &out_buf, &out_size, &root_type);
+    ret = flb_pack_json(request->data.data, request->data.len,
+                        &out_buf, &out_size, &root_type, NULL);
 
     if (ret == 0 && root_type == JSMN_OBJECT) {
         /* JSON found, pack it msgpack representation */
@@ -1286,7 +1287,8 @@ static int json_payload_to_msgpack(struct flb_opentelemetry *ctx,
     size_t           offset;
     int              result;
 
-    result = flb_pack_json(body, len, &msgpack_body, &msgpack_body_length, &root_type);
+    result = flb_pack_json(body, len, &msgpack_body, &msgpack_body_length,
+                           &root_type, NULL);
 
     if (result != 0) {
         flb_plg_error(ctx->ins, "json to msgpack conversion error");
