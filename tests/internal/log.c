@@ -62,7 +62,7 @@ static void cache_basic_timeout()
     TEST_CHECK(entry == NULL);
 
     /* upon trying to check for a suppress and if not found, it must be added */
-    ret_1 = flb_log_cache_check_suppress(cache, TEST_RECORD_01, TEST_RECORD_01_SIZE);
+    ret_1 = flb_log_cache_check_suppress(cache, TEST_RECORD_01, TEST_RECORD_01_SIZE, 0);
     TEST_CHECK(ret_1 == FLB_FALSE);
 
     /* double check that it was added */
@@ -78,20 +78,20 @@ static void cache_basic_timeout()
     cache = flb_log_cache_create(timeout, 4);
     TEST_CHECK(cache != NULL);
 
-    ret_1 = flb_log_cache_check_suppress(cache, TEST_RECORD_01, TEST_RECORD_01_SIZE);
-    ret_2 = flb_log_cache_check_suppress(cache, TEST_RECORD_02, TEST_RECORD_02_SIZE);
+    ret_1 = flb_log_cache_check_suppress(cache, TEST_RECORD_01, TEST_RECORD_01_SIZE, 0);
+    ret_2 = flb_log_cache_check_suppress(cache, TEST_RECORD_02, TEST_RECORD_02_SIZE, 0);
     TEST_CHECK(ret_1 == FLB_FALSE);
     TEST_CHECK(ret_2 == FLB_FALSE);
     sleep(1);
 
     for (i = 1; i < 10; i++) {
-        ret_1 = flb_log_cache_check_suppress(cache, TEST_RECORD_01, TEST_RECORD_01_SIZE);
+        ret_1 = flb_log_cache_check_suppress(cache, TEST_RECORD_01, TEST_RECORD_01_SIZE, 0);
         ret = update_and_check_interval(timeout, ret_1, &interval1);
         if (!TEST_CHECK(ret == 0)) {
             TEST_MSG("update_and_check_interval for TEST_RECORD_01 failed. i=%d", i);
         }
 
-        ret_2 = flb_log_cache_check_suppress(cache, TEST_RECORD_02, TEST_RECORD_02_SIZE);
+        ret_2 = flb_log_cache_check_suppress(cache, TEST_RECORD_02, TEST_RECORD_02_SIZE, 0);
         ret = update_and_check_interval(timeout, ret_2, &interval2);
         if (!TEST_CHECK(ret == 0)) {
             TEST_MSG("update_and_check_interval for TEST_RECORD_02 failed. i=%d", i);
@@ -105,10 +105,10 @@ static void cache_basic_timeout()
     ret = update_and_check_interval(timeout, ret_2, &interval2);
     TEST_CHECK(ret == 0);
 
-    ret_1 = flb_log_cache_check_suppress(cache, TEST_RECORD_01, TEST_RECORD_01_SIZE);
+    ret_1 = flb_log_cache_check_suppress(cache, TEST_RECORD_01, TEST_RECORD_01_SIZE, 0);
     TEST_CHECK(ret_1 == FLB_FALSE);
 
-    ret_2 = flb_log_cache_check_suppress(cache, TEST_RECORD_02, TEST_RECORD_02_SIZE);
+    ret_2 = flb_log_cache_check_suppress(cache, TEST_RECORD_02, TEST_RECORD_02_SIZE, 0);
     TEST_CHECK(ret_2 == FLB_FALSE);
 
     flb_log_cache_destroy(cache);
@@ -129,15 +129,15 @@ static void cache_one_slot()
     for (i = 0; i < 10; i++) {
 
         if (i == 0) {
-            ret_1 = flb_log_cache_check_suppress(cache, TEST_RECORD_01, TEST_RECORD_01_SIZE);
+            ret_1 = flb_log_cache_check_suppress(cache, TEST_RECORD_01, TEST_RECORD_01_SIZE, 0);
             TEST_CHECK(ret_1 == FLB_FALSE);
 
-            ret_1 = flb_log_cache_check_suppress(cache, TEST_RECORD_01, TEST_RECORD_01_SIZE);
+            ret_1 = flb_log_cache_check_suppress(cache, TEST_RECORD_01, TEST_RECORD_01_SIZE, 0);
             TEST_CHECK(ret_1 == FLB_TRUE);
         }
         else {
-            ret_2 = flb_log_cache_check_suppress(cache, TEST_RECORD_02, TEST_RECORD_02_SIZE);
-            ret_1 = flb_log_cache_check_suppress(cache, TEST_RECORD_01, TEST_RECORD_01_SIZE);
+            ret_2 = flb_log_cache_check_suppress(cache, TEST_RECORD_02, TEST_RECORD_02_SIZE, 0);
+            ret_1 = flb_log_cache_check_suppress(cache, TEST_RECORD_01, TEST_RECORD_01_SIZE, 0);
 
             TEST_CHECK(ret_1 == FLB_FALSE);
             TEST_CHECK(ret_2 == FLB_FALSE);

@@ -129,7 +129,7 @@ void flb_log_cache_destroy(struct flb_log_cache *cache);
 struct flb_log_cache_entry *flb_log_cache_exists(struct flb_log_cache *cache, char *msg_buf, size_t msg_size);
 struct flb_log_cache_entry *flb_log_cache_get_target(struct flb_log_cache *cache, uint64_t ts);
 
-int flb_log_cache_check_suppress(struct flb_log_cache *cache, char *msg_buf, size_t msg_size);
+int flb_log_cache_check_suppress(struct flb_log_cache *cache, char *msg_buf, size_t msg_size, int i);
 
 
 static inline int flb_log_suppress_check(int log_suppress_interval, const char *fmt, ...)
@@ -141,11 +141,11 @@ static inline int flb_log_suppress_check(int log_suppress_interval, const char *
     struct flb_worker *w;
 
     if (log_suppress_interval <= 0) {
-        printf("No log_supress_interval");
+        printf("No log_supress_interval\n");
         return FLB_FALSE;
     }
 
-    printf("Log_supress_interval: %d", log_suppress_interval);
+    printf("Log_supress_interval: %d\n", log_suppress_interval);
 
     va_start(args, fmt);
     size = vsnprintf(buf, sizeof(buf) - 1, fmt, args);
@@ -160,7 +160,10 @@ static inline int flb_log_suppress_check(int log_suppress_interval, const char *
         return FLB_FALSE;
     }
 
-    ret = flb_log_cache_check_suppress(w->log_cache, buf, size);
+    // we should check for the interval here, but we don't have the entry.timestamp. So we'll check this in the
+    // flb_log_cache_check_supress func
+
+    ret = flb_log_cache_check_suppress(w->log_cache, buf, size, log_suppress_interval);
     return ret;
 }
 

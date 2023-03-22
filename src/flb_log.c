@@ -267,7 +267,7 @@ struct flb_log_cache_entry *flb_log_cache_get_target(struct flb_log_cache *cache
  *
  * if no similar message exists, then the incoming message is added to the cache.
  */
-int flb_log_cache_check_suppress(struct flb_log_cache *cache, char *msg_buf, size_t msg_size)
+int flb_log_cache_check_suppress(struct flb_log_cache *cache, char *msg_buf, size_t msg_size, int log_s_i)
 {
     uint64_t now = 0;
     struct flb_log_cache_entry *entry;
@@ -296,8 +296,9 @@ int flb_log_cache_check_suppress(struct flb_log_cache *cache, char *msg_buf, siz
     }
     else {
         flb_info("Similar message found");
-        if (entry->timestamp + cache->timeout > now) {
-            flb_info("Timeout reached. ts: %llu, to: %d", entry->timestamp, cache->timeout);
+
+        if (entry->timestamp + log_s_i > now) {
+            flb_info("Timeout reached. ts: %llu, to: %d, log_supress_interval: %d", entry->timestamp, cache->timeout, log_s_i);
             return FLB_TRUE;
         }
         else {
