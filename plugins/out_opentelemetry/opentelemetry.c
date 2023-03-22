@@ -713,6 +713,7 @@ static int flush_to_otel(struct opentelemetry_context *ctx,
     size_t kv_index;
     struct mk_list *kv_head;
     struct flb_kv *kv;
+    int index;
 
     void *body;
     unsigned len;
@@ -741,7 +742,7 @@ static int flush_to_otel(struct opentelemetry_context *ctx,
             flb_errno();
             return -1;
     }
-    for(int index = 0; index < kv_size; index++) {
+    for(index = 0; index < kv_size; index++) {
             attributes_list[index] = &attributes[index];
     }
 
@@ -781,7 +782,7 @@ static int flush_to_otel(struct opentelemetry_context *ctx,
 
     flb_free(body);
     flb_free(resource_log.resource);
-    for (int index = 0; index < kv_size; index++) {
+    for (index = 0; index < kv_size; index++) {
         flb_free(attributes[index].value);
     }
     flb_free(attributes);
