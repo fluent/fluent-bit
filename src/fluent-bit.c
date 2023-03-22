@@ -147,7 +147,7 @@ static void flb_help(int rc, struct flb_config *config)
                 config->coro_stack_size);
     print_opt("-q, --quiet", "quiet mode");
     print_opt("-S, --sosreport", "support report for Enterprise customers");
-    print_opt("-Y, --enable-hot-reloading", "enable for hot reloading");
+    print_opt("-Y, --enable-hot-reload", "enable for hot reloading");
     print_opt("-V, --version", "show version number");
     print_opt("-h, --help", "print this help");
 
