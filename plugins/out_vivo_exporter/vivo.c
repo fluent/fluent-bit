@@ -145,12 +145,7 @@ static int logs_event_chunk_append(struct vivo_exporter *ctx,
     flb_sds_t json;
     struct vivo_stream_entry *entry;
 
-    /* Convert msgpack to readable JSON format
-    json = flb_pack_msgpack_to_json_format(event_chunk->data,
-                                           event_chunk->size,
-                                           FLB_PACK_JSON_FORMAT_LINES,
-                                           FLB_PACK_JSON_DATE_FLUENT, NULL);
-    */
+
     json = format_logs(event_chunk);
     if (!json) {
         flb_plg_error(ctx->ins, "cannot convert logs chunk to JSON");
@@ -185,6 +180,8 @@ static int metrics_traces_event_chunk_append(struct vivo_exporter *ctx,
         flb_plg_error(ctx->ins, "cannot convert metrics chunk to JSON");
         return -1;
     }
+
+    flb_sds_cat_safe(&json, "\n", 1);
 
     /* append content to the stream */
     len = flb_sds_len(json);
