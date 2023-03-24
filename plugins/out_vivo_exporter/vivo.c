@@ -328,6 +328,12 @@ static struct flb_config_map config_map[] = {
      "and traces can hold up to 'stream_queue_size' bytes."
     },
 
+    {
+     FLB_CONFIG_MAP_STR, "http_cors_allow_origin", NULL,
+     0, FLB_TRUE, offsetof(struct vivo_exporter, http_cors_allow_origin),
+     "Specify the value for the HTTP Access-Control-Allow-Origin header (CORS)"
+    },
+
     /* EOF */
     {0}
 };
