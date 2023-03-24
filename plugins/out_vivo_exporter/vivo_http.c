@@ -64,6 +64,29 @@ static int stream_get_uri_properties(mk_request_t *request,
     return 0;
 }
 
+static void headers_set(mk_request_t *request, struct vivo_stream *vs)
+{
+    struct vivo_exporter *ctx;
+
+
+    /* parent context */
+    ctx = vs->parent;
+
+    /* content type */
+    mk_http_header(request,
+                   VIVO_CONTENT_TYPE, sizeof(VIVO_CONTENT_TYPE) - 1,
+                   VIVO_CONTENT_TYPE_JSON, sizeof(VIVO_CONTENT_TYPE_JSON) - 1);
+
+    /* CORS */
+    if (ctx->http_cors_allow_origin) {
+        mk_http_header(request,
+                       "Access-Control-Allow-Origin",
+                       sizeof("Access-Control-Allow-Origin") - 1,
+                       ctx->http_cors_allow_origin,
+                       flb_sds_len(ctx->http_cors_allow_origin));
+    }
+}
+
 static void serve_content(mk_request_t *request, struct vivo_stream *vs)
 {
     int64_t from = -1;
@@ -74,6 +97,7 @@ static void serve_content(mk_request_t *request, struct vivo_stream *vs)
     flb_sds_t payload;
     flb_sds_t str_start;
     flb_sds_t str_end;
+
 
     if (request->query_string.len > 0) {
         stream_get_uri_properties(request, &from, &to, &limit);
@@ -88,15 +112,14 @@ static void serve_content(mk_request_t *request, struct vivo_stream *vs)
 
     if (flb_sds_len(payload) == 0) {
         mk_http_status(request, 200);
+        headers_set(request, vs);
         return;
     }
 
     mk_http_status(request, 200);
 
-    /* content type */
-    mk_http_header(request,
-                   VIVO_CONTENT_TYPE, sizeof(VIVO_CONTENT_TYPE) - 1,
-                   VIVO_CONTENT_TYPE_JSON, sizeof(VIVO_CONTENT_TYPE_JSON) - 1);
+    /* set response headers */
+    headers_set(request, vs);
 
     /* stream ids served: compose buffer and set headers */
     str_start = flb_sds_create_size(32);

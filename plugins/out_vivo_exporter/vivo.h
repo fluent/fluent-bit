@@ -36,6 +36,7 @@ struct vivo_exporter {
     /* options */
     int empty_stream_on_read;
     size_t stream_queue_size;
+    flb_sds_t http_cors_allow_origin;
 
     /* instance context */
     struct flb_output_instance *ins;
