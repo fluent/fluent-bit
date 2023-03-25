@@ -135,7 +135,7 @@ int callback_test(void* data, size_t size, void* cb_data)
 {
     if (size > 0) {
         new_data = true;
-        flb_debug("[test_filter_log_to_metrics] received message: %s", data);
+        flb_debug("[test_filter_log_to_metrics] received message: %s", (char*)data);
         pthread_mutex_lock(&result_mutex);
             strncat(output, data, size);
             data_size = size; 
