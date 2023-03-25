@@ -92,7 +92,7 @@ static int cb_count_msgpack_events(void *record, size_t size, void *data)
 int callback_test(void* data, size_t size, void* cb_data)
 {
     if (size > 0) {
-        flb_debug("[test_filter_lua] received message: %s", data);
+        flb_debug("[test_filter_lua] received message: %s", (char*)data);
         set_output(data); /* success */
     }
     return 0;
@@ -102,7 +102,7 @@ int callback_cat(void* data, size_t size, void* cb_data)
 {
     flb_sds_t *outbuf = cb_data;
     if (size > 0) {
-        flb_debug("[test_filter_lua] received message: %s", data);
+        flb_debug("[test_filter_lua] received message: %s", (char*)data);
         pthread_mutex_lock(&result_mutex);
         flb_sds_cat_safe(outbuf, data, size);
         pthread_mutex_unlock(&result_mutex);
