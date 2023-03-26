@@ -112,6 +112,7 @@ int callback_cat(void* data, size_t size, void* cb_data)
         flb_debug("[test_filter_lua] received message: %s", (char*)data);
         pthread_mutex_lock(&result_mutex);
         flb_sds_cat_safe(outbuf, data, size);
+        flb_free(data);
         pthread_mutex_unlock(&result_mutex);
     }
     return 0;
