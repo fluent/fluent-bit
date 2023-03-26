@@ -84,6 +84,19 @@ static void headers_set(mk_request_t *request, struct vivo_stream *vs)
                        sizeof("Access-Control-Allow-Origin") - 1,
                        ctx->http_cors_allow_origin,
                        flb_sds_len(ctx->http_cors_allow_origin));
+
+        mk_http_header(request,
+                       "Access-Control-Allow-Headers",
+                       sizeof("Access-Control-Allow-Headers") - 1,
+                       "Origin, X-Requested-With, Content-Type, Accept",
+                       sizeof("Origin, X-Requested-With, Content-Type, Accept") - 1);
+
+        mk_http_header(request,
+                       "Access-Control-Expose-Headers",
+                       sizeof("Access-Control-Expose-Headers") - 1,
+                       "vivo-stream-start-id, vivo-stream-end-id",
+                       sizeof("vivo-stream-start-id, vivo-stream-end-id") - 1);
+
     }
 }
 
