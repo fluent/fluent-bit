@@ -52,6 +52,7 @@ int callback_count(void* data, size_t size, void* cb_data)
     if (size > 0) {
         flb_debug("[test_filter_nest] received message: %s", (char*)data);
         add_output_num(); /* success */
+        flb_free(data);
     }
     return 0;
 }
