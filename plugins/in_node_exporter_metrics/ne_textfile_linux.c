@@ -95,6 +95,7 @@ static int textfile_update(struct flb_ne *ctx)
 
     if (ctx->path_textfile == NULL) {
         flb_plg_warn(ctx->ins, "No valid path for textfile metric is registered");
+        return -1;
     }
 
     ext = strrchr(ctx->path_textfile, '.');
