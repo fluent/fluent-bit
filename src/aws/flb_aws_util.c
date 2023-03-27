@@ -245,8 +245,7 @@ void flb_aws_client_destroy(struct flb_aws_client *aws_client)
         if (aws_client->upstream) {
             flb_upstream_destroy(aws_client->upstream);
         }
-        if (aws_client->free_user_agent) {
-            /* if user agent was auto-set by code its an SDS string */
+        if (aws_client->extra_user_agent) {
             flb_sds_destroy(aws_client->extra_user_agent);
         }
         flb_free(aws_client);
@@ -378,7 +377,6 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
             goto error;
         }
         aws_client->extra_user_agent = tmp;
-        aws_client->free_user_agent = FLB_TRUE;
         tmp = NULL;
     }
     
