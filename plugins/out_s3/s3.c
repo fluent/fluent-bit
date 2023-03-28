@@ -1239,6 +1239,10 @@ static int put_all_chunks(struct flb_s3 *ctx, int is_startup)
             continue;
         }
 
+        if (is_startup == FLB_TRUE && fs_stream == ctx->stream_active) {
+            continue;
+        }
+
         mk_list_foreach_safe(f_head, tmp, &fs_stream->files) {
             fsf = mk_list_entry(f_head, struct flb_fstore_file, _head);
             chunk = fsf->data;
@@ -2135,7 +2139,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     if (ctx->daemon_coro_started == FLB_FALSE) {
         daemon_coroutine(config, ctx);
     }
-    
+
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
