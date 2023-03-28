@@ -147,6 +147,8 @@ struct flb_s3 {
     flb_sds_t metadata_dir;
     flb_sds_t seq_index_file;
 
+    int daemon_coro_started;
+
     struct flb_output_instance *ins;
 };
 
