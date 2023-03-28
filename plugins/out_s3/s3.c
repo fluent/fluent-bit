@@ -2135,8 +2135,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     if (ctx->daemon_coro_started == FLB_FALSE) {
         daemon_coroutine(config, ctx);
     }
-
-    flb_plg_info(ctx->ins, "normal coro flush ending...");
+    
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
