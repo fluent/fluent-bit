@@ -26,9 +26,10 @@
 /*
  * Error status (do not confuse with return statuses!)
  */
-#define CIO_ERR_BAD_CHECKSUM -10      /* Chunk has a bad checksum */
-#define CIO_ERR_BAD_LAYOUT   -11      /* Bad magic bytes or general layout */
-#define CIO_ERR_PERMISSION   -12      /* Permission error */
+#define CIO_ERR_BAD_CHECKSUM  -10      /* Chunk has a bad checksum */
+#define CIO_ERR_BAD_LAYOUT    -11      /* Bad magic bytes or general layout */
+#define CIO_ERR_PERMISSION    -12      /* Permission error */
+#define CIO_ERR_BAD_FILE_SIZE -13      /* Chunk has a bad file size */
 
 char *cio_error_get_str(struct cio_chunk *ch);
 int cio_error_get(struct cio_chunk *ch);

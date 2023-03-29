@@ -13,7 +13,8 @@ Before we can approve your change; please submit the following in a comment:
 - [ ] Attached [Valgrind](https://valgrind.org/docs/manual/quick-start.html) output that shows no leaks or memory corruption was found
 
 If this is a change to packaging of containers or native binaries then please confirm it works for all targets.
-- [ ] Attached [local packaging test](./packaging/local-build-all.sh) output showing all targets (including any new ones) build.
+- [ ] Run [local packaging test](./packaging/local-build-all.sh) showing all targets (including any new ones) build.
+- [ ] Set `ok-package-test` label to test for all targets (requires maintainer to do).
 
 **Documentation**
 <!-- Docs can be edited at https://github.com/fluent/fluent-bit-docs -->

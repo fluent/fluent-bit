@@ -175,11 +175,15 @@ int flb_aws_imds_request_by_key(struct flb_aws_imds *ctx, const char *metadata_p
     }
 
     if (c->resp.status != 200) {
+        ret = -1;
+        if (c->resp.status == 404) {
+            ret = -2;
+        }
         if (c->resp.payload_size > 0) {
             flb_debug("[imds] metadata request failure response\n%s", c->resp.payload);
         }
         flb_http_client_destroy(c);
-        return -1;
+        return ret;
     }
 
     if (key != NULL) {

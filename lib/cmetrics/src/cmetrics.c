@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -80,6 +80,8 @@ struct cmt *cmt_create()
     cfl_list_init(&cmt->untypeds);
 
     cmt->log_level = CMT_LOG_ERROR;
+
+    cfl_list_entry_init(&cmt->_head);
     
     return cmt;
 }

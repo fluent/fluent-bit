@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -130,7 +130,7 @@ double cmt_summary_quantile_get_value(struct cmt_metric *metric, int quantile_id
 {
     uint64_t val;
 
-    if (quantile_id < 0 || quantile_id > 5) {
+    if (quantile_id < 0 /*|| quantile_id > metric->sum_quantiles_count*/) {
         return 0;
     }
 
@@ -285,6 +285,7 @@ int cmt_summary_set_default(struct cmt_summary *summary,
             cmt_errno();
             return -1;
         }
+        metric->sum_quantiles_count = summary->quantiles_count;
     }
 
     /* set quantile values */

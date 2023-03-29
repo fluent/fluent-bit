@@ -21,6 +21,9 @@ RELEASE_KEY=${RELEASE_KEY:-https://packages.fluentbit.io/fluentbit.key}
 STAGING_URL=${STAGING_URL:-https://fluentbit-staging.s3.amazonaws.com}
 STAGING_KEY=${STAGING_KEY:-https://fluentbit-staging.s3.amazonaws.com/fluentbit.key}
 
+# Podman is preferred as better systemd support and cgroups handling
+CONTAINER_RUNTIME=${CONTAINER_RUNTIME:-podman}
+
 if [[ ! -f "$SCRIPT_DIR/Dockerfile.$PACKAGE_TEST" ]]; then
     echo "No definition for $SCRIPT_DIR/Dockerfile.$PACKAGE_TEST"
     exit 1
@@ -38,11 +41,12 @@ do
 
     CONTAINER_NAME="package-verify-$PACKAGE_TEST-$TARGET"
 
-    docker rm -f "$CONTAINER_NAME"
+    # Cope with needing --ignore for podman but not for docker
+    "${CONTAINER_RUNTIME}" rm --force --ignore --volumes "$CONTAINER_NAME" || "${CONTAINER_RUNTIME}" rm --force --volumes "$CONTAINER_NAME"
 
     # We do want splitting for build args
     # shellcheck disable=SC2086
-    docker build \
+    "${CONTAINER_RUNTIME}" build \
                 --build-arg STAGING_KEY=$STAGING_KEY \
                 --build-arg STAGING_URL=$STAGING_URL \
                 --build-arg RELEASE_KEY=$RELEASE_KEY \
@@ -51,13 +55,20 @@ do
                 -t "$CONTAINER_NAME" \
                 -f "$SCRIPT_DIR/Dockerfile.$PACKAGE_TEST" "$SCRIPT_DIR/"
 
-    docker run --rm -d \
-        --privileged \
-        -v /sys/fs/cgroup/:/sys/fs/cgroup:ro \
-        --name "$CONTAINER_NAME" \
-        "$CONTAINER_NAME"
+    if [[ "$CONTAINER_RUNTIME" == "docker" ]]; then
+        "${CONTAINER_RUNTIME}" run --rm -d \
+            --privileged \
+            -v /sys/fs/cgroup/:/sys/fs/cgroup:ro \
+            --name "$CONTAINER_NAME" \
+            "$CONTAINER_NAME"
+    else
+        "${CONTAINER_RUNTIME}" run --rm -d \
+            --timeout 30 \
+            --name "$CONTAINER_NAME" \
+            "$CONTAINER_NAME"
+    fi
 
-    docker exec -t "$CONTAINER_NAME" /test.sh
+    "${CONTAINER_RUNTIME}" exec -t "$CONTAINER_NAME" /test.sh
 
-    docker rm -f "$CONTAINER_NAME"
+    "${CONTAINER_RUNTIME}" rm --force --ignore --volumes "$CONTAINER_NAME" || "${CONTAINER_RUNTIME}" rm --force --volumes "$CONTAINER_NAME"
 done

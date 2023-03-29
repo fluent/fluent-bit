@@ -106,8 +106,6 @@ int mk_event_add(struct mk_event_loop *loop, int fd,
 int mk_event_inject(struct mk_event_loop *loop, struct mk_event *event,
                     int flags, int prevent_duplication)
 {
-    int result;
-
     if (loop->n_events + 1 >= loop->size) {
         return -1;
     }
@@ -176,6 +174,18 @@ int mk_event_channel_create(struct mk_event_loop *loop,
     mk_bug(!data);
     ctx = loop->data;
     return _mk_event_channel_create(ctx, r_fd, w_fd, data);
+}
+
+/* Destroy channel created to distribute signals */
+int mk_event_channel_destroy(struct mk_event_loop *loop,
+                            int r_fd, int w_fd,
+                            void *data)
+{
+    struct mk_event_ctx *ctx;
+
+    mk_bug(!data);
+    ctx = loop->data;
+    return _mk_event_channel_destroy(ctx, r_fd, w_fd, data);
 }
 
 /* Poll events */

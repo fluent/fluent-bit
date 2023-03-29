@@ -197,7 +197,7 @@ struct syslog_conn *syslog_conn_add(struct flb_connection *connection,
      * stream mode (UDP events are received through the collector)
      */
     if (!ctx->dgram_mode_flag) {
-        ret = mk_event_add(ctx->evl,
+        ret = mk_event_add(flb_engine_evl_get(),
                            connection->fd,
                            FLB_ENGINE_EV_CUSTOM,
                            MK_EVENT_READ,

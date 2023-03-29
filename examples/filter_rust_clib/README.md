@@ -67,7 +67,7 @@ Create fluent-bit configuration file as follows:
 [FILTER]
     Name wasm
     Tag  dummy.*
-    WASI_Path /path/to/rust_clib_filter.wasm
+    WASM_Path /path/to/rust_clib_filter.wasm
     Function_Name rust_clib_filter
     accessible_paths .,/path/to/fluent-bit
 

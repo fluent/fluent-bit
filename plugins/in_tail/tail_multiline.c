@@ -132,7 +132,7 @@ static int pack_line(char *data, size_t data_size, struct flb_tail_file *file,
 
     flb_tail_file_pack_line(&mp_sbuf, &mp_pck, &out_time,
                             data, data_size, file, processed_bytes);
-    flb_input_chunk_append_raw(ctx->ins,
+    flb_input_log_append(ctx->ins,
                                file->tag_buf,
                                file->tag_len,
                                mp_sbuf.data,
@@ -162,7 +162,7 @@ int flb_tail_mult_process_first(time_t now,
         msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
         flb_tail_mult_flush(&mp_sbuf, &mp_pck, file, ctx);
-        flb_input_chunk_append_raw(ctx->ins,
+        flb_input_log_append(ctx->ins,
                                    file->tag_buf,
                                    file->tag_len,
                                    mp_sbuf.data,
@@ -515,7 +515,7 @@ static void file_pending_flush(struct flb_tail_config *ctx,
 
     flb_tail_mult_flush(&mp_sbuf, &mp_pck, file, ctx);
 
-    flb_input_chunk_append_raw(ctx->ins,
+    flb_input_log_append(ctx->ins,
                                file->tag_buf,
                                file->tag_len,
                                mp_sbuf.data,

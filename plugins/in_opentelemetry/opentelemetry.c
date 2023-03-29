@@ -107,9 +107,9 @@ static int in_opentelemetry_init(struct flb_input_instance *ins,
         return -1;
     }
 
-    flb_plg_info(ctx->ins, "listening on %s:%s", ctx->listen, ctx->tcp_port);
+    flb_input_downstream_set(ctx->downstream, ctx->ins);
 
-    ctx->evl = config->evl;
+    flb_plg_info(ctx->ins, "listening on %s:%s", ctx->listen, ctx->tcp_port);
 
     if (ctx->successful_response_code != 200 &&
         ctx->successful_response_code != 201 &&
@@ -174,7 +174,11 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_opentelemetry, successful_response_code),
      "Set successful response code. 200, 201 and 204 are supported."
     },
-
+    {
+     FLB_CONFIG_MAP_BOOL, "raw_traces", "false",
+     0, FLB_TRUE, offsetof(struct flb_opentelemetry, raw_traces),
+     "Forward traces without processing"
+    },
 
     /* EOF */
     {0}
@@ -192,6 +196,5 @@ struct flb_input_plugin in_opentelemetry_plugin = {
     .cb_resume    = NULL,
     .cb_exit      = in_opentelemetry_exit,
     .config_map   = config_map,
-    .flags        = FLB_INPUT_NET | FLB_IO_OPT_TLS,
-    .event_type   = FLB_INPUT_LOGS | FLB_INPUT_METRICS 
+    .flags        = FLB_INPUT_NET_SERVER | FLB_IO_OPT_TLS
 };

@@ -264,7 +264,7 @@ static int in_de_collect(struct flb_input_instance *ins,
             msgpack_pack_str_body(&mp_pck, ctx->key, flb_sds_len(ctx->key));
             msgpack_pack_str(&mp_pck, str_len);
             msgpack_pack_str_body(&mp_pck, ctx->buf, str_len);
-            flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data,
+            flb_input_log_append(ins, NULL, 0, mp_sbuf.data,
                                        mp_sbuf.size);
             msgpack_sbuffer_destroy(&mp_sbuf);
         }
@@ -285,7 +285,7 @@ static int in_de_collect(struct flb_input_instance *ins,
                 flb_time_append_to_msgpack(&out_time, &mp_pck, 0);
                 msgpack_sbuffer_write(&mp_sbuf, out_buf, out_size);
 
-                flb_input_chunk_append_raw(ins, NULL, 0,
+                flb_input_log_append(ins, NULL, 0,
                                            mp_sbuf.data, mp_sbuf.size);
                 msgpack_sbuffer_destroy(&mp_sbuf);
                 flb_free(out_buf);

@@ -1,10 +1,11 @@
 # For staging upgrade we use the 'official-install' as the base
-ARG STAGING_BASE=dokken/debian-11
+ARG STAGING_BASE=docker.io/dokken/debian-11
 
 ARG RELEASE_URL=https://packages.fluentbit.io
 ARG RELEASE_KEY=https://packages.fluentbit.io/fluentbit.key
 
-FROM dokken/debian-11 as official-install
+# hadolint ignore=DL3006
+FROM docker.io/dokken/debian-11 as official-install
 
 ARG RELEASE_URL
 ENV FLUENT_BIT_PACKAGES_URL=${RELEASE_URL}
@@ -14,7 +15,7 @@ ENV FLUENT_BIT_PACKAGES_KEY=${RELEASE_KEY}
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh
-RUN systemctl enable fluent-bit || systemctl enable td-agent-bit
+RUN systemctl enable fluent-bit
 
 COPY ./test.sh /test.sh
 RUN chmod a+x /test.sh
@@ -22,6 +23,7 @@ RUN chmod a+x /test.sh
 FROM official-install as staging-upgrade-prep
 RUN rm -f /etc/apt/sources.list.d/fluent-bit.list
 
+# hadolint ignore=DL3006
 FROM ${STAGING_BASE} as staging-install
 ARG STAGING_VERSION
 ENV STAGING_VERSION=${STAGING_VERSION}

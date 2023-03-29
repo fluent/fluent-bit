@@ -1,10 +1,11 @@
 # For staging upgrade we use the 'staging-upgrade-prep' as the base
-ARG STAGING_BASE=dokken/centos-8
+ARG STAGING_BASE=docker.io/dokken/centos-8
 
 ARG RELEASE_URL=https://packages.fluentbit.io
 ARG RELEASE_KEY=https://packages.fluentbit.io/fluentbit.key
 
-FROM dokken/centos-8 as official-install
+# hadolint ignore=DL3006
+FROM docker.io/dokken/centos-8 as official-install
 # CentOS is now EOL so have to use the vault repos
 RUN sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-* && \
     sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*
@@ -17,7 +18,7 @@ ENV FLUENT_BIT_PACKAGES_KEY=${RELEASE_KEY}
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh
-RUN systemctl enable fluent-bit || systemctl enable td-agent-bit
+RUN systemctl enable fluent-bit
 
 COPY ./test.sh /test.sh
 RUN chmod a+x /test.sh
@@ -25,6 +26,7 @@ RUN chmod a+x /test.sh
 FROM official-install as staging-upgrade-prep
 RUN rm -f /etc/yum.repos.d/*-bit.repo
 
+# hadolint ignore=DL3006
 FROM ${STAGING_BASE} as staging-install
 # CentOS is now EOL so have to use the vault repos
 RUN sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-* && \

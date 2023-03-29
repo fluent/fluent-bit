@@ -120,7 +120,7 @@ void flb_connection_set_remote_host(struct flb_connection *connection,
 {
     size_t address_size;
 
-    address_size = flb_network_address_size(remote_host);
+    address_size = flb_network_address_size((struct sockaddr_storage *) remote_host);
 
     if (address_size > 0 &&
         address_size < sizeof(struct sockaddr_storage)) {

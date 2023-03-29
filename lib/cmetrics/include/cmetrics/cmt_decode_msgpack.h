@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -52,9 +52,9 @@ struct cmt_msgpack_decode_context {
     size_t             bucket_count;
     double            *quantile_list;
     size_t             quantile_count;
-    struct cfl_list     unique_label_list;
-    uint64_t           summary_quantiles[5];
-    int                static_labels_unpacked;
+    uint64_t           *summary_quantiles;
+    size_t             summary_quantiles_count;
+    int                aggregation_type;
 };
 
 int cmt_decode_msgpack_create(struct cmt **out_cmt, char *in_buf, size_t in_size, 

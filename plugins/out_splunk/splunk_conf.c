@@ -57,7 +57,7 @@ static int event_fields_create(struct flb_splunk *ctx)
             flb_plg_error(ctx->ins,
                           "could not process event_field number #%i with "
                           "pattern '%s'",
-                          i, pattern);
+                          i, pattern->str);
             flb_sds_destroy(f->key_name);
             flb_free(f);
             return -1;

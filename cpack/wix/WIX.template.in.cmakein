@@ -77,13 +77,18 @@
         <?include "properties.wxi"?>
         <?include "product_fragment.wxi"?>
 
+        <Property Id="LAUNCHSERVICE" Value="1"/>
+        <SetProperty Id="LAUNCHSERVICE" Value="0" After="LaunchConditions" Sequence="first">
+          <![CDATA[%NOT_FLB_SVC_LAUNCH <> ""]]>
+        </SetProperty>
+
         <Property Id="CreateFluentBitWinSvc" Value=" "/>
         <CustomAction Id="SetCreateFluentBitWinSvcCommand" Property="CreateFluentBitWinSvc" Value="&quot;sc.exe&quot; create @FLB_OUT_NAME@ binpath= &quot;\&quot;[INSTALL_ROOT]bin\@FLB_OUT_NAME@.exe\&quot; -c \&quot;[INSTALL_ROOT]conf\@FLB_OUT_NAME@.conf\&quot;&quot; start= delayed-auto" Execute="immediate" />
-        <CustomAction Id="CreateFluentBitWinSvc" BinaryKey="WixCA" DllEntry="CAQuietExec" Execute="deferred" Return="check" Impersonate="no" />
+        <CustomAction Id="CreateFluentBitWinSvc" BinaryKey="WixCA" DllEntry="CAQuietExec" Execute="deferred" Return="ignore" Impersonate="no" />
 
         <Property Id="LaunchFluentBitWinSvc" Value=" "/>
         <CustomAction Id="SetLaunchFluentBitWinSvcCommand" Property="LaunchFluentBitWinSvc" Value="&quot;sc.exe&quot; start @FLB_OUT_NAME@" Execute="immediate" />
-        <CustomAction Id="LaunchFluentBitWinSvc" BinaryKey="WixCA" DllEntry="CAQuietExec" Execute="deferred" Return="check" Impersonate="no" />
+        <CustomAction Id="LaunchFluentBitWinSvc" BinaryKey="WixCA" DllEntry="CAQuietExec" Execute="deferred" Return="ignore" Impersonate="no" />
 
         <Property Id="StopFluentBitWinSvc" Value=" "/>
         <CustomAction Id="SetStopFluentBitWinSvcCommand" Property="StopFluentBitWinSvc" Value="&quot;sc.exe&quot; stop @FLB_OUT_NAME@" Execute="immediate" />
@@ -91,13 +96,13 @@
 
         <Property Id="DeleteFluentBitWinSvc" Value=" "/>
         <CustomAction Id="SetDeleteFluentBitWinSvcCommand" Property="DeleteFluentBitWinSvc" Value="&quot;sc.exe&quot; delete @FLB_OUT_NAME@" Execute="immediate" />
-        <CustomAction Id="DeleteFluentBitWinSvc" BinaryKey="WixCA" DllEntry="CAQuietExec" Execute="deferred" Return="check" Impersonate="no" />
+        <CustomAction Id="DeleteFluentBitWinSvc" BinaryKey="WixCA" DllEntry="CAQuietExec" Execute="deferred" Return="ignore" Impersonate="no" />
 
         <InstallExecuteSequence>
             <Custom Action="SetCreateFluentBitWinSvcCommand" After="InstallFiles">NOT Installed</Custom>
             <Custom Action="CreateFluentBitWinSvc" After="SetCreateFluentBitWinSvcCommand">NOT Installed</Custom>
-            <Custom Action="SetLaunchFluentBitWinSvcCommand" After="CreateFluentBitWinSvc">NOT Installed</Custom>
-            <Custom Action="LaunchFluentBitWinSvc" After="SetLaunchFluentBitWinSvcCommand">NOT Installed</Custom>
+            <Custom Action="SetLaunchFluentBitWinSvcCommand" After="CreateFluentBitWinSvc">LAUNCHSERVICE="1" AND NOT Installed</Custom>
+            <Custom Action="LaunchFluentBitWinSvc" After="SetLaunchFluentBitWinSvcCommand">LAUNCHSERVICE="1" AND NOT Installed</Custom>
 
             <Custom Action="SetStopFluentBitWinSvcCommand" After="InstallInitialize">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
             <Custom Action="StopFluentBitWinSvc" After="SetStopFluentBitWinSvcCommand">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>

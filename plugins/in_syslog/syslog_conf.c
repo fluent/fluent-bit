@@ -45,7 +45,6 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
         return NULL;
     }
 
-    ctx->evl = config->evl;
     ctx->ins = ins;
 
     mk_list_init(&ctx->connections);
@@ -114,6 +113,13 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
     }
     else if (ctx->buffer_max_size == 0) {
         ctx->buffer_max_size = ctx->buffer_chunk_size;
+    }
+
+    /* Socket rcv buffer size */
+    if (ctx->receive_buffer_size == -1 || ctx->receive_buffer_size>INT_MAX) {
+        flb_plg_error(ins, "invalid receive_buffer_size");
+        flb_free(ctx);
+        return NULL;
     }
 
     /* Parser */

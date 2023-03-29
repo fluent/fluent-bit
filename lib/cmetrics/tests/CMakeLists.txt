@@ -38,7 +38,7 @@ foreach(source_file ${UNIT_TESTS_FILES})
     encode_output.c
     )
 
-  target_link_libraries(${source_file_we} cmetrics-static cfl-static)
+  target_link_libraries(${source_file_we} cmetrics-static cfl-static fluent-otel-proto)
 
 if(NOT CMT_SYSTEM_WINDOWS)
   target_link_libraries(${source_file_we} pthread)

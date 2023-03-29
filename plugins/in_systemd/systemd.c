@@ -189,7 +189,7 @@ static int in_systemd_collect(struct flb_input_instance *ins,
          */
         if (mp_sbuf.size > 0 &&
             ((last_tag_len != tag_len) || (strncmp(last_tag, tag, tag_len) != 0))) {
-            flb_input_chunk_append_raw(ctx->ins,
+            flb_input_log_append(ctx->ins,
                                        last_tag, last_tag_len,
                                        mp_sbuf.data,
                                        mp_sbuf.size);
@@ -298,7 +298,7 @@ static int in_systemd_collect(struct flb_input_instance *ins,
          * more than 1MB. Journal will resume later.
          */
         if (mp_sbuf.size > 1024000) {
-            flb_input_chunk_append_raw(ctx->ins,
+            flb_input_log_append(ctx->ins,
                                        tag, tag_len,
                                        mp_sbuf.data,
                                        mp_sbuf.size);
@@ -329,7 +329,7 @@ static int in_systemd_collect(struct flb_input_instance *ins,
 
     /* Write any pending data into the buffer */
     if (mp_sbuf.size > 0) {
-        flb_input_chunk_append_raw(ctx->ins,
+        flb_input_log_append(ctx->ins,
                                    tag, tag_len,
                                    mp_sbuf.data,
                                    mp_sbuf.size);

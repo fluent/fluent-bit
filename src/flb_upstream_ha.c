@@ -132,8 +132,8 @@ static struct flb_upstream_node *create_node(int id,
     char *tls_crt_file = NULL;
     char *tls_key_file = NULL;
     char *tls_key_passwd = NULL;
-    struct mk_list *head;
-    struct flb_kv *entry;
+    struct cfl_list *head;
+    struct cfl_kvpair *entry;
     struct flb_hash_table *ht;
     const char *known_keys[] = {"name", "host", "port",
                                 "tls", "tls.vhost", "tls.verify", "tls.debug",
@@ -143,7 +143,7 @@ static struct flb_upstream_node *create_node(int id,
     struct flb_upstream_node *node;
 
     /* name */
-    name = flb_cf_section_property_get(cf, s, "name");
+    name = flb_cf_section_property_get_string(cf, s, "name");
     if (!name) {
         flb_error("[upstream_ha] no 'name' has been set on node #%i",
                   id + 1);
@@ -151,7 +151,7 @@ static struct flb_upstream_node *create_node(int id,
     }
 
     /* host */
-    host = flb_cf_section_property_get(cf, s, "host");
+    host = flb_cf_section_property_get_string(cf, s, "host");
     if (!host) {
         flb_error("[upstream_ha] no 'host' has been set on node #%i",
                   id + 1);
@@ -159,7 +159,7 @@ static struct flb_upstream_node *create_node(int id,
     }
 
     /* port */
-    port = flb_cf_section_property_get(cf, s, "port");
+    port = flb_cf_section_property_get_string(cf, s, "port");
     if (!port) {
         flb_error("[upstream_ha] no 'port' has been set on node #%i",
                   id + 1);
@@ -167,40 +167,43 @@ static struct flb_upstream_node *create_node(int id,
     }
 
     /* tls */
-    tmp = flb_cf_section_property_get(cf, s, "tls");
+    tmp = flb_cf_section_property_get_string(cf, s, "tls");
     if (tmp) {
         tls = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
     }
 
     /* tls.verify */
-    tmp = flb_cf_section_property_get(cf, s, "tls.verify");
+    tmp = flb_cf_section_property_get_string(cf, s, "tls.verify");
     if (tmp) {
         tls_verify = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
     }
 
     /* tls.debug */
-    tmp = flb_cf_section_property_get(cf, s, "tls.debug");
+    tmp = flb_cf_section_property_get_string(cf, s, "tls.debug");
     if (tmp) {
         tls_debug = atoi(tmp);
+        flb_sds_destroy(tmp);
     }
 
     /* tls.vhost */
-    tls_vhost = flb_cf_section_property_get(cf, s, "tls.vhost");
+    tls_vhost = flb_cf_section_property_get_string(cf, s, "tls.vhost");
 
     /* tls.ca_path */
-    tls_ca_path = flb_cf_section_property_get(cf, s, "tls.ca_path");
+    tls_ca_path = flb_cf_section_property_get_string(cf, s, "tls.ca_path");
 
     /* tls.ca_file */
-    tls_ca_file = flb_cf_section_property_get(cf, s, "tls.ca_file");
+    tls_ca_file = flb_cf_section_property_get_string(cf, s, "tls.ca_file");
 
     /* tls.crt_file */
-    tls_crt_file = flb_cf_section_property_get(cf, s, "tls.crt_file");
+    tls_crt_file = flb_cf_section_property_get_string(cf, s, "tls.crt_file");
 
     /* tls.key_file */
-    tls_key_file = flb_cf_section_property_get(cf, s, "tls.key_file");
+    tls_key_file = flb_cf_section_property_get_string(cf, s, "tls.key_file");
 
     /* tls.key_file */
-    tls_key_passwd = flb_cf_section_property_get(cf, s, "tls.key_passwd");
+    tls_key_passwd = flb_cf_section_property_get_string(cf, s, "tls.key_passwd");
 
     /*
      * Create hash table to store unknown key/values that might be used
@@ -216,8 +219,8 @@ static struct flb_upstream_node *create_node(int id,
      * Iterate mk_rconf section internals, find all unknown keys and add
      * them to the hash table associated to the node.
      */
-    mk_list_foreach(head, &s->properties) {
-        entry = mk_list_entry(head, struct flb_kv, _head);
+    cfl_list_foreach(head, &s->properties->list) {
+        entry = cfl_list_entry(head, struct cfl_kvpair, _head);
 
         /* If this is a known entry, just skip it */
         skip = FLB_FALSE;
@@ -232,7 +235,7 @@ static struct flb_upstream_node *create_node(int id,
         }
 
         klen = flb_sds_len(entry->key);
-        vlen = flb_sds_len(entry->val);
+        vlen = flb_sds_len(entry->val->data.as_string);
 
         /* Always store keys in lowercase */
         for (i = 0; i < klen; i++) {
@@ -241,7 +244,7 @@ static struct flb_upstream_node *create_node(int id,
         key[klen] = '\0';
 
         /* Add the key and value to the hash table */
-        ret = flb_hash_table_add(ht, key, klen, entry->val, vlen);
+        ret = flb_hash_table_add(ht, key, klen, entry->val->data.as_string, vlen);
         if (ret == -1) {
             flb_error("[upstream_ha] cannot add key %s to hash table",
                       entry->key);
@@ -306,7 +309,7 @@ struct flb_upstream_ha *flb_upstream_ha_from_file(const char *file,
     }
 
     /* upstream name */
-    tmp = flb_cf_section_property_get(cf, section, "name");
+    tmp = flb_cf_section_property_get_string(cf, section, "name");
     if (!tmp) {
         flb_error("[upstream_ha] missing name for upstream at %s", cfg);
         flb_cf_destroy(cf);
@@ -314,6 +317,7 @@ struct flb_upstream_ha *flb_upstream_ha_from_file(const char *file,
     }
 
     ups = flb_upstream_ha_create(tmp);
+    flb_sds_destroy(tmp);
     if (!ups) {
         flb_error("[upstream_ha] cannot create context");
         flb_cf_destroy(cf);

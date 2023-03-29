@@ -28,7 +28,10 @@
 
 #define WE_VERSION_KEY_NAME      "CurrentVersion"
 
-double we_get_windows_version();
+int we_get_windows_version(double *version_number);
 void we_hexdump(uint8_t *buffer, size_t buffer_length, size_t line_length);
+/* Utilites for char/wchar_t conversion */
+wchar_t* we_convert_str(char *str);
+char* we_convert_wstr(wchar_t *wstr, UINT codePage);
 
 #endif

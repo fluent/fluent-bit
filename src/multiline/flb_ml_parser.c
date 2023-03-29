@@ -69,6 +69,13 @@ int flb_ml_parser_builtin_create(struct flb_config *config)
         return -1;
     }
 
+    /* Ruby */
+    mlp = flb_ml_parser_ruby(config, NULL);
+    if (!mlp) {
+        flb_error("[multiline] could not init 'ruby' built-in parser");
+        return -1;
+    }
+
     /* Python */
     mlp = flb_ml_parser_python(config, NULL);
     if (!mlp) {
@@ -219,7 +226,7 @@ struct flb_ml_parser_ins *flb_ml_parser_instance_create(struct flb_ml *ml,
     ret = flb_ml_group_add_parser(ml, ins);
     if (ret != 0) {
         flb_error("[multiline] could not register parser '%s' on "
-                  "multiline '%s 'group", ml->name);
+                  "multiline '%s 'group", name, ml->name);
         flb_free(ins);
         return NULL;
     }

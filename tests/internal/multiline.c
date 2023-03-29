@@ -146,6 +146,28 @@ struct record_check java_output[] = {
   }
 };
 
+struct record_check ruby_input[] = {
+    {"/app/config/routes.rb:6:in `/': divided by 0 (ZeroDivisionError)"},
+    {"	from /app/config/routes.rb:6:in `block in <main>'"},
+    {"	from /var/lib/gems/3.0.0/gems/actionpack-7.0.4/lib/action_dispatch/routing/route_set.rb:428:in `instance_exec'"},
+    {"	from /var/lib/gems/3.0.0/gems/actionpack-7.0.4/lib/action_dispatch/routing/route_set.rb:428:in `eval_block'"},
+    {"	from /var/lib/gems/3.0.0/gems/actionpack-7.0.4/lib/action_dispatch/routing/route_set.rb:410:in `draw'"},
+    {"	from /app/config/routes.rb:1:in `<main>'"},
+    {"hello world, not multiline\n"}
+};
+
+struct record_check ruby_output[] = {
+    {
+        "/app/config/routes.rb:6:in `/': divided by 0 (ZeroDivisionError)\n"
+        "	from /app/config/routes.rb:6:in `block in <main>'\n"
+        "	from /var/lib/gems/3.0.0/gems/actionpack-7.0.4/lib/action_dispatch/routing/route_set.rb:428:in `instance_exec'\n"
+        "	from /var/lib/gems/3.0.0/gems/actionpack-7.0.4/lib/action_dispatch/routing/route_set.rb:428:in `eval_block'\n"
+        "	from /var/lib/gems/3.0.0/gems/actionpack-7.0.4/lib/action_dispatch/routing/route_set.rb:410:in `draw'\n"
+        "	from /app/config/routes.rb:1:in `<main>'\n"
+    },
+    {"hello world, not multiline\n"}
+};
+
 /* Python stacktrace detection */
 struct record_check python_input[] = {
   {"Traceback (most recent call last):\n"},
@@ -714,6 +736,65 @@ static void test_parser_python()
     entries = sizeof(python_input) / sizeof(struct record_check);
     for (i = 0; i < entries; i++) {
         r = &python_input[i];
+        len = strlen(r->buf);
+
+        /* Package as msgpack */
+        flb_time_get(&tm);
+        flb_ml_append(ml, stream_id, FLB_ML_TYPE_TEXT, &tm, r->buf, len);
+    }
+
+    if (ml) {
+        flb_ml_destroy(ml);
+    }
+
+    flb_config_exit(config);
+}
+
+static void test_parser_ruby()
+{
+    int i;
+    int len;
+    int ret;
+    int entries;
+    uint64_t stream_id;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    struct record_check *r;
+    struct flb_config *config;
+    struct flb_time tm;
+    struct flb_ml *ml;
+    struct flb_ml_parser_ins *mlp_i;
+    struct expected_result res = {0};
+
+    /* Expected results context */
+    res.key = "log";
+    res.out_records = ruby_output;
+
+    /* initialize buffers */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    /* Initialize environment */
+    config = flb_config_init();
+
+    /* Create docker multiline mode */
+    ml = flb_ml_create(config, "ruby-test");
+    TEST_CHECK(ml != NULL);
+
+    /* Generate an instance of multiline ruby parser */
+    mlp_i = flb_ml_parser_instance_create(ml, "ruby");
+    TEST_CHECK(mlp_i != NULL);
+
+    ret = flb_ml_stream_create(ml, "ruby", -1, flush_callback, (void *) &res,
+                               &stream_id);
+    TEST_CHECK(ret == 0);
+
+    flb_time_get(&tm);
+
+    printf("\n");
+    entries = sizeof(ruby_input) / sizeof(struct record_check);
+    for (i = 0; i < entries; i++) {
+        r = &ruby_input[i];
         len = strlen(r->buf);
 
         /* Package as msgpack */
@@ -1377,6 +1458,7 @@ TEST_LIST = {
     { "parser_cri",     test_parser_cri},
     { "parser_java",    test_parser_java},
     { "parser_python",  test_parser_python},
+    { "parser_ruby",    test_parser_ruby},
     { "parser_elastic", test_parser_elastic},
     { "parser_go",      test_parser_go},
     { "container_mix",  test_container_mix},

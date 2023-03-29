@@ -96,6 +96,11 @@ uint64_t flb_time_to_nanosec(struct flb_time *tm)
     return (((uint64_t)tm->tm.tv_sec * 1000000000L) + tm->tm.tv_nsec);
 }
 
+uint64_t flb_time_to_millisec(struct flb_time *tm)
+{
+    return (((uint64_t)tm->tm.tv_sec * 1000L) + tm->tm.tv_nsec / 1000000L);
+}
+
 int flb_time_add(struct flb_time *base, struct flb_time *duration, struct flb_time *result)
 {
     if (base == NULL || duration == NULL|| result == NULL) {
@@ -346,7 +351,7 @@ int flb_time_pop_from_mpack(struct flb_time *time, mpack_reader_t *reader)
             time->tm.tv_nsec = (uint32_t) ntohl(tmp);
             break;
         default:
-            flb_warn("unknown time format %s", tag.type);
+            flb_warn("unknown time format %d", tag.type);
             return -1;
     }
 

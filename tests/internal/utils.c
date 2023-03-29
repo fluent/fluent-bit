@@ -3,7 +3,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_utils.h>
-
+#include <stdarg.h>
 #include "flb_tests_internal.h"
 
 
@@ -474,6 +474,84 @@ void test_proxy_url_split() {
     }
 }
 
+static int compare_split_entry(const char* input, int separator, int max_split, ...)
+{
+    va_list ap;
+    int count = 1;
+    char *expect;
+    struct mk_list *split = NULL;
+    struct mk_list *tmp_list = NULL;
+    struct mk_list *head = NULL;
+    struct flb_split_entry *entry = NULL;
+
+    split = flb_utils_split(input, separator, max_split);
+    if (!TEST_CHECK(split != NULL)) {
+        TEST_MSG("flb_utils_split failed. input=%s", input);
+        return -1;
+    }
+    if (!TEST_CHECK(mk_list_is_empty(split) != 0)) {
+        TEST_MSG("list is empty. input=%s", input);
+        return -1;
+    }
+
+    va_start(ap, max_split);
+    mk_list_foreach_safe(head, tmp_list, split) {
+        if (max_split > 0 && !TEST_CHECK(count <= max_split) ) {
+            TEST_MSG("count error. got=%d expect=%d input=%s", count, max_split, input);
+        }
+
+        expect = va_arg(ap, char*);
+        entry = mk_list_entry(head, struct flb_split_entry, _head);
+        if (!TEST_CHECK(entry != NULL)) {
+            TEST_MSG("entry is NULL. input=%s", input);
+            goto comp_end;
+        }
+        /*
+        printf("%d:%s\n", count, entry->value);
+        */
+        if (!TEST_CHECK(strcmp(expect, entry->value) == 0)) {
+            TEST_MSG("mismatch. got=%s expect=%s. input=%s", entry->value, expect, input);
+            goto comp_end;
+        }
+        count++;
+    }
+ comp_end:
+    if (split != NULL) {
+        flb_utils_split_free(split);
+    }
+    va_end(ap);
+    return 0;
+}
+
+void test_flb_utils_split()
+{
+    compare_split_entry("aa,bb", ',', 2, "aa","bb" );
+    compare_split_entry("localhost:12345", ':', 2, "localhost","12345" );
+    compare_split_entry("https://fluentbit.io/announcements/", '/', -1, "https:", "fluentbit.io","announcements" );
+
+    /* /proc/net/dev example */
+    compare_split_entry("enp0s3: 1955136    1768    0    0    0     0          0         0    89362     931    0    0    0     0       0          0",
+                        ' ', 256, 
+                        "enp0s3:", "1955136", "1768", "0", "0", "0", "0", "0", "0", "89362", "931", "0", "0", "0", "0", "0", "0", "0");
+
+    /* filter_grep configuration */
+    compare_split_entry("Regex test  *a*", ' ', 3, "Regex", "test", "*a*");
+
+    /* filter_modify configuration */
+    compare_split_entry("Condition Key_Value_Does_Not_Equal cpustats  KNOWN", ' ', 4, 
+                        "Condition", "Key_Value_Does_Not_Equal", "cpustats", "KNOWN");
+
+    /* nginx_exporter_metrics example */
+    compare_split_entry("Active connections: 1\nserver accepts handled requests\n 10 10 10\nReading: 0 Writing: 1 Waiting: 0", '\n', 4,
+                        "Active connections: 1", "server accepts handled requests", " 10 10 10","Reading: 0 Writing: 1 Waiting: 0");
+
+    /* out_cloudwatch_logs example */
+    compare_split_entry("dimension_1,dimension_2;dimension_3", ';', 256,
+                        "dimension_1,dimension_2", "dimension_3");
+    /* separator is not contained */
+    compare_split_entry("aa,bb", '/', 2, "aa,bb");
+}
+
 TEST_LIST = {
     /* JSON maps iteration */
     { "url_split", test_url_split },
@@ -484,5 +562,6 @@ TEST_LIST = {
     { "test_write_str_invalid_leading_byte_case_2", test_write_str_invalid_leading_byte_case_2 },
     { "test_write_str_buffer_overrun", test_write_str_buffer_overrun },
     { "proxy_url_split", test_proxy_url_split },
+    { "test_flb_utils_split", test_flb_utils_split },
     { 0 }
 };

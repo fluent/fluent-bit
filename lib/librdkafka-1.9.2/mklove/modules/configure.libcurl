@@ -1,0 +1,99 @@
+#!/bin/bash
+#
+# libcurl support, with installer
+#
+# Usage:
+#   mkl_require libcurl
+#
+# And then call the following function from the correct place/order in checks:
+#   mkl_check libcurl
+#
+
+mkl_toggle_option "Feature" ENABLE_CURL "--enable-curl" "Enable HTTP client (using libcurl)" "try"
+
+function manual_checks {
+    case "$ENABLE_CURL" in
+        n) return 0 ;;
+        y) local action=fail ;;
+        try) local action=disable ;;
+        *) mkl_err "mklove internal error: invalid value for ENABLE_CURL: $ENABLE_CURL"; exit 1 ;;
+    esac
+
+    mkl_meta_set "libcurl" "apk" "curl-dev curl-static"
+    mkl_meta_set "libcurl" "deb" "libcurl4-openssl-dev"
+    mkl_meta_set "libcurl" "static" "libcurl.a"
+    if [[ $MKL_DISTRO == "osx" && $WITH_STATIC_LINKING ]]; then
+        mkl_env_append LDFLAGS "-framework CoreFoundation -framework SystemConfiguration"
+        mkl_mkvar_append "libcurl" MKL_PKGCONFIG_LIBS_PRIVATE "-framework CoreFoundation -framework SystemConfiguration"
+    fi
+    mkl_lib_check "libcurl" "WITH_CURL" $action CC "-lcurl" \
+                  "
+#include <curl/curl.h>
+
+void foo (void) {
+     curl_global_init(CURL_GLOBAL_DEFAULT);
+}
+"
+}
+
+
+# Install curl from source tarball
+#
+# Param 1: name (libcurl)
+# Param 2: install-dir-prefix (e.g., DESTDIR)
+# Param 2: version (optional)
+function install_source {
+    local name=$1
+    local destdir=$2
+    local ver=7.84.0
+    local checksum="3c6893d38d054d4e378267166858698899e9d87258e8ff1419d020c395384535"
+
+    echo "### Installing $name $ver from source to $destdir"
+    if [[ ! -f Makefile ]]; then
+        mkl_download_archive \
+            "https://curl.se/download/curl-${ver}.tar.gz" \
+            256 \
+            $checksum || return 1
+    fi
+
+    # curl's configure has a runtime check where a program is built
+    # with all libs linked and then executed, since mklove's destdir
+    # is outside the standard ld.so search path this runtime check will
+    # fail due to missing libraries.
+    # We patch curl's configure file to skip this check altogether.
+    if ! mkl_patch libcurl 0000 ; then
+        return 1
+    fi
+
+    # Clear out LIBS to not interfer with lib detection process.
+    LIBS="" ./configure \
+	--with-openssl \
+	--enable-static \
+	--disable-shared \
+	--disable-ntlm{,-wb} \
+	--disable-dict \
+	--disable-ftp \
+	--disable-file \
+	--disable-gopher \
+	--disable-imap \
+	--disable-mqtt \
+	--disable-pop3 \
+	--disable-rtsp \
+	--disable-smb \
+	--disable-smtp \
+	--disable-telnet \
+	--disable-tftp \
+	--disable-manual \
+	--disable-ldap{,s} \
+	--disable-libcurl-option \
+        --without-{librtmp,libidn2,winidn,nghttp2,nghttp3,ngtcp2,quiche,brotli} &&
+	time make -j &&
+	make DESTDIR="${destdir}" prefix=/usr install
+    local ret=$?
+
+    if [[ $MKL_DISTRO == osx ]]; then
+        mkl_mkvar_append "libcurl" LIBS "-framework CoreFoundation -framework SystemConfiguration"
+    fi
+
+    return $ret
+}

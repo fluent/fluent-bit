@@ -30,6 +30,7 @@
 #define FLB_ES_DEFAULT_TIME_KEYF  "%Y-%m-%dT%H:%M:%S"
 #define FLB_ES_DEFAULT_TAG_KEY    "flb-key"
 #define FLB_ES_DEFAULT_HTTP_MAX   "512k"
+#define FLB_ES_DEFAULT_HTTPS_PORT 443
 #define FLB_ES_WRITE_OP_INDEX     "index"
 #define FLB_ES_WRITE_OP_CREATE    "create"
 #define FLB_ES_WRITE_OP_UPDATE    "update"
@@ -61,6 +62,8 @@ struct flb_elasticsearch {
     /* one for the standard chain provider, one for sts assume role */
     struct flb_tls *aws_sts_tls;
     char *aws_session_name;
+    char *aws_service_name;
+    struct mk_list *aws_unsigned_headers;
 #endif
 
     /* HTTP Client Setup */

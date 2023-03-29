@@ -63,8 +63,8 @@ static flb_sds_t add_aws_auth(struct flb_http_client *c,
     flb_http_add_header(c, "User-Agent", 10, "aws-fluent-bit-plugin", 21);
 
     signature = flb_signv4_do(c, FLB_TRUE, FLB_TRUE, time(NULL),
-                              ctx->aws_region, "es",
-                              0,
+                              ctx->aws_region, ctx->aws_service_name,
+                              S3_MODE_SIGNED_PAYLOAD, ctx->aws_unsigned_headers,
                               ctx->aws_provider);
     if (!signature) {
         flb_plg_error(ctx->ins, "could not sign request with sigv4");
@@ -242,6 +242,7 @@ static int elasticsearch_format(struct flb_config *config,
                                 struct flb_input_instance *ins,
                                 void *plugin_context,
                                 void *flush_ctx,
+                                int event_type,
                                 const char *tag, int tag_len,
                                 const void *data, size_t bytes,
                                 void **out_data, size_t *out_size)
@@ -812,6 +813,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     /* Convert format */
     ret = elasticsearch_format(config, ins,
                                ctx, NULL,
+                               event_chunk->type,
                                event_chunk->tag, flb_sds_len(event_chunk->tag),
                                event_chunk->data, event_chunk->size,
                                &out_buf, &out_size);
@@ -1052,6 +1054,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "aws_external_id", NULL,
      0, FLB_FALSE, 0,
      "External ID for the AWS IAM Role specified with `aws_role_arn`"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "aws_service_name", "es",
+     0, FLB_TRUE, offsetof(struct flb_elasticsearch, aws_service_name),
+     "AWS Service Name"
     },
 #endif
 

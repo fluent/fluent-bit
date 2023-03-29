@@ -265,7 +265,7 @@ static int generate_record_linux(struct flb_input_instance *i_ins,
         msgpack_pack_uint64(&mp_pck, fds);
     }
 
-    flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    flb_input_log_append(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;

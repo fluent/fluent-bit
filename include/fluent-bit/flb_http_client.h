@@ -155,6 +155,8 @@ int flb_http_basic_auth(struct flb_http_client *c,
                         const char *user, const char *passwd);
 int flb_http_proxy_auth(struct flb_http_client *c,
                         const char *user, const char *passwd);
+int flb_http_bearer_auth(struct flb_http_client *c,
+                        const char *token);
 int flb_http_set_keepalive(struct flb_http_client *c);
 int flb_http_set_content_encoding_gzip(struct flb_http_client *c);
 int flb_http_set_callback_context(struct flb_http_client *c,

@@ -1,5 +1,29 @@
 # -*- coding: utf-8 -*-
 
+# Copyright (c) 2011-2019  K.Takata  <kentkt AT csc DOT jp>
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+# OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+# HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+# LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+# OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+# SUCH DAMAGE.
+
 """Using Onigmo (Oniguruma-mod) regular expression library.
 
 This is a low level wrapper for Onigmo regular expression DLL/shared object.
@@ -115,20 +139,26 @@ class OnigErrorInfo(ctypes.Structure):
 
 # load the DLL or the shared library
 
+if sys.version_info[0:3] < (3, 8, 0):
+    loadargs = {}
+else:
+    # Use the default (potentially insecure) search path
+    loadargs = {'winmode': 0}
+
 if os.name in ("nt", "ce"):
     # Win32
     _libname = "onigmo.dll"
     try:
-        libonig = ctypes.cdll.LoadLibrary(_libname)
+        libonig = ctypes.CDLL(_libname, **loadargs)
     except OSError:
         # Sometimes MinGW version has a prefix "lib".
         _libname = "libonigmo.dll"
         try:
-            libonig = ctypes.cdll.LoadLibrary(_libname)
+            libonig = ctypes.CDLL(_libname, **loadargs)
         except OSError:
             # Sometimes MinGW version has the API version.
             _libname = "libonigmo-%d.dll" % _onig_api_version
-            libonig = ctypes.cdll.LoadLibrary(_libname)
+            libonig = ctypes.CDLL(_libname, **loadargs)
 elif sys.platform == "cygwin":
     # Cygwin
     _libname = "cygonigmo-%d.dll" % _onig_api_version

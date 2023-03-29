@@ -41,7 +41,8 @@ int flb_input_metrics_append(struct flb_input_instance *ins,
     }
 
     /* Append packed metrics */
-    ret = flb_input_chunk_append_raw(ins, tag, tag_len, mt_buf, mt_size);
+    ret = flb_input_chunk_append_raw(ins, FLB_INPUT_METRICS, 0,
+                                     tag, tag_len, mt_buf, mt_size);
     cmt_encode_msgpack_destroy(mt_buf);
 
     return ret;

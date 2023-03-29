@@ -53,7 +53,9 @@
 
 struct flb_opensearch {
     /* OpenSearch index (database) and type (table) */
-    char *index;
+    flb_sds_t index;
+    struct flb_record_accessor *ra_index;
+
     char *type;
     char suppress_type_name;
 
@@ -73,6 +75,8 @@ struct flb_opensearch {
     /* one for the standard chain provider, one for sts assume role */
     struct flb_tls *aws_sts_tls;
     char *aws_session_name;
+    char *aws_service_name;
+    struct mk_list *aws_unsigned_headers;
 #endif
 
     /* HTTP Client Setup */

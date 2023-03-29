@@ -230,7 +230,7 @@ static int cb_serial_collect(struct flb_input_instance *in,
         }
     }
 
-    flb_input_chunk_append_raw(in, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    flb_input_log_append(in, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;

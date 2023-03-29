@@ -495,9 +495,12 @@ int pthread_cancel(pthread_t t)
 
     SuspendThread(t->h);
     GetThreadContext(t->h, &ctxt);
-#ifdef _M_X64
+#if defined(_M_X64)
     ctxt.Rip = (uintptr_t) _pthread_invoke_cancel;
-#else
+#elif defined(_M_ARM64)
+    ctxt.Pc = (uintptr_t) _pthread_invoke_cancel;
+ #else
+
     ctxt.Eip = (uintptr_t) _pthread_invoke_cancel;
 #endif
     SetThreadContext(t->h, &ctxt);

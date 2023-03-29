@@ -64,12 +64,18 @@ void flb_plugins_unregister(struct flb_config *config)
 
     mk_list_foreach_safe(head, tmp, &config->in_plugins) {
         in = mk_list_entry(head, struct flb_input_plugin, _head);
+        if(in->cb_destroy) {
+            in->cb_destroy(in);
+        }
         mk_list_del(&in->_head);
         flb_free(in);
     }
 
     mk_list_foreach_safe(head, tmp, &config->out_plugins) {
         out = mk_list_entry(head, struct flb_output_plugin, _head);
+        if(out->cb_destroy) {
+            out->cb_destroy(out);
+        }
         mk_list_del(&out->_head);
         flb_free(out);
     }

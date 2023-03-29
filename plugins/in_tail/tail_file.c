@@ -75,7 +75,7 @@ static int stat_to_hash_bits(struct flb_tail_config *ctx, struct stat *st,
     st_dev = stat_get_st_dev(st);
 
     len = snprintf(tmp, sizeof(tmp) - 1, "%" PRIu64 ":%" PRIu64,
-                   st_dev, st->st_ino);
+                   st_dev, (uint64_t)st->st_ino);
 
     *out_hash = cfl_hash_64bits(tmp, len);
     return 0;
@@ -95,7 +95,7 @@ static int stat_to_hash_key(struct flb_tail_config *ctx, struct stat *st,
 
     st_dev = stat_get_st_dev(st);
     tmp = flb_sds_printf(&buf, "%" PRIu64 ":%" PRIu64,
-                         st_dev, st->st_ino);
+                         st_dev, (uint64_t)st->st_ino);
     if (!tmp) {
         flb_sds_destroy(buf);
         return -1;
@@ -287,7 +287,7 @@ int flb_tail_pack_line_map(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
         append_record_to_map(data, data_size,
                              file->config->path_key,
                              flb_sds_len(file->config->path_key),
-                             file->name, file->name_len, 0);
+                             file->orig_name, file->orig_name_len, 0);
     }
     if (file->config->offset_key != NULL) {
         append_record_to_map(data, data_size,
@@ -325,8 +325,8 @@ int flb_tail_file_pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
         msgpack_pack_str(mp_pck, flb_sds_len(file->config->path_key));
         msgpack_pack_str_body(mp_pck, file->config->path_key,
                               flb_sds_len(file->config->path_key));
-        msgpack_pack_str(mp_pck, file->name_len);
-        msgpack_pack_str_body(mp_pck, file->name, file->name_len);
+        msgpack_pack_str(mp_pck, file->orig_name_len);
+        msgpack_pack_str_body(mp_pck, file->orig_name, file->orig_name_len);
     }
     if (file->config->offset_key != NULL) {
         /* append offset_key */
@@ -353,7 +353,7 @@ static int ml_stream_buffer_append(struct flb_tail_file *file, char *buf_data, s
 static int ml_stream_buffer_flush(struct flb_tail_config *ctx, struct flb_tail_file *file)
 {
     if (file->ml_sbuf.size > 0) {
-        flb_input_chunk_append_raw(ctx->ins,
+        flb_input_log_append(ctx->ins,
                                    file->tag_buf,
                                    file->tag_len,
                                    file->ml_sbuf.data, file->ml_sbuf.size);
@@ -555,12 +555,12 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         *bytes = processed_bytes;
 
         if (out_sbuf->size > 0) {
-            flb_input_chunk_append_raw2(ctx->ins,
-                                        lines,
-                                        file->tag_buf,
-                                        file->tag_len,
-                                        out_sbuf->data,
-                                        out_sbuf->size);
+            flb_input_log_append_records(ctx->ins,
+                                         lines,
+                                         file->tag_buf,
+                                         file->tag_len,
+                                         out_sbuf->data,
+                                         out_sbuf->size);
         }
 
     }
@@ -747,31 +747,6 @@ static int tag_compose(char *tag, char *fname, char *out_buf, size_t *out_size,
     return 0;
 }
 
-static inline int flb_tail_file_exists_old(struct stat *st,
-                                       struct flb_tail_config *ctx)
-{
-    struct mk_list *head;
-    struct flb_tail_file *file;
-
-    /* Iterate static list */
-    mk_list_foreach(head, &ctx->files_static) {
-        file = mk_list_entry(head, struct flb_tail_file, _head);
-        if (file->inode == st->st_ino) {
-            return FLB_TRUE;
-        }
-    }
-
-    /* Iterate dynamic list */
-    mk_list_foreach(head, &ctx->files_event) {
-        file = mk_list_entry(head, struct flb_tail_file, _head);
-        if (file->inode == st->st_ino) {
-            return FLB_TRUE;
-        }
-    }
-
-    return FLB_FALSE;
-}
-
 static inline int flb_tail_file_exists(struct stat *st,
                                        struct flb_tail_config *ctx)
 {
@@ -866,8 +841,8 @@ static int ml_flush_callback(struct flb_ml_parser *parser,
     else {
         /* adjust the records in a new buffer */
         record_append_custom_keys(file,
-                                  file->mult_sbuf.data,
-                                  file->mult_sbuf.size,
+                                  buf_data,
+                                  buf_size,
                                   &mult_buf, &mult_size);
 
         ml_stream_buffer_append(file, mult_buf, mult_size);
@@ -1292,7 +1267,6 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
     size_t capacity;
     size_t processed_bytes;
     ssize_t bytes;
-    struct stat st;
     struct flb_tail_config *ctx;
 
     /* Check if we the engine issued a pause */
@@ -1383,15 +1357,9 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         }
 #endif
 
-        ret = fstat(file->fd, &st);
-        if (ret == -1) {
-            flb_errno();
-            return FLB_TAIL_ERROR;
-        }
-        else {
-            /* adjust file counters, returns FLB_TAIL_OK or FLB_TAIL_ERROR */
-            ret = adjust_counters(ctx, file);
-        }
+        /* adjust file counters, returns FLB_TAIL_OK or FLB_TAIL_ERROR */
+        ret = adjust_counters(ctx, file);
+
         /* Data was consumed but likely some bytes still remain */
         return ret;
     }
@@ -1794,7 +1762,7 @@ int flb_tail_file_purge(struct flb_input_instance *ins,
                 flb_plg_debug(ctx->ins,
                               "inode=%"PRIu64" purge rotated file %s " \
                               "(offset=%"PRId64" / size = %"PRIu64")",
-                              file->inode, file->name, file->offset, st.st_size);
+                              file->inode, file->name, file->offset, (uint64_t)st.st_size);
                 if (file->pending_bytes > 0 && flb_input_buf_paused(ins)) {
                     flb_plg_warn(ctx->ins, "purged rotated file while data "
                                  "ingestion is paused, consider increasing "

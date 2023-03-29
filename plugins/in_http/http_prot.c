@@ -188,17 +188,17 @@ int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
 
             /* Ingest record into the engine */
             if (tag_from_record) {
-                flb_input_chunk_append_raw(ctx->ins, tag_from_record, flb_sds_len(tag_from_record),
+                flb_input_log_append(ctx->ins, tag_from_record, flb_sds_len(tag_from_record),
                                         mp_sbuf.data, mp_sbuf.size);
                 flb_sds_destroy(tag_from_record);
             }
             else if (tag) {
-                flb_input_chunk_append_raw(ctx->ins, tag, flb_sds_len(tag),
+                flb_input_log_append(ctx->ins, tag, flb_sds_len(tag),
                                         mp_sbuf.data, mp_sbuf.size);
             }
             else {
                 /* use default plugin Tag (it internal name, e.g: http.0 */
-                flb_input_chunk_append_raw(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+                flb_input_log_append(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
             }
             msgpack_sbuffer_destroy(&mp_sbuf);
         } 
@@ -222,17 +222,17 @@ int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
 
                 /* Ingest record into the engine */
                 if (tag_from_record) {
-                    flb_input_chunk_append_raw(ctx->ins, tag_from_record, flb_sds_len(tag_from_record),
+                    flb_input_log_append(ctx->ins, tag_from_record, flb_sds_len(tag_from_record),
                                             mp_sbuf.data, mp_sbuf.size);
                     flb_sds_destroy(tag_from_record);
                 }
                 else if (tag) {
-                    flb_input_chunk_append_raw(ctx->ins, tag, flb_sds_len(tag),
+                    flb_input_log_append(ctx->ins, tag, flb_sds_len(tag),
                                                mp_sbuf.data, mp_sbuf.size);
                 }
                 else {
                     /* use default plugin Tag (it internal name, e.g: http.0 */
-                    flb_input_chunk_append_raw(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+                    flb_input_log_append(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
                 }
 
                 msgpack_sbuffer_destroy(&mp_sbuf);

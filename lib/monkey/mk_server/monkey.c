@@ -122,6 +122,28 @@ struct mk_server *mk_server_create()
         return NULL;
     }
 
+    /* Library mode: start event loop */
+    server->lib_evl_start = mk_event_loop_create(1);
+    if (!server->lib_evl_start) {
+        mk_event_loop_destroy(server->lib_evl);
+        mk_mem_free(server);
+        return NULL;
+    }
+
+    memset(&server->lib_ch_start_event, 0, sizeof(struct mk_event));
+
+    ret = mk_event_channel_create(server->lib_evl_start,
+                                  &server->lib_ch_start[0],
+                                  &server->lib_ch_start[1],
+                                  &server->lib_ch_start_event);
+
+    if (ret != 0) {
+        mk_event_loop_destroy(server->lib_evl);
+        mk_event_loop_destroy(server->lib_evl_start);
+        mk_mem_free(server);
+        return NULL;
+    }
+
     /* Initialize linked list heads */
     mk_list_init(&server->plugins);
     mk_list_init(&server->sched_worker_callbacks);

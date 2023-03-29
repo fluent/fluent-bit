@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_time.h>
 #include <float.h>
+#include <math.h>
 #include "flb_tests_runtime.h"
 
 struct test_ctx {
@@ -54,6 +55,35 @@ static void set_output_num(int num)
 static void clear_output_num()
 {
     set_output_num(0);
+}
+
+void wait_with_timeout(uint32_t timeout_ms, int *output_num)
+{
+    struct flb_time start_time;
+    struct flb_time end_time;
+    struct flb_time diff_time;
+    uint64_t elapsed_time_flb = 0;
+
+    flb_time_get(&start_time);
+
+    while (true) {
+        *output_num = get_output_num();
+
+        if (*output_num > 0) {
+            break;
+        }
+
+        flb_time_msleep(100);
+        flb_time_get(&end_time);
+        flb_time_diff(&end_time, &start_time, &diff_time);
+        elapsed_time_flb = flb_time_to_nanosec(&diff_time) / 1000000;
+
+        if (elapsed_time_flb > timeout_ms) {
+            flb_warn("[timeout] elapsed_time: %ld", elapsed_time_flb);
+            // Reached timeout.
+            break;
+        }
+    }
 }
 
 struct str_list {
@@ -133,7 +163,7 @@ static int msgpack_strncmp(char* str, size_t str_len, msgpack_object obj)
     case MSGPACK_OBJECT_FLOAT64:
         {
             double val = strtod(str, NULL);
-            if ((val - obj.via.f64) < DBL_EPSILON) {
+            if (fabs(val - obj.via.f64) < DBL_EPSILON) {
                 ret = 0;
             }
         }
@@ -343,9 +373,8 @@ static void test_format_json(void)
     TEST_CHECK(ret >= 0);
 
     /* waiting to flush */
-    flb_time_msleep(500);
+    wait_with_timeout(2000, &num);
 
-    num = get_output_num();
     if (!TEST_CHECK(num > 0))  {
         TEST_MSG("no outputs");
     }
@@ -395,9 +424,8 @@ static void test_format_msgpack(void)
     TEST_CHECK(ret >= 0);
 
     /* waiting to flush */
-    flb_time_msleep(500);
+    wait_with_timeout(2000, &num);
 
-    num = get_output_num();
     if (!TEST_CHECK(num > 0))  {
         TEST_MSG("no outputs");
     }
@@ -447,9 +475,8 @@ static void test_max_records(void)
     }
 
     /* waiting to flush */
-    flb_time_msleep(500);
+    wait_with_timeout(1000, &num);
 
-    num = get_output_num();
     if (!TEST_CHECK(num == expected /* max_records */))  {
         TEST_MSG("max_records error. got=%d, expected=%d", num, expected);
     }
@@ -493,9 +520,8 @@ static void test_metrics_msgpack(void)
     TEST_CHECK(ret == 0);
 
     /* waiting to flush */
-    flb_time_msleep(1500);
+    wait_with_timeout(5000, &num);
 
-    num = get_output_num();
     if (!TEST_CHECK(num > 0))  {
         TEST_MSG("no outputs");
     }
@@ -539,9 +565,8 @@ static void test_metrics_json(void)
     TEST_CHECK(ret == 0);
 
     /* waiting to flush */
-    flb_time_msleep(1500);
+    wait_with_timeout(5000, &num);
 
-    num = get_output_num();
     if (!TEST_CHECK(num > 0))  {
         TEST_MSG("no outputs");
     }

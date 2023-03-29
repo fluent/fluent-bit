@@ -1,4 +1,3 @@
-
 name: Composite action to generate the matrix of targets to build packages for.
 description: Remove any duplication of this information so we only have to update in one place.
 
@@ -9,14 +8,20 @@ inputs:
   target:
     description: Override to build a single target for debug/test only.
     required: false
-    default: ''
+    default: ""
   ref:
     description: The commit, tag or branch of Fluent Bit to checkout for building we then use to determine version for.
     required: true
 outputs:
   build-matrix:
-    description: The build matrix we have created.
+    description: The total build matrix we have created.
     value: ${{ steps.set-matrix.outputs.matrix }}
+  deb-build-matrix:
+    description: The targets that provide DEB artefacts.
+    value: ${{ steps.set-matrix.outputs.debmatrix }}
+  rpm-build-matrix:
+    description: The targets that provide RPN artefacts.
+    value: ${{ steps.set-matrix.outputs.rpmmatrix }}
 runs:
   using: "composite"
   steps:
@@ -27,31 +32,36 @@ runs:
         path: version-check
 
     - name: Determine target type
-      # TODO: probably switch to a sentinel file with the version in rather than checking for specific changes, or git branch tests.
       id: determine-build-type
       run: |
-        ls -l
-        BUILD_TYPE="1.8"
-        if [[ -d "packaging" ]]; then
-          BUILD_TYPE="1.9"
-        fi
+        BUILD_TYPE="legacy"
         if [[ -f "packaging/build-config.json" ]]; then
-          BUILD_TYPE="2.0"
+          BUILD_TYPE="modern"
         fi
         echo "Detected type: $BUILD_TYPE"
-        echo ::set-output name=BUILD_TYPE::$BUILD_TYPE
+        echo "BUILD_TYPE=$BUILD_TYPE" >> $GITHUB_OUTPUT
       shell: bash
       working-directory: version-check
 
-    - name: 2.0 targets
-      if: steps.determine-build-type.outputs.BUILD_TYPE == '2.0'
+    - name: 2.0+ targets
+      if: steps.determine-build-type.outputs.BUILD_TYPE == 'modern'
       run: |
-        matrix=$(echo '{ "distro" : '$(jq -cr '.linux_targets' packaging/build-config.json)'}'|jq -c .)
+        matrix=$(echo '{ "distro" : '$(jq -cr '.linux_targets|map(.target)' packaging/build-config.json)'}'|jq -c .)
         echo "MATRIX=$matrix" >> $GITHUB_ENV
+
+        # The following are only used by release so exclude architecture as well
+
+        debtargets=$(jq -cr '[.linux_targets[] | select(.target|contains("arm64v8")|not) | select(.type=="deb") | .target ]' packaging/build-config.json)
+        debmatrix=$(echo "{ \"distro\" : $debtargets }"|jq -c .)
+        echo "DEB_MATRIX=$debmatrix" >> $GITHUB_ENV
+
+        rpmtargets=$(jq -cr '[.linux_targets[] | select(.target|contains("arm64v8")|not) | select(.type=="rpm") | .target ]' packaging/build-config.json)
+        rpmmatrix=$(echo "{ \"distro\" : $rpmtargets}"|jq -c .)
+        echo "RPM_MATRIX=$rpmmatrix" >> $GITHUB_ENV
       shell: bash
 
     - name: 1.9 targets
-      if: steps.determine-build-type.outputs.BUILD_TYPE == '1.9'
+      if: steps.determine-build-type.outputs.BUILD_TYPE == 'legacy'
       run: |
         matrix=$((
           echo '{ "distro" : ['
@@ -64,21 +74,21 @@ runs:
           echo ']}'
         ) | jq -c .)
         echo "MATRIX=$matrix" >> $GITHUB_ENV
-      shell: bash
-
-    - name: 1.8 targets
-      if: steps.determine-build-type.outputs.BUILD_TYPE == '1.8'
-      run: |
-        matrix=$((
+        debmatrix=$((
           echo '{ "distro" : ['
-          echo '"amazonlinux/2", "amazonlinux/2.arm64v8",'
-          echo '"centos/7", "centos/7.arm64v8",'
-          echo '"debian/stretch", "debian/stretch.arm64v8", "debian/buster", "debian/buster.arm64v8",'
-          echo '"ubuntu/16.04", "ubuntu/18.04", "ubuntu/20.04", "ubuntu/18.04.arm64v8", "ubuntu/20.04.arm64v8",'
-          echo '"raspbian/buster"'
+          echo '"debian/buster", "debian/bullseye",'
+          echo '"ubuntu/16.04", "ubuntu/18.04", "ubuntu/20.04", "ubuntu/22.04",'
+          echo '"raspbian/buster", "raspbian/bullseye"'
           echo ']}'
         ) | jq -c .)
-        echo "MATRIX=$matrix" >> $GITHUB_ENV
+        echo "DEB_MATRIX=$debmatrix" >> $GITHUB_ENV
+        rpmmatrix=$((
+          echo '{ "distro" : ['
+          echo '"amazonlinux/2",'
+          echo '"centos/7", "centos/8"'
+          echo ']}'
+        ) | jq -c .)
+        echo "RPM_MATRIX=$rpmmatrix" >> $GITHUB_ENV
       shell: bash
 
     - name: Manual override of target
@@ -99,5 +109,11 @@ runs:
       run: |
         echo $MATRIX
         echo $MATRIX| jq .
-        echo "::set-output name=matrix::$MATRIX"
+        echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+        echo $DEB_MATRIX
+        echo $DEB_MATRIX| jq .
+        echo "debmatrix=$DEB_MATRIX" >> $GITHUB_OUTPUT
+        echo $RPM_MATRIX
+        echo $RPM_MATRIX| jq .
+        echo "rpmmatrix=$RPM_MATRIX" >> $GITHUB_OUTPUT
       shell: bash

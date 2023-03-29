@@ -15,6 +15,9 @@ void flb_test_config_map_opts(void)
 {
     flb_ctx_t    *ctx    = NULL;
     int in_ffd, r;
+
+    flb_init_env();
+
     ctx = flb_create();
     in_ffd = flb_input(ctx, (char *) "tail", NULL);
     r = flb_input_property_check(ctx, in_ffd, "invalid_option", "invalid value");

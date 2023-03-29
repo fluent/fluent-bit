@@ -110,6 +110,11 @@ void flb_utils_error(int err)
     case FLB_ERR_CORO_STACK_SIZE:
         msg = "invalid coroutine stack size";
         break;
+    case FLB_ERR_CFG_PLUGIN_FILE:
+        msg = "plugins_file not found";
+        break;
+    default:
+        flb_error("(error message is not defined. err=%d)", err);
     }
 
     if (!msg) {

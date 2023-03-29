@@ -50,6 +50,7 @@ struct flb_parser {
     int time_offset;      /* fixed UTC offset */
     int time_keep;        /* keep time field */
     int time_strict;      /* parse time field strictly */
+    int logfmt_no_bare_keys; /* in logfmt parsers, require all keys to have values */
     char *time_frac_secs; /* time format have fractional seconds ? */
     struct flb_parser_types *types; /* type casting */
     int types_len;
@@ -73,17 +74,13 @@ enum {
     FLB_PARSER_TYPE_HEX,
 };
 
-static inline time_t flb_parser_tm2time(const struct tm *src)
+static inline time_t flb_parser_tm2time(const struct flb_tm *src)
 {
     struct tm tmp;
     time_t res;
 
-    tmp = *src;
-#ifdef FLB_HAVE_GMTOFF
-    res = timegm(&tmp) - src->tm_gmtoff;
-#else
-    res = timegm(&tmp);
-#endif
+    tmp = src->tm;
+    res = timegm(&tmp) - flb_tm_gmtoff(src);
     return res;
 }
 
@@ -95,6 +92,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
                                      const char *time_offset,
                                      int time_keep,
                                      int time_strict,
+                                     int logfmt_no_bare_keys,
                                      struct flb_parser_types *types,
                                      int types_len,
                                      struct mk_list *decoders,
@@ -109,7 +107,7 @@ void flb_parser_exit(struct flb_config *config);
 int flb_parser_tzone_offset(const char *str, int len, int *tmdiff);
 int flb_parser_time_lookup(const char *time, size_t tsize, time_t now,
                            struct flb_parser *parser,
-                           struct tm *tm, double *ns);
+                           struct flb_tm *tm, double *ns);
 int flb_parser_typecast(const char *key, int key_len,
                         const char *val, int val_len,
                         msgpack_packer *pck,

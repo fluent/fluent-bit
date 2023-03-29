@@ -39,8 +39,6 @@ void flb_test_filter_stdout_case_insensitive(void)
      * In general, macOS requests surely initialization for pthread stuffs.
      */
     flb_init_env();
-
-    flb_stop(ctx);
     flb_destroy(ctx);
 }
 

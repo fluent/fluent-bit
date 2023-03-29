@@ -24,7 +24,10 @@
 int LLVMFuzzerTestOneInput(unsigned char *data, size_t size)
 {
     TIMEOUT_GUARD
+    /* Set fuzzer-malloc chance of failure */
     flb_malloc_p = 0;
+    flb_malloc_mod = 25000;
+
     if (size < 1) {
         return 0;
     }

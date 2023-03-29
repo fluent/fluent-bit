@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_downstream.h>
 #include <string.h>
 #include <float.h>
+#include <math.h>
 #include <msgpack.h>
 #include "flb_tests_runtime.h"
 
@@ -146,7 +147,7 @@ static int msgpack_strncmp(char* str, size_t str_len, msgpack_object obj)
     case MSGPACK_OBJECT_FLOAT64:
         {
             double val = strtod(str, NULL);
-            if ((val - obj.via.f64) < DBL_EPSILON) {
+            if (fabs(val - obj.via.f64) < DBL_EPSILON) {
                 ret = 0;
             }
         }
@@ -899,7 +900,6 @@ static void cb_check_basic(void *ctx, int ffd,
 void flb_test_tcp_exit_workers(void)
 {
     int ret;
-    int bytes;
     flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;
@@ -944,7 +944,6 @@ void flb_test_tcp_exit_workers(void)
 void flb_test_tcp_exit_no_workers(void)
 {
     int ret;
-    int bytes;
     flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;

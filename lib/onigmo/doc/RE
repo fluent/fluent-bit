@@ -375,7 +375,7 @@ syntax: ONIG_SYNTAX_RUBY (default)
     \k<name+level> \k'name+level'
     \k<name-level> \k'name-level'
 
-    Destine a group on the recursion level relative to the referring position.
+    Refer a group on the recursion level relative to the referring position.
 
     ex 1.
 

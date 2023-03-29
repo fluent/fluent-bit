@@ -873,7 +873,7 @@ static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    if (event_chunk->type == FLB_EVENT_TYPE_METRIC) {
+    if (event_chunk->type == FLB_EVENT_TYPE_METRICS) {
         /* if we have labels append them */
         if (ctx->add_labels && mk_list_size(ctx->add_labels) > 0) {
             ret = cmt_decode_msgpack_create(&cmt,
@@ -929,7 +929,7 @@ static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
     }
     
 #ifdef FLB_HAVE_CHUNK_TRACE
-    if (event_chunk->type == (FLB_EVENT_TYPE_LOG | FLB_EVENT_TYPE_HAS_TRACE)) {
+    if (event_chunk->type == (FLB_EVENT_TYPE_LOGS | FLB_EVENT_TYPE_HAS_TRACE)) {
         json = flb_pack_msgpack_to_json_format(event_chunk->data,
                                                event_chunk->size,
                                                FLB_PACK_JSON_FORMAT_STREAM,

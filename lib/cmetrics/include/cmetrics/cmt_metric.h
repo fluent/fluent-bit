@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -34,6 +34,7 @@ struct cmt_metric {
     /* summary */
     int sum_quantiles_set;     /* specify if quantive values has been set */
     uint64_t *sum_quantiles;   /* 0, 0.25, 0.5, 0.75 and 1 */
+    size_t sum_quantiles_count;
     uint64_t sum_count;
     uint64_t sum_sum;
 

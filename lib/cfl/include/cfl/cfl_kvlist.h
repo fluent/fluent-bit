@@ -20,6 +20,7 @@
 #ifndef CFL_KVLIST_H
 #define CFL_KVLIST_H
 
+#include <stdio.h>
 #include <cfl/cfl_sds.h>
 #include <cfl/cfl_list.h>
 #include <cfl/cfl_variant.h>
@@ -70,5 +71,6 @@ int cfl_kvlist_insert(struct cfl_kvlist *list,
 
 int cfl_kvlist_count(struct cfl_kvlist *list);
 struct cfl_variant *cfl_kvlist_fetch(struct cfl_kvlist *list, char *key);
+int cfl_kvlist_print(FILE *fp, struct cfl_kvlist *list);
 
 #endif

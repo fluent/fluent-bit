@@ -20,6 +20,11 @@
 #ifndef FLB_OUT_SYSLOG_CONF_H
 #define FLB_OUT_SYSLOG_CONF_H
 
+#include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_pipe.h>
+
+
 #define FLB_SYSLOG_UDP 0
 #define FLB_SYSLOG_TCP 1
 #define FLB_SYSLOG_TLS 2
@@ -42,6 +47,14 @@ struct flb_syslog {
     flb_sds_t msgid_key;
     struct mk_list *sd_keys;
     flb_sds_t message_key;
+
+    /* Preset */
+    int severity_preset;
+    int facility_preset;
+    flb_sds_t hostname_preset;
+    flb_sds_t appname_preset;
+    flb_sds_t procid_preset;
+    flb_sds_t msgid_preset;
 
     /* Internal */
     int parsed_mode;

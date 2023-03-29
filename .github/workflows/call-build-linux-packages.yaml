@@ -24,7 +24,7 @@ on:
         description: Optionally add metadata to build to indicate an unstable build, set to the contents you want to add.
         type: string
         required: false
-        default: ''
+        default: ""
       ignore_failing_targets:
         description: Optionally ignore any failing builds in the matrix and continue.
         type: boolean
@@ -51,39 +51,11 @@ on:
         required: false
 
 jobs:
-  call-build-legacy-check:
-    # Determine if this is a 1.8 type of build which is different
-    name: Extract any supporting metadata
-    outputs:
-      build-type: ${{ steps.determine-build-type.outputs.BUILD_TYPE }}
-    runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-        with:
-          ref: ${{ inputs.ref }}
-
-      - name: Determine build type
-        id: determine-build-type
-        run: |
-          BUILD_TYPE="1.8"
-          if [[ -f "dockerfiles/Dockerfile" ]]; then
-            BUILD_TYPE="modern"
-          fi
-          echo "Detected type: $BUILD_TYPE"
-          echo ::set-output name=BUILD_TYPE::$BUILD_TYPE
-        shell: bash
-
   call-build-capture-source:
     # Capture source tarball and generate checksum for it
     name: Extract any supporting metadata
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
-    needs:
-      - call-build-legacy-check
     permissions:
       contents: read
     steps:
@@ -93,24 +65,11 @@ jobs:
           ref: ${{ inputs.ref }}
           path: source
 
-      - name: Checkout legacy packaging code
-        if: needs.call-build-legacy-check.outputs.build-type == '1.8'
-        uses: actions/checkout@v3
-        with:
-          repository: fluent/fluent-bit-packaging
-          path: packaging
-
       - name: Create tarball and checksums
         run: |
           tar -czvf $SOURCE_FILENAME_PREFIX.tar.gz -C source --exclude-vcs .
           md5sum $SOURCE_FILENAME_PREFIX.tar.gz > $SOURCE_FILENAME_PREFIX.tar.gz.md5
           sha256sum $SOURCE_FILENAME_PREFIX.tar.gz > $SOURCE_FILENAME_PREFIX.tar.gz.sha256
-          if [[ -d packaging ]]; then
-            echo "Also adding 1.8 packaging code"
-            tar -czvf $SOURCE_FILENAME_PREFIX-packaging.tar.gz -C packaging --exclude-vcs .
-            md5sum $SOURCE_FILENAME_PREFIX-packaging.tar.gz > $SOURCE_FILENAME_PREFIX-packaging.tar.gz.md5
-            sha256sum $SOURCE_FILENAME_PREFIX-packaging.tar.gz > $SOURCE_FILENAME_PREFIX-packaging.tar.gz.sha256
-          fi
           # Move to a directory to simplify upload/sync
           mkdir -p source-packages
           cp -fv $SOURCE_FILENAME_PREFIX* source-packages/
@@ -125,7 +84,7 @@ jobs:
           path: source-packages/*
           if-no-files-found: error
 
-      # Required to support 1.8 style builds which will not have it
+      # Pick up latest master version
       - name: Checkout code for action
         if: inputs.environment == 'staging'
         uses: actions/checkout@v3
@@ -143,14 +102,10 @@ jobs:
           bucket-directory: "${{ inputs.version }}/source"
           source-directory: "source-packages/"
 
-  # We build both master/1.9 and 1.8 style packages in a single job as it is simpler to keep all the custom
-  # code and workflow together. We need to run the dependent job after this as well.
   call-build-linux-packages:
     name: ${{ matrix.distro }} package build and stage to S3
     environment: ${{ inputs.environment }}
     runs-on: ubuntu-latest
-    needs:
-      - call-build-legacy-check
     permissions:
       contents: read
     strategy:
@@ -160,17 +115,9 @@ jobs:
     continue-on-error: ${{ inputs.ignore_failing_targets || false }}
     steps:
       - name: Checkout code
-        if: needs.call-build-legacy-check.outputs.build-type != '1.8'
         uses: actions/checkout@v3
         with:
           ref: ${{ inputs.ref }}
-
-      - name: Checkout legacy packaging code
-        if: needs.call-build-legacy-check.outputs.build-type == '1.8'
-        uses: actions/checkout@v3
-        with:
-          repository: fluent/fluent-bit-packaging
-          path: packaging
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
@@ -178,52 +125,27 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      - uses: frabert/replace-string-action@v2.2
+      - name: Replace all special characters with dashes
         id: formatted_distro
-        with:
-          pattern: '(.*)\/(.*)$'
-          string: "${{ matrix.distro }}"
-          replace-with: '$1-$2'
-          flags: 'g'
+        run:
+          output=${INPUT//[\/]/-}
+          echo "$INPUT --> $output"
+          echo "replaced=$output" >> "$GITHUB_OUTPUT"
+        shell: bash
+        env: 
+          INPUT: ${{ matrix.distro }}
 
       - name: fluent-bit - ${{ matrix.distro }} artifacts
-        if: needs.call-build-legacy-check.outputs.build-type != '1.8'
         run: |
           ./build.sh
         env:
           FLB_DISTRO: ${{ matrix.distro }}
-          # Align with 1.8 output
           FLB_OUT_DIR: ${{ inputs.version }}/staging
-          FLB_TD: "Off"
           FLB_NIGHTLY_BUILD: ${{ inputs.unstable }}
           CMAKE_INSTALL_PREFIX: /opt/fluent-bit/
         working-directory: packaging
 
-      - name: td-agent-bit - ${{ matrix.distro }} artifacts
-        if: needs.call-build-legacy-check.outputs.build-type != '1.8'
-        run: |
-          ./build.sh
-        env:
-          FLB_DISTRO: ${{ matrix.distro }}
-          # Align with 1.8 output
-          FLB_OUT_DIR: ${{ inputs.version }}/staging
-          FLB_TD: "On"
-          FLB_NIGHTLY_BUILD: ${{ inputs.unstable }}
-          CMAKE_INSTALL_PREFIX: /opt/td-agent-bit/
-        working-directory: packaging
-
-      - name: Legacy td-agent-bit - ${{ matrix.distro }} artifacts
-        if: needs.call-build-legacy-check.outputs.build-type == '1.8'
-        run: |
-          ./build.sh -v $FLB_VERSION -b $FLB_BRANCH -d $FLB_DISTRO
-        env:
-          FLB_VERSION: ${{ inputs.ref }}
-          FLB_BRANCH: ${{ inputs.ref }}
-          FLB_DISTRO: ${{ matrix.distro }}
-          FLB_OUT_DIR: staging
-        working-directory: packaging
-
-      - name: Upload the ${{ matrix.distro }} artifacts
+      - name: Upload the ${{ steps.formatted_distro.outputs.replaced }} artifacts
         uses: actions/upload-artifact@v3
         with:
           name: packages-${{ inputs.version }}-${{ steps.formatted_distro.outputs.replaced }}
@@ -248,7 +170,7 @@ jobs:
               fi
           fi
           echo "$TARGET"
-          echo ::set-output name=target::$TARGET
+          echo "target=$TARGET" >> $GITHUB_OUTPUT
         env:
           DISTRO: ${{ matrix.distro }}
         shell: bash
@@ -263,7 +185,7 @@ jobs:
           fi
         shell: bash
 
-      # Required to support 1.8 style builds which will not have it
+      # Pick up latest master version
       - name: Checkout code for action
         if: inputs.environment == 'staging'
         uses: actions/checkout@v3
@@ -281,13 +203,12 @@ jobs:
           bucket-directory: "${{ inputs.version }}/${{ steps.get-target-info.outputs.target }}/"
           source-directory: "packaging/packages/${{ matrix.distro }}/${{ inputs.version }}/staging/"
 
-
   call-build-linux-packages-repo:
     name: Create repo metadata in S3
     # Only upload for staging
     if: inputs.environment == 'staging'
     # Need to use 18.04 as 20.04 has no createrepo available
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-22.04
     environment: ${{ inputs.environment }}
     needs:
       - call-build-linux-packages
@@ -295,7 +216,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y createrepo aptly
+          sudo apt-get install -y createrepo-c aptly
 
       - name: Checkout code for repo metadata construction - always latest
         uses: actions/checkout@v3

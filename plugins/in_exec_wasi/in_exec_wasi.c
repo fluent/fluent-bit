@@ -108,8 +108,7 @@ static int in_exec_wasi_collect(struct flb_input_instance *ins,
                 flb_time_append_to_msgpack(&out_time, &mp_pck, 0);
                 msgpack_sbuffer_write(&mp_sbuf, out_buf, out_size);
 
-                ctx->ins->event_type = FLB_INPUT_LOGS;
-                flb_input_chunk_append_raw(ins, NULL, 0,
+                flb_input_log_append(ins, NULL, 0,
                                            mp_sbuf.data, mp_sbuf.size);
                 msgpack_sbuffer_destroy(&mp_sbuf);
                 flb_free(out_buf);
@@ -144,8 +143,7 @@ static int in_exec_wasi_collect(struct flb_input_instance *ins,
             msgpack_pack_str_body(&mp_pck,
                                   ctx->buf, str_len);
 
-            ctx->ins->event_type = FLB_INPUT_LOGS;
-            flb_input_chunk_append_raw(ins, NULL, 0,
+            flb_input_log_append(ins, NULL, 0,
                                        mp_sbuf.data, mp_sbuf.size);
             msgpack_sbuffer_destroy(&mp_sbuf);
         }
@@ -205,7 +203,7 @@ static int in_exec_wasi_config_read(struct flb_exec_wasi *ctx,
         ctx->interval_nsec = -1;
     }
 
-    flb_plg_debug(in, "interval_sec=%d interval_nsec=%d oneshot=%i buf_size=%d",
+    flb_plg_debug(in, "interval_sec=%d interval_nsec=%d oneshot=%i buf_size=%zu",
               ctx->interval_sec, ctx->interval_nsec, ctx->oneshot, ctx->buf_size);
 
     return 0;

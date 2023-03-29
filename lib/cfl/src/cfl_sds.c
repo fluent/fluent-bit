@@ -22,8 +22,10 @@
  * string storage
  */
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 #include <inttypes.h>
 
 #include <cfl/cfl_sds.h>
@@ -179,5 +181,56 @@ void cfl_sds_cat_safe(cfl_sds_t *buf, const char *str, int len)
         return;
     }
     *buf = tmp;
+}
+
+cfl_sds_t cfl_sds_printf(cfl_sds_t *sds, const char *fmt, ...)
+{
+    va_list ap;
+    int len = strlen(fmt)*2;
+    int size;
+    cfl_sds_t tmp = NULL;
+    cfl_sds_t s;
+    struct cfl_sds *head;
+
+    if (len < 64) len = 64;
+
+    s = *sds;
+    if (cfl_sds_avail(s)< len) {
+        tmp = cfl_sds_increase(s, len);
+        if (!tmp) {
+            return NULL;
+        }
+        *sds = s = tmp;
+    }
+
+    va_start(ap, fmt);
+    size = vsnprintf((char *) (s + cfl_sds_len(s)), cfl_sds_avail(s), fmt, ap);
+    if (size < 0) {
+        va_end(ap);
+        return NULL;
+    }
+    va_end(ap);
+
+    if (size > cfl_sds_avail(s)) {
+        tmp = cfl_sds_increase(s, size);
+        if (!tmp) {
+            return NULL;
+        }
+        *sds = s = tmp;
+
+        va_start(ap, fmt);
+        size = vsnprintf((char *) (s + cfl_sds_len(s)), cfl_sds_avail(s), fmt, ap);
+        if (size > cfl_sds_avail(s)) {
+            va_end(ap);
+            return NULL;
+        }
+        va_end(ap);
+    }
+
+    head = CFL_SDS_HEADER(s);
+    head->len += size;
+    s[head->len] = '\0';
+
+    return s;
 }
 

@@ -18,26 +18,26 @@ libonigmo_la_SOURCES = regint.h regparse.h regenc.h st.h \
 	regerror.c regparse.c regext.c regcomp.c regexec.c reggnu.c \
 	regenc.c regsyntax.c regtrav.c regversion.c st.c \
 	regposix.c regposerr.c \
-	$(encdir)/unicode.c $(encdir)/ascii.c $(encdir)/utf_8.c \
-	$(encdir)/utf_16be.c $(encdir)/utf_16le.c \
-	$(encdir)/utf_32be.c $(encdir)/utf_32le.c \
-	$(encdir)/unicode/casefold.h $(encdir)/unicode/name2ctype.h \
-	$(encdir)/euc_jp.c $(encdir)/shift_jis.c $(encdir)/shift_jis.h \
-	$(encdir)/windows_31j.c \
-	$(encdir)/jis/props.h $(encdir)/jis/props.kwd \
-	$(encdir)/iso_8859.h $(encdir)/iso_8859_1.c \
-	$(encdir)/iso_8859_2.c  $(encdir)/iso_8859_3.c \
-	$(encdir)/iso_8859_4.c  $(encdir)/iso_8859_5.c \
-	$(encdir)/iso_8859_6.c  $(encdir)/iso_8859_7.c \
-	$(encdir)/iso_8859_8.c  $(encdir)/iso_8859_9.c \
-	$(encdir)/iso_8859_10.c $(encdir)/iso_8859_11.c \
-	$(encdir)/iso_8859_13.c $(encdir)/iso_8859_14.c \
-	$(encdir)/iso_8859_15.c $(encdir)/iso_8859_16.c \
-	$(encdir)/euc_tw.c $(encdir)/euc_kr.c $(encdir)/big5.c \
-	$(encdir)/gb18030.c $(encdir)/koi8_r.c $(encdir)/koi8_u.c \
-	$(encdir)/windows_1250.c $(encdir)/windows_1251.c \
-	$(encdir)/windows_1252.c $(encdir)/windows_1253.c \
-	$(encdir)/windows_1254.c $(encdir)/windows_1257.c
+	enc/unicode.c enc/ascii.c enc/utf_8.c \
+	enc/utf_16be.c enc/utf_16le.c \
+	enc/utf_32be.c enc/utf_32le.c \
+	enc/unicode/casefold.h enc/unicode/name2ctype.h \
+	enc/euc_jp.c enc/shift_jis.c enc/shift_jis.h \
+	enc/windows_31j.c \
+	enc/jis/props.h enc/jis/props.kwd \
+	enc/iso_8859.h enc/iso_8859_1.c \
+	enc/iso_8859_2.c  enc/iso_8859_3.c \
+	enc/iso_8859_4.c  enc/iso_8859_5.c \
+	enc/iso_8859_6.c  enc/iso_8859_7.c \
+	enc/iso_8859_8.c  enc/iso_8859_9.c \
+	enc/iso_8859_10.c enc/iso_8859_11.c \
+	enc/iso_8859_13.c enc/iso_8859_14.c \
+	enc/iso_8859_15.c enc/iso_8859_16.c \
+	enc/euc_tw.c enc/euc_kr.c enc/big5.c \
+	enc/gb18030.c enc/koi8_r.c enc/koi8_u.c \
+	enc/windows_1250.c enc/windows_1251.c \
+	enc/windows_1252.c enc/windows_1253.c \
+	enc/windows_1254.c enc/windows_1257.c
 
 libonigmo_la_LDFLAGS = -version-info $(LTVERSION) -no-undefined
 
@@ -81,18 +81,22 @@ mktable: $(encdir)/mktable.c $(srcdir)/regenc.h
 # TEST
 TESTS = testc testp testcu
 
-check_PROGRAMS = testc testp testcu
+check_PROGRAMS = testc testp testcu \
+	test_enc_utf8
 
 test: atest pytest
 	$(MAKE) -C sample test
 
-atest: testc$(EXEEXT) testp$(EXEEXT) testcu$(EXEEXT)
+atest: testc$(EXEEXT) testp$(EXEEXT) testcu$(EXEEXT) \
+    test_enc_utf8$(EXEEXT)
 	@echo "[Onigmo API, ASCII/EUC-JP check]"
 	@$(top_builddir)/testc  | grep RESULT
 	@echo "[POSIX API, ASCII/EUC-JP check]"
 	@$(top_builddir)/testp  | grep RESULT
 	@echo "[Onigmo API, UTF-16 check]"
 	@$(top_builddir)/testcu | grep RESULT
+	@echo "[UTF-8 encoding check]"
+	@$(top_builddir)/test_enc_utf8 | grep RESULT
 
 testc_SOURCES = testc.c
 testc_LDADD = libonigmo.la
@@ -104,6 +108,8 @@ testp_CFLAGS = -DPOSIX_TEST
 testcu_SOURCES = testu.c
 testcu_LDADD = libonigmo.la
 
+test_enc_utf8_SOURCES = test_enc_utf8.c
+test_enc_utf8_LDADD = libonigmo.la
 
 #$(srcdir)/testc.c: $(srcdir)/test.rb $(srcdir)/testconv.rb
 $(srcdir)/testc.c:
@@ -133,8 +139,8 @@ pytest:
 # Collect coverage data and write to coverage.info, then create HTML output
 # in the coverage directory.
 lcov:
-	if [ ! -f $(builddir)/enc/jis/props.kwd ]; then mkdir -p $(builddir)/enc/jis; cp $(srcdir)/enc/jis/props.kwd $(builddir)/enc/jis/props.kwd; fi
-	lcov -c -d .libs -o coverage.info
+	if [ ! -f $(builddir)/enc/jis/props.kwd ]; then mkdir -p $(builddir)/enc/jis; cp -p $(srcdir)/enc/jis/props.kwd $(builddir)/enc/jis/props.kwd; fi
+	lcov -c -d .libs -d enc/.libs -o coverage.info
 	genhtml -o coverage coverage.info
 
 # Clear coverage data.

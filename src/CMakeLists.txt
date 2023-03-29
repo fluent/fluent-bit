@@ -17,13 +17,16 @@ set(src
   flb_pack.c
   flb_pack_gelf.c
   flb_sds.c
+  flb_sds_list.c
   flb_pipe.c
   flb_meta.c
   flb_kernel.c
   flb_custom.c
   flb_input.c
   flb_input_chunk.c
+  flb_input_log.c
   flb_input_metric.c
+  flb_input_trace.c
   flb_input_thread.c
   flb_filter.c
   flb_output.c
@@ -199,9 +202,9 @@ if(FLB_JEMALLOC)
 endif()
 
 if(FLB_REGEX)
-  set(extra_libs
-    ${extra_libs}
-    "libonigmo")
+  set(FLB_DEPS
+    ${FLB_DEPSS}
+    onigmo-static)
   set(src
     ${src}
     "flb_regex.c"
@@ -346,13 +349,16 @@ endif()
 set(FLB_DEPS
   ${FLB_DEPS}
   cfl-static
+  fluent-otel-proto
+  cmetrics-static
+  ctraces-static
   mk_core
   jsmn
   msgpack-c-static
   mpack-static
   chunkio-static
   miniz
-  cmetrics-static
+
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}
@@ -474,7 +480,7 @@ if(FLB_BINARY)
   endif()
 
   if(FLB_REGEX)
-    target_link_libraries(fluent-bit-bin libonigmo)
+    target_link_libraries(fluent-bit-bin onigmo-static)
   endif()
 
   if(FLB_JEMALLOC)
@@ -503,13 +509,13 @@ if(FLB_BINARY)
   endif()
 
   # Detect init system, install upstart, systemd or init.d script
-  if(IS_DIRECTORY /lib/systemd/system)
+  if(DEFINED SYSTEMD_UNITDIR)
     set(FLB_SYSTEMD_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.service")
     configure_file(
       "${PROJECT_SOURCE_DIR}/init/systemd.in"
       ${FLB_SYSTEMD_SCRIPT}
       )
-    install(FILES ${FLB_SYSTEMD_SCRIPT} COMPONENT binary DESTINATION /lib/systemd/system)
+    install(FILES ${FLB_SYSTEMD_SCRIPT} COMPONENT binary DESTINATION ${SYSTEMD_UNITDIR})
     install(DIRECTORY DESTINATION ${FLB_INSTALL_CONFDIR} COMPONENT binary)
   elseif(IS_DIRECTORY /usr/share/upstart)
     set(FLB_UPSTART_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.conf")

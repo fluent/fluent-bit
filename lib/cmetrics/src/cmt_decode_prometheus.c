@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -34,6 +34,7 @@
 #include <cmt_decode_prometheus_parser.h>
 #include <stdio.h>
 #include <string.h>
+#include <cmetrics/cmt_map.h>
 
 static void reset_context(struct cmt_decode_prometheus_context *context,
                           bool reset_summary)
@@ -591,7 +592,7 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
     }
 
     h = context->current.histogram;
-    if (!h) {
+    if (!h || label_i != h->map->label_count) {
         cmt_buckets = cmt_histogram_buckets_create_size(buckets, bucket_count);
         if (!cmt_buckets) {
             ret = report_error(context,
@@ -619,7 +620,7 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
         context->current.histogram = h;
     }
 
-    if (cmt_histogram_set_default(h, 0, bucket_defaults, sum, count,
+    if (cmt_histogram_set_default(h, timestamp, bucket_defaults, sum, count,
                 label_i,
                 label_i ? values_without_le : NULL)) {
         ret = report_error(context,
@@ -806,7 +807,7 @@ static int add_metric_summary(struct cmt_decode_prometheus_context *context)
     }
 
     s = context->current.summary;
-    if (!s) {
+    if (!s || label_i != s->map->label_count) {
         s = cmt_summary_create(context->cmt,
                                context->metric.ns,
                                context->metric.subsystem,
@@ -909,7 +910,7 @@ static int finish_duplicate_histogram_summary_sum_count(
         cfl_sds_set_len(metric_name, cfl_sds_len(metric_name) - 6);
     } else if (type == CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_SUM) {
         cfl_sds_set_len(metric_name, cfl_sds_len(metric_name) - 4);
-    } else {
+    } else if (type == CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_BUCKET) {
         cfl_sds_set_len(metric_name, cfl_sds_len(metric_name) - 7);
     }
     metric_name[cfl_sds_len(metric_name)] = 0;
@@ -936,6 +937,9 @@ static int parse_histogram_summary_name(
 {
     bool sum_found;
     bool count_found;
+    bool has_buckets;
+    bool is_previous_sum_or_count;
+    bool name_matched = false;
     struct cfl_list *head;
     struct cfl_list *tmp;
     size_t current_name_len;
@@ -955,13 +959,12 @@ static int parse_histogram_summary_name(
         return finish_metric(context, true, metric_name);
     }
     else if (parsed_name_len == current_name_len) {
-        /* parsing HELP after TYPE */
-        cfl_sds_destroy(metric_name);
-        return 0;
+        name_matched = true;
     }
 
     sum_found = false;
     count_found = false;
+    has_buckets = false;
 
     cfl_list_foreach_safe(head, tmp, &context->metric.samples) {
         sample = cfl_list_entry(head, struct cmt_decode_prometheus_context_sample, _head);
@@ -974,13 +977,31 @@ static int parse_histogram_summary_name(
                 count_found = true;
                 break;
             default:
+                has_buckets = true;
                 break;
+        }
+    }
+
+    sample = cfl_list_entry_last(&context->metric.samples,
+            struct cmt_decode_prometheus_context_sample, _head);
+    is_previous_sum_or_count = sample->type == CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_SUM ||
+        sample->type == CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_COUNT;
+
+    if (name_matched) {
+        if (sum_found && count_found) {
+            /* finish instance of the summary/histogram */
+            return finish_duplicate_histogram_summary_sum_count(context, metric_name, -1);
+        }
+        else {
+            /* parsing HELP after TYPE */
+            cfl_sds_destroy(metric_name);
+            return 0;
         }
     }
 
     /* invalid histogram/summary suffix, treat it as a different metric */
     if (!strcmp(metric_name + parsed_name_len, "_bucket")) {
-        if (sum_found && count_found) {
+        if (sum_found && count_found && has_buckets && is_previous_sum_or_count) {
             /* already found both sum and count, so this is a new metric */
             return finish_duplicate_histogram_summary_sum_count(
                     context,
@@ -999,6 +1020,7 @@ static int parse_histogram_summary_name(
                     CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_SUM);
         }
         context->metric.current_sample_type = CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_SUM;
+        sum_found = true;
     }
     else if (!strcmp(metric_name + parsed_name_len, "_count")) {
         if (count_found) {
@@ -1010,6 +1032,7 @@ static int parse_histogram_summary_name(
                     CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_COUNT);
         }
         context->metric.current_sample_type = CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_COUNT;
+        count_found = true;
     }
     else {
         /* invalid histogram/summary suffix, treat it as a different metric */
@@ -1028,18 +1051,16 @@ static int parse_metric_name(
     int ret = 0;
 
     if (context->metric.name_orig) {
-        if (strcmp(context->metric.name_orig, metric_name)) {
-            if (context->metric.type == HISTOGRAM || context->metric.type == SUMMARY) {
-                ret = parse_histogram_summary_name(context, metric_name);
-                if (!ret) {
-                    /* bucket/sum/count parsed */
-                    return ret;
-                }
+        if (context->metric.type == HISTOGRAM || context->metric.type == SUMMARY) {
+            ret = parse_histogram_summary_name(context, metric_name);
+            if (!ret) {
+                /* bucket/sum/count parsed */
+                return ret;
             }
-            else {
-                /* new metric name means the current metric is finished */
-                return finish_metric(context, true, metric_name);
-            }
+        }
+        else if (strcmp(context->metric.name_orig, metric_name)) {
+            /* new metric name means the current metric is finished */
+            return finish_metric(context, true, metric_name);
         }
         else {
             /* same metric with name already allocated, destroy and return */

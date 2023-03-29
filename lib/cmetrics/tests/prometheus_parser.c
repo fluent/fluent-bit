@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -1362,6 +1362,309 @@ void test_override_timestamp()
     cmt_decode_prometheus_destroy(cmt);
 }
 
+// testing bug uncovered by https://github.com/fluent/cmetrics/pull/168
+void test_pr_168()
+{
+    char errbuf[256];
+    int status;
+    struct cmt *cmt;
+    cfl_sds_t result = NULL;
+    struct cmt_decode_prometheus_parse_opts opts;
+    memset(&opts, 0, sizeof(opts));
+    opts.errbuf = errbuf;
+    opts.errbuf_size = sizeof(errbuf);
+    cfl_sds_t in_buf = read_file(CMT_TESTS_DATA_PATH "/pr_168.txt");
+    const char expected[] =
+        "# HELP prometheus_engine_query_duration_seconds Query timings\n"
+        "# TYPE prometheus_engine_query_duration_seconds summary\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.5\",slice=\"inner_eval\"} nan 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.9\",slice=\"inner_eval\"} nan 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.99\",slice=\"inner_eval\"} nan 0\n"
+        "prometheus_engine_query_duration_seconds_sum{slice=\"inner_eval\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds_count{slice=\"inner_eval\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.5\",slice=\"prepare_time\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.9\",slice=\"prepare_time\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.99\",slice=\"prepare_time\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds_sum{slice=\"prepare_time\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds_count{slice=\"prepare_time\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.5\",slice=\"queue_time\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.9\",slice=\"queue_time\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.99\",slice=\"queue_time\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds_sum{slice=\"queue_time\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds_count{slice=\"queue_time\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.5\",slice=\"result_sort\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.9\",slice=\"result_sort\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.99\",slice=\"result_sort\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds_sum{slice=\"result_sort\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds_count{slice=\"result_sort\"} 0 0\n";
+
+    cmt_initialize();
+    status = cmt_decode_prometheus_create(&cmt, in_buf, cfl_sds_len(in_buf), &opts);
+    TEST_CHECK(status == 0);
+    if (!status) {
+        result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
+        status = strcmp(result, expected);
+        TEST_CHECK(status == 0);
+        if (status) {
+            fprintf(stderr, "EXPECTED:\n======\n%s\n======\nRESULT:\n======\n%s\n======\n", expected, result);
+        }
+        cfl_sds_destroy(result);
+    }
+    cfl_sds_destroy(in_buf);
+    cmt_decode_prometheus_destroy(cmt);
+}
+
+void test_histogram_different_label_count()
+{
+    char errbuf[256];
+    int status;
+    struct cmt *cmt;
+    cfl_sds_t result = NULL;
+    struct cmt_decode_prometheus_parse_opts opts;
+    memset(&opts, 0, sizeof(opts));
+    opts.errbuf = errbuf;
+    opts.errbuf_size = sizeof(errbuf);
+    cfl_sds_t in_buf = read_file(CMT_TESTS_DATA_PATH "/histogram_different_label_count.txt");
+    const char expected[] =
+        "# HELP k8s_network_load Network load\n"
+        "# TYPE k8s_network_load histogram\n"
+        "k8s_network_load_bucket{le=\"0.05\"} 0 0\n"
+        "k8s_network_load_bucket{le=\"5.0\"} 1 0\n"
+        "k8s_network_load_bucket{le=\"10.0\"} 2 0\n"
+        "k8s_network_load_bucket{le=\"+Inf\"} 3 0\n"
+        "k8s_network_load_sum 1013 0\n"
+        "k8s_network_load_count 3 0\n"
+        "# HELP k8s_network_load Network load\n"
+        "# TYPE k8s_network_load histogram\n"
+        "k8s_network_load_bucket{le=\"0.05\",my_label=\"my_val\"} 0 0\n"
+        "k8s_network_load_bucket{le=\"5.0\",my_label=\"my_val\"} 1 0\n"
+        "k8s_network_load_bucket{le=\"10.0\",my_label=\"my_val\"} 2 0\n"
+        "k8s_network_load_bucket{le=\"+Inf\",my_label=\"my_val\"} 3 0\n"
+        "k8s_network_load_sum{my_label=\"my_val\"} 1013 0\n"
+        "k8s_network_load_count{my_label=\"my_val\"} 3 0\n"
+        ;
+
+    cmt_initialize();
+    status = cmt_decode_prometheus_create(&cmt, in_buf, cfl_sds_len(in_buf), &opts);
+    TEST_CHECK(status == 0);
+    if (!status) {
+        result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
+        status = strcmp(result, expected);
+        TEST_CHECK(status == 0);
+        if (status) {
+            fprintf(stderr, "EXPECTED:\n======\n%s\n======\nRESULT:\n======\n%s\n======\n", expected, result);
+        }
+        cfl_sds_destroy(result);
+    }
+    cfl_sds_destroy(in_buf);
+    cmt_decode_prometheus_destroy(cmt);
+}
+
+// reproduces https://github.com/fluent/fluent-bit/issues/6534
+void test_issue_fluent_bit_6534()
+{
+    char errbuf[256];
+    int status;
+    cfl_sds_t result = NULL;
+    struct cmt *cmt;
+    struct cmt_decode_prometheus_parse_opts opts;
+    memset(&opts, 0, sizeof(opts));
+    opts.errbuf = errbuf;
+    opts.errbuf_size = sizeof(errbuf);
+    cfl_sds_t in_buf = read_file(CMT_TESTS_DATA_PATH "/issue_6534.txt");
+    size_t in_size = cfl_sds_len(in_buf);
+
+    const char expected[] =
+        "# HELP dotnet_jit_method_total Total number of methods compiled by the JIT compiler\n"
+        "# TYPE dotnet_jit_method_total counter\n"
+        "dotnet_jit_method_total 6476 0\n"
+        "# HELP dotnet_gc_collection_count_total Counts the number of garbage collections that have occurred, broken down by generation number and the reason for the collection.\n"
+        "# TYPE dotnet_gc_collection_count_total counter\n"
+        "dotnet_gc_collection_count_total{gc_generation=\"1\",gc_reason=\"alloc_small\"} 133 0\n"
+        "dotnet_gc_collection_count_total{gc_generation=\"0\",gc_reason=\"alloc_small\"} 618 0\n"
+        "dotnet_gc_collection_count_total{gc_generation=\"2\",gc_reason=\"alloc_small\"} 8 0\n"
+        "# HELP dotnet_collection_count_total GC collection count\n"
+        "# TYPE dotnet_collection_count_total counter\n"
+        "dotnet_collection_count_total{generation=\"0\"} 759 0\n"
+        "dotnet_collection_count_total{generation=\"2\"} 8 0\n"
+        "dotnet_collection_count_total{generation=\"1\"} 141 0\n"
+        "# HELP dotnet_threadpool_adjustments_total The total number of changes made to the size of the thread pool, labeled by the reason for change\n"
+        "# TYPE dotnet_threadpool_adjustments_total counter\n"
+        "dotnet_threadpool_adjustments_total{adjustment_reason=\"starvation\"} 957 0\n"
+        "dotnet_threadpool_adjustments_total{adjustment_reason=\"warmup\"} 4 0\n"
+        "dotnet_threadpool_adjustments_total{adjustment_reason=\"thread_timed_out\"} 2409 0\n"
+        "dotnet_threadpool_adjustments_total{adjustment_reason=\"climbing_move\"} 93458 0\n"
+        "# HELP process_cpu_seconds_total Total user and system CPU time spent in seconds.\n"
+        "# TYPE process_cpu_seconds_total counter\n"
+        "process_cpu_seconds_total 1450.8499999999999 0\n"
+        "# HELP dotnet_contention_total The number of locks contended\n"
+        "# TYPE dotnet_contention_total counter\n"
+        "dotnet_contention_total 6758 0\n"
+        "# HELP dotnet_contention_seconds_total The total amount of time spent contending locks\n"
+        "# TYPE dotnet_contention_seconds_total counter\n"
+        "dotnet_contention_seconds_total 1.0246322000000074 0\n"
+        "# HELP dotnet_internal_recycle_count prometheus-net.DotNetRuntime internal metric. Counts the number of times the underlying event listeners have been recycled\n"
+        "# TYPE dotnet_internal_recycle_count counter\n"
+        "dotnet_internal_recycle_count 3 0\n"
+        "# HELP dotnet_gc_allocated_bytes_total The total number of bytes allocated on the managed heap\n"
+        "# TYPE dotnet_gc_allocated_bytes_total counter\n"
+        "dotnet_gc_allocated_bytes_total{gc_heap=\"soh\"} 19853322336 0\n"
+        "# HELP dotnet_threadpool_throughput_total The total number of work items that have finished execution in the thread pool\n"
+        "# TYPE dotnet_threadpool_throughput_total counter\n"
+        "dotnet_threadpool_throughput_total 3381388 0\n"
+        "# HELP dotnet_exceptions_total Count of exceptions thrown, broken down by type\n"
+        "# TYPE dotnet_exceptions_total counter\n"
+        "dotnet_exceptions_total{type=\"System.Net.Http.HttpRequestException\"} 792 0\n"
+        "dotnet_exceptions_total{type=\"System.ObjectDisposedException\"} 11977 0\n"
+        "dotnet_exceptions_total{type=\"System.IO.DirectoryNotFoundException\"} 14 0\n"
+        "dotnet_exceptions_total{type=\"System.Net.Sockets.SocketException\"} 258287 0\n"
+        "dotnet_exceptions_total{type=\"Grpc.Core.RpcException\"} 72 0\n"
+        "# HELP dotnet_threadpool_num_threads The number of active threads in the thread pool\n"
+        "# TYPE dotnet_threadpool_num_threads gauge\n"
+        "dotnet_threadpool_num_threads 6 0\n"
+        "# HELP dotnet_gc_heap_size_bytes The current size of all heaps (only updated after a garbage collection)\n"
+        "# TYPE dotnet_gc_heap_size_bytes gauge\n"
+        "dotnet_gc_heap_size_bytes{gc_generation=\"0\"} 24 0\n"
+        "dotnet_gc_heap_size_bytes{gc_generation=\"loh\"} 550280 0\n"
+        "dotnet_gc_heap_size_bytes{gc_generation=\"2\"} 2625704 0\n"
+        "dotnet_gc_heap_size_bytes{gc_generation=\"1\"} 226944 0\n"
+        "# HELP dotnet_threadpool_timer_count The number of timers active\n"
+        "# TYPE dotnet_threadpool_timer_count gauge\n"
+        "dotnet_threadpool_timer_count 5 0\n"
+        "# HELP dotnet_gc_cpu_ratio The percentage of process CPU time spent running garbage collections\n"
+        "# TYPE dotnet_gc_cpu_ratio gauge\n"
+        "dotnet_gc_cpu_ratio 0 0\n"
+        "# HELP process_open_handles Number of open handles\n"
+        "# TYPE process_open_handles gauge\n"
+        "process_open_handles 264 0\n"
+        "# HELP dotnet_gc_pause_ratio The percentage of time the process spent paused for garbage collection\n"
+        "# TYPE dotnet_gc_pause_ratio gauge\n"
+        "dotnet_gc_pause_ratio 0 0\n"
+        "# HELP dotnet_jit_il_bytes Total bytes of IL compiled by the JIT compiler\n"
+        "# TYPE dotnet_jit_il_bytes gauge\n"
+        "dotnet_jit_il_bytes 487850 0\n"
+        "# HELP dotnet_gc_memory_total_available_bytes The upper limit on the amount of physical memory .NET can allocate to\n"
+        "# TYPE dotnet_gc_memory_total_available_bytes gauge\n"
+        "dotnet_gc_memory_total_available_bytes 805306368 0\n"
+        "# HELP dotnet_build_info Build information about prometheus-net.DotNetRuntime and the environment\n"
+        "# TYPE dotnet_build_info gauge\n"
+        "dotnet_build_info{version=\"4.2.4.0\",target_framework=\".NETCoreApp,Version=v6.0\",runtime_version=\".NET 6.0.11\",os_version=\"Linux 5.4.0-1094-azure #100~18.04.1-Ubuntu SMP Mon Oct 17 11:44:30 UTC 2022\",process_architecture=\"X64\",gc_mode=\"Workstation\"} 1 0\n"
+        "# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.\n"
+        "# TYPE process_start_time_seconds gauge\n"
+        "process_start_time_seconds 1670526623.05 0\n"
+        "# HELP process_cpu_count The number of processor cores available to this process.\n"
+        "# TYPE process_cpu_count gauge\n"
+        "process_cpu_count 1 0\n"
+        "# HELP dotnet_gc_pinned_objects The number of pinned objects\n"
+        "# TYPE dotnet_gc_pinned_objects gauge\n"
+        "dotnet_gc_pinned_objects 0 0\n"
+        "# HELP dotnet_total_memory_bytes Total known allocated memory\n"
+        "# TYPE dotnet_total_memory_bytes gauge\n"
+        "dotnet_total_memory_bytes 20979896 0\n"
+        "# HELP process_virtual_memory_bytes Virtual memory size in bytes.\n"
+        "# TYPE process_virtual_memory_bytes gauge\n"
+        "process_virtual_memory_bytes 8562679808 0\n"
+        "# HELP process_working_set_bytes Process working set\n"
+        "# TYPE process_working_set_bytes gauge\n"
+        "process_working_set_bytes 135118848 0\n"
+        "# HELP process_num_threads Total number of threads\n"
+        "# TYPE process_num_threads gauge\n"
+        "process_num_threads 21 0\n"
+        "# HELP dotnet_gc_finalization_queue_length The number of objects waiting to be finalized\n"
+        "# TYPE dotnet_gc_finalization_queue_length gauge\n"
+        "dotnet_gc_finalization_queue_length 15 0\n"
+        "# HELP process_private_memory_bytes Process private memory size\n"
+        "# TYPE process_private_memory_bytes gauge\n"
+        "process_private_memory_bytes 247390208 0\n"
+        "# HELP dotnet_threadpool_queue_length Measures the queue length of the thread pool. Values greater than 0 indicate a backlog of work for the threadpool to process.\n"
+        "# TYPE dotnet_threadpool_queue_length histogram\n"
+        "dotnet_threadpool_queue_length_bucket{le=\"0.0\"} 321728 0\n"
+        "dotnet_threadpool_queue_length_bucket{le=\"1.0\"} 321733 0\n"
+        "dotnet_threadpool_queue_length_bucket{le=\"10.0\"} 321733 0\n"
+        "dotnet_threadpool_queue_length_bucket{le=\"100.0\"} 321733 0\n"
+        "dotnet_threadpool_queue_length_bucket{le=\"1000.0\"} 321733 0\n"
+        "dotnet_threadpool_queue_length_bucket{le=\"+Inf\"} 0 0\n"
+        "dotnet_threadpool_queue_length_sum 5 0\n"
+        "dotnet_threadpool_queue_length_count 321733 0\n"
+        "# HELP dotnet_gc_pause_seconds The amount of time execution was paused for garbage collection\n"
+        "# TYPE dotnet_gc_pause_seconds histogram\n"
+        "dotnet_gc_pause_seconds_bucket{le=\"0.001\"} 7 0\n"
+        "dotnet_gc_pause_seconds_bucket{le=\"0.01\"} 747 0\n"
+        "dotnet_gc_pause_seconds_bucket{le=\"0.05\"} 759 0\n"
+        "dotnet_gc_pause_seconds_bucket{le=\"0.1\"} 759 0\n"
+        "dotnet_gc_pause_seconds_bucket{le=\"0.5\"} 759 0\n"
+        "dotnet_gc_pause_seconds_bucket{le=\"1.0\"} 759 0\n"
+        "dotnet_gc_pause_seconds_bucket{le=\"10.0\"} 759 0\n"
+        "dotnet_gc_pause_seconds_bucket{le=\"+Inf\"} 0 0\n"
+        "dotnet_gc_pause_seconds_sum 1.3192573999999997 0\n"
+        "dotnet_gc_pause_seconds_count 759 0\n"
+        "# HELP dotnet_gc_collection_seconds The amount of time spent running garbage collections\n"
+        "# TYPE dotnet_gc_collection_seconds histogram\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"0.001\",gc_generation=\"1\",gc_type=\"non_concurrent_gc\"} 3 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"0.01\",gc_generation=\"1\",gc_type=\"non_concurrent_gc\"} 133 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"0.05\",gc_generation=\"1\",gc_type=\"non_concurrent_gc\"} 133 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"0.1\",gc_generation=\"1\",gc_type=\"non_concurrent_gc\"} 133 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"0.5\",gc_generation=\"1\",gc_type=\"non_concurrent_gc\"} 133 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"1.0\",gc_generation=\"1\",gc_type=\"non_concurrent_gc\"} 133 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"10.0\",gc_generation=\"1\",gc_type=\"non_concurrent_gc\"} 133 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"+Inf\",gc_generation=\"1\",gc_type=\"non_concurrent_gc\"} 0 0\n"
+        "dotnet_gc_collection_seconds_sum{gc_generation=\"1\",gc_type=\"non_concurrent_gc\"} 0.20421500000000006 0\n"
+        "dotnet_gc_collection_seconds_count{gc_generation=\"1\",gc_type=\"non_concurrent_gc\"} 133 0\n"
+        "# HELP dotnet_gc_collection_seconds The amount of time spent running garbage collections\n"
+        "# TYPE dotnet_gc_collection_seconds histogram\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"0.001\"} 0 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"0.01\"} 0 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"0.05\"} 0 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"0.1\"} 0 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"0.5\"} 0 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"1.0\"} 0 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"10.0\"} 0 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"+Inf\"} 0 0\n"
+        "dotnet_gc_collection_seconds_sum 0 0\n"
+        "dotnet_gc_collection_seconds_count 0 0\n"
+        "# HELP dotnet_gc_collection_seconds The amount of time spent running garbage collections\n"
+        "# TYPE dotnet_gc_collection_seconds histogram\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"0.001\",gc_generation=\"2\",gc_type=\"non_concurrent_gc\"} 0 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"0.01\",gc_generation=\"2\",gc_type=\"non_concurrent_gc\"} 0 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"0.05\",gc_generation=\"2\",gc_type=\"non_concurrent_gc\"} 8 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"0.1\",gc_generation=\"2\",gc_type=\"non_concurrent_gc\"} 8 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"0.5\",gc_generation=\"2\",gc_type=\"non_concurrent_gc\"} 8 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"1.0\",gc_generation=\"2\",gc_type=\"non_concurrent_gc\"} 8 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"10.0\",gc_generation=\"2\",gc_type=\"non_concurrent_gc\"} 8 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"+Inf\",gc_generation=\"2\",gc_type=\"non_concurrent_gc\"} 0 0\n"
+        "dotnet_gc_collection_seconds_sum{gc_generation=\"2\",gc_type=\"non_concurrent_gc\"} 0.093447800000000011 0\n"
+        "dotnet_gc_collection_seconds_count{gc_generation=\"2\",gc_type=\"non_concurrent_gc\"} 8 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"0.001\",gc_generation=\"0\",gc_type=\"non_concurrent_gc\"} 127 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"0.01\",gc_generation=\"0\",gc_type=\"non_concurrent_gc\"} 617 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"0.05\",gc_generation=\"0\",gc_type=\"non_concurrent_gc\"} 618 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"0.1\",gc_generation=\"0\",gc_type=\"non_concurrent_gc\"} 618 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"0.5\",gc_generation=\"0\",gc_type=\"non_concurrent_gc\"} 618 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"1.0\",gc_generation=\"0\",gc_type=\"non_concurrent_gc\"} 618 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"10.0\",gc_generation=\"0\",gc_type=\"non_concurrent_gc\"} 618 0\n"
+        "dotnet_gc_collection_seconds_bucket{le=\"+Inf\",gc_generation=\"0\",gc_type=\"non_concurrent_gc\"} 0 0\n"
+        "dotnet_gc_collection_seconds_sum{gc_generation=\"0\",gc_type=\"non_concurrent_gc\"} 0.85545190000000104 0\n"
+        "dotnet_gc_collection_seconds_count{gc_generation=\"0\",gc_type=\"non_concurrent_gc\"} 618 0\n"
+        ;
+
+    status = cmt_decode_prometheus_create(&cmt, in_buf, in_size, &opts);
+    TEST_CHECK(status == 0);
+    if (status) {
+        fprintf(stderr, "PARSE ERROR:\n======\n%s\n======\n", errbuf);
+    }
+    else {
+        result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
+        status = strcmp(result, expected);
+        TEST_CHECK(status == 0);
+        if (status) {
+            fprintf(stderr, "EXPECTED:\n======\n%s\n======\nRESULT:\n======\n%s\n======\n", expected, result);
+        }
+    }
+
+    cfl_sds_destroy(in_buf);
+    cfl_sds_destroy(result);
+    cmt_decode_prometheus_destroy(cmt);
+}
+
 TEST_LIST = {
     {"header_help", test_header_help},
     {"header_type", test_header_type},
@@ -1391,5 +1694,8 @@ TEST_LIST = {
     {"empty_metrics", test_empty_metrics},
     {"issue_fluent_bit_6021", test_issue_fluent_bit_6021},
     {"override_timestamp", test_override_timestamp},
+    {"pr_168", test_pr_168},
+    {"histogram_different_label_count", test_histogram_different_label_count},
+    {"issue_fluent_bit_6534", test_issue_fluent_bit_6534},
     { 0 }
 };

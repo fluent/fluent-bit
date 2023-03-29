@@ -41,6 +41,7 @@
 
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_langinfo.h>
+#include <fluent-bit/flb_time.h>
 
 #define	_ctloc(x)		(nl_langinfo(x))
 
@@ -112,7 +113,7 @@ static nl_item abmon[] = {
 static	int _conv_num64(const unsigned char **, int64_t *, int64_t, int64_t);
 static	int _conv_num(const unsigned char **, int *, int, int);
 static	int leaps_thru_end_of(const int y);
-static	char *_flb_strptime(const char *, const char *, struct tm *, int);
+static	char *_flb_strptime(const char *, const char *, struct flb_tm *, int);
 static	const u_char *_find_string(const u_char *, int *, const char * const *,
 	    const char * const *, int);
 
@@ -133,13 +134,13 @@ int flb_timezone(void)
 #endif
 
 char *
-flb_strptime(const char *buf, const char *fmt, struct tm *tm)
+flb_strptime(const char *buf, const char *fmt, struct flb_tm *tm)
 {
 	return(_flb_strptime(buf, fmt, tm, 1));
 }
 
 static char *
-_flb_strptime(const char *buf, const char *fmt, struct tm *tm, int initialize)
+_flb_strptime(const char *buf, const char *fmt, struct flb_tm *tm, int initialize)
 {
 	unsigned char c;
 	const unsigned char *bp, *ep;
@@ -274,7 +275,7 @@ literal:
 			if (i == 7)
 				return (NULL);
 
-			tm->tm_wday = i;
+			tm->tm.tm_wday = i;
 			bp += len;
 			fields |= FIELD_TM_WDAY;
 			break;
@@ -299,7 +300,7 @@ literal:
 			if (i == 12)
 				return (NULL);
 
-			tm->tm_mon = i;
+			tm->tm.tm_mon = i;
 			bp += len;
 			fields |= FIELD_TM_MON;
 			break;
@@ -318,7 +319,7 @@ literal:
 			/* FALLTHROUGH */
 		case 'd':
 			_LEGAL_ALT(_ALT_O);
-			if (!(_conv_num(&bp, &tm->tm_mday, 1, 31)))
+			if (!(_conv_num(&bp, &tm->tm.tm_mday, 1, 31)))
 				return (NULL);
 			fields |= FIELD_TM_MDAY;
 			break;
@@ -328,7 +329,7 @@ literal:
 			/* FALLTHROUGH */
 		case 'H':
 			_LEGAL_ALT(_ALT_O);
-			if (!(_conv_num(&bp, &tm->tm_hour, 0, 23)))
+			if (!(_conv_num(&bp, &tm->tm.tm_hour, 0, 23)))
 				return (NULL);
 			break;
 
@@ -337,29 +338,29 @@ literal:
 			/* FALLTHROUGH */
 		case 'I':
 			_LEGAL_ALT(_ALT_O);
-			if (!(_conv_num(&bp, &tm->tm_hour, 1, 12)))
+			if (!(_conv_num(&bp, &tm->tm.tm_hour, 1, 12)))
 				return (NULL);
 			break;
 
 		case 'j':	/* The day of year. */
 			_LEGAL_ALT(0);
-			if (!(_conv_num(&bp, &tm->tm_yday, 1, 366)))
+			if (!(_conv_num(&bp, &tm->tm.tm_yday, 1, 366)))
 				return (NULL);
-			tm->tm_yday--;
+			tm->tm.tm_yday--;
 			fields |= FIELD_TM_YDAY;
 			break;
 
 		case 'M':	/* The minute. */
 			_LEGAL_ALT(_ALT_O);
-			if (!(_conv_num(&bp, &tm->tm_min, 0, 59)))
+			if (!(_conv_num(&bp, &tm->tm.tm_min, 0, 59)))
 				return (NULL);
 			break;
 
 		case 'm':	/* The month. */
 			_LEGAL_ALT(_ALT_O);
-			if (!(_conv_num(&bp, &tm->tm_mon, 1, 12)))
+			if (!(_conv_num(&bp, &tm->tm.tm_mon, 1, 12)))
 				return (NULL);
-			tm->tm_mon--;
+			tm->tm.tm_mon--;
 			fields |= FIELD_TM_MON;
 			break;
 
@@ -368,10 +369,10 @@ literal:
 			/* AM? */
 			len = strlen(_ctloc(AM_STR));
 			if (strncasecmp(_ctloc(AM_STR), (const char *)bp, len) == 0) {
-				if (tm->tm_hour > 12)	/* i.e., 13:00 AM ?! */
+				if (tm->tm.tm_hour > 12)	/* i.e., 13:00 AM ?! */
 					return (NULL);
-				else if (tm->tm_hour == 12)
-					tm->tm_hour = 0;
+				else if (tm->tm.tm_hour == 12)
+					tm->tm.tm_hour = 0;
 
 				bp += len;
 				break;
@@ -379,10 +380,10 @@ literal:
 			/* PM? */
 			len = strlen(_ctloc(PM_STR));
 			if (strncasecmp(_ctloc(PM_STR), (const char *)bp, len) == 0) {
-				if (tm->tm_hour > 12)	/* i.e., 13:00 PM ?! */
+				if (tm->tm.tm_hour > 12)	/* i.e., 13:00 PM ?! */
 					return (NULL);
-				else if (tm->tm_hour < 12)
-					tm->tm_hour += 12;
+				else if (tm->tm.tm_hour < 12)
+					tm->tm.tm_hour += 12;
 
 				bp += len;
 				break;
@@ -393,7 +394,7 @@ literal:
 
 		case 'S':	/* The seconds. */
 			_LEGAL_ALT(_ALT_O);
-			if (!(_conv_num(&bp, &tm->tm_sec, 0, 60)))
+			if (!(_conv_num(&bp, &tm->tm.tm_sec, 0, 60)))
 				return (NULL);
 			break;
 		case 's':	/* Seconds since epoch */
@@ -401,7 +402,7 @@ literal:
 				int64_t i64;
 				if (!(_conv_num64(&bp, &i64, 0, INT64_MAX)))
 					return (NULL);
-				if (!gmtime_r(&i64, tm))
+				if (!gmtime_r(&i64, &tm->tm))
 					return (NULL);
 				fields = 0xffff;	 /* everything */
 			}
@@ -421,7 +422,7 @@ literal:
 
 		case 'w':	/* The day of week, beginning on sunday. */
 			_LEGAL_ALT(_ALT_O);
-			if (!(_conv_num(&bp, &tm->tm_wday, 0, 6)))
+			if (!(_conv_num(&bp, &tm->tm.tm_wday, 0, 6)))
 				return (NULL);
 			fields |= FIELD_TM_WDAY;
 			break;
@@ -430,7 +431,7 @@ literal:
 			_LEGAL_ALT(_ALT_O);
 			if (!(_conv_num(&bp, &i, 1, 7)))
 				return (NULL);
-			tm->tm_wday = i % 7;
+			tm->tm.tm_wday = i % 7;
 			fields |= FIELD_TM_WDAY;
 			continue;
 
@@ -460,7 +461,7 @@ literal:
 				return (NULL);
 
 			relyear = -1;
-			tm->tm_year = i - TM_YEAR_BASE;
+			tm->tm.tm_year = i - TM_YEAR_BASE;
 			fields |= FIELD_TM_YEAR;
 			break;
 
@@ -473,21 +474,17 @@ literal:
 		case 'Z':
 			tzset();
 			if (strncmp((const char *)bp, gmt, 3) == 0) {
-				tm->tm_isdst = 0;
-#ifdef FLB_HAVE_GMTOFF
-				tm->tm_gmtoff = 0;
-#endif
+				tm->tm.tm_isdst = 0;
+				flb_tm_gmtoff(tm) = 0;
 #ifdef FLB_HAVE_ZONE
-				tm->tm_zone = gmt;
+				tm->tm.tm_zone = gmt;
 #endif
 				bp += 3;
 			} else if (strncmp((const char *)bp, utc, 3) == 0) {
-				tm->tm_isdst = 0;
-#ifdef FLB_HAVE_GMTOFF
-				tm->tm_gmtoff = 0;
-#endif
+				tm->tm.tm_isdst = 0;
+				flb_tm_gmtoff(tm) = 0;
 #ifdef FLB_HAVE_ZONE
-				tm->tm_zone = utc;
+				tm->tm.tm_zone = utc;
 #endif
 				bp += 3;
 			} else {
@@ -497,12 +494,10 @@ literal:
 				if (ep == NULL)
 					return (NULL);
 
-				tm->tm_isdst = i;
-#ifdef FLB_HAVE_GMTOFF
-				tm->tm_gmtoff = -(timezone);
-#endif
+				tm->tm.tm_isdst = i;
+				flb_tm_gmtoff(tm) = -(timezone);
 #ifdef FLB_HAVE_ZONE
-				tm->tm_zone = tzname[i];
+				tm->tm.tm_zone = tzname[i];
 #endif
 				bp = ep;
 			}
@@ -536,12 +531,10 @@ literal:
 					return NULL;
 				/*FALLTHROUGH*/
 			case 'Z':
-				tm->tm_isdst = 0;
-#ifdef FLB_HAVE_GMTOFF
-				tm->tm_gmtoff = 0;
-#endif
+				tm->tm.tm_isdst = 0;
+				flb_tm_gmtoff(tm) = 0;
 #ifdef FLB_HAVE_ZONE
-				tm->tm_zone = utc;
+				tm->tm.tm_zone = utc;
 #endif
 				continue;
 			case '+':
@@ -554,23 +547,19 @@ literal:
 				--bp;
 				ep = _find_string(bp, &i, nast, NULL, 4);
 				if (ep != NULL) {
-#ifdef FLB_HAVE_GMTOFF
-					tm->tm_gmtoff = (-5 - i) * SECSPERHOUR;
-#endif
+				flb_tm_gmtoff(tm) = (-5 - i) * SECSPERHOUR;
 #ifdef FLB_HAVE_ZONE
-					tm->tm_zone = (char *)nast[i];
+					tm->tm.tm_zone = (char *)nast[i];
 #endif
 					bp = ep;
 					continue;
 				}
 				ep = _find_string(bp, &i, nadt, NULL, 4);
 				if (ep != NULL) {
-					tm->tm_isdst = 1;
-#ifdef FLB_HAVE_GMTOFF
-					tm->tm_gmtoff = (-4 - i) * SECSPERHOUR;
-#endif
+					tm->tm.tm_isdst = 1;
+					flb_tm_gmtoff(tm) = (-4 - i) * SECSPERHOUR;
 #ifdef FLB_HAVE_ZONE
-					tm->tm_zone = (char *)nadt[i];
+					tm->tm.tm_zone = (char *)nadt[i];
 #endif
 					bp = ep;
 					continue;
@@ -591,12 +580,10 @@ literal:
 			}
 			if (neg)
 				offs = -offs;
-			tm->tm_isdst = 0;	/* XXX */
-#ifdef FLB_HAVE_GMTOFF
-			tm->tm_gmtoff = offs;
-#endif
+			tm->tm.tm_isdst = 0;	/* XXX */
+			flb_tm_gmtoff(tm) = offs;
 #ifdef FLB_HAVE_ZONE
-			tm->tm_zone = NULL;	/* XXX */
+			tm->tm.tm_zone = NULL;	/* XXX */
 #endif
 			continue;
 
@@ -625,46 +612,46 @@ literal:
 	if (relyear != -1) {
 		if (century == TM_YEAR_BASE) {
 			if (relyear <= 68)
-				tm->tm_year = relyear + 2000 - TM_YEAR_BASE;
+				tm->tm.tm_year = relyear + 2000 - TM_YEAR_BASE;
 			else
-				tm->tm_year = relyear + 1900 - TM_YEAR_BASE;
+				tm->tm.tm_year = relyear + 1900 - TM_YEAR_BASE;
 		} else {
-			tm->tm_year = relyear + century - TM_YEAR_BASE;
+			tm->tm.tm_year = relyear + century - TM_YEAR_BASE;
 		}
 		fields |= FIELD_TM_YEAR;
 	}
 
 	/* Compute some missing values when possible. */
 	if (fields & FIELD_TM_YEAR) {
-		const int year = (unsigned int)tm->tm_year + (unsigned int)TM_YEAR_BASE;
+		const int year = (unsigned int)tm->tm.tm_year + (unsigned int)TM_YEAR_BASE;
 		const int *mon_lens = mon_lengths[isleap(year)];
 		if (!(fields & FIELD_TM_YDAY) &&
 		    (fields & FIELD_TM_MON) && (fields & FIELD_TM_MDAY)) {
-			tm->tm_yday = tm->tm_mday - 1;
-			for (i = 0; i < tm->tm_mon; i++)
-				tm->tm_yday += mon_lens[i];
+			tm->tm.tm_yday = tm->tm.tm_mday - 1;
+			for (i = 0; i < tm->tm.tm_mon; i++)
+				tm->tm.tm_yday += mon_lens[i];
 			fields |= FIELD_TM_YDAY;
 		}
 		if (fields & FIELD_TM_YDAY) {
-			int days = tm->tm_yday;
+			int days = tm->tm.tm_yday;
 			if (!(fields & FIELD_TM_WDAY)) {
-				tm->tm_wday = EPOCH_WDAY +
+				tm->tm.tm_wday = EPOCH_WDAY +
 				    ((year - EPOCH_YEAR) % DAYSPERWEEK) *
 				    (DAYSPERNYEAR % DAYSPERWEEK) +
 				    leaps_thru_end_of(year - 1) -
 				    leaps_thru_end_of(EPOCH_YEAR - 1) +
-				    tm->tm_yday;
-				tm->tm_wday %= DAYSPERWEEK;
-				if (tm->tm_wday < 0)
-					tm->tm_wday += DAYSPERWEEK;
+				    tm->tm.tm_yday;
+				tm->tm.tm_wday %= DAYSPERWEEK;
+				if (tm->tm.tm_wday < 0)
+					tm->tm.tm_wday += DAYSPERWEEK;
 			}
 			if (!(fields & FIELD_TM_MON)) {
-				tm->tm_mon = 0;
-				while (tm->tm_mon < MONSPERYEAR && days >= mon_lens[tm->tm_mon])
-					days -= mon_lens[tm->tm_mon++];
+				tm->tm.tm_mon = 0;
+				while (tm->tm.tm_mon < MONSPERYEAR && days >= mon_lens[tm->tm.tm_mon])
+					days -= mon_lens[tm->tm.tm_mon++];
 			}
 			if (!(fields & FIELD_TM_MDAY))
-				tm->tm_mday = days + 1;
+				tm->tm.tm_mday = days + 1;
 		}
 	}
 
@@ -721,7 +708,7 @@ _conv_num64(const unsigned char **buf, int64_t *dest, int64_t llim, int64_t ulim
         /* watch out for overflows. If value gets above
          * ((2**64)/2.0)/10.0 then we will overflow. So instead
          * we return 0 */
-        if (result >= 922337203685477632) {
+        if (result >= 922337203685477580) {
             return (0);
         }
 	} while ((result * 10 <= ulim) && rulim && **buf >= '0' && **buf <= '9');

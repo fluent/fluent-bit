@@ -28,6 +28,10 @@
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_plugin_proxy.h>
 
+#include <cfl/cfl_sds.h>
+#include <cfl/cfl_variant.h>
+#include <cfl/cfl_kvlist.h>
+
 #include <sys/types.h>
 #include <sys/stat.h>
 
@@ -329,11 +333,11 @@ int flb_plugin_load_config_file(const char *file, struct flb_config *config)
     char tmp[PATH_MAX + 1];
     char *cfg = NULL;
     struct mk_list *head;
-    struct mk_list *head_e;
+    struct cfl_list *head_e;
     struct stat st;
     struct flb_cf *cf;
     struct flb_cf_section *section;
-    struct flb_kv *entry;
+    struct cfl_kvpair *entry;
 
 #ifndef FLB_HAVE_STATIC_CONF
     ret = stat(file, &st);
@@ -371,14 +375,14 @@ int flb_plugin_load_config_file(const char *file, struct flb_config *config)
             continue;
         }
 
-        mk_list_foreach(head_e, &section->properties) {
-            entry = mk_list_entry(head_e, struct flb_kv, _head);
+        cfl_list_foreach(head_e, &section->properties->list) {
+            entry = cfl_list_entry(head_e, struct cfl_kvpair, _head);
             if (strcasecmp(entry->key, "path") != 0) {
                 continue;
             }
 
             /* Load plugin with router function */
-            ret = flb_plugin_load_router(entry->val, config);
+            ret = flb_plugin_load_router(entry->val->data.as_string, config);
             if (ret == -1) {
                 flb_cf_destroy(cf);
                 return -1;

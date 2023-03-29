@@ -25,7 +25,7 @@ jobs:
       - id: set-matrix
         run: |
           matrix=$((
-            echo '{ "distro" : [ "debian/bullseye", "ubuntu/16.04", "ubuntu/18.04", "ubuntu/20.04" ]}'
+            echo '{ "distro" : [ "debian/bullseye", "ubuntu/20.04", "ubuntu/22.04", "centos/7" ]}'
           ) | jq -c .)
           if [ -n "${{ github.event.inputs.target || '' }}" ]; then
             echo "Overriding matrix to build: ${{ github.event.inputs.target }}"
@@ -37,12 +37,12 @@ jobs:
           fi
           echo $matrix
           echo $matrix| jq .
-          echo "::set-output name=matrix::$matrix"
+          echo "matrix=$matrix" >> $GITHUB_OUTPUT
         shell: bash
 
   master-build-packages:
     needs: master-build-generate-matrix
-    uses: fluent/fluent-bit/.github/workflows/call-build-linux-packages.yaml@master
+    uses: ./.github/workflows/call-build-linux-packages.yaml
     with:
       version: master
       ref: master

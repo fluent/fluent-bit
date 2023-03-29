@@ -209,7 +209,7 @@ static int cio_file_format_check(struct cio_chunk *ch,
         if (p[0] != CIO_FILE_ID_00 || p[1] != CIO_FILE_ID_01) {
             cio_log_debug(ch->ctx, "[cio file] invalid header at %s",
                           ch->name);
-            cio_error_set(ch, CIO_ERR_PERMISSION);
+            cio_error_set(ch, CIO_ERR_BAD_LAYOUT);
             return -1;
         }
 
@@ -330,6 +330,7 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
         /* We can only prepare a file if it has been opened in RW mode */
         if ((cf->flags & CIO_OPEN_RW) == 0) {
             cio_error_set(ch, CIO_ERR_PERMISSION);
+
             return CIO_CORRUPTED;
         }
 
@@ -351,7 +352,6 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
             return CIO_ERROR;
         }
 
-
         cio_log_debug(ctx, "%s:%s adjusting size OK", ch->st->name, ch->name);
     }
 
@@ -371,6 +371,8 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
         content_size = cio_file_st_get_content_size(cf->map, fs_size);
 
         if (content_size == -1) {
+            cio_error_set(ch, CIO_ERR_BAD_FILE_SIZE);
+
             cio_log_error(ctx, "invalid content size %s", cf->path);
 
             cio_file_native_unmap(cf);
@@ -686,6 +688,34 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     *err = CIO_OK;
 
     return cf;
+}
+
+/* This function is used to delete a chunk by name, its only purpose is to delete
+ * chunks that cannnot be loaded (otherwise we would set them down with the delete
+ * flag set to TRUE).
+ */
+int cio_file_delete(struct cio_ctx *ctx, struct cio_stream *st, const char *name)
+{
+    char *path;
+    int   ret;
+
+    ret = cio_file_native_filename_check(name);
+    if (ret != CIO_OK) {
+        cio_log_error(ctx, "[cio file] invalid file name");
+
+        return CIO_ERROR;
+    }
+
+    path = cio_file_native_compose_path(ctx->options.root_path, st->name, name);
+    if (path == NULL) {
+        return CIO_ERROR;
+    }
+
+    ret = cio_file_native_delete_by_path(path);
+
+    free(path);
+
+    return ret;
 }
 
 /*

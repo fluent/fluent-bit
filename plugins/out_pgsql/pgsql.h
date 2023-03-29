@@ -67,6 +67,9 @@ struct flb_pgsql_config {
     /* instance reference */
     struct flb_output_instance *ins;
 
+    /* connections options */
+    const char *conn_options;
+
     /* connections pool */
     struct mk_list conn_queue;
     struct mk_list _head;

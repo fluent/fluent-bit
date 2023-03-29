@@ -40,6 +40,7 @@
 #define FLB_PACK_JSON_DATE_ISO8601               1
 #define FLB_PACK_JSON_DATE_EPOCH                 2
 #define FLB_PACK_JSON_DATE_JAVA_SQL_TIMESTAMP    3
+#define FLB_PACK_JSON_DATE_EPOCH_MS              4
 
 /* Specific ISO8601 format */
 #define FLB_PACK_JSON_DATE_ISO8601_FMT "%Y-%m-%dT%H:%M:%S"

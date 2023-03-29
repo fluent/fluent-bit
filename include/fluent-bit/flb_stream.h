@@ -168,10 +168,10 @@ static inline int flb_stream_acquire_lock(struct flb_stream *stream,
 
     if (stream->thread_safety_flag) {
         if (wait_flag) {
-            result = pthread_mutex_trylock(&stream->list_mutex);
+            result = pthread_mutex_lock(&stream->list_mutex);
         }
         else {
-            result = pthread_mutex_lock(&stream->list_mutex);
+            result = pthread_mutex_trylock(&stream->list_mutex);
         }
     }
 

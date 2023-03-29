@@ -350,6 +350,37 @@ void flb_mp_array_header_end(struct flb_mp_map_header *mh)
     flb_mp_set_array_header_size(ptr, mh->entries);
 }
 
+static int insert_by_subkey_count(struct flb_record_accessor *ra, struct flb_mp_accessor *mpa)
+{
+    int subkey_count;
+    int count;
+    struct mk_list *h;
+    struct flb_record_accessor *val_ra;
+
+    /*
+     * sort flb_record_accessor by number of subkey
+     *
+     *  e.g.
+     *    $kubernetes
+     *    $kubernetes[2]['a']
+     *    $kubernetes[2]['annotations']['fluentbit.io/tag']
+     */
+    subkey_count = flb_ra_subkey_count(ra);
+    mk_list_foreach(h, &mpa->ra_list) {
+        val_ra = mk_list_entry(h, struct flb_record_accessor, _head);
+        count = flb_ra_subkey_count(val_ra);
+        if (count >=  subkey_count) {
+            mk_list_add_before(&ra->_head, &val_ra->_head, &mpa->ra_list);
+            return 0;
+        }
+    }
+
+    /* add to tail of list */
+    mk_list_add(&ra->_head, &mpa->ra_list);
+    return 0;
+}
+
+
 /*
  * Create an 'mp accessor' context: this context allows to create a list of
  * record accessor patterns based on a 'slist' context, where every slist string
@@ -382,7 +413,7 @@ struct flb_mp_accessor *flb_mp_accessor_create(struct mk_list *slist_patterns)
             flb_mp_accessor_destroy(mpa);
             return NULL;
         }
-        mk_list_add(&ra->_head, &mpa->ra_list);
+        insert_by_subkey_count(ra, mpa);
     }
 
     if (mk_list_size(&mpa->ra_list) == 0) {

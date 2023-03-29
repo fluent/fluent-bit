@@ -27,6 +27,21 @@
 #include "ra_parser.h"
 #include "ra_lex.h"
 
+int flb_ra_parser_subkey_count(struct flb_ra_parser *rp)
+{
+    if (rp == NULL || rp->key == NULL) {
+        return -1;
+    }
+    else if (rp->type != FLB_RA_PARSER_KEYMAP) {
+        return 0;
+    }
+    else if(rp->key->subkeys == NULL) {
+        return -1;
+    }
+
+    return mk_list_size(rp->key->subkeys);
+}
+
 void flb_ra_parser_dump(struct flb_ra_parser *rp)
 {
     struct mk_list *head;

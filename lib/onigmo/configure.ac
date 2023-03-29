@@ -1,9 +1,9 @@
 dnl Process this file with autoconf to produce a configure script.
-AC_INIT(onigmo, 6.1.3)
+AC_INIT(onigmo, 6.2.0)
 
 AC_CONFIG_MACRO_DIR([m4])
 
-AM_INIT_AUTOMAKE(foreign)
+AM_INIT_AUTOMAKE([foreign subdir-objects])
 AC_CONFIG_HEADER(config.h)
 
 
@@ -42,7 +42,7 @@ dnl Checks for programs.
 AC_PROG_CC
 AC_PROG_LIBTOOL
 AM_PROG_CC_C_O
-LTVERSION="6:4:0"
+LTVERSION="6:5:0"
 AC_SUBST(LTVERSION)
 
 AC_PROG_INSTALL

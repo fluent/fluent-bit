@@ -159,7 +159,7 @@ static int in_stdin_collect(struct flb_input_instance *ins,
 
             flb_free(pack);
 
-            flb_input_chunk_append_raw(ins, NULL, 0,
+            flb_input_log_append(ins, NULL, 0,
                                        mp_sbuf.data, mp_sbuf.size);
             msgpack_sbuffer_destroy(&mp_sbuf);
             return 0;
@@ -178,7 +178,7 @@ static int in_stdin_collect(struct flb_input_instance *ins,
                 pack_regex(&mp_sbuf, &mp_pck,
                            ctx, &out_time, out_buf, out_size);
                 flb_free(out_buf);
-                flb_input_chunk_append_raw(ins, NULL, 0,
+                flb_input_log_append(ins, NULL, 0,
                                            mp_sbuf.data, mp_sbuf.size);
                 msgpack_sbuffer_clear(&mp_sbuf);
             }
@@ -242,7 +242,7 @@ static int in_stdin_config_init(struct flb_in_stdin_config *ctx,
         return -1;
     }
     else if (ctx->buf_size < DEFAULT_BUF_SIZE) {
-        flb_plg_error(ctx->ins, "buffer_size '%d' must be at least %i bytes",
+        flb_plg_error(ctx->ins, "buffer_size '%zu' must be at least %i bytes",
                       ctx->buf_size, DEFAULT_BUF_SIZE);
         return -1;
     }

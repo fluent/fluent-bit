@@ -60,20 +60,79 @@ static int config_add_labels(struct flb_output_instance *ins,
     return 0;
 }
 
+/*
+* Check if a Proxy have been set, if so the Upstream manager will use
+* the Proxy end-point and then we let the HTTP client know about it, so
+* it can adjust the HTTP requests.
+*/
+
+static void check_proxy(struct flb_output_instance *ins,
+                        struct opentelemetry_context *ctx,
+                        char *host, char *port,
+                        char *protocol, char *uri){
+
+    const char *tmp = NULL;
+    int ret;
+    tmp = flb_output_get_property("proxy", ins);
+    if (tmp) {
+        ret = flb_utils_url_split(tmp, &protocol, &host, &port, &uri);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "could not parse proxy parameter: '%s'", tmp);
+            flb_free(ctx);
+        }
+
+        ctx->proxy_host = host;
+        ctx->proxy_port = atoi(port);
+        ctx->proxy = tmp;
+        flb_free(protocol);
+        flb_free(port);
+        flb_free(uri);
+        uri = NULL;
+    }
+    else {
+        flb_output_net_default("127.0.0.1", 80, ins);
+    }
+}
+
+static char *sanitize_uri(char *uri){
+    char *new_uri;
+    int   uri_len;
+
+    if (uri == NULL) {
+        uri = flb_strdup("/");
+    }
+    else if (uri[0] != '/') {
+        uri_len = strlen(uri);
+        new_uri = flb_calloc(uri_len + 2, sizeof(char));
+
+        if (new_uri != NULL) {
+            new_uri[0] = '/';
+
+            strncat(new_uri, uri, uri_len + 1);
+        }
+
+        uri = new_uri;
+    }
+
+    /* This function could return NULL if flb_calloc fails */
+
+    return uri;
+}
+
 struct opentelemetry_context *flb_opentelemetry_context_create(
     struct flb_output_instance *ins, struct flb_config *config)
 {
     int ret;
-    int ulen;
     int io_flags = 0;
     char *protocol = NULL;
     char *host = NULL;
     char *port = NULL;
-    char *uri = NULL;
-    char *tmp_uri = NULL;
-    const char *tmp;
+    char *metrics_uri = NULL;
+    char *traces_uri = NULL;
+    char *logs_uri = NULL;
     struct flb_upstream *upstream;
     struct opentelemetry_context *ctx = NULL;
+    const char *tmp = NULL;
 
     /* Allocate plugin context */
     ctx = flb_calloc(1, sizeof(struct opentelemetry_context));
@@ -96,31 +155,8 @@ struct opentelemetry_context *flb_opentelemetry_context_create(
         return NULL;
     }
 
-    /*
-     * Check if a Proxy have been set, if so the Upstream manager will use
-     * the Proxy end-point and then we let the HTTP client know about it, so
-     * it can adjust the HTTP requests.
-     */
-    tmp = flb_output_get_property("proxy", ins);
-    if (tmp) {
-        ret = flb_utils_url_split(tmp, &protocol, &host, &port, &uri);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "could not parse proxy parameter: '%s'", tmp);
-            flb_free(ctx);
-            return NULL;
-        }
-
-        ctx->proxy_host = host;
-        ctx->proxy_port = atoi(port);
-        ctx->proxy = tmp;
-        flb_free(protocol);
-        flb_free(port);
-        flb_free(uri);
-        uri = NULL;
-    }
-    else {
-        flb_output_net_default("127.0.0.1", 80, ins);
-    }
+    check_proxy(ins, ctx, host, port, protocol, metrics_uri);
+    check_proxy(ins, ctx, host, port, protocol, logs_uri);
 
     /* Check if SSL/TLS is enabled */
 #ifdef FLB_HAVE_TLS
@@ -158,36 +194,52 @@ struct opentelemetry_context *flb_opentelemetry_context_create(
         return NULL;
     }
 
-    if (ins->host.uri) {
-        uri = flb_strdup(ins->host.uri->full);
-    }
-    else {
-        tmp = flb_output_get_property("uri", ins);
-        if (tmp) {
-            uri = flb_strdup(tmp);
-        }
-    }
-
-    if (!uri) {
-        uri = flb_strdup("/");
-    }
-    else if (uri[0] != '/') {
-        ulen = strlen(uri);
-        tmp_uri = flb_malloc(ulen + 2);
-        tmp_uri[0] = '/';
-        memcpy(tmp_uri + 1, uri, ulen);
-        tmp_uri[ulen + 1] = '\0';
-        flb_free(uri);
-        uri = tmp_uri;
-    }
+    logs_uri = sanitize_uri(ctx->logs_uri);
+    traces_uri = sanitize_uri(ctx->traces_uri);
+    metrics_uri = sanitize_uri(ctx->metrics_uri);
 
     ctx->u = upstream;
-    ctx->uri = uri;
     ctx->host = ins->host.name;
     ctx->port = ins->host.port;
 
+    if (logs_uri == NULL) {
+        flb_plg_trace(ctx->ins,
+                      "Could not allocate memory for sanitized "
+                      "log endpoint uri");
+    }
+    else {
+        ctx->logs_uri = logs_uri;
+    }
+
+    if (traces_uri == NULL) {
+        flb_plg_trace(ctx->ins,
+                      "Could not allocate memory for sanitized "
+                      "trace endpoint uri");
+    }
+    else {
+        ctx->traces_uri = traces_uri;
+    }
+
+    if (metrics_uri == NULL) {
+        flb_plg_trace(ctx->ins,
+                      "Could not allocate memory for sanitized "
+                      "metric endpoint uri");
+    }
+    else {
+        ctx->metrics_uri = metrics_uri;
+    }
+
+
     /* Set instance flags into upstream */
     flb_output_upstream_set(ctx->u, ins);
+
+    tmp = flb_output_get_property("compress", ins);
+    ctx->compress_gzip = FLB_FALSE;
+    if (tmp) {
+        if (strcasecmp(tmp, "gzip") == 0) {
+            ctx->compress_gzip = FLB_TRUE;
+        }
+    }
 
     return ctx;
 }
@@ -206,6 +258,5 @@ void flb_opentelemetry_context_destroy(
     }
 
     flb_free(ctx->proxy_host);
-    flb_free(ctx->uri);
     flb_free(ctx);
 }

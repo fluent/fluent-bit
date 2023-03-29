@@ -5,6 +5,8 @@
 #  JOURNALD_INCLUDE_DIR - the Journald include directory
 #  JOURNALD_LIBRARIES - Link these to use Journald
 #  JOURNALD_DEFINITIONS - Compiler switches required for using Journald
+#  SYSTEMD_UNITDIR - The systemd units' directory
+#
 # Redistribution and use is allowed according to the terms of the BSD license.
 # For details see the accompanying COPYING-CMAKE-SCRIPTS file.
 #
@@ -16,7 +18,9 @@
 # in the FIND_PATH() and FIND_LIBRARY() calls
 find_package(PkgConfig)
 pkg_check_modules(PC_JOURNALD QUIET systemd)
+pkg_get_variable(PC_SYSTEMD_UNITDIR systemd "systemdsystemunitdir")
 
+set(SYSTEMD_UNITDIR ${PC_SYSTEMD_UNITDIR})
 set(JOURNALD_FOUND ${PC_JOURNALD_FOUND})
 set(JOURNALD_DEFINITIONS ${PC_JOURNALD_CFLAGS_OTHER})
 

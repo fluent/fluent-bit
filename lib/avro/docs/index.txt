@@ -67,7 +67,7 @@ feel free to https://avro.apache.org/[submit patches to the project].
 
 Most functions in the Avro C library return a single +int+ status code.
 Following the POSIX _errno.h_ convention, a status code of 0 indicates
-success.  Non-zero codes indiciate an error condition.  Some functions
+success.  Non-zero codes indicate an error condition.  Some functions
 return a pointer value instead of an +int+ status code; for these
 functions, a +NULL+ pointer indicates an error.
 

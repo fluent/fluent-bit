@@ -406,7 +406,7 @@ static void file_pending_flush(struct flb_tail_config *ctx,
 
     flb_tail_dmode_flush(&mp_sbuf, &mp_pck, file, ctx);
 
-    flb_input_chunk_append_raw(ctx->ins,
+    flb_input_log_append(ctx->ins,
                                file->tag_buf,
                                file->tag_len,
                                mp_sbuf.data,

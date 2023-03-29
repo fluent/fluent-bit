@@ -43,12 +43,16 @@ int callback_add_record(void* data, size_t size, void* cb_data)
 
     if (size > 0) {
         flb_info("[test] flush record");
+        /* We should check ctx->num_records has a valid value. */
+        if (ctx->num_records < 0) {
+            return -1;
+        }
         if (ctx->records == NULL) {
             ctx->records = (struct callback_record *)
                            flb_calloc(1, sizeof(struct callback_record));
         } else {
             ctx->records = (struct callback_record *)
-                           flb_realloc(ctx->records, 
+                           flb_realloc(ctx->records,
                                        (ctx->num_records+1)*sizeof(struct callback_record));
         }
         if (ctx->records ==  NULL) {
@@ -66,7 +70,6 @@ void do_test_records_trace(void (*records_cb)(struct callback_records *))
     flb_ctx_t    *ctx    = NULL;
     struct flb_input_instance *input;
     struct flb_output_instance *output;
-    struct flb_output_instance *trace_output;
     int i;
     struct flb_lib_out_cb cb;
     struct callback_records *records;
@@ -87,6 +90,7 @@ void do_test_records_trace(void (*records_cb)(struct callback_records *))
 
     TEST_CHECK(flb_service_set(ctx, "Flush", "0.5",
                                     "Grace", "1",
+                                    "Enable_Chunk_Trace", "On",
                                     NULL) == 0);
 
 

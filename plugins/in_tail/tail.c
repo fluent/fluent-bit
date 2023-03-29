@@ -571,6 +571,14 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_tail_config, watcher_interval),
     },
     {
+     FLB_CONFIG_MAP_TIME, "progress_check_interval", "2s",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, progress_check_interval),
+    },
+    {
+     FLB_CONFIG_MAP_INT, "progress_check_interval_nsec", "0",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, progress_check_interval_nsec),
+    },
+    {
      FLB_CONFIG_MAP_TIME, "rotate_wait", FLB_TAIL_ROTATE_WAIT,
      0, FLB_TRUE, offsetof(struct flb_tail_config, rotate_wait),
      "specify the number of extra time in seconds to monitor a file once is "

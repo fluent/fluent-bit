@@ -1,5 +1,43 @@
 History of Onigmo (Oniguruma-mod)
 
+2019/01/30: Version 6.2.0
+
+2019/01/30: [dist] Update LTVERSION to "6:5:0".
+2019/01/30: [dist] Delete all autotools generated files from the repository.
+                   (PR #115)
+2019/01/30: [test] Update tests. (PR #127)
+2019/01/30: [impl] Add USE_CASE_MAP_API configuration. (PR #125)
+2019/01/29: [test] Add some tests. (PR #124)
+2019/01/29: [impl] Revise the code for searching. (PR #123)
+2019/01/28: [bug]  Fix initialization of the table for quick search.
+                   This was caused by PR #113.
+                   (Issue #120) (PR #121)
+2019/01/26: [spec] (thanks omochimetaru)
+                   Make it possible to extend UTF-8 to 31 bits. (PR #111)
+2019/01/25: [dist] Remove minor version from the py command. (PR #119)
+2019/01/25: [impl] Avoid negative character. (PR #118)
+2019/01/25: [impl] Fix lgtm.com warnings. (PR #117)
+2019/01/25: [bug]  Fix that "ss" in look-behind causes syntax error.
+                   (Issue #92) (PR #116)
+2019/01/24: [bug]  Fix performance regression if quantifier lower bound is 1.
+                   (Issue #100) (PR #114)
+2019/01/24: [bug]  Fix performance problem with /k/i and /s/i.
+                   (Issue #97) (PR #113)
+2019/01/24: [new]  Update Unicode data: Unicode 11.0.0, Emoji 11.0 (PR #112)
+2019/01/24: [bug]  Import the latest code from Ruby (PR #112)
+2019/01/24: [impl] (thanks aycabta)
+                   Support gperf 3.1 with backward compatibility. (PR #101)
+2018/12/10: [dist] (thanks Xavier RENE-CORAIL)
+                   Add LGTM.com code quality badges. (PR #108)
+2018/11/10: [impl] (thanks Urabe, Shyouhei)
+                   Avoid negative character. (PR #107)
+2018/01/19: [impl] (thanks Tom Lord)
+                   Remove unused variable. (PR #99)
+2017/09/27: [spec] Import Ruby r58965
+                   Change max byte length of UTF-8 to 4 bytes.
+2017/09/26: [new]  Update Unicode data: Unicode 10.0.0, Emoji 5.0 (PR #93)
+
+
 2017/09/26: Version 6.1.3
 
 2017/09/26: [dist] Update LTVERSION to "6:4:0".

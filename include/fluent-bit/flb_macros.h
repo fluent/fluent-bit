@@ -30,6 +30,13 @@
 #define FLB_OK      1
 #define FLB_RETRY   2
 
+/* ala-printf format check */
+#if defined(__GNUC__) || defined(__clang__)
+#define FLB_FORMAT_PRINTF(fmt, args) __attribute__ ((format (printf, fmt, args)))
+#else
+#define FLB_FORMAT_PRINTF(fmt, args)
+#endif
+
 #ifdef _WIN32
 #define FLB_INLINE inline
 #else

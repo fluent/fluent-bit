@@ -108,8 +108,8 @@ int resource_api_has_required_labels(struct flb_stackdriver *ctx)
 
     required_labels = get_required_labels(ctx->resource_type);
     if (required_labels == NULL) {
-        flb_plg_warn(ctx->ins, "no validation applied to resource_labels ",
-            "for set resource type");
+        flb_plg_warn(ctx->ins, "no validation applied to resource_labels "
+                               "for set resource type");
         return FLB_FALSE;
     }
 

@@ -232,7 +232,7 @@ static int http_post(struct flb_out_http *ctx,
                                   time(NULL),
                                   (char *) ctx->aws_region,
                                   (char *) ctx->aws_service,
-                                  0,
+                                  0, NULL,
                                   ctx->aws_provider);
 
         if (!signature) {
@@ -541,7 +541,7 @@ static int post_all_requests(struct flb_out_http *ctx,
         }
 
         if (body_found && headers_found) {
-            flb_plg_trace(ctx->ins, "posting record %d", record_count++);
+            flb_plg_trace(ctx->ins, "posting record %zu", record_count++);
             ret = http_post(ctx, body, body_size, event_chunk->tag,
                     flb_sds_len(event_chunk->tag), headers);
         }
@@ -737,6 +737,7 @@ static int cb_http_format_test(struct flb_config *config,
                                struct flb_input_instance *ins,
                                void *plugin_context,
                                void *flush_ctx,
+                               int event_type,
                                const char *tag, int tag_len,
                                const void *data, size_t bytes,
                                void **out_data, size_t *out_size)

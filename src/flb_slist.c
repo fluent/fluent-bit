@@ -154,6 +154,10 @@ static flb_sds_t token_retrieve(char **str)
  exit:
     if (*p) {
         out = flb_sds_create_len(start, p - start);
+        if (!out) {
+            *str = NULL;
+            return NULL;
+        }
         if (quoted == FLB_TRUE) {
             len = token_unescape(out);
             flb_sds_len_set(out, len);

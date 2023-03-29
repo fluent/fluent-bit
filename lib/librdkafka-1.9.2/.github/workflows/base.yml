@@ -1,0 +1,32 @@
+name: check
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - run: |
+          sudo apt update
+          sudo apt install -y python3 python3-pip python3-setuptools libcurl4-openssl-dev libssl-dev libsasl2-dev
+          python3 -m pip install -r tests/requirements.txt
+      - run: |
+          ./configure --CFLAGS="-std=c99" --CXXFLAGS="-std=c++98" --install-deps --enable-devel --disable-lz4-ext --prefix="$PWD/dest"
+      - run: |
+          make -j
+          make -C tests -j build
+      - run: |
+          examples/rdkafka_example -V || true
+          examples/rdkafka_example -X builtin.features
+      - run: |
+          make -C tests run_local_quick
+
+  style:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - run: |
+          sudo apt update
+          sudo apt install -y python3 python3-pip python3-setuptools clang-format
+          python3 -m pip install -r packaging/tools/requirements.txt
+      - name: Style checker
+        run: make style-check

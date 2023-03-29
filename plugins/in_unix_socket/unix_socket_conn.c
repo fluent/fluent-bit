@@ -72,7 +72,7 @@ static inline int process_pack(struct unix_socket_conn *conn,
 
     msgpack_unpacked_destroy(&result);
 
-    flb_input_chunk_append_raw(conn->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    flb_input_log_append(conn->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;
@@ -153,7 +153,7 @@ static ssize_t parse_payload_none(struct unix_socket_conn *conn)
         }
     }
 
-    flb_input_chunk_append_raw(conn->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    flb_input_log_append(conn->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return consumed;
@@ -347,7 +347,7 @@ struct unix_socket_conn *unix_socket_conn_add(struct flb_connection *connection,
     }
 
     /* Register instance into the event loop */
-    ret = mk_event_add(ctx->evl,
+    ret = mk_event_add(flb_engine_evl_get(),
                        connection->fd,
                        FLB_ENGINE_EV_CUSTOM,
                        MK_EVENT_READ,

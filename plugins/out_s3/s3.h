@@ -61,7 +61,7 @@
 struct upload_queue {
     struct s3_file *upload_file;
     struct multipart_upload *m_upload_file;
-    char *tag;
+    flb_sds_t tag;
     int tag_len;
 
     int retry_counter;
@@ -120,6 +120,10 @@ struct flb_s3 {
     int compression;
     int port;
     int insecure;
+    size_t store_dir_limit_size;
+
+    /* track the total amount of buffered data */
+    size_t current_buffer_size;
 
     struct flb_aws_provider *provider;
     struct flb_aws_provider *base_provider;

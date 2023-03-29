@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.0)
 project(chunk-io)
 
 set(CIO_VERSION_MAJOR  1)
-set(CIO_VERSION_MINOR  3)
+set(CIO_VERSION_MINOR  4)
 set(CIO_VERSION_PATCH  0)
 set(CIO_VERSION_STR "${CIO_VERSION_MAJOR}.${CIO_VERSION_MINOR}.${CIO_VERSION_PATCH}")
 

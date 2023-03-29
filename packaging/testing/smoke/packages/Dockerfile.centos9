@@ -1,11 +1,11 @@
 # For staging upgrade we use the 'staging-upgrade-prep' as the base
-ARG STAGING_BASE=dokken/centos-9
+ARG STAGING_BASE=docker.io/dokken/centos-stream-9
 
 ARG RELEASE_URL=https://packages.fluentbit.io
 ARG RELEASE_KEY=https://packages.fluentbit.io/fluentbit.key
 
 # hadolint ignore=DL3006
-FROM dokken/centos-9 as official-install
+FROM docker.io/dokken/centos-stream-9 as official-install
 ARG RELEASE_URL
 ENV FLUENT_BIT_PACKAGES_URL=${RELEASE_URL}
 

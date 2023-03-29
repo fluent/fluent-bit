@@ -651,6 +651,7 @@ onigenc_unicode_get_case_fold_codes_by_str(OnigEncoding enc,
   return n;
 }
 
+#ifdef USE_CASE_MAP_API
 /* length in bytes for three characters in UTF-32; e.g. needed for ffi (U+FB03) */
 #define CASE_MAPPING_SLACK 12
 #define MODIFIED (flags |= ONIGENC_CASE_MODIFIED)
@@ -678,13 +679,13 @@ onigenc_unicode_case_map(OnigCaseFoldType* flagP,
     *pp += codepoint_length;
 
     if (code <= 'z') { /* ASCII comes first */
-      if (code >= 'a' && code <= 'z') {
+      if (code >= 'a' /*&& code <= 'z'*/) {
 	if (flags & ONIGENC_CASE_UPCASE) {
 	  MODIFIED;
 	  if (flags & ONIGENC_CASE_FOLD_TURKISH_AZERI && code == 'i')
 	    code = I_WITH_DOT_ABOVE;
-	  else
-	    code += 'A' - 'a';
+          else
+            code -= 'a' - 'A';
 	}
       }
       else if (code >= 'A' && code <= 'Z') {
@@ -717,7 +718,11 @@ onigenc_unicode_case_map(OnigCaseFoldType* flagP,
 	}
       }
       else if ((folded = onigenc_unicode_fold_lookup(code)) != 0) { /* data about character found in CaseFold_11_Table */
-	if ((flags & ONIGENC_CASE_TITLECASE)                                 /* Titlecase needed, */
+	if ((flags & ONIGENC_CASE_TITLECASE) && code>=0x1C90 && code<=0x1CBF) { /* Georgian MTAVRULI */
+          MODIFIED;
+	  code += 0x10D0 - 0x1C90;
+        }
+        else if ((flags & ONIGENC_CASE_TITLECASE)                            /* Titlecase needed, */
 	    && (OnigCaseFoldFlags(folded->n) & ONIGENC_CASE_IS_TITLECASE)) { /* but already Titlecase  */
 	  /* already Titlecase, no changes needed */
 	}
@@ -770,10 +775,15 @@ SpecialsCopy:
 	  }
 	}
       }
-      else if ((folded = onigenc_unicode_unfold1_lookup(code)) != 0  /* data about character found in CaseUnfold_11_Table */
-	  && flags & OnigCaseFoldFlags(folded->n)) { /* needs and data availability match */
-	MODIFIED;
-	code = folded->code[(flags & OnigCaseFoldFlags(folded->n) & ONIGENC_CASE_TITLECASE) ? 1 : 0];
+      else if ((folded = onigenc_unicode_unfold1_lookup(code)) != 0) { /* data about character found in CaseUnfold_11_Table */
+	if ((flags & ONIGENC_CASE_TITLECASE)                                 /* Titlecase needed, */
+	    && (OnigCaseFoldFlags(folded->n) & ONIGENC_CASE_IS_TITLECASE)) { /* but already Titlecase */
+	  /* already Titlecase, no changes needed */
+	}
+	else if (flags & OnigCaseFoldFlags(folded->n)) { /* needs and data availability match */
+	  MODIFIED;
+	  code = folded->code[(flags & OnigCaseFoldFlags(folded->n) & ONIGENC_CASE_TITLECASE) ? 1 : 0];
+	}
       }
     }
     to += ONIGENC_CODE_TO_MBC(enc, code, to);
@@ -785,6 +795,7 @@ SpecialsCopy:
   *flagP = flags;
   return (int )(to - to_start);
 }
+#endif
 
 #if 0
 const char onigenc_unicode_version_string[] =

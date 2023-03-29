@@ -157,7 +157,7 @@ void mk_server_listen_exit(struct mk_list *list)
 
     mk_list_foreach_safe(head, tmp, list) {
         listen = mk_list_entry(head, struct mk_server_listen, _head);
-        close(listen->server_fd);
+        mk_event_closesocket(listen->server_fd);
         mk_list_del(&listen->_head);
         mk_mem_free(listen);
     }
@@ -420,6 +420,8 @@ void mk_server_loop_balancer(struct mk_server *server)
             }
         }
     }
+    mk_event_loop_destroy(evl);
+    mk_server_listen_exit(listeners);
 }
 
 /*
@@ -634,19 +636,18 @@ static int mk_server_lib_notify_started(struct mk_server *server)
     uint64_t val;
 
     /* Check the channel is valid (enabled by library mode) */
-    if (server->lib_ch_manager[1] <= 0) {
+    if (server->lib_ch_start[1] <= 0) {
         return -1;
     }
 
     val = MK_SERVER_SIGNAL_START;
 
 #ifdef _WIN32
-    return send(server->lib_ch_manager[1], &val, sizeof(uint64_t), 0);
+    return send(server->lib_ch_start[1], &val, sizeof(uint64_t), 0);
 #else
-    return write(server->lib_ch_manager[1], &val, sizeof(uint64_t));
+    return write(server->lib_ch_start[1], &val, sizeof(uint64_t));
 #endif
 }
-
 
 void mk_server_loop(struct mk_server *server)
 {

@@ -7,11 +7,16 @@
 #include <fluent-bit/flb_sds.h>
 #include <sys/stat.h>
 
+#include <cfl/cfl.h>
+#include <cfl/cfl_list.h>
+
 #include "flb_tests_internal.h"
 
 #define FLB_000 FLB_TESTS_DATA_PATH "/data/config_format/classic/fluent-bit.conf"
 #define FLB_001 FLB_TESTS_DATA_PATH "/data/config_format/classic/issue_5880.conf"
 #define FLB_002 FLB_TESTS_DATA_PATH "/data/config_format/classic/indent_level_error.conf"
+#define FLB_003 FLB_TESTS_DATA_PATH "/data/config_format/classic/recursion.conf"
+#define FLB_004 FLB_TESTS_DATA_PATH "/data/config_format/classic/issue6281.conf"
 
 #define ERROR_LOG "fluentbit_conf_error.log"
 
@@ -32,7 +37,7 @@ void test_basic()
 	/* SERVICE check */
     TEST_CHECK(cf->service != NULL);
     if (cf->service) {
-        TEST_CHECK(mk_list_size(&cf->service->properties) == 3);
+        TEST_CHECK(cfl_list_size(&cf->service->properties->list) == 3);
     }
 
     /* Meta commands */
@@ -54,7 +59,7 @@ void test_basic()
 
     mk_list_foreach(head, &s->groups) {
         g = mk_list_entry(head, struct flb_cf_group, _head);
-        TEST_CHECK(mk_list_size(&g->properties) == 2);
+        TEST_CHECK(cfl_list_size(&g->properties->list) == 2);
     }
 
     printf("\n");
@@ -205,9 +210,59 @@ void indent_level_error()
     unlink(ERROR_LOG);
 }
 
+void recursion()
+{
+	struct flb_cf *cf;
+
+    cf = flb_cf_create();
+    if (!TEST_CHECK(cf != NULL)) {
+        TEST_MSG("flb_cf_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    cf = flb_cf_fluentbit_create(cf, FLB_003, NULL, 0);
+
+    /* No SIGSEGV means success */
+}
+
+
+/*
+ *  https://github.com/fluent/fluent-bit/issues/6281
+ *
+ *  Fluent-bit loads issue6281.conf that loads issue6281_input/output.conf.
+ *
+ *    config dir -+-- issue6281.conf
+ *                |
+ *                +-- issue6281_input.conf
+ *                |
+ *                +-- issue6281_output.conf
+ */
+void not_current_dir_files()
+{
+    struct flb_cf *cf;
+
+    cf = flb_cf_create();
+    if (!TEST_CHECK(cf != NULL)) {
+        TEST_MSG("flb_cf_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    cf = flb_cf_fluentbit_create(cf, FLB_004, NULL, 0);
+    if (!TEST_CHECK(cf != NULL)) {
+        TEST_MSG("flb_cf_fluentbit_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    if (cf != NULL) {
+        flb_cf_destroy(cf);
+    }
+}
+
 TEST_LIST = {
     { "basic"    , test_basic},
     { "missing_value_issue5880" , missing_value},
     { "indent_level_error" , indent_level_error},
+    { "recursion" , recursion},
+    { "not_current_dir_files", not_current_dir_files},
     { 0 }
 };

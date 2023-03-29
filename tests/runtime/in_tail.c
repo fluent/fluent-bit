@@ -38,6 +38,12 @@ Approach for this tests is basing on filter_kubernetes tests
 
 #define DPATH_COMMON       FLB_TESTS_DATA_PATH "/data/common"
 
+#ifdef _WIN32
+    #define TIME_EPSILON_MS 30
+#else
+    #define TIME_EPSILON_MS 10
+#endif
+
 struct test_tail_ctx {
     flb_ctx_t *flb;    /* Fluent Bit library context */
     int i_ffd;         /* Input fd  */
@@ -275,6 +281,32 @@ struct tail_file_lines {
   int lines_c;
 };
 
+void wait_with_timeout(uint32_t timeout_ms, struct tail_test_result *result, int nExpected)
+{
+    struct flb_time start_time;
+    struct flb_time end_time;
+    struct flb_time diff_time;
+    uint64_t elapsed_time_flb = 0;
+
+    flb_time_get(&start_time);
+
+    while (true) {
+        if (result->nMatched == nExpected) {
+            break;
+        }
+
+        flb_time_msleep(100);
+        flb_time_get(&end_time);
+        flb_time_diff(&end_time, &start_time, &diff_time);
+        elapsed_time_flb = flb_time_to_nanosec(&diff_time) / 1000000;
+
+        if (elapsed_time_flb > timeout_ms - TIME_EPSILON_MS) {
+            flb_warn("[timeout] elapsed_time: %ld", elapsed_time_flb);
+            // Reached timeout.
+            break;
+        }
+    }
+}
 
 static inline int64_t set_result(int64_t v)
 {
@@ -473,10 +505,13 @@ void do_test(char *system, const char *target, int tExpected, int nExpected, ...
     ret = flb_start(ctx);
     TEST_CHECK_(ret == 0, "starting engine");
 
-    /* Poll for up to 2 seconds or until we got a match */
+    /* Poll for up to 5 seconds or until we got a match */
     for (ret = 0; ret < tExpected && result.nMatched < nExpected; ret++) {
         usleep(1000);
     }
+
+    /* Wait until matching nExpected results */
+    wait_with_timeout(5000, &result, nExpected);
 
     TEST_CHECK(result.nMatched == nExpected);
     TEST_MSG("result.nMatched: %i\nnExpected: %i", result.nMatched, nExpected);
@@ -622,7 +657,7 @@ void flb_test_in_tail_skip_long_lines()
     ret = flb_start(ctx);
     TEST_CHECK_(ret == 0, "starting engine");
 
-    sleep(2);
+    wait_with_timeout(5000, &result, nExpected);
 
     TEST_CHECK(result.nMatched == nExpected);
     TEST_MSG("result.nMatched: %i\nnExpected: %i", result.nMatched, nExpected);
@@ -705,7 +740,7 @@ void flb_test_in_tail_issue_3943()
     ret = flb_start(ctx);
     TEST_CHECK_(ret == 0, "starting engine");
 
-    sleep(2);
+    wait_with_timeout(3000, &result, nExpected);
 
     TEST_CHECK(result.nMatched == nExpected);
     TEST_MSG("result.nMatched: %i\nnExpected: %i", result.nMatched, nExpected);
@@ -792,6 +827,7 @@ void flb_test_in_tail_multiline_json_and_regex()
     for (ret = 0; ret < t_expected && result.nMatched < n_expected; ret++) {
         usleep(1000);
     }
+    wait_with_timeout(5000, &result, n_expected);
 
     TEST_CHECK(result.nMatched == n_expected);
     TEST_MSG("result.nMatched: %i\nnExpected: %i", result.nMatched, n_expected);

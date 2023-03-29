@@ -25,6 +25,64 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_http_server.h>
 
+static struct cmt *metrics_context_create(struct flb_storage_metrics *sm)
+{
+    struct cmt *cmt;
+
+    cmt = cmt_create();
+    if (!cmt) {
+        return NULL;
+    }
+
+    sm->cmt_chunks = cmt_gauge_create(cmt,
+                                      "fluentbit", "storage", "chunks",
+                                      "Total number of chunks in the storage layer.",
+                                      0, (char *[]) { NULL });
+
+    sm->cmt_mem_chunks = cmt_gauge_create(cmt,
+                                          "fluentbit", "storage", "mem_chunks",
+                                          "Total number of memory chunks.",
+                                          0, (char *[]) { NULL });
+
+    sm->cmt_fs_chunks = cmt_gauge_create(cmt,
+                                         "fluentbit", "storage", "fs_chunks",
+                                         "Total number of filesystem chunks.",
+                                         0, (char *[]) { NULL });
+
+    sm->cmt_fs_chunks_up = cmt_gauge_create(cmt,
+                                            "fluentbit", "storage", "fs_chunks_up",
+                                            "Total number of filesystem chunks up in memory.",
+                                            0, (char *[]) { NULL });
+
+    sm->cmt_fs_chunks_down = cmt_gauge_create(cmt,
+                                              "fluentbit", "storage", "fs_chunks_down",
+                                              "Total number of filesystem chunks down.",
+                                              0, (char *[]) { NULL });
+
+    return cmt;
+}
+
+
+/* This function collect the 'global' metrics of the storage layer (cmetrics) */
+int flb_storage_metrics_update(struct flb_config *ctx, struct flb_storage_metrics *sm)
+{
+    uint64_t ts;
+    struct cio_stats st;
+
+    /* Retrieve general stats from the storage layer */
+    cio_stats_get(ctx->cio, &st);
+
+    ts = cfl_time_now();
+
+    cmt_gauge_set(sm->cmt_chunks, ts, st.chunks_total, 0, NULL);
+    cmt_gauge_set(sm->cmt_mem_chunks, ts, st.chunks_mem, 0, NULL);
+    cmt_gauge_set(sm->cmt_fs_chunks, ts, st.chunks_fs, 0, NULL);
+    cmt_gauge_set(sm->cmt_fs_chunks_up, ts, st.chunks_fs_up, 0, NULL);
+    cmt_gauge_set(sm->cmt_fs_chunks_down, ts, st.chunks_fs_down, 0, NULL);
+
+    return 0;
+}
+
 static void metrics_append_general(msgpack_packer *mp_pck,
                                    struct flb_config *ctx,
                                    struct flb_storage_metrics *sm)
@@ -75,28 +133,45 @@ static void metrics_append_input(msgpack_packer *mp_pck,
 {
     int len;
     int ret;
+    uint64_t ts;
     const char *tmp;
     char buf[32];
     ssize_t size;
+    size_t total_chunks;
 
     /* chunks */
     int up;
     int down;
     int busy;
     int busy_size_err;
+    char *name;
     ssize_t busy_size;
     struct mk_list *head;
     struct mk_list *h_chunks;
     struct flb_input_instance *i;
     struct flb_input_chunk *ic;
 
+    /*
+     * DISCLAIMER: This interface will be deprecated once we extend Chunk I/O
+     * stats per stream.
+     *
+     * For now and to avoid duplication of iterating chunks we are adding the
+     * metrics counting for CMetrics inside the same logic for the old code.
+     */
+
     msgpack_pack_str(mp_pck, 12);
     msgpack_pack_str_body(mp_pck, "input_chunks", 12);
     msgpack_pack_map(mp_pck, mk_list_size(&ctx->inputs));
 
+    /* current time */
+    ts = cfl_time_now();
+
     /* Input Plugins Ingestion */
     mk_list_foreach(head, &ctx->inputs) {
         i = mk_list_entry(head, struct flb_input_instance, _head);
+
+        name = (char *) flb_input_name(i);
+        total_chunks = mk_list_size(&i->chunks);
 
         tmp = flb_input_name(i);
         len = strlen(tmp);
@@ -121,6 +196,8 @@ static void metrics_append_input(msgpack_packer *mp_pck,
         msgpack_pack_str(mp_pck, 9);
         msgpack_pack_str_body(mp_pck, "overlimit", 9);
 
+
+        /* CMetrics */
         ret = FLB_FALSE;
         if (i->mem_buf_limit > 0) {
             if (i->mem_chunks_size >= i->mem_buf_limit) {
@@ -128,11 +205,25 @@ static void metrics_append_input(msgpack_packer *mp_pck,
             }
         }
         if (ret == FLB_TRUE) {
+            /* cmetrics */
+            cmt_gauge_set(i->cmt_storage_overlimit, ts, 1,
+                          1, (char *[]) {name});
+
+            /* old code */
             msgpack_pack_true(mp_pck);
         }
         else {
+            /* cmetrics */
+            cmt_gauge_set(i->cmt_storage_overlimit, ts, 0,
+                          1, (char *[]) {name});
+
+            /* old code */
             msgpack_pack_false(mp_pck);
         }
+
+        /* fluentbit_storage_memory_bytes */
+        cmt_gauge_set(i->cmt_storage_memory_bytes, ts, i->mem_chunks_size,
+                      1, (char *[]) {name});
 
         /* status['mem_size'] */
         msgpack_pack_str(mp_pck, 8);
@@ -159,6 +250,13 @@ static void metrics_append_input(msgpack_packer *mp_pck,
          * Chunks
          * ======
          */
+
+        /* cmetrics */
+        cmt_gauge_set(i->cmt_storage_chunks, ts, total_chunks,
+                      1, (char *[]) {name});
+
+
+        /* old code */
         msgpack_pack_str(mp_pck, 6);
         msgpack_pack_str_body(mp_pck, "chunks", 6);
 
@@ -168,7 +266,7 @@ static void metrics_append_input(msgpack_packer *mp_pck,
         /* chunks['total_chunks'] */
         msgpack_pack_str(mp_pck, 5);
         msgpack_pack_str_body(mp_pck, "total", 5);
-        msgpack_pack_uint64(mp_pck, mk_list_size(&i->chunks));
+        msgpack_pack_uint64(mp_pck, total_chunks);
 
         /*
          * chunks Details: chunks marked as 'busy' are 'locked' since they are in
@@ -205,20 +303,36 @@ static void metrics_append_input(msgpack_packer *mp_pck,
 
         }
 
+        /* fluentbit_storage_chunks_up */
+        cmt_gauge_set(i->cmt_storage_chunks_up, ts, up,
+                      1, (char *[]) {name});
+
         /* chunks['up'] */
         msgpack_pack_str(mp_pck, 2);
         msgpack_pack_str_body(mp_pck, "up", 2);
         msgpack_pack_uint64(mp_pck, up);
+
+        /* fluentbit_storage_chunks_down */
+        cmt_gauge_set(i->cmt_storage_chunks_down, ts, down,
+                      1, (char *[]) {name});
 
         /* chunks['down'] */
         msgpack_pack_str(mp_pck, 4);
         msgpack_pack_str_body(mp_pck, "down", 4);
         msgpack_pack_uint64(mp_pck, down);
 
+        /* fluentbit_storage_chunks_busy */
+        cmt_gauge_set(i->cmt_storage_chunks_busy, ts, busy,
+                      1, (char *[]) {name});
+
         /* chunks['busy'] */
         msgpack_pack_str(mp_pck, 4);
         msgpack_pack_str_body(mp_pck, "busy", 4);
         msgpack_pack_uint64(mp_pck, busy);
+
+        /* fluentbit_storage_chunks_busy_size */
+        cmt_gauge_set(i->cmt_storage_chunks_busy_bytes, ts, busy_size,
+                      1, (char *[]) {name});
 
         /* chunks['busy_size'] */
         msgpack_pack_str(mp_pck, 9);
@@ -258,9 +372,14 @@ struct flb_storage_metrics *flb_storage_metrics_create(struct flb_config *ctx)
     int ret;
     struct flb_storage_metrics *sm;
 
-    sm = flb_malloc(sizeof(struct flb_storage_metrics));
+    sm = flb_calloc(1, sizeof(struct flb_storage_metrics));
     if (!sm) {
         flb_errno();
+        return NULL;
+    }
+    sm->cmt = metrics_context_create(sm);
+    if(!sm->cmt) {
+        flb_free(sm);
         return NULL;
     }
 
@@ -333,7 +452,7 @@ static void print_storage_info(struct flb_config *ctx, struct cio_ctx *cio)
         type = "memory+filesystem";
     }
     else {
-        type = "memory-only";
+        type = "memory";
     }
 
     if (cio->options.flags & CIO_FULL_SYNC) {
@@ -344,13 +463,13 @@ static void print_storage_info(struct flb_config *ctx, struct cio_ctx *cio)
     }
 
     if (cio->options.flags & CIO_CHECKSUM) {
-        checksum = "enabled";
+        checksum = "on";
     }
     else {
-        checksum = "disabled";
+        checksum = "off";
     }
 
-    flb_info("[storage] version=%s, type=%s, sync=%s, checksum=%s, max_chunks_up=%i",
+    flb_info("[storage] ver=%s, type=%s, sync=%s, checksum=%s, max_chunks_up=%i",
              cio_version(), type, sync, checksum, ctx->storage_max_chunks_up);
 
     /* Storage input plugin */
@@ -360,8 +479,8 @@ static void print_storage_info(struct flb_config *ctx, struct cio_ctx *cio)
     }
 }
 
-static void log_cb(void *ctx, int level, const char *file, int line,
-                   const char *str)
+static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
+                  char *str)
 {
     if (level == CIO_LOG_ERROR) {
         flb_error("[storage] %s", str);
@@ -375,31 +494,43 @@ static void log_cb(void *ctx, int level, const char *file, int line,
     else if (level == CIO_LOG_DEBUG) {
         flb_debug("[storage] %s", str);
     }
+
+    return 0;
 }
 
 int flb_storage_input_create(struct cio_ctx *cio,
                              struct flb_input_instance *in)
 {
+    int cio_storage_type;
     struct flb_storage_input *si;
     struct cio_stream *stream;
 
     /* storage config: get stream type */
     if (in->storage_type == -1) {
-        in->storage_type = CIO_STORE_MEM;
+        in->storage_type = FLB_STORAGE_MEM;
     }
 
-    if (in->storage_type == CIO_STORE_FS && cio->options.root_path == NULL) {
+    if (in->storage_type == FLB_STORAGE_FS && cio->options.root_path == NULL) {
         flb_error("[storage] instance '%s' requested filesystem storage "
                   "but no filesystem path was defined.",
                   flb_input_name(in));
         return -1;
     }
 
+    /*
+     * The input instance can define it owns storage type which is based on some
+     * specific Chunk I/O storage type. We handle the proper initialization here.
+     */
+    cio_storage_type = in->storage_type;
+    if (in->storage_type == FLB_STORAGE_MEMRB) {
+        cio_storage_type = FLB_STORAGE_MEM;
+    }
+
     /* Check for duplicates */
     stream = cio_stream_get(cio, in->name);
     if (!stream) {
         /* create stream for input instance */
-        stream = cio_stream_create(cio, in->name, in->storage_type);
+        stream = cio_stream_create(cio, in->name, cio_storage_type);
         if (!stream) {
             flb_error("[storage] cannot create stream for instance %s",
                       in->name);
@@ -470,6 +601,12 @@ int flb_storage_create(struct flb_config *ctx)
 
     /* always use read/write mode */
     flags = CIO_OPEN;
+
+    /* if explicitly stated any irrecoverably corrupted
+     * chunks will be deleted */
+    if (ctx->storage_del_bad_chunks) {
+        flags |= CIO_DELETE_IRRECOVERABLE;
+    }
 
     /* synchronization mode */
     if (ctx->storage_sync) {
@@ -558,6 +695,7 @@ int flb_storage_create(struct flb_config *ctx)
 void flb_storage_destroy(struct flb_config *ctx)
 {
     struct cio_ctx *cio;
+    struct flb_storage_metrics *sm;
 
     /* Destroy Chunk I/O context */
     cio = (struct cio_ctx *) ctx->cio;
@@ -566,9 +704,11 @@ void flb_storage_destroy(struct flb_config *ctx)
         return;
     }
 
-    if (ctx->storage_metrics == FLB_TRUE &&
-        ctx->storage_metrics_ctx != NULL) {
-        flb_free(ctx->storage_metrics_ctx);
+    sm = ctx->storage_metrics_ctx;
+    if (ctx->storage_metrics == FLB_TRUE && sm != NULL) {
+        cmt_destroy(sm->cmt);
+        flb_free(sm);
+        ctx->storage_metrics_ctx = NULL;
     }
 
     cio_destroy(cio);

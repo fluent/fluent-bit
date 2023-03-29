@@ -231,8 +231,8 @@ static int init_config(struct checklist *ctx)
     /* record accessor pattern / key name */
     ctx->ra_lookup_key = flb_ra_create(ctx->lookup_key, FLB_TRUE);
     if (!ctx->ra_lookup_key) {
-        flb_plg_error(ctx->ins, "invalid ra_lookup_key pattern: %s",
-                      ctx->ra_lookup_key);
+        flb_plg_error(ctx->ins, "invalid lookup_key pattern: %s",
+                      ctx->lookup_key);
         return -1;
     }
 

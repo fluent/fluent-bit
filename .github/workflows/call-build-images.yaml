@@ -32,7 +32,7 @@ on:
         description: Optionally add metadata to build to indicate an unstable build, set to the contents you want to add.
         type: string
         required: false
-        default: ''
+        default: ""
     secrets:
       token:
         description: The Github token or similar to authenticate with for the registry.
@@ -47,7 +47,6 @@ jobs:
   call-build-images-meta:
     name: Extract any supporting metadata
     outputs:
-      build-type: ${{ steps.determine-build-type.outputs.BUILD_TYPE }}
       major-version: ${{ steps.determine-major-version.outputs.replaced }}
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
@@ -59,171 +58,20 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
-      # Determine if this is a 1.8 type of build which is different
-      - name: Determine build type
-        id: determine-build-type
-        run: |
-          BUILD_TYPE="1.8"
-          if [[ -f "dockerfiles/Dockerfile" ]]; then
-            BUILD_TYPE="modern"
-          fi
-          echo "Detected type: $BUILD_TYPE"
-          echo ::set-output name=BUILD_TYPE::$BUILD_TYPE
-        shell: bash
-
-      # For main branch/releases we want to also tag with the major version.
+      # For main branch/releases we want to tag with the major version.
       # E.g. if we build version 1.9.2 we want to tag with 1.9.2 and 1.9.
       - name: Determine major version tag
         id: determine-major-version
-        uses: frabert/replace-string-action@v2.2
+        uses: frabert/replace-string-action@v2.4
         with:
           pattern: '^(\d+\.\d+).*$'
           string: ${{ inputs.version }}
-          replace-with: '$1'
-          flags: 'g'
-
-  # For 1.8 builds it is a little more complex so we have this build matrix to handle it.
-  # This creates separate images for each architecture.
-  # The later step then creates a multi-arch manifest for all of these.
-  call-build-legacy-images-matrix:
-    if: needs.call-build-images-meta.outputs.build-type == '1.8'
-    name: Build single arch legacy images
-    runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
-    needs:
-      - call-build-images-meta
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [ amd64, arm64, arm/v7 ]
-        include:
-          - arch: amd64
-            suffix: x86_64
-          - arch: arm/v7
-            suffix: arm32v7
-          - arch: arm64
-            suffix: arm64v8
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Checkout the docker build repo for legacy builds
-        uses: actions/checkout@v3
-        with:
-          repository: fluent/fluent-bit-docker-image
-          ref: '1.8' # Fixed to this branch
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Log in to the Container registry
-        uses: docker/login-action@v2
-        with:
-          registry: ${{ inputs.registry }}
-          username: ${{ inputs.username }}
-          password: ${{ secrets.token }}
-
-      - id: debug-meta
-        uses: docker/metadata-action@v4
-        with:
-          images: ${{ inputs.registry }}/${{ inputs.image }}
-          tags: |
-            raw,${{ inputs.version }}-debug
-            raw,${{ needs.call-build-images-meta.outputs.major-version }}-debug
-
-      - name: Build the legacy x86_64 debug image
-        if: matrix.arch == 'amd64'
-        uses: docker/build-push-action@v3
-        with:
-          file: ./Dockerfile.x86_64.debug
-          context: .
-          tags: ${{ steps.debug-meta.outputs.tags }}
-          labels: ${{ steps.debug-meta.outputs.labels }}
-          platforms: linux/amd64
-          push: true
-          load: false
-          build-args: |
-            FLB_TARBALL=https://github.com/fluent/fluent-bit/tarball/${{ inputs.ref }}
-
-      - name: Extract metadata from Github
-        id: meta
-        uses: docker/metadata-action@v4
-        with:
-          images: ${{ inputs.registry }}/${{ inputs.image }}
-          tags: |
-            raw,${{ matrix.suffix }}-${{ inputs.version }}
-
-      - name: Build the legacy ${{ matrix.arch }} image
-        uses: docker/build-push-action@v3
-        with:
-          file: ./Dockerfile.${{ matrix.suffix }}
-          context: .
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          platforms: linux/${{ matrix.arch }}
-          push: true
-          load: false
-          build-args: |
-            FLB_TARBALL=https://github.com/fluent/fluent-bit/tarball/${{ inputs.ref }}
-
-  # Create a multi-arch manifest for the separate 1.8 images.
-  call-build-legacy-image-manifests:
-    if: needs.call-build-images-meta.outputs.build-type == '1.8'
-    name: Deploy multi-arch container image manifests
-    permissions:
-      contents: read
-      packages: write
-    runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
-    needs:
-      - call-build-images-meta
-      - call-build-legacy-images-matrix
-    steps:
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Log in to the Container registry
-        uses: docker/login-action@v2
-        with:
-          registry: ${{ inputs.registry }}
-          username: ${{ inputs.username }}
-          password: ${{ secrets.token }}
-
-      - name: Pull all the images
-        # Use platform to trigger warnings on invalid image metadata
-        run: |
-          docker pull --platform=linux/amd64 ${{ inputs.registry }}/${{ inputs.image }}:x86_64-${{ inputs.version }}
-          docker pull --platform=linux/arm64 ${{ inputs.registry }}/${{ inputs.image }}:arm64v8-${{ inputs.version }}
-          docker pull --platform=linux/arm/v7  ${{ inputs.registry }}/${{ inputs.image }}:arm32v7-${{ inputs.version }}
-
-      - name: Create manifests for images
-        # Latest is 1.9, not 1.8 now
-        run: |
-          docker manifest create ${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }} \
-            --amend ${{ inputs.registry }}/${{ inputs.image }}:x86_64-${{ inputs.version }} \
-            --amend ${{ inputs.registry }}/${{ inputs.image }}:arm64v8-${{ inputs.version }} \
-            --amend ${{ inputs.registry }}/${{ inputs.image }}:arm32v7-${{ inputs.version }}
-          docker manifest push --purge ${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}
-        env:
-          DOCKER_CLI_EXPERIMENTAL: enabled
-        shell: bash
-
-      - name: Create major version manifest
-        if: needs.call-build-images-meta.outputs.major-version != inputs.version
-        run: |
-          docker manifest push --purge ${{ inputs.registry }}/${{ inputs.image }}:${{ needs.call-build-images-meta.outputs.major-version }}
-        env:
-          DOCKER_CLI_EXPERIMENTAL: enabled
-        shell: bash
+          replace-with: "$1"
+          flags: "g"
 
   # This is the intended approach to multi-arch image and all the other checks scanning,
   # signing, etc only trigger from this.
-  # 1.8 images are legacy and were not scanned or signed previously so this keeps it simple.
   call-build-images:
-    if: needs.call-build-images-meta.outputs.build-type != '1.8'
     needs:
       - call-build-images-meta
     name: Multiarch container images to GHCR
@@ -232,6 +80,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      production-digest: ${{ steps.build_push.outputs.digest }}
+      debug-digest: ${{ steps.debug_build_push.outputs.digest }}
     steps:
       - name: Checkout code for modern style builds
         uses: actions/checkout@v3
@@ -262,7 +113,8 @@ jobs:
             raw,latest
 
       - name: Build the production images
-        uses: docker/build-push-action@v3
+        id: build_push
+        uses: docker/build-push-action@v4
         with:
           file: ./dockerfiles/Dockerfile
           context: .
@@ -286,7 +138,8 @@ jobs:
             raw,latest-debug
 
       - name: Build the debug multi-arch images
-        uses: docker/build-push-action@v3
+        id: debug_build_push
+        uses: docker/build-push-action@v4
         with:
           file: ./dockerfiles/Dockerfile
           context: .
@@ -304,7 +157,6 @@ jobs:
     needs:
       - call-build-images-meta
       - call-build-images
-    if: needs.call-build-images-meta.outputs.build-type != '1.8'
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     permissions:
@@ -332,7 +184,6 @@ jobs:
           if-no-files-found: error
 
   call-build-images-scan:
-    if: needs.call-build-images-meta.outputs.build-type != '1.8'
     needs:
       - call-build-images-meta
       - call-build-images
@@ -353,22 +204,21 @@ jobs:
       - name: Trivy - multi-arch
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: '${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}'
-          format: 'table'
-          exit-code: '1'
+          image-ref: "${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}"
+          format: "table"
+          exit-code: "1"
           ignore-unfixed: true
-          vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
+          vuln-type: "os,library"
+          severity: "CRITICAL,HIGH"
 
       - name: Dockle - multi-arch
         uses: hands-lab/dockle-action@v1
         with:
-          image: '${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}'
-          exit-code: '1'
+          image: "${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}"
+          exit-code: "1"
           exit-level: WARN
 
   call-build-images-sign:
-    if: needs.call-build-images-meta.outputs.build-type != '1.8'
     needs:
       - call-build-images-meta
       - call-build-images
@@ -394,17 +244,16 @@ jobs:
         run: |
           cosign sign --recursive \
             -a "repo=${{ github.repository }}" \
-            -a "workflow=${{ github.workflow }}" \
+            -a "workflow=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             -a "ref=${{ github.sha }}" \
             -a "release=${{ inputs.version }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}:${{ needs.call-build-images-meta.outputs.major-version }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}:latest"
+            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-images.outputs.production-digest }}" \
+            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-images.outputs.debug-digest }}"
         shell: bash
         # Ensure we move on to key-based signing as well
         continue-on-error: true
         env:
-          COSIGN_EXPERIMENTAL: "true"
+          COSIGN_EXPERIMENTAL: true
 
       - name: Cosign with a key
         # Only run if we have a key defined
@@ -414,26 +263,31 @@ jobs:
           echo -e "${COSIGN_PRIVATE_KEY}" > /tmp/my_cosign.key
           cosign sign --key /tmp/my_cosign.key --recursive \
             -a "repo=${{ github.repository }}" \
-            -a "workflow=${{ github.workflow }}" \
+            -a "workflow=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             -a "ref=${{ github.sha }}" \
             -a "release=${{ inputs.version }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}:${{ needs.call-build-images-meta.outputs.major-version }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}:latest"
+            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-images.outputs.production-digest }}" \
+            "${{ inputs.registry }}/${{ inputs.image }}@${{ needs.call-build-images.outputs.debug-digest }}"
           rm -f /tmp/my_cosign.key
         shell: bash
+        continue-on-error: true
         env:
           COSIGN_PRIVATE_KEY: ${{ secrets.cosign_private_key }}
           COSIGN_PASSWORD: ${{ secrets.cosign_private_key_password }} # optional
 
   # This takes a long time...
   call-build-windows-container:
-    if: needs.call-build-images-meta.outputs.build-type != '1.8'
-    name: Windows container image
-    runs-on: windows-2019
+    name: Windows container images
+    runs-on: windows-${{ matrix.windows-base-version }}
     environment: ${{ inputs.environment }}
     needs:
       - call-build-images-meta
+    strategy:
+      fail-fast: true
+      matrix:
+        windows-base-version: 
+          - '2019'
+          - '2022'
     permissions:
       contents: read
       packages: write
@@ -452,10 +306,11 @@ jobs:
 
       - name: Build the production images
         run: |
-          docker build -t ${{ inputs.registry }}/${{ inputs.image }}:windows-2019-${{ inputs.version }} --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc2019 -f ./dockerfiles/Dockerfile.windows .
-          docker push ${{ inputs.registry }}/${{ inputs.image }}:windows-2019-${{ inputs.version }}
+          docker build -t ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }} --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/Dockerfile.windows .
+          docker push ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }}
+        
         # We cannot use this action as it requires privileged mode
-        # uses: docker/build-push-action@v3
+        # uses: docker/build-push-action@v4
         # with:
         #   file: ./dockerfiles/Dockerfile.windows
         #   context: .

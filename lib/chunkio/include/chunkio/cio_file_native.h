@@ -49,6 +49,7 @@ int cio_file_native_filename_check(char *name);
 int cio_file_native_open(struct cio_file *cf);
 int cio_file_native_close(struct cio_file *cf);
 int cio_file_native_delete(struct cio_file *cf);
+int cio_file_native_delete_by_path(const char *path);
 int cio_file_native_sync(struct cio_file *cf, int sync_mode);
 int cio_file_native_resize(struct cio_file *cf, size_t new_size);
 

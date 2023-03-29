@@ -69,7 +69,7 @@ static int cb_resize(void *record, size_t size, void *data)
         TEST_MSG("log is not truncated.ret=%d", ret);
     }
 
-    ret = flb_error_is_truncated("%.*s", strlen(log) - ret, log);
+    ret = flb_error_is_truncated("%.*s", (int)(strlen(log) - ret), log);
     if (!TEST_CHECK(ret == 0)) {
         TEST_MSG("log is truncated.ret=%d", ret);
     }

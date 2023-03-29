@@ -1,0 +1,14 @@
+/*
+ * Copyright (C) 2019 Intel Corporation.  All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+ */
+
+/* Please don't modify this header. It is automatically generated.
+   Any modification should be in config_common.cmake */
+
+#ifndef _WAMR_VERSION_H_
+#define _WAMR_VERSION_H_
+#cmakedefine WAMR_VERSION_MAJOR @WAMR_VERSION_MAJOR@
+#define WAMR_VERSION_MINOR @WAMR_VERSION_MINOR@
+#define WAMR_VERSION_PATCH @WAMR_VERSION_PATCH@
+#endif

@@ -26,3 +26,5 @@ src/include/
 build/
 include/monkey/mk_static_plugins.h
 include/monkey/mk_core/mk_core_info.h
+.vscode
+monkey.service

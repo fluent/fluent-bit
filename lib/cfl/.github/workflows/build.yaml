@@ -24,6 +24,35 @@ jobs:
         run: |
           ctest --rerun-failed --output-on-failure -C Debug --test-dir .\tests\
 
+  build-msys2:
+    name: Build sources on MSYS2 for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-2019]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Get dependencies w/ chocolatey
+        uses: crazy-max/ghaction-chocolatey@v2
+        with:
+          args: install -y cmake --installargs 'ADD_CMAKE_TO_PATH=System'
+      - uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          msystem: UCRT64
+          path-type: inherit
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+      - name: Build on ${{ matrix.os }} with MSYS2
+        shell: msys2 {0}
+        run: |
+          cmake -G "MinGW Makefiles" -DCFL_TESTS=On .
+          cmake --build .
+      - name: Run unit tests.
+        run: |
+          ctest --rerun-failed --output-on-failure -C Debug --test-dir .\tests\
+
   build-centos:
     name: CentOS 7 build to confirm no issues once used downstream
     runs-on: ubuntu-latest
@@ -31,20 +60,36 @@ jobs:
     steps:
       - name: Set up base image dependencies
         run: |
-          yum -y update && \
-          yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
-                        wget unzip systemd-devel wget flex bison \
-                        cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
-                        postgresql-libs postgresql-devel postgresql-server postgresql && \
-          wget http://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm && \
-          rpm -ivh epel-release-latest-7.noarch.rpm && \
+          yum -y update
+          yum install -y ca-certificates cmake gcc gcc-c++ make wget
+          wget http://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+          rpm -ivh epel-release-latest-7.noarch.rpm
           yum install -y cmake3
+        shell: bash
 
       - uses: actions/checkout@v3
 
       - name: Run compilation
         run: |
           cmake3 -DCFL_DEV=on .
+          make
+
+  build-debian:
+    name: Debian Buster build to confirm no issues once used downstream
+    runs-on: ubuntu-latest
+    container: debian:buster
+    steps:
+      - name: Set up base image dependencies
+        run: |
+          apt-get update
+          apt-get install -y build-essential cmake make
+        shell: bash
+
+      - uses: actions/checkout@v3
+
+      - name: Run compilation
+        run: |
+          cmake -DCFL_DEV=on .
           make
 
   build-unix-arm64:
@@ -58,7 +103,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
-        uses: uraimo/run-on-arch-action@v2.2.1
+        uses: uraimo/run-on-arch-action@v2.3.0
         with:
           arch: aarch64
           distro: ubuntu20.04
@@ -75,6 +120,7 @@ jobs:
             CTEST_OUTPUT_ON_FAILURE=1 make test
         env:
           CC: ${{ matrix.compiler }}
+
   build-unix-amd64:
     name: Build sources on amd64 for ${{ matrix.os }} - ${{ matrix.compiler }}
     runs-on: ${{ matrix.os }}
@@ -93,3 +139,30 @@ jobs:
           CTEST_OUTPUT_ON_FAILURE=1 make test
         env:
           CC: ${{ matrix.compiler }}
+
+  build-analysis-tests:
+    name: Build with various code analysis tools
+    strategy:
+      fail-fast: false
+      matrix:
+        preset:
+          - clang-sanitize-address
+          - clang-sanitize-memory
+          - clang-sanitize-undefined
+          - clang-sanitize-dataflow
+          - clang-sanitize-safe-stack
+          - valgrind
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - uses: docker://lpenz/ghaction-cmake:0.19
+        with:
+          preset: ${{ matrix.preset }}
+          # dependencies_debian: ''
+          cmakeflags: '-DCFL_TESTS=On -DCFL_DEV=on .'
+          build_command: make all

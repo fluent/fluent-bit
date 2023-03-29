@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -67,6 +67,9 @@ struct cmt {
     struct cfl_list histograms;
     struct cfl_list summaries;
     struct cfl_list untypeds;
+
+    /* Only used by the otlp decoder */
+    struct cfl_list _head;
 };
 
 void cmt_initialize();

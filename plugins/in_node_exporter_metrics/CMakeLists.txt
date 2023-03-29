@@ -2,6 +2,7 @@ set(src
   ne_cpu.c
   ne_meminfo.c
   ne_diskstats.c
+  ne_filesystem.c
   ne_uname.c
   ne_stat_linux.c
   ne_vmstat_linux.c

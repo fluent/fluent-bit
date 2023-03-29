@@ -181,7 +181,7 @@ void test_parser_time_lookup()
     struct flb_parser *p;
     struct flb_config *config;
     struct time_check *t;
-    struct tm tm;
+    struct flb_tm tm;
 
     config = flb_config_init();
 

@@ -24,8 +24,8 @@
 #include <fluent-bit/flb_sds.h>
 #include <chunkio/chunkio.h>
 
-static void log_cb(void *ctx, int level, const char *file, int line,
-                   const char *str)
+static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
+                  char *str)
 {
     if (level == CIO_LOG_ERROR) {
         flb_error("[fstore] %s", str);
@@ -39,6 +39,8 @@ static void log_cb(void *ctx, int level, const char *file, int line,
     else if (level == CIO_LOG_DEBUG) {
         flb_debug("[fstore] %s", str);
     }
+
+    return 0;
 }
 
 /*

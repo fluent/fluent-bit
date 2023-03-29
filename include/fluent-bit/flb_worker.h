@@ -33,6 +33,7 @@ struct flb_worker {
     pthread_t tid;             /* thread ID   */
 
     /* Logging */
+    struct flb_log_cache *log_cache;
 #ifdef _WIN32
     intptr_t log[2];
 #else

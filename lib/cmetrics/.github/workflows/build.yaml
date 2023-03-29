@@ -74,7 +74,7 @@ jobs:
           submodules: true
 
       - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
-        uses: uraimo/run-on-arch-action@v2.2.1
+        uses: uraimo/run-on-arch-action@v2.3.0
         with:
           arch: aarch64
           distro: ubuntu20.04
@@ -84,7 +84,7 @@ jobs:
             build-essential \
             cmake \
             file \
-            make 
+            make
             export CC=${{ env.compiler }}
             cmake -DCMT_TESTS=On .
             make all

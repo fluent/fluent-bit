@@ -8,6 +8,7 @@
 #include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_router.h>
+#include <fluent-bit/flb_time.h>
 #include "flb_tests_internal.h"
 #include "chunkio/chunkio.h"
 #include "data/input_chunk/log/test_buffer_drop_chunks.h"
@@ -313,7 +314,7 @@ void flb_test_input_chunk_dropping_chunks()
         flb_input_chunk_destroy(ic, FLB_TRUE);
     }
 
-    sleep(2);
+    flb_time_msleep(2100);
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -370,8 +371,8 @@ static int gen_buf(msgpack_sbuffer *mp_sbuf, char *buf, size_t buf_size)
     return 0;
 }
 
-static void log_cb(void *data, int level, const char *file, int line,
-                   const char *str)
+static int log_cb(struct cio_ctx *data, int level, const char *file, int line,
+                  char *str)
 {
     if (level == CIO_LOG_ERROR) {
         flb_error("[fstore] %s", str);
@@ -385,6 +386,8 @@ static void log_cb(void *data, int level, const char *file, int line,
     else if (level == CIO_LOG_DEBUG) {
         flb_debug("[fstore] %s", str);
     }
+
+    return 0;
 }
 
 /* This tests uses the subsystems of the engine directly
@@ -392,6 +395,7 @@ static void log_cb(void *data, int level, const char *file, int line,
  */
 void flb_test_input_chunk_fs_chunks_size_real()
 {
+    int records;
     bool have_size_discrepancy = FLB_FALSE;
     bool has_checked_size = FLB_FALSE;
     struct flb_input_instance *i_ins;
@@ -408,6 +412,7 @@ void flb_test_input_chunk_fs_chunks_size_real()
     struct mk_event_loop *evl;
     struct cio_options opts = {0};
 
+    flb_init_env();
     cfg = flb_config_init();
     evl = mk_event_loop_create(256);
 
@@ -441,14 +446,16 @@ void flb_test_input_chunk_fs_chunks_size_real()
     memset((void *)buf, 0x41, sizeof(buf));
     msgpack_sbuffer_init(&mp_sbuf);
     gen_buf(&mp_sbuf, buf, sizeof(buf));
-    flb_input_chunk_append_raw(i_ins, "dummy", 4, (void *)buf, sizeof(buf));
+
+    records = flb_mp_count(buf, sizeof(buf));
+    flb_input_chunk_append_raw(i_ins, FLB_INPUT_LOGS, records, "dummy", 4, (void *)buf, sizeof(buf));
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     /* then force a realloc? */
     memset((void *)buf, 0x42, 256);
     msgpack_sbuffer_init(&mp_sbuf);
     gen_buf(&mp_sbuf, buf, 256);
-    flb_input_chunk_append_raw(i_ins, "dummy", 4, (void *)buf, 256);
+    flb_input_chunk_append_raw(i_ins, FLB_INPUT_LOGS, 256, "dummy", 4, (void *)buf, 256);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     /* clean up test chunks */
@@ -467,7 +474,7 @@ void flb_test_input_chunk_fs_chunks_size_real()
      */
     mk_list_foreach_safe(head, tmp, &ic->in->config->outputs) {
         o_ins = mk_list_entry(head, struct flb_output_instance, _head);
-        flb_info("[input chunk test] chunk_size=%d fs_chunk_size=%d", chunk_size,
+        flb_info("[input chunk test] chunk_size=%zu fs_chunk_size=%zu", chunk_size,
                  o_ins->fs_chunks_size);
         has_checked_size = FLB_TRUE;
         TEST_CHECK_(chunk_size == o_ins->fs_chunks_size, "fs_chunks_size must match total real size");

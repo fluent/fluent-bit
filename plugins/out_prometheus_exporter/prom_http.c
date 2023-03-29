@@ -18,7 +18,7 @@
  */
 
 #include <fluent-bit/flb_output_plugin.h>
-
+#include <fluent-bit/flb_http_server.h>
 #include "prom.h"
 #include "prom_http.h"
 
@@ -173,6 +173,7 @@ static void cb_metrics(mk_request_t *request, void *data)
     buf->users++;
 
     mk_http_status(request, 200);
+    flb_hs_add_content_type_to_req(request, FLB_HS_CONTENT_TYPE_PROMETHEUS);
     mk_http_send(request, buf->buf_data, buf->buf_size, NULL);
     mk_http_done(request);
 

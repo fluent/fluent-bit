@@ -49,6 +49,7 @@
 
 #define FLB_JSON_DATE_DOUBLE      0
 #define FLB_JSON_DATE_ISO8601     1
+#define FLB_JSON_DATE_ISO8601_NS  2
 #define FLB_JSON_DATE_ISO8601_FMT "%Y-%m-%dT%H:%M:%S"
 
 struct flb_kafka_topic {

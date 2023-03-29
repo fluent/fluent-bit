@@ -21,6 +21,7 @@
 #define FLB_FILTER_RECORD_MODIFIER_H
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_filter.h>
 
 struct modifier_record {
@@ -42,6 +43,9 @@ struct record_modifier_ctx {
     int records_num;
     int remove_keys_num;
     int allowlist_keys_num;
+
+    flb_sds_t uuid_key;
+
     /* config map */
     struct mk_list *records_map;
     struct mk_list *remove_keys_map;

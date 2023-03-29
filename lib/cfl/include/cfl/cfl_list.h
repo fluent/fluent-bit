@@ -34,7 +34,7 @@
 #ifdef _WIN32
 /* Windows */
 #define cfl_container_of(address, type, field) ((type *)(                   \
-                                                        (unsigned char)(address) - \
+                                                        (unsigned char *)(address) - \
                                                         (intptr_t)(&((type *)0)->field)))
 #else
 /* Rest of the world */

@@ -25,13 +25,36 @@
 #include <fluent-bit/flb_upstream_ha.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_connection.h>
+#include <fluent-bit/flb_pthread.h>
+#include <cfl/cfl_list.h>
 
-/* Forward modes */
+/*
+ * Forward modes
+ * =============
+ */
+
+/*
+ * Message mode
+ * ------------
+ * https://github.com/fluent/fluentd/wiki/Forward-Protocol-Specification-v1#message-modes
+ */
 #define MODE_MESSAGE               0
+
+/*
+ * Forward mode
+ * ------------
+ * https://github.com/fluent/fluentd/wiki/Forward-Protocol-Specification-v1#forward-mode
+ */
 #define MODE_FORWARD               1
+
+/*
+ * Forward Compat: similar to MODE_FORWARD, but it sends the timestamps as unsigned
+ * integers for compatibility with very old versions of Fluentd that don't have timestamps
+ * with nanoseconds. This mode only applies for Logs.
+ */
 #define MODE_FORWARD_COMPAT        3
 
-/* Compression modes */
+/* Compression options */
 #define COMPRESS_NONE              0
 #define COMPRESS_GZIP              1
 
@@ -48,6 +71,8 @@ struct flb_forward_config {
     int secured;              /* Using Secure Forward mode ?  */
     int compress;             /* Using compression ? */
     int time_as_integer;      /* Use backward compatible timestamp ? */
+    int fluentd_compat;       /* Use Fluentd compatible payload for
+                               * metrics and ctraces */
 
     /* config */
     flb_sds_t shared_key;        /* shared key                   */
@@ -75,12 +100,20 @@ struct flb_forward_config {
     struct mk_list _head;     /* Link to list flb_forward->configs */
 };
 
+struct flb_forward_uds_connection {
+    flb_sockfd_t    descriptor;
+    struct cfl_list _head;     /* Link to list flb_forward->uds_connnection_list */
+};
+
 /* Plugin Context */
 struct flb_forward {
     /* if HA mode is enabled */
     int ha_mode;              /* High Availability mode enabled ? */
     char *ha_upstream;        /* Upstream configuration file      */
     struct flb_upstream_ha *ha;
+
+    struct cfl_list uds_connection_list;
+    pthread_mutex_t uds_connection_list_mutex;
 
     /* Upstream handler and config context for single mode (no HA) */
     struct flb_upstream *u;

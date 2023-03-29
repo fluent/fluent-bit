@@ -62,8 +62,8 @@ struct flb_upstream_node {
 };
 
 
-struct flb_upstream_node *flb_upstream_node_create(const char *name, const char *host,
-                                                   const char *port,
+struct flb_upstream_node *flb_upstream_node_create(flb_sds_t name, flb_sds_t host,
+                                                   flb_sds_t port,
                                                    int tls, int tls_verify,
                                                    int tls_debug,
                                                    const char *tls_vhost,

@@ -1,4 +1,5 @@
-UNICODE_VERSION = 9.0.0
+UNICODE_VERSION = 15.0.0
+EMOJI_VERSION = 15.0.0
 
 PROP_FILES = \
 	    $(UNICODE_VERSION)/Blocks.txt \
@@ -9,7 +10,8 @@ PROP_FILES = \
 	    $(UNICODE_VERSION)/PropList.txt \
 	    $(UNICODE_VERSION)/Scripts.txt \
 	    $(UNICODE_VERSION)/UnicodeData.txt \
-	    $(UNICODE_VERSION)/auxiliary/GraphemeBreakProperty.txt
+	    $(UNICODE_VERSION)/auxiliary/GraphemeBreakProperty.txt \
+	    $(UNICODE_VERSION)/emoji-data.txt
 
 CASEFOLD_FILES = \
 	    $(UNICODE_VERSION)/CaseFolding.txt \
@@ -24,18 +26,18 @@ update-unicode-header: casefold.h name2ctype.h
 update-jis-header: ../enc/jis/props.kwd
 	cd .. && ./tool/convert-jis-props.sh enc/jis/props.kwd enc/jis/props.h && cd -
 
-update-doc: $(PROP_FILES)
+update-doc: $(PROP_FILES) update-doc.py
 	$(PYTHON) ./update-doc.py $(UNICODE_VERSION) > ../doc/UnicodeProps.txt
 
 download:
-	./download-ucd.sh $(UNICODE_VERSION)
+	./download-ucd.sh $(UNICODE_VERSION) $(EMOJI_VERSION)
 
 
-casefold.h: $(CASEFOLD_FILES)
+casefold.h: $(CASEFOLD_FILES) case-folding.rb
 	$(RUBY) ./case-folding.rb -m $(UNICODE_VERSION) -o casefold.h
 
-name2ctype.h: $(PROP_FILES)
-	$(RUBY) ./enc-unicode.rb --header $(UNICODE_VERSION) > name2ctype.h
+name2ctype.h: $(PROP_FILES) enc-unicode.rb
+	$(RUBY) ./enc-unicode.rb --header $(UNICODE_VERSION) > name2ctype.h || rm -f name2ctype.h
 
 
 clean:

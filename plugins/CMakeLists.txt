@@ -178,14 +178,20 @@ REGISTER_IN_PLUGIN("in_prometheus_scrape")
 REGISTER_IN_PLUGIN("in_emitter")
 REGISTER_IN_PLUGIN("in_tail")
 REGISTER_IN_PLUGIN("in_dummy")
-REGISTER_IN_PLUGIN("in_dummy_thread")
 REGISTER_IN_PLUGIN("in_head")
 REGISTER_IN_PLUGIN("in_health")
 REGISTER_IN_PLUGIN("in_http")
 REGISTER_IN_PLUGIN("in_collectd")
 REGISTER_IN_PLUGIN("in_statsd")
 REGISTER_IN_PLUGIN("in_opentelemetry")
+REGISTER_IN_PLUGIN("in_elasticsearch")
+
+# Test the event loop messaging when used in threaded mode
 REGISTER_IN_PLUGIN("in_event_test")
+
+# Send different event types: logs, metrics and traces
+REGISTER_IN_PLUGIN("in_event_type")
+
 
 if (FLB_IN_STORAGE_BACKLOG)
   REGISTER_IN_PLUGIN("in_storage_backlog")
@@ -263,6 +269,7 @@ REGISTER_OUT_PLUGIN("out_stackdriver")
 REGISTER_OUT_PLUGIN("out_stdout")
 REGISTER_OUT_PLUGIN("out_syslog")
 REGISTER_OUT_PLUGIN("out_tcp")
+REGISTER_OUT_PLUGIN("out_udp")
 REGISTER_OUT_PLUGIN("out_td")
 REGISTER_OUT_PLUGIN("out_lib")
 REGISTER_OUT_PLUGIN("out_flowcounter")
@@ -275,12 +282,14 @@ REGISTER_OUT_PLUGIN("out_opentelemetry")
 REGISTER_OUT_PLUGIN("out_prometheus_exporter")
 REGISTER_OUT_PLUGIN("out_prometheus_remote_write")
 REGISTER_OUT_PLUGIN("out_s3")
+REGISTER_OUT_PLUGIN("out_vivo_exporter")
 
 # FILTERS
 # =======
 REGISTER_FILTER_PLUGIN("filter_alter_size")
 REGISTER_FILTER_PLUGIN("filter_aws")
 REGISTER_FILTER_PLUGIN("filter_checklist")
+REGISTER_FILTER_PLUGIN("filter_ecs")
 REGISTER_FILTER_PLUGIN("filter_record_modifier")
 REGISTER_FILTER_PLUGIN("filter_throttle")
 REGISTER_FILTER_PLUGIN("filter_throttle_size")
@@ -299,6 +308,10 @@ if(FLB_RECORD_ACCESSOR)
   REGISTER_FILTER_PLUGIN("filter_expect")
   REGISTER_FILTER_PLUGIN("filter_grep")
   REGISTER_FILTER_PLUGIN("filter_rewrite_tag")
+endif()
+
+if(FLB_METRICS)
+  REGISTER_FILTER_PLUGIN("filter_log_to_metrics")
 endif()
 
 if(FLB_LUAJIT)

@@ -2,7 +2,7 @@
 
 /*  CMetrics
  *  ========
- *  Copyright 2021 Eduardo Silva <eduardo@calyptia.com>
+ *  Copyright 2021-2022 The CMetrics Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -122,13 +122,14 @@ static struct cmt *generate_encoder_test_data()
 
 void test_opentelemetry()
 {
-    cfl_sds_t   reference_prometheus_context;
-    cfl_sds_t   opentelemetry_context;
-    cfl_sds_t   prometheus_context;
-    struct cmt *decoded_context;
-    size_t      offset;
-    int         result;
-    struct cmt *cmt;
+    cfl_sds_t        reference_prometheus_context;
+    cfl_sds_t        opentelemetry_context;
+    struct cfl_list  decoded_context_list;
+    cfl_sds_t        prometheus_context;
+    struct cmt      *decoded_context;
+    size_t           offset;
+    int              result;
+    struct cmt      *cmt;
 
     offset = 0;
 
@@ -145,25 +146,28 @@ void test_opentelemetry()
         TEST_CHECK(opentelemetry_context != NULL);
 
         if (opentelemetry_context != NULL) {
-            result = cmt_decode_opentelemetry_create(&decoded_context,
+            result = cmt_decode_opentelemetry_create(&decoded_context_list,
                                                      opentelemetry_context,
                                                      cfl_sds_len(opentelemetry_context),
                                                      &offset);
-            TEST_CHECK(result == 0);
 
-            if (result == 0) {
-                prometheus_context = cmt_encode_prometheus_create(decoded_context,
-                                                                  CMT_TRUE);
-                TEST_CHECK(prometheus_context != NULL);
+            if (TEST_CHECK(result == 0)) {
+                decoded_context = cfl_list_entry_first(&decoded_context_list, struct cmt, _head);
 
-                if (prometheus_context != NULL) {
-                    TEST_CHECK(strcmp(prometheus_context,
-                                      reference_prometheus_context) == 0);
+                if (TEST_CHECK(result == 0)) {
+                    prometheus_context = cmt_encode_prometheus_create(decoded_context,
+                                                                      CMT_TRUE);
+                    TEST_CHECK(prometheus_context != NULL);
 
-                    cmt_encode_prometheus_destroy(prometheus_context);
+                    if (prometheus_context != NULL) {
+                        TEST_CHECK(strcmp(prometheus_context,
+                                          reference_prometheus_context) == 0);
+
+                        cmt_encode_prometheus_destroy(prometheus_context);
+                    }
                 }
 
-                cmt_decode_opentelemetry_destroy(decoded_context);
+                cmt_decode_opentelemetry_destroy(&decoded_context_list);
             }
         }
 

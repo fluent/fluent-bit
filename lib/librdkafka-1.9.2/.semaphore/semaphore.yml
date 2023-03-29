@@ -1,0 +1,29 @@
+version: v1.0
+name: M1 Pipeline
+agent:
+  machine:
+    type: s1-prod-mac-m1
+blocks:
+  - name: 'Build, Test, Package'
+    task:
+      jobs:
+        - name: 'Build'
+          env_vars:
+            - name: CC
+              value: gcc
+          commands:
+            - cd $SEM_WORKSPACE
+            - checkout
+            - export WORKSPACE=$SEM_WORKSPACE/librdkafka
+            - cd $WORKSPACE
+            - mkdir dest artifacts
+            - ./configure --install-deps --source-deps-only --enable-static --disable-lz4-ext --prefix="$WORKSPACE/dest" --enable-strip
+            - make -j2 all examples check
+            - make -j2 -C tests build
+            - make -C tests run_local_quick
+            - make install
+            - cd $WORKSPACE/dest
+            - tar cvzf ${WORKSPACE}/artifacts/librdkafka-${CC}.tar.gz .
+            - artifact push job ${WORKSPACE}/artifacts/librdkafka-${CC}.tar.gz
+            - cd $WORKSPACE
+            - sha256sum artifacts/*

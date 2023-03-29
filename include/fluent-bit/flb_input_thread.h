@@ -58,8 +58,6 @@ struct flb_input_thread {
     size_t bufpos;                /* current offset in the msgpack buffer */
 };
 
-/* ============== New input thread interface =================== */
-
 struct flb_input_thread_instance {
     struct mk_event event;               /* event context to associate events */
     struct mk_event event_local;         /* local events inside the thread/event loop */
@@ -104,19 +102,5 @@ int flb_input_thread_collectors_start(struct flb_input_instance *ins);
 int flb_input_thread_init_fail(struct flb_input_instance *ins);
 int flb_input_thread_is_ready(struct flb_input_instance *ins);
 int flb_input_thread_wait_until_is_ready(struct flb_input_instance *ins);
-
-/* ============= END ==================== */
-
-int flb_input_thread_init(struct flb_input_thread *it,
-                          flb_input_thread_cb callback,
-                          void *data);
-int flb_input_thread_destroy(struct flb_input_thread *it,
-                             struct flb_input_instance *ins);
-int flb_input_thread_collect(struct flb_input_instance *ins,
-                             struct flb_config *config,
-                             void *in_context);
-void flb_input_thread_exit(void *in_context, struct flb_input_instance *ins);
-bool flb_input_thread_exited(struct flb_input_thread *it);
-
 
 #endif

@@ -24,12 +24,60 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_ra_key.h>
+#include <fluent-bit/flb_thread_storage.h>
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
 #include <fluent-bit/flb_mp.h>
 
 #include <ctype.h>
+#include <sys/stat.h>
 
 #include "loki.h"
+
+struct flb_loki_dynamic_tenant_id_entry {
+    flb_sds_t value;
+    struct cfl_list _head;
+};
+
+pthread_once_t initialization_guard = PTHREAD_ONCE_INIT;
+
+FLB_TLS_DEFINE(struct flb_loki_dynamic_tenant_id_entry,
+               thread_local_tenant_id);
+
+void initialize_thread_local_storage()
+{
+    FLB_TLS_INIT(thread_local_tenant_id);
+}
+
+static struct flb_loki_dynamic_tenant_id_entry *dynamic_tenant_id_create() {
+    struct flb_loki_dynamic_tenant_id_entry *entry;
+
+    entry = (struct flb_loki_dynamic_tenant_id_entry *) \
+        flb_calloc(1, sizeof(struct flb_loki_dynamic_tenant_id_entry));
+
+    if (entry != NULL) {
+        entry->value = NULL;
+
+        cfl_list_entry_init(&entry->_head);
+    }
+
+    return entry;
+}
+
+static void dynamic_tenant_id_destroy(struct flb_loki_dynamic_tenant_id_entry *entry) {
+    if (entry != NULL) {
+        if (entry->value != NULL) {
+            flb_sds_destroy(entry->value);
+
+            entry->value = NULL;
+        }
+
+        if (!cfl_list_entry_is_orphan(&entry->_head)) {
+            cfl_list_del(&entry->_head);
+        }
+
+        flb_free(entry);
+    }
+}
 
 static void flb_loki_kv_init(struct mk_list *list)
 {
@@ -46,7 +94,7 @@ static inline void safe_sds_cat(flb_sds_t *buf, const char *str, int len)
     }
 }
 
-static inline void normalize_cat(struct flb_ra_parser *rp, flb_sds_t name)
+static inline void normalize_cat(struct flb_ra_parser *rp, flb_sds_t *name)
 {
     int sub;
     int len;
@@ -58,12 +106,12 @@ static inline void normalize_cat(struct flb_ra_parser *rp, flb_sds_t name)
     /* Iterate record accessor keys */
     key = rp->key;
     if (rp->type == FLB_RA_PARSER_STRING) {
-        safe_sds_cat(&name, key->name, flb_sds_len(key->name));
+        safe_sds_cat(name, key->name, flb_sds_len(key->name));
     }
     else if (rp->type == FLB_RA_PARSER_KEYMAP) {
-        safe_sds_cat(&name, key->name, flb_sds_len(key->name));
+        safe_sds_cat(name, key->name, flb_sds_len(key->name));
         if (mk_list_size(key->subkeys) > 0) {
-            safe_sds_cat(&name, "_", 1);
+            safe_sds_cat(name, "_", 1);
         }
 
         sub = 0;
@@ -71,15 +119,15 @@ static inline void normalize_cat(struct flb_ra_parser *rp, flb_sds_t name)
             entry = mk_list_entry(s_head, struct flb_ra_subentry, _head);
 
             if (sub > 0) {
-                safe_sds_cat(&name, "_", 1);
+                safe_sds_cat(name, "_", 1);
             }
             if (entry->type == FLB_RA_PARSER_STRING) {
-                safe_sds_cat(&name, entry->str, flb_sds_len(entry->str));
+                safe_sds_cat(name, entry->str, flb_sds_len(entry->str));
             }
             else if (entry->type == FLB_RA_PARSER_ARRAY_ID) {
                 len = snprintf(tmp, sizeof(tmp) -1, "%d",
                                entry->array_id);
-                safe_sds_cat(&name, tmp, len);
+                safe_sds_cat(name, tmp, len);
             }
             sub++;
         }
@@ -104,7 +152,7 @@ static flb_sds_t normalize_ra_key_name(struct flb_loki *ctx,
         if (c > 0) {
             flb_sds_cat(name, "_", 1);
         }
-        normalize_cat(rp, name);
+        normalize_cat(rp, &name);
         c++;
     }
 
@@ -407,6 +455,235 @@ static flb_sds_t pack_labels(struct flb_loki *ctx,
     return 0;
 }
 
+static int create_label_map_entry(struct flb_loki *ctx,
+                                  struct flb_sds_list *list, msgpack_object *val, int *ra_used)
+{
+    msgpack_object key;
+    flb_sds_t label_key;
+    flb_sds_t val_str;
+    int i;
+    int len;
+    int ret;
+
+    if (ctx == NULL || list == NULL || val == NULL || ra_used == NULL) {
+        return -1;
+    }
+
+    switch (val->type) {
+    case MSGPACK_OBJECT_STR:
+        label_key = flb_sds_create_len(val->via.str.ptr, val->via.str.size);
+        if (label_key == NULL) {
+            flb_errno();
+            return -1;
+        }
+
+        val_str = flb_ra_create_str_from_list(list);
+        if (val_str == NULL) {
+            flb_plg_error(ctx->ins, "[%s] flb_ra_create_from_list failed", __FUNCTION__);
+            flb_sds_destroy(label_key);
+            return -1;
+        }
+
+        /* for debugging
+          printf("label_key=%s val_str=%s\n", label_key, val_str);
+         */
+
+        ret = flb_loki_kv_append(ctx, label_key, val_str);
+        flb_sds_destroy(label_key);
+        flb_sds_destroy(val_str);
+        if (ret == -1) {
+            return -1;
+        }
+        *ra_used = *ra_used + 1;
+
+        break;
+    case MSGPACK_OBJECT_MAP:
+        len = val->via.map.size;
+        for (i=0; i<len; i++) {
+            key = val->via.map.ptr[i].key;
+            if (key.type != MSGPACK_OBJECT_STR) {
+                flb_plg_error(ctx->ins, "[%s] key is not string", __FUNCTION__);
+                return -1;
+            }
+            ret = flb_sds_list_add(list, (char*)key.via.str.ptr, key.via.str.size);
+            if (ret < 0) {
+                flb_plg_error(ctx->ins, "[%s] flb_sds_list_add failed", __FUNCTION__);
+                return -1;
+            }
+
+            ret = create_label_map_entry(ctx, list, &val->via.map.ptr[i].val, ra_used);
+            if (ret < 0) {
+                return -1;
+            }
+
+            ret = flb_sds_list_del_last_entry(list);
+            if (ret < 0) {
+                flb_plg_error(ctx->ins, "[%s] flb_sds_list_del_last_entry failed", __FUNCTION__);
+                return -1;
+            }
+        }
+
+        break;
+    default:
+        flb_plg_error(ctx->ins, "[%s] value type is not str or map. type=%d", __FUNCTION__, val->type);
+        return -1;
+    }
+    return 0;
+}
+
+static int create_label_map_entries(struct flb_loki *ctx,
+                                    char *msgpack_buf, size_t msgpack_size, int *ra_used)
+{
+    struct flb_sds_list *list = NULL;
+    msgpack_unpacked result;
+    size_t off = 0;
+    int i;
+    int len;
+    int ret;
+    msgpack_object key;
+
+    if (ctx == NULL || msgpack_buf == NULL || ra_used == NULL) {
+        return -1;
+    }
+
+    msgpack_unpacked_init(&result);
+    while(msgpack_unpack_next(&result, msgpack_buf, msgpack_size, &off) == MSGPACK_UNPACK_SUCCESS) {
+        if (result.data.type != MSGPACK_OBJECT_MAP) {
+            flb_plg_error(ctx->ins, "[%s] data type is not map", __FUNCTION__);
+            msgpack_unpacked_destroy(&result);
+            return -1;
+        }
+
+        len = result.data.via.map.size;
+        for (i=0; i<len; i++) {
+            list = flb_sds_list_create();
+            if (list == NULL) {
+                flb_plg_error(ctx->ins, "[%s] flb_sds_list_create failed", __FUNCTION__);
+                msgpack_unpacked_destroy(&result);
+                return -1;
+            }
+            key = result.data.via.map.ptr[i].key;
+            if (key.type != MSGPACK_OBJECT_STR) {
+                flb_plg_error(ctx->ins, "[%s] key is not string", __FUNCTION__);
+                flb_sds_list_destroy(list);
+                msgpack_unpacked_destroy(&result);
+                return -1;
+            }
+
+            ret = flb_sds_list_add(list, (char*)key.via.str.ptr, key.via.str.size);
+            if (ret < 0) {
+                flb_plg_error(ctx->ins, "[%s] flb_sds_list_add failed", __FUNCTION__);
+                flb_sds_list_destroy(list);
+                msgpack_unpacked_destroy(&result);
+                return -1;
+            }
+
+            ret = create_label_map_entry(ctx, list, &result.data.via.map.ptr[i].val, ra_used);
+            if (ret < 0) {
+                flb_plg_error(ctx->ins, "[%s] create_label_map_entry failed", __FUNCTION__);
+                flb_sds_list_destroy(list);
+                msgpack_unpacked_destroy(&result);
+                return -1;
+            }
+
+            flb_sds_list_destroy(list);
+            list = NULL;
+        }
+    }
+
+    msgpack_unpacked_destroy(&result);
+
+    return 0;
+}
+
+static int read_label_map_path_file(struct flb_output_instance *ins, flb_sds_t path,
+                                    char **out_buf, size_t *out_size)
+{
+    int ret;
+    int root_type;
+    char *buf = NULL;
+    char *msgp_buf = NULL;
+    FILE *fp = NULL;
+    struct stat st;
+    size_t file_size;
+    size_t ret_size;
+
+    ret = access(path, R_OK);
+    if (ret < 0) {
+        flb_errno();
+        flb_plg_error(ins, "can't access %s", path);
+        return -1;
+    }
+
+    ret = stat(path, &st);
+    if (ret < 0) {
+        flb_errno();
+        flb_plg_error(ins, "stat failed %s", path);
+        return -1;
+    }
+    file_size = st.st_size;
+
+    fp = fopen(path, "r");
+    if (fp == NULL) {
+        flb_plg_error(ins, "can't open %s", path);
+        return -1;
+    }
+
+    buf = flb_malloc(file_size);
+    if (buf == NULL) {
+        flb_plg_error(ins, "malloc failed");
+        fclose(fp);
+        return -1;
+    }
+
+    ret_size = fread(buf, 1, file_size, fp);
+    if (ret_size < file_size && feof(fp) != 0) {
+        flb_plg_error(ins, "fread failed");
+        fclose(fp);
+        flb_free(buf);
+        return -1;
+    }
+
+    ret = flb_pack_json(buf, file_size, &msgp_buf, &ret_size, &root_type);
+    if (ret < 0) {
+        flb_plg_error(ins, "flb_pack_json failed");
+        fclose(fp);
+        flb_free(buf);
+        return -1;
+    }
+
+    *out_buf = msgp_buf;
+    *out_size = ret_size;
+
+    fclose(fp);
+    flb_free(buf);
+    return 0;
+}
+
+static int load_label_map_path(struct flb_loki *ctx, flb_sds_t path, int *ra_used)
+{
+    int ret;
+    char *msgpack_buf = NULL;
+    size_t msgpack_size;
+
+    ret = read_label_map_path_file(ctx->ins, path, &msgpack_buf, &msgpack_size);
+    if (ret < 0) {
+        return -1;
+    }
+
+    ret = create_label_map_entries(ctx, msgpack_buf, msgpack_size, ra_used);
+    if (ret < 0) {
+        flb_free(msgpack_buf);
+        return -1;
+    }
+
+    if (msgpack_buf != NULL) {
+        flb_free(msgpack_buf);
+    }
+
+    return 0;
+}
+
 static int parse_labels(struct flb_loki *ctx)
 {
     int ret;
@@ -489,6 +766,14 @@ static int parse_labels(struct flb_loki *ctx)
             else if (ret > 0) {
                 ra_used++;
             }
+        }
+    }
+
+    /* label_map_path */
+    if (ctx->label_map_path) {
+        ret = load_label_map_path(ctx, ctx->label_map_path, &ra_used);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "failed to load label_map_path");
         }
     }
 
@@ -601,10 +886,6 @@ static void loki_config_destroy(struct flb_loki *ctx)
     }
     if (ctx->ra_tenant_id_key) {
         flb_ra_destroy(ctx->ra_tenant_id_key);
-        if (ctx->dynamic_tenant_id) {
-            flb_sds_destroy(ctx->dynamic_tenant_id);
-            ctx->dynamic_tenant_id = NULL;
-        }
     }
 
     if (ctx->remove_mpa) {
@@ -667,7 +948,6 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
             flb_plg_error(ctx->ins,
                           "could not create record accessor for Tenant ID");
         }
-        ctx->dynamic_tenant_id = NULL;
     }
 
     /* Line Format */
@@ -734,7 +1014,7 @@ static void pack_timestamp(msgpack_packer *mp_pck, struct flb_time *tms)
 }
 
 
-static void pack_format_line_value(flb_sds_t buf, msgpack_object *val)
+static void pack_format_line_value(flb_sds_t *buf, msgpack_object *val)
 {
     int i;
     int len;
@@ -743,28 +1023,28 @@ static void pack_format_line_value(flb_sds_t buf, msgpack_object *val)
     msgpack_object v;
 
     if (val->type == MSGPACK_OBJECT_STR) {
-        safe_sds_cat(&buf, "\"", 1);
-        safe_sds_cat(&buf, val->via.str.ptr, val->via.str.size);
-        safe_sds_cat(&buf, "\"", 1);
+        safe_sds_cat(buf, "\"", 1);
+        safe_sds_cat(buf, val->via.str.ptr, val->via.str.size);
+        safe_sds_cat(buf, "\"", 1);
     }
     else if (val->type == MSGPACK_OBJECT_NIL) {
-        safe_sds_cat(&buf, "null", 4);
+        safe_sds_cat(buf, "null", 4);
     }
     else if (val->type == MSGPACK_OBJECT_BOOLEAN) {
         if (val->via.boolean) {
-            safe_sds_cat(&buf, "true", 4);
+            safe_sds_cat(buf, "true", 4);
         }
         else {
-            safe_sds_cat(&buf, "false", 5);
+            safe_sds_cat(buf, "false", 5);
         }
     }
     else if (val->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
         len = snprintf(temp, sizeof(temp)-1, "%"PRIu64, val->via.u64);
-        safe_sds_cat(&buf, temp, len);
+        safe_sds_cat(buf, temp, len);
     }
     else if (val->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
         len = snprintf(temp, sizeof(temp)-1, "%"PRId64, val->via.i64);
-        safe_sds_cat(&buf, temp, len);
+        safe_sds_cat(buf, temp, len);
     }
     else if (val->type == MSGPACK_OBJECT_FLOAT32 ||
              val->type == MSGPACK_OBJECT_FLOAT64) {
@@ -774,20 +1054,21 @@ static void pack_format_line_value(flb_sds_t buf, msgpack_object *val)
         else {
             len = snprintf(temp, sizeof(temp)-1, "%.16g", val->via.f64);
         }
+        safe_sds_cat(buf, temp, len);
     }
     else if (val->type == MSGPACK_OBJECT_ARRAY) {
-        safe_sds_cat(&buf, "\"[", 2);
+        safe_sds_cat(buf, "\"[", 2);
         for (i = 0; i < val->via.array.size; i++) {
             v = val->via.array.ptr[i];
             if (i > 0) {
-                safe_sds_cat(&buf, " ", 1);
+                safe_sds_cat(buf, " ", 1);
             }
             pack_format_line_value(buf, &v);
         }
-        safe_sds_cat(&buf, "]\"", 2);
+        safe_sds_cat(buf, "]\"", 2);
     }
     else if (val->type == MSGPACK_OBJECT_MAP) {
-        safe_sds_cat(&buf, "\"map[", 5);
+        safe_sds_cat(buf, "\"map[", 5);
 
         for (i = 0; i < val->via.map.size; i++) {
             k = val->via.map.ptr[i].key;
@@ -798,14 +1079,14 @@ static void pack_format_line_value(flb_sds_t buf, msgpack_object *val)
             }
 
             if (i > 0) {
-                safe_sds_cat(&buf, " ", 1);
+                safe_sds_cat(buf, " ", 1);
             }
 
-            safe_sds_cat(&buf, k.via.str.ptr, k.via.str.size);
-            safe_sds_cat(&buf, ":", 1);
+            safe_sds_cat(buf, k.via.str.ptr, k.via.str.size);
+            safe_sds_cat(buf, ":", 1);
             pack_format_line_value(buf, &v);
         }
-        safe_sds_cat(&buf, "]\"", 2);
+        safe_sds_cat(buf, "]\"", 2);
     }
     else {
 
@@ -813,8 +1094,9 @@ static void pack_format_line_value(flb_sds_t buf, msgpack_object *val)
     }
 }
 
-// seek tenant id from map and set it to ctx->dynamic_tenant_id
-static int get_tenant_id_from_record(struct flb_loki *ctx, msgpack_object *map)
+// seek tenant id from map and set it to dynamic_tenant_id
+static int get_tenant_id_from_record(struct flb_loki *ctx, msgpack_object *map,
+                                     flb_sds_t *dynamic_tenant_id)
 {
     struct flb_ra_value *rval = NULL;
     flb_sds_t tmp_str;
@@ -843,30 +1125,35 @@ static int get_tenant_id_from_record(struct flb_loki *ctx, msgpack_object *map)
     }
 
     // check if already dynamic_tenant_id is set.
-    if (ctx->dynamic_tenant_id) {
-        cmp_len = flb_sds_len(ctx->dynamic_tenant_id);
+    if (*dynamic_tenant_id != NULL) {
+        cmp_len = flb_sds_len(*dynamic_tenant_id);
+
         if ((rval->o.via.str.size == cmp_len) &&
-            flb_sds_cmp(tmp_str, ctx->dynamic_tenant_id, cmp_len) == 0) {
+            flb_sds_cmp(tmp_str, *dynamic_tenant_id, cmp_len) == 0) {
             // tenant_id is same. nothing to do.
             flb_ra_key_value_destroy(rval);
             flb_sds_destroy(tmp_str);
+
             return 0;
         }
+
         flb_plg_warn(ctx->ins, "Tenant ID is overwritten %s -> %s",
-                     ctx->dynamic_tenant_id, tmp_str);
-        flb_sds_destroy(ctx->dynamic_tenant_id);
+                     *dynamic_tenant_id, tmp_str);
+
+        flb_sds_destroy(*dynamic_tenant_id);
     }
 
     // this sds will be released after setting http header.
-    ctx->dynamic_tenant_id = tmp_str;
-    flb_plg_debug(ctx->ins, "Tenant ID is %s", ctx->dynamic_tenant_id);
+    *dynamic_tenant_id = tmp_str;
+    flb_plg_debug(ctx->ins, "Tenant ID is %s", *dynamic_tenant_id);
 
     flb_ra_key_value_destroy(rval);
     return 0;
 }
 
 static int pack_record(struct flb_loki *ctx,
-                       msgpack_packer *mp_pck, msgpack_object *rec)
+                       msgpack_packer *mp_pck, msgpack_object *rec,
+                       flb_sds_t *dynamic_tenant_id)
 {
     int i;
     int skip = 0;
@@ -882,6 +1169,14 @@ static int pack_record(struct flb_loki *ctx,
     msgpack_unpacked mp_buffer;
     size_t off = 0;
 
+    /*
+     * Get tenant id from record before removing keys.
+     * https://github.com/fluent/fluent-bit/issues/6207
+     */
+    if (ctx->ra_tenant_id_key && rec->type == MSGPACK_OBJECT_MAP) {
+        get_tenant_id_from_record(ctx, rec, dynamic_tenant_id);
+    }
+
     /* Remove keys in remove_keys */
     msgpack_unpacked_init(&mp_buffer);
     if (ctx->remove_mpa) {
@@ -896,11 +1191,6 @@ static int pack_record(struct flb_loki *ctx,
             }
             rec = &mp_buffer.data;
         }
-    }
-
-    // Get tenant id from record.
-    if (ctx->ra_tenant_id_key && rec->type == MSGPACK_OBJECT_MAP) {
-        get_tenant_id_from_record(ctx, rec);
     }
 
     /* Drop single key */
@@ -922,7 +1212,7 @@ static int pack_record(struct flb_loki *ctx,
                     }
                     return -1;
                 }
-                pack_format_line_value(buf, &val);
+                pack_format_line_value(&buf, &val);
                 msgpack_pack_str(mp_pck, flb_sds_len(buf));
                 msgpack_pack_str_body(mp_pck, buf, flb_sds_len(buf));
                 flb_sds_destroy(buf);
@@ -984,7 +1274,7 @@ static int pack_record(struct flb_loki *ctx,
 
             safe_sds_cat(&buf, key.via.str.ptr, key.via.str.size);
             safe_sds_cat(&buf, "=", 1);
-            pack_format_line_value(buf, &val);
+            pack_format_line_value(&buf, &val);
         }
 
         msgpack_pack_str(mp_pck, flb_sds_len(buf));
@@ -1004,6 +1294,7 @@ static int pack_record(struct flb_loki *ctx,
 static int cb_loki_init(struct flb_output_instance *ins,
                         struct flb_config *config, void *data)
 {
+    int              result;
     struct flb_loki *ctx;
 
     /* Create plugin context */
@@ -1012,6 +1303,33 @@ static int cb_loki_init(struct flb_output_instance *ins,
         flb_plg_error(ins, "cannot initialize configuration");
         return -1;
     }
+
+    result = pthread_mutex_init(&ctx->dynamic_tenant_list_lock, NULL);
+
+    if (result != 0) {
+        flb_errno();
+
+        flb_plg_error(ins, "cannot initialize dynamic tenant id list lock");
+
+        loki_config_destroy(ctx);
+
+        return -1;
+    }
+
+    result = pthread_once(&initialization_guard,
+                          initialize_thread_local_storage);
+
+    if (result != 0) {
+        flb_errno();
+
+        flb_plg_error(ins, "cannot initialize thread local storage");
+
+        loki_config_destroy(ctx);
+
+        return -1;
+    }
+
+    cfl_list_init(&ctx->dynamic_tenant_list);
 
     /*
      * This plugin instance uses the HTTP client interface, let's register
@@ -1028,7 +1346,8 @@ static int cb_loki_init(struct flb_output_instance *ins,
 static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
                                       int total_records,
                                       char *tag, int tag_len,
-                                      const void *data, size_t bytes)
+                                      const void *data, size_t bytes,
+                                      flb_sds_t *dynamic_tenant_id)
 {
     int mp_ok = MSGPACK_UNPACK_SUCCESS;
     size_t off = 0;
@@ -1102,7 +1421,7 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
 
              /* Append the timestamp */
              pack_timestamp(&mp_pck, &tms);
-             pack_record(ctx, &mp_pck, obj);
+             pack_record(ctx, &mp_pck, obj, dynamic_tenant_id);
          }
     }
     else {
@@ -1137,7 +1456,7 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
 
              /* Append the timestamp */
              pack_timestamp(&mp_pck, &tms);
-             pack_record(ctx, &mp_pck, obj);
+             pack_record(ctx, &mp_pck, obj, dynamic_tenant_id);
          }
     }
 
@@ -1162,15 +1481,39 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
     struct flb_loki *ctx = out_context;
     struct flb_connection *u_conn;
     struct flb_http_client *c;
+    struct flb_loki_dynamic_tenant_id_entry *dynamic_tenant_id;
+
+    dynamic_tenant_id = FLB_TLS_GET(thread_local_tenant_id);
+
+    if (dynamic_tenant_id == NULL) {
+        dynamic_tenant_id = dynamic_tenant_id_create();
+
+        if (dynamic_tenant_id == NULL) {
+            flb_errno();
+            flb_plg_error(ctx->ins, "cannot allocate dynamic tenant id");
+
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+
+        FLB_TLS_SET(thread_local_tenant_id, dynamic_tenant_id);
+
+        pthread_mutex_lock(&ctx->dynamic_tenant_list_lock);
+
+        cfl_list_add(&dynamic_tenant_id->_head, &ctx->dynamic_tenant_list);
+
+        pthread_mutex_unlock(&ctx->dynamic_tenant_list_lock);
+    }
 
     /* Format the data to the expected Newrelic Payload */
     payload = loki_compose_payload(ctx,
                                    event_chunk->total_events,
                                    (char *) event_chunk->tag,
                                    flb_sds_len(event_chunk->tag),
-                                   event_chunk->data, event_chunk->size);
+                                   event_chunk->data, event_chunk->size,
+                                   &dynamic_tenant_id->value);
     if (!payload) {
         flb_plg_error(ctx->ins, "cannot compose request payload");
+
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -1178,7 +1521,9 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
         flb_plg_error(ctx->ins, "no upstream connections available");
+
         flb_sds_destroy(payload);
+
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -1189,11 +1534,12 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
                         NULL, 0);
     if (!c) {
         flb_plg_error(ctx->ins, "cannot create HTTP client context");
+
         flb_sds_destroy(payload);
         flb_upstream_conn_release(u_conn);
+
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
-
 
     /* Set callback context to the HTTP client context */
     flb_http_set_callback_context(c, ctx->ins->callback);
@@ -1201,9 +1547,11 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
     /* User Agent */
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
 
-    /* Basic Auth headers */
-    if (ctx->http_user && ctx->http_passwd) {
+    /* Auth headers */
+    if (ctx->http_user && ctx->http_passwd) { /* Basic */
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
+    } else if (ctx->bearer_token) { /* Bearer token */
+        flb_http_bearer_auth(c, ctx->bearer_token);
     }
 
     /* Add Content-Type header */
@@ -1212,13 +1560,11 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
                         FLB_LOKI_CT_JSON, sizeof(FLB_LOKI_CT_JSON) - 1);
 
     /* Add X-Scope-OrgID header */
-    if (ctx->dynamic_tenant_id) {
+    if (dynamic_tenant_id->value != NULL) {
         flb_http_add_header(c,
                             FLB_LOKI_HEADER_SCOPE, sizeof(FLB_LOKI_HEADER_SCOPE) - 1,
-                            ctx->dynamic_tenant_id,
-                            flb_sds_len(ctx->dynamic_tenant_id));
-        flb_sds_destroy(ctx->dynamic_tenant_id);
-        ctx->dynamic_tenant_id = NULL; // clear for next flush
+                            dynamic_tenant_id->value,
+                            flb_sds_len(dynamic_tenant_id->value));
     }
     else if (ctx->tenant_id) {
         flb_http_add_header(c,
@@ -1286,7 +1632,23 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
 
     flb_http_client_destroy(c);
     flb_upstream_conn_release(u_conn);
+
     FLB_OUTPUT_RETURN(out_ret);
+}
+
+static void release_dynamic_tenant_ids(struct cfl_list *dynamic_tenant_list)
+{
+    struct cfl_list                         *iterator;
+    struct cfl_list                         *backup;
+    struct flb_loki_dynamic_tenant_id_entry *entry;
+
+    cfl_list_foreach_safe(iterator, backup, dynamic_tenant_list) {
+        entry = cfl_list_entry(iterator,
+                               struct flb_loki_dynamic_tenant_id_entry,
+                               _head);
+
+        dynamic_tenant_id_destroy(entry);
+    }
 }
 
 static int cb_loki_exit(void *data, struct flb_config *config)
@@ -1297,7 +1659,14 @@ static int cb_loki_exit(void *data, struct flb_config *config)
         return 0;
     }
 
+    pthread_mutex_lock(&ctx->dynamic_tenant_list_lock);
+
+    release_dynamic_tenant_ids(&ctx->dynamic_tenant_list);
+
+    pthread_mutex_unlock(&ctx->dynamic_tenant_list_lock);
+
     loki_config_destroy(ctx);
+
     return 0;
 }
 
@@ -1359,6 +1728,12 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_STR, "label_map_path", NULL,
+     0, FLB_TRUE, offsetof(struct flb_loki, label_map_path),
+     "A label map file path"
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "http_user", NULL,
      0, FLB_TRUE, offsetof(struct flb_loki, http_user),
      "Set HTTP auth user"
@@ -1370,6 +1745,12 @@ static struct flb_config_map config_map[] = {
      "Set HTTP auth password"
     },
 
+    {
+     FLB_CONFIG_MAP_STR, "bearer_token", NULL,
+     0, FLB_TRUE, offsetof(struct flb_loki, bearer_token),
+     "Set bearer token auth"
+    },
+
     /* EOF */
     {0}
 };
@@ -1379,20 +1760,29 @@ static int cb_loki_format_test(struct flb_config *config,
                                struct flb_input_instance *ins,
                                void *plugin_context,
                                void *flush_ctx,
+                               int event_type,
                                const char *tag, int tag_len,
                                const void *data, size_t bytes,
                                void **out_data, size_t *out_size)
 {
     int total_records;
     flb_sds_t payload = NULL;
+    flb_sds_t dynamic_tenant_id;
     struct flb_loki *ctx = plugin_context;
+
+    dynamic_tenant_id = NULL;
 
     /* Count number of records */
     total_records = flb_mp_count(data, bytes);
 
     payload = loki_compose_payload(ctx, total_records,
-                                   (char *) tag, tag_len, data, bytes);
+                                   (char *) tag, tag_len, data, bytes,
+                                   &dynamic_tenant_id);
     if (payload == NULL) {
+        if (dynamic_tenant_id != NULL) {
+            flb_sds_destroy(dynamic_tenant_id);
+        }
+
         return -1;
     }
 
@@ -1414,5 +1804,5 @@ struct flb_output_plugin out_loki_plugin = {
     /* for testing */
     .test_formatter.callback = cb_loki_format_test,
 
-    .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS | FLB_OUTPUT_NO_MULTIPLEX,
+    .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };

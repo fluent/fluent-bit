@@ -143,6 +143,9 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STORAGE_MAX_CHUNKS_UP,
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, storage_max_chunks_up)},
+    {FLB_CONF_STORAGE_DELETE_IRRECOVERABLE_CHUNKS,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, storage_del_bad_chunks)},
 
     /* Coroutines */
     {FLB_CONF_STR_CORO_STACK_SIZE,
@@ -199,6 +202,7 @@ struct flb_config *flb_config_init()
     /* Initialize config_format context */
     cf = flb_cf_create();
     if (!cf) {
+        flb_free(config);
         return NULL;
     }
     config->cf_main = cf;
@@ -206,6 +210,7 @@ struct flb_config *flb_config_init()
     section = flb_cf_section_create(cf, "service", 0);
     if (!section) {
         flb_cf_destroy(cf);
+        flb_free(config);
         return NULL;
     }
 
@@ -253,6 +258,7 @@ struct flb_config *flb_config_init()
     config->cio          = NULL;
     config->storage_path = NULL;
     config->storage_input_plugin = NULL;
+    config->storage_metrics = FLB_TRUE;
 
     config->sched_cap  = FLB_SCHED_CAP;
     config->sched_base = FLB_SCHED_BASE;
@@ -301,12 +307,26 @@ struct flb_config *flb_config_init()
 
     memset(&config->tasks_map, '\0', sizeof(config->tasks_map));
 
+    /* Initialize multiline-parser list. We need this here, because from now
+     * on we use flb_config_exit to cleanup the config, which requires
+     * the config->multiline_parsers list to be initialized. */
+    mk_list_init(&config->multiline_parsers);
+
     /* Environment */
     config->env = flb_env_create();
+    if (config->env == NULL) {
+        flb_error("[config] environment creation failed");
+        flb_config_exit(config);
+        return NULL;
+    }
 
     /* Multiline core */
-    mk_list_init(&config->multiline_parsers);
-    flb_ml_init(config);
+    ret = flb_ml_init(config);
+    if (ret == -1) {
+        flb_error("[config] multiline core initialization failed");
+        flb_config_exit(config);
+        return NULL;
+    }
 
     /* Register static plugins */
     ret = flb_plugins_register(config);
@@ -390,7 +410,9 @@ void flb_config_exit(struct flb_config *config)
         }
     }
 
-    flb_env_destroy(config->env);
+    if (config->env) {
+        flb_env_destroy(config->env);
+    }
 
     /* Program name */
     if (config->program_name) {
@@ -408,18 +430,24 @@ void flb_config_exit(struct flb_config *config)
     }
 
     /* Destroy any DSO context */
-    flb_plugin_destroy(config->dso_plugins);
+    if (config->dso_plugins) {
+        flb_plugin_destroy(config->dso_plugins);
+    }
 
     /* Workers */
     flb_worker_exit(config);
 
     /* Event flush */
     if (config->evl) {
-        mk_event_timeout_destroy(config->evl, &config->event_flush);
+        if (config->event_flush.status != MK_EVENT_NONE) {
+            mk_event_timeout_destroy(config->evl, &config->event_flush);
+        }
     }
 
     /* Release scheduler */
-    flb_sched_destroy(config->sched);
+    if (config->sched) {
+        flb_sched_destroy(config->sched);
+    }
 
 #ifdef FLB_HAVE_HTTP_SERVER
     if (config->http_listen) {

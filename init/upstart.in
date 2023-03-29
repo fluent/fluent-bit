@@ -1,4 +1,4 @@
-# td-agent-bit - ligtweight log shipping for fluent
+# fluent-bit - ligtweight log shipping for fluent
 
 description "@FLB_PROG_NAME@"
 

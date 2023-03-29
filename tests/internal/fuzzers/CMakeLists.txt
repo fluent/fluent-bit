@@ -1,7 +1,11 @@
 set(UNIT_TESTS_FILES
+  aws_util_fuzzer.c
+  aws_credentials_fuzzer.c
+  base64_fuzzer.c
   engine_fuzzer.c
   config_fuzzer.c
   config_random_fuzzer.c
+  ctrace_fuzzer.c
   signv4_fuzzer.c
   flb_json_fuzzer.c
   filter_stdout_fuzzer.c

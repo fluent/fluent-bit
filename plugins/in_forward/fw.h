@@ -41,7 +41,6 @@ struct flb_in_fw_config {
     int coll_fd;
     struct flb_downstream *downstream; /* Client manager          */
     struct mk_list connections;     /* List of active connections */
-    struct mk_event_loop *evl;      /* Event loop file descriptor */
     struct flb_input_instance *ins; /* Input plugin instace       */
 };
 

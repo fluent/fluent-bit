@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_input_plugin.h>
 
 #define DEFAULT_URI           "/metrics"
+#define HTTP_BUFFER_MAX_SIZE    "10M"
 
 struct prom_scrape
 {
@@ -31,6 +32,7 @@ struct prom_scrape
     flb_sds_t metrics_path;
     struct flb_upstream *upstream;
     struct flb_input_instance *ins;  /* input plugin instance */
+    size_t buffer_max_size;          /* Maximum buffer size */
 };
 
 #endif

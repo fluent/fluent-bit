@@ -340,11 +340,15 @@ char *mk_string_dup(const char *s)
     size_t len;
     char *p;
 
-    if (!s)
+    if (!s) {
         return NULL;
+    }
 
     len = strlen(s);
     p = mk_mem_alloc(len + 1);
+    if (!p) {
+        return NULL;
+    }
     memcpy(p, s, len);
     p[len] = '\0';
 
@@ -364,6 +368,9 @@ struct mk_list *mk_string_split_line(const char *line)
     }
 
     list = mk_mem_alloc(sizeof(struct mk_list));
+    if (!list) {
+        return NULL;
+    }
     mk_list_init(list);
 
     len = strlen(line);
@@ -590,8 +597,9 @@ char *mk_string_copy_substr(const char *string, int pos_init, int pos_end)
     }
 
     size = (unsigned int) (pos_end - pos_init) + 1;
-    if (size <= 2)
+    if (size <= 2) {
         size = 4;
+    }
 
     buffer = mk_mem_alloc(size);
 
@@ -611,6 +619,10 @@ char *mk_string_tolower(const char *in)
     char *out = mk_string_dup(in);
     const char *ip = in;
     char *op = out;
+
+    if (!out) {
+        return NULL;
+    }
 
     while (*ip) {
         *op = tolower(*ip);

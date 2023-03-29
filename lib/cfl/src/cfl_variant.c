@@ -22,6 +22,64 @@
 #include <cfl/cfl_array.h>
 #include <cfl/cfl_kvlist.h>
 
+#if defined(__MINGW32__) || defined(__MINGW64__)
+#define HEXDUMPFORMAT "%#x"
+#else
+#define HEXDUMPFORMAT "%p"
+#endif
+
+int cfl_variant_print(FILE *fp, struct cfl_variant *val)
+{
+    int ret = -1;
+    size_t size;
+    size_t i;
+
+    if (fp == NULL || val == NULL) {
+        return -1;
+    }
+
+    switch (val->type) {
+    case CFL_VARIANT_STRING:
+        ret = fprintf(fp, "\"%s\"", val->data.as_string);
+        break;
+    case CFL_VARIANT_BOOL:
+        if (val->data.as_bool) {
+            ret = fputs("true",fp);
+        }
+        else {
+            ret = fputs("false", fp);
+        }
+        break;
+    case CFL_VARIANT_INT:
+        ret = fprintf(fp, "%" PRId64, val->data.as_int64);
+        break;
+    case CFL_VARIANT_DOUBLE:
+        ret = fprintf(fp, "%lf", val->data.as_double);
+        break;
+    case CFL_VARIANT_BYTES:
+        size = cfl_sds_len(val->data.as_bytes);
+        for (i=0; i<size; i++) {
+            ret = fprintf(fp, "%02x", (unsigned char)val->data.as_bytes[i]);
+        }
+        break;
+
+    case CFL_VARIANT_REFERENCE:
+        ret = fprintf(fp, HEXDUMPFORMAT, val->data.as_reference);
+        break;
+    case CFL_VARIANT_ARRAY:
+        ret = cfl_array_print(fp, val->data.as_array);
+        break;
+
+    case CFL_VARIANT_KVLIST:
+        ret = cfl_kvlist_print(fp, val->data.as_kvlist);
+        break;
+
+    default:
+        ret = fputs("!Unknown Type", fp);
+    }
+    return ret;
+}
+
 struct cfl_variant *cfl_variant_create_from_string(char *value)
 {
     struct cfl_variant *instance;

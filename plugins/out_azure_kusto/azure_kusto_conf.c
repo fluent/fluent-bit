@@ -40,6 +40,8 @@ static struct flb_upstream_node *flb_upstream_node_create_url(struct flb_azure_k
     char *host = NULL;
     char *port = NULL;
     char *uri = NULL;
+    flb_sds_t sds_host = NULL;
+    flb_sds_t sds_port = NULL;
     char *tmp;
     struct flb_hash_table *kv = NULL;
     struct flb_upstream_node *node = NULL;
@@ -71,8 +73,12 @@ static struct flb_upstream_node *flb_upstream_node_create_url(struct flb_azure_k
                                    sas_length);
 
                 if (ret != -1) {
+                    /* if any/all of these creations would fail the node creation will fail and cleanup */
+                    sds_host = flb_sds_create(host);
+                    sds_port = flb_sds_create(port);
+
                     node = flb_upstream_node_create(
-                        NULL, host, port, FLB_TRUE, ctx->ins->tls->verify,
+                        NULL, sds_host, sds_port, FLB_TRUE, ctx->ins->tls->verify,
                         ctx->ins->tls->debug, ctx->ins->tls->vhost, NULL, NULL, NULL,
                         NULL, NULL, kv, config);
 

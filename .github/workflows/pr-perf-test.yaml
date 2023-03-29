@@ -55,7 +55,7 @@ jobs:
           do
             file_test_newlines+="  $line"
           done < report.md
-          echo "::set-output name=report::$file_test_newlines"
+          echo "report=$file_test_newlines" >> $GITHUB_OUTPUT
         shell: bash
         working-directory: output
 
