@@ -420,12 +420,14 @@ static int cb_modifier_filter(const void *data, size_t bytes,
                         FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].val));
             }
         }
+
         flb_free(bool_map);
         bool_map = NULL;
 
         /* append record */
         if (ctx->records_num > 0) {
             is_modified = FLB_TRUE;
+
             mk_list_foreach_safe(head, tmp, &ctx->records) {
                 mod_rec = mk_list_entry(head, struct modifier_record,  _head);
 
@@ -448,6 +450,8 @@ static int cb_modifier_filter(const void *data, size_t bytes,
                     FLB_LOG_EVENT_STRING_VALUE(ctx->uuid_key, flb_sds_len(ctx->uuid_key)),
                     FLB_LOG_EVENT_STRING_VALUE(&uuid[0], uuid_len));
         }
+
+        flb_log_event_encoder_commit_record(&log_encoder);
     }
 
     if (bool_map != NULL) {

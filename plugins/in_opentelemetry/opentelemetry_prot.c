@@ -487,10 +487,12 @@ static int binary_payload_to_msgpack(struct flb_log_event_encoder *encoder,
                         else {
                             ret = flb_log_event_encoder_append_body_values(
                                     encoder,
-                                    FLB_LOG_EVENT_CSTRING_VALUE("raw_value"),
+                                    FLB_LOG_EVENT_CSTRING_VALUE("message"),
                                     FLB_LOG_EVENT_MSGPACK_RAW_VALUE(buffer.data, buffer.size));
                         }
                     }
+
+                    msgpack_sbuffer_clear(&buffer);
                 }
 
                 if (ret == FLB_EVENT_ENCODER_SUCCESS) {

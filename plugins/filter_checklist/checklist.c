@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/flb_sqldb.h>
+#include <fluent-bit/flb_log_event_debug.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
@@ -593,7 +594,7 @@ static int cb_checklist_filter(const void *data, size_t bytes,
     flb_log_event_decoder_destroy(&log_decoder);
     flb_log_event_encoder_destroy(&log_encoder);
 
-    return FLB_FILTER_NOTOUCH;
+    return ret;
 }
 
 static int cb_exit(void *data, struct flb_config *config)

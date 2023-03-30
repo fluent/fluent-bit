@@ -299,6 +299,11 @@ static int cb_grep_filter(const void *data, size_t bytes,
         record_begining = record_end;
     }
 
+    if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA &&
+        log_decoder.offset == bytes) {
+        ret = FLB_EVENT_ENCODER_SUCCESS;
+    }
+
     flb_log_event_decoder_destroy(&log_decoder);
 
     /* we keep everything ? */

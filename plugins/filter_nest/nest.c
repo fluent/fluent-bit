@@ -417,6 +417,8 @@ static inline void pack_map(
     int ret;
     msgpack_object *key;
 
+    ret = FLB_EVENT_ENCODER_SUCCESS;
+
     for (i = 0;
          i < map->via.map.size &&
          ret == FLB_EVENT_ENCODER_SUCCESS ;
@@ -494,11 +496,28 @@ static inline int apply_lifting_rules(struct flb_log_event_encoder *log_encoder,
     ret = flb_log_event_encoder_set_timestamp(
             log_encoder, &log_event->timestamp);
 
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -2;
+    }
+
+    ret = flb_log_event_encoder_set_metadata_from_msgpack_object(
+            log_encoder, log_event->metadata);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -3;
+    }
+
     /* Pack all current top-level items excluding the key keys */
     map_pack_each_fn(log_encoder, &map, ctx, &is_not_kv_to_lift);
 
     /* Lift and pack all elements in key keys */
     map_lift_each_fn(log_encoder, &map, ctx, &is_kv_to_lift);
+
+    ret = flb_log_event_encoder_commit_record(log_encoder);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -2;
+    }
 
     return 1;
 }
@@ -566,6 +585,12 @@ static inline int apply_nesting_rules(struct flb_log_event_encoder *log_encoder,
 
     /* Pack the nested items */
     map_transform_and_pack_each_fn(log_encoder, &map, ctx, &is_kv_to_nest);
+
+    ret = flb_log_event_encoder_commit_record(log_encoder);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -6;
+    }
 
     return 1;
 }
@@ -671,7 +696,6 @@ static int cb_nest_filter(const void *data, size_t bytes,
                 apply_lifting_rules(&log_encoder, &log_event, ctx);
         }
 
-
         if (modified_records == 0) {
             // not matched, so copy original event.
             ret = repack_raw(&log_encoder,
@@ -682,6 +706,11 @@ static int cb_nest_filter(const void *data, size_t bytes,
         total_modified_records += modified_records;
 
         record_begining = record_end;
+    }
+
+    if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA &&
+        log_decoder.offset == bytes) {
+        ret = FLB_EVENT_ENCODER_SUCCESS;
     }
 
     if (log_encoder.output_length > 0) {

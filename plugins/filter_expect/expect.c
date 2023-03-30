@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_log_event_debug.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
@@ -449,6 +450,7 @@ static int cb_expect_filter(const void *data, size_t bytes,
         }
     }
 
+    ret = 0;
     /* Append result key when action is "result_key"*/
     if (ctx->action == FLB_EXP_RESULT_KEY) {
         flb_log_event_decoder_reset(&log_decoder, (char *) data, bytes);
@@ -476,6 +478,11 @@ static int cb_expect_filter(const void *data, size_t bytes,
             }
 
             if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_set_metadata_from_msgpack_object(&log_encoder,
+                        log_event.metadata);
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
                 ret = flb_log_event_encoder_append_body_values(
                         &log_encoder,
                         FLB_LOG_EVENT_STRING_VALUE(ctx->result_key, flb_sds_len(ctx->result_key)),
@@ -496,6 +503,11 @@ static int cb_expect_filter(const void *data, size_t bytes,
             if (ret == FLB_EVENT_ENCODER_SUCCESS) {
                 ret = flb_log_event_encoder_commit_record(&log_encoder);
             }
+        }
+
+        if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA &&
+            log_decoder.offset == bytes) {
+            ret = FLB_EVENT_ENCODER_SUCCESS;
         }
 
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
