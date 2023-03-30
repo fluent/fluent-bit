@@ -176,7 +176,11 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_http, successful_response_code),
      "Set successful response code. 200, 201 and 204 are supported."
     },
-
+    {
+     FLB_CONFIG_MAP_STR, "add_request_header", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_http, add_headers_map),
+     "Specify a regexp to append a request header to record."
+    },
 
     /* EOF */
     {0}

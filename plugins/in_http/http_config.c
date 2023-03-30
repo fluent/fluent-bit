@@ -27,6 +27,9 @@ struct flb_http *http_config_create(struct flb_input_instance *ins)
     int ret;
     char port[8];
     struct flb_http *ctx;
+    struct flb_config_map_val *mv = NULL;
+    struct mk_list *head = NULL;
+    struct header_key_condition *header_cond = NULL;
 
     ctx = flb_calloc(1, sizeof(struct flb_http));
     if (!ctx) {
@@ -35,6 +38,7 @@ struct flb_http *http_config_create(struct flb_input_instance *ins)
     }
     ctx->ins = ins;
     mk_list_init(&ctx->connections);
+    mk_list_init(&ctx->add_headers);
 
     /* Load the config map */
     ret = flb_input_config_map_set(ins, (void *) ctx);
@@ -58,11 +62,35 @@ struct flb_http *http_config_create(struct flb_input_instance *ins)
      * moment so we want to make sure that it stays that way!
      */
 
+    /* 'add_request_header' configuration */
+    ctx->add_headers_num = 0;
+    flb_config_map_foreach(head, mv, ctx->add_headers_map) {
+        header_cond = flb_malloc(sizeof(struct header_key_condition));
+        if (header_cond == NULL) {
+            flb_errno();
+            continue;
+        }
+
+        header_cond->regex = flb_regex_create(mv->val.str);
+        if (header_cond->regex == NULL) {
+            flb_free(header_cond);
+            flb_plg_error(ctx->ins, "invalid regex=%s", mv->val.str);
+            continue;
+        }
+
+        mk_list_add(&header_cond->_head, &ctx->add_headers);
+        ctx->add_headers_num++;
+    }
+
     return ctx;
 }
 
 int http_config_destroy(struct flb_http *ctx)
 {
+    struct mk_list *tmp = NULL;
+    struct mk_list *head = NULL;
+    struct header_key_condition *cond = NULL;
+
     /* release all connections */
     http_conn_release_all(ctx);
 
@@ -74,6 +102,12 @@ int http_config_destroy(struct flb_http *ctx)
 
     if (ctx->downstream != NULL) {
         flb_downstream_destroy(ctx->downstream);
+    }
+
+    mk_list_foreach_safe(head, tmp, &ctx->add_headers) {
+        cond = mk_list_entry(head, struct header_key_condition, _head);
+        flb_regex_destroy(cond->regex);
+        flb_free(cond);
     }
 
     if (ctx->server) {
