@@ -159,6 +159,11 @@ struct flb_stackdriver {
     flb_sds_t job;
     flb_sds_t task_id;
 
+    /* Payload compression */
+    flb_sds_t compress;
+    /* Internal variable to reduce string comparisons */
+    int compress_gzip;
+
     /* other */
     flb_sds_t export_to_project_id;
     flb_sds_t resource;
