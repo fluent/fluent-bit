@@ -75,6 +75,7 @@ if(FLB_IN_LIB AND FLB_OUT_LIB)
     FLB_RT_TEST(FLB_FILTER_WASM            "filter_wasm.c")
   endif ()
   FLB_RT_TEST(FLB_FILTER_ECS       "filter_ecs.c")
+  FLB_RT_TEST(FLB_FILTER_LOG_TO_METRICS       "filter_log_to_metrics.c")
 endif()
 
 

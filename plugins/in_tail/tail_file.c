@@ -300,7 +300,7 @@ int flb_tail_pack_line_map(struct flb_time *time, char **data,
             result = flb_log_event_encoder_append_body_values(
                         file->sl_log_event_encoder,
                         FLB_LOG_EVENT_CSTRING_VALUE(file->config->path_key),
-                        FLB_LOG_EVENT_CSTRING_VALUE(file->name));
+                        FLB_LOG_EVENT_CSTRING_VALUE(file->orig_name_len));
         }
     }
 
@@ -360,10 +360,13 @@ int flb_tail_file_pack_line(struct flb_time *time, char *data, size_t data_size,
     }
 
     if (result == FLB_EVENT_ENCODER_SUCCESS) {
-        result = flb_log_event_encoder_append_body_values(
-                    file->sl_log_event_encoder,
-                    FLB_LOG_EVENT_CSTRING_VALUE(file->config->key),
-                    FLB_LOG_EVENT_STRING_VALUE(data, data_size));
+        if (file->config->path_key != NULL) {
+            /* append path_key */
+            result = flb_log_event_encoder_append_body_values(
+                        file->sl_log_event_encoder,
+                        FLB_LOG_EVENT_CSTRING_VALUE(file->config->key),
+                        FLB_LOG_EVENT_STRING_VALUE(file->orig_name, 
+                                                   file->orig_name_len));
     }
 
     if (result == FLB_EVENT_ENCODER_SUCCESS) {

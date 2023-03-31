@@ -32,12 +32,17 @@
 #include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_histogram.h>
 
-#define CALLBACK_TIME     2
-#define OTEL_SPAN_ID_LEN  8
+#define DEFAULT_INTERVAL_SEC  "2"
+#define DEFAULT_INTERVAL_NSEC "0"
+
+#define OTEL_SPAN_ID_LEN   8
 
 struct event_type {
     int coll_fd;
     int type;
+
+    int interval_sec;
+    int interval_nsec;
 };
 
 static struct ctrace_id *create_random_span_id()
@@ -405,6 +410,8 @@ static int cb_event_type_init(struct flb_input_instance *ins,
         return -1;
     }
 
+    flb_input_set_context(ins, ctx);
+
 
     ctx->type = FLB_EVENT_TYPE_LOGS;
     tmp = (char *) flb_input_get_property("type", ins);
@@ -422,15 +429,12 @@ static int cb_event_type_init(struct flb_input_instance *ins,
 
     /* unit test 0: collector_time */
     ret = flb_input_set_collector_time(ins, cb_collector_time,
-                                       CALLBACK_TIME, 0, config);
+                                       ctx->interval_sec, ctx->interval_nsec, config);
     if (ret < 0) {
-        flb_free(ctx);
         return -1;
     }
     ctx->coll_fd = ret;
 
-    /* Allocate space for the configuration */
-    flb_input_set_context(ins, ctx);
     return 0;
 }
 
@@ -448,6 +452,16 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "type", "logs",
      0, FLB_FALSE, 0,
      "Set the type of event to deliver, optionsa are: logs, metrics or traces"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "interval_sec", DEFAULT_INTERVAL_SEC,
+      0, FLB_TRUE, offsetof(struct event_type, interval_sec),
+      "Set the interval seconds between events generation"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "interval_nsec", DEFAULT_INTERVAL_NSEC,
+      0, FLB_TRUE, offsetof(struct event_type, interval_nsec),
+      "Set the nanoseconds interval (sub seconds)"
     },
 
    /* EOF */

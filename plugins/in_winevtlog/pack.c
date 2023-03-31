@@ -375,6 +375,7 @@ static void pack_string_inserts(struct winevtlog_config *ctx, PEVT_VARIANT value
             if (pack_binary(ctx, values[i].BinaryVal, values[i].Count)) {
                 pack_nullstr(ctx);
             }
+            break;
         default:
             msgpack_pack_str(ctx, 1);
             msgpack_pack_str_body(ctx, "?", 1);

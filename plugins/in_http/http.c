@@ -167,6 +167,12 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_SLIST_1, "success_header", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_http, success_headers),
+     "Add an HTTP header key/value pair on success. Multiple headers can be set"
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "tag_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_http, tag_key),
      ""

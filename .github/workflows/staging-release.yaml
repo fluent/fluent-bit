@@ -104,8 +104,7 @@ jobs:
     permissions:
       contents: read
     strategy:
-      matrix:
-        distro: ${{ fromJSON(needs.staging-release-generate-package-matrix.outputs.rpm-build-matrix) }}
+      matrix: ${{ fromJSON(needs.staging-release-generate-package-matrix.outputs.rpm-build-matrix) }}
       fail-fast: false
     steps:
     - name: Checkout code
@@ -114,7 +113,7 @@ jobs:
     - name: Setup runner
       run: |
         sudo apt-get update
-        sudo apt-get install -y createrepo-c
+        sudo apt-get install -y createrepo-c rpm
       shell: bash
 
     - name: Import GPG key for signing
@@ -143,8 +142,8 @@ jobs:
 
     - name: GPG set up keys for signing
       run: |
-        gpg --export -a "${{ steps.import_gpg.outputs.name }}" > packaging/releases/fluentbit.key
-        rpm --import packaging/releases/fluentbit.key
+        gpg --export -a "${{ steps.import_gpg.outputs.name }}" > /tmp/fluentbit.key
+        rpm --import /tmp/fluentbit.key
       shell: bash
 
     - name: Update repo info and remove any staging details
@@ -179,8 +178,7 @@ jobs:
     permissions:
       contents: read
     strategy:
-      matrix:
-        distro: ${{ fromJSON(needs.staging-release-generate-package-matrix.outputs.deb-build-matrix) }}
+      matrix: ${{ fromJSON(needs.staging-release-generate-package-matrix.outputs.deb-build-matrix) }}
       fail-fast: false
     steps:
     - name: Checkout code
@@ -211,15 +209,8 @@ jobs:
         DISTRO: ${{ matrix.distro }}
       shell: bash
 
-    - name: GPG set up keys for signing
-      run: |
-        gpg --export -a "${{ steps.import_gpg.outputs.name }}" > packaging/releases/fluentbit.key
-        rpm --import packaging/releases/fluentbit.key
-      shell: bash
-
     - name: Update repo info and remove any staging details
       run: |
-        rm -f packaging/releases/*.repo
         packaging/update-apt-repo.sh
       env:
         GPG_KEY: ${{ steps.import_gpg.outputs.name }}
@@ -237,6 +228,83 @@ jobs:
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         AWS_REGION: "us-east-1"
         DISTRO: ${{ matrix.distro }}
+      shell: bash
+
+  staging-release-update-non-linux-s3:
+    name: Update Windows and macOS packages
+    runs-on: ubuntu-22.04
+    environment: release
+    needs: 
+      - staging-release-version-check
+    permissions:
+      contents: none
+    strategy:
+      matrix:
+        distro:
+          - macos
+          - windows
+      fail-fast: false
+    steps:
+    - name: Sync packages from buckets on S3
+      run: |
+        mkdir -p "packaging/releases/$DISTRO"
+        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
+        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: "us-east-1"
+        DISTRO: ${{ matrix.distro }}
+      shell: bash
+
+    - name: Sync to release bucket on S3
+      run: |
+        aws s3 sync "packaging/releases/$DISTRO" "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/$DISTRO" --delete --follow-symlinks --no-progress
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: "us-east-1"
+        DISTRO: ${{ matrix.distro }}
+      shell: bash
+
+  staging-release-update-base-s3:
+    name: Update top-level bucket info
+    runs-on: ubuntu-22.04
+    environment: release
+    needs: 
+      - staging-release-apt-packages
+      - staging-release-yum-packages
+    permissions:
+      contents: none
+    steps:
+    - name: Import GPG key for signing
+      id: import_gpg
+      uses: crazy-max/ghaction-import-gpg@v5
+      with:
+        gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+        passphrase: ${{ secrets.GPG_PRIVATE_KEY_PASSPHRASE }}
+
+    - name: GPG public key
+      run: |
+        gpg --export -a "${{ steps.import_gpg.outputs.name }}" > ./fluentbit.key
+        aws s3 cp ./fluentbit.key s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/fluentbit.key --no-progress
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: "us-east-1"
+      shell: bash
+
+    - name: JSON schema
+      continue-on-error: true
+      run: |
+        aws s3 sync "s3://${AWS_STAGING_S3_BUCKET}/${VERSION}" "s3://${AWS_RELEASE_S3_BUCKET}/${VERSION}" --no-progress
+      env:
+          VERSION: ${{ github.event.inputs.version }}
+          AWS_REGION: "us-east-1"
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_STAGING_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_STAGING }}
+          AWS_RELEASE_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_RELEASE }}
       shell: bash
 
   staging-release-source-s3:
@@ -295,12 +363,15 @@ jobs:
       shell: bash
 
     - name: Provide output for documentation PR
+      # do not fail the build for this
+      continue-on-error: true
       run: |
+          ls -l $BASE_DIR/
           export WIN_32_EXE_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win32.exe.sha256"|awk '{print $1}')
           export WIN_32_ZIP_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win32.zip.sha256"|awk '{print $1}')
           export WIN_64_EXE_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win64.exe.sha256"|awk '{print $1}')
           export WIN_64_ZIP_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win64.zip.sha256"|awk '{print $1}')
-          cat > windows-part.md < EOF
+          cat > windows-part.md << EOF
           ## Installation Packages
 
           The latest stable version is ${{ inputs.version }}, each version is available on the Github release as well as at `https://releases.fluentbit.io/<Major Version>/fluent-bit-<Full Version>-win[32|64].[exe|zip]`:
@@ -320,7 +391,7 @@ jobs:
           EOF
       shell: bash
       env:
-        BASE_DIR: ${{ needs.staging-release-version-check.outputs.major-version }}
+        BASE_DIR: release/${{ needs.staging-release-version-check.outputs.major-version }}
 
     - name: Upload Windows docs
       uses: actions/upload-artifact@v3

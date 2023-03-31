@@ -9,7 +9,7 @@
           "type": "rpm"
         },
         {
-          "target": "amazonlinux/2022",
+          "target": "amazonlinux/2023",
           "type": "rpm"
         },
         {

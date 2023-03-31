@@ -55,6 +55,7 @@ static void delete_rules(struct grep_ctx *ctx)
 
 static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
 {
+    int first_rule = GREP_NO_RULE;
     flb_sds_t tmp;
     struct mk_list *head;
     struct mk_list *split;
@@ -81,11 +82,21 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
             rule->type = GREP_EXCLUDE;
         }
         else {
-            flb_plg_error(ctx->ins, "unknown rule type '%s'", kv->key);
-            delete_rules(ctx);
+            /* Other property. Skip */
             flb_free(rule);
-            return -1;
+            continue;
         }
+
+        if (ctx->logical_op != GREP_LOGICAL_OP_LEGACY && first_rule != GREP_NO_RULE) {
+            /* 'AND'/'OR' case */
+            if (first_rule != rule->type) {
+                flb_plg_error(ctx->ins, "Both 'regex' and 'exclude' are set.");
+                delete_rules(ctx);
+                flb_free(rule);
+                return -1;
+            }
+        }
+        first_rule = rule->type;
 
         /* As a value we expect a pair of field name and a regular expression */
         split = flb_utils_split(kv->val, ' ', 1);
@@ -187,6 +198,8 @@ static int cb_grep_init(struct flb_filter_instance *f_ins,
                         void *data)
 {
     int ret;
+    size_t len;
+    const char* val;
     struct grep_ctx *ctx;
 
     /* Create context */
@@ -204,6 +217,24 @@ static int cb_grep_init(struct flb_filter_instance *f_ins,
     mk_list_init(&ctx->rules);
     ctx->ins = f_ins;
 
+    ctx->logical_op = GREP_LOGICAL_OP_LEGACY;
+    val = flb_filter_get_property("logical_op", f_ins);
+    if (val != NULL) {
+        len = strlen(val);
+        if (len == 3 && strncasecmp("AND", val, len) == 0) {
+            flb_plg_info(ctx->ins, "AND mode");
+            ctx->logical_op = GREP_LOGICAL_OP_AND;
+        }
+        else if (len == 2 && strncasecmp("OR", val, len) == 0) {
+            flb_plg_info(ctx->ins, "OR mode");
+            ctx->logical_op = GREP_LOGICAL_OP_OR;
+        }
+        else if (len == 6 && strncasecmp("legacy", val, len) == 0) {
+            flb_plg_info(ctx->ins, "legacy mode");
+            ctx->logical_op = GREP_LOGICAL_OP_LEGACY;
+        }
+    }
+
     /* Load rules */
     ret = set_rules(ctx, f_ins);
     if (ret == -1) {
@@ -214,6 +245,42 @@ static int cb_grep_init(struct flb_filter_instance *f_ins,
     /* Set our context */
     flb_filter_set_context(f_ins, ctx);
     return 0;
+}
+
+static inline int grep_filter_data_and_or(msgpack_object map, struct grep_ctx *ctx)
+{
+    ssize_t ra_ret;
+    int found = FLB_FALSE;
+    struct mk_list *head;
+    struct grep_rule *rule;
+
+    /* For each rule, validate against map fields */
+    mk_list_foreach(head, &ctx->rules) {
+        found = FLB_FALSE;
+        rule = mk_list_entry(head, struct grep_rule, _head);
+
+        ra_ret = flb_ra_regex_match(rule->ra, map, rule->regex, NULL);
+        if (ra_ret > 0) {
+            found = FLB_TRUE;
+        }
+
+        if (ctx->logical_op == GREP_LOGICAL_OP_OR && found == FLB_TRUE) {
+            /* OR case: One rule is matched. */
+            goto grep_filter_data_and_or_end;
+        }
+        else if (ctx->logical_op == GREP_LOGICAL_OP_AND && found == FLB_FALSE) {
+            /* AND case: One rule is not matched */
+            goto grep_filter_data_and_or_end;
+        }
+    }
+
+ grep_filter_data_and_or_end:
+    if (rule->type == GREP_REGEX) {
+        return found ? GREP_RET_KEEP : GREP_RET_EXCLUDE;
+    }
+
+    /* rule is exclude */
+    return found ? GREP_RET_EXCLUDE : GREP_RET_KEEP;
 }
 
 static int cb_grep_filter(const void *data, size_t bytes,
@@ -271,7 +338,12 @@ static int cb_grep_filter(const void *data, size_t bytes,
         /* get time and map */
         map  = *log_event.body;
 
-        ret = grep_filter_data(map, context);
+        if (ctx->logical_op == GREP_LOGICAL_OP_LEGACY) {
+            ret = grep_filter_data(map, ctx);
+        }
+        else {
+            ret = grep_filter_data_and_or(map, ctx);
+        }
 
         if (ret == GREP_RET_KEEP) {
             ret = flb_log_event_encoder_begin_record(&log_encoder);
@@ -358,6 +430,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "exclude", NULL,
      FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
      "Exclude records in which the content of KEY matches the regular expression."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "logical_op", "legacy",
+     0, FLB_FALSE, 0,
+     "Specify whether to use logical conjuciton or disjunction. legacy, AND and OR are allowed."
     },
     {0}
 };

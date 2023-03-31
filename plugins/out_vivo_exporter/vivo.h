@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2023 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,22 +17,29 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IN_PROMETHEUS_SCRAPE_H
-#define FLB_IN_PROMETHEUS_SCRAPE_H
+#ifndef FLB_VIVO_EXPORTER_H
+#define FLB_VIVO_EXPORTER_H
 
-#include <fluent-bit/flb_input_plugin.h>
+#include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_ring_buffer.h>
 
-#define DEFAULT_URI           "/metrics"
-#define HTTP_BUFFER_MAX_SIZE    "10M"
+#define VIVO_RING_BUFFER_SIZE 10
 
-struct prom_scrape
-{
-    int coll_id;                     /* collector id */
-    uint64_t scrape_interval;
-    flb_sds_t metrics_path;
-    struct flb_upstream *upstream;
-    struct flb_input_instance *ins;  /* input plugin instance */
-    size_t buffer_max_size;          /* Maximum buffer size */
+/* Plugin context */
+struct vivo_exporter {
+    void *http;
+
+    void *stream_logs;
+    void *stream_metrics;
+    void *stream_traces;
+
+    /* options */
+    int empty_stream_on_read;
+    size_t stream_queue_size;
+    flb_sds_t http_cors_allow_origin;
+
+    /* instance context */
+    struct flb_output_instance *ins;
 };
 
 #endif

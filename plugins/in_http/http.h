@@ -39,6 +39,10 @@ struct flb_http {
 
     int collector_id;
 
+    /* Success HTTP headers */
+    struct mk_list *success_headers;
+    flb_sds_t success_headers_str;
+
     size_t buffer_max_size;            /* Maximum buffer size */
     size_t buffer_chunk_size;          /* Chunk allocation size */
 

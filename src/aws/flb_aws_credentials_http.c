@@ -473,6 +473,10 @@ struct flb_aws_credentials *flb_parse_json_credentials(char *response,
                 t = &tokens[i];
                 current_token = &response[t->start];
                 len = t->end - t->start;
+                if (creds->access_key_id != NULL) {
+                    flb_error("Trying to double allocate access_key_id");
+                    goto error;
+                }
                 creds->access_key_id = flb_sds_create_len(current_token, len);
                 if (!creds->access_key_id) {
                     flb_errno();
@@ -486,6 +490,10 @@ struct flb_aws_credentials *flb_parse_json_credentials(char *response,
                 t = &tokens[i];
                 current_token = &response[t->start];
                 len = t->end - t->start;
+                if (creds->secret_access_key != NULL) {
+                    flb_error("Trying to double allocate secret_access_key");
+                    goto error;
+                }
                 creds->secret_access_key = flb_sds_create_len(current_token,
                                                               len);
                 if (!creds->secret_access_key) {
@@ -499,6 +507,10 @@ struct flb_aws_credentials *flb_parse_json_credentials(char *response,
                 t = &tokens[i];
                 current_token = &response[t->start];
                 len = t->end - t->start;
+                if (creds->session_token != NULL) {
+                    flb_error("Trying to double allocate session_token");
+                    goto error;
+                }
                 creds->session_token = flb_sds_create_len(current_token, len);
                 if (!creds->session_token) {
                     flb_errno();

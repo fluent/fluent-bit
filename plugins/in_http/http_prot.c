@@ -32,9 +32,12 @@
 
 static int send_response(struct http_conn *conn, int http_status, char *message)
 {
-    size_t    sent;
-    int       len;
-    flb_sds_t out;
+    struct flb_http *context;
+    size_t           sent;
+    int              len;
+    flb_sds_t        out;
+
+    context = (struct flb_http *) conn->ctx;
 
     out = flb_sds_create_size(256);
     if (!out) {
@@ -52,22 +55,28 @@ static int send_response(struct http_conn *conn, int http_status, char *message)
         flb_sds_printf(&out,
                        "HTTP/1.1 201 Created \r\n"
                        "Server: Fluent Bit v%s\r\n"
+                       "%s"
                        "Content-Length: 0\r\n\r\n",
-                       FLB_VERSION_STR);
+                       FLB_VERSION_STR,
+                       context->success_headers_str);
     }
     else if (http_status == 200) {
         flb_sds_printf(&out,
                        "HTTP/1.1 200 OK\r\n"
                        "Server: Fluent Bit v%s\r\n"
+                       "%s"
                        "Content-Length: 0\r\n\r\n",
-                       FLB_VERSION_STR);
+                       FLB_VERSION_STR,
+                       context->success_headers_str);
     }
     else if (http_status == 204) {
         flb_sds_printf(&out,
                        "HTTP/1.1 204 No Content\r\n"
                        "Server: Fluent Bit v%s\r\n"
+                       "%s"
                        "Content-Length: 0\r\n\r\n",
-                       FLB_VERSION_STR);
+                       FLB_VERSION_STR,
+                       context->success_headers_str);
     }
     else if (http_status == 400) {
         flb_sds_printf(&out,

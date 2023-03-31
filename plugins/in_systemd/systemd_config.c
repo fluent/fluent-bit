@@ -281,7 +281,7 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
     sd_journal_get_data_threshold(ctx->j, &size);
     flb_plg_debug(ctx->ins,
                   "sd_journal library may truncate values "
-                  "to sd_journal_get_data_threshold() bytes: %i", size);
+                  "to sd_journal_get_data_threshold() bytes: %zu", size);
 
     return ctx;
 }
