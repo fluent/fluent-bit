@@ -497,7 +497,7 @@ static void cb_kafka_flush(struct flb_event_chunk *event_chunk,
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         ret = produce_message(&log_event.timestamp,
-                              *log_event.body,
+                              log_event.body,
                               ctx, config);
 
         if (ret != FLB_OK) {
