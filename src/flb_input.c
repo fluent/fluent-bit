@@ -48,6 +48,7 @@
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
 struct flb_libco_in_params libco_in_param;
+pthread_key_t libco_in_param_key;
 
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
 
