@@ -39,5 +39,6 @@ int ctr_id_cmp(struct ctrace_id *cid1, struct ctrace_id *cid2);
 size_t ctr_id_get_len(struct ctrace_id *cid);
 void *ctr_id_get_buf(struct ctrace_id *cid);
 cfl_sds_t ctr_id_to_lower_base16(struct ctrace_id *cid);
+struct ctrace_id *ctr_id_from_base16(cfl_sds_t id);
 
 #endif
