@@ -483,6 +483,16 @@ static inline bool helper_msgpack_object_matches_regex(msgpack_object * obj,
         key = obj->via.str.ptr;
         len = obj->via.str.size;
     }
+    else if (obj->type == MSGPACK_OBJECT_BOOLEAN) {
+        if (obj->via.boolean) {
+            key = "true";
+            len = 4;
+        }
+        else {
+            key = "false";
+            len = 5;
+        }
+    }
     else {
         return false;
     }
