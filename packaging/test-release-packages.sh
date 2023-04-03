@@ -46,7 +46,7 @@ YUM_TARGETS=("centos:7"
     "rockylinux:8"
     "quay.io/centos/centos:stream9"
     "amazonlinux:2"
-    "amazonlinux:2022")
+    "amazonlinux:2023")
 
 for IMAGE in "${YUM_TARGETS[@]}"
 do
