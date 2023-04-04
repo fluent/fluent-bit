@@ -145,7 +145,7 @@ int proxy_go_flush(struct flb_plugin_proxy_context *ctx,
     return ret;
 }
 
-int proxy_go_destroy(void *data)
+int proxy_go_exit(void *data)
 {
     int ret = 0;
     struct flbgo_output_plugin *plugin;
@@ -159,6 +159,16 @@ int proxy_go_destroy(void *data)
     else if (plugin->cb_exit) {
         ret = plugin->cb_exit();
     }
+
+    return ret;
+}
+
+void proxy_go_destroy(void *data)
+{
+    int ret = 0;
+    struct flbgo_output_plugin *plugin;
+
+    plugin = (struct flbgo_output_plugin *) data;
     flb_free(plugin->name);
     flb_free(plugin);
     return ret;
