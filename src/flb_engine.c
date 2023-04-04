@@ -940,6 +940,9 @@ int flb_engine_shutdown(struct flb_config *config)
     }
 #endif
 
+    /* free/destroy plugins */
+    flb_plugins_unregister(config);
+
     return 0;
 }
 
