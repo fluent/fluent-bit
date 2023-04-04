@@ -17,13 +17,13 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_OUT_AZURE_CONF_H
-#define FLB_OUT_AZURE_CONF_H
+#ifndef FLB_OUT_AZURE_LOGS_INGESTION_CONF_H
+#define FLB_OUT_AZURE_LOGS_INGESTION_CONF_H
 
-#include "azure.h"
+#include "azure_logs_ingestion.h"
 
-struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
+struct flb_azure *flb_azure_logs_ingestion_conf_create(struct flb_output_instance *ins,
                                         struct flb_config *config);
-int flb_azure_conf_destroy(struct flb_azure *ctx);
+int flb_azure_logs_ingestion_conf_destroy(struct flb_azure_logs_ingestion *ctx);
 
 #endif
