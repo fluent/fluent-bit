@@ -291,6 +291,7 @@ int flb_tail_dmode_process_content(time_t now,
                            unesc_ends_with_nl,
                            prepend_sds_to_str, file->dmode_buf);
     if (ret >= 0) {
+        printf("SETTING LAST LINE TO  : %.*s", line_len, line);
         /* line is a valid json */
         flb_sds_len_set(file->dmode_lastline, 0);
 
@@ -388,9 +389,13 @@ void flb_tail_dmode_flush(struct flb_tail_file *file, struct flb_tail_config *ct
 static void file_pending_flush(struct flb_tail_config *ctx,
                                struct flb_tail_file *file, time_t now)
 {
+    printf("FLUSH? %s - %llu - %llu\n", file->name, (uint64_t) file->dmode_flush_timeout, (uint64_t) now);
+
     if (file->dmode_flush_timeout > now) {
         return;
     }
+
+    printf("flb_sds_len(file->dmode_lastline) = %u\n", flb_sds_len(file->dmode_lastline));
 
     if (flb_sds_len(file->dmode_lastline) == 0) {
         return;

@@ -517,6 +517,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
             goto go_next;
         }
         else if (ctx->docker_mode) {
+            printf("DOCKER MODE : %.*s\n", (int) line_len, line);
             ret = flb_tail_dmode_process_content(now, line, line_len,
                                                  &repl_line, &repl_line_len,
                                                  file, ctx);
@@ -532,6 +533,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
                 goto go_next;
             }
             else {
+                printf("FLUSHING\n");
                 flb_tail_dmode_flush(file, ctx);
             }
         }
