@@ -44,5 +44,6 @@ int proxy_go_init(struct flb_plugin_proxy *proxy);
 int proxy_go_flush(struct flb_plugin_proxy_context *ctx,
                    const void *data, size_t size,
                    const char *tag, int tag_len);
-int proxy_go_destroy(void *data);
+void proxy_go_destroy(void *data);
+int proxy_go_exit(void *data);
 #endif
