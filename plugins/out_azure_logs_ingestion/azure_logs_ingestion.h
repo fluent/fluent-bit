@@ -17,8 +17,8 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_OUT_AZURE
-#define FLB_OUT_AZURE
+#ifndef FLB_OUT_AZURE_LOGS_INGESTION_H
+#define FLB_OUT_AZURE_LOGS_INGESTION_H
 
 #define FLB_AZURE_API_VERSION        "?api-version=2016-04-01"
 #define FLB_AZURE_HOST               ".ods.opinsights.azure.com"
@@ -31,12 +31,14 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_sds.h>
 
-struct flb_azure {
+struct flb_azure_logs_ingestion {
     /* account setup */
-    flb_sds_t customer_id;
-    flb_sds_t log_type;
-    flb_sds_t shared_key;
-    flb_sds_t dec_shared_key;
+    flb_sds_t tenant_id;
+    flb_sds_t client_id;
+    flb_sds_t client_secret;
+    flb_sds_t dce_uri;
+    flb_sds_t dcr_id;
+    flb_sds_t table_name;
 
     /* networking */
     int port;
@@ -49,8 +51,8 @@ struct flb_azure {
     /* time_generated: on/off */
     int time_generated;
 
-    /* Upstream connection to the backend server */
-    struct flb_upstream *u;
+    /* Upstream connection to the data collection endpoint */
+    struct flb_upstream *u_dce;
 
     /* Plugin instance reference */
     struct flb_output_instance *ins;
