@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_plugin_proxy.h>
 #include <fluent-bit/flb_log.h>
 
 @FLB_IN_PLUGINS_DECL@
@@ -70,6 +71,9 @@ void flb_plugins_unregister(struct flb_config *config)
 
     mk_list_foreach_safe(head, tmp, &config->out_plugins) {
         out = mk_list_entry(head, struct flb_output_plugin, _head);
+        if (out->proxy) {
+            flb_plugin_proxy_unregister(out);
+        }
         mk_list_del(&out->_head);
         flb_free(out);
     }
