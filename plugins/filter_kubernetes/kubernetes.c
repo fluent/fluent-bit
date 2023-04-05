@@ -220,6 +220,7 @@ static int pack_map_content(struct flb_log_event_encoder *log_encoder,
                             struct flb_kube *ctx)
 {
     int append_original_objects;
+    int scope_opened;
     int ret;
     int i;
     int map_size = 0;
@@ -382,6 +383,7 @@ static int pack_map_content(struct flb_log_event_encoder *log_encoder,
         return -2;
     }
 
+    scope_opened = FLB_FALSE;
     /* Merge Log */
     if (log_index != -1) {
         if (merge_status == MERGE_PARSED) {
@@ -398,6 +400,8 @@ static int pack_map_content(struct flb_log_event_encoder *log_encoder,
                 if (ret != FLB_EVENT_ENCODER_SUCCESS) {
                     return -3;
                 }
+
+                scope_opened = FLB_TRUE;
             }
 
             off = 0;
@@ -441,7 +445,7 @@ static int pack_map_content(struct flb_log_event_encoder *log_encoder,
 
             flb_free(log_buf);
 
-            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            if (scope_opened && ret == FLB_EVENT_ENCODER_SUCCESS) {
                 ret = flb_log_event_encoder_body_commit_map(log_encoder);
             }
 
@@ -465,6 +469,8 @@ static int pack_map_content(struct flb_log_event_encoder *log_encoder,
                 if (ret != FLB_EVENT_ENCODER_SUCCESS) {
                     return -6;
                 }
+
+                scope_opened = FLB_TRUE;
             }
 
             map = source_map.via.map.ptr[log_index].val;
@@ -481,7 +487,7 @@ static int pack_map_content(struct flb_log_event_encoder *log_encoder,
                         FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&v));
             }
 
-            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            if (scope_opened && ret == FLB_EVENT_ENCODER_SUCCESS) {
                 ret = flb_log_event_encoder_body_commit_map(log_encoder);
             }
 
@@ -547,7 +553,6 @@ static int cb_kube_filter(const void *data, size_t bytes,
     struct flb_kube *ctx = filter_context;
     struct flb_kube_meta meta = {0};
     struct flb_kube_props props = {0};
-    struct flb_time time_lookup;
     struct flb_log_event_encoder log_encoder;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
@@ -598,7 +603,6 @@ static int cb_kube_filter(const void *data, size_t bytes,
 
         return FLB_FILTER_NOTOUCH;
     }
-
 
     while ((ret = flb_log_event_decoder_next(
                     &log_decoder,
@@ -682,7 +686,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
         ret = pack_map_content(&log_encoder,
                                map,
                                cache_buf, cache_size,
-                               &meta, &time_lookup, parser, ctx);
+                               &meta, &log_event.timestamp, parser, ctx);
         if (ret != 0) {
             flb_log_event_decoder_destroy(&log_decoder);
             flb_log_event_encoder_destroy(&log_encoder);
@@ -721,25 +725,15 @@ static int cb_kube_filter(const void *data, size_t bytes,
         flb_free(dummy_cache_buf);
     }
 
-    if (log_encoder.output_length > 0) {
-        *out_buf   = log_encoder.output_buffer;
-        *out_bytes = log_encoder.output_length;
+    *out_buf   = log_encoder.output_buffer;
+    *out_bytes = log_encoder.output_length;
 
-        ret = FLB_FILTER_MODIFIED;
-
-        flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
-    }
-    else {
-        flb_plg_error(ctx->ins,
-                      "Log event encoder error : %d", ret);
-
-        ret = FLB_FILTER_NOTOUCH;
-    }
+    flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
 
     flb_log_event_decoder_destroy(&log_decoder);
     flb_log_event_encoder_destroy(&log_encoder);
 
-    return ret;
+    return FLB_FILTER_MODIFIED;
 }
 
 static int cb_kube_exit(void *data, struct flb_config *config)

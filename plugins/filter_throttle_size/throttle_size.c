@@ -677,7 +677,7 @@ static int cb_throttle_size_filter(const void *data, size_t bytes,
     ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
     if (ret != FLB_EVENT_DECODER_SUCCESS) {
-        flb_plg_error(ctx->ins,
+        flb_plg_error(ins,
                       "Log event decoder initialization error : %d", ret);
 
         return FLB_FILTER_NOTOUCH;
@@ -687,7 +687,7 @@ static int cb_throttle_size_filter(const void *data, size_t bytes,
                                      FLB_LOG_EVENT_FORMAT_DEFAULT);
 
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-        flb_plg_error(ctx->ins,
+        flb_plg_error(ins,
                       "Log event encoder initialization error : %d", ret);
 
         flb_log_event_decoder_destroy(&log_decoder);

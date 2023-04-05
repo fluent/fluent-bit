@@ -318,6 +318,9 @@ int flb_tail_pack_line_map(struct flb_time *time, char **data,
     if (result == FLB_EVENT_ENCODER_SUCCESS) {
         result = flb_log_event_encoder_commit_record(file->sl_log_event_encoder);
     }
+    else {
+        flb_log_event_encoder_rollback_record(file->sl_log_event_encoder);
+    }
 
     if (result != FLB_EVENT_ENCODER_SUCCESS) {
         flb_plg_error(file->config->ins, "error packing event");
