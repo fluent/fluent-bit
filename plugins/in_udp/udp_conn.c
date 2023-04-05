@@ -43,6 +43,8 @@ static inline int process_pack(struct udp_conn *conn,
 
     ctx = conn->ctx;
 
+    flb_log_event_encoder_reset(ctx->log_encoder);
+
     /* First pack the results, iterate concatenated messages */
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, pack, size, &off) == MSGPACK_UNPACK_SUCCESS) {
@@ -149,6 +151,8 @@ static ssize_t parse_payload_none(struct udp_conn *conn)
 
     buf = conn->buf_data;
     ret = FLB_EVENT_ENCODER_SUCCESS;
+
+    flb_log_event_encoder_reset(ctx->log_encoder);
 
     while ((s = strstr(buf, separator))) {
         len = (s - buf);

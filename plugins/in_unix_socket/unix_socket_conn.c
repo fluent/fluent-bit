@@ -43,6 +43,8 @@ static inline int process_pack(struct unix_socket_conn *conn,
 
     ctx = (struct flb_in_unix_socket_config *) conn->ctx;
 
+    flb_log_event_encoder_reset(ctx->log_encoder);
+
     /* First pack the results, iterate concatenated messages */
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, pack, size, &off) == MSGPACK_UNPACK_SUCCESS) {
@@ -149,6 +151,8 @@ static ssize_t parse_payload_none(struct unix_socket_conn *conn)
     sep_len = flb_sds_len(conn->ctx->separator);
 
     buf = conn->buf_data;
+
+    flb_log_event_encoder_reset(ctx->log_encoder);
 
     while ((s = strstr(buf, separator))) {
         len = (s - buf);

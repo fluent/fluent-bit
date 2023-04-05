@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_error.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 #include "in_lib.h"
 
 static int in_lib_collect(struct flb_input_instance *ins,
@@ -41,6 +42,8 @@ static int in_lib_collect(struct flb_input_instance *ins,
     int size;
     char *ptr;
     char *pack;
+    struct flb_log_event record;
+    struct flb_log_event_decoder decoder;
     struct flb_in_lib_config *ctx = in_context;
 
     capacity = (ctx->buf_size - ctx->buf_len);
@@ -86,22 +89,44 @@ static int in_lib_collect(struct flb_input_instance *ins,
     }
     ctx->buf_len = 0;
 
-    ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
+    ret = flb_log_event_decoder_init(&decoder, pack, out_size);
 
-    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        ret = flb_log_event_encoder_set_current_timestamp(
-                &ctx->log_encoder);
+    while ((ret = flb_log_event_decoder_next(
+                    &decoder,
+                    &record)) == FLB_EVENT_DECODER_SUCCESS) {
+        if (ret == FLB_EVENT_DECODER_SUCCESS) {
+            ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
+        }
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_set_timestamp(
+                    &ctx->log_encoder,
+                    &record.timestamp);
+        }
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_set_metadata_from_msgpack_object(
+                    &ctx->log_encoder,
+                    record.metadata);
+        }
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_set_body_from_msgpack_object(
+                    &ctx->log_encoder,
+                    record.body);
+        }
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+        }
+        else {
+            flb_log_event_encoder_rollback_record(&ctx->log_encoder);
+        }
     }
 
-    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        ret = flb_log_event_encoder_set_body_from_raw_msgpack(
-                &ctx->log_encoder,
-                pack,
-                out_size);
-    }
-
-    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+    if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA &&
+        decoder.offset == out_size) {
+        ret = FLB_EVENT_ENCODER_SUCCESS;
     }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
@@ -118,6 +143,7 @@ static int in_lib_collect(struct flb_input_instance *ins,
     }
 
     flb_log_event_encoder_reset(&ctx->log_encoder);
+    flb_log_event_decoder_destroy(&decoder);
 
     /* Reset the state */
     flb_free(pack);
