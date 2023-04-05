@@ -794,7 +794,7 @@ jobs:
         shell: bash
 
       - name: Raise docs PR
-        uses: peter-evans/create-pull-request@v4
+        uses: peter-evans/create-pull-request@v5
         with:
           commit-message: 'release: update to v${{ inputs.version }}'
           signoff: true
