@@ -38,6 +38,8 @@
 #include <fluent-bit/flb_input_log.h>
 #include <fluent-bit/flb_input_metric.h>
 #include <fluent-bit/flb_input_trace.h>
+#include <fluent-bit/flb_config_format.h>
+#include <fluent-bit/flb_processor.h>
 
 #ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics.h>
@@ -152,10 +154,7 @@ struct flb_input_plugin {
 struct flb_input_instance {
     struct mk_event event;           /* events handler */
 
-
-    /* DEPRECATED: no logic should be build on top of this flag
-     * int event_type;                   FLB_INPUT_LOGS, FLB_INPUT_METRICS
-     */
+    struct flb_processor *processor;
 
     /*
      * The instance flags are derived from the fixed plugin flags. This
@@ -690,5 +689,8 @@ struct mk_event_loop *flb_input_event_loop_get(struct flb_input_instance *ins);
 int flb_input_upstream_set(struct flb_upstream *u, struct flb_input_instance *ins);
 int flb_input_downstream_set(struct flb_stream *stream,
                              struct flb_input_instance *ins);
+
+/* processors */
+int flb_input_instance_processors_load(struct flb_input_instance *ins, struct flb_cf_group *processors);
 
 #endif

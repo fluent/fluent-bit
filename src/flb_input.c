@@ -39,6 +39,7 @@
 #include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_ring_buffer.h>
+#include <fluent-bit/flb_processor.h>
 
 /* input plugin macro helpers */
 #include <fluent-bit/flb_input_plugin.h>
@@ -336,6 +337,9 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->mem_chunks_size = 0;
         instance->storage_buf_status = FLB_INPUT_RUNNING;
         mk_list_add(&instance->_head, &config->inputs);
+
+        /* processor instance */
+        instance->processor = flb_processor_create(config, instance->name, instance);
     }
 
     return instance;
@@ -781,8 +785,14 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
 
     mk_list_del(&ins->_head);
 
+    /* ring buffer */
     if (ins->rb) {
         flb_ring_buffer_destroy(ins->rb);
+    }
+
+    /* processor */
+    if (ins->processor) {
+        flb_processor_destroy(ins->processor);
     }
     flb_free(ins);
 }
