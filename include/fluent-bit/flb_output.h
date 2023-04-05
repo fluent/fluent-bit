@@ -64,7 +64,14 @@
 #define FLB_OUTPUT_SYNCHRONOUS  2048  /* run one task at a time, no flush cycle limit */
 
 
-/* Event type handlers */
+/*
+ * Event type handlers
+ *
+ * These types are defined by creating a mask using numbers. However, it's important
+ * to note that the masks used in this process are different from the ones used
+ * in flb_event.h. The original chunk values are not actually masks, but rather set
+ * numbers starting from 0; this is for compatibility reasons.
+ */
 #define FLB_OUTPUT_LOGS        1
 #define FLB_OUTPUT_METRICS     2
 #define FLB_OUTPUT_TRACES      4
