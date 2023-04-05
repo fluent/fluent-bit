@@ -465,6 +465,26 @@ struct flb_cf_group *flb_cf_group_create(struct flb_cf *cf, struct flb_cf_sectio
     return g;
 }
 
+struct flb_cf_group *flb_cf_group_get(struct flb_cf *cf, struct flb_cf_section *s, char *name)
+{
+    struct mk_list *head;
+    struct flb_cf_group *g;
+
+    mk_list_foreach(head, &s->groups) {
+        g = mk_list_entry(head, struct flb_cf_group, _head);
+        if (strcasecmp(g->name, name) == 0){
+            return g;
+        }
+    }
+
+    return NULL;
+}
+
+void flb_cf_group_print(struct flb_cf_group *g)
+{
+    cfl_kvlist_print(stdout, g->properties);
+}
+
 void flb_cf_group_destroy(struct flb_cf_group *g)
 {
     if (g->name) {

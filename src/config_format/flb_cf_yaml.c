@@ -45,6 +45,8 @@
 #define PATH_MAX MAX_PATH
 #endif
 
+#include <stdio.h>
+
 enum section {
     SECTION_ENV,
     SECTION_INCLUDE,
@@ -90,6 +92,16 @@ enum state {
     STATE_GROUP_KEY,
     STATE_GROUP_VAL,
 
+    STATE_INPUT_PROCESSOR,
+    STATE_INPUT_PROCESSOR_LOGS_KEY,
+    STATE_INPUT_PROCESSOR_LOGS_VAL,
+
+    STATE_INPUT_PROCESSOR_METRICS_KEY,
+    STATE_INPUT_PROCESSOR_METRICS_VAL,
+
+    STATE_INPUT_PROCESSOR_TRACES_KEY,
+    STATE_INPUT_PROCESSOR_TRACES_VAL,
+
     /* environment variables */
     STATE_ENV,
 
@@ -114,6 +126,11 @@ struct parser_state {
 
     /* active group */
     struct flb_cf_group *cf_group;
+
+    /* active processor group: logs, metrics or traces */
+    struct cfl_kvlist *cf_processor_kv;
+    struct cfl_array *cf_processor_type_array;
+    struct cfl_kvlist *cf_processor_type_list;
 
     /* file */
     flb_sds_t file;                /* file name */
@@ -160,6 +177,37 @@ static int add_section_type(struct flb_cf *cf, struct parser_state *s)
     return 0;
 }
 
+static char *event_type_str(yaml_event_t *event)
+{
+    switch (event->type) {
+    case YAML_NO_EVENT:
+        return "no-event";
+    case YAML_STREAM_START_EVENT:
+        return "stream-start-event";
+    case YAML_STREAM_END_EVENT:
+        return "stream-end-event";
+    case YAML_DOCUMENT_START_EVENT:
+        return "document-start-event";
+    case YAML_DOCUMENT_END_EVENT:
+        return "document-end-event";
+    case YAML_ALIAS_EVENT:
+        return "alias-event";
+    case YAML_SCALAR_EVENT:
+        return "scalar-event";
+    case YAML_SEQUENCE_START_EVENT:
+        return "sequence-start-event";
+        break;
+    case YAML_SEQUENCE_END_EVENT:
+        return "sequence-end-event";
+    case YAML_MAPPING_START_EVENT:
+        return "mapping-start-event";
+    case YAML_MAPPING_END_EVENT:
+        return "mapping-end-event";
+    default:
+        return "unknown";
+    }
+}
+
 static char *get_last_included_file(struct local_ctx *ctx)
 {
     struct flb_slist_entry *e;
@@ -176,9 +224,9 @@ static void yaml_error_event(struct local_ctx *ctx, struct parser_state *s,
     e = mk_list_entry_last(&ctx->includes, struct flb_slist_entry, _head);
 
     flb_error("[config] YAML error found in file \"%s\", line %zu, column %zu: "
-              "unexpected event %d in state %d.",
+              "unexpected event '%s' (%d) in state %d.",
               e->str, event->start_mark.line + 1, event->start_mark.column,
-              event->type, s->state);
+              event_type_str(event), event->type, s->state);
 }
 
 static void yaml_error_definition(struct local_ctx *ctx, struct parser_state *s,
@@ -788,6 +836,210 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
         }
         break;
 
+    case STATE_INPUT_PROCESSOR:
+        switch(event->type) {
+            case YAML_MAPPING_START_EVENT:
+                break;
+            case YAML_MAPPING_END_EVENT:
+                s->state = STATE_PLUGIN_KEY;
+                break;
+            case YAML_SCALAR_EVENT:
+                /* remove 'processors' key, not longer needed */
+                if (s->key) {
+                    flb_sds_destroy(s->key);
+                    s->key = NULL;
+                }
+                /* Check if we are entering a 'logs', 'metrics' or 'traces' section */
+                value = (char *) event->data.scalar.value;
+                if (strcasecmp(value, "logs") == 0) {
+                    /* logs state */
+                    s->state = STATE_INPUT_PROCESSOR_LOGS_KEY;
+
+                    /* create the array for definitions found under 'log' */
+                    s->cf_processor_type_array = cfl_array_create(1);
+                    cfl_array_resizable(s->cf_processor_type_array, CFL_TRUE);
+
+                    cfl_kvlist_insert_array(s->cf_group->properties, "logs", s->cf_processor_type_array);
+                }
+                else if (strcasecmp(value, "metrics") == 0) {
+                    /* metrics state */
+                    s->state = STATE_INPUT_PROCESSOR_METRICS_KEY;
+
+                    /* create the array for definitions found under 'log' */
+                    s->cf_processor_type_array = cfl_array_create(1);
+                    cfl_array_resizable(s->cf_processor_type_array, CFL_TRUE);
+
+                    cfl_kvlist_insert_array(s->cf_group->properties, "metrics", s->cf_processor_type_array);
+                }
+                else if (strcasecmp(value, "traces") == 0) {
+                    /* metrics state */
+                    s->state = STATE_INPUT_PROCESSOR_TRACES_KEY;
+
+                    /* create the array for definitions found under 'log' */
+                    s->cf_processor_type_array = cfl_array_create(1);
+                    cfl_array_resizable(s->cf_processor_type_array, CFL_TRUE);
+
+                    cfl_kvlist_insert_array(s->cf_group->properties, "traces", s->cf_processor_type_array);
+                }
+                else {
+                    printf("processor unknown\n");
+                }
+                break;
+            default:
+                yaml_error_event(ctx, s, event);
+                return YAML_FAILURE;
+        };
+        break;
+    case STATE_INPUT_PROCESSOR_LOGS_KEY:
+        switch(event->type) {
+            case YAML_SEQUENCE_START_EVENT:
+                break;
+            case YAML_SEQUENCE_END_EVENT:
+                s->state = STATE_INPUT_PROCESSOR;
+                break;
+            case YAML_MAPPING_START_EVENT:
+                s->cf_processor_type_list = cfl_kvlist_create();
+                cfl_array_append_kvlist(s->cf_processor_type_array, s->cf_processor_type_list);
+                break;
+            case YAML_MAPPING_END_EVENT:
+                break;
+            case YAML_SCALAR_EVENT:
+                /* Check if we are entering a 'logs', 'metrics' or 'traces' section */
+                value = (char *) event->data.scalar.value;
+                s->key = flb_sds_create(value);
+                s->state = STATE_INPUT_PROCESSOR_LOGS_VAL;
+                break;
+            default:
+                yaml_error_event(ctx, s, event);
+                return YAML_FAILURE;
+        };
+        break;
+
+    case STATE_INPUT_PROCESSOR_LOGS_VAL:
+        switch(event->type) {
+            case YAML_SEQUENCE_START_EVENT:
+                s->state = STATE_INPUT_PROCESSOR_LOGS_KEY;
+                break;
+            case YAML_SEQUENCE_END_EVENT:
+                break;
+            case YAML_MAPPING_START_EVENT:
+                break;
+            case YAML_MAPPING_END_EVENT:
+                break;
+            case YAML_SCALAR_EVENT:
+                value = (char *) event->data.scalar.value;
+                if (!s->cf_processor_type_list || !s->key || !value) {
+                    s->state = STATE_INPUT_PROCESSOR;
+                    break;
+                }
+                cfl_kvlist_insert_string(s->cf_processor_type_list, s->key, value);
+                flb_sds_destroy(s->key);
+                s->key = NULL;
+                s->state = STATE_INPUT_PROCESSOR_LOGS_KEY;
+                break;
+            default:
+                yaml_error_event(ctx, s, event);
+                return YAML_FAILURE;
+        };
+        break;
+
+    case STATE_INPUT_PROCESSOR_METRICS_KEY:
+        switch(event->type) {
+            case YAML_SEQUENCE_START_EVENT:
+                break;
+            case YAML_SEQUENCE_END_EVENT:
+                s->state = STATE_INPUT_PROCESSOR;
+                break;
+            case YAML_MAPPING_START_EVENT:
+                s->cf_processor_type_list = cfl_kvlist_create();
+                cfl_array_append_kvlist(s->cf_processor_type_array, s->cf_processor_type_list);
+                break;
+            case YAML_MAPPING_END_EVENT:
+                break;
+            case YAML_SCALAR_EVENT:
+                value = (char *) event->data.scalar.value;
+                s->key = flb_sds_create(value);
+                s->state = STATE_INPUT_PROCESSOR_METRICS_VAL;
+                break;
+            default:
+                yaml_error_event(ctx, s, event);
+                return YAML_FAILURE;
+        };
+        break;
+
+    case STATE_INPUT_PROCESSOR_METRICS_VAL:
+        switch(event->type) {
+            case YAML_SEQUENCE_START_EVENT:
+                s->state = STATE_INPUT_PROCESSOR_METRICS_KEY;
+                break;
+            case YAML_SEQUENCE_END_EVENT:
+                break;
+            case YAML_MAPPING_START_EVENT:
+                break;
+            case YAML_MAPPING_END_EVENT:
+                break;
+            case YAML_SCALAR_EVENT:
+                value = (char *) event->data.scalar.value;
+                cfl_kvlist_insert_string(s->cf_processor_type_list, s->key, value);
+                flb_sds_destroy(s->key);
+                s->key = NULL;
+                s->val = NULL;
+                s->state = STATE_INPUT_PROCESSOR_METRICS_KEY;
+                break;
+            default:
+                yaml_error_event(ctx, s, event);
+                return YAML_FAILURE;
+        };
+        break;
+
+    case STATE_INPUT_PROCESSOR_TRACES_KEY:
+        switch(event->type) {
+            case YAML_SEQUENCE_START_EVENT:
+                break;
+            case YAML_SEQUENCE_END_EVENT:
+                s->state = STATE_INPUT_PROCESSOR;
+                break;
+            case YAML_MAPPING_START_EVENT:
+                s->cf_processor_type_list = cfl_kvlist_create();
+                cfl_array_append_kvlist(s->cf_processor_type_array, s->cf_processor_type_list);
+                break;
+            case YAML_MAPPING_END_EVENT:
+                break;
+            case YAML_SCALAR_EVENT:
+                value = (char *) event->data.scalar.value;
+                s->key = flb_sds_create(value);
+                s->state = STATE_INPUT_PROCESSOR_TRACES_VAL;
+                break;
+            default:
+                yaml_error_event(ctx, s, event);
+                return YAML_FAILURE;
+        };
+        break;
+
+    case STATE_INPUT_PROCESSOR_TRACES_VAL:
+        switch(event->type) {
+            case YAML_SEQUENCE_START_EVENT:
+                s->state = STATE_INPUT_PROCESSOR_TRACES_KEY;
+                break;
+            case YAML_SEQUENCE_END_EVENT:
+                break;
+            case YAML_MAPPING_START_EVENT:
+                break;
+            case YAML_MAPPING_END_EVENT:
+                break;
+            case YAML_SCALAR_EVENT:
+                value = (char *) event->data.scalar.value;
+                cfl_kvlist_insert_string(s->cf_processor_type_list, s->key, value);
+                flb_sds_destroy(s->key);
+                s->key = NULL;
+                s->val = NULL;
+                s->state = STATE_INPUT_PROCESSOR_TRACES_KEY;
+                break;
+            default:
+                yaml_error_event(ctx, s, event);
+                return YAML_FAILURE;
+        };
+        break;
     case STATE_PLUGIN_VAL:
         switch(event->type) {
         case YAML_SCALAR_EVENT:
@@ -806,8 +1058,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             }
             flb_sds_destroy(s->key);
             flb_sds_destroy(s->val);
+            s->key = NULL;
+            s->val = NULL;
             break;
-        case YAML_MAPPING_START_EVENT: /* start a new group */
+        case YAML_SEQUENCE_START_EVENT: /* start a new group */
             s->state = STATE_GROUP_KEY;
             s->cf_group = flb_cf_group_create(cf, s->cf_section,
                                               s->key, flb_sds_len(s->key));
@@ -816,7 +1070,20 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 return YAML_FAILURE;
             }
             break;
-        case YAML_SEQUENCE_START_EVENT:
+        case YAML_SEQUENCE_END_EVENT:   /* end of group */
+            s->state = STATE_PLUGIN_KEY;
+            s->cf_group = NULL;
+            break;
+        case YAML_MAPPING_START_EVENT:
+            /* Special handling for input processor */
+            if (strcmp(s->key, "processors") == 0) {
+                s->state = STATE_INPUT_PROCESSOR;
+
+                /* set active group: processors.logs */
+                s->cf_group = flb_cf_group_create(cf, s->cf_section, "processors", 10);
+                break;
+            }
+
             s->state = STATE_PLUGIN_VAL_LIST;
             s->values = flb_cf_section_property_add_list(cf,
                                                          s->cf_section->properties,
@@ -825,7 +1092,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 return YAML_FAILURE;
             }
             flb_sds_destroy(s->key);
-        break;
+            break;
+        case YAML_MAPPING_END_EVENT:
+            s->state = STATE_PLUGIN_KEY;
+            break;
         default:
             yaml_error_event(ctx, s, event);
             return YAML_FAILURE;
@@ -838,11 +1108,16 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             if (s->values == NULL) {
                 return YAML_FAILURE;
             }
-            cfl_array_append_string(s->values, (char *)event->data.scalar.value);
+            cfl_array_append_string(s->values, (char *) event->data.scalar.value);
             break;
         case YAML_SEQUENCE_END_EVENT:
             s->values = NULL;
             s->state = STATE_PLUGIN_KEY;
+            break;
+        case YAML_MAPPING_START_EVENT: /* opening a group (STATE_GROUP_KEY) */
+            s->values = NULL;
+            s->state = STATE_GROUP_KEY;
+            printf("opening a group\n");
             break;
         default:
             yaml_error_event(ctx, s, event);
@@ -850,16 +1125,29 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
         }
         break;
 
+    /* groups: a group is a sub-section and here we handle the key/value pairs */
     case STATE_GROUP_KEY:
         switch(event->type) {
         case YAML_SCALAR_EVENT:
+            /* next state */
             s->state = STATE_GROUP_VAL;
+
+            /* grab current value (key) */
             value = (char *) event->data.scalar.value;
             s->key = flb_sds_create(value);
+            printf("  scalar event > KEY -> %s\n", value);
+            break;
+        case YAML_MAPPING_START_EVENT:
+            printf("mapping start event > \n");
             break;
         case YAML_MAPPING_END_EVENT:
-            s->cf_group = NULL;
+            printf("mapping end event, going to state group key\n");
+            s->state = STATE_GROUP_KEY;
+            break;
+        case YAML_SEQUENCE_END_EVENT:
+            printf("sequence end ?\n");
             s->state = STATE_PLUGIN_KEY;
+            s->cf_group = NULL;
             break;
         default:
             yaml_error_event(ctx, s, event);
@@ -874,12 +1162,17 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             value = (char *) event->data.scalar.value;
             s->val = flb_sds_create(value);
 
-            /* register key/value pair as a property */
+            printf("  scalar event > VAL -> %s\n", value);
+
+            /* add the kv pair to the active group properties */
             flb_cf_section_property_add(cf, s->cf_group->properties,
                                         s->key, flb_sds_len(s->key),
                                         s->val, flb_sds_len(s->val));
             flb_sds_destroy(s->key);
             flb_sds_destroy(s->val);
+            s->key = NULL;
+            s->val = NULL;
+
             break;
         default:
             yaml_error_event(ctx, s, event);
