@@ -258,7 +258,8 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
                                                            (char *) ctx->region,
                                                            (char *) ctx->sts_endpoint,
                                                            NULL,
-                                                           flb_aws_client_generator());
+                                                           flb_aws_client_generator(),
+                                                           ctx->profile);
     if (!ctx->aws_provider) {
         flb_plg_error(ctx->ins, "Failed to create AWS Credential Provider");
         goto error;
@@ -656,6 +657,13 @@ static struct flb_config_map config_map[] = {
      "dimensions, put the values as a comma seperated string. If you want to put "
      "list of lists, use the list as semicolon seperated strings. If your value "
      "is 'd1,d2;d3', we will consider it as [[d1, d2],[d3]]."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "profile", NULL,
+     0, FLB_TRUE, offsetof(struct flb_cloudwatch, profile),
+     "AWS Profile name. AWS Profiles can be configured with AWS CLI and are usually stored in "
+     "$HOME/.aws/ directory."
     },
 
     /* EOF */
