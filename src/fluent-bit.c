@@ -666,6 +666,7 @@ static int service_configure_plugin(struct flb_config *config,
     struct cfl_kvpair *kv;
     struct cfl_variant *val;
     struct flb_cf_section *s;
+    struct flb_cf_group *processors = NULL;
     int i;
     void *ins;
 
@@ -739,7 +740,8 @@ static int service_configure_plugin(struct flb_config *config,
             if (type == FLB_CF_CUSTOM) {
                 if (kv->val->type == CFL_VARIANT_STRING) {
                     ret = flb_custom_set_property(ins, kv->key, kv->val->data.as_string);
-                } else if (kv->val->type == CFL_VARIANT_ARRAY) {
+                }
+                else if (kv->val->type == CFL_VARIANT_ARRAY) {
                     for (i = 0; i < kv->val->data.as_array->entry_count; i++) {
                         val = kv->val->data.as_array->entries[i];
                         ret = flb_custom_set_property(ins, kv->key, val->data.as_string);
@@ -749,7 +751,8 @@ static int service_configure_plugin(struct flb_config *config,
             else if (type == FLB_CF_INPUT) {
                  if (kv->val->type == CFL_VARIANT_STRING) {
                     ret = flb_input_set_property(ins, kv->key, kv->val->data.as_string);
-                } else if (kv->val->type == CFL_VARIANT_ARRAY) {
+                }
+                else if (kv->val->type == CFL_VARIANT_ARRAY) {
                     for (i = 0; i < kv->val->data.as_array->entry_count; i++) {
                         val = kv->val->data.as_array->entries[i];
                         ret = flb_input_set_property(ins, kv->key, val->data.as_string);
@@ -781,6 +784,17 @@ static int service_configure_plugin(struct flb_config *config,
                 flb_error("[config] could not configure property '%s' on "
                           "%s plugin with section name '%s'",
                           kv->key, s_type, name);
+            }
+        }
+
+        /* Processors */
+        processors = flb_cf_group_get(cf, s, "processors");
+        if (processors) {
+            if (type == FLB_CF_INPUT) {
+                flb_processors_load_from_config_format_group(((struct flb_input_instance *) ins)->processor, processors);
+            }
+            else if (type == FLB_CF_OUTPUT) {
+                /* FIXME */
             }
         }
     }
@@ -1170,7 +1184,6 @@ int flb_main(int argc, char **argv)
 
     /* Validate config file */
 #ifndef FLB_HAVE_STATIC_CONF
-
     if (cfg_file) {
         if (access(cfg_file, R_OK) != 0) {
             flb_free(cfg_file);
