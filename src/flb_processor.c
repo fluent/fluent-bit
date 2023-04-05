@@ -35,13 +35,14 @@ struct flb_processor *flb_processor_create(struct flb_config *config, char *name
 {
     struct flb_processor *proc;
 
-    proc = flb_malloc(sizeof(struct flb_processor));
+    proc = flb_calloc(1, sizeof(struct flb_processor));
     if (!proc) {
         flb_errno();
         return NULL;
     }
     proc->config = config;
     proc->data = data;
+    proc->is_active = FLB_FALSE;
 
     /* lists for types */
     mk_list_init(&proc->logs);
