@@ -183,7 +183,8 @@ static int cb_firehose_init(struct flb_output_instance *ins,
                                                            (char *) ctx->region,
                                                            ctx->sts_endpoint,
                                                            NULL,
-                                                           flb_aws_client_generator());
+                                                           flb_aws_client_generator(),
+                                                           ctx->profile);
     if (!ctx->aws_provider) {
         flb_plg_error(ctx->ins, "Failed to create AWS Credential Provider");
         goto error;
@@ -477,6 +478,12 @@ static struct flb_config_map config_map[] = {
      "networking issues."
     },
 
+    {
+     FLB_CONFIG_MAP_STR, "profile", NULL,
+     0, FLB_TRUE, offsetof(struct flb_firehose, profile),
+     "AWS Profile name. AWS Profiles can be configured with AWS CLI and are usually stored in "
+     "$HOME/.aws/ directory."
+    },
     /* EOF */
     {0}
 };
