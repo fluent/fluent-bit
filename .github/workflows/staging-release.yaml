@@ -160,7 +160,6 @@ jobs:
     - name: Sync to release bucket on S3
       run: |
         aws s3 sync "packaging/releases/$DISTRO" "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/$DISTRO" --delete --follow-symlinks --no-progress
-        aws s3 sync "packaging/releases/*.repo" "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/" --no-progress
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -800,8 +799,8 @@ jobs:
           signoff: true
           delete-branch: true
           title: 'release: update to v${{ inputs.version }}'
-          # We need workflows permission so have to use the CI_PAT
-          token: ${{ secrets.CI_PAT }}
+          # We need workflows permission so have to use the GH_PA_TOKEN
+          token: ${{ secrets.GH_PA_TOKEN }}
           labels: ci,automerge
           body: |
             Update release ${{ inputs.version }} version.
