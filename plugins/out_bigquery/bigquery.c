@@ -711,7 +711,8 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
                                                                NULL,
                                                                NULL,
                                                                NULL,
-                                                               flb_aws_client_generator());
+                                                               flb_aws_client_generator(),
+                                                               NULL);
 
         if (!ctx->aws_provider) {
             flb_plg_error(ctx->ins, "Failed to create AWS Credential Provider");
