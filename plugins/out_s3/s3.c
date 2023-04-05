@@ -805,7 +805,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
                                                        ctx->region,
                                                        ctx->sts_endpoint,
                                                        NULL,
-                                                       flb_aws_client_generator());
+                                                       flb_aws_client_generator(),
+                                                       ctx->profile);
 
     if (!ctx->provider) {
         flb_plg_error(ctx->ins, "Failed to create AWS Credential Provider");
@@ -2480,6 +2481,13 @@ static struct flb_config_map config_map[] = {
      0, FLB_FALSE, 0,
      "Specify the storage class for S3 objects. If this option is not specified, objects "
      "will be stored with the default 'STANDARD' storage class."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "profile", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, profile),
+     "AWS Profile name. AWS Profiles can be configured with AWS CLI and are usually stored in "
+     "$HOME/.aws/ directory."
     },
 
     /* EOF */
