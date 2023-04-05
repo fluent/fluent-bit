@@ -1002,6 +1002,12 @@ static struct flb_config_map config_map[] = {
      "AWS Region of your Amazon OpenSearch Service cluster"
     },
     {
+     FLB_CONFIG_MAP_STR, "aws_profile", "default",
+     0, FLB_TRUE, offsetof(struct flb_opensearch, aws_profile),
+     "AWS Profile name. AWS Profiles can be configured with AWS CLI and are usually stored in "
+     "$HOME/.aws/ directory."
+    },
+    {
      FLB_CONFIG_MAP_STR, "aws_sts_endpoint", NULL,
      0, FLB_TRUE, offsetof(struct flb_opensearch, aws_sts_endpoint),
      "Custom endpoint for the AWS STS API, used with the AWS_Role_ARN option"
