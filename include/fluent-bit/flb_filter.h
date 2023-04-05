@@ -41,10 +41,21 @@
 #define FLB_FILTER_MODIFIED 1
 #define FLB_FILTER_NOTOUCH  2
 
+/*
+ * Types are defined by creating a mask using numbers. However, it's important
+ * to note that the masks used in this process are different from the ones used
+ * in flb_event.h. The original chunk values are not actually masks, but rather set
+ * numbers starting from 0; this is for compatibility reasons.
+ */
+#define FLB_FILTER_LOGS        1
+#define FLB_FILTER_METRICS     2
+#define FLB_FILTER_TRACES      4
+
 struct flb_input_instance;
 struct flb_filter_instance;
 
 struct flb_filter_plugin {
+    int event_type;        /* Event type: logs, metrics, traces */
     int flags;             /* Flags (not available at the moment */
     char *name;            /* Filter short name            */
     char *description;     /* Description                  */
@@ -66,6 +77,7 @@ struct flb_filter_plugin {
 };
 
 struct flb_filter_instance {
+    int event_type;                /* Event type: logs, metrics, traces */
     int id;                        /* instance id              */
     int log_level;                 /* instance log level       */
     char name[32];                 /* numbered name            */
@@ -113,12 +125,17 @@ const char *flb_filter_get_property(const char *key,
 
 struct flb_filter_instance *flb_filter_new(struct flb_config *config,
                                            const char *filter, void *data);
+void flb_filter_instance_exit(struct flb_filter_instance *ins,
+                              struct flb_config *config);
+
 void flb_filter_exit(struct flb_config *config);
 void flb_filter_do(struct flb_input_chunk *ic,
                    const void *data, size_t bytes,
                    const char *tag, int tag_len,
                    struct flb_config *config);
 const char *flb_filter_name(struct flb_filter_instance *ins);
+
+int flb_filter_init(struct flb_config *config, struct flb_filter_instance *ins);
 int flb_filter_init_all(struct flb_config *config);
 void flb_filter_set_context(struct flb_filter_instance *ins, void *context);
 void flb_filter_instance_destroy(struct flb_filter_instance *ins);
