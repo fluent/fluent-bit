@@ -87,6 +87,7 @@ struct flb_firehose {
     const char *log_key;
     const char *external_id;
     char *sts_endpoint;
+    char *profile;
     int custom_endpoint;
     int retry_requests;
     int compression;
