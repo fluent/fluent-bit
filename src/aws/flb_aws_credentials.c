@@ -48,7 +48,8 @@ static struct flb_aws_provider *standard_chain_create(struct flb_config
                                                       struct
                                                       flb_aws_client_generator
                                                       *generator,
-                                                      int eks_irsa);
+                                                      int eks_irsa,
+                                                      char *profile);
 
 
 /*
@@ -273,7 +274,8 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
                                                             char *proxy,
                                                             struct
                                                             flb_aws_client_generator
-                                                            *generator)
+                                                            *generator,
+                                                            char *profile)
 {
     struct flb_aws_provider *provider;
     struct flb_aws_provider *tmp_provider;
@@ -289,7 +291,7 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
          */
         flb_debug("[aws_credentials] Using EKS_POD_EXECUTION_ROLE=%s", eks_pod_role);
         tmp_provider = standard_chain_create(config, tls, region, sts_endpoint,
-                                             proxy, generator, FLB_FALSE);
+                                             proxy, generator, FLB_FALSE, profile);
 
         if (!tmp_provider) {
             return NULL;
@@ -320,7 +322,7 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
 
     /* standard case- not in EKS Fargate */
     provider = standard_chain_create(config, tls, region, sts_endpoint,
-                                     proxy, generator, FLB_TRUE);
+                                     proxy, generator, FLB_TRUE, profile);
     return provider;
 }
 
@@ -338,10 +340,12 @@ struct flb_aws_provider *flb_managed_chain_provider_create(struct flb_output_ins
     flb_sds_t config_key_sts_endpoint;
     flb_sds_t config_key_role_arn;
     flb_sds_t config_key_external_id;
+    flb_sds_t config_key_profile;
     const char *region = NULL;
     const char *sts_endpoint = NULL;
     const char *role_arn = NULL;
     const char *external_id = NULL;
+    const char *profile = NULL;
     char *session_name = NULL;
     int key_prefix_len;
     int key_max_len;
@@ -367,6 +371,8 @@ struct flb_aws_provider *flb_managed_chain_provider_create(struct flb_output_ins
     strcpy(config_key_role_arn + key_prefix_len, "role_arn");
     config_key_external_id = flb_sds_create_len(config_key_prefix, key_max_len);
     strcpy(config_key_external_id + key_prefix_len, "external_id");
+    config_key_profile = flb_sds_create_len(config_key_prefix, key_max_len);
+    strcpy(config_key_profile + key_prefix_len, "profile");
 
     /* AWS provider needs a separate TLS instance */
     cred_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
@@ -392,13 +398,15 @@ struct flb_aws_provider *flb_managed_chain_provider_create(struct flb_output_ins
 
     /* Use null sts_endpoint if none provided */
     sts_endpoint = flb_output_get_property(config_key_sts_endpoint, ins);
-
+    /* Get the profile from configuration */
+    profile = flb_output_get_property(config_key_profile, ins);
     aws_provider = flb_standard_chain_provider_create(config,
                                                       cred_tls,
                                                       (char *) region,
                                                       (char *) sts_endpoint,
                                                       NULL,
-                                                      flb_aws_client_generator());
+                                                      flb_aws_client_generator(),
+                                                      profile);
     if (!aws_provider) {
         flb_plg_error(ins, "Failed to create AWS Credential Provider");
         goto error;
@@ -515,7 +523,8 @@ static struct flb_aws_provider *standard_chain_create(struct flb_config
                                                       struct
                                                       flb_aws_client_generator
                                                       *generator,
-                                                      int eks_irsa)
+                                                      int eks_irsa,
+                                                      char *profile)
 {
     struct flb_aws_provider *sub_provider;
     struct flb_aws_provider *provider;
@@ -552,7 +561,8 @@ static struct flb_aws_provider *standard_chain_create(struct flb_config
 
     mk_list_add(&sub_provider->_head, &implementation->sub_providers);
 
-    sub_provider = flb_profile_provider_create();
+    flb_debug("[aws_credentials] creating profile %s provider", profile);
+    sub_provider = flb_profile_provider_create(profile);
     if (sub_provider) {
         /* Profile provider can fail if HOME env var is not set */;
         mk_list_add(&sub_provider->_head, &implementation->sub_providers);
