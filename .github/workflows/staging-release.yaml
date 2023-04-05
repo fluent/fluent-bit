@@ -195,7 +195,9 @@ jobs:
         CODENAME="$DISTRO"
         if [[ "$DISTRO" == ubuntu* ]]; then
           echo "Converting Ubuntu version to codename"
-          CODENAME=$(grep "${DISTRO##*/} LTS" /usr/share/distro-info/ubuntu.csv|cut -d ',' -f3)
+          UBUNTU_NAME=$(grep "${DISTRO##*/} LTS" /usr/share/distro-info/ubuntu.csv|cut -d ',' -f3)
+          echo "Got Ubuntu codename: $UBUNTU_NAME"
+          CODENAME="ubuntu/$UBUNTU_NAME"
         fi
         echo "Using codename: $CODENAME"
         echo "CODENAME=$CODENAME" >> $GITHUB_OUTPUT
