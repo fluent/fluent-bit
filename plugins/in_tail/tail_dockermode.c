@@ -291,7 +291,6 @@ int flb_tail_dmode_process_content(time_t now,
                            unesc_ends_with_nl,
                            prepend_sds_to_str, file->dmode_buf);
     if (ret >= 0) {
-        printf("SETTING LAST LINE TO  : %.*s", line_len, line);
         /* line is a valid json */
         flb_sds_len_set(file->dmode_lastline, 0);
 
@@ -372,6 +371,7 @@ void flb_tail_dmode_flush(struct flb_tail_file *file, struct flb_tail_config *ct
             if (ctx->ignore_older > 0 && (now - ctx->ignore_older) > out_time.tm.tv_sec) {
                 goto dmode_flush_end;
             }
+
             flb_tail_pack_line_map(&out_time, (char**) &out_buf, &out_size, file, 0);
 
             goto dmode_flush_end;
@@ -389,19 +389,25 @@ void flb_tail_dmode_flush(struct flb_tail_file *file, struct flb_tail_config *ct
 static void file_pending_flush(struct flb_tail_config *ctx,
                                struct flb_tail_file *file, time_t now)
 {
-    printf("FLUSH? %s - %llu - %llu\n", file->name, (uint64_t) file->dmode_flush_timeout, (uint64_t) now);
-
     if (file->dmode_flush_timeout > now) {
         return;
     }
-
-    printf("flb_sds_len(file->dmode_lastline) = %u\n", flb_sds_len(file->dmode_lastline));
 
     if (flb_sds_len(file->dmode_lastline) == 0) {
         return;
     }
 
     flb_tail_dmode_flush(file, ctx);
+
+    if (file->sl_log_event_encoder->output_length > 0) {
+        flb_input_log_append(ctx->ins,
+                             file->tag_buf,
+                             file->tag_len,
+                             file->sl_log_event_encoder->output_buffer,
+                             file->sl_log_event_encoder->output_length);
+
+        flb_log_event_encoder_reset(file->sl_log_event_encoder);
+    }
 }
 
 int flb_tail_dmode_pending_flush_all(struct flb_tail_config *ctx)

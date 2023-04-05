@@ -474,9 +474,6 @@ void do_test(char *system, const char *target, int tExpected, int nExpected, ...
     snprintf(path, sizeof(path) - 1, DPATH "/log/%s.log", target);
     TEST_CHECK_(access(path, R_OK) == 0, "accessing log file: %s", path);
 
-    printf("DATA PATH : %s\n", path);
-    exit(0);
-
     TEST_CHECK(flb_input_set(ctx, in_ffd,
                              "path"          , path,
                              "docker_mode"   , "on",
@@ -1575,12 +1572,12 @@ TEST_LIST = {
 #endif
 
 #ifdef in_tail
-    // {"in_tail_dockermode",                          flb_test_in_tail_dockermode},
-    // {"in_tail_dockermode_splitted_line",            flb_test_in_tail_dockermode_splitted_line},
+    {"in_tail_dockermode",                          flb_test_in_tail_dockermode},
+    {"in_tail_dockermode_splitted_line",            flb_test_in_tail_dockermode_splitted_line},
     {"in_tail_dockermode_multiple_lines",           flb_test_in_tail_dockermode_multiple_lines},
-    // {"in_tail_dockermode_splitted_multiple_lines",  flb_test_in_tail_dockermode_splitted_multiple_lines},
-    // {"in_tail_dockermode_firstline_detection",      flb_test_in_tail_dockermode_firstline_detection},
-    // {"in_tail_multiline_json_and_regex",            flb_test_in_tail_multiline_json_and_regex},
+    {"in_tail_dockermode_splitted_multiple_lines",  flb_test_in_tail_dockermode_splitted_multiple_lines},
+    {"in_tail_dockermode_firstline_detection",      flb_test_in_tail_dockermode_firstline_detection},
+    {"in_tail_multiline_json_and_regex",            flb_test_in_tail_multiline_json_and_regex},
 #endif
     {NULL, NULL}
 };
