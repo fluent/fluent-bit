@@ -221,12 +221,11 @@ static struct flb_aws_provider_vtable profile_provider_vtable = {
     .upstream_set = upstream_set_fn_profile,
 };
 
-struct flb_aws_provider *flb_profile_provider_create()
+struct flb_aws_provider *flb_profile_provider_create(char* profile)
 {
     struct flb_aws_provider *provider = NULL;
     struct flb_aws_provider_profile *implementation = NULL;
     int result = -1;
-    char *profile = NULL;
 
     provider = flb_calloc(1, sizeof(struct flb_aws_provider));
 
@@ -266,8 +265,10 @@ struct flb_aws_provider *flb_profile_provider_create()
         goto error;
     }
 
-    /* AWS profile name */
-    profile = getenv(AWS_PROFILE);
+    /* AWS profile name. */
+    if (profile == NULL) {
+        profile = getenv(AWS_PROFILE);
+    }
     if (profile && strlen(profile) > 0) {
         goto set_profile;
     }
