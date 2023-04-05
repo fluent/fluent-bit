@@ -774,18 +774,20 @@ jobs:
     environment: release
     runs-on: ubuntu-latest
     steps:
-      - name: Release 1.9 - not latest
-        if: startsWith(inputs.version, '1.9')
+      - name: Release 2.0 - not latest
+        if: startsWith(inputs.version, '2.0')
         uses: actions/checkout@v3
         with:
           repository: fluent/fluent-bit-docs
-          ref: 1.9
+          ref: 2.0
+          token: ${{ secrets.GH_PA_TOKEN }}
 
       - name: Release 2.0 and latest
-        if: startsWith(inputs.version, '2.')
+        if: startsWith(inputs.version, '2.1')
         uses: actions/checkout@v3
         with:
           repository: fluent/fluent-bit-docs
+          token: ${{ secrets.GH_PA_TOKEN }}
 
       - name: Update container tags
         run: |
