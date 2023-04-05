@@ -1016,6 +1016,12 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, aws_service_name),
      "AWS Service Name"
     },
+    {
+     FLB_CONFIG_MAP_STR, "aws_profile", NULL,
+     0, FLB_TRUE, offsetof(struct flb_elasticsearch, aws_profile),
+     "AWS Profile name. AWS Profiles can be configured with AWS CLI and are usually stored in "
+     "$HOME/.aws/ directory."
+    },
 #endif
 
     /* Logstash compatibility */
