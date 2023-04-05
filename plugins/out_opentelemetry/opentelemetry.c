@@ -102,7 +102,6 @@ static inline void otlp_any_value_destroy(Opentelemetry__Proto__Common__V1__AnyV
         if (value->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE) {
             if (value->string_value != NULL) {
                 flb_free(value->string_value);
-                value->string_value = NULL;
             }
         }
         else if (value->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_ARRAY_VALUE) {
@@ -121,8 +120,9 @@ static inline void otlp_any_value_destroy(Opentelemetry__Proto__Common__V1__AnyV
             }
         }
 
+        value->string_value = NULL;
+
         flb_free(value);
-        value = NULL;
     }
 }
 
@@ -131,48 +131,67 @@ static int http_post(struct opentelemetry_context *ctx,
                      const char *tag, int tag_len,
                      const char *uri)
 {
-    int ret;
-    int out_ret = FLB_OK;
-    size_t b_sent;
-    struct flb_upstream *u;
-    struct flb_connection *u_conn;
-    struct flb_http_client *c;
-    struct mk_list *head;
+    size_t                     final_body_len;
+    void                      *final_body;
+    int                        compressed;
+    int                        out_ret;
+    size_t                     b_sent;
+    struct flb_connection     *u_conn;
+    struct mk_list            *head;
+    int                        ret;
+    struct flb_slist_entry    *key;
+    struct flb_slist_entry    *val;
     struct flb_config_map_val *mv;
-    struct flb_slist_entry *key = NULL;
-    struct flb_slist_entry *val = NULL;
-    void *final_body = NULL;
-    size_t final_body_len = 0;
-    int compressed = FLB_FALSE;
+    struct flb_http_client    *c;
 
-    /* Get upstream context and connection */
-    u = ctx->u;
-    u_conn = flb_upstream_conn_get(u);
-    if (!u_conn) {
-        flb_plg_error(ctx->ins, "no upstream connections available to %s:%i",
-                      u->tcp_host, u->tcp_port);
+    compressed = FLB_FALSE;
+
+    u_conn = flb_upstream_conn_get(ctx->u);
+
+    if (u_conn == NULL) {
+        flb_plg_error(ctx->ins,
+                      "no upstream connections available to %s:%i",
+                      ctx->u->tcp_host,
+                      ctx->u->tcp_port);
+
         return FLB_RETRY;
     }
-     if (ctx->compress_gzip == FLB_TRUE) {
+
+    if (ctx->compress_gzip) {
         ret = flb_gzip_compress((void *) body, body_len,
                                 &final_body, &final_body_len);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "cannot gzip payload, disabling compression");
-        } else {
+
+        if (ret == 0) {
             compressed = FLB_TRUE;
+        } else {
+            flb_plg_error(ctx->ins, "cannot gzip payload, disabling compression");
         }
-    } else {
-        final_body = body;
+    }
+
+    if (!compressed) {
+        final_body = (void *) body;
         final_body_len = body_len;
     }
+
     /* Create HTTP client context */
     c = flb_http_client(u_conn, FLB_HTTP_POST, uri,
                         final_body, final_body_len,
                         ctx->host, ctx->port,
                         ctx->proxy, 0);
 
+    if (c == NULL) {
+        flb_plg_error(ctx->ins, "error initializing http client");
 
-    if (c->proxy.host) {
+        if (compressed) {
+            flb_free(final_body);
+        }
+
+        flb_upstream_conn_release(u_conn);
+
+        return FLB_RETRY;
+    }
+
+    if (c->proxy.host != NULL) {
         flb_plg_debug(ctx->ins, "[http_client] proxy host: %s port: %i",
                       c->proxy.host, c->proxy.port);
     }
@@ -193,7 +212,8 @@ static int http_post(struct opentelemetry_context *ctx,
                         sizeof(FLB_OPENTELEMETRY_MIME_PROTOBUF_LITERAL) - 1);
 
     /* Basic Auth headers */
-    if (ctx->http_user && ctx->http_passwd) {
+    if (ctx->http_user != NULL &&
+        ctx->http_passwd != NULL) {
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
     }
 
@@ -207,10 +227,13 @@ static int http_post(struct opentelemetry_context *ctx,
                             key->str, flb_sds_len(key->str),
                             val->str, flb_sds_len(val->str));
     }
-    if (compressed == FLB_TRUE) {
+
+    if (compressed) {
         flb_http_set_content_encoding_gzip(c);
     }
+
     ret = flb_http_do(c, &b_sent);
+
     if (ret == 0) {
         /*
          * Only allow the following HTTP status:
@@ -225,44 +248,51 @@ static int http_post(struct opentelemetry_context *ctx,
          */
         if (c->resp.status < 200 || c->resp.status > 205) {
             if (ctx->log_response_payload &&
-                c->resp.payload && c->resp.payload_size > 0) {
-                flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                c->resp.payload != NULL &&
+                c->resp.payload_size > 0) {
+                flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%.*s",
                               ctx->host, ctx->port,
-                              c->resp.status, c->resp.payload);
+                              c->resp.status,
+                              (int) c->resp.payload_size,
+                              c->resp.payload);
             }
             else {
                 flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
                               ctx->host, ctx->port, c->resp.status);
             }
+
             out_ret = FLB_RETRY;
         }
         else {
             if (ctx->log_response_payload &&
-                c->resp.payload && c->resp.payload_size > 0) {
-                flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                c->resp.payload != NULL &&
+                c->resp.payload_size > 0) {
+                flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%.*s",
                              ctx->host, ctx->port,
-                             c->resp.status, c->resp.payload);
+                             c->resp.status,
+                             (int) c->resp.payload_size,
+                             c->resp.payload);
             }
             else {
                 flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i",
                              ctx->host, ctx->port,
                              c->resp.status);
             }
+
+            out_ret = FLB_OK;
         }
     }
     else {
         flb_plg_error(ctx->ins, "could not flush records to %s:%i (http_do=%i)",
                       ctx->host, ctx->port, ret);
+
         out_ret = FLB_RETRY;
     }
 
-    /*
-     * If the payload buffer is different than incoming records in body, means
-     * we generated a different payload and must be freed.
-     */
-    if (final_body != body) {
+    if (compressed) {
         flb_free(final_body);
     }
+
     /* Destroy HTTP client context */
     flb_http_client_destroy(c);
 
@@ -294,10 +324,11 @@ static void clear_array(Opentelemetry__Proto__Logs__V1__LogRecord **logs,
     }
 
     for (index = 0 ; index < log_count ; index++) {
-        otlp_any_value_destroy(logs[index]->body);
+        if (logs[index]->body != NULL) {
+            otlp_any_value_destroy(logs[index]->body);
+            logs[index]->body = NULL;
+        }
     }
-
-    flb_free(logs);
 }
 
 static Opentelemetry__Proto__Common__V1__ArrayValue *otlp_array_value_initialize(size_t entry_count)
@@ -384,6 +415,9 @@ static Opentelemetry__Proto__Common__V1__AnyValue *otlp_any_value_initialize(int
     if (data_type == MSGPACK_OBJECT_STR) {
         value->value_case = OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE;
     }
+    else if (data_type == MSGPACK_OBJECT_NIL) {
+        value->value_case = OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE__NOT_SET;
+    }
     else if (data_type == MSGPACK_OBJECT_BOOLEAN) {
         value->value_case = OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_BOOL_VALUE;
     }
@@ -399,6 +433,7 @@ static Opentelemetry__Proto__Common__V1__AnyValue *otlp_any_value_initialize(int
 
         if (value->array_value == NULL) {
             flb_free(value);
+
             value = NULL;
         }
     }
@@ -488,6 +523,19 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *msgpack_string_to_otlp
     return result;
 }
 
+static inline Opentelemetry__Proto__Common__V1__AnyValue *msgpack_nil_to_otlp_any_value(struct msgpack_object *o)
+{
+    Opentelemetry__Proto__Common__V1__AnyValue *result;
+
+    result = otlp_any_value_initialize(MSGPACK_OBJECT_NIL, 0);
+
+    if (result != NULL) {
+        result->string_value = NULL;
+    }
+
+    return result;
+}
+
 static inline Opentelemetry__Proto__Common__V1__AnyValue *msgpack_bin_to_otlp_any_value(struct msgpack_object *o)
 {
     Opentelemetry__Proto__Common__V1__AnyValue *result;
@@ -551,6 +599,7 @@ static inline Opentelemetry__Proto__Common__V1__KeyValue *msgpack_kv_to_otlp_any
     kv = otlp_kvpair_value_initialize();
     if (kv == NULL) {
         flb_errno();
+
         return NULL;
     }
 
@@ -558,14 +607,15 @@ static inline Opentelemetry__Proto__Common__V1__KeyValue *msgpack_kv_to_otlp_any
     if (kv->key == NULL) {
         flb_errno();
         flb_free(kv);
+
         return NULL;
     }
 
     kv->value = msgpack_object_to_otlp_any_value(&input_pair->val);
     if (kv->value == NULL) {
-        flb_errno();
         flb_free(kv->key);
         flb_free(kv);
+
         return NULL;
     }
 
@@ -599,7 +649,12 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *msgpack_object_to_otlp
 {
     Opentelemetry__Proto__Common__V1__AnyValue *result;
 
+    result = NULL;
+
     switch (o->type) {
+        case MSGPACK_OBJECT_NIL:
+            result = msgpack_nil_to_otlp_any_value(o);
+            break;
 
         case MSGPACK_OBJECT_BOOLEAN:
             result = msgpack_boolean_to_otlp_any_value(o);
@@ -619,6 +674,10 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *msgpack_object_to_otlp
             result = msgpack_string_to_otlp_any_value(o);
             break;
 
+        case MSGPACK_OBJECT_MAP:
+            result = msgpack_map_to_otlp_any_value(o);
+            break;
+
         case MSGPACK_OBJECT_BIN:
             result = msgpack_bin_to_otlp_any_value(o);
             break;
@@ -627,13 +686,13 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *msgpack_object_to_otlp
             result = msgpack_array_to_otlp_any_value(o);
             break;
 
-        case MSGPACK_OBJECT_MAP:
-            result = msgpack_map_to_otlp_any_value(o);
-            break;
-
         default:
             break;
     }
+
+    /* This function will fail if it receives an object with
+     * type MSGPACK_OBJECT_EXT
+     */
 
     return result;
 }
@@ -692,64 +751,56 @@ static int process_logs(struct flb_event_chunk *event_chunk,
                         struct flb_input_instance *ins, void *out_context,
                         struct flb_config *config)
 {
-    struct opentelemetry_context *ctx;
-    ctx = out_context;
-
-    /*
-    * These were initially variable length arrays.
-    * However, having a high value for batch_size was causing memory
-    * issues with the event chunk being overwritten. Moving it to the heap
-    * solves these issues but we still do not know the root cause
-    */
-
+    size_t                                      log_record_count;
     Opentelemetry__Proto__Logs__V1__LogRecord **log_record_list;
-    Opentelemetry__Proto__Logs__V1__LogRecord *log_records;
-    Opentelemetry__Proto__Common__V1__AnyValue *log_bodies;
+    Opentelemetry__Proto__Logs__V1__LogRecord  *log_records;
     Opentelemetry__Proto__Common__V1__AnyValue *log_object;
+    msgpack_unpacked                            result;
+    size_t                                      index;
+    struct opentelemetry_context               *ctx;
+    msgpack_object                             *obj;
+    size_t                                      off;
+    int                                         res;
+    struct flb_time                             tm;
 
-    size_t log_record_count;
-    size_t index;
-    msgpack_unpacked result;
-    msgpack_object *obj;
-    size_t off = 0;
-    struct flb_time tm;
-    int res = FLB_OK;
+    ctx = (struct opentelemetry_context *) out_context;
 
-    log_record_list = (Opentelemetry__Proto__Logs__V1__LogRecord *) flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Logs__V1__LogRecord *));
-    if (!log_record_list) {
+    log_record_list = (Opentelemetry__Proto__Logs__V1__LogRecord **) \
+        flb_calloc(ctx->batch_size,
+                   sizeof(Opentelemetry__Proto__Logs__V1__LogRecord *));
+
+    if (log_record_list == NULL) {
         flb_errno();
+
         return -1;
     }
 
-    log_records = flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Logs__V1__LogRecord));
-    if (!log_records) {
-        flb_free(log_record_list);
-        flb_errno();
-        return -1;
-    }
+    log_records = (Opentelemetry__Proto__Logs__V1__LogRecord *)
+        flb_calloc(ctx->batch_size,
+                   sizeof(Opentelemetry__Proto__Logs__V1__LogRecord));
 
-    log_bodies = (Opentelemetry__Proto__Common__V1__AnyValue *) flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Common__V1__AnyValue));
-    if (!log_bodies) {
-        flb_free(log_record_list);
-        flb_free(log_records);
+    if (log_records == NULL) {
         flb_errno();
-        return -1;
+
+        flb_free(log_record_list);
+
+        return -2;
     }
 
     for(index = 0 ; index < ctx->batch_size ; index++) {
-        opentelemetry__proto__logs__v1__log_record__init(&log_records[index]);
-        opentelemetry__proto__common__v1__any_value__init(&log_bodies[index]);
-
-        log_records[index].body = &log_bodies[index];
         log_record_list[index] = &log_records[index];
     }
-    log_record_count = 0;
 
     msgpack_unpacked_init(&result);
 
+    log_record_count = 0;
+    res = FLB_OK;
+    off = 0;
+
     while (msgpack_unpack_next(&result,
                                 event_chunk->data,
-                                event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS) {
+                                event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS &&
+           res == FLB_OK) {
 
         if (result.data.type != MSGPACK_OBJECT_ARRAY) {
             continue;
@@ -768,6 +819,14 @@ static int process_logs(struct flb_event_chunk *event_chunk,
 
         log_object = msgpack_object_to_otlp_any_value(obj);
 
+        if (log_object == NULL) {
+            flb_plg_error(ctx->ins, "log event conversion failure");
+            res = FLB_ERROR;
+            continue;
+        }
+
+        opentelemetry__proto__logs__v1__log_record__init(&log_records[log_record_count]);
+
         log_records[log_record_count].body = log_object;
         log_records[log_record_count].time_unix_nano = flb_time_to_nanosec(&tm);
 
@@ -780,29 +839,25 @@ static int process_logs(struct flb_event_chunk *event_chunk,
                                 log_record_count);
 
             clear_array(log_record_list, log_record_count);
-            flb_free(log_records);
 
             log_record_count = 0;
-
-            if (res != FLB_OK) {
-                return res;
-            }
         }
     }
 
-    if (log_record_count >= 0) {
+    if (log_record_count > 0 &&
+        res == FLB_OK) {
         res = flush_to_otel(ctx,
                             event_chunk,
                             log_record_list,
                             log_record_count);
 
-        clear_array(log_record_list, log_record_count);
-        flb_free(log_records);
-
-        log_record_count = 0;
     }
 
-    flb_free(log_bodies);
+    clear_array(log_record_list, log_record_count);
+
+    flb_free(log_record_list);
+    flb_free(log_records);
+
     msgpack_unpacked_destroy(&result);
 
     return res;

@@ -61,7 +61,7 @@
 struct upload_queue {
     struct s3_file *upload_file;
     struct multipart_upload *m_upload_file;
-    char *tag;
+    flb_sds_t tag;
     int tag_len;
 
     int retry_counter;

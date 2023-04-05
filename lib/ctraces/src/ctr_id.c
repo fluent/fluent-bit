@@ -151,3 +151,105 @@ cfl_sds_t ctr_id_to_lower_base16(struct ctrace_id *cid)
 
     return out;
 }
+
+/* This function returns CFL_TRUE on success and CFL_FALSE on
+ * failure.
+ */
+static int decode_hex_digit(char *digit)
+{
+    if (*digit >= '0' && *digit <= '9') {
+        *digit -= '0';
+    }
+    else if (*digit >= 'a' && *digit <= 'f') {
+        *digit -= 'a';
+        *digit += 10;
+    }
+    else if (*digit >= 'A' && *digit <= 'F') {
+        *digit -= 'A';
+        *digit += 10;
+    }
+    else {
+        return CFL_FALSE;
+    }
+
+    return CFL_TRUE;
+}
+
+struct ctrace_id *ctr_id_from_base16(cfl_sds_t id)
+{
+    size_t            output_index;
+    size_t            input_index;
+    cfl_sds_t         decoded_id;
+    struct ctrace_id *result_id;
+    int               result;
+    size_t            length;
+    char              digit;
+    char              value;
+
+    if (id == NULL) {
+        return NULL;
+    }
+
+    length = cfl_sds_len(id);
+
+    if (length < 2) {
+        return NULL;
+    }
+
+    if ((length % 2) != 0) {
+        return NULL;
+    }
+
+    decoded_id = cfl_sds_create_size(length / 2);
+
+    if (decoded_id == NULL) {
+        return NULL;
+    }
+
+    output_index = 0;
+    input_index = 0;
+    value = 0;
+
+    /* This loop consumes one character per iteration,
+     * on each iteration it verifies that the character
+     * corresponds to the base16 charset and then
+     * it subtracts the correct base to get a number
+     * ranging from 0 to 16.
+     * Then the accumulator is left shifted 4 bits and
+     * the current value is bitwise ORed to its value.
+     * If the character index is odd then the accumulator
+     * value is appended to the decoded id buffer and
+     * reinitialized to be used on the next iteration.
+    */
+
+    while (input_index < length) {
+        digit = id[input_index];
+        result = decode_hex_digit(&digit);
+
+        if (!result) {
+            break;
+        }
+
+        digit  &= 0xF;
+        value <<= 4;
+        value  |= digit;
+
+        if ((input_index % 2) == 1) {
+            decoded_id[output_index++] = value;
+            value = 0;
+        }
+
+        input_index++;
+    }
+
+    if (result) {
+        result_id = ctr_id_create(decoded_id, length / 2);
+    }
+    else {
+        result_id = NULL;
+    }
+
+    cfl_sds_destroy(decoded_id);
+
+    return result_id;
+}

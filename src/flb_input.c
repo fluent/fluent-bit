@@ -1919,47 +1919,22 @@ int flb_input_upstream_set(struct flb_upstream *u, struct flb_input_instance *in
     return 0;
 }
 
-int flb_input_downstream_set(struct flb_stream *stream,
+int flb_input_downstream_set(struct flb_downstream *stream,
                              struct flb_input_instance *ins)
 {
-    int flags = 0;
-
     if (stream == NULL) {
         return -1;
     }
-
-    /* TLS */
-#ifdef FLB_HAVE_TLS
-    if (ins->use_tls == FLB_TRUE) {
-        flags |= FLB_IO_TLS;
-    }
-    else {
-        flags |= FLB_IO_TCP;
-    }
-#else
-    flags |= FLB_IO_TCP;
-#endif
-
-    /* IPv6 */
-    if (ins->host.ipv6 == FLB_TRUE) {
-        flags |= FLB_IO_IPV6;
-    }
-
-    /* Set flags */
-    flb_stream_enable_flags(stream, flags);
 
     /*
      * If the input plugin will run in multiple threads, enable
      * the thread safe mode for the Downstream context.
      */
     if (flb_input_is_threaded(ins)) {
-        flb_stream_enable_thread_safety(stream);
+        flb_stream_enable_thread_safety(&stream->base);
 
-        mk_list_add(&stream->_head, &ins->downstreams);
+        mk_list_add(&stream->base._head, &ins->downstreams);
     }
-
-    /* Set networking options 'net.*' received through instance properties */
-    memcpy(&stream->net, &ins->net_setup, sizeof(struct flb_net_setup));
 
     return 0;
 }

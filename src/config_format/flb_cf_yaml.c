@@ -223,8 +223,8 @@ static void yaml_error_event(struct local_ctx *ctx, struct parser_state *s,
 
     e = mk_list_entry_last(&ctx->includes, struct flb_slist_entry, _head);
 
-    flb_error("[config] YAML error found in file \"%s\", line %i, column %i: "
-              "unexpected event '%s' (%d) in state %d.",
+    flb_error("[config] YAML error found in file \"%s\", line %zu, column %zu: "
+              "unexpected event %d in state %d.",
               e->str, event->start_mark.line + 1, event->start_mark.column,
               event_type_str(event), event->type, s->state);
 }
@@ -232,7 +232,7 @@ static void yaml_error_event(struct local_ctx *ctx, struct parser_state *s,
 static void yaml_error_definition(struct local_ctx *ctx, struct parser_state *s,
                                   yaml_event_t *event, char *value)
 {
-    flb_error("[config] YAML error found in file \"%s\", line %i, column %i: "
+    flb_error("[config] YAML error found in file \"%s\", line %zu, column %zu: "
               "duplicated definition of '%s'",
               s->file, event->start_mark.line + 1, event->start_mark.column,
               value);
@@ -241,7 +241,7 @@ static void yaml_error_definition(struct local_ctx *ctx, struct parser_state *s,
 static void yaml_error_plugin_category(struct local_ctx *ctx, struct parser_state *s,
                                        yaml_event_t *event, char *value)
 {
-    flb_error("[config] YAML error found in file \"%s\", line %i, column %i: "
+    flb_error("[config] YAML error found in file \"%s\", line %zu, column %zu: "
               "the pipeline component '%s' is not valid. Try one of these values: "
               "customs, inputs, filters or outputs.",
               s->file, event->start_mark.line + 1, event->start_mark.column,
@@ -590,7 +590,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 ret = read_config(cf, ctx, s->file, value);
             }
             if (ret == -1) {
-                flb_error("[config]  including file '%s' at %s:%i",
+                flb_error("[config]  including file '%s' at %s:%zu",
                           value,
                           last_included, event->start_mark.line + 1);
                 return YAML_FAILURE;

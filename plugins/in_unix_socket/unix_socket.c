@@ -174,6 +174,8 @@ static int in_unix_socket_init(struct flb_input_instance *in,
         return -1;
     }
 
+    flb_input_downstream_set(ctx->downstream, ctx->ins);
+
     if (ctx->socket_permissions != NULL) {
         ret = chmod(ctx->listen, ctx->socket_acl);
 
@@ -188,8 +190,6 @@ static int in_unix_socket_init(struct flb_input_instance *in,
             return -1;
         }
     }
-
-    ctx->evl = config->evl;
 
     if (ctx->dgram_mode_flag) {
         connection = flb_downstream_conn_get(ctx->downstream);

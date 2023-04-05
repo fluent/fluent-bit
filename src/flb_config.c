@@ -307,11 +307,20 @@ struct flb_config *flb_config_init()
 
     memset(&config->tasks_map, '\0', sizeof(config->tasks_map));
 
+    /* Initialize multiline-parser list. We need this here, because from now
+     * on we use flb_config_exit to cleanup the config, which requires
+     * the config->multiline_parsers list to be initialized. */
+    mk_list_init(&config->multiline_parsers);
+
     /* Environment */
     config->env = flb_env_create();
+    if (config->env == NULL) {
+        flb_error("[config] environment creation failed");
+        flb_config_exit(config);
+        return NULL;
+    }
 
     /* Multiline core */
-    mk_list_init(&config->multiline_parsers);
     ret = flb_ml_init(config);
     if (ret == -1) {
         flb_error("[config] multiline core initialization failed");

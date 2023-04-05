@@ -67,7 +67,7 @@ static int opentelemetry_conn_event(void *data)
                 flb_errno();
                 return -1;
             }
-            flb_plg_trace(ctx->ins, "fd=%i buffer realloc %i -> %i",
+            flb_plg_trace(ctx->ins, "fd=%i buffer realloc %i -> %zu",
                           event->fd, conn->buf_size, size);
 
             conn->buf_data = tmp;
@@ -86,7 +86,7 @@ static int opentelemetry_conn_event(void *data)
             return -1;
         }
 
-        flb_plg_trace(ctx->ins, "read()=%i pre_len=%i now_len=%i",
+        flb_plg_trace(ctx->ins, "read()=%zi pre_len=%i now_len=%zi",
                       bytes, conn->buf_len, conn->buf_len + bytes);
         conn->buf_len += bytes;
         conn->buf_data[conn->buf_len] = '\0';
@@ -244,7 +244,7 @@ struct http_conn *opentelemetry_conn_add(struct flb_connection *connection,
     conn->buf_size = ctx->buffer_chunk_size;
 
     /* Register instance into the event loop */
-    ret = mk_event_add(ctx->evl,
+    ret = mk_event_add(flb_engine_evl_get(),
                        connection->fd,
                        FLB_ENGINE_EV_CUSTOM,
                        MK_EVENT_READ,

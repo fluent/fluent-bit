@@ -257,7 +257,7 @@ static int http_enable_trace(mk_request_t *request, void *data, const char *inpu
     rc = msgpack_unpack_next(&result, buf, buf_size, &off);
     if (rc != MSGPACK_UNPACK_SUCCESS) {
         ret = 503;
-        flb_error("unable to unpack msgpack parameters", input_name);
+        flb_error("unable to unpack msgpack parameters for %s", input_name);
         goto unpack_error;
     }
 

@@ -366,14 +366,14 @@ struct flb_typecast_rule *flb_typecast_rule_create(char *from_type, int from_len
 
     rule->from_type = flb_typecast_str_to_type_t(from_type, from_len);
     if (rule->from_type == FLB_TYPECAST_TYPE_ERROR) {
-        flb_error("%s: unknown from str %s", from_type);
+        flb_error("%s: unknown from str %s", __FUNCTION__, from_type);
         flb_typecast_rule_destroy(rule);
         return NULL;
     }
 
     rule->to_type = flb_typecast_str_to_type_t(to_type, to_len);
     if (rule->to_type   == FLB_TYPECAST_TYPE_ERROR) {
-        flb_error("%s: unknown to str %s", to_type);
+        flb_error("%s: unknown to str %s", __FUNCTION__, to_type);
         flb_typecast_rule_destroy(rule);
         return NULL;
     }

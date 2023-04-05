@@ -23,6 +23,8 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_upstream.h>
+#include <fluent-bit/flb_hash_table.h>
+#include <cfl/cfl_list.h>
 
 #define FLB_LOKI_CT              "Content-Type"
 #define FLB_LOKI_CT_JSON         "application/json"
@@ -61,6 +63,9 @@ struct flb_loki {
     flb_sds_t http_user;
     flb_sds_t http_passwd;
 
+    /* Bearer Token Auth */
+    flb_sds_t bearer_token;
+
     /* Labels */
     struct mk_list *labels;
     struct mk_list *label_keys;
@@ -78,7 +83,9 @@ struct flb_loki {
     struct mk_list remove_keys_derived; /* remove_keys with label RAs */
     struct flb_mp_accessor *remove_mpa; /* remove_keys multi-pattern accessor */
     struct flb_record_accessor *ra_tenant_id_key; /* dynamic tenant id key */
-    flb_sds_t dynamic_tenant_id; /* temporary buffer for tenant id */
+
+    struct cfl_list dynamic_tenant_list;
+    pthread_mutex_t dynamic_tenant_list_lock;
 
     /* Upstream Context */
     struct flb_upstream *u;

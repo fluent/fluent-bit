@@ -1148,10 +1148,10 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
 
     if (p == NULL) {
         if (parser->time_strict) {
-            flb_error("[parser] cannot parse '%.*s'", tsize, time_str);
+            flb_error("[parser] cannot parse '%.*s'", (int)tsize, time_str);
             return -1;
         }
-        flb_debug("[parser] non-exact match '%.*s'", tsize, time_str);
+        flb_debug("[parser] non-exact match '%.*s'", (int)tsize, time_str);
         return 0;
     }
 
@@ -1159,10 +1159,10 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
         ret = parse_subseconds(p, time_len - (p - time_ptr), ns);
         if (ret < 0) {
             if (parser->time_strict) {
-                flb_error("[parser] cannot parse %%L for '%.*s'", tsize, time_str);
+                flb_error("[parser] cannot parse %%L for '%.*s'", (int)tsize, time_str);
                 return -1;
             }
-            flb_debug("[parser] non-exact match on %%L '%.*s'", tsize, time_str);
+            flb_debug("[parser] non-exact match on %%L '%.*s'", (int)tsize, time_str);
             return 0;
         }
         p += ret;
@@ -1171,10 +1171,10 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
         p = flb_strptime(p, parser->time_frac_secs, tm);
         if (p == NULL) {
             if (parser->time_strict) {
-                flb_error("[parser] cannot parse '%.*s' after %%L", tsize, time_str);
+                flb_error("[parser] cannot parse '%.*s' after %%L", (int)tsize, time_str);
                 return -1;
             }
-            flb_debug("[parser] non-exact match after %%L '%.*s'", tsize, time_str);
+            flb_debug("[parser] non-exact match after %%L '%.*s'", (int)tsize, time_str);
             return 0;
         }
     }

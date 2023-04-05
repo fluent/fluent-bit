@@ -474,7 +474,7 @@ void flb_test_input_chunk_fs_chunks_size_real()
      */
     mk_list_foreach_safe(head, tmp, &ic->in->config->outputs) {
         o_ins = mk_list_entry(head, struct flb_output_instance, _head);
-        flb_info("[input chunk test] chunk_size=%d fs_chunk_size=%d", chunk_size,
+        flb_info("[input chunk test] chunk_size=%zu fs_chunk_size=%zu", chunk_size,
                  o_ins->fs_chunks_size);
         has_checked_size = FLB_TRUE;
         TEST_CHECK_(chunk_size == o_ins->fs_chunks_size, "fs_chunks_size must match total real size");

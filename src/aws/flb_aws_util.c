@@ -94,7 +94,7 @@ char *flb_aws_endpoint(char* service, char* region)
     len += strlen(region);
     len++; /* null byte */
 
-    endpoint = flb_malloc(len);
+    endpoint = flb_calloc(len, sizeof(char));
     if (!endpoint) {
         flb_errno();
         return NULL;
@@ -136,7 +136,7 @@ int flb_read_file(const char *path, char **out_buf, size_t *out_size)
         return -1;
     }
 
-    buf = flb_malloc(st.st_size + sizeof(char));
+    buf = flb_calloc(st.st_size + 1, sizeof(char));
     if (!buf) {
         flb_errno();
         close(fd);
@@ -347,7 +347,7 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
     ret = flb_http_buffer_size(c, FLB_MAX_AWS_RESP_BUFFER_SIZE);
     if (ret != 0) {
         flb_warn("[aws_http_client] failed to increase max response buffer size");
-    } 
+    }
 
     /* Set AWS Fluent Bit user agent */
     env = aws_client->upstream->base.config->env;
@@ -355,18 +355,18 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
     if (buf == NULL) {
         if (getenv(AWS_ECS_METADATA_URI) != NULL) {
             user_agent = AWS_USER_AGENT_ECS;
-        } 
+        }
         else {
             buf = (char *) flb_env_get(env, AWS_USER_AGENT_K8S);
             if (buf && strcasecmp(buf, "enabled") == 0) {
                 user_agent = AWS_USER_AGENT_K8S;
             }
-        } 
+        }
 
         if (user_agent == NULL) {
             user_agent = AWS_USER_AGENT_NONE;
         }
-        
+
         flb_env_set(env, "FLB_AWS_USER_AGENT", user_agent);
     }
     if (aws_client->extra_user_agent == NULL) {
@@ -379,7 +379,7 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
         aws_client->extra_user_agent = tmp;
         tmp = NULL;
     }
-    
+
     /* Add AWS Fluent Bit user agent header */
     if (strcasecmp(aws_client->extra_user_agent, AWS_USER_AGENT_NONE) == 0) {
         ret = flb_http_add_header(c, "User-Agent", 10,
@@ -459,7 +459,7 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
         }
         signature = flb_signv4_do(c, normalize_uri, FLB_TRUE, time(NULL),
                                   aws_client->region, aws_client->service,
-                                  aws_client->s3_mode,
+                                  aws_client->s3_mode, NULL,
                                   aws_client->provider);
         if (!signature) {
             if (aws_client->debug_only == FLB_TRUE) {
@@ -700,7 +700,7 @@ static char* replace_uri_tokens(const char* original_string, const char* current
     i = 0;
     while (*original_string) {
         if (strstr(original_string, current_word) == original_string) {
-            strcpy(&result[i], new_word);
+            strncpy(&result[i], new_word, new_word_len);
             i += new_word_len;
             original_string += old_word_len;
         }
@@ -812,8 +812,12 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
             flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
         }
 
+        if (buf != tmp) {
+            flb_sds_destroy(buf);
+        }
         flb_sds_destroy(tmp);
         tmp = NULL;
+        buf = NULL;
         flb_sds_destroy(s3_key);
         s3_key = tmp_key;
         tmp_key = NULL;
@@ -851,7 +855,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
     /* Find all occurences of $INDEX and replace with the appropriate index. */
     if (strstr((char *) format, INDEX_STRING)) {
         seq_index_len = snprintf(NULL, 0, "%"PRIu64, seq_index);
-        seq_index_str = flb_malloc(seq_index_len + 1);
+        seq_index_str = flb_calloc(seq_index_len + 1, sizeof(char));
         if (seq_index_str == NULL) {
             goto error;
         }
@@ -859,7 +863,10 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
         sprintf(seq_index_str, "%"PRIu64, seq_index);
         seq_index_str[seq_index_len] = '\0';
         tmp_key = replace_uri_tokens(s3_key, INDEX_STRING, seq_index_str);
-
+        if (tmp_key == NULL) {
+            flb_free(seq_index_str);
+            goto error;
+        }
         if (strlen(tmp_key) > S3_KEY_SIZE) {
             flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
         }
@@ -882,11 +889,11 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
         flb_free(random_alphanumeric);
         goto error;
     }
-    
+
     if(strlen(tmp_key) > S3_KEY_SIZE){
         flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
     }
-    
+
     flb_sds_destroy(s3_key);
     s3_key = tmp_key;
     tmp_key = NULL;
@@ -935,7 +942,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
         if (s3_key){
             flb_sds_destroy(s3_key);
         }
-        if (buf){
+        if (buf && buf != tmp){
             flb_sds_destroy(buf);
         }
         if (tmp){

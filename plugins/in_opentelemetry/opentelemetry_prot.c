@@ -270,9 +270,12 @@ static int otel_pack_array(msgpack_packer *mp_pck,
     int ret;
     int array_index;
 
+    ret = 0;
+
     for (array_index = 0; array_index < array->n_values && ret == 0; array_index++) {
         ret = otlp_pack_any_value(mp_pck, array->values[array_index]);
     }
+
     return ret;
 }
 

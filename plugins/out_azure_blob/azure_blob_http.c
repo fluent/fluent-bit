@@ -202,7 +202,7 @@ flb_sds_t azb_http_canonical_request(struct flb_azure_blob *ctx,
 
     if (content_length >= 0) {
         flb_sds_printf(&can_req,
-                       "%i\n"     /* Content-Length */,
+                       "%zi\n"     /* Content-Length */,
                        content_length);
     }
     else {
