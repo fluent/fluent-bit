@@ -794,11 +794,13 @@ static int service_configure_plugin(struct flb_config *config,
                 flb_processors_load_from_config_format_group(((struct flb_input_instance *) ins)->processor, processors);
             }
             else if (type == FLB_CF_OUTPUT) {
-                /* FIXME */
+                flb_processors_load_from_config_format_group(((struct flb_output_instance *) ins)->processor, processors);
+            }
+            else {
+                flb_error("[config] section '%s' does not support processors", s_type);
             }
         }
     }
-
     return 0;
 }
 
