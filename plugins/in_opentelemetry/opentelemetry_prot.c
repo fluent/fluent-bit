@@ -24,7 +24,6 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_snappy.h>
-#include <fluent-bit/flb_log_event_debug.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
 #include <monkey/monkey.h>
@@ -730,21 +729,12 @@ static int json_payload_append_converted_map(
             int target_field,
             msgpack_object *object)
 {
-    char                temporary_buffer[33];
     int                 encoder_result;
-    int                 unwrap_value;
-    msgpack_object_str *inner_key;
     int                 result;
     size_t              index;
-    msgpack_object     *value;
-    int                 type;
-    msgpack_object_str *key;
     msgpack_object_map *map;
 
     map = &object->via.map;
-
-    unwrap_value = FLB_FALSE;
-
 
     result = json_payload_append_unwrapped_value(
                 encoder,
@@ -976,7 +966,6 @@ static int process_json_payload_log_records_entry(
     int                 body_type;
     struct flb_time     timestamp;
     int                 result;
-    size_t              index;
 
     if (log_records_object->type != MSGPACK_OBJECT_MAP) {
         flb_plg_error(ctx->ins, "unexpected logRecords entry type");
