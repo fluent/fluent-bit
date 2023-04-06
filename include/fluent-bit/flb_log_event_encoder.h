@@ -228,7 +228,7 @@ int flb_log_event_encoder_begin_record(struct flb_log_event_encoder *context);
 int flb_log_event_encoder_commit_record(struct flb_log_event_encoder *context);
 int flb_log_event_encoder_rollback_record(struct flb_log_event_encoder *context);
 int flb_log_event_encoder_emit_raw_record(struct flb_log_event_encoder *context,
-                                          char *buffer,
+                                          const char *buffer,
                                           size_t length);
 
 int flb_log_event_encoder_set_timestamp(

@@ -124,7 +124,7 @@ void flb_log_event_encoder_claim_internal_buffer_ownership(
 }
 
 int flb_log_event_encoder_emit_raw_record(struct flb_log_event_encoder *context,
-                                          char *buffer,
+                                          const char *buffer,
                                           size_t length)
 {
     int result;

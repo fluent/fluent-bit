@@ -254,6 +254,10 @@ int flb_event_decoder_decode_object(struct flb_log_event_decoder *context,
     event->body = body;
     event->root = root;
 
+    context->record_base   = \
+        (const char *) &context->buffer[context->previous_offset];
+    context->record_length = context->offset - context->previous_offset;
+
     return FLB_EVENT_DECODER_SUCCESS;
 }
 
@@ -263,6 +267,7 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
     size_t previous_offset;
     int    result;
 
+    context->record_base = NULL;
     context->record_length = 0;
 
     if (context == NULL) {
@@ -290,10 +295,8 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
     }
 
     context->previous_offset = previous_offset;
-    context->record_length = context->offset - context->previous_offset;
 
     return flb_event_decoder_decode_object(context,
                                            event,
                                            &context->unpacked_event.data);
-
 }

@@ -454,20 +454,10 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
          * - record was not emitted
          */
         if (keep == FLB_TRUE || is_matched != FLB_TRUE) {
-            ret = flb_log_event_encoder_begin_record(&log_encoder);
-
-            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                ret = flb_log_event_encoder_set_root_from_raw_msgpack(&log_encoder,
-                        &((char *) data)[pre],
-                        off - pre);
-            }
-
-            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                ret = flb_log_event_encoder_commit_record(&log_encoder);
-            }
-            else {
-                flb_log_event_encoder_rollback_record(&log_encoder);
-            }
+            ret = flb_log_event_encoder_emit_raw_record(
+                    &log_encoder,
+                    &((char *) data)[pre],
+                    off - pre);
         }
 
         /* Adjust previous offset */

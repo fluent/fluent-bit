@@ -338,25 +338,6 @@ static int cb_lua_filter_mpack(const void *data, size_t bytes,
 
 #else
 
-static int repack_raw(struct flb_log_event_encoder *log_encoder,
-                      char *data, size_t bytes)
-{
-    int ret;
-
-    ret = flb_log_event_encoder_begin_record(log_encoder);
-
-    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        ret = flb_log_event_encoder_set_root_from_raw_msgpack(
-                log_encoder, data, bytes);
-    }
-
-    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        ret = flb_log_event_encoder_commit_record(log_encoder);
-    }
-
-    return ret;
-}
-
 static int pack_result (struct lua_filter *ctx, struct flb_time *ts,
                         struct flb_log_event_encoder *log_encoder,
                         char *data, size_t bytes)
@@ -622,9 +603,11 @@ static int cb_lua_filter(const void *data, size_t bytes,
                               "original record will be kept." , l_code);
             }
 
-            ret = repack_raw(&log_encoder,
-                             &((char *) data)[record_begining],
-                             record_end);
+
+            ret = flb_log_event_encoder_emit_raw_record(
+                    &log_encoder,
+                    &((char *) data)[record_begining],
+                    record_end);
 
             if (ret != FLB_EVENT_ENCODER_SUCCESS) {
                 flb_plg_error(ctx->ins,

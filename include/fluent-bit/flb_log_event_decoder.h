@@ -50,6 +50,7 @@ struct flb_log_event_decoder {
     size_t            previous_offset;
     msgpack_unpacked  unpacked_event;
     size_t            record_length;
+    const char       *record_base;
     int               initialized;
     msgpack_object   *empty_map;
     const char       *buffer;

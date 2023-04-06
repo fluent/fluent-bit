@@ -703,18 +703,10 @@ static int cb_throttle_size_filter(const void *data, size_t bytes,
         ret = throttle_data_by_size(*log_event.body, context);
 
         if (ret == throttle_size_RET_KEEP) {
-            ret = flb_log_event_encoder_begin_record(&log_encoder);
-
-            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                ret = flb_log_event_encoder_set_root_from_raw_msgpack(
-                        &log_encoder,
-                        &((char *) data)[log_decoder.previous_offset],
-                        log_decoder.record_length);
-            }
-
-            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                ret = flb_log_event_encoder_commit_record(&log_encoder);
-            }
+            ret = flb_log_event_encoder_emit_raw_record(
+                             &log_encoder,
+                             log_decoder.record_base,
+                             log_decoder.record_length);
 
             new_size++;
         }

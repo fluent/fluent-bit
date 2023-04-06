@@ -581,8 +581,6 @@ static int ml_filter_partial(const void *data, size_t bytes,
     struct flb_log_event_encoder log_encoder;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
-    size_t record_begining;
-    size_t record_end;
 
     (void) f_ins;
     (void) config;
@@ -637,11 +635,9 @@ static int ml_filter_partial(const void *data, size_t bytes,
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
-    record_begining = 0;
     while ((ret = flb_log_event_decoder_next(
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
-        record_end = log_decoder.offset;
         total_records++;
 
         partial = ml_is_partial(log_event.body);
@@ -690,17 +686,16 @@ pack_non_partial:
             return_records++;
             /* record passed from filter as-is */
 
-            ret = repack_raw(&log_encoder,
-                             &((char *) data)[record_begining],
-                             record_end - record_begining);
+            ret = flb_log_event_encoder_emit_raw_record(
+                    &log_encoder,
+                    log_decoder.record_base,
+                    log_decoder.record_length);
 
             if (ret != FLB_EVENT_ENCODER_SUCCESS) {
                 flb_plg_error(ctx->ins,
                               "Log event encoder initialization error : %d", ret);
             }
         }
-
-        record_begining = record_end;
     }
 
     if (partial_records == 0) {

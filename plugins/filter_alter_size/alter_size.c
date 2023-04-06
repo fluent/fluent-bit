@@ -110,16 +110,8 @@ static int cb_alter_size_filter(const void *data, size_t bytes,
         flb_plg_debug(ins, "add %i records", ctx->add);
 
         /* append old data */
-        ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
-
-        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-            ret = flb_log_event_encoder_set_root_from_raw_msgpack(
-                    ctx->log_encoder, (char *) data, bytes);
-        }
-
-        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-            ret = flb_log_event_encoder_commit_record(ctx->log_encoder);
-        }
+        ret = flb_log_event_encoder_emit_raw_record(
+                ctx->log_encoder, data, bytes);
 
         for (i = 0; i < ctx->add; i++) {
             ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
@@ -161,17 +153,11 @@ static int cb_alter_size_filter(const void *data, size_t bytes,
         while (count < total &&
                flb_log_event_decoder_next(
                 ctx->log_decoder, &event) == FLB_EVENT_DECODER_SUCCESS) {
-            ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
 
-            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                ret = flb_log_event_encoder_set_root_from_msgpack_object(
-                        ctx->log_encoder,
-                        event.root);
-            }
-
-            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                ret = flb_log_event_encoder_commit_record(ctx->log_encoder);
-            }
+            ret = flb_log_event_encoder_emit_raw_record(
+                    ctx->log_encoder,
+                    ctx->log_decoder->record_base,
+                    ctx->log_decoder->record_length);
 
             count++;
         }

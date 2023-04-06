@@ -618,25 +618,6 @@ static int cb_nest_init(struct flb_filter_instance *f_ins,
     return 0;
 }
 
-static int repack_raw(struct flb_log_event_encoder *log_encoder,
-                      char *data, size_t bytes)
-{
-    int ret;
-
-    ret = flb_log_event_encoder_begin_record(log_encoder);
-
-    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        ret = flb_log_event_encoder_set_root_from_raw_msgpack(
-                log_encoder, data, bytes);
-    }
-
-    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        ret = flb_log_event_encoder_commit_record(log_encoder);
-    }
-
-    return ret;
-}
-
 static int cb_nest_filter(const void *data, size_t bytes,
                           const char *tag, int tag_len,
                           void **out_buf, size_t * out_size,
@@ -647,17 +628,14 @@ static int cb_nest_filter(const void *data, size_t bytes,
     struct flb_log_event_encoder log_encoder;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
-    size_t record_begining;
-    size_t record_end;
+    struct filter_nest_ctx *ctx = context;
+    int modified_records = 0;
     int ret;
 
     (void) f_ins;
     (void) i_ins;
     (void) config;
 
-    struct filter_nest_ctx *ctx = context;
-    int modified_records = 0;
-    int total_modified_records = 0;
 
     ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
@@ -680,11 +658,9 @@ static int cb_nest_filter(const void *data, size_t bytes,
         return FLB_FILTER_NOTOUCH;
     }
 
-    record_begining = 0;
     while ((ret = flb_log_event_decoder_next(
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
-        record_end = log_decoder.offset;
         modified_records = 0;
 
         if (ctx->operation == NEST) {
@@ -697,15 +673,11 @@ static int cb_nest_filter(const void *data, size_t bytes,
         }
 
         if (modified_records == 0) {
-            // not matched, so copy original event.
-            ret = repack_raw(&log_encoder,
-                             &((char *) data)[record_begining],
-                             record_end - record_begining);
+            ret = flb_log_event_encoder_emit_raw_record(
+                    &log_encoder,
+                    log_decoder.record_base,
+                    log_decoder.record_length);
         }
-
-        total_modified_records += modified_records;
-
-        record_begining = record_end;
     }
 
     if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA &&

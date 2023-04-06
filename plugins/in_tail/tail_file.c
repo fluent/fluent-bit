@@ -389,17 +389,9 @@ static int ml_stream_buffer_append(struct flb_tail_file *file, char *buf_data, s
 {
     int result;
 
-    result = flb_log_event_encoder_begin_record(file->ml_log_event_encoder);
-
-    if (result == FLB_EVENT_ENCODER_SUCCESS) {
-        result = flb_log_event_encoder_set_root_from_raw_msgpack(
-                    file->ml_log_event_encoder,
-                    buf_data, buf_size);
-    }
-
-    if (result == FLB_EVENT_ENCODER_SUCCESS) {
-        result = flb_log_event_encoder_commit_record(file->ml_log_event_encoder);
-    }
+    result = flb_log_event_encoder_emit_raw_record(
+                 file->ml_log_event_encoder,
+                 buf_data, buf_size);
 
     if (result != FLB_EVENT_ENCODER_SUCCESS) {
         flb_plg_error(file->config->ins,
