@@ -22,6 +22,7 @@
 #define FLB_WINEVTLOG_H
 
 #include <winevt.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 struct winevtlog_config {
     unsigned int interval_sec;
@@ -37,6 +38,7 @@ struct winevtlog_config {
     struct flb_sqldb *db;
     flb_pipefd_t coll_fd;
     struct flb_input_instance *ins;
+    struct flb_log_event_encoder *log_encoder;
 };
 
 /* Some channels has very heavy contents for 10 events at same time.
@@ -73,7 +75,7 @@ void winevtlog_close(struct winevtlog_channel *ch);
 /*
  * Read records from a channel.
  */
-int winevtlog_read(struct winevtlog_channel *ch, msgpack_packer *mp_pck,
+int winevtlog_read(struct winevtlog_channel *ch,
                    struct winevtlog_config *ctx, unsigned int *read);
 
 /*
@@ -84,10 +86,10 @@ int winevtlog_read(struct winevtlog_channel *ch, msgpack_packer *mp_pck,
 struct mk_list *winevtlog_open_all(const char *channels, int read_exising_events, int ignore_missing_channels);
 void winevtlog_close_all(struct mk_list *list);
 
-void winevtlog_pack_xml_event(msgpack_packer *mp_pck, WCHAR *system_xml, WCHAR *message,
+void winevtlog_pack_xml_event(WCHAR *system_xml, WCHAR *message,
                               PEVT_VARIANT string_inserts, UINT count_inserts, struct winevtlog_channel *ch,
                               struct winevtlog_config *ctx);
-void winevtlog_pack_event(msgpack_packer *mp_pck, PEVT_VARIANT system, WCHAR *message,
+void winevtlog_pack_event(PEVT_VARIANT system, WCHAR *message,
                           PEVT_VARIANT string_inserts, UINT count_inserts, struct winevtlog_channel *ch,
                           struct winevtlog_config *ctx);
 
