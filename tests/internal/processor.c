@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_lib.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_processor.h>
@@ -68,6 +69,8 @@ static void processor()
     size_t out_size;
 
     printf("\n\n");
+
+    flb_init_env();
 
     config = flb_config_init();
     TEST_CHECK(config != NULL);
