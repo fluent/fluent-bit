@@ -26,6 +26,8 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 #include <msgpack.h>
 
 #include "rewrite_tag.h"
@@ -388,28 +390,49 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
     uint64_t ts;
     char *name;
 #endif
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
     msgpack_object map;
-    msgpack_object root;
-    msgpack_unpacked result;
-    struct flb_rewrite_tag *ctx = (struct flb_rewrite_tag *) filter_context;
+    struct flb_rewrite_tag *ctx;
+    struct flb_log_event_encoder log_encoder;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    int ret;
+
     (void) config;
     (void) i_ins;
+
+    ctx = (struct flb_rewrite_tag *) filter_context;
 
 #ifdef FLB_HAVE_METRICS
     ts = cfl_time_now();
     name = (char *) flb_filter_name(f_ins);
 #endif
 
-    /* Create temporal msgpack buffer */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        root = result.data;
-        map = root.via.array.ptr[1];
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    ret = flb_log_event_encoder_init(&log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder initialization error : %d", ret);
+
+        flb_log_event_decoder_destroy(&log_decoder);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        off = log_decoder.offset;
+        map = *log_event.body;
         is_matched = FLB_FALSE;
         /*
          * Process the record according the defined rules. If it returns FLB_TRUE means
@@ -431,16 +454,20 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
          * - record was not emitted
          */
         if (keep == FLB_TRUE || is_matched != FLB_TRUE) {
-            msgpack_sbuffer_write(&mp_sbuf, (char *) data + pre, off - pre);
+            ret = flb_log_event_encoder_emit_raw_record(
+                    &log_encoder,
+                    &((char *) data)[pre],
+                    off - pre);
         }
 
         /* Adjust previous offset */
         pre = off;
     }
-    msgpack_unpacked_destroy(&result);
 
     if (emitted_num == 0) {
-        msgpack_sbuffer_destroy(&mp_sbuf);
+        flb_log_event_decoder_destroy(&log_decoder);
+        flb_log_event_encoder_destroy(&log_encoder);
+
         return FLB_FILTER_NOTOUCH;
     }
 #ifdef FLB_HAVE_METRICS
@@ -453,10 +480,30 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
     }
 #endif
 
-    *out_buf = mp_sbuf.data;
-    *out_bytes = mp_sbuf.size;
+    if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA &&
+        log_decoder.offset == bytes) {
+        ret = FLB_EVENT_ENCODER_SUCCESS;
+    }
 
-    return FLB_FILTER_MODIFIED;
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        *out_buf   = log_encoder.output_buffer;
+        *out_bytes = log_encoder.output_length;
+
+        ret = FLB_FILTER_MODIFIED;
+
+        flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
+    }
+    else {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder error : %d", ret);
+
+        ret = FLB_FILTER_NOTOUCH;
+    }
+
+    flb_log_event_decoder_destroy(&log_decoder);
+    flb_log_event_encoder_destroy(&log_encoder);
+
+    return ret;
 }
 
 /* Destroy rules from context */
