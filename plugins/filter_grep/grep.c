@@ -30,6 +30,8 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 #include <msgpack.h>
 
 #include "grep.h"
@@ -292,33 +294,49 @@ static int cb_grep_filter(const void *data, size_t bytes,
     int ret;
     int old_size = 0;
     int new_size = 0;
-    struct grep_ctx *ctx = context;
-    msgpack_unpacked result;
     msgpack_object map;
-    msgpack_object root;
-    size_t off = 0;
+    size_t record_begining = 0;
+    size_t record_end = 0;
+    struct flb_log_event_encoder log_encoder;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    struct grep_ctx *ctx;
+
     (void) f_ins;
     (void) i_ins;
     (void) config;
-    msgpack_sbuffer tmp_sbuf;
-    msgpack_packer tmp_pck;
 
-    /* Create temporary msgpack buffer */
-    msgpack_sbuffer_init(&tmp_sbuf);
-    msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
+    ctx = (struct grep_ctx *) context;
 
-    /* Iterate each item array and apply rules */
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        root = result.data;
-        if (root.type != MSGPACK_OBJECT_ARRAY) {
-            continue;
-        }
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    ret = flb_log_event_encoder_init(&log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder initialization error : %d", ret);
+
+        flb_log_event_decoder_destroy(&log_decoder);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        record_end = log_decoder.offset;
         old_size++;
 
         /* get time and map */
-        map  = root.via.array.ptr[1];
+        map  = *log_event.body;
 
         if (ctx->logical_op == GREP_LOGICAL_OP_LEGACY) {
             ret = grep_filter_data(map, ctx);
@@ -328,27 +346,54 @@ static int cb_grep_filter(const void *data, size_t bytes,
         }
 
         if (ret == GREP_RET_KEEP) {
-            msgpack_pack_object(&tmp_pck, root);
+            ret = flb_log_event_encoder_emit_raw_record(
+                             &log_encoder,
+                             log_decoder.record_base,
+                             log_decoder.record_length);
+
             new_size++;
         }
         else if (ret == GREP_RET_EXCLUDE) {
             /* Do nothing */
         }
+
+        record_begining = record_end;
     }
-    msgpack_unpacked_destroy(&result);
+
+    if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA &&
+        log_decoder.offset == bytes) {
+        ret = FLB_EVENT_ENCODER_SUCCESS;
+    }
+
+    flb_log_event_decoder_destroy(&log_decoder);
 
     /* we keep everything ? */
     if (old_size == new_size) {
+        flb_log_event_encoder_destroy(&log_encoder);
+
         /* Destroy the buffer to avoid more overhead */
-        msgpack_sbuffer_destroy(&tmp_sbuf);
         return FLB_FILTER_NOTOUCH;
     }
 
-    /* link new buffers */
-    *out_buf   = tmp_sbuf.data;
-    *out_size = tmp_sbuf.size;
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        *out_buf  = log_encoder.output_buffer;
+        *out_size = log_encoder.output_length;
 
-    return FLB_FILTER_MODIFIED;
+        ret = FLB_FILTER_MODIFIED;
+
+        flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
+    }
+    else {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder error : %d", ret);
+
+        ret = FLB_FILTER_NOTOUCH;
+    }
+
+    flb_log_event_decoder_destroy(&log_decoder);
+    flb_log_event_encoder_destroy(&log_encoder);
+
+    return ret;
 }
 
 static int cb_grep_exit(void *data, struct flb_config *config)
