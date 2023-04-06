@@ -170,6 +170,7 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
 
     (void) config;
 
+    result = FLB_EVENT_DECODER_SUCCESS;
     ctx = (struct flb_stdout *) out_context;
     cnt = 0;
 
