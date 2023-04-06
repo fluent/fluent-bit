@@ -53,7 +53,8 @@ static int http_post(struct prometheus_remote_write_context *ctx,
 
     /* Map payload */
     ret = flb_snappy_compress((void *) body, body_len,
-                              &payload_buf, &payload_size);
+                              (char **) &payload_buf,
+                              &payload_size);
     if (ret != 0) {
         flb_upstream_conn_release(u_conn);
 
