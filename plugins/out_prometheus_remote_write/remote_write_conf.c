@@ -22,6 +22,8 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_signv4.h>
+#include <fluent-bit/flb_aws_credentials.h>
 
 #include "remote_write.h"
 #include "remote_write_conf.h"
@@ -74,6 +76,11 @@ struct prometheus_remote_write_context *flb_prometheus_remote_write_context_crea
     const char *tmp;
     struct flb_upstream *upstream;
     struct prometheus_remote_write_context *ctx = NULL;
+#ifdef FLB_HAVE_AWS
+    char *aws_role_arn = NULL;
+    char *aws_external_id = NULL;
+    char *aws_session_name = NULL;
+#endif
 
     /* Allocate plugin context */
     ctx = flb_calloc(1, sizeof(struct prometheus_remote_write_context));
@@ -188,6 +195,119 @@ struct prometheus_remote_write_context *flb_prometheus_remote_write_context_crea
 
     /* Set instance flags into upstream */
     flb_output_upstream_set(ctx->u, ins);
+
+
+#ifdef FLB_HAVE_AWS
+    /* AWS Auth */
+    ctx->has_aws_auth = FLB_FALSE;
+    tmp = flb_output_get_property("aws_auth", ins);
+    if (tmp) {
+        if (strncasecmp(tmp, "On", 2) == 0) {
+            ctx->has_aws_auth = FLB_TRUE;
+            flb_debug("[out_es] Enabled AWS Auth");
+
+            /* AWS provider needs a separate TLS instance */
+            ctx->aws_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                          FLB_TRUE,
+                                          ins->tls_debug,
+                                          ins->tls_vhost,
+                                          ins->tls_ca_path,
+                                          ins->tls_ca_file,
+                                          ins->tls_crt_file,
+                                          ins->tls_key_file,
+                                          ins->tls_key_passwd);
+            if (!ctx->aws_tls) {
+                return NULL;
+            }
+
+            tmp = flb_output_get_property("aws_region", ins);
+            if (!tmp) {
+                flb_error("[out_es] aws_auth enabled but aws_region not set");
+                return NULL;
+            }
+            ctx->aws_region = (char *) tmp;
+
+            tmp = flb_output_get_property("aws_sts_endpoint", ins);
+            if (tmp) {
+                ctx->aws_sts_endpoint = (char *) tmp;
+            }
+
+            ctx->aws_provider = flb_standard_chain_provider_create(config,
+                                                                   ctx->aws_tls,
+                                                                   ctx->aws_region,
+                                                                   ctx->aws_sts_endpoint,
+                                                                   NULL,
+                                                                   flb_aws_client_generator());
+            if (!ctx->aws_provider) {
+                flb_error("[out_es] Failed to create AWS Credential Provider");
+                return NULL;
+            }
+
+            tmp = flb_output_get_property("aws_role_arn", ins);
+            if (tmp) {
+                /* Use the STS Provider */
+                ctx->base_aws_provider = ctx->aws_provider;
+                aws_role_arn = (char *) tmp;
+                aws_external_id = NULL;
+                tmp = flb_output_get_property("aws_external_id", ins);
+                if (tmp) {
+                    aws_external_id = (char *) tmp;
+                }
+
+                aws_session_name = flb_sts_session_name();
+                if (!aws_session_name) {
+                    flb_plg_error(ctx->ins, "failed to create aws iam role "
+                              "session name");
+                    return NULL;
+                }
+
+                /* STS provider needs yet another separate TLS instance */
+                ctx->aws_sts_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                                  FLB_TRUE,
+                                                  ins->tls_debug,
+                                                  ins->tls_vhost,
+                                                  ins->tls_ca_path,
+                                                  ins->tls_ca_file,
+                                                  ins->tls_crt_file,
+                                                  ins->tls_key_file,
+                                                  ins->tls_key_passwd);
+                if (!ctx->aws_sts_tls) {
+                    flb_errno();
+                    flb_os_conf_destroy(ctx);
+                    return NULL;
+                }
+
+                ctx->aws_provider = flb_sts_provider_create(config,
+                                                            ctx->aws_sts_tls,
+                                                            ctx->
+                                                            base_aws_provider,
+                                                            aws_external_id,
+                                                            aws_role_arn,
+                                                            aws_session_name,
+                                                            ctx->aws_region,
+                                                            ctx->aws_sts_endpoint,
+                                                            NULL,
+                                                            flb_aws_client_generator());
+                /* Session name can be freed once provider is created */
+                flb_free(aws_session_name);
+                if (!ctx->aws_provider) {
+                    flb_error("[out_es] Failed to create AWS STS Credential "
+                              "Provider");
+                    flb_os_conf_destroy(ctx);
+                    return NULL;
+                }
+
+            }
+
+            /* initialize credentials in sync mode */
+            ctx->aws_provider->provider_vtable->sync(ctx->aws_provider);
+            ctx->aws_provider->provider_vtable->init(ctx->aws_provider);
+            /* set back to async */
+            ctx->aws_provider->provider_vtable->async(ctx->aws_provider);
+            ctx->aws_provider->provider_vtable->upstream_set(ctx->aws_provider, ctx->ins);
+        }
+    }
+#endif
 
     return ctx;
 }
