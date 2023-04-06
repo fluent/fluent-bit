@@ -24,7 +24,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_pack.h>
-#include <msgpack.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -54,6 +54,8 @@ struct flb_in_health_config {
     /* Networking */
     struct flb_upstream *u;
 
+    struct flb_log_event_encoder log_encoder;
+
     /* Plugin instance */
     struct flb_input_instance *ins;
 };
@@ -62,12 +64,10 @@ struct flb_in_health_config {
 static int in_health_collect(struct flb_input_instance *ins,
                              struct flb_config *config, void *in_context)
 {
-    int map_num = 1;
     uint8_t alive;
     struct flb_in_health_config *ctx = in_context;
     struct flb_connection *u_conn;
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
+    int ret;
 
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
@@ -82,53 +82,61 @@ static int in_health_collect(struct flb_input_instance *ins,
         FLB_INPUT_RETURN(0);
     }
 
-    /* Initialize local msgpack buffer */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
 
-    /* Pack data */
-    msgpack_pack_array(&mp_pck, 2);
-    flb_pack_time_now(&mp_pck);
-
-    /* extract map field */
-    if (ctx->add_host) {
-        map_num++;
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_current_timestamp(
+                &ctx->log_encoder);
     }
-    if (ctx->add_port) {
-        map_num++;
-    }
-    msgpack_pack_map(&mp_pck, map_num);
 
     /* Status */
-    msgpack_pack_str(&mp_pck, 5);
-    msgpack_pack_str_body(&mp_pck, "alive", 5);
-
-    if (alive) {
-        msgpack_pack_true(&mp_pck);
-    }
-    else {
-        msgpack_pack_false(&mp_pck);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_append_body_values(
+                &ctx->log_encoder,
+                FLB_LOG_EVENT_CSTRING_VALUE("alive"),
+                FLB_LOG_EVENT_BOOLEAN_VALUE(alive));
     }
 
     if (ctx->add_host) {
         /* append hostname */
-        msgpack_pack_str(&mp_pck, strlen("hostname"));
-        msgpack_pack_str_body(&mp_pck, "hostname", strlen("hostname"));
-        msgpack_pack_str(&mp_pck, ctx->len_host);
-        msgpack_pack_str_body(&mp_pck, ctx->hostname, ctx->len_host);
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &ctx->log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE("hostname"),
+                    FLB_LOG_EVENT_CSTRING_VALUE(ctx->hostname));
+        }
     }
 
     if (ctx->add_port) {
         /* append port number */
-        msgpack_pack_str(&mp_pck, strlen("port"));
-        msgpack_pack_str_body(&mp_pck, "port", strlen("port"));
-        msgpack_pack_int32(&mp_pck, ctx->port);
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &ctx->log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE("port"),
+                    FLB_LOG_EVENT_INT32_VALUE(ctx->port));
+        }
     }
 
-    flb_input_log_append(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+    }
 
-    FLB_INPUT_RETURN(0);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        flb_input_log_append(ins, NULL, 0,
+                             ctx->log_encoder.output_buffer,
+                             ctx->log_encoder.output_length);
+
+        ret = 0;
+    }
+    else {
+        flb_plg_error(ins, "Error encoding record : %d", ret);
+
+        ret = -1;
+    }
+
+    flb_log_event_encoder_reset(&ctx->log_encoder);
+
+    FLB_INPUT_RETURN(ret);
 }
 
 static int in_health_init(struct flb_input_instance *in,
@@ -212,6 +220,17 @@ static int in_health_init(struct flb_input_instance *in,
         return -1;
     }
 
+    ret = flb_log_event_encoder_init(&ctx->log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(in, "error initializing event encoder : %d", ret);
+
+        flb_free(ctx);
+
+        return -1;
+    }
+
     return 0;
 }
 
@@ -219,6 +238,8 @@ static int in_health_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_in_health_config *ctx = data;
+
+    flb_log_event_encoder_destroy(&ctx->log_encoder);
 
     /* Remove msgpack buffer and destroy context */
     flb_upstream_destroy(ctx->u);
