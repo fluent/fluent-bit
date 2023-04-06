@@ -28,7 +28,7 @@
 #define FLB_MULTILINE_MODE_PARTIAL_MESSAGE   "partial_message"
 #define FLB_MULTILINE_MODE_PARSER            "parser"
 
-/* 
+/*
  * input instance + tag is the unique identifier
  * for a multiline stream
  * TODO: implement clean up of streams that haven't been used recently
@@ -45,6 +45,7 @@ struct ml_ctx {
     int debug_flush;
     int use_buffer;
     flb_sds_t key_content;
+    int max_lines;
     flb_sds_t mode;
 
     /* packaging buffers */

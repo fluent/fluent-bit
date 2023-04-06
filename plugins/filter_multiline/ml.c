@@ -118,6 +118,8 @@ static int multiline_load_parsers(struct ml_ctx *ctx)
      * Iterate all 'multiline.parser' entries. Every entry is considered
      * a group which can have multiple multiline parser instances.
      */
+    flb_info("parsers are %s", ctx->multiline_parsers);
+
     flb_config_map_foreach(head, mv, ctx->multiline_parsers) {
         mk_list_foreach(head_p, mv->val.list) {
             val = mk_list_entry(head_p, struct flb_slist_entry, _head);
@@ -138,6 +140,11 @@ static int multiline_load_parsers(struct ml_ctx *ctx)
                     return -1;
                 }
             }
+
+            flb_info("Maximum number of lines is %d", ctx->max_lines);
+
+            /* Always override parent parser values */
+            parser_i->max_lines = ctx->max_lines;
         }
     }
 
@@ -200,9 +207,9 @@ static int cb_ml_init(struct flb_filter_instance *ins,
     ctx->config = config;
     ctx->timer_created = FLB_FALSE;
 
-    /* 
+    /*
      * Config map is not yet set at this point in the code
-     * user must explicitly set buffer to false to turn it off 
+     * user must explicitly set buffer to false to turn it off
      */
     ctx->use_buffer = FLB_TRUE;
     tmp = (char *) flb_filter_get_property("buffer", ins);
@@ -217,7 +224,7 @@ static int cb_ml_init(struct flb_filter_instance *ins,
         } else if (strcasecmp(tmp, FLB_MULTILINE_MODE_PARSER) == 0) {
             ctx->partial_mode = FLB_FALSE;
         } else {
-            flb_plg_error(ins, "'Mode' must be '%s' or '%s'", 
+            flb_plg_error(ins, "'Mode' must be '%s' or '%s'",
                           FLB_MULTILINE_MODE_PARTIAL_MESSAGE,
                           FLB_MULTILINE_MODE_PARSER);
             return -1;
@@ -274,7 +281,7 @@ static int cb_ml_init(struct flb_filter_instance *ins,
         flb_free(ctx);
         return -1;
     }
-    
+
     /* Set plugin context */
     flb_filter_set_context(ins, ctx);
 
@@ -309,7 +316,7 @@ static int cb_ml_init(struct flb_filter_instance *ins,
             flb_free(ctx);
             return -1;
         }
-        
+
         /* Create the emitter context */
         ret = emitter_create(ctx);
         if (ret == -1) {
@@ -408,7 +415,7 @@ static struct ml_stream *get_by_id(struct ml_ctx *ctx, uint64_t stream_id)
 }
 
 static struct ml_stream *get_or_create_stream(struct ml_ctx *ctx,
-                                              struct flb_input_instance *i_ins, 
+                                              struct flb_input_instance *i_ins,
                                               const char *tag, int tag_len)
 {
     uint64_t stream_id;
@@ -500,23 +507,23 @@ static void partial_timer_cb(struct flb_config *config, void *data)
     struct split_message_packer *packer;
     unsigned long long now;
     unsigned long long diff;
-    int ret; 
+    int ret;
 
     now = ml_current_timestamp();
 
     mk_list_foreach_safe(head, tmp, &ctx->split_message_packers) {
         packer = mk_list_entry(head, struct split_message_packer, _head);
-        
+
         diff = now - packer->last_write_time;
         if (diff <= ctx->flush_ms) {
             continue;
         }
-        
+
         mk_list_del(&packer->_head);
         ml_split_message_packer_complete(packer);
         /* re-emit record with original tag */
         flb_plg_trace(ctx->ins, "emitting from %s to %s", packer->input_name, packer->tag);
-        ret = in_emitter_add_record(packer->tag, flb_sds_len(packer->tag), 
+        ret = in_emitter_add_record(packer->tag, flb_sds_len(packer->tag),
                                     packer->mp_sbuf.data, packer->mp_sbuf.size,
                                     ctx->ins_emitter);
         if (ret < 0) {
@@ -571,7 +578,7 @@ static int ml_filter_partial(const void *data, size_t bytes,
         sched = flb_sched_ctx_get();
 
         ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_PERM,
-                                        ctx->flush_ms / 2, partial_timer_cb, 
+                                        ctx->flush_ms / 2, partial_timer_cb,
                                         ctx, NULL);
         if (ret < 0) {
             flb_plg_error(ctx->ins, "Failed to create flush timer");
@@ -580,7 +587,7 @@ static int ml_filter_partial(const void *data, size_t bytes,
         }
     }
 
-    /* 
+    /*
      * Create temporary msgpack buffer
      * for non-partial messages which are passed on as-is
      */
@@ -591,7 +598,7 @@ static int ml_filter_partial(const void *data, size_t bytes,
     while (msgpack_unpack_next(&result, data, bytes, &off) == ok) {
         total_records++;
         flb_time_pop_from_msgpack(&tm, &result, &obj);
-        
+
         partial = ml_is_partial(obj);
         if (partial == FLB_TRUE) {
             partial_records++;
@@ -602,7 +609,7 @@ static int ml_filter_partial(const void *data, size_t bytes,
                 partial_records--;
                 goto pack_non_partial;
             }
-            packer = ml_get_packer(&ctx->split_message_packers, tag, 
+            packer = ml_get_packer(&ctx->split_message_packers, tag,
                                    i_ins->name, partial_id_str, partial_id_size);
             if (packer == NULL) {
                 flb_plg_trace(ctx->ins, "Found new partial record with tag %s", tag);
@@ -739,9 +746,9 @@ static int cb_ml_filter(const void *data, size_t bytes,
 
         /* unlikely to happen.. but just in case */
         return FLB_FILTER_NOTOUCH;
-    
+
     } else { /* buffered mode */
-        
+
         stream = get_or_create_stream(ctx, i_ins, tag, tag_len);
 
         if (!stream) {
@@ -761,7 +768,7 @@ static int cb_ml_filter(const void *data, size_t bytes,
         }
         msgpack_unpacked_destroy(&result);
 
-        /* 
+        /*
          * always returned modified, which will be 0 records, since the emitter takes
          * all records.
         */
@@ -838,6 +845,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "multiline.key_content", NULL,
      0, FLB_TRUE, offsetof(struct ml_ctx, key_content),
      "specify the key name that holds the content to process."
+    },
+
+    {
+     FLB_CONFIG_MAP_INT, "multiline.max_lines", "100",
+     0, FLB_TRUE, offsetof(struct ml_ctx, max_lines),
+     "specify the maximum number of lines to be concatenated."
     },
 
     /* emitter config */

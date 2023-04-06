@@ -65,6 +65,7 @@ void test_multiline_parser(msgpack_object *root2, int rand_val) {
         struct flb_ml_parser_ins *mlp_i =
             flb_ml_parser_instance_create(ml, "java");
         flb_ml_parser_instance_set(mlp_i, "key_content", "log");
+        flb_ml_parser_instance_set(mlp_i, "max_lines", "10");
 
         if (rand_val & 0x01) {
             flb_ml_stream_create(ml, "java", -1, flush_callback, (void *)&res,
