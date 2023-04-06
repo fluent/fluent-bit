@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 
 #include "logdna.h"
 
@@ -134,24 +135,29 @@ static flb_sds_t logdna_compose_payload(struct flb_logdna *ctx,
 {
     int ret;
     int len;
-    int mp_ok = MSGPACK_UNPACK_SUCCESS;
     int total_lines;
     int array_size = 0;
-    size_t off = 0;
     off_t map_off;
     char *line_json;
     flb_sds_t json;
-    struct flb_time tms;
-    msgpack_object *obj;
-    msgpack_unpacked result;
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return NULL;
+    }
 
     /* Count number of records */
     total_lines = flb_mp_count(data, bytes);
 
     /* Initialize msgpack buffers */
-    msgpack_unpacked_init(&result);
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
@@ -162,9 +168,9 @@ static flb_sds_t logdna_compose_payload(struct flb_logdna *ctx,
 
     msgpack_pack_array(&mp_pck, total_lines);
 
-    while (msgpack_unpack_next(&result, data, bytes, &off) == mp_ok) {
-        flb_time_pop_from_msgpack(&tms, &result, &obj);
-
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         map_off = mp_sbuf.size;
 
         array_size = 2;
@@ -174,19 +180,19 @@ static flb_sds_t logdna_compose_payload(struct flb_logdna *ctx,
          * Append primary keys found, the return values is the number of appended
          * keys to the record, we use that to adjust the map header size.
          */
-        ret = record_append_primary_keys(ctx, obj, &mp_pck);
+        ret = record_append_primary_keys(ctx, log_event.body, &mp_pck);
         array_size += ret;
 
         /* Timestamp */
         msgpack_pack_str(&mp_pck, 9);
         msgpack_pack_str_body(&mp_pck, "timestamp", 9);
-        msgpack_pack_int(&mp_pck, (int) flb_time_to_double(&tms));
+        msgpack_pack_int(&mp_pck, (int) flb_time_to_double(&log_event.timestamp));
 
         /* Line */
         msgpack_pack_str(&mp_pck, 4);
         msgpack_pack_str_body(&mp_pck, "line", 4);
 
-        line_json = flb_msgpack_to_json_str(1024, obj);
+        line_json = flb_msgpack_to_json_str(1024, log_event.body);
         len = strlen(line_json);
         msgpack_pack_str(&mp_pck, len);
         msgpack_pack_str_body(&mp_pck, line_json, len);
@@ -195,7 +201,8 @@ static flb_sds_t logdna_compose_payload(struct flb_logdna *ctx,
         /* Adjust map header size */
         flb_mp_set_map_header_size(mp_sbuf.data + map_off, array_size);
     }
-    msgpack_unpacked_destroy(&result);
+
+    flb_log_event_decoder_destroy(&log_decoder);
 
     json = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
