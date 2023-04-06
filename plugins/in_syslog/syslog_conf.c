@@ -47,12 +47,24 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
 
     ctx->ins = ins;
 
+    ctx->log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ctx->log_encoder == NULL) {
+        flb_plg_error(ins, "could not initialize event encoder");
+        syslog_conf_destroy(ctx);
+
+        return NULL;
+    }
+
     mk_list_init(&ctx->connections);
 
     ret = flb_input_config_map_set(ins, (void *)ctx);
     if (ret == -1) {
+        flb_log_event_encoder_destroy(ctx->log_encoder);
+
         flb_plg_error(ins, "unable to load configuration");
         flb_free(ctx);
+
         return NULL;
     }
 
@@ -71,6 +83,8 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
             ctx->mode = FLB_SYSLOG_UDP;
         }
         else {
+            flb_log_event_encoder_destroy(ctx->log_encoder);
+
             flb_error("[in_syslog] Unknown syslog mode %s", ctx->mode_str);
             flb_free(ctx);
             return NULL;
@@ -100,6 +114,8 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
 
     /* Buffer Chunk Size */
     if (ctx->buffer_chunk_size == -1) {
+        flb_log_event_encoder_destroy(ctx->log_encoder);
+
         flb_plg_error(ins, "invalid buffer_chunk_size");
         flb_free(ctx);
         return NULL; 
@@ -107,6 +123,8 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
 
     /* Buffer Max Size */
     if (ctx->buffer_max_size == -1) {
+        flb_log_event_encoder_destroy(ctx->log_encoder);
+
         flb_plg_error(ins, "invalid buffer_max_size");
         flb_free(ctx);
         return NULL;
@@ -117,6 +135,8 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
 
     /* Socket rcv buffer size */
     if (ctx->receive_buffer_size == -1 || ctx->receive_buffer_size>INT_MAX) {
+        flb_log_event_encoder_destroy(ctx->log_encoder);
+
         flb_plg_error(ins, "invalid receive_buffer_size");
         flb_free(ctx);
         return NULL;
@@ -136,6 +156,8 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
     }
 
     if (!ctx->parser) {
+        flb_log_event_encoder_destroy(ctx->log_encoder);
+
         flb_error("[in_syslog] parser not set");
         syslog_conf_destroy(ctx);
         return NULL;
@@ -146,6 +168,10 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
 
 int syslog_conf_destroy(struct flb_syslog *ctx)
 {
+    if (ctx->log_encoder != NULL) {
+        flb_log_event_encoder_destroy(ctx->log_encoder);
+    }
+
     syslog_server_destroy(ctx);
 
     flb_free(ctx);
