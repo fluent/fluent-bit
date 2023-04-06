@@ -290,7 +290,7 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
     }
 
     context->previous_offset = previous_offset;
-    context->record_length = context->previous_offset - context->offset;
+    context->record_length = context->offset - context->previous_offset;
 
     return flb_event_decoder_decode_object(context,
                                            event,

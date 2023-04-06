@@ -236,20 +236,14 @@ static int cb_throttle_filter(const void *data, size_t bytes,
         pthread_mutex_unlock(&throttle_mut);
 
         if (ret == THROTTLE_RET_KEEP) {
-            ret = flb_log_event_encoder_begin_record(&log_encoder);
-
-            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                ret = flb_log_event_encoder_set_root_from_raw_msgpack(
+            ret = flb_log_event_encoder_emit_raw_record(
                         &log_encoder,
                         &((char *) data)[log_decoder.previous_offset],
                         log_decoder.record_length);
-            }
 
             if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                ret = flb_log_event_encoder_commit_record(&log_encoder);
+                new_size++;
             }
-
-            new_size++;
         }
         else if (ret == THROTTLE_RET_DROP) {
             /* Do nothing */
