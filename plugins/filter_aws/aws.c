@@ -392,7 +392,7 @@ static int get_ec2_tag_values(struct flb_filter_aws *ctx)
         /* fetch tag value using path: /latest/meta-data/tags/instance/{tag_name} */
         tag_value_path_len = ctx->tag_keys_len[i] + 1 +
                              strlen(FLB_AWS_IMDS_INSTANCE_TAG);
-        tag_value_path = flb_sds_create_size(tag_value_path_len);
+        tag_value_path = flb_sds_create_size(tag_value_path_len + 1);
         if (!tag_value_path) {
             flb_errno();
             return -1;
