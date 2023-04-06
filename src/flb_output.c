@@ -423,6 +423,12 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
     }
 
     mk_list_del(&ins->_head);
+
+    /* processor */
+    if (ins->processor) {
+        flb_processor_destroy(ins->processor);
+    }
+
     flb_free(ins);
 
     return 0;
@@ -693,8 +699,12 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
 
     mk_list_add(&instance->_head, &config->outputs);
 
+    /* processor instance */
+    instance->processor = flb_processor_create(config, instance->name, instance);
+
     /* Tests */
     instance->test_formatter.callback = plugin->test_formatter.callback;
+
 
     return instance;
 }
@@ -1309,8 +1319,7 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
     if (ins->host.ipv6 == FLB_TRUE) {
         flags |= FLB_IO_IPV6;
     }
-    
-    /* keepalive */
+        /* keepalive */
     if (ins->net_setup.keepalive == FLB_TRUE) {
         flags |= FLB_IO_TCP_KA;
     }
