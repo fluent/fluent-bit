@@ -43,7 +43,7 @@ static int try_json(mpack_writer_t *writer, rd_kafka_message_t *rkm)
     size_t bufsize;
     int ret;
 
-    ret = flb_pack_json(rkm->payload, rkm->len, &buf, &bufsize, &root_type);
+    ret = flb_pack_json(rkm->payload, rkm->len, &buf, &bufsize, &root_type, NULL);
     if (ret) {
         if (buf) {
             flb_free(buf);
