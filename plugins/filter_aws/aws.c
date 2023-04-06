@@ -32,6 +32,8 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/aws/flb_aws_imds.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #include <monkey/mk_core/mk_list.h>
 #include <msgpack.h>
@@ -574,19 +576,17 @@ static int cb_aws_filter(const void *data, size_t bytes,
                          struct flb_config *config)
 {
     struct flb_filter_aws *ctx = context;
+    int i = 0;
+    int ret;
+    msgpack_object  *obj;
+    msgpack_object_kv *kv;
+    struct flb_log_event_encoder log_encoder;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+
     (void) f_ins;
     (void) i_ins;
     (void) config;
-    size_t off = 0;
-    int i = 0;
-    int ret;
-    struct flb_time tm;
-    int total_records;
-    msgpack_sbuffer tmp_sbuf;
-    msgpack_packer tmp_pck;
-    msgpack_unpacked result;
-    msgpack_object  *obj;
-    msgpack_object_kv *kv;
 
     /* First check that the metadata has been retrieved */
     if (!ctx->metadata_retrieved) {
@@ -598,148 +598,170 @@ static int cb_aws_filter(const void *data, size_t bytes,
         }
         expose_aws_meta(ctx);
     }
-    /* Create temporary msgpack buffer */
-    msgpack_sbuffer_init(&tmp_sbuf);
-    msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
-    /* Iterate over each item */
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)
-           == MSGPACK_UNPACK_SUCCESS) {
-        /*
-         * Each record is a msgpack array [timestamp, map] of the
-         * timestamp and record map. We 'unpack' each record, and then re-pack
-         * it with the new fields added.
-         */
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
-        if (result.data.type != MSGPACK_OBJECT_ARRAY) {
-            continue;
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    ret = flb_log_event_encoder_init(&log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder initialization error : %d", ret);
+
+        flb_log_event_decoder_destroy(&log_decoder);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        obj = log_event.body;
+
+        ret = flb_log_event_encoder_begin_record(&log_encoder);
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_set_timestamp(
+                    &log_encoder,
+                    &log_event.timestamp);
         }
-
-        /* unpack the array of [timestamp, map] */
-        flb_time_pop_from_msgpack(&tm, &result, &obj);
-
-        /* obj should now be the record map */
-        if (obj->type != MSGPACK_OBJECT_MAP) {
-            continue;
-        }
-
-        /* re-pack the array into a new buffer */
-        msgpack_pack_array(&tmp_pck, 2);
-        flb_time_append_to_msgpack(&tm, &tmp_pck, 0);
-
-        /* new record map size is old size + the new keys we will add */
-        total_records = obj->via.map.size + ctx->new_keys;
-        msgpack_pack_map(&tmp_pck, total_records);
 
         /* iterate through the old record map and add it to the new buffer */
         kv = obj->via.map.ptr;
-        for(i=0; i < obj->via.map.size; i++) {
-            msgpack_pack_object(&tmp_pck, (kv+i)->key);
-            msgpack_pack_object(&tmp_pck, (kv+i)->val);
+
+        for(i=0;
+            i < obj->via.map.size &&
+            ret == FLB_EVENT_ENCODER_SUCCESS;
+            i++) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &log_encoder,
+                    FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].key),
+                    FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].val));
         }
 
         /* append new keys */
-
-        if (ctx->availability_zone_include) {
-            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_AVAILABILITY_ZONE_KEY_LEN);
-            msgpack_pack_str_body(&tmp_pck,
-                                  FLB_FILTER_AWS_AVAILABILITY_ZONE_KEY,
-                                  FLB_FILTER_AWS_AVAILABILITY_ZONE_KEY_LEN);
-            msgpack_pack_str(&tmp_pck, ctx->availability_zone_len);
-            msgpack_pack_str_body(&tmp_pck,
-                                  ctx->availability_zone,
-                                  ctx->availability_zone_len);
+        if (ctx->availability_zone_include &&
+            ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_AVAILABILITY_ZONE_KEY),
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->availability_zone,
+                                               ctx->availability_zone_len));
         }
 
-        if (ctx->instance_id_include) {
-            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_INSTANCE_ID_KEY_LEN);
-            msgpack_pack_str_body(&tmp_pck,
-                                  FLB_FILTER_AWS_INSTANCE_ID_KEY,
-                                  FLB_FILTER_AWS_INSTANCE_ID_KEY_LEN);
-            msgpack_pack_str(&tmp_pck, ctx->instance_id_len);
-            msgpack_pack_str_body(&tmp_pck,
-                                  ctx->instance_id, ctx->instance_id_len);
+        if (ctx->instance_id_include &&
+            ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_INSTANCE_ID_KEY),
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->instance_id,
+                                               ctx->instance_id_len));
         }
 
-        if (ctx->instance_type_include) {
-            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_INSTANCE_TYPE_KEY_LEN);
-            msgpack_pack_str_body(&tmp_pck,
-                                  FLB_FILTER_AWS_INSTANCE_TYPE_KEY,
-                                  FLB_FILTER_AWS_INSTANCE_TYPE_KEY_LEN);
-            msgpack_pack_str(&tmp_pck, ctx->instance_type_len);
-            msgpack_pack_str_body(&tmp_pck,
-                                  ctx->instance_type, ctx->instance_type_len);
+        if (ctx->instance_type_include &&
+            ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_INSTANCE_TYPE_KEY),
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->instance_type,
+                                               ctx->instance_type_len));
         }
 
-        if (ctx->private_ip_include) {
-            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_PRIVATE_IP_KEY_LEN);
-            msgpack_pack_str_body(&tmp_pck,
-                                  FLB_FILTER_AWS_PRIVATE_IP_KEY,
-                                  FLB_FILTER_AWS_PRIVATE_IP_KEY_LEN);
-            msgpack_pack_str(&tmp_pck, ctx->private_ip_len);
-            msgpack_pack_str_body(&tmp_pck,
-                                  ctx->private_ip, ctx->private_ip_len);
+        if (ctx->private_ip_include &&
+            ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_PRIVATE_IP_KEY),
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->private_ip,
+                                               ctx->private_ip_len));
         }
 
-        if (ctx->vpc_id_include) {
-            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_VPC_ID_KEY_LEN);
-            msgpack_pack_str_body(&tmp_pck,
-                                  FLB_FILTER_AWS_VPC_ID_KEY,
-                                  FLB_FILTER_AWS_VPC_ID_KEY_LEN);
-            msgpack_pack_str(&tmp_pck, ctx->vpc_id_len);
-            msgpack_pack_str_body(&tmp_pck,
-                                  ctx->vpc_id, ctx->vpc_id_len);
+        if (ctx->vpc_id_include &&
+            ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_VPC_ID_KEY),
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->vpc_id,
+                                               ctx->vpc_id_len));
         }
 
-        if (ctx->ami_id_include) {
-            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_AMI_ID_KEY_LEN);
-            msgpack_pack_str_body(&tmp_pck,
-                                  FLB_FILTER_AWS_AMI_ID_KEY,
-                                  FLB_FILTER_AWS_AMI_ID_KEY_LEN);
-            msgpack_pack_str(&tmp_pck, ctx->ami_id_len);
-            msgpack_pack_str_body(&tmp_pck,
-                                  ctx->ami_id, ctx->ami_id_len);
+        if (ctx->ami_id_include &&
+            ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_AMI_ID_KEY),
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->ami_id,
+                                               ctx->ami_id_len));
         }
 
-        if (ctx->account_id_include) {
-            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_ACCOUNT_ID_KEY_LEN);
-            msgpack_pack_str_body(&tmp_pck,
-                                  FLB_FILTER_AWS_ACCOUNT_ID_KEY,
-                                  FLB_FILTER_AWS_ACCOUNT_ID_KEY_LEN);
-            msgpack_pack_str(&tmp_pck, ctx->account_id_len);
-            msgpack_pack_str_body(&tmp_pck,
-                                  ctx->account_id, ctx->account_id_len);
+        if (ctx->account_id_include &&
+            ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_ACCOUNT_ID_KEY),
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->account_id,
+                                               ctx->account_id_len));
         }
 
-        if (ctx->hostname_include) {
-            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_HOSTNAME_KEY_LEN);
-            msgpack_pack_str_body(&tmp_pck,
-                                  FLB_FILTER_AWS_HOSTNAME_KEY,
-                                  FLB_FILTER_AWS_HOSTNAME_KEY_LEN);
-            msgpack_pack_str(&tmp_pck, ctx->hostname_len);
-            msgpack_pack_str_body(&tmp_pck,
-                                  ctx->hostname, ctx->hostname_len);
+        if (ctx->hostname_include &&
+            ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_HOSTNAME_KEY),
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->hostname,
+                                               ctx->hostname_len));
         }
 
         if (ctx->tags_include && ctx->tags_fetched) {
-            for (i = 0; i < ctx->tags_count; i++) {
-                msgpack_pack_str(&tmp_pck, ctx->tag_keys_len[i]);
-                msgpack_pack_str_body(&tmp_pck,
-                                    ctx->tag_keys[i],
-                                    ctx->tag_keys_len[i]);
-                msgpack_pack_str(&tmp_pck, ctx->tag_values_len[i]);
-                msgpack_pack_str_body(&tmp_pck,
-                                    ctx->tag_values[i], ctx->tag_values_len[i]);
+            for (i = 0;
+                 i < ctx->tags_count &&
+                 ret == FLB_EVENT_ENCODER_SUCCESS;
+                 i++) {
+                ret = flb_log_event_encoder_append_body_values(
+                        &log_encoder,
+                        FLB_LOG_EVENT_STRING_VALUE(ctx->tag_keys[i],
+                                                   ctx->tag_keys_len[i]),
+                        FLB_LOG_EVENT_STRING_VALUE(ctx->tag_values[i],
+                                                   ctx->tag_values_len[i]));
             }
         }
-    }
-    msgpack_unpacked_destroy(&result);
 
-    /* link new buffers */
-    *out_buf  = tmp_sbuf.data;
-    *out_size = tmp_sbuf.size;
-    return FLB_FILTER_MODIFIED;
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_commit_record(&log_encoder);
+        }
+    }
+
+    if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA &&
+        log_decoder.offset == bytes) {
+        ret = FLB_EVENT_ENCODER_SUCCESS;
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        *out_buf  = log_encoder.output_buffer;
+        *out_size = log_encoder.output_length;
+
+        ret = FLB_FILTER_MODIFIED;
+
+        flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
+    }
+    else {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder error : %d", ret);
+
+        ret = FLB_FILTER_NOTOUCH;
+    }
+
+    flb_log_event_decoder_destroy(&log_decoder);
+    flb_log_event_encoder_destroy(&log_encoder);
+
+    return ret;
 }
 
 static void flb_filter_aws_destroy(struct flb_filter_aws *ctx)
