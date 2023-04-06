@@ -538,25 +538,6 @@ static void partial_timer_cb(struct flb_config *config, void *data)
     }
 }
 
-static int repack_raw(struct flb_log_event_encoder *log_encoder,
-                      char *data, size_t bytes)
-{
-    int ret;
-
-    ret = flb_log_event_encoder_begin_record(log_encoder);
-
-    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        ret = flb_log_event_encoder_set_root_from_raw_msgpack(
-                log_encoder, data, bytes);
-    }
-
-    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        ret = flb_log_event_encoder_commit_record(log_encoder);
-    }
-
-    return ret;
-}
-
 static int ml_filter_partial(const void *data, size_t bytes,
                              const char *tag, int tag_len,
                              void **out_buf, size_t *out_bytes,
