@@ -38,6 +38,7 @@ struct flb_syslog {
     flb_sds_t mode;
     flb_sds_t format;
     size_t maxsize;
+    flb_sds_t nested_key_separator;
     flb_sds_t severity_key;
     flb_sds_t facility_key;
     flb_sds_t timestamp_key;
