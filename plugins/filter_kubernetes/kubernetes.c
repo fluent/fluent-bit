@@ -24,6 +24,8 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_unescape.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #include "kube_conf.h"
 #include "kube_meta.h"
@@ -151,7 +153,7 @@ static int merge_log_handler(msgpack_object o,
     else { /* Default JSON parser */
         ret = flb_pack_json_recs(ctx->unesc_buf, ctx->unesc_buf_len,
                                  (char **) out_buf, out_size, &root_type,
-                                 &records);
+                                 &records, NULL);
         if (ret == 0 && root_type != FLB_PACK_JSON_OBJECT) {
             flb_plg_debug(ctx->ins, "could not merge JSON, root_type=%i",
                       root_type);
@@ -209,7 +211,7 @@ static int cb_kube_init(struct flb_filter_instance *f_ins,
     return 0;
 }
 
-static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
+static int pack_map_content(struct flb_log_event_encoder *log_encoder,
                             msgpack_object source_map,
                             const char *kube_buf, size_t kube_size,
                             struct flb_kube_meta *meta,
@@ -217,6 +219,9 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
                             struct flb_parser *parser,
                             struct flb_kube *ctx)
 {
+    int append_original_objects;
+    int scope_opened;
+    int ret;
     int i;
     int map_size = 0;
     int merge_status = -1;
@@ -273,14 +278,21 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
     /* Append record timestamp */
     if (merge_status == MERGE_PARSED) {
         if (flb_time_to_nanosec(&log_time) == 0L) {
-            flb_time_append_to_msgpack(time_lookup, pck, 0);
+            ret = flb_log_event_encoder_set_timestamp(
+                    log_encoder, time_lookup);
         }
         else {
-            flb_time_append_to_msgpack(&log_time, pck, 0);
+            ret = flb_log_event_encoder_set_timestamp(
+                    log_encoder, &log_time);
         }
     }
     else {
-        flb_time_append_to_msgpack(time_lookup, pck, 0);
+        ret = flb_log_event_encoder_set_timestamp(
+                log_encoder, time_lookup);
+    }
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -1;
     }
 
     /* Determinate the size of the new map */
@@ -323,11 +335,11 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
         new_map_size--;
     }
 
-    /* Pack Map */
-    msgpack_pack_map(pck, new_map_size);
-
     /* Original map */
-    for (i = 0; i < map_size; i++) {
+    for (i = 0;
+         i < map_size &&
+         ret == FLB_EVENT_ENCODER_SUCCESS;
+         i++) {
         k = source_map.via.map.ptr[i].key;
         v = source_map.via.map.ptr[i].val;
 
@@ -336,37 +348,60 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
          * will depend on merge_status. If the parsing failed we cannot
          * merge so we keep the 'log' key/value.
          */
+        append_original_objects = FLB_FALSE;
+
         if (log_index == i) {
             if (ctx->keep_log == FLB_TRUE) {
-                msgpack_pack_object(pck, k);
                 if (merge_status == MERGE_NONE || merge_status == MERGE_PARSED){
-                    msgpack_pack_str(pck, ctx->unesc_buf_len);
-                    msgpack_pack_str_body(pck, ctx->unesc_buf,
-                                          ctx->unesc_buf_len);
+                    ret = flb_log_event_encoder_append_body_values(
+                            log_encoder,
+                            FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&k),
+                            FLB_LOG_EVENT_STRING_VALUE(ctx->unesc_buf,
+                                                       ctx->unesc_buf_len));
                 }
                 else {
-                    msgpack_pack_object(pck, v);
+                    append_original_objects = FLB_TRUE;
                 }
             }
             else if (merge_status == MERGE_NONE) {
-                msgpack_pack_object(pck, k);
-                msgpack_pack_object(pck, v);
+                append_original_objects = FLB_TRUE;
             }
         }
         else {
-            msgpack_pack_object(pck, k);
-            msgpack_pack_object(pck, v);
+            append_original_objects = FLB_TRUE;
+        }
+
+        if (append_original_objects) {
+            ret = flb_log_event_encoder_append_body_values(
+                    log_encoder,
+                    FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&k),
+                    FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&v));
         }
     }
 
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -2;
+    }
+
+    scope_opened = FLB_FALSE;
     /* Merge Log */
     if (log_index != -1) {
         if (merge_status == MERGE_PARSED) {
             if (ctx->merge_log_key && log_buf_entries > 0) {
-                msgpack_pack_str(pck, flb_sds_len(ctx->merge_log_key));
-                msgpack_pack_str_body(pck, ctx->merge_log_key,
-                                      flb_sds_len(ctx->merge_log_key));
-                msgpack_pack_map(pck, log_buf_entries);
+                ret = flb_log_event_encoder_append_body_string(
+                        log_encoder,
+                        ctx->merge_log_key,
+                        flb_sds_len(ctx->merge_log_key));
+
+                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                    ret = flb_log_event_encoder_body_begin_map(log_encoder);
+                }
+
+                if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                    return -3;
+                }
+
+                scope_opened = FLB_TRUE;
             }
 
             off = 0;
@@ -374,9 +409,18 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
             msgpack_unpack_next(&result, log_buf, log_size, &off);
             root = result.data;
 
-            for (i = 0; i < log_buf_entries; i++) {
+            for (i = 0;
+                 i < log_buf_entries &&
+                 ret == FLB_EVENT_ENCODER_SUCCESS;
+                 i++) {
                 k = root.via.map.ptr[i].key;
-                msgpack_pack_object(pck, k);
+
+                ret = flb_log_event_encoder_append_body_msgpack_object(
+                        log_encoder, &k);
+
+                if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                    return -4;
+                }
 
                 v = root.via.map.ptr[i].val;
 
@@ -386,47 +430,105 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
                  */
                 if (v.type == MSGPACK_OBJECT_STR &&
                     ctx->merge_log_trim == FLB_TRUE) {
-                    int s = value_trim_size(v);
-                    msgpack_pack_str(pck, s);
-                    msgpack_pack_str_body(pck, v.via.str.ptr, s);
+                    ret = flb_log_event_encoder_append_body_string(
+                            log_encoder,
+                            (char *) v.via.str.ptr,
+                            value_trim_size(v));
                 }
                 else {
-                    msgpack_pack_object(pck, v);
+                    ret = flb_log_event_encoder_append_body_msgpack_object(
+                            log_encoder, &v);
                 }
             }
+
             msgpack_unpacked_destroy(&result);
+
             flb_free(log_buf);
+
+            if (scope_opened && ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_body_commit_map(log_encoder);
+            }
+
+            if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                return -5;
+            }
         }
         else if (merge_status == MERGE_MAP) {
             msgpack_object map;
 
             if (ctx->merge_log_key && log_buf_entries > 0) {
-                msgpack_pack_str(pck, flb_sds_len(ctx->merge_log_key));
-                msgpack_pack_str_body(pck, ctx->merge_log_key,
-                                      flb_sds_len(ctx->merge_log_key));
-                msgpack_pack_map(pck, log_buf_entries);
+                ret = flb_log_event_encoder_append_body_string(
+                        log_encoder,
+                        ctx->merge_log_key,
+                        flb_sds_len(ctx->merge_log_key));
+
+                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                    ret = flb_log_event_encoder_body_begin_map(log_encoder);
+                }
+
+                if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                    return -6;
+                }
+
+                scope_opened = FLB_TRUE;
             }
 
             map = source_map.via.map.ptr[log_index].val;
-            for (i = 0; i < map.via.map.size; i++) {
+            for (i = 0;
+                 i < map.via.map.size &&
+                 ret == FLB_EVENT_ENCODER_SUCCESS;
+                 i++) {
                 k = map.via.map.ptr[i].key;
                 v = map.via.map.ptr[i].val;
-                msgpack_pack_object(pck, k);
-                msgpack_pack_object(pck, v);
+
+                ret = flb_log_event_encoder_append_body_values(
+                        log_encoder,
+                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&k),
+                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&v));
+            }
+
+            if (scope_opened && ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_body_commit_map(log_encoder);
+            }
+
+            if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                return -7;
             }
         }
     }
 
     /* Kubernetes */
     if (kube_buf && kube_size > 0) {
-        msgpack_pack_str(pck, 10);
-        msgpack_pack_str_body(pck, "kubernetes", 10);
+        ret = flb_log_event_encoder_append_body_cstring(
+                log_encoder,
+                "kubernetes");
 
         off = 0;
         msgpack_unpacked_init(&result);
         msgpack_unpack_next(&result, kube_buf, kube_size, &off);
-        msgpack_pack_object(pck, result.data);
+
+        if (kube_size != off) {
+            /* This buffer should contain a single map and we shouldn't
+             * have to unpack it in order to ensure that we are appending
+             * a single map but considering that the current code only
+             * appends the first entry without taking any actions I think
+             * we should warn the user if there is more than one entry in
+             * it so in the future we can remove the unpack code and just
+             * use flb_log_event_encoder_append_body_raw_msgpack with
+             * kube_size.
+             */
+        }
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_raw_msgpack(log_encoder,
+                    (char *) kube_buf, off);
+        }
+
         msgpack_unpacked_destroy(&result);
+    }
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -8;
     }
 
     return 0;
@@ -446,17 +548,15 @@ static int cb_kube_filter(const void *data, size_t bytes,
     char *dummy_cache_buf = NULL;
     const char *cache_buf = NULL;
     size_t cache_size = 0;
-    msgpack_unpacked result;
     msgpack_object map;
-    msgpack_object root;
-    msgpack_sbuffer tmp_sbuf;
-    msgpack_packer tmp_pck;
-    msgpack_object *obj;
     struct flb_parser *parser = NULL;
     struct flb_kube *ctx = filter_context;
     struct flb_kube_meta meta = {0};
     struct flb_kube_props props = {0};
-    struct flb_time time_lookup;
+    struct flb_log_event_encoder log_encoder;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+
     (void) f_ins;
     (void) i_ins;
     (void) config;
@@ -478,22 +578,36 @@ static int cb_kube_filter(const void *data, size_t bytes,
         }
     }
 
-    /* Create temporary msgpack buffer */
-    msgpack_sbuffer_init(&tmp_sbuf);
-    msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
-    /* Iterate each item array and append meta */
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        root = result.data;
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
 
-        if (root.type != MSGPACK_OBJECT_ARRAY ||
-            root.via.array.size != 2 ||
-            root.via.array.ptr[1].type != MSGPACK_OBJECT_MAP) {
-            flb_plg_warn(ctx->ins, "unexpected record format");
-            continue;
-        }
+        flb_kube_meta_release(&meta);
+        flb_kube_prop_destroy(&props);
 
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    ret = flb_log_event_encoder_init(&log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder initialization error : %d", ret);
+
+        flb_log_event_decoder_destroy(&log_decoder);
+        flb_kube_meta_release(&meta);
+        flb_kube_prop_destroy(&props);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        off = log_decoder.offset;
         /*
          * Journal entries can be origined by different Pods, so we are forced
          * to parse and check it metadata.
@@ -515,7 +629,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
 
         parser = NULL;
 
-        switch (get_stream(root.via.array.ptr[1].via.map)) {
+        switch (get_stream(log_event.body->via.map)) {
         case FLB_KUBE_PROP_STREAM_STDOUT:
             {
                 if (props.stdout_exclude == FLB_TRUE) {
@@ -560,33 +674,39 @@ static int cb_kube_filter(const void *data, size_t bytes,
             break;
         }
 
-        /*
-         * Temporal time lookup in case a parser comes up with a new
-         * timestamp for the record.
-         */
-        flb_time_pop_from_msgpack(&time_lookup, &result, &obj);
-
         /* get records map */
-        map  = root.via.array.ptr[1];
+        map  = *log_event.body;
 
-        /* Compose the new array (0=timestamp, 1=record) */
-        msgpack_pack_array(&tmp_pck, 2);
+        ret = flb_log_event_encoder_begin_record(&log_encoder);
 
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            break;
+        }
 
-        ret = pack_map_content(&tmp_pck, &tmp_sbuf,
+        ret = pack_map_content(&log_encoder,
                                map,
                                cache_buf, cache_size,
-                               &meta, &time_lookup, parser, ctx);
-        if (ret == -1) {
-            msgpack_sbuffer_destroy(&tmp_sbuf);
-            msgpack_unpacked_destroy(&result);
+                               &meta, &log_event.timestamp, parser, ctx);
+        if (ret != 0) {
+            flb_log_event_decoder_destroy(&log_decoder);
+            flb_log_event_encoder_destroy(&log_encoder);
+
             if (ctx->dummy_meta == FLB_TRUE) {
                 flb_free(dummy_cache_buf);
             }
 
             flb_kube_meta_release(&meta);
             flb_kube_prop_destroy(&props);
+
             return FLB_FILTER_NOTOUCH;
+        }
+
+        ret = flb_log_event_encoder_commit_record(&log_encoder);
+
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_log_event_encoder_rollback_record(&log_encoder);
+
+            break;
         }
 
         if (ctx->use_journal == FLB_TRUE) {
@@ -594,7 +714,6 @@ static int cb_kube_filter(const void *data, size_t bytes,
             flb_kube_prop_destroy(&props);
         }
     }
-    msgpack_unpacked_destroy(&result);
 
     /* Release meta fields */
     if (ctx->use_journal == FLB_FALSE) {
@@ -602,13 +721,17 @@ static int cb_kube_filter(const void *data, size_t bytes,
         flb_kube_prop_destroy(&props);
     }
 
-    /* link new buffers */
-    *out_buf   = tmp_sbuf.data;
-    *out_bytes = tmp_sbuf.size;
-
     if (ctx->dummy_meta == FLB_TRUE) {
         flb_free(dummy_cache_buf);
     }
+
+    *out_buf   = log_encoder.output_buffer;
+    *out_bytes = log_encoder.output_length;
+
+    flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
+
+    flb_log_event_decoder_destroy(&log_decoder);
+    flb_log_event_encoder_destroy(&log_encoder);
 
     return FLB_FILTER_MODIFIED;
 }
