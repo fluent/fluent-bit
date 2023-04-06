@@ -63,8 +63,8 @@ void flb_test_aws_ec2_tags_present() {
             expect(URI, "/latest/meta-data/tags/instance"),
             expect(METHOD, FLB_HTTP_GET),
             set(STATUS, 200),
-            set(PAYLOAD, "Name\nCUSTOMER_ID"),
-            set(PAYLOAD_SIZE, 16)
+            set(PAYLOAD, "Name\nCUSTOMER_ID\nthis-would-be-my-very-long-tag-name-does-it-work"),
+            set(PAYLOAD_SIZE, 65)
         ),
         response(
             expect(URI, "/latest/meta-data/tags/instance/Name"),
@@ -79,6 +79,13 @@ void flb_test_aws_ec2_tags_present() {
             set(STATUS, 200),
             set(PAYLOAD, "70ec5c04-3a6e-11ed-a261-0242ac120002"),
             set(PAYLOAD_SIZE, 36)
+        ),
+        response(
+            expect(URI, "/latest/meta-data/tags/instance/this-would-be-my-very-long-tag-name-does-it-work"),
+            expect(METHOD, FLB_HTTP_GET),
+            set(STATUS, 200),
+            set(PAYLOAD, "yes-it-does"),
+            set(PAYLOAD_SIZE, 11)
         )
     );
     flb_aws_client_mock_configure_generator(request_chain);
@@ -137,6 +144,10 @@ void flb_test_aws_ec2_tags_present() {
             TEST_MSG("output:%s\n", output);
         }
         result = strstr(output, "\"CUSTOMER_ID\":\"70ec5c04-3a6e-11ed-a261-0242ac120002\"");
+        if (!TEST_CHECK(result != NULL)) {
+            TEST_MSG("output:%s\n", output);
+        }
+        result = strstr(output, "\"this-would-be-my-very-long-tag-name-does-it-work\":\"yes-it-does\"");
         if (!TEST_CHECK(result != NULL)) {
             TEST_MSG("output:%s\n", output);
         }
