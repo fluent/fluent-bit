@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 #include <msgpack.h>
 
 #include <time.h>
@@ -264,10 +265,10 @@ static int elasticsearch_format(struct flb_config *config,
     size_t out_buf_len = 0;
     flb_sds_t tmp_buf;
     flb_sds_t id_key_str = NULL;
-    msgpack_unpacked result;
-    msgpack_object root;
+    // msgpack_unpacked result;
+    // msgpack_object root;
     msgpack_object map;
-    msgpack_object *obj;
+    // msgpack_object *obj;
     flb_sds_t j_index;
     struct es_bulk *bulk;
     struct tm tm;
@@ -277,6 +278,8 @@ static int elasticsearch_format(struct flb_config *config,
     uint16_t hash[8];
     int es_index_custom_len;
     struct flb_elasticsearch *ctx = plugin_context;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
 
     j_index = flb_sds_create_size(ES_BULK_HEADER);
     if (j_index == NULL) {
@@ -284,52 +287,28 @@ static int elasticsearch_format(struct flb_config *config,
         return -1;
     }
 
-    /* Iterate the original buffer and perform adjustments */
-    msgpack_unpacked_init(&result);
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
-    /* Perform some format validation */
-    ret = msgpack_unpack_next(&result, data, bytes, &off);
-    if (ret != MSGPACK_UNPACK_SUCCESS) {
-        msgpack_unpacked_destroy(&result);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
         flb_sds_destroy(j_index);
-        return -1;
-    }
 
-    /* We 'should' get an array */
-    if (result.data.type != MSGPACK_OBJECT_ARRAY) {
-        /*
-         * If we got a different format, we assume the caller knows what he is
-         * doing, we just duplicate the content in a new buffer and cleanup.
-         */
-        msgpack_unpacked_destroy(&result);
-        flb_sds_destroy(j_index);
-        return -1;
-    }
-
-    root = result.data;
-    if (root.via.array.size == 0) {
-        msgpack_unpacked_destroy(&result);
-        flb_sds_destroy(j_index);
         return -1;
     }
 
     /* Create the bulk composer */
     bulk = es_bulk_create(bytes);
     if (!bulk) {
-        msgpack_unpacked_destroy(&result);
+        flb_log_event_decoder_destroy(&log_decoder);
         flb_sds_destroy(j_index);
         return -1;
     }
 
-    off = 0;
-
-    msgpack_unpacked_destroy(&result);
-    msgpack_unpacked_init(&result);
-
     /* Copy logstash prefix if logstash format is enabled */
     if (ctx->logstash_format == FLB_TRUE) {
-        memcpy(logstash_index, ctx->logstash_prefix, flb_sds_len(ctx->logstash_prefix));
-        logstash_index[flb_sds_len(ctx->logstash_prefix)] = '\0';
+        strncpy(logstash_index, ctx->logstash_prefix, sizeof(logstash_index));
+        logstash_index[sizeof(logstash_index) - 1] = '\0';
     }
 
     /*
@@ -372,23 +351,16 @@ static int elasticsearch_format(struct flb_config *config,
     }
 
     /* Iterate each record and do further formatting */
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        if (result.data.type != MSGPACK_OBJECT_ARRAY) {
-            continue;
-        }
-
-        /* Each array must have two entries: time and record */
-        root = result.data;
-        if (root.via.array.size != 2) {
-            continue;
-        }
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
 
         /* Only pop time from record if current_time_index is disabled */
         if (ctx->current_time_index == FLB_FALSE) {
-            flb_time_pop_from_msgpack(&tms, &result, &obj);
+            flb_time_copy(&tms, &log_event.timestamp);
         }
 
-        map   = root.via.array.ptr[1];
+        map   = *log_event.body;
         map_size = map.via.map.size;
 
         es_index_custom_len = 0;
@@ -499,7 +471,7 @@ static int elasticsearch_format(struct flb_config *config,
          */
         ret = es_pack_map_content(&tmp_pck, map, ctx);
         if (ret == -1) {
-            msgpack_unpacked_destroy(&result);
+            flb_log_event_decoder_destroy(&log_decoder);
             msgpack_sbuffer_destroy(&tmp_sbuf);
             es_bulk_destroy(bulk);
             flb_sds_destroy(j_index);
@@ -553,7 +525,7 @@ static int elasticsearch_format(struct flb_config *config,
         out_buf = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size);
         msgpack_sbuffer_destroy(&tmp_sbuf);
         if (!out_buf) {
-            msgpack_unpacked_destroy(&result);
+            flb_log_event_decoder_destroy(&log_decoder);
             es_bulk_destroy(bulk);
             flb_sds_destroy(j_index);
             return -1;
@@ -581,14 +553,14 @@ static int elasticsearch_format(struct flb_config *config,
         off_prev = off;
         if (ret == -1) {
             /* We likely ran out of memory, abort here */
-            msgpack_unpacked_destroy(&result);
+            flb_log_event_decoder_destroy(&log_decoder);
             *out_size = 0;
             es_bulk_destroy(bulk);
             flb_sds_destroy(j_index);
             return -1;
         }
     }
-    msgpack_unpacked_destroy(&result);
+    flb_log_event_decoder_destroy(&log_decoder);
 
     /* Set outgoing data */
     *out_data = bulk->ptr;
@@ -660,7 +632,7 @@ static int elasticsearch_error_check(struct flb_elasticsearch *ctx,
      */
     /* Convert JSON payload to msgpack */
     ret = flb_pack_json(c->resp.payload, c->resp.payload_size,
-                        &out_buf, &out_size, &root_type);
+                        &out_buf, &out_size, &root_type, NULL);
     if (ret == -1) {
         /* Is this an incomplete HTTP Request ? */
         if (c->resp.payload_size <= 0) {
