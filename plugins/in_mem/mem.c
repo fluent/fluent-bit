@@ -178,7 +178,6 @@ static int in_mem_collect(struct flb_input_instance *i_ins,
                           struct flb_config *config, void *in_context)
 {
     int ret;
-    int entries = 6;/* (total,used,free) * (memory, swap) */
     struct proc_task *task = NULL;
     struct flb_in_mem_config *ctx = in_context;
     struct flb_in_mem_info info;
@@ -198,10 +197,6 @@ static int in_mem_collect(struct flb_input_instance *i_ins,
             proc_free(task);
         }
         return -1;
-    }
-
-    if (task) {
-        entries += 2;
     }
 
     ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
