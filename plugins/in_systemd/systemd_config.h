@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_sqldb.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #include <systemd/sd-journal.h>
 
@@ -71,6 +72,7 @@ struct flb_systemd_config {
     sqlite3_stmt *stmt_cursor;
 #endif
     struct flb_input_instance *ins;
+    struct flb_log_event_encoder *log_encoder;
 };
 
 struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *i_ins,
