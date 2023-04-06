@@ -31,6 +31,8 @@
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_env.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #include <monkey/mk_core/mk_list.h>
 #include <msgpack.h>
@@ -438,7 +440,7 @@ static int get_ecs_cluster_metadata(struct flb_filter_ecs *ctx)
     }
 
     ret = flb_pack_json(c->resp.payload, c->resp.payload_size,
-                        &buffer, &size, &root_type);
+                        &buffer, &size, &root_type, NULL);
 
     if (ret < 0) {
         flb_plg_warn(ctx->ins, "Could not parse response from %s; response=\n%s", 
@@ -1039,7 +1041,7 @@ static int get_task_metadata(struct flb_filter_ecs *ctx, char* short_id)
     }
 
     ret = flb_pack_json(c->resp.payload, c->resp.payload_size,
-                        &buffer, &size, &root_type);
+                        &buffer, &size, &root_type, NULL);
 
     if (ret < 0) {
         flb_plg_warn(ctx->ins, "Could not parse response from %s; response=\n%s", 
@@ -1441,19 +1443,9 @@ static int cb_ecs_filter(const void *data, size_t bytes,
                          struct flb_config *config)
 {
     struct flb_filter_ecs *ctx = context;
-    (void) f_ins;
-    (void) i_ins;
-    (void) config;
-    size_t off = 0;
     int i = 0;
     int ret;
-    int len;
-    struct flb_time tm;
-    int total_records;
     int check = FLB_FALSE;
-    msgpack_sbuffer tmp_sbuf;
-    msgpack_packer tmp_pck;
-    msgpack_unpacked result;
     msgpack_object  *obj;
     msgpack_object_kv *kv;
     struct mk_list *tmp;
@@ -1461,6 +1453,13 @@ static int cb_ecs_filter(const void *data, size_t bytes,
     struct flb_ecs_metadata_key *metadata_key;
     struct flb_ecs_metadata_buffer *metadata_buffer;
     flb_sds_t val;
+    struct flb_log_event_encoder log_encoder;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+
+    (void) f_ins;
+    (void) i_ins;
+    (void) config;
 
     /* First check that the static cluster metadata has been retrieved */
     if (ctx->has_cluster_metadata == FLB_FALSE) {
@@ -1496,49 +1495,49 @@ static int cb_ecs_filter(const void *data, size_t bytes,
 
     metadata_buffer->last_used_time = time(NULL);
 
-    /* Create temporary msgpack buffer */
-    msgpack_sbuffer_init(&tmp_sbuf);
-    msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
-    /* Iterate over each item */
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)
-           == MSGPACK_UNPACK_SUCCESS) {
-        /*
-         * Each record is a msgpack array [timestamp, map] of the
-         * timestamp and record map. We 'unpack' each record, and then re-pack
-         * it with the new fields added.
-         */
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
 
-        if (result.data.type != MSGPACK_OBJECT_ARRAY) {
-            flb_plg_error(ctx->ins, "cb_filter buffer wrong type, msgpack_type=%i",
-                          result.data.type);
-            continue;
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    ret = flb_log_event_encoder_init(&log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder initialization error : %d", ret);
+
+        flb_log_event_decoder_destroy(&log_decoder);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        obj = log_event.body;
+
+        ret = flb_log_event_encoder_begin_record(&log_encoder);
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_set_timestamp(
+                    &log_encoder, &log_event.timestamp);
         }
-
-        /* unpack the array of [timestamp, map] */
-        flb_time_pop_from_msgpack(&tm, &result, &obj);
-
-        /* obj should now be the record map */
-        if (obj->type != MSGPACK_OBJECT_MAP) {
-            flb_plg_error(ctx->ins, "Record wrong type, msgpack_type=%i",
-                          obj->type);
-            continue;
-        }
-
-        /* re-pack the array into a new buffer */
-        msgpack_pack_array(&tmp_pck, 2);
-        flb_time_append_to_msgpack(&tm, &tmp_pck, 0);
-
-        /* new record map size is old size + the new keys we will add */
-        total_records = obj->via.map.size + ctx->metadata_keys_len;
-        msgpack_pack_map(&tmp_pck, total_records);
 
         /* iterate through the old record map and add it to the new buffer */
         kv = obj->via.map.ptr;
-        for(i=0; i < obj->via.map.size; i++) {
-            msgpack_pack_object(&tmp_pck, (kv+i)->key);
-            msgpack_pack_object(&tmp_pck, (kv+i)->val);
+        for(i=0;
+            i < obj->via.map.size &&
+            ret == FLB_EVENT_ENCODER_SUCCESS;
+            i++) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &log_encoder,
+                    FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].key),
+                    FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].val));
         }
 
         /* append new keys */
@@ -1549,33 +1548,67 @@ static int cb_ecs_filter(const void *data, size_t bytes,
             if (!val) {
                 flb_plg_info(ctx->ins, "Translation failed for %s : %s",
                              metadata_key->key, metadata_key->template);
-                msgpack_unpacked_destroy(&result);
-                msgpack_sbuffer_destroy(&tmp_sbuf);
+
+                flb_log_event_decoder_destroy(&log_decoder);
+                flb_log_event_encoder_destroy(&log_encoder);
+
                 return FLB_FILTER_NOTOUCH;
             }
-            len = flb_sds_len(metadata_key->key);
-            msgpack_pack_str(&tmp_pck, len);
-            msgpack_pack_str_body(&tmp_pck,
-                                  metadata_key->key,
-                                  len);
-            len = flb_sds_len(val);
-            msgpack_pack_str(&tmp_pck, len);
-            msgpack_pack_str_body(&tmp_pck,
-                                  val,
-                                  len);
+
+            ret = flb_log_event_encoder_append_body_values(
+                    &log_encoder,
+                    FLB_LOG_EVENT_STRING_VALUE(metadata_key->key,
+                                               flb_sds_len(metadata_key->key)),
+                    FLB_LOG_EVENT_STRING_VALUE(val, flb_sds_len(val)));
+
+            if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                flb_plg_info(ctx->ins,
+                             "Metadata appendage failed for %.*s",
+                             (int) flb_sds_len(metadata_key->key),
+                             metadata_key->key);
+
+                flb_log_event_decoder_destroy(&log_decoder);
+                flb_log_event_encoder_destroy(&log_encoder);
+
+                return FLB_FILTER_NOTOUCH;
+            }
+
             flb_sds_destroy(val);
         }
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            flb_log_event_encoder_commit_record(&log_encoder);
+        }
     }
-    msgpack_unpacked_destroy(&result);
 
     if (ctx->cluster_metadata_only == FLB_FALSE) {
         clean_old_metadata_buffers(ctx);
     }
 
-    /* link new buffers */
-    *out_buf  = tmp_sbuf.data;
-    *out_size = tmp_sbuf.size;
-    return FLB_FILTER_MODIFIED;
+    if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA &&
+        log_decoder.offset == bytes) {
+        ret = FLB_EVENT_ENCODER_SUCCESS;
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        *out_buf  = log_encoder.output_buffer;
+        *out_size = log_encoder.output_length;
+
+        ret = FLB_FILTER_MODIFIED;
+
+        flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
+    }
+    else {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder error : %d", ret);
+
+        ret = FLB_FILTER_NOTOUCH;
+    }
+
+    flb_log_event_decoder_destroy(&log_decoder);
+    flb_log_event_encoder_destroy(&log_encoder);
+
+    return ret;
 }
 
 static void flb_ecs_metadata_key_destroy(struct flb_ecs_metadata_key *metadata_key)
