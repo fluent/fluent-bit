@@ -134,7 +134,7 @@ int flb_time_diff(struct flb_time *time1,
         }
         else if(result->tm.tv_sec == 0){
             /* underflow */
-            return -1;
+            return -2;
         }
         else{
             result->tm.tv_nsec = ONESEC_IN_NSEC
@@ -144,7 +144,7 @@ int flb_time_diff(struct flb_time *time1,
     }
     else {
         /* underflow */
-        return -1;
+        return -3;
     }
     return 0;
 }
@@ -301,11 +301,15 @@ int flb_time_pop_from_mpack(struct flb_time *time, mpack_reader_t *reader)
     uint32_t tmp;
     char extbuf[8];
     size_t ext_len;
+    int header_detected;
 
     if (time == NULL) {
         return -1;
     }
 
+    header_detected = FLB_FALSE;
+
+    /* consume the record array */
     tag = mpack_read_tag(reader);
 
     if (mpack_reader_error(reader) != mpack_ok ||
@@ -314,7 +318,30 @@ int flb_time_pop_from_mpack(struct flb_time *time, mpack_reader_t *reader)
         return -1;
     }
 
+    /* consume the header array or the timestamp
+     * depending on the chunk encoding
+     */
     tag = mpack_read_tag(reader);
+
+    if (mpack_reader_error(reader) != mpack_ok) {
+        return -1;
+    }
+
+    if (mpack_tag_type(&tag) == mpack_type_array) {
+        if(mpack_tag_array_count(&tag) != 2) {
+            return -1;
+        }
+
+        /* consume the timestamp element */
+        tag = mpack_read_tag(reader);
+
+        if (mpack_reader_error(reader) != mpack_ok) {
+            return -1;
+        }
+
+        header_detected = FLB_TRUE;
+    }
+
     switch (mpack_tag_type(&tag)) {
         case mpack_type_int:
             i = mpack_tag_int_value(&tag);
@@ -355,6 +382,12 @@ int flb_time_pop_from_mpack(struct flb_time *time, mpack_reader_t *reader)
             return -1;
     }
 
+    /* discard the metadata map if present */
+
+    if (header_detected) {
+        mpack_discard(reader);
+    }
+
     return 0;
 }
 
@@ -373,6 +406,15 @@ int flb_time_pop_from_msgpack(struct flb_time *time, msgpack_unpacked *upk,
     }
 
     obj = upk->data.via.array.ptr[0];
+
+    if (obj.type == MSGPACK_OBJECT_ARRAY) {
+        if (obj.via.array.size != 2) {
+            return -1;
+        }
+
+        obj = obj.via.array.ptr[0];
+    }
+
     *map = &upk->data.via.array.ptr[1];
 
     ret = flb_time_msgpack_to_time(time, &obj);
