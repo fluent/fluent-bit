@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 /* Default collection time: every 1 second (0 nanoseconds) */
 #define DEFAULT_INTERVAL_SEC    "1"
@@ -76,18 +77,13 @@ struct flb_cpu {
     int interval_nsec;  /* interval collection time (Nanosecond) */
     struct cpu_stats cstats;
     struct flb_input_instance *ins;
+    struct flb_log_event_encoder log_encoder;
 };
-
 
 #define CPU_KEY_FORMAT(s, key, i)                                   \
     s->k_##key.length = snprintf(s->k_##key.name,                   \
                                  IN_CPU_KEY_LEN,                    \
                                  "cpu%i.p_%s", i - 1, #key)
-
-#define CPU_PACK_SNAP(s, key)                                           \
-    msgpack_pack_str(&mp_pck, s->k_##key.length);                       \
-    msgpack_pack_str_body(&mp_pck, s->k_##key.name, s->k_##key.length); \
-    msgpack_pack_double(&mp_pck, s->p_##key)
 
 #define ULL_ABS(a, b)  (a > b) ? a - b : b - a
 
