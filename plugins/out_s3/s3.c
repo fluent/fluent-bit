@@ -2143,7 +2143,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
         while ((ret = flb_log_event_decoder_next(
                         &log_decoder,
                         &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
-            if (&log_event.timestamp.tm.tv_sec != 0) {
+            if (log_event.timestamp.tm.tv_sec != 0) {
                 file_first_log_time = log_event.timestamp.tm.tv_sec;
                 break;
             }
