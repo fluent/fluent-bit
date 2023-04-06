@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
@@ -41,6 +42,7 @@ struct flb_in_thermal_config {
     flb_sds_t type_rgx; /* optional filter by type */
 #endif
     struct flb_input_instance *ins;
+    struct flb_log_event_encoder *log_encoder;
 };
 
 int in_thermal_pre_run(void *in_context, struct flb_config *config);
