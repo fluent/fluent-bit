@@ -24,12 +24,9 @@
  * as soon as the program starts if enabled.
  */
 
-#ifdef _WIN32
+#ifndef _WIN64
 CRITICAL_SECTION atomic_operation_lock;
 static int       atomic_operation_system_initialized = 0;
-#endif
-
-#ifdef _WIN32
 
 int cmt_atomic_initialize()
 {
