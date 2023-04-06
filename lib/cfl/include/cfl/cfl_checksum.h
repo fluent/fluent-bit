@@ -17,22 +17,11 @@
  *  limitations under the License.
  */
 
-#ifndef CFL_HASH_H
-#define CFL_HASH_H
-
-/* NOTE: this is just a wrapper for naming convention */
+#ifndef CFL_CHECKSUM_H
+#define CFL_CHECKSUM_H
 
 #include <stdint.h>
-#include "xxh3.h"
 
-#define cfl_hash_64bits_t      XXH64_hash_t
-#define cfl_hash_state_t       XXH3_state_t
-#define cfl_hash_64bits_reset  XXH3_64bits_reset
-#define cfl_hash_64bits_update XXH3_64bits_update
-#define cfl_hash_64bits_digest XXH3_64bits_digest
-#define cfl_hash_64bits        XXH3_64bits
-
-#define cfl_hash_128bits_t     XXH128_hash_t
-#define cfl_hash_128bits       XXH3_128bits
+uint32_t cfl_checksum_crc32c(unsigned char *buffer, size_t length);
 
 #endif
