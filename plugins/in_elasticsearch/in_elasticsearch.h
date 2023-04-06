@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #include <monkey/monkey.h>
 
@@ -46,6 +47,8 @@ struct flb_in_elasticsearch {
 
     struct flb_downstream *downstream; /* Client manager */
     struct mk_list connections;        /* linked list of connections */
+
+    struct flb_log_event_encoder log_encoder;
 
     struct mk_server *server;
     struct flb_input_instance *ins;
