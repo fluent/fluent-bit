@@ -294,48 +294,62 @@ static int get_local_pod_info(struct flb_kube *ctx)
  * If not, fall back to API. This is primarily for diagnostic purposes,
  * e.g. debugging new parsers.
  */
-static int get_meta_file_info(struct flb_kube *ctx, const char *namespace,
-                              const char *podname, char **buffer, size_t *size,
+static int get_meta_file_info(struct flb_kube *ctx, const char *namespace, const char *podname,
+                              const char *pod_uid, char **buffer, size_t *size,
                               int *root_type) {
 
     int fd = -1;
     char *payload = NULL;
     size_t payload_size = 0;
     struct stat sb;
+    int meta_found = FLB_FALSE;
     int packed = -1;
     int ret;
     char uri[1024];
 
-    if (ctx->meta_preload_cache_dir && namespace && podname) {
-
-        ret = snprintf(uri, sizeof(uri) - 1, "%s/%s_%s.meta",
-                       ctx->meta_preload_cache_dir, namespace, podname);
-        if (ret > 0) {
-            fd = open(uri, O_RDONLY, 0);
-            if (fd != -1) {
-                if (fstat(fd, &sb) == 0) {
-                    payload = flb_malloc(sb.st_size);
-                    if (!payload) {
-                        flb_errno();
-                    }
-                    else {
-                        ret = read(fd, payload, sb.st_size);
-                        if (ret == sb.st_size) {
-                            payload_size = ret;
+    if (ctx->meta_preload_cache_dir) {	
+        if (namespace && podname) {
+            flb_plg_debug(ctx->ins,"namespace %s  pod name=%s",
+                namespace, podname);
+            ret = snprintf(uri, sizeof(uri) - 1, "%s/%s-%s.meta", ctx->meta_preload_cache_dir, namespace, podname);
+            meta_found = FLB_TRUE;
+        } else if (pod_uid) {
+            flb_plg_debug(ctx->ins,"[filter_kube] PreloadCache (pod_uid=%s) cache_dir=%s",
+                pod_uid, ctx->meta_preload_cache_dir);
+            ret = snprintf(uri, sizeof(uri) - 1, "%s/%s.meta", ctx->meta_preload_cache_dir, pod_uid);
+            meta_found = FLB_TRUE;
+        } else {
+            // no matches, need to get out
+            meta_found = FLB_FALSE;
+        }
+        if (meta_found) {
+            if (ret > 0) {
+                fd = open(uri, O_RDONLY, 0);
+                if (fd != -1) {
+                    if (fstat(fd, &sb) == 0) {
+                        payload = flb_malloc(sb.st_size);
+                        if (!payload) {
+                            flb_errno();
+                        }
+                        else {
+                            ret = read(fd, payload, sb.st_size);
+                            if (ret == sb.st_size) {
+                                payload_size = ret;
+                            }
                         }
                     }
+                    close(fd);
                 }
-                close(fd);
             }
-        }
 
-        if (payload_size) {
-            packed = flb_pack_json(payload, payload_size,
-                                   buffer, size, root_type);
-        }
+            if (payload_size) {
+                packed = flb_pack_json(payload, payload_size,
+                                buffer, size, root_type);
+            }
 
-        if (payload) {
-            flb_free(payload);
+            if (payload) {
+                flb_free(payload);
+            }
         }
     }
 
@@ -415,7 +429,7 @@ static int get_meta_info_from_request(struct flb_kube *ctx,
 
 /* Gather pods list information from Kubelet */
 static int get_pods_from_kubelet(struct flb_kube *ctx,
-                                 const char *namespace, const char *podname,
+                                 const char *namespace, const char *podname, const char *pod_uid,
                                  char **out_buf, size_t *out_size)
 {
     int ret;
@@ -429,7 +443,7 @@ static int get_pods_from_kubelet(struct flb_kube *ctx,
     *out_size = 0;
 
     /* used for unit test purposes*/
-    packed = get_meta_file_info(ctx, namespace, podname, &buf, &size,
+    packed = get_meta_file_info(ctx, namespace, podname, pod_uid, &buf, &size,
                                 &root_type);
 
     if (packed == -1) {
@@ -457,7 +471,7 @@ static int get_pods_from_kubelet(struct flb_kube *ctx,
 
 /* Gather metadata from API Server */
 static int get_api_server_info(struct flb_kube *ctx,
-                               const char *namespace, const char *podname,
+                               const char *namespace, const char *podname, const char *pod_uid,
                                char **out_buf, size_t *out_size)
 {
     int ret;
@@ -471,7 +485,7 @@ static int get_api_server_info(struct flb_kube *ctx,
     *out_size = 0;
 
     /* used for unit test purposes*/
-    packed = get_meta_file_info(ctx, namespace, podname,
+    packed = get_meta_file_info(ctx, namespace, podname, pod_uid,
                                 &buf, &size, &root_type);
 
     if (packed == -1) {
@@ -535,6 +549,12 @@ static void cb_results(const char *name, const char *value,
              strcmp(name, "container_hash") == 0) {
         meta->container_hash = flb_strndup(value, vlen);
         meta->container_hash_len = vlen;
+        meta->fields++;
+    }
+    else if (meta->pod_uid == NULL &&
+             strcmp(name, "pod_uid") == 0) {
+        meta->pod_uid = flb_strndup(value, vlen);
+        meta->pod_uid_len = vlen;
         meta->fields++;
     }
 
@@ -917,6 +937,10 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
     int have_labels = -1;
     int have_annotations = -1;
     int have_nodename = -1;
+
+    int have_meta_name = -1;
+    int have_meta_namespace = -1;
+
     size_t off = 0;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
@@ -1010,10 +1034,12 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
 
                     char *ptr = (char *) k.via.str.ptr;
                     size_t size = k.via.str.size;
-
                     if (size == 3 && strncmp(ptr, "uid", 3) == 0) {
                         have_uid = i;
-                        map_size++;
+                        if (meta->pod_uid == NULL) {
+                            // only increase map if pod_uid not extracted already
+                            map_size++;
+                        }
                     }
                     else if (size == 6 && strncmp(ptr, "labels", 6) == 0) {
                         have_labels = i;
@@ -1028,8 +1054,17 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
                             map_size++;
                         }
                     }
+                    else if (size == 4 && strncmp(ptr, "name", 4) == 0) {
+                        have_meta_name = i;
+                        map_size++;
+                    }
 
-                    if (have_uid >= 0 && have_labels >= 0 && have_annotations >= 0) {
+                    else if (size == 9 && strncmp(ptr, "namespace", 9) == 0) {
+                        have_meta_namespace = i;
+                        map_size++;
+                    }
+
+                    if (have_uid >= 0 && have_labels >= 0 && have_annotations >= 0 && have_meta_name >= 0 && have_meta_namespace >= 0) {
                         break;
                     }
                 }
@@ -1039,8 +1074,10 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
             if (spec_found == FLB_TRUE) {
                 for (i = 0; i < spec_val.via.map.size; i++) {
                     k = spec_val.via.map.ptr[i].key;
-                    if (k.via.str.size == 8 &&
-                        strncmp(k.via.str.ptr, "nodeName", 8) == 0) {
+                    if ((k.via.str.size == 8 &&
+                        strncmp(k.via.str.ptr, "nodeName", 8) == 0) ||
+                        (k.via.str.size == 9 &&
+                        strncmp(k.via.str.ptr, "node_name", 9) == 0)) {
                         have_nodename = i;
                         map_size++;
                         break;
@@ -1065,17 +1102,34 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
         msgpack_pack_str(&mp_pck, meta->podname_len);
         msgpack_pack_str_body(&mp_pck, meta->podname, meta->podname_len);
     }
+    else if (have_meta_name >= 0) {
+        v = meta_val.via.map.ptr[have_meta_name].val;
+        msgpack_pack_str(&mp_pck, 8);
+        msgpack_pack_str_body(&mp_pck, "pod_name", 8);
+        ret = msgpack_pack_object(&mp_pck, v);
+    }
     if (meta->namespace != NULL) {
         msgpack_pack_str(&mp_pck, 14);
         msgpack_pack_str_body(&mp_pck, "namespace_name", 14);
         msgpack_pack_str(&mp_pck, meta->namespace_len);
         msgpack_pack_str_body(&mp_pck, meta->namespace, meta->namespace_len);
     }
+    else if (have_meta_namespace >= 0) {
+        v = meta_val.via.map.ptr[have_meta_namespace].val;
+        msgpack_pack_str(&mp_pck, 14);
+        msgpack_pack_str_body(&mp_pck, "namespace_name", 14);
+        msgpack_pack_object(&mp_pck, v);
+    }
 
     /* Append API Server content */
-    if (have_uid >= 0) {
+    if (meta->pod_uid != NULL) {
+        msgpack_pack_str(&mp_pck, 6);
+        msgpack_pack_str_body(&mp_pck, "pod_id", 6);
+        msgpack_pack_str(&mp_pck, meta->pod_uid_len);
+        msgpack_pack_str_body(&mp_pck, meta->pod_uid, meta->pod_uid_len);
+    }
+    else if (have_uid >= 0) {
         v = meta_val.via.map.ptr[have_uid].val;
-
         msgpack_pack_str(&mp_pck, 6);
         msgpack_pack_str_body(&mp_pck, "pod_id", 6);
         msgpack_pack_object(&mp_pck, v);
@@ -1316,6 +1370,19 @@ static inline int extract_meta(struct flb_kube *ctx,
         meta->cache_key[off] = '\0';
         meta->cache_key_len = off;
     }
+    else if (meta->pod_uid) {
+        n = meta->pod_uid_len + 1;
+        meta->cache_key = flb_malloc(n);
+        if (!meta->cache_key) {
+            flb_errno();
+            return -1;
+        }
+        /* Copy pod_uid */
+        memcpy(meta->cache_key, meta->pod_uid, meta->pod_uid_len);
+        off = meta->pod_uid_len;
+        meta->cache_key[off] = '\0';
+        meta->cache_key_len = off;
+    }
     else {
         meta->cache_key = NULL;
         meta->cache_key_len = 0;
@@ -1340,11 +1407,11 @@ static int get_and_merge_meta(struct flb_kube *ctx, struct flb_kube_meta *meta,
         return ret;
     }
     else if (ctx->use_kubelet) {
-        ret = get_pods_from_kubelet(ctx, meta->namespace, meta->podname,
+        ret = get_pods_from_kubelet(ctx, meta->namespace, meta->podname, meta->pod_uid,
                                     &api_buf, &api_size);
     }
     else {
-        ret = get_api_server_info(ctx, meta->namespace, meta->podname,
+        ret = get_api_server_info(ctx, meta->namespace, meta->podname, meta->pod_uid,
                                   &api_buf, &api_size);
     }
     if (ret == -1) {
@@ -1464,13 +1531,13 @@ int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config)
         if (ctx->use_kubelet) {
             /* Gather info from Kubelet */
             flb_plg_info(ctx->ins, "testing connectivity with Kubelet...");
-            ret = get_pods_from_kubelet(ctx, ctx->namespace, ctx->podname,
+            ret = get_pods_from_kubelet(ctx, ctx->namespace, ctx->podname, NULL,
                                               &meta_buf, &meta_size);
         }
         else {
             /* Gather info from API server */
             flb_plg_info(ctx->ins, "testing connectivity with API server...");
-            ret = get_api_server_info(ctx, ctx->namespace, ctx->podname,
+            ret = get_api_server_info(ctx, ctx->namespace, ctx->podname, NULL,
                                    &meta_buf, &meta_size);
         }
         if (ret == -1) {
@@ -1593,6 +1660,7 @@ int flb_kube_meta_get(struct flb_kube *ctx,
     *out_buf = hash_meta_buf;
     *out_size = off;
 
+
     /* A new unpack_next() call will succeed If annotation properties exists */
     ret = msgpack_unpack_next(&result, hash_meta_buf, hash_meta_size, &off);
     if (ret == MSGPACK_UNPACK_SUCCESS) {
@@ -1642,6 +1710,11 @@ int flb_kube_meta_release(struct flb_kube_meta *meta)
 
     if (meta->cache_key) {
         flb_free(meta->cache_key);
+    }
+
+    if (meta->pod_uid) {
+        flb_free(meta->pod_uid);
+        r++;
     }
 
     return r;
