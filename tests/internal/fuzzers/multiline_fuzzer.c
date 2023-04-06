@@ -103,20 +103,20 @@ void test_multiline_parser(msgpack_object *root2, int rand_val) {
             for (int j = 0; j < 5; j++) {
                 if (random_strings[i] != NULL && stream_ids[j] != NULL) {
                     /* stream_ids index by j, random_strings index by i */
-                    flb_ml_append(ml, stream_ids[j], FLB_ML_TYPE_TEXT, &tm2,
-                                  random_strings[i], strlen(random_strings[i]));
-                    flb_ml_append(ml, stream_ids[j],
-                                  flb_ml_type_lookup("endswith"), &tm2,
-                                  random_strings[i], strlen(random_strings[i]));
-                    flb_ml_append(ml, stream_ids[j],
-                                  flb_ml_type_lookup("regex"), &tm2,
-                                  random_strings[i], strlen(random_strings[i]));
-                    flb_ml_append(ml, stream_ids[j], flb_ml_type_lookup("eq"),
-                                  &tm2, random_strings[i],
-                                  strlen(random_strings[i]));
-                    flb_ml_append(ml, stream_ids[j],
-                                  flb_ml_type_lookup("equal"), &tm2,
-                                  random_strings[i], strlen(random_strings[i]));
+                    flb_ml_append_text(ml, stream_ids[j], FLB_ML_TYPE_TEXT, &tm2,
+                                       random_strings[i], strlen(random_strings[i]));
+                    flb_ml_append_text(ml, stream_ids[j],
+                                       flb_ml_type_lookup("endswith"), &tm2,
+                                       random_strings[i], strlen(random_strings[i]));
+                    flb_ml_append_text(ml, stream_ids[j],
+                                       flb_ml_type_lookup("regex"), &tm2,
+                                       random_strings[i], strlen(random_strings[i]));
+                    flb_ml_append_text(ml, stream_ids[j], flb_ml_type_lookup("eq"),
+                                       &tm2, random_strings[i],
+                                       strlen(random_strings[i]));
+                    flb_ml_append_text(ml, stream_ids[j],
+                                       flb_ml_type_lookup("equal"), &tm2,
+                                       random_strings[i], strlen(random_strings[i]));
                 }
             }
         }
