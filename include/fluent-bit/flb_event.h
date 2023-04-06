@@ -39,7 +39,7 @@
 struct flb_event_chunk {
     int type;               /* event type */
     flb_sds_t tag;          /* tag associated */
-    const void *data;       /* event content */
+    void *data;             /* event content */
     size_t size;            /* size of event */
     size_t total_events;    /* total number of serialized events */
 };
