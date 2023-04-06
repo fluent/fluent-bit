@@ -23,7 +23,6 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_pack.h>
-#include <fluent-bit/flb_log_event_debug.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 
 #include <cfl/cfl.h>
@@ -803,14 +802,10 @@ static int process_logs(struct flb_event_chunk *event_chunk,
     Opentelemetry__Proto__Logs__V1__LogRecord  *log_records;
     Opentelemetry__Proto__Common__V1__AnyValue *log_object;
     struct flb_log_event_decoder               *decoder;
-    msgpack_unpacked                            result;
     struct flb_log_event                        event;
     size_t                                      index;
-    msgpack_object                             *obj;
-    size_t                                      off;
     struct opentelemetry_context               *ctx;
     int                                         res;
-    struct flb_time                             tm;
 
     ctx = (struct opentelemetry_context *) out_context;
 
@@ -840,7 +835,7 @@ static int process_logs(struct flb_event_chunk *event_chunk,
         log_record_list[index] = &log_records[index];
     }
 
-    decoder = flb_log_event_decoder_create(event_chunk->data,
+    decoder = flb_log_event_decoder_create((char *) event_chunk->data,
                                            event_chunk->size);
 
     if (decoder == NULL) {
