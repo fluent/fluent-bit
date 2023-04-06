@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_thread_storage.h>
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
 #include <fluent-bit/flb_mp.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 
 #include <ctype.h>
 #include <sys/stat.h>
@@ -644,7 +645,7 @@ static int read_label_map_path_file(struct flb_output_instance *ins, flb_sds_t p
         return -1;
     }
 
-    ret = flb_pack_json(buf, file_size, &msgp_buf, &ret_size, &root_type);
+    ret = flb_pack_json(buf, file_size, &msgp_buf, &ret_size, &root_type, NULL);
     if (ret < 0) {
         flb_plg_error(ins, "flb_pack_json failed");
         fclose(fp);
@@ -1349,14 +1350,17 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
                                       const void *data, size_t bytes,
                                       flb_sds_t *dynamic_tenant_id)
 {
-    int mp_ok = MSGPACK_UNPACK_SUCCESS;
-    size_t off = 0;
+    // int mp_ok = MSGPACK_UNPACK_SUCCESS;
+    // size_t off = 0;
     flb_sds_t json;
-    struct flb_time tms;
-    msgpack_unpacked result;
+    // struct flb_time tms;
+    // msgpack_unpacked result;
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
-    msgpack_object *obj;
+    // msgpack_object *obj;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    int ret;
 
     /*
      * Fluent Bit uses Loki API v1 to push records in JSON format, this
@@ -1377,8 +1381,16 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
      * }
      */
 
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return NULL;
+    }
+
     /* Initialize msgpack buffers */
-    msgpack_unpacked_init(&result);
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
@@ -1395,34 +1407,32 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
          * keys, so it's safe to put one main stream and attach all the
          * values.
          */
-         msgpack_pack_array(&mp_pck, 1);
+        msgpack_pack_array(&mp_pck, 1);
 
-         /* map content: streams['stream'] & streams['values'] */
-         msgpack_pack_map(&mp_pck, 2);
+        /* map content: streams['stream'] & streams['values'] */
+        msgpack_pack_map(&mp_pck, 2);
 
-         /* streams['stream'] */
-         msgpack_pack_str(&mp_pck, 6);
-         msgpack_pack_str_body(&mp_pck, "stream", 6);
+        /* streams['stream'] */
+        msgpack_pack_str(&mp_pck, 6);
+        msgpack_pack_str_body(&mp_pck, "stream", 6);
 
-         /* Pack stream labels */
-         pack_labels(ctx, &mp_pck, tag, tag_len, NULL);
+        /* Pack stream labels */
+        pack_labels(ctx, &mp_pck, tag, tag_len, NULL);
 
         /* streams['values'] */
-         msgpack_pack_str(&mp_pck, 6);
-         msgpack_pack_str_body(&mp_pck, "values", 6);
-         msgpack_pack_array(&mp_pck, total_records);
+        msgpack_pack_str(&mp_pck, 6);
+        msgpack_pack_str_body(&mp_pck, "values", 6);
+        msgpack_pack_array(&mp_pck, total_records);
 
-         /* Iterate each record and pack it */
-         while (msgpack_unpack_next(&result, data, bytes, &off) == mp_ok) {
-             /* Retrive timestamp of the record */
-             flb_time_pop_from_msgpack(&tms, &result, &obj);
+        while ((ret = flb_log_event_decoder_next(
+                        &log_decoder,
+                        &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+            msgpack_pack_array(&mp_pck, 2);
 
-             msgpack_pack_array(&mp_pck, 2);
-
-             /* Append the timestamp */
-             pack_timestamp(&mp_pck, &tms);
-             pack_record(ctx, &mp_pck, obj, dynamic_tenant_id);
-         }
+            /* Append the timestamp */
+            pack_timestamp(&mp_pck, &log_event.timestamp);
+            pack_record(ctx, &mp_pck, log_event.body, dynamic_tenant_id);
+        }
     }
     else {
         /*
@@ -1432,38 +1442,37 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
          */
         msgpack_pack_array(&mp_pck, total_records);
 
-         /* Iterate each record and pack it */
-         while (msgpack_unpack_next(&result, data, bytes, &off) == mp_ok) {
-             /* Retrive timestamp of the record */
-             flb_time_pop_from_msgpack(&tms, &result, &obj);
+        while ((ret = flb_log_event_decoder_next(
+                        &log_decoder,
+                        &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+            /* map content: streams['stream'] & streams['values'] */
+            msgpack_pack_map(&mp_pck, 2);
 
-             /* map content: streams['stream'] & streams['values'] */
-             msgpack_pack_map(&mp_pck, 2);
+            /* streams['stream'] */
+            msgpack_pack_str(&mp_pck, 6);
+            msgpack_pack_str_body(&mp_pck, "stream", 6);
 
-             /* streams['stream'] */
-             msgpack_pack_str(&mp_pck, 6);
-             msgpack_pack_str_body(&mp_pck, "stream", 6);
+            /* Pack stream labels */
+            pack_labels(ctx, &mp_pck, tag, tag_len, log_event.body);
 
-             /* Pack stream labels */
-             pack_labels(ctx, &mp_pck, tag, tag_len, obj);
+            /* streams['values'] */
+            msgpack_pack_str(&mp_pck, 6);
+            msgpack_pack_str_body(&mp_pck, "values", 6);
+            msgpack_pack_array(&mp_pck, 1);
 
-             /* streams['values'] */
-             msgpack_pack_str(&mp_pck, 6);
-             msgpack_pack_str_body(&mp_pck, "values", 6);
-             msgpack_pack_array(&mp_pck, 1);
+            msgpack_pack_array(&mp_pck, 2);
 
-             msgpack_pack_array(&mp_pck, 2);
-
-             /* Append the timestamp */
-             pack_timestamp(&mp_pck, &tms);
-             pack_record(ctx, &mp_pck, obj, dynamic_tenant_id);
-         }
+            /* Append the timestamp */
+            pack_timestamp(&mp_pck, &log_event.timestamp);
+            pack_record(ctx, &mp_pck, log_event.body, dynamic_tenant_id);
+        }
     }
+
+    flb_log_event_decoder_destroy(&log_decoder);
 
     json = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
 
     msgpack_sbuffer_destroy(&mp_sbuf);
-    msgpack_unpacked_destroy(&result);
 
     return json;
 }
