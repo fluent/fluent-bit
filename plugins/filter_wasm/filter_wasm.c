@@ -26,6 +26,8 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 #include <msgpack.h>
 
 #include <stdio.h>
@@ -46,9 +48,6 @@ static int cb_wasm_filter(const void *data, size_t bytes,
     int ret;
     char *ret_val = NULL;
     char *buf = NULL;
-    (void) f_ins;
-    (void) i_ins;
-    (void) config;
 
     size_t off = 0;
     size_t last_off = 0;
@@ -58,55 +57,63 @@ static int cb_wasm_filter(const void *data, size_t bytes,
     int root_type;
     struct flb_wasm *wasm = NULL;
 
-    msgpack_object *p;
-    msgpack_unpacked result;
-    msgpack_object root;
-    msgpack_sbuffer tmp_sbuf;
-    msgpack_packer tmp_pck;
-
-    struct flb_time t;
     struct flb_filter_wasm *ctx = filter_context;
+    struct flb_log_event_encoder log_encoder;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+
+    (void) f_ins;
+    (void) i_ins;
+    (void) config;
+
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    ret = flb_log_event_encoder_init(&log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder initialization error : %d", ret);
+
+        flb_log_event_decoder_destroy(&log_decoder);
+
+        return FLB_FILTER_NOTOUCH;
+    }
 
     wasm = flb_wasm_instantiate(config, ctx->wasm_path, ctx->accessible_dir_list, -1, -1, -1);
     if (wasm == NULL) {
         flb_plg_debug(ctx->ins, "instantiate wasm [%s] failed", ctx->wasm_path);
         goto on_error;
     }
-    ctx->wasm = wasm;
 
-    /* Create temporary msgpack buffer */
-    msgpack_sbuffer_init(&tmp_sbuf);
-    msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
-
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        root = result.data;
-        if (root.type != MSGPACK_OBJECT_ARRAY) {
-            continue;
-        }
-
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        off = log_decoder.offset;
         alloc_size = (off - last_off) + 128; /* JSON is larger than msgpack */
         last_off = off;
 
-        /* Get timestamp */
-        flb_time_pop_from_msgpack(&t, &result, &p);
-
         /* Encode as JSON from msgpack */
-        buf = flb_msgpack_to_json_str(alloc_size, p);
+        buf = flb_msgpack_to_json_str(alloc_size, log_event.body);
 
         if (buf) {
             /* Execute WASM program */
-            ret_val = flb_wasm_call_function_format_json(ctx->wasm, ctx->wasm_function_name,
+            ret_val = flb_wasm_call_function_format_json(wasm, ctx->wasm_function_name,
                                                          tag, tag_len,
-                                                         t,
+                                                         log_event.timestamp,
                                                          buf, strlen(buf));
 
             flb_free(buf);
         }
         else {
             flb_plg_error(ctx->ins, "encode as JSON from msgpack is failed");
-            msgpack_sbuffer_destroy(&tmp_sbuf);
-            msgpack_unpacked_destroy(&result);
 
             goto on_error;
         }
@@ -116,22 +123,46 @@ static int cb_wasm_filter(const void *data, size_t bytes,
             continue;
         }
 
-        /* main array */
-        msgpack_pack_array(&tmp_pck, 2);
+        ret = flb_log_event_encoder_begin_record(&log_encoder);
 
-        /* repack original flb_time */
-        flb_time_append_to_msgpack(&t, &tmp_pck, 0);
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_set_timestamp(
+                    &log_encoder, &log_event.timestamp);
+        }
 
-        /* Convert JSON payload to msgpack */
-        ret = flb_pack_json(ret_val, strlen(ret_val),
-                            &json_buf, &json_size, &root_type);
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_set_metadata_from_msgpack_object(
+                    &log_encoder,
+                    log_event.metadata);
+        }
 
-        if (ret == 0 && root_type == JSMN_OBJECT) {
-            /* JSON found, pack it msgpack representation */
-            msgpack_sbuffer_write(&tmp_sbuf, json_buf, json_size);
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            /* Convert JSON payload to msgpack */
+            ret = flb_pack_json(ret_val, strlen(ret_val),
+                                &json_buf, &json_size, &root_type, NULL);
+
+            if (ret == 0 && root_type == JSMN_OBJECT) {
+                /* JSON found, pack it msgpack representation */
+                ret = flb_log_event_encoder_set_body_from_raw_msgpack(
+                        &log_encoder,
+                        json_buf,
+                        json_size);
+
+                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                    ret = flb_log_event_encoder_commit_record(&log_encoder);
+                }
+                else {
+                    flb_log_event_encoder_rollback_record(&log_encoder);
+                }
+            }
+            else {
+                flb_plg_error(ctx->ins, "invalid JSON format. ret: %d, buf: %s", ret, ret_val);
+
+                flb_log_event_encoder_rollback_record(&log_encoder);
+            }
         }
         else {
-            flb_plg_error(ctx->ins, "invalid JSON format. ret: %d, buf: %s", ret, ret_val);
+            flb_log_event_encoder_rollback_record(&log_encoder);
         }
 
         /* release 'ret_val' if it was allocated */
@@ -145,22 +176,25 @@ static int cb_wasm_filter(const void *data, size_t bytes,
         }
     }
 
-    msgpack_unpacked_destroy(&result);
-
     /* Teardown WASM context */
-    if (ctx->wasm != NULL) {
-        flb_wasm_destroy(ctx->wasm);
-    }
+    flb_wasm_destroy(wasm);
 
-    /* link new buffers */
-    *out_buf   = tmp_sbuf.data;
-    *out_bytes = tmp_sbuf.size;
+    *out_buf   = log_encoder.output_buffer;
+    *out_bytes = log_encoder.output_length;
+
+    flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
+
+    flb_log_event_decoder_destroy(&log_decoder);
+    flb_log_event_encoder_destroy(&log_encoder);
 
     return FLB_FILTER_MODIFIED;
 
 on_error:
-    if (ctx->wasm != NULL) {
-        flb_wasm_destroy(ctx->wasm);
+    flb_log_event_decoder_destroy(&log_decoder);
+    flb_log_event_encoder_destroy(&log_encoder);
+
+    if (wasm != NULL) {
+        flb_wasm_destroy(wasm);
     }
 
     return FLB_FILTER_NOTOUCH;
