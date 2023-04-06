@@ -263,52 +263,6 @@ static flb_sds_t tag_key(struct flb_in_elasticsearch *ctx, msgpack_object *map)
     return NULL;
 }
 
-static inline void map_pack_each(msgpack_packer *packer,
-                                 msgpack_object *map)
-{
-    int i;
-    msgpack_object *key;
-
-    for (i = 0; i < map->via.map.size; i++) {
-        key = &map->via.map.ptr[i].key;
-        msgpack_pack_object(packer, *key);
-        msgpack_pack_object(packer, map->via.map.ptr[i].val);
-    }
-}
-
-static int count_map_elements(struct flb_in_elasticsearch *ctx, char *buf, size_t size, int idx)
-{
-    msgpack_unpacked result;
-    int index = 0;
-    int map_num = 0;
-    msgpack_object *obj;
-    size_t off = 0;
-
-    msgpack_unpacked_init(&result);
-
-    /* Iterate each item to know map number */
-    while (msgpack_unpack_next(&result, buf, size, &off) == MSGPACK_UNPACK_SUCCESS) {
-        if (idx >= index) {
-            index++;
-            continue;
-        }
-
-        if (result.data.type == MSGPACK_OBJECT_MAP) {
-            obj = &result.data;
-            map_num = obj->via.map.size;
-            break;
-        }
-        else if (result.data.type == MSGPACK_OBJECT_ARRAY) {
-            obj = &result.data;
-            map_num = obj->via.array.size;
-            break;
-        }
-    }
-    msgpack_unpacked_destroy(&result);
-
-    return map_num;
-}
-
 static int get_write_op(struct flb_in_elasticsearch *ctx, msgpack_object *map, flb_sds_t *out_write_op, size_t *out_key_size)
 {
     char *op_str = NULL;
@@ -351,14 +305,14 @@ static int status_buffer_avail(struct flb_in_elasticsearch *ctx, flb_sds_t bulk_
 
 static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char *buf, size_t size, flb_sds_t bulk_statuses)
 {
+    int ret;
     size_t off = 0;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
+    size_t map_copy_index;
+    msgpack_object_kv *map_copy_entry;
     msgpack_unpacked result;
     struct flb_time tm;
     msgpack_object *obj;
     flb_sds_t tag_from_record = NULL;
-    int map_num  = 0;
     int idx = 0;
     int cursor = 0;
     flb_sds_t write_op;
@@ -378,9 +332,6 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                 break;
             }
             if (idx % 2 == 0) {
-                msgpack_sbuffer_init(&mp_sbuf);
-                msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
                 op_ret = get_write_op(ctx, &result.data, &write_op, &op_str_size);
 
                 if (op_ret) {
@@ -402,7 +353,6 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                         idx += 1; /* Prepare to adjust to multiple of two
                                    * in the end of the loop.
                                    * Due to delete actions include only one line. */
-                        msgpack_sbuffer_destroy(&mp_sbuf);
                         flb_sds_destroy(write_op);
 
                         goto proceed;
@@ -411,7 +361,6 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                         flb_sds_cat(bulk_statuses, "{\"unknown\":{\"status\":400,\"result\":\"bad_request\"}}", 49);
                         error_op = FLB_TRUE;
 
-                        msgpack_sbuffer_destroy(&mp_sbuf);
                         flb_sds_destroy(write_op);
 
                         break;
@@ -425,43 +374,109 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                 }
 
                 if (error_op == FLB_FALSE) {
-                    msgpack_pack_array(&mp_pck, 2);
-                    flb_time_append_to_msgpack(&tm, &mp_pck, 0);
+                    flb_log_event_encoder_reset(&ctx->log_encoder);
 
-                    /* Prepare map for records */
-                    map_num = count_map_elements(ctx, buf, size, cursor);
-                    msgpack_pack_map(&mp_pck, map_num + 1);
+                    ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
 
-                    /* Pack meta */
-                    msgpack_pack_str(&mp_pck, strlen(ctx->meta_key));
-                    msgpack_pack_str_body(&mp_pck, ctx->meta_key, strlen(ctx->meta_key));
-                    msgpack_pack_object(&mp_pck, result.data);
+                    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                        flb_sds_destroy(write_op);
+                        flb_plg_error(ctx->ins, "event encoder error : %d", ret);
+                        error_op = FLB_TRUE;
+
+                        break;
+                    }
+
+                    ret = flb_log_event_encoder_set_timestamp(
+                            &ctx->log_encoder,
+                            &tm);
+
+                    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                        flb_sds_destroy(write_op);
+                        flb_plg_error(ctx->ins, "event encoder error : %d", ret);
+                        error_op = FLB_TRUE;
+
+                        break;
+                    }
+
+                    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                        ret = flb_log_event_encoder_append_body_values(
+                                &ctx->log_encoder,
+                                FLB_LOG_EVENT_CSTRING_VALUE((char *) ctx->meta_key),
+                                FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&result.data));
+                    }
+
+                    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                        flb_sds_destroy(write_op);
+                        flb_plg_error(ctx->ins, "event encoder error : %d", ret);
+                        error_op = FLB_TRUE;
+
+                        break;
+                    }
                 }
             }
             else if (idx % 2 == 1) {
                 if (error_op == FLB_FALSE) {
                     /* Pack body */
-                    map_pack_each(&mp_pck, &result.data);
+
+                    for (map_copy_index = 0 ;
+                         map_copy_index < result.data.via.map.size &&
+                         ret == FLB_EVENT_ENCODER_SUCCESS ;
+                         map_copy_index++) {
+                        map_copy_entry = &result.data.via.map.ptr[map_copy_index];
+
+                        ret = flb_log_event_encoder_append_body_values(
+                                &ctx->log_encoder,
+                                FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&map_copy_entry->key),
+                                FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&map_copy_entry->val));
+                    }
+
+                    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                        flb_plg_error(ctx->ins, "event encoder error : %d", ret);
+                        error_op = FLB_TRUE;
+
+                        break;
+                    }
+
+                    ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+
+                    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                        flb_plg_error(ctx->ins, "event encoder error : %d", ret);
+                        error_op = FLB_TRUE;
+
+                        break;
+                    }
 
                     tag_from_record = NULL;
+
                     if (ctx->tag_key) {
                         obj = &result.data;
                         tag_from_record = tag_key(ctx, obj);
                     }
 
                     if (tag_from_record) {
-                        flb_input_log_append(ctx->ins, tag_from_record, flb_sds_len(tag_from_record),
-                                             mp_sbuf.data, mp_sbuf.size);
+                        flb_input_log_append(ctx->ins,
+                                             tag_from_record,
+                                             flb_sds_len(tag_from_record),
+                                             ctx->log_encoder.output_buffer,
+                                             ctx->log_encoder.output_length);
+
                         flb_sds_destroy(tag_from_record);
                     }
                     else if (tag) {
-                        flb_input_log_append(ctx->ins, tag, flb_sds_len(tag),
-                                             mp_sbuf.data, mp_sbuf.size);
+                        flb_input_log_append(ctx->ins,
+                                             tag,
+                                             flb_sds_len(tag),
+                                             ctx->log_encoder.output_buffer,
+                                             ctx->log_encoder.output_length);
                     }
                     else {
                         /* use default plugin Tag (it internal name, e.g: http.0 */
-                        flb_input_log_append(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+                        flb_input_log_append(ctx->ins, NULL, 0,
+                                             ctx->log_encoder.output_buffer,
+                                             ctx->log_encoder.output_length);
                     }
+
+                    flb_log_event_encoder_reset(&ctx->log_encoder);
                 }
                 if (op_ret) {
                     if (flb_sds_cmp(write_op, "index", op_str_size) == 0) {
@@ -474,13 +489,11 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                         flb_sds_cat(bulk_statuses, "{\"status\":403,\"result\":\"forbidden\"}}", 36);
                     }
                     if (status_buffer_avail(ctx, bulk_statuses, 50) == FLB_FALSE) {
-                        msgpack_sbuffer_destroy(&mp_sbuf);
                         flb_sds_destroy(write_op);
 
                         break;
                     }
                 }
-                msgpack_sbuffer_destroy(&mp_sbuf);
                 flb_sds_destroy(write_op);
             }
 
@@ -503,7 +516,6 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
             /* On lacking of body case in non-error case, there is no
              * releasing memory code paths. We should proceed to do
              * it here. */
-            msgpack_sbuffer_destroy(&mp_sbuf);
             flb_sds_destroy(write_op);
         }
 
