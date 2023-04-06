@@ -27,7 +27,6 @@
 
 #include <fluent-bit/flb_input_metric.h>
 #include <fluent-bit/flb_input_trace.h>
-#include <fluent-bit/flb_log_event_debug.h>
 
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_decode_msgpack.h>
