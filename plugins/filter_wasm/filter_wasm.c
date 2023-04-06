@@ -179,25 +179,15 @@ static int cb_wasm_filter(const void *data, size_t bytes,
     /* Teardown WASM context */
     flb_wasm_destroy(wasm);
 
-    if (log_encoder.output_length > 0) {
-        *out_buf   = log_encoder.output_buffer;
-        *out_bytes = log_encoder.output_length;
+    *out_buf   = log_encoder.output_buffer;
+    *out_bytes = log_encoder.output_length;
 
-        ret = FLB_FILTER_MODIFIED;
-
-        flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
-    }
-    else {
-        flb_plg_error(ctx->ins,
-                      "Log event encoder error : %d", ret);
-
-        ret = FLB_FILTER_NOTOUCH;
-    }
+    flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
 
     flb_log_event_decoder_destroy(&log_decoder);
     flb_log_event_encoder_destroy(&log_encoder);
 
-    return ret;
+    return FLB_FILTER_MODIFIED;
 
 on_error:
     flb_log_event_decoder_destroy(&log_decoder);

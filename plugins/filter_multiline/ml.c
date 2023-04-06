@@ -722,9 +722,6 @@ pack_non_partial:
             flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
         }
         else {
-            flb_plg_error(ctx->ins,
-                          "Log event encoder error : %d", ret);
-
             ret = FLB_FILTER_NOTOUCH;
         }
 

@@ -253,6 +253,16 @@ struct split_message_packer *ml_create_packer(const char *tag, char *input_name,
         return NULL;
     }
 
+    ret = flb_log_event_encoder_begin_record(&packer->log_encoder);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_error("[partial message concat] Log event encoder error : %d", ret);
+
+        ml_split_message_packer_destroy(packer);
+
+        return NULL;
+    }
+
     /* write all of the keys except the split one and the partial metadata */
     ret = flb_log_event_encoder_set_timestamp(
             &packer->log_encoder, tm);
@@ -355,8 +365,6 @@ int ml_split_message_packer_write(struct split_message_packer *packer,
         return -1;
     }
 
-
-
     flb_sds_cat_safe(&packer->buf, val_str, val_str_size);
     packer->last_write_time = ml_current_timestamp();
 
@@ -368,6 +376,8 @@ void ml_split_message_packer_complete(struct split_message_packer *packer)
     flb_log_event_encoder_append_body_string(&packer->log_encoder,
                                              packer->buf,
                                              flb_sds_len(packer->buf));
+
+    flb_log_event_encoder_commit_record(&packer->log_encoder);
 }
 
 void ml_append_complete_record(struct split_message_packer *packer,
@@ -420,6 +430,11 @@ void ml_append_complete_record(struct split_message_packer *packer,
 
             break;
         }
+    }
+
+    if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA &&
+        log_decoder.offset == packer->log_encoder.output_length) {
+        ret = FLB_EVENT_ENCODER_SUCCESS;
     }
 
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
