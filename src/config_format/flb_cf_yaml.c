@@ -1064,6 +1064,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             s->val = NULL;
             break;
         case YAML_SEQUENCE_START_EVENT: /* start a new group */
+            if (strcmp(s->key, "processors") == 0) {
+                yaml_error_event(ctx, s, event);
+                return YAML_FAILURE;
+            }
             s->state = STATE_GROUP_KEY;
             s->cf_group = flb_cf_group_create(cf, s->cf_section,
                                               s->key, flb_sds_len(s->key));
