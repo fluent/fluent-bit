@@ -21,6 +21,7 @@
 #define FLB_IN_COLLECTD_H
 
 #include <fluent-bit/flb_input_plugin.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 struct flb_in_collectd_config {
     char *buf;
@@ -36,6 +37,7 @@ struct flb_in_collectd_config {
 
     flb_sds_t types_db;
     struct mk_list *tdb;
+    struct flb_log_event_encoder log_encoder;
 
     /* Plugin input instance */
     struct flb_input_instance *ins;
