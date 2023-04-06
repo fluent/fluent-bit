@@ -123,6 +123,27 @@ void flb_log_event_encoder_claim_internal_buffer_ownership(
     }
 }
 
+int flb_log_event_encoder_emit_raw_record(struct flb_log_event_encoder *context,
+                                          char *buffer,
+                                          size_t length)
+{
+    int result;
+
+    result = msgpack_pack_str_body(&context->packer, buffer, length);
+
+    if (result != 0) {
+        result = FLB_EVENT_ENCODER_ERROR_SERIALIZATION_FAILURE;
+    }
+    else {
+        result = FLB_EVENT_ENCODER_SUCCESS;
+    }
+
+    flb_log_event_encoder_update_internal_state(context);
+    flb_log_event_encoder_reset_record(context);
+
+    return result;
+}
+
 int flb_log_event_encoder_emit_record(struct flb_log_event_encoder *context)
 {
     int result;
