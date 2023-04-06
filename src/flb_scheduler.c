@@ -554,7 +554,7 @@ struct flb_sched *flb_sched_create(struct flb_config *config,
     event->status = MK_EVENT_NONE;
 
     /* Create the frame timer */
-    fd = mk_event_timeout_create(evl, FLB_SCHED_REQUEST_FRAME, 0,
+    fd = mk_event_timeout_create(sched->evl, FLB_SCHED_REQUEST_FRAME, 0,
                                  event);
     event->priority = FLB_ENGINE_PRIORITY_CB_SCHED;
     if (fd == -1) {

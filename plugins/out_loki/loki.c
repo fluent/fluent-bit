@@ -1414,6 +1414,14 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
 
          /* Iterate each record and pack it */
          while (msgpack_unpack_next(&result, data, bytes, &off) == mp_ok) {
+             if (result.data.type != MSGPACK_OBJECT_ARRAY) {
+                 continue;
+             }
+
+             if (result.data.via.array.size != 2) {
+                 continue;
+             }
+
              /* Retrive timestamp of the record */
              flb_time_pop_from_msgpack(&tms, &result, &obj);
 
@@ -1434,6 +1442,14 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
 
          /* Iterate each record and pack it */
          while (msgpack_unpack_next(&result, data, bytes, &off) == mp_ok) {
+             if (result.data.type != MSGPACK_OBJECT_ARRAY) {
+                 continue;
+             }
+
+             if (result.data.via.array.size != 2) {
+                 continue;
+             }
+
              /* Retrive timestamp of the record */
              flb_time_pop_from_msgpack(&tms, &result, &obj);
 

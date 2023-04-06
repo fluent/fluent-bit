@@ -321,16 +321,15 @@ int flb_log_worker_init(struct flb_worker *worker)
     ret = mk_event_add(log->evl, worker->log[0],
                        FLB_LOG_EVENT, MK_EVENT_READ, &worker->event);
     if (ret == -1) {
-        close(worker->log[0]);
-        close(worker->log[1]);
+        flb_pipe_destroy(worker->log);
         return -1;
     }
 
     /* Log cache to reduce noise */
     cache = flb_log_cache_create(10, FLB_LOG_CACHE_ENTRIES);
     if (!cache) {
-        close(worker->log[0]);
-        close(worker->log[1]);
+        mk_event_loop_destroy(log->evl);
+        flb_pipe_destroy(worker->log);
         return -1;
     }
     worker->log_cache = cache;
@@ -429,6 +428,7 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
                        FLB_LOG_MNG, MK_EVENT_READ, &log->event);
     if (ret == -1) {
         fprintf(stderr, "[log] could not register event\n");
+        flb_pipe_destroy(log->ch_mng);
         mk_event_loop_destroy(log->evl);
         flb_free(log);
         config->log = NULL;
@@ -443,6 +443,7 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
     worker = flb_worker_context_create(NULL, NULL, config);
     if (!worker) {
         flb_errno();
+        flb_pipe_destroy(log->ch_mng);
         mk_event_loop_destroy(log->evl);
         flb_free(log);
         config->log = NULL;
@@ -455,6 +456,7 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
     ret = flb_log_worker_init(worker);
     if (ret == -1) {
         flb_errno();
+        flb_pipe_destroy(log->ch_mng);
         mk_event_loop_destroy(log->evl);
         flb_free(log);
         config->log = NULL;
@@ -476,6 +478,7 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
     ret = flb_worker_create(log_worker_collector, log, &log->tid, config);
     if (ret == -1) {
         pthread_mutex_unlock(&log->pth_mutex);
+        flb_pipe_destroy(log->ch_mng);
         mk_event_loop_destroy(log->evl);
         flb_free(log->worker);
         flb_free(log);
@@ -689,6 +692,7 @@ int flb_log_destroy(struct flb_log *log, struct flb_config *config)
     if (log->worker->log_cache) {
         flb_log_cache_destroy(log->worker->log_cache);
     }
+    flb_pipe_destroy(log->worker->log);
     flb_free(log->worker);
     flb_free(log);
 
