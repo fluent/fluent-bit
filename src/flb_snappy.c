@@ -20,9 +20,12 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
-#include <fluent-bit/flb_snappy.h>
-#include <fluent-bit/flb_log_event_debug.h>
+
+#include <cfl/cfl.h>
+#include <cfl/cfl_list.h>
 #include <cfl/cfl_checksum.h>
+
+#include <fluent-bit/flb_snappy.h>
 
 #include <snappy.h>
 
