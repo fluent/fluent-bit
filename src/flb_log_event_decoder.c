@@ -123,11 +123,15 @@ struct flb_log_event_decoder *flb_log_event_decoder_create(
 
 void flb_log_event_decoder_destroy(struct flb_log_event_decoder *context)
 {
+    int dynamically_allocated;
+
     if (context != NULL) {
         if (context->initialized) {
             msgpack_unpacked_destroy(&context->unpacked_empty_map);
             msgpack_unpacked_destroy(&context->unpacked_event);
         }
+
+        dynamically_allocated = context->dynamically_allocated;
 
         memset(context, 0, sizeof(struct flb_log_event_decoder));
 
@@ -139,7 +143,7 @@ void flb_log_event_decoder_destroy(struct flb_log_event_decoder *context)
          */
         context->initialized = FLB_FALSE;
 
-        if (context->dynamically_allocated) {
+        if (dynamically_allocated) {
             free(context);
         }
     }
