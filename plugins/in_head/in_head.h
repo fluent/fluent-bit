@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #include <msgpack.h>
 
@@ -47,6 +48,9 @@ struct flb_in_head_config {
 
     int          interval_sec;
     int          interval_nsec;
+
+    struct flb_log_event_encoder log_encoder;
+
     struct flb_input_instance *ins;
 };
 
