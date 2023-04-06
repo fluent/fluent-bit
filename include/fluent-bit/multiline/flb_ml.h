@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_pthread.h>
 
 /* Types available */
 #define FLB_ML_REGEX     1    /* pattern is a regular expression    */
@@ -101,6 +102,8 @@ struct flb_ml_stream_group {
     msgpack_packer mp_pck;    /* temporary msgpack packer              */
     struct flb_time mp_time;  /* multiline time parsed from first line */
 
+    pthread_mutex_t pth_mutex;
+
     struct mk_list _head;
 };
 
@@ -124,6 +127,8 @@ struct flb_ml_stream {
 
     /* reference to parent instance */
     struct flb_ml_parser_ins *parser;
+
+    pthread_mutex_t pth_mutex;
 
     struct mk_list _head;
 };
