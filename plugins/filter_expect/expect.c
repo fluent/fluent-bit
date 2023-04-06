@@ -24,7 +24,6 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_utils.h>
-#include <fluent-bit/flb_log_event_debug.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
