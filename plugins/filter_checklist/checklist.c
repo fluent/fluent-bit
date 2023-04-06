@@ -552,7 +552,7 @@ static int cb_checklist_filter(const void *data, size_t bytes,
                 /* append current record to new buffer */
                 ret = flb_log_event_encoder_emit_raw_record(
                         &log_encoder,
-                        data + pre,
+                        &((char *) data)[pre],
                         off - pre);
             }
         }
