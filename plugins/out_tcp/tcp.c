@@ -65,17 +65,17 @@ static int compose_payload(struct flb_out_tcp *ctx,
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
 
-    ret = flb_log_event_decoder_init(&log_decoder, (char *) in_data, in_size);
-
-    if (ret != FLB_EVENT_DECODER_SUCCESS) {
-        flb_plg_error(ctx->ins,
-                      "Log event decoder initialization error : %d", ret);
-
-        return -1;
-    }
-
     /* raw message key by using a record accessor */
     if (ctx->ra_raw_message_key) {
+        ret = flb_log_event_decoder_init(&log_decoder, (char *) in_data, in_size);
+
+        if (ret != FLB_EVENT_DECODER_SUCCESS) {
+            flb_plg_error(ctx->ins,
+                          "Log event decoder initialization error : %d", ret);
+
+            return -1;
+        }
+
         buf = flb_sds_create_size(in_size);
         if (!buf) {
             flb_log_event_decoder_destroy(&log_decoder);

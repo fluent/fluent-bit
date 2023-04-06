@@ -92,7 +92,7 @@ void test_multiline_parser(msgpack_object *root2, int rand_val) {
             struct flb_time tm;
             flb_time_get(&tm);
             for (int i = 0; i < 4; i++) {
-                flb_ml_append_object(ml, stream_ids[i], &tm, root2);
+                flb_ml_append_object(ml, stream_ids[i], &tm, NULL, root2);
             }
         }
 

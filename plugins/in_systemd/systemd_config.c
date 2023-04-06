@@ -288,6 +288,12 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
 
 int flb_systemd_config_destroy(struct flb_systemd_config *ctx)
 {
+    if (ctx->log_encoder != NULL) {
+        flb_log_event_encoder_destroy(ctx->log_encoder);
+
+        ctx->log_encoder = NULL;
+    }
+
     /* Close context */
     if (ctx->j) {
         sd_journal_close(ctx->j);
