@@ -76,105 +76,105 @@
 #define FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR            -1
 
 #define FLB_LOG_EVENT_VALUE_LIST_TERMINATOR() \
-            FLB_LOG_EVENT_APPEND_TERMINATOR_VALUE_TYPE
+            (int) FLB_LOG_EVENT_APPEND_TERMINATOR_VALUE_TYPE
 
 #define FLB_LOG_EVENT_STRING_LENGTH_VALUE(length) \
-            FLB_LOG_EVENT_STRING_LENGTH_VALUE_TYPE, \
+            (int) FLB_LOG_EVENT_STRING_LENGTH_VALUE_TYPE, \
             (size_t) length
 
 #define FLB_LOG_EVENT_STRING_BODY_VALUE(buffer, length) \
-            FLB_LOG_EVENT_STRING_BODY_VALUE_TYPE, \
+            (int) FLB_LOG_EVENT_STRING_BODY_VALUE_TYPE, \
             (char *) buffer, \
             (size_t) length
 
 #define FLB_LOG_EVENT_BINARY_LENGTH_VALUE(length) \
-            FLB_LOG_EVENT_BINARY_LENGTH_VALUE_TYPE, \
-            length
+            (int) FLB_LOG_EVENT_BINARY_LENGTH_VALUE_TYPE, \
+            (size_t) length
 
 #define FLB_LOG_EVENT_BINARY_BODY_VALUE(buffer, length) \
-            FLB_LOG_EVENT_BINARY_BODY_VALUE_TYPE, \
+            (int) FLB_LOG_EVENT_BINARY_BODY_VALUE_TYPE, \
             (char *) buffer, \
             (size_t) length
 
 #define FLB_LOG_EVENT_EXT_LENGTH_VALUE(type_, length) \
-            FLB_LOG_EVENT_EXT_LENGTH_VALUE_TYPE, \
-            type_, \
+            (int) FLB_LOG_EVENT_EXT_LENGTH_VALUE_TYPE, \
+            (int) type_, \
             (size_t) length
 
 #define FLB_LOG_EVENT_EXT_BODY_VALUE(buffer, length) \
-            FLB_LOG_EVENT_EXT_BODY_VALUE_TYPE, \
+            (int) FLB_LOG_EVENT_EXT_BODY_VALUE_TYPE, \
             (char *) buffer, \
             (size_t) length
 
 #define FLB_LOG_EVENT_TIMESTAMP_VALUE(value) \
-            FLB_LOG_EVENT_TIMESTAMP_VALUE_TYPE, \
-            value
+            (int) FLB_LOG_EVENT_TIMESTAMP_VALUE_TYPE, \
+            (char *) value
 
 #define FLB_LOG_EVENT_LEGACY_TIMESTAMP_VALUE(value) \
-            FLB_LOG_EVENT_LEGACY_TIMESTAMP_VALUE_TYPE, \
-            value
+            (int) FLB_LOG_EVENT_LEGACY_TIMESTAMP_VALUE_TYPE, \
+            (char *) value
 
 #define FLB_LOG_EVENT_FORWARD_V1_TIMESTAMP_VALUE(value) \
-            FLB_LOG_EVENT_FORWARD_V1_TIMESTAMP_VALUE_TYPE, \
-            value
+            (int) FLB_LOG_EVENT_FORWARD_V1_TIMESTAMP_VALUE_TYPE, \
+            (char *) value
 
 #define FLB_LOG_EVENT_FLUENT_BIT_V1_TIMESTAMP_VALUE(value) \
-            FLB_LOG_EVENT_FLUENT_BIT_V1_TIMESTAMP_VALUE_TYPE, \
-            value
+            (int) FLB_LOG_EVENT_FLUENT_BIT_V1_TIMESTAMP_VALUE_TYPE, \
+            (char *) value
 
 #define FLB_LOG_EVENT_NULL_VALUE() \
-            FLB_LOG_EVENT_NULL_VALUE_TYPE
+            (int) FLB_LOG_EVENT_NULL_VALUE_TYPE
 
 #define FLB_LOG_EVENT_CHAR_VALUE(value) \
-            FLB_LOG_EVENT_CHAR_VALUE_TYPE, \
-            value
+            (int) FLB_LOG_EVENT_CHAR_VALUE_TYPE, \
+            (int) value
 
 #define FLB_LOG_EVENT_INT8_VALUE(value) \
-            FLB_LOG_EVENT_INT8_VALUE_TYPE, \
-            value
+            (int) FLB_LOG_EVENT_INT8_VALUE_TYPE, \
+            (int) value
 
 #define FLB_LOG_EVENT_INT16_VALUE(value) \
-            FLB_LOG_EVENT_INT16_VALUE_TYPE, \
-            value
+            (int) FLB_LOG_EVENT_INT16_VALUE_TYPE, \
+            (int) value
 
 #define FLB_LOG_EVENT_INT32_VALUE(value) \
-            FLB_LOG_EVENT_INT32_VALUE_TYPE, \
-            value
+            (int) FLB_LOG_EVENT_INT32_VALUE_TYPE, \
+            (int32_t) value
 
 #define FLB_LOG_EVENT_INT64_VALUE(value) \
-            FLB_LOG_EVENT_INT64_VALUE_TYPE, \
-            value
+            (int) FLB_LOG_EVENT_INT64_VALUE_TYPE, \
+            (int64_t) value
 
 #define FLB_LOG_EVENT_UINT8_VALUE(value) \
-            FLB_LOG_EVENT_UINT8_VALUE_TYPE, \
-            value
+            (int) FLB_LOG_EVENT_UINT8_VALUE_TYPE, \
+            (unsigned int) value
 
 #define FLB_LOG_EVENT_UINT16_VALUE(value) \
-            FLB_LOG_EVENT_UINT16_VALUE_TYPE, \
-            value
+            (int) FLB_LOG_EVENT_UINT16_VALUE_TYPE, \
+            (unsigned int) value
 
 #define FLB_LOG_EVENT_UINT32_VALUE(value) \
-            FLB_LOG_EVENT_UINT32_VALUE_TYPE, \
-            value
+            (int) FLB_LOG_EVENT_UINT32_VALUE_TYPE, \
+            (uint32_t) value
 
 #define FLB_LOG_EVENT_UINT64_VALUE(value) \
-            FLB_LOG_EVENT_UINT64_VALUE_TYPE, \
-            value
+            (int) FLB_LOG_EVENT_UINT64_VALUE_TYPE, \
+            (uint64_t) value
 
 #define FLB_LOG_EVENT_DOUBLE_VALUE(value) \
-            FLB_LOG_EVENT_DOUBLE_VALUE_TYPE, \
-            value
+            (int) FLB_LOG_EVENT_DOUBLE_VALUE_TYPE, \
+            (double) value
 
 #define FLB_LOG_EVENT_BOOLEAN_VALUE(value) \
-            FLB_LOG_EVENT_BOOLEAN_VALUE_TYPE, \
-            value
+            (int) FLB_LOG_EVENT_BOOLEAN_VALUE_TYPE, \
+            (int) value
 
 #define FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(value) \
-            FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE_TYPE, \
-            value
+            (int) FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE_TYPE, \
+            (char *) value
 
 #define FLB_LOG_EVENT_MSGPACK_RAW_VALUE(buffer, length) \
-            FLB_LOG_EVENT_MSGPACK_RAW_VALUE_TYPE, \
+            (int) FLB_LOG_EVENT_MSGPACK_RAW_VALUE_TYPE, \
             (char *) buffer, \
             (size_t) length
 

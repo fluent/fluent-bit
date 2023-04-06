@@ -643,12 +643,12 @@ int flb_log_event_encoder_append_values_unsafe(
         else if (value_type == FLB_LOG_EVENT_UINT8_VALUE_TYPE) {
             result = flb_log_event_encoder_append_uint8(context,
                         target_field,
-                        (uint8_t) va_arg(arguments, int));
+                        (uint8_t) va_arg(arguments, unsigned int));
         }
         else if (value_type == FLB_LOG_EVENT_UINT16_VALUE_TYPE) {
             result = flb_log_event_encoder_append_uint16(context,
                         target_field,
-                        (uint16_t) va_arg(arguments, int));
+                        (uint16_t) va_arg(arguments, unsigned int));
         }
         else if (value_type == FLB_LOG_EVENT_UINT32_VALUE_TYPE) {
             result = flb_log_event_encoder_append_uint32(context,
