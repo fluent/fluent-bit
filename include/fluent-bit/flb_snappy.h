@@ -21,11 +21,37 @@
 #define FLB_SNAPPY_H
 
 #include <fluent-bit/flb_info.h>
+#include <cfl/cfl_list.h>
+
 #include <stdio.h>
 
-int flb_snappy_compress(void *in_data, size_t in_len,
-                        void **out_data, size_t *out_len);
-int flb_snappy_uncompress(void *in_data, size_t in_len,
-                          void **out_data, size_t *out_size);
+#define FLB_SNAPPY_STREAM_IDENTIFIER_STRING     "sNaPpY"
+#define FLB_SNAPPY_FRAME_SIZE_LIMIT             65540
+
+#define FLB_SNAPPY_FRAME_TYPE_STREAM_IDENTIFIER         0xFF
+#define FLB_SNAPPY_FRAME_TYPE_COMPRESSED_DATA           0x00
+#define FLB_SNAPPY_FRAME_TYPE_UNCOMPRESSED_DATA         0x01
+#define FLB_SNAPPY_FRAME_TYPE_RESERVED_UNSKIPPABLE_BASE 0x02
+#define FLB_SNAPPY_FRAME_TYPE_RESERVED_UNSKIPPABLE_TOP  0x7F
+#define FLB_SNAPPY_FRAME_TYPE_RESERVED_SKIPPABLE_BASE   0x80
+#define FLB_SNAPPY_FRAME_TYPE_RESERVED_SKIPPABLE_TOP    0xFD
+#define FLB_SNAPPY_FRAME_TYPE_PADDING                   0xFE
+
+struct flb_snappy_data_chunk {
+    int             dynamically_allocated_buffer;
+    char           *buffer;
+    size_t          length;
+
+    struct cfl_list _head;
+};
+
+int flb_snappy_compress(char *in_data, size_t in_len,
+                        char **out_data, size_t *out_len);
+
+int flb_snappy_uncompress(char *in_data, size_t in_len,
+                          char **out_data, size_t *out_size);
+
+int flb_snappy_uncompress_framed_data(char *in_data, size_t in_len,
+                                      char **out_data, size_t *out_len);
 
 #endif
