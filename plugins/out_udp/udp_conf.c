@@ -29,7 +29,6 @@ struct flb_out_udp *flb_udp_conf_create(struct flb_output_instance *ins,
                                         struct flb_config *config)
 {
     int ret;
-    int io_flags = 0;
     const char *tmp;
     struct flb_out_udp *ctx = NULL;
 
@@ -49,12 +48,6 @@ struct flb_out_udp *flb_udp_conf_create(struct flb_output_instance *ins,
 
     /* Set default network configuration if not set */
     flb_output_net_default("127.0.0.1", 5170, ins);
-
-    io_flags = 0;
-
-    if (ins->host.ipv6 == FLB_TRUE) {
-        io_flags |= FLB_IO_IPV6;
-    }
 
     /* raw message key mode */
     if (ctx->raw_message_key) {
