@@ -46,6 +46,7 @@
 #define FLB_EXPORT MK_EXPORT
 
 #define FLB_DEBUG_TRACE() fprintf(stderr, "DEBUG TRACE : %s - %s - %d\n", __FILE__, __FUNCTION__, __LINE__);
+#define FLB_DEBUG_TRACE_PRINT(fmt, ...) fprintf(stderr, "DEBUG TRACE : %s - %s - %d - " fmt "\n", __FILE__, __FUNCTION__, __LINE__, __VA_ARGS__);
 
 #define FLB_DUMP_BINARY_SEQ(filename_format, buffer, length)    {                                                                            \
                                                                     static size_t flb_fn_idx = 0;                                            \
