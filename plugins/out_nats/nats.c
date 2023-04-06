@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_config_map.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 
 #include <stdio.h>
 #include <msgpack.h>
@@ -77,51 +78,48 @@ static int cb_nats_init(struct flb_output_instance *ins, struct flb_config *conf
     return 0;
 }
 
-static int msgpack_to_json(const void *data, size_t bytes,
+static int msgpack_to_json(struct flb_out_nats_config *ctx,
+                           const void *data, size_t bytes,
                            const char *tag, int tag_len,
                            char **out_json, size_t *out_size)
 {
     int i;
     int map_size;
-    size_t off = 0;
     size_t array_size = 0;
     flb_sds_t out_buf;
     msgpack_object map;
-    msgpack_object root;
     msgpack_object m_key;
     msgpack_object m_val;
-    msgpack_packer   mp_pck;
-    msgpack_sbuffer  mp_sbuf;
-    msgpack_unpacked result;
-    msgpack_object *obj;
-    struct flb_time tm;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    int ret;
 
-    /* Iterate the original buffer and perform adjustments */
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        array_size++;
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return -1;
     }
-    msgpack_unpacked_destroy(&result);
-    msgpack_unpacked_init(&result);
-    off = 0;
+
+    array_size = flb_mp_count(data, bytes);
 
     /* Convert MsgPack to JSON */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
     msgpack_pack_array(&mp_pck, array_size);
 
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        if (result.data.type != MSGPACK_OBJECT_ARRAY) {
-            continue;
-        }
-        root = result.data;
-
-        flb_time_pop_from_msgpack(&tm, &result, &obj);
-        map    = root.via.array.ptr[1];
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        map      = *log_event.body;
         map_size = map.via.map.size;
 
         msgpack_pack_array(&mp_pck, 2);
-        msgpack_pack_double(&mp_pck, flb_time_to_double(&tm));
+        msgpack_pack_double(&mp_pck, flb_time_to_double(&log_event.timestamp));
 
         msgpack_pack_map(&mp_pck, map_size + 1);
         msgpack_pack_str(&mp_pck, 3);
@@ -137,7 +135,8 @@ static int msgpack_to_json(const void *data, size_t bytes,
             msgpack_pack_object(&mp_pck, m_val);
         }
     }
-    msgpack_unpacked_destroy(&result);
+
+    flb_log_event_decoder_destroy(&log_decoder);
 
     out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
@@ -184,7 +183,8 @@ static void cb_nats_flush(struct flb_event_chunk *event_chunk,
     }
 
     /* Convert original Fluent Bit MsgPack format to JSON */
-    ret = msgpack_to_json(event_chunk->data, event_chunk->size,
+    ret = msgpack_to_json(ctx,
+                          event_chunk->data, event_chunk->size,
                           event_chunk->tag, flb_sds_len(event_chunk->tag),
                           &json_msg, &json_len);
     if (ret == -1) {
