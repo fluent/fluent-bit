@@ -308,6 +308,13 @@ static int cb_type_converter_filter(const void *data, size_t bytes,
             is_record_modified = FLB_TRUE;
         }
 
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            flb_log_event_encoder_commit_record(&log_encoder);
+        }
+        else {
+            flb_log_event_encoder_rollback_record(&log_encoder);
+        }
+
     }
     msgpack_sbuffer_destroy(&tmp_sbuf);
 

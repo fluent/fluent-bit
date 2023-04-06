@@ -80,12 +80,12 @@
 
 #define FLB_LOG_EVENT_STRING_LENGTH_VALUE(length) \
             FLB_LOG_EVENT_STRING_LENGTH_VALUE_TYPE, \
-            length
+            (size_t) length
 
 #define FLB_LOG_EVENT_STRING_BODY_VALUE(buffer, length) \
             FLB_LOG_EVENT_STRING_BODY_VALUE_TYPE, \
             (char *) buffer, \
-            length
+            (size_t) length
 
 #define FLB_LOG_EVENT_BINARY_LENGTH_VALUE(length) \
             FLB_LOG_EVENT_BINARY_LENGTH_VALUE_TYPE, \
@@ -94,17 +94,17 @@
 #define FLB_LOG_EVENT_BINARY_BODY_VALUE(buffer, length) \
             FLB_LOG_EVENT_BINARY_BODY_VALUE_TYPE, \
             (char *) buffer, \
-            length
+            (size_t) length
 
 #define FLB_LOG_EVENT_EXT_LENGTH_VALUE(type_, length) \
             FLB_LOG_EVENT_EXT_LENGTH_VALUE_TYPE, \
             type_, \
-            length
+            (size_t) length
 
 #define FLB_LOG_EVENT_EXT_BODY_VALUE(buffer, length) \
             FLB_LOG_EVENT_EXT_BODY_VALUE_TYPE, \
             (char *) buffer, \
-            length
+            (size_t) length
 
 #define FLB_LOG_EVENT_TIMESTAMP_VALUE(value) \
             FLB_LOG_EVENT_TIMESTAMP_VALUE_TYPE, \
@@ -175,8 +175,8 @@
 
 #define FLB_LOG_EVENT_MSGPACK_RAW_VALUE(buffer, length) \
             FLB_LOG_EVENT_MSGPACK_RAW_VALUE_TYPE, \
-            buffer, \
-            length
+            (char *) buffer, \
+            (size_t) length
 
 #define FLB_LOG_EVENT_STRING_VALUE(buffer, length) \
             FLB_LOG_EVENT_STRING_LENGTH_VALUE(length), \
