@@ -20,13 +20,10 @@
 #ifndef FLB_OUT_AZURE_LOGS_INGESTION_H
 #define FLB_OUT_AZURE_LOGS_INGESTION_H
 
-#define FLB_AZ_LI_API_VERSION          "?api-version=2021-11-01-preview"
+#define FLB_AZ_LI_API_VERSION          "api-version=2021-11-01-preview"
 #define FLB_AZ_LI_TIME_KEY             "@timestamp"
-#define FLB_AZ_LI_AUTH_SCOPE        "https://monitor.azure.com//.default"
-/* auth body needs client_id, client_secret and FLB_AZ_LI_AUTH_SCOPE */
-#define FLB_AZ_LI_AUTH_BODY_TMPLT   "client_id=%s&scope="FLB_AZ_LI_AUTH_SCOPE\
-                                    "&client_secret=%s&"\
-                                    "grant_type=client_credentials"
+// #define FLB_AZ_LI_AUTH_SCOPE        "https://monitor.azure.com//.default"
+#define FLB_AZ_LI_AUTH_SCOPE        "https://monitor.azure.com/.default"
 /* auth url needs tenant_id */
 #define FLB_AZ_LI_AUTH_URL_TMPLT    "https://login.microsoftonline.com/"\
                                     "%s/oauth2/v2.0/token"
@@ -51,15 +48,15 @@ struct flb_az_li {
     flb_sds_t dce_url;
     flb_sds_t dcr_id;
     flb_sds_t table_name;
-    /* TODO: Put current processing time in a time field: will generate if not NULL */
+    /* Put current processing time in a time field: will generate if not NULL */
     /* time_generated: on/off */
     int time_generated;
     /* records the time */
     flb_sds_t time_key;
 
-
     /* mangement auth */
     flb_sds_t auth_url;
+    flb_sds_t token;
     struct flb_oauth2 *u_auth;
     /* mutex for acquiring tokens */
     pthread_mutex_t token_mutex;

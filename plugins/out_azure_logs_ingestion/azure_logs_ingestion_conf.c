@@ -56,37 +56,37 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
 
     /* config: 'client_id' */
     if (!ctx->client_id) {
-        flb_plg_error(ctx->ins, "property 'client_id' is not defined");
+        flb_plg_error(ins, "property 'client_id' is not defined");
         flb_az_li_ctx_destroy(ctx);
         return NULL;
     }
     /* config: 'tenant_id' */
     if (!ctx->tenant_id) {
-        flb_plg_error(ctx->ins, "property 'tenant_id' is not defined");
+        flb_plg_error(ins, "property 'tenant_id' is not defined");
         flb_az_li_ctx_destroy(ctx);
         return NULL;
     }
     /* config: 'client_secret' */
     if (!ctx->client_secret) {
-        flb_plg_error(ctx->ins, "property 'client_secret' is not defined");
+        flb_plg_error(ins, "property 'client_secret' is not defined");
         flb_az_li_ctx_destroy(ctx);
         return NULL;
     }
     /* config: 'dce_url' */
     if (!ctx->dce_url) {
-        flb_plg_error(ctx->ins, "property 'dce_url' is not defined");
+        flb_plg_error(ins, "property 'dce_url' is not defined");
         flb_az_li_ctx_destroy(ctx);
         return NULL;
     }
     /* config: 'dcr_id' */
     if (!ctx->dcr_id) {
-        flb_plg_error(ctx->ins, "property 'dcr_id' is not defined");
+        flb_plg_error(ins, "property 'dcr_id' is not defined");
         flb_az_li_ctx_destroy(ctx);
         return NULL;
     }
     /* config: 'table_name' */
     if (!ctx->table_name) {
-        flb_plg_error(ctx->ins, "property 'table_name' is not defined");
+        flb_plg_error(ins, "property 'table_name' is not defined");
         flb_az_li_ctx_destroy(ctx);
         return NULL;
     }
@@ -123,27 +123,28 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
     ctx->u_auth = flb_oauth2_create(config, ctx->auth_url,
                                     FLB_AZ_LI_TOKEN_TIMEOUT);
     if (!ctx->u_auth) {
-        flb_plg_error(ctx->ins, "cannot create oauth2 context");
+        flb_plg_error(ins, "cannot create oauth2 context");
         flb_az_li_ctx_destroy(ctx);
         return NULL;
     }
+
     /* Create upstream context for Log Ingsetion endpoint */
     ctx->u_dce = flb_upstream_create_url(config, ctx->dce_url, 
                                         FLB_AZ_LI_TLS_MODE, ins->tls);
     if (!ctx->u_dce) {
-        flb_plg_error(ctx->ins, "upstream creation failed");
+        flb_plg_error(ins, "upstream creation failed");
         flb_az_li_ctx_destroy(ctx);
         return NULL;
     }
     flb_output_upstream_set(ctx->u_dce, ins);
 
-    flb_plg_info(ctx->ins, "dce_url='%s', dcr='%s', table='%s', stream='Custom-%s'",
+    flb_plg_info(ins, "dce_url='%s', dcr='%s', table='%s', stream='Custom-%s'",
                 ctx->dce_url, ctx->dcr_id, ctx->table_name, ctx->table_name);
 
     return ctx;
 }
 
-/* free the context */
+/* free the context and created memory */
 int flb_az_li_ctx_destroy(struct flb_az_li *ctx)
 {
     if (!ctx) {
@@ -156,6 +157,14 @@ int flb_az_li_ctx_destroy(struct flb_az_li *ctx)
 
     if (ctx->dce_u_url) {
         flb_sds_destroy(ctx->dce_u_url);
+    }
+
+    if (ctx->token) {
+        flb_sds_destroy(ctx->token);
+    }
+
+    if (ctx->u_auth) {
+        flb_oauth2_destroy(ctx->u_auth);
     }
 
     if (ctx->u_dce) {
