@@ -1,0 +1,27 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "cmake",
+			"label": "CMake: build",
+			"command": "build",
+			"targets": [
+				"fluent-bit-bin"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": [],
+			"detail": "CMake template build task"
+		},
+		{
+			"type": "cmake",
+			"label": "CMake: clean",
+			"targets": ["fluent-bit-bin"],
+			"command": "clean",
+			"problemMatcher": [],
+			"detail": "CMake template clean task"
+		}
+	]
+}

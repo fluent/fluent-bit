@@ -7,7 +7,7 @@ _book/
 lib/jemalloc
 tests/internal/flb_tests_internal.h
 tests/runtime/flb_tests_runtime.h
-build/*
+build**/*
 include/fluent-bit/flb_info.h
 include/fluent-bit/flb_plugins.h
 include/fluent-bit/flb_version.h

@@ -1,0 +1,15 @@
+{
+    "files.associations": {
+        "Makefile": "makefile",
+        "flb_utils.h": "c",
+        "flb_output.h": "c",
+        "azure_logs_ingestion.h": "c",
+        "azure_logs_ingestion_conf.h": "c",
+        "flb_base64.h": "c",
+        "flb_output_plugin.h": "c",
+        "azure_conf.h": "c",
+        "azure.h": "c",
+        "flb_pack.h": "c"
+    },
+    "cmake.generator": "Unix Makefiles"
+}
