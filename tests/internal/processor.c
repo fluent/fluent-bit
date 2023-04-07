@@ -45,7 +45,7 @@ static int create_msgpack_records(char **out_buf, size_t *out_size)
     msgpack_pack_array(&mp_pck, 2);
     flb_pack_time_now(&mp_pck);
 
-    ret = flb_pack_json(json, strlen(json), &mp_tmp, &mp_size, &root_type);
+    ret = flb_pack_json(json, strlen(json), &mp_tmp, &mp_size, &root_type, NULL);
     TEST_CHECK(ret == 0);
 
     msgpack_sbuffer_write(&mp_sbuf, mp_tmp, mp_size);
