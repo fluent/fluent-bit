@@ -22,8 +22,8 @@
 
 #include "azure_logs_ingestion.h"
 
-struct flb_azure *flb_azure_logs_ingestion_conf_create(struct flb_output_instance *ins,
+struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
                                         struct flb_config *config);
-int flb_azure_logs_ingestion_conf_destroy(struct flb_azure_logs_ingestion *ctx);
+int flb_az_li_ctx_destroy(struct flb_az_li *ctx);
 
 #endif

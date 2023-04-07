@@ -20,42 +20,57 @@
 #ifndef FLB_OUT_AZURE_LOGS_INGESTION_H
 #define FLB_OUT_AZURE_LOGS_INGESTION_H
 
-#define FLB_AZURE_API_VERSION        "?api-version=2016-04-01"
-#define FLB_AZURE_HOST               ".ods.opinsights.azure.com"
-#define FLB_AZURE_PORT               443
-#define FLB_AZURE_RESOURCE           "/api/logs"
-#define FLB_AZURE_LOG_TYPE           "fluentbit"
-#define FLB_AZURE_TIME_KEY           "@timestamp"
+#define FLB_AZ_LI_API_VERSION          "?api-version=2021-11-01-preview"
+#define FLB_AZ_LI_TIME_KEY             "@timestamp"
+#define FLB_AZ_LI_AUTH_SCOPE        "https://monitor.azure.com//.default"
+/* auth body needs client_id, client_secret and FLB_AZ_LI_AUTH_SCOPE */
+#define FLB_AZ_LI_AUTH_BODY_TMPLT   "client_id=%s&scope="FLB_AZ_LI_AUTH_SCOPE\
+                                    "&client_secret=%s&"\
+                                    "grant_type=client_credentials"
+/* auth url needs tenant_id */
+#define FLB_AZ_LI_AUTH_URL_TMPLT    "https://login.microsoftonline.com/"\
+                                    "%s/oauth2/v2.0/token"
+/* DCE Full URL needs: dce_url, dcr_id, Log Analytics custom table name */
+#define FLB_AZ_LI_DCE_URL_TMPLT     "%s/dataCollectionRules/%s/streams/"\
+                                    "Custom-%s?"FLB_AZ_LI_API_VERSION
+/* TLS Modes for upstream connection = FLB_IO_TLS or FLB_IO_OPT_TLS*/
+#define FLB_AZ_LI_TLS_MODE          FLB_IO_TLS
+/* refresh token every 60 minutes */
+#define FLB_AZ_LI_TOKEN_TIMEOUT 3600
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_sds.h>
 
-struct flb_azure_logs_ingestion {
-    /* account setup */
+/* Context structure for Azure Logs Ingestion API */
+struct flb_az_li {
+    /* log ingestion account setup */
     flb_sds_t tenant_id;
     flb_sds_t client_id;
     flb_sds_t client_secret;
-    flb_sds_t dce_uri;
+    flb_sds_t dce_url;
     flb_sds_t dcr_id;
     flb_sds_t table_name;
-
-    /* networking */
-    int port;
-    flb_sds_t host;
-    flb_sds_t uri;
-
-    /* records */
-    flb_sds_t time_key;
-
+    /* TODO: Put current processing time in a time field: will generate if not NULL */
     /* time_generated: on/off */
     int time_generated;
+    /* records the time */
+    flb_sds_t time_key;
 
-    /* Upstream connection to the data collection endpoint */
+
+    /* mangement auth */
+    flb_sds_t auth_url;
+    struct flb_oauth2 *u_auth;
+    /* mutex for acquiring tokens */
+    pthread_mutex_t token_mutex;
+
+    /* upstream connection to the data collection endpoint */
     struct flb_upstream *u_dce;
+    flb_sds_t dce_u_url;
 
-    /* Plugin instance reference */
+    /* plugin output and config instance reference */
     struct flb_output_instance *ins;
+    struct flb_config *config;
 };
 
 #endif

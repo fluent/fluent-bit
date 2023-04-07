@@ -33,6 +33,18 @@
 static int cb_azure_ingestion_init(struct flb_output_instance *ins,
                           struct flb_config *config, void *data)
 {
+    struct flb_az_li *ctx;
+    (void) config;
+    (void) ins;
+    (void) data;
+
+    // Allocate and initialize a context from configuration
+    ctx = flb_az_li_ctx_create(ins, config);
+    if (!ctx) {
+        flb_plg_error(ins, "configuration failed");
+        return -1;
+    }
+
     return 0;
 }
 
@@ -47,42 +59,58 @@ static void cb_azure_ingestion_flush(struct flb_event_chunk *event_chunk,
 
 static int cb_azure_ingestion_exit(void *data, struct flb_config *config)
 {
+    struct flb_azure *ctx = data;
+
+    flb_azure_conf_destroy(ctx);
+    return 0;
 }
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "tenant_id", (char *)NULL, 0, FLB_TRUE,
-     offsetof(struct flb_azure_logs_ingestion, tenant_id),
+     offsetof(struct flb_az_li, tenant_id),
      "Set the tenant ID of the AAD application"
     },
     {
      FLB_CONFIG_MAP_STR, "client_id", (char *)NULL, 0, FLB_TRUE,
-     offsetof(struct flb_azure_logs_ingestion, client_id),
+     offsetof(struct flb_az_li, client_id),
      "Set the client/app ID of the AAD application"
     },
     {
      FLB_CONFIG_MAP_STR, "client_secret", (char *)NULL, 0, FLB_TRUE,
-     offsetof(struct flb_azure_logs_ingestion, client_secret),
+     offsetof(struct flb_az_li, client_secret),
      "Set the client secret of the AAD application"
     },
     {
-     FLB_CONFIG_MAP_STR, "dce_uri", (char *)NULL, 0, FLB_TRUE,
-     offsetof(struct flb_azure_logs_ingestion, dce_uri),
+     FLB_CONFIG_MAP_STR, "dce_url", (char *)NULL, 0, FLB_TRUE,
+     offsetof(struct flb_az_li, dce_url),
      "Data Collection Endpoint(DCE) URI (e.g. "
      "https://la-endpoint-q57l.eastus-1.ingest.monitor.azure.com)"
     },
     {
      FLB_CONFIG_MAP_STR, "dcr_id", (char *)NULL, 0, FLB_TRUE,
-     offsetof(struct flb_azure_logs_ingestion, dcr_id),
+     offsetof(struct flb_az_li, dcr_id),
      "Data Collection Rule (DCR) immutable ID"
     },
     {
      FLB_CONFIG_MAP_STR, "table_name", (char *)NULL, 0, FLB_TRUE,
-     offsetof(struct flb_azure_logs_ingestion, table_name),
+     offsetof(struct flb_az_li, table_name),
      "The name of the custom log table, including '_CL' suffix"
     },
+    /* optional params */
+    {
+     FLB_CONFIG_MAP_STR, "time_key", FLB_AZ_LI_TIME_KEY,
+     0, FLB_TRUE, offsetof(struct flb_az_li, time_key),
+     "[Optional] Specify the key name where the timestamp will be stored."
+    },
 
+    {
+     FLB_CONFIG_MAP_BOOL, "time_generated", "false",
+     0, FLB_TRUE, offsetof(struct flb_az_li, time_generated),
+     "If enabled, will generate a timestamp and append it to JSON. "
+     "The key name is set by the 'time_key' parameter"
+    },
     /* EOF */
     {0}
 };
