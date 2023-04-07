@@ -55,16 +55,20 @@ int flb_parser_json_do(struct flb_parser *parser,
     time_t time_lookup;
     struct flb_tm tm = {0};
     struct flb_time *t;
+    size_t consumed;
+
+    consumed = 0;
 
     /* Convert incoming in_buf JSON message to message pack format */
     ret = flb_pack_json_recs(in_buf, in_size, &mp_buf, &mp_size, &root_type,
-                             &records);
+                             &records, &consumed);
     if (ret != 0) {
         return -1;
     }
 
     if (records != 1) {
         flb_free(mp_buf);
+
         return -1;
     }
 
@@ -75,6 +79,7 @@ int flb_parser_json_do(struct flb_parser *parser,
         if (map.type != MSGPACK_OBJECT_MAP) {
             flb_free(mp_buf);
             msgpack_unpacked_destroy(&result);
+
             return -1;
         }
     }
@@ -82,7 +87,9 @@ int flb_parser_json_do(struct flb_parser *parser,
         if (mp_size > 0) {
             flb_free(mp_buf);
         }
+
         msgpack_unpacked_destroy(&result);
+
         return -1;
     }
 
@@ -116,7 +123,8 @@ int flb_parser_json_do(struct flb_parser *parser,
     /* Do time resolution ? */
     if (!parser->time_fmt) {
         msgpack_unpacked_destroy(&result);
-        return *out_size;
+
+        return (int) consumed;
     }
 
     if (parser->time_key) {
@@ -149,6 +157,7 @@ int flb_parser_json_do(struct flb_parser *parser,
             }
             *out_buf = NULL;
             msgpack_unpacked_destroy(&result);
+
             return -1;
         }
 
@@ -171,13 +180,15 @@ int flb_parser_json_do(struct flb_parser *parser,
     /* No time_key field found */
     if (i >= map_size || !k || !v) {
         msgpack_unpacked_destroy(&result);
-        return *out_size;
+
+        return (int) consumed;
     }
 
     /* Ensure we have an accurate type */
     if (v->type != MSGPACK_OBJECT_STR) {
         msgpack_unpacked_destroy(&result);
-        return *out_size;
+
+        return (int) consumed;
     }
 
     /* Lookup time */
@@ -213,12 +224,14 @@ int flb_parser_json_do(struct flb_parser *parser,
         if (i == skip) {
             continue;
         }
+
         msgpack_pack_object(&mp_pck, map.via.map.ptr[i].key);
         msgpack_pack_object(&mp_pck, map.via.map.ptr[i].val);
     }
 
     /* Export the proper buffer */
     flb_free(tmp_out_buf);
+
     *out_buf = mp_sbuf.data;
     *out_size = mp_sbuf.size;
 
@@ -227,5 +240,6 @@ int flb_parser_json_do(struct flb_parser *parser,
     t->tm.tv_nsec = (tmfrac * 1000000000);
 
     msgpack_unpacked_destroy(&result);
-    return *out_size;
+
+    return (int) consumed;
 }

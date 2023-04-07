@@ -41,27 +41,94 @@ static inline void consume_bytes(char *buf, int bytes, int length)
     memmove(buf, buf + bytes, length - bytes);
 }
 
-static inline int process_pack(msgpack_packer *mp_pck,
-                               struct flb_in_stdin_config *ctx,
+static inline int process_pack(struct flb_in_stdin_config *ctx,
                                char *data, size_t data_size)
 {
-    size_t off = 0;
-    msgpack_unpacked result;
-    msgpack_object entry;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event         log_event;
+    msgpack_unpacked             result;
+    msgpack_object               entry;
+    int                          ret;
+    size_t                       off;
+
+    ret = flb_log_event_decoder_init(&log_decoder, NULL, 0);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -1;
+    }
 
     /* Queue the data with time field */
     msgpack_unpacked_init(&result);
 
+    off = 0;
     while (msgpack_unpack_next(&result, data, data_size, &off) == MSGPACK_UNPACK_SUCCESS) {
         entry = result.data;
 
         if (entry.type == MSGPACK_OBJECT_MAP) {
-            msgpack_pack_array(mp_pck, 2);
-            flb_pack_time_now(mp_pck);
-            msgpack_pack_object(mp_pck, entry);
+            ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_set_current_timestamp(ctx->log_encoder);
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_set_body_from_msgpack_object(
+                        ctx->log_encoder, &entry);
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_commit_record(ctx->log_encoder);
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = 0;
+            }
+            else {
+                ret = -1;
+
+                break;
+            }
         }
         else if (entry.type == MSGPACK_OBJECT_ARRAY) {
-            msgpack_pack_object(mp_pck, entry);
+            ret = flb_event_decoder_decode_object(&log_decoder,
+                                                  &log_event,
+                                                  &entry);
+
+            if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                ret = -1;
+
+                break;
+            }
+
+            ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_set_timestamp(ctx->log_encoder,
+                                                          &log_event.timestamp);
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_set_metadata_from_msgpack_object(
+                        ctx->log_encoder, log_event.metadata);
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_set_body_from_msgpack_object(
+                        ctx->log_encoder, log_event.body);
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_commit_record(ctx->log_encoder);
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = 0;
+            }
+            else {
+                ret = -1;
+
+                break;
+            }
         }
         else {
             /*
@@ -70,24 +137,46 @@ static inline int process_pack(msgpack_packer *mp_pck,
              */
             flb_plg_error(ctx->ins, "invalid record found, "
                           "it's not a JSON map or array");
-            msgpack_unpacked_destroy(&result);
-            return -1;
+            ret = -1;
+            break;
         }
     }
 
+    flb_log_event_decoder_destroy(&log_decoder);
+
     msgpack_unpacked_destroy(&result);
-    return 0;
+
+    return ret;
 }
 
-static inline int pack_regex(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
-                             struct flb_in_stdin_config *ctx,
+static inline int pack_regex(struct flb_in_stdin_config *ctx,
                              struct flb_time *t, char *data, size_t data_size)
 {
-    msgpack_pack_array(mp_pck, 2);
-    flb_time_append_to_msgpack(t, mp_pck, 0);
-    msgpack_sbuffer_write(mp_sbuf, data, data_size);
+    int ret;
 
-    return 0;
+    ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_timestamp(ctx->log_encoder, t);
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_body_from_raw_msgpack(
+                ctx->log_encoder, data, data_size);
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_commit_record(ctx->log_encoder);
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = 0;
+    }
+    else {
+        ret = -1;
+    }
+
+    return ret;
 }
 
 static int in_stdin_collect(struct flb_input_instance *ins,
@@ -101,8 +190,6 @@ static int in_stdin_collect(struct flb_input_instance *ins,
     size_t out_size;
     struct flb_time out_time;
     struct flb_in_stdin_config *ctx = in_context;
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
 
     bytes = read(ctx->fd,
                  ctx->buf + ctx->buf_len,
@@ -121,10 +208,6 @@ static int in_stdin_collect(struct flb_input_instance *ins,
     ctx->buf_len += bytes;
     ctx->buf[ctx->buf_len] = '\0';
 
-    /* Initialize local msgpack buffer */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
     while (ctx->buf_len > 0) {
         /* Try built-in JSON parser */
         if (!ctx->parser) {
@@ -132,7 +215,6 @@ static int in_stdin_collect(struct flb_input_instance *ins,
                                       &pack, &pack_size, &ctx->pack_state);
             if (ret == FLB_ERR_JSON_PART) {
                 flb_plg_debug(ctx->ins, "data incomplete, waiting for more...");
-                msgpack_sbuffer_destroy(&mp_sbuf);
                 return 0;
             }
             else if (ret == FLB_ERR_JSON_INVAL) {
@@ -141,12 +223,11 @@ static int in_stdin_collect(struct flb_input_instance *ins,
                 flb_pack_state_init(&ctx->pack_state);
                 ctx->pack_state.multiple = FLB_TRUE;
                 ctx->buf_len = 0;
-                msgpack_sbuffer_destroy(&mp_sbuf);
                 return -1;
             }
 
             /* Process valid packaged records */
-            process_pack(&mp_pck, ctx, pack, pack_size);
+            process_pack(ctx, pack, pack_size);
 
             /* Move out processed bytes */
             consume_bytes(ctx->buf, ctx->pack_state.last_byte, ctx->buf_len);
@@ -159,9 +240,14 @@ static int in_stdin_collect(struct flb_input_instance *ins,
 
             flb_free(pack);
 
-            flb_input_log_append(ins, NULL, 0,
-                                       mp_sbuf.data, mp_sbuf.size);
-            msgpack_sbuffer_destroy(&mp_sbuf);
+            if (ctx->log_encoder->output_length > 0) {
+                flb_input_log_append(ctx->ins, NULL, 0,
+                                     ctx->log_encoder->output_buffer,
+                                     ctx->log_encoder->output_length);
+            }
+
+            flb_log_event_encoder_reset(ctx->log_encoder);
+
             return 0;
         }
         else {
@@ -171,21 +257,25 @@ static int in_stdin_collect(struct flb_input_instance *ins,
             /* Use the defined parser */
             ret = flb_parser_do(ctx->parser, ctx->buf, ctx->buf_len,
                                 &out_buf, &out_size, &out_time);
+
             if (ret >= 0) {
                 if (flb_time_to_nanosec(&out_time) == 0L) {
                     flb_time_get(&out_time);
                 }
-                pack_regex(&mp_sbuf, &mp_pck,
-                           ctx, &out_time, out_buf, out_size);
+                pack_regex(ctx, &out_time, out_buf, out_size);
                 flb_free(out_buf);
-                flb_input_log_append(ins, NULL, 0,
-                                           mp_sbuf.data, mp_sbuf.size);
-                msgpack_sbuffer_clear(&mp_sbuf);
+
+                if (ctx->log_encoder->output_length > 0) {
+                    flb_input_log_append(ctx->ins, NULL, 0,
+                                         ctx->log_encoder->output_buffer,
+                                         ctx->log_encoder->output_length);
+                }
+
+                flb_log_event_encoder_reset(ctx->log_encoder);
             }
             else {
                 /* we need more data ? */
-                flb_plg_trace(ctx->ins, "data mismatch or incomplete");
-                msgpack_sbuffer_destroy(&mp_sbuf);
+                flb_plg_trace(ctx->ins, "data mismatch or incomplete : %d", ret);
                 return 0;
             }
         }
@@ -206,7 +296,6 @@ static int in_stdin_collect(struct flb_input_instance *ins,
         }
     }
 
-    msgpack_sbuffer_destroy(&mp_sbuf);
     return 0;
 }
 
@@ -257,6 +346,10 @@ static void in_stdin_config_destroy(struct flb_in_stdin_config *ctx)
         return;
     }
 
+    if (ctx->log_encoder != NULL) {
+        flb_log_event_encoder_destroy(ctx->log_encoder);
+    }
+
     /* release buffer */
     if (ctx->buf) {
         flb_free(ctx->buf);
@@ -273,11 +366,18 @@ static int in_stdin_init(struct flb_input_instance *in,
     struct flb_in_stdin_config *ctx;
 
     /* Allocate space for the configuration context */
-    ctx = flb_malloc(sizeof(struct flb_in_stdin_config));
+    ctx = flb_calloc(1, sizeof(struct flb_in_stdin_config));
     if (!ctx) {
         return -1;
     }
-    memset(ctx, 0, sizeof(struct flb_in_stdin_config));
+
+    ctx->log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ctx->log_encoder == NULL) {
+        flb_plg_error(in, "could not initialize event encoder");
+
+        goto init_error;
+    }
 
     /* Initialize stdin config */
     ret = in_stdin_config_init(ctx, in, config);

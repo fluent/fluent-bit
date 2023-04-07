@@ -160,7 +160,6 @@ jobs:
     - name: Sync to release bucket on S3
       run: |
         aws s3 sync "packaging/releases/$DISTRO" "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/$DISTRO" --delete --follow-symlinks --no-progress
-        aws s3 sync "packaging/releases/*.repo" "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/" --no-progress
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -187,9 +186,25 @@ jobs:
     - name: Setup runner
       run: |
         sudo apt-get update
-        sudo apt-get install -y debsigs aptly rsync
+        sudo apt-get install -y aptly debsigs distro-info rsync
       shell: bash
 
+    - name: Convert version to codename
+      id: get_codename
+      run: |
+        CODENAME="$DISTRO"
+        if [[ "$DISTRO" == ubuntu* ]]; then
+          echo "Converting Ubuntu version to codename"
+          UBUNTU_NAME=$(grep "${DISTRO##*/} LTS" /usr/share/distro-info/ubuntu.csv|cut -d ',' -f3)
+          echo "Got Ubuntu codename: $UBUNTU_NAME"
+          CODENAME="ubuntu/$UBUNTU_NAME"
+        fi
+        echo "Using codename: $CODENAME"
+        echo "CODENAME=$CODENAME" >> $GITHUB_OUTPUT
+      shell: bash
+      env:
+        DISTRO: ${{ matrix.distro }}
+        
     - name: Import GPG key for signing
       id: import_gpg
       uses: crazy-max/ghaction-import-gpg@v5
@@ -199,14 +214,14 @@ jobs:
 
     - name: Sync packages from buckets on S3
       run: |
-        mkdir -p "packaging/releases/$DISTRO"
-        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
-        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
+        mkdir -p "packaging/releases/$CODENAME"
+        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/$CODENAME" "packaging/releases/$CODENAME" --no-progress
+        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}/$CODENAME" "packaging/releases/$CODENAME" --no-progress
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         AWS_REGION: "us-east-1"
-        DISTRO: ${{ matrix.distro }}
+        CODENAME: ${{ steps.get_codename.outputs.CODENAME }}
       shell: bash
 
     - name: Update repo info and remove any staging details
@@ -217,17 +232,17 @@ jobs:
         AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_RELEASE }}
         VERSION: ${{ github.event.inputs.version }}
         BASE_PATH: "packaging/releases"
-        DEB_REPO: ${{ matrix.distro }}
+        DEB_REPO: ${{ steps.get_codename.outputs.CODENAME }}
       shell: bash
 
     - name: Sync to release bucket on S3
       run: |
-        aws s3 sync "packaging/releases/$DISTRO" "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/$DISTRO" --delete --follow-symlinks --no-progress
+        aws s3 sync "packaging/releases/$CODENAME" "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/$CODENAME" --delete --follow-symlinks --no-progress
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         AWS_REGION: "us-east-1"
-        DISTRO: ${{ matrix.distro }}
+        CODENAME: ${{ steps.get_codename.outputs.CODENAME }}
       shell: bash
 
   staging-release-update-non-linux-s3:
@@ -761,18 +776,20 @@ jobs:
     environment: release
     runs-on: ubuntu-latest
     steps:
-      - name: Release 1.9 - not latest
-        if: startsWith(inputs.version, '1.9')
+      - name: Release 2.0 - not latest
+        if: startsWith(inputs.version, '2.0')
         uses: actions/checkout@v3
         with:
           repository: fluent/fluent-bit-docs
-          ref: 1.9
+          ref: 2.0
+          token: ${{ secrets.GH_PA_TOKEN }}
 
       - name: Release 2.0 and latest
-        if: startsWith(inputs.version, '2.')
+        if: startsWith(inputs.version, '2.1')
         uses: actions/checkout@v3
         with:
           repository: fluent/fluent-bit-docs
+          token: ${{ secrets.GH_PA_TOKEN }}
 
       - name: Update container tags
         run: |
@@ -794,14 +811,14 @@ jobs:
         shell: bash
 
       - name: Raise docs PR
-        uses: peter-evans/create-pull-request@v4
+        uses: peter-evans/create-pull-request@v5
         with:
           commit-message: 'release: update to v${{ inputs.version }}'
           signoff: true
           delete-branch: true
           title: 'release: update to v${{ inputs.version }}'
-          # We need workflows permission so have to use the CI_PAT
-          token: ${{ secrets.CI_PAT }}
+          # We need workflows permission so have to use the GH_PA_TOKEN
+          token: ${{ secrets.GH_PA_TOKEN }}
           labels: ci,automerge
           body: |
             Update release ${{ inputs.version }} version.

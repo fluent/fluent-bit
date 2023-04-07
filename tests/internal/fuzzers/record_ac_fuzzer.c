@@ -45,7 +45,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     char *json_raw = get_null_terminated(len, &data, &size);
 
     /* Convert to msgpack */
-    int ret = flb_pack_json(json_raw, len, &outbuf, &outsize, &type);
+    int ret = flb_pack_json(json_raw, len, &outbuf, &outsize, &type, NULL);
     if (ret == -1) {
         flb_free(json_raw);
         return 0;

@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #include <stdint.h>
 
@@ -57,6 +58,7 @@ struct flb_in_kmsg_config {
     char *buf_data;
     size_t buf_len;
     size_t buf_size;
+    struct flb_log_event_encoder log_encoder;
     struct flb_input_instance *ins;
 };
 

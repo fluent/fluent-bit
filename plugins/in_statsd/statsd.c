@@ -17,6 +17,7 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_socket.h>
@@ -38,6 +39,7 @@ struct flb_statsd {
     flb_sockfd_t server_fd;            /* server socket */
     flb_pipefd_t coll_fd;              /* server handler */
     struct flb_input_instance *ins;    /* input instance */
+    struct flb_log_event_encoder *log_encoder;
 };
 
 /*
@@ -52,15 +54,6 @@ struct statsd_message {
     int type;
     double sample_rate;
 };
-
-static void pack_string(msgpack_packer *mp_pck, char *str, ssize_t len)
-{
-    if (len < 0) {
-        len = strlen(str);
-    }
-    msgpack_pack_str(mp_pck, len);
-    msgpack_pack_str_body(mp_pck, str, len);
-}
 
 static int get_statsd_type(char *str)
 {
@@ -84,61 +77,81 @@ static int is_incremental(char *str)
     return (*str == '+' || *str == '-');
 }
 
-static int statsd_process_message(msgpack_packer *mp_pck,
+static int statsd_process_message(struct flb_statsd *ctx,
                                   struct statsd_message *m)
 {
-    msgpack_pack_array(mp_pck, 2);
-    flb_pack_time_now(mp_pck);
+    int ret;
 
-    switch (m->type) {
-    case STATSD_TYPE_COUNTER:
-        msgpack_pack_map(mp_pck, 4);
-        pack_string(mp_pck, "type", 4);
-        pack_string(mp_pck, "counter", 7);
-        pack_string(mp_pck, "bucket", 6);
-        pack_string(mp_pck, m->bucket, m->bucket_len);
-        pack_string(mp_pck, "value", 5);
-        msgpack_pack_double(mp_pck, atof(m->value));
-        pack_string(mp_pck, "sample_rate", 11);
-        msgpack_pack_double(mp_pck, m->sample_rate);
-        break;
-    case STATSD_TYPE_GAUGE:
-        msgpack_pack_map(mp_pck, 4);
-        pack_string(mp_pck, "type", 4);
-        pack_string(mp_pck, "gauge", 5);
-        pack_string(mp_pck, "bucket", 6);
-        pack_string(mp_pck, m->bucket, m->bucket_len);
-        pack_string(mp_pck, "value", 5);
-        msgpack_pack_double(mp_pck, atof(m->value));
-        pack_string(mp_pck, "incremental", 11);
-        msgpack_pack_int(mp_pck, is_incremental(m->value));
-        break;
-    case STATSD_TYPE_TIMER:
-        msgpack_pack_map(mp_pck, 4);
-        pack_string(mp_pck, "type", 4);
-        pack_string(mp_pck, "timer", 5);
-        pack_string(mp_pck, "bucket", 6);
-        pack_string(mp_pck, m->bucket, m->bucket_len);
-        pack_string(mp_pck, "value", 5);
-        msgpack_pack_double(mp_pck, atof(m->value));
-        pack_string(mp_pck, "sample_rate", 11);
-        msgpack_pack_double(mp_pck, m->sample_rate);
-        break;
-    case STATSD_TYPE_SET:
-        msgpack_pack_map(mp_pck, 3);
-        pack_string(mp_pck, "type", 4);
-        pack_string(mp_pck, "set", 3);
-        pack_string(mp_pck, "bucket", 6);
-        pack_string(mp_pck, m->bucket, m->bucket_len);
-        pack_string(mp_pck, "value", 5);
-        pack_string(mp_pck, m->value, m->value_len);
-        break;
+    ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_current_timestamp(ctx->log_encoder);
     }
-    return 0;
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        switch (m->type) {
+        case STATSD_TYPE_COUNTER:
+            ret = flb_log_event_encoder_append_body_values(
+                    ctx->log_encoder,
+
+                    FLB_LOG_EVENT_CSTRING_VALUE("type"),
+                    FLB_LOG_EVENT_CSTRING_VALUE("counter"),
+                    FLB_LOG_EVENT_CSTRING_VALUE("bucket"),
+                    FLB_LOG_EVENT_STRING_VALUE(m->bucket, m->bucket_len),
+                    FLB_LOG_EVENT_CSTRING_VALUE("value"),
+                    FLB_LOG_EVENT_DOUBLE_VALUE(strtod(m->value, NULL)),
+                    FLB_LOG_EVENT_CSTRING_VALUE("sample_rate"),
+                    FLB_LOG_EVENT_DOUBLE_VALUE(m->sample_rate));
+
+            break;
+        case STATSD_TYPE_GAUGE:
+            ret = flb_log_event_encoder_append_body_values(
+                    ctx->log_encoder,
+
+                    FLB_LOG_EVENT_CSTRING_VALUE("type"),
+                    FLB_LOG_EVENT_CSTRING_VALUE("gauge"),
+                    FLB_LOG_EVENT_CSTRING_VALUE("bucket"),
+                    FLB_LOG_EVENT_STRING_VALUE(m->bucket, m->bucket_len),
+                    FLB_LOG_EVENT_CSTRING_VALUE("value"),
+                    FLB_LOG_EVENT_DOUBLE_VALUE(strtod(m->value, NULL)),
+                    FLB_LOG_EVENT_CSTRING_VALUE("incremental"),
+                    FLB_LOG_EVENT_INT64_VALUE(is_incremental(m->value)));
+            break;
+        case STATSD_TYPE_TIMER:
+            ret = flb_log_event_encoder_append_body_values(
+                    ctx->log_encoder,
+
+                    FLB_LOG_EVENT_CSTRING_VALUE("type"),
+                    FLB_LOG_EVENT_CSTRING_VALUE("timer"),
+                    FLB_LOG_EVENT_CSTRING_VALUE("bucket"),
+                    FLB_LOG_EVENT_STRING_VALUE(m->bucket, m->bucket_len),
+                    FLB_LOG_EVENT_CSTRING_VALUE("value"),
+                    FLB_LOG_EVENT_DOUBLE_VALUE(strtod(m->value, NULL)),
+                    FLB_LOG_EVENT_CSTRING_VALUE("sample_rate"),
+                    FLB_LOG_EVENT_DOUBLE_VALUE(m->sample_rate));
+
+        case STATSD_TYPE_SET:
+            ret = flb_log_event_encoder_append_body_values(
+                    ctx->log_encoder,
+
+                    FLB_LOG_EVENT_CSTRING_VALUE("type"),
+                    FLB_LOG_EVENT_CSTRING_VALUE("set"),
+                    FLB_LOG_EVENT_CSTRING_VALUE("bucket"),
+                    FLB_LOG_EVENT_STRING_VALUE(m->bucket, m->bucket_len),
+                    FLB_LOG_EVENT_CSTRING_VALUE("value"),
+                    FLB_LOG_EVENT_STRING_VALUE(m->value, m->value_len));
+            break;
+        }
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_commit_record(ctx->log_encoder);
+    }
+
+    return ret;
 }
 
-static int statsd_process_line(struct flb_statsd *ctx,
-                               msgpack_packer *mp_pck, char *line)
+static int statsd_process_line(struct flb_statsd *ctx, char *line)
 {
     char *colon, *bar, *atmark;
     struct statsd_message m;
@@ -185,17 +198,16 @@ static int statsd_process_line(struct flb_statsd *ctx,
         m.sample_rate = atof(atmark + 2);
     }
 
-    return statsd_process_message(mp_pck, &m);
+    return statsd_process_message(ctx, &m);
 }
 
 
 static int cb_statsd_receive(struct flb_input_instance *ins,
                              struct flb_config *config, void *data)
 {
+    int ret;
     char *line;
     int len;
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
     struct flb_statsd *ctx = data;
 
     /* Receive a UDP datagram */
@@ -206,24 +218,33 @@ static int cb_statsd_receive(struct flb_input_instance *ins,
     }
     ctx->buf[len] = '\0';
 
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
+    ret = FLB_EVENT_ENCODER_SUCCESS;
     /* Process all messages in buffer */
     line = strtok(ctx->buf, "\n");
-    while (line) {
+    while (line != NULL) {
         flb_plg_trace(ctx->ins, "received a line: '%s'", line);
-        if (statsd_process_line(ctx, &mp_pck, line) < 0) {
+
+        ret = statsd_process_line(ctx, line);
+
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
             flb_plg_error(ctx->ins, "failed to process line: '%s'", line);
+
+            break;
         }
+
         line = strtok(NULL, "\n");
     }
 
-    /* Send to output */
-    if (mp_sbuf.size > 0) {
-        flb_input_log_append(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    if (ctx->log_encoder->output_length > 0) {
+        flb_input_log_append(ctx->ins, NULL, 0,
+                             ctx->log_encoder->output_buffer,
+                             ctx->log_encoder->output_length);
     }
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    else {
+        flb_plg_error(ctx->ins, "log event encoding error : %d", ret);
+    }
+
+    flb_log_event_encoder_reset(ctx->log_encoder);
 
     return 0;
 }
@@ -243,9 +264,19 @@ static int cb_statsd_init(struct flb_input_instance *ins,
     }
     ctx->ins = ins;
 
+    ctx->log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ctx->log_encoder == NULL) {
+        flb_plg_error(ins, "could not initialize event encoder");
+        flb_free(ctx);
+
+        return -1;
+    }
+
     ctx->buf = flb_malloc(MAX_PACKET_SIZE);
     if (!ctx->buf) {
         flb_errno();
+        flb_log_event_encoder_destroy(ctx->log_encoder);
         flb_free(ctx);
         return -1;
     }
@@ -254,6 +285,8 @@ static int cb_statsd_init(struct flb_input_instance *ins,
     ret = flb_input_config_map_set(ins, (void *)ctx);
     if (ret == -1) {
         flb_plg_error(ins, "unable to load configuration");
+        flb_log_event_encoder_destroy(ctx->log_encoder);
+        flb_free(ctx);
         return -1;
     }
 
@@ -282,6 +315,7 @@ static int cb_statsd_init(struct flb_input_instance *ins,
     ctx->server_fd = flb_net_server_udp(ctx->port, ctx->listen);
     if (ctx->server_fd == -1) {
         flb_plg_error(ctx->ins, "can't bind to %s:%s", ctx->listen, ctx->port);
+        flb_log_event_encoder_destroy(ctx->log_encoder);
         flb_free(ctx->buf);
         flb_free(ctx);
         return -1;
@@ -292,6 +326,7 @@ static int cb_statsd_init(struct flb_input_instance *ins,
                                                   ctx->server_fd, config);
     if (ctx->coll_fd == -1) {
         flb_plg_error(ctx->ins, "cannot set up connection callback ");
+        flb_log_event_encoder_destroy(ctx->log_encoder);
         flb_socket_close(ctx->server_fd);
         flb_free(ctx->buf);
         flb_free(ctx);
@@ -317,6 +352,10 @@ static void cb_statsd_resume(void *data, struct flb_config *config)
 static int cb_statsd_exit(void *data, struct flb_config *config)
 {
     struct flb_statsd *ctx = data;
+
+    if (ctx->log_encoder != NULL) {
+        flb_log_event_encoder_destroy(ctx->log_encoder);
+    }
 
     flb_socket_close(ctx->server_fd);
     flb_free(ctx->buf);

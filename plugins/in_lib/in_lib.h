@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #define LIB_BUF_CHUNK   65536
 
@@ -33,6 +34,7 @@ struct flb_in_lib_config {
     int buf_len;                /* read buffer length      */
     char *buf_data;             /* the real buffer         */
 
+    struct flb_log_event_encoder log_encoder;
     struct flb_pack_state state;
     struct flb_input_instance *ins;
 };

@@ -652,7 +652,7 @@ error:
 
 /* Generates string which can serve as a unique session name */
 char *flb_sts_session_name() {
-    unsigned char *random_data[SESSION_NAME_RANDOM_BYTE_LEN];
+    unsigned char random_data[SESSION_NAME_RANDOM_BYTE_LEN];
     char *session_name = NULL;
     int ret;
 
@@ -664,16 +664,15 @@ char *flb_sts_session_name() {
         return NULL;
     }
 
-    session_name = flb_malloc(sizeof(char) *
-                              (SESSION_NAME_RANDOM_BYTE_LEN + 1));
-    if (!session_name) {
+    session_name = flb_calloc(SESSION_NAME_RANDOM_BYTE_LEN + 1,
+                              sizeof(char));
+    if (session_name == NULL) {
         flb_errno();
 
         return NULL;
     }
 
     bytes_to_string(random_data, session_name, SESSION_NAME_RANDOM_BYTE_LEN);
-    session_name[SESSION_NAME_RANDOM_BYTE_LEN] = '\0';
 
     return session_name;
 }

@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_signv4.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 
 #include "azure_kusto.h"
 #include "azure_kusto_conf.h"
@@ -257,20 +258,17 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
                               size_t *out_size)
 {
     int records = 0;
-    size_t off = 0;
-    msgpack_unpacked result;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     /* for sub msgpack objs */
     int map_size;
-    struct flb_time tm;
     struct tm tms;
-    msgpack_object root;
-    msgpack_object *obj;
     char time_formatted[32];
     size_t s;
     int len;
-
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event         log_event;
+    int                          ret;
     /* output buffer */
     flb_sds_t out_buf;
 
@@ -281,30 +279,24 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
         return -1;
     }
 
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return -1;
+    }
+
     /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     msgpack_pack_array(&mp_pck, records);
 
-    off = 0;
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        root = result.data;
-        /* Each array must have two entries: time and record */
-        if (root.type != MSGPACK_OBJECT_ARRAY) {
-            flb_plg_debug(ctx->ins, "unexpected msgpack object type: %d", root.type);
-            continue;
-        }
-        if (root.via.array.size != 2) {
-            flb_plg_debug(ctx->ins, "unexpected msgpack array size: %d",
-                          root.via.array.size);
-            continue;
-        }
-
-        /* Get timestamp and object */
-        flb_time_pop_from_msgpack(&tm, &result, &obj);
-
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         map_size = 1;
         if (ctx->include_time_key == FLB_TRUE) {
             map_size++;
@@ -322,12 +314,13 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
             msgpack_pack_str_body(&mp_pck, ctx->time_key, flb_sds_len(ctx->time_key));
 
             /* Append the time value as ISO 8601 */
-            gmtime_r(&tm.tm.tv_sec, &tms);
+            gmtime_r(&log_event.timestamp.tm.tv_sec, &tms);
             s = strftime(time_formatted, sizeof(time_formatted) - 1,
                          FLB_PACK_JSON_DATE_ISO8601_FMT, &tms);
 
             len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,
-                           ".%03" PRIu64 "Z", (uint64_t)tm.tm.tv_nsec / 1000000);
+                           ".%03" PRIu64 "Z",
+                           (uint64_t)log_event.timestamp.tm.tv_nsec / 1000000);
             s += len;
             msgpack_pack_str(&mp_pck, s);
             msgpack_pack_str_body(&mp_pck, time_formatted, s);
@@ -343,15 +336,15 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
 
         msgpack_pack_str(&mp_pck, flb_sds_len(ctx->log_key));
         msgpack_pack_str_body(&mp_pck, ctx->log_key, flb_sds_len(ctx->log_key));
-        msgpack_pack_object(&mp_pck, *obj);
+        msgpack_pack_object(&mp_pck, *log_event.body);
     }
 
     /* Convert from msgpack to JSON */
     out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
 
     /* Cleanup */
+    flb_log_event_decoder_destroy(&log_decoder);
     msgpack_sbuffer_destroy(&mp_sbuf);
-    msgpack_unpacked_destroy(&result);
 
     if (!out_buf) {
         flb_plg_error(ctx->ins, "error formatting JSON payload");

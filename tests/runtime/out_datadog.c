@@ -54,7 +54,7 @@ static int mp_kv_cmp(char *json_data, size_t json_len, char *key_accessor, char 
 
     /* Convert JSON to msgpack */
     ret = flb_pack_json((const char *) json_data, json_len, &mp_buf, &mp_size,
-                        &type);
+                        &type, NULL);
     TEST_CHECK(ret != -1);
 
     /* Set return status */

@@ -31,6 +31,7 @@
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_base64.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 #include <stdlib.h>
 #include <sys/stat.h>
 
@@ -1864,15 +1865,14 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     char *val_buf;
     char *key_str = NULL;
     size_t key_str_size = 0;
-    size_t off = 0;
     size_t msgpack_size = bytes + bytes / 4;
     size_t val_offset = 0;
     flb_sds_t out_buf;
-    msgpack_unpacked result;
-    msgpack_object root;
     msgpack_object map;
     msgpack_object key;
     msgpack_object val;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
 
     /* Iterate the original buffer and perform adjustments */
     records = flb_mp_count(data, bytes);
@@ -1889,23 +1889,30 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
         return NULL;
     }
 
-    msgpack_unpacked_init(&result);
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        flb_free(val_buf);
+
+        return NULL;
+    }
+
+
     while (!alloc_error &&
-           msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        /* Each array must have two entries: time and record */
-        root = result.data;
-        if (root.type != MSGPACK_OBJECT_ARRAY) {
-            continue;
-        }
-        if (root.via.array.size != 2) {
-            continue;
-        }
+           (ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
 
         /* Get the record/map */
-        map = root.via.array.ptr[1];
+        map = *log_event.body;
+
         if (map.type != MSGPACK_OBJECT_MAP) {
             continue;
         }
+
         map_size = map.via.map.size;
 
         /* Reset variables for found log_key and correct type */
@@ -1977,8 +1984,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
                       ctx->log_key, log_key_missing);
     }
 
-    /* Release the unpacker */
-    msgpack_unpacked_destroy(&result);
+    flb_log_event_decoder_destroy(&log_decoder);
 
     /* If nothing was read, destroy buffer */
     if (val_offset == 0) {
@@ -2089,11 +2095,9 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     struct s3_file *upload_file = NULL;
     struct flb_s3 *ctx = out_context;
     struct multipart_upload *m_upload_file = NULL;
-    msgpack_unpacked result;
-    msgpack_object *obj;
-    size_t off = 0;
-    struct flb_time tms;
     time_t file_first_log_time = 0;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
 
     /* Cleanup old buffers and initialize upload timer */
     flush_init(ctx);
@@ -2123,21 +2127,29 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
                                     flb_sds_len(event_chunk->tag));
 
     if (upload_file == NULL) {
-        /* unpack msgpack */
-        msgpack_unpacked_init(&result);
+        ret = flb_log_event_decoder_init(&log_decoder,
+                                         (char *) event_chunk->data,
+                                         event_chunk->size);
 
-        /* Get the first record timestamp */
-        while (msgpack_unpack_next(&result,
-                                   event_chunk->data,
-                                   event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS) {
-            flb_time_pop_from_msgpack(&tms, &result, &obj);
-            if (&tms.tm.tv_sec != 0) {
-                file_first_log_time = tms.tm.tv_sec;
+        if (ret != FLB_EVENT_DECODER_SUCCESS) {
+            flb_plg_error(ctx->ins,
+                          "Log event decoder initialization error : %d", ret);
+
+            flb_sds_destroy(chunk);
+
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
+
+        while ((ret = flb_log_event_decoder_next(
+                        &log_decoder,
+                        &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+            if (log_event.timestamp.tm.tv_sec != 0) {
+                file_first_log_time = log_event.timestamp.tm.tv_sec;
                 break;
             }
         }
 
-        msgpack_unpacked_destroy(&result);
+        flb_log_event_decoder_destroy(&log_decoder);
     }
     else {
         /* Get file_first_log_time from upload_file */

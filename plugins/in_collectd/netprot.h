@@ -19,4 +19,4 @@
 
 /* Convert a binary buffer into MessagePack format */
 int netprot_to_msgpack(char *buf, int len, struct mk_list *tdb,
-                       msgpack_packer *ppck);
+                       struct flb_log_event_encoder *encoder);

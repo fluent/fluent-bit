@@ -46,7 +46,7 @@ static int create_map(char *input_json, msgpack_object *out_map,
         return -1;
     }
     len = strlen(input_json);
-    ret = flb_pack_json(input_json, len, out_buf, &out_size, &type);
+    ret = flb_pack_json(input_json, len, out_buf, &out_size, &type, NULL);
     if (!TEST_CHECK(ret == 0)) {
         TEST_MSG("can't convert. input=%s", input_json);
         exit(EXIT_FAILURE);
@@ -147,7 +147,7 @@ void cb_translate()
 
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &out_buf, &out_size, &type);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);
@@ -219,7 +219,7 @@ void cb_translate_tag()
 
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &out_buf, &out_size, &type);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);
@@ -274,7 +274,7 @@ void cb_dots_subkeys()
 
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &out_buf, &out_size, &type);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);
@@ -342,7 +342,7 @@ void cb_array_id()
 
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &out_buf, &out_size, &type);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);
@@ -412,7 +412,7 @@ void cb_get_kv_pair()
 
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &out_buf, &out_size, &type);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);
@@ -764,7 +764,7 @@ void cb_dash_key()
 
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &out_buf, &out_size, &type);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);
@@ -824,7 +824,7 @@ void cb_dot_and_slash_key()
 
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &out_buf, &out_size, &type);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);
@@ -933,7 +933,7 @@ void cb_key_order_lookup()
 
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &out_buf, &out_size, &type);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);
@@ -972,7 +972,7 @@ void cb_issue_4917()
     json = "{\"tool\": \"fluent\", \"sub\": {\"s1\": {\"s2\": \"bit\"}}}";
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &out_buf, &out_size, &type);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);
@@ -1460,7 +1460,7 @@ void cb_ra_translate_check()
 
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &out_buf, &out_size, &type);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);
@@ -1524,7 +1524,7 @@ void cb_issue_5936_last_array()
 
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &out_buf, &out_size, &type);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);

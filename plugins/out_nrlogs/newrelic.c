@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 
 #include "newrelic.h"
 
@@ -143,15 +144,13 @@ static int package_record(struct flb_time *ts, msgpack_object *map,
 static flb_sds_t newrelic_compose_payload(struct flb_newrelic *ctx,
                                           const void *data, size_t bytes)
 {
-    int mp_ok = MSGPACK_UNPACK_SUCCESS;
     int total_records;
-    size_t off = 0;
     flb_sds_t json;
-    struct flb_time tms;
-    msgpack_unpacked result;
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
-    msgpack_object *obj;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    int ret;
 
     /*
      * Following the New Relic Fluentd implementation, this is the
@@ -170,11 +169,19 @@ static flb_sds_t newrelic_compose_payload(struct flb_newrelic *ctx,
      *     ]}
      */
 
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return NULL;
+    }
+
     /* Count number of records */
     total_records = flb_mp_count(data, bytes);
 
     /* Initialize msgpack buffers */
-    msgpack_unpacked_init(&result);
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
@@ -216,18 +223,18 @@ static flb_sds_t newrelic_compose_payload(struct flb_newrelic *ctx,
     msgpack_pack_str_body(&mp_pck, "logs", 4);
     msgpack_pack_array(&mp_pck, total_records);
 
-    /* Iterate each record and pack it */
-    while (msgpack_unpack_next(&result, data, bytes, &off) == mp_ok) {
-        /* Retrive timestamp of the record */
-        flb_time_pop_from_msgpack(&tms, &result, &obj);
-
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         /* Package the record */
-        package_record(&tms, obj, &mp_pck);
+        package_record(&log_event.timestamp, log_event.body, &mp_pck);
     }
 
+    flb_log_event_decoder_destroy(&log_decoder);
+
     json = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+
     msgpack_sbuffer_destroy(&mp_sbuf);
-    msgpack_unpacked_destroy(&result);
 
     return json;
 }

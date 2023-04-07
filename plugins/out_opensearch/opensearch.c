@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 #include <msgpack.h>
 
 #include <cfl/cfl.h>
@@ -244,7 +245,6 @@ static int opensearch_format(struct flb_config *config,
     int write_op_upsert = FLB_FALSE;
     flb_sds_t ra_index = NULL;
     size_t s = 0;
-    size_t off = 0;
     char *p;
     char *index = NULL;
     char logstash_index[256];
@@ -253,10 +253,7 @@ static int opensearch_format(struct flb_config *config,
     char uuid[37];
     flb_sds_t out_buf;
     flb_sds_t id_key_str = NULL;
-    msgpack_unpacked result;
-    msgpack_object root;
     msgpack_object map;
-    msgpack_object *obj;
     flb_sds_t bulk;
     struct tm tm;
     struct flb_time tms;
@@ -267,58 +264,37 @@ static int opensearch_format(struct flb_config *config,
     int index_custom_len;
     struct flb_opensearch *ctx = plugin_context;
     flb_sds_t j_index;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return -1;
+    }
 
     j_index = flb_sds_create_size(FLB_OS_HEADER_SIZE);
     if (j_index == NULL) {
+        flb_log_event_decoder_destroy(&log_decoder);
+
         return -1;
     }
 
     bulk = flb_sds_create_size(bytes * 2);
     if (!bulk) {
+        flb_log_event_decoder_destroy(&log_decoder);
         flb_sds_destroy(j_index);
+
         return -1;
     }
-
-    /* Iterate the original buffer and perform adjustments */
-    msgpack_unpacked_init(&result);
-
-    /* Perform some format validation */
-    ret = msgpack_unpack_next(&result, data, bytes, &off);
-    if (ret != MSGPACK_UNPACK_SUCCESS) {
-        msgpack_unpacked_destroy(&result);
-        flb_sds_destroy(bulk);
-        flb_sds_destroy(j_index);
-        return -1;
-    }
-
-    /* We 'should' get an array */
-    if (result.data.type != MSGPACK_OBJECT_ARRAY) {
-        /*
-         * If we got a different format, we assume the caller knows what he is
-         * doing, we just duplicate the content in a new buffer and cleanup.
-         */
-        msgpack_unpacked_destroy(&result);
-        flb_sds_destroy(bulk);
-        flb_sds_destroy(j_index);
-        return -1;
-    }
-
-    root = result.data;
-    if (root.via.array.size == 0) {
-        msgpack_unpacked_destroy(&result);
-        flb_sds_destroy(bulk);
-        flb_sds_destroy(j_index);
-        return -1;
-    }
-
-    off = 0;
-    msgpack_unpacked_destroy(&result);
-    msgpack_unpacked_init(&result);
 
     /* Copy logstash prefix if logstash format is enabled */
     if (ctx->logstash_format == FLB_TRUE) {
-        memcpy(logstash_index, ctx->logstash_prefix, flb_sds_len(ctx->logstash_prefix));
-        logstash_index[flb_sds_len(ctx->logstash_prefix)] = '\0';
+        strncpy(logstash_index, ctx->logstash_prefix, sizeof(logstash_index));
+        logstash_index[sizeof(logstash_index) - 1] = '\0';
     }
 
     /*
@@ -350,7 +326,7 @@ static int opensearch_format(struct flb_config *config,
         }
 
         if (index_len == -1) {
-            msgpack_unpacked_destroy(&result);
+            flb_log_event_decoder_destroy(&log_decoder);
             flb_sds_destroy(bulk);
             flb_sds_destroy(j_index);
             return -1;
@@ -367,24 +343,15 @@ static int opensearch_format(struct flb_config *config,
         flb_time_get(&tms);
     }
 
-    /* Iterate each record and do further formatting */
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        if (result.data.type != MSGPACK_OBJECT_ARRAY) {
-            continue;
-        }
-
-        /* Each array must have two entries: time and record */
-        root = result.data;
-        if (root.via.array.size != 2) {
-            continue;
-        }
-
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         /* Only pop time from record if current_time_index is disabled */
-        if (ctx->current_time_index == FLB_FALSE) {
-            flb_time_pop_from_msgpack(&tms, &result, &obj);
+        if (!ctx->current_time_index) {
+            flb_time_copy(&tms, &log_event.timestamp);
         }
 
-        map   = root.via.array.ptr[1];
+        map      = *log_event.body;
         map_size = map.via.map.size;
 
         index_custom_len = 0;
@@ -401,6 +368,7 @@ static int opensearch_format(struct flb_config *config,
                 else {
                     memcpy(logstash_index, v, len);
                 }
+
                 index_custom_len = len;
                 flb_sds_destroy(v);
             }
@@ -410,7 +378,7 @@ static int opensearch_format(struct flb_config *config,
         msgpack_sbuffer_init(&tmp_sbuf);
         msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
-        if (ctx->include_tag_key == FLB_TRUE) {
+        if (ctx->include_tag_key) {
             map_size++;
         }
 
@@ -527,7 +495,7 @@ static int opensearch_format(struct flb_config *config,
          */
         ret = os_pack_map_content(&tmp_pck, map, ctx);
         if (ret == -1) {
-            msgpack_unpacked_destroy(&result);
+            flb_log_event_decoder_destroy(&log_decoder);
             msgpack_sbuffer_destroy(&tmp_sbuf);
             flb_sds_destroy(bulk);
             flb_sds_destroy(j_index);
@@ -588,7 +556,7 @@ static int opensearch_format(struct flb_config *config,
         out_buf = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size);
         msgpack_sbuffer_destroy(&tmp_sbuf);
         if (!out_buf) {
-            msgpack_unpacked_destroy(&result);
+            flb_log_event_decoder_destroy(&log_decoder);
             flb_sds_destroy(bulk);
             flb_sds_destroy(j_index);
             if (ra_index != NULL) {
@@ -599,7 +567,7 @@ static int opensearch_format(struct flb_config *config,
 
         ret = flb_sds_cat_safe(&bulk, j_index, flb_sds_len(j_index));
         if (ret == -1) {
-            msgpack_unpacked_destroy(&result);
+            flb_log_event_decoder_destroy(&log_decoder);
             *out_size = 0;
             flb_sds_destroy(bulk);
             flb_sds_destroy(j_index);
@@ -631,7 +599,7 @@ static int opensearch_format(struct flb_config *config,
 
         ret = flb_sds_cat_safe(&bulk, out_buf, flb_sds_len(out_buf));
         if (ret == -1) {
-            msgpack_unpacked_destroy(&result);
+            flb_log_event_decoder_destroy(&log_decoder);
             *out_size = 0;
             flb_sds_destroy(bulk);
             flb_sds_destroy(j_index);
@@ -650,7 +618,8 @@ static int opensearch_format(struct flb_config *config,
         flb_sds_cat_safe(&bulk, "\n", 1);
         flb_sds_destroy(out_buf);
     }
-    msgpack_unpacked_destroy(&result);
+
+    flb_log_event_decoder_destroy(&log_decoder);
 
     /* Set outgoing data */
     *out_data = bulk;
@@ -724,7 +693,7 @@ static int opensearch_error_check(struct flb_opensearch *ctx,
      */
     /* Convert JSON payload to msgpack */
     ret = flb_pack_json(c->resp.payload, c->resp.payload_size,
-                        &out_buf, &out_size, &root_type);
+                        &out_buf, &out_size, &root_type, NULL);
     if (ret == -1) {
         /* Is this an incomplete HTTP Request ? */
         if (c->resp.payload_size <= 0) {

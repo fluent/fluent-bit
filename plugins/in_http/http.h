@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #include <monkey/monkey.h>
 
@@ -45,6 +46,7 @@ struct flb_http {
     size_t buffer_max_size;            /* Maximum buffer size */
     size_t buffer_chunk_size;          /* Chunk allocation size */
 
+    struct flb_log_event_encoder log_encoder;
     struct flb_downstream *downstream; /* Client manager */
     struct mk_list connections;        /* linked list of connections */
 

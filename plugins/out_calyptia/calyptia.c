@@ -420,7 +420,7 @@ static flb_sds_t get_agent_info(char *buf, size_t size, char *k)
 
     len = strlen(k);
 
-    ret = flb_pack_json(buf, size, &out_buf, &out_size, &type);
+    ret = flb_pack_json(buf, size, &out_buf, &out_size, &type, NULL);
     if (ret != 0) {
         return NULL;
     }
@@ -489,7 +489,7 @@ static int store_session_set(struct flb_calyptia *ctx, char *buf, size_t size)
                              FLB_VERSION_STR "\n", sizeof(FLB_VERSION_STR) - 1);
 
     /* encode */
-    ret = flb_pack_json(buf, size, &mp_buf, &mp_size, &type);
+    ret = flb_pack_json(buf, size, &mp_buf, &mp_size, &type, NULL);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "could not encode session information");
         return -1;
