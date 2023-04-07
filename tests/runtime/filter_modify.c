@@ -1337,8 +1337,9 @@ static int get_output_num()
 static int callback_count(void* data, size_t size, void* cb_data)
 {
     if (size > 0) {
-        flb_debug("[test_filter_modify] received message: %s", data);
+        flb_debug("[test_filter_modify] received message: %s", (char*)data);
         add_output_num(); /* success */
+        flb_free(data);
     }
     return 0;
 }
