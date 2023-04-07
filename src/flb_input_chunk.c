@@ -1993,6 +1993,14 @@ const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size)
         }
     }
 
+    /* Lock the internal chunk
+     *
+     * This operation has to be performed before getting the chunk data
+     * pointer because in certain situations it could cause the chunk
+     * mapping to be relocated (ie. macos / windows on trim)
+     */
+    cio_chunk_lock(ic->chunk);
+
     /*
      * msgpack-c internal use a raw buffer for it operations, since we
      * already appended data we just can take out the references to avoid
@@ -2011,9 +2019,6 @@ const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size)
 
     /* Set it busy as it likely it's a reference for an outgoing task */
     ic->busy = FLB_TRUE;
-
-    /* Lock the internal chunk */
-    cio_chunk_lock(ic->chunk);
 
     post_size = flb_input_chunk_get_real_size(ic);
     if (post_size != pre_size) {
