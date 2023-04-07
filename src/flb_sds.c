@@ -434,8 +434,8 @@ flb_sds_t flb_sds_printf(flb_sds_t *sds, const char *fmt, ...)
     }
     va_end(ap);
 
-    if (size > flb_sds_avail(s)) {
-        tmp = flb_sds_increase(s, size);
+    if (size >= flb_sds_avail(s)) {
+        tmp = flb_sds_increase(s, size + 1);
         if (!tmp) {
             return NULL;
         }
