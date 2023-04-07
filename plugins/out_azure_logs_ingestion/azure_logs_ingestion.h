@@ -48,11 +48,14 @@ struct flb_az_li {
     flb_sds_t dce_url;
     flb_sds_t dcr_id;
     flb_sds_t table_name;
-    /* Put current processing time in a time field: will generate if not NULL */
+
     /* time_generated: on/off */
     int time_generated;
-    /* records the time */
+    /* time key name */
     flb_sds_t time_key;
+
+    /* compress payload */
+    int compress_enabled;
 
     /* mangement auth */
     flb_sds_t auth_url;

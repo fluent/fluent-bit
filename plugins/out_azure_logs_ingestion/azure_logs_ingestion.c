@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_crypto.h>
+#include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_hmac.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
@@ -49,8 +50,8 @@ static int cb_azure_logs_ingestion_init(struct flb_output_instance *ins,
     return 0;
 }
 
-/* A duplicate function copied from the azure log analytics plugin.
- * creates a new sds string */
+/* A duplicate function copied from the azure log analytics plugin. 
+    allocates sds string */
 static int az_li_format(const void *in_buf, size_t in_bytes,
                         char **out_buf, size_t *out_size,
                         struct flb_az_li *ctx)
@@ -156,7 +157,7 @@ static int az_li_format(const void *in_buf, size_t in_bytes,
     return 0;
 }
 
-/* gets OAuth token; it creates a new sds string */
+/* Gets OAuth token; (allocates sds string) */
 flb_sds_t get_az_li_token(struct flb_az_li *ctx)
 {
     int ret = 0;
@@ -244,9 +245,12 @@ static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
 {
     int ret;
     int flush_status;
+    int is_compressed;
     size_t b_sent;
     flb_sds_t json_payload;
     size_t json_payload_size;
+    void* final_payload;
+    size_t final_payload_size;
     flb_sds_t token;
     struct flb_connection *u_conn;
     struct flb_http_client *c;
@@ -275,10 +279,28 @@ static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
         goto cleanup;
     }
 
+    /* Map buffer */
+    final_payload = json_payload;
+    final_payload_size = json_payload_size;
+    is_compressed = FLB_FALSE;
+    if (ctx->compress_enabled == FLB_TRUE) {
+        ret = flb_gzip_compress((void *) json_payload, json_payload_size,
+                                &final_payload, &final_payload_size);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins,
+                          "cannot gzip payload, disabling compression");
+        }
+        else {
+            is_compressed = FLB_TRUE;
+            flb_plg_trace(ctx->ins, "enabled payload gzip compression");
+            /* JSON buffer will be cleared at cleanup: */
+        }
+    }
+
     /* Compose HTTP Client request */
     c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->dce_u_url,
-                        json_payload, json_payload_size, NULL, 0, NULL, 0);
-    flb_plg_info(ctx->ins, "payload=%s", json_payload);
+                        final_payload, final_payload_size, NULL, 0, NULL, 0);
+    flb_plg_trace(ctx->ins, "uncomp payload=%s", json_payload);
 
     if (!c) {
         flush_status = FLB_RETRY;
@@ -288,10 +310,13 @@ static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
     /* Append headers */
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
     flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
-    // flb_http_add_header(c, "Content-Encoding", 16, "gzip", 4);
+    if (is_compressed) {
+        flb_http_add_header(c, "Content-Encoding", 16, "gzip", 4);
+    }
     flb_http_add_header(c, "Authorization", 13, token, flb_sds_len(token));
     flb_http_buffer_size(c, FLB_HTTP_DATA_SIZE_MAX);
 
+    /* Execute rest call */
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {
         flb_plg_warn(ctx->ins, "http_do=%i", ret);
@@ -319,10 +344,15 @@ static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
     }
 
 cleanup:
-    /* Cleanup */
+    /* cleanup */
     if (json_payload) {
         flb_sds_destroy(json_payload);
     }
+    /* release compressed payload */
+    if (is_compressed == FLB_TRUE) {
+        flb_free(final_payload);
+    }
+
     if (c) {
         flb_http_client_destroy(c);
     }
@@ -361,7 +391,7 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "dce_url", (char *)NULL, 0, FLB_TRUE,
      offsetof(struct flb_az_li, dce_url),
      "Data Collection Endpoint(DCE) URI (e.g. "
-     "https://la-endpoint-q57l.eastus-1.ingest.monitor.azure.com)"
+     "https://la-endpoint-q12a.eastus-1.ingest.monitor.azure.com)"
     },
     {
      FLB_CONFIG_MAP_STR, "dcr_id", (char *)NULL, 0, FLB_TRUE,
@@ -384,6 +414,11 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_az_li, time_generated),
      "If enabled, will generate a timestamp and append it to JSON. "
      "The key name is set by the 'time_key' parameter"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "compress", "false",
+     0, FLB_TRUE,  offsetof(struct flb_az_li, compress_enabled),
+     "Enable HTTP payload compression (gzip)."
     },
     /* EOF */
     {0}

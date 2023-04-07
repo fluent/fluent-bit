@@ -91,7 +91,7 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
         return NULL;
     }
 
-    /* allocate and set auth url */
+    /* Allocate and set auth url */
     ctx->auth_url = flb_sds_create_size(sizeof(FLB_AZ_LI_AUTH_URL_TMPLT) - 1 +
                                         flb_sds_len(ctx->tenant_id));
     if (!ctx->auth_url) {
@@ -102,7 +102,7 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
     flb_sds_snprintf(&ctx->auth_url, flb_sds_alloc(ctx->auth_url),
                     FLB_AZ_LI_AUTH_URL_TMPLT, ctx->tenant_id);
 
-    /* allocate and set dce full url */
+    /* Allocate and set dce full url */
     ctx->dce_u_url = flb_sds_create_size(sizeof(FLB_AZ_LI_DCE_URL_TMPLT) - 1 +
                                         flb_sds_len(ctx->dce_url) +
                                         flb_sds_len(ctx->dcr_id) +
@@ -116,7 +116,7 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
                     FLB_AZ_LI_DCE_URL_TMPLT, ctx->dce_url, 
                     ctx->dcr_id, ctx->table_name);
 
-    /* initialize the auth mutex */
+    /* Initialize the auth mutex */
     pthread_mutex_init(&ctx->token_mutex, NULL);
 
     /* Create oauth2 context */
@@ -144,7 +144,7 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
     return ctx;
 }
 
-/* free the context and created memory */
+/* Free the context and created memory */
 int flb_az_li_ctx_destroy(struct flb_az_li *ctx)
 {
     if (!ctx) {
