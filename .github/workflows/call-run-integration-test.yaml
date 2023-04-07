@@ -283,6 +283,8 @@ jobs:
 
       - if: matrix.cloud == 'gke'
         uses: 'google-github-actions/setup-gcloud@v1'
+        with:
+          install_components: 'gke-gcloud-auth-plugin'
 
       - name: Setup BATS
         uses: mig4/setup-bats@v1
