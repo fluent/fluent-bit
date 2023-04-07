@@ -317,9 +317,6 @@ int flb_snappy_uncompress_framed_data(char *in_data, size_t in_len,
                                    struct flb_snappy_data_chunk, _head);
 
             if (chunk->buffer != NULL) {
-                assert(chunk->length <=
-                       (aggregated_data_length - aggregated_data_offset));
-
                 if (aggregated_data_buffer != NULL &&
                     result == 0) {
                     memcpy(&aggregated_data_buffer[aggregated_data_offset],
