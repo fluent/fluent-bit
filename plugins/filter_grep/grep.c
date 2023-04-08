@@ -295,8 +295,6 @@ static int cb_grep_filter(const void *data, size_t bytes,
     int old_size = 0;
     int new_size = 0;
     msgpack_object map;
-    size_t record_begining = 0;
-    size_t record_end = 0;
     struct flb_log_event_encoder log_encoder;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
@@ -332,7 +330,6 @@ static int cb_grep_filter(const void *data, size_t bytes,
     while ((ret = flb_log_event_decoder_next(
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
-        record_end = log_decoder.offset;
         old_size++;
 
         /* get time and map */
@@ -356,8 +353,6 @@ static int cb_grep_filter(const void *data, size_t bytes,
         else if (ret == GREP_RET_EXCLUDE) {
             /* Do nothing */
         }
-
-        record_begining = record_end;
     }
 
     if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA &&
