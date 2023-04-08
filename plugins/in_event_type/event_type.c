@@ -217,6 +217,8 @@ static int send_metrics(struct flb_input_instance *ins)
     cmt_summary_set_default(s1, ts, quantiles, 51.612894511314444, 10, 1, (char *[]) {"my_val"});
 
     ret = flb_input_metrics_append(ins, NULL, 0, cmt);
+
+    cmt_destroy(cmt);
     return ret;
 }
 
