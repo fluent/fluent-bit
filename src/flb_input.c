@@ -787,6 +787,7 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
 
     /* ring buffer */
     if (ins->rb) {
+        flb_input_chunk_ring_buffer_cleanup(ins);
         flb_ring_buffer_destroy(ins->rb);
     }
 
