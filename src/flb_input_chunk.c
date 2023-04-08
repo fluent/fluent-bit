@@ -1915,6 +1915,24 @@ retry:
     return 0;
 }
 
+/* iterate input instance ring buffer and remove any enqueued input_chunk_raw */
+void flb_input_chunk_ring_buffer_cleanup(struct flb_input_instance *ins)
+{
+    int ret;
+    struct input_chunk_raw *cr;
+
+    if (!ins->rb) {
+        return;
+    }
+
+    while ((ret = flb_ring_buffer_read(ins->rb, (void *) &cr, sizeof(cr))) == 0) {
+        if (cr) {
+            destroy_chunk_raw(cr);
+            cr = NULL;
+        }
+    }
+}
+
 void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data)
 {
     int ret;
