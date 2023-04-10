@@ -1010,7 +1010,6 @@ int flb_output_net_property_check(struct flb_output_instance *ins,
                 flb_helper("try the command: %s -o %s -h\n",
                            config->program_name, ins->p->name);
             }
-            flb_output_instance_destroy(ins);
             return -1;
         }
     }
@@ -1047,7 +1046,6 @@ int flb_output_plugin_property_check(struct flb_output_instance *ins,
                 flb_helper("try the command: %s -o %s -h\n",
                            config->program_name, ins->p->name);
             }
-            flb_output_instance_destroy(ins);
             return -1;
         }
     }
@@ -1237,6 +1235,7 @@ int flb_output_init_all(struct flb_config *config)
          * configuration parameters are valid if the plugin is registering a config map.
          */
         if (flb_output_plugin_property_check(ins, config) == -1) {
+            flb_output_instance_destroy(ins);
             return -1;
         }
 
@@ -1264,6 +1263,7 @@ int flb_output_init_all(struct flb_config *config)
         flb_net_setup_init(&ins->net_setup);
 
         if (flb_output_net_property_check(ins, config) == -1) {
+            flb_output_instance_destroy(ins);
             return -1;
         }
 
