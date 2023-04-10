@@ -417,8 +417,8 @@ flb_sds_t flb_sds_printf(flb_sds_t *sds, const char *fmt, ...)
     if (len < 64) len = 64;
 
     s = *sds;
-    if (flb_sds_avail(s)< len) {
-        tmp = flb_sds_increase(s, len);
+    if (flb_sds_avail(s) < len) {
+        tmp = flb_sds_increase(s, len - flb_sds_avail(s));
         if (!tmp) {
             return NULL;
         }
@@ -435,7 +435,7 @@ flb_sds_t flb_sds_printf(flb_sds_t *sds, const char *fmt, ...)
     va_end(ap);
 
     if (size >= flb_sds_avail(s)) {
-        tmp = flb_sds_increase(s, size + 1);
+        tmp = flb_sds_increase(s, size - flb_sds_avail(s) + 1);
         if (!tmp) {
             return NULL;
         }
