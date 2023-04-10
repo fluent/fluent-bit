@@ -872,7 +872,6 @@ int flb_input_net_property_check(struct flb_input_instance *ins,
                 flb_helper("try the command: %s -i %s -h\n",
                            config->program_name, ins->p->name);
             }
-            flb_input_instance_destroy(ins);
             return -1;
         }
     }
@@ -909,7 +908,6 @@ int flb_input_plugin_property_check(struct flb_input_instance *ins,
                 flb_helper("try the command: %s -i %s -h\n",
                            config->program_name, ins->p->name);
             }
-            flb_input_instance_destroy(ins);
             return -1;
         }
     }
@@ -1081,16 +1079,12 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                           "(certificate file missing)",
                           ins->name);
 
-                flb_input_instance_destroy(ins);
-
                 return -1;
             }
             else if (ins->tls_key_file == NULL) {
                 flb_error("[input %s] error initializing TLS context "
                           "(private key file missing)",
                           ins->name);
-
-                flb_input_instance_destroy(ins);
 
                 return -1;
             }
@@ -1115,8 +1109,6 @@ int flb_input_instance_init(struct flb_input_instance *ins,
             flb_error("[input %s] error initializing TLS context",
                       ins->name);
 
-            flb_input_instance_destroy(ins);
-
             return -1;
         }
     }
@@ -1127,8 +1119,6 @@ int flb_input_instance_init(struct flb_input_instance *ins,
     ins->tls_config_map = flb_tls_get_config_map(config);
 
     if (ins->tls_config_map == NULL) {
-        flb_input_instance_destroy(ins);
-
         return -1;
     }
 
@@ -1168,7 +1158,6 @@ int flb_input_instance_init(struct flb_input_instance *ins,
             if (ret != 0) {
                 flb_error("failed initialize input %s",
                           ins->name);
-                flb_input_instance_destroy(ins);
                 return -1;
             }
 
@@ -1177,7 +1166,6 @@ int flb_input_instance_init(struct flb_input_instance *ins,
             if (ret != 0) {
                 flb_error("failed initialize channel events on input %s",
                           ins->name);
-                flb_input_instance_destroy(ins);
                 return -1;
             }
 
@@ -1186,7 +1174,6 @@ int flb_input_instance_init(struct flb_input_instance *ins,
             if (ret) {
                 flb_error("failed while registering ring buffer events on input %s",
                           ins->name);
-                flb_input_instance_destroy(ins);
                 return -1;
             }
         }
@@ -1201,7 +1188,6 @@ int flb_input_instance_init(struct flb_input_instance *ins,
             if (ret != 0) {
                 flb_error("failed initialize input %s",
                           ins->name);
-                flb_input_instance_destroy(ins);
                 return -1;
             }
         }
@@ -1253,7 +1239,7 @@ int flb_input_init_all(struct flb_config *config)
         /* Initialize instance */
         ret = flb_input_instance_init(ins, config);
         if (ret == -1) {
-            /* do nothing, it's ok if it fails */
+            flb_input_instance_destroy(ins);
             return -1;
         }
     }
