@@ -170,6 +170,7 @@ flb_sds_t get_az_li_token(struct flb_az_li *ctx)
     }
     /* Retrieve access token only if expired */
     if (flb_oauth2_token_expired(ctx->u_auth) == FLB_TRUE) {
+        flb_plg_debug(ctx->ins, "token expired. getting new token");
         /* Clear any previous oauth2 payload content */
         flb_oauth2_payload_clear(ctx->u_auth);
 
@@ -221,11 +222,15 @@ flb_sds_t get_az_li_token(struct flb_az_li *ctx)
             }
             /* If our token_length is more than what we already allocated */
             else if (token_len > flb_sds_len(ctx->token)) {
+                flb_plg_debug(ctx->ins, "new token len > previous token len");
                 ctx->token = flb_sds_increase(ctx->token, token_len - 
                                               flb_sds_len(ctx->token));
             }
             flb_sds_snprintf(&ctx->token, flb_sds_alloc(ctx->token), "%s %s",
                              ctx->u_auth->token_type, ctx->u_auth->access_token);
+
+            flb_plg_debug(ctx->ins, "got azure token");
+
         }
     }
 
@@ -292,7 +297,7 @@ static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
         }
         else {
             is_compressed = FLB_TRUE;
-            flb_plg_trace(ctx->ins, "enabled payload gzip compression");
+            flb_plg_debug(ctx->ins, "enabled payload gzip compression");
             /* JSON buffer will be cleared at cleanup: */
         }
     }
@@ -300,9 +305,9 @@ static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
     /* Compose HTTP Client request */
     c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->dce_u_url,
                         final_payload, final_payload_size, NULL, 0, NULL, 0);
-    flb_plg_trace(ctx->ins, "uncomp payload=%s", json_payload);
 
     if (!c) {
+        flb_plg_warn(ctx->ins, "retrying payload bytes=%d", flb_sds_len(final_payload_size));
         flush_status = FLB_RETRY;
         goto cleanup;
     }
@@ -338,6 +343,7 @@ static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
             else {
                 flb_plg_warn(ctx->ins, "http_status=%i", c->resp.status);
             }
+            flb_plg_debug(ctx->ins, "retrying payload bytes=%d", flb_sds_len(final_payload_size));
             flush_status = FLB_RETRY;
             goto cleanup;
         }
@@ -365,7 +371,7 @@ cleanup:
 static int cb_azure_logs_ingestion_exit(void *data, struct flb_config *config)
 {
     struct flb_az_li *ctx = data;
-
+    flb_plg_debug(ctx->ins, "exiting logs ingestion plugin");
     flb_az_li_ctx_destroy(ctx);
     return 0;
 }
