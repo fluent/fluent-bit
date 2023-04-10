@@ -505,6 +505,8 @@ static int flb_forward_format_forward_compat_mode(struct flb_forward *ctx,
                        (char *) data, bytes, NULL, chunk);
     }
 
+    flb_log_event_decoder_destroy(&log_decoder);
+
     *out_buf  = mp_sbuf.data;
     *out_size = mp_sbuf.size;
 
