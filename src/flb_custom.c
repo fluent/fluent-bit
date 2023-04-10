@@ -220,7 +220,6 @@ int flb_custom_plugin_property_check(struct flb_custom_instance *ins,
                 flb_helper("try the command: %s -F %s -h\n",
                            config->program_name, ins->p->name);
             }
-            flb_custom_instance_destroy(ins);
             return -1;
         }
     }
@@ -262,6 +261,7 @@ int flb_custom_init_all(struct flb_config *config)
          * configuration parameters are valid if the plugin is registering a config map.
          */
         if (flb_custom_plugin_property_check(ins, config) == -1) {
+            flb_custom_instance_destroy(ins);
             return -1;
         }
 
