@@ -242,7 +242,9 @@ static int flb_forward_format_message_mode(struct flb_forward *ctx,
 
         /* Pack timestamp */
         if (fc->time_as_integer == FLB_TRUE) {
-            msgpack_pack_uint64(&mp_pck, tm.tm.tv_sec);
+            flb_time_append_to_msgpack(&log_event.timestamp,
+                                       &mp_pck,
+                                       FLB_TIME_ETFMT_INT);
         }
         else {
             flb_time_append_to_msgpack(&log_event.timestamp,
