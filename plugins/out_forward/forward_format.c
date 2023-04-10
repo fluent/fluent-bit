@@ -196,7 +196,6 @@ static int flb_forward_format_message_mode(struct flb_forward *ctx,
     size_t record_size;
     char *chunk;
     char chunk_buf[33];
-    msgpack_object   ts;
     msgpack_packer   mp_pck;
     msgpack_sbuffer  mp_sbuf;
     struct flb_time tm;
@@ -246,7 +245,9 @@ static int flb_forward_format_message_mode(struct flb_forward *ctx,
             msgpack_pack_uint64(&mp_pck, tm.tm.tv_sec);
         }
         else {
-            msgpack_pack_object(&mp_pck, ts);
+            flb_time_append_to_msgpack(&log_event.timestamp,
+                                       &mp_pck,
+                                       FLB_TIME_ETFMT_V1_FIXEXT);
         }
 
         /* Pack records */
