@@ -507,7 +507,7 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
         count = 0;
         o_ins = mk_list_entry(head, struct flb_output_instance, _head);
 
-        flb_info("[input chunk] Output instance: %s. Total_limit_size: %d. Over-limit %s",o_ins->name, o_ins->total_limit_size, overlimit);
+        flb_info("[input chunk] Output instance: %s. Total_limit_size: %d. Over-limit %d",o_ins->name, o_ins->total_limit_size, overlimit);
 
         if ((o_ins->total_limit_size == -1) || ((1 << o_ins->id) & overlimit) == 0 ||
            (flb_routes_mask_get_bit(ic->routes_mask, o_ins->id) == 0)) {
