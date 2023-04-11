@@ -440,8 +440,8 @@ int flb_intput_chunk_count_dropped_chunks(struct flb_input_chunk *ic,
                      o_ins->fs_chunks_size -
                      o_ins->fs_backlog_chunks_size;
 
-    flb_info("[input chunk] chk: %s - flb_intput_chunk_count_dropped_chunks. Chunk size: %d. bytes_remained: %d. Chunk %s. Output %s",
-             flb_input_chunk_get_name(ic), chunk_size, bytes_remained, flb_input_chunk_get_name(ic), o_ins->name);
+    flb_info("[input chunk] chk: %s - flb_intput_chunk_count_dropped_chunks. Chunk size: %d. bytes_remained: %d. Output %s",
+             flb_input_chunk_get_name(ic), chunk_size, bytes_remained, o_ins->name);
 
     flb_info("[input chunk] chk: %s - Chunks list size: %d",
              flb_input_chunk_get_name(ic), mk_list_size(&ic->in->chunks));
@@ -477,8 +477,8 @@ int flb_intput_chunk_count_dropped_chunks(struct flb_input_chunk *ic,
      * Return '0' means that we cannot find a slot to ingest the incoming data.
      */
     if (enough_space == FLB_FALSE) {
-        flb_info("[input chunk] chk: %s - not enough space. Returning 0. Count: %d. Chunk size %d. Chunk: %s. Output %s",
-                 flb_input_chunk_get_name(ic), count, chunk_size, flb_input_chunk_get_name(ic), o_ins->name);
+        flb_info("[input chunk] chk: %s - not enough space. Returning 0. Count: %d. Chunk size %d. Output %s",
+                 flb_input_chunk_get_name(ic), count, chunk_size, o_ins->name);
         return 0;
     }
 
