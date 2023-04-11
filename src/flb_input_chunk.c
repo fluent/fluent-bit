@@ -440,6 +440,9 @@ int flb_intput_chunk_count_dropped_chunks(struct flb_input_chunk *ic,
                      o_ins->fs_chunks_size -
                      o_ins->fs_backlog_chunks_size;
 
+    flb_info("[input chunk] flb_intput_chunk_count_dropped_chunks. Chunk size: %d. bytes_remained: %d. Chunk %s. Output %s",
+             chunk_size, bytes_remained, flb_input_chunk_get_name(ic), o_ins->name);
+
     mk_list_foreach(head, &ic->in->chunks) {
         old_ic = mk_list_entry(head, struct flb_input_chunk, _head);
 
@@ -450,6 +453,8 @@ int flb_intput_chunk_count_dropped_chunks(struct flb_input_chunk *ic,
 
         bytes_remained += flb_input_chunk_get_real_size(old_ic);
         count++;
+        flb_info("[input chunk] Updated bytes remained: %d. Count: %d. Chunk: %s",
+                 bytes_remained, count, flb_input_chunk_get_name(ic));
         if (bytes_remained >= (ssize_t) chunk_size) {
             enough_space = FLB_TRUE;
             break;
@@ -465,6 +470,8 @@ int flb_intput_chunk_count_dropped_chunks(struct flb_input_chunk *ic,
      * Return '0' means that we cannot find a slot to ingest the incoming data.
      */
     if (enough_space == FLB_FALSE) {
+        flb_info("[input chunk] not enough space. Returning 0. Count: %d. Chunk size %d. Chunk: %s. Output %s",
+                 count, chunk_size, flb_input_chunk_get_name(ic), o_ins->name);
         return 0;
     }
 
@@ -495,9 +502,12 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
      * routes_mask to only route to the output plugin that have enough space after
      * deleting some chunks fome the queue.
      */
+    flb_info("[input chunk] finding space to allocate %d bytes.", chunk_size);
     mk_list_foreach(head, &ic->in->config->outputs) {
         count = 0;
         o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+
+        flb_info("[input chunk] Output instance: %s. Total_limit_size: %d. Over-limit %s",o_ins->name, o_ins->total_limit_size, overlimit);
 
         if ((o_ins->total_limit_size == -1) || ((1 << o_ins->id) & overlimit) == 0 ||
            (flb_routes_mask_get_bit(ic->routes_mask, o_ins->id) == 0)) {
@@ -516,6 +526,7 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
              * satisfied solely by releasing chunks in either storage_backlog
              * state (segregated or in queue)
              */
+            flb_info("[input chunk] space requirement was satisfied for chunk %s in output %s", flb_input_chunk_get_name(ic), o_ins->name);
             continue;
         }
 
