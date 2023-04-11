@@ -443,6 +443,9 @@ int flb_intput_chunk_count_dropped_chunks(struct flb_input_chunk *ic,
     flb_info("[input chunk] chk: %s - flb_intput_chunk_count_dropped_chunks. Chunk size: %d. bytes_remained: %d. Chunk %s. Output %s",
              flb_input_chunk_get_name(ic), chunk_size, bytes_remained, flb_input_chunk_get_name(ic), o_ins->name);
 
+    flb_info("[input chunk] chk: %s - Chunks list size: %d",
+             flb_input_chunk_get_name(ic), mk_list_size(&ic->in->chunks));
+
     mk_list_foreach(head, &ic->in->chunks) {
         old_ic = mk_list_entry(head, struct flb_input_chunk, _head);
 
