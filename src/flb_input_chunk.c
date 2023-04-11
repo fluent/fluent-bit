@@ -456,6 +456,8 @@ int flb_intput_chunk_count_dropped_chunks(struct flb_input_chunk *ic,
         flb_info("[input chunk] chk: %s - Updated bytes remained: %d. Count: %d. Chunk: %s",
                  flb_input_chunk_get_name(ic), bytes_remained, count, flb_input_chunk_get_name(ic));
         if (bytes_remained >= (ssize_t) chunk_size) {
+            flb_info("[input chunk] chk: %s - enough space here. bytes remained: %d '>=' Chunk size: %d",
+                     flb_input_chunk_get_name(ic), bytes_remained, chunk_size);
             enough_space = FLB_TRUE;
             break;
         }
