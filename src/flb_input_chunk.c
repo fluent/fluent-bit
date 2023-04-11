@@ -509,7 +509,8 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
      * routes_mask to only route to the output plugin that have enough space after
      * deleting some chunks fome the queue.
      */
-    flb_info("[input chunk] chk: %s - finding space to allocate %d bytes.", flb_input_chunk_get_name(ic), chunk_size);
+    flb_info("[input chunk] chk: %s - finding space to allocate %d bytes. Outputs: %d",
+             flb_input_chunk_get_name(ic), chunk_size, mk_list_size(&ic->in->config->outputs));
     mk_list_foreach(head, &ic->in->config->outputs) {
         count = 0;
         o_ins = mk_list_entry(head, struct flb_output_instance, _head);
@@ -519,6 +520,7 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
 
         if ((o_ins->total_limit_size == -1) || ((1 << o_ins->id) & overlimit) == 0 ||
            (flb_routes_mask_get_bit(ic->routes_mask, o_ins->id) == 0)) {
+            flb_info("[input chunk] chk: %s - Continue.", flb_input_chunk_get_name(ic));
             continue;
         }
 
@@ -984,6 +986,8 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
     struct mk_list *head;
     struct flb_output_instance *o_ins;
 
+    flb_info("[input chunk] chk: %s - Calling flb_input_chunk_destroy", flb_input_chunk_get_name(ic));
+
     if (flb_input_chunk_is_up(ic) == FLB_FALSE) {
         flb_input_chunk_set_up(ic);
     }
@@ -1005,7 +1009,7 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
             if (ic->fs_counted == FLB_TRUE) {
                 FS_CHUNK_SIZE_DEBUG_MOD(o_ins, ic, -bytes);
                 o_ins->fs_chunks_size -= bytes;
-                flb_debug("[input chunk] remove chunk %s with %ld bytes from plugin %s, "
+                flb_info("[input chunk] remove chunk %s with %ld bytes from plugin %s, "
                           "the updated fs_chunks_size is %ld bytes", flb_input_chunk_get_name(ic),
                           bytes, o_ins->name, o_ins->fs_chunks_size);
             }
