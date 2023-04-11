@@ -213,16 +213,6 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         ctx->sts_endpoint = (char *) tmp;
     }
 
-    /* init log streams */
-    if (ctx->log_stream_name) {
-        ctx->stream.name = flb_sds_create(ctx->log_stream_name);
-        if (!ctx->stream.name) {
-            flb_errno();
-            goto error;
-        }
-        ctx->stream_created = FLB_FALSE;
-    }
-
     /* one tls instance for provider, one for cw client */
     ctx->cred_tls = flb_tls_create(FLB_TRUE,
                                    ins->tls_debug,
@@ -479,19 +469,10 @@ void flb_cloudwatch_ctx_destroy(struct flb_cloudwatch *ctx)
             flb_sds_destroy(ctx->stream_name);
         }
 
-        if (ctx->log_stream_name) {
-            if (ctx->stream.name) {
-                flb_sds_destroy(ctx->stream.name);
-            }
-            if (ctx->stream.sequence_token) {
-                flb_sds_destroy(ctx->stream.sequence_token);
-            }
-        } else {
-            mk_list_foreach_safe(head, tmp, &ctx->streams) {
-                stream = mk_list_entry(head, struct log_stream, _head);
-                mk_list_del(&stream->_head);
-                log_stream_destroy(stream);
-            }
+        mk_list_foreach_safe(head, tmp, &ctx->streams) {
+            stream = mk_list_entry(head, struct log_stream, _head);
+            mk_list_del(&stream->_head);
+            log_stream_destroy(stream);
         }
         flb_free(ctx);
     }
