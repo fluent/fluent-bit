@@ -436,7 +436,7 @@ static int prepare_destroy_conn(struct flb_connection *u_conn)
     flb_trace("[upstream] destroy connection #%i to %s:%i",
               u_conn->fd, u->tcp_host, u->tcp_port);
 
-    if (flb_stream_is_async(&u->base)) {
+    if (MK_EVENT_IS_REGISTERED((&u_conn->event))) {
         mk_event_del(u_conn->evl, &u_conn->event);
     }
 
