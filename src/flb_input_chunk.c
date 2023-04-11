@@ -451,6 +451,8 @@ int flb_intput_chunk_count_dropped_chunks(struct flb_input_chunk *ic,
 
         if (flb_input_chunk_safe_delete(ic, old_ic, o_ins->id) == FLB_FALSE ||
             flb_input_chunk_is_task_safe_delete(old_ic->task) == FLB_FALSE) {
+            flb_info("[input chunk] chk: %s - Continue",
+                     flb_input_chunk_get_name(ic));
             continue;
         }
 
