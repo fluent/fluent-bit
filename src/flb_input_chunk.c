@@ -1394,7 +1394,7 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
      */
     ic = input_chunk_get(in, tag, tag_len, buf_size, &set_down);
     if (!ic) {
-        flb_error("[input chunk] no available chunk");
+        flb_error("[input chunk] chk: %s - no available chunk", flb_input_chunk_get_name(ic));
         return -1;
     }
 
