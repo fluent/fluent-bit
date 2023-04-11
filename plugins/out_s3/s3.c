@@ -1101,7 +1101,7 @@ put_object:
     if (ret < 0) {
         if (chunk) {
             chunk->failures += 1;
-            if (chunk->failures > ctx->ins->retry_limit){
+            if (ctx->ins->retry_limit >= 0 && chunk->failures > ctx->ins->retry_limit){
                 s3_retry_warn(ctx, tag, chunk->input_name, file_first_log_time, FLB_FALSE);
                 return -2;
             }
@@ -1147,7 +1147,7 @@ multipart:
 
         if (chunk) {
             chunk->failures += 1;
-            if (chunk->failures > ctx->ins->retry_limit) {
+            if (ctx->ins->retry_limit >= 0 &&  chunk->failures > ctx->ins->retry_limit) {
                 s3_retry_warn(ctx, (char *) chunk->fsf->meta_buf, m_upload->input_name,
                               chunk->create_time, FLB_FALSE);
                 /*
@@ -1234,12 +1234,15 @@ static int put_all_chunks(struct flb_s3 *ctx, int is_startup)
         if (fs_stream == ctx->stream_upload) {
             continue;
         }
+
         /* skip metadata stream */
         if (fs_stream == ctx->stream_metadata) {
             continue;
         }
 
+        /* on startup, we only send old chunks in this routine */
         if (is_startup == FLB_TRUE && fs_stream == ctx->stream_active) {
+            flb_info("put_all_chunks: stream_active has %d chunks", mk_list_size(&fs_stream->files));
             continue;
         }
 
@@ -1278,7 +1281,7 @@ static int put_all_chunks(struct flb_s3 *ctx, int is_startup)
             if (ret < 0) {
                 chunk->failures += 1;
                 if (is_startup == FLB_TRUE) {
-                    if (chunk->failures > ctx->ins->retry_limit){
+                    if (ctx->ins->retry_limit >= 0 && chunk->failures > ctx->ins->retry_limit){
                         s3_retry_warn(ctx, (char *) fsf->meta_buf, NULL,
                                       chunk->create_time, FLB_FALSE);
                         if (chunk->locked == FLB_TRUE) {
@@ -1638,8 +1641,32 @@ static void cb_s3_upload(struct flb_config *config, void *data)
     struct mk_list *head;
     int complete;
     int ret;
+    time_t now;
 
+    now = time(NULL);
+    
     flb_plg_debug(ctx->ins, "Running upload daemon coro uploader (cb_s3_upload)..");
+
+    /* check chunks in active stream not marked as ready to be sent and see if any are timed out */
+    mk_list_foreach_safe(head, tmp, &ctx->stream_active->files) {
+        fsf = mk_list_entry(head, struct flb_fstore_file, _head);
+        chunk = fsf->data;
+
+        /* Locked chunks are already in the queue, skip */
+        if (chunk->locked == FLB_TRUE) {
+            continue;
+        }
+
+        if (now > (chunk->create_time + ctx->upload_timeout)) {
+            /* add to upload queue */
+            if (chunk->input_name) {
+                flb_plg_info(ctx->ins, "upload_timeout reached for chunk from %s",
+                             chunk->input_name);
+            }
+            s3_store_file_lock(chunk);
+            mk_list_add(&chunk->_head, &ctx->upload_queue);
+        }
+    }
 
     /* send any chunks that are ready */
     mk_list_foreach_safe(head, tmp, &ctx->upload_queue) {
@@ -1680,7 +1707,7 @@ static void cb_s3_upload(struct flb_config *config, void *data)
         m_upload = mk_list_entry(head, struct multipart_upload, _head);
         complete = FLB_FALSE;
 
-        if (m_upload->complete_errors > ctx->ins->retry_limit) {
+        if (ctx->ins->retry_limit >= 0 && m_upload->complete_errors > ctx->ins->retry_limit) {
             flb_plg_error(ctx->ins,
                           "Multipart Upload for %s has failed "
                           "s3:CompleteMultipartUpload more than configured retry_limit, "
@@ -1913,6 +1940,11 @@ static void flush_startup_chunks(struct flb_s3 *ctx)
                           "Failed to send locally buffered data left over "
                           "from previous executions; will retry. Buffer=%s",
                           ctx->fs->root_path);
+        } else {
+            flb_plg_info(ctx->ins,
+                          "Successfully sent all locally buffered data left over "
+                          "from previous executions. Buffer=%s",
+                          ctx->fs->root_path);
         }
     }
 
@@ -2004,13 +2036,21 @@ static void daemon_coroutine(struct flb_config *config, struct flb_s3 *ctx)
     /* tell engine that this task did complete successfully */
     flb_output_return_no_destroy(FLB_OK);
 
-    while (FLB_TRUE) {
+    /* 
+     * FLB engine uses a graceful cooperative shutdown model. 
+     * If coroutines never end, the system won't stop.
+     * So the daemon coroutine must exit itself when the engine is in shutdown mode.
+     */
+    while (config->is_running == FLB_TRUE) {
         /* Cleanup old buffers found on startup */
         flush_startup_chunks(ctx);
 
         /* upload any ready chunks */
         cb_s3_upload(config, ctx);
 
+        if (config->is_running == FLB_FALSE) {
+            break;
+        }
         /* 
          * special coroutine sleep
          * Doesn't block any thread
@@ -2097,7 +2137,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
         unit_test_flush(ctx, upload_file,
                         event_chunk->tag, flb_sds_len(event_chunk->tag),
                         chunk, chunk_size,
-                        m_upload_file, file_first_log_time, out_flush->task->i_ins->name);
+                        m_upload_file, file_first_log_time, i_ins->name);
     }
 
     /* 
@@ -2106,7 +2146,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
      */
     ret = buffer_chunk(ctx, upload_file, chunk, chunk_size,
                        event_chunk->tag, flb_sds_len(event_chunk->tag),
-                       file_first_log_time, out_flush->task->i_ins->name);
+                       file_first_log_time, i_ins->name);
 
     if (ret < 0) {
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -2116,8 +2156,8 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     if (upload_file != NULL && time(NULL) >
         (upload_file->create_time + ctx->upload_timeout)) {
         upload_timeout_check = FLB_TRUE;
-        flb_plg_info(ctx->ins, "upload_timeout reached for %s",
-                     event_chunk->tag);
+        flb_plg_info(ctx->ins, "upload_timeout reached for chunk from %s, tag=%s",
+                     i_ins->name, event_chunk->tag);
     }
 
     m_upload_file = get_upload(ctx,
@@ -2150,6 +2190,8 @@ static int cb_s3_exit(void *data, struct flb_config *config)
     struct multipart_upload *m_upload = NULL;
     struct mk_list *tmp;
     struct mk_list *head;
+
+    flb_plg_info(ctx->ins, "cb_exit");
 
     if (!ctx) {
         return 0;
