@@ -286,7 +286,7 @@ static int flb_input_chunk_is_task_safe_delete(struct flb_task *task)
         return FLB_FALSE;
     }
 
-    flb_info("[input chunk] chk: %s - FLB_TRUE", flb_input_chunk_get_name(task->ic));
+    flb_info("[input chunk] chk: %s - FLB_TRUE flb_input_chunk_is_task_safe_delete", flb_input_chunk_get_name(task->ic));
     return FLB_TRUE;
 }
 
@@ -310,7 +310,7 @@ static int flb_input_chunk_safe_delete(struct flb_input_chunk *ic,
         flb_info("[input chunk] chk: %s - same routes.", flb_input_chunk_get_name(ic));
         return FLB_FALSE;
     }
-    flb_info("[input chunk] chk: %s - FLB_TRUE", flb_input_chunk_get_name(ic));
+    flb_info("[input chunk] chk: %s - FLB_TRUE flb_input_chunk_safe_delete", flb_input_chunk_get_name(ic));
     return FLB_TRUE;
 }
 
