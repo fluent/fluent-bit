@@ -31,6 +31,27 @@ int flb_input_metrics_append(struct flb_input_instance *ins,
     int ret;
     char *mt_buf;
     size_t mt_size;
+    int processor_is_active;
+
+    processor_is_active = flb_processor_is_active(ins->processor);
+    if (processor_is_active) {
+        if (!tag) {
+            if (ins->tag && ins->tag_len > 0) {
+                tag = ins->tag;
+                tag_len = ins->tag_len;
+            }
+            else {
+                tag = ins->name;
+                tag_len = strlen(ins->name);
+            }
+        }
+
+        ret = flb_processor_run(ins->processor, FLB_PROCESSOR_METRICS, tag, tag_len, (char *) cmt, 0, NULL, NULL);
+
+        if (ret == -1) {
+            return -1;
+        }
+    }
 
     /* Convert metrics to msgpack */
     ret = cmt_encode_msgpack_create(cmt, &mt_buf, &mt_size);

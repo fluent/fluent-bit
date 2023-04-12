@@ -19,10 +19,12 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_event.h>
 #include <fluent-bit/flb_processor.h>
 #include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_kv.h>
 
 /*
  * A processor creates a chain of processing units for different telemetry data
@@ -57,10 +59,13 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
                                                      char *unit_name)
 {
     struct mk_list *head;
+    int    filter_event_type;
     struct flb_filter_plugin *f = NULL;
     struct flb_filter_instance *f_ins;
     struct flb_config *config = proc->config;
     struct flb_processor_unit *pu = NULL;
+    struct flb_native_processor_plugin *native_processor;
+    struct flb_native_processor_instance *native_processor_instance;
 
     /*
      * Looking the processor unit by using it's name and type, the first list we
@@ -69,13 +74,17 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
     mk_list_foreach(head, &config->filter_plugins) {
         f = mk_list_entry(head, struct flb_filter_plugin, _head);
 
-        /* skip filters which don't handle the required type */
-        if (!(event_type & f->event_type)) {
-            continue;
+        filter_event_type = f->event_type;
+
+        if (filter_event_type == 0) {
+            filter_event_type = FLB_FILTER_LOGS;
         }
 
-        if (strcmp(f->name, unit_name) == 0) {
-            break;
+        /* skip filters which don't handle the required type */
+        if ((event_type & filter_event_type) != 0) {
+            if (strcmp(f->name, unit_name) == 0) {
+                break;
+            }
         }
 
         f = NULL;
@@ -101,7 +110,9 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
         /* create an instance of the filter */
         f_ins = flb_filter_new(config, unit_name, NULL);
         if (!f_ins) {
+            flb_sds_destroy(pu->name);
             flb_free(pu);
+
             return NULL;
         }
         /* matching rule: just set to workaround the pipeline initializer */
@@ -124,7 +135,19 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
     else {
         pu->unit_type = FLB_PROCESSOR_UNIT_NATIVE;
 
-        /* FIXME */
+        /* create an instance of the processor */
+        native_processor_instance = flb_native_processor_new(config, unit_name, NULL);
+
+        if (native_processor_instance == NULL) {
+            flb_error("[processor] error creating native processor instance %s", pu->name);
+
+            flb_free(pu);
+
+            return NULL;
+        }
+
+        /* unit type and context */
+        pu->ctx = (void *) native_processor_instance;
     }
 
     /* Link the processor unit to the proper list */
@@ -137,6 +160,7 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
     else if (event_type == FLB_PROCESSOR_TRACES) {
         mk_list_add(&pu->_head, &proc->traces);
     }
+
     return pu;
 }
 
@@ -145,10 +169,10 @@ int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k
     if (pu->unit_type == FLB_PROCESSOR_UNIT_FILTER) {
         return flb_filter_set_property(pu->ctx, k, v);
     }
-    else {
-        /* FIXME */
-    }
-    return -1;
+
+    return flb_native_processor_set_property(
+            (struct flb_native_processor_instance *) pu->ctx,
+            k, v);
 }
 
 void flb_processor_unit_destroy(struct flb_processor_unit *pu)
@@ -161,8 +185,14 @@ void flb_processor_unit_destroy(struct flb_processor_unit *pu)
         flb_filter_instance_destroy(pu->ctx);
     }
     else {
-        /* FIXME */
+        flb_native_processor_instance_exit(
+            (struct flb_native_processor_instance *) pu->ctx,
+            config);
+
+        flb_native_processor_instance_destroy(
+            (struct flb_native_processor_instance *) pu->ctx);
     }
+
     flb_sds_destroy(pu->name);
     flb_free(pu);
 }
@@ -182,7 +212,16 @@ int flb_processor_unit_init(struct flb_processor_unit *pu)
         }
     }
     else {
-        /* FIXME */
+        ret = flb_native_processor_init(
+                proc->config,
+                (struct flb_native_processor_instance *) pu->ctx);
+
+        if (ret == -1) {
+            flb_error("[processor] error initializing unit native processor "
+                      "%s", pu->name);
+
+            return -1;
+        }
     }
 
     return ret;
@@ -259,6 +298,7 @@ int flb_processor_run(struct flb_processor *proc,
     struct mk_list *list = NULL;
     struct flb_processor_unit *pu;
     struct flb_filter_instance *f_ins;
+    struct flb_native_processor_instance *p_ins;
 
     if (type == FLB_PROCESSOR_LOGS) {
         list = &proc->logs;
@@ -329,13 +369,59 @@ int flb_processor_run(struct flb_processor *proc,
             }
         }
         else {
-            /* FIXME */
+            /* get the processor context */
+            p_ins = pu->ctx;
+
+            ret = 0;
+
+            /* run the process callback */
+            if (type == FLB_PROCESSOR_LOGS) {
+                if (p_ins->p->cb_process_logs != NULL) {
+                    ret = p_ins->p->cb_process_logs(
+                                        cur_buf, cur_size,    /* msgpack buffer */
+                                        tag, tag_len,         /* tag */
+                                        &tmp_buf, &tmp_size,  /* output buffer */
+                                        p_ins,                /* filter instance */
+                                        proc->data,           /* (input/output) instance context */
+                                        p_ins->context,       /* filter context */
+                                        proc->config);
+                }
+            }
+            else if (type == FLB_PROCESSOR_METRICS) {
+                if (p_ins->p->cb_process_metrics != NULL) {
+                    ret = p_ins->p->cb_process_metrics(
+                                        (struct cmt *) cur_buf, /* cmetrics context */
+                                        tag, tag_len,         /* tag */
+                                        &tmp_buf, &tmp_size,  /* output buffer */
+                                        p_ins,                /* filter instance */
+                                        proc->data,           /* (input/output) instance context */
+                                        p_ins->context,       /* filter context */
+                                        proc->config);
+                }
+            }
+            else if (type == FLB_PROCESSOR_TRACES) {
+                if (p_ins->p->cb_process_traces != NULL) {
+                    ret = p_ins->p->cb_process_traces(
+                                        (struct ctrace *) cur_buf, /* ctraces context */
+                                        tag, tag_len,         /* tag */
+                                        &tmp_buf, &tmp_size,  /* output buffer */
+                                        p_ins,                /* filter instance */
+                                        proc->data,           /* (input/output) instance context */
+                                        p_ins->context,       /* filter context */
+                                        proc->config);
+                }
+            }
         }
     }
 
     /* set output buffer */
-    *out_buf = cur_buf;
-    *out_size = cur_size;
+    if (out_buf != NULL) {
+        *out_buf = cur_buf;
+    }
+
+    if (out_size != NULL) {
+        *out_size = cur_size;
+    }
 
     return 0;
 }
@@ -483,9 +569,276 @@ int flb_processors_load_from_config_format_group(struct flb_processor *proc, str
 
 
 
+static inline int prop_key_check(const char *key, const char *kv, int k_len)
+{
+    int len;
+
+    len = strlen(key);
+    if (strncasecmp(key, kv, k_len) == 0 && len == k_len) {
+        return 0;
+    }
+
+    return -1;
+}
 
 
+int flb_native_processor_set_property(struct flb_native_processor_instance *ins,
+                                      const char *k, const char *v)
+{
+    int len;
+    int ret;
+    flb_sds_t tmp;
+    struct flb_kv *kv;
 
+    len = strlen(k);
+    tmp = flb_env_var_translate(ins->config->env, v);
+    if (!tmp) {
+        return -1;
+    }
+
+    if (prop_key_check("alias", k, len) == 0 && tmp) {
+        ins->alias = tmp;
+    }
+    else if (prop_key_check("log_level", k, len) == 0 && tmp) {
+        ret = flb_log_get_level_str(tmp);
+        flb_sds_destroy(tmp);
+        if (ret == -1) {
+            return -1;
+        }
+        ins->log_level = ret;
+    }
+    else {
+        /*
+         * Create the property, we don't pass the value since we will
+         * map it directly to avoid an extra memory allocation.
+         */
+        kv = flb_kv_item_create(&ins->properties, (char *) k, NULL);
+        if (!kv) {
+            if (tmp) {
+                flb_sds_destroy(tmp);
+            }
+            return -1;
+        }
+        kv->val = tmp;
+    }
+
+    return 0;
+}
+
+
+const char *flb_native_processor_get_property(
+                const char *key,
+                struct flb_native_processor_instance *ins)
+{
+    return flb_kv_get_key_value(key, &ins->properties);
+}
+
+struct flb_native_processor_instance *flb_native_processor_new(
+                                        struct flb_config *config,
+                                        const char *name, void *data)
+{
+    struct flb_native_processor_instance *instance;
+    struct flb_native_processor_plugin   *plugin;
+    struct mk_list                       *head;
+    int                                   id;
+
+    if (name == NULL) {
+        return NULL;
+    }
+
+    mk_list_foreach(head, &config->native_processor_plugins) {
+        plugin = mk_list_entry(head, struct flb_native_processor_plugin, _head);
+        if (strcasecmp(plugin->name, name) == 0) {
+            break;
+        }
+        plugin = NULL;
+    }
+
+    if (!plugin) {
+        return NULL;
+    }
+
+    instance = flb_calloc(1, sizeof(struct flb_filter_instance));
+    if (!instance) {
+        flb_errno();
+        return NULL;
+    }
+    instance->config = config;
+
+    /*
+     * Initialize event type, if not set, default to FLB_FILTER_LOGS. Note that a
+     * zero value means it's undefined.
+     */
+    if (plugin->event_type == 0) {
+        instance->event_type = FLB_PROCESSOR_LOGS;
+    }
+    else {
+        instance->event_type = plugin->event_type;
+    }
+
+    /* Get an ID */
+    id =  0;
+
+    /* format name (with instance id) */
+    snprintf(instance->name, sizeof(instance->name) - 1,
+             "%s.%i", plugin->name, id);
+
+    instance->id    = id;
+    instance->alias = NULL;
+    instance->p     = plugin;
+    instance->data  = data;
+    instance->log_level = -1;
+
+    mk_list_init(&instance->properties);
+
+    return instance;
+}
+
+void flb_native_processor_instance_exit(
+        struct flb_native_processor_instance *ins,
+        struct flb_config *config)
+{
+    struct flb_native_processor_plugin *plugin;
+
+    plugin = ins->p;
+    if (plugin->cb_exit != NULL &&
+        ins->context != NULL) {
+        plugin->cb_exit(ins->context, config);
+    }
+}
+
+const char *flb_native_processor_name(struct flb_native_processor_instance *ins)
+{
+    if (ins->alias) {
+        return ins->alias;
+    }
+
+    return ins->name;
+}
+
+int flb_native_processor_plugin_property_check(
+        struct flb_native_processor_instance *ins,
+        struct flb_config *config)
+{
+    int ret = 0;
+    struct mk_list *config_map;
+    struct flb_native_processor_plugin *p = ins->p;
+
+    if (p->config_map) {
+        /*
+         * Create a dynamic version of the configmap that will be used by the specific
+         * instance in question.
+         */
+        config_map = flb_config_map_create(config, p->config_map);
+        if (!config_map) {
+            flb_error("[native processor] error loading config map for '%s' plugin",
+                      p->name);
+            return -1;
+        }
+        ins->config_map = config_map;
+
+        /* Validate incoming properties against config map */
+        ret = flb_config_map_properties_check(ins->p->name,
+                                              &ins->properties,
+                                              ins->config_map);
+        if (ret == -1) {
+            if (config->program_name) {
+                flb_helper("try the command: %s -F %s -h\n",
+                           config->program_name, ins->p->name);
+            }
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+int flb_native_processor_init(
+        struct flb_config *config,
+        struct flb_native_processor_instance *ins)
+{
+    int ret;
+    uint64_t ts;
+    char *name;
+    struct flb_native_processor_plugin *p;
+
+    if (ins->log_level == -1 &&
+        config->log != NULL) {
+        ins->log_level = config->log->level;
+    }
+
+    p = ins->p;
+
+    /* Get name or alias for the instance */
+    name = (char *) flb_native_processor_name(ins);
+    ts = cfl_time_now();
+
+    /* CMetrics */
+    ins->cmt = cmt_create();
+    if (!ins->cmt) {
+        flb_error("[filter] could not create cmetrics context: %s",
+                  flb_filter_name(ins));
+        return -1;
+    }
+
+    /*
+     * Before to call the initialization callback, make sure that the received
+     * configuration parameters are valid if the plugin is registering a config map.
+     */
+    if (flb_filter_plugin_property_check(ins, config) == -1) {
+        return -1;
+    }
+
+    /* Initialize the input */
+    if (p->cb_init) {
+        ret = p->cb_init(ins, config, ins->data);
+        if (ret != 0) {
+            flb_error("Failed initialize filter %s", ins->name);
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+
+// int flb_native_processor_init_all(struct flb_config *config);
+void flb_native_processor_set_context(
+        struct flb_native_processor_instance *ins,
+        void *context)
+{
+    ins->context = context;
+}
+
+void flb_native_processor_instance_destroy(
+        struct flb_native_processor_instance *ins)
+{
+    if (!ins) {
+        return;
+    }
+
+    /* destroy config map */
+    if (ins->config_map) {
+        flb_config_map_destroy(ins->config_map);
+    }
+
+    /* release properties */
+    flb_kv_release(&ins->properties);
+
+    /* Remove metrics */
+#ifdef FLB_HAVE_METRICS
+    if (ins->cmt) {
+        cmt_destroy(ins->cmt);
+    }
+#endif
+
+    if (ins->alias) {
+        flb_sds_destroy(ins->alias);
+    }
+
+    // mk_list_del(&ins->_head);
+    flb_free(ins);
+}
 
 
 

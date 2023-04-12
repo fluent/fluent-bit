@@ -270,6 +270,8 @@ option(FLB_FILTER_GEOIP2               "Enable geoip2 filter"                   
 option(FLB_FILTER_NIGHTFALL            "Enable Nightfall filter"                      Yes)
 option(FLB_FILTER_WASM                 "Enable WASM filter"                           Yes)
 
+option(FLB_PROCESSOR_TEST              "Enable test processor"                        Yes)
+
 
 if(DEFINED FLB_NIGHTLY_BUILD AND NOT "${FLB_NIGHTLY_BUILD}" STREQUAL "")
   FLB_DEFINITION_VAL(FLB_NIGHTLY_BUILD ${FLB_NIGHTLY_BUILD})
