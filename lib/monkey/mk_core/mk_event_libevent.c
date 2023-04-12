@@ -332,13 +332,21 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
 
 static inline int _mk_event_timeout_destroy(struct mk_event_ctx *ctx, void *data)
 {
+    struct mk_event *event;
+
     if (data == NULL) {
         return 0;
     }
 
-    /* The event fd member is already being closed by _mk_event_del
-     * so we don't need to do it here as well.
+    /* In the case that the timeout is being destroyed manually, we need to close the
+     * read end of the socket to ensure that cb_timeout will eventually fail to send
+     * data and clean itself up (including the write end of the socket and the event's
+     * data).
      */
+    event = (struct mk_event*)data; 
+    if (event->fd > 0) {
+        evutil_closesocket(event->fd);
+    }
 
     return _mk_event_del(ctx, data);
 }
