@@ -277,7 +277,7 @@ int flb_input_chunk_write_at(void *data, off_t offset,
 static int flb_input_chunk_is_task_safe_delete(struct flb_task *task)
 {
     if (!task) {
-        flb_info("[input chunk] chk: %s - no task", flb_input_chunk_get_name(task->ic));
+        flb_info("[input chunk] - no task");
         return FLB_TRUE;
     }
 
