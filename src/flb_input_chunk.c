@@ -277,13 +277,16 @@ int flb_input_chunk_write_at(void *data, off_t offset,
 static int flb_input_chunk_is_task_safe_delete(struct flb_task *task)
 {
     if (!task) {
+        flb_info("[input chunk] chk: %s - no task", flb_input_chunk_get_name(task->ic));
         return FLB_TRUE;
     }
 
     if (task->users != 0) {
+        flb_info("[input chunk] chk: %s - task users !=0 - $d", flb_input_chunk_get_name(task->ic), task->users);
         return FLB_FALSE;
     }
 
+    flb_info("[input chunk] chk: %s - FLB_TRUE", flb_input_chunk_get_name(task->ic));
     return FLB_TRUE;
 }
 
@@ -293,6 +296,8 @@ static int flb_input_chunk_safe_delete(struct flb_input_chunk *ic,
 {
     /* The chunk we want to drop should not be the incoming chunk */
     if (ic == old_ic) {
+        flb_info("[input chunk] chk: %s - The chunk we want to drop should not be the incoming chunk. old: %s",
+                 flb_input_chunk_get_name(ic), flb_input_chunk_get_name(old_ic));
         return FLB_FALSE;
     }
 
@@ -302,9 +307,10 @@ static int flb_input_chunk_safe_delete(struct flb_input_chunk *ic,
      * we still need to do the validation on the routes_mask with o_id.
      */
     if (flb_routes_mask_get_bit(old_ic->routes_mask, o_id) == 0) {
+        flb_info("[input chunk] chk: %s - same routes.", flb_input_chunk_get_name(ic));
         return FLB_FALSE;
     }
-
+    flb_info("[input chunk] chk: %s - FLB_TRUE", flb_input_chunk_get_name(ic));
     return FLB_TRUE;
 }
 
@@ -458,7 +464,7 @@ int flb_intput_chunk_count_dropped_chunks(struct flb_input_chunk *ic,
 
         bytes_remained += flb_input_chunk_get_real_size(old_ic);
         count++;
-        flb_info("[input chunk] chk: %s - Updated bytes remained: %d. Count: %d.Old_ic: %s",
+        flb_info("[input chunk] chk: %s - Updated bytes remained: %d. Count: %d. Old_ic: %s",
                  flb_input_chunk_get_name(ic), bytes_remained, count, flb_input_chunk_get_name(old_ic));
         if (bytes_remained >= (ssize_t) chunk_size) {
             flb_info("[input chunk] chk: %s - enough space here. bytes remained: %d '>=' Chunk size: %d",
