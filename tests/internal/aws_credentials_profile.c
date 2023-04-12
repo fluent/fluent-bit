@@ -55,7 +55,7 @@ static void test_profile_default()
     ret = setenv("AWS_SHARED_CREDENTIALS_FILE", TEST_CREDENTIALS_FILE, 1);
     TEST_ASSERT(ret == 0);
 
-    provider = flb_profile_provider_create();
+    provider = flb_profile_provider_create("", "");
     TEST_ASSERT(provider != NULL);
 
     /* repeated calls to get credentials should return the same set */
@@ -108,7 +108,7 @@ static void test_profile_non_default()
     ret = setenv("AWS_PROFILE", "nondefault", 1);
     TEST_ASSERT(ret == 0);
 
-    provider = flb_profile_provider_create();
+    provider = flb_profile_provider_create("", "");
     TEST_ASSERT(provider != NULL);
 
     /* repeated calls to get credentials should return the same set */
@@ -161,7 +161,7 @@ static void test_profile_no_space()
     ret = setenv("AWS_DEFAULT_PROFILE", "nospace", 1);
     TEST_ASSERT(ret == 0);
 
-    provider = flb_profile_provider_create();
+    provider = flb_profile_provider_create("", "");
     TEST_ASSERT(provider != NULL);
 
     /* repeated calls to get credentials should return the same set */
@@ -214,7 +214,8 @@ static void test_profile_weird_whitespace()
     ret = setenv("AWS_DEFAULT_PROFILE", "weirdwhitespace", 1);
     TEST_ASSERT(ret == 0);
 
-    provider = flb_profile_provider_create();
+    provider = flb_profile_provider_create("", "");
+
     TEST_ASSERT(provider != NULL);
 
     /* repeated calls to get credentials should return the same set */
@@ -275,7 +276,7 @@ static void test_profile_missing()
     ret = setenv("AWS_DEFAULT_PROFILE", "missing", 1);
     TEST_ASSERT(ret == 0);
 
-    provider = flb_profile_provider_create();
+    provider = flb_profile_provider_create("", "");
     TEST_ASSERT(provider != NULL);
 
     /* repeated calls to get credentials should return the same set */
@@ -317,7 +318,7 @@ static void test_profile_nodefault()
     ret = setenv("AWS_SHARED_CREDENTIALS_FILE", TEST_CREDENTIALS_NODEFAULT, 1);
     TEST_ASSERT(ret == 0);
 
-    provider = flb_profile_provider_create();
+    provider = flb_profile_provider_create("", "");
     TEST_ASSERT(provider != NULL);
 
     /* repeated calls to get credentials should return the same set */

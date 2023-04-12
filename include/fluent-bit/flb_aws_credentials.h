@@ -159,6 +159,8 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
                                                             char *region,
                                                             char *sts_endpoint,
                                                             char *proxy,
+                                                            char *aws_config_file,
+                                                            char *aws_shared_credentials_file,
                                                             struct
                                                             flb_aws_client_generator
                                                             *generator);
@@ -196,6 +198,8 @@ struct flb_aws_provider *flb_managed_chain_provider_create(struct flb_output_ins
                                                            *config,
                                                            char *config_key_prefix,
                                                            char *proxy,
+                                                           char *aws_config_file,
+                                                           char *aws_shared_credentials_file,
                                                            struct
                                                            flb_aws_client_generator
                                                            *generator);
@@ -277,7 +281,7 @@ struct flb_aws_provider *flb_ec2_provider_create(struct flb_config *config,
 /*
  * New AWS Profile provider, reads from the shared credentials file
  */
-struct flb_aws_provider *flb_profile_provider_create();
+struct flb_aws_provider *flb_profile_provider_create(char *aws_config_file, char *aws_shared_credentials_file);
 
 /*
  * Helper functions

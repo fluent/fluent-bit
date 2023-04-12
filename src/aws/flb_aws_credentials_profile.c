@@ -221,7 +221,7 @@ static struct flb_aws_provider_vtable profile_provider_vtable = {
     .upstream_set = upstream_set_fn_profile,
 };
 
-struct flb_aws_provider *flb_profile_provider_create()
+struct flb_aws_provider *flb_profile_provider_create(char *aws_config_file, char *aws_shared_credentials_file)
 {
     struct flb_aws_provider *provider = NULL;
     struct flb_aws_provider_profile *implementation = NULL;
@@ -247,17 +247,37 @@ struct flb_aws_provider *flb_profile_provider_create()
     provider->provider_vtable = &profile_provider_vtable;
     provider->implementation = implementation;
 
-    result = get_aws_shared_file_path(&implementation->config_path, AWS_CONFIG_FILE,
-                                      "/.aws/config");
-    if (result < 0) {
-        goto error;
+    if (!aws_config_file || strcmp(aws_config_file, "") == 0) {
+        result = get_aws_shared_file_path(&implementation->config_path, AWS_CONFIG_FILE,
+                                          "/.aws/config");
+        if (result < 0) {
+            goto error;
+        }
+    } else {
+        implementation->config_path = flb_sds_create(aws_config_file);
+        if (!implementation->config_path) {
+            flb_errno();
+            goto error;
+        }
     }
 
-    result = get_aws_shared_file_path(&implementation->credentials_path,
-                                      AWS_SHARED_CREDENTIALS_FILE, "/.aws/credentials");
-    if (result < 0) {
-        goto error;
+    flb_debug("[aws_credentials] Configuration path set to %s", implementation->config_path);
+
+    if (!aws_shared_credentials_file || strcmp(aws_shared_credentials_file, "") == 0) {
+        result = get_aws_shared_file_path(&implementation->credentials_path,
+                                          AWS_SHARED_CREDENTIALS_FILE, "/.aws/credentials");
+        if (result < 0) {
+            goto error;
+        }
+    } else {
+        implementation->credentials_path = flb_sds_create(aws_shared_credentials_file);
+        if (!implementation->credentials_path) {
+            flb_errno();
+            goto error;
+        }
     }
+
+    flb_debug("[aws_credentials] Credentials path set to %s", implementation->credentials_path);
 
     if (!implementation->config_path && !implementation->credentials_path) {
         AWS_CREDS_WARN("Failed to initialize profile provider: "
