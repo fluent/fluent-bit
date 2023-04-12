@@ -282,7 +282,7 @@ static int flb_input_chunk_is_task_safe_delete(struct flb_task *task)
     }
 
     if (task->users != 0) {
-        flb_info("[input chunk] chk: %s - task users !=0 - $d", flb_input_chunk_get_name(task->ic), task->users);
+        flb_info("[input chunk] chk: %s - task users !=0 - %d", flb_input_chunk_get_name(task->ic), task->users);
         return FLB_FALSE;
     }
 
