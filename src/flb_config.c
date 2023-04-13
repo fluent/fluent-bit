@@ -290,7 +290,7 @@ struct flb_config *flb_config_init()
     pthread_mutex_init(&config->collectors_mutex, NULL);
 
     /* Initialize linked lists */
-    mk_list_init(&config->native_processor_plugins);
+    mk_list_init(&config->processor_plugins);
     mk_list_init(&config->custom_plugins);
     mk_list_init(&config->in_plugins);
     mk_list_init(&config->parser_plugins);

@@ -206,7 +206,7 @@ int flb_plugin_load(char *path, struct flb_plugins *ctx,
     char *plugin_stname;
     struct flb_plugin *plugin;
     struct flb_input_plugin *input;
-    struct flb_native_processor_plugin *processor;
+    struct flb_processor_plugin *processor;
     struct flb_filter_plugin *filter;
     struct flb_output_plugin *output;
 
@@ -252,15 +252,15 @@ int flb_plugin_load(char *path, struct flb_plugins *ctx,
     }
     else if (is_processor(plugin_stname) == FLB_TRUE) {
         type = FLB_PLUGIN_PROCESSOR;
-        processor = flb_malloc(sizeof(struct flb_native_processor_plugin));
+        processor = flb_malloc(sizeof(struct flb_processor_plugin));
         if (processor == NULL) {
             flb_errno();
             flb_free(plugin_stname);
             dlclose(dso_handle);
             return -1;
         }
-        memcpy(processor, symbol, sizeof(struct flb_native_processor_plugin));
-        mk_list_add(&processor->_head, &config->native_processor_plugins);
+        memcpy(processor, symbol, sizeof(struct flb_processor_plugin));
+        mk_list_add(&processor->_head, &config->processor_plugins);
     }
     else if (is_filter(plugin_stname) == FLB_TRUE) {
         type = FLB_PLUGIN_FILTER;

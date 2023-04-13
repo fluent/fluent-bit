@@ -106,9 +106,6 @@ static int send_logs(struct flb_input_instance *ins)
     }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        flb_pack_print(log_encoder.output_buffer,
-                       log_encoder.output_length);
-
         flb_input_log_append(ins, NULL, 0,
                              log_encoder.output_buffer,
                              log_encoder.output_length);

@@ -125,13 +125,13 @@ macro(REGISTER_PROCESSOR_PLUGIN name)
     set(FLB_PROCESSOR_PLUGINS_DECL "${FLB_PROCESSOR_PLUGINS_DECL}extern struct flb_processor_plugin ${p_name}_plugin;\n")
 
     # C code
-    set(C_CODE          "    processor = flb_malloc(sizeof(struct flb_native_processor_plugin));\n")
+    set(C_CODE          "    processor = flb_malloc(sizeof(struct flb_processor_plugin));\n")
     set(C_CODE "${C_CODE}    if (!processor) {\n")
     set(C_CODE "${C_CODE}        flb_errno();\n")
     set(C_CODE "${C_CODE}        return -1;\n")
     set(C_CODE "${C_CODE}    }\n")
-    set(C_CODE "${C_CODE}    memcpy(processor, &${p_name}_plugin, sizeof(struct flb_native_processor_plugin));\n")
-    set(C_CODE "${C_CODE}    mk_list_add(&processor->_head, &config->native_processor_plugins);\n\n")
+    set(C_CODE "${C_CODE}    memcpy(processor, &${p_name}_plugin, sizeof(struct flb_processor_plugin));\n")
+    set(C_CODE "${C_CODE}    mk_list_add(&processor->_head, &config->processor_plugins);\n\n")
 
     set(FLB_PROCESSOR_PLUGINS_ADD "${FLB_PROCESSOR_PLUGINS_ADD}${C_CODE}")
     if (p_path)

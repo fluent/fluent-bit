@@ -105,7 +105,7 @@ static void flb_help(int rc, struct flb_config *config)
     struct flb_input_plugin *in;
     struct flb_output_plugin *out;
     struct flb_filter_plugin *filter;
-    struct flb_native_processor_plugin *processor;
+    struct flb_processor_plugin *processor;
 
     printf("Usage: %s [OPTION]\n\n", prog_name);
     printf("%sAvailable Options%s\n", ANSI_BOLD, ANSI_RESET);
@@ -166,8 +166,8 @@ static void flb_help(int rc, struct flb_config *config)
     }
 
     printf("\n%sProcessors%s\n", ANSI_BOLD, ANSI_RESET);
-    mk_list_foreach(head, &config->native_processor_plugins) {
-        processor = mk_list_entry(head, struct flb_native_processor_plugin, _head);
+    mk_list_foreach(head, &config->processor_plugins) {
+        processor = mk_list_entry(head, struct flb_processor_plugin, _head);
         print_opt(processor->name, processor->description);
     }
 

@@ -66,6 +66,7 @@ int flb_input_trace_append(struct flb_input_instance *ins,
     /* Append packed metrics */
     ret = flb_input_chunk_append_raw(ins, FLB_INPUT_TRACES, 0,
                                      tag, tag_len, out_buf, out_size);
+
     ctr_encode_msgpack_destroy(out_buf);
 
     return ret;

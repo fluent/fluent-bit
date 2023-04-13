@@ -26,9 +26,17 @@
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_config_format.h>
 
-#define FLB_PROCESSOR_LOGS      1
-#define FLB_PROCESSOR_METRICS   2
-#define FLB_PROCESSOR_TRACES    4
+#include <ctraces/ctraces.h>
+#include <cmetrics/cmetrics.h>
+
+/* Processor plugin result values */
+#define FLB_PROCESSOR_SUCCESS        0
+#define FLB_PROCESSOR_FAILURE       -1
+
+/* Processor event types */
+#define FLB_PROCESSOR_LOGS           1
+#define FLB_PROCESSOR_METRICS        2
+#define FLB_PROCESSOR_TRACES         4
 
 /* Type of processor unit: 'pipeline filter' or 'native unit' */
 #define FLB_PROCESSOR_UNIT_NATIVE    0
@@ -81,6 +89,80 @@ struct flb_processor {
     struct flb_config *config;
 };
 
+struct flb_log_event;
+struct flb_input_instance;
+struct flb_log_event_decoder;
+struct flb_log_event_encoder;
+struct flb_processor_instance;
+
+struct flb_processor_plugin {
+    int flags;             /* Flags (not available at the moment */
+    char *name;            /* Processor short name               */
+    char *description;     /* Description                        */
+
+    /* Config map */
+    struct flb_config_map *config_map;
+
+    /* Callbacks */
+    int (*cb_init) (struct flb_processor_instance *,
+                    struct flb_config *,
+                    void *);
+
+    int (*cb_process_logs) (struct flb_log_event *,
+                            const char *, int,
+                            struct flb_log_event_encoder *,
+                            struct flb_processor_instance *,
+                            struct flb_input_instance *,
+                            void *,
+                            struct flb_config *);
+
+    int (*cb_process_metrics) (struct cmt *,
+                               const char *,
+                               int,
+                               struct flb_processor_instance *,
+                               struct flb_input_instance *,
+                               void *,
+                               struct flb_config *);
+
+    int (*cb_process_traces) (struct ctrace *,
+                              const char *,
+                              int,
+                              struct flb_processor_instance *,
+                              struct flb_input_instance *,
+                              void *,
+                              struct flb_config *);
+
+    int (*cb_exit) (void *, struct flb_config *);
+
+    struct mk_list _head;  /* Link to parent list (config->filters) */
+};
+
+struct flb_processor_instance {
+    int id;                                /* instance id              */
+    int log_level;                         /* instance log level       */
+    char name[32];                         /* numbered name            */
+    char *alias;                           /* alias name               */
+    void *context;                         /* Instance local context   */
+    void *data;
+    struct flb_processor_plugin *p;        /* original plugin          */
+    struct mk_list properties;             /* config properties        */
+    struct mk_list *config_map;            /* configuration map        */
+
+    struct flb_log_event_decoder *log_decoder;
+    struct flb_log_event_encoder *log_encoder;
+
+    /*
+     * CMetrics
+     * --------
+     */
+    struct cmt *cmt;                      /* parent context               */
+
+    /* Keep a reference to the original context this instance belongs to */
+    struct flb_config *config;
+};
+
+
+/* Processor stack */
 
 struct flb_processor *flb_processor_create(struct flb_config *config, char *name, void *data);
 
@@ -104,119 +186,48 @@ int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k
 
 int flb_processors_load_from_config_format_group(struct flb_processor *proc, struct flb_cf_group *g);
 
+/* Processor plugin instance */
 
+struct flb_processor_instance *flb_processor_instance_create(
+                                    struct flb_config *config,
+                                    const char *name,
+                                    void *data);
 
+void flb_processor_instance_destroy(
+        struct flb_processor_instance *ins);
 
-#include <ctraces/ctraces.h>
-#include <cmetrics/cmetrics.h>
-#include <cmetrics/cmt_counter.h>
+int flb_processor_instance_init(
+        struct flb_config *config,
+        struct flb_processor_instance *ins);
 
-struct flb_input_instance;
-struct flb_native_processor_instance;
+void flb_processor_instance_exit(
+        struct flb_processor_instance *ins,
+        struct flb_config *config);
 
-struct flb_native_processor_plugin {
-    int event_type;
-    int flags;             /* Flags (not available at the moment */
-    char *name;            /* Processor short name               */
-    char *description;     /* Description                        */
+void flb_processor_instance_set_context(
+        struct flb_processor_instance *ins,
+        void *context);
 
-    /* Config map */
-    struct flb_config_map *config_map;
+int flb_processor_instance_check_properties(
+        struct flb_processor_instance *ins,
+        struct flb_config *config);
 
-    /* Callbacks */
-    int (*cb_init) (struct flb_native_processor_instance *,
-                    struct flb_config *,
-                    void *);
+int flb_processor_instance_set_property(
+        struct flb_processor_instance *ins,
+        const char *k, const char *v);
 
-    int (*cb_process_logs) (const void *, size_t,
-                            const char *, int,
-                            void **, size_t *,
-                            struct flb_native_processor_instance *,
-                            struct flb_input_instance *,
-                            void *, struct flb_config *);
-    int (*cb_process_metrics) (struct cmt *,
-                               const char *, int,
-                               void **, size_t *,
-                               struct flb_native_processor_instance *,
-                               struct flb_input_instance *,
-                               void *, struct flb_config *);
+const char *flb_processor_instance_get_property(
+                const char *key,
+                struct flb_processor_instance *ins);
 
-    int (*cb_process_traces) (struct ctrace *,
-                              const char *, int,
-                              void **, size_t *,
-                              struct flb_native_processor_instance *,
-                              struct flb_input_instance *,
-                              void *, struct flb_config *);
+const char *flb_processor_instance_get_name(
+                struct flb_processor_instance *ins);
 
-    int (*cb_exit) (void *, struct flb_config *);
-
-    struct mk_list _head;  /* Link to parent list (config->filters) */
-};
-
-struct flb_native_processor_instance {
-    int event_type;
-    int id;                                /* instance id              */
-    int log_level;                         /* instance log level       */
-    char name[32];                         /* numbered name            */
-    char *alias;                           /* alias name               */
-    void *context;                         /* Instance local context   */
-    void *data;
-    struct flb_native_processor_plugin *p; /* original plugin          */
-    struct mk_list properties;             /* config properties        */
-    struct mk_list *config_map;            /* configuration map        */
-
-    struct mk_list _head;                  /* link to config->filters  */
-
-    /*
-     * CMetrics
-     * --------
-     */
-    struct cmt *cmt;                      /* parent context               */
-
-    /* Keep a reference to the original context this instance belongs to */
-    struct flb_config *config;
-};
-
-static inline int flb_native_processor_config_map_set(
-                    struct flb_native_processor_instance *ins,
+static inline int flb_processor_instance_config_map_set(
+                    struct flb_processor_instance *ins,
                     void *context)
 {
     return flb_config_map_set(&ins->properties, ins->config_map, context);
 }
-
-int flb_native_processor_set_property(struct flb_native_processor_instance *ins,
-                                      const char *k, const char *v);
-
-const char *flb_native_processor_get_property(
-                const char *key,
-                struct flb_native_processor_instance *ins);
-
-struct flb_native_processor_instance *flb_native_processor_new(
-                                        struct flb_config *config,
-                                        const char *name, void *data);
-
-void flb_native_processor_instance_exit(
-        struct flb_native_processor_instance *ins,
-        struct flb_config *config);
-
-// void flb_native_processor_exit(struct flb_config *config);
-
-const char *flb_native_processor_name(struct flb_native_processor_instance *ins);
-
-int flb_native_processor_plugin_property_check(
-        struct flb_native_processor_instance *ins,
-        struct flb_config *config);
-
-int flb_native_processor_init(
-        struct flb_config *config,
-        struct flb_native_processor_instance *ins);
-
-// int flb_native_processor_init_all(struct flb_config *config);
-void flb_native_processor_set_context(
-        struct flb_native_processor_instance *ins,
-        void *context);
-
-void flb_native_processor_instance_destroy(
-        struct flb_native_processor_instance *ins);
 
 #endif
