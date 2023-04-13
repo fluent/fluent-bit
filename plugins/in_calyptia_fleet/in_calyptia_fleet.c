@@ -47,6 +47,14 @@
 #define CALYPTIA_HOST "cloud-api.calyptia.com"
 #define CALYPTIA_PORT "443"
 
+#ifndef _WIN32
+#define PATH_SEPARATOR "/"
+#define DEFAULT_CONFIG_DIR "/tmp/calyptia-fleet"
+#else
+#define DEFAULT_CONFIG_DIR NULL
+#define PATH_SEPARATOR "\\"
+#endif
+
 struct flb_in_calyptia_fleet_config {
     /* Time interval check */
     int interval_sec;
@@ -54,6 +62,7 @@ struct flb_in_calyptia_fleet_config {
 
     flb_sds_t api_key;
     flb_sds_t fleet_id;
+    flb_sds_t config_dir;
     flb_sds_t cloud_host;
     flb_sds_t cloud_port;
 
@@ -125,7 +134,7 @@ static flb_sds_t fleet_config_filename(struct flb_in_calyptia_fleet_config *ctx,
     flb_sds_t cfgname;
 
     cfgname = flb_sds_create_size(4096);
-    flb_sds_printf(&cfgname, "/tmp/calyptia-fleet/%s/%s.ini", ctx->fleet_id, fname);
+    flb_sds_printf(&cfgname, "%s" PATH_SEPARATOR "%s" PATH_SEPARATOR "%s.ini", ctx->config_dir, ctx->fleet_id, fname);
 
     return cfgname;
 }
@@ -377,12 +386,12 @@ static void create_fleet_directory(struct flb_in_calyptia_fleet_config *ctx)
 {
     flb_sds_t myfleetdir;
 
-    if (access("/tmp/calyptia-fleet", F_OK)) {
-        mkdir("/tmp/calyptia-fleet", 0700);
+    if (access(ctx->config_dir, F_OK)) {
+        mkdir(ctx->config_dir, 0700);
     }
 
     myfleetdir = flb_sds_create_size(256);
-    flb_sds_printf(&myfleetdir, "/tmp/calyptia-fleet/%s", ctx->fleet_id);
+    flb_sds_printf(&myfleetdir, "%s" PATH_SEPARATOR "%s", ctx->config_dir, ctx->fleet_id);
 
     if (access(myfleetdir, F_OK)) {
         mkdir(myfleetdir, 0700);
@@ -418,6 +427,10 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
     struct flb_in_calyptia_fleet_config *ctx;
     (void) data;
 
+#ifdef _WIN32
+    char *tmpdir;
+#endif
+
     flb_plg_info(in, "initializing calyptia fleet input.");
     if (in->host.name == NULL) {
         flb_plg_error(in, "no input 'Host' provided");
@@ -440,6 +453,23 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
         flb_plg_error(in, "unable to load configuration");
         return -1;
     }
+
+#ifdef _WIN32
+    if (ctx->config_dir == NULL) {
+        tmpdir = getenv("TEMP");
+        if (tmpdir == NULL) {
+            flb_plg_error(in, "unable to find temporary directory (%%TEMP%%).");
+            return -1;
+        }
+
+        ctx->config_dir = flb_sds_create_size(4096);
+        if (ctx->config_dir == NULL) {
+            flb_plg_error(in, "unable to allocate config-dir.");
+            return -1;
+        }
+        flb_sds_printf(&ctx->config_dir, "%s" PATH_SEPARATOR "%s", tmpdir, "calyptia-fleet");
+    }
+#endif
 
     upstream_flags = FLB_IO_TCP;
 
@@ -517,6 +547,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "api_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_in_calyptia_fleet_config, api_key),
      "Calyptia Cloud API Key."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "config_dir", DEFAULT_CONFIG_DIR,
+     0, FLB_TRUE, offsetof(struct flb_in_calyptia_fleet_config, config_dir),
+     "Base path for the configuration directory."
     },
     {
      FLB_CONFIG_MAP_STR, "fleet_id", NULL,
