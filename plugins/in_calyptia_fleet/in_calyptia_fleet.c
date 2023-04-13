@@ -246,7 +246,7 @@ static void execute_reload(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t c
     reload->cfg_path = cfgpath;
 
     pthread_attr_init(&ptha);
-    pthread_attr_setdetachstate(&ptha, 1);
+    pthread_attr_setdetachstate(&ptha, PTHREAD_CREATE_DETACHED);
     pthread_create(&pth, &ptha, do_reload, reload);
 }
 
