@@ -203,6 +203,7 @@ option(FLB_IN_ELASTICSEARCH            "Enable Elasticsearch (Bulk API) input pl
 option(FLB_IN_CALYPTIA_FLEET           "Enable Calyptia Fleet input plugin"           Yes)
 option(FLB_IN_GELF                     "Enable GELF input plugin"                     Yes)
 option(FLB_IN_CALYPTIA_FLEET           "Enable Calyptia Fleet input plugin"           Yes)
+option(FLB_IN_GELF                     "Enable GELF input plugin"                     Yes)
 option(FLB_OUT_AZURE                   "Enable Azure output plugin"                   Yes)
 option(FLB_OUT_AZURE_BLOB              "Enable Azure output plugin"                   Yes)
 option(FLB_OUT_AZURE_KUSTO             "Enable Azure Kusto output plugin"             Yes)
