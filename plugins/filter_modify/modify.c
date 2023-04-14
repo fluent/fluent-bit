@@ -30,6 +30,8 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 #include <msgpack.h>
 
 #include "modify.h"
@@ -482,6 +484,16 @@ static inline bool helper_msgpack_object_matches_regex(msgpack_object * obj,
     else if (obj->type == MSGPACK_OBJECT_STR) {
         key = obj->via.str.ptr;
         len = obj->via.str.size;
+    }
+    else if (obj->type == MSGPACK_OBJECT_BOOLEAN) {
+        if (obj->via.boolean) {
+            key = "true";
+            len = 4;
+        }
+        else {
+            key = "false";
+            len = 5;
+        }
     }
     else {
         return false;
@@ -1281,38 +1293,39 @@ static inline int apply_modifying_rule(struct filter_modify_ctx *ctx,
     return FLB_FILTER_NOTOUCH;
 }
 
-static inline int apply_modifying_rules(msgpack_packer *packer,
-                                        msgpack_object *root,
-                                        struct filter_modify_ctx *ctx)
+
+
+static inline int apply_modifying_rules(
+                    struct flb_log_event_encoder *log_encoder,
+                    struct flb_log_event *log_event,
+                    struct filter_modify_ctx *ctx)
 {
-    msgpack_object ts = root->via.array.ptr[0];
-    msgpack_object map = root->via.array.ptr[1];
+    int ret;
+    int records_in;
+    msgpack_object map;
+    struct modify_rule *rule;
+    msgpack_sbuffer sbuffer;
+    msgpack_packer in_packer;
+    msgpack_unpacker unpacker;
+    msgpack_unpacked unpacked;
+    int initial_buffer_size = 1024 * 8;
+    int new_buffer_size = 0;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    bool has_modifications = false;
+
+    map = *log_event->body;
+    records_in = map.via.map.size;
 
     if (!evaluate_conditions(&map, ctx)) {
         flb_plg_debug(ctx->ins, "Conditions not met, not touching record");
         return 0;
     }
 
-    bool has_modifications = false;
-
-    int records_in = map.via.map.size;
-
-    struct modify_rule *rule;
-
-    msgpack_sbuffer sbuffer;
-    msgpack_packer in_packer;
-    msgpack_unpacker unpacker;
-    msgpack_unpacked unpacked;
-
-    int initial_buffer_size = 1024 * 8;
-    int new_buffer_size = 0;
-
-    struct mk_list *tmp;
-    struct mk_list *head;
-
     msgpack_sbuffer_init(&sbuffer);
     msgpack_packer_init(&in_packer, &sbuffer, msgpack_sbuffer_write);
     msgpack_unpacked_init(&unpacked);
+
     if (!msgpack_unpacker_init(&unpacker, initial_buffer_size)) {
         flb_plg_error(ctx->ins, "Unable to allocate memory for unpacker, aborting");
         return -1;
@@ -1355,17 +1368,37 @@ static inline int apply_modifying_rules(msgpack_packer *packer,
     }
 
     if (has_modifications) {
-        // * Record array init(2)
-        msgpack_pack_array(packer, 2);
+        ret = flb_log_event_encoder_begin_record(log_encoder);
 
-        // * * Record array item 1/2
-        msgpack_pack_object(packer, ts);
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_set_timestamp(
+                    log_encoder, &log_event->timestamp);
+        }
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_set_metadata_from_msgpack_object(
+                    log_encoder, log_event->metadata);
+        }
 
         flb_plg_trace(ctx->ins, "Input map size %d elements, output map size "
                       "%d elements", records_in, map.via.map.size);
 
-        // * * Record array item 2/2
-        msgpack_pack_object(packer, map);
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_set_body_from_msgpack_object(
+                    log_encoder, &map);
+        }
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_commit_record(log_encoder);
+        }
+
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_plg_error(ctx->ins, "log event encoding error : %d", ret);
+
+            flb_log_event_encoder_rollback_record(log_encoder);
+
+            has_modifications = FLB_FALSE;
+        }
     }
 
     msgpack_unpacked_destroy(&unpacked);
@@ -1410,58 +1443,85 @@ static int cb_modify_filter(const void *data, size_t bytes,
                             struct flb_input_instance *i_ins,
                             void *context, struct flb_config *config)
 {
-    msgpack_unpacked result;
-    size_t off = 0;
+    struct flb_log_event_encoder log_encoder;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    struct filter_modify_ctx *ctx = context;
+    int modifications = 0;
+    int total_modifications = 0;
+    int ret;
+
     (void) f_ins;
     (void) i_ins;
     (void) config;
 
-    struct filter_modify_ctx *ctx = context;
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
-    int modifications = 0;
-    int total_modifications = 0;
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
 
-    msgpack_sbuffer buffer;
-    msgpack_sbuffer_init(&buffer);
-
-    msgpack_packer packer;
-    msgpack_packer_init(&packer, &buffer, msgpack_sbuffer_write);
-
-    // Records come in the format,
-    //
-    // [ TIMESTAMP, { K1:V1, K2:V2, ...} ],
-    // [ TIMESTAMP, { K1:V1, K2:V2, ...} ]
-    //
-    // Example record,
-    // [1123123, {"Mem.total"=>4050908, "Mem.used"=>476576, "Mem.free"=>3574332 } ]
-
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        if (result.data.type == MSGPACK_OBJECT_ARRAY) {
-            modifications =
-                apply_modifying_rules(&packer, &result.data, ctx);
-
-            if (modifications == 0) {
-                // not matched, so copy original event.
-                msgpack_pack_object(&packer, result.data);
-            }
-            total_modifications += modifications;
-        }
-        else {
-            msgpack_pack_object(&packer, result.data);
-        }
-    }
-    msgpack_unpacked_destroy(&result);
-
-    if(total_modifications == 0) {
-        msgpack_sbuffer_destroy(&buffer);
         return FLB_FILTER_NOTOUCH;
     }
 
-    *out_buf = buffer.data;
-    *out_size = buffer.size;
+    ret = flb_log_event_encoder_init(&log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
 
-    return FLB_FILTER_MODIFIED;
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder initialization error : %d", ret);
+
+        flb_log_event_decoder_destroy(&log_decoder);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        modifications =
+            apply_modifying_rules(&log_encoder, &log_event, ctx);
+
+        if (modifications == 0) {
+            /* not matched, so copy original event. */
+            ret = flb_log_event_encoder_emit_raw_record(
+                             &log_encoder,
+                             log_decoder.record_base,
+                             log_decoder.record_length);
+        }
+
+        total_modifications += modifications;
+    }
+
+    if(total_modifications > 0) {
+        if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA &&
+            log_decoder.offset == bytes) {
+            ret = FLB_EVENT_ENCODER_SUCCESS;
+        }
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            *out_buf  = log_encoder.output_buffer;
+            *out_size = log_encoder.output_length;
+
+            ret = FLB_FILTER_MODIFIED;
+
+            flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
+        }
+        else {
+            flb_plg_error(ctx->ins,
+                          "Log event encoder error : %d", ret);
+
+            ret = FLB_FILTER_NOTOUCH;
+        }
+    }
+    else {
+        ret = FLB_FILTER_NOTOUCH;
+    }
+
+    flb_log_event_decoder_destroy(&log_decoder);
+    flb_log_event_encoder_destroy(&log_encoder);
+
+    return ret;
 }
 
 static int cb_modify_exit(void *data, struct flb_config *config)

@@ -725,7 +725,7 @@ static int forward_read_ack(struct flb_forward *ctx,
         goto error;
     }
 
-    flb_plg_debug(ctx->ins, "protocol: received ACK %.*s", ack_len, ack);
+    flb_plg_debug(ctx->ins, "protocol: received ACK %.*s", (int)ack_len, ack);
     msgpack_unpacked_destroy(&result);
     return 0;
 
@@ -1667,6 +1667,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "time_as_integer", "false",
      0, FLB_TRUE, offsetof(struct flb_forward_config, time_as_integer),
      "Set timestamp in integer format (compat mode for old Fluentd v0.12)"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "retain_metadata_in_forward_mode", "false",
+     0, FLB_TRUE, offsetof(struct flb_forward_config, fwd_retain_metadata),
+     "Retain metadata when operating in forward mode"
     },
     {
      FLB_CONFIG_MAP_STR, "shared_key", NULL,

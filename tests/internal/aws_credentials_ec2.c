@@ -1,7 +1,7 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
-#include "aws_client_mock.h"
-#include "aws_client_mock.c"
+#include "../include/aws_client_mock.h"
+#include "../include/aws_client_mock.c"
 
 #include <fluent-bit.h>
 #include <fluent-bit/flb_sds.h>
@@ -26,7 +26,7 @@ struct flb_config *config;
 struct flb_config *config_fluent;
 int ret;
 
-/* 
+/*
  * Hardcoding a copy of the ec2 credential provider struct from flb_aws_credentials_ec2.c
  * Note: this will require a change if the other copy is changed.
  * A provider that obtains credentials from EC2 IMDS.
@@ -37,7 +37,7 @@ struct flb_aws_provider_ec2 {
 
     /* upstream connection to IMDS */
     struct flb_aws_client *client;
-    
+
     /* IMDS interface */
     struct flb_aws_imds *imds_interface;
 };
@@ -51,7 +51,7 @@ struct flb_aws_provider_ec2 {
 void setup_test(struct flb_aws_client_mock_request_chain *request_chain) {
     /* Initialize test environment */
     config_fluent = flb_config_init();
-    
+
     flb_aws_client_mock_configure_generator(request_chain);
 
     /* Init provider */
@@ -484,7 +484,7 @@ static void test_ec2_provider_version_detection_error()
             expect(METHOD, FLB_HTTP_PUT),
             set(STATUS, 200),
             set(PAYLOAD, "AQAAANjUxxxxxxXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX_Q=="),
-            set(PAYLOAD_SIZE, 56)            
+            set(PAYLOAD_SIZE, 56)
         ),
         response(
             expect(URI, "/latest/meta-data/iam/security-credentials/"),
@@ -569,7 +569,7 @@ static void test_ec2_provider_version_detection_error()
 static void test_ec2_provider_acquire_token_error()
 {
     setup_test(FLB_AWS_CLIENT_MOCK(
-        
+
         /*
          *  First call to get_credentials():
          *  -> 1 request made to test for IMDSv2 (Success)

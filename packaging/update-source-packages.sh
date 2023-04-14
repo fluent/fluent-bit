@@ -60,8 +60,12 @@ else
 fi
 
 # Source - we do want word splitting and ensure some files exist
-if compgen -G "$SOURCE_DIR/source/*$VERSION*" > /dev/null; then
+if compgen -G "$SOURCE_DIR/source-$VERSION*" > /dev/null; then
     echo "Copying source artefacts"
+    # shellcheck disable=SC2086
+    cp -vf "$SOURCE_DIR"/source-$VERSION* "$TARGET_DIR/$MAJOR_VERSION/"
+elif compgen -G "$SOURCE_DIR/source/*$VERSION*" > /dev/null; then
+    echo "Copying (legacy) source artefacts"
     # shellcheck disable=SC2086
     cp -vf "$SOURCE_DIR"/source/*$VERSION* "$TARGET_DIR/$MAJOR_VERSION/"
 else

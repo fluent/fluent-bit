@@ -139,6 +139,7 @@ int cfl_array_append(struct cfl_array *array,
                 return -1;
             }
             array->slot_count = new_slot_count;
+            array->entries = tmp;
         }
         else {
             return -1;

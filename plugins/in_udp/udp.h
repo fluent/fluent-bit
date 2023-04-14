@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 #include <msgpack.h>
 
 struct udp_conn;
@@ -45,8 +46,8 @@ struct flb_in_udp_config {
     int collector_id;                  /* Listener collector id       */
     struct flb_downstream *downstream; /* Client manager              */
     struct udp_conn *dummy_conn;       /* Datagram dummy connection   */
-    struct mk_event_loop *evl;         /* Event loop file descriptor  */
     struct flb_input_instance *ins;    /* Input plugin instace        */
+    struct flb_log_event_encoder *log_encoder;
 };
 
 #endif

@@ -21,7 +21,6 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
-#include <msgpack.h>
 
 #include <stdio.h>
 #include "in_netif.h"
@@ -47,6 +46,10 @@ struct entry_define entry_name_linux[] = {
 
 static int config_destroy(struct flb_in_netif_config *ctx)
 {
+    if (ctx->log_encoder != NULL) {
+        flb_log_event_encoder_destroy(ctx->log_encoder);
+    }
+
     flb_free(ctx->entry);
     flb_free(ctx);
     return 0;
@@ -216,8 +219,9 @@ static int in_netif_collect_linux(struct flb_input_instance *i_ins,
     int  key_len;
     int i;
     int entry_len = ctx->entry_len;
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
+    int ret;
+
+    ret = 0;
 
     read_proc_file_linux(ctx);
 
@@ -231,35 +235,51 @@ static int in_netif_collect_linux(struct flb_input_instance *i_ins,
         ctx->first_snapshot = FLB_FALSE;
     }
     else {
-        /* Initialize local msgpack buffer */
-        msgpack_sbuffer_init(&mp_sbuf);
-        msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+        ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
 
-        /* Pack data */
-        msgpack_pack_array(&mp_pck, 2);
-        flb_pack_time_now(&mp_pck);
-        msgpack_pack_map(&mp_pck, ctx->map_num);
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_set_current_timestamp(ctx->log_encoder);
+        }
 
-        for (i = 0; i < entry_len; i++) {
+        for (i = 0 ;
+            i < entry_len &&
+            ret == FLB_EVENT_ENCODER_SUCCESS ;
+            i++) {
             if (ctx->entry[i].checked) {
                 key_len = ctx->interface_len + ctx->entry[i].name_len + 1/* '.' */;
 
                 snprintf(key_name, key_len + 1 /* add null character */,
                          "%s.%s", ctx->interface, ctx->entry[i].name);
-                msgpack_pack_str(&mp_pck, key_len);
-                msgpack_pack_str_body(&mp_pck, key_name, key_len);
 
-                msgpack_pack_uint64(&mp_pck, calc_diff(&ctx->entry[i]));
+                ret = flb_log_event_encoder_append_body_values(
+                        ctx->log_encoder,
+                        FLB_LOG_EVENT_CSTRING_VALUE(key_name),
+                        FLB_LOG_EVENT_UINT64_VALUE(calc_diff(&ctx->entry[i])));
 
                 ctx->entry[i].prev = ctx->entry[i].now;
             }
         }
 
-        flb_input_log_append(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
-        msgpack_sbuffer_destroy(&mp_sbuf);
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_commit_record(ctx->log_encoder);
+        }
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            flb_input_log_append(i_ins, NULL, 0,
+                                 ctx->log_encoder->output_buffer,
+                                 ctx->log_encoder->output_length);
+            ret = 0;
+        }
+        else {
+            flb_plg_error(i_ins, "log event encoding error : %d", ret);
+
+            ret = -1;
+        }
+
+        flb_log_event_encoder_reset(ctx->log_encoder);
     }
 
-    return 0;
+    return ret;
 }
 
 static int in_netif_collect(struct flb_input_instance *i_ins,
@@ -283,6 +303,15 @@ static int in_netif_init(struct flb_input_instance *in,
         return -1;
     }
     ctx->ins = in;
+
+    ctx->log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ctx->log_encoder == NULL) {
+        flb_plg_error(in, "could not initialize event encoder");
+        config_destroy(ctx);
+
+        return -1;
+    }
 
     if (configure(ctx, in) < 0) {
         config_destroy(ctx);

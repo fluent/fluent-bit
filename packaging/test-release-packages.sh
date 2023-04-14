@@ -46,7 +46,7 @@ YUM_TARGETS=("centos:7"
     "rockylinux:8"
     "quay.io/centos/centos:stream9"
     "amazonlinux:2"
-    "amazonlinux:2022")
+    "amazonlinux:2023")
 
 for IMAGE in "${YUM_TARGETS[@]}"
 do
@@ -54,9 +54,9 @@ do
     LOG_FILE=$(mktemp)
 
     UPDATED_FLUENT_BIT_INSTALL_COMMAND_PREFIX=${FLUENT_BIT_INSTALL_COMMAND_PREFIX:-}
-    # For AL2022 we currently want a fixed 2022 version instead of build timestamps
-    if [[ "$IMAGE" == "amazonlinux:2022" ]]; then
-        UPDATED_FLUENT_BIT_INSTALL_COMMAND_PREFIX="sed -i 's|\$releasever/|2022/|g' /etc/yum.repos.d/fluent-bit.repo;${FLUENT_BIT_INSTALL_COMMAND_PREFIX:-}"
+    # For AL2023 we currently want a fixed 2023 version instead of build timestamps
+    if [[ "$IMAGE" == "amazonlinux:2023" ]]; then
+        UPDATED_FLUENT_BIT_INSTALL_COMMAND_PREFIX="sed -i 's|\$releasever/|2023/|g' /etc/yum.repos.d/fluent-bit.repo;${FLUENT_BIT_INSTALL_COMMAND_PREFIX:-}"
     fi
 
     # We do want word splitting for EXTRA_MOUNTS

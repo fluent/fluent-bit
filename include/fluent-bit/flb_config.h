@@ -78,6 +78,8 @@ struct flb_config {
 
     /* main configuration */
     struct flb_cf *cf_main;
+    /* command line configuration (handled by fluent-bit bin) */
+    struct flb_cf *cf_opts;
     struct mk_list cf_parsers_list;
 
     flb_sds_t program_name;      /* argv[0] */
@@ -87,6 +89,12 @@ struct flb_config {
      * absolute path for the directory that contains the file.
      */
     char *conf_path;
+
+    /* if the configuration come from the file system, store the given path */
+    flb_sds_t conf_path_file;
+
+    /* if the external plugins come from the file system, store the given paths from command line */
+    struct mk_list external_plugins;
 
     /* Event */
     struct mk_event event_flush;
@@ -247,6 +255,8 @@ struct flb_config {
     int enable_chunk_trace;
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
+    int enable_hot_reload;
+
     /* Co-routines */
     unsigned int coro_stack_size;
 
@@ -279,6 +289,7 @@ const char *flb_config_prop_get(const char *key, struct mk_list *list);
 int flb_config_set_property(struct flb_config *config,
                             const char *k, const char *v);
 int flb_config_set_program_name(struct flb_config *config, char *name);
+int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf);
 
 int set_log_level_from_env(struct flb_config *config);
 #ifdef FLB_HAVE_STATIC_CONF

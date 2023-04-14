@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_endian.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 #include <msgpack.h>
 #include "netprot.h"
 #include "typesdb.h"
@@ -79,33 +80,16 @@ struct netprot_header
     char *type_instance;
 };
 
-static int netprot_pack_cstr(msgpack_packer *ppck, char *s) {
-    int len = strlen(s);
-    msgpack_pack_str(ppck, len);
-    msgpack_pack_str_body(ppck, s, len);
-    return 0;
-}
-
-/* Return the number of non-empty fields in the header */
-static int netprot_header_count(struct netprot_header *hdr)
-{
-    return ((hdr->time > 0)
-            + (hdr->interval > 0)
-            + !!hdr->host
-            + !!hdr->type
-            + !!hdr->type_instance
-            + !!hdr->plugin
-            + !!hdr->plugin_instance);
-}
-
 static int netprot_pack_value(char *ptr, int size, struct netprot_header *hdr,
-                              struct mk_list *tdb, msgpack_packer *ppck)
+                              struct mk_list *tdb,
+                              struct flb_log_event_encoder *encoder)
 {
     int i;
     char type;
     char *pval;
     uint16_t count;
     struct typesdb_node *node;
+    int result;
 
     if (hdr->type == NULL) {
         flb_error("[in_collectd] invalid data (type is NULL)");
@@ -138,68 +122,112 @@ static int netprot_pack_value(char *ptr, int size, struct netprot_header *hdr,
         return -1;
     }
 
-    msgpack_pack_array(ppck, 2);
-    flb_pack_time_now(ppck);
+    result = flb_log_event_encoder_begin_record(encoder);
 
-    msgpack_pack_map(ppck, netprot_header_count(hdr) + count);
-
-    netprot_pack_cstr(ppck, "type");
-    netprot_pack_cstr(ppck, hdr->type);
-
-    if (hdr->type_instance) {
-        netprot_pack_cstr(ppck, "type_instance");
-        netprot_pack_cstr(ppck, hdr->type_instance);
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_set_current_timestamp(encoder);
     }
 
-    if (hdr->time > 0) {
-        netprot_pack_cstr(ppck, "time");
-        msgpack_pack_double(ppck, hdr->time);
+    if (hdr->type != NULL &&
+        result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_append_body_values(
+                    encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE("type"),
+                    FLB_LOG_EVENT_CSTRING_VALUE(hdr->type));
     }
 
-    if (hdr->interval > 0) {
-        netprot_pack_cstr(ppck, "interval");
-        msgpack_pack_double(ppck, hdr->interval);
+    if (hdr->type_instance != NULL &&
+        result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_append_body_values(
+                    encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE("type_instance"),
+                    FLB_LOG_EVENT_CSTRING_VALUE(hdr->type_instance));
     }
 
-    if (hdr->plugin) {
-        netprot_pack_cstr(ppck, "plugin");
-        netprot_pack_cstr(ppck, hdr->plugin);
+    if (hdr->time > 0 &&
+        result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_append_body_values(
+                    encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE("time"),
+                    FLB_LOG_EVENT_DOUBLE_VALUE(hdr->time));
     }
 
-    if (hdr->plugin_instance) {
-        netprot_pack_cstr(ppck, "plugin_instance");
-        netprot_pack_cstr(ppck, hdr->plugin_instance);
+    if (hdr->interval > 0 &&
+        result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_append_body_values(
+                    encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE("interval"),
+                    FLB_LOG_EVENT_DOUBLE_VALUE(hdr->interval));
     }
 
-    if (hdr->host) {
-        netprot_pack_cstr(ppck, "host");
-        netprot_pack_cstr(ppck, hdr->host);
+    if (hdr->plugin != NULL &&
+        result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_append_body_values(
+                    encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE("plugin"),
+                    FLB_LOG_EVENT_CSTRING_VALUE(hdr->plugin));
     }
 
-    for (i = 0; i < count; i++) {
+    if (hdr->plugin_instance != NULL &&
+        result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_append_body_values(
+                    encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE("plugin_instance"),
+                    FLB_LOG_EVENT_CSTRING_VALUE(hdr->plugin_instance));
+    }
+
+    if (hdr->host != NULL &&
+        result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_append_body_values(
+                    encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE("host"),
+                    FLB_LOG_EVENT_CSTRING_VALUE(hdr->host));
+    }
+
+    for (i = 0; i < count && result == FLB_EVENT_ENCODER_SUCCESS ; i++) {
         pval = ptr + 2 + count + 8 * i;
         type = ptr[2 + i];
 
-        netprot_pack_cstr(ppck, node->fields[i]);
+        if (result == FLB_EVENT_ENCODER_SUCCESS) {
+            result = flb_log_event_encoder_append_body_cstring(
+                        encoder, node->fields[i]);
+        }
 
         switch (type) {
             case DS_TYPE_COUNTER:
-                msgpack_pack_uint64(ppck, be64read(pval));
+                result = flb_log_event_encoder_append_body_uint64(
+                            encoder, be64read(pval));
                 break;
             case DS_TYPE_GAUGE:
-                msgpack_pack_double(ppck, *((double *) pval));
+                result = flb_log_event_encoder_append_body_double(
+                            encoder, *((double *) pval));
                 break;
             case DS_TYPE_DERIVE:
-                msgpack_pack_int64(ppck, (int64_t) be64read(pval));
+                result = flb_log_event_encoder_append_body_int64(
+                            encoder, (int64_t) be64read(pval));
                 break;
             case DS_TYPE_ABSOLUTE:
-                msgpack_pack_uint64(ppck, be64read(pval));
+                result = flb_log_event_encoder_append_body_uint64(
+                            encoder, be64read(pval));
                 break;
             default:
                 flb_error("[in_collectd] unknown data type %i", type);
-                return -1;
+
+                result = FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT;
         }
     }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_commit_record(encoder);
+    }
+    else {
+        flb_log_event_encoder_rollback_record(encoder);
+    }
+
+    if (result != FLB_EVENT_ENCODER_SUCCESS) {
+        return -1;
+    }
+
     return 0;
 }
 
@@ -207,7 +235,7 @@ static int netprot_pack_value(char *ptr, int size, struct netprot_header *hdr,
  * Entry point function
  */
 int netprot_to_msgpack(char *buf, int len, struct mk_list *tdb,
-                       msgpack_packer *ppck)
+                       struct flb_log_event_encoder *encoder)
 {
     uint16_t part_type;
     uint16_t part_len;
@@ -259,7 +287,7 @@ int netprot_to_msgpack(char *buf, int len, struct mk_list *tdb,
                 }
                 break;
             case PART_VALUE:
-                if (netprot_pack_value(ptr, size, &hdr, tdb, ppck)) {
+                if (netprot_pack_value(ptr, size, &hdr, tdb, encoder)) {
                     return -1;
                 }
                 break;

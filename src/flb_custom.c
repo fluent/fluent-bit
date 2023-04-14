@@ -192,13 +192,47 @@ const char *flb_custom_name(struct flb_custom_instance *ins)
     return ins->name;
 }
 
+int flb_custom_plugin_property_check(struct flb_custom_instance *ins,
+                                     struct flb_config *config)
+{
+    int ret = 0;
+    struct mk_list *config_map;
+    struct flb_custom_plugin *p = ins->p;
+
+    if (p->config_map) {
+        /*
+         * Create a dynamic version of the configmap that will be used by the specific
+         * instance in question.
+         */
+        config_map = flb_config_map_create(config, p->config_map);
+        if (!config_map) {
+            flb_error("[custom] error loading config map for '%s' plugin",
+                      p->name);
+            return -1;
+        }
+        ins->config_map = config_map;
+
+        /* Validate incoming properties against config map */
+        ret = flb_config_map_properties_check(ins->p->name,
+                                              &ins->properties, ins->config_map);
+        if (ret == -1) {
+            if (config->program_name) {
+                flb_helper("try the command: %s -F %s -h\n",
+                           config->program_name, ins->p->name);
+            }
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 /* Initialize all custom plugins */
 int flb_custom_init_all(struct flb_config *config)
 {
     int ret;
     struct mk_list *tmp;
     struct mk_list *head;
-    struct mk_list *config_map;
     struct flb_custom_plugin *p;
     struct flb_custom_instance *ins;
 
@@ -226,30 +260,9 @@ int flb_custom_init_all(struct flb_config *config)
          * Before to call the initialization callback, make sure that the received
          * configuration parameters are valid if the plugin is registering a config map.
          */
-        if (p->config_map) {
-            /*
-             * Create a dynamic version of the configmap that will be used by the specific
-             * instance in question.
-             */
-            config_map = flb_config_map_create(config, p->config_map);
-            if (!config_map) {
-                flb_error("[custom] error loading config map for '%s' plugin",
-                          p->name);
-                return -1;
-            }
-            ins->config_map = config_map;
-
-            /* Validate incoming properties against config map */
-            ret = flb_config_map_properties_check(ins->p->name,
-                                                  &ins->properties, ins->config_map);
-            if (ret == -1) {
-                if (config->program_name) {
-                    flb_helper("try the command: %s -F %s -h\n",
-                               config->program_name, ins->p->name);
-                }
-                flb_custom_instance_destroy(ins);
-                return -1;
-            }
+        if (flb_custom_plugin_property_check(ins, config) == -1) {
+            flb_custom_instance_destroy(ins);
+            return -1;
         }
 
         /* Initialize the input */

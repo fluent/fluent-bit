@@ -51,7 +51,7 @@ static int debug_event_mask(struct flb_tail_config *ctx,
     }
 
     if (file) {
-        buf_size = file->name_len + 64;
+        buf_size = file->name_len + 128;
     }
     
     if (buf_size < 256) {
@@ -66,7 +66,7 @@ static int debug_event_mask(struct flb_tail_config *ctx,
 
     /* Print info into sds */
     if (file) {
-        flb_sds_printf(&buf, "inode=%"PRIu64", %s, events: ", file->name, file->inode);
+        flb_sds_printf(&buf, "inode=%"PRIu64", %s, events: ", file->inode, file->name);
     }
     else {
         flb_sds_printf(&buf, "events: ");

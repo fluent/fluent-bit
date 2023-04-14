@@ -22,6 +22,8 @@
 
 #include <msgpack.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 struct flb_in_fw_config {
     size_t buffer_max_size;         /* Max Buffer size             */
@@ -41,8 +43,10 @@ struct flb_in_fw_config {
     int coll_fd;
     struct flb_downstream *downstream; /* Client manager          */
     struct mk_list connections;     /* List of active connections */
-    struct mk_event_loop *evl;      /* Event loop file descriptor */
     struct flb_input_instance *ins; /* Input plugin instace       */
+
+    struct flb_log_event_decoder *log_decoder;
+    struct flb_log_event_encoder *log_encoder;
 };
 
 #endif

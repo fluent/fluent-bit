@@ -184,6 +184,8 @@ REGISTER_IN_PLUGIN("in_http")
 REGISTER_IN_PLUGIN("in_collectd")
 REGISTER_IN_PLUGIN("in_statsd")
 REGISTER_IN_PLUGIN("in_opentelemetry")
+REGISTER_IN_PLUGIN("in_elasticsearch")
+REGISTER_IN_PLUGIN("in_calyptia_fleet")
 
 # Test the event loop messaging when used in threaded mode
 REGISTER_IN_PLUGIN("in_event_test")
@@ -281,6 +283,7 @@ REGISTER_OUT_PLUGIN("out_opentelemetry")
 REGISTER_OUT_PLUGIN("out_prometheus_exporter")
 REGISTER_OUT_PLUGIN("out_prometheus_remote_write")
 REGISTER_OUT_PLUGIN("out_s3")
+REGISTER_OUT_PLUGIN("out_vivo_exporter")
 
 # FILTERS
 # =======
@@ -306,6 +309,10 @@ if(FLB_RECORD_ACCESSOR)
   REGISTER_FILTER_PLUGIN("filter_expect")
   REGISTER_FILTER_PLUGIN("filter_grep")
   REGISTER_FILTER_PLUGIN("filter_rewrite_tag")
+endif()
+
+if(FLB_METRICS)
+  REGISTER_FILTER_PLUGIN("filter_log_to_metrics")
 endif()
 
 if(FLB_LUAJIT)

@@ -23,7 +23,8 @@
 #include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
-
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 #include <msgpack.h>
 
 static int cb_stdout_init(struct flb_filter_instance *f_ins,
@@ -49,26 +50,43 @@ static int cb_stdout_filter(const void *data, size_t bytes,
                             void *filter_context,
                             struct flb_config *config)
 {
-    msgpack_unpacked result;
-    size_t off = 0, cnt = 0;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    size_t cnt;
+    int ret;
+
     (void) out_buf;
     (void) out_bytes;
     (void) f_ins;
     (void) i_ins;
     (void) filter_context;
     (void) config;
-    struct flb_time tmp;
-    msgpack_object *p;
 
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(f_ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    cnt = 0;
+
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         printf("[%zd] %s: [", cnt++, tag);
-        flb_time_pop_from_msgpack(&tmp, &result, &p);
-        printf("%"PRIu32".%09lu, ", (uint32_t)tmp.tm.tv_sec, tmp.tm.tv_nsec);
-        msgpack_object_print(stdout, *p);
+        printf("%"PRIu32".%09lu, ",
+               (uint32_t) log_event.timestamp.tm.tv_sec,
+               log_event.timestamp.tm.tv_nsec);
+        msgpack_object_print(stdout, *log_event.metadata);
+        printf(", ");
+        msgpack_object_print(stdout, *log_event.body);
         printf("]\n");
     }
-    msgpack_unpacked_destroy(&result);
+
+    flb_log_event_decoder_destroy(&log_decoder);
 
     return FLB_FILTER_NOTOUCH;
 }

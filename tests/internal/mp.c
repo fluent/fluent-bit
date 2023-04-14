@@ -106,7 +106,7 @@ void test_accessor_keys_remove()
 
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &buf, &size, &type);
+    ret = flb_pack_json(json, len, &buf, &size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);
@@ -145,9 +145,209 @@ void test_accessor_keys_remove()
     msgpack_unpacked_destroy(&result);
 }
 
+/* https://github.com/fluent/fluent-bit/issues/5546 */
+void test_keys_remove_subkey_key()
+{
+    int len;
+    int ret;
+    int type;
+    size_t off = 0;
+    char *buf;
+    size_t size;
+    char *out_buf;
+    size_t out_size;
+    char *json;
+    char final_json[2048] = {0};
+    msgpack_unpacked result;
+    msgpack_unpacked result_final;
+    msgpack_object map;
+    struct flb_mp_accessor *mpa;
+    struct mk_list patterns;
+
+    /* Sample JSON message */
+    json =
+        "{\"key1\": \"something\", "
+        "\"kubernetes\": "
+        "   [true, "
+        "    false, "
+        "    {\"a\": false, "
+        "     \"annotations\": { "
+        "                       \"fluentbit.io/tag\": \"thetag\","
+        "                       \"extra\": false\""
+        "}}]}";
+
+    /* Convert to msgpack */
+    len = strlen(json);
+    ret = flb_pack_json(json, len, &buf, &size, &type, NULL);
+    TEST_CHECK(ret == 0);
+    if (ret == -1) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Unpack the content */
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, buf, size, &off);
+    map = result.data;
+
+    /* Create list of patterns */
+    flb_slist_create(&patterns);
+
+    /* sub key -> key */
+    flb_slist_add(&patterns, "$kubernetes[2]['annotations']['fluentbit.io/tag']");
+    flb_slist_add(&patterns, "$kubernetes");
+
+
+    /* Create mp accessor */
+    mpa = flb_mp_accessor_create(&patterns);
+    TEST_CHECK(mpa != NULL);
+
+    /* Remove the entry that matches the pattern(s) */
+    ret = flb_mp_accessor_keys_remove(mpa, &map, (void *) &out_buf, &out_size);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    printf("\n=== ORIGINAL  ===\n");
+    flb_pack_print(buf, size);
+    flb_free(buf);
+
+    printf("=== FINAL MAP ===\n");
+    if (ret == FLB_TRUE) {
+        flb_pack_print(out_buf, out_size);
+    }
+    msgpack_unpacked_destroy(&result);
+
+    off = 0;
+    msgpack_unpacked_init(&result_final);
+    msgpack_unpack_next(&result_final, out_buf, out_size, &off);
+    flb_msgpack_to_json(&final_json[0], sizeof(final_json), &result_final.data);
+
+    if (!TEST_CHECK(strstr(&final_json[0] ,"kubernetes") == NULL)) {
+        TEST_MSG("kubernetes field should be removed");
+    }
+
+    msgpack_unpacked_destroy(&result_final);
+
+    flb_free(out_buf);
+    flb_mp_accessor_destroy(mpa);
+    flb_slist_destroy(&patterns);
+
+}
+
+void remove_subkey_keys(char *list[], int list_size, int index_start)
+{
+    int len;
+    int ret;
+    int type;
+    size_t off = 0;
+    char *buf;
+    size_t size;
+    char *out_buf;
+    size_t out_size;
+    char *json;
+    char final_json[2048] = {0};
+    msgpack_unpacked result;
+    msgpack_unpacked result_final;
+    msgpack_object map;
+    struct flb_mp_accessor *mpa;
+    struct mk_list patterns;
+    int i;
+    int count = 0;
+
+    /* Sample JSON message */
+    json =
+        "{\"key1\": \"something\", "
+        "\"kubernetes\": "
+        "   [true, "
+        "    false, "
+        "    {\"a\": false, "
+        "     \"annotations\": { "
+        "                       \"fluentbit.io/tag\": \"thetag\","
+        "                       \"extra\": false\""
+        "}}]}";
+
+    /* Convert to msgpack */
+    len = strlen(json);
+    ret = flb_pack_json(json, len, &buf, &size, &type, NULL);
+    TEST_CHECK(ret == 0);
+    if (ret == -1) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Unpack the content */
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, buf, size, &off);
+    map = result.data;
+
+    /* Create list of patterns */
+    flb_slist_create(&patterns);
+
+    /* sub keys */
+    for (i=index_start; count<list_size; i++) {
+        if (i>=list_size) {
+            i = 0;
+        }
+        flb_slist_add(&patterns, list[i]);
+        count++;
+    }
+
+    /* Create mp accessor */
+    mpa = flb_mp_accessor_create(&patterns);
+    TEST_CHECK(mpa != NULL);
+
+    /* Remove the entry that matches the pattern(s) */
+    ret = flb_mp_accessor_keys_remove(mpa, &map, (void *) &out_buf, &out_size);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    printf("\n=== ORIGINAL  ===\n");
+    flb_pack_print(buf, size);
+    flb_free(buf);
+
+    printf("=== FINAL MAP ===\n");
+    if (ret == FLB_TRUE) {
+        flb_pack_print(out_buf, out_size);
+    }
+    msgpack_unpacked_destroy(&result);
+
+    off = 0;
+    msgpack_unpacked_init(&result_final);
+    msgpack_unpack_next(&result_final, out_buf, out_size, &off);
+    flb_msgpack_to_json(&final_json[0], sizeof(final_json), &result_final.data);
+
+    if (!TEST_CHECK(strstr(&final_json[0] ,"kubernetes") == NULL)) {
+        TEST_MSG("kubernetes field should be removed");
+    }
+
+    msgpack_unpacked_destroy(&result_final);
+
+    flb_free(out_buf);
+    flb_mp_accessor_destroy(mpa);
+    flb_slist_destroy(&patterns);
+}
+
+void test_keys_remove_subkey_keys()
+{
+    char *list[] = {"$kubernetes[2]['annotations']['fluentbit.io/tag']",
+                    "$kubernetes[2]['a']", 
+                    "$kubernetes"};
+    char *list2[] = {"$kubernetes[2]['annotations']['fluentbit.io/tag']",
+                     "$kubernetes",
+                     "$kubernetes[2]['a']"};
+
+    int size = sizeof(list)/sizeof(char*);
+    int i;
+    
+    for (i=0; i<size; i++) {
+        remove_subkey_keys(list, size, i);
+    }
+    for (i=0; i<size; i++) {
+        remove_subkey_keys(list2, size, i);
+    }
+}
+
 TEST_LIST = {
     {"count"                , test_count},
     {"map_header"           , test_map_header},
     {"accessor_keys_remove" , test_accessor_keys_remove},
+    {"accessor_keys_remove_subkey_key" , test_keys_remove_subkey_key},
+    {"accessor_keys_remove_subkey_keys" , test_keys_remove_subkey_keys},
     { 0 }
 };

@@ -312,6 +312,7 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
                      flb_input_name(task->i_ins),
                      flb_output_name(ins), out_id);
         }
+
         flb_task_retry_clean(task, ins);
         flb_task_users_dec(task, FLB_TRUE);
     }
@@ -331,7 +332,10 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
                      task_id,
                      flb_input_name(task->i_ins),
                      flb_output_name(ins), out_id);
+
+            flb_task_retry_clean(task, ins);
             flb_task_users_dec(task, FLB_TRUE);
+
             return 0;
         }
 
@@ -363,7 +367,9 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
                       flb_input_name(task->i_ins),
                       flb_output_name(ins));
 
+            flb_task_retry_clean(task, ins);
             flb_task_users_dec(task, FLB_TRUE);
+
             return 0;
         }
 
@@ -422,6 +428,8 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
         flb_metrics_sum(FLB_METRIC_OUT_ERROR, 1, ins->metrics);
         flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, task->records, ins->metrics);
 #endif
+
+        flb_task_retry_clean(task, ins);
         flb_task_users_dec(task, FLB_TRUE);
     }
 

@@ -90,8 +90,6 @@ static int in_http_init(struct flb_input_instance *ins,
     /* Set the context */
     flb_input_set_context(ins, ctx);
 
-    ctx->evl = config->evl;
-
     port = (unsigned short int) strtoul(ctx->tcp_port, NULL, 10);
 
     ctx->downstream = flb_downstream_create(FLB_TRANSPORT_TCP,
@@ -111,6 +109,8 @@ static int in_http_init(struct flb_input_instance *ins,
 
         return -1;
     }
+
+    flb_input_downstream_set(ctx->downstream, ctx->ins);
 
     if (ctx->successful_response_code != 200 &&
         ctx->successful_response_code != 201 &&
@@ -164,6 +164,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", HTTP_BUFFER_CHUNK_SIZE,
      0, FLB_TRUE, offsetof(struct flb_http, buffer_chunk_size),
      ""
+    },
+
+    {
+     FLB_CONFIG_MAP_SLIST_1, "success_header", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_http, success_headers),
+     "Add an HTTP header key/value pair on success. Multiple headers can be set"
     },
 
     {

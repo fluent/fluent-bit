@@ -49,14 +49,6 @@ static void cb_thread_sched_timer(struct flb_config *ctx, void *data)
     flb_downstream_conn_timeouts(&ins->downstreams);
 }
 
-static void *worker(void *arg)
-{
-    struct flb_input_thread *it = arg;
-    it->callback(it->write, it->data);
-    fclose(it->write_file);
-    return NULL;
-}
-
 static inline int handle_input_event(flb_pipefd_t fd, struct flb_input_instance *ins)
 {
     int bytes;

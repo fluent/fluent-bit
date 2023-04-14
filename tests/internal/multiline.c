@@ -482,7 +482,7 @@ static void test_parser_docker()
         flb_time_get(&tm);
 
         /* Package as msgpack */
-        flb_ml_append(ml, stream_id, FLB_ML_TYPE_TEXT, &tm, r->buf, len);
+        flb_ml_append_text(ml, stream_id, &tm, r->buf, len);
     }
 
     if (ml) {
@@ -536,7 +536,7 @@ static void test_parser_cri()
         flb_time_get(&tm);
 
         /* Package as msgpack */
-        flb_ml_append(ml, stream_id, FLB_ML_TYPE_TEXT, &tm, r->buf, len);
+        flb_ml_append_text(ml, stream_id, &tm, r->buf, len);
     }
 
     if (ml) {
@@ -590,7 +590,7 @@ static void test_container_mix()
         flb_time_get(&tm);
 
         /* Package as msgpack */
-        flb_ml_append(ml, stream_id, FLB_ML_TYPE_TEXT, &tm, r->buf, len);
+        flb_ml_append_text(ml, stream_id, &tm, r->buf, len);
     }
 
     if (ml) {
@@ -678,7 +678,7 @@ static void test_parser_java()
         map = &root.via.array.ptr[1];
 
         /* Package as msgpack */
-        ret = flb_ml_append_object(ml, stream_id, &tm, map);
+        ret = flb_ml_append_object(ml, stream_id, &tm, NULL, map);
 
         msgpack_unpacked_destroy(&result);
         msgpack_sbuffer_destroy(&mp_sbuf);
@@ -740,7 +740,7 @@ static void test_parser_python()
 
         /* Package as msgpack */
         flb_time_get(&tm);
-        flb_ml_append(ml, stream_id, FLB_ML_TYPE_TEXT, &tm, r->buf, len);
+        flb_ml_append_text(ml, stream_id, &tm, r->buf, len);
     }
 
     if (ml) {
@@ -799,7 +799,7 @@ static void test_parser_ruby()
 
         /* Package as msgpack */
         flb_time_get(&tm);
-        flb_ml_append(ml, stream_id, FLB_ML_TYPE_TEXT, &tm, r->buf, len);
+        flb_ml_append_text(ml, stream_id, &tm, r->buf, len);
     }
 
     if (ml) {
@@ -866,7 +866,7 @@ static void test_issue_4949()
 
         /* Package as msgpack */
         flb_time_get(&tm);
-        flb_ml_append(ml, stream_id, FLB_ML_TYPE_TEXT, &tm, r->buf, len);
+        flb_ml_append_text(ml, stream_id, &tm, r->buf, len);
     }
 
     if (ml) {
@@ -976,7 +976,7 @@ static void test_parser_elastic()
         map = &root.via.array.ptr[1];
 
         /* Package as msgpack */
-        ret = flb_ml_append_object(ml, stream_id, &tm, map);
+        ret = flb_ml_append_object(ml, stream_id, &tm, NULL, map);
 
         msgpack_unpacked_destroy(&result);
         msgpack_sbuffer_destroy(&mp_sbuf);
@@ -1042,7 +1042,7 @@ static void test_endswith()
 
         /* Package as msgpack */
         flb_time_get(&tm);
-        flb_ml_append(ml, stream_id, FLB_ML_TYPE_TEXT, &tm, r->buf, len);
+        flb_ml_append_text(ml, stream_id, &tm, r->buf, len);
     }
 
     if (ml) {
@@ -1091,7 +1091,7 @@ static void test_parser_go()
 
         /* Package as msgpack */
         flb_time_get(&tm);
-        flb_ml_append(ml, stream_id, FLB_ML_TYPE_TEXT, &tm, r->buf, len);
+        flb_ml_append_text(ml, stream_id, &tm, r->buf, len);
     }
 
     if (ml) {
@@ -1169,7 +1169,7 @@ static void run_test(struct flb_config *config, char *test_name,
         flb_time_get(&tm);
 
         /* Package as msgpack */
-        flb_ml_append(ml, stream1, FLB_ML_TYPE_TEXT, &tm, r->buf, len);
+        flb_ml_append_text(ml, stream1, &tm, r->buf, len);
     }
 
     flb_ml_destroy(ml);
@@ -1199,7 +1199,7 @@ static void run_test(struct flb_config *config, char *test_name,
         flb_time_pop_from_msgpack(&tm, &result, &map);
 
         /* Package as msgpack */
-        ret = flb_ml_append_object(ml, stream2, &tm, map);
+        ret = flb_ml_append_object(ml, stream2, &tm, NULL, map);
     }
     flb_ml_flush_pending_now(ml);
 
@@ -1354,7 +1354,7 @@ static void test_issue_4034()
         map = &root.via.array.ptr[1];
 
         /* Package as msgpack */
-        ret = flb_ml_append_object(ml, stream_id, &tm, map);
+        ret = flb_ml_append_object(ml, stream_id, &tm, NULL, map);
 
         msgpack_unpacked_destroy(&result);
         msgpack_sbuffer_destroy(&mp_sbuf);

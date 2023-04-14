@@ -1136,6 +1136,43 @@ int flb_http_proxy_auth(struct flb_http_client *c,
     return flb_http_add_auth_header(c, user, passwd, FLB_HTTP_HEADER_PROXY_AUTH);
 }
 
+int flb_http_bearer_auth(struct flb_http_client *c, const char *token)
+{
+    flb_sds_t header_buffer;
+    flb_sds_t header_line;
+    int       result;
+
+    result = -1;
+
+    if (token == NULL) {
+        token = "";
+
+        /* Shouldn't we log this and return instead of sending
+         * a malformed value?
+         */
+    }
+
+    header_buffer = flb_sds_create_size(strlen(token) + 64);
+
+    if (header_buffer == NULL) {
+        return -1;
+    }
+
+    header_line = flb_sds_printf(&header_buffer, "Bearer %s", token);
+
+    if (header_line != NULL) {
+        result = flb_http_add_header(c,
+                                     FLB_HTTP_HEADER_AUTH,
+                                     strlen(FLB_HTTP_HEADER_AUTH),
+                                     header_line,
+                                     flb_sds_len(header_line));
+    }
+
+    flb_sds_destroy(header_buffer);
+
+    return result;
+}
+
 
 int flb_http_do(struct flb_http_client *c, size_t *bytes)
 {

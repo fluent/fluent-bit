@@ -23,6 +23,8 @@
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_crypto.h>
 #include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 
 #include "forward.h"
 
@@ -85,6 +87,7 @@ static int append_options(struct flb_forward *ctx,
                           int event_type,
                           msgpack_packer *mp_pck,
                           int entries, void *data, size_t bytes,
+                          msgpack_object *metadata,
                           char *out_chunk)
 {
     char *chunk = NULL;
@@ -149,6 +152,14 @@ static int append_options(struct flb_forward *ctx,
     msgpack_pack_str_body(mp_pck, "fluent_signal", 13);
     msgpack_pack_int64(mp_pck, event_type);
 
+    if (metadata != NULL &&
+        metadata->type == MSGPACK_OBJECT_MAP &&
+        metadata->via.map.size > 0) {
+        flb_mp_map_header_append(&mh);
+        msgpack_pack_str_with_body(mp_pck, "metadata", 8);
+        msgpack_pack_object(mp_pck, *metadata);
+    }
+
     flb_mp_map_header_end(&mh);
 
     flb_plg_debug(ctx->ins,
@@ -167,8 +178,10 @@ static int append_options(struct flb_forward *ctx,
  *  [
  *    "TAG",
  *    TIMESTAMP,
- *    RECORD/MAP
+ *    RECORD/MAP,
+ *    *OPTIONS*
  *  ]
+ *
  */
 static int flb_forward_format_message_mode(struct flb_forward *ctx,
                                            struct flb_forward_config *fc,
@@ -178,21 +191,17 @@ static int flb_forward_format_message_mode(struct flb_forward *ctx,
                                            void **out_buf, size_t *out_size)
 {
     int entries = 0;
-    int ok = MSGPACK_UNPACK_SUCCESS;
-    int s;
     size_t pre = 0;
     size_t off = 0;
     size_t record_size;
     char *chunk;
     char chunk_buf[33];
-    msgpack_object   *mp_obj;
-    msgpack_object   root;
-    msgpack_object   ts;
-    msgpack_object   *map;
     msgpack_packer   mp_pck;
     msgpack_sbuffer  mp_sbuf;
-    msgpack_unpacked result;
     struct flb_time tm;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    int ret;
 
     /*
      * Our only reason to use Message Mode is because the user wants to generate
@@ -208,37 +217,43 @@ static int flb_forward_format_message_mode(struct flb_forward *ctx,
      */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-    msgpack_unpacked_init(&result);
 
-    while (msgpack_unpack_next(&result, data, bytes, &off) == ok) {
-        root = result.data;
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
-        ts = root.via.array.ptr[0];
-        map = &root.via.array.ptr[1];
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
 
-        /* Gather time */
-        flb_time_pop_from_msgpack(&tm, &result, &mp_obj);
+        return -1;
+    }
+
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        flb_time_copy(&tm, &log_event.timestamp);
 
         /* Prepare main array: tag, timestamp and record/map */
-        s = 3;
-        if (fc->require_ack_response == FLB_TRUE) {
-            s++;
-        }
-        msgpack_pack_array(&mp_pck, s);
+        msgpack_pack_array(&mp_pck, 4);
 
         /* Generate dynamic Tag or use default one */
-        flb_forward_format_append_tag(ctx, fc, &mp_pck, map, tag, tag_len);
+        flb_forward_format_append_tag(ctx, fc, &mp_pck,
+                                      log_event.body,
+                                      tag, tag_len);
 
         /* Pack timestamp */
         if (fc->time_as_integer == FLB_TRUE) {
-            msgpack_pack_uint64(&mp_pck, tm.tm.tv_sec);
+            flb_time_append_to_msgpack(&log_event.timestamp,
+                                       &mp_pck,
+                                       FLB_TIME_ETFMT_INT);
         }
         else {
-            msgpack_pack_object(&mp_pck, ts);
+            flb_time_append_to_msgpack(&log_event.timestamp,
+                                       &mp_pck,
+                                       FLB_TIME_ETFMT_V1_FIXEXT);
         }
 
         /* Pack records */
-        msgpack_pack_object(&mp_pck, *mp_obj);
+        msgpack_pack_object(&mp_pck, *log_event.body);
 
         record_size = off - pre;
 
@@ -249,23 +264,102 @@ static int flb_forward_format_message_mode(struct flb_forward *ctx,
             chunk = chunk_buf;
         }
 
-        if (fc->require_ack_response == FLB_TRUE) {
-            append_options(ctx, fc, FLB_EVENT_TYPE_LOGS, &mp_pck, 0,
-                           (char *) data + pre, record_size,
-                           chunk);
-        }
+        append_options(ctx, fc, FLB_EVENT_TYPE_LOGS, &mp_pck, 0,
+                       (char *) data + pre, record_size,
+                       log_event.metadata,
+                       chunk);
 
         pre = off;
         entries++;
     }
 
+    flb_log_event_decoder_destroy(&log_decoder);
+
     *out_buf  = mp_sbuf.data;
     *out_size = mp_sbuf.size;
-    msgpack_unpacked_destroy(&result);
 
     return entries;
 }
 #endif
+
+static int flb_forward_format_transcode(
+            struct flb_forward *ctx, int format,
+            char *input_buffer, size_t input_length,
+            char **output_buffer, size_t *output_length)
+{
+    struct flb_log_event_encoder log_encoder;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event         log_event;
+    int                          result;
+
+    result = flb_log_event_decoder_init(&log_decoder, input_buffer, input_length);
+
+    if (result != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", result);
+
+        return -1;
+    }
+
+    result = flb_log_event_encoder_init(&log_encoder, format);
+
+    if (result != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder initialization error : %d", result);
+
+        flb_log_event_decoder_destroy(&log_decoder);
+
+        return -1;
+    }
+
+    while ((result = flb_log_event_decoder_next(
+                        &log_decoder,
+                        &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+
+        result = flb_log_event_encoder_begin_record(&log_encoder);
+
+        if (result == FLB_EVENT_ENCODER_SUCCESS) {
+            result = flb_log_event_encoder_set_timestamp(
+                        &log_encoder, &log_event.timestamp);
+        }
+
+        if (result == FLB_EVENT_ENCODER_SUCCESS) {
+            result = flb_log_event_encoder_set_metadata_from_msgpack_object(
+                        &log_encoder,
+                        log_event.metadata);
+        }
+
+        if (result == FLB_EVENT_ENCODER_SUCCESS) {
+            result = flb_log_event_encoder_set_body_from_msgpack_object(
+                        &log_encoder,
+                        log_event.body);
+        }
+
+        if (result == FLB_EVENT_ENCODER_SUCCESS) {
+            result = flb_log_event_encoder_commit_record(&log_encoder);
+        }
+    }
+
+    if (log_encoder.output_length > 0) {
+        *output_buffer = log_encoder.output_buffer;
+        *output_length = log_encoder.output_length;
+
+        flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
+
+        result = 0;
+    }
+    else {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder error : %d", result);
+
+        result = -1;
+    }
+
+    flb_log_event_decoder_destroy(&log_decoder);
+    flb_log_event_encoder_destroy(&log_encoder);
+
+    return result;
+}
 
 /*
  * Forward Protocol: Forward Mode
@@ -281,11 +375,14 @@ static int flb_forward_format_forward_mode(struct flb_forward *ctx,
                                            const void *data, size_t bytes,
                                            void **out_buf, size_t *out_size)
 {
+    int result;
     int entries = 0;
     char *chunk;
     char chunk_buf[33];
     msgpack_packer   mp_pck;
     msgpack_sbuffer  mp_sbuf;
+    char *transcoded_buffer;
+    size_t transcoded_length;
 
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
@@ -306,7 +403,24 @@ static int flb_forward_format_forward_mode(struct flb_forward *ctx,
             entries = 0;
         }
 
-        append_options(ctx, fc, event_type, &mp_pck, entries, (char *) data, bytes, chunk);
+        if (fc->fwd_retain_metadata && event_type == FLB_EVENT_TYPE_LOGS) {
+            result = flb_forward_format_transcode(ctx, FLB_LOG_EVENT_FORMAT_FORWARD,
+                                                  (char *) data, bytes,
+                                                  &transcoded_buffer,
+                                                  &transcoded_length);
+
+            if (result == 0) {
+                append_options(ctx, fc, event_type, &mp_pck, entries,
+                               transcoded_buffer,
+                               transcoded_length,
+                               NULL, chunk);
+
+                free(transcoded_buffer);
+            }
+        }
+        else {
+            append_options(ctx, fc, event_type, &mp_pck, entries, (char *) data, bytes, NULL, chunk);
+        }
     }
 
     *out_buf  = mp_sbuf.data;
@@ -330,17 +444,22 @@ static int flb_forward_format_forward_compat_mode(struct flb_forward *ctx,
                                                   void **out_buf, size_t *out_size)
 {
     int entries = 0;
-    int ok = MSGPACK_UNPACK_SUCCESS;
-    size_t off = 0;
     char *chunk;
     char chunk_buf[33];
-    msgpack_object   *mp_obj;
-    msgpack_object   root;
-    msgpack_object   ts;
     msgpack_packer   mp_pck;
     msgpack_sbuffer  mp_sbuf;
-    msgpack_unpacked result;
-    struct flb_time tm;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    int ret;
+
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return -1;
+    }
 
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
@@ -361,33 +480,34 @@ static int flb_forward_format_forward_compat_mode(struct flb_forward *ctx,
     /* Entries */
     entries = flb_mp_count(data, bytes);
     msgpack_pack_array(&mp_pck, entries);
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == ok) {
-        root = result.data;
 
-        ts = root.via.array.ptr[0];
-
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         msgpack_pack_array(&mp_pck, 2);
-
-        /* Gather time */
-        flb_time_pop_from_msgpack(&tm, &result, &mp_obj);
 
         /* Pack timestamp */
         if (fc->time_as_integer == FLB_TRUE) {
-            msgpack_pack_uint64(&mp_pck, tm.tm.tv_sec);
+            flb_time_append_to_msgpack(&log_event.timestamp,
+                                       &mp_pck,
+                                       FLB_TIME_ETFMT_INT);
         }
         else {
-            msgpack_pack_object(&mp_pck, ts);
+            flb_time_append_to_msgpack(&log_event.timestamp,
+                                       &mp_pck,
+                                       FLB_TIME_ETFMT_V1_FIXEXT);
         }
 
         /* Pack records */
-        msgpack_pack_object(&mp_pck, *mp_obj);
+        msgpack_pack_object(&mp_pck, *log_event.body);
     }
 
     if (fc->send_options == FLB_TRUE) {
         append_options(ctx, fc, FLB_EVENT_TYPE_LOGS, &mp_pck, entries,
-                       (char *) data, bytes, chunk);
+                       (char *) data, bytes, NULL, chunk);
     }
+
+    flb_log_event_decoder_destroy(&log_decoder);
 
     *out_buf  = mp_sbuf.data;
     *out_size = mp_sbuf.size;

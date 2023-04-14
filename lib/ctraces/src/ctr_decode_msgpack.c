@@ -236,10 +236,14 @@ static int unpack_link_trace_id(mpack_reader_t *reader, size_t index, void *ctx)
     int                                result;
     cfl_sds_t                          value;
 
-    result = ctr_mpack_consume_binary_tag(reader, &value);
+    result = ctr_mpack_consume_string_or_nil_tag(reader, &value);
 
-    if (result == CTR_MPACK_SUCCESS) {
-        context->link->trace_id = ctr_id_create(value, cfl_sds_len(value));
+    if (result == CTR_MPACK_SUCCESS && value != NULL) {
+        context->link->trace_id = ctr_id_from_base16(value);
+
+        if (context->link->trace_id == NULL) {
+            result = CTR_MPACK_CORRUPT_INPUT_DATA_ERROR;
+        }
 
         cfl_sds_destroy(value);
     }
@@ -253,11 +257,14 @@ static int unpack_link_span_id(mpack_reader_t *reader, size_t index, void *ctx)
     int                                result;
     cfl_sds_t                          value;
 
-    result = ctr_mpack_consume_binary_or_nil_tag(reader, &value);
+    result = ctr_mpack_consume_string_or_nil_tag(reader, &value);
 
-    if (result == CTR_MPACK_SUCCESS &&
-        value != NULL) {
-        context->link->span_id = ctr_id_create(value, cfl_sds_len(value));
+    if (result == CTR_MPACK_SUCCESS && value != NULL) {
+        context->link->span_id = ctr_id_from_base16(value);
+
+        if (context->link->span_id == NULL) {
+            result = CTR_MPACK_CORRUPT_INPUT_DATA_ERROR;
+        }
 
         cfl_sds_destroy(value);
     }
@@ -339,13 +346,23 @@ static int unpack_link(mpack_reader_t *reader, size_t index, void *ctx)
 static int unpack_span_trace_id(mpack_reader_t *reader, size_t index, void *ctx)
 {
     struct ctr_msgpack_decode_context *context = ctx;
+    struct ctrace_id                  *decoded_id;
     int                                result;
     cfl_sds_t                          value;
 
-    result = ctr_mpack_consume_binary_or_nil_tag(reader, &value);
+    result = ctr_mpack_consume_string_or_nil_tag(reader, &value);
 
     if (result == CTR_MPACK_SUCCESS && value != NULL) {
-        ctr_span_set_trace_id(context->span, value, cfl_sds_len(value));
+        decoded_id = ctr_id_from_base16(value);
+
+        if (decoded_id != NULL) {
+            ctr_span_set_trace_id_with_cid(context->span, decoded_id);
+
+            ctr_id_destroy(decoded_id);
+        }
+        else {
+            result = CTR_MPACK_CORRUPT_INPUT_DATA_ERROR;
+        }
 
         cfl_sds_destroy(value);
     }
@@ -356,13 +373,23 @@ static int unpack_span_trace_id(mpack_reader_t *reader, size_t index, void *ctx)
 static int unpack_span_span_id(mpack_reader_t *reader, size_t index, void *ctx)
 {
     struct ctr_msgpack_decode_context *context = ctx;
+    struct ctrace_id                  *decoded_id;
     int                                result;
     cfl_sds_t                          value;
 
-    result = ctr_mpack_consume_binary_or_nil_tag(reader, &value);
+    result = ctr_mpack_consume_string_or_nil_tag(reader, &value);
 
     if (result == CTR_MPACK_SUCCESS && value != NULL) {
-        ctr_span_set_span_id(context->span, value, cfl_sds_len(value));
+        decoded_id = ctr_id_from_base16(value);
+
+        if (decoded_id != NULL) {
+            ctr_span_set_span_id_with_cid(context->span, decoded_id);
+
+            ctr_id_destroy(decoded_id);
+        }
+        else {
+            result = CTR_MPACK_CORRUPT_INPUT_DATA_ERROR;
+        }
 
         cfl_sds_destroy(value);
     }
@@ -373,13 +400,23 @@ static int unpack_span_span_id(mpack_reader_t *reader, size_t index, void *ctx)
 static int unpack_span_parent_span_id(mpack_reader_t *reader, size_t index, void *ctx)
 {
     struct ctr_msgpack_decode_context *context = ctx;
+    struct ctrace_id                  *decoded_id;
     int                                result;
     cfl_sds_t                          value;
 
-    result = ctr_mpack_consume_binary_or_nil_tag(reader, &value);
+    result = ctr_mpack_consume_string_or_nil_tag(reader, &value);
 
     if (result == CTR_MPACK_SUCCESS && value != NULL) {
-        ctr_span_set_parent_span_id(context->span, value, cfl_sds_len(value));
+        decoded_id = ctr_id_from_base16(value);
+
+        if (decoded_id != NULL) {
+            ctr_span_set_parent_span_id_with_cid(context->span, decoded_id);
+
+            ctr_id_destroy(decoded_id);
+        }
+        else {
+            result = CTR_MPACK_CORRUPT_INPUT_DATA_ERROR;
+        }
 
         cfl_sds_destroy(value);
     }

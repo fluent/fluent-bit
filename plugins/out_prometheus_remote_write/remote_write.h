@@ -26,12 +26,27 @@
 #define FLB_PROMETHEUS_REMOTE_WRITE_MIME_PROTOBUF_LITERAL    "application/x-protobuf"
 #define FLB_PROMETHEUS_REMOTE_WRITE_VERSION_HEADER_NAME      "X-Prometheus-Remote-Write-Version"
 #define FLB_PROMETHEUS_REMOTE_WRITE_VERSION_LITERAL          "0.1.0"
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+#define FLB_PROMETHEUS_REMOTE_WRITE_CREDENTIAL_PREFIX "aws_"
+#endif
+#endif
 
 /* Plugin context */
 struct prometheus_remote_write_context {
     /* HTTP Auth */
     char *http_user;
     char *http_passwd;
+
+    /* AWS Auth */
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+    int has_aws_auth;
+    struct flb_aws_provider *aws_provider;
+    const char *aws_region;
+    const char *aws_service;
+#endif
+#endif
 
     /* Proxy */
     const char *proxy;

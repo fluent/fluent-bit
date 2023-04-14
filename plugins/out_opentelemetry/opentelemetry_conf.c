@@ -71,7 +71,7 @@ static void check_proxy(struct flb_output_instance *ins,
                         char *host, char *port,
                         char *protocol, char *uri){
 
-    char *tmp = NULL;
+    const char *tmp = NULL;
     int ret;
     tmp = flb_output_get_property("proxy", ins);
     if (tmp) {
@@ -132,7 +132,7 @@ struct opentelemetry_context *flb_opentelemetry_context_create(
     char *logs_uri = NULL;
     struct flb_upstream *upstream;
     struct opentelemetry_context *ctx = NULL;
-    char *tmp = NULL;
+    const char *tmp = NULL;
 
     /* Allocate plugin context */
     ctx = flb_calloc(1, sizeof(struct opentelemetry_context));

@@ -97,6 +97,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
                                      int types_len,
                                      struct mk_list *decoders,
                                      struct flb_config *config);
+int flb_parser_conf_file_stat(const char *file, struct flb_config *config);
 int flb_parser_conf_file(const char *file, struct flb_config *config);
 void flb_parser_destroy(struct flb_parser *parser);
 struct flb_parser *flb_parser_get(const char *name, struct flb_config *config);

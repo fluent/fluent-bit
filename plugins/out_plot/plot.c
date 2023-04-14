@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 #include <msgpack.h>
 
 #include <stdio.h>
@@ -70,14 +71,15 @@ static void cb_plot_flush(struct flb_event_chunk *event_chunk,
     int i;
     int written;
     int fd;
-    struct flb_time atime;
-    msgpack_unpacked result;
-    size_t off = 0;
     const char *out_file;
     msgpack_object *map;
     msgpack_object *key = NULL;
     msgpack_object *val = NULL;
     struct flb_plot *ctx = out_context;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    int ret;
+
     (void) i_ins;
     (void) config;
 
@@ -98,15 +100,27 @@ static void cb_plot_flush(struct flb_event_chunk *event_chunk,
         fd = STDOUT_FILENO;
     }
 
+    ret = flb_log_event_decoder_init(&log_decoder,
+                                     (char *) event_chunk->data,
+                                     event_chunk->size);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        close(fd);
+
+        FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
+
     /*
      * Upon flush, for each array, lookup the time and the first field
      * of the map to use as a data point.
      */
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result,
-                               event_chunk->data,
-                               event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS) {
-        flb_time_pop_from_msgpack(&atime, &result, &map);
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        map = log_event.body;
 
         /*
          * Lookup key, we need to iterate the whole map as sometimes the
@@ -141,6 +155,9 @@ static void cb_plot_flush(struct flb_event_chunk *event_chunk,
                     if (fd != STDOUT_FILENO) {
                         close(fd);
                     }
+
+                    flb_log_event_decoder_destroy(&log_decoder);
+
                     FLB_OUTPUT_RETURN(FLB_ERROR);
                 }
             }
@@ -151,24 +168,27 @@ static void cb_plot_flush(struct flb_event_chunk *event_chunk,
 
         if (!val) {
             flb_plg_error(ctx->ins, "unmatched key '%s'", ctx->key);
+
             if (fd != STDOUT_FILENO) {
                 close(fd);
             }
-            msgpack_unpacked_destroy(&result);
+
+            flb_log_event_decoder_destroy(&log_decoder);
+
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
 
         if (val->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
             written = dprintf(fd, "%f %" PRIu64 "\n",
-                              flb_time_to_double(&atime), val->via.u64);
+                              flb_time_to_double(&log_event.timestamp), val->via.u64);
         }
         else if (val->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
             written = dprintf(fd, "%f %" PRId64 "\n",
-                              flb_time_to_double(&atime), val->via.i64);
+                              flb_time_to_double(&log_event.timestamp), val->via.i64);
         }
         else if (val->type == MSGPACK_OBJECT_FLOAT) {
             written = dprintf(fd, "%f %lf\n",
-                              flb_time_to_double(&atime), val->via.f64);
+                              flb_time_to_double(&log_event.timestamp), val->via.f64);
         }
         else {
             flb_plg_error(ctx->ins, "value must be integer, negative integer "
@@ -178,7 +198,8 @@ static void cb_plot_flush(struct flb_event_chunk *event_chunk,
         flb_plg_debug(ctx->ins, "%i bytes written to file '%s'",
                       written, out_file);
     }
-    msgpack_unpacked_destroy(&result);
+
+    flb_log_event_decoder_destroy(&log_decoder);
 
     if (fd != STDOUT_FILENO) {
         close(fd);

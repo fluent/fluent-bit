@@ -1,4 +1,4 @@
-#if defined(__aarch64__) || defined(__arm64__)
+#if defined(__aarch64__) || defined(__arm64__) || defined(_M_ARM64)
 const char *str = "ARCHITECTURE IS AArch64";
 #elif defined(__arm__) || defined(__arm) || defined(__ARM__) || defined(__ARM)
 const char *str = "ARCHITECTURE IS ARM";

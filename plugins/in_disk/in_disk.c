@@ -25,8 +25,6 @@
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_pack.h>
 
-#include <msgpack.h>
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
@@ -123,19 +121,22 @@ static int update_disk_stats(struct flb_in_disk_config *ctx)
 static int in_disk_collect(struct flb_input_instance *i_ins,
                            struct flb_config *config, void *in_context)
 {
-    struct flb_in_disk_config *ctx = in_context;
-    (void) *i_ins;
+    unsigned long              write_total;
+    unsigned long              read_total;
+    int                        entry;
+    struct flb_in_disk_config *ctx;
+    int                        ret;
+    int                        i;
+
     (void) *config;
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
+
+    ret = 0;
+    ctx = (struct flb_in_disk_config *) in_context;
+    entry = ctx->entry;
 
     /* The type of sector size is unsigned long in kernel source */
-    unsigned long   read_total = 0;
-    unsigned long  write_total = 0;
-
-    int entry = ctx->entry;
-    int i;
-    int num_map = 2;/* write, read */
+    read_total = 0;
+    write_total = 0;
 
     update_disk_stats(ctx);
 
@@ -166,26 +167,43 @@ static int in_disk_collect(struct flb_input_instance *i_ins,
         read_total  *= 512;
         write_total *= 512;
 
-        /* Initialize local msgpack buffer */
-        msgpack_sbuffer_init(&mp_sbuf);
-        msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-        /* Pack data */
-        msgpack_pack_array(&mp_pck, 2);
-        flb_pack_time_now(&mp_pck);
-        msgpack_pack_map(&mp_pck, num_map);
+        ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_set_current_timestamp(
+                    &ctx->log_encoder);
+        }
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &ctx->log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE(STR_KEY_READ),
+                    FLB_LOG_EVENT_UINT64_VALUE(read_total),
+
+                    FLB_LOG_EVENT_CSTRING_VALUE(STR_KEY_WRITE),
+                    FLB_LOG_EVENT_UINT64_VALUE(write_total));
+        }
 
 
-        msgpack_pack_str(&mp_pck, strlen(STR_KEY_READ));
-        msgpack_pack_str_body(&mp_pck, STR_KEY_READ, strlen(STR_KEY_READ));
-        msgpack_pack_uint64(&mp_pck, read_total);
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+        }
 
-        msgpack_pack_str(&mp_pck, strlen(STR_KEY_WRITE));
-        msgpack_pack_str_body(&mp_pck, STR_KEY_WRITE, strlen(STR_KEY_WRITE));
-        msgpack_pack_uint64(&mp_pck, write_total);
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            flb_input_log_append(i_ins, NULL, 0,
+                                 ctx->log_encoder.output_buffer,
+                                 ctx->log_encoder.output_length);
 
-        flb_input_log_append(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
-        msgpack_sbuffer_destroy(&mp_sbuf);
+            ret = 0;
+        }
+        else {
+            flb_plg_error(i_ins, "Error encoding record : %d", ret);
+
+            ret = -1;
+        }
+
+        flb_log_event_encoder_reset(&ctx->log_encoder);
     }
 
     return 0;
@@ -278,6 +296,7 @@ static int in_disk_init(struct flb_input_instance *in,
     if (disk_config == NULL) {
         return -1;
     }
+
     disk_config->read_total = NULL;
     disk_config->write_total = NULL;
     disk_config->prev_read_total = NULL;
@@ -300,6 +319,15 @@ static int in_disk_init(struct flb_input_instance *in,
         goto init_error;
     }
 
+    ret = flb_log_event_encoder_init(&disk_config->log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(in, "error initializing event encoder : %d", ret);
+
+        goto init_error;
+    }
+
     return 0;
 
   init_error:
@@ -315,6 +343,8 @@ static int in_disk_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_in_disk_config *disk_config = data;
+
+    flb_log_event_encoder_destroy(&disk_config->log_encoder);
 
     flb_free(disk_config->read_total);
     flb_free(disk_config->write_total);

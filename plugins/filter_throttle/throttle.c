@@ -26,6 +26,8 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 #include <msgpack.h>
 #include "stdlib.h"
 
@@ -195,53 +197,77 @@ static int cb_throttle_filter(const void *data, size_t bytes,
     int ret;
     int old_size = 0;
     int new_size = 0;
-    msgpack_unpacked result;
-    msgpack_object root;
-    size_t off = 0;
+    struct flb_log_event_encoder log_encoder;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+
     (void) f_ins;
     (void) i_ins;
     (void) config;
-    msgpack_sbuffer tmp_sbuf;
-    msgpack_packer tmp_pck;
 
-    /* Create temporary msgpack buffer */
-    msgpack_sbuffer_init(&tmp_sbuf);
-    msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(f_ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    ret = flb_log_event_encoder_init(&log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(f_ins,
+                      "Log event encoder initialization error : %d", ret);
+
+        flb_log_event_decoder_destroy(&log_decoder);
+
+        return FLB_FILTER_NOTOUCH;
+    }
 
     /* Iterate each item array and apply rules */
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        root = result.data;
-        if (root.type != MSGPACK_OBJECT_ARRAY) {
-            continue;
-        }
-
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         old_size++;
         pthread_mutex_lock(&throttle_mut);
         ret = throttle_data(context);
         pthread_mutex_unlock(&throttle_mut);
+
         if (ret == THROTTLE_RET_KEEP) {
-            msgpack_pack_object(&tmp_pck, root);
-            new_size++;
+            ret = flb_log_event_encoder_emit_raw_record(
+                        &log_encoder,
+                        &((char *) data)[log_decoder.previous_offset],
+                        log_decoder.record_length);
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                new_size++;
+            }
         }
         else if (ret == THROTTLE_RET_DROP) {
             /* Do nothing */
         }
     }
-    msgpack_unpacked_destroy(&result);
 
     /* we keep everything ? */
     if (old_size == new_size) {
         /* Destroy the buffer to avoid more overhead */
-        msgpack_sbuffer_destroy(&tmp_sbuf);
-        return FLB_FILTER_NOTOUCH;
+        ret = FLB_FILTER_NOTOUCH;
+    }
+    else {
+        *out_buf  = log_encoder.output_buffer;
+        *out_size = log_encoder.output_length;
+
+        flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
+
+        ret = FLB_FILTER_MODIFIED;
     }
 
-    /* link new buffers */
-    *out_buf   = tmp_sbuf.data;
-    *out_size = tmp_sbuf.size;
-    return FLB_FILTER_MODIFIED;
+    flb_log_event_decoder_destroy(&log_decoder);
+    flb_log_event_encoder_destroy(&log_encoder);
+
+    return ret;
 }
 
 static int cb_throttle_exit(void *data, struct flb_config *config)

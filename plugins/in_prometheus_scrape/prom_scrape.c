@@ -98,7 +98,7 @@ static int collect_metrics(struct prom_scrape *ctx)
         goto client_error;
     }
 
-    flb_http_buffer_size(c, 1024 * 1000 * 10);
+    flb_http_buffer_size(c, ctx->buffer_max_size);
 
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {
@@ -204,6 +204,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_TIME, "scrape_interval", "10s",
      0, FLB_TRUE, offsetof(struct prom_scrape, scrape_interval),
      "Scraping interval."
+    },
+
+    {
+     FLB_CONFIG_MAP_SIZE, "buffer_max_size", HTTP_BUFFER_MAX_SIZE,
+     0, FLB_TRUE, offsetof(struct prom_scrape, buffer_max_size),
+     ""
     },
 
     {

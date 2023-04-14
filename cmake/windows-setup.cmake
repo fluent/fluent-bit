@@ -7,7 +7,13 @@ if(FLB_WINDOWS_DEFAULTS)
   message(STATUS "Overriding setttings with windows-setup.cmake")
   set(FLB_REGEX                 Yes)
   set(FLB_BACKTRACE              No)
-  set(FLB_LUAJIT                Yes)
+  # LuaJIT does not currently support Windows ARM64 architecture so we disable it for now.
+  # See also: https://github.com/LuaJIT/LuaJIT/issues/593
+  if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|AARCH64)")
+    set(FLB_LUAJIT               No)
+  else()
+    set(FLB_LUAJIT              Yes)
+  endif()
   set(FLB_EXAMPLES              Yes)
   set(FLB_PARSER                Yes)
   set(FLB_TLS                   Yes)
@@ -49,6 +55,9 @@ if(FLB_WINDOWS_DEFAULTS)
   set(FLB_IN_STATSD             Yes)
   set(FLB_IN_STORAGE_BACKLOG    Yes)
   set(FLB_IN_EMITTER            Yes)
+  set(FLB_IN_ELASTICSEARCH      Yes)
+  # disable calyptia fleet management for now
+  set(FLB_IN_CALYPTIA_FLEET     No)
 
   # OUTPUT plugins
   # ==============

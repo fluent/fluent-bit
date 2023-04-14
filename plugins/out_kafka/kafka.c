@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 
 #include "kafka_config.h"
 #include "kafka_topic.h"
@@ -467,11 +468,9 @@ static void cb_kafka_flush(struct flb_event_chunk *event_chunk,
 {
 
     int ret;
-    size_t off = 0;
     struct flb_out_kafka *ctx = out_context;
-    struct flb_time tms;
-    msgpack_object *obj;
-    msgpack_unpacked result;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
 
     /*
      * If the context is blocked, means rdkafka queue is full and no more
@@ -482,33 +481,34 @@ static void cb_kafka_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
+    ret = flb_log_event_decoder_init(&log_decoder,
+                                     (char *) event_chunk->data,
+                                     event_chunk->size);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
     /* Iterate the original buffer and perform adjustments */
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result,
-                               event_chunk->data,
-                               event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS) {
-        if (result.data.type != MSGPACK_OBJECT_ARRAY) {
-            continue;
-        }
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        ret = produce_message(&log_event.timestamp,
+                              log_event.body,
+                              ctx, config);
 
-        if (result.data.via.array.size != 2) {
-            continue;
-        }
+        if (ret != FLB_OK) {
+            flb_log_event_decoder_destroy(&log_decoder);
 
-        flb_time_pop_from_msgpack(&tms, &result, &obj);
-
-        ret = produce_message(&tms, obj, ctx, config);
-        if (ret == FLB_ERROR) {
-            msgpack_unpacked_destroy(&result);
-            FLB_OUTPUT_RETURN(FLB_ERROR);
-        }
-        else if (ret == FLB_RETRY) {
-            msgpack_unpacked_destroy(&result);
-            FLB_OUTPUT_RETURN(FLB_RETRY);
+            FLB_OUTPUT_RETURN(ret);
         }
     }
 
-    msgpack_unpacked_destroy(&result);
+    flb_log_event_decoder_destroy(&log_decoder);
+
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 

@@ -4,9 +4,19 @@
 #include <fluent-bit/flb_pack.h>
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size){
-    /* Set fuzzer-malloc chance of failure */
-    flb_malloc_mod = 25000;
+    /* Set flb_malloc_mod to be fuzzer-data dependent */
+    if (size < 4) {
+        return 0;
+    }
     flb_malloc_p = 0;
+    flb_malloc_mod = *(int*)data;
+    data += 4;
+    size -= 4;
+
+    /* Avoid division by zero for modulo operations */
+    if (flb_malloc_mod == 0) {
+        flb_malloc_mod = 1;
+    }
 
     if (size != 512)
         return 0;

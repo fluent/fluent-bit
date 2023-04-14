@@ -1,6 +1,7 @@
 # api/v2
 set(src
   metrics.c
+  reload.c
   register.c
   )
 

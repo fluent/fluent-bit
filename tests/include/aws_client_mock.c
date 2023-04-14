@@ -32,9 +32,7 @@ static struct flb_aws_client_vtable mock_client_vtable = {
 void flb_aws_client_mock_configure_generator(
     struct flb_aws_client_mock_request_chain *request_chain)
 {
-    if (flb_aws_client_mock_instance != NULL) {
-        flb_aws_client_mock_destroy(flb_aws_client_mock_instance);
-    }
+    flb_aws_client_mock_destroy_generator();
     flb_aws_client_mock_instance = flb_aws_client_mock_create(request_chain);
 }
 

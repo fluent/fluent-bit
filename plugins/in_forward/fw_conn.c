@@ -149,7 +149,7 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
     conn->in       = ctx->ins;
 
     /* Register instance into the event loop */
-    ret = mk_event_add(ctx->evl,
+    ret = mk_event_add(flb_engine_evl_get(),
                        connection->fd,
                        FLB_ENGINE_EV_CUSTOM,
                        MK_EVENT_READ,
