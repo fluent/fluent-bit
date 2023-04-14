@@ -101,6 +101,7 @@ struct flb_opensearch {
 
     /* prefix */
     flb_sds_t logstash_prefix;
+    flb_sds_t logstash_prefix_separator;
 
     /* prefix key */
     flb_sds_t logstash_prefix_key;
