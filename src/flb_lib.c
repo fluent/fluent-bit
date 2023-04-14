@@ -633,6 +633,7 @@ static void flb_lib_worker(void *data)
     struct flb_config *config;
 
     config = ctx->config;
+    flb_context_set(ctx);
     mk_utils_worker_rename("flb-pipeline");
     ret = flb_engine_start(config);
     if (ret == -1) {

@@ -56,6 +56,8 @@ if(FLB_WINDOWS_DEFAULTS)
   set(FLB_IN_STORAGE_BACKLOG    Yes)
   set(FLB_IN_EMITTER            Yes)
   set(FLB_IN_ELASTICSEARCH      Yes)
+  # disable calyptia fleet management for now
+  set(FLB_IN_CALYPTIA_FLEET     No)
 
   # OUTPUT plugins
   # ==============
