@@ -42,6 +42,16 @@
 #define FLB_PROCESSOR_UNIT_NATIVE    0
 #define FLB_PROCESSOR_UNIT_FILTER    1
 
+/* These forward definitions are necessary in order to avoid
+ * inclussion conflicts.
+ */
+
+struct flb_log_event;
+struct flb_input_instance;
+struct flb_log_event_decoder;
+struct flb_log_event_encoder;
+struct flb_processor_instance;
+
 struct flb_processor_unit {
     int event_type;
     int unit_type;
@@ -84,16 +94,11 @@ struct flb_processor {
      * plugins this will contain the input instance context.
      */
     void *data;
+    int source_plugin_type;
 
     /* Fluent Bit context */
     struct flb_config *config;
 };
-
-struct flb_log_event;
-struct flb_input_instance;
-struct flb_log_event_decoder;
-struct flb_log_event_encoder;
-struct flb_processor_instance;
 
 struct flb_processor_plugin {
     int flags;             /* Flags (not available at the moment */
@@ -105,34 +110,27 @@ struct flb_processor_plugin {
 
     /* Callbacks */
     int (*cb_init) (struct flb_processor_instance *,
-                    struct flb_config *,
-                    void *);
+                    void *,
+                    int,
+                    struct flb_config *);
 
-    int (*cb_process_logs) (struct flb_log_event *,
-                            const char *, int,
+    int (*cb_process_logs) (struct flb_processor_instance *,
                             struct flb_log_event_encoder *,
-                            struct flb_processor_instance *,
-                            struct flb_input_instance *,
-                            void *,
-                            struct flb_config *);
+                            struct flb_log_event *,
+                            const char *,
+                            int);
 
-    int (*cb_process_metrics) (struct cmt *,
+    int (*cb_process_metrics) (struct flb_processor_instance *,
+                               struct cmt *,
                                const char *,
-                               int,
-                               struct flb_processor_instance *,
-                               struct flb_input_instance *,
-                               void *,
-                               struct flb_config *);
+                               int);
 
-    int (*cb_process_traces) (struct ctrace *,
+    int (*cb_process_traces) (struct flb_processor_instance *,
+                              struct ctrace *,
                               const char *,
-                              int,
-                              struct flb_processor_instance *,
-                              struct flb_input_instance *,
-                              void *,
-                              struct flb_config *);
+                              int);
 
-    int (*cb_exit) (void *, struct flb_config *);
+    int (*cb_exit) (struct flb_processor_instance *);
 
     struct mk_list _head;  /* Link to parent list (config->filters) */
 };
@@ -164,7 +162,10 @@ struct flb_processor_instance {
 
 /* Processor stack */
 
-struct flb_processor *flb_processor_create(struct flb_config *config, char *name, void *data);
+struct flb_processor *flb_processor_create(struct flb_config *config,
+                                           char *name,
+                                           void *source_plugin_instance,
+                                           int source_plugin_type);
 
 int flb_processor_is_active(struct flb_processor *proc);
 
@@ -197,8 +198,10 @@ void flb_processor_instance_destroy(
         struct flb_processor_instance *ins);
 
 int flb_processor_instance_init(
-        struct flb_config *config,
-        struct flb_processor_instance *ins);
+        struct flb_processor_instance *ins,
+        void *source_plugin_instance,
+        int source_plugin_type,
+        struct flb_config *config);
 
 void flb_processor_instance_exit(
         struct flb_processor_instance *ins,

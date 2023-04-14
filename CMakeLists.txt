@@ -271,6 +271,7 @@ option(FLB_FILTER_NIGHTFALL            "Enable Nightfall filter"                
 option(FLB_FILTER_WASM                 "Enable WASM filter"                           Yes)
 
 option(FLB_PROCESSOR_TEST              "Enable test processor"                        Yes)
+option(FLB_PROCESSOR_ADD_LABELS        "Enable labels addition processor"             Yes)
 
 
 if(DEFINED FLB_NIGHTLY_BUILD AND NOT "${FLB_NIGHTLY_BUILD}" STREQUAL "")

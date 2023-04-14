@@ -29,10 +29,10 @@
 #include <fluent-bit/flb_log_event_encoder.h>
 
 static int cb_init(struct flb_processor_instance *p_ins,
-                          struct flb_config *config,
-                          void *data)
+                   void *source_plugin_instance,
+                   int source_plugin_type,
+                   struct flb_config *config)
 {
-
     return FLB_PROCESSOR_SUCCESS;
 }
 
@@ -61,14 +61,11 @@ static int add_canary_metadata_entry(struct flb_log_event_encoder *encoder)
 }
 
 
-static int cb_process_logs(struct flb_log_event *event,
-                           const char *tag,
-                           int tag_len,
+static int cb_process_logs(struct flb_processor_instance *p_ins,
                            struct flb_log_event_encoder *encoder,
-                           struct flb_processor_instance *p_ins,
-                           struct flb_input_instance *i_ins,
-                           void *filter_context,
-                           struct flb_config *config)
+                           struct flb_log_event *event,
+                           const char *tag,
+                           int tag_len)
 {
     int result;
 
@@ -101,13 +98,10 @@ static int cb_process_logs(struct flb_log_event *event,
     return FLB_PROCESSOR_SUCCESS;
 }
 
-static int cb_process_metrics(struct cmt *metrics_context,
+static int cb_process_metrics(struct flb_processor_instance *p_ins,
+                              struct cmt *metrics_context,
                               const char *tag,
-                              int tag_len,
-                              struct flb_processor_instance *p_ins,
-                              struct flb_input_instance *i_ins,
-                              void *processor_context,
-                              struct flb_config *config)
+                              int tag_len)
 {
     printf("cb_process_metrics : %p\n", metrics_context);
 
@@ -116,13 +110,10 @@ static int cb_process_metrics(struct cmt *metrics_context,
     return FLB_PROCESSOR_SUCCESS;
 }
 
-static int cb_process_traces(struct ctrace *trace,
+static int cb_process_traces(struct flb_processor_instance *p_ins,
+                             struct ctrace *trace,
                              const char *tag,
-                             int tag_len,
-                             struct flb_processor_instance *p_ins,
-                             struct flb_input_instance *i_ins,
-                             void *processor_context,
-                             struct flb_config *config)
+                             int tag_len)
 {
     struct ctrace_span *span;
 

@@ -36,7 +36,10 @@
  * From a design perspective, a Processor can be run independently from inputs, outputs
  * or unit tests directly.
  */
-struct flb_processor *flb_processor_create(struct flb_config *config, char *name, void *data)
+struct flb_processor *flb_processor_create(struct flb_config *config,
+                                           char *name,
+                                           void *source_plugin_instance,
+                                           int source_plugin_type)
 {
     struct flb_processor *proc;
 
@@ -46,8 +49,9 @@ struct flb_processor *flb_processor_create(struct flb_config *config, char *name
         return NULL;
     }
     proc->config = config;
-    proc->data = data;
     proc->is_active = FLB_FALSE;
+    proc->data = source_plugin_instance;
+    proc->source_plugin_type = source_plugin_type;
 
     /* lists for types */
     mk_list_init(&proc->logs);
@@ -215,8 +219,10 @@ int flb_processor_unit_init(struct flb_processor_unit *pu)
     }
     else {
         ret = flb_processor_instance_init(
-                proc->config,
-                (struct flb_processor_instance *) pu->ctx);
+                (struct flb_processor_instance *) pu->ctx,
+                proc->data,
+                0,
+                proc->config);
 
         if (ret == -1) {
             flb_error("[processor] error initializing unit native processor "
@@ -404,14 +410,10 @@ int flb_processor_run(struct flb_processor *proc,
                                             &log_event);
 
                         if (decoder_result == FLB_EVENT_DECODER_SUCCESS) {
-                            ret = p_ins->p->cb_process_logs(
-                                                &log_event,           /* msgpack buffer */
-                                                tag, tag_len,         /* tag */
-                                                p_ins->log_encoder,   /* output buffer */
-                                                p_ins,                /* filter instance */
-                                                proc->data,           /* (input/output) instance context */
-                                                p_ins->context,       /* filter context */
-                                                proc->config);
+                            ret = p_ins->p->cb_process_logs(p_ins,
+                                                            p_ins->log_encoder,
+                                                            &log_event,
+                                                            tag, tag_len);
                         }
                     }
                     while (decoder_result == FLB_EVENT_DECODER_SUCCESS &&
@@ -449,13 +451,10 @@ int flb_processor_run(struct flb_processor *proc,
             }
             else if (type == FLB_PROCESSOR_METRICS) {
                 if (p_ins->p->cb_process_metrics != NULL) {
-                    ret = p_ins->p->cb_process_metrics(
-                                        (struct cmt *) cur_buf, /* cmetrics context */
-                                        tag, tag_len,           /* tag */
-                                        p_ins,                  /* filter instance */
-                                        proc->data,             /* (input/output) instance context */
-                                        p_ins->context,         /* filter context */
-                                        proc->config);
+                    ret = p_ins->p->cb_process_metrics(p_ins,
+                                                       (struct cmt *) cur_buf,
+                                                       tag,
+                                                       tag_len);
 
                     if (ret != FLB_PROCESSOR_SUCCESS) {
                         return -1;
@@ -464,13 +463,10 @@ int flb_processor_run(struct flb_processor *proc,
             }
             else if (type == FLB_PROCESSOR_TRACES) {
                 if (p_ins->p->cb_process_traces != NULL) {
-                    ret = p_ins->p->cb_process_traces(
-                                        (struct ctrace *) cur_buf, /* ctraces context */
-                                        tag, tag_len,              /* tag */
-                                        p_ins,                     /* filter instance */
-                                        proc->data,                /* (input/output) instance context */
-                                        p_ins->context,            /* filter context */
-                                        proc->config);
+                    ret = p_ins->p->cb_process_traces(p_ins,
+                                                      (struct ctrace *) cur_buf,
+                                                      tag,
+                                                      tag_len);
 
                     if (ret != FLB_PROCESSOR_SUCCESS) {
                         return -1;
@@ -780,7 +776,7 @@ void flb_processor_instance_exit(
 
     if (plugin->cb_exit != NULL &&
         ins->context != NULL) {
-        plugin->cb_exit(ins->context, config);
+        plugin->cb_exit(ins);
     }
 }
 
@@ -831,8 +827,10 @@ int flb_processor_instance_check_properties(
 }
 
 int flb_processor_instance_init(
-        struct flb_config *config,
-        struct flb_processor_instance *ins)
+        struct flb_processor_instance *ins,
+        void *source_plugin_instance,
+        int source_plugin_type,
+        struct flb_config *config)
 {
     int ret;
     char *name;
@@ -850,9 +848,11 @@ int flb_processor_instance_init(
 
     /* CMetrics */
     ins->cmt = cmt_create();
+
     if (!ins->cmt) {
-        flb_error("[filter] could not create cmetrics context: %s",
+        flb_error("[processor] could not create cmetrics context: %s",
                   name);
+
         return -1;
     }
 
@@ -865,10 +865,15 @@ int flb_processor_instance_init(
     }
 
     /* Initialize the input */
-    if (p->cb_init) {
-        ret = p->cb_init(ins, config, ins->data);
+    if (p->cb_init != NULL) {
+        ret = p->cb_init(ins,
+                         source_plugin_instance,
+                         source_plugin_type,
+                         config);
+
         if (ret != 0) {
-            flb_error("Failed initialize filter %s", ins->name);
+            flb_error("[processor] failed initialize filter %s", ins->name);
+
             return -1;
         }
     }
@@ -886,12 +891,12 @@ void flb_processor_instance_set_context(
 void flb_processor_instance_destroy(
         struct flb_processor_instance *ins)
 {
-    if (!ins) {
+    if (ins == NULL) {
         return;
     }
 
     /* destroy config map */
-    if (ins->config_map) {
+    if (ins->config_map != NULL) {
         flb_config_map_destroy(ins->config_map);
     }
 
@@ -900,12 +905,12 @@ void flb_processor_instance_destroy(
 
     /* Remove metrics */
 #ifdef FLB_HAVE_METRICS
-    if (ins->cmt) {
+    if (ins->cmt != NULL) {
         cmt_destroy(ins->cmt);
     }
 #endif
 
-    if (ins->alias) {
+    if (ins->alias != NULL) {
         flb_sds_destroy(ins->alias);
     }
 
