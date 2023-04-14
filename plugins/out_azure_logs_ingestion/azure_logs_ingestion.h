@@ -20,9 +20,8 @@
 #ifndef FLB_OUT_AZURE_LOGS_INGESTION
 #define FLB_OUT_AZURE_LOGS_INGESTION
 
-#define FLB_AZ_LI_API_VERSION          "api-version=2021-11-01-preview"
-#define FLB_AZ_LI_TIME_KEY             "@timestamp"
-// #define FLB_AZ_LI_AUTH_SCOPE        "https://monitor.azure.com//.default"
+#define FLB_AZ_LI_API_VERSION       "api-version=2021-11-01-preview"
+#define FLB_AZ_LI_TIME_KEY          "@timestamp"
 #define FLB_AZ_LI_AUTH_SCOPE        "https://monitor.azure.com/.default"
 /* auth url needs tenant_id */
 #define FLB_AZ_LI_AUTH_URL_TMPLT    "https://login.microsoftonline.com/"\

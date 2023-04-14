@@ -40,7 +40,7 @@ static int cb_azure_logs_ingestion_init(struct flb_output_instance *ins,
     (void) ins;
     (void) data;
 
-    // Allocate and initialize a context from configuration
+    /* Allocate and initialize a context from configuration */
     ctx = flb_az_li_ctx_create(ins, config);
     if (!ctx) {
         flb_plg_error(ctx->ins, "configuration failed");
@@ -122,7 +122,8 @@ static int az_li_format(const void *in_buf, size_t in_bytes,
             s += len;
             msgpack_pack_str(&mp_pck, s);
             msgpack_pack_str_body(&mp_pck, time_formatted, s);
-        } else {
+        }
+        else {
             /* Append the time value as millis.nanos */
             t = flb_time_to_double(&tm);
             msgpack_pack_double(&mp_pck, t);
@@ -250,15 +251,15 @@ static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
 {
     int ret;
     int flush_status;
-    int is_compressed;
     size_t b_sent;
-    flb_sds_t json_payload;
     size_t json_payload_size;
     void* final_payload;
     size_t final_payload_size;
     flb_sds_t token;
     struct flb_connection *u_conn;
     struct flb_http_client *c;
+    int is_compressed = FLB_FALSE;
+    flb_sds_t json_payload = NULL;
     struct flb_az_li *ctx = out_context;
     (void) i_ins;
     (void) config;
@@ -287,7 +288,6 @@ static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
     /* Map buffer */
     final_payload = json_payload;
     final_payload_size = json_payload_size;
-    is_compressed = FLB_FALSE;
     if (ctx->compress_enabled == FLB_TRUE) {
         ret = flb_gzip_compress((void *) json_payload, json_payload_size,
                                 &final_payload, &final_payload_size);
@@ -379,34 +379,34 @@ static int cb_azure_logs_ingestion_exit(void *data, struct flb_config *config)
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
-     FLB_CONFIG_MAP_STR, "tenant_id", (char *)NULL, 0, FLB_TRUE,
-     offsetof(struct flb_az_li, tenant_id),
+     FLB_CONFIG_MAP_STR, "tenant_id", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_az_li, tenant_id),
      "Set the tenant ID of the AAD application"
     },
     {
-     FLB_CONFIG_MAP_STR, "client_id", (char *)NULL, 0, FLB_TRUE,
-     offsetof(struct flb_az_li, client_id),
+     FLB_CONFIG_MAP_STR, "client_id", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_az_li, client_id),
      "Set the client/app ID of the AAD application"
     },
     {
-     FLB_CONFIG_MAP_STR, "client_secret", (char *)NULL, 0, FLB_TRUE,
-     offsetof(struct flb_az_li, client_secret),
+     FLB_CONFIG_MAP_STR, "client_secret", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_az_li, client_secret),
      "Set the client secret of the AAD application"
     },
     {
-     FLB_CONFIG_MAP_STR, "dce_url", (char *)NULL, 0, FLB_TRUE,
-     offsetof(struct flb_az_li, dce_url),
+     FLB_CONFIG_MAP_STR, "dce_url", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_az_li, dce_url),
      "Data Collection Endpoint(DCE) URI (e.g. "
      "https://la-endpoint-q12a.eastus-1.ingest.monitor.azure.com)"
     },
     {
-     FLB_CONFIG_MAP_STR, "dcr_id", (char *)NULL, 0, FLB_TRUE,
-     offsetof(struct flb_az_li, dcr_id),
+     FLB_CONFIG_MAP_STR, "dcr_id", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_az_li, dcr_id),
      "Data Collection Rule (DCR) immutable ID"
     },
     {
-     FLB_CONFIG_MAP_STR, "table_name", (char *)NULL, 0, FLB_TRUE,
-     offsetof(struct flb_az_li, table_name),
+     FLB_CONFIG_MAP_STR, "table_name", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_az_li, table_name),
      "The name of the custom log table, including '_CL' suffix"
     },
     /* optional params */
