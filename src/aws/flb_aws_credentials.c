@@ -412,9 +412,9 @@ struct flb_aws_provider *flb_managed_chain_provider_create(struct flb_output_ins
                                                       cred_tls,
                                                       (char *) region,
                                                       (char *) sts_endpoint,
+                                                      NULL,
                                                       aws_config_file,
                                                       aws_shared_credentials_file,
-                                                      NULL,
                                                       flb_aws_client_generator(),
                                                       profile);
     if (!aws_provider) {
