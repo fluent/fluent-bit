@@ -72,7 +72,7 @@ extern struct flb_aws_error_reporter *error_reporter;
 static pthread_once_t local_thread_engine_evl_init = PTHREAD_ONCE_INIT;
 FLB_TLS_DEFINE(struct mk_event_loop, flb_engine_evl);
 
-void flb_engine_evl_init_private()
+static void flb_engine_evl_init_private()
 {
     FLB_TLS_INIT(flb_engine_evl);
 }
