@@ -274,7 +274,7 @@ REGISTER_IN_PLUGIN("in_random")
 # PROCESSORS
 # ==========
 REGISTER_PROCESSOR_PLUGIN("processor_test")
-REGISTER_PROCESSOR_PLUGIN("processor_add_labels")
+REGISTER_PROCESSOR_PLUGIN("processor_labels")
 
 # OUTPUTS
 # =======
