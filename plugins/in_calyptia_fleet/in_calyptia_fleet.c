@@ -269,7 +269,49 @@ static void *do_reload(void *data)
     return NULL;
 }
 
-static void execute_reload(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t cfgpath)
+static int test_config_is_valid(flb_sds_t cfgpath)
+{
+    struct flb_config *config;
+    struct flb_cf *cf;
+    int ret = FLB_FALSE;
+
+
+    config = flb_config_init();
+    if (config == NULL) {
+        goto config_init_error;
+    }
+
+    cf = flb_cf_create();
+    if (cf == NULL) {
+        goto cf_create_error;
+    } 
+
+    cf = flb_cf_create_from_file(cf, cfgpath);
+    if (cf == NULL) {
+        goto cf_create_from_file_error;
+    } 
+
+    if (flb_config_load_config_format(config, cf)) {
+        goto cf_load_config_format_error;
+    }
+
+    if (flb_reload_property_check_all(config)) {
+       goto cf_property_check_error;
+    }
+
+    ret = FLB_TRUE;
+
+cf_property_check_error:
+cf_load_config_format_error:
+cf_create_from_file_error:
+    flb_cf_destroy(cf);
+cf_create_error:
+    flb_config_exit(config);
+config_init_error:
+    return ret;
+}
+
+static int execute_reload(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t cfgpath)
 {
     struct reload_ctx *reload;
     pthread_t pth;
@@ -282,6 +324,11 @@ static void execute_reload(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t c
     //    [error] [reload] given flb context is NULL
     flb_plg_info(ctx->ins, "loading configuration from %s.", cfgpath);
 
+    if (test_config_is_valid(cfgpath) == FLB_FALSE) {
+        flb_plg_error(ctx->ins, "unable to load configuration.");
+        return FLB_FALSE;
+    }
+
     reload = flb_calloc(1, sizeof(struct reload_ctx));
     reload->flb = flb;
     reload->cfg_path = cfgpath;
@@ -289,6 +336,8 @@ static void execute_reload(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t c
     pthread_attr_init(&ptha);
     pthread_attr_setdetachstate(&ptha, PTHREAD_CREATE_DETACHED);
     pthread_create(&pth, &ptha, do_reload, reload);
+
+    return FLB_TRUE;
 }
 
 /* cb_collect callback */
@@ -301,6 +350,7 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
     flb_sds_t cfgname;
     flb_sds_t cfgnewname;
     flb_sds_t cfgoldname;
+    flb_sds_t cfgcurname;
     flb_sds_t header;
     FILE *cfgfp;
     const char *fbit_last_modified;
@@ -398,14 +448,21 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
         flb_sds_destroy(cfgname);
         flb_sds_destroy(data);
 
-        execute_reload(ctx, cfgnewname);
-        FLB_INPUT_RETURN(0);
+        if (execute_reload(ctx, cfgnewname) == FLB_FALSE) {
+            cfgoldname = old_fleet_config_filename(ctx);
+            cfgcurname = cur_fleet_config_filename(ctx);
+            rename(cfgoldname, cfgcurname);
+            flb_sds_destroy(cfgcurname);
+            flb_sds_destroy(cfgoldname);
+            goto reload_error;
+        } else {
+            FLB_INPUT_RETURN(0);
+        }
     }
 
-    flb_sds_destroy(cfgname);
-    flb_sds_destroy(data);
     ret = 0;
 
+reload_error:
 http_error:
     flb_http_client_destroy(client);
 client_error:
@@ -440,14 +497,11 @@ static void load_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
     // check if we are already using the fleet configuration file.
     if (is_fleet_config(ctx, flb_ctx->config) == FLB_FALSE) {
         // check which one and load it
-        if (exists_new_fleet_config(ctx) == FLB_TRUE) {
-            execute_reload(ctx, new_fleet_config_filename(ctx));
-        } else if (exists_cur_fleet_config(ctx) == FLB_TRUE) {
+        if (exists_cur_fleet_config(ctx) == FLB_TRUE) {
             execute_reload(ctx, cur_fleet_config_filename(ctx));
+        } else if (exists_new_fleet_config(ctx) == FLB_TRUE) {
+            execute_reload(ctx, new_fleet_config_filename(ctx));
         }
-    } else if (is_new_fleet_config(ctx, flb_ctx->config) == FLB_TRUE) {
-        // WE HAVE SUCCESSFULLY LOADED THE NEW CONFIGURATION?
-        flb_plg_info(ctx->ins, "successfully loaded new configuration file.");
     }
 }
 
