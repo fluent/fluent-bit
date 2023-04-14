@@ -79,8 +79,41 @@ struct flb_in_calyptia_fleet_config {
     int collect_fd;
 };
 
+static char *find_case_header(struct flb_http_client *c, const char *header)
+{
+    char *p;
+    char *headstart;
+
+
+    headstart = strstr(c->resp.data, "\r\n");
+    if (headstart == NULL) {
+        return NULL;
+    }
+
+    /* Lookup the beginning of the header */
+    for (p = headstart; p != NULL && p+2 < c->resp.payload; p = strstr(p, "\r\n")) {
+        if (p + 4 < c->resp.payload && strcmp(p, "\r\n\r\n") == 0) {
+            return NULL;
+        }
+
+        p+=2;
+
+        // no space left for header
+        if (p + strlen(header)+2 >= c->resp.payload) {
+            return NULL;
+        }
+        // matched header and the delimiter
+        if (strncasecmp(p, header, strlen(header)) == 0) {
+            if (p[strlen(header)] == ':' && p[strlen(header)+1] == ' ') {
+                return p;                
+            }
+        }
+    }
+    return NULL;
+}
+
 /* Try to find a header value in the buffer. Copied from flb_http_client.c. */
-static int header_lookup(struct flb_http_client *c,
+static int case_header_lookup(struct flb_http_client *c,
                          const char *header, int header_len,
                          const char **out_val, int *out_len)
 {
@@ -92,8 +125,7 @@ static int header_lookup(struct flb_http_client *c,
         return -1;
     }
 
-    /* Lookup the beginning of the header */
-    p = strstr(c->resp.data, header);
+    p = find_case_header(c, header);
     end = strstr(c->resp.data, "\r\n\r\n");
     if (!p) {
         if (end) {
@@ -116,7 +148,7 @@ static int header_lookup(struct flb_http_client *c,
         return -1;
     }
 
-    p += header_len;
+    p += header_len + 2;
 
     *out_val = p;
     *out_len = (crlf - p);
@@ -318,7 +350,7 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
     memcpy(data, client->resp.payload, client->resp.payload_size);
     data[client->resp.payload_size] = '\0';
 
-    ret = header_lookup(client, "Last-Modified: ", strlen("Last-Modified: "), 
+    ret = case_header_lookup(client, "Last-modified", strlen("Last-modified"),
                         &fbit_last_modified, &fbit_last_modified_len);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "unable to get last-modified header");
