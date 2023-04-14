@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_metrics.h>
+#include <fluent-bit/flb_utils.h>
 #include <chunkio/chunkio.h>
 
 #ifdef FLB_HAVE_CHUNK_TRACE
