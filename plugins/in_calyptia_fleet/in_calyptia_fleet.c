@@ -363,19 +363,25 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
 
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
+        flb_plg_error(ctx->ins, "could not get an upstream connection to %s:%u",
+                      ctx->ins->host.name, ctx->ins->host.port);
         goto conn_error;
     }
 
     client = flb_http_client(u_conn, FLB_HTTP_GET, ctx->fleet_url,
-                             NULL, 0, ctx->ins->host.name, ctx->ins->host.port, NULL, 0);
+                             NULL, 0, 
+                             ctx->ins->host.name, ctx->ins->host.port, NULL, 0);
     if (!client) {
         flb_plg_error(ins, "unable to create http client");
         goto client_error;
     }
 
+    flb_http_buffer_size(client, 8192);
+
     flb_http_add_header(client,
                         CALYPTIA_H_PROJECT, sizeof(CALYPTIA_H_PROJECT) - 1,
                         ctx->api_key, flb_sds_len(ctx->api_key));
+
     ret = flb_http_do(client, &b_sent);
     if (ret != 0) {
         flb_plg_error(ins, "http do error");
