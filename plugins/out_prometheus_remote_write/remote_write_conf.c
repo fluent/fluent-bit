@@ -142,6 +142,8 @@ struct prometheus_remote_write_context *flb_prometheus_remote_write_context_crea
             config,
             FLB_PROMETHEUS_REMOTE_WRITE_CREDENTIAL_PREFIX,
             NULL,
+            "",
+            "",
             flb_aws_client_generator()
         );
         if (!ctx->aws_provider) {

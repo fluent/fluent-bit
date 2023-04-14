@@ -108,7 +108,7 @@ static void test_profile_custom()
     ret = setenv("AWS_SHARED_CREDENTIALS_FILE", TEST_CREDENTIALS_FILE, 1);
     TEST_ASSERT(ret == 0);
 
-    provider = flb_profile_provider_create("custom");
+    provider = flb_profile_provider_create("custom", "", "");
     TEST_ASSERT(provider != NULL);
 
     /* repeated calls to get credentials should return the same set */
