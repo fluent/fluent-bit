@@ -221,7 +221,7 @@ static struct flb_aws_provider_vtable profile_provider_vtable = {
     .upstream_set = upstream_set_fn_profile,
 };
 
-struct flb_aws_provider *flb_profile_provider_create(char *aws_config_file, char *aws_shared_credentials_file, char *profile)
+struct flb_aws_provider *flb_profile_provider_create(char *profile, char *aws_config_file, char *aws_shared_credentials_file)
 {
     struct flb_aws_provider *provider = NULL;
     struct flb_aws_provider_profile *implementation = NULL;
