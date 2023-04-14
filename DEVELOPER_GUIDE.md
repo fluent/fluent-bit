@@ -650,6 +650,13 @@ SUCCESS: All unit tests have passed.
 
 [Valgrind](https://valgrind.org/) is a tool that will help you detect and diagnose memory issues in your code. It will check for memory leaks and invalid memory accesses.
 
+When you use Valgrind, you should compile Fluent Bit with the following options:
+
+```
+$ cmake -DFLB_DEV=On -DFLB_VALGRIND=On ../
+$ make
+```
+
 To use it while developing, invoke it before Fluent Bit:
 
 ```shell
