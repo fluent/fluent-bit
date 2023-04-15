@@ -264,7 +264,7 @@ option(FLB_FILTER_MULTILINE            "Enable multiline filter"                
 option(FLB_FILTER_NEST                 "Enable nest filter"                           Yes)
 option(FLB_FILTER_LOG_TO_METRICS       "Enable log-derived metrics filter"            Yes)
 option(FLB_FILTER_LUA                  "Enable Lua scripting filter"                  Yes)
-option(FLB_FILTER_LUA_USE_MPACK        "Enable mpack on the lua filter"               Yes)
+option(FLB_FILTER_LUA_USE_MPACK        "Enable mpack on the lua filter"                No)
 option(FLB_FILTER_RECORD_MODIFIER      "Enable record_modifier filter"                Yes)
 option(FLB_FILTER_TENSORFLOW           "Enable tensorflow filter"                      No)
 option(FLB_FILTER_GEOIP2               "Enable geoip2 filter"                         Yes)
