@@ -46,6 +46,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_processor.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_slist.h>
@@ -104,6 +105,7 @@ static void flb_help(int rc, struct flb_config *config)
     struct flb_input_plugin *in;
     struct flb_output_plugin *out;
     struct flb_filter_plugin *filter;
+    struct flb_processor_plugin *processor;
 
     printf("Usage: %s [OPTION]\n\n", prog_name);
     printf("%sAvailable Options%s\n", ANSI_BOLD, ANSI_RESET);
@@ -161,6 +163,12 @@ static void flb_help(int rc, struct flb_config *config)
             continue;
         }
         print_opt(in->name, in->description);
+    }
+
+    printf("\n%sProcessors%s\n", ANSI_BOLD, ANSI_RESET);
+    mk_list_foreach(head, &config->processor_plugins) {
+        processor = mk_list_entry(head, struct flb_processor_plugin, _head);
+        print_opt(processor->name, processor->description);
     }
 
     printf("\n%sFilters%s\n", ANSI_BOLD, ANSI_RESET);
