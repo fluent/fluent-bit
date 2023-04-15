@@ -242,7 +242,7 @@ static int process_label_modification_list_setting(
     }
 
     flb_config_map_foreach(iterator, source_entry, source_list) {
-        result = flb_slist_add_sds(destination_list, source_entry->val.str);
+        result = flb_slist_add(destination_list, source_entry->val.str);
 
         if (result != 0) {
             flb_plg_error(plugin_instance,
@@ -399,6 +399,17 @@ static int cb_init(struct flb_processor_instance *processor_instance,
 
     if (processor_instance->context == NULL) {
         return FLB_PROCESSOR_FAILURE;
+    }
+
+    return FLB_PROCESSOR_SUCCESS;
+}
+
+
+static int cb_exit(struct flb_processor_instance *processor_instance)
+{
+    if (processor_instance != NULL &&
+        processor_instance->context != NULL) {
+        destroy_context(processor_instance->context);
     }
 
     return FLB_PROCESSOR_SUCCESS;
@@ -1767,7 +1778,7 @@ struct flb_processor_plugin processor_labels_plugin = {
     .cb_process_logs    = NULL,
     .cb_process_metrics = cb_process_metrics,
     .cb_process_traces  = NULL,
-    .cb_exit            = NULL,
+    .cb_exit            = cb_exit,
     .config_map         = config_map,
     .flags              = 0
 };
