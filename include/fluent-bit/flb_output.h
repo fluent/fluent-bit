@@ -51,6 +51,13 @@
 
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_counter.h>
+#include <cmetrics/cmt_decode_msgpack.h>
+#include <cmetrics/cmt_encode_msgpack.h>
+
+#include <ctraces/ctraces.h>
+#include <ctraces/ctr_decode_msgpack.h>
+#include <ctraces/ctr_encode_msgpack.h>
+#include <ctraces/ctr_mpack_utils_defs.h>
 
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
@@ -575,6 +582,13 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
     struct flb_out_thread_instance *th_ins;
     struct flb_event_chunk *evc;
     struct flb_event_chunk *tmp;
+    char *resized_serialization_buffer;
+    size_t serialization_buffer_offset;
+    char *serialized_context_buffer;
+    size_t serialized_context_size;
+    struct cmt *metrics_context;
+    struct ctrace *trace_context;
+    size_t chunk_offset;
 
     /* Custom output coroutine info */
     out_flush = (struct flb_output_flush *) flb_calloc(1, sizeof(struct flb_output_flush));
@@ -604,35 +618,228 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
 
     /* Logs processor */
     evc = task->event_chunk;
-    if (evc->type == FLB_EVENT_TYPE_LOGS && flb_processor_is_active(o_ins->processor)) {
+    if (flb_processor_is_active(o_ins->processor)) {
+        if (evc->type == FLB_EVENT_TYPE_LOGS) {
+            /* run the processor */
+            ret = flb_processor_run(o_ins->processor, FLB_PROCESSOR_LOGS,
+                                    evc->tag, flb_sds_len(evc->tag),
+                                    evc->data, evc->size,
+                                    &p_buf, &p_size);
+            if (ret == -1 || p_size == 0) {
+                flb_coro_destroy(coro);
+                flb_free(out_flush);
+                return NULL;
+            }
 
-        /* run the processor */
-        ret = flb_processor_run(o_ins->processor, FLB_PROCESSOR_LOGS,
-                                evc->tag, flb_sds_len(evc->tag),
-                                evc->data, evc->size,
-                                &p_buf, &p_size);
-        if (ret == -1 || p_size == 0) {
-            flb_coro_destroy(coro);
-            flb_free(out_flush);
-            return NULL;
-        }
+            records = flb_mp_count(p_buf, p_size);
+            if (records == 0) {
+                flb_coro_destroy(coro);
+                flb_free(out_flush);
+                flb_free(p_buf);
+                return NULL;
+            }
 
-        records = flb_mp_count(p_buf, p_size);
-        if (records == 0) {
-            flb_coro_destroy(coro);
-            flb_free(out_flush);
-            flb_free(p_buf);
-            return NULL;
+            tmp = flb_event_chunk_create(evc->type, records, evc->tag, flb_sds_len(evc->tag), p_buf, p_size);
+            if (!tmp) {
+                flb_coro_destroy(coro);
+                flb_free(out_flush);
+                flb_free(p_buf);
+                return NULL;
+            }
+            out_flush->processed_event_chunk = tmp;
         }
+        else if (evc->type == FLB_EVENT_TYPE_METRICS) {
+            p_buf = flb_calloc(evc->size * 2, sizeof(char));
 
-        tmp = flb_event_chunk_create(evc->type, records, evc->tag, flb_sds_len(evc->tag), p_buf, p_size);
-        if (!tmp) {
-            flb_coro_destroy(coro);
-            flb_free(out_flush);
-            flb_free(p_buf);
-            return NULL;
+            if (p_buf == NULL) {
+                flb_coro_destroy(coro);
+                flb_free(out_flush);
+
+                return NULL;
+            }
+
+            p_size = evc->size;
+
+            chunk_offset = 0;
+            serialization_buffer_offset = 0;
+
+            while ((ret = cmt_decode_msgpack_create(
+                            &metrics_context,
+                            (char *) evc->data,
+                            evc->size,
+                            &chunk_offset)) == CMT_DECODE_MSGPACK_SUCCESS) {
+                ret = flb_processor_run(o_ins->processor,
+                                        FLB_PROCESSOR_METRICS,
+                                        evc->tag,
+                                        flb_sds_len(evc->tag),
+                                        (char *) metrics_context,
+                                        0,
+                                        NULL,
+                                        NULL);
+
+                if (ret == 0) {
+                    ret = cmt_encode_msgpack_create(metrics_context,
+                                                    &serialized_context_buffer,
+                                                    &serialized_context_size);
+
+                    cmt_destroy(metrics_context);
+
+                    if (ret != 0) {
+                        flb_coro_destroy(coro);
+                        flb_free(out_flush);
+                        flb_free(p_buf);
+
+                        return NULL;
+                    }
+
+                    if ((serialization_buffer_offset +
+                         serialized_context_size) > p_size) {
+                        resized_serialization_buffer = \
+                            flb_realloc(p_buf, p_size + serialized_context_size);
+
+                        if (resized_serialization_buffer == NULL) {
+                            cmt_encode_msgpack_destroy(serialized_context_buffer);
+                            flb_coro_destroy(coro);
+                            flb_free(out_flush);
+                            flb_free(p_buf);
+
+                            return NULL;
+                        }
+
+                        p_size += serialized_context_size;
+                        p_buf = resized_serialization_buffer;
+                    }
+
+                    memcpy(&(((char *) p_buf)[serialization_buffer_offset]),
+                           serialized_context_buffer,
+                           serialized_context_size);
+
+                    serialization_buffer_offset += serialized_context_size;
+
+                    cmt_encode_msgpack_destroy(serialized_context_buffer);
+                }
+            }
+
+            if (serialization_buffer_offset == 0) {
+                flb_coro_destroy(coro);
+                flb_free(out_flush);
+                flb_free(p_buf);
+
+                return NULL;
+            }
+
+            out_flush->processed_event_chunk = flb_event_chunk_create(
+                                                evc->type,
+                                                0,
+                                                evc->tag,
+                                                flb_sds_len(evc->tag),
+                                                p_buf,
+                                                p_size);
+
+            if (out_flush->processed_event_chunk == NULL) {
+                flb_coro_destroy(coro);
+                flb_free(out_flush);
+                flb_free(p_buf);
+
+                return NULL;
+            }
         }
-        out_flush->processed_event_chunk = tmp;
+        else if (evc->type == FLB_EVENT_TYPE_TRACES) {
+            p_buf = flb_calloc(evc->size * 2, sizeof(char));
+
+            if (p_buf == NULL) {
+                flb_coro_destroy(coro);
+                flb_free(out_flush);
+
+                return NULL;
+            }
+
+            p_size = evc->size;
+
+            chunk_offset = 0;
+            serialization_buffer_offset = 0;
+
+            while ((ret = ctr_decode_msgpack_create(
+                            &trace_context,
+                            (char *) evc->data,
+                            evc->size,
+                            &chunk_offset)) == CTR_DECODE_MSGPACK_SUCCESS) {
+                ret = flb_processor_run(o_ins->processor,
+                                        FLB_PROCESSOR_TRACES,
+                                        evc->tag,
+                                        flb_sds_len(evc->tag),
+                                        (char *) trace_context,
+                                        0,
+                                        NULL,
+                                        NULL);
+
+                if (ret == 0) {
+                    ret = ctr_encode_msgpack_create(trace_context,
+                                                    &serialized_context_buffer,
+                                                    &serialized_context_size);
+
+                    ctr_destroy(trace_context);
+
+                    if (ret != 0) {
+                        flb_coro_destroy(coro);
+                        flb_free(out_flush);
+                        flb_free(p_buf);
+
+                        return NULL;
+                    }
+
+                    if ((serialization_buffer_offset +
+                         serialized_context_size) > p_size) {
+                        resized_serialization_buffer = \
+                            flb_realloc(p_buf, p_size + serialized_context_size);
+
+                        if (resized_serialization_buffer == NULL) {
+                            ctr_encode_msgpack_destroy(serialized_context_buffer);
+                            flb_coro_destroy(coro);
+                            flb_free(out_flush);
+                            flb_free(p_buf);
+
+                            return NULL;
+                        }
+
+                        p_size += serialized_context_size;
+                        p_buf = resized_serialization_buffer;
+                    }
+
+                    memcpy(&(((char *) p_buf)[serialization_buffer_offset]),
+                           serialized_context_buffer,
+                           serialized_context_size);
+
+                    serialization_buffer_offset += serialized_context_size;
+
+                    ctr_encode_msgpack_destroy(serialized_context_buffer);
+                }
+            }
+
+            if (serialization_buffer_offset == 0) {
+                flb_coro_destroy(coro);
+                flb_free(out_flush);
+                flb_free(p_buf);
+
+                return NULL;
+            }
+
+            out_flush->processed_event_chunk = flb_event_chunk_create(
+                                                evc->type,
+                                                0,
+                                                evc->tag,
+                                                flb_sds_len(evc->tag),
+                                                p_buf,
+                                                p_size);
+
+            if (out_flush->processed_event_chunk == NULL) {
+                flb_coro_destroy(coro);
+                flb_free(out_flush);
+                flb_free(p_buf);
+
+                return NULL;
+            }
+        }
     }
 
     coro->caller = co_active();
@@ -693,7 +900,10 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     task = out_flush->task;
 
     if (out_flush->processed_event_chunk) {
-        flb_free(out_flush->processed_event_chunk->data);
+        if (task->event_chunk->data != out_flush->processed_event_chunk->data) {
+            flb_free(out_flush->processed_event_chunk->data);
+        }
+
         flb_event_chunk_destroy(out_flush->processed_event_chunk);
         out_flush->processed_event_chunk = NULL;
     }
