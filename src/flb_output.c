@@ -33,6 +33,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_plugin_proxy.h>
 #include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_output_thread.h>
@@ -716,7 +717,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     mk_list_add(&instance->_head, &config->outputs);
 
     /* processor instance */
-    instance->processor = flb_processor_create(config, instance->name, instance);
+    instance->processor = flb_processor_create(config, instance->name, instance, FLB_PLUGIN_OUTPUT);
 
     /* Tests */
     instance->test_formatter.callback = plugin->test_formatter.callback;
