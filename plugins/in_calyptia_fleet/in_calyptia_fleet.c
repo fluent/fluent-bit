@@ -200,6 +200,9 @@ static int is_new_fleet_config(struct flb_in_calyptia_fleet_config *ctx, struct 
     int ret = FLB_FALSE;
 
 
+    if (cfg->conf_path_file == NULL) {
+        return FLB_FALSE;
+    }
     cfgnewname = new_fleet_config_filename(ctx);
     if (strcmp(cfgnewname, cfg->conf_path_file) == 0) {
         ret = FLB_TRUE;
@@ -216,6 +219,9 @@ static int is_cur_fleet_config(struct flb_in_calyptia_fleet_config *ctx, struct 
     int ret = FLB_FALSE;
 
 
+    if (cfg->conf_path_file == NULL) {
+        return FLB_FALSE;
+    }
     cfgcurname = cur_fleet_config_filename(ctx);
     if (strcmp(cfgcurname, cfg->conf_path_file) == 0) {
         ret = FLB_TRUE;
@@ -228,6 +234,9 @@ static int is_cur_fleet_config(struct flb_in_calyptia_fleet_config *ctx, struct 
 
 static int is_fleet_config(struct flb_in_calyptia_fleet_config *ctx, struct flb_config *cfg)
 {
+    if (cfg->conf_path_file == NULL) {
+        return FLB_FALSE;
+    }
     return is_new_fleet_config(ctx, cfg) || is_cur_fleet_config(ctx, cfg);
 }
 
