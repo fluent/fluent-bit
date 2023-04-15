@@ -339,6 +339,7 @@ static int cb_lua_filter_mpack(const void *data, size_t bytes,
 #else
 
 static int pack_result (struct lua_filter *ctx, struct flb_time *ts,
+                        msgpack_object *metadata,
                         struct flb_log_event_encoder *log_encoder,
                         char *data, size_t bytes)
 {
@@ -368,7 +369,7 @@ static int pack_result (struct lua_filter *ctx, struct flb_time *ts,
             return FLB_FALSE;
         }
     }
-    if (result.data.type == MSGPACK_OBJECT_ARRAY) {
+    else if (result.data.type == MSGPACK_OBJECT_ARRAY) {
         map_detected = FLB_FALSE;
     }
     else {
@@ -422,6 +423,11 @@ static int pack_result (struct lua_filter *ctx, struct flb_time *ts,
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         ret = flb_log_event_encoder_set_timestamp(log_encoder, ts);
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS && metadata != NULL) {
+        ret = flb_log_event_encoder_set_metadata_from_msgpack_object(
+                log_encoder, metadata);
     }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
@@ -581,7 +587,8 @@ static int cb_lua_filter(const void *data, size_t bytes,
                 /* Keep the timestamp */
                 t = t_orig;
             }
-            ret = pack_result(ctx, &t, &log_encoder,
+
+            ret = pack_result(ctx, &t, log_event.metadata, &log_encoder,
                               data_sbuf.data, data_sbuf.size);
 
             if (ret == FLB_FALSE) {
@@ -602,7 +609,6 @@ static int cb_lua_filter(const void *data, size_t bytes,
                               "unexpected Lua script return code %i, "
                               "original record will be kept." , l_code);
             }
-
 
             ret = flb_log_event_encoder_emit_raw_record(
                     &log_encoder,
