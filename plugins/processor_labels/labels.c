@@ -1627,7 +1627,7 @@ static int delete_labels(struct cmt *metrics_context,
     return FLB_PROCESSOR_SUCCESS;
 }
 
-int hash_transformer(struct cmt_metric *metric, cfl_sds_t *value)
+static int hash_transformer(struct cmt_metric *metric, cfl_sds_t *value)
 {
     unsigned char digest_buffer[32];
     int           result;
