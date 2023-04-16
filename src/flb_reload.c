@@ -422,8 +422,6 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     /* Inherit verbose from the old ctx instance */
     verbose = ctx->config->verbose;
     new_config->verbose = verbose;
-    enable_reloading = ctx->config->enable_hot_reload;
-    new_config->enable_hot_reload = enable_reloading;
 
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     /* Inherit stream processor definitions from command line */
