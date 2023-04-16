@@ -410,17 +410,7 @@ static int gelf_pack_message(struct flb_gelf *ctx,
     msgpack_sbuffer_write(&mp_sbuf, packed_data, packed_size);
     records = flb_mp_count(mp_sbuf.data, sizeof(mp_sbuf.data));
     flb_input_chunk_append_raw(ctx->ins, FLB_INPUT_LOGS, records, NULL, 0, mp_sbuf.data, mp_sbuf.size);
-    
-// int flb_input_chunk_append_raw(struct flb_input_instance *in,
-//                                int event_type,
-//                                size_t records,
-//                                const char *tag, size_t tag_len,
-//                                const void *buf, size_t buf_size);
-
-// int flb_input_chunk_append_raw(struct flb_input_instance *in,
-//                                const char *tag, size_t tag_len,
-//                                const void *buf, size_t buf_size);
-                               
+                       
     msgpack_sbuffer_destroy(&mp_sbuf);
     flb_free(packed_data);
     return 0;
