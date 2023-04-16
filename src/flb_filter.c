@@ -46,6 +46,24 @@ static inline int instance_id(struct flb_config *config)
     return (entry->id + 1);
 }
 
+static int is_active(struct mk_list *in_properties)
+{
+    struct mk_list *head;
+    struct mk_list *m_head;
+    struct flb_kv *kv;
+
+    mk_list_foreach(head, in_properties) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        if (strcasecmp(kv->key, "active") == 0) {
+            /* Skip checking deactivation ... */
+            if (strcasecmp(kv->val, "FALSE") == 0 || strcmp(kv->val, "0") == 0) {
+                return FLB_FALSE;
+            }
+        }
+    }
+    return FLB_TRUE;
+}
+
 static inline int prop_key_check(const char *key, const char *kv, int k_len)
 {
     int len;
@@ -114,6 +132,9 @@ void flb_filter_do(struct flb_input_chunk *ic,
     /* Iterate filters */
     mk_list_foreach(head, &config->filters) {
         f_ins = mk_list_entry(head, struct flb_filter_instance, _head);
+        if (is_active(&f_ins->properties) == FLB_FALSE) {
+            continue;
+        }
         if (flb_router_match(ntag, tag_len, f_ins->match
 #ifdef FLB_HAVE_REGEX
         , f_ins->match_regex
@@ -562,6 +583,10 @@ int flb_filter_init(struct flb_config *config, struct flb_filter_instance *ins)
      */
     if (flb_filter_plugin_property_check(ins, config) == -1) {
         return -1;
+    }
+
+    if (is_active(&ins->properties) == FLB_FALSE) {
+        return 0;
     }
 
     /* Initialize the input */
