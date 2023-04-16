@@ -35,6 +35,7 @@
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_downstream.h>
+#include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_scheduler.h>
@@ -341,7 +342,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         mk_list_add(&instance->_head, &config->inputs);
 
         /* processor instance */
-        instance->processor = flb_processor_create(config, instance->name, instance);
+        instance->processor = flb_processor_create(config, instance->name, instance, FLB_PLUGIN_INPUT);
     }
 
     return instance;

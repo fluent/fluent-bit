@@ -75,7 +75,7 @@ static void processor()
     config = flb_config_init();
     TEST_CHECK(config != NULL);
 
-    proc = flb_processor_create(config, "unit_test", NULL);
+    proc = flb_processor_create(config, "unit_test", NULL, 0);
     TEST_CHECK(proc != NULL);
 
     pu = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "stdout");

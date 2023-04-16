@@ -267,12 +267,13 @@ option(FLB_FILTER_MULTILINE            "Enable multiline filter"                
 option(FLB_FILTER_NEST                 "Enable nest filter"                           Yes)
 option(FLB_FILTER_LOG_TO_METRICS       "Enable log-derived metrics filter"            Yes)
 option(FLB_FILTER_LUA                  "Enable Lua scripting filter"                  Yes)
-option(FLB_FILTER_LUA_USE_MPACK        "Enable mpack on the lua filter"               Yes)
+option(FLB_FILTER_LUA_USE_MPACK        "Enable mpack on the lua filter"                No)
 option(FLB_FILTER_RECORD_MODIFIER      "Enable record_modifier filter"                Yes)
 option(FLB_FILTER_TENSORFLOW           "Enable tensorflow filter"                      No)
 option(FLB_FILTER_GEOIP2               "Enable geoip2 filter"                         Yes)
 option(FLB_FILTER_NIGHTFALL            "Enable Nightfall filter"                      Yes)
 option(FLB_FILTER_WASM                 "Enable WASM filter"                           Yes)
+option(FLB_PROCESSOR_LABELS            "Enable metrics label manipulation processor"  Yes)
 
 
 if(DEFINED FLB_NIGHTLY_BUILD AND NOT "${FLB_NIGHTLY_BUILD}" STREQUAL "")

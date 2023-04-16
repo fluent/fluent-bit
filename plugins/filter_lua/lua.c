@@ -338,12 +338,46 @@ static int cb_lua_filter_mpack(const void *data, size_t bytes,
 
 #else
 
+static int pack_record(struct lua_filter *ctx,
+                       struct flb_log_event_encoder *log_encoder,
+                       struct flb_time *ts,
+                       msgpack_object *metadata,
+                       msgpack_object *body)
+{
+    int ret;
+
+    ret = flb_log_event_encoder_begin_record(log_encoder);
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_timestamp(log_encoder, ts);
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS && metadata != NULL) {
+        ret = flb_log_event_encoder_set_metadata_from_msgpack_object(
+                log_encoder, metadata);
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_body_from_msgpack_object(
+                log_encoder, body);
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_commit_record(log_encoder);
+    }
+
+    return ret;
+}
+
 static int pack_result (struct lua_filter *ctx, struct flb_time *ts,
+                        msgpack_object *metadata,
                         struct flb_log_event_encoder *log_encoder,
                         char *data, size_t bytes)
 {
     int ret;
+    size_t index = 0;
     size_t off = 0;
+    msgpack_object *entry;
     msgpack_unpacked result;
     int map_detected;
     struct flb_log_event_decoder log_decoder;
@@ -360,80 +394,46 @@ static int pack_result (struct lua_filter *ctx, struct flb_time *ts,
     }
 
     if (result.data.type == MSGPACK_OBJECT_MAP) {
-        map_detected = FLB_TRUE;
+        ret = pack_record(ctx, log_encoder,
+                          ts, metadata, &result.data);
 
-        if (result.data.via.map.size <= 0) {
-            msgpack_unpacked_destroy(&result);
-
-            return FLB_FALSE;
-        }
-    }
-    if (result.data.type == MSGPACK_OBJECT_ARRAY) {
-        map_detected = FLB_FALSE;
-    }
-    else {
         msgpack_unpacked_destroy(&result);
 
-        return FLB_FALSE;
-    }
-
-    msgpack_unpacked_destroy(&result);
-
-    if (!map_detected) {
-        ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
-
-        if (ret != FLB_EVENT_DECODER_SUCCESS) {
-            flb_plg_error(ctx->ins,
-                          "Log event decoder initialization error : %d", ret);
-
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
             return FLB_FALSE;
         }
 
-        while ((ret = flb_log_event_decoder_next(
-                        &log_decoder,
-                        &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
-            ret = flb_log_event_encoder_begin_record(log_encoder);
+        return FLB_TRUE;
+    }
+    else if (result.data.type == MSGPACK_OBJECT_ARRAY) {
+        for (index = 0 ; index < result.data.via.array.size ; index++) {
+            entry = &result.data.via.array.ptr[index];
 
-            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                ret = flb_log_event_encoder_set_timestamp(log_encoder, ts);
+            if (entry->type == MSGPACK_OBJECT_MAP) {
+                ret = pack_record(ctx, log_encoder,
+                                  ts, metadata, entry);
+
+                if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                    msgpack_unpacked_destroy(&result);
+
+                    return FLB_FALSE;
+                }
             }
+            else {
+                msgpack_unpacked_destroy(&result);
 
-            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                ret = flb_log_event_encoder_set_metadata_from_msgpack_object(
-                        log_encoder, log_event.metadata);
-            }
-
-            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                ret = flb_log_event_encoder_set_body_from_msgpack_object(
-                        log_encoder, log_event.body);
-            }
-
-            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                ret = flb_log_event_encoder_commit_record(log_encoder);
+                return FLB_FALSE;
             }
         }
 
-        flb_log_event_decoder_destroy(&log_decoder);
+        msgpack_unpacked_destroy(&result);
 
         return FLB_TRUE;
     }
 
-    ret = flb_log_event_encoder_begin_record(log_encoder);
+    msgpack_unpacked_destroy(&result);
 
-    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        ret = flb_log_event_encoder_set_timestamp(log_encoder, ts);
-    }
-
-    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        ret = flb_log_event_encoder_set_body_from_raw_msgpack(
-                log_encoder, data, bytes);
-    }
-
-    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        ret = flb_log_event_encoder_commit_record(log_encoder);
-    }
-
-    return FLB_TRUE;
+    return FLB_FALSE;
 }
 
 static int cb_lua_filter(const void *data, size_t bytes,
@@ -581,7 +581,8 @@ static int cb_lua_filter(const void *data, size_t bytes,
                 /* Keep the timestamp */
                 t = t_orig;
             }
-            ret = pack_result(ctx, &t, &log_encoder,
+
+            ret = pack_result(ctx, &t, log_event.metadata, &log_encoder,
                               data_sbuf.data, data_sbuf.size);
 
             if (ret == FLB_FALSE) {
@@ -603,7 +604,6 @@ static int cb_lua_filter(const void *data, size_t bytes,
                               "original record will be kept." , l_code);
             }
 
-
             ret = flb_log_event_encoder_emit_raw_record(
                     &log_encoder,
                     &((char *) data)[record_begining],
@@ -620,7 +620,11 @@ static int cb_lua_filter(const void *data, size_t bytes,
         record_begining = record_end;
     }
 
-    if (log_encoder.output_length > 0) {
+    if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA) {
+        ret = FLB_EVENT_ENCODER_SUCCESS;
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         *out_buf   = log_encoder.output_buffer;
         *out_bytes = log_encoder.output_length;
 

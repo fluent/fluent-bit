@@ -108,6 +108,7 @@ struct flb_config {
     void *dso_plugins;
 
     /* Plugins references */
+    struct mk_list processor_plugins;
     struct mk_list custom_plugins;
     struct mk_list in_plugins;
     struct mk_list parser_plugins;      /* not yet implemented */
