@@ -284,8 +284,6 @@ static int opensearch_format(struct flb_config *config,
     int write_op_upsert = FLB_FALSE;
     flb_sds_t ra_index = NULL;
     size_t s = 0;
-    size_t off = 0;
-    char *p;
     char *index = NULL;
     char logstash_index[256];
     char time_formatted[256];
