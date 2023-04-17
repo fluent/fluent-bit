@@ -336,6 +336,8 @@ enum conf_type {
 #define FLB_CONF_STR_ENABLE_CHUNK_TRACE      "Enable_Chunk_Trace"
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
+#define FLB_CONF_STR_HOT_RELOAD        "Hot_Reload"
+
 /* DNS */
 #define FLB_CONF_DNS_MODE              "dns.mode"
 #define FLB_CONF_DNS_RESOLVER          "dns.resolver"

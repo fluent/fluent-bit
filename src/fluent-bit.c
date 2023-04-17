@@ -979,7 +979,7 @@ int flb_main(int argc, char **argv)
             config->support_mode = FLB_TRUE;
             break;
         case 'Y':
-            config->enable_hot_reload = FLB_TRUE;
+            flb_cf_section_property_add(cf_opts, service->properties, FLB_CONF_STR_HOT_RELOAD, 0, "on", 0);
             break;
 #ifdef FLB_HAVE_CHUNK_TRACE
         case 'Z':
