@@ -173,7 +173,7 @@ struct flb_service_config service_configs[] = {
      offsetof(struct flb_config, enable_chunk_trace)},
 #endif
 
-    {FLB_CONF_STR_ENABLE_HOT_RELOAD,
+    {FLB_CONF_STR_HOT_RELOAD,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, enable_hot_reload)},
 
