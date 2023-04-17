@@ -438,13 +438,28 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
                        "    Host          %s\n"
                        "    Port          %d\n"
                        "    Config_Dir    %s\n"
-                       "    TLS           %s\n",
+                       "    TLS           %s\n"
+                       "[CUSTOM]\n"
+                       "    Name          calyptia\n"
+                       "    api_key       %s\n"
+                       "    log_level     debug\n"
+                       "    fleet_id      %s\n"
+                       "    add_label     fleet_id %s\n"
+                       "    calyptia_host %s\n"
+                       "    calyptia_port %d\n"
+                       "    calyptia_tls  %s\n",
                        ctx->api_key,
                        ctx->fleet_id,
                        ctx->ins->host.name,
                        ctx->ins->host.port,
                        ctx->config_dir,
-                       (ctx->ins->tls_verify ? "On" : "Off")
+                       (ctx->ins->tls ? "On" : "Off"),
+                       ctx->api_key,
+                       ctx->fleet_id,
+                       ctx->fleet_id,
+                       ctx->ins->host.name,
+                       ctx->ins->host.port,
+                       (ctx->ins->tls ? "On" : "Off")
         );
         fwrite(header, strlen(header), 1, cfgfp);
         flb_sds_destroy(header);
