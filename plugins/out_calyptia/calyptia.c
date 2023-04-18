@@ -311,6 +311,16 @@ static flb_sds_t get_agent_metadata(struct flb_calyptia *ctx)
     msgpack_pack_str(&mp_pck, len);
     msgpack_pack_str_body(&mp_pck, ctx->machine_id, len);
 
+    /* fleetID */
+    if (ctx->fleet_id) {
+        flb_mp_map_header_append(&mh);
+        msgpack_pack_str(&mp_pck, 7);
+        msgpack_pack_str_body(&mp_pck, "fleetID", 7);
+        len = flb_sds_len(ctx->fleet_id);
+        msgpack_pack_str(&mp_pck, len);
+        msgpack_pack_str_body(&mp_pck, ctx->fleet_id, len);
+    }
+
     /* pack environment metadata */
     pack_env_metadata(config->env, &mh, &mp_pck);
 
@@ -1046,6 +1056,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "machine_id", NULL,
      0, FLB_TRUE, offsetof(struct flb_calyptia, machine_id),
      "Custom machine_id to be used when registering agent"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "fleet_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_calyptia, fleet_id),
+     "Fleet ID for identifying as part of a managed fleet"
     },
 
     {

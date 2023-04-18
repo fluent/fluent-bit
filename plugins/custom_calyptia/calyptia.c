@@ -35,6 +35,7 @@ struct calyptia {
     flb_sds_t cloud_host;
     flb_sds_t cloud_port;
     flb_sds_t machine_id;
+    flb_sds_t fleet_id;
 
 /* used for reporting chunk trace records. */
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -296,6 +297,10 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
         flb_output_set_property(ctx->o, "machine_id", ctx->machine_id);
     }
 
+    if (ctx->fleet_id) {
+        flb_output_set_property(ctx->o, "fleet_id", ctx->fleet_id);
+    }
+
     /* Override network details: development purposes only */
     if (ctx->cloud_host) {
         flb_output_set_property(ctx->o, "cloud_host", ctx->cloud_host);
@@ -386,6 +391,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "machine_id", NULL,
      0, FLB_TRUE, offsetof(struct calyptia, machine_id),
      "Custom machine_id to be used when registering agent"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "fleet_id", NULL,
+     0, FLB_TRUE, offsetof(struct calyptia, fleet_id),
+     "Fleet id to be used when registering agent in a fleet"
     },
 
 #ifdef FLB_HAVE_CHUNK_TRACE
