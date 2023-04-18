@@ -115,33 +115,6 @@ int flb_tail_mult_destroy(struct flb_tail_config *ctx)
     return 0;
 }
 
-/*
- * Pack a line that did not matched a firstline and is not part of a multiline
- * message.
- */
-static int pack_line(char *data, size_t data_size, struct flb_tail_file *file,
-                     struct flb_tail_config *ctx, size_t processed_bytes)
-{
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
-    struct flb_time out_time;
-
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-    flb_time_get(&out_time);
-
-    flb_tail_file_pack_line(&mp_sbuf, &mp_pck, &out_time,
-                            data, data_size, file, processed_bytes);
-    flb_input_log_append(ctx->ins,
-                               file->tag_buf,
-                               file->tag_len,
-                               mp_sbuf.data,
-                               mp_sbuf.size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
-
-    return 0;
-}
-
 /* Process the result of a firstline match */
 int flb_tail_mult_process_first(time_t now,
                                 char *buf, size_t size,
@@ -151,23 +124,12 @@ int flb_tail_mult_process_first(time_t now,
 {
     int ret;
     size_t off;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
     msgpack_object map;
     msgpack_unpacked result;
 
     /* If a previous multiline context already exists, flush first */
-    if (file->mult_firstline == FLB_TRUE && file->mult_skipping == FLB_FALSE) {
-        msgpack_sbuffer_init(&mp_sbuf);
-        msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
-        flb_tail_mult_flush(&mp_sbuf, &mp_pck, file, ctx);
-        flb_input_log_append(ctx->ins,
-                                   file->tag_buf,
-                                   file->tag_len,
-                                   mp_sbuf.data,
-                                   mp_sbuf.size);
-        msgpack_sbuffer_destroy(&mp_sbuf);
+    if (file->mult_firstline && !file->mult_skipping) {
+        flb_tail_mult_flush(file, ctx);
     }
 
     /* Remark as first multiline message */
@@ -343,12 +305,13 @@ int flb_tail_mult_process_content(time_t now,
          * If no parser was found means the string log must be appended
          * to the last structured field.
          */
-        if (file->mult_firstline == FLB_TRUE && file->mult_firstline_append == FLB_TRUE) {
+        if (file->mult_firstline && file->mult_firstline_append) {
             flb_tail_mult_append_raw(buf, len, file, ctx);
         }
         else {
-            pack_line(buf, len, file, ctx, processed_bytes);
+            flb_tail_file_pack_line(NULL, buf, len, file, processed_bytes);
         }
+
         return FLB_TAIL_MULT_MORE;
     }
 
@@ -366,23 +329,169 @@ int flb_tail_mult_process_content(time_t now,
     return FLB_TAIL_MULT_MORE;
 }
 
-/* Flush any multiline context data into outgoing buffers */
-int flb_tail_mult_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
-                        struct flb_tail_file *file, struct flb_tail_config *ctx)
+static int flb_tail_mult_pack_line_body(
+    struct flb_log_event_encoder *context,
+    struct flb_tail_file *file)
 {
-    int i;
-    int map_size;
-    size_t total;
-    size_t off = 0;
-    size_t next_off = 0;
-    size_t bytes;
-    void *data;
-    msgpack_unpacked result;
-    msgpack_unpacked cont;
-    msgpack_object root;
-    msgpack_object next;
-    msgpack_object k;
-    msgpack_object v;
+    size_t                  adjacent_object_offset;
+    size_t                  continuation_length;
+    msgpack_unpacked        adjacent_object;
+    msgpack_unpacked        current_object;
+    size_t                  entry_index;
+    msgpack_object          entry_value;
+    msgpack_object          entry_key;
+    msgpack_object_map     *data_map;
+    int                     map_size;
+    size_t                  offset;
+    struct flb_tail_config *config;
+    int                     result;
+
+    result = FLB_EVENT_ENCODER_SUCCESS;
+    config = (struct flb_tail_config *) file->config;
+
+    /* New Map size */
+    map_size = file->mult_keys;
+
+    if (file->config->path_key != NULL) {
+        map_size++;
+
+        result = flb_log_event_encoder_append_body_values(
+                    context,
+                    FLB_LOG_EVENT_CSTRING_VALUE(config->path_key),
+                    FLB_LOG_EVENT_CSTRING_VALUE(file->name));
+    }
+
+
+    msgpack_unpacked_init(&current_object);
+    msgpack_unpacked_init(&adjacent_object);
+
+    offset = 0;
+
+    while (result == FLB_EVENT_ENCODER_SUCCESS &&
+           msgpack_unpack_next(&current_object,
+                               file->mult_sbuf.data,
+                               file->mult_sbuf.size,
+                               &offset) == MSGPACK_UNPACK_SUCCESS) {
+        if (current_object.data.type != MSGPACK_OBJECT_MAP) {
+            continue;
+        }
+
+        data_map = &current_object.data.via.map;
+
+        continuation_length = 0;
+
+        for (entry_index = 0; entry_index < data_map->size; entry_index++) {
+            entry_key   = data_map->ptr[entry_index].key;
+            entry_value = data_map->ptr[entry_index].val;
+
+            result = flb_log_event_encoder_append_body_msgpack_object(context,
+                                                                      &entry_key);
+
+            if (result != FLB_EVENT_ENCODER_SUCCESS) {
+                break;
+            }
+
+            /* Check if this is the last entry in the map and if that is
+             * the case then add the lengths of all the trailing string
+             * objects after the map in order to append them to the value
+             * but only if the value object is a string
+             */
+            if (entry_index + 1 == data_map->size &&
+                entry_value.type == MSGPACK_OBJECT_STR) {
+                adjacent_object_offset = offset;
+
+                while (msgpack_unpack_next(
+                        &adjacent_object,
+                        file->mult_sbuf.data,
+                        file->mult_sbuf.size,
+                        &adjacent_object_offset) == MSGPACK_UNPACK_SUCCESS) {
+                    if (adjacent_object.data.type != MSGPACK_OBJECT_STR) {
+                        break;
+                    }
+
+                    /* Sum total bytes to append */
+                    continuation_length += adjacent_object.data.via.str.size + 1;
+                }
+
+                result = flb_log_event_encoder_append_body_string_length(
+                            context,
+                            entry_value.via.str.size +
+                            continuation_length);
+
+                if (result != FLB_EVENT_ENCODER_SUCCESS) {
+                    break;
+                }
+
+                result = flb_log_event_encoder_append_body_string_body(
+                            context,
+                            (char *) entry_value.via.str.ptr,
+                            entry_value.via.str.size);
+
+                if (result != FLB_EVENT_ENCODER_SUCCESS) {
+                    break;
+                }
+
+                if (continuation_length > 0) {
+                    adjacent_object_offset = offset;
+
+                    while (msgpack_unpack_next(
+                            &adjacent_object,
+                            file->mult_sbuf.data,
+                            file->mult_sbuf.size,
+                            &adjacent_object_offset) == MSGPACK_UNPACK_SUCCESS) {
+                        if (adjacent_object.data.type != MSGPACK_OBJECT_STR) {
+                            break;
+                        }
+
+                        result = flb_log_event_encoder_append_body_string_body(
+                                    context,
+                                    "\n",
+                                    1);
+
+                        if (result != FLB_EVENT_ENCODER_SUCCESS) {
+                            break;
+                        }
+
+                        result = flb_log_event_encoder_append_body_string_body(
+                                    context,
+                                    (char *) adjacent_object.data.via.str.ptr,
+                                    adjacent_object.data.via.str.size);
+
+                        if (result != FLB_EVENT_ENCODER_SUCCESS) {
+                            break;
+                        }
+                    }
+                }
+            }
+            else {
+                result = flb_log_event_encoder_append_body_msgpack_object(context,
+                                                                          &entry_value);
+            }
+        }
+    }
+
+    msgpack_unpacked_destroy(&current_object);
+    msgpack_unpacked_destroy(&adjacent_object);
+
+    /* Reset status */
+    file->mult_firstline = FLB_FALSE;
+    file->mult_skipping = FLB_FALSE;
+    file->mult_keys = 0;
+    file->mult_flush_timeout = 0;
+
+    msgpack_sbuffer_destroy(&file->mult_sbuf);
+
+    file->mult_sbuf.data = NULL;
+
+    flb_time_zero(&file->mult_time);
+
+    return result;
+}
+
+/* Flush any multiline context data into outgoing buffers */
+int flb_tail_mult_flush(struct flb_tail_file *file, struct flb_tail_config *ctx)
+{
+    int result;
 
     /* nothing to flush */
     if (file->mult_firstline == FLB_FALSE) {
@@ -393,113 +502,46 @@ int flb_tail_mult_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
         return -1;
     }
 
-    /* Compose the new record with the multiline content */
-    msgpack_pack_array(mp_pck, 2);
-    flb_time_append_to_msgpack(&file->mult_time, mp_pck, 0);
+    result = flb_log_event_encoder_begin_record(file->ml_log_event_encoder);
 
-    /* New Map size */
-    map_size = file->mult_keys;
-    if (file->config->path_key != NULL) {
-        map_size++;
-    }
-    msgpack_pack_map(mp_pck, map_size);
-
-    /* Append Path_Key ? */
-    if (file->config->path_key != NULL) {
-        msgpack_pack_str(mp_pck, flb_sds_len(file->config->path_key));
-        msgpack_pack_str_body(mp_pck, file->config->path_key,
-                              flb_sds_len(file->config->path_key));
-        msgpack_pack_str(mp_pck, file->name_len);
-        msgpack_pack_str_body(mp_pck, file->name, file->name_len);
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_set_timestamp(
+                    file->ml_log_event_encoder, &file->mult_time);
     }
 
-    data = file->mult_sbuf.data;
-    bytes = file->mult_sbuf.size;
-
-    msgpack_unpacked_init(&result);
-    msgpack_unpacked_init(&cont);
-
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        root = result.data;
-        if (root.type != MSGPACK_OBJECT_MAP) {
-            continue;
-        }
-
-        total = 0;
-        next_off = off;
-
-        for (i = 0; i < root.via.map.size; i++) {
-            k = root.via.map.ptr[i].key;
-            v = root.via.map.ptr[i].val;
-
-            /* Always check if the 'next' entry is a continuation */
-            total = 0;
-            if (i + 1 == root.via.map.size) {
-                while (msgpack_unpack_next(&cont, data, bytes, &next_off) ==
-                       MSGPACK_UNPACK_SUCCESS) {
-
-                    next = cont.data;
-                    if (next.type != MSGPACK_OBJECT_STR) {
-                        break;
-                    }
-
-                    /* Sum total bytes to append */
-                    total += next.via.str.size + 1;
-                }
-            }
-
-            msgpack_pack_object(mp_pck, k);
-            if (total > 0 && v.type == MSGPACK_OBJECT_STR) {
-                msgpack_pack_str(mp_pck, v.via.str.size + total);
-                msgpack_pack_str_body(mp_pck, v.via.str.ptr, v.via.str.size);
-            }
-            else {
-                msgpack_pack_object(mp_pck, v);
-            }
-
-            if (total > 0) {
-                /*
-                 * We have extra lines that needs to be merged inside this
-                 * value field.
-                 */
-                next_off = off;
-                while (msgpack_unpack_next(&cont, data, bytes, &next_off) ==
-                       MSGPACK_UNPACK_SUCCESS) {
-
-                    next = cont.data;
-                    if (next.type != MSGPACK_OBJECT_STR) {
-                        break;
-                    }
-
-                    msgpack_pack_str_body(mp_pck, "\n", 1);
-                    msgpack_pack_str_body(mp_pck, next.via.str.ptr,
-                                          next.via.str.size);
-                }
-            }
-        }
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_tail_mult_pack_line_body(
+                    file->ml_log_event_encoder,
+                    file);
     }
 
-    msgpack_unpacked_destroy(&result);
-    msgpack_unpacked_destroy(&cont);
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_commit_record(
+                    file->ml_log_event_encoder);
+    }
 
-    /* Reset status */
-    file->mult_firstline = FLB_FALSE;
-    file->mult_skipping = FLB_FALSE;
-    file->mult_keys = 0;
-    file->mult_flush_timeout = 0;
-    msgpack_sbuffer_destroy(&file->mult_sbuf);
-    file->mult_sbuf.data = NULL;
-    flb_time_zero(&file->mult_time);
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        flb_input_log_append(ctx->ins,
+                             file->tag_buf,
+                             file->tag_len,
+                             file->ml_log_event_encoder->output_buffer,
+                             file->ml_log_event_encoder->output_length);
+        result = 0;
+    }
+    else {
+        flb_plg_error(file->config->ins, "error packing event : %d", result);
 
-    return 0;
+        result = -1;
+    }
+
+    flb_log_event_encoder_reset(file->ml_log_event_encoder);
+
+    return result;
 }
 
 static void file_pending_flush(struct flb_tail_config *ctx,
                                struct flb_tail_file *file, time_t now)
 {
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
-
     if (file->mult_flush_timeout > now) {
         return;
     }
@@ -510,17 +552,7 @@ static void file_pending_flush(struct flb_tail_config *ctx,
         }
     }
 
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
-    flb_tail_mult_flush(&mp_sbuf, &mp_pck, file, ctx);
-
-    flb_input_log_append(ctx->ins,
-                               file->tag_buf,
-                               file->tag_len,
-                               mp_sbuf.data,
-                               mp_sbuf.size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    flb_tail_mult_flush(file, ctx);
 }
 
 int flb_tail_mult_pending_flush_all(struct flb_tail_config *ctx)
@@ -559,12 +591,14 @@ int flb_tail_mult_pending_flush(struct flb_input_instance *ins,
     /* Iterate promoted event files with pending bytes */
     mk_list_foreach(head, &ctx->files_static) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
+
         file_pending_flush(ctx, file, now);
     }
 
     /* Iterate promoted event files with pending bytes */
     mk_list_foreach(head, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
+
         file_pending_flush(ctx, file, now);
     }
 

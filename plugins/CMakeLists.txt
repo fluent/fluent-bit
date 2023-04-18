@@ -107,6 +107,42 @@ macro(REGISTER_OUT_PLUGIN name)
   endif()
 endmacro()
 
+
+# REGISTER_PROCESSOR_PLUGIN
+macro(REGISTER_PROCESSOR_PLUGIN name)
+  string(FIND ${name} "=" pos)
+  if(pos GREATER -1)
+    string(REPLACE "=" ";" list ${name})
+    list(GET list 0 p_name)
+    list(GET list 1 p_path)
+    message(STATUS "EXTERNAL PROCESSOR PLUGIN name='${p_name}' path='${p_path}'")
+  else()
+    set(p_name ${name})
+  endif()
+
+  string(TOUPPER ${p_name} NAME)
+  if(FLB_${NAME} OR p_path)
+    set(FLB_PROCESSOR_PLUGINS_DECL "${FLB_PROCESSOR_PLUGINS_DECL}extern struct flb_processor_plugin ${p_name}_plugin;\n")
+
+    # C code
+    set(C_CODE          "    processor = flb_malloc(sizeof(struct flb_processor_plugin));\n")
+    set(C_CODE "${C_CODE}    if (!processor) {\n")
+    set(C_CODE "${C_CODE}        flb_errno();\n")
+    set(C_CODE "${C_CODE}        return -1;\n")
+    set(C_CODE "${C_CODE}    }\n")
+    set(C_CODE "${C_CODE}    memcpy(processor, &${p_name}_plugin, sizeof(struct flb_processor_plugin));\n")
+    set(C_CODE "${C_CODE}    mk_list_add(&processor->_head, &config->processor_plugins);\n\n")
+
+    set(FLB_PROCESSOR_PLUGINS_ADD "${FLB_PROCESSOR_PLUGINS_ADD}${C_CODE}")
+    if (p_path)
+      add_subdirectory(${p_path} ${p_path})
+    else()
+      add_subdirectory(${p_name})
+    endif()
+    set(flb_plugins "${flb_plugins}flb-plugin-${p_name};")
+  endif()
+endmacro()
+
 # REGISTER_FILTER_PLUGIN
 macro(REGISTER_FILTER_PLUGIN name)
   string(FIND ${name} "=" pos)
@@ -184,6 +220,8 @@ REGISTER_IN_PLUGIN("in_http")
 REGISTER_IN_PLUGIN("in_collectd")
 REGISTER_IN_PLUGIN("in_statsd")
 REGISTER_IN_PLUGIN("in_opentelemetry")
+REGISTER_IN_PLUGIN("in_elasticsearch")
+REGISTER_IN_PLUGIN("in_calyptia_fleet")
 
 # Test the event loop messaging when used in threaded mode
 REGISTER_IN_PLUGIN("in_event_test")
@@ -233,6 +271,14 @@ REGISTER_IN_PLUGIN("in_mqtt")
 REGISTER_IN_PLUGIN("in_lib")
 REGISTER_IN_PLUGIN("in_forward")
 REGISTER_IN_PLUGIN("in_random")
+
+# PROCESSORS
+# ==========
+REGISTER_PROCESSOR_PLUGIN("processor_labels")
+REGISTER_PROCESSOR_PLUGIN("processor_attributes")
+
+# OUTPUTS
+# =======
 REGISTER_OUT_PLUGIN("out_azure")
 REGISTER_OUT_PLUGIN("out_azure_blob")
 REGISTER_OUT_PLUGIN("out_azure_kusto")
@@ -281,6 +327,7 @@ REGISTER_OUT_PLUGIN("out_opentelemetry")
 REGISTER_OUT_PLUGIN("out_prometheus_exporter")
 REGISTER_OUT_PLUGIN("out_prometheus_remote_write")
 REGISTER_OUT_PLUGIN("out_s3")
+REGISTER_OUT_PLUGIN("out_vivo_exporter")
 
 # FILTERS
 # =======
@@ -308,6 +355,10 @@ if(FLB_RECORD_ACCESSOR)
   REGISTER_FILTER_PLUGIN("filter_rewrite_tag")
 endif()
 
+if(FLB_METRICS)
+  REGISTER_FILTER_PLUGIN("filter_log_to_metrics")
+endif()
+
 if(FLB_LUAJIT)
   REGISTER_FILTER_PLUGIN("filter_lua")
 endif()
@@ -333,6 +384,13 @@ if(EXT_OUT_PLUGINS)
   string(REPLACE "," ";" plugins ${EXT_OUT_PLUGINS})
   foreach(entry ${plugins})
     REGISTER_OUT_PLUGIN(${entry})
+  endforeach()
+endif()
+
+if(EXT_PROCESSOR_PLUGINS)
+  string(REPLACE "," ";" plugins ${EXT_PROCESSOR_PLUGINS})
+  foreach(entry ${plugins})
+    REGISTER_PROCESSOR_PLUGIN(${entry})
   endforeach()
 endif()
 

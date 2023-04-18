@@ -54,6 +54,13 @@ char *get_output(void)
     return val;
 }
 
+static void clear_output()
+{
+    pthread_mutex_lock(&result_mutex);
+    output = NULL;
+    pthread_mutex_unlock(&result_mutex);
+}
+
 static void clear_output_num()
 {
     pthread_mutex_lock(&result_mutex);
@@ -96,7 +103,7 @@ static int cb_count_msgpack_events(void *record, size_t size, void *data)
 int callback_test(void* data, size_t size, void* cb_data)
 {
     if (size > 0) {
-        flb_debug("[test_filter_lua] received message: %s", data);
+        flb_debug("[test_filter_wasm] received message: %s", (char*)data);
         set_output(data); /* success */
     }
     return 0;
@@ -145,6 +152,9 @@ void flb_test_append_tag(void)
     char *input = "[0, {\"key\":\"val\"}]";
     char *result;
     struct flb_lib_out_cb cb_data;
+
+    /* clear previous output */
+    clear_output();
 
     /* Create context, flush every second (some checks omitted here) */
     ctx = flb_create();
@@ -242,6 +252,9 @@ void flb_test_numerics_records(void)
     char *result;
     struct flb_lib_out_cb cb_data;
 
+    /* clear previous output */
+    clear_output();
+
     /* Create context, flush every second (some checks omitted here) */
     ctx = flb_create();
     flb_service_set(ctx, "flush", FLUSH_INTERVAL, "grace", "1", NULL);
@@ -332,6 +345,9 @@ void flb_test_array_contains_null(void)
     char *input = "[0, {\"hello\": [1, null, \"world\"]}]";
     char *result;
     struct flb_lib_out_cb cb_data;
+
+    /* clear previous output */
+    clear_output();
 
     /* Create context, flush every second (some checks omitted here) */
     ctx = flb_create();
@@ -436,9 +452,6 @@ void flb_test_drop_all_records(void)
     if (!TEST_CHECK(ret == 0)) {
         TEST_MSG("error. got %d expect 0", ret);
     }
-
-    /* clean up */
-    flb_lib_free(output);
 
     flb_stop(ctx);
     flb_destroy(ctx);

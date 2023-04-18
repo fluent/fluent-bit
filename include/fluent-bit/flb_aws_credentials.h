@@ -161,7 +161,8 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
                                                             char *proxy,
                                                             struct
                                                             flb_aws_client_generator
-                                                            *generator);
+                                                            *generator,
+                                                            char *profile);
 
 /* Provide base configuration options for managed chain */
 #define FLB_AWS_CREDENTIAL_BASE_CONFIG_MAP(prefix)                                    \
@@ -185,8 +186,13 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
      0, FLB_FALSE, 0,                                                                 \
      "Specify an external ID for the STS API, can be used with the `" prefix          \
      "role_arn` parameter if your role requires an external ID."                      \
+    },                                                                                \
+    {                                                                                 \
+     FLB_CONFIG_MAP_STR, prefix "profile", NULL,                                      \
+     0, FLB_FALSE, 0,                                                                 \
+     "AWS Profile name. AWS Profiles can be configured with AWS CLI and are usually"  \
+     "stored in $HOME/.aws/ directory."                                               \
     }
-    
 /*
  * Managed chain provider; Creates and manages removal of dependancies for an instance
  */
@@ -277,7 +283,7 @@ struct flb_aws_provider *flb_ec2_provider_create(struct flb_config *config,
 /*
  * New AWS Profile provider, reads from the shared credentials file
  */
-struct flb_aws_provider *flb_profile_provider_create();
+struct flb_aws_provider *flb_profile_provider_create(char* profile);
 
 /*
  * Helper functions

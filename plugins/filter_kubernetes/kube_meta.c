@@ -166,7 +166,7 @@ static int get_http_auth_header(struct flb_kube *ctx)
         if (ret == -1) {
             flb_plg_warn(ctx->ins, "cannot open %s", FLB_KUBE_TOKEN);
         }
-        flb_plg_info(ctx->ins, " token updated", FLB_KUBE_TOKEN);
+        flb_plg_info(ctx->ins, " token updated");
     }
     ctx->kube_token_create = time(NULL);
 
@@ -331,7 +331,8 @@ static int get_meta_file_info(struct flb_kube *ctx, const char *namespace,
 
         if (payload_size) {
             packed = flb_pack_json(payload, payload_size,
-                                   buffer, size, root_type);
+                                   buffer, size, root_type,
+                                   NULL);
         }
 
         if (payload) {
@@ -403,7 +404,7 @@ static int get_meta_info_from_request(struct flb_kube *ctx,
     }
 
     packed = flb_pack_json(c->resp.payload, c->resp.payload_size,
-                                   buffer, size, root_type);
+                                   buffer, size, root_type, NULL);
 
     /* release resources */
     flb_http_client_destroy(c);

@@ -19,14 +19,20 @@
 
 #include <monkey/mk_info.h>
 
-#ifdef MK_HAVE_C_TLS
 
 #ifndef MK_VHOST_TLS_H
 #define MK_VHOST_TLS_H
 
 #include <monkey/mk_core.h>
 
+#ifdef MK_HAVE_C_TLS  /* Use Compiler Thread Local Storage (TLS) */
+
 __thread struct mk_list *mk_tls_vhost_fdt;
 
-#endif /* MK_VHOST_TLS_H */
+#else
+
+pthread_key_t mk_tls_vhost_fdt;
+
 #endif /* MK_HAVE_C_TLS  */
+
+#endif /* MK_VHOST_TLS_H */

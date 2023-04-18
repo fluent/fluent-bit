@@ -602,9 +602,9 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
             FS_CHUNK_SIZE_DEBUG_MOD(o_ins, old_ic, -old_ic_bytes);
             o_ins->fs_chunks_size -= old_ic_bytes;
 
-            flb_debug("[input chunk] remove route of chunk %s with size %ld bytes to output plugin %s "
-                      "to place the incoming data with size %ld bytes", flb_input_chunk_get_name(old_ic),
-                      old_ic_bytes, o_ins->name, chunk_size);
+            flb_debug("[input chunk] consider route removal for chunk %s with size %zd bytes from input plugin %s to output plugin %s "
+                      "to place the incoming data with size %zu bytes, total_limit_size=%zu", flb_input_chunk_get_name(old_ic),
+                      old_ic_bytes, ic->in->name, o_ins->name, chunk_size, o_ins->total_limit_size);
 
             if (flb_routes_mask_is_empty(old_ic->routes_mask)) {
                 if (old_ic->task != NULL) {
@@ -615,12 +615,18 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
                     if (old_ic->task->users == 0) {
                         flb_debug("[task] drop task_id %d with no active route from input plugin %s",
                                   old_ic->task->id, ic->in->name);
+                        /* end-user friendly message */
+                        flb_info("[input chunk] remove chunk %s with size %zd bytes from input plugin %s to output plugin %s "
+                                 "to place the incoming data with size %zu bytes, total_limit_size=%zu, task_id=%d",
+                                 flb_input_chunk_get_name(old_ic), old_ic_bytes, ic->in->name, o_ins->name, chunk_size, 
+                                 o_ins->total_limit_size, old_ic->task->id);
                         flb_task_destroy(old_ic->task, FLB_TRUE);
                     }
                 }
                 else {
-                    flb_debug("[input chunk] drop chunk %s with no output route from input plugin %s",
-                              flb_input_chunk_get_name(old_ic), ic->in->name);
+                    flb_info("[input chunk] remove chunk %s with size %zd bytes from input plugin %s to output plugin %s "
+                             "to place the incoming data with size %zu bytes, total_limit_size=%zu", flb_input_chunk_get_name(old_ic),
+                             old_ic_bytes, ic->in->name, o_ins->name, chunk_size, o_ins->total_limit_size);
                     flb_input_chunk_destroy(old_ic, FLB_TRUE);
                 }
             }
@@ -1039,7 +1045,6 @@ int flb_input_chunk_destroy_corrupted(struct flb_input_chunk *ic,
                                       const char *tag_buf, int tag_len,
                                       int del)
 {
-    int ret;
     ssize_t bytes;
     struct mk_list *head;
     struct flb_output_instance *o_ins;
@@ -1209,7 +1214,7 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
 
     if (tag_len > FLB_INPUT_CHUNK_TAG_MAX) {
         flb_plg_warn(in,
-                     "Tag set exceeds limit, truncating from %lu to %lu bytes",
+                     "Tag set exceeds limit, truncating from %i to %i bytes",
                      tag_len, FLB_INPUT_CHUNK_TAG_MAX);
         tag_len = FLB_INPUT_CHUNK_TAG_MAX;
     }
@@ -1309,7 +1314,7 @@ static inline int flb_input_chunk_is_storage_overlimit(struct flb_input_instance
 
     if (storage->type == FLB_STORAGE_FS) {
         if (i->storage_pause_on_chunks_overlimit == FLB_TRUE) {
-            if (storage->cio->total_chunks >= storage->cio->max_chunks_up) {
+            if (storage->cio->total_chunks_up >= storage->cio->max_chunks_up) {
                 return FLB_TRUE;
             }
         }
@@ -1371,9 +1376,9 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
         in->storage_buf_status = FLB_INPUT_RUNNING;
         if (in->p->cb_resume) {
             in->p->cb_resume(in->context, in->config);
-            flb_info("[input] %s resume (storage buf overlimit %d/%d)",
+            flb_info("[input] %s resume (storage buf overlimit %zu/%zu)",
                       in->name,
-                      ((struct flb_storage_input *)in->storage)->cio->total_chunks,
+                      ((struct flb_storage_input *)in->storage)->cio->total_chunks_up,
                       ((struct flb_storage_input *)in->storage)->cio->max_chunks_up);
         }
     }
@@ -1390,9 +1395,9 @@ static inline int flb_input_chunk_protect(struct flb_input_instance *i)
     struct flb_storage_input *storage = i->storage;
 
     if (flb_input_chunk_is_storage_overlimit(i) == FLB_TRUE) {
-        flb_warn("[input] %s paused (storage buf overlimit %d/%d)",
+        flb_warn("[input] %s paused (storage buf overlimit %zu/%zu)",
                  i->name,
-                 storage->cio->total_chunks,
+                 storage->cio->total_chunks_up,
                  storage->cio->max_chunks_up);
         flb_input_pause(i);
         i->storage_buf_status = FLB_INPUT_PAUSED;
@@ -1803,7 +1808,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     real_size = flb_input_chunk_get_real_size(ic);
     real_diff = real_size - pre_real_size;
     if (real_diff != 0) {
-        flb_debug("[input chunk] update output instances with new chunk size diff=%d",
+        flb_debug("[input chunk] update output instances with new chunk size diff=%zu",
                   real_diff);
         flb_input_chunk_update_output_instances(ic, real_diff);
     }
@@ -1910,6 +1915,24 @@ retry:
     return 0;
 }
 
+/* iterate input instance ring buffer and remove any enqueued input_chunk_raw */
+void flb_input_chunk_ring_buffer_cleanup(struct flb_input_instance *ins)
+{
+    int ret;
+    struct input_chunk_raw *cr;
+
+    if (!ins->rb) {
+        return;
+    }
+
+    while ((ret = flb_ring_buffer_read(ins->rb, (void *) &cr, sizeof(cr))) == 0) {
+        if (cr) {
+            destroy_chunk_raw(cr);
+            cr = NULL;
+        }
+    }
+}
+
 void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data)
 {
     int ret;
@@ -1979,8 +2002,8 @@ const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size)
     ssize_t diff_size;
     char *buf = NULL;
 
-
     pre_size = flb_input_chunk_get_real_size(ic);
+
     if (cio_chunk_is_up(ic->chunk) == CIO_FALSE) {
         ret = cio_chunk_up(ic->chunk);
         if (ret == -1) {
@@ -1988,12 +2011,21 @@ const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size)
         }
     }
 
+    /* Lock the internal chunk
+     *
+     * This operation has to be performed before getting the chunk data
+     * pointer because in certain situations it could cause the chunk
+     * mapping to be relocated (ie. macos / windows on trim)
+     */
+    cio_chunk_lock(ic->chunk);
+
     /*
      * msgpack-c internal use a raw buffer for it operations, since we
      * already appended data we just can take out the references to avoid
      * a new memory allocation and skip a copy operation.
      */
     ret = cio_chunk_get_content(ic->chunk, &buf, size);
+
     if (ret == -1) {
         flb_error("[input chunk] error retrieving chunk content");
         return NULL;
@@ -2006,9 +2038,6 @@ const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size)
 
     /* Set it busy as it likely it's a reference for an outgoing task */
     ic->busy = FLB_TRUE;
-
-    /* Lock the internal chunk */
-    cio_chunk_lock(ic->chunk);
 
     post_size = flb_input_chunk_get_real_size(ic);
     if (post_size != pre_size) {

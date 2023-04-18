@@ -15,11 +15,20 @@
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
-    if (size < 55) { 
+    if (size < 59) {
         return 0;
     }
 
+    /* Set flb_malloc_mod to be fuzzer-data dependent */
     flb_malloc_p = 0;
+    flb_malloc_mod = *(int*)data;
+    data += 4;
+    size -= 4;
+
+    /* Avoid division by zero for modulo operations */
+    if (flb_malloc_mod == 0) {
+        flb_malloc_mod = 1;
+    }
 
     char s3_mode = data[0];
     MOVE_INPUT(1)
@@ -58,37 +67,38 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     }
 
     http_u = flb_upstream_create(http_config, "127.0.0.1", 8001, 0, NULL);
-    http_u_conn = flb_malloc(sizeof(struct flb_connection));
-    if (http_u_conn == NULL) {
-        flb_free(config);
-        return 0;
-    }
-    http_u_conn->upstream = http_u;
+    if (http_u != NULL) {
+        http_u_conn = flb_calloc(1, sizeof(struct flb_connection));
+        if (http_u_conn != NULL) {
+            http_u_conn->upstream = http_u;
 
-    http_c = flb_http_client(http_u_conn, method, uri, 
-                 null_terminated, size, "127.0.0.1", 8001, NULL, 0);
-
-    /* Call into the main target flb_signv4_do*/
-    time_t t = 1440938160;
-    char *region = "us-east-1";
-    char *access_key = "AKIDEXAMPLE";
-    char *service = "service";
-    char *secret_key = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY";	
-    int ret = setenv(AWS_ACCESS_KEY_ID, access_key, 1);
-    if (ret >= 0) {
-        ret = setenv(AWS_SECRET_ACCESS_KEY, secret_key, 1);
-        if (ret >= 0) {
-            flb_sds_t signature = flb_signv4_do(http_c, FLB_TRUE, FLB_FALSE, t,
-                        region, service, s3_mode, provider);
-            if (signature) {
-              flb_sds_destroy(signature);
+            http_c = flb_http_client(http_u_conn, method, uri,
+                         null_terminated, size, "127.0.0.1", 8001, NULL, 0);
+            if (http_c) {
+                /* Call into the main target flb_signv4_do*/
+                time_t t = 1440938160;
+                char *region = "us-east-1";
+                char *access_key = "AKIDEXAMPLE";
+                char *service = "service";
+                char *secret_key = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY";
+                int ret = setenv(AWS_ACCESS_KEY_ID, access_key, 1);
+                if (ret >= 0) {
+                    ret = setenv(AWS_SECRET_ACCESS_KEY, secret_key, 1);
+                    if (ret >= 0) {
+                        flb_sds_t signature = flb_signv4_do(http_c, FLB_TRUE, FLB_FALSE,
+                                    t, region, service, s3_mode, NULL, provider);
+                        if (signature) {
+                          flb_sds_destroy(signature);
+                        }
+                    }
+                }
+                flb_http_client_destroy(http_c);
             }
         }
+        flb_upstream_destroy(http_u);
     }
 
     /* Cleanup */
-    flb_http_client_destroy(http_c);
-    flb_upstream_destroy(http_u);
     flb_config_exit(http_config);
     flb_aws_provider_destroy(provider);
     flb_free(config);

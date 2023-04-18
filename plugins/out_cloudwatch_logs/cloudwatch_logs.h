@@ -114,6 +114,7 @@ struct flb_cloudwatch {
     const char *log_key;
     const char *extra_user_agent;
     const char *external_id;
+    const char *profile;
     int custom_endpoint;
     /* Should the plugin create the log group */
     int create_group;

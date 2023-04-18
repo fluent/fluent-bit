@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_aws_credentials.h>
@@ -165,6 +166,7 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
     size_t len;
     size_t tmp_size;
     void *compressed_tmp_buf;
+    char *out_buf;
 
     tmp_buf_ptr = buf->tmp_buf + buf->tmp_buf_offset;
     ret = flb_msgpack_to_json(tmp_buf_ptr,
@@ -216,34 +218,48 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
                          ctx->delivery_stream);
             return 2;
         }
-        /* guess space needed to write time_key */
-        len = 6 + strlen(ctx->time_key) + 6 * strlen(ctx->time_key_format);
+
+        /* format time output and return the length */
+        len = flb_aws_strftime_precision(&out_buf, ctx->time_key_format, tms);
+
         /* how much space do we have left */
         tmp_size = (buf->tmp_buf_size - buf->tmp_buf_offset) - written;
         if (len > tmp_size) {
-            /* not enough space- tell caller to retry */
+            /* not enough space - tell caller to retry */
+            flb_free(out_buf);
             return 1;
         }
-        time_key_ptr = tmp_buf_ptr + written - 1;
-        memcpy(time_key_ptr, ",", 1);
-        time_key_ptr++;
-        memcpy(time_key_ptr, "\"", 1);
-        time_key_ptr++;
-        memcpy(time_key_ptr, ctx->time_key, strlen(ctx->time_key));
-        time_key_ptr += strlen(ctx->time_key);
-        memcpy(time_key_ptr, "\":\"", 3);
-        time_key_ptr += 3;
-        tmp_size = buf->tmp_buf_size - buf->tmp_buf_offset;
-        tmp_size -= (time_key_ptr - tmp_buf_ptr);
-        len = strftime(time_key_ptr, tmp_size, ctx->time_key_format, &time_stamp);
-        if (len <= 0) {
-            /* ran out of space - should not happen because of check above */
-            return 1;
+
+        if (len == 0) {
+            /*
+             * when the length of out_buf is not enough for time_key_format,
+             * time_key will not be added to record.
+             */
+            flb_plg_error(ctx->ins, "Failed to add time_key %s to record, %s",
+                          ctx->time_key, ctx->delivery_stream);
+            flb_free(out_buf);
         }
-        time_key_ptr += len;
-        memcpy(time_key_ptr, "\"}", 2);
-        time_key_ptr += 2;
-        written = (time_key_ptr - tmp_buf_ptr);
+        else {
+            time_key_ptr = tmp_buf_ptr + written - 1;
+            memcpy(time_key_ptr, ",", 1);
+            time_key_ptr++;
+            memcpy(time_key_ptr, "\"", 1);
+            time_key_ptr++;
+            memcpy(time_key_ptr, ctx->time_key, strlen(ctx->time_key));
+            time_key_ptr += strlen(ctx->time_key);
+            memcpy(time_key_ptr, "\":\"", 3);
+            time_key_ptr += 3;
+            tmp_size = buf->tmp_buf_size - buf->tmp_buf_offset;
+            tmp_size -= (time_key_ptr - tmp_buf_ptr);
+
+            /* merge out_buf to time_key_ptr */
+            memcpy(time_key_ptr, out_buf, len);
+            flb_free(out_buf);
+            time_key_ptr += len;
+            memcpy(time_key_ptr, "\"}", 2);
+            time_key_ptr += 2;
+            written = (time_key_ptr - tmp_buf_ptr);
+        }
     }
 
     /* is (written + 1) because we still have to append newline */
@@ -303,7 +319,7 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
                                                        &size); /* evaluate size */
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Unable to compress record, discarding, "
-                                    "%s", written + 1, ctx->delivery_stream);
+                                    "%s", ctx->delivery_stream);
             return 2;
         }
         flb_free(buf->event_buf);
@@ -496,13 +512,13 @@ send:
 int process_and_send_records(struct flb_firehose *ctx, struct flush *buf,
                              const char *data, size_t bytes)
 {
-    size_t off = 0;
+    // size_t off = 0;
     int i = 0;
     size_t map_size;
-    msgpack_unpacked result;
-    msgpack_object  *obj;
+    // msgpack_unpacked result;
+    // msgpack_object  *obj;
     msgpack_object  map;
-    msgpack_object root;
+    // msgpack_object root;
     msgpack_object_kv *kv;
     msgpack_object  key;
     msgpack_object  val;
@@ -512,25 +528,24 @@ int process_and_send_records(struct flb_firehose *ctx, struct flush *buf,
     int ret;
     int check = FLB_FALSE;
     int found = FLB_FALSE;
-    struct flb_time tms;
+    // struct flb_time tms;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
 
-    /* unpack msgpack */
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        /*
-         * Each record is a msgpack array [timestamp, map] of the
-         * timestamp and record map.
-         */
-        root = result.data;
-        if (root.via.array.size != 2) {
-            continue;
-        }
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
-        /* unpack the array of [timestamp, map] */
-        flb_time_pop_from_msgpack(&tms, &result, &obj);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
 
-        /* Get the record/map */
-        map = root.via.array.ptr[1];
+        return -1;
+    }
+
+
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        map = *log_event.body;
         map_size = map.via.map.size;
 
         if (ctx->log_key) {
@@ -558,7 +573,7 @@ int process_and_send_records(struct flb_firehose *ctx, struct flush *buf,
                     if (strncmp(ctx->log_key, key_str, key_str_size) == 0) {
                         found = FLB_TRUE;
                         val = (kv+j)->val;
-                        ret = add_event(ctx, buf, &val, &tms);
+                        ret = add_event(ctx, buf, &val, &log_event.timestamp);
                         if (ret < 0 ) {
                             goto error;
                         }
@@ -576,27 +591,30 @@ int process_and_send_records(struct flb_firehose *ctx, struct flush *buf,
             continue;
         }
 
-        ret = add_event(ctx, buf, &map, &tms);
+        ret = add_event(ctx, buf, &map, &log_event.timestamp);
         if (ret < 0 ) {
             goto error;
         }
         i++;
     }
-    msgpack_unpacked_destroy(&result);
+    flb_log_event_decoder_destroy(&log_decoder);
 
     /* send any remaining events */
     ret = send_log_events(ctx, buf);
     reset_flush_buf(ctx, buf);
+
     if (ret < 0) {
         return -1;
     }
 
     /* return number of events processed */
     buf->records_processed = i;
+
     return i;
 
 error:
-    msgpack_unpacked_destroy(&result);
+    flb_log_event_decoder_destroy(&log_decoder);
+
     return -1;
 }
 
@@ -630,7 +648,7 @@ static int process_api_response(struct flb_firehose *ctx,
 
     /* Convert JSON payload to msgpack */
     ret = flb_pack_json(c->resp.payload, c->resp.payload_size,
-                        &out_buf, &out_size, &root_type);
+                        &out_buf, &out_size, &root_type, NULL);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not pack/validate JSON API response\n%s",
                       c->resp.payload);

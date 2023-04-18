@@ -172,12 +172,40 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         flb_config_map_foreach(head, mv, ctx->systemd_filters) {
             flb_plg_debug(ctx->ins, "add filter: %s (%s)", mv->val.str,
                 journal_filter_is_and ? "and" : "or");
-            sd_journal_add_match(ctx->j, mv->val.str, 0);
+            ret = sd_journal_add_match(ctx->j, mv->val.str, 0);
+            if (ret < 0) {
+                if (ret == -EINVAL) {
+                    flb_plg_error(ctx->ins,
+                                  "systemd_filter error: invalid input '%s'",
+                                  mv->val.str);
+                }
+                else {
+                    flb_plg_error(ctx->ins,
+                                  "systemd_filter error: status=%d input '%s'",
+                                  ret, mv->val.str);
+                }
+                flb_systemd_config_destroy(ctx);
+                return NULL;
+            }
             if (journal_filter_is_and) {
-                sd_journal_add_conjunction(ctx->j);
+                ret = sd_journal_add_conjunction(ctx->j);
+                if (ret < 0) {
+                    flb_plg_error(ctx->ins,
+                                  "sd_journal_add_conjunction failed. ret=%d",
+                                  ret);
+                    flb_systemd_config_destroy(ctx);
+                    return NULL;
+                }
             }
             else {
-                sd_journal_add_disjunction(ctx->j);
+                ret = sd_journal_add_disjunction(ctx->j);
+                if (ret < 0) {
+                    flb_plg_error(ctx->ins,
+                                  "sd_journal_add_disjunction failed. ret=%d",
+                                  ret);
+                    flb_systemd_config_destroy(ctx);
+                    return NULL;
+                }
             }
         }
     }
@@ -240,16 +268,32 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
     }
 #endif
 
+    ctx->log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ctx->log_encoder == NULL) {
+        flb_plg_error(ctx->ins, "could not initialize event encoder");
+        flb_systemd_config_destroy(ctx);
+
+        return NULL;
+    }
+
+
     sd_journal_get_data_threshold(ctx->j, &size);
     flb_plg_debug(ctx->ins,
                   "sd_journal library may truncate values "
-                  "to sd_journal_get_data_threshold() bytes: %i", size);
+                  "to sd_journal_get_data_threshold() bytes: %zu", size);
 
     return ctx;
 }
 
 int flb_systemd_config_destroy(struct flb_systemd_config *ctx)
 {
+    if (ctx->log_encoder != NULL) {
+        flb_log_event_encoder_destroy(ctx->log_encoder);
+
+        ctx->log_encoder = NULL;
+    }
+
     /* Close context */
     if (ctx->j) {
         sd_journal_close(ctx->j);

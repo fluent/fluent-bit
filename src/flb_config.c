@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_env.h>
+#include <fluent-bit/flb_meta.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_parser.h>
@@ -172,6 +173,10 @@ struct flb_service_config service_configs[] = {
      offsetof(struct flb_config, enable_chunk_trace)},
 #endif
 
+    {FLB_CONF_STR_HOT_RELOAD,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, enable_hot_reload)},
+
     {NULL, FLB_CONF_TYPE_OTHER, 0} /* end of array */
 };
 
@@ -202,14 +207,15 @@ struct flb_config *flb_config_init()
     /* Initialize config_format context */
     cf = flb_cf_create();
     if (!cf) {
-        flb_config_exit(config);
+        flb_free(config);
         return NULL;
     }
     config->cf_main = cf;
 
     section = flb_cf_section_create(cf, "service", 0);
     if (!section) {
-        flb_config_exit(config);
+        flb_cf_destroy(cf);
+        flb_free(config);
         return NULL;
     }
 
@@ -274,6 +280,8 @@ struct flb_config *flb_config_init()
     flb_slist_create(&config->stream_processor_tasks);
 #endif
 
+    flb_slist_create(&config->external_plugins);
+
     /* Set default coroutines stack size */
     config->coro_stack_size = FLB_CORO_STACK_SIZE_BYTE;
     if (config->coro_stack_size < getpagesize()) {
@@ -286,7 +294,7 @@ struct flb_config *flb_config_init()
     pthread_mutex_init(&config->collectors_mutex, NULL);
 
     /* Initialize linked lists */
-    mk_list_init(&config->custom_plugins);
+    mk_list_init(&config->processor_plugins);
     mk_list_init(&config->custom_plugins);
     mk_list_init(&config->in_plugins);
     mk_list_init(&config->parser_plugins);
@@ -306,11 +314,20 @@ struct flb_config *flb_config_init()
 
     memset(&config->tasks_map, '\0', sizeof(config->tasks_map));
 
+    /* Initialize multiline-parser list. We need this here, because from now
+     * on we use flb_config_exit to cleanup the config, which requires
+     * the config->multiline_parsers list to be initialized. */
+    mk_list_init(&config->multiline_parsers);
+
     /* Environment */
     config->env = flb_env_create();
+    if (config->env == NULL) {
+        flb_error("[config] environment creation failed");
+        flb_config_exit(config);
+        return NULL;
+    }
 
     /* Multiline core */
-    mk_list_init(&config->multiline_parsers);
     ret = flb_ml_init(config);
     if (ret == -1) {
         flb_error("[config] multiline core initialization failed");
@@ -414,6 +431,11 @@ void flb_config_exit(struct flb_config *config)
         flb_free(config->conf_path);
     }
 
+    /* conf path file (file system config path) */
+    if (config->conf_path_file) {
+        flb_sds_destroy(config->conf_path_file);
+    }
+
     /* Working directory */
     if (config->workdir) {
         flb_free(config->workdir);
@@ -479,6 +501,8 @@ void flb_config_exit(struct flb_config *config)
     flb_slist_destroy(&config->stream_processor_tasks);
 #endif
 
+    flb_slist_destroy(&config->external_plugins);
+
     if (config->evl) {
         mk_event_loop_destroy(config->evl);
     }
@@ -491,6 +515,11 @@ void flb_config_exit(struct flb_config *config)
     if (config->cf_main) {
         flb_cf_destroy(config->cf_main);
     }
+
+    /* cf_opts' lifetime should differ from config's lifetime.
+     * This member should be storing just for the cf_opts reference.
+     * Don't destroy it here.
+     */
 
     /* remove parsers */
     mk_list_foreach_safe(head, tmp, &config->cf_parsers_list) {
@@ -656,6 +685,237 @@ int flb_config_set_program_name(struct flb_config *config, char *name)
     config->program_name = flb_sds_create(name);
 
     if (!config->program_name) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, enum section_type type)
+{
+    int ret;
+    char *tmp;
+    char *name;
+    char *s_type;
+    struct mk_list *list;
+    struct mk_list *head;
+    struct cfl_list *h_prop;
+    struct cfl_kvpair *kv;
+    struct cfl_variant *val;
+    struct flb_cf_section *s;
+    struct flb_cf_group *processors = NULL;
+    int i;
+    void *ins;
+
+    if (type == FLB_CF_CUSTOM) {
+        s_type = "custom";
+        list = &cf->customs;
+    }
+    else if (type == FLB_CF_INPUT) {
+        s_type = "input";
+        list = &cf->inputs;
+    }
+    else if (type == FLB_CF_FILTER) {
+        s_type = "filter";
+        list = &cf->filters;
+    }
+    else if (type == FLB_CF_OUTPUT) {
+        s_type = "output";
+        list = &cf->outputs;
+    }
+    else {
+        return -1;
+    }
+
+    mk_list_foreach(head, list) {
+        s = mk_list_entry(head, struct flb_cf_section, _head_section);
+        name = flb_cf_section_property_get_string(cf, s, "name");
+        if (!name) {
+            flb_error("[config] section '%s' is missing the 'name' property",
+                      s_type);
+            return -1;
+        }
+
+        /* translate the variable */
+        tmp = flb_env_var_translate(config->env, name);
+
+        /* create an instance of the plugin */
+        ins = NULL;
+        if (type == FLB_CF_CUSTOM) {
+            ins = flb_custom_new(config, tmp, NULL);
+        }
+        else if (type == FLB_CF_INPUT) {
+            ins = flb_input_new(config, tmp, NULL, FLB_TRUE);
+        }
+        else if (type == FLB_CF_FILTER) {
+            ins = flb_filter_new(config, tmp, NULL);
+        }
+        else if (type == FLB_CF_OUTPUT) {
+            ins = flb_output_new(config, tmp, NULL, FLB_TRUE);
+        }
+        flb_sds_destroy(tmp);
+
+        /* validate the instance creation */
+        if (!ins) {
+            flb_error("[config] section '%s' tried to instance a plugin name "
+                      "that don't exists", name);
+            flb_sds_destroy(name);
+            return -1;
+        }
+        flb_sds_destroy(name);
+
+        /*
+         * iterate section properties and populate instance by using specific
+         * api function.
+         */
+        cfl_list_foreach(h_prop, &s->properties->list) {
+            kv = cfl_list_entry(h_prop, struct cfl_kvpair, _head);
+            if (strcasecmp(kv->key, "name") == 0) {
+                continue;
+            }
+
+            if (type == FLB_CF_CUSTOM) {
+                if (kv->val->type == CFL_VARIANT_STRING) {
+                    ret = flb_custom_set_property(ins, kv->key, kv->val->data.as_string);
+                } else if (kv->val->type == CFL_VARIANT_ARRAY) {
+                    for (i = 0; i < kv->val->data.as_array->entry_count; i++) {
+                        val = kv->val->data.as_array->entries[i];
+                        ret = flb_custom_set_property(ins, kv->key, val->data.as_string);
+                    }
+                }
+            }
+            else if (type == FLB_CF_INPUT) {
+                 if (kv->val->type == CFL_VARIANT_STRING) {
+                    ret = flb_input_set_property(ins, kv->key, kv->val->data.as_string);
+                } else if (kv->val->type == CFL_VARIANT_ARRAY) {
+                    for (i = 0; i < kv->val->data.as_array->entry_count; i++) {
+                        val = kv->val->data.as_array->entries[i];
+                        ret = flb_input_set_property(ins, kv->key, val->data.as_string);
+                    }
+                }
+            }
+            else if (type == FLB_CF_FILTER) {
+                 if (kv->val->type == CFL_VARIANT_STRING) {
+                    ret = flb_filter_set_property(ins, kv->key, kv->val->data.as_string);
+                } else if (kv->val->type == CFL_VARIANT_ARRAY) {
+                    for (i = 0; i < kv->val->data.as_array->entry_count; i++) {
+                        val = kv->val->data.as_array->entries[i];
+                        ret = flb_filter_set_property(ins, kv->key, val->data.as_string);
+                    }
+                }
+            }
+            else if (type == FLB_CF_OUTPUT) {
+                 if (kv->val->type == CFL_VARIANT_STRING) {
+                    ret = flb_output_set_property(ins, kv->key, kv->val->data.as_string);
+                } else if (kv->val->type == CFL_VARIANT_ARRAY) {
+                    for (i = 0; i < kv->val->data.as_array->entry_count; i++) {
+                        val = kv->val->data.as_array->entries[i];
+                        ret = flb_output_set_property(ins, kv->key, val->data.as_string);
+                    }
+                }
+            }
+
+            if (ret == -1) {
+                flb_error("[config] could not configure property '%s' on "
+                          "%s plugin with section name '%s'",
+                          kv->key, s_type, name);
+            }
+        }
+
+        /* Processors */
+        processors = flb_cf_group_get(cf, s, "processors");
+        if (processors) {
+            if (type == FLB_CF_INPUT) {
+                flb_processors_load_from_config_format_group(((struct flb_input_instance *) ins)->processor, processors);
+            }
+            else if (type == FLB_CF_OUTPUT) {
+                flb_processors_load_from_config_format_group(((struct flb_output_instance *) ins)->processor, processors);
+            }
+            else {
+                flb_error("[config] section '%s' does not support processors", s_type);
+            }
+        }
+    }
+
+    return 0;
+}
+/* Load a struct flb_config_format context into a flb_config instance */
+int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)
+{
+    int ret;
+    struct flb_kv *kv;
+    struct mk_list *head;
+    struct cfl_kvpair *ckv;
+    struct cfl_list *chead;
+    struct flb_cf_section *s;
+
+    /* Process config environment vars */
+    mk_list_foreach(head, &cf->env) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        ret = flb_env_set(config->env, kv->key, kv->val);
+        if (ret == -1) {
+            flb_error("could not set config environment variable '%s'", kv->key);
+            return -1;
+        }
+    }
+
+    /* Process all meta commands */
+    mk_list_foreach(head, &cf->metas) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        flb_meta_run(config, kv->key, kv->val);
+    }
+
+    /* Validate sections */
+    mk_list_foreach(head, &cf->sections) {
+        s = mk_list_entry(head, struct flb_cf_section, _head);
+
+        if (strcasecmp(s->name, "env") == 0 ||
+            strcasecmp(s->name, "service") == 0 ||
+            strcasecmp(s->name, "custom") == 0 ||
+            strcasecmp(s->name, "input") == 0 ||
+            strcasecmp(s->name, "filter") == 0 ||
+            strcasecmp(s->name, "output") == 0) {
+
+            /* continue on valid sections */
+            continue;
+        }
+
+        /* Extra sanity checks */
+        if (strcasecmp(s->name, "parser") == 0 ||
+            strcasecmp(s->name, "multiline_parser") == 0) {
+            fprintf(stderr,
+                    "Sections 'multiline_parser' and 'parser' are not valid in "
+                    "the main configuration file. It belongs to \n"
+                    "the 'parsers_file' configuration files.\n");
+            return -1;
+        }
+    }
+
+    /* Read main 'service' section */
+    s = cf->service;
+    if (s) {
+        /* Iterate properties */
+        cfl_list_foreach(chead, &s->properties->list) {
+            ckv = cfl_list_entry(chead, struct cfl_kvpair, _head);
+            flb_config_set_property(config, ckv->key, ckv->val->data.as_string);
+        }
+    }
+
+    ret = configure_plugins_type(config, cf, FLB_CF_CUSTOM);
+    if (ret == -1) {
+        return -1;
+    }
+
+    ret = configure_plugins_type(config, cf, FLB_CF_INPUT);
+    if (ret == -1) {
+        return -1;
+    }
+    ret = configure_plugins_type(config, cf, FLB_CF_FILTER);
+    if (ret == -1) {
+        return -1;
+    }
+    ret = configure_plugins_type(config, cf, FLB_CF_OUTPUT);
+    if (ret == -1) {
         return -1;
     }
 

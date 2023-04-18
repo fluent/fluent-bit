@@ -19,6 +19,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_network.h>
@@ -227,9 +228,9 @@ static int in_fw_init(struct flb_input_instance *ins,
         }
     }
 
-    flb_net_socket_nonblocking(ctx->downstream->server_fd);
+    flb_input_downstream_set(ctx->downstream, ctx->ins);
 
-    ctx->evl = config->evl;
+    flb_net_socket_nonblocking(ctx->downstream->server_fd);
 
     /* Collect upon data available on the standard input */
     ret = flb_input_set_collector_socket(ins,

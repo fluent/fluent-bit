@@ -34,6 +34,27 @@ int flb_input_trace_append(struct flb_input_instance *ins,
     int ret;
     char *out_buf;
     size_t out_size;
+    int processor_is_active;
+
+    processor_is_active = flb_processor_is_active(ins->processor);
+    if (processor_is_active) {
+        if (!tag) {
+            if (ins->tag && ins->tag_len > 0) {
+                tag = ins->tag;
+                tag_len = ins->tag_len;
+            }
+            else {
+                tag = ins->name;
+                tag_len = strlen(ins->name);
+            }
+        }
+
+        ret = flb_processor_run(ins->processor, FLB_PROCESSOR_TRACES, tag, tag_len, (char *) ctr, 0, NULL, NULL);
+
+        if (ret == -1) {
+            return -1;
+        }
+    }
 
     /* Convert trace context to msgpack */
     ret = ctr_encode_msgpack_create(ctr, &out_buf, &out_size);
@@ -45,6 +66,7 @@ int flb_input_trace_append(struct flb_input_instance *ins,
     /* Append packed metrics */
     ret = flb_input_chunk_append_raw(ins, FLB_INPUT_TRACES, 0,
                                      tag, tag_len, out_buf, out_size);
+
     ctr_encode_msgpack_destroy(out_buf);
 
     return ret;

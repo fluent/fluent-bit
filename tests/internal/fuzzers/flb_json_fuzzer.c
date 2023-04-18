@@ -24,7 +24,10 @@
 int LLVMFuzzerTestOneInput(unsigned char *data, size_t size)
 {
     TIMEOUT_GUARD
+    /* Set fuzzer-malloc chance of failure */
     flb_malloc_p = 0;
+    flb_malloc_mod = 25000;
+
     if (size < 1) {
         return 0;
     }
@@ -36,7 +39,7 @@ int LLVMFuzzerTestOneInput(unsigned char *data, size_t size)
     char *out_buf = NULL;
     size_t out_size;
     int root_type;
-    int ret = flb_pack_json((char*)data, size, &out_buf, &out_size, &root_type);
+    int ret = flb_pack_json((char*)data, size, &out_buf, &out_size, &root_type, NULL);
 
     if (ret == 0) {
         size_t off = 0;

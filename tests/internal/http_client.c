@@ -42,7 +42,7 @@ struct test_ctx* test_ctx_create()
         return NULL;
     }
 
-    ret_ctx->u_conn = flb_malloc(sizeof(struct flb_connection));
+    ret_ctx->u_conn = flb_calloc(1, sizeof(struct flb_connection));
     if(!TEST_CHECK(ret_ctx->u_conn != NULL)) {
         flb_errno();
         TEST_MSG("flb_malloc(flb_connection) failed");

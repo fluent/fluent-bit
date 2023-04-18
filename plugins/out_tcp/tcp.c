@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_config_map.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 #include <msgpack.h>
 
 #include <stdio.h>
@@ -57,26 +58,36 @@ static int compose_payload(struct flb_out_tcp *ctx,
                            void **out_payload, size_t *out_size)
 {
     int ret;
-    size_t off = 0;
     flb_sds_t buf = NULL;
     flb_sds_t json = NULL;
     flb_sds_t str;
-    msgpack_unpacked result;
-    msgpack_object root;
     msgpack_object map;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
 
     /* raw message key by using a record accessor */
     if (ctx->ra_raw_message_key) {
+        ret = flb_log_event_decoder_init(&log_decoder, (char *) in_data, in_size);
+
+        if (ret != FLB_EVENT_DECODER_SUCCESS) {
+            flb_plg_error(ctx->ins,
+                          "Log event decoder initialization error : %d", ret);
+
+            return -1;
+        }
+
         buf = flb_sds_create_size(in_size);
         if (!buf) {
+            flb_log_event_decoder_destroy(&log_decoder);
             return FLB_ERROR;
         }
 
-        msgpack_unpacked_init(&result);
-        while (msgpack_unpack_next(&result, in_data, in_size, &off) == MSGPACK_UNPACK_SUCCESS) {
-            root = result.data;
+        while ((ret = flb_log_event_decoder_next(
+                        &log_decoder,
+                        &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
 
-            map = root.via.array.ptr[1];
+            map = *log_event.body;
+
             str = flb_ra_translate(ctx->ra_raw_message_key, (char *) tag, tag_len, map, NULL);
             if (!str) {
                 continue;
@@ -92,7 +103,7 @@ static int compose_payload(struct flb_out_tcp *ctx,
             flb_sds_cat_safe(&buf, "\n", 1);
         }
 
-        msgpack_unpacked_destroy(&result);
+        flb_log_event_decoder_destroy(&log_decoder);
 
         if (flb_sds_len(buf) == 0) {
             flb_sds_destroy(buf);

@@ -436,7 +436,7 @@ static int prepare_destroy_conn(struct flb_connection *u_conn)
     flb_trace("[upstream] destroy connection #%i to %s:%i",
               u_conn->fd, u->tcp_host, u->tcp_port);
 
-    if (flb_stream_is_async(&u->base)) {
+    if (MK_EVENT_IS_REGISTERED((&u_conn->event))) {
         mk_event_del(u_conn->evl, &u_conn->event);
     }
 
@@ -778,6 +778,7 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
 {
     time_t now;
     int drop;
+    int inject;
     const char *reason;
     struct mk_list *head;
     struct mk_list *u_head;
@@ -838,16 +839,18 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
                     }
                 }
 
+                inject = FLB_FALSE;
                 if (u_conn->event.status != MK_EVENT_NONE) {
+                    inject = FLB_TRUE;
+                }
+                u_conn->net_error = ETIMEDOUT;
+                prepare_destroy_conn(u_conn);
+                if (inject == FLB_TRUE) {
                     mk_event_inject(u_conn->evl,
                                     &u_conn->event,
                                     u_conn->event.mask,
                                     FLB_TRUE);
                 }
-
-                u_conn->net_error = ETIMEDOUT;
-
-                prepare_destroy_conn(u_conn);
             }
         }
 

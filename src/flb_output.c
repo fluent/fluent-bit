@@ -33,6 +33,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_plugin_proxy.h>
 #include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_output_thread.h>
@@ -221,6 +222,12 @@ static int flb_output_task_queue_flush_one(struct flb_task_queue *queue)
     queued_task = mk_list_entry_first(&queue->pending, struct flb_task_enqueued, _head);
     mk_list_del(&queued_task->_head);
     mk_list_add(&queued_task->_head, &queue->in_progress);
+
+    /*
+     * Remove temporary user now that task is out of singleplex queue.
+     * Flush will add back the user representing queued_task->out_instance if it succeeds.
+     */
+    flb_task_users_dec(queued_task->task, FLB_FALSE);
     ret = flb_output_task_flush(queued_task->task,
                                 queued_task->out_instance,
                                 queued_task->config);
@@ -250,6 +257,16 @@ int flb_output_task_singleplex_enqueue(struct flb_task_queue *queue,
 {
     int ret;
     int is_empty;
+
+    /*
+     * Add temporary user to preserve task while in singleplex queue.
+     * Temporary user will be removed when task is removed from queue.
+     *
+     * Note: if we fail to increment now, then the task may be prematurely
+     * deleted if the task's users go to 0 while we are waiting in the
+     * queue.
+     */
+    flb_task_users_inc(task);
 
     /* Enqueue task */
     ret = flb_output_task_queue_enqueue(queue, retry, task, out_ins, config);
@@ -423,6 +440,12 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
     }
 
     mk_list_del(&ins->_head);
+
+    /* processor */
+    if (ins->processor) {
+        flb_processor_destroy(ins->processor);
+    }
+
     flb_free(ins);
 
     return 0;
@@ -580,6 +603,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     }
     instance->config = config;
     instance->log_level = -1;
+    instance->log_suppress_interval = -1;
     instance->test_mode = FLB_FALSE;
     instance->is_threaded = FLB_FALSE;
     instance->tp_workers = plugin->workers;
@@ -692,8 +716,12 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
 
     mk_list_add(&instance->_head, &config->outputs);
 
+    /* processor instance */
+    instance->processor = flb_processor_create(config, instance->name, instance, FLB_PLUGIN_OUTPUT);
+
     /* Tests */
     instance->test_formatter.callback = plugin->test_formatter.callback;
+
 
     return instance;
 }
@@ -750,6 +778,14 @@ int flb_output_set_property(struct flb_output_instance *ins,
             return -1;
         }
         ins->log_level = ret;
+    }
+    else if (prop_key_check("log_suppress_interval", k, len) == 0 && tmp) {
+        ret = flb_utils_time_to_seconds(tmp);
+        flb_sds_destroy(tmp);
+        if (ret == -1) {
+            return -1;
+        }
+        ins->log_suppress_interval = ret;
     }
     else if (prop_key_check("host", k, len) == 0) {
         ins->host.name = tmp;
@@ -966,6 +1002,74 @@ void *flb_output_get_cmt_instance(struct flb_output_instance *ins)
 }
 #endif
 
+int flb_output_net_property_check(struct flb_output_instance *ins,
+                                  struct flb_config *config)
+{
+    int ret = 0;
+
+    /* Get Upstream net_setup configmap */
+    ins->net_config_map = flb_upstream_get_config_map(config);
+    if (!ins->net_config_map) {
+        flb_output_instance_destroy(ins);
+        return -1;
+    }
+
+    /*
+     * Validate 'net.*' properties: if the plugin use the Upstream interface,
+     * it might receive some networking settings.
+     */
+    if (mk_list_size(&ins->net_properties) > 0) {
+        ret = flb_config_map_properties_check(ins->p->name,
+                                              &ins->net_properties,
+                                              ins->net_config_map);
+        if (ret == -1) {
+            if (config->program_name) {
+                flb_helper("try the command: %s -o %s -h\n",
+                           config->program_name, ins->p->name);
+            }
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+int flb_output_plugin_property_check(struct flb_output_instance *ins,
+                                     struct flb_config *config)
+{
+    int ret = 0;
+    struct mk_list *config_map;
+    struct flb_output_plugin *p = ins->p;
+
+    if (p->config_map) {
+        /*
+         * Create a dynamic version of the configmap that will be used by the specific
+         * instance in question.
+         */
+        config_map = flb_config_map_create(config, p->config_map);
+        if (!config_map) {
+            flb_error("[output] error loading config map for '%s' plugin",
+                      p->name);
+            flb_output_instance_destroy(ins);
+            return -1;
+        }
+        ins->config_map = config_map;
+
+        /* Validate incoming properties against config map */
+        ret = flb_config_map_properties_check(ins->p->name,
+                                              &ins->properties, ins->config_map);
+        if (ret == -1) {
+            if (config->program_name) {
+                flb_helper("try the command: %s -o %s -h\n",
+                           config->program_name, ins->p->name);
+            }
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 /* Trigger the output plugins setup callbacks to prepare them. */
 int flb_output_init_all(struct flb_config *config)
 {
@@ -975,7 +1079,6 @@ int flb_output_init_all(struct flb_config *config)
 #endif
     struct mk_list *tmp;
     struct mk_list *head;
-    struct mk_list *config_map;
     struct flb_output_instance *ins;
     struct flb_output_plugin *p;
     uint64_t ts;
@@ -1148,39 +1251,7 @@ int flb_output_init_all(struct flb_config *config)
          * Before to call the initialization callback, make sure that the received
          * configuration parameters are valid if the plugin is registering a config map.
          */
-        if (p->config_map) {
-            /*
-             * Create a dynamic version of the configmap that will be used by the specific
-             * instance in question.
-             */
-            config_map = flb_config_map_create(config, p->config_map);
-            if (!config_map) {
-                flb_error("[output] error loading config map for '%s' plugin",
-                          p->name);
-                flb_output_instance_destroy(ins);
-                return -1;
-            }
-            ins->config_map = config_map;
-
-            /* Validate incoming properties against config map */
-            ret = flb_config_map_properties_check(ins->p->name,
-                                                  &ins->properties, ins->config_map);
-            if (ret == -1) {
-                if (config->program_name) {
-                    flb_helper("try the command: %s -o %s -h\n",
-                               config->program_name, ins->p->name);
-                }
-                flb_output_instance_destroy(ins);
-                return -1;
-            }
-        }
-
-        /* Init network defaults */
-        flb_net_setup_init(&ins->net_setup);
-
-        /* Get Upstream net_setup configmap */
-        ins->net_config_map = flb_upstream_get_config_map(config);
-        if (!ins->net_config_map) {
+        if (flb_output_plugin_property_check(ins, config) == -1) {
             flb_output_instance_destroy(ins);
             return -1;
         }
@@ -1204,22 +1275,13 @@ int flb_output_init_all(struct flb_config *config)
             m->value.val.boolean = FLB_FALSE;
         }
 #endif
-        /*
-         * Validate 'net.*' properties: if the plugin use the Upstream interface,
-         * it might receive some networking settings.
-         */
-        if (mk_list_size(&ins->net_properties) > 0) {
-            ret = flb_config_map_properties_check(ins->p->name,
-                                                  &ins->net_properties,
-                                                  ins->net_config_map);
-            if (ret == -1) {
-                if (config->program_name) {
-                    flb_helper("try the command: %s -o %s -h\n",
-                               config->program_name, ins->p->name);
-                }
-                flb_output_instance_destroy(ins);
-                return -1;
-            }
+
+        /* Init network defaults */
+        flb_net_setup_init(&ins->net_setup);
+
+        if (flb_output_net_property_check(ins, config) == -1) {
+            flb_output_instance_destroy(ins);
+            return -1;
         }
 
         /* Initialize plugin through it 'init callback' */
@@ -1299,6 +1361,10 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
     /* IPv6 */
     if (ins->host.ipv6 == FLB_TRUE) {
         flags |= FLB_IO_IPV6;
+    }
+        /* keepalive */
+    if (ins->net_setup.keepalive == FLB_TRUE) {
+        flags |= FLB_IO_TCP_KA;
     }
 
     /* Set flags */

@@ -56,8 +56,8 @@ endif()
 
 # CMetrics Version
 set(CMT_VERSION_MAJOR  0)
-set(CMT_VERSION_MINOR  5)
-set(CMT_VERSION_PATCH  8)
+set(CMT_VERSION_MINOR  6)
+set(CMT_VERSION_PATCH  1)
 set(CMT_VERSION_STR "${CMT_VERSION_MAJOR}.${CMT_VERSION_MINOR}.${CMT_VERSION_PATCH}")
 
 # Define __CMT_FILENAME__ consistently across Operating Systems

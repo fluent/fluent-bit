@@ -31,15 +31,16 @@
 
 /* The following metadata paths can be evaluated with flb_aws_imds_request
  * to retrieve specific metadata members */
-#define FLB_AWS_IMDS_INSTANCE_ID_PATH "/latest/meta-data/instance-id/"
-#define FLB_AWS_IMDS_AZ_PATH "/latest/meta-data/placement/availability-zone/"
+#define FLB_AWS_IMDS_INSTANCE_ID_PATH   "/latest/meta-data/instance-id/"
+#define FLB_AWS_IMDS_AZ_PATH            "/latest/meta-data/placement/availability-zone/"
 #define FLB_AWS_IMDS_INSTANCE_TYPE_PATH "/latest/meta-data/instance-type/"
-#define FLB_AWS_IMDS_PRIVATE_IP_PATH "/latest/meta-data/local-ipv4/"
+#define FLB_AWS_IMDS_PRIVATE_IP_PATH    "/latest/meta-data/local-ipv4/"
 #define FLB_AWS_IMDS_VPC_ID_PATH_PREFIX "/latest/meta-data/network/interfaces/macs/"
-#define FLB_AWS_IMDS_AMI_ID_PATH "/latest/meta-data/ami-id/"
-#define FLB_AWS_IMDS_ACCOUNT_ID_PATH "/latest/dynamic/instance-identity/document/"
-#define FLB_AWS_IMDS_HOSTNAME_PATH "/latest/meta-data/hostname/"
-#define FLB_AWS_IMDS_MAC_PATH "/latest/meta-data/mac/"
+#define FLB_AWS_IMDS_AMI_ID_PATH        "/latest/meta-data/ami-id/"
+#define FLB_AWS_IMDS_ACCOUNT_ID_PATH    "/latest/dynamic/instance-identity/document/"
+#define FLB_AWS_IMDS_HOSTNAME_PATH      "/latest/meta-data/hostname/"
+#define FLB_AWS_IMDS_MAC_PATH           "/latest/meta-data/mac/"
+#define FLB_AWS_IMDS_INSTANCE_TAG       "/latest/meta-data/tags/instance"
 
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_sds.h>

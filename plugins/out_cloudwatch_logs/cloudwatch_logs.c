@@ -240,7 +240,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     }
 
     ctx->client_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
-                                     FLB_TRUE,
+                                     ins->tls_verify,
                                      ins->tls_debug,
                                      ins->tls_vhost,
                                      ins->tls_ca_path,
@@ -258,7 +258,8 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
                                                            (char *) ctx->region,
                                                            (char *) ctx->sts_endpoint,
                                                            NULL,
-                                                           flb_aws_client_generator());
+                                                           flb_aws_client_generator(),
+                                                           ctx->profile);
     if (!ctx->aws_provider) {
         flb_plg_error(ctx->ins, "Failed to create AWS Credential Provider");
         goto error;
@@ -332,8 +333,8 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     ctx->cw_client->provider = ctx->aws_provider;
     ctx->cw_client->region = (char *) ctx->region;
     ctx->cw_client->service = "logs";
-    ctx->cw_client->port = 443;
-    ctx->cw_client->flags = 0;
+    ctx->cw_client->port = (ins->host.port != 0) ? ins->host.port : 443;
+    ctx->cw_client->flags = (ins->use_tls) ? FLB_IO_TLS : FLB_IO_TCP;
     ctx->cw_client->proxy = NULL;
     ctx->cw_client->static_headers = &content_type_header;
     ctx->cw_client->static_headers_len = 1;
@@ -346,7 +347,8 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     ctx->cw_client->retry_requests = ctx->retry_requests;
 
     struct flb_upstream *upstream = flb_upstream_create(config, ctx->endpoint,
-                                                        443, FLB_IO_TLS,
+                                                        ctx->cw_client->port,
+                                                        ctx->cw_client->flags,
                                                         ctx->client_tls);
     if (!upstream) {
         flb_plg_error(ctx->ins, "Connection initialization error");
@@ -655,6 +657,13 @@ static struct flb_config_map config_map[] = {
      "dimensions, put the values as a comma seperated string. If you want to put "
      "list of lists, use the list as semicolon seperated strings. If your value "
      "is 'd1,d2;d3', we will consider it as [[d1, d2],[d3]]."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "profile", NULL,
+     0, FLB_TRUE, offsetof(struct flb_cloudwatch, profile),
+     "AWS Profile name. AWS Profiles can be configured with AWS CLI and are usually stored in "
+     "$HOME/.aws/ directory."
     },
 
     /* EOF */

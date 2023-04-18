@@ -142,6 +142,10 @@ void flb_worker_destroy(struct flb_worker *worker)
         return;
     }
 
+    if (worker->log_cache) {
+        flb_log_cache_destroy(worker->log_cache);
+    }
+
     mk_list_del(&worker->_head);
     flb_free(worker);
 }

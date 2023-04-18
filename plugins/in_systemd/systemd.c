@@ -82,14 +82,12 @@ static int in_systemd_collect(struct flb_input_instance *ins,
     int rows = 0;
     time_t sec;
     long nsec;
-    uint8_t h;
     uint64_t usec;
     size_t length;
     size_t threshold;
     const char *sep;
     const char *key;
     const char *val;
-    char *tmp;
     char *buf = NULL;
 #ifdef FLB_HAVE_SQLDB
     char *cursor = NULL;
@@ -99,20 +97,14 @@ static int in_systemd_collect(struct flb_input_instance *ins,
     char last_tag[PATH_MAX];
     size_t tag_len;
     size_t last_tag_len = 0;
-    off_t off;
     const void *data;
     struct flb_systemd_config *ctx = in_context;
     struct flb_time tm;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
 
     /* Restricted by mem_buf_limit */
     if (flb_input_buf_paused(ins) == FLB_TRUE) {
         return FLB_SYSTEMD_BUSY;
     }
-
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     /*
      * if there are not pending records from a previous round, likely we got
@@ -187,35 +179,26 @@ static int in_systemd_collect(struct flb_input_instance *ins,
          * so a new msgpack buffer is required. We ingest the data and prepare
          * a new buffer.
          */
-        if (mp_sbuf.size > 0 &&
-            ((last_tag_len != tag_len) || (strncmp(last_tag, tag, tag_len) != 0))) {
+        if (ctx->log_encoder->output_length > 0 &&
+            ((last_tag_len != tag_len) ||
+             (strncmp(last_tag, tag, tag_len) != 0))) {
             flb_input_log_append(ctx->ins,
-                                       last_tag, last_tag_len,
-                                       mp_sbuf.data,
-                                       mp_sbuf.size);
-            msgpack_sbuffer_destroy(&mp_sbuf);
-            msgpack_sbuffer_init(&mp_sbuf);
+                                 last_tag, last_tag_len,
+                                 ctx->log_encoder->output_buffer,
+                                 ctx->log_encoder->output_length);
+
+            flb_log_event_encoder_reset(ctx->log_encoder);
 
             strncpy(last_tag, tag, tag_len);
             last_tag_len = tag_len;
         }
 
-        /* Prepare buffer and write map content */
-        msgpack_pack_array(&mp_pck, 2);
-        flb_time_append_to_msgpack(&tm, &mp_pck, 0);
 
-        /*
-         * Save the current size/position of the buffer since this is
-         * where the Map header will be stored.
-         */
-        off = mp_sbuf.size;
+        ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
 
-        /*
-         * Register the maximum fields allowed per entry in the map. With
-         * this approach we can ingest all the fields and then just adjust
-         * the map size if required.
-         */
-        msgpack_pack_map(&mp_pck, ctx->max_fields);
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_set_timestamp(ctx->log_encoder, &tm);
+        }
 
         /* Pack every field in the entry */
         entries = 0;
@@ -235,7 +218,11 @@ static int in_systemd_collect(struct flb_input_instance *ins,
             }
 
             len = (sep - key);
-            msgpack_pack_str(&mp_pck, len);
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_append_body_string_length(
+                        ctx->log_encoder, len);
+            }
 
             if (ctx->lowercase == FLB_TRUE) {
                 /*
@@ -252,60 +239,53 @@ static int in_systemd_collect(struct flb_input_instance *ins,
                     buf[i] = tolower(key[i]);
                 }
 
-                msgpack_pack_str_body(&mp_pck, buf, len);
+                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                    ret = flb_log_event_encoder_append_body_string_body(
+                            ctx->log_encoder, buf, len);
+                }
             }
             else {
-                msgpack_pack_str_body(&mp_pck, key, len);
+                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                    ret = flb_log_event_encoder_append_body_string_body(
+                            ctx->log_encoder, (char *) key, len);
+                }
             }
 
             val = sep + 1;
             len = length - (sep - key) - 1;
-            msgpack_pack_str(&mp_pck, len);
-            msgpack_pack_str_body(&mp_pck, val, len);
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_append_body_string(
+                        ctx->log_encoder, (char *) val, len);
+            }
 
             entries++;
         }
         rows++;
-        if (entries == ctx->max_fields) {
-            flb_plg_debug(ctx->ins,
-                          "max number of fields is reached: %i; all other "
-                          "fields are discarded", ctx->max_fields);
-        }
+
         if (skip_entries > 0) {
             flb_plg_error(ctx->ins, "Skip %d broken entries", skip_entries);
         }
 
-        /*
-         * The fields were packed, now we need to adjust the msgpack map size
-         * to set the proper number of fields appended to the record.
-         */
-        tmp = mp_sbuf.data + off;
-        h = tmp[0];
-        if (h >> 4 == 0x8) {
-            *tmp = (uint8_t) 0x8 << 4 | ((uint8_t) entries);
-        }
-        else if (h == 0xde) {
-            tmp++;
-            pack_uint16(tmp, entries);
-        }
-        else if (h == 0xdf) {
-            tmp++;
-            pack_uint32(tmp, entries);
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_commit_record(ctx->log_encoder);
         }
 
         /*
          * Some journals can have too much data, pause if we have processed
          * more than 1MB. Journal will resume later.
          */
-        if (mp_sbuf.size > 1024000) {
+        if (ctx->log_encoder->output_length > 1024000) {
             flb_input_log_append(ctx->ins,
-                                       tag, tag_len,
-                                       mp_sbuf.data,
-                                       mp_sbuf.size);
-            msgpack_sbuffer_destroy(&mp_sbuf);
-            msgpack_sbuffer_init(&mp_sbuf);
+                                 tag, tag_len,
+                                 ctx->log_encoder->output_buffer,
+                                 ctx->log_encoder->output_length);
+
+            flb_log_event_encoder_reset(ctx->log_encoder);
+
             strncpy(last_tag, tag, tag_len);
             last_tag_len = tag_len;
+
             break;
         }
 
@@ -328,13 +308,14 @@ static int in_systemd_collect(struct flb_input_instance *ins,
 #endif
 
     /* Write any pending data into the buffer */
-    if (mp_sbuf.size > 0) {
+    if (ctx->log_encoder->output_length > 0) {
         flb_input_log_append(ctx->ins,
-                                   tag, tag_len,
-                                   mp_sbuf.data,
-                                   mp_sbuf.size);
+                             tag, tag_len,
+                             ctx->log_encoder->output_buffer,
+                             ctx->log_encoder->output_length);
+
+        flb_log_event_encoder_reset(ctx->log_encoder);
     }
-    msgpack_sbuffer_destroy(&mp_sbuf);
 
     /* the journal is empty, no more records */
     if (ret_j == 0) {

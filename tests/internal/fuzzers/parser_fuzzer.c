@@ -42,6 +42,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     int time_keep = 0;
     int types_len = 0;
 
+    /* Set fuzzer-malloc chance of failure */
+    flb_malloc_mod = 25000;
     flb_malloc_p = 0;
 
     if (size < 100) {

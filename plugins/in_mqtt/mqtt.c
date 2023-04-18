@@ -70,7 +70,7 @@ static int in_mqtt_init(struct flb_input_instance *in,
         return -1;
     }
 
-    ctx->evl = config->evl;
+    flb_input_downstream_set(ctx->downstream, ctx->ins);
 
     /* Collect upon data available on the standard input */
     ret = flb_input_set_collector_event(in,

@@ -61,24 +61,24 @@ extern __thread struct mk_server_timeout *mk_tls_server_timeout;
 #else /* Use Posix Thread Keys */
 
 /* mk_cache.c */
-pthread_key_t mk_tls_cache_iov_header;
-pthread_key_t mk_tls_cache_header_cl;
-pthread_key_t mk_tls_cache_header_lm;
-pthread_key_t mk_tls_cache_gmtime;
-pthread_key_t mk_tls_cache_gmtext;
+extern pthread_key_t mk_tls_cache_iov_header;
+extern pthread_key_t mk_tls_cache_header_cl;
+extern pthread_key_t mk_tls_cache_header_lm;
+extern pthread_key_t mk_tls_cache_gmtime;
+extern pthread_key_t mk_tls_cache_gmtext;
 
 /* mk_vhost.c */
-pthread_key_t mk_tls_vhost_fdt;
+extern pthread_key_t mk_tls_vhost_fdt;
 
 /* mk_scheduler.c */
-pthread_key_t mk_tls_sched_cs;
-pthread_key_t mk_tls_sched_cs_incomplete;
-pthread_key_t mk_tls_sched_worker_notif;
-pthread_key_t mk_tls_sched_worker_node;
+extern pthread_key_t mk_tls_sched_cs;
+extern pthread_key_t mk_tls_sched_cs_incomplete;
+extern pthread_key_t mk_tls_sched_worker_notif;
+extern pthread_key_t mk_tls_sched_worker_node;
 
 /* mk_server.c */
-pthread_key_t mk_tls_server_listen;
-pthread_key_t mk_tls_server_timeout;
+extern pthread_key_t mk_tls_server_listen;
+extern pthread_key_t mk_tls_server_timeout;
 
 #define MK_TLS_SET(key, val)      pthread_setspecific(key, (void *) val)
 #define MK_TLS_GET(key)           pthread_getspecific(key)

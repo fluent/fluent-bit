@@ -72,6 +72,17 @@ struct flb_in_de_config *de_config_init(struct flb_input_instance *ins,
         }
     }
 
+    ret = flb_log_event_encoder_init(&ctx->log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins, "error initializing event encoder : %d", ret);
+
+        de_config_destroy(ctx);
+
+        ctx = NULL;
+    }
+
     return ctx;
 }
 
@@ -87,6 +98,8 @@ int de_config_destroy(struct flb_in_de_config *ctx)
     if (ctx->buf) {
         flb_free(ctx->buf);
     }
+
+    flb_log_event_encoder_destroy(&ctx->log_encoder);
 
     flb_free(ctx);
     return 0;

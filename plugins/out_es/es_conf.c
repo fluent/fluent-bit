@@ -334,6 +334,18 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     }
 
 #ifdef FLB_HAVE_AWS
+    /* AWS Auth Unsigned Headers */
+    ctx->aws_unsigned_headers = flb_malloc(sizeof(struct mk_list));
+    if (ret != 0) {
+        flb_es_conf_destroy(ctx);
+    }
+    flb_slist_create(ctx->aws_unsigned_headers);
+    ret = flb_slist_add(ctx->aws_unsigned_headers, "Content-Length");
+    if (ret != 0) {
+        flb_es_conf_destroy(ctx);
+        return NULL;
+    }
+
     /* AWS Auth */
     ctx->has_aws_auth = FLB_FALSE;
     tmp = flb_output_get_property("aws_auth", ins);
@@ -376,7 +388,8 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                                                                    ctx->aws_region,
                                                                    ctx->aws_sts_endpoint,
                                                                    NULL,
-                                                                   flb_aws_client_generator());
+                                                                   flb_aws_client_generator(),
+                                                                   ctx->aws_profile);
             if (!ctx->aws_provider) {
                 flb_error("[out_es] Failed to create AWS Credential Provider");
                 flb_es_conf_destroy(ctx);
@@ -485,6 +498,11 @@ int flb_es_conf_destroy(struct flb_elasticsearch *ctx)
 
     if (ctx->aws_sts_tls) {
         flb_tls_destroy(ctx->aws_sts_tls);
+    }
+
+    if (ctx->aws_unsigned_headers) {
+        flb_slist_destroy(ctx->aws_unsigned_headers);
+        flb_free(ctx->aws_unsigned_headers);
     }
 #endif
 

@@ -32,9 +32,12 @@
 
 static int send_response(struct http_conn *conn, int http_status, char *message)
 {
-    size_t    sent;
-    int       len;
-    flb_sds_t out;
+    struct flb_http *context;
+    size_t           sent;
+    int              len;
+    flb_sds_t        out;
+
+    context = (struct flb_http *) conn->ctx;
 
     out = flb_sds_create_size(256);
     if (!out) {
@@ -52,22 +55,28 @@ static int send_response(struct http_conn *conn, int http_status, char *message)
         flb_sds_printf(&out,
                        "HTTP/1.1 201 Created \r\n"
                        "Server: Fluent Bit v%s\r\n"
+                       "%s"
                        "Content-Length: 0\r\n\r\n",
-                       FLB_VERSION_STR);
+                       FLB_VERSION_STR,
+                       context->success_headers_str);
     }
     else if (http_status == 200) {
         flb_sds_printf(&out,
                        "HTTP/1.1 200 OK\r\n"
                        "Server: Fluent Bit v%s\r\n"
+                       "%s"
                        "Content-Length: 0\r\n\r\n",
-                       FLB_VERSION_STR);
+                       FLB_VERSION_STR,
+                       context->success_headers_str);
     }
     else if (http_status == 204) {
         flb_sds_printf(&out,
                        "HTTP/1.1 204 No Content\r\n"
                        "Server: Fluent Bit v%s\r\n"
+                       "%s"
                        "Content-Length: 0\r\n\r\n",
-                       FLB_VERSION_STR);
+                       FLB_VERSION_STR,
+                       context->success_headers_str);
     }
     else if (http_status == 400) {
         flb_sds_printf(&out,
@@ -157,9 +166,8 @@ static flb_sds_t tag_key(struct flb_http *ctx, msgpack_object *map)
 
 int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
 {
+    int ret;
     size_t off = 0;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
     msgpack_unpacked result;
     struct flb_time tm;
     int i = 0;
@@ -172,70 +180,121 @@ int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, buf, size, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type == MSGPACK_OBJECT_MAP) {
-            msgpack_sbuffer_init(&mp_sbuf);
-            msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
             tag_from_record = NULL;
             if (ctx->tag_key) {
                 obj = &result.data;
                 tag_from_record = tag_key(ctx, obj);
             }
 
-            /* Pack record with timestamp */
-            msgpack_pack_array(&mp_pck, 2);
-            flb_time_append_to_msgpack(&tm, &mp_pck, 0);
-            msgpack_pack_object(&mp_pck, result.data);
+            ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
 
-            /* Ingest record into the engine */
-            if (tag_from_record) {
-                flb_input_log_append(ctx->ins, tag_from_record, flb_sds_len(tag_from_record),
-                                        mp_sbuf.data, mp_sbuf.size);
-                flb_sds_destroy(tag_from_record);
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_set_timestamp(
+                        &ctx->log_encoder,
+                        &tm);
             }
-            else if (tag) {
-                flb_input_log_append(ctx->ins, tag, flb_sds_len(tag),
-                                        mp_sbuf.data, mp_sbuf.size);
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_set_body_from_msgpack_object(
+                        &ctx->log_encoder,
+                        &result.data);
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                if (tag_from_record) {
+                    flb_input_log_append(ctx->ins,
+                                         tag_from_record,
+                                         flb_sds_len(tag_from_record),
+                                         ctx->log_encoder.output_buffer,
+                                         ctx->log_encoder.output_length);
+
+                    flb_sds_destroy(tag_from_record);
+                }
+                else if (tag) {
+                    flb_input_log_append(ctx->ins, tag, flb_sds_len(tag),
+                                         ctx->log_encoder.output_buffer,
+                                         ctx->log_encoder.output_length);
+                }
+                else {
+                    /* use default plugin Tag (it internal name, e.g: http.0 */
+                    flb_input_log_append(ctx->ins, NULL, 0,
+                                         ctx->log_encoder.output_buffer,
+                                         ctx->log_encoder.output_length);
+                }
             }
             else {
-                /* use default plugin Tag (it internal name, e.g: http.0 */
-                flb_input_log_append(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+                flb_plg_error(ctx->ins, "Error encoding record : %d", ret);
             }
-            msgpack_sbuffer_destroy(&mp_sbuf);
+
+            flb_log_event_encoder_reset(&ctx->log_encoder);
         } 
         else if (result.data.type == MSGPACK_OBJECT_ARRAY) {
             obj = &result.data;
             for (i = 0; i < obj->via.array.size; i++)
             {
                 record = obj->via.array.ptr[i];
-                msgpack_sbuffer_init(&mp_sbuf);
-                msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
                 tag_from_record = NULL;
                 if (ctx->tag_key) {
                     tag_from_record = tag_key(ctx, &record);
                 }
 
-                /* Pack record with timestamp */
-                msgpack_pack_array(&mp_pck, 2);
-                flb_time_append_to_msgpack(&tm, &mp_pck, 0);
-                msgpack_pack_object(&mp_pck, record); 
+                ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
 
-                /* Ingest record into the engine */
-                if (tag_from_record) {
-                    flb_input_log_append(ctx->ins, tag_from_record, flb_sds_len(tag_from_record),
-                                            mp_sbuf.data, mp_sbuf.size);
-                    flb_sds_destroy(tag_from_record);
+                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                    ret = flb_log_event_encoder_set_timestamp(
+                            &ctx->log_encoder,
+                            &tm);
                 }
-                else if (tag) {
-                    flb_input_log_append(ctx->ins, tag, flb_sds_len(tag),
-                                               mp_sbuf.data, mp_sbuf.size);
+
+                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                    ret = flb_log_event_encoder_set_body_from_msgpack_object(
+                            &ctx->log_encoder,
+                            &record);
+                }
+
+                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                    ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+                }
+
+                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                    if (tag_from_record) {
+                        flb_input_log_append(ctx->ins,
+                                             tag_from_record,
+                                             flb_sds_len(tag_from_record),
+                                             ctx->log_encoder.output_buffer,
+                                             ctx->log_encoder.output_length);
+
+                        flb_sds_destroy(tag_from_record);
+                    }
+                    else if (tag) {
+                        flb_input_log_append(ctx->ins, tag, flb_sds_len(tag),
+                                             ctx->log_encoder.output_buffer,
+                                             ctx->log_encoder.output_length);
+                    }
+                    else {
+                        /* use default plugin Tag (it internal name, e.g: http.0 */
+                        flb_input_log_append(ctx->ins, NULL, 0,
+                                             ctx->log_encoder.output_buffer,
+                                             ctx->log_encoder.output_length);
+                    }
                 }
                 else {
-                    /* use default plugin Tag (it internal name, e.g: http.0 */
-                    flb_input_log_append(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+                    flb_plg_error(ctx->ins, "Error encoding record : %d", ret);
                 }
 
-                msgpack_sbuffer_destroy(&mp_sbuf);
+                /* TODO : Optimize this
+                 *
+                 * This is wasteful, considering that we are emitting a series
+                 * of records we should start and commit each one and then
+                 * emit them all at once after the loop.
+                 */
+
+                flb_log_event_encoder_reset(&ctx->log_encoder);
             }
 
             break;
@@ -243,7 +302,9 @@ int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
         else {
             flb_plg_error(ctx->ins, "skip record from invalid type: %i",
                          result.data.type);
+
             msgpack_unpacked_destroy(&result);
+
             return -1;
         }
     }

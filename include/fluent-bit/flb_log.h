@@ -27,8 +27,10 @@
 #include <fluent-bit/flb_thread_storage.h>
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_sds.h>
 #include <inttypes.h>
 #include <errno.h>
+#include <stdarg.h>
 
 /* FIXME: this extern should be auto-populated from flb_thread_storage.h */
 extern FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
@@ -52,6 +54,9 @@ extern FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
 #define FLB_LOG_EVENT    MK_EVENT_NOTIFICATION
 #define FLB_LOG_MNG      1024
 
+#define FLB_LOG_CACHE_ENTRIES        10
+#define FLB_LOG_CACHE_TEXT_BUF_SIZE  1024
+
 /* Logging main context */
 struct flb_log {
     struct mk_event event;     /* worker event for manager */
@@ -67,6 +72,19 @@ struct flb_log {
     int pth_init;
     pthread_cond_t  pth_cond;
     pthread_mutex_t pth_mutex;
+};
+
+struct flb_log_cache_entry {
+    flb_sds_t buf;
+    uint64_t timestamp;
+    struct mk_list _head;
+};
+
+/* Structure to keep a reference of the last N number of entries */
+struct flb_log_cache {
+    int size;                       /* cache size       */
+    int timeout;                    /* cache timeout    */
+    struct mk_list entries;         /* list for entries */
 };
 
 /*
@@ -103,8 +121,46 @@ int flb_log_get_level_str(char *str);
 int flb_log_set_file(struct flb_config *config, char *out);
 
 int flb_log_destroy(struct flb_log *log, struct flb_config *config);
-void flb_log_print(int type, const char *file, int line, const char *fmt, ...);
-int flb_log_is_truncated(int type, const char *file, int line, const char *fmt, ...);
+void flb_log_print(int type, const char *file, int line, const char *fmt, ...) FLB_FORMAT_PRINTF(4, 5);
+int flb_log_is_truncated(int type, const char *file, int line, const char *fmt, ...) FLB_FORMAT_PRINTF(4, 5);
+
+struct flb_log_cache *flb_log_cache_create(int timeout_seconds, int size);
+void flb_log_cache_destroy(struct flb_log_cache *cache);
+struct flb_log_cache_entry *flb_log_cache_exists(struct flb_log_cache *cache, char *msg_buf, size_t msg_size);
+struct flb_log_cache_entry *flb_log_cache_get_target(struct flb_log_cache *cache, uint64_t ts);
+
+int flb_log_cache_check_suppress(struct flb_log_cache *cache, char *msg_buf, size_t msg_size);
+
+
+static inline int flb_log_suppress_check(int log_suppress_interval, const char *fmt, ...)
+{
+    int ret;
+    size_t size;
+    va_list args;
+    char buf[4096];
+    struct flb_worker *w;
+
+    if (log_suppress_interval <= 0) {
+        return FLB_FALSE;
+    }
+
+    va_start(args, fmt);
+    size = vsnprintf(buf, sizeof(buf) - 1, fmt, args);
+    va_end(args);
+
+    if (size == -1) {
+        return FLB_FALSE;
+    }
+
+    w = flb_worker_get();
+    if (!w) {
+        return FLB_FALSE;
+    }
+
+    ret = flb_log_cache_check_suppress(w->log_cache, buf, size);
+    return ret;
+}
+
 
 /* Logging macros */
 #define flb_helper(fmt, ...)                                    \

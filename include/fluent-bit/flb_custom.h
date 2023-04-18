@@ -85,6 +85,8 @@ struct flb_custom_instance *flb_custom_new(struct flb_config *config,
                                            const char *custom, void *data);
 void flb_custom_exit(struct flb_config *config);
 const char *flb_custom_name(struct flb_custom_instance *ins);
+int flb_custom_plugin_property_check(struct flb_custom_instance *ins,
+                                    struct flb_config *config);
 int flb_custom_init_all(struct flb_config *config);
 void flb_custom_set_context(struct flb_custom_instance *ins, void *context);
 void flb_custom_instance_destroy(struct flb_custom_instance *ins);

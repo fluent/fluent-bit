@@ -51,9 +51,19 @@ static int in_winevtlog_init(struct flb_input_instance *in,
     }
     ctx->ins = in;
 
+    ctx->log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ctx->log_encoder == NULL) {
+        flb_plg_error(in, "could not initialize event encoder");
+        flb_free(ctx);
+
+        return NULL;
+    }
+
     /* Load the config map */
     ret = flb_input_config_map_set(in, (void *) ctx);
     if (ret == -1) {
+        flb_log_event_encoder_destroy(ctx->log_encoder);
         flb_free(ctx);
         return -1;
     }
@@ -71,6 +81,7 @@ static int in_winevtlog_init(struct flb_input_instance *in,
     ctx->active_channel = winevtlog_open_all(tmp, ctx->read_existing_events, ctx->ignore_missing_channels);
     if (!ctx->active_channel) {
         flb_plg_error(ctx->ins, "failed to open channels");
+        flb_log_event_encoder_destroy(ctx->log_encoder);
         flb_free(ctx);
         return -1;
     }
@@ -82,6 +93,7 @@ static int in_winevtlog_init(struct flb_input_instance *in,
         if (!ctx->db) {
             flb_plg_error(ctx->ins, "could not open/create database");
             winevtlog_close_all(ctx->active_channel);
+            flb_log_event_encoder_destroy(ctx->log_encoder);
             flb_free(ctx);
             return -1;
         }
@@ -91,6 +103,7 @@ static int in_winevtlog_init(struct flb_input_instance *in,
             flb_plg_error(ctx->ins, "could not create 'channels' table");
             flb_sqldb_close(ctx->db);
             winevtlog_close_all(ctx->active_channel);
+            flb_log_event_encoder_destroy(ctx->log_encoder);
             flb_free(ctx);
             return -1;
         }
@@ -125,13 +138,8 @@ static int in_winevtlog_read_channel(struct flb_input_instance *ins,
                                      struct winevtlog_channel *ch)
 {
     unsigned int read;
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
 
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
-    if (winevtlog_read(ch, &mp_pck, ctx, &read)) {
+    if (winevtlog_read(ch, ctx, &read)) {
         flb_plg_error(ctx->ins, "failed to read '%s'", ch->name);
         return -1;
     }
@@ -147,9 +155,14 @@ static int in_winevtlog_read_channel(struct flb_input_instance *ins,
         winevtlog_sqlite_save(ch, ctx->db);
     }
 
-    flb_input_log_append(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    if (ctx->log_encoder->output_length > 0) {
+        flb_input_log_append(ctx->ins, NULL, 0,
+                             ctx->log_encoder->output_buffer,
+                             ctx->log_encoder->output_length);
+    }
 
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    flb_log_event_encoder_reset(ctx->log_encoder);
+
     return 0;
 }
 

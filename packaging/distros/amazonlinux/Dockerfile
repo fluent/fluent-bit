@@ -18,7 +18,7 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
     postgresql-devel postgresql-libs \
-    cmake3 libyaml-devel && \
+    cmake3 libyaml-devel zlib-devel && \
     yum clean all
 
 # amazonlinux/2.arm64v8 base image
@@ -32,10 +32,10 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
     postgresql-devel postgresql-libs \
-    cmake3 libyaml-devel && \
+    cmake3 libyaml-devel zlib-devel && \
     yum clean all
 
-FROM amazonlinux:2022 as amazonlinux-2022-base
+FROM amazonlinux:2023 as amazonlinux-2023-base
 
 # hadolint ignore=DL3033
 RUN yum -y update && \
@@ -43,11 +43,11 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs \
-    cmake3 libyaml-devel && \
+    cmake3 libyaml-devel zlib-devel && \
     yum clean all
 
 # hadolint ignore=DL3029
-FROM --platform=arm64 amazonlinux:2022 as amazonlinux-2022.arm64v8-base
+FROM --platform=arm64 amazonlinux:2023 as amazonlinux-2023.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
@@ -57,7 +57,7 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs \
-    cmake3 libyaml-devel && \
+    cmake3 libyaml-devel zlib-devel && \
     yum clean all
 
 # Common build for all distributions now

@@ -28,13 +28,15 @@ struct s3_file {
     int failures;                    /* delivery failures */
     size_t size;                     /* file size */
     time_t create_time;              /* creation time */
+    time_t first_log_time;           /* first log time */
     flb_sds_t file_path;             /* file path */
     struct flb_fstore_file *fsf;     /* reference to parent flb_fstore_file */
 };
 
 int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
                         const char *tag, int tag_len,
-                        char *data, size_t bytes);
+                        char *data, size_t bytes,
+                        time_t file_first_log_time);
 
 int s3_store_init(struct flb_s3 *ctx);
 int s3_store_exit(struct flb_s3 *ctx);

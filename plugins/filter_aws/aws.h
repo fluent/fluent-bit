@@ -23,30 +23,6 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_filter.h>
 
-#define FLB_FILTER_AWS_IMDS_V2_TOKEN_TTL_HEADER           "X-aws-ec2-metadata-token-ttl-seconds"
-#define FLB_FILTER_AWS_IMDS_V2_TOKEN_TTL_HEADER_LEN       36
-
-#define FLB_FILTER_AWS_IMDS_V2_TOKEN_TTL_HEADER_VAL       "21600"
-#define FLB_FILTER_AWS_IMDS_V2_TOKEN_TTL_HEADER_VAL_LEN   5
-
-#define FLB_FILTER_AWS_IMDS_V2_TOKEN_TTL                  21600
-
-#define FLB_FILTER_AWS_IMDS_HOST                          "169.254.169.254"
-#define FLB_FILTER_AWS_IMDS_V2_TOKEN_PATH                 "/latest/api/token"
-
-#define FLB_FILTER_AWS_IMDS_INSTANCE_ID_PATH              "/latest/meta-data/instance-id/"
-#define FLB_FILTER_AWS_IMDS_AZ_PATH                       "/latest/meta-data/placement/availability-zone/"
-#define FLB_FILTER_AWS_IMDS_INSTANCE_TYPE_PATH            "/latest/meta-data/instance-type/"
-#define FLB_FILTER_AWS_IMDS_PRIVATE_IP_PATH               "/latest/meta-data/local-ipv4/"
-#define FLB_FILTER_AWS_IMDS_VPC_ID_PATH_PREFIX            "/latest/meta-data/network/interfaces/macs/"
-#define FLB_FILTER_AWS_IMDS_AMI_ID_PATH                   "/latest/meta-data/ami-id/"
-#define FLB_FILTER_AWS_IMDS_ACCOUNT_ID_PATH               "/latest/dynamic/instance-identity/document/"
-#define FLB_FILTER_AWS_IMDS_HOSTNAME_PATH                 "/latest/meta-data/hostname/"
-#define FLB_FILTER_AWS_IMDS_MAC_PATH                      "/latest/meta-data/mac/"
-
-#define FLB_FILTER_AWS_IMDS_V2_TOKEN_HEADER               "X-aws-ec2-metadata-token"
-#define FLB_FILTER_AWS_IMDS_V2_TOKEN_HEADER_LEN           24
-
 #define FLB_FILTER_AWS_AVAILABILITY_ZONE_KEY              "az"
 #define FLB_FILTER_AWS_AVAILABILITY_ZONE_KEY_LEN          2
 #define FLB_FILTER_AWS_INSTANCE_ID_KEY                    "ec2_instance_id"
@@ -65,8 +41,11 @@
 #define FLB_FILTER_AWS_HOSTNAME_KEY_LEN                   8
 
 struct flb_filter_aws {
+    struct flb_filter_aws_init_options *options;
+
     /* upstream connection to ec2 IMDS */
-    struct flb_upstream *ec2_upstream;
+    struct flb_aws_client *aws_ec2_filter_client;
+    struct flb_aws_imds *client_imds;
 
     /*
      * IMDSv2 requires a token which must be present in metadata requests
@@ -106,10 +85,32 @@ struct flb_filter_aws {
     size_t account_id_len;
     int account_id_include;
 
-
     flb_sds_t hostname;
     size_t hostname_len;
     int hostname_include;
+
+    /* tags_* fields are related to exposing EC2 tags in log labels
+     * tags_enabled defines if EC2 tags functionality is enabled */
+    int tags_enabled;
+
+    /* tags_fetched defines if tag keys and values were fetched successfully
+     * and might be used to inject into msgpack */
+    int tags_fetched;
+    /* tags_count defines how many tags are available to use
+     * it could be 0 if there are no tags defined or if metadata server has
+     * disabled exposing tags functionality */
+    size_t tags_count;
+    /* tag_keys is an array of tag key strings */
+    flb_sds_t *tag_keys;
+    /* tag_keys_len is an array of lengths corresponding to tag_keys items */
+    size_t *tag_keys_len;
+    /* tag_values is an array of tag values strings */
+    flb_sds_t *tag_values;
+    /* tag_values_len is an array of lengths related to tag_values items */
+    size_t *tag_values_len;
+    /* tag_is_enabled is an array of bools which define if corresponding tag should be injected */
+    /* e.g.: if tag_is_enabled[0] = FALSE, then filter aws should not inject first tag */
+    int *tag_is_enabled;
 
     /* number of new keys added by this plugin */
     int new_keys;
@@ -121,6 +122,10 @@ struct flb_filter_aws {
 
     /* Filter plugin instance reference */
     struct flb_filter_instance *ins;
+};
+
+struct flb_filter_aws_init_options {
+    struct flb_aws_client_generator *client_generator;
 };
 
 #endif

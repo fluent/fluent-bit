@@ -13,8 +13,8 @@
 
 # Build System & Portability
 # --------------------------
-/CMakeLists.txt          @fujimotos @niedbalski
-/cmake/                  @fujimotos @niedbalski
+/CMakeLists.txt          @fujimotos @niedbalski @patrick-stephens
+/cmake/                  @fujimotos @niedbalski @patrick-stephens
 
 # CI 
 # -------------------------
@@ -34,6 +34,11 @@
 # ------------
 /src/aws                 @pettitwesley
 
+# AWS header files
+/include/aws                   @pettitwesley
+/include/flb_aws_credentials.h @pettitwesley
+/include/flb_aws_util.h        @pettitwesley
+
 # Core: Stream Processor
 # ----------------
 /src/stream_processor/   @koleini
@@ -51,6 +56,7 @@
 # Filter Plugins
 # --------------
 /plugins/filter_aws      @pettitwesley
+/plugins/filter_ecs      @pettitwesley
 
 # Output Plugins
 # --------------
@@ -62,3 +68,18 @@
 /plugins/out_cloudwatch_logs  @pettitwesley
 /plugins/out_kinesis_firehose @pettitwesley
 /plugins/out_kinesis_streams  @pettitwesley
+/plugins/out_opensearch       @pettitwesley @edsiper
+
+# AWS test code
+/tests/internal/aws             @pettitwesley
+/tests/internal/aws_*           @pettitwesley
+/tests/runtime/filter_ecs.c     @pettitwesley
+/tests/runtime/filter_aws.c     @pettitwesley
+/tests/runtime/out_cloudwatch.c @pettitwesley
+/tests/runtime/out_firehose.c   @pettitwesley
+/tests/runtime/out_kinesis.c    @pettitwesley
+/tests/runtime/out_opensearch.c @pettitwesley @edsiper
+/tests/runtime/out_s3.c         @pettitwesley
+
+# Devcontainer
+/.devcontainer                  @patrick-stephens @niedbalski @edsiper

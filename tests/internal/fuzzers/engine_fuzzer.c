@@ -15,9 +15,12 @@ struct flb_parser *parser;
 int filter_ffd;
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-    if (size < 100) { 
+    if (size < 100) {
         return 0;
     }
+    /* Set fuzzer-malloc chance of failure */
+    flb_malloc_p = 0;
+    flb_malloc_mod = 25000;
 
     uint8_t ud = data[0];
     MOVE_INPUT(1);
@@ -85,7 +88,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                             flb_input_chunk_flush(ic, &flushed);
                         }
                     }
-                } 
+                }
             }
             break;
         case 6:
@@ -122,9 +125,12 @@ struct flb_lib_out_cb cb;
 
 
 int LLVMFuzzerInitialize(int *argc, char ***argv) {
+    /* Set fuzzer-malloc chance of failure */
     flb_malloc_p = 0;
+    flb_malloc_mod = 25000;
+
     ctx = flb_create();
-    flb_service_set(ctx, "Flush", "0", "Grace", 
+    flb_service_set(ctx, "Flush", "0", "Grace",
                     "0", "Log_Level", "debug", NULL);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);

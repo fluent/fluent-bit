@@ -68,6 +68,7 @@ struct flb_opensearch {
     int has_aws_auth;
     char *aws_region;
     char *aws_sts_endpoint;
+    char *aws_profile;
     struct flb_aws_provider *aws_provider;
     struct flb_aws_provider *base_aws_provider;
     /* tls instances can't be re-used; aws provider requires a separate one */
@@ -75,6 +76,8 @@ struct flb_opensearch {
     /* one for the standard chain provider, one for sts assume role */
     struct flb_tls *aws_sts_tls;
     char *aws_session_name;
+    char *aws_service_name;
+    struct mk_list *aws_unsigned_headers;
 #endif
 
     /* HTTP Client Setup */
@@ -98,6 +101,7 @@ struct flb_opensearch {
 
     /* prefix */
     flb_sds_t logstash_prefix;
+    flb_sds_t logstash_prefix_separator;
 
     /* prefix key */
     flb_sds_t logstash_prefix_key;

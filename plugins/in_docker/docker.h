@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 
 #define CURRENT_DIR           "."
@@ -31,11 +32,11 @@
 #define OS_DIR_TYPE           4
 #define DOCKER_LONG_ID_LEN    64
 #define DOCKER_SHORT_ID_LEN   12
-#define DOCKER_CGROUP_MEM_DIR "/sys/fs/cgroup/memory/docker"
-#define DOCKER_CGROUP_CPU_DIR "/sys/fs/cgroup/cpu/docker"
-#define DOCKER_MEM_LIMIT_FILE "memory.limit_in_bytes"
-#define DOCKER_MEM_USAGE_FILE "memory.usage_in_bytes"
-#define DOCKER_CPU_USAGE_FILE "cpuacct.usage"
+#define DOCKER_CGROUP_V1_MEM_DIR "/sys/fs/cgroup/memory/docker"
+#define DOCKER_CGROUP_V1_CPU_DIR "/sys/fs/cgroup/cpu/docker"
+#define DOCKER_CGROUP_V1_MEM_LIMIT_FILE "memory.limit_in_bytes"
+#define DOCKER_CGROUP_V1_MEM_USAGE_FILE "memory.usage_in_bytes"
+#define DOCKER_CGROUP_V1_CPU_USAGE_FILE "cpuacct.usage"
 #define DOCKER_LIB_ROOT       "/var/lib/docker/containers"
 #define DOCKER_CONFIG_JSON    "config.v2.json"
 #define DOCKER_NAME_ARG       "\"Name\""
@@ -64,6 +65,17 @@ typedef struct docker_snapshot {
     struct mk_list _head;
 } docker_snapshot;
 
+struct flb_docker;
+
+struct cgroup_api {
+    int cgroup_version;
+    struct mk_list* (*get_active_docker_ids) ();
+    char*           (*get_container_name) (struct flb_docker *, char *);
+    cpu_snapshot*   (*get_cpu_snapshot)   (struct flb_docker *, char *);
+    mem_snapshot*   (*get_mem_snapshot)   (struct flb_docker *, char *);
+};
+int in_docker_set_cgroup_api_v1(struct cgroup_api *api);
+
 /* Docker Input configuration & context */
 struct flb_docker {
     int coll_fd;                /* collector id/fd */
@@ -71,10 +83,12 @@ struct flb_docker {
     int interval_nsec;          /* interval collection time (Nanosecond) */
     struct mk_list *whitelist;  /* dockers to monitor */
     struct mk_list *blacklist;  /* dockers to exclude */
+    struct cgroup_api cgroup_api;
     struct flb_input_instance *ins;
+    struct flb_log_event_encoder log_encoder;
 };
 
 int in_docker_collect(struct flb_input_instance *i_ins,
                       struct flb_config *config, void *in_context);
-
+docker_info *in_docker_init_docker_info(char *id);
 #endif

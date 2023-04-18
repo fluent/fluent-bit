@@ -69,12 +69,17 @@ extern struct flb_aws_error_reporter *error_reporter;
 
 #include <ctraces/ctr_version.h>
 
+static pthread_once_t local_thread_engine_evl_init = PTHREAD_ONCE_INIT;
 FLB_TLS_DEFINE(struct mk_event_loop, flb_engine_evl);
 
+static void flb_engine_evl_init_private()
+{
+    FLB_TLS_INIT(flb_engine_evl);
+}
 
 void flb_engine_evl_init()
 {
-    FLB_TLS_INIT(flb_engine_evl);
+    pthread_once(&local_thread_engine_evl_init, flb_engine_evl_init_private);
 }
 
 struct mk_event_loop *flb_engine_evl_get()
@@ -312,6 +317,7 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
                      flb_input_name(task->i_ins),
                      flb_output_name(ins), out_id);
         }
+
         flb_task_retry_clean(task, ins);
         flb_task_users_dec(task, FLB_TRUE);
     }
@@ -331,7 +337,10 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
                      task_id,
                      flb_input_name(task->i_ins),
                      flb_output_name(ins), out_id);
+
+            flb_task_retry_clean(task, ins);
             flb_task_users_dec(task, FLB_TRUE);
+
             return 0;
         }
 
@@ -363,7 +372,9 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
                       flb_input_name(task->i_ins),
                       flb_output_name(ins));
 
+            flb_task_retry_clean(task, ins);
             flb_task_users_dec(task, FLB_TRUE);
+
             return 0;
         }
 
@@ -422,6 +433,8 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
         flb_metrics_sum(FLB_METRIC_OUT_ERROR, 1, ins->metrics);
         flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, task->records, ins->metrics);
 #endif
+
+        flb_task_retry_clean(task, ins);
         flb_task_users_dec(task, FLB_TRUE);
     }
 

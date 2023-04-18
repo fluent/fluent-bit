@@ -20,6 +20,8 @@
 #ifndef FLB_IN_MQTT_H
 #define FLB_IN_MQTT_H
 
+#include <fluent-bit/flb_log_event_encoder.h>
+
 #define MQTT_MSGP_BUF_SIZE 8192
 
 struct flb_in_mqtt_config {
@@ -29,9 +31,9 @@ struct flb_in_mqtt_config {
     int msgp_len;                      /* msgpack data length         */
     char msgp[MQTT_MSGP_BUF_SIZE];     /* msgpack static buffer       */
     struct flb_input_instance *ins;    /* plugin input instance       */
-    struct mk_event_loop *evl;         /* Event loop file descriptor  */
     struct flb_downstream *downstream; /* Client manager              */
     struct mk_list conns;              /* Active connections          */
+    struct flb_log_event_encoder *log_encoder;
 };
 
 int in_mqtt_collect(struct flb_input_instance *i_ins,

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Usage:
@@ -10,7 +10,7 @@ import os
 import re
 import datetime
 
-onig_ver = "6.2.1"
+onig_ver = "6.2.2"
 ucddir = "."
 
 def print_list(arr, title):

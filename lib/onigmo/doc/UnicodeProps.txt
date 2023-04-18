@@ -1,4 +1,4 @@
-Onigmo (Oniguruma-mod) Unicode Properties  Version 6.2.1    2019/07/28
+Onigmo (Oniguruma-mod) Unicode Properties  Version 6.2.2    2022/09/20
 
 * POSIX brackets
     Alpha
@@ -85,13 +85,16 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.2.1    2019/07/28
     Chakma
     Cham
     Cherokee
+    Chorasmian
     Common
     Coptic
     Cuneiform
     Cypriot
+    Cypro_Minoan
     Cyrillic
     Deseret
     Devanagari
+    Dives_Akuru
     Dogra
     Duployan
     Egyptian_Hieroglyphs
@@ -121,8 +124,10 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.2.1    2019/07/28
     Kaithi
     Kannada
     Katakana
+    Kawi
     Kayah_Li
     Kharoshthi
+    Khitan_Small_Script
     Khmer
     Khojki
     Khudawadi
@@ -154,6 +159,7 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.2.1    2019/07/28
     Multani
     Myanmar
     Nabataean
+    Nag_Mundari
     Nandinagari
     New_Tai_Lue
     Newa
@@ -170,6 +176,7 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.2.1    2019/07/28
     Old_Sogdian
     Old_South_Arabian
     Old_Turkic
+    Old_Uyghur
     Oriya
     Osage
     Osmanya
@@ -201,6 +208,7 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.2.1    2019/07/28
     Tai_Viet
     Takri
     Tamil
+    Tangsa
     Tangut
     Telugu
     Thaana
@@ -208,11 +216,14 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.2.1    2019/07/28
     Tibetan
     Tifinagh
     Tirhuta
+    Toto
     Ugaritic
     Unknown
     Vai
+    Vithkuqi
     Wancho
     Warang_Citi
+    Yezidi
     Yi
     Zanabazar_Square
 
@@ -292,6 +303,10 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.2.1    2019/07/28
     DI
     Dep
     Dia
+    EBase
+    EComp
+    EMod
+    EPres
     Ext
     Gr_Base
     Gr_Ext
@@ -390,11 +405,14 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.2.1    2019/07/28
     Cans
     Cari
     Cher
+    Chrs
     Copt
     Qaac
+    Cpmn
     Cprt
     Cyrl
     Deva
+    Diak
     Dogr
     Dsrt
     Dupl
@@ -428,6 +446,7 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.2.1    2019/07/28
     Khar
     Khmr
     Khoj
+    Kits
     Knda
     Kthi
     Lana
@@ -454,6 +473,7 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.2.1    2019/07/28
     Mtei
     Mult
     Mymr
+    Nagm
     Nand
     Narb
     Nbat
@@ -465,6 +485,7 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.2.1    2019/07/28
     Orya
     Osge
     Osma
+    Ougr
     Palm
     Pauc
     Perm
@@ -506,12 +527,15 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.2.1    2019/07/28
     Thaa
     Tibt
     Tirh
+    Tnsa
     Ugar
     Vaii
+    Vith
     Wara
     Wcho
     Xpeo
     Xsux
+    Yezi
     Yiii
     Zanb
     Zinh
@@ -525,6 +549,9 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.2.1    2019/07/28
     Age=11.0
     Age=12.0
     Age=12.1
+    Age=13.0
+    Age=14.0
+    Age=15.0
     Age=2.0
     Age=2.1
     Age=3.0
@@ -564,6 +591,7 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.2.1    2019/07/28
     In_Samaritan
     In_Mandaic
     In_Syriac_Supplement
+    In_Arabic_Extended_B
     In_Arabic_Extended_A
     In_Devanagari
     In_Bengali
@@ -727,7 +755,9 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.2.1    2019/07/28
     In_Osage
     In_Elbasan
     In_Caucasian_Albanian
+    In_Vithkuqi
     In_Linear_A
+    In_Latin_Extended_F
     In_Cypriot_Syllabary
     In_Imperial_Aramaic
     In_Palmyrene
@@ -749,8 +779,12 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.2.1    2019/07/28
     In_Old_Hungarian
     In_Hanifi_Rohingya
     In_Rumi_Numeral_Symbols
+    In_Yezidi
+    In_Arabic_Extended_C
     In_Old_Sogdian
     In_Sogdian
+    In_Old_Uyghur
+    In_Chorasmian
     In_Elymaic
     In_Brahmi
     In_Kaithi
@@ -772,24 +806,31 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.2.1    2019/07/28
     In_Ahom
     In_Dogra
     In_Warang_Citi
+    In_Dives_Akuru
     In_Nandinagari
     In_Zanabazar_Square
     In_Soyombo
+    In_Unified_Canadian_Aboriginal_Syllabics_Extended_A
     In_Pau_Cin_Hau
+    In_Devanagari_Extended_A
     In_Bhaiksuki
     In_Marchen
     In_Masaram_Gondi
     In_Gunjala_Gondi
     In_Makasar
+    In_Kawi
+    In_Lisu_Supplement
     In_Tamil_Supplement
     In_Cuneiform
     In_Cuneiform_Numbers_and_Punctuation
     In_Early_Dynastic_Cuneiform
+    In_Cypro_Minoan
     In_Egyptian_Hieroglyphs
     In_Egyptian_Hieroglyph_Format_Controls
     In_Anatolian_Hieroglyphs
     In_Bamum_Supplement
     In_Mro
+    In_Tangsa
     In_Bassa_Vah
     In_Pahawh_Hmong
     In_Medefaidrin
@@ -797,23 +838,33 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.2.1    2019/07/28
     In_Ideographic_Symbols_and_Punctuation
     In_Tangut
     In_Tangut_Components
+    In_Khitan_Small_Script
+    In_Tangut_Supplement
+    In_Kana_Extended_B
     In_Kana_Supplement
     In_Kana_Extended_A
     In_Small_Kana_Extension
     In_Nushu
     In_Duployan
     In_Shorthand_Format_Controls
+    In_Znamenny_Musical_Notation
     In_Byzantine_Musical_Symbols
     In_Musical_Symbols
     In_Ancient_Greek_Musical_Notation
+    In_Kaktovik_Numerals
     In_Mayan_Numerals
     In_Tai_Xuan_Jing_Symbols
     In_Counting_Rod_Numerals
     In_Mathematical_Alphanumeric_Symbols
     In_Sutton_SignWriting
+    In_Latin_Extended_G
     In_Glagolitic_Supplement
+    In_Cyrillic_Extended_D
     In_Nyiakeng_Puachue_Hmong
+    In_Toto
     In_Wancho
+    In_Nag_Mundari
+    In_Ethiopic_Extended_B
     In_Mende_Kikakui
     In_Adlam
     In_Indic_Siyaq_Numbers
@@ -834,12 +885,15 @@ Onigmo (Oniguruma-mod) Unicode Properties  Version 6.2.1    2019/07/28
     In_Supplemental_Symbols_and_Pictographs
     In_Chess_Symbols
     In_Symbols_and_Pictographs_Extended_A
+    In_Symbols_for_Legacy_Computing
     In_CJK_Unified_Ideographs_Extension_B
     In_CJK_Unified_Ideographs_Extension_C
     In_CJK_Unified_Ideographs_Extension_D
     In_CJK_Unified_Ideographs_Extension_E
     In_CJK_Unified_Ideographs_Extension_F
     In_CJK_Compatibility_Ideographs_Supplement
+    In_CJK_Unified_Ideographs_Extension_G
+    In_CJK_Unified_Ideographs_Extension_H
     In_Tags
     In_Variation_Selectors_Supplement
     In_Supplementary_Private_Use_Area_A

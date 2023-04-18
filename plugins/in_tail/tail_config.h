@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_sqldb.h>
 #include <fluent-bit/flb_metrics.h>
+#include <fluent-bit/flb_log_event.h>
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
 #endif
@@ -68,6 +69,7 @@ struct flb_tail_config {
     int coll_fd_inactive;
     int coll_fd_dmode_flush;
     int coll_fd_mult_flush;
+    int coll_fd_progress_check;
 
     /* Backend collectors */
     int coll_fd_fs1;           /* used by fs_inotify & fs_stat */
@@ -91,6 +93,9 @@ struct flb_tail_config {
     int   skip_long_lines;     /* skip long lines              */
     int   skip_empty_lines;    /* skip empty lines (off)       */
     int   exit_on_eof;         /* exit fluent-bit on EOF, test */
+
+    int progress_check_interval;      /* watcher interval             */
+    int progress_check_interval_nsec; /* watcher interval             */
 
 #ifdef FLB_HAVE_INOTIFY
     int   inotify_watcher;     /* enable/disable inotify monitor */
@@ -140,6 +145,9 @@ struct flb_tail_config {
 
     /* Plugin input instance */
     struct flb_input_instance *ins;
+
+    struct flb_log_event_encoder log_event_encoder;
+    struct flb_log_event_decoder log_event_decoder;
 
     /* Metrics */
     struct cmt_counter *cmt_files_opened;

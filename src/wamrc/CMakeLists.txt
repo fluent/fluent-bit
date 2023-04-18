@@ -116,6 +116,12 @@ if (NOT WAMR_BUILD_WITH_SYSTEM_LLVM)
   endif ()
 endif ()
 
+if(LLVM_ENABLE_CURL STREQUAL FORCE_ON)
+  find_package(CURL REQUIRED)
+else()
+  find_package(CURL)
+endif()
+
 find_package(LLVM CONFIG)
 if (LLVM_FOUND)
   include_directories(${LLVM_INCLUDE_DIRS})

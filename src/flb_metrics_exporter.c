@@ -148,9 +148,17 @@ static int collect_outputs(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
 
 static int collect_metrics(struct flb_me *me)
 {
+    int ret;
     int keys;
+    char *buf_data;
+    size_t buf_size;
     struct flb_config *ctx = me->config;
+    struct cmt *cmt;
 
+    /*
+     * msgpack buffer for old-style /v1/metrics
+     * ----------------------------------------
+     */
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
 
@@ -166,15 +174,36 @@ static int collect_metrics(struct flb_me *me)
     collect_filters(&mp_sbuf, &mp_pck, me->config);
     collect_outputs(&mp_sbuf, &mp_pck, me->config);
 
+    /*
+     * If the built-in HTTP server is enabled, push metrics and health checks
+     * ---------------------------------------------------------------------
+     */
+
 #ifdef FLB_HAVE_HTTP_SERVER
     if (ctx->http_server == FLB_TRUE) {
-        /* v1 metrics (old) */
+        /* /v1/metrics (old) */
         flb_hs_push_pipeline_metrics(ctx->http_ctx, mp_sbuf.data, mp_sbuf.size);
+
+        /* /v1/health */
         if (ctx->health_check == FLB_TRUE) {
             flb_hs_push_health_metrics(ctx->http_ctx, mp_sbuf.data, mp_sbuf.size);
         }
+
+        /* /v2/metrics: retrieve a CMetrics context with internal metrics */
+        cmt = flb_me_get_cmetrics(ctx);
+        if (cmt) {
+            /* encode context to msgpack */
+            ret = cmt_encode_msgpack_create(cmt, &buf_data, &buf_size);
+            if (ret == 0) {
+                flb_hs_push_metrics(ctx->http_ctx, buf_data, buf_size);
+                cmt_encode_msgpack_destroy(buf_data);
+            }
+            cmt_destroy(cmt);
+        }
     }
 #endif
+
+    /* destroy msgpack buffer for old-style /v1/metrics */
     msgpack_sbuffer_destroy(&mp_sbuf);
 
 
@@ -189,7 +218,7 @@ struct flb_me *flb_me_create(struct flb_config *ctx)
     struct flb_me *me;
 
     /* Context */
-    me = flb_malloc(sizeof(struct flb_me));
+    me = flb_calloc(1, sizeof(struct flb_me));
     if (!me) {
         flb_errno();
         return NULL;

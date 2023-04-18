@@ -31,6 +31,7 @@
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_base64.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 #include <stdlib.h>
 #include <sys/stat.h>
 
@@ -46,7 +47,7 @@ static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
                                     struct s3_file *chunk,
                                     char **out_buf, size_t *out_size);
 
-static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time,
+static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_log_time,
                          char *body, size_t body_size);
 
 static int put_all_chunks(struct flb_s3 *ctx);
@@ -57,7 +58,8 @@ static struct multipart_upload *get_upload(struct flb_s3 *ctx,
                                            const char *tag, int tag_len);
 
 static struct multipart_upload *create_upload(struct flb_s3 *ctx,
-                                              const char *tag, int tag_len);
+                                              const char *tag, int tag_len,
+                                              time_t file_first_log_time);
 
 static void remove_from_queue(struct upload_queue *entry);
 
@@ -104,7 +106,7 @@ static char *mock_error_response(char *error_env_var)
 
     err_val = getenv(error_env_var);
     if (err_val != NULL && strlen(err_val) > 0) {
-        error = flb_malloc(strlen(err_val) + sizeof(char));
+        error = flb_calloc(strlen(err_val) + 1, sizeof(char));
         if (error == NULL) {
             flb_errno();
             return NULL;
@@ -157,7 +159,7 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
         return 0;
     }
 
-    s3_headers = flb_malloc(sizeof(struct flb_aws_header) * headers_len);
+    s3_headers = flb_calloc(headers_len, sizeof(struct flb_aws_header));
     if (s3_headers == NULL) {
         flb_errno();
         return -1;
@@ -242,7 +244,7 @@ struct flb_http_client *mock_s3_call(char *error_env_var, char *api)
                               "Server: AmazonS3";
             /* since etag is in the headers, this code uses resp.data */
             len = strlen(resp);
-            c->resp.data = flb_malloc(len + 1);
+            c->resp.data = flb_calloc(len + 1, sizeof(char));
             if (!c->resp.data) {
                 flb_errno();
                 return NULL;
@@ -399,7 +401,7 @@ static int init_seq_index(void *context) {
             return -1;
         }
         flb_plg_info(ctx->ins, "Successfully recovered index. "
-                     "Continuing at index=%d", ctx->seq_index);
+                     "Continuing at index=%"PRIu64, ctx->seq_index);
     }
     return 0;
 }
@@ -803,7 +805,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
                                                        ctx->region,
                                                        ctx->sts_endpoint,
                                                        NULL,
-                                                       flb_aws_client_generator());
+                                                       flb_aws_client_generator(),
+                                                       ctx->profile);
 
     if (!ctx->provider) {
         flb_plg_error(ctx->ins, "Failed to create AWS Credential Provider");
@@ -977,11 +980,21 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
     int size_check = FLB_FALSE;
     int part_num_check = FLB_FALSE;
     int timeout_check = FLB_FALSE;
-    time_t create_time;
     int ret;
     void *payload_buf = NULL;
     size_t payload_size = 0;
     size_t preCompress_size = 0;
+    time_t file_first_log_time = time(NULL);
+
+    /*
+     * When chunk does not exist, file_first_log_time will be the current time.
+     * This is only for unit tests and prevents unit tests from segfaulting when chunk is
+     * NULL because if so chunk->first_log_time will be NULl either and will cause
+     * segfault during the process of put_object upload or mutipart upload.
+     */
+    if (chunk != NULL) {
+        file_first_log_time = chunk->first_log_time;
+    }
 
     if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
         /* Map payload */
@@ -1027,7 +1040,7 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
         }
         else {
             if (ctx->use_put_object == FLB_FALSE && ctx->compression == FLB_AWS_COMPRESS_GZIP) {
-                flb_plg_info(ctx->ins, "Pre-compression upload_chunk_size= %d, After compression, chunk is only %d bytes, "
+                flb_plg_info(ctx->ins, "Pre-compression upload_chunk_size= %zu, After compression, chunk is only %zu bytes, "
                                        "the chunk was too small, using PutObject to upload", preCompress_size, body_size);
             }
             goto put_object;
@@ -1047,14 +1060,7 @@ put_object:
     /*
      * remove chunk from buffer list
      */
-    if (chunk) {
-        create_time = chunk->create_time;
-    }
-    else {
-        create_time = time(NULL);
-    }
-
-    ret = s3_put_object(ctx, tag, create_time, body, body_size);
+    ret = s3_put_object(ctx, tag, file_first_log_time, body, body_size);
     if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
         flb_free(payload_buf);
     }
@@ -1076,7 +1082,7 @@ put_object:
 multipart:
 
     if (init_upload == FLB_TRUE) {
-        m_upload = create_upload(ctx, tag, tag_len);
+        m_upload = create_upload(ctx, tag, tag_len, file_first_log_time);
         if (!m_upload) {
             flb_plg_error(ctx->ins, "Could not find or create upload for tag %s", tag);
             if (chunk) {
@@ -1227,7 +1233,7 @@ static int put_all_chunks(struct flb_s3 *ctx)
                 if (ret == -1) {
                     flb_plg_error(ctx->ins, "Failed to compress data, uploading uncompressed data instead to prevent data loss");
                 } else {
-                    flb_plg_info(ctx->ins, "Pre-compression chunk size is %d, After compression, chunk is %d bytes", buffer_size, payload_size);
+                    flb_plg_info(ctx->ins, "Pre-compression chunk size is %zu, After compression, chunk is %zu bytes", buffer_size, payload_size);
                     buffer = (void *) payload_buf;
                     buffer_size = payload_size;
                 }
@@ -1314,7 +1320,7 @@ static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
     return 0;
 }
 
-static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time,
+static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_log_time,
                          char *body, size_t body_size)
 {
     flb_sds_t s3_key = NULL;
@@ -1331,8 +1337,8 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
     flb_sds_t tmp;
     char final_body_md5[25];
 
-    s3_key = flb_get_s3_key(ctx->s3_key_format, create_time, tag, ctx->tag_delimiters,
-                            ctx->seq_index);
+    s3_key = flb_get_s3_key(ctx->s3_key_format, file_first_log_time, tag,
+                            ctx->tag_delimiters, ctx->seq_index);
     if (!s3_key) {
         flb_plg_error(ctx->ins, "Failed to construct S3 Object Key for %s", tag);
         return -1;
@@ -1506,8 +1512,8 @@ static struct multipart_upload *get_upload(struct flb_s3 *ctx,
     return m_upload;
 }
 
-static struct multipart_upload *create_upload(struct flb_s3 *ctx,
-                                              const char *tag, int tag_len)
+static struct multipart_upload *create_upload(struct flb_s3 *ctx, const char *tag,
+                                              int tag_len, time_t file_first_log_time)
 {
     int ret;
     struct multipart_upload *m_upload = NULL;
@@ -1520,8 +1526,8 @@ static struct multipart_upload *create_upload(struct flb_s3 *ctx,
         flb_errno();
         return NULL;
     }
-    s3_key = flb_get_s3_key(ctx->s3_key_format, time(NULL), tag, ctx->tag_delimiters,
-                            ctx->seq_index);
+    s3_key = flb_get_s3_key(ctx->s3_key_format, file_first_log_time, tag,
+                            ctx->tag_delimiters, ctx->seq_index);
     if (!s3_key) {
         flb_plg_error(ctx->ins, "Failed to construct S3 Object Key for %s", tag);
         flb_free(m_upload);
@@ -1561,10 +1567,10 @@ static int add_to_queue(struct flb_s3 *ctx, struct s3_file *upload_file,
                  struct multipart_upload *m_upload_file, const char *tag, int tag_len)
 {
     struct upload_queue *upload_contents;
-    char *tag_cpy;
+    flb_sds_t tag_cpy;
 
     /* Create upload contents object and add to upload queue */
-    upload_contents = flb_malloc(sizeof(struct upload_queue));
+    upload_contents = flb_calloc(1, sizeof(struct upload_queue));
     if (upload_contents == NULL) {
         flb_plg_error(ctx->ins, "Error allocating memory for upload_queue entry");
         flb_errno();
@@ -1577,15 +1583,14 @@ static int add_to_queue(struct flb_s3 *ctx, struct s3_file *upload_file,
     upload_contents->upload_time = -1;
 
     /* Necessary to create separate string for tag to prevent corruption */
-    tag_cpy = flb_malloc(tag_len);
-    if (tag_cpy == NULL) {
-        flb_free(upload_contents);
-        flb_plg_error(ctx->ins, "Error allocating memory for tag in add_to_queue");
+    tag_cpy = flb_sds_create_len(tag, tag_len);
+    if (!tag_cpy) {
         flb_errno();
+        flb_free(upload_contents);
         return -1;
     }
-    strncpy(tag_cpy, tag, tag_len);
     upload_contents->tag = tag_cpy;
+
 
     /* Add entry to upload queue */
     mk_list_add(&upload_contents->_head, &ctx->upload_queue);
@@ -1596,7 +1601,7 @@ static int add_to_queue(struct flb_s3 *ctx, struct s3_file *upload_file,
 void remove_from_queue(struct upload_queue *entry)
 {
     mk_list_del(&entry->_head);
-    flb_free(entry->tag);
+    flb_sds_destroy(entry->tag);
     flb_free(entry);
     return;
 }
@@ -1661,13 +1666,16 @@ static int send_upload_request(void *out_context, flb_sds_t chunk,
     return ret;
 }
 
-static int buffer_chunk(void *out_context, struct s3_file *upload_file, flb_sds_t chunk,
-                        int chunk_size, const char *tag, int tag_len)
+static int buffer_chunk(void *out_context, struct s3_file *upload_file,
+                        flb_sds_t chunk, int chunk_size,
+                        const char *tag, int tag_len,
+                        time_t file_first_log_time)
 {
     int ret;
     struct flb_s3 *ctx = out_context;
 
-    ret = s3_store_buffer_put(ctx, upload_file, tag, tag_len, chunk, (size_t) chunk_size);
+    ret = s3_store_buffer_put(ctx, upload_file, tag,
+                              tag_len, chunk, (size_t) chunk_size, file_first_log_time);
     flb_sds_destroy(chunk);
     if (ret < 0) {
         flb_plg_warn(ctx->ins, "Could not buffer chunk. Data order preservation "
@@ -1858,15 +1866,14 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     char *val_buf;
     char *key_str = NULL;
     size_t key_str_size = 0;
-    size_t off = 0;
     size_t msgpack_size = bytes + bytes / 4;
     size_t val_offset = 0;
     flb_sds_t out_buf;
-    msgpack_unpacked result;
-    msgpack_object root;
     msgpack_object map;
     msgpack_object key;
     msgpack_object val;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
 
     /* Iterate the original buffer and perform adjustments */
     records = flb_mp_count(data, bytes);
@@ -1875,7 +1882,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     }
 
     /* Allocate buffer to store log_key contents */
-    val_buf = flb_malloc(msgpack_size);
+    val_buf = flb_calloc(1, msgpack_size);
     if (val_buf == NULL) {
         flb_plg_error(ctx->ins, "Could not allocate enough "
                       "memory to read record");
@@ -1883,23 +1890,30 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
         return NULL;
     }
 
-    msgpack_unpacked_init(&result);
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        flb_free(val_buf);
+
+        return NULL;
+    }
+
+
     while (!alloc_error &&
-           msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        /* Each array must have two entries: time and record */
-        root = result.data;
-        if (root.type != MSGPACK_OBJECT_ARRAY) {
-            continue;
-        }
-        if (root.via.array.size != 2) {
-            continue;
-        }
+           (ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
 
         /* Get the record/map */
-        map = root.via.array.ptr[1];
+        map = *log_event.body;
+
         if (map.type != MSGPACK_OBJECT_MAP) {
             continue;
         }
+
         map_size = map.via.map.size;
 
         /* Reset variables for found log_key and correct type */
@@ -1966,13 +1980,12 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     }
 
     /* Throw error once per chunk if at least one log key was not found */
-    if (log_key_missing == FLB_TRUE) {
+    if (log_key_missing > 0) {
         flb_plg_error(ctx->ins, "Could not find log_key '%s' in %d records",
                       ctx->log_key, log_key_missing);
     }
 
-    /* Release the unpacker */
-    msgpack_unpacked_destroy(&result);
+    flb_log_event_decoder_destroy(&log_decoder);
 
     /* If nothing was read, destroy buffer */
     if (val_offset == 0) {
@@ -1994,14 +2007,16 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
 
 static void unit_test_flush(void *out_context, struct s3_file *upload_file,
                             const char *tag, int tag_len, flb_sds_t chunk,
-                            int chunk_size, struct multipart_upload *m_upload_file)
+                            int chunk_size, struct multipart_upload *m_upload_file,
+                            time_t file_first_log_time)
 {
     int ret;
     char *buffer;
     size_t buffer_size;
     struct flb_s3 *ctx = out_context;
 
-    s3_store_buffer_put(ctx, upload_file, tag, tag_len, chunk, (size_t) chunk_size);
+    s3_store_buffer_put(ctx, upload_file, tag, tag_len,
+                        chunk, (size_t) chunk_size, file_first_log_time);
     ret = construct_request_buffer(ctx, chunk, upload_file, &buffer, &buffer_size);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Could not construct request buffer for %s",
@@ -2081,6 +2096,9 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     struct s3_file *upload_file = NULL;
     struct flb_s3 *ctx = out_context;
     struct multipart_upload *m_upload_file = NULL;
+    time_t file_first_log_time = 0;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
 
     /* Cleanup old buffers and initialize upload timer */
     flush_init(ctx);
@@ -2109,11 +2127,46 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
                                     event_chunk->tag,
                                     flb_sds_len(event_chunk->tag));
 
+    if (upload_file == NULL) {
+        ret = flb_log_event_decoder_init(&log_decoder,
+                                         (char *) event_chunk->data,
+                                         event_chunk->size);
+
+        if (ret != FLB_EVENT_DECODER_SUCCESS) {
+            flb_plg_error(ctx->ins,
+                          "Log event decoder initialization error : %d", ret);
+
+            flb_sds_destroy(chunk);
+
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
+
+        while ((ret = flb_log_event_decoder_next(
+                        &log_decoder,
+                        &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+            if (log_event.timestamp.tm.tv_sec != 0) {
+                file_first_log_time = log_event.timestamp.tm.tv_sec;
+                break;
+            }
+        }
+
+        flb_log_event_decoder_destroy(&log_decoder);
+    }
+    else {
+        /* Get file_first_log_time from upload_file */
+        file_first_log_time = upload_file->first_log_time;
+    }
+
+    if (file_first_log_time == 0) {
+        file_first_log_time = time(NULL);
+    }
+
     /* Specific to unit tests, will not get called normally */
     if (s3_plugin_under_test() == FLB_TRUE) {
         unit_test_flush(ctx, upload_file,
                         event_chunk->tag, flb_sds_len(event_chunk->tag),
-                        chunk, chunk_size, m_upload_file);
+                        chunk, chunk_size,
+                        m_upload_file, file_first_log_time);
     }
 
     /* Discard upload_file if it has failed to upload MAX_UPLOAD_ERRORS times */
@@ -2147,12 +2200,14 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
         total_file_size_check = FLB_TRUE;
     }
 
-    /* File is ready for upload */
-    if (upload_timeout_check == FLB_TRUE || total_file_size_check == FLB_TRUE) {
+    /* File is ready for upload, upload_file != NULL prevents from segfaulting. */
+    if ((upload_file != NULL) && (upload_timeout_check == FLB_TRUE || total_file_size_check == FLB_TRUE)) {
         if (ctx->preserve_data_ordering == FLB_TRUE) {
             /* Buffer last chunk in file and lock file to prevent further changes */
             ret = buffer_chunk(ctx, upload_file, chunk, chunk_size,
-                               event_chunk->tag, flb_sds_len(event_chunk->tag));
+                               event_chunk->tag, flb_sds_len(event_chunk->tag),
+                               file_first_log_time);
+
             if (ret < 0) {
                 FLB_OUTPUT_RETURN(FLB_RETRY);
             }
@@ -2187,7 +2242,9 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
 
     /* Buffer current chunk in filesystem and wait for next chunk from engine */
     ret = buffer_chunk(ctx, upload_file, chunk, chunk_size,
-                       event_chunk->tag, flb_sds_len(event_chunk->tag));
+                       event_chunk->tag, flb_sds_len(event_chunk->tag),
+                       file_first_log_time);
+
     if (ret < 0) {
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
@@ -2424,6 +2481,13 @@ static struct flb_config_map config_map[] = {
      0, FLB_FALSE, 0,
      "Specify the storage class for S3 objects. If this option is not specified, objects "
      "will be stored with the default 'STANDARD' storage class."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "profile", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, profile),
+     "AWS Profile name. AWS Profiles can be configured with AWS CLI and are usually stored in "
+     "$HOME/.aws/ directory."
     },
 
     /* EOF */
