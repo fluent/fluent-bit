@@ -21,9 +21,8 @@ if [[ ! -d "$SOURCE_DIR" ]]; then
     exit 1
 fi
 
-if [[ ! -d "$TARGET_DIR" ]]; then
-    echo "Missing target directory: $TARGET_DIR"
-    exit 1
+if [ ! -d "$TARGET_DIR/$MAJOR_VERSION" ]; then
+    mkdir -p "$TARGET_DIR/$MAJOR_VERSION"
 fi
 
 # Handle the JSON schema by copying in the new versions (if they exist).
