@@ -25,6 +25,8 @@ if [[ ! -d "$TARGET_DIR" ]]; then
     echo "Missing target directory: $TARGET_DIR"
     exit 1
 fi
+# create MAJOR_VERSION dir if not exist
+mkdir -p "$TARGET_DIR/$MAJOR_VERSION"
 
 # Handle the JSON schema by copying in the new versions (if they exist).
 echo "Updating JSON schema"
