@@ -125,6 +125,18 @@ int flb_router_match(const char *tag, int tag_len, const char *match,
     return ret;
 }
 
+int flb_router_match_input_output(struct flb_input_instance *in,
+                                  struct flb_output_instance *out)
+{
+    return flb_router_match(in->tag, in->tag_len, out->match,
+#ifdef FLB_HAVE_REGEX
+                            out->match_regex
+#else
+                            NULL
+#endif
+    );
+}
+
 /* Associate and input and output instances due to a previous match */
 int flb_router_connect(struct flb_input_instance *in,
                        struct flb_output_instance *out)
