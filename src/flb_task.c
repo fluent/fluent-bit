@@ -81,6 +81,17 @@ void flb_task_retry_destroy(struct flb_task_retry *retry)
     flb_free(retry);
 }
 
+int flb_task_cancel(struct flb_config *config, struct flb_task *task)
+{
+    flb_error("canceling task=%p", task);
+    if (task->coro) {
+        flb_task_retry_clean(task, task->coro->o_ins);
+        flb_output_coro_destroy(task->coro);
+    }
+    task->users = 0;
+    task->ic = NULL;
+}
+
 /*
  * For an existing task 'retry', re-schedule it. One of the use case of this function
  * is when the engine dispatcher fails to bring the chunk up due to Chunk I/O
@@ -185,6 +196,9 @@ int flb_task_from_fs_storage(struct flb_task *task)
     struct flb_input_chunk *ic;
 
     ic = (struct flb_input_chunk *) task->ic;
+    if (ic == NULL) {
+        return NULL;
+    }
     return ic->fs_backlog;
 }
 
@@ -465,7 +479,7 @@ void flb_task_destroy(struct flb_task *task, int del)
     mk_list_del(&task->_head);
 
     /* destroy chunk */
-    flb_input_chunk_destroy(task->ic, del);
+    if (task->ic) flb_input_chunk_destroy(task->ic, del);
 
     /* Remove 'retries' */
     mk_list_foreach_safe(head, tmp, &task->retries) {

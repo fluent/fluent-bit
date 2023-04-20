@@ -66,14 +66,27 @@ static ssize_t flb_input_chunk_get_releasable_space(
     struct mk_list         *input_chunk_iterator;
     ssize_t                 releasable_space;
     struct flb_input_chunk *old_input_chunk;
+    struct flb_task_cancel *cancel_task;
+    int ret;
+
 
     releasable_space = 0;
 
     mk_list_foreach(input_chunk_iterator, &input_plugin->chunks) {
         old_input_chunk = mk_list_entry(input_chunk_iterator, struct flb_input_chunk, _head);
 
-        if (!flb_routes_mask_get_bit(old_input_chunk->routes_mask, output_plugin->id)) {
-            continue;
+        if (flb_input_chunk_safe_delete(new_input_chunk, old_input_chunk,
+               output_plugin->id) == FLB_FALSE) {
+               continue;
+        }
+        if (flb_input_chunk_is_task_safe_delete(old_input_chunk->task) == FLB_FALSE) {
+           if (old_input_chunk->task != NULL) {
+                flb_task_cancel(input_plugin->config, old_input_chunk->task);
+                old_input_chunk->task = NULL;
+                releasable_space += flb_input_chunk_get_real_size(old_input_chunk);
+           } else {
+                continue;
+           }
         }
 
         if (flb_input_chunk_safe_delete(new_input_chunk, old_input_chunk,
@@ -655,7 +668,7 @@ int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
  */
 int flb_input_chunk_place_new_chunk(struct flb_input_chunk *ic, size_t chunk_size)
 {
-	int overlimit;
+    int overlimit;
     overlimit = flb_input_chunk_has_overlimit_routes(ic, chunk_size);
     if (overlimit != 0) {
         flb_input_chunk_find_space_new_data(ic, chunk_size, overlimit);

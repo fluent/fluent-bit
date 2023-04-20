@@ -107,6 +107,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
 void flb_task_add_coro(struct flb_task *task, struct flb_coro *coro);
 
 void flb_task_destroy(struct flb_task *task, int del);
+int flb_task_cancel(struct flb_config *, struct flb_task *);
 
 struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
                                              struct flb_output_instance *ins);
@@ -145,7 +146,7 @@ static inline void flb_task_users_inc(struct flb_task *task)
  */
 static inline void flb_task_users_dec(struct flb_task *task, int release_check)
 {
-    task->users--;
+    if (task->users) task->users--;
     if (release_check == FLB_TRUE) {
         flb_task_users_release(task);
     }

@@ -194,7 +194,7 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
     name = (char *) flb_output_name(ins);
 
     /* A task has finished, delete it */
-    if (ret == FLB_OK) {
+    if (ret == FLB_OK || task->users == 0) {
         /* cmetrics */
         cmt_counter_add(ins->cmt_proc_records, ts, task->records,
                         1, (char *[]) {name});
