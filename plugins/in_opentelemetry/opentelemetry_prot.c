@@ -1339,7 +1339,7 @@ static int process_payload_logs(struct flb_opentelemetry *ctx, struct http_conn 
         ret = binary_payload_to_msgpack(encoder, (uint8_t *) request->data.data, request->data.len);
     }
     else {
-        flb_error("[otel] Unsupported content type %.*s", request->content_type.len, request->content_type.data);
+        flb_error("[otel] Unsupported content type %.*s", (int)request->content_type.len, request->content_type.data);
 
         ret = -1;
     }
