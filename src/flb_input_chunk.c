@@ -57,6 +57,17 @@ static int flb_input_chunk_is_task_safe_delete(struct flb_task *task);
 
 static ssize_t flb_input_chunk_get_real_size(struct flb_input_chunk *ic);
 
+static inline void flb_input_chunk_task_cancel(struct flb_input_chunk *ic)
+{
+    if (ic->task->coro) {
+        flb_task_retry_clean(ic->task, ic->task->coro->o_ins);
+        flb_output_coro_destroy(ic->task->coro);
+    }
+    ic->task->users = 0;
+    ic->task->ic = NULL;
+    ic->task = NULL;
+}
+
 static ssize_t flb_input_chunk_get_releasable_space(
                                     struct flb_input_chunk     *new_input_chunk,
                                     struct flb_input_instance  *input_plugin,
@@ -66,7 +77,6 @@ static ssize_t flb_input_chunk_get_releasable_space(
     struct mk_list         *input_chunk_iterator;
     ssize_t                 releasable_space;
     struct flb_input_chunk *old_input_chunk;
-    struct flb_task_cancel *cancel_task;
     int ret;
 
 
@@ -80,7 +90,7 @@ static ssize_t flb_input_chunk_get_releasable_space(
                continue;
         }
 
-        if (flb_input_chunk_is_task_safe_delete(old_input_chunk->task) == FLB_FALSE && 0) {
+        if (flb_input_chunk_is_task_safe_delete(old_input_chunk->task) == FLB_FALSE) {
             /* ADD SETTING FOR DELETING RETRIES ... */
             continue;
         }
@@ -165,10 +175,8 @@ static int flb_input_chunk_release_space(
 
                     chunk_released = FLB_TRUE;
                 } else {
-                    flb_task_cancel(input_plugin->config, old_input_chunk->task);
-                    old_input_chunk->task = NULL;
+                    flb_input_chunk_task_cancel(old_input_chunk);
                     flb_input_chunk_destroy(old_input_chunk, FLB_TRUE);
-                    flb_error("CHUNK RELEASED!");
 
                     chunk_released = FLB_TRUE;
                 }
@@ -292,6 +300,11 @@ static int flb_input_chunk_is_task_safe_delete(struct flb_task *task)
     if (!task) {
         return FLB_TRUE;
     }
+
+    if (task->coro) {
+        return FLB_TRUE;
+    }
+    return FLB_TRUE;
 
     if (task->users != 0) {
         return FLB_FALSE;

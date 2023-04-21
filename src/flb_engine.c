@@ -194,6 +194,9 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
     name = (char *) flb_output_name(ins);
 
     /* A task has finished, delete it */
+    if (task == NULL) {
+        return 0;
+    }
     if (ret == FLB_OK || task->users == 0) {
         /* cmetrics */
         cmt_counter_add(ins->cmt_proc_records, ts, task->records,
@@ -201,7 +204,6 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
 
         cmt_counter_add(ins->cmt_proc_bytes, ts, task->size,
                         1, (char *[]) {name});
-
         /* [OLD API] Update metrics */
 #ifdef FLB_HAVE_METRICS
         if (ins->metrics) {
