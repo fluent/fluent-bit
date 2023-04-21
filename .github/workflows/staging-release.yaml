@@ -480,8 +480,8 @@ jobs:
         shell: bash
 
   staging-release-images-latest-tags:
-    # Only update latest tags for 2.0 releases
-    if: startsWith(github.event.inputs.version, '2.0') 
+    # Only update latest tags for 2.1 releases
+    if: startsWith(github.event.inputs.version, '2.1') 
     name: Release latest Linux container images
     runs-on: ubuntu-latest
     needs:
