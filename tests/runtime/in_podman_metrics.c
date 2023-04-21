@@ -32,8 +32,8 @@
 int check_metric(flb_ctx_t *ctx, flb_sds_t *name) {
     struct mk_list *tmp;
     struct mk_list *head;
-    struct mk_list *inner_tmp;
-    struct mk_list *inner_head;
+    struct cfl_list *inner_tmp;
+    struct cfl_list *inner_head;
 
     struct flb_input_instance *i_ins;
     struct cmt_counter *counter;
@@ -42,7 +42,7 @@ int check_metric(flb_ctx_t *ctx, flb_sds_t *name) {
 
     mk_list_foreach_safe(head, tmp, &ctx->config->inputs) {
         i_ins = mk_list_entry(head, struct flb_input_instance, _head);
-        mk_list_foreach_safe(inner_head, inner_tmp, &i_ins->cmt->counters) {
+        cfl_list_foreach_safe(inner_head, inner_tmp, &i_ins->cmt->counters) {
             counter = mk_list_entry(inner_head, struct cmt_counter, _head);
 
             if (strlen(name) != 0 && strcmp(name, counter->opts.name) == 0)
