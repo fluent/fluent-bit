@@ -90,6 +90,7 @@ struct flb_task {
     struct mk_list _head;               /* link to input_instance        */
     struct flb_input_instance *i_ins;   /* input instance                */
     struct flb_config *config;          /* parent flb config             */
+    struct flb_output_coro *coro;
 };
 
 int flb_task_running_count(struct flb_config *config);
