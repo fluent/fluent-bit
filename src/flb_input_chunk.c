@@ -79,19 +79,9 @@ static ssize_t flb_input_chunk_get_releasable_space(
                output_plugin->id) == FLB_FALSE) {
                continue;
         }
-        if (flb_input_chunk_is_task_safe_delete(old_input_chunk->task) == FLB_FALSE) {
-           if (old_input_chunk->task != NULL) {
-                flb_task_cancel(input_plugin->config, old_input_chunk->task);
-                old_input_chunk->task = NULL;
-                releasable_space += flb_input_chunk_get_real_size(old_input_chunk);
-           } else {
-                continue;
-           }
-        }
 
-        if (flb_input_chunk_safe_delete(new_input_chunk, old_input_chunk,
-                                        output_plugin->id) == FLB_FALSE ||
-            flb_input_chunk_is_task_safe_delete(old_input_chunk->task) == FLB_FALSE) {
+        if (flb_input_chunk_is_task_safe_delete(old_input_chunk->task) == FLB_FALSE && 0) {
+            /* ADD SETTING FOR DELETING RETRIES ... */
             continue;
         }
 
@@ -134,8 +124,11 @@ static int flb_input_chunk_release_space(
 
         if (flb_input_chunk_safe_delete(new_input_chunk,
                                         old_input_chunk,
-                                        output_plugin->id) == FLB_FALSE ||
-            flb_input_chunk_is_task_safe_delete(old_input_chunk->task) == FLB_FALSE) {
+                                        output_plugin->id) == FLB_FALSE) {
+            continue;
+        }
+
+        if (flb_input_chunk_is_task_safe_delete(old_input_chunk->task) == FLB_FALSE /* ADD SETTING CHECK */ && 0) {
             continue;
         }
 
@@ -169,6 +162,13 @@ static int flb_input_chunk_release_space(
                     flb_debug("[task] drop task_id %d with no active route from input plugin %s",
                               old_input_chunk->task->id, new_input_chunk->in->name);
                     flb_task_destroy(old_input_chunk->task, FLB_TRUE);
+
+                    chunk_released = FLB_TRUE;
+                } else {
+                    flb_task_cancel(input_plugin->config, old_input_chunk->task);
+                    old_input_chunk->task = NULL;
+                    flb_input_chunk_destroy(old_input_chunk, FLB_TRUE);
+                    flb_error("CHUNK RELEASED!");
 
                     chunk_released = FLB_TRUE;
                 }
@@ -359,7 +359,7 @@ int flb_input_chunk_release_space_compound(
         required_space_remainder -= segregated_backlog_releasable_space;
     }
 
-    if (required_space_remainder > 0) {
+    if (required_space_remainder > 0 && release_local_space) {
         active_plugin_releasable_space = flb_input_chunk_get_releasable_space(
                                                     new_input_chunk,
                                                     new_input_chunk->in,
@@ -522,7 +522,7 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
         result = flb_input_chunk_release_space_compound(
                                             ic, o_ins,
                                             &local_release_requirement,
-                                            FLB_FALSE);
+                                            FLB_TRUE);
 
         if (!result && local_release_requirement == 0) {
             /* If this function returned 0 it means the space requirement was
