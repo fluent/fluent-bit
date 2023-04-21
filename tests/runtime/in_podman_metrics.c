@@ -29,7 +29,7 @@
 #define DPATH_PODMAN_CGROUP_V2      FLB_TESTS_DATA_PATH "/data/podman/cgroupv2"
 
 
-int check_metric(flb_ctx_t *ctx, flb_sds_t *name) {
+int check_metric(flb_ctx_t *ctx, char *name) {
     struct mk_list *tmp;
     struct mk_list *head;
     struct cfl_list *inner_tmp;
