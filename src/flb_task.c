@@ -197,7 +197,7 @@ int flb_task_from_fs_storage(struct flb_task *task)
 
     ic = (struct flb_input_chunk *) task->ic;
     if (ic == NULL) {
-        return NULL;
+        return FLB_FALSE;
     }
     return ic->fs_backlog;
 }
