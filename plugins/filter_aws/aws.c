@@ -192,7 +192,8 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
     if (ret < 0) {
         /* If the metadata fetch fails, the plugin continues to work. */
         /* Every flush will attempt to fetch ec2 metadata, if needed. */
-        /* In the error is unrecoverable (-3), it exits and does not retry. */
+        /* If the error is unrecoverable (-3), it exits and does not retry. */
+        /* e.g.: unrecoverable errors might be related to invalid configuration. */
         if (ret == -3) {
             flb_free(ctx);
             return -1;
