@@ -288,6 +288,13 @@ void flb_test_aws_ec2_tags_list_500() {
 
     request_chain = FLB_AWS_CLIENT_MOCK(
         response(
+            expect(URI, "/latest/meta-data/instance-id/"),
+            expect(METHOD, FLB_HTTP_GET),
+            set(STATUS, 200),
+            set(PAYLOAD, "i-0e66fc7f9809d7168"),
+            set(PAYLOAD_SIZE, 19)
+        ),
+        response(
             expect(URI, "/latest/meta-data/tags/instance"),
             expect(METHOD, FLB_HTTP_GET),
             set(STATUS, 500)
@@ -332,7 +339,7 @@ void flb_test_aws_ec2_tags_list_500() {
     TEST_CHECK(filter_ffd >= 0);
     ret = flb_filter_set(ctx, filter_ffd, "match", "*", NULL);
     TEST_CHECK(ret == 0);
-    ret = flb_filter_set(ctx, filter_ffd, "ec2_instance_id", "false", NULL);
+    ret = flb_filter_set(ctx, filter_ffd, "ec2_instance_id", "true", NULL);
     TEST_CHECK(ret == 0);
     ret = flb_filter_set(ctx, filter_ffd, "az", "false", NULL);
     TEST_CHECK(ret == 0);
@@ -353,6 +360,12 @@ void flb_test_aws_ec2_tags_list_500() {
     if (output) {
         result = strstr(output, "hello, from my ec2 instance");
         if (!TEST_CHECK(result != NULL)) {
+            TEST_MSG("output:%s\n", output);
+        }
+        result = strstr(output, "i-0e66fc7f9809d7168");
+        if (!TEST_CHECK(result != NULL)) {
+            TEST_MSG("ec2 instance id is not present in the output log\n");
+            TEST_MSG("however, it should be injected despite ec2 tags fetching errors\n");
             TEST_MSG("output:%s\n", output);
         }
     }
