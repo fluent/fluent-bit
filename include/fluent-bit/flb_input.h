@@ -185,6 +185,7 @@ struct flb_input_instance {
     /* Plugin properties */
     char *tag;                           /* Input tag for routing        */
     int tag_len;
+    int tag_default;                     /* is it using the default tag? */
 
     /* By default all input instances are 'routable' */
     int routable;

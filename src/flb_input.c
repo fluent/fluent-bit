@@ -242,6 +242,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->p        = plugin;
         instance->tag      = NULL;
         instance->tag_len  = 0;
+        instance->tag_default = FLB_FALSE;
         instance->routable = FLB_TRUE;
         instance->data     = data;
         instance->storage  = NULL;
@@ -471,6 +472,7 @@ int flb_input_set_property(struct flb_input_instance *ins,
     if (prop_key_check("tag", k, len) == 0 && tmp) {
         ins->tag     = tmp;
         ins->tag_len = flb_sds_len(tmp);
+        ins->tag_default = FLB_FALSE;
     }
     else if (prop_key_check("log_level", k, len) == 0 && tmp) {
         ret = flb_log_get_level_str(tmp);
@@ -1120,6 +1122,7 @@ int flb_input_instance_init(struct flb_input_instance *ins,
         /* Sanity check: all non-dynamic tag input plugins must have a tag */
         if (!ins->tag) {
             flb_input_set_property(ins, "tag", ins->name);
+            ins->tag_default = FLB_TRUE;
         }
 
         if (flb_input_is_threaded(ins)) {
