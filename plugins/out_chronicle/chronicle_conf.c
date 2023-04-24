@@ -334,7 +334,7 @@ struct flb_chronicle *flb_chronicle_conf_create(struct flb_output_instance *ins,
     ctx->endpoint = flb_sds_printf(&ctx->endpoint, FLB_CHRONICLE_UNSTRUCTURED_ENDPOINT);
 
     /* Create the base URI */
-    if (ctx->region == NULL || strncmp(ctx->region, "US", 2) == 0) {
+    if (ctx->region == NULL || strncasecmp(ctx->region, "US", 2) == 0) {
         ctx->uri = flb_sds_create_size(sizeof(FLB_CHRONICLE_URL_BASE));
         if (!ctx->uri) {
             flb_errno();
@@ -343,7 +343,7 @@ struct flb_chronicle *flb_chronicle_conf_create(struct flb_output_instance *ins,
         }
         ctx->uri = flb_sds_printf(&ctx->uri, FLB_CHRONICLE_URL_BASE);
     }
-    else if (strncmp(ctx->region, "EU", 2) == 0){
+    else if (strncasecmp(ctx->region, "EU", 2) == 0){
         ctx->uri = flb_sds_create_size(sizeof(FLB_CHRONICLE_URL_BASE_EU));
         if (!ctx->uri) {
             flb_errno();
@@ -352,7 +352,7 @@ struct flb_chronicle *flb_chronicle_conf_create(struct flb_output_instance *ins,
         }
         ctx->uri = flb_sds_printf(&ctx->uri, FLB_CHRONICLE_URL_BASE_EU);
     }
-    else if (strncmp(ctx->region, "UK", 2) == 0) {
+    else if (strncasecmp(ctx->region, "UK", 2) == 0) {
         ctx->uri = flb_sds_create_size(sizeof(FLB_CHRONICLE_URL_BASE_UK));
         if (!ctx->uri) {
             flb_errno();
@@ -361,7 +361,7 @@ struct flb_chronicle *flb_chronicle_conf_create(struct flb_output_instance *ins,
         }
         ctx->uri = flb_sds_printf(&ctx->uri, FLB_CHRONICLE_URL_BASE_UK);
     }
-    else if (strncmp(ctx->region, "ASIA", 4) == 0) {
+    else if (strncasecmp(ctx->region, "ASIA", 4) == 0) {
         ctx->uri = flb_sds_create_size(sizeof(FLB_CHRONICLE_URL_BASE_ASIA));
         if (!ctx->uri) {
             flb_errno();
