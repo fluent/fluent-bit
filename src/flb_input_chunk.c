@@ -59,9 +59,37 @@ static ssize_t flb_input_chunk_get_real_size(struct flb_input_chunk *ic);
 
 static inline void flb_input_chunk_task_cancel(struct flb_input_chunk *ic)
 {
+    struct flb_upstream_conn *conn;
+    struct flb_upstream *u;
+    struct mk_list *u_head;
+    struct mk_list *c_head;
+    struct ml_list *tmp;
+    struct flb_upstream_queue *uq;
+
+
+    flb_error("[input chunk] cancel task=%d", ic->task->id);
     if (ic->task->coro) {
+        if (ic->task != ic->task->coro->task) {
+            flb_error("chunk task and coro task do not match");
+        }
+        flb_error("task_cancel: coro=%p", ic->task->coro);
+        
+        mk_list_foreach(u_head, &ic->in->config->upstreams) {
+            u = mk_list_entry(u_head, struct flb_upstream, _head);
+            uq = flb_upstream_queue_get(u);
+
+            mk_list_foreach_safe(c_head, tmp, &uq->busy_queue) {
+                conn = mk_list_entry(c_head, struct flb_upstream_conn, _head);
+                if (conn->coro == ic->task->coro->coro) {
+                    flb_upstream_conn_release(conn);
+                }
+            }
+        }
+
+        flb_output_return(FLB_TRUE, ic->task->coro->coro);
         flb_task_retry_clean(ic->task, ic->task->coro->o_ins);
-        flb_output_coro_destroy(ic->task->coro);
+    } else {
+        flb_error("task_cancel: no coro");
     }
     ic->task->users = 0;
     ic->task->ic = NULL;

@@ -207,6 +207,8 @@ int flb_output_task_flush(struct flb_task *task,
             return -1;
         }
 
+        flb_error("[output] task id=%d coro=%p", task->id, out_coro);
+        task->coro = out_coro;
         flb_task_users_inc(task);
         flb_coro_resume(out_coro->coro);
     }
@@ -386,10 +388,11 @@ int flb_output_flush_finished(struct flb_config *config, int out_id)
         list = &ins->coros_destroy;
     }
 
-    /* Look for output coroutines that needs to be destroyed */
+    /* Look for output coroutines that need to be destroyed */
     mk_list_foreach_safe(head, tmp, list) {
         out_coro = mk_list_entry(head, struct flb_output_coro, _head);
-        flb_output_coro_destroy(out_coro);
+        // this causes problems with flb_input_chunk_task_cancel ... no idea why...
+        // flb_output_coro_destroy(out_coro);
     }
 
     return 0;

@@ -81,17 +81,6 @@ void flb_task_retry_destroy(struct flb_task_retry *retry)
     flb_free(retry);
 }
 
-int flb_task_cancel(struct flb_config *config, struct flb_task *task)
-{
-    flb_error("canceling task=%p", task);
-    if (task->coro) {
-        flb_task_retry_clean(task, task->coro->o_ins);
-        flb_output_coro_destroy(task->coro);
-    }
-    task->users = 0;
-    task->ic = NULL;
-}
-
 /*
  * For an existing task 'retry', re-schedule it. One of the use case of this function
  * is when the engine dispatcher fails to bring the chunk up due to Chunk I/O
