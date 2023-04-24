@@ -282,10 +282,10 @@ static int flb_forward_format_message_mode(struct flb_forward *ctx,
 }
 #endif
 
-static int flb_forward_format_transcode(
-            struct flb_forward *ctx, int format,
-            char *input_buffer, size_t input_length,
-            char **output_buffer, size_t *output_length)
+int flb_forward_format_transcode(
+        struct flb_forward *ctx, int format,
+        char *input_buffer, size_t input_length,
+        char **output_buffer, size_t *output_length)
 {
     struct flb_log_event_encoder log_encoder;
     struct flb_log_event_decoder log_decoder;
@@ -403,7 +403,7 @@ static int flb_forward_format_forward_mode(struct flb_forward *ctx,
             entries = 0;
         }
 
-        if (fc->fwd_retain_metadata && event_type == FLB_EVENT_TYPE_LOGS) {
+        if (!fc->fwd_retain_metadata && event_type == FLB_EVENT_TYPE_LOGS) {
             result = flb_forward_format_transcode(ctx, FLB_LOG_EVENT_FORMAT_FORWARD,
                                                   (char *) data, bytes,
                                                   &transcoded_buffer,

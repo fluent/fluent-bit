@@ -40,4 +40,9 @@ int flb_forward_format(struct flb_config *config,
                        const void *data, size_t bytes,
                        void **out_buf, size_t *out_size);
 
+int flb_forward_format_transcode(
+        struct flb_forward *ctx, int format,
+        char *input_buffer, size_t input_length,
+        char **output_buffer, size_t *output_length);
+
 #endif
