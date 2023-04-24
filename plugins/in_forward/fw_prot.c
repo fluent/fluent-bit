@@ -596,16 +596,30 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                 flb_sds_destroy(out_tag);
                 return -1;
             }
+
+            /* reference the tag associated with the record */
             stag     = tag.via.str.ptr;
             stag_len = tag.via.str.size;
 
-            /* Copy the tag to the new buffer, prefix it if required */
-            flb_sds_len_set(out_tag, 0); /* clear out_tag before using */
+            /* clear out_tag before using */
+            flb_sds_len_set(out_tag, 0);
+
+            /* Prefix the incoming record tag with a custom prefix */
             if (ctx->tag_prefix) {
+                /* prefix */
                 flb_sds_cat_safe(&out_tag,
                                  ctx->tag_prefix, flb_sds_len(ctx->tag_prefix));
+                /* record tag */
+                flb_sds_cat_safe(&out_tag, stag, stag_len);
             }
-            flb_sds_cat_safe(&out_tag, stag, stag_len);
+            else if (ins->tag && !ins->tag_default) {
+                /* if the input plugin instance Tag has been manually set, use it */
+                flb_sds_cat_safe(&out_tag, ins->tag, flb_sds_len(ins->tag));
+            }
+            else {
+                /* use the tag from the record */
+                flb_sds_cat_safe(&out_tag, stag, stag_len);
+            }
 
             entry = root.via.array.ptr[1];
 
