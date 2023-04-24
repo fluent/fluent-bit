@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_random.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_log_event.h>
 #include <msgpack.h>
 
 #include "forward.h"
@@ -1277,6 +1278,11 @@ static int flush_forward_mode(struct flb_forward *ctx,
     msgpack_packer mp_pck;
     void *final_data;
     size_t final_bytes;
+    char *transcoded_buffer;
+    size_t transcoded_length;
+
+    transcoded_buffer = NULL;
+    transcoded_length = 0;
 
     /* Pack message header */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -1291,22 +1297,56 @@ static int flush_forward_mode(struct flb_forward *ctx,
     /* Tag */
     flb_forward_format_append_tag(ctx, fc, &mp_pck, NULL, tag, tag_len);
 
+    if (!fc->fwd_retain_metadata && event_type == FLB_EVENT_TYPE_LOGS) {
+        ret = flb_forward_format_transcode(ctx, FLB_LOG_EVENT_FORMAT_FORWARD,
+                                           (char *) data, bytes,
+                                           &transcoded_buffer,
+                                           &transcoded_length);
+
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "could not transcode entries");
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            return FLB_RETRY;
+        }
+    }
+
     if (fc->compress == COMPRESS_GZIP) {
         /* When compress is set, we switch from using Forward mode to using
          * CompressedPackedForward mode.
          */
-        ret = flb_gzip_compress((void *) data, bytes, &final_data, &final_bytes);
+
+        if (transcoded_buffer != NULL) {
+            ret = flb_gzip_compress((void *) transcoded_buffer,
+                                    transcoded_length,
+                                    &final_data,
+                                    &final_bytes);
+        }
+        else {
+            ret = flb_gzip_compress((void *) data, bytes, &final_data, &final_bytes);
+        }
+
         if (ret == -1) {
             flb_plg_error(ctx->ins, "could not compress entries");
             msgpack_sbuffer_destroy(&mp_sbuf);
+
+            if (transcoded_buffer != NULL) {
+                flb_free(transcoded_buffer);
+            }
+
             return FLB_RETRY;
         }
 
         msgpack_pack_bin(&mp_pck, final_bytes);
     }
     else {
-        final_data = (void *) data;
-        final_bytes = bytes;
+        if (transcoded_buffer != NULL) {
+            final_data = (void *) transcoded_buffer;
+            final_bytes = transcoded_length;
+        }
+        else {
+            final_data = (void *) data;
+            final_bytes = bytes;
+        }
 
         if (event_type == FLB_EVENT_TYPE_LOGS) {
             /* for log events we create an array for the serialized messages */
@@ -1319,7 +1359,7 @@ static int flush_forward_mode(struct flb_forward *ctx,
                 pack_metricses_payload(&mp_pck, data, bytes);
             }
             else {
-                msgpack_pack_bin(&mp_pck, bytes);
+                msgpack_pack_bin(&mp_pck, final_bytes);
             }
         }
     }
@@ -1332,6 +1372,11 @@ static int flush_forward_mode(struct flb_forward *ctx,
         if (fc->compress == COMPRESS_GZIP) {
             flb_free(final_data);
         }
+
+        if (transcoded_buffer != NULL) {
+            flb_free(transcoded_buffer);
+        }
+
         return FLB_RETRY;
     }
     msgpack_sbuffer_destroy(&mp_sbuf);
@@ -1343,11 +1388,20 @@ static int flush_forward_mode(struct flb_forward *ctx,
         if (fc->compress == COMPRESS_GZIP) {
             flb_free(final_data);
         }
+
+        if (transcoded_buffer != NULL) {
+            flb_free(transcoded_buffer);
+        }
+
         return FLB_RETRY;
     }
 
     if (fc->compress == COMPRESS_GZIP) {
         flb_free(final_data);
+    }
+
+    if (transcoded_buffer != NULL) {
+        flb_free(transcoded_buffer);
     }
 
     /* Write options */
