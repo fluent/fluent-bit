@@ -214,7 +214,7 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
         /* Inform the user if a 'retry' succedeed */
         if (mk_list_size(&task->retries) > 0) {
             retries = flb_task_retry_count(task, ins);
-            if (retries > 0) {
+            if (retries > 0 && task->ic) {
                 flb_info("[engine] flush chunk '%s' succeeded at retry %i: "
                          "task_id=%i, input=%s > output=%s (out_id=%i)",
                          flb_input_chunk_get_name(task->ic),

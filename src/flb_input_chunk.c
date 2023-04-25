@@ -68,6 +68,10 @@ static inline void flb_input_chunk_task_cancel(struct flb_input_chunk *ic)
 
 
     flb_error("[input chunk] cancel task=%d", ic->task->id);
+    if (ic->task == NULL) {
+        flb_error("[input chunk] chunk has no task.");
+        return;
+    }
     if (ic->task->coro) {
         if (ic->task != ic->task->coro->task) {
             flb_error("chunk task and coro task do not match");
@@ -329,16 +333,17 @@ static int flb_input_chunk_is_task_safe_delete(struct flb_task *task)
         return FLB_TRUE;
     }
 
+    // we have to interrupt tasks that have already been spun up,
+    // or else we risk a race condition.
     if (task->coro) {
         return FLB_TRUE;
     }
-    return FLB_TRUE;
 
     if (task->users != 0) {
         return FLB_FALSE;
     }
 
-    return FLB_TRUE;
+    return FLB_FALSE;
 }
 
 static int flb_input_chunk_safe_delete(struct flb_input_chunk *ic,
