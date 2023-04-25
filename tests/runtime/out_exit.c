@@ -59,7 +59,9 @@ void flb_test_exit_json_invalid(void)
 
     sleep(WAIT_STOP); /* waiting stop automatically */
 
-    /* call flb_stop() from out_exit plugin */
+    /* On invalid case, flb_stop() is not called from out_exit plugin.
+     * To shutdown normally and cleanly, it needs to call flb_stop() here. */
+    flb_stop(ctx);
     flb_destroy(ctx);
 }
 
