@@ -97,7 +97,7 @@ struct mk_net_connection *mk_net_conn_create(char *addr, int port)
     struct mk_net_connection *conn;
 
     /* Allocate connection context */
-    conn = mk_mem_alloc(sizeof(struct mk_net_connection));
+    conn = mk_mem_alloc_z(sizeof(struct mk_net_connection));
     if (!conn) {
         return NULL;
     }
