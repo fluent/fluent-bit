@@ -390,7 +390,9 @@ int name_starts_with(flb_sds_t s, const char *str)
  * Calculate which cgroup version is used on host by checing existence of
  * cgroup.controllers file (if it exists, it is V2).
  */
-int get_cgroup_version()
+int get_cgroup_version(struct flb_in_metrics *ctx)
 {
-    return (access(CGROUP_V2_PATH, F_OK) == 0) ? CGROUP_V2 : CGROUP_V1;
+    char path[SYSFS_FILE_PATH_SIZE];
+    snprintf(path, sizeof(path), "%s/%s", ctx->sysfs_path, CGROUP_V2_PATH);
+    return (access(path, F_OK) == 0) ? CGROUP_V2 : CGROUP_V1;
 }

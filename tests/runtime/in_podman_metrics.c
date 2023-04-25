@@ -26,6 +26,7 @@
 #define DPATH_PODMAN_NO_SYSFS       FLB_TESTS_DATA_PATH "/data/podman/no_sysfs"
 #define DPATH_PODMAN_NO_PROC        FLB_TESTS_DATA_PATH "/data/podman/no_proc"
 #define DPATH_PODMAN_GARBAGE        FLB_TESTS_DATA_PATH "/data/podman/garbage"
+#define DPATH_PODMAN_CGROUP_V2      FLB_TESTS_DATA_PATH "/data/podman/cgroupv2"
 
 
 int check_metric(flb_ctx_t *ctx, flb_sds_t *name) {
@@ -176,6 +177,22 @@ void flb_test_ipm_garbage() {
     do_destroy(ctx);
 }
 
+void flb_test_ipm_cgroupv2() {
+    flb_ctx_t *ctx = flb_create();
+    do_create(ctx,
+            "podman_metrics",
+            "path.config", DPATH_PODMAN_CGROUP_V2 "/config.json",
+            "scrape_on_start", "true",
+            "path.sysfs", DPATH_PODMAN_CGROUP_V2,
+            "path.procfs", DPATH_PODMAN_CGROUP_V2,
+            NULL);
+    TEST_CHECK(flb_start(ctx) == 0);
+    sleep(1);
+    TEST_CHECK(check_metric(ctx, "usage_bytes") == 0);
+    TEST_CHECK(check_metric(ctx, "receive_bytes_total") == 0);
+    do_destroy(ctx);
+}
+
 TEST_LIST = {
     {"regular", flb_test_ipm_regular},
     {"no_config", flb_test_ipm_no_config},
@@ -183,4 +200,5 @@ TEST_LIST = {
     {"no_sysfs_data", flb_test_ipm_no_sysfs},
     {"no_proc_data", flb_test_ipm_no_proc},
     {"garbage_data", flb_test_ipm_garbage},
+    {"cgroup_v2", flb_test_ipm_cgroupv2},
     {NULL, NULL}};

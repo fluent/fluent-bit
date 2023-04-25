@@ -46,6 +46,6 @@ int fill_counters_with_sysfs_data_v1(struct flb_in_metrics *ctx);
 int fill_counters_with_sysfs_data_v2(struct flb_in_metrics *ctx);
 
 int name_starts_with(flb_sds_t s, const char *str);
-int get_cgroup_version();
+int get_cgroup_version(struct flb_in_metrics *ctx);
 
 #endif
