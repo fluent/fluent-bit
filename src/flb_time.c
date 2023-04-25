@@ -346,7 +346,7 @@ int flb_time_pop_from_mpack(struct flb_time *time, mpack_reader_t *reader)
             time->tm.tv_nsec = (uint32_t) ntohl(tmp);
             break;
         default:
-            flb_warn("unknown time format %s", tag.type);
+            flb_warn("unknown time format %d", tag.type);
             return -1;
     }
 
