@@ -47,7 +47,7 @@
 #define JSON_FIELD_NAMES                "names"
 #define JSON_FIELD_ID                   "id"
 
-#define CGROUP_V2_PATH                  "/sys/fs/cgroup/cgroup.controllers"
+#define CGROUP_V2_PATH                  "cgroup.controllers"
 #define CGROUP_V1                       1
 #define CGROUP_V2                       2
 

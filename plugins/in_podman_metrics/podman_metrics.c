@@ -423,7 +423,7 @@ static int in_metrics_init(struct flb_input_instance *in, struct flb_config *con
         ctx->config = flb_sds_create(PODMAN_CONFIG_DEFAULT_PATH);
     }
 
-    if (get_cgroup_version() == CGROUP_V2) {
+    if (get_cgroup_version(ctx) == CGROUP_V2) {
         flb_plg_info(ctx->ins, "Detected cgroups v2");
         ctx->cgroup_version = CGROUP_V2;
     }
