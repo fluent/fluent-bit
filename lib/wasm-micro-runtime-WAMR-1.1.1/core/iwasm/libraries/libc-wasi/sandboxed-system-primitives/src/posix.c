@@ -2644,8 +2644,8 @@ wasmtime_ssp_poll_oneoff(
                     pfds[i] = (struct pollfd){
                         .fd = fd_number(fos[i]),
                         .events = s->u.type == __WASI_EVENTTYPE_FD_READ
-                                      ? POLLRDNORM
-                                      : POLLWRNORM,
+                                      ? POLLIN
+                                      : POLLOUT,
                     };
                 }
                 else {
@@ -2756,7 +2756,7 @@ wasmtime_ssp_poll_oneoff(
                             __WASI_EVENT_FD_READWRITE_HANGUP,
                     };
                 }
-                else if ((pfds[i].revents & (POLLRDNORM | POLLWRNORM)) != 0) {
+                else if ((pfds[i].revents & (POLLIN | POLLOUT)) != 0) {
                     // Read or write possible.
                     out[(*nevents)++] = (__wasi_event_t){
                         .userdata = in[i].userdata,
