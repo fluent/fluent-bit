@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.4)
-project(onigmo)
+project(onigmo C)
 
 # Onigmo Version
 set(ONIGMO_VERSION_MAJOR  6)
