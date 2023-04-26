@@ -73,7 +73,8 @@ if [[ -f "fluent-bit-$NEW_VERSION.bb" ]]; then
     echo "ERROR: existing fluent-bit-$NEW_VERSION.bb"
     exit 1
 else
-    sed_wrapper "s/PV = \"[0-9].[0-9].[0-9]\"/PV = \"$NEW_VERSION\"/g" "$SCRIPT_DIR"/fluent-bit-*.*.*.bb > "fluent-bit-$NEW_VERSION.bb"
+    sed_wrapper -i "s/PV = \"[0-9].[0-9].[0-9]\"/PV = \"$NEW_VERSION\"/g" "$SCRIPT_DIR"/fluent-bit-*.*.*.bb
+    mv "$SCRIPT_DIR"/fluent-bit-*.*.*.bb "fluent-bit-$NEW_VERSION.bb"
 fi
 
 if [[ "${DISABLE_COMMIT:-no}" != "no" ]]; then
