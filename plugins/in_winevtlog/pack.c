@@ -280,6 +280,9 @@ static int pack_sid(struct winevtlog_config *ctx, PSID sid)
 static void pack_string_inserts(struct winevtlog_config *ctx, PEVT_VARIANT values, DWORD count)
 {
     int i;
+    int ret;
+
+    ret = flb_log_event_encoder_body_begin_array(ctx->log_encoder);
 
     for (i = 0; i < count; i++) {
         if (values[i].Type & EVT_VARIANT_TYPE_ARRAY) {
@@ -381,6 +384,11 @@ static void pack_string_inserts(struct winevtlog_config *ctx, PEVT_VARIANT value
             msgpack_pack_str_body(ctx, "?", 1);
         }
     }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_body_commit_array(ctx->log_encoder);
+    }
+
 }
 
 void winevtlog_pack_xml_event(WCHAR *system_xml, WCHAR *message,
