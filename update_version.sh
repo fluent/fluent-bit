@@ -77,7 +77,7 @@ else
     mv "$SCRIPT_DIR"/fluent-bit-*.*.*.bb "fluent-bit-$NEW_VERSION.bb"
 fi
 
-if [[ "${DISABLE_COMMIT:-no}" != "no" ]]; then
+if [[ "${DISABLE_COMMIT:-no}" == "no" ]]; then
     if ! command -v git &> /dev/null ; then
         echo "ERROR: Missing git CLI" >&2
         exit 1
