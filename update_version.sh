@@ -89,6 +89,8 @@ if [[ "${DISABLE_COMMIT:-no}" != "no" ]]; then
     # Handle renaming
     git add "*.bb"
     git commit -a -s -m "bitbake: bump to v$NEW_VERSION"
+else 
+    echo "Skipping commits"
 fi
 
 echo "Updated version successfully"
