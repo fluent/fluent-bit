@@ -751,18 +751,29 @@ jobs:
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
           draft: false
-          generate_release_notes: false
+          generate_release_notes: true
           name: "Fluent Bit ${{ inputs.version }}"
           tag_name: v${{ inputs.version }}
           target_commitish: '1.9'
 
-      - name: Release 2.0 and latest
+      - name: Release 2.0 - not latest
         uses: softprops/action-gh-release@v1
-        if: startsWith(inputs.version, '2.')
+        if: startsWith(inputs.version, '2.0')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
           draft: false
-          generate_release_notes: false
+          generate_release_notes: true
+          name: "Fluent Bit ${{ inputs.version }}"
+          tag_name: v${{ inputs.version }}
+          target_commitish: '2.0'
+
+      - name: Release 2.1 and latest
+        uses: softprops/action-gh-release@v1
+        if: startsWith(inputs.version, '2.1')
+        with:
+          body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          draft: false
+          generate_release_notes: true
           name: "Fluent Bit ${{ inputs.version }}"
           tag_name: v${{ inputs.version }}
 
