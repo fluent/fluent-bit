@@ -69,10 +69,11 @@ sed_wrapper -i "s/ARG RELEASE_VERSION=[0-9].[0-9].[0-9]/ARG RELEASE_VERSION=$NEW
 sed_wrapper -i "s/version: '[0-9].[0-9].[0-9]'/version: '$NEW_VERSION'/g" "$SCRIPT_DIR"/snap/snapcraft.yaml
 
 # Bitbake / Yocto
-if [[ ! -f "fluent-bit-$NEW_VERSION.bb" ]]; then
-    sed_wrapper "s/PV = \"[0-9].[0-9].[0-9]\"/PV = \"$NEW_VERSION\"/g" "$SCRIPT_DIR"/fluent-bit-*.*.*.bb > "fluent-bit-$NEW_VERSION.bb"
+if [[ -f "fluent-bit-$NEW_VERSION.bb" ]]; then
     echo "ERROR: existing fluent-bit-$NEW_VERSION.bb"
     exit 1
+else
+    sed_wrapper "s/PV = \"[0-9].[0-9].[0-9]\"/PV = \"$NEW_VERSION\"/g" "$SCRIPT_DIR"/fluent-bit-*.*.*.bb > "fluent-bit-$NEW_VERSION.bb"
 fi
 
 if [[ "${DISABLE_COMMIT:-no}" != "no" ]]; then
