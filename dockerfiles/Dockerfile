@@ -175,7 +175,7 @@ COPY --from=deb-extractor /dpkg /
 COPY --from=builder /etc/ssl/certs /etc/ssl/certs
 
 # Mitigate https://www.form3.tech/engineering/content/exploiting-distroless-images by removing the binaries for OpenSSL CLI
-RUN rm -f /usr/bin/openssl /usr/bin/c_rehash
+RUN rm -fv /usr/bin/openssl && rm -fv /usr/bin/c_rehash
 
 # Finally the binaries as most likely to change
 COPY --from=builder /fluent-bit /fluent-bit
