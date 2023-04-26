@@ -275,8 +275,8 @@ static void cb_pgsql_flush(struct flb_event_chunk *event_chunk,
     flb_sds_t tag_escaped = NULL;
     size_t str_len;
 
-    if (ctx ==NULL) {
-        FLB_OUTPUT_RETURN(FLB_RETRY);
+    if (ctx == NULL) {
+        FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
     if (pgsql_next_connection(ctx) == 1) {

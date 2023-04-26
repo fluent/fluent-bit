@@ -143,7 +143,7 @@ int pgsql_next_connection(struct flb_pgsql_config *ctx)
     struct mk_list *head;
     int ret_conn = 1;
 
-    if (ctx ==NULL) {
+    if (ctx == NULL) {
         return 1;
     }
 
