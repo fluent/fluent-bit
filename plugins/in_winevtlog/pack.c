@@ -380,8 +380,7 @@ static void pack_string_inserts(struct winevtlog_config *ctx, PEVT_VARIANT value
             }
             break;
         default:
-            msgpack_pack_str(ctx, 1);
-            msgpack_pack_str_body(ctx, "?", 1);
+            flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "?");
         }
     }
 
