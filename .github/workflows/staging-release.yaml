@@ -398,11 +398,11 @@ jobs:
           | [fluent-bit-${{ inputs.version }}-win64.exe](https://releases.fluentbit.io/${{ needs.staging-release-version-check.outputs.major-version }}/fluent-bit-${{ inputs.version }}-win64.exe) | [$WIN_64_EXE_HASH](https://releases.fluentbit.io/2.0/fluent-bit-${{ inputs.version }}-win64.exe.sha256) |
           | [fluent-bit-${{ inputs.version }}-win64.zip](https://releases.fluentbit.io/${{ needs.staging-release-version-check.outputs.major-version }}/fluent-bit-${{ inputs.version }}-win64.zip) | [$WIN_64_ZIP_HASH](https://releases.fluentbit.io/2.0/fluent-bit-${{ inputs.version }}-win64.zip.sha256) |
 
-          To check the integrity, use `Get-FileHash` cmdlet on PowerShell.
+          To check the integrity, use the \`Get-FileHash\` cmdlet on PowerShell.
 
-          ```powershell
+          \`\`\`powershell
           PS> Get-FileHash fluent-bit-${{ inputs.version }}-win32.exe
-          ```
+          \`\`\`
           EOF
       shell: bash
       env:
@@ -808,6 +808,7 @@ jobs:
           sed -i '/## Installation Packages/,/## Installing from ZIP archive/{//p;d;}' installation/windows.md
           # Add new info (from previous job) at the end for simplicity
           cat windows-part.md >> installation/windows.md
+          rm -f windows-part.md
         shell: bash
 
       - name: Raise docs PR
