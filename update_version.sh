@@ -21,11 +21,6 @@ if [[ -z "$NEW_VERSION" ]]; then
     exit 1
 fi
 
-if command -v git &> /dev/null ; then
-    echo "Missing git CLI" >&2
-    exit 1
-fi
-
 # Handle stripping the v prefix if present
 if [[ "$NEW_VERSION" =~ ^v?([0-9]+\.[0-9]+\.[0-9]+)$ ]] ; then
     NEW_VERSION=${BASH_REMATCH[1]}
@@ -58,21 +53,28 @@ sed_wrapper -i "s/FLB_VERSION_MAJOR  [0-9]/FLB_VERSION_MAJOR  $major/g" CMakeLis
 sed_wrapper -i "s/FLB_VERSION_MINOR  [0-9]/FLB_VERSION_MINOR  $minor/g" CMakeLists.txt
 sed_wrapper -i "s/FLB_VERSION_PATCH  [0-9]/FLB_VERSION_PATCH  $patch/g" CMakeLists.txt
 
-git commit -s -m "build: bump to v$NEW_VERSION" -- CMakeLists.txt
-
 # Dockerfile
 sed_wrapper -i "s/ARG RELEASE_VERSION=[0-9].[0-9].[0-9]/ARG RELEASE_VERSION=$NEW_VERSION/g" dockerfiles/Dockerfile
 sed_wrapper -i "s/ARG RELEASE_VERSION=[0-9].[0-9].[0-9]/ARG RELEASE_VERSION=$NEW_VERSION/g" dockerfiles/Dockerfile*
 
-git commit -s -m "dockerfile: bump to v$NEW_VERSION" -- dockerfiles/*
 
 # Snap
 sed_wrapper -i "s/version: '[0-9].[0-9].[0-9]'/version: '$NEW_VERSION'/g" snap/snapcraft.yaml
-git commit -s -m "snap: bump to v$NEW_VERSION" snap/snapcraft.yaml
 
 # Bitbake / Yocto
 sed_wrapper -i "s/PV = \"[0-9].[0-9].[0-9]\"/PV = \"$NEW_VERSION\"/g" fluent-bit_*.*.*.bb
-git mv fluent-bit_*.*.*.bb "fluent-bit_$NEW_VERSION.bb"
-git commit -a -s -m "bitbake: bump to v$NEW_VERSION"
+
+if [[ "${DISABLE_COMMIT:-no}" != "no" ]]; then
+    if ! command -v git &> /dev/null ; then
+        echo "ERROR: Missing git CLI" >&2
+        exit 1
+    fi
+
+    git commit -s -m "build: bump to v$NEW_VERSION" -- CMakeLists.txt
+    git commit -s -m "dockerfile: bump to v$NEW_VERSION" -- dockerfiles/*
+    git commit -s -m "snap: bump to v$NEW_VERSION" snap/snapcraft.yaml
+    git mv fluent-bit_*.*.*.bb "fluent-bit_$NEW_VERSION.bb"
+    git commit -a -s -m "bitbake: bump to v$NEW_VERSION"
+fi
 
 echo "Updated version successfully"
