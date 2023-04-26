@@ -325,6 +325,9 @@ static int next_token(const char *str, int separator, char **out, int *out_len, 
         }
         *out_len = len;
         *out = mk_string_copy_substr(token_in, 0, len);
+        if (*out == NULL) {
+            return -1;
+        }
 
         return (int)(token_in - str) + len;
     }
@@ -337,7 +340,7 @@ static int next_token(const char *str, int separator, char **out, int *out_len, 
     }
 
     /* Consume the quote character. */
-    token_in++;
+    quote = *token_in++;
 
     token_out = flb_malloc(len + 1);
     if (!token_out) {
@@ -345,12 +348,16 @@ static int next_token(const char *str, int separator, char **out, int *out_len, 
     }
 
     /* Copy the token */
-    for (i = 0; i < len;) {
-        /* Handle escapes */
+    for (i = 0; i < len; i++) {
+        /* Handle escapes when inside quoted token:
+         *   \" -> "
+         *   \' -> '
+         *   \\ -> \
+         */
         if (*token_in == '\\' && (token_in[1] == quote || token_in[1] == '\\')) {
             token_in++;
         }
-        token_out[i++] = *token_in++;
+        token_out[i] = *token_in++;
     }
     token_out[i] = '\0';
 
@@ -388,8 +395,8 @@ static struct mk_list *split(const char *line, int separator, int max_split, int
         end = next_token(line + i, separator, &val, &val_len, quoted);
         if (end == -1) {
             flb_error("Parsing failed: %s", line);
-            /* Return what was parsed until error */
-            return list;
+            flb_utils_split_free(list);
+            return NULL;
         }
 
         /* Update last position */

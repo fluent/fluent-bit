@@ -564,9 +564,45 @@ void test_flb_utils_split()
 
 void test_flb_utils_split_quoted()
 {
-    compare_split_entry("aa \"bb cc\" dd", ' ', 256, FLB_TRUE, "aa", "bb cc", "dd");
-    compare_split_entry("aa bb 'cc dd'", ' ', 256, FLB_TRUE, "aa", "bb",  "cc dd");
+   /* Tokens quoted with "..." */
+    compare_split_entry("aa \"double quote\" bb", ' ', 256, FLB_TRUE, "aa", "double quote", "bb");
+    compare_split_entry("\"begin with double quote\" aa", ' ', 256, FLB_TRUE, "begin with double quote", "aa");
+    compare_split_entry("aa \"end with double quote\"", ' ', 256, FLB_TRUE, "aa", "end with double quote");
 
+    /* Tokens quoted with '...' */
+    compare_split_entry("aa bb 'single quote' cc", ' ', 256, FLB_TRUE, "aa", "bb",  "single quote", "cc");
+    compare_split_entry("'begin with single quote' aa", ' ', 256, FLB_TRUE, "begin with single quote", "aa");
+    compare_split_entry("aa 'end with single quote'", ' ', 256, FLB_TRUE, "aa", "end with single quote");
+
+    /* Tokens surrounded by more than one separator character */
+    compare_split_entry("  aa   \" spaces bb \"  cc  '  spaces dd '  ff", ' ', 256, FLB_TRUE,
+                        "aa", " spaces bb ", "cc", "  spaces dd ", "ff");
+
+    /* Escapes within quoted token */
+    compare_split_entry("aa \"escaped \\\" quote\" bb", ' ', 256, FLB_TRUE, "aa", "escaped \" quote", "bb");
+    compare_split_entry("aa 'escaped \\' quote\' bb", ' ', 256, FLB_TRUE, "aa", "escaped \' quote", "bb");
+    compare_split_entry("aa \"\\\"escaped balanced quotes\\\"\" bb", ' ', 256, FLB_TRUE,
+                        "aa", "\"escaped balanced quotes\"", "bb");
+    compare_split_entry("aa '\\'escaped balanced quotes\\'\' bb", ' ', 256, FLB_TRUE,
+                        "aa", "'escaped balanced quotes'", "bb");
+    compare_split_entry("aa 'escaped \\\\ escape\' bb", ' ', 256, FLB_TRUE, "aa", "escaped \\ escape", "bb");
+
+    /* Escapes that are not processed */
+    compare_split_entry("\\\"aa bb", ' ', 256, FLB_TRUE, "\\\"aa", "bb");
+    compare_split_entry("\\'aa bb", ' ', 256, FLB_TRUE, "\\'aa", "bb");
+    compare_split_entry("\\\\aa bb", ' ', 256, FLB_TRUE, "\\\\aa", "bb");
+    compare_split_entry("aa\\ bb", ' ', 256, FLB_TRUE, "aa\\", "bb");
+
+}
+
+void test_flb_utils_split_quoted_errors()
+{
+    struct mk_list *split = NULL;
+
+    split = flb_utils_split_quoted("aa \"unbalanced quotes should fail", ' ', 256);
+    TEST_CHECK(split == NULL);
+    split = flb_utils_split_quoted("aa 'unbalanced quotes should fail", ' ', 256);
+    TEST_CHECK(split == NULL);
 }
 
 TEST_LIST = {
@@ -581,5 +617,6 @@ TEST_LIST = {
     { "proxy_url_split", test_proxy_url_split },
     { "test_flb_utils_split", test_flb_utils_split },
     { "test_flb_utils_split_quoted", test_flb_utils_split_quoted},
+    { "test_flb_utils_split_quoted_errors", test_flb_utils_split_quoted_errors},
     { 0 }
 };
