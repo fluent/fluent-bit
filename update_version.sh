@@ -1,16 +1,39 @@
-#!/bin/sh
+#!/bin/bash
 set -eux
 
 NEW_VERSION=${NEW_VERSION:-$1}
 
-if [ -z "$NEW_VERSION" ]; then
+if [[ -z "$NEW_VERSION" ]]; then
     echo "Usage: $0 2.1.2" >&2
     exit 1
 fi
 
-major=$(echo "$NEW_VERSION" | sed -e "s/^\([0-9]*\)\.[0-9]*\.[0-9]*/\1/")
-minor=$(echo "$NEW_VERSION" | sed -e "s/^[0-9]*\.\([0-9]*\)\.[0-9]*/\1/")
-patch=$(echo "$NEW_VERSION" | sed -e "s/^[0-9]*\.[0-9]*\.\([0-9]*\)/\1/")
+# Handle stripping the v prefix if present
+if [[ "$NEW_VERSION" =~ ^v?([0-9]+\.[0-9]+\.[0-9]+)$ ]] ; then
+    NEW_VERSION=${BASH_REMATCH[1]}
+    echo "Valid version string: $NEW_VERSION"
+else
+    echo "ERROR: Invalid semver string: $NEW_VERSION"
+    exit 1
+fi
+
+# Extract and verify each version
+major=$(echo "$NEW_VERSION" | cut -d. -f1)
+minor=$(echo "$NEW_VERSION" | cut -d. -f2)
+minor=$(echo "$NEW_VERSION" | cut -d. -f3)
+
+if [[ -z "$major" ]]; then
+    echo "ERROR: major is empty, invalid version: $NEW_VERSION"
+    exit 1
+fi
+if [[ -z "$minor" ]]; then
+    echo "ERROR: minor is empty, invalid version: $NEW_VERSION"
+    exit 1
+fi
+if [[ -z "$patch" ]]; then
+    echo "ERROR: patch is empty, invalid version: $NEW_VERSION"
+    exit 1
+fi
 
 # Build version
 sed -i "s/FLB_VERSION_MAJOR  [0-9]/FLB_VERSION_MAJOR  $major/g" CMakeLists.txt
