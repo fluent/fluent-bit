@@ -1438,11 +1438,13 @@ int uncompress_gzip(char **output_buffer,
                     size_t input_size)
 {
     int ret;
+    int64_t gzip_decompress_limit = 100000000; /* 100MB */
 
     ret = flb_gzip_uncompress(input_buffer,
                               input_size,
                               (void *) output_buffer,
-                              output_size);
+                              output_size,
+                              gzip_decompress_limit);
 
     if (ret == -1) {
         flb_error("[opentelemetry] gzip decompression failed");
