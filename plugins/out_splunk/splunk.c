@@ -478,13 +478,16 @@ static void debug_request_response(struct flb_splunk *ctx,
     unsigned char *ptr;
     flb_sds_t req_headers = NULL;
     flb_sds_t req_body = NULL;
+    int64_t gzip_decompress_limit = 100000000; /* 100MB */
 
     if (c->body_len > 3) {
         ptr = (unsigned char *) c->body_buf;
         if (ptr[0] == 0x1F && ptr[1] == 0x8B && ptr[2] == 0x08) {
             /* uncompress payload */
             ret = flb_gzip_uncompress((void *) c->body_buf, c->body_len,
-                                      &tmp_buf, &tmp_size);
+                                      &tmp_buf, &tmp_size,
+                                      gzip_decompress_limit);
+
             if (ret == -1) {
                 fprintf(stdout, "[out_splunk] could not uncompress data\n");
             }
