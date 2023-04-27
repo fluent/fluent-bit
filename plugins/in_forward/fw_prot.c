@@ -479,6 +479,7 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
     struct flb_in_fw_config *ctx = conn->ctx;
     struct cmt *cmt;
     struct ctrace *ctr;
+    int64_t gzip_decompress_limit = 100000000; /* 100MB */
 
     /*
      * [tag, time, record]
@@ -746,7 +747,8 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
 
                     if (ret == FLB_TRUE) {
                         ret = flb_gzip_uncompress((void *) data, len,
-                                                  &gz_data, &gz_size);
+                                                  &gz_data, &gz_size,
+                                                  gzip_decompress_limit);
                         if (ret == -1) {
                             flb_plg_error(ctx->ins, "gzip uncompress failure");
                             msgpack_unpacked_destroy(&result);
