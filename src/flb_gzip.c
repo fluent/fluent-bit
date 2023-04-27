@@ -163,7 +163,8 @@ int flb_gzip_compress(void *in_data, size_t in_len,
 
 /* Uncompress (inflate) GZip data */
 int flb_gzip_uncompress(void *in_data, size_t in_len,
-                        void **out_data, size_t *out_len)
+                        void **out_data, size_t *out_len,
+                        int64_t gzip_decompress_limit)
 {
     int status;
     uint8_t *p;
@@ -257,9 +258,9 @@ int flb_gzip_uncompress(void *in_data, size_t in_len,
     /* Get decompressed length */
     dlen = read_le32(&p[in_len - 4]);
 
-    /* Limit decompressed length to 100MB */
-    if (dlen > 100000000) {
-        flb_error("[gzip] maximum decompression size is 100MB");
+    /* Limit decompressed length to be the configured limit */
+    if (dlen > gzip_decompress_limit) {
+        flb_error("[gzip] maximum decompression size is %ld", gzip_decompress_limit);
         return -1;
     }
 
