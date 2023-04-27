@@ -833,16 +833,24 @@ jobs:
         if: startsWith(inputs.version, '2.0')
         uses: actions/checkout@v3
         with:
-          repository: fluent/fluent-bit-docs
+          ref: 2.0
 
       - name: Release 2.1 and latest
         if: startsWith(inputs.version, '2.1')
         uses: actions/checkout@v3
 
+      # Get the new version to use
+      - name: 'Get next minor version'
+        id: semvers
+        uses: "WyriHaximus/github-action-next-semvers@v1"
+        with:
+          version: ${{ inputs.version }}
+          strict: true
+
       - run: ./update-version.sh
         shell: bash
         env:
-          NEW_VERSION: ${{ inputs.version }}
+          NEW_VERSION: ${{ steps.semvers.outputs.patch }}
           # Ensure we use the PR action to do the work
           DISABLE_COMMIT: 'yes'
 
