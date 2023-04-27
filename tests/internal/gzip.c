@@ -20,6 +20,7 @@ void test_compress()
     size_t in_len;
     void *str;
     size_t len;
+    int64_t gzip_decompress_limit = 100000000; /* 100MB */
 
     sample_len = strlen(morpheus);
     in_len = sample_len;
@@ -29,7 +30,7 @@ void test_compress()
     in_data = str;
     in_len = len;
 
-    ret = flb_gzip_uncompress(in_data, in_len, &str, &len);
+    ret = flb_gzip_uncompress(in_data, in_len, &str, &len, gzip_decompress_limit);
     TEST_CHECK(ret == 0);
 
     TEST_CHECK(sample_len == len);
