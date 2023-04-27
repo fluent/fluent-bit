@@ -21,6 +21,7 @@
 #include "flb_tests_runtime.h"
 
 #define DPATH_PODMAN_REGULAR        FLB_TESTS_DATA_PATH "/data/podman/regular"
+#define DPATH_PODMAN_REVERSED       FLB_TESTS_DATA_PATH "/data/podman/reversed"
 #define DPATH_PODMAN_NO_CONFIG      FLB_TESTS_DATA_PATH "/data/podman/no_config"
 #define DPATH_PODMAN_GARBAGE_CONFIG FLB_TESTS_DATA_PATH "/data/podman/garbage_config"
 #define DPATH_PODMAN_NO_SYSFS       FLB_TESTS_DATA_PATH "/data/podman/no_sysfs"
@@ -95,6 +96,22 @@ void flb_test_ipm_regular() {
             "scrape_on_start", "true",
             "path.sysfs", DPATH_PODMAN_REGULAR,
             "path.procfs", DPATH_PODMAN_REGULAR,
+            NULL);
+    TEST_CHECK(flb_start(ctx) == 0);
+    sleep(1);
+    TEST_CHECK(check_metric(ctx, "usage_bytes") == 0);
+    TEST_CHECK(check_metric(ctx, "receive_bytes_total") == 0);
+    do_destroy(ctx);
+}
+
+void flb_test_ipm_reversed() {
+    flb_ctx_t *ctx = flb_create();
+    do_create(ctx,
+            "podman_metrics",
+            "path.config", DPATH_PODMAN_REVERSED "/config.json",
+            "scrape_on_start", "true",
+            "path.sysfs", DPATH_PODMAN_REVERSED,
+            "path.procfs", DPATH_PODMAN_REVERSED,
             NULL);
     TEST_CHECK(flb_start(ctx) == 0);
     sleep(1);
@@ -195,6 +212,7 @@ void flb_test_ipm_cgroupv2() {
 
 TEST_LIST = {
     {"regular", flb_test_ipm_regular},
+    {"reversed", flb_test_ipm_reversed},
     {"no_config", flb_test_ipm_no_config},
     {"garbage_config", flb_test_ipm_garbage_config},
     {"no_sysfs_data", flb_test_ipm_no_sysfs},

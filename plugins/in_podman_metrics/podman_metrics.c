@@ -42,6 +42,11 @@ static int collect_container_data(struct flb_in_metrics *ctx)
     char *buffer;
     char name[CONTAINER_NAME_SIZE];
     char id[CONTAINER_ID_SIZE];
+    char image_name[IMAGE_NAME_SIZE];
+    char metadata[CONTAINER_METADATA_SIZE];
+    char *metadata_token_start;
+    char *metadata_token_stop;
+    int metadata_token_size;
 
     int array_id;
     int r, i, j;
@@ -95,11 +100,32 @@ static int collect_container_data(struct flb_in_metrics *ctx)
                         strncpy(name, buffer + t[j].start, t[j].end - t[j].start);
                         name[t[j].end - t[j].start] = '\0';
                         flb_plg_trace(ctx->ins, "Found name %s", name);
-                        add_container_to_list(ctx, id, name);
                         j++;
-                        collected_containers++;
                     }
                 }
+            }
+            else if (sizeof(JSON_FIELD_METADATA)-1 == t[i].end - t[i].start &&
+                strncmp(buffer + t[i].start, JSON_FIELD_METADATA, t[i].end - t[i].start) == 0) {
+                token_len = t[i + 1].end - t[i + 1].start;
+                strncpy(metadata, buffer + t[i+1].start, t[i + 1].end - t[i + 1].start);
+                metadata[token_len] = '\0';
+
+                metadata_token_start = strstr(metadata, JSON_SUBFIELD_IMAGE_NAME);
+                if (metadata_token_start) {
+                    metadata_token_stop = strstr(metadata_token_start + JSON_SUBFIELD_SIZE_IMAGE_NAME+1, "\\\"");
+                    metadata_token_size = metadata_token_stop - metadata_token_start - JSON_SUBFIELD_SIZE_IMAGE_NAME;
+
+                    strncpy(image_name, metadata_token_start+JSON_SUBFIELD_SIZE_IMAGE_NAME, metadata_token_size);
+                    image_name[metadata_token_size] = '\0';
+
+                    flb_plg_trace(ctx->ins, "Found image name %s", image_name);
+                    add_container_to_list(ctx, id, name, image_name);
+                }
+                else {
+                    flb_plg_warn(ctx->ins, "Image name was not found for %s", id);
+                    add_container_to_list(ctx, id, name, "unknown");
+                }
+                collected_containers++;
             }
         }
     }
@@ -110,11 +136,11 @@ static int collect_container_data(struct flb_in_metrics *ctx)
 }
 
 /*
- * Create structure instance based on previously found id and name. Set all its values (like
+ * Create structure instance based on previously found id, name and image name. Set all its values (like
  * memory or cpu to UINT64_MAX, in case it won't be found later. This function also adds this structure
  * to internal list, so it can be found by iteration later on.
  */
-static int add_container_to_list(struct flb_in_metrics *ctx, flb_sds_t id, flb_sds_t name)
+static int add_container_to_list(struct flb_in_metrics *ctx, flb_sds_t id, flb_sds_t name, flb_sds_t image_name)
 {
     struct container *cnt;
     cnt = flb_malloc(sizeof(struct container));
@@ -124,6 +150,7 @@ static int add_container_to_list(struct flb_in_metrics *ctx, flb_sds_t id, flb_s
     }
     cnt->id = flb_sds_create(id);
     cnt->name = flb_sds_create(name);
+    cnt->image_name = flb_sds_create(image_name);
 
     cnt->memory_usage = UINT64_MAX;
     cnt->memory_max_usage = UINT64_MAX;
@@ -157,6 +184,7 @@ static int destroy_container_list(struct flb_in_metrics *ctx)
 
         flb_sds_destroy(cnt->id);
         flb_sds_destroy(cnt->name);
+        flb_sds_destroy(cnt->image_name);
         mk_list_foreach_safe(inner_head, inner_tmp, &cnt->net_data) {
             iface = mk_list_entry(inner_head, struct net_iface, _head);
             flb_sds_destroy(iface->name);
@@ -179,13 +207,13 @@ static int destroy_container_list(struct flb_in_metrics *ctx)
 
 
 /*
- * Create counter for given metric name, using name and value as counter labels. Counters
+ * Create counter for given metric name, using name, image name and value as counter labels. Counters
  * are created per counter name, so they are "shared" between multiple containers - counter
  * name remains the same, only labels like ID are changed.
  * This function creates counter only once per counter name - every next call only sets counter
  * value for specific labels.
  */
-static int create_counter(struct flb_in_metrics *ctx, struct cmt_counter **counter, flb_sds_t id, flb_sds_t name, flb_sds_t metric_prefix,
+static int create_counter(struct flb_in_metrics *ctx, struct cmt_counter **counter, flb_sds_t id, flb_sds_t name, flb_sds_t image_name, flb_sds_t metric_prefix,
                           flb_sds_t *fields, flb_sds_t metric_name, flb_sds_t description, flb_sds_t interface, uint64_t value)
 {
     flb_sds_t *labels;
@@ -204,12 +232,12 @@ static int create_counter(struct flb_in_metrics *ctx, struct cmt_counter **count
     }
 
     if (interface == NULL) {
-        labels = (char *[]){id, name};
-        label_count = 2;
+        labels = (char *[]){id, name, image_name};
+        label_count = 3;
     }
     else {
-        labels = (char *[]){id, name, interface};
-        label_count = 3;
+        labels = (char *[]){id, name, image_name, interface};
+        label_count = 4;
     }
 
     /* if counter was not yet created, it means that this function is called for the first time per counter type */
@@ -229,13 +257,13 @@ static int create_counter(struct flb_in_metrics *ctx, struct cmt_counter **count
 }
 
 /*
- * Create gauge for given metric name, using name and value as counter labels. Gauges
+ * Create gauge for given metric name, using name, image name and value as counter labels. Gauges
  * are created per counter name, so they are "shared" between multiple containers - counter
  * name remains the same, only labels like ID are changed.
  * This function creates gauge only once per counter name - every next call only sets gauge
  * value for specific labels.
  */
-static int create_gauge(struct flb_in_metrics *ctx, struct cmt_gauge **gauge, flb_sds_t id, flb_sds_t name, flb_sds_t metric_prefix,
+static int create_gauge(struct flb_in_metrics *ctx, struct cmt_gauge **gauge, flb_sds_t id, flb_sds_t name, flb_sds_t image_name, flb_sds_t metric_prefix,
                           flb_sds_t *fields, flb_sds_t metric_name, flb_sds_t description, flb_sds_t interface, uint64_t value)
 {
     flb_sds_t *labels;
@@ -245,8 +273,8 @@ static int create_gauge(struct flb_in_metrics *ctx, struct cmt_gauge **gauge, fl
         return -1;
     }
 
-    labels = (char *[]){id, name};
-    label_count = 2;
+    labels = (char *[]){id, name, image_name};
+    label_count = 3;
 
     /* if gauge was not yet created, it means that this function is called for the first time per counter type */
     if (*gauge == NULL) {
@@ -289,28 +317,28 @@ static int create_counters(struct flb_in_metrics *ctx)
     mk_list_foreach_safe(head, tmp, &ctx->items)
     {
         cnt = mk_list_entry(head, struct container, _head);
-        create_counter(ctx, &ctx->c_memory_usage, cnt->id, cnt->name, COUNTER_MEMORY_PREFIX, FIELDS_METRIC, COUNTER_MEMORY_USAGE,
+        create_counter(ctx, &ctx->c_memory_usage, cnt->id, cnt->name, cnt->image_name, COUNTER_MEMORY_PREFIX, FIELDS_METRIC, COUNTER_MEMORY_USAGE,
                        DESCRIPTION_MEMORY_USAGE, NULL, cnt->memory_usage);
-        create_counter(ctx, &ctx->c_memory_max_usage, cnt->id, cnt->name, COUNTER_MEMORY_PREFIX, FIELDS_METRIC, COUNTER_MEMORY_MAX_USAGE,
+        create_counter(ctx, &ctx->c_memory_max_usage, cnt->id, cnt->name, cnt->image_name, COUNTER_MEMORY_PREFIX, FIELDS_METRIC, COUNTER_MEMORY_MAX_USAGE,
                        DESCRIPTION_MEMORY_MAX_USAGE, NULL, cnt->memory_max_usage);
-        create_counter(ctx, &ctx->c_memory_limit, cnt->id, cnt->name, COUNTER_SPEC_MEMORY_PREFIX, FIELDS_METRIC, COUNTER_MEMORY_LIMIT,
+        create_counter(ctx, &ctx->c_memory_limit, cnt->id, cnt->name, cnt->image_name, COUNTER_SPEC_MEMORY_PREFIX, FIELDS_METRIC, COUNTER_MEMORY_LIMIT,
                        DESCRIPTION_MEMORY_LIMIT, NULL, cnt->memory_limit);
-        create_gauge(ctx, &ctx->g_rss, cnt->id, cnt->name, COUNTER_MEMORY_PREFIX, FIELDS_METRIC, GAUGE_MEMORY_RSS,
+        create_gauge(ctx, &ctx->g_rss, cnt->id, cnt->name, cnt->image_name, COUNTER_MEMORY_PREFIX, FIELDS_METRIC, GAUGE_MEMORY_RSS,
                      DESCRIPTION_MEMORY_RSS, NULL, cnt->rss);
-        create_counter(ctx, &ctx->c_cpu_user, cnt->id, cnt->name, COUNTER_CPU_PREFIX, FIELDS_METRIC, COUNTER_CPU_USER,
+        create_counter(ctx, &ctx->c_cpu_user, cnt->id, cnt->name, cnt->image_name, COUNTER_CPU_PREFIX, FIELDS_METRIC, COUNTER_CPU_USER,
                        DESCRIPTION_CPU_USER, NULL, cnt->cpu_user);
-        create_counter(ctx, &ctx->c_cpu, cnt->id, cnt->name, COUNTER_CPU_PREFIX, FIELDS_METRIC, COUNTER_CPU,
+        create_counter(ctx, &ctx->c_cpu, cnt->id, cnt->name, cnt->image_name, COUNTER_CPU_PREFIX, FIELDS_METRIC, COUNTER_CPU,
                        DESCRIPTION_CPU, NULL, cnt->cpu);
         mk_list_foreach_safe(inner_head, inner_tmp, &cnt->net_data)
         {
             iface = mk_list_entry(inner_head, struct net_iface, _head);
-            create_counter(ctx, &ctx->rx_bytes, cnt->id, cnt->name, COUNTER_NETWORK_PREFIX, FIELDS_METRIC_WITH_IFACE, COUNTER_RX_BYTES,
+            create_counter(ctx, &ctx->rx_bytes, cnt->id, cnt->name, cnt->image_name, COUNTER_NETWORK_PREFIX, FIELDS_METRIC_WITH_IFACE, COUNTER_RX_BYTES,
                            DESCRIPTION_RX_BYTES, iface->name, iface->rx_bytes);
-            create_counter(ctx, &ctx->rx_errors, cnt->id, cnt->name, COUNTER_NETWORK_PREFIX, FIELDS_METRIC_WITH_IFACE, COUNTER_RX_ERRORS,
+            create_counter(ctx, &ctx->rx_errors, cnt->id, cnt->name, cnt->image_name, COUNTER_NETWORK_PREFIX, FIELDS_METRIC_WITH_IFACE, COUNTER_RX_ERRORS,
                            DESCRIPTION_RX_ERRORS, iface->name, iface->rx_errors);
-            create_counter(ctx, &ctx->tx_bytes, cnt->id, cnt->name, COUNTER_NETWORK_PREFIX, FIELDS_METRIC_WITH_IFACE, COUNTER_TX_BYTES,
+            create_counter(ctx, &ctx->tx_bytes, cnt->id, cnt->name, cnt->image_name, COUNTER_NETWORK_PREFIX, FIELDS_METRIC_WITH_IFACE, COUNTER_TX_BYTES,
                            DESCRIPTION_TX_BYTES, iface->name, iface->tx_bytes);
-            create_counter(ctx, &ctx->tx_errors, cnt->id, cnt->name, COUNTER_NETWORK_PREFIX, FIELDS_METRIC_WITH_IFACE, COUNTER_TX_ERRORS,
+            create_counter(ctx, &ctx->tx_errors, cnt->id, cnt->name, cnt->image_name, COUNTER_NETWORK_PREFIX, FIELDS_METRIC_WITH_IFACE, COUNTER_TX_ERRORS,
                            DESCRIPTION_TX_ERRORS, iface->name, iface->tx_errors);
         }
     }

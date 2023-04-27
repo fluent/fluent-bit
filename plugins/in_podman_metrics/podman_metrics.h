@@ -31,11 +31,13 @@
 #include "podman_metrics_config.h"
 
 static int collect_container_data(struct flb_in_metrics *ctx);
-static int add_container_to_list(struct flb_in_metrics *ctx, flb_sds_t id, flb_sds_t name);
+static int add_container_to_list(struct flb_in_metrics *ctx, flb_sds_t id, flb_sds_t name, flb_sds_t image_name);
 static int destroy_container_list(struct flb_in_metrics *ctx);
 
-static int create_counter(struct flb_in_metrics *ctx, struct cmt_counter **counter, flb_sds_t id, flb_sds_t name, flb_sds_t metric_prefix,
+static int create_counter(struct flb_in_metrics *ctx, struct cmt_counter **counter, flb_sds_t id, flb_sds_t name, flb_sds_t image_name, flb_sds_t metric_prefix,
                           flb_sds_t *fieds, flb_sds_t metric_name, flb_sds_t description, flb_sds_t interface, uint64_t value);
+static int create_gauge(struct flb_in_metrics *ctx, struct cmt_gauge **gauge, flb_sds_t id, flb_sds_t name, flb_sds_t image_name, flb_sds_t metric_prefix,
+                          flb_sds_t *fields, flb_sds_t metric_name, flb_sds_t description, flb_sds_t interface, uint64_t value);
 static int create_counters(struct flb_in_metrics *ctx);
 
 static int scrape_metrics(struct flb_config *config, struct flb_in_metrics *ctx);

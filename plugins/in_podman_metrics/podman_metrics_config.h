@@ -32,6 +32,8 @@
 #define JSON_TOKENS                     2048
 #define CONTAINER_NAME_SIZE             50
 #define CONTAINER_ID_SIZE               80
+#define CONTAINER_METADATA_SIZE         512
+#define IMAGE_NAME_SIZE                 512
 #define PID_BUFFER_SIZE                 21
 #define SYSFS_FILE_PATH_SIZE            512
 #define PROCFS_FILE_PATH_SIZE           512
@@ -46,6 +48,10 @@
 
 #define JSON_FIELD_NAMES                "names"
 #define JSON_FIELD_ID                   "id"
+#define JSON_FIELD_METADATA             "metadata"
+
+#define JSON_SUBFIELD_IMAGE_NAME        "image-name\\\":\\\""
+#define JSON_SUBFIELD_SIZE_IMAGE_NAME   15
 
 #define CGROUP_V2_PATH                  "cgroup.controllers"
 #define CGROUP_V1                       1
@@ -81,8 +87,8 @@
 #define STAT_KEY_CPU_USER               "user_usec"
 
 /* Static lists of fields in counters or gauges */
-#define FIELDS_METRIC                  (char*[2]){"id", "name" }
-#define FIELDS_METRIC_WITH_IFACE       (char*[3]){"id", "name", "interface" }
+#define FIELDS_METRIC                  (char*[3]){"id", "name", "image" }
+#define FIELDS_METRIC_WITH_IFACE       (char*[4]){"id", "name", "image", "interface" }
 
 /* Files from sysfs containing required data (cgroups v1) */
 #define V1_SYSFS_FILE_MEMORY           "memory.usage_in_bytes"
@@ -144,6 +150,7 @@ struct net_iface {
 struct container {
     flb_sds_t       name;
     flb_sds_t       id;
+    flb_sds_t       image_name;
     struct mk_list  _head;
 
     uint64_t        memory_usage;
