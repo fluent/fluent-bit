@@ -23,11 +23,12 @@
 #include "in_elasticsearch_config.h"
 #include "in_elasticsearch_bulk_conn.h"
 
-struct flb_in_elasticsearch *in_elasticsearch_config_create(struct flb_input_instance *ins)
+struct flb_in_elasticsearch *in_elasticsearch_config_create(struct flb_input_instance *ins, struct flb_config *config)
 {
     int ret;
     char port[8];
     struct flb_in_elasticsearch *ctx;
+    int64_t gzip_decompress_limit = 100000000; /* 100MB */
 
     ctx = flb_calloc(1, sizeof(struct flb_in_elasticsearch));
     if (!ctx) {
@@ -54,6 +55,12 @@ struct flb_in_elasticsearch *in_elasticsearch_config_create(struct flb_input_ins
     /* HTTP Server specifics */
     ctx->server = flb_calloc(1, sizeof(struct mk_server));
     ctx->server->keep_alive = MK_TRUE;
+
+    /* Set up the limit of gzip decompression */
+    ctx->gzip_decompress_limit = gzip_decompress_limit;
+    if (ctx->buffer_max_size > gzip_decompress_limit) {
+        ctx->gzip_decompress_limit = ctx->buffer_max_size;
+    }
 
     /* monkey detects server->workers == 0 as the server not being initialized at the
      * moment so we want to make sure that it stays that way!

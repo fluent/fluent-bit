@@ -44,6 +44,7 @@ struct flb_in_elasticsearch {
 
     size_t buffer_max_size;            /* Maximum buffer size */
     size_t buffer_chunk_size;          /* Chunk allocation size */
+    int64_t gzip_decompress_limit;
 
     struct flb_downstream *downstream; /* Client manager */
     struct mk_list connections;        /* linked list of connections */

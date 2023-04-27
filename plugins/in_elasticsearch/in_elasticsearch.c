@@ -99,7 +99,7 @@ static int in_elasticsearch_bulk_init(struct flb_input_instance *ins,
     (void) data;
 
     /* Create context and basic conf */
-    ctx = in_elasticsearch_config_create(ins);
+    ctx = in_elasticsearch_config_create(ins, config);
     if (!ctx) {
         return -1;
     }

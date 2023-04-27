@@ -624,7 +624,8 @@ static int process_payload(struct flb_in_elasticsearch *ctx, struct in_elasticse
     if (type == HTTP_CONTENT_NDJSON || type == HTTP_CONTENT_JSON) {
         if (gzip_compressed == FLB_TRUE) {
             ret = flb_gzip_uncompress((void *) request->data.data, request->data.len,
-                                      &gz_data, &gz_size);
+                                      &gz_data, &gz_size,
+                                      ctx->gzip_decompress_limit);
             if (ret == -1) {
                 flb_error("[elasticsearch_bulk_prot] gzip uncompress is failed");
                 return -1;

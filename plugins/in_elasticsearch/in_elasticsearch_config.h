@@ -23,7 +23,7 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include "in_elasticsearch.h"
 
-struct flb_in_elasticsearch *in_elasticsearch_config_create(struct flb_input_instance *ins);
+struct flb_in_elasticsearch *in_elasticsearch_config_create(struct flb_input_instance *ins, struct flb_config *config);
 int in_elasticsearch_config_destroy(struct flb_in_elasticsearch *ctx);
 
 #endif
