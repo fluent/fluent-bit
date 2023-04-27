@@ -509,7 +509,7 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
         result = flb_input_chunk_release_space_compound(
                                             ic, o_ins,
                                             &local_release_requirement,
-                                            FLB_FALSE);
+                                            FLB_TRUE);
 
         if (!result && local_release_requirement == 0) {
             /* If this function returned 0 it means the space requirement was
@@ -519,89 +519,35 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
             continue;
         }
 
-        /* flb_input_chunk_find_space_new_data_backlog may fail to meet the space
-         * requirements but it always sets local_release_requirement to the right amount
+
+        /* As part of the PoC and to simplify the situation I have enable local chunk
+         * release in flb_input_chunk_release_space_compound which performs the same
+         * function the removed code did but uses the same code that's already being
+         * used for the storage backlog chunks.
          */
-
-        count = flb_intput_chunk_count_dropped_chunks(ic, o_ins, local_release_requirement);
-
-        if (count == 0) {
-            /*
-             * The worst scenerio is that we cannot find a space by dropping some
-             * old chunks for the incoming chunk. We need to adjust the routes_mask
-             * of the incoming chunk to not flush to that output instance.
-             */
-            flb_error("[input chunk] no enough space in filesystem to buffer "
-                      "chunk %s in plugin %s", flb_input_chunk_get_name(ic), o_ins->name);
-
-            flb_routes_mask_clear_bit(ic->routes_mask, o_ins->id);
-            if (flb_routes_mask_is_empty(ic->routes_mask)) {
-                bytes = flb_input_chunk_get_size(ic);
-                if (bytes != 0) {
-                    /*
-                     * Skip newly created chunk as newly created chunk
-                     * hasn't updated the fs_chunks_size yet.
-                     */
-                    bytes = flb_input_chunk_get_real_size(ic);
-                    FS_CHUNK_SIZE_DEBUG_MOD(o_ins, ic, -bytes);
-                    o_ins->fs_chunks_size -= bytes;
-                    flb_debug("[input chunk] chunk %s has no output route, "
-                              "remove %ld bytes from fs_chunks_size",
-                              flb_input_chunk_get_name(ic), bytes);
-                }
-            }
-
-            continue;
-        }
 
         /*
-         * Here we need to drop some chunks from the beginning of chunks list.
-         * Since chunks are stored in a double linked list (mk_list), we are
-         * able to iterate the list from the beginning and check if the current
-         * chunk is able to be removed.
+         * The worst scenerio is that we cannot find a space by dropping some
+         * old chunks for the incoming chunk. We need to adjust the routes_mask
+         * of the incoming chunk to not flush to that output instance.
          */
-        mk_list_foreach_safe(head_chunk, tmp, &ic->in->chunks) {
-            old_ic = mk_list_entry(head_chunk, struct flb_input_chunk, _head);
+        flb_error("[input chunk] no enough space in filesystem to buffer "
+                  "chunk %s in plugin %s", flb_input_chunk_get_name(ic), o_ins->name);
 
-            if (flb_input_chunk_safe_delete(ic, old_ic, o_ins->id) == FLB_FALSE ||
-                flb_input_chunk_is_task_safe_delete(old_ic->task) == FLB_FALSE) {
-                continue;
-            }
-
-            old_ic_bytes = flb_input_chunk_get_real_size(old_ic);
-
-            /* drop chunk by adjusting the routes_mask */
-            flb_routes_mask_clear_bit(old_ic->routes_mask, o_ins->id);
-            FS_CHUNK_SIZE_DEBUG_MOD(o_ins, old_ic, -old_ic_bytes);
-            o_ins->fs_chunks_size -= old_ic_bytes;
-
-            flb_debug("[input chunk] remove route of chunk %s with size %ld bytes to output plugin %s "
-                      "to place the incoming data with size %ld bytes", flb_input_chunk_get_name(old_ic),
-                      old_ic_bytes, o_ins->name, chunk_size);
-
-            if (flb_routes_mask_is_empty(old_ic->routes_mask)) {
-                if (old_ic->task != NULL) {
-                    /*
-                     * If the chunk is referenced by a task and task has no active route,
-                     * we need to destroy the task as well.
-                     */
-                    if (old_ic->task->users == 0) {
-                        flb_debug("[task] drop task_id %d with no active route from input plugin %s",
-                                  old_ic->task->id, ic->in->name);
-                        flb_task_destroy(old_ic->task, FLB_TRUE);
-                    }
-                }
-                else {
-                    flb_debug("[input chunk] drop chunk %s with no output route from input plugin %s",
-                              flb_input_chunk_get_name(old_ic), ic->in->name);
-                    flb_input_chunk_destroy(old_ic, FLB_TRUE);
-                }
-            }
-
-            count--;
-            if (count == 0) {
-                /* we have dropped enough chunks to place the incoming chunks */
-                break;
+        flb_routes_mask_clear_bit(ic->routes_mask, o_ins->id);
+        if (flb_routes_mask_is_empty(ic->routes_mask)) {
+            bytes = flb_input_chunk_get_size(ic);
+            if (bytes != 0) {
+                /*
+                 * Skip newly created chunk as newly created chunk
+                 * hasn't updated the fs_chunks_size yet.
+                 */
+                bytes = flb_input_chunk_get_real_size(ic);
+                FS_CHUNK_SIZE_DEBUG_MOD(o_ins, ic, -bytes);
+                o_ins->fs_chunks_size -= bytes;
+                flb_debug("[input chunk] chunk %s has no output route, "
+                          "remove %ld bytes from fs_chunks_size",
+                          flb_input_chunk_get_name(ic), bytes);
             }
         }
     }
