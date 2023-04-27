@@ -22,7 +22,15 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_routes_mask.h>
+#include <fluent-bit/flb_config.h>
 
+static int routes_arr_size = FLB_ROUTES_MASK_ELEMENTS;
+static int max_routes_value = FLB_ROUTES_MASK_MAX_VALUE;
+
+void flb_routes_mask_init(struct flb_config *config) {
+    routes_arr_size = config->routes_mask_elements;
+    max_routes_value = routes_arr_size * FLB_ROUTES_MASK_ELEMENT_BITS;
+}
 
 /*
  * Set the routes_mask for input chunk with a router_match on tag, return a
@@ -39,9 +47,11 @@ int flb_routes_mask_set_by_tag(uint64_t *routes_mask,
     if (!in) {
         return 0;
     }
-
+    uint64_t *tmp;
+    tmp = flb_realloc(routes_mask, sizeof(uint64_t) * routes_arr_size);
+    routes_mask = tmp;
     /* Clear the bit field */
-    memset(routes_mask, 0, sizeof(uint64_t) * FLB_ROUTES_MASK_ELEMENTS);
+    memset(routes_mask, 0, sizeof(uint64_t) * routes_arr_size);
 
     /* Find all matching routes for the given tag */
     mk_list_foreach(o_head, &in->config->outputs) {
@@ -75,7 +85,7 @@ void flb_routes_mask_set_bit(uint64_t *routes_mask, int value)
     int index;
     uint64_t bit;
 
-    if (value < 0 || value > FLB_ROUTES_MASK_MAX_VALUE) {
+    if (value < 0 || value > max_routes_value) {
         flb_warn("[routes_mask] Can't set bit (%d) past limits of bitfield",
                  value);
         return;
@@ -98,7 +108,7 @@ void flb_routes_mask_clear_bit(uint64_t *routes_mask, int value)
     int index;
     uint64_t bit;
 
-    if (value < 0 || value > FLB_ROUTES_MASK_MAX_VALUE) {
+    if (value < 0 || value > max_routes_value) {
         flb_warn("[routes_mask] Can't set bit (%d) past limits of bitfield",
                  value);
         return;
@@ -122,7 +132,7 @@ int flb_routes_mask_get_bit(uint64_t *routes_mask, int value)
     int index;
     uint64_t bit;
 
-    if (value < 0 || value > FLB_ROUTES_MASK_MAX_VALUE) {
+    if (value < 0 || value > max_routes_value) {
         flb_warn("[routes_mask] Can't get bit (%d) past limits of bitfield",
                  value);
         return 0;
@@ -135,7 +145,7 @@ int flb_routes_mask_get_bit(uint64_t *routes_mask, int value)
 
 int flb_routes_mask_is_empty(uint64_t *routes_mask)
 {
-    uint64_t empty[FLB_ROUTES_MASK_ELEMENTS];
+    uint64_t empty[routes_arr_size];
 
     /* Clear the tmp bitfield */
     memset(empty, 0, sizeof(empty));
