@@ -271,7 +271,7 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
         }
 
         if (skip_flag) {
-            flb_info("[task] %s - skipping chunk %s task creation to ensure "
+            flb_debug("[task] %s - skipping chunk %s task creation to ensure "
                       "droppable chunk availability (%zu remaining)",
                       in->name,
                       flb_input_chunk_get_name(ic),
