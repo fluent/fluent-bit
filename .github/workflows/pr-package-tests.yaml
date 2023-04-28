@@ -17,7 +17,6 @@ jobs:
     if: contains(github.event.pull_request.labels.*.name, 'ok-package-test')
     name: Get metadata to add to build
     runs-on: ubuntu-latest
-    environment: unstable
     outputs:
       date: ${{ steps.date.outputs.date }}
     permissions:
@@ -38,7 +37,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       build-matrix: ${{ steps.set-matrix.outputs.build-matrix }}
-    environment: pr
     permissions:
       contents: read
     steps:
@@ -61,7 +59,6 @@ jobs:
       version: pr-${{ github.event.number }}
       ref: ${{ github.ref }}
       build_matrix: ${{ needs.pr-package-test-build-generate-matrix.outputs.build-matrix }}
-      environment: pr
       unstable: ${{ needs.pr-package-test-build-get-meta.outputs.date }}
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
@@ -74,7 +71,6 @@ jobs:
     with:
       version: pr-${{ github.event.number }}
       ref: ${{ github.ref }}
-      environment: pr
       unstable: ${{ needs.pr-package-test-build-get-meta.outputs.date }}
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
@@ -87,7 +83,6 @@ jobs:
     with:
       version: pr-${{ github.event.number }}
       ref: ${{ github.ref }}
-      environment: pr-package-test
       unstable: ${{ needs.pr-package-test-build-get-meta.outputs.date }}
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
