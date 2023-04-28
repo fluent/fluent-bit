@@ -100,12 +100,44 @@ int flb_engine_destroy_tasks(struct mk_list *tasks)
     return c;
 }
 
+/* This is a simplistic output plugin storage limit check
+ * ripped from flb_input_chunk_has_overlimit_routes which
+ * we should move to a more appropriate place for the final
+ * patch.
+ */
+static inline int flb_output_instance_can_store(
+                    struct flb_output_instance *o_ins,
+                    size_t chunk_size)
+{
+    if (o_ins->total_limit_size != -1) {
+        if ((o_ins->fs_chunks_size +
+             o_ins->fs_backlog_chunks_size +
+             chunk_size) > o_ins->total_limit_size) {
+            return FLB_FALSE;
+        }
+    }
+
+    return FLB_TRUE;
+}
+
 int flb_engine_flush(struct flb_config *config,
                      struct flb_input_plugin *in_force)
 {
+    struct flb_output_instance *out;
     struct flb_input_instance *in;
     struct flb_input_plugin *p;
     struct mk_list *head;
+
+    mk_list_foreach(head, &config->outputs) {
+        out = mk_list_entry(head, struct flb_output_instance, _head);
+
+        if (!flb_output_instance_can_store(out, FLB_DISPATCHER_RESERVED_STORAGE_SPACE)) {
+            out->releasable_chunks_required = FLB_DISPATCHER_RESERVED_CHUNK_MINIMUM;
+        }
+        else {
+            out->releasable_chunks_required = 0;
+        }
+    }
 
     mk_list_foreach(head, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_instance, _head);

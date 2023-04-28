@@ -31,28 +31,6 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_task.h>
 
-
-/* FLB_DISPATCHER_RESERVED_CHUNK_PERCENTAGE defines the percentage of chunks that
- * will not be scheduled to be flushed if there are routes that risk running out
- * of storage space.
- *
- * FLB_DISPATCHER_RESERVED_CHUNK_MINIMUM defines a lower boundary for the number
- * of chunks we calculate using FLB_DISPATCHER_RESERVED_CHUNK_PERCENTAGE which
- * in the real world shouldn't happen because target systems usually have
- * limits above 500 megabytes.
- *
- * FLB_DISPATCHER_RESERVED_STORAGE_SPACE as defined ensures that the system is
- * able to ingest N bytes without exceeding the limits (in this PoCs case 10 MB).
- *
- * In the real world these souldn't be constants but rather settings and the
- * storage space setting should be higher than 10 megabytes, especially when
- * the ingestion volume is rather large.
-*/
-
-#define FLB_DISPATCHER_RESERVED_CHUNK_PERCENTAGE 10
-#define FLB_DISPATCHER_RESERVED_CHUNK_MINIMUM    5
-#define FLB_DISPATCHER_RESERVED_STORAGE_SPACE    (10 * 1000000)
-
 /* It creates a new output thread using a 'Retry' context */
 int flb_engine_dispatch_retry(struct flb_task_retry *retry,
                               struct flb_config *config)
@@ -82,6 +60,11 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
         /* Just return because it has been re-scheduled */
         return 0;
     }
+
+    /* We should improve the scope of the chunk skipping code so we can
+     * determine here if we need to re-schedule this retry rather than
+     * perform it immediately.
+     */
 
     /* There is a match, get the buffer */
     task->buf = flb_input_chunk_flush(task->ic, &buf_size);
@@ -249,23 +232,13 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
     struct flb_input_plugin *p;
     struct flb_input_chunk *ic;
     struct flb_task *task = NULL;
-    size_t chunk_count;
-    size_t chunk_index;
-    size_t availability_window;
-    int    overlimit_flag;
+    struct flb_output_instance *o_ins;
+    struct mk_list *o_head;
+    int skip_flag;
 
     p = in->p;
     if (!p) {
         return 0;
-    }
-
-    chunk_count = mk_list_size(&in->chunks);
-    chunk_index = 0;
-
-    availability_window = ceil((FLB_DISPATCHER_RESERVED_CHUNK_PERCENTAGE * chunk_count) / 100);
-
-    if (availability_window < FLB_DISPATCHER_RESERVED_CHUNK_MINIMUM) {
-        availability_window = FLB_DISPATCHER_RESERVED_CHUNK_MINIMUM;
     }
 
     /* Look for chunks ready to go */
@@ -275,17 +248,34 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
             continue;
         }
 
-        chunk_index++;
+        skip_flag = FLB_FALSE;
 
-        overlimit_flag = flb_input_chunk_has_overlimit_routes(
-                            ic, FLB_DISPATCHER_RESERVED_STORAGE_SPACE);
+        /* Find matching routes for the incoming task */
+        mk_list_foreach(o_head, &config->outputs) {
+            o_ins = mk_list_entry(o_head,
+                                  struct flb_output_instance, _head);
 
-        if (overlimit_flag &&
-            availability_window >= chunk_index) {
-            flb_debug("[task] skipping chunk %s task creation to ensure "
-                      "droppable chunk availability (%zu / %zu)",
+            if (o_ins->releasable_chunks_required == 0) {
+                continue;
+            }
+
+            /* skip output plugins that don't handle proper event types */
+            if (!flb_router_match_type(ic->event_type, o_ins)) {
+                continue;
+            }
+
+            if (flb_routes_mask_get_bit(ic->routes_mask, o_ins->id) != 0) {
+                o_ins->releasable_chunks_required--;
+                skip_flag = FLB_TRUE;
+            }
+        }
+
+        if (skip_flag) {
+            flb_info("[task] %s - skipping chunk %s task creation to ensure "
+                      "droppable chunk availability (%zu remaining)",
+                      in->name,
                       flb_input_chunk_get_name(ic),
-                      chunk_index, availability_window);
+                      o_ins->releasable_chunks_required);
 
             continue;
         }
