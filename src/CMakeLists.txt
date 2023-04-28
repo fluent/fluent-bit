@@ -223,7 +223,7 @@ endif()
 if(FLB_LUAJIT)
   set(extra_libs
     ${extra_libs}
-    "libluajit")
+    ${LUAJIT_LIBRARIES})
 endif()
 
 if(FLB_SQLDB)
