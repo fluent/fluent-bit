@@ -119,6 +119,8 @@ static inline void MK_EVENT_INIT(struct mk_event *ev, int fd, void *data,
 static inline void MK_EVENT_ZERO(struct mk_event *e)
 {
     MK_EVENT_INIT(e, -1, NULL, NULL);
+    e->_priority_head.next = NULL;
+    e->_priority_head.prev = NULL;
 }
 
 static inline void MK_EVENT_NEW(struct mk_event *e)
