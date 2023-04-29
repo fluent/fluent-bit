@@ -165,11 +165,9 @@ int proxy_go_exit(void *data)
 
 void proxy_go_destroy(void *data)
 {
-    int ret = 0;
     struct flbgo_output_plugin *plugin;
 
     plugin = (struct flbgo_output_plugin *) data;
     flb_free(plugin->name);
     flb_free(plugin);
-    return ret;
 }
