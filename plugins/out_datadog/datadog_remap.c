@@ -28,172 +28,98 @@ const char *ECS_ARN_PREFIX = "arn:aws:ecs:";
 const char *ECS_CLUSTER_PREFIX = "cluster/";
 const char *ECS_TASK_PREFIX = "task/";
 
-static int dd_remap_append_kv_to_ddtags(const char *key,
-                                        const char *val, size_t val_len, flb_sds_t *dd_tags_buf)
+static void dd_remap_append_kv_to_ddtags(const char *key,
+                                         const char *val, size_t val_len, flb_sds_t dd_tags)
 {
-    flb_sds_t tmp;
-
-    if (flb_sds_len(*dd_tags_buf) != 0) {
-        tmp = flb_sds_cat(*dd_tags_buf, FLB_DATADOG_TAG_SEPERATOR, strlen(FLB_DATADOG_TAG_SEPERATOR));
-        if (!tmp) {
-            flb_errno();
-            return -1;
-        }
-        *dd_tags_buf = tmp;
+    if (flb_sds_len(dd_tags) != 0) {
+        flb_sds_cat(dd_tags, FLB_DATADOG_TAG_SEPERATOR, strlen(FLB_DATADOG_TAG_SEPERATOR));
     }
-
-    tmp = flb_sds_cat(*dd_tags_buf, key, strlen(key));
-    if (!tmp) {
-            flb_errno();
-            return -1;
-        }
-    *dd_tags_buf = tmp;
-
-    tmp = flb_sds_cat(*dd_tags_buf, ":", 1);
-    if (!tmp) {
-            flb_errno();
-            return -1;
-        }
-    *dd_tags_buf = tmp;
-
-    tmp = flb_sds_cat(*dd_tags_buf, val, val_len);
-    if (!tmp) {
-            flb_errno();
-            return -1;
-        }
-    *dd_tags_buf = tmp;
-
-    return 0;
+    flb_sds_cat(dd_tags, key, strlen(key));
+    flb_sds_cat(dd_tags, ":", 1);
+    flb_sds_cat(dd_tags, val, val_len);
 }
 
 /* default remapping: just move the key/val pair under dd_tags */
-static int dd_remap_move_to_tags(const char *tag_name,
-                                  msgpack_object attr_value, flb_sds_t *dd_tags_buf)
+static void dd_remap_move_to_tags(const char *tag_name,
+                                  msgpack_object attr_value, flb_sds_t dd_tags)
 {
-    return dd_remap_append_kv_to_ddtags(tag_name, attr_value.via.str.ptr,
-                                        attr_value.via.str.size, dd_tags_buf);
+    dd_remap_append_kv_to_ddtags(tag_name, attr_value.via.str.ptr,
+                                 attr_value.via.str.size, dd_tags);
 }
 
 /* remapping function for container_name */
-static int dd_remap_container_name(const char *tag_name,
-                                    msgpack_object attr_value, flb_sds_t *dd_tags_buf)
+static void dd_remap_container_name(const char *tag_name,
+                                    msgpack_object attr_value, flb_sds_t dd_tags)
 {
     /* remove the first / if present */
     unsigned int adjust;
-    flb_sds_t buf = NULL;
-    int ret;
+    flb_sds_t buf;
 
     adjust = attr_value.via.str.ptr[0] == '/' ? 1 : 0;
     buf = flb_sds_create_len(attr_value.via.str.ptr + adjust,
                              attr_value.via.str.size - adjust);
-    if (!buf) {
-        flb_errno();
-        return -1;
-    }
-    ret = dd_remap_append_kv_to_ddtags(tag_name, buf, strlen(buf), dd_tags_buf);
+    dd_remap_append_kv_to_ddtags(tag_name, buf, strlen(buf), dd_tags);
     flb_sds_destroy(buf);
-    if (ret < 0) {
-        return -1;
-    }
-
-    return 0;
 }
 
 /* remapping function for ecs_cluster */
-static int dd_remap_ecs_cluster(const char *tag_name,
-                                 msgpack_object attr_value, flb_sds_t *dd_tags_buf)
+static void dd_remap_ecs_cluster(const char *tag_name,
+                                 msgpack_object attr_value, flb_sds_t dd_tags)
 {
-    flb_sds_t buf = NULL;
+    flb_sds_t buf;
     char *cluster_name;
-    int ret;
 
     buf = flb_sds_create_len(attr_value.via.str.ptr, attr_value.via.str.size);
-    if (!buf) {
-        flb_errno();
-        return -1;
-    }
     cluster_name = strstr(buf, ECS_CLUSTER_PREFIX);
 
     if (cluster_name != NULL) {
         cluster_name += strlen(ECS_CLUSTER_PREFIX);
-        ret = dd_remap_append_kv_to_ddtags(tag_name, cluster_name, strlen(cluster_name), dd_tags_buf);
-        if (ret < 0) {
-            flb_sds_destroy(buf);
-            return -1;
-        }
+        dd_remap_append_kv_to_ddtags(tag_name, cluster_name, strlen(cluster_name), dd_tags);
     }
     else {
         /*
          * here the input is invalid: not in form of "XXXXXXcluster/"cluster-name
          * we preverse the original value under tag "cluster_name".
          */
-        ret = dd_remap_append_kv_to_ddtags(tag_name, buf, strlen(buf), dd_tags_buf);
-        if (ret < 0) {
-            flb_sds_destroy(buf);
-            return -1;
-        }
+        dd_remap_append_kv_to_ddtags(tag_name, buf, strlen(buf), dd_tags);
     }
     flb_sds_destroy(buf);
-    return 0;
 }
 
 /* remapping function for ecs_task_definition */
-static int dd_remap_ecs_task_definition(const char *tag_name,
-                                         msgpack_object attr_value, flb_sds_t *dd_tags_buf)
+static void dd_remap_ecs_task_definition(const char *tag_name,
+                                         msgpack_object attr_value, flb_sds_t dd_tags)
 {
-    flb_sds_t buf = NULL;
+    flb_sds_t buf;
     char *split;
-    int ret;
 
     buf = flb_sds_create_len(attr_value.via.str.ptr, attr_value.via.str.size);
-    if (!buf) {
-        flb_errno();
-        return -1;
-    }
     split = strchr(buf, ':');
 
     if (split != NULL) {
-        ret = dd_remap_append_kv_to_ddtags("task_family", buf, split-buf, dd_tags_buf);
-        if (ret < 0) {
-            flb_sds_destroy(buf);
-            return -1;
-        }
-        ret = dd_remap_append_kv_to_ddtags("task_version", split+1, strlen(split+1), dd_tags_buf);
-        if (ret < 0) {
-            flb_sds_destroy(buf);
-            return -1;
-        }
+        dd_remap_append_kv_to_ddtags("task_family", buf, split-buf, dd_tags);
+        dd_remap_append_kv_to_ddtags("task_version", split+1, strlen(split+1), dd_tags);
     }
     else {
         /*
          * here the input is invalid: not in form of task_name:task_version
          * we preverse the original value under tag "ecs_task_definition".
          */
-        ret = dd_remap_append_kv_to_ddtags(tag_name, buf, strlen(buf), dd_tags_buf);
-        if (ret < 0) {
-            flb_sds_destroy(buf);
-            return -1;
-        }
+        dd_remap_append_kv_to_ddtags(tag_name, buf, strlen(buf), dd_tags);
     }
     flb_sds_destroy(buf);
-    return 0;
 }
 
 /* remapping function for ecs_task_arn */
-static int dd_remap_ecs_task_arn(const char *tag_name,
-                                  msgpack_object attr_value, flb_sds_t *dd_tags_buf)
+static void dd_remap_ecs_task_arn(const char *tag_name,
+                                  msgpack_object attr_value, flb_sds_t dd_tags)
 {
     flb_sds_t buf;
     char *remain;
     char *split;
     char *task_arn;
-    int ret;
 
     buf = flb_sds_create_len(attr_value.via.str.ptr, attr_value.via.str.size);
-    if (!buf) {
-        flb_errno();
-        return -1;
-    }
 
     /*
      * if the input is invalid, not in the form of "arn:aws:ecs:region:XXXX"
@@ -206,11 +132,7 @@ static int dd_remap_ecs_task_arn(const char *tag_name,
         split = strchr(remain, ':');
 
         if (split != NULL) {
-            ret = dd_remap_append_kv_to_ddtags("region", remain, split-remain, dd_tags_buf);
-            if (ret < 0) {
-                flb_sds_destroy(buf);
-                return -1;
-            }
+            dd_remap_append_kv_to_ddtags("region", remain, split-remain, dd_tags);
         }
     }
 
@@ -218,21 +140,16 @@ static int dd_remap_ecs_task_arn(const char *tag_name,
     if (task_arn != NULL) {
         /* parse out the task_arn */
         task_arn += strlen(ECS_TASK_PREFIX);
-        ret = dd_remap_append_kv_to_ddtags(tag_name, task_arn, strlen(task_arn), dd_tags_buf);
+        dd_remap_append_kv_to_ddtags(tag_name, task_arn, strlen(task_arn), dd_tags);
     }
     else {
         /*
          * if the input is invalid, not in the form of "XXXXXXXXtask/"task-arn
          * then we preverse the original value under tag "task_arn".
          */
-        ret = dd_remap_append_kv_to_ddtags(tag_name, buf, strlen(buf), dd_tags_buf);
+        dd_remap_append_kv_to_ddtags(tag_name, buf, strlen(buf), dd_tags);
     }
     flb_sds_destroy(buf);
-    if (ret < 0) {
-         return -1;
-    }
-
-    return 0;
 }
 
 /*

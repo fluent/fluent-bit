@@ -179,7 +179,7 @@ static int datadog_format(struct flb_config *config,
                     return -1;
                 }
             } else if (flb_sds_len(remapped_tags) < byte_cnt) {
-                tmp = flb_sds_increase(remapped_tags, flb_sds_len(remapped_tags) - byte_cnt);
+                tmp = flb_sds_increase(remapped_tags, byte_cnt - flb_sds_len(remapped_tags));
                 if (!tmp) {
                     flb_errno();
                     flb_sds_destroy(remapped_tags);
@@ -254,11 +254,8 @@ static int datadog_format(struct flb_config *config,
              * (so they won't be packed as attr)
              */
             if (ctx->remap && (ind = dd_attr_need_remapping(k, v)) >=0 ) {
-                ret = remapping[ind].remap_to_tag(remapping[ind].remap_tag_name, v,
-                                                  &remapped_tags);
-                if (ret < 0) {
-                    flb_plg_error(ctx->ins, "Failed to remap tag: %s, skipping", remapping[ind].remap_tag_name);
-                }
+                remapping[ind].remap_to_tag(remapping[ind].remap_tag_name, v,
+                                            remapped_tags);
                 continue;
             }
 
@@ -280,25 +277,9 @@ static int datadog_format(struct flb_config *config,
         /* here we concatenate ctx->dd_tags and remapped_tags, depending on their presence */
         if (remap_cnt) {
             if (ctx->dd_tags != NULL) {
-                tmp = flb_sds_cat(remapped_tags, FLB_DATADOG_TAG_SEPERATOR,
-                                  strlen(FLB_DATADOG_TAG_SEPERATOR));
-                if (!tmp) {
-                    flb_errno();
-                    flb_sds_destroy(remapped_tags);
-                    msgpack_sbuffer_destroy(&mp_sbuf);
-                    msgpack_unpacked_destroy(&result);
-                    return -1;
-                }
-                remapped_tags = tmp;
+                flb_sds_cat(remapped_tags, FLB_DATADOG_TAG_SEPERATOR,
+                            strlen(FLB_DATADOG_TAG_SEPERATOR));
                 flb_sds_cat(remapped_tags, ctx->dd_tags, strlen(ctx->dd_tags));
-                if (!tmp) {
-                    flb_errno();
-                    flb_sds_destroy(remapped_tags);
-                    msgpack_sbuffer_destroy(&mp_sbuf);
-                    msgpack_unpacked_destroy(&result);
-                    return -1;
-                }
-                remapped_tags = tmp;
             }
             dd_msgpack_pack_key_value_str(&mp_pck,
                                           FLB_DATADOG_DD_TAGS_KEY,
