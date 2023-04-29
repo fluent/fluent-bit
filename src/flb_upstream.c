@@ -429,7 +429,7 @@ static int prepare_destroy_conn(struct flb_upstream_conn *u_conn)
     flb_trace("[upstream] destroy connection #%i to %s:%i",
               u_conn->fd, u->tcp_host, u->tcp_port);
 
-    if (u->flags & FLB_IO_ASYNC) {
+    if (u->flags & FLB_IO_ASYNC || u_conn->ka_dropped_event_added == FLB_TRUE) {
         mk_event_del(u_conn->evl, &u_conn->event);
     }
 
@@ -513,6 +513,8 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     conn->fd            = -1;
     conn->net_error     = -1;
     conn->busy_flag     = FLB_TRUE;
+
+    conn->ka_dropped_event_added = FLB_FALSE;
 
     /* retrieve the event loop */
     evl = flb_engine_evl_get();
@@ -769,6 +771,7 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
                       conn->fd, conn->u->tcp_host, conn->u->tcp_port);
             return prepare_destroy_conn_safe(conn);
         }
+        conn->ka_dropped_event_added = FLB_TRUE;
 
         flb_debug("[upstream] KA connection #%i to %s:%i is now available",
                   conn->fd, conn->u->tcp_host, conn->u->tcp_port);
