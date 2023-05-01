@@ -803,22 +803,35 @@ if(FLB_CONFIG_YAML)
     include_directories(${LIBYAML_INCLUDEDIR})
     link_directories(${LIBYAML_LIBRARY_DIRS})
   else()
-    # Requires libyaml support
-    check_c_source_compiles("
+    if (FLB_LIBYAML_DIR)
+      set(LIBYAML_LIBRARY_DIRS "${FLB_LIBYAML_DIR}/lib")
+      set(LIBYAML_INCLUDEDIR "${FLB_LIBYAML_DIR}/include")
+      message(STATUS "specified libyaml dir: ${FLB_LIBYAML_DIR}")
+      if (MSVC)
+        FLB_DEFINITION(YAML_DECLARE_STATIC)
+      endif ()
+      set(FLB_HAVE_LIBYAML 1)
+      FLB_DEFINITION(FLB_HAVE_LIBYAML)
+      include_directories(${LIBYAML_INCLUDEDIR})
+      link_directories(${LIBYAML_LIBRARY_DIRS})
+    else ()
+      # Requires libyaml support
+      check_c_source_compiles("
       #include <yaml.h>
       int main() {
         yaml_parser_t parser;
         return 0;
       }" FLB_HAVE_LIBYAML)
 
-    if(NOT FLB_HAVE_LIBYAML)
-      message(FATAL_ERROR
-        "YAML development dependencies required for YAML configuration format handling.\n"
-        "This is a build time dependency, you can either install the "
-        "dependencies or disable the feature setting the CMake option "
-        "-DFLB_CONFIG_YAML=Off ."
+      if(NOT FLB_HAVE_LIBYAML)
+        message(FATAL_ERROR
+          "YAML development dependencies required for YAML configuration format handling.\n"
+          "This is a build time dependency, you can either install the "
+          "dependencies or disable the feature setting the CMake option "
+          "-DFLB_CONFIG_YAML=Off ."
         )
-    endif()
+      endif()
+    endif ()
 
     FLB_DEFINITION(FLB_HAVE_LIBYAML)
   endif()
