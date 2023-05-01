@@ -386,7 +386,7 @@ static int read_glob(struct flb_cf *cf, struct parser_state *ctx, const char *pa
 
         ret = stat(buf, &st);
         if (ret == 0 && (st.st_mode & S_IFMT) == S_IFREG) {
-            if (read_config(cf, ctx, buf) < 0) {
+            if (read_config(cf, ctx, data.cFileName, buf) < 0) {
                 return -1;
             }
         }
