@@ -1102,11 +1102,11 @@ put_object:
         if (chunk) {
             chunk->failures += 1;
             if (ctx->ins->retry_limit >= 0 && chunk->failures > ctx->ins->retry_limit){
-                s3_retry_warn(ctx, tag, chunk->input_name, file_first_log_time, FLB_FALSE);
+                s3_retry_warn(ctx, tag, input_name, file_first_log_time, FLB_FALSE);
                 return -2;
             }
             else {
-                s3_retry_warn(ctx, tag, chunk->input_name, file_first_log_time, FLB_TRUE);
+                s3_retry_warn(ctx, tag, input_name, file_first_log_time, FLB_TRUE);
                 return -1;
             }
         }
