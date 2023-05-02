@@ -229,6 +229,8 @@ static void output_thread(void *data)
     snprintf(tmp, sizeof(tmp) - 1, "flb-out-%s-w%i", ins->name, thread_id);
     mk_utils_worker_rename(tmp);
 
+    memset(&event_local, 0, sizeof(struct mk_event));
+
     /* Channel used by flush callbacks to notify it return status */
     ret = mk_event_channel_create(th_ins->evl,
                                   &th_ins->ch_thread_events[0],
