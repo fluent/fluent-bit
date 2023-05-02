@@ -311,16 +311,18 @@ static int cb_parser_filter(const void *data, size_t bytes,
 
             encoder_result = flb_log_event_encoder_begin_record(&log_encoder);
 
-            if (out_buf != NULL) {
+            if (encoder_result == FLB_EVENT_ENCODER_SUCCESS) {
                 encoder_result = flb_log_event_encoder_set_timestamp(
-                                    &log_encoder, &tm);
+                                     &log_encoder, &tm);
+            }
 
-                if (encoder_result == FLB_EVENT_ENCODER_SUCCESS) {
-                    encoder_result = \
-                        flb_log_event_encoder_set_metadata_from_msgpack_object(
-                            &log_encoder, log_event.metadata);
-                }
+            if (encoder_result == FLB_EVENT_ENCODER_SUCCESS) {
+                encoder_result = \
+                    flb_log_event_encoder_set_metadata_from_msgpack_object(
+                        &log_encoder, log_event.metadata);
+            }
 
+            if (out_buf != NULL) {
                 if (ctx->reserve_data) {
                     char *new_buf = NULL;
                     int  new_size;
