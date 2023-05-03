@@ -442,6 +442,20 @@ if(FLB_IPO STREQUAL "On" OR (FLB_IPO STREQUAL "ReleaseOnly" AND FLB_RELEASE))
   endif()
 endif()
 
+# Harden release binary against security vulnerabilities
+if(FLB_RELEASE)
+  if (NOT MSVC)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wl,-z,relro,-z,now")
+    if(NOT FLB_SMALL)
+      set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fstack-protector")
+      # Fortify requires optimization
+      if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_FORTIFY_SOURCE=1")
+      endif()
+    endif()
+  endif()
+endif()
+
 if(FLB_PARSER)
   FLB_DEFINITION(FLB_HAVE_PARSER)
   message(STATUS "Enabling FLB_REGEX since FLB_PARSER requires")
