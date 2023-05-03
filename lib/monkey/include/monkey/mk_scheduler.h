@@ -326,13 +326,13 @@ static inline void mk_sched_conn_timeout_del(struct mk_sched_conn *conn)
 
 
 #define mk_sched_conn_read(conn, buf, s)                \
-    conn->net->read(conn->event.fd, buf, s)
+    conn->net->read(conn->net->plugin, conn->event.fd, buf, s)
 #define mk_sched_conn_write(ch, buf, s)         \
     mk_net_conn_write(ch, buf, s)
 #define mk_sched_conn_writev(ch, iov)           \
-    ch->io->writev(ch->fd, iov)
+    ch->io->writev(ch->io->plugin, ch->fd, iov)
 #define mk_sched_conn_sendfile(ch, f_fd, f_offs, f_count)   \
-    ch->io->send_file(ch->fd, f_fd, f_offs, f_count)
+    ch->io->send_file(ch->io->plugin, ch->fd, f_fd, f_offs, f_count)
 
 #define mk_sched_switch_protocol(conn, cap)     \
     conn->protocol = mk_sched_handler_cap(cap)
