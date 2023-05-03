@@ -50,7 +50,7 @@ static int mk_static_plugin_attach(struct mk_list *plugins,
 
     memcpy(network, plugin->network, sizeof(struct mk_plugin_network));
 
-    plugin->network = network;
+    instance->network = network;
 
     mk_list_add(&instance->_head, plugins);
 
