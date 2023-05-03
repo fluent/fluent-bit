@@ -561,6 +561,7 @@ void mk_plugin_exit_all(struct mk_server *server)
 #endif
         }
         else if (plugin->load_type == MK_PLUGIN_STATIC) {
+            mk_mem_free(plugin->network);
             mk_mem_free(plugin);
         }
     }
