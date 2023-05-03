@@ -1454,7 +1454,7 @@ static void flb_test_issue_4319()
 }
 
 
-/* 
+/*
  * to check issue https://github.com/fluent/fluent-bit/issues/4319
    Key_value_does_not_match case
 */
@@ -1503,6 +1503,48 @@ static void flb_test_issue_4319_2()
 
     filter_test_destroy(ctx);
 }
+
+/* https://github.com/fluent/fluent-bit/issues/1225 */
+static void flb_test_issue_1225()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "condition", "key_value_matches \"key 1\" \".*with spaces.*\"",
+                         "add", "\"key 2\" \"second value with spaces\"",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"key 1\":\"first value with spaces\","\
+                   "\"key 2\":\"second value with spaces\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0,{\"key 1\":\"first value with spaces\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
 
 /*
  * to check issue https://github.com/fluent/fluent-bit/issues/7075
@@ -1596,6 +1638,7 @@ TEST_LIST = {
     {"cond_key_value_does_not_equal and key does not exist", flb_test_issue_4319 },
     {"cond_key_value_does_not_matches and key does not exist", flb_test_issue_4319_2 },
     {"Key_value_matches and value is bool type", flb_test_issue_7075},
+    {"operation_with_whitespace", flb_test_issue_1225 },
 
     {NULL, NULL}
 };

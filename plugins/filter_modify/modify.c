@@ -131,7 +131,7 @@ static int setup(struct filter_modify_ctx *ctx,
     mk_list_foreach(head, &f_ins->properties) {
         kv = mk_list_entry(head, struct flb_kv, _head);
 
-        split = flb_utils_split(kv->val, ' ', 3);
+        split = flb_utils_split_quoted(kv->val, ' ', 3);
         list_size = mk_list_size(split);
 
         // Conditions are,
