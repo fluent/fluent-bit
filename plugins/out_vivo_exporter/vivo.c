@@ -20,6 +20,8 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #include "vivo.h"
 #include "vivo_http.h"
@@ -27,28 +29,24 @@
 
 static flb_sds_t format_logs(struct flb_event_chunk *event_chunk)
 {
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    int result;
     int i;
-    int ok = MSGPACK_UNPACK_SUCCESS;
-    int map_size;
-    size_t off = 0;
     flb_sds_t out_js;
     flb_sds_t out_buf = NULL;
-    msgpack_unpacked result;
-    msgpack_object root;
-    msgpack_object map;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
-    msgpack_object *obj;
-    msgpack_object *k;
-    msgpack_object *v;
-    struct flb_time tms;
-    const char *data;
-    size_t bytes;
 
-    data = event_chunk->data;
-    bytes = event_chunk->size;
+    result = flb_log_event_decoder_init(&log_decoder,
+                                        (char *) event_chunk->data,
+                                        event_chunk->size);
 
-    out_buf = flb_sds_create_size((bytes * 2) / 4);
+    if (result != FLB_EVENT_DECODER_SUCCESS) {
+        return NULL;
+    }
+
+    out_buf = flb_sds_create_size((event_chunk->size * 2) / 4);
     if (!out_buf) {
         flb_errno();
         return NULL;
@@ -58,29 +56,9 @@ static flb_sds_t format_logs(struct flb_event_chunk *event_chunk)
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
-
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == ok) {
-        /* Each array must have two entries: time and record */
-        root = result.data;
-        if (root.type != MSGPACK_OBJECT_ARRAY) {
-            continue;
-        }
-        if (root.via.array.size != 2) {
-            continue;
-        }
-
-        /* Unpack time */
-        flb_time_pop_from_msgpack(&tms, &result, &obj);
-
-        /* Get the record/map */
-        map = root.via.array.ptr[1];
-        if (map.type != MSGPACK_OBJECT_MAP) {
-            continue;
-        }
-        map_size = map.via.map.size;
-
-
+    while ((result = flb_log_event_decoder_next(
+                        &log_decoder,
+                        &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         /*
          * If the caller specified FLB_PACK_JSON_DATE_FLUENT, we format the data
          * by using the following structure:
@@ -89,25 +67,38 @@ static flb_sds_t format_logs(struct flb_event_chunk *event_chunk)
          */
         msgpack_pack_array(&tmp_pck, 2);
         msgpack_pack_array(&tmp_pck, 2);
-        msgpack_pack_uint64(&tmp_pck, flb_time_to_nanosec(&tms));
+        msgpack_pack_uint64(&tmp_pck, flb_time_to_nanosec(&log_event.timestamp));
 
         /* add tag only */
-        msgpack_pack_map(&tmp_pck, 1);
+        msgpack_pack_map(&tmp_pck, 1 + log_event.metadata->via.map.size);
 
         msgpack_pack_str(&tmp_pck, 4);
         msgpack_pack_str_body(&tmp_pck, "_tag", 4);
+
         msgpack_pack_str(&tmp_pck, flb_sds_len(event_chunk->tag));
         msgpack_pack_str_body(&tmp_pck, event_chunk->tag, flb_sds_len(event_chunk->tag));
 
+        /* Append remaining keys/values */
+        for (i = 0;
+             i < log_event.metadata->via.map.size;
+             i++) {
+            msgpack_pack_object(&tmp_pck,
+                                log_event.metadata->via.map.ptr[i].key);
+            msgpack_pack_object(&tmp_pck,
+                                log_event.metadata->via.map.ptr[i].val);
+        }
+
         /* pack the remaining content */
-        msgpack_pack_map(&tmp_pck, map_size);
+        msgpack_pack_map(&tmp_pck, log_event.body->via.map.size);
 
         /* Append remaining keys/values */
-        for (i = 0; i < map_size; i++) {
-            k = &map.via.map.ptr[i].key;
-            v = &map.via.map.ptr[i].val;
-            msgpack_pack_object(&tmp_pck, *k);
-            msgpack_pack_object(&tmp_pck, *v);
+        for (i = 0;
+             i < log_event.body->via.map.size;
+             i++) {
+            msgpack_pack_object(&tmp_pck,
+                                log_event.body->via.map.ptr[i].key);
+            msgpack_pack_object(&tmp_pck,
+                                log_event.body->via.map.ptr[i].val);
         }
 
         /* Concatenate by using break lines */
@@ -115,7 +106,7 @@ static flb_sds_t format_logs(struct flb_event_chunk *event_chunk)
         if (!out_js) {
             flb_sds_destroy(out_buf);
             msgpack_sbuffer_destroy(&tmp_sbuf);
-            msgpack_unpacked_destroy(&result);
+            flb_log_event_decoder_destroy(&log_decoder);
             return NULL;
         }
 
@@ -131,7 +122,7 @@ static flb_sds_t format_logs(struct flb_event_chunk *event_chunk)
     }
 
     /* Release the unpacker */
-    msgpack_unpacked_destroy(&result);
+    flb_log_event_decoder_destroy(&log_decoder);
 
     msgpack_sbuffer_destroy(&tmp_sbuf);
 
