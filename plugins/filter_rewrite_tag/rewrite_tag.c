@@ -456,8 +456,8 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
         if (keep == FLB_TRUE || is_matched != FLB_TRUE) {
             ret = flb_log_event_encoder_emit_raw_record(
                     &log_encoder,
-                    &((char *) data)[pre],
-                    off - pre);
+                    log_decoder.record_base,
+                    log_decoder.record_length);
         }
 
         /* Adjust previous offset */
