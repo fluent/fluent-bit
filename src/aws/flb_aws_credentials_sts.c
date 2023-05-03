@@ -34,16 +34,30 @@
 &RoleSessionName=%s&RoleArn=%s"
 #define STS_ASSUME_ROLE_URI_BASE_LEN  54
 
+/*
+ * The STS APIs return an XML document with credentials.
+ * The part of the document we care about looks like this:
+ * <Credentials>
+ *    <AccessKeyId>akid</AccessKeyId>
+ *    <SecretAccessKey>skid</SecretAccessKey>
+ *    <SessionToken>token</SessionToken>
+ *    <Expiration>2019-11-09T13:34:41Z</Expiration>
+ * </Credentials>
+ */
 #define CREDENTIALS_NODE              "<Credentials>"
 #define CREDENTIALS_NODE_LEN          13
 #define ACCESS_KEY_NODE               "<AccessKeyId>"
 #define ACCESS_KEY_NODE_LEN           13
+#define ACCESS_KEY_NODE_END           "</AccessKeyId>"
 #define SECRET_KEY_NODE               "<SecretAccessKey>"
 #define SECRET_KEY_NODE_LEN           17
+#define SECRET_KEY_NODE_END           "</SecretAccessKey>"
 #define SESSION_TOKEN_NODE            "<SessionToken>"
 #define SESSION_TOKEN_NODE_LEN        14
+#define SESSION_TOKEN_NODE_END        "</SessionToken>"
 #define EXPIRATION_NODE               "<Expiration>"
 #define EXPIRATION_NODE_LEN           12
+#define EXPIRATION_NODE_END           "</Expiration>"
 
 #define TOKEN_FILE_ENV_VAR            "AWS_WEB_IDENTITY_TOKEN_FILE"
 #define ROLE_ARN_ENV_VAR              "AWS_ROLE_ARN"
@@ -59,7 +73,7 @@ static int sts_assume_role_request(struct flb_aws_client *sts_client,
                                    struct flb_aws_credentials **creds,
                                    char *uri,
                                    time_t *next_refresh);
-static flb_sds_t get_node(char *cred_node, char* node_name, int node_len);
+static flb_sds_t get_node(char *cred_node, char* node_name, int node_name_len, char* node_end);
 
 
 /*
@@ -864,24 +878,24 @@ struct flb_aws_credentials *flb_parse_sts_resp(char *response,
     }
 
     creds->access_key_id = get_node(cred_node, ACCESS_KEY_NODE,
-                                    ACCESS_KEY_NODE_LEN);
+                                    ACCESS_KEY_NODE_LEN, ACCESS_KEY_NODE_END);
     if (!creds->access_key_id) {
         goto error;
     }
 
     creds->secret_access_key = get_node(cred_node, SECRET_KEY_NODE,
-                                        SECRET_KEY_NODE_LEN);
+                                        SECRET_KEY_NODE_LEN, SECRET_KEY_NODE_END);
     if (!creds->secret_access_key) {
         goto error;
     }
 
     creds->session_token = get_node(cred_node, SESSION_TOKEN_NODE,
-                                    SESSION_TOKEN_NODE_LEN);
+                                    SESSION_TOKEN_NODE_LEN, SESSION_TOKEN_NODE_END);
     if (!creds->session_token) {
         goto error;
     }
 
-    tmp = get_node(cred_node, EXPIRATION_NODE, EXPIRATION_NODE_LEN);
+    tmp = get_node(cred_node, EXPIRATION_NODE, EXPIRATION_NODE_LEN, EXPIRATION_NODE_END);
     if (!tmp) {
         goto error;
     }
@@ -948,7 +962,7 @@ flb_sds_t flb_sts_uri(char *action, char *role_arn, char *session_name,
     return uri;
 }
 
-static flb_sds_t get_node(char *cred_node, char* node_name, int node_len)
+static flb_sds_t get_node(char *cred_node, char* node_name, int node_name_len, char* node_end)
 {
     char *node = NULL;
     char *end = NULL;
@@ -961,8 +975,8 @@ static flb_sds_t get_node(char *cred_node, char* node_name, int node_len)
                   node_name);
         return NULL;
     }
-    node += node_len;
-    end = strchr(node, '<');
+    node += node_name_len;
+    end = strstr(node, node_end);
     if (!end) {
         flb_error("[aws_credentials] Could not find end of '%s' node in "
                   "sts response", node_name);
