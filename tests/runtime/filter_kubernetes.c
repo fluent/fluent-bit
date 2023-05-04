@@ -936,13 +936,13 @@ static void flb_test_systemd_logs()
         sd_journal *journal;
         r = sd_journal_open(&journal, 0);
         if (r < 0) {
-            flb_error("Skip test: journal error: ", strerror(-r));
+            flb_error("Skip test: journal error: %s", strerror(-r));
             return;
         }
 
         r = sd_journal_get_fd(journal);
         if (r < 0) {
-            flb_error("Skip test: journal fd error: ", strerror(-r));
+            flb_error("Skip test: journal fd error: %s", strerror(-r));
             sd_journal_close(journal);
             return;
         }
@@ -955,28 +955,28 @@ static void flb_test_systemd_logs()
          */
         if (flb_test_systemd_send() < 0) {
 
-            flb_error("Skip test: journal send error: ", strerror(-r));
+            flb_error("Skip test: journal send error: %s", strerror(-r));
             sd_journal_close(journal);
             return;
         }
 
         r = sd_journal_previous(journal);
         if (r < 0) {
-            flb_error("Skip test: journal previous error: ", strerror(-r));
+            flb_error("Skip test: journal previous error: %s", strerror(-r));
             sd_journal_close(journal);
             return;
         }
 
         r = sd_journal_next(journal);
         if (r < 0) {
-            flb_error("Skip test: journal next error: ", strerror(-r));
+            flb_error("Skip test: journal next error: %s", strerror(-r));
             sd_journal_close(journal);
             return;
         }
 
         r = sd_journal_wait(journal, 2000);
         if (r < 0) {
-            flb_error("Skip test: journal wait error: ", strerror(-r));
+            flb_error("Skip test: journal wait error: %s", strerror(-r));
             sd_journal_close(journal);
             return;
         }
