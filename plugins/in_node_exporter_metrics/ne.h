@@ -57,6 +57,7 @@ struct flb_ne {
     int netdev_scrape_interval;
     int filefd_scrape_interval;
     int textfile_scrape_interval;
+    int systemd_scrape_interval;
 
     int coll_cpu_fd;                                    /* collector fd (cpu)    */
     int coll_cpufreq_fd;                                /* collector fd (cpufreq)  */
@@ -71,6 +72,7 @@ struct flb_ne {
     int coll_netdev_fd;                                 /* collector fd (netdev)    */
     int coll_filefd_fd;                                 /* collector fd (filefd)    */
     int coll_textfile_fd;                               /* collector fd (textfile)  */
+    int coll_systemd_fd ;                               /* collector fd (systemd)  */
 
     /*
      * Metrics Contexts
@@ -147,6 +149,30 @@ struct flb_ne {
 
     /* testfile */
     struct cmt_counter *load_errors;
+
+    /* systemd */
+
+    struct cmt_gauge   *systemd_socket_accepted_connections;
+    struct cmt_gauge   *systemd_socket_active_connections;
+    struct cmt_gauge   *systemd_socket_refused_connections;
+    struct cmt_counter *systemd_service_restarts;
+    struct cmt_gauge   *systemd_unit_start_times;
+    struct cmt_gauge   *systemd_system_running;
+    struct cmt_gauge   *systemd_timer_last_trigger_seconds;
+    struct cmt_gauge   *systemd_unit_state;
+    struct cmt_gauge   *systemd_unit_tasks;
+    struct cmt_gauge   *systemd_unit_tasks_max;
+    struct cmt_gauge   *systemd_units;
+    struct cmt_gauge   *systemd_version;
+    void               *systemd_dbus_handle;
+    int                 systemd_initialization_flag;
+    int                 systemd_include_unit_start_times;
+    int                 systemd_include_service_restarts;
+    int                 systemd_include_service_task_metrics;
+    flb_sds_t           systemd_regex_include_list_text;
+    flb_sds_t           systemd_regex_exclude_list_text;
+    struct flb_regex   *systemd_regex_include_list;
+    struct flb_regex   *systemd_regex_exclude_list;
 };
 
 #endif
