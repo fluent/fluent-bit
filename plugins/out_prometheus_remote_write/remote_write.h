@@ -58,6 +58,8 @@ struct prometheus_remote_write_context {
     char *host;
     int port;
 
+    const char *compression;
+
     /* Log the response paylod */
     int log_response_payload;
 
