@@ -16,7 +16,7 @@ set(src
   ne.c
   )
 
-if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+if(FLB_HAVE_SYSTEMD)
 set(src
     ${src}
     ne_systemd.c

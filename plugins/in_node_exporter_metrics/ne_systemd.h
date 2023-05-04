@@ -110,4 +110,19 @@ int ne_systemd_exit(struct flb_ne *ctx);
                               "ActiveEnterTimestamp", \
                               't', (void *) (output_variable))
 
+#ifndef FLB_HAVE_SYSTEMD
+static int ne_systemd_init(struct flb_ne *ctx)
+{
+    return 0;
+}
+static int ne_systemd_update(struct flb_ne *ctx)
+{
+    return 0;
+}
+static int ne_systemd_exit(struct flb_ne *ctx)
+{
+    return 0;
+}
+#endif
+
 #endif

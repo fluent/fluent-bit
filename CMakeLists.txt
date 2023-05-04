@@ -694,8 +694,10 @@ endif()
 # Systemd Journald support
 if(JOURNALD_FOUND)
   FLB_DEFINITION(FLB_HAVE_SYSTEMD)
+  FLB_OPTION(FLB_HAVE_SYSTEMD YES)
 else()
   FLB_OPTION(FLB_IN_SYSTEMD OFF)
+  FLB_OPTION(FLB_HAVE_SYSTEMD NO)
 endif()
 
 # Valgrind support
