@@ -95,7 +95,7 @@ static int send_response(struct http_conn *conn, int http_status, char *message)
         flb_sds_printf(&out,
                        "HTTP/1.1 204 No Content\r\n"
                        "Server: Fluent Bit v%s\r\n"
-                       "Content-Length: 0\r\n\r\n",
+                       "\r\n",
                        FLB_VERSION_STR);
     }
     else if (http_status == 400) {
