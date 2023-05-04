@@ -606,8 +606,8 @@ static int cb_lua_filter(const void *data, size_t bytes,
 
             ret = flb_log_event_encoder_emit_raw_record(
                     &log_encoder,
-                    &((char *) data)[record_begining],
-                    record_end);
+                    log_decoder.record_base,
+                    log_decoder.record_length);
 
             if (ret != FLB_EVENT_ENCODER_SUCCESS) {
                 flb_plg_error(ctx->ins,
