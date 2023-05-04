@@ -59,9 +59,24 @@ struct ne_systemd_unit {
     uint64_t  last_trigger_timestamp;
 };
 
+#ifdef FLB_HAVE_SYSTEMD
 int ne_systemd_init(struct flb_ne *ctx);
 int ne_systemd_update(struct flb_ne *ctx);
 int ne_systemd_exit(struct flb_ne *ctx);
+#else
+static int ne_systemd_init(struct flb_ne *ctx)
+{
+    return 0;
+}
+static int ne_systemd_update(struct flb_ne *ctx)
+{
+    return 0;
+}
+static int ne_systemd_exit(struct flb_ne *ctx)
+{
+    return 0;
+}
+#endif
 
 #define get_system_state(context, output_variable) \
             get_system_property(context, NULL, "SystemState", \
@@ -109,20 +124,4 @@ int ne_systemd_exit(struct flb_ne *ctx);
                               "org.freedesktop.systemd1.Unit", \
                               "ActiveEnterTimestamp", \
                               't', (void *) (output_variable))
-
-#ifndef FLB_HAVE_SYSTEMD
-static int ne_systemd_init(struct flb_ne *ctx)
-{
-    return 0;
-}
-static int ne_systemd_update(struct flb_ne *ctx)
-{
-    return 0;
-}
-static int ne_systemd_exit(struct flb_ne *ctx)
-{
-    return 0;
-}
-#endif
-
 #endif
