@@ -74,7 +74,7 @@ static int send_response(struct http_conn *conn, int http_status, char *message)
                        "HTTP/1.1 204 No Content\r\n"
                        "Server: Fluent Bit v%s\r\n"
                        "%s"
-                       "Content-Length: 0\r\n\r\n",
+                       "\r\n\r\n",
                        FLB_VERSION_STR,
                        context->success_headers_str);
     }
