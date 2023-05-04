@@ -49,7 +49,6 @@ static inline int instance_id(struct flb_config *config)
 static int is_active(struct mk_list *in_properties)
 {
     struct mk_list *head;
-    struct mk_list *m_head;
     struct flb_kv *kv;
 
     mk_list_foreach(head, in_properties) {
