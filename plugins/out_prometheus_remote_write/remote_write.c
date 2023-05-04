@@ -60,9 +60,23 @@ static int http_post(struct prometheus_remote_write_context *ctx,
     }
 
     /* Map payload */
-    ret = flb_snappy_compress((void *) body, body_len,
-                              (char **) &payload_buf,
-                              &payload_size);
+
+    if (strcasecmp(ctx->compression, "snappy") == 0) {
+        ret = flb_snappy_compress((void *) body, body_len,
+                                  (char **) &payload_buf,
+                                  &payload_size);
+    }
+    else if (strcasecmp(ctx->compression, "gzip") == 0) {
+        ret = flb_gzip_compress((void *) body, body_len,
+                                &payload_buf, &payload_size);
+    }
+    else {
+        payload_buf = body;
+        payload_size = body_len;
+
+        ret = 0;
+    }
+
     if (ret != 0) {
         flb_upstream_conn_release(u_conn);
 
@@ -104,6 +118,21 @@ static int http_post(struct prometheus_remote_write_context *ctx,
                         sizeof(FLB_PROMETHEUS_REMOTE_WRITE_VERSION_HEADER_NAME) - 1,
                         FLB_PROMETHEUS_REMOTE_WRITE_VERSION_LITERAL,
                         sizeof(FLB_PROMETHEUS_REMOTE_WRITE_VERSION_LITERAL) - 1);
+
+    if (strcasecmp(ctx->compression, "snappy") == 0) {
+        flb_http_add_header(c,
+                            "Content-Encoding",
+                            strlen("Content-Encoding"),
+                            "snappy",
+                            strlen("snappy"));
+    }
+    else if (strcasecmp(ctx->compression, "gzip") == 0) {
+        flb_http_add_header(c,
+                            "Content-Encoding",
+                            strlen("Content-Encoding"),
+                            "gzip",
+                            strlen("gzip"));
+    }
 
     /* Basic Auth headers */
     if (ctx->http_user && ctx->http_passwd) {
@@ -366,6 +395,12 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct prometheus_remote_write_context, http_passwd),
      "Set HTTP auth password"
     },
+    {
+     FLB_CONFIG_MAP_STR, "compression", "snappy",
+     0, FLB_TRUE, offsetof(struct prometheus_remote_write_context, compression),
+     "Compress the payload with either snappy, gzip if set"
+    },
+
 #ifdef FLB_HAVE_SIGNV4
 #ifdef FLB_HAVE_AWS
     {
