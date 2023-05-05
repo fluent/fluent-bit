@@ -59,7 +59,7 @@ struct ne_systemd_unit {
     uint64_t  last_trigger_timestamp;
 };
 
-#ifdef FLB_HAVE_SYSTEMD
+#ifdef FLB_HAVE_SYSTEMD_SDBUS
 int ne_systemd_init(struct flb_ne *ctx);
 int ne_systemd_update(struct flb_ne *ctx);
 int ne_systemd_exit(struct flb_ne *ctx);

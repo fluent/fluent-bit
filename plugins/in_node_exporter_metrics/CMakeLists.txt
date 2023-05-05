@@ -16,7 +16,7 @@ set(src
   ne.c
   )
 
-if(FLB_HAVE_SYSTEMD)
+if(FLB_HAVE_SYSTEMD_SDBUS)
 set(src
     ${src}
     ne_systemd.c

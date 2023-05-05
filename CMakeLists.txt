@@ -274,7 +274,6 @@ option(FLB_FILTER_WASM                 "Enable WASM filter"                     
 option(FLB_PROCESSOR_LABELS            "Enable metrics label manipulation processor"  Yes)
 option(FLB_PROCESSOR_ATTRIBUTES        "Enable atributes manipulation processor"      Yes)
 
-
 if(DEFINED FLB_NIGHTLY_BUILD AND NOT "${FLB_NIGHTLY_BUILD}" STREQUAL "")
   FLB_DEFINITION_VAL(FLB_NIGHTLY_BUILD ${FLB_NIGHTLY_BUILD})
 endif()
@@ -694,10 +693,18 @@ endif()
 # Systemd Journald support
 if(JOURNALD_FOUND)
   FLB_DEFINITION(FLB_HAVE_SYSTEMD)
-  FLB_OPTION(FLB_HAVE_SYSTEMD YES)
+
+  check_c_source_compiles("
+    #include <systemd/sd-bus.h>
+    int main() {
+       return 0;
+    }" FLB_HAVE_SYSTEMD_SDBUS)
+
+  if(FLB_HAVE_SYSTEMD_SDBUS)
+    FLB_DEFINITION(FLB_HAVE_SYSTEMD_SDBUS)
+  endif()
 else()
   FLB_OPTION(FLB_IN_SYSTEMD OFF)
-  FLB_OPTION(FLB_HAVE_SYSTEMD NO)
 endif()
 
 # Valgrind support
