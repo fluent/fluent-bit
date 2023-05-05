@@ -19,6 +19,7 @@
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_snappy.h>
+#include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_kv.h>
 
