@@ -127,7 +127,7 @@ struct flb_opensearch {
     /* id_key */
     flb_sds_t id_key;
     struct flb_record_accessor *ra_id_key;
-    
+
     /* include_tag_key */
     int include_tag_key;
     flb_sds_t tag_key;
@@ -142,6 +142,9 @@ struct flb_opensearch {
 
     /* Plugin output instance reference */
     struct flb_output_instance *ins;
+
+    /* Compression mode (gzip) */
+    int compress_gzip;
 };
 
 #endif

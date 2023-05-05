@@ -214,6 +214,15 @@ struct flb_opensearch *flb_os_conf_create(struct flb_output_instance *ins,
         }
     }
 
+    /* Compress (gzip) */
+    tmp = flb_output_get_property("compress", ins);
+    ctx->compress_gzip = FLB_FALSE;
+    if (tmp) {
+        if (strcasecmp(tmp, "gzip") == 0) {
+            ctx->compress_gzip = FLB_TRUE;
+        }
+    }
+
 #ifdef FLB_HAVE_AWS
     /* AWS Auth Unsigned Headers */
     ctx->aws_unsigned_headers = flb_malloc(sizeof(struct mk_list));
