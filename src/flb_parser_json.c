@@ -204,6 +204,7 @@ int flb_parser_json_do(struct flb_parser *parser,
         flb_warn("[parser:%s] invalid time format %s for '%s'",
                  parser->name, parser->time_fmt_full, tmp);
         time_lookup = 0;
+        skip = map_size;
     }
     else {
         time_lookup = flb_parser_tm2time(&tm);
@@ -213,7 +214,7 @@ int flb_parser_json_do(struct flb_parser *parser,
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    if (parser->time_keep == FLB_FALSE) {
+    if (parser->time_keep == FLB_FALSE && skip < map_size) {
         msgpack_pack_map(&mp_pck, map_size - 1);
     }
     else {
