@@ -24,14 +24,7 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_record_accessor.h>
-
-/* rule types */
-#define GREP_REGEX 1
-#define GREP_EXCLUDE 2
-
-/* actions */
-#define GREP_RET_KEEP 0
-#define GREP_RET_EXCLUDE 1
+#include <fluent-bit/flb_grep.h>
 
 /* modes */
 #define FLB_LOG_TO_METRICS_COUNTER_STR "counter"
@@ -51,7 +44,6 @@
 
 struct log_to_metrics_ctx
 {
-    struct mk_list rules;
     struct flb_filter_instance *ins;
     int mode;
     flb_sds_t metric_name;
@@ -70,16 +62,7 @@ struct log_to_metrics_ctx
     flb_sds_t tag;
     int *bucket_counter;
     double *buckets;
-};
-
-struct grep_rule
-{
-    int type;
-    flb_sds_t field;
-    char *regex_pattern;
-    struct flb_regex *regex;
-    struct flb_record_accessor *ra;
-    struct mk_list _head;
+    struct flb_grep *grep;
 };
 
 #endif
