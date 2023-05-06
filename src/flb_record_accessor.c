@@ -218,7 +218,7 @@ static int ra_parse_buffer(struct flb_record_accessor *ra, flb_sds_t buf)
     }
 
     /* Append remaining string */
-    if (i - 1 > end && pre < i) {
+    if ((i - 1 > end && pre < i) || i == 1 /*allow single character*/) {
         end = flb_sds_len(buf);
         rp_str = ra_parse_string(ra, buf, pre, end);
         if (rp_str) {
