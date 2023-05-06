@@ -16,4 +16,11 @@ set(src
   ne.c
   )
 
+if(FLB_HAVE_SYSTEMD_SDBUS)
+set(src
+    ${src}
+    ne_systemd.c
+   )
+endif()
+
 FLB_PLUGIN(in_node_exporter_metrics "${src}" "")
