@@ -1633,6 +1633,75 @@ void cb_ra_create_str_from_list()
     flb_sds_list_destroy(list);
 }
 
+/*
+ * https://github.com/fluent/fluent-bit/issues/7330
+ */
+void cb_issue_7330_single_char()
+{
+    int ret;
+    int type;
+    char *json;
+    char *out_buf = NULL;
+    size_t out_size;
+    size_t off = 0;
+    flb_sds_t input = NULL;
+    flb_sds_t out_tag = NULL;
+    struct flb_regex_search regex_result;
+    struct flb_record_accessor *ra_tag = NULL;
+    msgpack_unpacked result;
+    msgpack_object map;
+
+    json = "{\"tool\":\"fluent\"}";
+    ret = flb_pack_json(json, strlen(json), &out_buf, &out_size, &type, NULL);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("flb_pack_json failed");
+        exit(EXIT_FAILURE);
+    }
+
+    input = flb_sds_create("b");
+    if (!TEST_CHECK(input != NULL)) {
+        goto issue_7330;
+    }
+
+    /* create flb_record_accessor from single character */
+    ra_tag = flb_ra_create(input, FLB_FALSE);
+    if (!TEST_CHECK(ra_tag != NULL)) {
+        TEST_MSG("flb_ra_create failed");
+        goto issue_7330;
+    }
+
+    /* Unpack msgpack object */
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, out_buf, out_size, &off);
+    map = result.data;
+
+    /* Do translation */
+    out_tag = flb_ra_translate(ra_tag, "old", 3, map, &regex_result);
+    msgpack_unpacked_destroy(&result);
+    if (!TEST_CHECK(out_tag != NULL)) {
+        TEST_MSG("flb_ra_translate failed");
+        goto issue_7330;
+    }
+    else if (!TEST_CHECK(flb_sds_len(out_tag) > 0)) {
+        TEST_MSG("out_tag len error. len=%zd", flb_sds_len(out_tag));
+        goto issue_7330;
+    }
+
+ issue_7330:
+    if (input) {
+        flb_sds_destroy(input);
+    }
+    if (out_tag) {
+        flb_sds_destroy(out_tag);
+    }
+    if (out_buf) {
+        flb_free(out_buf);
+    }
+    if (ra_tag) {
+        flb_ra_destroy(ra_tag);
+    }
+}
+
 TEST_LIST = {
     { "keys"            , cb_keys},
     { "dash_key"        , cb_dash_key},
@@ -1657,5 +1726,6 @@ TEST_LIST = {
     { "flb_ra_translate_check" , cb_ra_translate_check},
     { "issue_5936_last_array"      , cb_issue_5936_last_array},
     { "ra_create_str_from_list", cb_ra_create_str_from_list},
+    { "issue_7330_single_character"  , cb_issue_7330_single_char},
     { NULL }
 };
