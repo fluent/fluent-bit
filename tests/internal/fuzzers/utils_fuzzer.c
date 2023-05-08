@@ -182,8 +182,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     size_t len;
     void *out_data = NULL;
     size_t out_len;
+    int64_t gzip_decompress_limit = 100000000; /* 100MB */
     if (flb_gzip_compress((char*)data, size, &str, &len) != -1) {
-        flb_gzip_uncompress(str, len, &out_data, &out_len);
+        flb_gzip_uncompress(str, len, &out_data, &out_len, gzip_decompress_limit);
     }
     if (str != NULL) {
         free(str);
@@ -193,7 +194,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     }
     void *out_data2 = NULL;
     size_t out2_len;
-    int uncompress_ret = flb_gzip_uncompress((char*)data, size, &out_data2, &out2_len);
+    int uncompress_ret = flb_gzip_uncompress((char*)data, size, &out_data2, &out2_len, gzip_decompress_limit);
     if (uncompress_ret != -1 && out_data2 != NULL) {
         flb_free(out_data2);
     }

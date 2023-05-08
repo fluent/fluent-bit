@@ -30,7 +30,8 @@ static void flb_aws_compress_general_test_cases(int test_type,
                                                int(*decompress)(void *in_data,
                                                                size_t in_len,
                                                                void **out_data,
-                                                               size_t *out_len));
+                                                               size_t *out_len,
+                                                               int64_t gzip_decompress_limit));
 static void flb_aws_compress_test_cases(struct flb_aws_test_case *cases);
 static void flb_aws_compress_truncate_b64_test_cases__gzip_decode(
                                                     struct flb_aws_test_case *cases,
@@ -238,7 +239,8 @@ static void flb_aws_compress_general_test_cases(int test_type,
                                                int(*decompress)(void *in_data,
                                                                size_t in_len,
                                                                void **out_data,
-                                                               size_t *out_len))
+                                                               size_t *out_len,
+                                                               int64_t gzip_decompress_limit))
 {
     int ret;
     size_t len;
@@ -249,6 +251,7 @@ static void flb_aws_compress_general_test_cases(int test_type,
     size_t out_data_b64_len;
     struct flb_config *config;
     struct flb_aws_test_case *tcase = cases;
+    int64_t gzip_decompress_limit = 100000000; /* 100MB */
 
     config = flb_config_init();
 
@@ -305,7 +308,7 @@ static void flb_aws_compress_general_test_cases(int test_type,
             out_data = out_data_b64;
             out_data_len = out_data_b64_len;
             ret = decompress(out_data, out_data_len, (void *)&out_data_b64,
-                            &out_data_b64_len);
+                            &out_data_b64_len, gzip_decompress_limit);
             flb_free(out_data);
             out_data = NULL;
             if (!TEST_CHECK(ret == 0)) {
