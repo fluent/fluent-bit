@@ -1652,7 +1652,7 @@ void cb_issue_7330_single_char()
     msgpack_object map;
 
     json = "{\"tool\":\"fluent\"}";
-    ret = flb_pack_json(json, strlen(json), &out_buf, &out_size, &type, NULL);
+    ret = flb_pack_json(json, strlen(json), &out_buf, &out_size, &type);
     if (!TEST_CHECK(ret == 0)) {
         TEST_MSG("flb_pack_json failed");
         exit(EXIT_FAILURE);
