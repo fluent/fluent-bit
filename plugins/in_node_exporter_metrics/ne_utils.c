@@ -77,15 +77,29 @@ int ne_utils_file_read_uint64(const char *mount,
     uint64_t val;
     ssize_t bytes;
     char tmp[32];
+    char *find = NULL;
+    int pos = -1;
 
     /* Compose the final path */
-    p = flb_sds_create(mount);
-    if (!p) {
-        return -1;
+    find = strstr(path, mount);
+    if (find != NULL) {
+        pos = find - path;
     }
+    /* If the mount is already concatenated, just using path. */
+    if (find && pos == 0) {
+        p = flb_sds_create(path);
+        if (!p) {
+            return -1;
+        }
+    } else {
+        p = flb_sds_create(mount);
+        if (!p) {
+            return -1;
+        }
 
-    len = strlen(path);
-    flb_sds_cat_safe(&p, path, len);
+        len = strlen(path);
+        flb_sds_cat_safe(&p, path, len);
+    }
 
     if (join_a) {
         flb_sds_cat_safe(&p, "/", 1);
