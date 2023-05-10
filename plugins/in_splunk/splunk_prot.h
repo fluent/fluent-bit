@@ -20,6 +20,11 @@
 #ifndef FLB_IN_SPLUNK_PROT
 #define FLB_IN_SPLUNK_PROT
 
+#define SPLUNK_AUTH_UNAUTH        1
+#define SPLUNK_AUTH_SUCCESS       0
+#define SPLUNK_AUTH_MISSING_CRED -1
+#define SPLUNK_AUTH_UNAUTHORIZED -2
+
 int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
                        struct mk_http_session *session,
                        struct mk_http_request *request);

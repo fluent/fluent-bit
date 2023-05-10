@@ -45,6 +45,9 @@ struct flb_splunk {
     size_t buffer_max_size;            /* Maximum buffer size */
     size_t buffer_chunk_size;          /* Chunk allocation size */
 
+    /* Token Auth */
+    flb_sds_t auth_header;
+
     struct flb_log_event_encoder log_encoder;
     struct flb_downstream *downstream; /* Client manager */
     struct mk_list connections;        /* linked list of connections */

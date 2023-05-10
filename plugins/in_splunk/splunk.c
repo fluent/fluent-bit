@@ -165,6 +165,12 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_STR, "splunk_token", NULL,
+     0, FLB_FALSE, 0,
+     "Set valid Splunk HEC tokens for the requests"
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "tag_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_splunk, tag_key),
      ""

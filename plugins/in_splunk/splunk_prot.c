@@ -28,6 +28,7 @@
 
 #include "splunk.h"
 #include "splunk_conn.h"
+#include "splunk_prot.h"
 
 #define HTTP_CONTENT_JSON  0
 #define HTTP_CONTENT_TEXT  1
@@ -89,7 +90,14 @@ static int send_response(struct splunk_conn *conn, int http_status, char *messag
                        FLB_VERSION_STR,
                        len, message);
     }
-
+    else if (http_status == 401) {
+        flb_sds_printf(&out,
+                       "HTTP/1.1 401 Unauthorized\r\n"
+                       "Server: Fluent Bit v%s\r\n"
+                       "Content-Length: %i\r\n\r\n%s",
+                       FLB_VERSION_STR,
+                       len, message);
+    }
     /* We should check this operations result */
     flb_io_net_write(conn->connection,
                      (void *) out,
@@ -435,6 +443,36 @@ static ssize_t parse_hec_payload_json(struct flb_splunk *ctx, flb_sds_t tag,
     return 0;
 }
 
+static int validate_auth_header(struct flb_splunk *ctx, struct mk_http_request *request)
+{
+    struct mk_http_header *auth_header = NULL;
+
+    if (ctx->auth_header == NULL) {
+        return SPLUNK_AUTH_UNAUTH;
+    }
+
+    auth_header = mk_http_header_get(MK_HEADER_AUTHORIZATION, request, NULL, 0);
+
+    if (auth_header == NULL) {
+        return SPLUNK_AUTH_MISSING_CRED;
+    }
+
+    if (auth_header && auth_header->val.len > 0) {
+        if (strncmp(ctx->auth_header, auth_header->val.data, strlen(ctx->auth_header)) == 0) {
+            return SPLUNK_AUTH_SUCCESS;
+        }
+        else {
+            return SPLUNK_AUTH_UNAUTHORIZED;
+        }
+    }
+    else {
+        return SPLUNK_AUTH_MISSING_CRED;
+    }
+
+    return SPLUNK_AUTH_SUCCESS;
+}
+
+
 static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
                                flb_sds_t tag,
                                struct mk_http_session *session,
@@ -715,6 +753,24 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
         mk_mem_free(uri);
 
         return 0;
+    }
+
+    /* Under services/collector endpoints are required for
+     * authentication if provided splunk_token */
+    ret = validate_auth_header(ctx, request);
+    if (ret < 0){
+        send_response(conn, 401, "error: unauthroized\n");
+        if (ret == SPLUNK_AUTH_MISSING_CRED) {
+            flb_plg_warn(ctx->ins, "missing credentials in request headers", ret);
+        }
+        else if (ret == SPLUNK_AUTH_UNAUTHORIZED) {
+            flb_plg_warn(ctx->ins, "wrong credentials in request headers", ret);
+        }
+
+        flb_sds_destroy(tag);
+        mk_mem_free(uri);
+
+        return -1;
     }
 
     if (request->method == MK_METHOD_POST) {
