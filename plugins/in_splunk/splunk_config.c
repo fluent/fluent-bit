@@ -159,6 +159,10 @@ int splunk_config_destroy(struct flb_splunk *ctx)
         ctx->collector_id = -1;
     }
 
+    if (ctx->auth_header != NULL) {
+        flb_sds_destroy(ctx->auth_header);
+    }
+
     if (ctx->downstream != NULL) {
         flb_downstream_destroy(ctx->downstream);
     }
