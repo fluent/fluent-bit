@@ -53,19 +53,13 @@ do
     echo "Testing $IMAGE"
     LOG_FILE=$(mktemp)
 
-    UPDATED_FLUENT_BIT_INSTALL_COMMAND_PREFIX=${FLUENT_BIT_INSTALL_COMMAND_PREFIX:-}
-    # For AL2023 we currently want a fixed 2023 version instead of build timestamps
-    if [[ "$IMAGE" == "amazonlinux:2023" ]]; then
-        UPDATED_FLUENT_BIT_INSTALL_COMMAND_PREFIX="sed -i 's|\$releasever/|2023/|g' /etc/yum.repos.d/fluent-bit.repo;${FLUENT_BIT_INSTALL_COMMAND_PREFIX:-}"
-    fi
-
     # We do want word splitting for EXTRA_MOUNTS
     # shellcheck disable=SC2086
     $CONTAINER_RUNTIME run --rm -t \
         -e FLUENT_BIT_PACKAGES_URL="${FLUENT_BIT_PACKAGES_URL:-https://packages.fluentbit.io}" \
         -e FLUENT_BIT_PACKAGES_KEY="${FLUENT_BIT_PACKAGES_KEY:-https://packages.fluentbit.io/fluentbit.key}" \
         -e FLUENT_BIT_RELEASE_VERSION="${FLUENT_BIT_RELEASE_VERSION:-}" \
-        -e FLUENT_BIT_INSTALL_COMMAND_PREFIX="$UPDATED_FLUENT_BIT_INSTALL_COMMAND_PREFIX" \
+        -e FLUENT_BIT_INSTALL_COMMAND_PREFIX="${FLUENT_BIT_INSTALL_COMMAND_PREFIX:-}" \
         -e FLUENT_BIT_INSTALL_PACKAGE_NAME="${FLUENT_BIT_INSTALL_PACKAGE_NAME:-fluent-bit}" \
         -e FLUENT_BIT_INSTALL_YUM_PARAMETERS="${FLUENT_BIT_INSTALL_YUM_PARAMETERS:-}" \
         $EXTRA_MOUNTS \
