@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_version.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_gzip.h>
 
 #include <monkey/monkey.h>
 #include <monkey/mk_core.h>
@@ -439,8 +440,15 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
                                struct mk_http_session *session,
                                struct mk_http_request *request)
 {
+    int i = 0;
+    int ret = 0;
     int type = -1;
     struct mk_http_header *header;
+    int extra_size = -1;
+    struct mk_http_header *headers_extra;
+    int gzip_compressed = FLB_FALSE;
+    void *gz_data = NULL;
+    size_t gz_size = -1;
 
     header = &session->parser.headers[MK_HEADER_CONTENT_TYPE];
     if (header->key.data == NULL) {
@@ -469,20 +477,63 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
         return -1;
     }
 
-    if (type == HTTP_CONTENT_JSON) {
-        parse_hec_payload_json(ctx, tag, request->data.data, request->data.len);
+    extra_size = session->parser.headers_extra_count;
+    if (extra_size > 0) {
+        for (i = 0; i < extra_size; i++) {
+            headers_extra = &session->parser.headers_extra[i];
+            if (headers_extra->key.len == 16 &&
+                strncasecmp(headers_extra->key.data, "Content-Encoding", 16) == 0) {
+                if (headers_extra->val.len == 4 &&
+                    strncasecmp(headers_extra->val.data, "gzip", 4) == 0) {
+                    flb_debug("[splunk_prot] body is gzipped");
+                    gzip_compressed = FLB_TRUE;
+                }
+            }
+        }
     }
 
-    if (type == HTTP_CONTENT_TEXT) {
-        process_raw_payload_pack(ctx, tag, request->data.data, request->data.len);
-    }
+    if (gzip_compressed == FLB_TRUE) {
+        ret = flb_gzip_uncompress((void *) request->data.data, request->data.len,
+                                  &gz_data, &gz_size);
+        if (ret == -1) {
+            flb_error("[elasticsearch_bulk_prot] gzip uncompress is failed");
+            return -1;
+        }
 
-    if (type == HTTP_CONTENT_UNKNOWN) {
-        if (request->data.data[0] == '{') {
+        if (type == HTTP_CONTENT_JSON) {
+            parse_hec_payload_json(ctx, tag, gz_data, gz_size);
+        }
+
+        if (type == HTTP_CONTENT_TEXT) {
+            process_raw_payload_pack(ctx, tag, gz_data, gz_size);
+        }
+
+        if (type == HTTP_CONTENT_UNKNOWN) {
+            if (((char *)gz_data)[0] == '{') {
+                parse_hec_payload_json(ctx, tag, gz_data, gz_size);
+            }
+            else {
+                process_raw_payload_pack(ctx, tag, gz_data, gz_size);
+            }
+        }
+        flb_free(gz_data);
+    }
+    else {
+        if (type == HTTP_CONTENT_JSON) {
             parse_hec_payload_json(ctx, tag, request->data.data, request->data.len);
         }
-        else {
+
+        if (type == HTTP_CONTENT_TEXT) {
             process_raw_payload_pack(ctx, tag, request->data.data, request->data.len);
+        }
+
+        if (type == HTTP_CONTENT_UNKNOWN) {
+            if (request->data.data[0] == '{') {
+                parse_hec_payload_json(ctx, tag, request->data.data, request->data.len);
+            }
+            else {
+                process_raw_payload_pack(ctx, tag, request->data.data, request->data.len);
+            }
         }
     }
 

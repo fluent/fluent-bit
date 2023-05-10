@@ -614,12 +614,211 @@ void flb_test_splunk_tag_key()
     test_ctx_destroy(ctx);
 }
 
+void flb_test_splunk_gzip(int port, char *endpoint)
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+    int ret;
+    int num;
+    size_t b_sent;
+    char *buf = "{\"event\": \"Pony 1 has left the barn\"}{\"event\": \"Pony 2 has left the barn\"}{\"event\": \"Pony 3 has left the barn\", \"nested\": {\"key1\": \"value1\"}}";
+    char *expected = "\"event\":";
+    char sport[16];
+    flb_sds_t target;
+    void *final_data;
+    size_t final_bytes;
+
+    target = flb_sds_create_size(64);
+    flb_sds_cat(target, endpoint, strlen(endpoint));
+
+    snprintf(sport, 16, "%d", port);
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = expected;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "port", sport,
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ctx->httpc = splunk_client_ctx_create(port);
+    TEST_CHECK(ctx->httpc != NULL);
+
+    ret = flb_gzip_compress((void *) buf, strlen(buf), &final_data, &final_bytes);
+    TEST_CHECK(ret != -1);
+
+    c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, target, final_data, final_bytes,
+                        "127.0.0.1", port, NULL, 0);
+    ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE, strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
+                              JSON_CONTENT_TYPE, strlen(JSON_CONTENT_TYPE));
+    TEST_CHECK(ret == 0);
+    /* Add Content-Encoding: gzip */
+    ret = flb_http_add_header(c, "Content-Encoding", 16, "gzip", 4);
+    TEST_CHECK(ret == 0);
+
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("splunk_client failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_http_do(c, &b_sent);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("ret error. ret=%d\n", ret);
+    }
+    else if (!TEST_CHECK(b_sent > 0)){
+        TEST_MSG("b_sent size error. b_sent = %lu\n", b_sent);
+    }
+    else if (!TEST_CHECK(c->resp.status == 200)) {
+        TEST_MSG("http response code error. expect: 200, got: %d\n", c->resp.status);
+    }
+    flb_free(final_data);
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+    flb_sds_destroy(target);
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(ctx->httpc->u_conn);
+    test_ctx_destroy(ctx);
+}
+
+void flb_test_splunk_collector_gzip()
+{
+    flb_test_splunk_gzip(8813, "/services/collector");
+}
+
+void flb_test_splunk_collector_event_gzip()
+{
+    flb_test_splunk_gzip(8814, "/services/collector/event");
+}
+
+void flb_test_splunk_raw_multilines_gzip(int port)
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+    int ret;
+    int num;
+    size_t b_sent;
+    char *buf = "127.0.0.1 - admin [28/Sep/2016:09:05:26.875 -0700] \"GET /servicesNS/admin/launcher/data/ui/views?count=-1 HTTP/1.0\" 200 126721 - - - 6ms" \
+            "127.0.0.1 - admin [28/Sep/2016:09:05:26.917 -0700] \"GET /servicesNS/admin/launcher/data/ui/nav/default HTTP/1.0\" 200 4367 - - - 6ms" \
+            "127.0.0.1 - admin [28/Sep/2016:09:05:26.941 -0700] \"GET /services/apps/local?search=disabled%3Dfalse&count=-1 HTTP/1.0\" 200 31930 - - - 4ms" \
+            "127.0.0.1 - admin [28/Sep/2016:09:05:26.954 -0700] \"GET /services/apps/local?search=disabled%3Dfalse&count=-1 HTTP/1.0\" 200 31930 - - - 3ms" \
+            "127.0.0.1 - admin [28/Sep/2016:09:05:26.968 -0700] \"GET /servicesNS/admin/launcher/data/ui/views?digest=1&count=-1 HTTP/1.0\" 200 58672 - - - 5ms";
+    char *expected = "\"log\":";
+    char sport[16];
+    void *final_data;
+    size_t final_bytes;
+
+    snprintf(sport, 16, "%d", port);
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = expected;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "port", sport,
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ctx->httpc = splunk_client_ctx_create(port);
+    TEST_CHECK(ctx->httpc != NULL);
+
+    ret = flb_gzip_compress((void *) buf, strlen(buf), &final_data, &final_bytes);
+    TEST_CHECK(ret != -1);
+
+    c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/services/collector/raw", final_data, final_bytes,
+                        "127.0.0.1", port, NULL, 0);
+    ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE, strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
+                              JSON_CONTENT_TYPE, strlen(JSON_CONTENT_TYPE));
+    /* Add Content-Encoding: gzip */
+    ret = flb_http_add_header(c, "Content-Encoding", 16, "gzip", 4);
+    TEST_CHECK(ret == 0);
+
+    TEST_CHECK(ret == 0);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("splunk_client failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_http_do(c, &b_sent);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("ret error. ret=%d\n", ret);
+    }
+    else if (!TEST_CHECK(b_sent > 0)){
+        TEST_MSG("b_sent size error. b_sent = %lu\n", b_sent);
+    }
+    else if (!TEST_CHECK(c->resp.status == 200)) {
+        TEST_MSG("http response code error. expect: 200, got: %d\n", c->resp.status);
+    }
+    flb_free(final_data);
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(ctx->httpc->u_conn);
+    test_ctx_destroy(ctx);
+}
+
+void flb_test_splunk_collector_raw_multilines_gzip()
+{
+    flb_test_splunk_raw_multilines_gzip(8815);
+}
+
 TEST_LIST = {
     {"health", flb_test_splunk_health},
     {"collector", flb_test_splunk_collector},
     {"collector_event", flb_test_splunk_collector_event},
     {"collector_raw", flb_test_splunk_collector_raw},
     {"collector_raw_multilines", flb_test_splunk_collector_raw_multilines},
+    {"collector_gzip", flb_test_splunk_collector_gzip},
+    {"collector_event_gzip", flb_test_splunk_collector_event_gzip},
+    {"collector_raw_multilines_gzip", flb_test_splunk_collector_raw_multilines_gzip},
     {"tag_key", flb_test_splunk_tag_key},
     {NULL, NULL}
 };
