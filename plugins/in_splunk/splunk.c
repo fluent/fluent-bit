@@ -144,6 +144,22 @@ static int in_splunk_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+
+static void in_splunk_pause(void *data, struct flb_config *config)
+{
+    struct flb_splunk *ctx = data;
+
+    flb_input_collector_pause(ctx->collector_id, ctx->ins);
+
+}
+
+static void in_splunk_resume(void *data, struct flb_config *config)
+{
+    struct flb_splunk *ctx = data;
+
+    flb_input_collector_resume(ctx->collector_id, ctx->ins);
+}
+
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
@@ -189,8 +205,8 @@ struct flb_input_plugin in_splunk_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = in_splunk_collect,
     .cb_flush_buf = NULL,
-    .cb_pause     = NULL,
-    .cb_resume    = NULL,
+    .cb_pause     = in_splunk_pause,
+    .cb_resume    = in_splunk_resume,
     .cb_exit      = in_splunk_exit,
     .config_map   = config_map,
     .flags        = FLB_INPUT_NET_SERVER | FLB_IO_OPT_TLS
