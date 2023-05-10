@@ -34,3 +34,23 @@ jobs:
           bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
           ./actionlint -color -shellcheck=
         shell: bash
+
+  coding-style-pr:
+    runs-on: ubuntu-latest
+    name: PR - Coding Style checks
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: cpp-linter/cpp-linter-action@v2
+        id: linter
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          version: '16'
+          style: file
+          ignore: lib/
+
+      # We can explicitly fail but by default the action does not so add this to fail the workflow if we want
+      - if: steps.linter.outputs.checks-failed > 0
+        run: echo "Some files failed the linting checks!"
+        # run: exit 1

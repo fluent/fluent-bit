@@ -1,0 +1,7 @@
+# https://clang.llvm.org/docs/ClangFormatStyleOptions.html
+BasedOnStyle: GNU
+
+# https://clang.llvm.org/docs/ClangFormatStyleOptions.html#bracewrapping
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: false
