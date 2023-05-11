@@ -765,9 +765,6 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
                 send_json_message_response(conn, 400, "{\"text\":\"Invalid data format\",\"code\":6}");
             }
             send_json_message_response(conn, 200, "{\"text\":\"Success\",\"code\":0}");
-
-            flb_sds_destroy(tag);
-            mk_mem_free(uri);
         }
         else if (strncmp(uri, "/services/collector/raw", 23) == 0) {
             ret = process_hec_raw_payload(ctx, conn, tag, session, request);
@@ -776,12 +773,13 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
                 send_json_message_response(conn, 400, "{\"text\":\"Invalid data format\",\"code\":6}");
             }
             send_json_message_response(conn, 200, "{\"text\":\"Success\",\"code\":0}");
-
-            flb_sds_destroy(tag);
-            mk_mem_free(uri);
         }
         else {
             send_response(conn, 400, "error: invalid HTTP endpoint\n");
+
+            flb_sds_destroy(tag);
+            mk_mem_free(uri);
+
             return -1;
         }
     }
@@ -795,6 +793,9 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
         send_response(conn, 400, "error: invalid HTTP method\n");
         return -1;
     }
+
+    flb_sds_destroy(tag);
+    mk_mem_free(uri);
 
     return ret;
 }
