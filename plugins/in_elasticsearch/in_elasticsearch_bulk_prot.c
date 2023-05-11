@@ -691,26 +691,33 @@ int in_elasticsearch_bulk_prot_handle(struct flb_in_elasticsearch *ctx,
         uri[diff] = '\0';
     }
 
-    /* Compose the query string using the URI */
-    len = strlen(uri);
-
-    if (len == 1) {
-        tag = NULL; /* use default tag */
-    }
-    else {
-        tag = flb_sds_create_size(len);
-        if (!tag) {
-            mk_mem_free(uri);
+    /* Refer the tag at first*/
+    if (ctx->ins->tag && !ctx->ins->tag_default) {
+        tag = flb_sds_create(ctx->ins->tag);
+        if (tag == NULL) {
             return -1;
         }
+    }
+    else {
+        /* Compose the query string using the URI */
+        len = strlen(uri);
 
-        /* New tag skipping the URI '/' */
-        flb_sds_cat(tag, uri + 1, len - 1);
+        if (len == 1) {
+            tag = NULL; /* use default tag */
+        }
+        else {
+            /* New tag skipping the URI '/' */
+            tag = flb_sds_create_len(&uri[1], len - 1);
+            if (!tag) {
+                mk_mem_free(uri);
+                return -1;
+            }
 
-        /* Sanitize, only allow alphanum chars */
-        for (i = 0; i < flb_sds_len(tag); i++) {
-            if (!isalnum(tag[i]) && tag[i] != '_' && tag[i] != '.') {
-                tag[i] = '_';
+            /* Sanitize, only allow alphanum chars */
+            for (i = 0; i < flb_sds_len(tag); i++) {
+                if (!isalnum(tag[i]) && tag[i] != '_' && tag[i] != '.') {
+                    tag[i] = '_';
+                }
             }
         }
     }
