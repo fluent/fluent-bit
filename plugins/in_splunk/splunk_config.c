@@ -34,7 +34,6 @@ struct flb_splunk *splunk_config_create(struct flb_input_instance *ins)
     int                        ret;
     struct flb_splunk         *ctx;
     const char                *tmp;
-    flb_sds_t                  token;
 
     ctx = flb_calloc(1, sizeof(struct flb_splunk));
     if (!ctx) {
@@ -55,16 +54,13 @@ struct flb_splunk *splunk_config_create(struct flb_input_instance *ins)
     tmp = flb_input_get_property("splunk_token", ins);
     if (tmp) {
         ctx->auth_header = flb_sds_create("Splunk ");
-        if (!ctx->auth_header) {
+        if (ctx->auth_header == NULL) {
             flb_plg_error(ctx->ins, "error on prefix of auth_header generation");
             splunk_config_destroy(ctx);
             return NULL;
         }
-        token = flb_sds_cat(ctx->auth_header, tmp, strlen(tmp));
-        if (token) {
-            ctx->auth_header = token;
-        }
-        else {
+        ret = flb_sds_cat_safe(&ctx->auth_header, tmp, strlen(tmp));
+        if (ret < 0) {
             flb_plg_error(ctx->ins, "error on token generation");
             splunk_config_destroy(ctx);
             return NULL;
