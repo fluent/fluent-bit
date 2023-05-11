@@ -282,7 +282,7 @@ void flb_test_in_elasticsearch_version()
     test_ctx_destroy(ctx);
 }
 
-void flb_test_in_elasticsearch(char *write_op, int port)
+void flb_test_in_elasticsearch(char *write_op, int port, char *tag)
 {
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
@@ -314,12 +314,27 @@ void flb_test_in_elasticsearch(char *write_op, int port)
                         "port", sport,
                         NULL);
     TEST_CHECK(ret == 0);
+    if (tag != NULL) {
+        ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                            "tag", tag,
+                            NULL);
+        TEST_CHECK(ret == 0);
+    }
 
-    ret = flb_output_set(ctx->flb, ctx->o_ffd,
-                         "match", "*",
-                         "format", "json",
-                         NULL);
-    TEST_CHECK(ret == 0);
+    if (tag != NULL) {
+        ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                             "match", tag,
+                             "format", "json",
+                             NULL);
+        TEST_CHECK(ret == 0);
+    }
+    else {
+        ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                             "match", "*",
+                             "format", "json",
+                             NULL);
+        TEST_CHECK(ret == 0);
+    }
 
     /* Start the engine */
     ret = flb_start(ctx->flb);
@@ -363,12 +378,12 @@ void flb_test_in_elasticsearch(char *write_op, int port)
 
 void flb_test_in_elasticsearch_index_op()
 {
-    flb_test_in_elasticsearch("index", 9202);
+    flb_test_in_elasticsearch("index", 9202, NULL);
 }
 
 void flb_test_in_elasticsearch_create_op()
 {
-    flb_test_in_elasticsearch("create", 9203);
+    flb_test_in_elasticsearch("create", 9203, NULL);
 }
 
 void flb_test_in_elasticsearch_invalid(char *write_op, int status, char *expected_op, int port)
@@ -793,6 +808,11 @@ void flb_test_in_elasticsearch_tag_key()
     test_ctx_destroy(ctx);
 }
 
+void flb_test_in_elasticsearch_index_op_with_plugin_tag()
+{
+    flb_test_in_elasticsearch("index", 9210, "es.index");
+}
+
 TEST_LIST = {
     {"version", flb_test_in_elasticsearch_version},
     {"index_op", flb_test_in_elasticsearch_index_op},
@@ -802,6 +822,7 @@ TEST_LIST = {
     {"nonexistent_op", flb_test_in_elasticsearch_nonexistent_op},
     {"multi_ops", flb_test_in_elasticsearch_multi_ops},
     {"multi_ops_gzip", flb_test_in_elasticsearch_multi_ops_gzip},
+    {"index_op_with_plugin_tag", flb_test_in_elasticsearch_index_op_with_plugin_tag},
     {"node_info", flb_test_in_elasticsearch_node_info},
     {"tag_key", flb_test_in_elasticsearch_tag_key},
     {NULL, NULL}
