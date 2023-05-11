@@ -667,13 +667,10 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
 
     /* Refer the tag at first*/
     if (ctx->ins->tag && !ctx->ins->tag_default) {
-        tag = flb_sds_create_size(1024);
-        if (!tag) {
+        tag = flb_sds_create(ctx->ins->tag);
+        if (tag == NULL) {
             return -1;
         }
-        /* clear tag before using */
-        flb_sds_len_set(tag, 0);
-        flb_sds_cat(tag, ctx->ins->tag, flb_sds_len(ctx->ins->tag));
     }
     else {
         /* Compose the query string using the URI */
