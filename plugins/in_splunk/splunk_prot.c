@@ -783,9 +783,8 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
             return -1;
         }
     }
-
-    if (request->method != MK_METHOD_GET &&
-        request->method != MK_METHOD_POST) {
+    else {
+        /* HEAD, PUT, PATCH, and DELETE methods are prohibited to use.*/
 
         flb_sds_destroy(tag);
         mk_mem_free(uri);
