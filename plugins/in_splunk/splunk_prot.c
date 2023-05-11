@@ -500,13 +500,11 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
         strncasecmp(header->val.data, "application/json", 16) == 0) {
         type = HTTP_CONTENT_JSON;
     }
-
-    if (header->val.len == 10 &&
+    else if (header->val.len == 10 &&
         strncasecmp(header->val.data, "text/plain", 10) == 0) {
         type = HTTP_CONTENT_TEXT;
     }
-
-    if (type == -1) {
+    else {
         /* Not neccesary to specify content-type for Splunk HEC. */
         flb_plg_debug(ctx->ins, "Mark as unknown type for ingested payloads");
         type = HTTP_CONTENT_UNKNOWN;
@@ -543,12 +541,10 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
         if (type == HTTP_CONTENT_JSON) {
             parse_hec_payload_json(ctx, tag, gz_data, gz_size);
         }
-
-        if (type == HTTP_CONTENT_TEXT) {
+        else if (type == HTTP_CONTENT_TEXT) {
             process_raw_payload_pack(ctx, tag, gz_data, gz_size);
         }
-
-        if (type == HTTP_CONTENT_UNKNOWN) {
+        else if (type == HTTP_CONTENT_UNKNOWN) {
             if (((char *)gz_data)[0] == '{') {
                 parse_hec_payload_json(ctx, tag, gz_data, gz_size);
             }
@@ -562,12 +558,10 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
         if (type == HTTP_CONTENT_JSON) {
             parse_hec_payload_json(ctx, tag, request->data.data, request->data.len);
         }
-
-        if (type == HTTP_CONTENT_TEXT) {
+        else if (type == HTTP_CONTENT_TEXT) {
             process_raw_payload_pack(ctx, tag, request->data.data, request->data.len);
         }
-
-        if (type == HTTP_CONTENT_UNKNOWN) {
+        else if (type == HTTP_CONTENT_UNKNOWN) {
             if (request->data.data[0] == '{') {
                 parse_hec_payload_json(ctx, tag, request->data.data, request->data.len);
             }
@@ -593,13 +587,11 @@ static int process_hec_raw_payload(struct flb_splunk *ctx, struct splunk_conn *c
         send_response(conn, 400, "error: header 'Content-Type' is not set\n");
         return -1;
     }
-
-    if (header->val.len == 10 &&
+    else if (header->val.len == 10 &&
         strncasecmp(header->val.data, "text/plain", 10) == 0) {
         type = HTTP_CONTENT_TEXT;
     }
-
-    if (type == -1) {
+    else {
         /* Not neccesary to specify content-type for Splunk HEC. */
         flb_plg_debug(ctx->ins, "Mark as unknown type for ingested payloads");
         type = HTTP_CONTENT_UNKNOWN;
@@ -611,9 +603,7 @@ static int process_hec_raw_payload(struct flb_splunk *ctx, struct splunk_conn *c
     }
 
     /* Always handle as raw type of payloads here */
-    if (type == HTTP_CONTENT_TEXT || type == HTTP_CONTENT_UNKNOWN) {
-        process_raw_payload_pack(ctx, tag, request->data.data, request->data.len);
-    }
+    process_raw_payload_pack(ctx, tag, request->data.data, request->data.len);
 
     return 0;
 }
