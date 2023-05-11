@@ -25,6 +25,33 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_record_accessor.h>
 
+
+static int delete_rule(struct flb_grep_rule *rule)
+{
+    if (rule == NULL) {
+        return -1;
+    }
+
+    if (rule->field) {
+        flb_sds_destroy(rule->field);
+    }
+    if (rule->regex_pattern) {
+        flb_free(rule->regex_pattern);
+    }
+    if (rule->ra) {
+        flb_ra_destroy(rule->ra);
+    }
+    if (rule->regex) {
+        flb_regex_destroy(rule->regex);
+    }
+    if (!mk_list_entry_is_orphan(&rule->_head)) {
+        mk_list_del(&rule->_head);
+    }
+    flb_free(rule);
+
+    return 0;
+}
+
 static int flb_grep_delete_rules(struct mk_list *rules)
 {
     struct mk_list *tmp;
@@ -37,12 +64,7 @@ static int flb_grep_delete_rules(struct mk_list *rules)
 
     mk_list_foreach_safe(head, tmp, rules) {
         rule = mk_list_entry(head, struct flb_grep_rule, _head);
-        flb_sds_destroy(rule->field);
-        flb_free(rule->regex_pattern);
-        flb_ra_destroy(rule->ra);
-        flb_regex_destroy(rule->regex);
-        mk_list_del(&rule->_head);
-        flb_free(rule);
+        delete_rule(rule);
     }
     return 0;
 }
@@ -101,7 +123,7 @@ int flb_grep_set_rule_str(struct flb_grep *grep_ctx, enum flb_grep_rule_type typ
         return -1;
     }
 
-    rule = flb_malloc(sizeof(struct flb_grep_rule));
+    rule = flb_calloc(1, sizeof(struct flb_grep_rule));
     if (rule == NULL) {
         flb_errno();
         return -1;
@@ -115,21 +137,27 @@ int flb_grep_set_rule_str(struct flb_grep *grep_ctx, enum flb_grep_rule_type typ
     split = flb_utils_split(rule_str, ' ', 1);
     if (mk_list_size(split) != 2) {
         flb_error("invalid regex, expected field and regular expression");
-        flb_free(rule);
+        delete_rule(rule);
         flb_utils_split_free(split);
         return -1;
     }
     /* Get first value (field) */
     sentry = mk_list_entry_first(split, struct flb_split_entry, _head);
-    if (*sentry->value == '$') {
+    if (sentry->value[0] == '$') {
         rule->field = flb_sds_create_len(sentry->value, sentry->len);
+        if (rule->field == NULL) {
+            flb_error("flb_sds_create_len failed");
+            delete_rule(rule);
+            flb_utils_split_free(split);
+            return -1;
+        }
     }
     else {
         rule->field = flb_sds_create_size(sentry->len + 2);
         ret = flb_sds_cat_safe(&rule->field, "$", 1);
         if (ret != 0) {
             flb_error("flb_sds_cat_safe failed");
-            flb_free(rule);
+            delete_rule(rule);
             flb_utils_split_free(split);
             return -1;
         }
@@ -137,7 +165,7 @@ int flb_grep_set_rule_str(struct flb_grep *grep_ctx, enum flb_grep_rule_type typ
         ret = flb_sds_cat_safe(&rule->field, sentry->value, sentry->len);
         if (ret != 0) {
             flb_error("flb_sds_cat_safe failed");
-            flb_free(rule);
+            delete_rule(rule);
             flb_utils_split_free(split);
             return -1;
         }
@@ -148,7 +176,7 @@ int flb_grep_set_rule_str(struct flb_grep *grep_ctx, enum flb_grep_rule_type typ
     rule->regex_pattern = flb_strndup(sentry->value, sentry->len);
     if (rule->regex_pattern == NULL) {
         flb_errno();
-        flb_free(rule);
+        delete_rule(rule);
         flb_utils_split_free(split);
         return -1;
     }
@@ -160,7 +188,7 @@ int flb_grep_set_rule_str(struct flb_grep *grep_ctx, enum flb_grep_rule_type typ
     rule->ra = flb_ra_create(rule->field, FLB_FALSE);
     if (!rule->ra) {
         flb_error("invalid record accessor? '%s'", rule->field);
-        flb_free(rule);
+        delete_rule(rule);
         return -1;
     }
 
@@ -169,7 +197,7 @@ int flb_grep_set_rule_str(struct flb_grep *grep_ctx, enum flb_grep_rule_type typ
     if (!rule->regex) {
         flb_error("could not compile regex pattern '%s'",
                   rule->regex_pattern);
-        flb_free(rule);
+        delete_rule(rule);
         return -1;
     }
 
@@ -254,11 +282,17 @@ static int flb_grep_filter_data_and_or(msgpack_object map, struct flb_grep *ctx)
 
  grep_filter_data_and_or_end:
     if (rule->type == FLB_GREP_REGEX) {
-        return found ? FLB_GREP_RET_KEEP : FLB_GREP_RET_EXCLUDE;
+        if (found) {
+            return FLB_GREP_RET_KEEP;
+        }
+        return FLB_GREP_RET_EXCLUDE;
     }
 
     /* rule is exclude */
-    return found ? FLB_GREP_RET_EXCLUDE : FLB_GREP_RET_KEEP;
+    if (found) {
+        return FLB_GREP_RET_EXCLUDE;
+    }
+    return FLB_GREP_RET_KEEP;
 }
 
 int flb_grep_filter(msgpack_object map, struct flb_grep *grep_ctx)
