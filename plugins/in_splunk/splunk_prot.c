@@ -218,9 +218,7 @@ static flb_sds_t tag_key(struct flb_splunk *ctx, msgpack_object *map)
  */
 static int process_raw_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char *buf, size_t size)
 {
-    int ret;
-
-    ret = FLB_EVENT_ENCODER_SUCCESS;
+    int ret = FLB_EVENT_ENCODER_SUCCESS;
 
     flb_log_event_encoder_reset(&ctx->log_encoder);
 
@@ -275,8 +273,7 @@ static int process_json_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char
         if (result.data.type == MSGPACK_OBJECT_MAP) {
             tag_from_record = NULL;
             if (ctx->tag_key) {
-                obj = &result.data;
-                tag_from_record = tag_key(ctx, obj);
+                tag_from_record = tag_key(ctx, &result.data);
             }
 
             ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
