@@ -458,7 +458,9 @@ static int validate_auth_header(struct flb_splunk *ctx, struct mk_http_request *
     }
 
     if (auth_header && auth_header->val.len > 0) {
-        if (strncmp(ctx->auth_header, auth_header->val.data, strlen(ctx->auth_header)) == 0) {
+        if (strncmp(ctx->auth_header,
+                    auth_header->val.data,
+                    strlen(ctx->auth_header)) == 0) {
             return SPLUNK_AUTH_SUCCESS;
         }
         else {
