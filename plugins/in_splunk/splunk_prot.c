@@ -471,6 +471,28 @@ static int validate_auth_header(struct flb_splunk *ctx, struct mk_http_request *
     return SPLUNK_AUTH_SUCCESS;
 }
 
+static int handle_hec_payload(struct flb_splunk *ctx, int content_type,
+                              flb_sds_t tag, char *buf, size_t size)
+{
+    int ret;
+
+    if (content_type == HTTP_CONTENT_JSON) {
+        ret = parse_hec_payload_json(ctx, tag, buf, size);
+    }
+    else if (content_type == HTTP_CONTENT_TEXT) {
+        ret = process_raw_payload_pack(ctx, tag, buf, size);
+    }
+    else if (content_type == HTTP_CONTENT_UNKNOWN) {
+        if (buf[0] == '{') {
+            ret = parse_hec_payload_json(ctx, tag, buf, size);
+        }
+        else {
+            ret = process_raw_payload_pack(ctx, tag, buf, size);
+        }
+    }
+
+    return ret;
+}
 
 static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
                                flb_sds_t tag,
@@ -535,37 +557,11 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
             return -1;
         }
 
-        if (type == HTTP_CONTENT_JSON) {
-            parse_hec_payload_json(ctx, tag, gz_data, gz_size);
-        }
-        else if (type == HTTP_CONTENT_TEXT) {
-            process_raw_payload_pack(ctx, tag, gz_data, gz_size);
-        }
-        else if (type == HTTP_CONTENT_UNKNOWN) {
-            if (((char *)gz_data)[0] == '{') {
-                parse_hec_payload_json(ctx, tag, gz_data, gz_size);
-            }
-            else {
-                process_raw_payload_pack(ctx, tag, gz_data, gz_size);
-            }
-        }
+        ret = handle_hec_payload(ctx, type, tag, gz_data, gz_size);
         flb_free(gz_data);
     }
     else {
-        if (type == HTTP_CONTENT_JSON) {
-            parse_hec_payload_json(ctx, tag, request->data.data, request->data.len);
-        }
-        else if (type == HTTP_CONTENT_TEXT) {
-            process_raw_payload_pack(ctx, tag, request->data.data, request->data.len);
-        }
-        else if (type == HTTP_CONTENT_UNKNOWN) {
-            if (request->data.data[0] == '{') {
-                parse_hec_payload_json(ctx, tag, request->data.data, request->data.len);
-            }
-            else {
-                process_raw_payload_pack(ctx, tag, request->data.data, request->data.len);
-            }
-        }
+        ret = handle_hec_payload(ctx, type, tag, request->data.data, request->data.len);
     }
 
     return 0;
