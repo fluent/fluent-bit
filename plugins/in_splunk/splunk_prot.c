@@ -220,8 +220,6 @@ static int process_raw_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char 
 {
     int ret = FLB_EVENT_ENCODER_SUCCESS;
 
-    flb_log_event_encoder_reset(&ctx->log_encoder);
-
     ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
@@ -247,6 +245,8 @@ static int process_raw_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char 
         flb_input_log_append(ctx->ins, NULL, 0,
                              ctx->log_encoder.output_buffer,
                              ctx->log_encoder.output_length);
+
+        flb_log_event_encoder_reset(&ctx->log_encoder);
     }
     else {
         flb_plg_error(ctx->ins, "log event encoding error : %d", ret);
