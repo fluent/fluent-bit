@@ -154,6 +154,12 @@ int flb_grep_set_rule_str(struct flb_grep *grep_ctx, enum flb_grep_rule_type typ
     }
     else {
         rule->field = flb_sds_create_size(sentry->len + 2);
+        if (rule->field == NULL) {
+            flb_error("flb_sds_create_size failed");
+            delete_rule(rule);
+            flb_utils_split_free(split);
+            return -1;
+        }
         ret = flb_sds_cat_safe(&rule->field, "$", 1);
         if (ret != 0) {
             flb_error("flb_sds_cat_safe failed");
