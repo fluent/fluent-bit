@@ -66,6 +66,9 @@ int flb_log_event_encoder_append_value(
                 result = msgpack_pack_ext(&field->packer, value_length,
                                           *((int8_t *) value_buffer));
             }
+            else if (value_type == FLB_LOG_EVENT_NULL_VALUE_TYPE) {
+                result = msgpack_pack_nil(&field->packer);
+            }
             else {
                 if (value_buffer == NULL) {
                     return FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT;
@@ -85,9 +88,6 @@ int flb_log_event_encoder_append_value(
                     result = msgpack_pack_ext_body(&field->packer,
                                                    value_buffer,
                                                    value_length);
-                }
-                else if (value_type == FLB_LOG_EVENT_NULL_VALUE_TYPE) {
-                    result = msgpack_pack_nil(&field->packer);
                 }
                 else if (value_type == FLB_LOG_EVENT_CHAR_VALUE_TYPE) {
                     result = msgpack_pack_char(&field->packer,
