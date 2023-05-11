@@ -457,7 +457,7 @@ static int validate_auth_header(struct flb_splunk *ctx, struct mk_http_request *
         return SPLUNK_AUTH_MISSING_CRED;
     }
 
-    if (auth_header && auth_header->val.len > 0) {
+    if (auth_header != NULL && auth_header->val.len > 0) {
         if (strncmp(ctx->auth_header,
                     auth_header->val.data,
                     strlen(ctx->auth_header)) == 0) {
@@ -712,7 +712,7 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
                          MK_HEADER_CONNECTION);
 
     /* HTTP/1.1 needs Host header */
-    if (!request->host.data && request->protocol == MK_HTTP_PROTOCOL_11) {
+    if (request->host.data == NULL && request->protocol == MK_HTTP_PROTOCOL_11) {
         flb_sds_destroy(tag);
         mk_mem_free(uri);
 
