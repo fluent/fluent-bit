@@ -725,7 +725,7 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
 
     if (request->method == MK_METHOD_GET) {
         /* Handle health minotoring of splunk hec endpoint for load balancers */
-        if (strncmp(uri, "/services/collector/health", 26) == 0) {
+        if (strcasecmp(uri, "/services/collector/health") == 0) {
             send_json_message_response(conn, 200, "{\"text\":\"Success\",\"code\":200}");
         }
         else {
@@ -757,17 +757,17 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
     }
 
     if (request->method == MK_METHOD_POST) {
-        if (strncmp(uri, "/services/collector/event", 25) == 0 ||
-            (strncmp(uri, "/services/collector", 19) == 0 && strlen(uri) == 19)) {
-            ret = process_hec_payload(ctx, conn, tag, session, request);
+        if (strcasecmp(uri, "/services/collector/raw") == 0) {
+            ret = process_hec_raw_payload(ctx, conn, tag, session, request);
 
             if (!ret) {
                 send_json_message_response(conn, 400, "{\"text\":\"Invalid data format\",\"code\":6}");
             }
             send_json_message_response(conn, 200, "{\"text\":\"Success\",\"code\":0}");
         }
-        else if (strncmp(uri, "/services/collector/raw", 23) == 0) {
-            ret = process_hec_raw_payload(ctx, conn, tag, session, request);
+        else if (strcasecmp(uri, "/services/collector/event") == 0 ||
+                 strcasecmp(uri, "/services/collector") == 0) {
+            ret = process_hec_payload(ctx, conn, tag, session, request);
 
             if (!ret) {
                 send_json_message_response(conn, 400, "{\"text\":\"Invalid data format\",\"code\":6}");
