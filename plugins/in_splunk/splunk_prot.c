@@ -255,6 +255,56 @@ static int process_raw_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char 
     return 0;
 }
 
+static void process_flb_log_append(struct flb_splunk *ctx, msgpack_object *record,
+                                   flb_sds_t tag, flb_sds_t tag_from_record,
+                                   struct flb_time tm) {
+    int ret;
+
+    ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_timestamp(
+                &ctx->log_encoder,
+                &tm);
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_body_from_msgpack_object(
+                &ctx->log_encoder,
+                record);
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        if (tag_from_record) {
+            flb_input_log_append(ctx->ins,
+                                 tag_from_record,
+                                 flb_sds_len(tag_from_record),
+                                 ctx->log_encoder.output_buffer,
+                                 ctx->log_encoder.output_length);
+
+            flb_sds_destroy(tag_from_record);
+        }
+        else if (tag) {
+            flb_input_log_append(ctx->ins, tag, flb_sds_len(tag),
+                                 ctx->log_encoder.output_buffer,
+                                 ctx->log_encoder.output_length);
+        }
+        else {
+            /* use default plugin Tag (it internal name, e.g: http.0 */
+            flb_input_log_append(ctx->ins, NULL, 0,
+                                 ctx->log_encoder.output_buffer,
+                                 ctx->log_encoder.output_length);
+        }
+    }
+    else {
+        flb_plg_error(ctx->ins, "Error encoding record : %d", ret);
+    }
+}
+
 static int process_json_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char *buf, size_t size)
 {
     int ret;
@@ -276,49 +326,7 @@ static int process_json_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char
                 tag_from_record = tag_key(ctx, &result.data);
             }
 
-            ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
-
-            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                ret = flb_log_event_encoder_set_timestamp(
-                        &ctx->log_encoder,
-                        &tm);
-            }
-
-            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                ret = flb_log_event_encoder_set_body_from_msgpack_object(
-                        &ctx->log_encoder,
-                        &result.data);
-            }
-
-            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
-            }
-
-            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                if (tag_from_record) {
-                    flb_input_log_append(ctx->ins,
-                                         tag_from_record,
-                                         flb_sds_len(tag_from_record),
-                                         ctx->log_encoder.output_buffer,
-                                         ctx->log_encoder.output_length);
-
-                    flb_sds_destroy(tag_from_record);
-                }
-                else if (tag) {
-                    flb_input_log_append(ctx->ins, tag, flb_sds_len(tag),
-                                         ctx->log_encoder.output_buffer,
-                                         ctx->log_encoder.output_length);
-                }
-                else {
-                    /* use default plugin Tag (it internal name, e.g: http.0 */
-                    flb_input_log_append(ctx->ins, NULL, 0,
-                                         ctx->log_encoder.output_buffer,
-                                         ctx->log_encoder.output_length);
-                }
-            }
-            else {
-                flb_plg_error(ctx->ins, "Error encoding record : %d", ret);
-            }
+            process_flb_log_append(ctx, &result.data, tag, tag_from_record, tm);
 
             flb_log_event_encoder_reset(&ctx->log_encoder);
         }
@@ -333,49 +341,7 @@ static int process_json_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char
                     tag_from_record = tag_key(ctx, &record);
                 }
 
-                ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
-
-                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                    ret = flb_log_event_encoder_set_timestamp(
-                            &ctx->log_encoder,
-                            &tm);
-                }
-
-                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                    ret = flb_log_event_encoder_set_body_from_msgpack_object(
-                            &ctx->log_encoder,
-                            &record);
-                }
-
-                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                    ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
-                }
-
-                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                    if (tag_from_record) {
-                        flb_input_log_append(ctx->ins,
-                                             tag_from_record,
-                                             flb_sds_len(tag_from_record),
-                                             ctx->log_encoder.output_buffer,
-                                             ctx->log_encoder.output_length);
-
-                        flb_sds_destroy(tag_from_record);
-                    }
-                    else if (tag) {
-                        flb_input_log_append(ctx->ins, tag, flb_sds_len(tag),
-                                             ctx->log_encoder.output_buffer,
-                                             ctx->log_encoder.output_length);
-                    }
-                    else {
-                        /* use default plugin Tag (it internal name, e.g: http.0 */
-                        flb_input_log_append(ctx->ins, NULL, 0,
-                                             ctx->log_encoder.output_buffer,
-                                             ctx->log_encoder.output_length);
-                    }
-                }
-                else {
-                    flb_plg_error(ctx->ins, "Error encoding record : %d", ret);
-                }
+                process_flb_log_append(ctx, &record, tag, tag_from_record, tm);
 
                 /* TODO : Optimize this
                  *
