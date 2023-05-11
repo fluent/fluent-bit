@@ -572,6 +572,7 @@ static int process_hec_raw_payload(struct flb_splunk *ctx, struct splunk_conn *c
                                    struct mk_http_session *session,
                                    struct mk_http_request *request)
 {
+    int ret = -1;
     int type = -1;
     struct mk_http_header *header;
 
@@ -596,9 +597,9 @@ static int process_hec_raw_payload(struct flb_splunk *ctx, struct splunk_conn *c
     }
 
     /* Always handle as raw type of payloads here */
-    process_raw_payload_pack(ctx, tag, request->data.data, request->data.len);
+    ret = process_raw_payload_pack(ctx, tag, request->data.data, request->data.len);
 
-    return 0;
+    return ret;
 }
 
 static inline int mk_http_point_header(mk_ptr_t *h,
@@ -760,6 +761,9 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
             (strncmp(uri, "/services/collector", 19) == 0 && strlen(uri) == 19)) {
             ret = process_hec_payload(ctx, conn, tag, session, request);
 
+            if (!ret) {
+                send_json_message_response(conn, 400, "{\"text\":\"Invalid data format\",\"code\":6}");
+            }
             send_json_message_response(conn, 200, "{\"text\":\"Success\",\"code\":0}");
 
             flb_sds_destroy(tag);
@@ -768,6 +772,9 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
         else if (strncmp(uri, "/services/collector/raw", 23) == 0) {
             ret = process_hec_raw_payload(ctx, conn, tag, session, request);
 
+            if (!ret) {
+                send_json_message_response(conn, 400, "{\"text\":\"Invalid data format\",\"code\":6}");
+            }
             send_json_message_response(conn, 200, "{\"text\":\"Success\",\"code\":0}");
 
             flb_sds_destroy(tag);
