@@ -520,7 +520,7 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
                 strncasecmp(headers_extra->key.data, "Content-Encoding", 16) == 0) {
                 if (headers_extra->val.len == 4 &&
                     strncasecmp(headers_extra->val.data, "gzip", 4) == 0) {
-                    flb_debug("[splunk_prot] body is gzipped");
+                    flb_plg_debug(ctx->ins, "body is gzipped");
                     gzip_compressed = FLB_TRUE;
                 }
             }
@@ -531,7 +531,7 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
         ret = flb_gzip_uncompress((void *) request->data.data, request->data.len,
                                   &gz_data, &gz_size);
         if (ret == -1) {
-            flb_error("[elasticsearch_bulk_prot] gzip uncompress is failed");
+            flb_plg_error(ctx->ins, "gzip uncompress is failed");
             return -1;
         }
 
