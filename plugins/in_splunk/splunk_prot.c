@@ -643,14 +643,12 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
             tag = NULL; /* use default tag */
         }
         else {
-            tag = flb_sds_create_size(len);
+            /* New tag skipping the URI '/' */
+            tag = flb_sds_create_len(&uri[1], len - 1);
             if (!tag) {
                 mk_mem_free(uri);
                 return -1;
             }
-
-            /* New tag skipping the URI '/' */
-            flb_sds_cat(tag, uri + 1, len - 1);
 
             /* Sanitize, only allow alphanum chars */
             for (i = 0; i < flb_sds_len(tag); i++) {
