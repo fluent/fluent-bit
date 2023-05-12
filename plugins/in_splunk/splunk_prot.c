@@ -238,6 +238,7 @@ static int process_raw_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char 
     }
 
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_rollback_record(&ctx->log_encoder);
         return -1;
     }
 
