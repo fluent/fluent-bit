@@ -448,6 +448,11 @@ static int cb_geoip2_filter(const void *data, size_t bytes,
         }
     }
 
+    if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA &&
+        log_decoder.offset == bytes) {
+        ret = FLB_EVENT_ENCODER_SUCCESS;
+    }
+
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         *out_buf  = log_encoder.output_buffer;
         *out_size = log_encoder.output_length;
