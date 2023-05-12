@@ -1509,6 +1509,76 @@ int opentelemetry_prot_uncompress(struct mk_http_session *session,
     return 0;
 }
 
+static void save_request_payload(struct flb_opentelemetry *ctx,
+                                 char *uri,
+                                 struct mk_http_request *request)
+{
+    char        request_file_path[4096];
+    size_t      request_data_pending;
+    size_t      request_data_written;
+    FILE       *request_file_handle;
+    size_t      request_data_offset;
+    const char *request_type;
+
+    request_type = "undefined";
+
+    if (strcmp(uri, "/v1/metrics") == 0) {
+        request_type = "metrics";
+    }
+    else if (strcmp(uri, "/v1/traces") == 0) {
+        request_type = "traces";
+    }
+    else if (strcmp(uri, "/v1/logs") == 0) {
+        request_type = "logs";
+    }
+
+    if (ctx->request_dump_path != NULL) {
+        ctx->request_id++;
+
+        memset(request_file_path, 0, sizeof(request_file_path));
+
+        snprintf(request_file_path,
+                 sizeof(request_file_path) - 1,
+                 "%s/%s_%zu.bin",
+                 ctx->request_dump_path,
+                 request_type,
+                 ctx->request_id);
+
+        flb_debug("[otel] saving payload in file \"%s\"", request_file_path);
+
+        request_file_handle = fopen(request_file_path, "wb+");
+
+        if (request_file_handle == NULL) {
+            flb_debug("[otel] could not create file \"%s\"", request_file_path);
+
+            return;
+        }
+
+        request_data_written = 0;
+        request_data_offset = 0;
+
+        while (request_data_offset < request->data.len) {
+            request_data_pending = request->data.len - request_data_offset;
+
+            request_data_written = fwrite(&request->data.data[request_data_offset],
+                                          sizeof(char),
+                                          request_data_pending,
+                                          request_file_handle);
+
+            if (request_data_written == 0) {
+                flb_debug("[otel] file write error while dumpong \"%s\"", request_file_path);
+
+                break;
+            }
+
+            request_data_offset += request_data_written;
+
+            fflush(request_file_handle);
+        }
+
+        fclose(request_file_handle);
+    }
+}
 
 /*
  * Handle an incoming request. It perform extra checks over the request, if
@@ -1636,6 +1706,8 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
         request->data.data = uncompressed_data;
         request->data.len = uncompressed_data_size;
     }
+
+    save_request_payload(ctx, uri, request);
 
     if (strcmp(uri, "/v1/metrics") == 0) {
         ret = process_payload_metrics(ctx, conn, tag, session, request);

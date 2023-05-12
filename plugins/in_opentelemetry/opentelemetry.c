@@ -163,6 +163,11 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_opentelemetry, buffer_chunk_size),
      ""
     },
+    {
+     FLB_CONFIG_MAP_STR, "request_dump_path", NULL,
+     0, FLB_TRUE, offsetof(struct flb_opentelemetry, request_dump_path),
+     ""
+    },
 
     {
      FLB_CONFIG_MAP_STR, "tag_key", NULL,
