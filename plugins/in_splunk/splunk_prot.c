@@ -721,6 +721,9 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
         return -1;
     }
 
+    /* Handle every ingested payload cleanly */
+    flb_log_event_encoder_reset(&ctx->log_encoder);
+
     if (request->method == MK_METHOD_POST) {
         if (strcasecmp(uri, "/services/collector/raw") == 0) {
             ret = process_hec_raw_payload(ctx, conn, tag, session, request);
