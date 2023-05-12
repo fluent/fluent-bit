@@ -243,11 +243,17 @@ static int process_raw_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char 
     }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        flb_input_log_append(ctx->ins, NULL, 0,
-                             ctx->log_encoder.output_buffer,
-                             ctx->log_encoder.output_length);
-
-        flb_log_event_encoder_reset(&ctx->log_encoder);
+        if (tag) {
+            flb_input_log_append(ctx->ins, tag, flb_sds_len(tag),
+                                 ctx->log_encoder.output_buffer,
+                                 ctx->log_encoder.output_length);
+        }
+        else {
+            /* use default plugin Tag (it internal name, e.g: http.0 */
+            flb_input_log_append(ctx->ins, NULL, 0,
+                                 ctx->log_encoder.output_buffer,
+                                 ctx->log_encoder.output_length);
+        }
     }
     else {
         flb_plg_error(ctx->ins, "log event encoding error : %d", ret);
