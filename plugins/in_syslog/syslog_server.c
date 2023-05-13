@@ -26,11 +26,13 @@
 #include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_input_plugin.h>
 
+#if !defined(FLB_SYSTEM_WINDOWS)
 #include <unistd.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#endif
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #include "syslog.h"
 
@@ -64,6 +66,7 @@ static int remove_existing_socket_file(char *socket_path)
     return 0;
 }
 
+#if !defined(FLB_SYSTEM_WINDOWS)
 static int syslog_server_unix_create(struct flb_syslog *ctx)
 {
     int             result;
@@ -123,6 +126,12 @@ static int syslog_server_unix_create(struct flb_syslog *ctx)
 
     return 0;
 }
+#else
+static int syslog_server_unix_create(struct flb_syslog *ctx)
+{
+    return -1;
+}
+#endif
 
 static int syslog_server_net_create(struct flb_syslog *ctx)
 {
