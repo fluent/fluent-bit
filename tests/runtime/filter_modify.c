@@ -1596,10 +1596,7 @@ static void flb_test_issue_7075()
 
 static void flb_test_issue_7368()
 {
-    int len;
     int ret;
-    int bytes;
-    char *p;
     struct flb_lib_out_cb cb_data;
     struct filter_test *ctx;
 
