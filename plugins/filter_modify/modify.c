@@ -58,10 +58,10 @@ static void condition_free(struct modify_condition *condition)
         flb_free(condition->raw_v);
     }
 
-    if (condition->a_is_regex) {
+    if (condition->a_regex) {
         flb_regex_destroy(condition->a_regex);
     }
-    if (condition->b_is_regex) {
+    if (condition->b_regex) {
         flb_regex_destroy(condition->b_regex);
     }
     if (condition->ra_a) {
@@ -308,6 +308,7 @@ static int setup(struct filter_modify_ctx *ctx,
                     flb_plg_error(ctx->ins, "Unable to create regex for "
                                   "condition %s %s",
                                   condition->raw_k, condition->raw_v);
+                    teardown(ctx);
                     condition_free(condition);
                     flb_utils_split_free(split);
                     return -1;
@@ -327,6 +328,7 @@ static int setup(struct filter_modify_ctx *ctx,
                     flb_plg_error(ctx->ins, "Unable to create regex "
                                   "for condition %s %s",
                                   condition->raw_k, condition->raw_v);
+                    teardown(ctx);
                     condition_free(condition);
                     flb_utils_split_free(split);
                     return -1;
