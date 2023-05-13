@@ -68,6 +68,9 @@ static void condition_free(struct modify_condition *condition)
         flb_ra_destroy(condition->ra_a);
         condition->ra_a = NULL;
     }
+    if (!mk_list_entry_is_orphan(&condition->_head)) {
+        mk_list_del(&condition->_head);
+    }
     flb_free(condition);
 }
 
@@ -111,9 +114,6 @@ static void teardown(struct filter_modify_ctx *ctx)
 
     mk_list_foreach_safe(head, tmp, &ctx->conditions) {
         condition = mk_list_entry(head, struct modify_condition, _head);
-        if (!mk_list_entry_is_orphan(&condition->_head)) {
-            mk_list_del(&condition->_head);
-        }
         condition_free(condition);
     }
 
