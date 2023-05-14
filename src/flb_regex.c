@@ -140,7 +140,6 @@ static int str_to_regex(const char *pattern, OnigRegex *reg)
                    ONIG_ENCODING_UTF8, ONIG_SYNTAX_RUBY, &einfo);
 
     if (ret != ONIG_NORMAL) {
-        printf("ret=%d. start=%s end=%c\n", ret, start, *end);
         return -1;
     }
     return 0;
