@@ -332,6 +332,32 @@ static int otlp_pack_any_value(msgpack_packer *mp_pck,
     return result;
 }
 
+static int otel_pack_body(msgpack_packer *mp_pck,
+                          Opentelemetry__Proto__Common__V1__AnyValue *body)
+{
+    int result;
+
+    if (body->value_case != OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_KVLIST_VALUE) {
+        result = msgpack_pack_map(mp_pck, 1);
+        if (result != 0) {
+            return result;
+        }
+
+        result = otel_pack_string(mp_pck, "message");
+        if (result != 0) {
+            return result;
+        }
+    }
+
+    result = otlp_pack_any_value(mp_pck, body);
+    if (result != 0) {
+        flb_error("[otel] Failed to convert log record body");
+        return -1;
+    }
+
+    return result;
+}
+
 static int binary_payload_to_msgpack(msgpack_packer *mp_pck,
                                      uint8_t *in_buf,
                                      size_t in_size)
@@ -385,12 +411,12 @@ static int binary_payload_to_msgpack(msgpack_packer *mp_pck,
 
                 log_record = log_records[log_record_index];
 
-                ret = otlp_pack_any_value(mp_pck, log_record->body);
-
+                ret = otel_pack_body(mp_pck, log_record->body);
                 if (ret != 0) {
-                    flb_error("[otel] Failed to convert log record body");
+                    flb_error("[otel] Failed to pack body field");
                     return -1;
                 }
+
             }
         }
     }
