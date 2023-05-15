@@ -1698,6 +1698,8 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
     original_data = request->data.data;
     original_data_size = request->data.len;
 
+    save_request_payload(ctx, uri, request);
+
     ret = opentelemetry_prot_uncompress(session, request,
                                         &uncompressed_data,
                                         &uncompressed_data_size);
@@ -1706,8 +1708,6 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
         request->data.data = uncompressed_data;
         request->data.len = uncompressed_data_size;
     }
-
-    save_request_payload(ctx, uri, request);
 
     if (strcmp(uri, "/v1/metrics") == 0) {
         ret = process_payload_metrics(ctx, conn, tag, session, request);
