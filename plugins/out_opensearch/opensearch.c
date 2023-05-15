@@ -906,21 +906,21 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
     pack = (char *) out_buf;
     pack_size = out_size;
 
+    final_payload_buf = pack;
+    final_payload_size = pack_size;
     /* Should we compress the payload ? */
     if (ctx->compress_gzip == FLB_TRUE) {
         ret = flb_gzip_compress((void *) pack, pack_size,
-                                &final_payload_buf, &final_payload_size);
+                                &out_buf, &out_size);
         if (ret == -1) {
             flb_plg_error(ctx->ins,
                           "cannot gzip payload, disabling compression");
         }
         else {
             compressed = FLB_TRUE;
+            final_payload_buf = out_buf;
+            final_payload_size = out_size;
         }
-    }
-    else {
-        final_payload_buf = pack;
-        final_payload_size = pack_size;
     }
 
     /* Compose HTTP Client request */
