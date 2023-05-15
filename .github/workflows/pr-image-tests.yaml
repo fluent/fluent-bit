@@ -16,6 +16,9 @@ jobs:
       name: PR - Buildkit docker build test
       runs-on: ubuntu-latest
       environment: pr
+      permissions:
+        contents: read
+        packages: write
       steps:
         - name: Checkout code
           uses: actions/checkout@v3
@@ -23,7 +26,16 @@ jobs:
         - name: Set up Docker Buildx
           uses: docker/setup-buildx-action@v2
 
+        - name: Extract metadata from Github
+          id: meta
+          uses: docker/metadata-action@v4
+          with:
+            images: ${{ github.repository }}/pr-${{ github.event.pull_request.number }}
+            tags: |
+              type=sha
+
         - name: Build the multi-arch images
+          id: build
           uses: docker/build-push-action@v4
           with:
             file: ./dockerfiles/Dockerfile
@@ -31,8 +43,15 @@ jobs:
             platforms: linux/amd64
             target: production
             push: false
-            load: false
+            load: true
+            tags: ${{ steps.meta.outputs.tags }}
+            labels: ${{ steps.meta.outputs.labels }}
 
+        - name: Sanity check it runs
+          run: |
+            docker run --rm -t ${{ steps.meta.outputs.tags }} --help
+          shell: bash
+        
         - name: Build the debug multi-arch images
           uses: docker/build-push-action@v4
           with:
