@@ -423,6 +423,9 @@ static int binary_payload_to_msgpack(msgpack_packer *mp_pck,
             }
         }
     }
+
+    opentelemetry__proto__collector__logs__v1__export_logs_service_request__free_unpacked(input_logs, NULL);
+
     return 0;
 }
 
