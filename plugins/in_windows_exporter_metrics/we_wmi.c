@@ -240,6 +240,8 @@ static inline int wmi_update_metrics(struct flb_we *ctx, struct wmi_query_spec *
             free(strlabel);
             break;
         default:
+            metric_label_set[label_index] = strdup("");
+            metric_label_count++;
             break;
         }
         VariantClear(&prop);
