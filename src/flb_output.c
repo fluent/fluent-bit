@@ -1300,6 +1300,12 @@ int flb_output_init_all(struct flb_config *config)
                       flb_output_name(ins));
             return -1;
         }
+
+        /* initialize processors */
+        ret = flb_processor_init(ins->processor);
+        if (ret == -1) {
+            return -1;
+        }
     }
 
     return 0;
