@@ -615,12 +615,6 @@ int flb_processors_load_from_config_format_group(struct flb_processor *proc, str
         }
     }
 
-    /* initialize processors */
-    ret = flb_processor_init(proc);
-    if (ret == -1) {
-        return -1;
-    }
-
     return 0;
 }
 
