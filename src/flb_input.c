@@ -1206,6 +1206,12 @@ int flb_input_instance_init(struct flb_input_instance *ins,
         }
     }
 
+    /* initialize processors */
+    ret = flb_processor_init(ins->processor);
+    if (ret == -1) {
+        return -1;
+    }
+
     return 0;
 }
 
@@ -1253,12 +1259,6 @@ int flb_input_init_all(struct flb_config *config)
         ret = flb_input_instance_init(ins, config);
         if (ret == -1) {
             flb_input_instance_destroy(ins);
-            return -1;
-        }
-
-        /* initialize processors */
-        ret = flb_processor_init(ins->processor);
-        if (ret == -1) {
             return -1;
         }
     }
