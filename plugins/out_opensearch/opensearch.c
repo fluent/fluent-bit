@@ -909,7 +909,7 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
     final_payload_buf = pack;
     final_payload_size = pack_size;
     /* Should we compress the payload ? */
-    if (ctx->compress_gzip == FLB_TRUE) {
+    if (ctx->compression == FLB_OS_COMPRESSION_GZIP) {
         ret = flb_gzip_compress((void *) pack, pack_size,
                                 &out_buf, &out_size);
         if (ret == -1) {
@@ -951,9 +951,11 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
     }
 #endif
 
-    /* Content Encoding: gzip */
+    /* Set Content-Encoding of compressed payload */
     if (compressed == FLB_TRUE) {
-        flb_http_set_content_encoding_gzip(c);
+        if (ctx->compression == FLB_OS_COMPRESSION_GZIP) {
+            flb_http_set_content_encoding_gzip(c);
+        }
     }
 
     /* Map debug callbacks */
@@ -1258,7 +1260,7 @@ static struct flb_config_map config_map[] = {
     /* HTTP Compression */
     {
      FLB_CONFIG_MAP_STR, "compress", NULL,
-     0, FLB_FALSE, 0,
+     0, FLB_TRUE, offsetof(struct flb_opensearch, compression_str),
      "Set payload compression mechanism. Option available is 'gzip'"
     },
 

@@ -51,6 +51,10 @@
 #define OS_BULK_UPDATE_OP_BODY       "{\"doc\":"
 #define OS_BULK_UPSERT_OP_BODY       "{\"doc_as_upsert\":true,\"doc\":"
 
+/* Supported compression algorithms */
+#define FLB_OS_COMPRESSION_NONE 0
+#define FLB_OS_COMPRESSION_GZIP 1
+
 struct flb_opensearch {
     /* OpenSearch index (database) and type (table) */
     flb_sds_t index;
@@ -143,8 +147,9 @@ struct flb_opensearch {
     /* Plugin output instance reference */
     struct flb_output_instance *ins;
 
-    /* Compression mode (gzip) */
-    int compress_gzip;
+    /* Compression algorithm */
+    int compression;
+    flb_sds_t compression_str;
 };
 
 #endif

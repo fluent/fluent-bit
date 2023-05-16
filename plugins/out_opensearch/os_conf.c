@@ -214,13 +214,16 @@ struct flb_opensearch *flb_os_conf_create(struct flb_output_instance *ins,
         }
     }
 
-    /* Compress (gzip) */
-    tmp = flb_output_get_property("compress", ins);
-    ctx->compress_gzip = FLB_FALSE;
-    if (tmp) {
-        if (strcasecmp(tmp, "gzip") == 0) {
-            ctx->compress_gzip = FLB_TRUE;
+    if (ctx->compression_str) {
+        if (strcasecmp(ctx->compression_str, "gzip") == 0) {
+            ctx->compression = FLB_OS_COMPRESSION_GZIP;
         }
+        else {
+            ctx->compression = FLB_OS_COMPRESSION_NONE;
+        }
+    }
+    else {
+        ctx->compression = FLB_OS_COMPRESSION_NONE;
     }
 
 #ifdef FLB_HAVE_AWS
