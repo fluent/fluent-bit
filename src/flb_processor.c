@@ -526,6 +526,7 @@ static int load_from_config_format_group(struct flb_processor *proc, int type, s
     struct cfl_kvpair *pair = NULL;
     struct cfl_list *head;
     struct flb_processor_unit *pu;
+    struct flb_filter_instance *f_ins;
 
     if (val->type != CFL_VARIANT_ARRAY) {
         return -1;
@@ -565,6 +566,15 @@ static int load_from_config_format_group(struct flb_processor *proc, int type, s
 
             if (pair->val->type != CFL_VARIANT_STRING) {
                 continue;
+            }
+            /* If filter plugin in processor unit has its own match rule,
+             * we must release the pre-allocated '*' match at first.
+             */
+            if (pu->unit_type == FLB_PROCESSOR_UNIT_FILTER) {
+                if (strcmp(pair->key, "match") == 0) {
+                    f_ins = (struct flb_filter_instance *)pu->ctx;
+                    flb_sds_destroy(f_ins->match);
+                }
             }
 
             ret = flb_processor_unit_set_property(pu, pair->key, pair->val->data.as_string);
