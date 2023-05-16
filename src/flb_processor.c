@@ -573,7 +573,10 @@ static int load_from_config_format_group(struct flb_processor *proc, int type, s
             if (pu->unit_type == FLB_PROCESSOR_UNIT_FILTER) {
                 if (strcmp(pair->key, "match") == 0) {
                     f_ins = (struct flb_filter_instance *)pu->ctx;
-                    flb_sds_destroy(f_ins->match);
+                    if (f_ins->match != NULL) {
+                        flb_sds_destroy(f_ins->match);
+                        f_ins->match = NULL;
+                    }
                 }
             }
 
