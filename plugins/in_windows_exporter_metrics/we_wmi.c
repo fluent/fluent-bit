@@ -150,6 +150,32 @@ static int wmi_update_counters(struct wmi_query_spec *spec, uint64_t timestamp, 
     return 0;
 }
 
+static char *convert_prop_to_str(VARIANT *prop, int handle_null)
+{
+    char *strlabel = NULL;
+    char *newstr = NULL;
+
+    if (handle_null == FLB_TRUE && prop->vt == VT_NULL) {
+        newstr = strdup("");
+        if (newstr == NULL) {
+            return NULL;
+        }
+    }
+    else {
+        VariantChangeType(prop, prop, 0, VT_BSTR);
+        strlabel = we_convert_wstr(prop->bstrVal, CP_UTF8);
+        if (strlabel == NULL) {
+            return NULL;
+        }
+        newstr = strdup(strlabel);
+        if (newstr == NULL) {
+            return NULL;
+        }
+        free(strlabel);
+    }
+    return newstr;
+}
+
 static double wmi_get_value(struct flb_we *ctx, struct wmi_query_spec *spec, IWbemClassObject *class_obj)
 {
     VARIANT prop;
@@ -157,21 +183,17 @@ static double wmi_get_value(struct flb_we *ctx, struct wmi_query_spec *spec, IWb
     double val = 1.0;
     HRESULT hr;
     wchar_t *wproperty;
-    VARIANT dstProp;
 
     VariantInit(&prop);
-    VariantInit(&dstProp);
     wproperty = we_convert_str(spec->wmi_property);
     hr = class_obj->lpVtbl->Get(class_obj, wproperty, 0, &prop, 0, 0);
-    VariantChangeType(&dstProp, &prop, 0, VT_BSTR);
-    strprop = we_convert_wstr(dstProp.bstrVal, CP_UTF8);
+    strprop = convert_prop_to_str(&prop, FLB_FALSE);
     if (strprop == NULL) {
         return 0;
     }
     wmi_utils_str_to_double(strprop, &val);
     flb_free(strprop);
     VariantClear(&prop);
-    VariantClear(&dstProp);
     flb_free(wproperty);
 
     return val;
@@ -184,21 +206,17 @@ static double wmi_get_property_value(struct flb_we *ctx, char *raw_property_key,
     double val = 1.0;
     HRESULT hr;
     wchar_t *wproperty;
-    VARIANT dstProp;
 
     VariantInit(&prop);
-    VariantInit(&dstProp);
     wproperty = we_convert_str(raw_property_key);
     hr = class_obj->lpVtbl->Get(class_obj, wproperty, 0, &prop, 0, 0);
-    VariantChangeType(&dstProp, &prop, 0, VT_BSTR);
-    strprop = we_convert_wstr(dstProp.bstrVal, CP_UTF8);
+    strprop = convert_prop_to_str(&prop, FLB_FALSE);
     if (strprop == NULL) {
         return 0;
     }
     wmi_utils_str_to_double(strprop, &val);
     flb_free(strprop);
     VariantClear(&prop);
-    VariantClear(&dstProp);
     flb_free(wproperty);
 
     return val;
@@ -212,41 +230,23 @@ static inline int wmi_update_metrics(struct flb_we *ctx, struct wmi_query_spec *
     VARIANT prop;
     int label_index = 0;
     HRESULT hr;
-    char *strlabel = NULL;
     char *metric_label_set[WE_WMI_METRIC_LABEL_LIST_SIZE];
     int metric_label_count = 0;
     char buf[16] = {0};
     wchar_t *wlabel;
     char *newstr = NULL;
-    VARIANT dstProp;
 
     VariantInit(&prop);
-    VariantInit(&dstProp);
     metric_label_count = 0;
     for (label_index = 0; label_index < spec->label_property_count; label_index++) {
         wlabel = we_convert_str(spec->label_property_keys[label_index]);
         hr = class_obj->lpVtbl->Get(class_obj, wlabel, 0, &prop, 0, 0);
-        if (prop.vt == VT_NULL) {
-            newstr = strdup("");
-            if (newstr == NULL) {
-                continue;
-            }
-        }
-        else {
-            VariantChangeType(&dstProp, &prop, 0, VT_BSTR);
-            strlabel = we_convert_wstr(dstProp.bstrVal, CP_UTF8);
-            if (strlabel == NULL) {
-                continue;
-            }
-            newstr = strdup(strlabel);
-            if (newstr == NULL) {
-                continue;
-            }
-            free(strlabel);
+        newstr = convert_prop_to_str(&prop, FLB_TRUE);
+        if (newstr == NULL) {
+            continue;
         }
         metric_label_set[label_index] = newstr;
         metric_label_count++;
-        VariantClear(&dstProp);
         VariantClear(&prop);
         flb_free(wlabel);
     }
