@@ -1078,6 +1078,12 @@ static struct flb_config_map config_map[] = {
      "ignore regular expression for filesystem types"
     },
 
+    /* diskstats specific settings */
+    {
+     FLB_CONFIG_MAP_STR, "diskstats.ignore_device_regex", IGNORED_DEVICES,
+     0, FLB_TRUE, offsetof(struct flb_ne, dt_regex_skip_devices_text),
+     "ignore regular expression for disk devices"
+    },
     /* EOF */
     {0}
 };

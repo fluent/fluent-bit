@@ -35,6 +35,9 @@
 #define IGNORED_MOUNT_POINTS "^/(dev|proc|run/credentials/.+|sys|var/lib/docker/.+|var/lib/containers/storage/.+)($|/)"
 #define IGNORED_FS_TYPES     "^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$"
 
+/* diskstats: regex for ignoring devices */
+#define IGNORED_DEVICES  "^(ram|loop|fd|(h|s|v|xv)d[a-z]|nvme\\d+n\\d+p)\\d+$"
+
 struct flb_ne {
     /* configuration */
     flb_sds_t path_procfs;
@@ -108,6 +111,7 @@ struct flb_ne {
     /* diskstats: abbreviation 'dt' */
     void *dt_metrics;
     struct flb_regex *dt_regex_skip_devices;
+    flb_sds_t dt_regex_skip_devices_text;
 
     /* uname */
     struct cmt_gauge *uname;
