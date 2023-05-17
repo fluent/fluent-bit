@@ -1065,6 +1065,19 @@ static struct flb_config_map config_map[] = {
      "exclude list regular expression"
     },
 
+    /* filesystem specific settings */
+    {
+     FLB_CONFIG_MAP_STR, "filesystem.ignore_mount_point_regex", IGNORED_MOUNT_POINTS,
+     0, FLB_TRUE, offsetof(struct flb_ne, fs_regex_ingore_mount_point_text),
+     "ignore regular expression for mount points"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "filesystem.ignore_filesystem_type_regex", IGNORED_FS_TYPES,
+     0, FLB_TRUE, offsetof(struct flb_ne, fs_regex_ingore_filesystem_type_text),
+     "ignore regular expression for filesystem types"
+    },
+
     /* EOF */
     {0}
 };
