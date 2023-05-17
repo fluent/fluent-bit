@@ -1004,7 +1004,6 @@ static int process_traces(struct flb_event_chunk *event_chunk,
                           struct flb_input_instance *ins, void *out_context,
                           struct flb_config *config)
 {
-    int ok;
     int ret;
     int result;
     cfl_sds_t encoded_chunk;
@@ -1015,7 +1014,6 @@ static int process_traces(struct flb_event_chunk *event_chunk,
 
     /* Initialize vars */
     ctx = out_context;
-    ok = 0;
     result = FLB_OK;
 
     buf = flb_sds_create_size(event_chunk->size);
@@ -1027,30 +1025,33 @@ static int process_traces(struct flb_event_chunk *event_chunk,
     flb_plg_debug(ctx->ins, "ctraces msgpack size: %lu",
                   event_chunk->size);
 
-    ret = ctr_decode_msgpack_create(&ctr,
-                                    (char *) event_chunk->data,
-                                    event_chunk->size, &off);
-    if  (ret != ok) {
-        flb_plg_error(ctx->ins, "Error decoding msgpack encoded context");
-        result = FLB_ERROR;
-        goto exit;
+    while (ctr_decode_msgpack_create(&ctr,
+                                     (char *) event_chunk->data,
+                                     event_chunk->size, &off) == 0) {
+        /* Create a OpenTelemetry payload */
+        encoded_chunk = ctr_encode_opentelemetry_create(ctr);
+        if (encoded_chunk == NULL) {
+            flb_plg_error(ctx->ins,
+                          "Error encoding context as opentelemetry");
+            result = FLB_ERROR;
+            ctr_destroy(ctr);
+            goto exit;
+        }
+
+        /* concat buffer */
+        ret = flb_sds_cat_safe(&buf, encoded_chunk, flb_sds_len(encoded_chunk));
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "Error appending encoded trace to buffer");
+            result = FLB_ERROR;
+            ctr_encode_opentelemetry_destroy(encoded_chunk);
+            ctr_destroy(ctr);
+            goto exit;
+        }
+
+        /* release */
+        ctr_encode_opentelemetry_destroy(encoded_chunk);
+        ctr_destroy(ctr);
     }
-
-    /* Create a OpenTelemetry payload */
-    encoded_chunk = ctr_encode_opentelemetry_create(ctr);
-    if (encoded_chunk == NULL) {
-        flb_plg_error(ctx->ins,
-                      "Error encoding context as opentelemetry");
-        result = FLB_ERROR;
-        goto exit;
-    }
-
-    /* concat buffer */
-    flb_sds_cat_safe(&buf, encoded_chunk, flb_sds_len(encoded_chunk));
-
-    /* release */
-    ctr_encode_opentelemetry_destroy(encoded_chunk);
-    ctr_destroy(ctr);
 
     flb_plg_debug(ctx->ins, "final payload size: %lu", flb_sds_len(buf));
     if (buf && flb_sds_len(buf) > 0) {
@@ -1071,8 +1072,6 @@ static int process_traces(struct flb_event_chunk *event_chunk,
             flb_plg_debug(ctx->ins, "http_post result FLB_RETRY");
         }
     }
-    flb_sds_destroy(buf);
-    buf = NULL;
 
 exit:
     if (buf) {
