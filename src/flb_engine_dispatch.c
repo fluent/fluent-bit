@@ -18,6 +18,7 @@
  *  limitations under the License.
  */
 
+#include <math.h>
 #include <stdlib.h>
 
 #include <fluent-bit/flb_info.h>
@@ -226,6 +227,9 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
     struct flb_input_plugin *p;
     struct flb_input_chunk *ic;
     struct flb_task *task = NULL;
+    struct flb_output_instance *o_ins;
+    struct mk_list *o_head;
+    int skip_flag;
 
     p = in->p;
     if (!p) {
@@ -236,6 +240,38 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
     mk_list_foreach_safe(head, tmp, &in->chunks) {
         ic = mk_list_entry(head, struct flb_input_chunk, _head);
         if (ic->busy == FLB_TRUE) {
+            continue;
+        }
+
+        skip_flag = FLB_FALSE;
+
+        /* Find matching routes for the incoming task */
+        mk_list_foreach(o_head, &config->outputs) {
+            o_ins = mk_list_entry(o_head,
+                                  struct flb_output_instance, _head);
+
+            if (o_ins->releasable_chunks_required == 0) {
+                continue;
+            }
+
+            /* skip output plugins that don't handle proper event types */
+            if (!flb_router_match_type(ic->event_type, o_ins)) {
+                continue;
+            }
+
+            if (flb_routes_mask_get_bit(ic->routes_mask, o_ins->id) != 0) {
+                o_ins->releasable_chunks_required--;
+                skip_flag = FLB_TRUE;
+            }
+        }
+
+        if (skip_flag) {
+            flb_debug("[task] %s - skipping chunk %s task creation to ensure "
+                      "droppable chunk availability (%zu remaining)",
+                      in->name,
+                      flb_input_chunk_get_name(ic),
+                      o_ins->releasable_chunks_required);
+
             continue;
         }
 
