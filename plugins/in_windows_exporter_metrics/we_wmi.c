@@ -162,7 +162,9 @@ static char *convert_prop_to_str(VARIANT *prop, int handle_null)
         }
     }
     else {
-        VariantChangeType(prop, prop, 0, VT_BSTR);
+        if (VariantChangeType(prop, prop, 0, VT_BSTR) != S_OK) {
+            return NULL;
+        }
         strlabel = we_convert_wstr(prop->bstrVal, CP_UTF8);
         if (strlabel == NULL) {
             return NULL;
