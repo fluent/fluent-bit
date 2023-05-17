@@ -34,7 +34,7 @@
 #define CTR_MPACK_ERROR_CUTOFF               20
 
 #define CTR_MPACK_MAX_ARRAY_ENTRY_COUNT      65535
-#define CTR_MPACK_MAX_MAP_ENTRY_COUNT        20
-#define CTR_MPACK_MAX_STRING_LENGTH          1024
+#define CTR_MPACK_MAX_MAP_ENTRY_COUNT        512
+#define CTR_MPACK_MAX_STRING_LENGTH          (1024 * 1000)
 
 #endif
