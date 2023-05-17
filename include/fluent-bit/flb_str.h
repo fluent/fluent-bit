@@ -55,4 +55,15 @@ static inline int flb_str_emptyval(const char *s)
     return FLB_FALSE;
 }
 
+static inline char *rtrim(const char *s, char c) {
+    short int n = strlen(s);
+
+    while(c == s[--n]);
+    if (n < 0){
+        return NULL;
+    }
+
+    return flb_strndup(s, n+1);
+}
+
 #endif
