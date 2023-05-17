@@ -169,6 +169,7 @@ static char *convert_prop_to_str(VARIANT *prop, int handle_null)
         }
         newstr = strdup(strlabel);
         if (newstr == NULL) {
+            free(strlabel);
             return NULL;
         }
         free(strlabel);
