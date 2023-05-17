@@ -342,14 +342,14 @@ static void clear_array(Opentelemetry__Proto__Logs__V1__LogRecord **logs,
     for (index = 0 ; index < log_count ; index++) {
         if (logs[index]->body != NULL) {
             otlp_any_value_destroy(logs[index]->body);
-            
+
             logs[index]->body = NULL;
         }
 
         if (logs[index]->attributes != NULL) {
             otlp_kvarray_destroy(logs[index]->attributes,
                                  logs[index]->n_attributes);
-                                 
+
             logs[index]->attributes = NULL;
         }
     }
@@ -1032,6 +1032,8 @@ static int process_traces(struct flb_event_chunk *event_chunk,
                                     event_chunk->size, &off);
     if  (ret != ok) {
         flb_plg_error(ctx->ins, "Error decoding msgpack encoded context");
+        result = FLB_ERROR;
+        goto exit;
     }
 
     /* Create a OpenTelemetry payload */
