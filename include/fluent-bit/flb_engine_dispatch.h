@@ -26,14 +26,8 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_task.h>
 
-/* FLB_DISPATCHER_RESERVED_CHUNK_PERCENTAGE defines the percentage of chunks that
- * will not be scheduled to be flushed if there are routes that risk running out
- * of storage space.
- *
- * FLB_DISPATCHER_RESERVED_CHUNK_MINIMUM defines a lower boundary for the number
- * of chunks we calculate using FLB_DISPATCHER_RESERVED_CHUNK_PERCENTAGE which
- * in the real world shouldn't happen because target systems usually have
- * limits above 500 megabytes.
+/* FLB_DISPATCHER_RESERVED_CHUNK_MINIMUM defines a lower boundary for the number
+ * of releasable chunks.
  *
  * FLB_DISPATCHER_RESERVED_STORAGE_SPACE as defined ensures that the system is
  * able to ingest N bytes without exceeding the limits (in this PoCs case 10 MB).
@@ -43,7 +37,6 @@
  * the ingestion volume is rather large.
 */
 
-#define FLB_DISPATCHER_RESERVED_CHUNK_PERCENTAGE 10
 #define FLB_DISPATCHER_RESERVED_CHUNK_MINIMUM    5
 #define FLB_DISPATCHER_RESERVED_STORAGE_SPACE    (20 * 1000000)
 
