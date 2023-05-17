@@ -497,11 +497,11 @@ int flb_tls_session_create(struct flb_tls *tls,
 
     if (connection->type == FLB_UPSTREAM_CONNECTION) {
         if (connection->upstream->proxied_host != NULL) {
-            vhost = rtrim(connection->upstream->proxied_host, '.');
+            vhost = flb_rtrim(connection->upstream->proxied_host, '.');
         }
         else {
             if (tls->vhost == NULL) {
-                vhost = rtrim(connection->upstream->tcp_host, '.');
+                vhost = flb_rtrim(connection->upstream->tcp_host, '.');
             }
         }
     }
