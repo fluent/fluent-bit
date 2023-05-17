@@ -1206,6 +1206,12 @@ int flb_input_instance_init(struct flb_input_instance *ins,
         }
     }
 
+    /* initialize processors */
+    ret = flb_processor_init(ins->processor);
+    if (ret == -1) {
+        return -1;
+    }
+
     return 0;
 }
 
