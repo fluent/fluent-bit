@@ -994,6 +994,7 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
     int cio_error;
     int delete_chunk;
     int new_chunk = FLB_FALSE;
+    size_t new_chunk_size;
     size_t out_size;
     struct flb_input_chunk *ic = NULL;
 
@@ -1049,6 +1050,17 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
             *set_down = FLB_TRUE;
         }
     }
+
+    if (ic != NULL) {
+        new_chunk_size = flb_input_chunk_get_real_size(ic);
+        new_chunk_size += chunk_size;
+
+        if (in->config->storage_max_chunk_size > 0 &&
+            in->config->storage_max_chunk_size < new_chunk_size) {
+            ic = NULL;
+        }
+    }
+
 
     /* No chunk was found, we need to create a new one */
     if (!ic) {
