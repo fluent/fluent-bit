@@ -993,6 +993,8 @@ static int process_traces(struct flb_event_chunk *event_chunk,
                                     event_chunk->size, &off);
     if  (ret != ok) {
         flb_plg_error(ctx->ins, "Error decoding msgpack encoded context");
+        result = FLB_ERROR;
+        goto exit;
     }
 
     /* Create a OpenTelemetry payload */
