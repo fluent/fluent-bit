@@ -908,6 +908,7 @@ static int process_metrics(struct flb_event_chunk *event_chunk,
             flb_plg_error(ctx->ins,
                           "Error encoding context as opentelemetry");
             result = FLB_ERROR;
+            cmt_destroy(cmt);
             goto exit;
         }
 
