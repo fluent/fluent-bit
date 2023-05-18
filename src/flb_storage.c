@@ -553,6 +553,25 @@ int flb_storage_create(struct flb_config *ctx)
         }
     }
 
+    if (ctx->storage_max_chunk_size_str == NULL) {
+        ctx->storage_max_chunk_size_str = flb_strdup(FLB_STORAGE_MAX_CHUNK_SIZE);
+
+        if (ctx->storage_max_chunk_size_str == NULL) {
+            flb_errno();
+
+            return -1;
+        }
+    }
+
+    ctx->storage_max_chunk_size = \
+        flb_utils_size_to_bytes(ctx->storage_max_chunk_size_str);
+
+    if (ctx->storage_max_chunk_size == 0) {
+        flb_error("[storage] maximum chunk size cannot be zero");
+
+        return -1;
+    }
+
     /* Create streams for input instances */
     ret = storage_contexts_create(ctx);
     if (ret == -1) {

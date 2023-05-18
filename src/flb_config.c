@@ -138,6 +138,9 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STORAGE_MAX_CHUNKS_UP,
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, storage_max_chunks_up)},
+    {FLB_CONF_STORAGE_MAX_CHUNK_SIZE,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, storage_max_chunk_size_str)},
 
     /* Coroutines */
     {FLB_CONF_STR_CORO_STACK_SIZE,
@@ -418,6 +421,9 @@ void flb_config_exit(struct flb_config *config)
     }
     if (config->storage_bl_mem_limit) {
         flb_free(config->storage_bl_mem_limit);
+    }
+    if (config->storage_max_chunk_size_str) {
+        flb_free(config->storage_max_chunk_size_str);
     }
 
 #ifdef FLB_HAVE_STREAM_PROCESSOR
