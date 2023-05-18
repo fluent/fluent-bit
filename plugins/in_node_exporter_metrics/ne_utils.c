@@ -148,10 +148,22 @@ int ne_utils_file_read_lines(const char *mount, const char *path, struct mk_list
     FILE *f;
     char line[512];
     char real_path[2048];
+    char *find = NULL;
+    int pos = -1;
+
 
     mk_list_init(list);
 
-    snprintf(real_path, sizeof(real_path) - 1, "%s%s", mount, path);
+    find = strstr(path, mount);
+    if (find != NULL) {
+        pos = find - path;
+    }
+    if (find && pos == 0) {
+        snprintf(real_path, sizeof(real_path) - 1, "%s", path);
+    }
+    else {
+        snprintf(real_path, sizeof(real_path) - 1, "%s%s", mount, path);
+    }
     f = fopen(real_path, "r");
     if (f == NULL) {
         flb_errno();
