@@ -77,29 +77,21 @@ int ne_utils_file_read_uint64(const char *mount,
     uint64_t val;
     ssize_t bytes;
     char tmp[32];
-    char *find = NULL;
-    int pos = -1;
+
+    /* Check the path starts with the mount point to prevent duplication. */
+    if (strncasecmp(path, mount, strlen(mount)) == 0 &&
+        path[strlen(mount)] == '/') {
+        mount = "";
+    }
 
     /* Compose the final path */
-    find = strstr(path, mount);
-    if (find != NULL) {
-        pos = find - path;
+    p = flb_sds_create(mount);
+    if (!p) {
+        return -1;
     }
-    /* If the mount is already concatenated, just using path. */
-    if (find && pos == 0) {
-        p = flb_sds_create(path);
-        if (!p) {
-            return -1;
-        }
-    } else {
-        p = flb_sds_create(mount);
-        if (!p) {
-            return -1;
-        }
 
-        len = strlen(path);
-        flb_sds_cat_safe(&p, path, len);
-    }
+    len = strlen(path);
+    flb_sds_cat_safe(&p, path, len);
 
     if (join_a) {
         flb_sds_cat_safe(&p, "/", 1);
@@ -148,22 +140,16 @@ int ne_utils_file_read_lines(const char *mount, const char *path, struct mk_list
     FILE *f;
     char line[512];
     char real_path[2048];
-    char *find = NULL;
-    int pos = -1;
-
 
     mk_list_init(list);
 
-    find = strstr(path, mount);
-    if (find != NULL) {
-        pos = find - path;
+    /* Check the path starts with the mount point to prevent duplication. */
+    if (strncasecmp(path, mount, strlen(mount)) == 0 &&
+        path[strlen(mount)] == '/') {
+        mount = "";
     }
-    if (find && pos == 0) {
-        snprintf(real_path, sizeof(real_path) - 1, "%s", path);
-    }
-    else {
-        snprintf(real_path, sizeof(real_path) - 1, "%s%s", mount, path);
-    }
+
+    snprintf(real_path, sizeof(real_path) - 1, "%s%s", mount, path);
     f = fopen(real_path, "r");
     if (f == NULL) {
         flb_errno();
