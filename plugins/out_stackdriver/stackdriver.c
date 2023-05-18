@@ -1405,6 +1405,23 @@ static int get_severity_level(severity_t * s, const msgpack_object * o,
     return -1;
 }
 
+static int get_trace_sampled(int * trace_sampled_value, const msgpack_object * src_obj,
+                             const flb_sds_t key)
+{
+    msgpack_object tmp;
+    int ret = get_msgpack_obj(&tmp, src_obj, key, flb_sds_len(key), MSGPACK_OBJECT_BOOLEAN);
+    
+    if (ret == 0 && tmp.via.boolean == true) {
+        *trace_sampled_value = FLB_TRUE;
+        return 0;
+    } else if (ret == 0 && tmp.via.boolean == false) {
+        *trace_sampled_value = FLB_FALSE;
+        return 0;        
+    }
+
+    return -1;
+}
+
 static insert_id_status validate_insert_id(msgpack_object * insert_id_value,
                                            const msgpack_object * obj)
 {
@@ -1476,6 +1493,7 @@ static int pack_json_payload(int insert_id_extracted,
         ctx->severity_key,
         ctx->trace_key,
         ctx->span_id_key,
+        ctx->trace_sampled_key,
         ctx->log_name_key,
         stream
         /* more special fields are required to be added, but, if this grows with more
@@ -1655,6 +1673,10 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     /* Parameters for span id */
     int span_id_extracted = FLB_FALSE;
     flb_sds_t span_id;
+
+    /* Parameters for trace sampled */
+    int trace_sampled_extracted = FLB_FALSE;
+    int trace_sampled = FLB_FALSE;
 
     /* Parameters for log name */
     int log_name_extracted = FLB_FALSE;
@@ -2119,6 +2141,7 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
          *  "jsonPayload": {...},
          *  "timestamp": "...",
          *  "spanId": "...",
+         *  "traceSampled": <true or false>,
          *  "trace": "..."
          * }
          */
@@ -2145,6 +2168,14 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
         if (ctx->span_id_key
             && get_string(&span_id, obj, ctx->span_id_key) == 0) {
             span_id_extracted = FLB_TRUE;
+            entry_size += 1;
+        }
+
+        /* Extract trace sampled */
+        trace_sampled_extracted = FLB_FALSE;
+        if (ctx->trace_sampled_key
+            && get_trace_sampled(&trace_sampled, obj, ctx->trace_sampled_key) == 0) {
+            trace_sampled_extracted = FLB_TRUE;
             entry_size += 1;
         }
 
@@ -2269,6 +2300,18 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             len = flb_sds_len(span_id);
             msgpack_pack_str_with_body(&mp_pck, span_id, len);
             flb_sds_destroy(span_id);
+        }
+
+        /* Add traceSampled field into the log entry */
+        if (trace_sampled_extracted == FLB_TRUE) {
+            msgpack_pack_str_with_body(&mp_pck, "traceSampled", 12);
+
+            if (trace_sampled == FLB_TRUE) {
+                msgpack_pack_true(&mp_pck);
+            } else {
+                msgpack_pack_false(&mp_pck);
+            }
+
         }
 
         /* Add insertId field into the log entry */
@@ -2691,6 +2734,11 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_STR, "span_id_key", DEFAULT_SPAN_ID_KEY,
       0, FLB_TRUE, offsetof(struct flb_stackdriver, span_id_key),
       "Set the span id key"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "trace_sampled_key", DEFAULT_TRACE_SAMPLED_KEY,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, trace_sampled_key),
+      "Set the trace sampled key"
     },
     {
       FLB_CONFIG_MAP_STR, "log_name_key", DEFAULT_LOG_NAME_KEY,
