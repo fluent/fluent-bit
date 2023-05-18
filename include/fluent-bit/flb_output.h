@@ -359,6 +359,8 @@ struct flb_output_instance {
      */
     size_t total_limit_size;
 
+    size_t releasable_chunks_required;
+
     /* Thread Pool: this is optional for the caller */
     int tp_workers;
     struct flb_tp *tp;
