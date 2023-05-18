@@ -36,6 +36,7 @@
 #include "data/stackdriver/stackdriver_test_labels.h"
 #include "data/stackdriver/stackdriver_test_trace.h"
 #include "data/stackdriver/stackdriver_test_span_id.h"
+#include "data/stackdriver/stackdriver_test_trace_sampled.h"
 #include "data/stackdriver/stackdriver_test_log_name.h"
 #include "data/stackdriver/stackdriver_test_resource_labels.h"
 #include "data/stackdriver/stackdriver_test_insert_id.h"
@@ -767,6 +768,42 @@ static void cb_check_span_id(void *ctx, int ffd,
     /* span id has been removed from jsonPayload */
     ret = mp_kv_exists(res_data, res_size,
                        "$entries[0]['jsonPayload']['logging.googleapis.com/spanId']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_trace_sampled_true(void *ctx, int ffd,
+                                         int res_ret, void *res_data, size_t res_size,
+                                         void *data)
+{
+    int ret;
+
+    /* trace sampled in the entries */
+    ret = mp_kv_cmp_boolean(res_data, res_size, "$entries[0]['traceSampled']", true);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* trace sampled has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size,
+                       "$entries[0]['jsonPayload']['logging.googleapis.com/traceSampled']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_trace_sampled_false(void *ctx, int ffd,
+                                         int res_ret, void *res_data, size_t res_size,
+                                         void *data)
+{
+    int ret;
+
+    /* trace sampled in the entries */
+    ret = mp_kv_cmp_boolean(res_data, res_size, "$entries[0]['traceSampled']", false);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* trace sampled has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size,
+                       "$entries[0]['jsonPayload']['logging.googleapis.com/traceSampled']");
     TEST_CHECK(ret == FLB_FALSE);
 
     flb_sds_destroy(res_data);
@@ -2458,7 +2495,6 @@ void flb_test_trace_stackdriver_autoformat()
     flb_destroy(ctx);
 }
 
-
 void flb_test_span_id()
 {
     int ret;
@@ -2493,6 +2529,86 @@ void flb_test_span_id()
 
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) SPAN_ID_COMMON_CASE, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_trace_sampled_true()
+{
+    int ret;
+    int size = sizeof(TRACE_SAMPLED_CASE_TRUE) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_trace_sampled_true,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) TRACE_SAMPLED_CASE_TRUE, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_trace_sampled_false()
+{
+    int ret;
+    int size = sizeof(TRACE_SAMPLED_CASE_FALSE) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_trace_sampled_false,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) TRACE_SAMPLED_CASE_FALSE, size);
 
     sleep(2);
     flb_stop(ctx);
@@ -6026,6 +6142,10 @@ TEST_LIST = {
 
     /* test span id */
     {"span_id", flb_test_span_id},
+
+    /* test trace sampled */
+    {"trace_sampled_true", flb_test_trace_sampled_true},
+    {"trace_sampled_false", flb_test_trace_sampled_false},
 
     /* test metadata server */
     {"set_metadata_server", flb_test_set_metadata_server},
