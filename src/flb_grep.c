@@ -160,17 +160,10 @@ int flb_grep_set_rule_str(struct flb_grep *grep_ctx, enum flb_grep_rule_type typ
             flb_utils_split_free(split);
             return -1;
         }
-        ret = flb_sds_cat_safe(&rule->field, "$", 1);
-        if (ret != 0) {
-            flb_error("flb_sds_cat_safe failed");
-            delete_rule(rule);
-            flb_utils_split_free(split);
-            return -1;
-        }
-
-        ret = flb_sds_cat_safe(&rule->field, sentry->value, sentry->len);
-        if (ret != 0) {
-            flb_error("flb_sds_cat_safe failed");
+        ret = flb_sds_snprintf(&rule->field, flb_sds_alloc(rule->field),
+                               "$%.*s", (int)sentry->len, sentry->value);
+        if (ret < 0 || ret >= sentry->len + 2) {
+            flb_error("flb_sds_snprintf failed");
             delete_rule(rule);
             flb_utils_split_free(split);
             return -1;
