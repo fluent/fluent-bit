@@ -123,9 +123,11 @@ int in_emitter_add_record(const char *tag, int tag_len,
         if (ec == NULL) {
             return -1;
         }
+        msgpack_sbuffer_init(&ec->mp_sbuf);
         ec->tag = flb_sds_create_len(tag, tag_len);
         msgpack_sbuffer_write(&ec->mp_sbuf, buf_data, buf_size);
         ret = flb_ring_buffer_write(ctx->msgs, (void *)ec, sizeof(struct em_chunk));
+        msgpack_sbuffer_destroy(&ec->mp_sbuf);
         flb_free(ec);
         return ret;
     }
