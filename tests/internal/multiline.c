@@ -1402,7 +1402,7 @@ static void test_issue_5504()
 
     /* Set the thread local scheduler */
     flb_sched_ctx_init();
-    flb_sched_ctx_set(sched);
+    flb_sched_ctx_set(config->sched);
 
     ml = flb_ml_create(config, "5504-test");
     TEST_CHECK(ml != NULL);
