@@ -42,6 +42,17 @@
 #define FLB_PROCESSOR_UNIT_NATIVE    0
 #define FLB_PROCESSOR_UNIT_FILTER    1
 
+
+/* The current values mean the processor stack will
+ * wait for 2 seconds at most in 50 millisecond increments
+ * for each processor unit.
+ *
+ * This is the worst case scenario and in reality there will
+ * be no wait in 99.9% of the cases.
+ */
+#define FLB_PROCESSOR_LOCK_RETRY_LIMIT 40
+#define FLB_PROCESSOR_LOCK_RETRY_DELAY 50000
+
 /* These forward definitions are necessary in order to avoid
  * inclussion conflicts.
  */
@@ -63,6 +74,16 @@ struct flb_processor_unit {
      */
     void *ctx;
 
+    /* This lock is meant to cover the case where two output plugin
+     * worker threads flb_output_flush_create calls overlap which
+     * could cause flb_processor_run to be invoked by both of them
+     * at the same time with the same context.
+     *
+     * This could cause certain non thread aware filters such as
+     * filter_lua to modify internal structures leading to corruption
+     * and crashes.
+    */
+    pthread_mutex_t lock;
     /*
      * pipeline filters needs to be linked somewhere since the destroy
      * function will do the mk_list_del(). To avoid corruptions we link
