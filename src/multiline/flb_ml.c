@@ -1017,15 +1017,16 @@ int flb_ml_parsers_init(struct flb_config *ctx)
 
 int flb_ml_auto_flush_init(struct flb_ml *ml)
 {
-    int ret;
-    struct flb_config *ctx;
+    struct flb_sched *scheduler;
+    int               ret;
 
-    if (!ml) {
+    if (ml == NULL) {
         return -1;
     }
 
-    ctx = ml->config;
-    if (!ctx->sched) {
+    scheduler = flb_sched_ctx_get();
+
+    if (scheduler == NULL) {
         flb_error("[multiline] scheduler context has not been created");
         return -1;
     }
@@ -1036,7 +1037,7 @@ int flb_ml_auto_flush_init(struct flb_ml *ml)
     }
 
     /* Create flush timer */
-    ret = flb_sched_timer_cb_create(ctx->sched,
+    ret = flb_sched_timer_cb_create(scheduler,
                                     FLB_SCHED_TIMER_CB_PERM,
                                     ml->flush_ms,
                                     cb_ml_flush_timer,
