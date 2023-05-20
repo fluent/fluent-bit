@@ -29,6 +29,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#define DEFAULT_EMITTER_RING_BUFFER_FLUSH_FREQUENCY 2000
+
 struct em_chunk {
     flb_sds_t tag;
     struct msgpack_sbuffer mp_sbuf;  /* msgpack sbuffer        */
@@ -207,9 +209,16 @@ static int in_emitter_start_ring_buffer(struct flb_input_instance *in, struct fl
 static int cb_emitter_init(struct flb_input_instance *in,
                            struct flb_config *config, void *data)
 {
+    struct flb_sched *scheduler;
     struct flb_emitter *ctx;
     int ret;
 
+    scheduler = flb_sched_ctx_get();
+
+    if (scheduler == NULL) {
+        flb_error("[emitter] scheduler context has not been created");
+        return -1;
+    }
 
     ctx = flb_calloc(1, sizeof(struct flb_emitter));
     if (!ctx) {
@@ -223,6 +232,17 @@ static int cb_emitter_init(struct flb_input_instance *in,
     ret = flb_input_config_map_set(in, (void *) ctx);
     if (ret == -1) {
         return -1;
+    }
+
+    if (scheduler != config->sched &&
+        ctx->ring_buffer_size == 0) {
+
+        ctx->ring_buffer_size = DEFAULT_EMITTER_RING_BUFFER_FLUSH_FREQUENCY;
+
+        flb_plg_debug(in,
+                      "threaded emitter instances require ring_buffer_size"
+                      " being set, using default value of %u",
+                      ctx->ring_buffer_size);
     }
 
     if (ctx->ring_buffer_size > 0) {
