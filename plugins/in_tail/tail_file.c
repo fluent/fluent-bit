@@ -1205,14 +1205,6 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     flb_plg_debug(ctx->ins, "inode=%"PRIu64" removing file name %s",
                   file->inode, file->name);
 
-    if (file->sl_log_event_encoder != NULL) {
-        flb_log_event_encoder_destroy(file->sl_log_event_encoder);
-    }
-
-    if (file->ml_log_event_encoder != NULL) {
-        flb_log_event_encoder_destroy(file->ml_log_event_encoder);
-    }
-
     /* remove the multiline.core stream */
     if (ctx->ml_ctx && file->ml_stream_id > 0) {
         /* destroy ml stream */
@@ -1233,6 +1225,14 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     }
 
     msgpack_sbuffer_destroy(&file->mult_sbuf);
+
+    if (file->sl_log_event_encoder != NULL) {
+        flb_log_event_encoder_destroy(file->sl_log_event_encoder);
+    }
+
+    if (file->ml_log_event_encoder != NULL) {
+        flb_log_event_encoder_destroy(file->ml_log_event_encoder);
+    }
 
     flb_sds_destroy(file->dmode_buf);
     flb_sds_destroy(file->dmode_lastline);
