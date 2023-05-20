@@ -328,6 +328,9 @@ int flb_processor_run(struct flb_processor *proc,
     mk_list_foreach(head, list) {
         pu = mk_list_entry(head, struct flb_processor_unit, _head);
 
+        tmp_buf = NULL;
+        tmp_size = 0;
+
         /* run the unit */
         if (pu->unit_type == FLB_PROCESSOR_UNIT_FILTER) {
             /* get the filter context */
