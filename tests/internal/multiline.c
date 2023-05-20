@@ -1402,6 +1402,10 @@ static void test_issue_5504()
     config->sched = flb_sched_create(config, config->evl);
     TEST_CHECK(config->sched != NULL);
 
+    /* Set the thread local scheduler */
+    flb_sched_ctx_init();
+    flb_sched_ctx_set(sched);
+
     /* Generate an instance of any multiline parser */
     mlp_i = flb_ml_parser_instance_create(ml, "cri");
     TEST_CHECK(mlp_i != NULL);
