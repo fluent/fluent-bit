@@ -128,6 +128,7 @@ int in_emitter_add_record(const char *tag, int tag_len,
         msgpack_sbuffer_write(&ec->mp_sbuf, buf_data, buf_size);
         ret = flb_ring_buffer_write(ctx->msgs, (void *)ec, sizeof(struct em_chunk));
         msgpack_sbuffer_destroy(&ec->mp_sbuf);
+        flb_sds_destroy(ec->tag);
         flb_free(ec);
         return ret;
     }
