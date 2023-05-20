@@ -1389,8 +1389,6 @@ static void test_issue_5504()
 
     /* Initialize environment */
     config = flb_config_init();
-    ml = flb_ml_create(config, "5504-test");
-    TEST_CHECK(ml != NULL);
     
     /* Create the event loop */
     evl = config->evl;
@@ -1401,6 +1399,13 @@ static void test_issue_5504()
     sched = config->sched;
     config->sched = flb_sched_create(config, config->evl);
     TEST_CHECK(config->sched != NULL);
+
+    /* Set the thread local scheduler */
+    flb_sched_ctx_init();
+    flb_sched_ctx_set(config->sched);
+
+    ml = flb_ml_create(config, "5504-test");
+    TEST_CHECK(ml != NULL);
 
     /* Generate an instance of any multiline parser */
     mlp_i = flb_ml_parser_instance_create(ml, "cri");
