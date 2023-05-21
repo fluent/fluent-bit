@@ -23,8 +23,8 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_ring_buffer.h>
-
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -110,27 +110,34 @@ int in_emitter_add_record(const char *tag, int tag_len,
                           const char *buf_data, size_t buf_size,
                           struct flb_input_instance *in)
 {
+    struct em_chunk temporary_chunk;
     struct mk_list *head;
-    struct em_chunk *ec = NULL;
+    struct em_chunk *ec;
     struct flb_emitter *ctx;
     int ret;
 
     ctx = (struct flb_emitter *) in->context;
+    ec = NULL;
 
     /* Use the ring buffer first if it exists */
     if (ctx->msgs) {
-        ec = flb_calloc(1, sizeof(struct em_chunk));
-        if (ec == NULL) {
+        memset(&temporary_chunk, 0, sizeof(struct em_chunk));
+
+        temporary_chunk.tag = flb_sds_create_len(tag, tag_len);
+
+        if (temporary_chunk.tag == NULL) {
+            flb_plg_error(ctx->ins,
+                          "cannot allocate memory for tag: %s",
+                          tag);
             return -1;
         }
-        msgpack_sbuffer_init(&ec->mp_sbuf);
-        ec->tag = flb_sds_create_len(tag, tag_len);
-        msgpack_sbuffer_write(&ec->mp_sbuf, buf_data, buf_size);
-        ret = flb_ring_buffer_write(ctx->msgs, (void *)ec, sizeof(struct em_chunk));
-        msgpack_sbuffer_destroy(&ec->mp_sbuf);
-        flb_sds_destroy(ec->tag);
-        flb_free(ec);
-        return ret;
+
+        msgpack_sbuffer_init(&temporary_chunk.mp_sbuf);
+        msgpack_sbuffer_write(&temporary_chunk.mp_sbuf, buf_data, buf_size);
+
+        return flb_ring_buffer_write(ctx->msgs,
+                                     (void *) &temporary_chunk,
+                                     sizeof(struct em_chunk));
     }
 
     /* Check if any target chunk already exists */
