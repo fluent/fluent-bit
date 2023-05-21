@@ -218,11 +218,6 @@ static int cb_emitter_init(struct flb_input_instance *in,
 
     scheduler = flb_sched_ctx_get();
 
-    if (scheduler == NULL) {
-        flb_error("[emitter] scheduler context has not been created");
-        return -1;
-    }
-
     ctx = flb_calloc(1, sizeof(struct flb_emitter));
     if (!ctx) {
         flb_errno();
@@ -238,6 +233,7 @@ static int cb_emitter_init(struct flb_input_instance *in,
     }
 
     if (scheduler != config->sched &&
+        scheduler != NULL &&
         ctx->ring_buffer_size == 0) {
 
         ctx->ring_buffer_size = DEFAULT_EMITTER_RING_BUFFER_FLUSH_FREQUENCY;
