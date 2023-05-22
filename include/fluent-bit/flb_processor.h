@@ -67,6 +67,7 @@ struct flb_processor_unit {
     int event_type;
     int unit_type;
     flb_sds_t name;
+    size_t stage;
 
     /*
      * Opaque data type for custom reference (for pipeline filters this
@@ -110,6 +111,7 @@ struct flb_processor {
     struct mk_list metrics;
     struct mk_list traces;
 
+    size_t stage_count;
     /*
      * opaque data type to reference anything specific from the caller, for input
      * plugins this will contain the input instance context.
@@ -194,6 +196,7 @@ int flb_processor_init(struct flb_processor *proc);
 void flb_processor_destroy(struct flb_processor *proc);
 
 int flb_processor_run(struct flb_processor *proc,
+                      size_t starting_stage,
                       int type,
                       const char *tag, size_t tag_len,
                       void *data, size_t data_size,
