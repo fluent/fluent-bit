@@ -97,7 +97,7 @@ static void processor()
     ret = create_msgpack_records(&mp_buf, &mp_size);
     TEST_CHECK(ret == 0);
 
-    ret = flb_processor_run(proc, FLB_PROCESSOR_LOGS, "TEST", 4, mp_buf, mp_size, &out_buf, &out_size);
+    ret = flb_processor_run(proc, 0, FLB_PROCESSOR_LOGS, "TEST", 4, mp_buf, mp_size, &out_buf, &out_size);
 
     if (out_buf != mp_buf) {
         flb_free(out_buf);
