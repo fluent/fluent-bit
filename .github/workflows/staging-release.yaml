@@ -847,7 +847,7 @@ jobs:
           version: ${{ inputs.version }}
           strict: true
 
-      - run: ./update-version.sh
+      - run: ./update_version.sh
         shell: bash
         env:
           NEW_VERSION: ${{ steps.semvers.outputs.patch }}
