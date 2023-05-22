@@ -39,43 +39,54 @@
 
 #include <monkey/mk_api.h>
 
-int mk_liana_plugin_init(struct plugin_api **api, char *confdir)
+int mk_liana_plugin_init(struct mk_plugin *plugin, char *confdir)
 {
     (void) confdir;
-    mk_api = *api;
+    (void) plugin;
+
     return 0;
 }
 
-int mk_liana_plugin_exit()
+int mk_liana_plugin_exit(struct mk_plugin *plugin)
 {
+    (void) plugin;
+
     return 0;
 }
 
-int mk_liana_read(int socket_fd, void *buf, int count)
+int mk_liana_read(struct mk_plugin *plugin, int socket_fd, void *buf, int count)
 {
+    (void) plugin;
+
     return recv(socket_fd, (void*)buf, count, 0);
 }
 
-int mk_liana_write(int socket_fd, const void *buf, size_t count )
+int mk_liana_write(struct mk_plugin *plugin, int socket_fd, const void *buf, size_t count )
 {
     ssize_t bytes_sent = -1;
+
+    (void) plugin;
 
     bytes_sent = send(socket_fd, buf, count, 0);
 
     return bytes_sent;
 }
 
-int mk_liana_writev(int socket_fd, struct mk_iov *mk_io)
+int mk_liana_writev(struct mk_plugin *plugin, int socket_fd, struct mk_iov *mk_io)
 {
     ssize_t bytes_sent = -1;
 
-    bytes_sent = mk_api->iov_send(socket_fd, mk_io);
+    (void) plugin;
+
+    bytes_sent = plugin->api->iov_send(socket_fd, mk_io);
 
     return bytes_sent;
 }
 
-int mk_liana_close(int socket_fd)
+int mk_liana_close(struct mk_plugin *plugin, int socket_fd)
 {
+    (void) plugin;
+
 #ifdef _WIN32
     return closesocket(socket_fd);
 #else
@@ -83,10 +94,12 @@ int mk_liana_close(int socket_fd)
 #endif
 }
 
-int mk_liana_send_file(int socket_fd, int file_fd, off_t *file_offset,
+int mk_liana_send_file(struct mk_plugin *plugin, int socket_fd, int file_fd, off_t *file_offset,
                        size_t file_count)
 {
     ssize_t ret = -1;
+
+    (void) plugin;
 
 #if defined (__linux__)
     ret = sendfile(socket_fd, file_fd, file_offset, file_count);

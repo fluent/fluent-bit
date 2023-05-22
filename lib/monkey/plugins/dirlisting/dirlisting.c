@@ -185,7 +185,7 @@ int mk_dirhtml_read_config(char *path)
 
     section = mk_api->config_section_get(conf, "DIRLISTING");
     if (!section) {
-        mk_err("Could not find DIRLISTING tag in configuration file");
+        mk_err_ex(mk_api, "Could not find DIRLISTING tag in configuration file");
         exit(EXIT_FAILURE);
     }
 
@@ -201,8 +201,8 @@ int mk_dirhtml_read_config(char *path)
 
     if (mk_api->file_get_info(dirhtml_conf->theme_path,
                               &finfo, MK_FILE_READ) != 0) {
-        mk_warn("Dirlisting: cannot load theme from '%s'", dirhtml_conf->theme_path);
-        mk_warn("Dirlisting: unloading plugin");
+        mk_warn_ex(mk_api, "Dirlisting: cannot load theme from '%s'", dirhtml_conf->theme_path);
+        mk_warn_ex(mk_api, "Dirlisting: unloading plugin");
         return -1;
     }
 
@@ -860,18 +860,21 @@ static int mk_dirhtml_init(struct mk_plugin *plugin,
     return 0;
 }
 
-int mk_dirlisting_plugin_init(struct plugin_api **api, char *confdir)
+int mk_dirlisting_plugin_init(struct mk_plugin *plugin, char *confdir)
 {
-    mk_api = *api;
+    mk_api = plugin->api;
 
     return mk_dirhtml_conf(confdir);
 }
 
-int mk_dirlisting_plugin_exit()
+int mk_dirlisting_plugin_exit(struct mk_plugin *plugin)
 {
+    (void) plugin;
+
     mk_api->mem_free(dirhtml_conf->theme);
     mk_api->mem_free(dirhtml_conf->theme_path);
     mk_api->mem_free(dirhtml_conf);
+
     return 0;
 }
 

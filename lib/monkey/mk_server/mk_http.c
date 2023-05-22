@@ -1113,7 +1113,7 @@ static inline void mk_http_request_ka_next(struct mk_http_session *cs)
     cs->counter_connections++;
 
     /* Update data for scheduler */
-    cs->init_time = log_current_utime;
+    cs->init_time = cs->server->clock_context->log_current_utime;
     cs->status = MK_REQUEST_STATUS_INCOMPLETE;
 
     /* Initialize parser */

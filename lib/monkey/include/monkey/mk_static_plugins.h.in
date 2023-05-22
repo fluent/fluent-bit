@@ -22,8 +22,40 @@
 
 #include <monkey/mk_core.h>
 #include <monkey/mk_plugin.h>
+#include <monkey/mk_plugin_net.h>
 
 @STATIC_PLUGINS_DECL@
+
+static int mk_static_plugin_attach(struct mk_list *plugins,
+                                   struct mk_plugin *plugin)
+{
+    struct mk_plugin *instance;
+    struct mk_plugin_network *network;
+
+    instance = mk_mem_alloc_z(sizeof(struct mk_plugin));
+
+    if (instance == NULL) {
+        return MK_FALSE;
+    }
+
+    memcpy(instance, plugin, sizeof(struct mk_plugin));
+
+    network = mk_mem_alloc(sizeof(struct mk_plugin_network));
+
+    if (network == NULL) {
+        mk_mem_free(instance);
+
+        return MK_FALSE;
+    }
+
+    memcpy(network, plugin->network, sizeof(struct mk_plugin_network));
+
+    instance->network = network;
+
+    mk_list_add(&instance->_head, plugins);
+
+    return MK_TRUE;
+}
 
 static void mk_static_plugins(struct mk_list *plugins)
 {
