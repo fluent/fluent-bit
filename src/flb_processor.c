@@ -198,6 +198,9 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
 
             return NULL;
         }
+
+        f_ins->parent = (void *) pu;
+
         /* matching rule: just set to workaround the pipeline initializer */
         f_ins->match = flb_sds_create("*");
 
@@ -254,6 +257,9 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
     else if (event_type == FLB_PROCESSOR_TRACES) {
         mk_list_add(&pu->_head, &proc->traces);
     }
+
+    pu->stage = proc->stage_count;
+    proc->stage_count++;
 
     return pu;
 }
@@ -382,6 +388,7 @@ int flb_processor_is_active(struct flb_processor *proc)
  * context for metrics or a 'CTraces' context for traces.
  */
 int flb_processor_run(struct flb_processor *proc,
+                      size_t starting_stage,
                       int type,
                       const char *tag, size_t tag_len,
                       void *data, size_t data_size,
@@ -394,7 +401,6 @@ int flb_processor_run(struct flb_processor *proc,
     size_t tmp_size;
     int decoder_result;
     struct mk_list *head;
-    size_t lock_retry_count;
     struct mk_list *list = NULL;
     struct flb_log_event log_event;
     struct flb_processor_unit *pu;
@@ -418,6 +424,14 @@ int flb_processor_run(struct flb_processor *proc,
     /* iterate list units */
     mk_list_foreach(head, list) {
         pu = mk_list_entry(head, struct flb_processor_unit, _head);
+
+        /* This is meant to be used when filters or processors re-inject
+         * records in the pipeline. This way we can ensure that they will
+         * continue the process at the right stage.
+         */
+        if (pu->stage < starting_stage) {
+            continue;
+        }
 
         tmp_buf = NULL;
         tmp_size = 0;
