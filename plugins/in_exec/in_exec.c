@@ -29,7 +29,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/wait.h>
+#include "in_exec_win32_compat.h"
 
 #include "in_exec.h"
 
@@ -59,7 +59,7 @@ static int in_exec_collect(struct flb_input_instance *ins,
         }
     }
 
-    cmdp = popen(ctx->cmd, "r");
+    cmdp = flb_popen(ctx->cmd, "r");
     if (cmdp == NULL) {
         flb_plg_debug(ctx->ins, "command %s failed", ctx->cmd);
         goto collect_end;
@@ -177,9 +177,8 @@ static int in_exec_collect(struct flb_input_instance *ins,
          * https://www.gnu.org/software/bash/manual/html_node/Exit-Status.html
          * and
          * https://skarnet.org/software/execline/exitcodes.html
-         *
          */
-        cmdret = pclose(cmdp);
+        cmdret = flb_pclose(cmdp);
         if (cmdret == -1) {
             flb_errno();
             flb_plg_debug(ctx->ins,
@@ -191,24 +190,26 @@ static int in_exec_collect(struct flb_input_instance *ins,
              * returned through a shell by a real child command.
              */
             flb_exit_code = 128;
-        } else if (WIFEXITED(cmdret)) {
-            flb_plg_debug(ctx->ins, "command %s exited with code %d", ctx->cmd, WEXITSTATUS(cmdret));
+        } else if (FLB_WIFEXITED(cmdret)) {
+            flb_plg_debug(ctx->ins, "command %s exited with code %d",
+                    ctx->cmd, FLB_WEXITSTATUS(cmdret));
             /*
              * Propagate shell exit code, which may encode a normal or signal
              * exit for the real child process, directly to the caller. This
              * could be greater than 127 if the shell encoded a signal exit
              * status from the child process into its own return code.
              */
-            flb_exit_code = WEXITSTATUS(cmdret);
-        } else if (WIFSIGNALED(cmdret)) {
-            flb_plg_debug(ctx->ins, "command %s exited with signal %d", ctx->cmd, WTERMSIG(cmdret));
+            flb_exit_code = FLB_WEXITSTATUS(cmdret);
+        } else if (FLB_WIFSIGNALED(cmdret)) {
+            flb_plg_debug(ctx->ins, "command %s exited with signal %d",
+                    ctx->cmd, FLB_WTERMSIG(cmdret));
             /*
              * Follow the shell convention of returning 128+signo for signal
              * exits. The consumer of fluent-bit's exit code will be unable to
              * differentiate between the shell exiting on a signal and the
              * process called by the shell exiting on a signal.
              */
-            flb_exit_code = 128 + WTERMSIG(cmdret);
+            flb_exit_code = 128 + FLB_WTERMSIG(cmdret);
         } else {
             flb_plg_debug(ctx->ins, "command %s exited with unknown status",
                     ctx->cmd);
@@ -227,7 +228,7 @@ static int in_exec_collect(struct flb_input_instance *ins,
             if (ctx->propagate_exit_code == FLB_TRUE) {
                 config->exit_status_code = flb_exit_code;
             }
-            flb_plg_debug(ctx->ins,
+            flb_plg_info(ctx->ins,
                     "one-shot command exited, terminating fluent-bit");
             flb_engine_exit(config);
         } else {
