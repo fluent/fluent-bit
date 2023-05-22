@@ -28,17 +28,7 @@
 #include <monkey/mk_config.h>
 #include <monkey/mk_clock.h>
 #include <monkey/mk_utils.h>
-
-pthread_t mk_clock_tid;
-
-time_t log_current_utime;
-time_t monkey_init_time;
-
-mk_ptr_t log_current_time = { NULL, LOG_TIME_BUFFER_SIZE - 2 };
-mk_ptr_t headers_preset = { NULL, HEADER_PRESET_SIZE - 1 };
-
-static char *log_time_buffers[2];
-static char *header_time_buffers[2];
+#include <monkey/mk_tls.h>
 
 #ifdef _WIN32
 static struct tm* localtime_r(const time_t* timep, struct tm* result)
@@ -72,18 +62,18 @@ static inline char *_next_buffer(mk_ptr_t *pointer, char **buffers)
     }
 }
 
-static void mk_clock_log_set_time(time_t utime)
+static void mk_clock_log_set_time(time_t utime, struct mk_server *server)
 {
     char *time_string;
     struct tm result;
 
-    time_string = _next_buffer(&log_current_time, log_time_buffers);
-    log_current_utime = utime;
+    time_string = _next_buffer(&server->clock_context->log_current_time, server->clock_context->log_time_buffers);
+    server->clock_context->log_current_utime = utime;
 
     strftime(time_string, LOG_TIME_BUFFER_SIZE, "[%d/%b/%G %T %z]",
              localtime_r(&utime, &result));
 
-    log_current_time.data = time_string;
+    server->clock_context->log_current_time.data = time_string;
 }
 
 static void mk_clock_headers_preset(time_t utime, struct mk_server *server)
@@ -94,7 +84,8 @@ static void mk_clock_headers_preset(time_t utime, struct mk_server *server)
     struct tm result;
     char *buffer;
 
-    buffer = _next_buffer(&headers_preset, header_time_buffers);
+    buffer = _next_buffer(&server->clock_context->headers_preset,
+                          server->clock_context->header_time_buffers);
 
     gmt_tm = gmtime_r(&utime, &result);
 
@@ -108,8 +99,8 @@ static void mk_clock_headers_preset(time_t utime, struct mk_server *server)
                     MK_CLOCK_GMT_DATEFORMAT,
                     gmt_tm);
 
-    headers_preset.data = buffer;
-    headers_preset.len  = len1 + len2;
+    server->clock_context->headers_preset.data = buffer;
+    server->clock_context->headers_preset.len  = len1 + len2;
 }
 
 void *mk_clock_worker_init(void *data)
@@ -121,13 +112,13 @@ void *mk_clock_worker_init(void *data)
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 
-    mk_clock_tid = pthread_self();
+    server->clock_context->mk_clock_tid = pthread_self();
 
     while (1) {
         cur_time = time(NULL);
 
         if(cur_time != ((time_t)-1)) {
-            mk_clock_log_set_time(cur_time);
+            mk_clock_log_set_time(cur_time, server);
             mk_clock_headers_preset(cur_time, server);
         }
         sleep(1);
@@ -136,35 +127,45 @@ void *mk_clock_worker_init(void *data)
     return NULL;
 }
 
-void mk_clock_exit()
+void mk_clock_exit(struct mk_server *server)
 {
-    pthread_cancel(mk_clock_tid);
-    pthread_join(mk_clock_tid, NULL);
+    pthread_cancel(server->clock_context->mk_clock_tid);
+    pthread_join(server->clock_context->mk_clock_tid, NULL);
 
-    mk_mem_free(header_time_buffers[0]);
-    mk_mem_free(header_time_buffers[1]);
-    mk_mem_free(log_time_buffers[0]);
-    mk_mem_free(log_time_buffers[1]);
+    mk_mem_free(server->clock_context->header_time_buffers[0]);
+    mk_mem_free(server->clock_context->header_time_buffers[1]);
+    mk_mem_free(server->clock_context->log_time_buffers[0]);
+    mk_mem_free(server->clock_context->log_time_buffers[1]);
+
+    mk_mem_free(server->clock_context);
 }
 
 /* This function must be called before any threads are created */
 void mk_clock_sequential_init(struct mk_server *server)
 {
+    server->clock_context = mk_mem_alloc_z(sizeof(struct mk_clock_context));
+
+    if (server->clock_context == NULL) {
+        return;
+    }
+
     /* Time when monkey was started */
-    monkey_init_time = time(NULL);
+    server->clock_context->monkey_init_time = time(NULL);
 
-    header_time_buffers[0] = mk_mem_alloc_z(HEADER_PRESET_SIZE);
-    header_time_buffers[1] = mk_mem_alloc_z(HEADER_PRESET_SIZE);
+    server->clock_context->log_current_time.len = LOG_TIME_BUFFER_SIZE - 2;
+    server->clock_context->headers_preset.len = HEADER_PRESET_SIZE - 1;
 
-    log_time_buffers[0] = mk_mem_alloc_z(LOG_TIME_BUFFER_SIZE);
-    log_time_buffers[1] = mk_mem_alloc_z(LOG_TIME_BUFFER_SIZE);
+    server->clock_context->header_time_buffers[0] = mk_mem_alloc_z(HEADER_PRESET_SIZE);
+    server->clock_context->header_time_buffers[1] = mk_mem_alloc_z(HEADER_PRESET_SIZE);
 
+    server->clock_context->log_time_buffers[0] = mk_mem_alloc_z(LOG_TIME_BUFFER_SIZE);
+    server->clock_context->log_time_buffers[1] = mk_mem_alloc_z(LOG_TIME_BUFFER_SIZE);
 
     /* Set the time once */
     time_t cur_time = time(NULL);
 
     if (cur_time != ((time_t)-1)) {
-        mk_clock_log_set_time(cur_time);
+        mk_clock_log_set_time(cur_time, server);
         mk_clock_headers_preset(cur_time, server);
     }
 }

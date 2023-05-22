@@ -105,6 +105,7 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
     int ret;
     struct mk_event *event;
     struct epoll_event ep_event;
+    memset(&ep_event, 0, sizeof(ep_event));
 
     mk_bug(ctx == NULL);
     mk_bug(data == NULL);
@@ -142,7 +143,11 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
 
     event->mask = events;
     event->priority = MK_EVENT_PRIORITY_DEFAULT;
-    mk_list_entry_init(&event->_priority_head);
+
+    /* Remove from priority queue */
+    if (!mk_list_entry_is_orphan(&event->_priority_head)) {
+        mk_list_del(&event->_priority_head);
+    }
 
     return ret;
 }

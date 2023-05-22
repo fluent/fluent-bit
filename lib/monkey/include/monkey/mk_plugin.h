@@ -265,9 +265,11 @@ struct mk_plugin {
     unsigned int hooks;
     char capabilities;
 
+    struct plugin_api *api;
+
     /* Init / Exit */
-    int (*init_plugin) (struct plugin_api **, char *);
-    int (*exit_plugin) ();
+    int (*init_plugin) (struct mk_plugin *, char *);
+    int (*exit_plugin) (struct mk_plugin *);
 
     /* Init Levels */
     int  (*master_init) (struct mk_server *);
@@ -313,8 +315,8 @@ struct mk_plugin_stage {
 };
 
 
-void mk_plugin_api_init();
-void mk_plugin_load_all();
+void mk_plugin_api_init(struct mk_server *server);
+void mk_plugin_load_all(struct mk_server *server);
 void mk_plugin_exit_all(struct mk_server *server);
 void mk_plugin_exit_worker();
 
@@ -356,8 +358,8 @@ void mk_plugin_unregister(struct mk_plugin *p);
 struct plugin *mk_plugin_alloc(void *handler, const char *path);
 void mk_plugin_free(struct mk_plugin *p);
 
-int mk_plugin_time_now_unix();
-mk_ptr_t *mk_plugin_time_now_human();
+int mk_plugin_time_now_unix(struct mk_server *server);
+mk_ptr_t *mk_plugin_time_now_human(struct mk_server *server);
 
 int mk_plugin_sched_remove_client(int socket, struct mk_server *server);
 

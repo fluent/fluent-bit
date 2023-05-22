@@ -201,7 +201,7 @@ int mk_net_conn_write(struct mk_channel *channel,
     }
 
     send = len - total;
-    bytes = channel->io->write(channel->fd, (uint8_t *)data + total, send);
+    bytes = channel->io->write(channel->io->plugin, channel->fd, (uint8_t *)data + total, send);
     if (bytes == -1) {
         if (errno == EAGAIN) {
             MK_EVENT_NEW(channel->event);
