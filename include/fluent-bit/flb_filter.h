@@ -87,6 +87,7 @@ struct flb_filter_instance {
 #ifdef FLB_HAVE_REGEX
     struct flb_regex *match_regex; /* match rule (regex) based on Tags */
 #endif
+    void *parent;                  /* Parent processor         */
     void *context;                 /* Instance local context   */
     void *data;
     struct flb_filter_plugin *p;   /* original plugin          */
