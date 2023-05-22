@@ -19,6 +19,8 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_plugin.h>
+#include <fluent-bit/flb_processor.h>
 #include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_storage.h>
@@ -307,6 +309,36 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
     return 0;
 }
 
+static int ingest_inline(struct flb_rewrite_tag *ctx,
+                         flb_sds_t out_tag,
+                         const void *buf, size_t buf_size)
+{
+    struct flb_input_instance *input_instance;
+    struct flb_processor_unit *processor_unit;
+    struct flb_processor      *processor;
+    int                        result;
+
+    if (ctx->ins->parent != NULL) {
+        processor_unit = (struct flb_processor_unit *) ctx->ins->parent;
+        processor = (struct flb_processor *) processor_unit->parent;
+        input_instance = (struct flb_input_instance *) processor->data;
+
+        if (processor->source_plugin_type == FLB_PLUGIN_INPUT) {
+            result = flb_input_log_append_ex(input_instance,
+                                             processor_unit->stage + 1,
+                                             out_tag, flb_sds_len(out_tag),
+                                             buf, buf_size);
+
+            if (result == 0) {
+                return FLB_TRUE;
+            }
+        }
+    }
+
+    return FLB_FALSE;
+}
+
+
 /*
  * On given record, check if a rule applies or not to the map, if so, compose
  * the new tag, emit the record and return FLB_TRUE, otherwise just return
@@ -358,9 +390,16 @@ static int process_record(const char *tag, int tag_len, msgpack_object map,
         return FLB_FALSE;
     }
 
-    /* Emit record with new tag */
-    ret = in_emitter_add_record(out_tag, flb_sds_len(out_tag), buf, buf_size,
-                                ctx->ins_emitter);
+    ret = ingest_inline(ctx, out_tag, buf, buf_size);
+
+    if (!ret) {
+        /* Emit record with new tag */
+        ret = in_emitter_add_record(out_tag, flb_sds_len(out_tag), buf, buf_size,
+                                    ctx->ins_emitter);
+    }
+    else {
+        ret = 0;
+    }
 
     /* Release the tag */
     flb_sds_destroy(out_tag);
