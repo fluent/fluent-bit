@@ -318,8 +318,9 @@ static int ingest_inline(struct flb_rewrite_tag *ctx,
     struct flb_processor      *processor;
     int                        result;
 
-    if (ctx->ins->parent != NULL) {
-        processor_unit = (struct flb_processor_unit *) ctx->ins->parent;
+    if (ctx->ins->parent_processor != NULL) {
+        processor_unit = (struct flb_processor_unit *) \
+                            ctx->ins->parent_processor;
         processor = (struct flb_processor *) processor_unit->parent;
         input_instance = (struct flb_input_instance *) processor->data;
 
