@@ -119,9 +119,10 @@ find_package(FLEX)
 find_package(BISON)
 
 if (NOT (${FLEX_FOUND} AND ${BISON_FOUND}))
-  message(STATUS "flex and bison not found. Disable stream_processor building.")
-  set(FLB_STREAM_PROCESSOR No)
-  set(FLB_RECORD_ACCESSOR  No)
+  # The build will fail later if flex and bison are missing, so there's no
+  # point attempting to continue. There's no test cover for windows builds
+  # without FLB_PARSER anyway.
+  message(FATAL_ERROR "flex and bison not found, see DEVELOPER_GUIDE.md")
 endif()
 
 if (MSVC)

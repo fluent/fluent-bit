@@ -621,6 +621,12 @@ if(FLB_TLS)
   if(OPENSSL_FOUND)
     FLB_DEFINITION(FLB_HAVE_OPENSSL)
   endif()
+
+  if (FLB_SYSTEM_WINDOWS AND NOT(OPENSSL_FOUND))
+    # win32 builds w/o openssl will fail later so we might as well catch it
+    # early instead.
+    MESSAGE(FATAL_ERROR "OpenSSL required on Windows, see DEVELOPER_GUIDE.md")
+  endif()
 endif()
 
 # Metrics
