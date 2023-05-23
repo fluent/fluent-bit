@@ -113,6 +113,9 @@ void flb_utils_error(int err)
     case FLB_ERR_CFG_PLUGIN_FILE:
         msg = "plugins_file not found";
         break;
+    case FLB_ERR_RELOADING_IN_PROGRESS:
+        msg = "reloading in progress";
+        break;
     default:
         flb_error("(error message is not defined. err=%d)", err);
     }
