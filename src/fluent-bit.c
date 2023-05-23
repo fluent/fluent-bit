@@ -72,7 +72,7 @@ extern void win32_started(void);
 flb_ctx_t *ctx;
 struct flb_config *config;
 volatile sig_atomic_t exit_signal = 0;
-volatile sig_atomic_t flb_bin_restarting = 0;
+volatile sig_atomic_t flb_bin_restarting = FLB_RELOAD_IDLE;
 
 #ifdef FLB_HAVE_LIBBACKTRACE
 struct flb_stacktrace flb_st;
@@ -606,8 +606,15 @@ static void flb_signal_handler(int signal)
         break;
     case SIGHUP:
 #ifndef FLB_HAVE_STATIC_CONF
-        /* reload by using same config files/path */
-        flb_reload(ctx, cf_opts);
+        if (flb_bin_restarting == FLB_RELOAD_IDLE) {
+            flb_bin_restarting = FLB_RELOAD_IN_PROGRESS;
+            /* reload by using same config files/path */
+            flb_reload(ctx, cf_opts);
+            flb_bin_restarting = FLB_RELOAD_IDLE;
+        }
+        else {
+            flb_utils_error(FLB_ERR_RELOADING_IN_PROGRESS);
+        }
         break;
 #endif
 #endif
