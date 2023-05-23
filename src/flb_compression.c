@@ -38,7 +38,7 @@ static size_t flb_decompression_context_get_read_buffer_offset(
     return input_buffer_offset;
 }
 
-uint8_t *flb_decompression_context_get_append_buffer(
+static void flb_decompression_context_adjust_buffer(
             struct flb_decompression_context *context)
 {
     uintptr_t input_buffer_offset;
@@ -54,6 +54,16 @@ uint8_t *flb_decompression_context_get_append_buffer(
 
             context->read_buffer = context->input_buffer;
         }
+    }
+}
+
+uint8_t *flb_decompression_context_get_append_buffer(
+            struct flb_decompression_context *context)
+{
+    uintptr_t input_buffer_offset;
+
+    if (context != NULL) {
+        flb_decompression_context_adjust_buffer(context);
 
         return &context->read_buffer[context->input_buffer_length];
     }
@@ -70,6 +80,8 @@ size_t flb_decompression_context_get_available_space(
     if (context == NULL) {
         return 0;
     }
+
+    flb_decompression_context_adjust_buffer(context);
 
     input_buffer_offset = \
         flb_decompression_context_get_read_buffer_offset(context);
