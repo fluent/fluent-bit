@@ -199,7 +199,7 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
             return NULL;
         }
 
-        f_ins->parent = (void *) pu;
+        f_ins->parent_processor = (void *) pu;
 
         /* matching rule: just set to workaround the pipeline initializer */
         f_ins->match = flb_sds_create("*");
