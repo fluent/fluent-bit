@@ -88,10 +88,11 @@ int flb_input_metrics_append(struct flb_input_instance *ins,
 }
 
 /* Take a metric context and enqueue it as a Metric's Chunk */
-int flb_input_metrics_append_ex(struct flb_input_instance *ins,
-                                size_t processor_starting_stage,
-                                const char *tag, size_t tag_len,
-                                struct cmt *cmt)
+int flb_input_metrics_append_skip_processor_stages(
+        struct flb_input_instance *ins,
+        size_t processor_starting_stage,
+        const char *tag, size_t tag_len,
+        struct cmt *cmt)
 {
     return input_metrics_append(ins,
                                 processor_starting_stage,
