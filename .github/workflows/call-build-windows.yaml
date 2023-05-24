@@ -1,6 +1,16 @@
 ---
 name: Reusable workflow to build Windows packages optionally into S3 bucket
 
+#
+# If you change dependencies etc here, please also check and update
+# the other Windows build resources:
+#
+# - DEVELOPER_GUIDE.md "Windows" section
+# - appveyor.yml
+# - .github/workflows/call-build-windows.yaml
+# - dockerfiles/Dockerfile.windows
+#
+
 on:
   workflow_call:
     inputs:
