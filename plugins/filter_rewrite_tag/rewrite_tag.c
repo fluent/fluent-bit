@@ -325,10 +325,11 @@ static int ingest_inline(struct flb_rewrite_tag *ctx,
         input_instance = (struct flb_input_instance *) processor->data;
 
         if (processor->source_plugin_type == FLB_PLUGIN_INPUT) {
-            result = flb_input_log_append_ex(input_instance,
-                                             processor_unit->stage + 1,
-                                             out_tag, flb_sds_len(out_tag),
-                                             buf, buf_size);
+            result = flb_input_log_append_skip_processor_stages(
+                        input_instance,
+                        processor_unit->stage + 1,
+                        out_tag, flb_sds_len(out_tag),
+                        buf, buf_size);
 
             if (result == 0) {
                 return FLB_TRUE;
