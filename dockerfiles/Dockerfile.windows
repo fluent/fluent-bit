@@ -1,5 +1,16 @@
 # escape=`
 
+# This Dockerfile will only build on Docker for Windows.
+#
+# If you change dependencies etc here, please also check and update
+# the other Windows build resources:
+#
+# - DEVELOPER_GUIDE.md "Windows" section
+# - appveyor.yml
+# - .github/workflows/call-build-windows.yaml
+# - dockerfiles/Dockerfile.windows
+#
+
 ARG WINDOWS_VERSION=ltsc2019
 
 # Builder Image - Windows Server Core
