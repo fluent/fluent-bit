@@ -233,10 +233,13 @@ static int package_content(struct flb_ml_stream *mst,
         mst->last_stream_group = stream_group;
     }
     else {
-        if (mst->last_stream_group != stream_group) {
+        /* CRI can have multiline messages from different streams interleaved */
+        if (mst->last_stream_group != stream_group &&
+            flb_sds_cmp(parser->name, "cri", 3) != 0) {
             flb_ml_flush_stream_group(parser, mst, mst->last_stream_group, FLB_FALSE);
-            mst->last_stream_group = stream_group;
         }
+
+        mst->last_stream_group = stream_group;
     }
 
     /* Set the parser type */
