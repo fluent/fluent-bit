@@ -35,6 +35,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.formatted_version.outputs.replaced }}
+    permissions:
+      contents: read
     steps:
 
       - run: |
