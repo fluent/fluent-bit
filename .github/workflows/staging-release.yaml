@@ -31,6 +31,7 @@ jobs:
 
   staging-release-version-check:
     name: Check staging release matches
+    environment: release # required to get bucket name
     runs-on: ubuntu-latest
     outputs:
       major-version: ${{ steps.get_major_version.outputs.value }}
