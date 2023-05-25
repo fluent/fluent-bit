@@ -110,8 +110,8 @@ struct record_check container_mix_input[] = {
 struct record_check container_mix_output[] = {
   {"a1\n"},
   {"a2\n"},
-  {"bbcc"},
   {"ddee\n"},
+  {"bbcc"},
   {"single full"},
   {"1a. some multiline log"},
   {"1b. some multiline log"},
@@ -1431,7 +1431,7 @@ static void test_issue_5504()
     }
     TEST_CHECK(cb != NULL);
 
-    /* Trigger the callback without delay */ 
+    /* Trigger the callback without delay */
     cb(config, ml);
     /* This should not update the last_flush since it is before the timeout */
     TEST_CHECK(ml->last_flush == last_flush);
