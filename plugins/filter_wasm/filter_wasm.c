@@ -124,20 +124,19 @@ static int cb_wasm_filter(const void *data, size_t bytes,
             ret = flb_wasm_format_msgpack_mode(tag, tag_len,
                                                &log_event,
                                                (void **)&buf, &buf_size);
-
             if (ret < 0) {
                 flb_plg_error(ctx->ins, "format msgpack is failed");
 
                 goto on_error;
             }
 
-            if (buf) {
-                /* Execute WASM program */
-                ret_val = flb_wasm_call_function_format_msgpack(ctx->wasm, ctx->wasm_function_name,
-                                                                buf, buf_size);
+            /* Execute WASM program */
+            ret_val = flb_wasm_call_function_format_msgpack(wasm, ctx->wasm_function_name,
+                                                            tag, tag_len,
+                                                            log_event.timestamp,
+                                                            buf, buf_size);
 
-                flb_free(buf);
-            }
+            flb_free(buf);
             break;
         }
 
@@ -146,8 +145,8 @@ static int cb_wasm_filter(const void *data, size_t bytes,
             continue;
         }
 
-
-        if (strlen(ret_val) == 0) { /* Skip record */
+        if (ctx->event_format == FLB_FILTER_WASM_FMT_JSON &&
+            strlen(ret_val) == 0) { /* Skip record */
             flb_plg_debug(ctx->ins, "WASM function returned empty string. Skip.");
             flb_free(ret_val);
             continue;
@@ -194,7 +193,19 @@ static int cb_wasm_filter(const void *data, size_t bytes,
                 }
                 break;
             case FLB_FILTER_WASM_FMT_MSGPACK:
-                /* How to handle the returned pointers from Wasm? */
+                /* msgpack found, pack it msgpack representation */
+                ret = flb_log_event_encoder_set_body_from_raw_msgpack(
+                        &log_encoder,
+                        ret_val,
+                        strlen(ret_val));
+
+                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                    ret = flb_log_event_encoder_commit_record(&log_encoder);
+                }
+                else {
+                    flb_log_event_encoder_rollback_record(&log_encoder);
+                }
+
                 break;
             }
         }

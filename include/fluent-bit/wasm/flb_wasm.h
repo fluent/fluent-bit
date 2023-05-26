@@ -45,15 +45,18 @@ struct flb_wasm *flb_wasm_instantiate(struct flb_config *config, const char *was
                                       struct mk_list *acessible_dir_list,
                                       int stdinfd, int stdoutfd, int stderrfd);
 
-int flb_wasm_format_msgpack_mode(const char *tag, int tag_len,
-                                 struct flb_log_event *log_event,
-                                 void **out_buf, size_t *out_size);
 char *flb_wasm_call_function_format_json(struct flb_wasm *fw, const char *function_name,
                                          const char* tag_data, size_t tag_len,
                                          struct flb_time t,
                                          const char* record_data, size_t record_len);
+
+int flb_wasm_format_msgpack_mode(const char *tag, int tag_len,
+                                 struct flb_log_event *log_event,
+                                 void **out_buf, size_t *out_size);
 char *flb_wasm_call_function_format_msgpack(struct flb_wasm *fw, const char *function_name,
-                                            const char* buf_data, size_t buf_size);
+                                            const char* tag_data, size_t tag_len,
+                                            struct flb_time t,
+                                            const char *records, size_t records_len);
 int flb_wasm_call_wasi_main(struct flb_wasm *fw);
 void flb_wasm_buffer_free(struct flb_wasm *fw);
 void flb_wasm_destroy(struct flb_wasm *fw);
