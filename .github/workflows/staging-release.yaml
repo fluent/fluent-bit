@@ -342,10 +342,10 @@ jobs:
     permissions:
       contents: read
     outputs:
-      windows-exe32-hash: steps.windows.outputs.WIN_32_EXE_HASH
-      windows-zip32-hash: steps.windows.outputs.WIN_32_ZIP_HASH
-      windows-exe64-hash: steps.windows.outputs.WIN_64_EXE_HASH
-      windows-zip64-hash: steps.windows.outputs.WIN_64_ZIP_HASH
+      windows-exe32-hash: ${{ steps.windows.outputs.WIN_32_EXE_HASH }}
+      windows-zip32-hash: ${{ steps.windows.outputs.WIN_32_ZIP_HASH }}
+      windows-exe64-hash: ${{ steps.windows.outputs.WIN_64_EXE_HASH }}
+      windows-zip64-hash: ${{ steps.windows.outputs.WIN_64_ZIP_HASH }}
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
