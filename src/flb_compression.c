@@ -60,8 +60,6 @@ static void flb_decompression_context_adjust_buffer(
 uint8_t *flb_decompression_context_get_append_buffer(
             struct flb_decompression_context *context)
 {
-    uintptr_t input_buffer_offset;
-
     if (context != NULL) {
         flb_decompression_context_adjust_buffer(context);
 
