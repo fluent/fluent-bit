@@ -66,21 +66,28 @@ struct flb_ml_parser *flb_ml_parser_python(struct flb_config *config, char *key)
     }
 
     /* rule(:python, /^[\t ]+File /, :python_code) */
-    ret = rule(mlp, "python", "/^[\\t ]+File /", "python_code", NULL);
+    ret = rule(mlp, "python, python_tracehint", "/^[\\t ]+File /", "python_code", NULL);
     if (ret != 0) {
         rule_error(mlp);
         return NULL;
     }
 
-    /* rule(:python_code, /[^\t ]/, :python) */
-    ret = rule(mlp, "python_code", "/[^\\t ]/", "python", NULL);
+    /* rule(:python_code, /[^\t ]/, :python_tracehint) */
+    ret = rule(mlp, "python_code", "/[^\\t ]/", "python_tracehint", NULL);
+    if (ret != 0) {
+        rule_error(mlp);
+        return NULL;
+    }
+
+    /* rule(:python_tracehint, /^[\t ]+[\^~]+/, :python) */
+    ret = rule(mlp, "python_tracehint", "/^[\\t ]+[\\^~]+/", "python", NULL);
     if (ret != 0) {
         rule_error(mlp);
         return NULL;
     }
 
     /* rule(:python, /^(?:[^\s.():]+\.)*[^\s.():]+:/, :start_state) */
-    ret = rule(mlp, "python", "/^(?:[^\\s.():]+\\.)*[^\\s.():]+:/", "start_state", NULL);
+    ret = rule(mlp, "python, python_tracehint", "/^(?:[^\\s.():]+\\.)*[^\\s.():]+:/", "start_state", NULL);
     if (ret != 0) {
         rule_error(mlp);
         return NULL;

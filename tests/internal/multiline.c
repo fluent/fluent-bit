@@ -178,7 +178,17 @@ struct record_check python_input[] = {
   {"  File \"/base/data/home/apps/s~nearfieldspy/1.378705245900539993/nearfieldspy.py\", line 5, in get\n"},
   {"    raise Exception('spam', 'eggs')\n"},
   {"Exception: ('spam', 'eggs')\n"},
-  {"hello world, not multiline\n"}
+  {"hello world, not multiline\n"},
+  {"Traceback (most recent call last):\n"},
+  {"  File \"/base/data/home/runtimes/python27/python27_lib/versions/third_party/webapp2-2.5.2/webapp2.py\", line 1535, in __call__\n"},
+  {"    rv = self.handle_exception(request, response, e)\n"},
+  {"                                ~~~~~~~~^^^^^^^^\n"},
+  {"  File \"/base/data/home/apps/s~nearfieldspy/1.378705245900539993/nearfieldspy.py\", line 17, in start\n"},
+  {"    return get()\n"},
+  {"  File \"/base/data/home/apps/s~nearfieldspy/1.378705245900539993/nearfieldspy.py\", line 5, in get\n"},
+  {"    raise Exception('spam', 'eggs')\n"},
+  {"                    ^^^^^^\n"},
+  {"Exception: ('spam', 'eggs')\n"}
 };
 
 struct record_check python_output[] = {
@@ -192,7 +202,19 @@ struct record_check python_output[] = {
       "    raise Exception('spam', 'eggs')\n"
       "Exception: ('spam', 'eggs')\n"
   },
-  {"hello world, not multiline\n"}
+  {"hello world, not multiline\n"},
+  {
+      "Traceback (most recent call last):\n"
+      "  File \"/base/data/home/runtimes/python27/python27_lib/versions/third_party/webapp2-2.5.2/webapp2.py\", line 1535, in __call__\n"
+      "    rv = self.handle_exception(request, response, e)\n"
+      "                                ~~~~~~~~^^^^^^^^\n"
+      "  File \"/base/data/home/apps/s~nearfieldspy/1.378705245900539993/nearfieldspy.py\", line 17, in start\n"
+      "    return get()\n"
+      "  File \"/base/data/home/apps/s~nearfieldspy/1.378705245900539993/nearfieldspy.py\", line 5, in get\n"
+      "    raise Exception('spam', 'eggs')\n"
+      "                    ^^^^^^\n"
+      "Exception: ('spam', 'eggs')\n"
+  },
 };
 
 /* Custom example for Elasticsearch stacktrace */
@@ -1431,7 +1453,7 @@ static void test_issue_5504()
     }
     TEST_CHECK(cb != NULL);
 
-    /* Trigger the callback without delay */ 
+    /* Trigger the callback without delay */
     cb(config, ml);
     /* This should not update the last_flush since it is before the timeout */
     TEST_CHECK(ml->last_flush == last_flush);
