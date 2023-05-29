@@ -51,7 +51,7 @@ static int try_json(struct flb_log_event_encoder *log_encoder,
         }
         return ret;
     }
-    flb_log_event_encoder_append_body_binary_body(log_encoder, buf, bufsize);
+    flb_log_event_encoder_append_body_raw_msgpack(log_encoder, buf, bufsize);
     flb_free(buf);
     return 0;
 }
