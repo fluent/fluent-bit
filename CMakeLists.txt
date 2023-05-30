@@ -170,6 +170,7 @@ option(FLB_IN_HEALTH                   "Enable Health input plugin"             
 option(FLB_IN_HTTP                     "Enable HTTP input plugin"                     Yes)
 option(FLB_IN_MEM                      "Enable Memory input plugin"                   Yes)
 option(FLB_IN_KAFKA                    "Enable Kafka input plugin"                     No)
+option(FLB_IN_KUBERNETES_EVENTS        "Enabke Kubernetes Events plugin"              Yes)
 option(FLB_IN_KMSG                     "Enable Kernel log input plugin"               Yes)
 option(FLB_IN_LIB                      "Enable library mode input plugin"             Yes)
 option(FLB_IN_RANDOM                   "Enable random input plugin"                   Yes)
