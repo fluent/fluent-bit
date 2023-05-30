@@ -158,7 +158,7 @@ void flb_test_ipm_no_sysfs() {
     TEST_CHECK(flb_start(ctx) == 0);
     sleep(1);
     TEST_CHECK(check_metric(ctx, "usage_bytes") != 0);
-    TEST_CHECK(check_metric(ctx, "receive_bytes_total") == 0);
+    TEST_CHECK(check_metric(ctx, "receive_bytes_total") != 0);
     do_destroy(ctx);
 }
 
