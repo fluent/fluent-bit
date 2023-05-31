@@ -58,7 +58,6 @@ struct flb_az_li {
 
     /* mangement auth */
     flb_sds_t auth_url;
-    flb_sds_t token;
     struct flb_oauth2 *u_auth;
     /* mutex for acquiring tokens */
     pthread_mutex_t token_mutex;

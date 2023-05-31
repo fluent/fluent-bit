@@ -50,7 +50,7 @@ static int cb_azure_logs_ingestion_init(struct flb_output_instance *ins,
     return 0;
 }
 
-/* A duplicate function copied from the azure log analytics plugin. 
+/* A duplicate function copied from the azure log analytics plugin.
     allocates sds string */
 static int az_li_format(const void *in_buf, size_t in_bytes,
                         char **out_buf, size_t *out_size,
@@ -158,12 +158,13 @@ static int az_li_format(const void *in_buf, size_t in_bytes,
     return 0;
 }
 
-/* Gets OAuth token; (allocates sds string) */
+/* Gets OAuth token; (allocates sds string everytime, must deallocate) */
 flb_sds_t get_az_li_token(struct flb_az_li *ctx)
 {
     int ret = 0;
     char* token;
     size_t token_len;
+    flb_sds_t token_return = NULL;
 
     if (pthread_mutex_lock(&ctx->token_mutex)) {
         flb_plg_error(ctx->ins, "error locking mutex");
@@ -175,32 +176,32 @@ flb_sds_t get_az_li_token(struct flb_az_li *ctx)
         /* Clear any previous oauth2 payload content */
         flb_oauth2_payload_clear(ctx->u_auth);
 
-        ret = flb_oauth2_payload_append(ctx->u_auth, "grant_type", 10, 
+        ret = flb_oauth2_payload_append(ctx->u_auth, "grant_type", 10,
                                         "client_credentials", 18);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "error appending oauth2 params");
-            return NULL;
+            goto token_cleanup;
         }
 
         ret = flb_oauth2_payload_append(ctx->u_auth, "scope", 5, FLB_AZ_LI_AUTH_SCOPE,
                                         sizeof(FLB_AZ_LI_AUTH_SCOPE) - 1);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "error appending oauth2 params");
-            return NULL;
+            goto token_cleanup;
         }
 
         ret = flb_oauth2_payload_append(ctx->u_auth, "client_id", 9,
                                         ctx->client_id, -1);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "error appending oauth2 params");
-            return NULL;
+            goto token_cleanup;
         }
 
         ret = flb_oauth2_payload_append(ctx->u_auth, "client_secret", 13,
                                         ctx->client_secret, -1);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "error appending oauth2 params");
-            return NULL;
+            goto token_cleanup;
         }
 
         token = flb_oauth2_token_get(ctx->u_auth);
@@ -208,39 +209,32 @@ flb_sds_t get_az_li_token(struct flb_az_li *ctx)
         /* Copy string to prevent race conditions */
         if (!token) {
             flb_plg_error(ctx->ins, "error retrieving oauth2 access token");
-            return NULL;
+            goto token_cleanup;
         }
-        else {
-            token_len = flb_sds_len(ctx->u_auth->token_type) + 2 +
-                                    flb_sds_len(ctx->u_auth->access_token);
-            /* If token string isn't allocated */
-            if (!ctx->token) {
-                ctx->token = flb_sds_create_size(token_len);
-                if (!ctx->token) {
-                    flb_plg_error(ctx->ins, "error creating token buffer");
-                    return NULL;
-                }
-            }
-            /* If our token_length is more than what we already allocated */
-            else if (token_len > flb_sds_len(ctx->token)) {
-                flb_plg_debug(ctx->ins, "new token len > previous token len");
-                ctx->token = flb_sds_increase(ctx->token, token_len - 
-                                              flb_sds_len(ctx->token));
-            }
-            flb_sds_snprintf(&ctx->token, flb_sds_alloc(ctx->token), "%s %s",
-                             ctx->u_auth->token_type, ctx->u_auth->access_token);
-
-            flb_plg_debug(ctx->ins, "got azure token");
-
-        }
+        flb_plg_debug(ctx->ins, "got azure token");
     }
 
+    /* Reached this code-block means, got new token or token not expired */
+    /* Either way we copy the token to a new string */
+    token_len = flb_sds_len(ctx->u_auth->token_type) + 2 +
+                    flb_sds_len(ctx->u_auth->access_token);
+    flb_plg_debug(ctx->ins, "create token header string");
+    /* Now create */
+    token_return = flb_sds_create_size(token_len);
+    if (!token_return) {
+        flb_plg_error(ctx->ins, "error creating token buffer");
+        goto token_cleanup;
+    }
+    flb_sds_snprintf(&token_return, flb_sds_alloc(token_return), "%s %s",
+                        ctx->u_auth->token_type, ctx->u_auth->access_token);
+
+token_cleanup:
     if (pthread_mutex_unlock(&ctx->token_mutex)) {
         flb_plg_error(ctx->ins, "error unlocking mutex");
         return NULL;
     }
 
-    return ctx->token;
+    return token_return;
 }
 
 static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
@@ -307,7 +301,7 @@ static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
                         final_payload, final_payload_size, NULL, 0, NULL, 0);
 
     if (!c) {
-        flb_plg_warn(ctx->ins, "retrying payload bytes=%d", flb_sds_len(final_payload_size));
+        flb_plg_warn(ctx->ins, "retrying payload bytes=%lu", final_payload_size);
         flush_status = FLB_RETRY;
         goto cleanup;
     }
@@ -343,7 +337,7 @@ static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
             else {
                 flb_plg_warn(ctx->ins, "http_status=%i", c->resp.status);
             }
-            flb_plg_debug(ctx->ins, "retrying payload bytes=%d", flb_sds_len(final_payload_size));
+            flb_plg_debug(ctx->ins, "retrying payload bytes=%lu", final_payload_size);
             flush_status = FLB_RETRY;
             goto cleanup;
         }
@@ -354,6 +348,7 @@ cleanup:
     if (json_payload) {
         flb_sds_destroy(json_payload);
     }
+
     /* release compressed payload */
     if (is_compressed == FLB_TRUE) {
         flb_free(final_payload);
@@ -364,6 +359,11 @@ cleanup:
     }
     if (u_conn) {
         flb_upstream_conn_release(u_conn);
+    }
+
+    /* destory token at last after HTTP call has finished */
+    if (token) {
+        flb_sds_destroy(token);
     }
     FLB_OUTPUT_RETURN(flush_status);
 }

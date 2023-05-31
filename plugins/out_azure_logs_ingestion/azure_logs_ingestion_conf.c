@@ -33,7 +33,7 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
     struct flb_az_li *ctx;
     (void) ins;
     (void) config;
-    
+
     /* Allocate a new context object for this output instance */
     ctx = flb_calloc(1, sizeof(struct flb_az_li));
     if (!ctx) {
@@ -129,7 +129,7 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
     }
 
     /* Create upstream context for Log Ingsetion endpoint */
-    ctx->u_dce = flb_upstream_create_url(config, ctx->dce_url, 
+    ctx->u_dce = flb_upstream_create_url(config, ctx->dce_url,
                                         FLB_AZ_LI_TLS_MODE, ins->tls);
     if (!ctx->u_dce) {
         flb_plg_error(ins, "upstream creation failed");
@@ -157,10 +157,6 @@ int flb_az_li_ctx_destroy(struct flb_az_li *ctx)
 
     if (ctx->dce_u_url) {
         flb_sds_destroy(ctx->dce_u_url);
-    }
-
-    if (ctx->token) {
-        flb_sds_destroy(ctx->token);
     }
 
     if (ctx->u_auth) {
