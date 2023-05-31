@@ -174,6 +174,23 @@ void k8s_events_conf_destroy(struct k8s_events *ctx)
         cfl_sds_destroy(ctx->last_resource_version);
     }
 
+
+    if (ctx->api_host) {
+        flb_free(ctx->api_host);
+    }
+    if (ctx->token) {
+        flb_free(ctx->token);
+    }
+    if (ctx->auth) {
+        flb_free(ctx->auth);
+    }
+
+#ifdef FLB_HAVE_TLS
+    if (ctx->tls) {
+        flb_tls_destroy(ctx->tls);
+    }
+#endif
+
     flb_free(ctx);
 }
 

@@ -86,6 +86,10 @@ static int get_http_auth_header(struct k8s_events *ctx)
     char *tk = NULL;
     size_t tk_size = 0;
 
+    if (!ctx->token_file) {
+        return 0;
+    }
+
     ret = file_to_buffer(ctx->token_file, &tk, &tk_size);
     if (ret == -1) {
         flb_plg_warn(ctx->ins, "cannot open %s", ctx->token_file);
@@ -337,7 +341,7 @@ static int k8s_events_collect(struct flb_input_instance *ins,
     }
 
     c = flb_http_client(u_conn, FLB_HTTP_GET, K8S_EVENTS_KUBE_API_URI,
-                        NULL, 0, ctx->ins->host.name, ctx->ins->host.port, NULL, 0);
+                        NULL, 0, ctx->api_host, ctx->api_port, NULL, 0);
     if (!c) {
         flb_plg_error(ins, "unable to create http client");
         goto exit;
@@ -355,17 +359,17 @@ static int k8s_events_collect(struct flb_input_instance *ins,
         goto exit;
     }
 
-    if (c->resp.status != 200) {
-        flb_plg_error(ins, "http status code error: %d", c->resp.status);
-        goto exit;
+    if (c->resp.status == 200) {
+        ret = process_events(ctx, c->resp.payload, c->resp.payload_size);
     }
-
-    if (c->resp.payload_size <= 0) {
-        flb_plg_error(ins, "empty response");
-        goto exit;
+    else {
+        if (c->resp.payload_size > 0) {
+            flb_plg_error(ctx->ins, "http_status=%i:\n%s", c->resp.status, c->resp.payload);
+        }
+        else {
+            flb_plg_error(ctx->ins, "http_status=%i", c->resp.status);
+        }
     }
-
-    ret = process_events(ctx, c->resp.payload, c->resp.payload_size);
 
 exit:
     if (c) {
@@ -413,6 +417,28 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "kube_url", "https://kubernetes.default.svc",
      0, FLB_FALSE, 0,
      "Kubernetes API server URL"
+    },
+
+    /* TLS: set debug 'level' */
+    {
+     FLB_CONFIG_MAP_INT, "tls.debug", "0",
+     0, FLB_TRUE, offsetof(struct k8s_events, tls_debug),
+     "set TLS debug level: 0 (no debug), 1 (error), "
+     "2 (state change), 3 (info) and 4 (verbose)"
+    },
+
+    /* TLS: enable verification */
+    {
+     FLB_CONFIG_MAP_BOOL, "tls.verify", "true",
+     0, FLB_TRUE, offsetof(struct k8s_events, tls_verify),
+     "enable or disable verification of TLS peer certificate"
+    },
+
+    /* TLS: set tls.vhost feature */
+    {
+     FLB_CONFIG_MAP_STR, "tls.vhost", NULL,
+     0, FLB_TRUE, offsetof(struct k8s_events, tls_vhost),
+     "set optional TLS virtual host"
     },
 
     /* Kubernetes TLS: CA file */
