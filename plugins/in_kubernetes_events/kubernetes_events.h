@@ -50,7 +50,9 @@ struct k8s_events {
     /* Kubernetes Token from FLB_KUBE_TOKEN file */
     char *token_file;
     char *token;
+    int token_ttl;
     size_t token_len;
+    int token_created;
 
     /* Pre-formatted HTTP Authorization header value */
     char *auth;

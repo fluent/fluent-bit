@@ -25,28 +25,135 @@
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_strptime.h>
+#include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
 #include "kubernetes_events.h"
 #include "kubernetes_events_conf.h"
 
-static int timestamp_lookup(struct k8s_events *ctx, char *ts, struct flb_time *tm)
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+static int file_to_buffer(const char *path,
+                          char **out_buf, size_t *out_size)
 {
-    time_t time;
-    struct tm t = {0};
+    int ret;
+    char *buf;
+    ssize_t bytes;
+    FILE *fp;
+    struct stat st;
 
-    if (strptime(ts, "%Y-%m-%dT%H:%M:%SZ", &t) == NULL) {
+    if (!(fp = fopen(path, "r"))) {
         return -1;
     }
 
-    time = mktime(&t);
-    if (time == -1) {
-        flb_plg_error(ctx->ins, "invalid timestamp '%s'", ts);
+    ret = stat(path, &st);
+    if (ret == -1) {
+        flb_errno();
+        fclose(fp);
         return -1;
     }
 
-    tm->tm.tv_sec = time;
-    tm->tm.tv_nsec = 0;
+    buf = flb_calloc(1, (st.st_size + 1));
+    if (!buf) {
+        flb_errno();
+        fclose(fp);
+        return -1;
+    }
+
+    bytes = fread(buf, st.st_size, 1, fp);
+    if (bytes < 1) {
+        flb_free(buf);
+        fclose(fp);
+        return -1;
+    }
+
+    fclose(fp);
+
+    *out_buf = buf;
+    *out_size = st.st_size;
+
+    return 0;
+}
+
+/* Set K8s Authorization Token and get HTTP Auth Header */
+static int get_http_auth_header(struct k8s_events *ctx)
+{
+    int ret;
+    char *temp;
+    char *tk = NULL;
+    size_t tk_size = 0;
+
+    ret = file_to_buffer(ctx->token_file, &tk, &tk_size);
+    if (ret == -1) {
+        flb_plg_warn(ctx->ins, "cannot open %s", ctx->token_file);
+        return -1;
+    }
+    ctx->token_created = time(NULL);
+
+    /* Token */
+    if (ctx->token != NULL) {
+        flb_free(ctx->token);
+    }
+    ctx->token = tk;
+    ctx->token_len = tk_size;
+
+    /* HTTP Auth Header */
+    if (ctx->auth == NULL) {
+        ctx->auth = flb_malloc(tk_size + 32);
+    }
+    else if (ctx->auth_len < tk_size + 32) {
+        temp = flb_realloc(ctx->auth, tk_size + 32);
+        if (temp == NULL) {
+            flb_errno();
+            flb_free(ctx->auth);
+            ctx->auth = NULL;
+            return -1;
+        }
+        ctx->auth = temp;
+    }
+
+    if (!ctx->auth) {
+        return -1;
+    }
+
+    ctx->auth_len = snprintf(ctx->auth, tk_size + 32, "Bearer %s", tk);
+    return 0;
+}
+
+/* Refresh HTTP Auth Header if K8s Authorization Token is expired */
+static int refresh_token_if_needed(struct k8s_events *ctx)
+{
+    int expired = FLB_FALSE;
+    int ret;
+
+    if (ctx->token_created > 0) {
+        if (time(NULL) > ctx->token_created + ctx->token_ttl) {
+            expired = FLB_TRUE;
+        }
+    }
+
+    if (expired || ctx->token_created == 0) {
+        ret = get_http_auth_header(ctx);
+        if (ret == -1) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+static int timestamp_lookup(struct k8s_events *ctx, char *ts, struct flb_time *time)
+{
+    struct flb_tm tm;
+
+    if (flb_strptime(ts, "%Y-%m-%dT%H:%M:%SZ", &tm) == NULL) {
+        return -1;
+    }
+
+    time->tm.tv_sec = flb_parser_tm2time(&tm);
+    time->tm.tv_nsec = 0;
 
     return 0;
 }
@@ -223,6 +330,12 @@ static int k8s_events_collect(struct flb_input_instance *ins,
         goto exit;
     }
 
+    ret = refresh_token_if_needed(ctx);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "failed to refresh token");
+        goto exit;
+    }
+
     c = flb_http_client(u_conn, FLB_HTTP_GET, K8S_EVENTS_KUBE_API_URI,
                         NULL, 0, ctx->ins->host.name, ctx->ins->host.port, NULL, 0);
     if (!c) {
@@ -230,6 +343,11 @@ static int k8s_events_collect(struct flb_input_instance *ins,
         goto exit;
     }
     flb_http_buffer_size(c, 0);
+
+    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+    if (ctx->auth_len > 0) {
+        flb_http_add_header(c, "Authorization", 13, ctx->auth, ctx->auth_len);
+    }
 
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {
@@ -316,6 +434,13 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "kube_token_file", K8S_EVENTS_KUBE_TOKEN,
      0, FLB_TRUE, offsetof(struct k8s_events, token_file),
      "Kubernetes authorization token file"
+    },
+
+    /* Kubernetes Token file TTL */
+    {
+     FLB_CONFIG_MAP_TIME, "kube_token_ttl", "10m",
+     0, FLB_TRUE, offsetof(struct k8s_events, token_ttl),
+     "kubernetes token ttl, until it is reread from the token file. Default: 10m"
     },
 
     /* EOF */
