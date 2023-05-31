@@ -17,6 +17,10 @@
  *  limitations under the License.
  */
 
+
+#include <sys/types.h>
+#include <sys/stat.h>
+
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_pack.h>
@@ -28,13 +32,10 @@
 #include <fluent-bit/flb_strptime.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_compat.h>
 
 #include "kubernetes_events.h"
 #include "kubernetes_events_conf.h"
-
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
 static int file_to_buffer(const char *path,
                           char **out_buf, size_t *out_size)
