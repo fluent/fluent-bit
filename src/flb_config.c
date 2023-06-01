@@ -177,6 +177,10 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, enable_hot_reload)},
 
+    {FLB_CONF_STR_HOT_RELOAD_ENSURE_THREAD_SAFETY,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, ensure_thread_safety_on_hot_reloading)},
+
     {NULL, FLB_CONF_TYPE_OTHER, 0} /* end of array */
 };
 

@@ -257,6 +257,7 @@ struct flb_config {
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
     int enable_hot_reload;
+    int ensure_thread_safety_on_hot_reloading;
 
     /* Co-routines */
     unsigned int coro_stack_size;
@@ -337,6 +338,7 @@ enum conf_type {
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
 #define FLB_CONF_STR_HOT_RELOAD        "Hot_Reload"
+#define FLB_CONF_STR_HOT_RELOAD_ENSURE_THREAD_SAFETY  "Hot_Reload.Ensure_Thread_Safety"
 
 /* DNS */
 #define FLB_CONF_DNS_MODE              "dns.mode"
