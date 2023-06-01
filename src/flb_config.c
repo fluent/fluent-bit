@@ -272,6 +272,9 @@ struct flb_config *flb_config_init()
     config->sched_cap  = FLB_SCHED_CAP;
     config->sched_base = FLB_SCHED_BASE;
 
+    /* reload */
+    config->ensure_thread_safety_on_hot_reloading = FLB_TRUE;
+
 #ifdef FLB_HAVE_SQLDB
     mk_list_init(&config->sqldb_list);
 #endif
