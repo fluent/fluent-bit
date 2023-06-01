@@ -150,7 +150,7 @@ static void flb_help(int rc, struct flb_config *config)
     print_opt("-q, --quiet", "quiet mode");
     print_opt("-S, --sosreport", "support report for Enterprise customers");
     print_opt("-Y, --enable-hot-reload", "enable for hot reloading");
-    print_opt("-W, --ensure-thread-safety-on-hot-reloading", "ensure thread safety on hot reloading");
+    print_opt("-W, --disable-thread-safety-on-hot-reloading", "disable thread safety on hot reloading");
     print_opt("-V, --version", "show version number");
     print_opt("-h, --help", "print this help");
 
@@ -805,7 +805,7 @@ int flb_main(int argc, char **argv)
 #ifdef FLB_HAVE_CHUNK_TRACE
         { "enable-chunk-trace",    no_argument, NULL, 'Z' },
 #endif
-        { "ensure-thread-safety-on-hot-reload", no_argument, NULL, 'W' },
+        { "disable-thread-safety-on-hot-reload", no_argument, NULL, 'W' },
         { NULL, 0, NULL, 0 }
     };
 
@@ -992,7 +992,7 @@ int flb_main(int argc, char **argv)
             break;
         case 'W':
             flb_cf_section_property_add(cf_opts, service->properties,
-                                        FLB_CONF_STR_HOT_RELOAD_ENSURE_THREAD_SAFETY, 0, "on", 0);
+                                        FLB_CONF_STR_HOT_RELOAD_ENSURE_THREAD_SAFETY, 0, "off", 0);
             break;
 #ifdef FLB_HAVE_CHUNK_TRACE
         case 'Z':
