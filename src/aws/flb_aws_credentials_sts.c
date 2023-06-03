@@ -135,7 +135,7 @@ struct flb_aws_credentials *get_credentials_fn_sts(struct flb_aws_provider
     }
 
     /* return a copy of the existing cached credentials */
-    creds = flb_malloc(sizeof(struct flb_aws_credentials));
+    creds = flb_calloc(1, sizeof(struct flb_aws_credentials));
     if (!creds) {
         goto error;
     }
