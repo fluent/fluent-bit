@@ -111,7 +111,7 @@ struct flb_aws_credentials *get_credentials_fn_profile(struct flb_aws_provider
         }
     }
 
-    creds = flb_malloc(sizeof(struct flb_aws_credentials));
+    creds = flb_calloc(1, sizeof(struct flb_aws_credentials));
     if (!creds) {
         flb_errno();
         goto error;
