@@ -399,7 +399,7 @@ static flb_sds_t url_params_format(char *params)
         return flb_sds_create("");
     }
 
-    arr = flb_malloc(sizeof(struct flb_kv *) * items);
+    arr = flb_calloc(1, sizeof(struct flb_kv *) * items);
     if (!arr) {
         flb_errno();
         flb_kv_release(&list);
@@ -825,7 +825,7 @@ static flb_sds_t flb_signv4_canonical_request(struct flb_http_client *c,
     all_items = mk_list_size(&list_tmp);
     excluded_items = 0;
     size = (sizeof(struct flb_kv *) * (all_items));
-    arr = flb_malloc(size);
+    arr = flb_calloc(1, size);
     if (!arr) {
         flb_errno();
         flb_kv_release(&list_tmp);
@@ -1164,7 +1164,7 @@ flb_sds_t flb_signv4_do(struct flb_http_client *c, int normalize_uri,
         return NULL;
     }
 
-    gmt = flb_malloc(sizeof(struct tm));
+    gmt = flb_calloc(1, sizeof(struct tm));
     if (!gmt) {
         flb_errno();
         flb_aws_credentials_destroy(creds);
