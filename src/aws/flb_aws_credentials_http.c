@@ -250,6 +250,8 @@ struct flb_aws_provider *flb_http_provider_create(struct flb_config *config,
         return NULL;
     }
 
+    pthread_mutex_init(&provider->lock, NULL);
+
     implementation = flb_calloc(1, sizeof(struct flb_aws_provider_http));
 
     if (!implementation) {
