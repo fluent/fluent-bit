@@ -165,7 +165,7 @@ static int refresh_token_if_needed(struct k8s_events *ctx)
 }
 static int timestamp_lookup(struct k8s_events *ctx, char *ts, struct flb_time *time)
 {
-    struct flb_tm tm;
+    struct flb_tm tm = { 0 };
 
     if (flb_strptime(ts, "%Y-%m-%dT%H:%M:%SZ", &tm) == NULL) {
         return -1;
@@ -220,7 +220,7 @@ static int record_get_field_sds(msgpack_object *obj, const char *fieldname, flb_
 static int record_get_field_time(msgpack_object *obj, const char *fieldname, time_t *val)
 {
     msgpack_object *v;
-    struct flb_tm tm;
+    struct flb_tm tm = { 0 };
 
     v = record_get_field_ptr(obj, fieldname);
     if (v == NULL) {
