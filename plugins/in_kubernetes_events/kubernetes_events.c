@@ -338,6 +338,10 @@ static int k8s_events_collect(struct flb_input_instance *ins,
     struct flb_http_client *c = NULL;
     struct k8s_events *ctx = in_context;
 
+    if (pthread_mutex_trylock(&ctx->lock) != 0) {
+        FLB_INPUT_RETURN(0);
+    }
+
     u_conn = flb_upstream_conn_get(ctx->upstream);
     if (!u_conn) {
         flb_plg_error(ins, "upstream connection initialization error");
@@ -382,6 +386,7 @@ static int k8s_events_collect(struct flb_input_instance *ins,
     }
 
 exit:
+    pthread_mutex_unlock(&ctx->lock);
     if (c) {
         flb_http_client_destroy(c);
     }
