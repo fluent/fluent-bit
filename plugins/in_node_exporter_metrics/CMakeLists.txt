@@ -16,6 +16,7 @@ set(src
   ne_utils.c
   ne_config.c
   ne_systemd.c
+  ne_thermalzone.c
   ne.c
   )
 
