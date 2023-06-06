@@ -41,6 +41,7 @@ static int file_to_buffer(const char *path,
                           char **out_buf, size_t *out_size)
 {
     int ret;
+    int len;
     char *buf;
     ssize_t bytes;
     FILE *fp;
@@ -73,8 +74,16 @@ static int file_to_buffer(const char *path,
 
     fclose(fp);
 
+    // trim new lines
+    for (len = st.st_size; len > 0; len--) {
+        if (buf[len-1] != '\n' && buf[len-1] != '\r') {
+            break;
+        }
+    }
+    buf[len] = '\0';
+
     *out_buf = buf;
-    *out_size = st.st_size;
+    *out_size = len;
 
     return 0;
 }
