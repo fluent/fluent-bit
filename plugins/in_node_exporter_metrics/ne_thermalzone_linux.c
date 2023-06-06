@@ -25,6 +25,10 @@
 
 #include <unistd.h>
 
+#define THERMAL_ZONE_PATTERN "/class/thermal/thermal_zone"
+#define COOLING_DEVICE_PATTERN "/class/thermal/cooling_device"
+
+
 /*
  * See kernel documentation for a description:
  * https://www.kernel.org/doc/html/latest/filesystems/proc.html
@@ -90,16 +94,29 @@ int ne_thermalzone_update_thermal_zones(struct flb_ne *ctx)
     struct mk_list list;
     struct flb_slist_entry *entry;
     flb_sds_t type;
-    const char *pattern = "/class/thermal/thermal_zone[0-9]*";
+    flb_sds_t syspfx = flb_sds_create_size(strlen(THERMAL_ZONE_PATTERN) + 
+                                           strlen(ctx->path_sysfs) + 8);
+    char *num;
+    const char *pattern = THERMAL_ZONE_PATTERN "[0-9]*";
 
     ts = cfl_time_now();
 
+    if (ctx->path_sysfs[strlen(ctx->path_sysfs)-1] == '/') {
+        flb_sds_cat_safe(&syspfx, ctx->path_sysfs, strlen(ctx->path_sysfs)-1);
+    } else {
+        flb_sds_cat_safe(&syspfx, ctx->path_sysfs, strlen(ctx->path_sysfs));
+    }
+    flb_sds_cat_safe(&syspfx, THERMAL_ZONE_PATTERN,
+                     strlen(THERMAL_ZONE_PATTERN));
+
     ret = ne_utils_path_scan(ctx, ctx->path_sysfs, pattern, NE_SCAN_DIR, &list);
     if (ret != 0) {
+        flb_sds_destroy(syspfx);
         return -1;
     }
 
     if (mk_list_size(&list) == 0) {
+        flb_sds_destroy(syspfx);
         return 0;
     }
 
@@ -122,12 +139,20 @@ int ne_thermalzone_update_thermal_zones(struct flb_ne *ctx)
             continue;
         }
 
+        if (strncmp(entry->str, syspfx, strlen(syspfx)) == 0) {
+            num = &entry->str[strlen(syspfx)];
+        } else {
+            num = entry->str;
+        }
+
         cmt_gauge_set(ctx->thermalzone_temp, ts, ((double)temp)/1000.0,
-                    2, (char *[]) {&entry->str[strlen("/sys/class/thermal/thermal_zone")], type});
+                    2, (char *[]) {num, type});
+
         flb_sds_destroy(type);
     }
 
     flb_slist_destroy(&list);
+    flb_sds_destroy(syspfx);
 
     return 0;
 }
@@ -142,25 +167,33 @@ int ne_thermalzone_update_cooling_devices(struct flb_ne *ctx)
     struct mk_list list;
     struct flb_slist_entry *entry;
     flb_sds_t type;
+    char *num;
+    flb_sds_t syspfx = flb_sds_create_size(strlen(COOLING_DEVICE_PATTERN) + 
+                                           strlen(ctx->path_sysfs) + 8);
     const char *pattern = "/class/thermal/cooling_device[0-9]*";
-    /* Status arrays */
-    uint64_t core_throttles_set[32][256];
-    uint64_t package_throttles_set[32];
+
 
     ts = cfl_time_now();
 
+    if (ctx->path_sysfs[strlen(ctx->path_sysfs)-1] == '/') {
+        flb_sds_cat_safe(&syspfx, ctx->path_sysfs, strlen(ctx->path_sysfs)-1);
+    } else {
+        flb_sds_cat_safe(&syspfx, ctx->path_sysfs, strlen(ctx->path_sysfs));
+    }
+    flb_sds_cat_safe(&syspfx, COOLING_DEVICE_PATTERN, 
+                     strlen(COOLING_DEVICE_PATTERN));
+
+
     ret = ne_utils_path_scan(ctx, ctx->path_sysfs, pattern, NE_SCAN_DIR, &list);
     if (ret != 0) {
+        flb_sds_destroy(syspfx);
         return -1;
     }
 
     if (mk_list_size(&list) == 0) {
+        flb_sds_destroy(syspfx);
         return 0;
     }
-
-    /* Reset arrays status */
-    memset(&core_throttles_set, 0, sizeof(core_throttles_set));
-    memset(&package_throttles_set, 0, sizeof(package_throttles_set));
 
     /* Process entries */
     mk_list_foreach(head, &list) {
@@ -189,14 +222,21 @@ int ne_thermalzone_update_cooling_devices(struct flb_ne *ctx)
             continue;
         }
 
+        if (strncmp(entry->str, syspfx, strlen(syspfx)) == 0) {
+            num = &entry->str[strlen(syspfx)];
+        } else {
+            num = entry->str;
+        }
+
         cmt_gauge_set(ctx->cooling_device_cur_state, ts, ((double)cur_state),
-                    2, (char *[]) {&entry->str[strlen("/sys/class/thermal/cooling_device")], type});
+                    2, (char *[]) {num, type});
         cmt_gauge_set(ctx->cooling_device_max_state, ts, ((double)max_state),
-                    2, (char *[]) {&entry->str[strlen("/sys/class/thermal/cooling_device")], type});
+                    2, (char *[]) {num, type});
         flb_sds_destroy(type);
     }
 
     flb_slist_destroy(&list);
+    flb_sds_destroy(syspfx);
 
     return 0;
 }
