@@ -24,14 +24,18 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_sqldb.h>
+
 #define DEFAULT_INTERVAL_SEC "0"
 #define DEFAULT_INTERVAL_NSEC "500000"
 
 /* Filter context */
 struct k8s_events {
     int coll_id;
+    int coll_cleanup_id;
     int interval_sec;             /* interval collection time (Second)     */
     int interval_nsec;            /* interval collection time (Nanosecond) */
+    int retention_time;           /* retention time limit, default 1 hour */
 
     /* Configuration parameters */
     char *api_host;
@@ -69,10 +73,6 @@ struct k8s_events {
 
     struct flb_log_event_encoder *encoder;
 
-    /* metadata state */
-    cfl_sds_t last_resource_version;
-    cfl_sds_t last_continue;
-
     /* record accessor */
     struct flb_record_accessor *ra_timestamp;
     struct flb_record_accessor *ra_resource_version;
@@ -81,6 +81,22 @@ struct k8s_events {
     struct flb_config *config;
     struct flb_upstream *upstream;
     struct flb_input_instance *ins;
+
+    /* limit for event queries */
+    int limit_request;
+    /* last highest seen resource_version */
+    uint64_t last_resource_version;
+
+#ifdef FLB_HAVE_SQLDB
+    /* State database */
+    struct flb_sqldb *db;
+    int db_sync;
+    int db_locking;
+    flb_sds_t db_journal_mode;
+    sqlite3_stmt *stmt_get_kubernetes_event_exists_by_uid;
+    sqlite3_stmt *stmt_insert_kubernetes_event;
+    sqlite3_stmt *stmt_delete_old_kubernetes_events;
+#endif
 
     /* concurrency lock */
     pthread_mutex_t lock;

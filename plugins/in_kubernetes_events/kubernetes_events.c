@@ -37,6 +37,10 @@
 #include "kubernetes_events.h"
 #include "kubernetes_events_conf.h"
 
+#ifdef FLB_HAVE_SQLDB
+#include "kubernetes_events_sql.h"
+static int k8s_events_sql_insert_event(struct k8s_events *ctx, msgpack_object *item);
+#endif
 
 static int file_to_buffer(const char *path,
                           char **out_buf, size_t *out_size)
@@ -173,28 +177,204 @@ static int timestamp_lookup(struct k8s_events *ctx, char *ts, struct flb_time *t
     return 0;
 }
 
-static int process_events(struct k8s_events *ctx, char *in_data, size_t in_size)
+static msgpack_object *record_get_field_ptr(msgpack_object *obj, const char *fieldname)
 {
     int i;
+    msgpack_object *k;
+    msgpack_object *v;
+
+    if (obj->type != MSGPACK_OBJECT_MAP) {
+        return NULL;
+    }
+
+    for (i = 0; i < obj->via.map.size; i++) {
+        k = &obj->via.map.ptr[i].key;
+        if (k->type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
+
+        if (strncmp(k->via.str.ptr, fieldname, strlen(fieldname)) == 0) {
+            v = &obj->via.map.ptr[i].val;
+            return v;
+        }
+    }
+    return NULL;
+}
+
+static int record_get_field_sds(msgpack_object *obj, const char *fieldname, flb_sds_t *val)
+{
+    msgpack_object *v;
+
+    v = record_get_field_ptr(obj, fieldname);
+    if (v == NULL) {
+        return 0;
+    }
+    if (v->type != MSGPACK_OBJECT_STR) {
+        return -1;
+    }
+
+    *val = flb_sds_create_len(v->via.str.ptr, v->via.str.size);
+    return 0;
+}
+
+static int record_get_field_time(msgpack_object *obj, const char *fieldname, time_t *val)
+{
+    msgpack_object *v;
+    struct flb_tm tm;
+
+    v = record_get_field_ptr(obj, fieldname);
+    if (v == NULL) {
+        return -1;
+    }
+    if (v->type != MSGPACK_OBJECT_STR) {
+        return -1;
+    }
+
+    if (flb_strptime(v->via.str.ptr, "%Y-%m-%dT%H:%M:%SZ", &tm) == NULL) {
+        return -2;
+    }
+
+    *val = mktime(&tm.tm);
+    return 0;
+}
+
+static int record_get_field_uint64(msgpack_object *obj, const char *fieldname, uint64_t *val)
+{
+    msgpack_object *v;
+    char *end;
+
+    v = record_get_field_ptr(obj, fieldname);
+    if (v == NULL) {
+        return -1;
+    }
+
+    // attempt to parse string as number...
+    if (v->type == MSGPACK_OBJECT_STR) {
+        *val = strtoul(v->via.str.ptr, &end, 10);
+        if (end == NULL || (end < v->via.str.ptr + v->via.str.size)) {
+            return -1;
+        }
+        return 0;
+    }
+
+    if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER || MSGPACK_OBJECT_NEGATIVE_INTEGER) {
+        *val = v->via.u64;
+        return 0;
+    }
+    if (v->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
+        *val = (uint64_t)v->via.i64;
+        return 0;
+    }
+    return -1;
+}
+
+static bool check_event_is_filtered(struct k8s_events *ctx, msgpack_object *obj)
+{
     int ret;
+    time_t last;
+    time_t now;
+    msgpack_object *metadata;
+    flb_sds_t uid;
+    uint64_t resource_version;
+
+    ret = record_get_field_time(obj, "lastTimestamp", &last);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "Cannot get lastTimestamp for item in response");
+        return FLB_FALSE;
+    }
+
+    now = (time_t)(cfl_time_now() / 1000000000);
+    if (last < (now - ctx->retention_time)) {
+        flb_plg_debug(ctx->ins, "Item is older than retention_time: %ld < %ld",
+                      last,  (now - ctx->retention_time));
+        return FLB_TRUE;
+    }
+
+    metadata = record_get_field_ptr(obj, "metadata");
+    if (metadata == NULL) {
+        flb_plg_error(ctx->ins, "Cannot unpack item metadata in response");
+        return FLB_FALSE;
+    }
+
+    ret = record_get_field_uint64(metadata, "resourceVersion", &resource_version);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "Cannot get resourceVersion for item in response");
+        return FLB_FALSE;
+    }
+
+    ret = record_get_field_sds(metadata, "uid", &uid);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "Cannot get resourceVersion for item in response");
+        return FLB_FALSE;
+    }
+
+
+#ifdef FLB_HAVE_SQLDB
+    bool exists;
+
+
+    if (ctx->db) {
+        sqlite3_bind_text(ctx->stmt_get_kubernetes_event_exists_by_uid,
+                           1, uid, -1, NULL);
+        ret = sqlite3_step(ctx->stmt_get_kubernetes_event_exists_by_uid);
+        if (ret != SQLITE_ROW) {
+            if (ret != SQLITE_DONE) {
+                flb_plg_error(ctx->ins, "cannot execute kubernetes event exists");
+            }
+            sqlite3_clear_bindings(ctx->stmt_get_kubernetes_event_exists_by_uid);
+            sqlite3_reset(ctx->stmt_get_kubernetes_event_exists_by_uid);
+            flb_sds_destroy(uid);
+            return FLB_FALSE;
+        }
+
+        exists = sqlite3_column_int64(ctx->stmt_get_kubernetes_event_exists_by_uid, 0);
+
+        flb_plg_debug(ctx->ins, "is_filtered: uid=%s exists=%d", uid, exists);
+        sqlite3_clear_bindings(ctx->stmt_get_kubernetes_event_exists_by_uid);
+        sqlite3_reset(ctx->stmt_get_kubernetes_event_exists_by_uid);
+        flb_sds_destroy(uid);
+
+        return exists > 0 ? FLB_TRUE : FLB_FALSE;
+    }
+#endif
+
+    // check if this is an old event.
+    if (ctx->last_resource_version && resource_version <= ctx->last_resource_version) {
+        flb_plg_debug(ctx->ins, "skipping old object: %lu (< %lu)", resource_version,
+                        ctx->last_resource_version);
+        flb_sds_destroy(uid);
+        return FLB_TRUE;
+    }
+
+    flb_sds_destroy(uid);
+    return FLB_FALSE;
+}
+
+static int process_events(struct k8s_events *ctx, char *in_data, size_t in_size, uint64_t *max_resource_version, flb_sds_t *continue_token)
+{
+    int i;
+    int ret = -1;
     int root_type;
-    int items_found = FLB_FALSE;
     size_t consumed = 0;
     char *buf_data;
     size_t buf_size;
     size_t off = 0;
     struct flb_time ts;
     struct flb_ra_value *rval;
+    uint64_t resource_version;
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object k;
-    msgpack_object items;
-    msgpack_object entry;
+    msgpack_object *items = NULL;
+    msgpack_object *item = NULL;
+    msgpack_object *item_metadata = NULL;
+    msgpack_object *metadata = NULL;
+
 
     ret = flb_pack_json(in_data, in_size, &buf_data, &buf_size, &root_type, &consumed);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not process payload, incomplete or bad formed JSON");
-        return -1;
+        goto json_error;
     }
 
     /* unpack */
@@ -202,121 +382,125 @@ static int process_events(struct k8s_events *ctx, char *in_data, size_t in_size)
     ret = msgpack_unpack_next(&result, buf_data, buf_size, &off);
     if (ret != MSGPACK_UNPACK_SUCCESS) {
         flb_plg_error(ctx->ins, "Cannot unpack response");
-        flb_free(buf_data);
-        return -1;
+        goto unpack_error;
     }
 
     /* lookup the items array */
     root = result.data;
+    if (root.type != MSGPACK_OBJECT_MAP) {
+        return -1;
+    }
+
+    // Traverse the EventList for the metadata (for the continue token) and the items.
+    // https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/#EventList
     for (i = 0; i < root.via.map.size; i++) {
         k = root.via.map.ptr[i].key;
-
         if (k.type != MSGPACK_OBJECT_STR) {
             continue;
         }
 
-        if (k.via.str.size != 5) {
+        if (strncmp(k.via.str.ptr, "items", 5) == 0) {
+            items = &root.via.map.ptr[i].val;
+            if (items->type != MSGPACK_OBJECT_ARRAY) {
+                flb_plg_error(ctx->ins, "Cannot unpack items");
+                goto msg_error;
+            }
+        }
+
+        if (strncmp(k.via.str.ptr, "metadata", 8) == 0) {
+            metadata = &root.via.map.ptr[i].val;
+            if (metadata->type != MSGPACK_OBJECT_MAP) {
+                flb_plg_error(ctx->ins, "Cannot unpack metadata");
+                goto msg_error;
+            }
+        }
+    }
+
+    if (items == NULL) {
+        flb_plg_error(ctx->ins, "Cannot find items in response");
+        goto msg_error;
+    }
+
+    if (metadata == NULL) {
+        flb_plg_error(ctx->ins, "Cannot find metatada in response");
+        goto msg_error;
+    }
+
+    ret = record_get_field_sds(metadata, "continue", continue_token);
+    if (ret == -1) {
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "Cannot process continue token");
+            goto msg_error;
+        }
+    }
+
+    for (i = 0; i < items->via.array.size; i++) {
+        if (items->via.array.ptr[i].type != MSGPACK_OBJECT_MAP) {
+            flb_plg_warn(ctx->ins, "Event that is not a map");
             continue;
         }
-
-        if (strncmp(k.via.str.ptr, "items", 5) != 0) {
+        item_metadata = record_get_field_ptr(&items->via.array.ptr[i], "metadata");
+        if (item_metadata == NULL) {
+            flb_plg_warn(ctx->ins, "Event without metadata");
             continue;
         }
-
-        items = root.via.map.ptr[i].val;
-        if (items.type != MSGPACK_OBJECT_ARRAY) {
-            flb_plg_error(ctx->ins, "Cannot unpack response");
-            break;
+        ret = record_get_field_uint64(item_metadata,
+                                      "resourceVersion", &resource_version);
+        if (ret == -1) {
+            continue;
         }
-
-        items_found = FLB_TRUE;
-        break;
-    }
-
-    if (!items_found) {
-        flb_plg_error(ctx->ins, "Cannot unpack response");
-        flb_free(buf_data);
-        msgpack_unpacked_destroy(&result);
-        return -1;
-    }
-
-    /* get the resourceVersion of the last item */
-    entry = items.via.array.ptr[items.via.array.size - 1];
-    if (entry.type != MSGPACK_OBJECT_MAP) {
-        flb_plg_error(ctx->ins, "Cannot unpack response");
-        flb_free(buf_data);
-        msgpack_unpacked_destroy(&result);
-        return -1;
-    }
-
-    /* lookup resourceVersion */
-    rval = flb_ra_get_value_object(ctx->ra_resource_version, entry);
-    if (!rval || rval->type != FLB_RA_STRING) {
-        flb_plg_error(ctx->ins, "cannot retrieve resourceVersion");
-        flb_free(buf_data);
-        msgpack_unpacked_destroy(&result);
-        return -1;
-    }
-
-    /* check if we should process this payload based on the last item resourceVersion */
-    if (ctx->last_resource_version) {
-        /* compare resourceVersion */
-        if (strcmp(rval->val.string, ctx->last_resource_version) == 0) {
-            flb_plg_debug(ctx->ins, "resourceVersion %s is equal to last resourceVersion %s, skipping payload",
-                          rval->val.string, ctx->last_resource_version);
-            flb_free(buf_data);
-            flb_ra_key_value_destroy(rval);
-            msgpack_unpacked_destroy(&result);
-            return 0;
-        }
-        else {
-            cfl_sds_destroy(ctx->last_resource_version);
-            ctx->last_resource_version = cfl_sds_create(rval->val.string);
+        if (resource_version > *max_resource_version) {
+            *max_resource_version = resource_version;
         }
     }
-    else {
-        ctx->last_resource_version = cfl_sds_create(rval->val.string);
-    }
-    flb_ra_key_value_destroy(rval);
 
     /* reset the log encoder */
     flb_log_event_encoder_reset(ctx->encoder);
 
     /* print every item from the items array */
-    for (i = 0; i < items.via.array.size; i++) {
-        entry = items.via.array.ptr[i];
-        if (entry.type != MSGPACK_OBJECT_MAP) {
-            flb_plg_error(ctx->ins, "Cannot unpack response");
-            break;
+    for (i = 0; i < items->via.array.size; i++) {
+        item = &items->via.array.ptr[i];
+        if (item->type != MSGPACK_OBJECT_MAP) {
+            flb_plg_error(ctx->ins, "Cannot unpack item in response");
+            goto msg_error;
         }
 
+        if (check_event_is_filtered(ctx, item) == FLB_TRUE) {
+            continue;
+        }
+
+#ifdef FLB_HAVE_SQLDB
+        if (ctx->db) {
+            k8s_events_sql_insert_event(ctx, item);
+        }
+#endif
+
         /* get event timestamp */
-        rval = flb_ra_get_value_object(ctx->ra_timestamp, entry);
+        rval = flb_ra_get_value_object(ctx->ra_timestamp, *item);
         if (!rval || rval->type != FLB_RA_STRING) {
             flb_plg_error(ctx->ins, "cannot retrieve event timestamp");
-            flb_free(buf_data);
-            msgpack_unpacked_destroy(&result);
-            return -1;
+            goto msg_error;
         }
 
         /* convert timestamp */
         ret = timestamp_lookup(ctx, rval->val.string, &ts);
         if (ret == -1) {
-            flb_free(buf_data);
+            flb_plg_error(ctx->ins, "cannot lookup event timestamp");
             flb_ra_key_value_destroy(rval);
-            msgpack_unpacked_destroy(&result);
-            return -1;
+            goto msg_error;
         }
-        flb_ra_key_value_destroy(rval);
 
         /* encode content as a log event */
         flb_log_event_encoder_begin_record(ctx->encoder);
         flb_log_event_encoder_set_timestamp(ctx->encoder, &ts);
 
-        ret = flb_log_event_encoder_set_body_from_msgpack_object(ctx->encoder, &entry);
+        ret = flb_log_event_encoder_set_body_from_msgpack_object(ctx->encoder, item);
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_commit_record(ctx->encoder);
+        } else {
+            flb_plg_warn(ctx->ins, "unable to encode: %lu", resource_version);
         }
+        flb_ra_key_value_destroy(rval);
     }
 
     if (ctx->encoder->output_length > 0) {
@@ -325,10 +509,135 @@ static int process_events(struct k8s_events *ctx, char *in_data, size_t in_size)
                              ctx->encoder->output_length);
     }
 
-    flb_free(buf_data);
+msg_error:
     msgpack_unpacked_destroy(&result);
+unpack_error:
+    flb_free(buf_data);
+json_error:
     return ret;
 }
+
+static struct flb_http_client *make_event_api_request(struct k8s_events *ctx,
+                                                      struct flb_connection *u_conn,
+                                                      flb_sds_t continue_token)
+{
+    flb_sds_t url;
+    struct flb_http_client *c;
+
+
+    if (continue_token == NULL && ctx->limit_request == 0) {
+        return flb_http_client(u_conn, FLB_HTTP_GET, K8S_EVENTS_KUBE_API_URI,
+                               NULL, 0, ctx->api_host, ctx->api_port, NULL, 0);
+    }
+
+    url = flb_sds_create(K8S_EVENTS_KUBE_API_URI);
+    flb_sds_cat_safe(&url, "?", 1);
+    if (ctx->limit_request) {
+        if (continue_token != NULL) {
+            flb_sds_printf(&url, "continue=%s&", continue_token);
+        }
+        flb_sds_printf(&url, "limit=%d", ctx->limit_request);
+    }
+    c = flb_http_client(u_conn, FLB_HTTP_GET, url,
+                        NULL, 0, ctx->api_host, ctx->api_port, NULL, 0);
+    flb_sds_destroy(url);
+    return c;
+}
+
+#ifdef FLB_HAVE_SQLDB
+
+static int k8s_events_cleanup_db(struct flb_input_instance *ins,
+                                 struct flb_config *config, void *in_context)
+{
+    int ret;
+    struct k8s_events *ctx = (struct k8s_events *)in_context;
+    time_t retention_time_ago;
+    time_t now = (cfl_time_now() / 1000000000);
+
+    if (ctx->db == NULL) {
+        FLB_INPUT_RETURN(0);
+    }
+
+    retention_time_ago = now - (ctx->retention_time);
+    sqlite3_bind_int64(ctx->stmt_delete_old_kubernetes_events,
+                        1, (int64_t)retention_time_ago);
+    ret = sqlite3_step(ctx->stmt_delete_old_kubernetes_events);
+    if (ret != SQLITE_ROW && ret != SQLITE_DONE) {
+        flb_plg_error(ctx->ins, "cannot execute delete old kubernetes events");
+    }
+
+    sqlite3_clear_bindings(ctx->stmt_delete_old_kubernetes_events);
+    sqlite3_reset(ctx->stmt_delete_old_kubernetes_events);
+
+    FLB_INPUT_RETURN(0);
+}
+
+static int k8s_events_sql_insert_event(struct k8s_events *ctx, msgpack_object *item)
+{
+    int ret;
+    uint64_t resource_version;
+    time_t last;
+    msgpack_object *meta;
+    flb_sds_t uid;
+
+
+    meta = record_get_field_ptr(item, "meta");
+    if (meta == NULL) {
+        flb_plg_error(ctx->ins, "unable to find metadata to save event");
+        return -1;
+    }
+
+    ret = record_get_field_uint64(meta, "resourceVersion", &resource_version);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "unable to find resourceVersion in metadata to save event");
+        return -1;
+    }
+
+    ret = record_get_field_sds(meta, "uid", &uid);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "unable to find uid in metadata to save event");
+        return -1;
+    }
+
+    ret = record_get_field_time(item, "lastTimestamp", &last);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "unable to find lastTimestamp in event to save it");
+        flb_sds_destroy(uid);
+        return -1;
+    }
+    if (ret == -2) {
+        flb_plg_error(ctx->ins, "unable to parse lastTimestamp in item to save event");
+        flb_sds_destroy(uid);
+        return -1;
+    }
+
+    /* Bind parameters */
+    sqlite3_bind_text(ctx->stmt_insert_kubernetes_event, 1, uid, -1, 0);
+    sqlite3_bind_int64(ctx->stmt_insert_kubernetes_event, 2, resource_version);
+    sqlite3_bind_int64(ctx->stmt_insert_kubernetes_event, 3, (int64_t)last);
+
+    /* Run the insert */
+    ret = sqlite3_step(ctx->stmt_insert_kubernetes_event);
+    if (ret != SQLITE_DONE) {
+        sqlite3_clear_bindings(ctx->stmt_insert_kubernetes_event);
+        sqlite3_reset(ctx->stmt_insert_kubernetes_event);
+        flb_plg_error(ctx->ins, "cannot execute insert kubernetes event %s inode=%lu",
+                      uid, resource_version);
+        flb_sds_destroy(uid);
+        return -1;
+    }
+
+    flb_plg_debug(ctx->ins,
+                  "inserted k8s event: uid=%s, resource_version=%lu, last=%ld",
+                  uid, resource_version, last);
+    sqlite3_clear_bindings(ctx->stmt_insert_kubernetes_event);
+    sqlite3_reset(ctx->stmt_insert_kubernetes_event);
+
+    flb_sds_destroy(uid);
+    return flb_sqldb_last_id(ctx->db);
+}
+
+#endif
 
 static int k8s_events_collect(struct flb_input_instance *ins,
                               struct flb_config *config, void *in_context)
@@ -338,6 +647,8 @@ static int k8s_events_collect(struct flb_input_instance *ins,
     struct flb_connection *u_conn = NULL;
     struct flb_http_client *c = NULL;
     struct k8s_events *ctx = in_context;
+    flb_sds_t continue_token = NULL;
+    uint64_t max_resource_version = 0;
 
     if (pthread_mutex_trylock(&ctx->lock) != 0) {
         FLB_INPUT_RETURN(0);
@@ -355,35 +666,47 @@ static int k8s_events_collect(struct flb_input_instance *ins,
         goto exit;
     }
 
-    c = flb_http_client(u_conn, FLB_HTTP_GET, K8S_EVENTS_KUBE_API_URI,
-                        NULL, 0, ctx->api_host, ctx->api_port, NULL, 0);
-    if (!c) {
-        flb_plg_error(ins, "unable to create http client");
-        goto exit;
-    }
-    flb_http_buffer_size(c, 0);
+    do {
+        c = make_event_api_request(ctx, u_conn, continue_token);
+        if (continue_token != NULL) {
+            flb_sds_destroy(continue_token);
+            continue_token = NULL;
+        }
+        if (!c) {
+            flb_plg_error(ins, "unable to create http client");
+            goto exit;
+        }
+        flb_http_buffer_size(c, 0);
 
-    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
-    if (ctx->auth_len > 0) {
-        flb_http_add_header(c, "Authorization", 13, ctx->auth, ctx->auth_len);
-    }
+        flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+        if (ctx->auth_len > 0) {
+            flb_http_add_header(c, "Authorization", 13, ctx->auth, ctx->auth_len);
+        }
 
-    ret = flb_http_do(c, &b_sent);
-    if (ret != 0) {
-        flb_plg_error(ins, "http do error");
-        goto exit;
-    }
+        ret = flb_http_do(c, &b_sent);
+        if (ret != 0) {
+            flb_plg_error(ins, "http do error");
+            goto exit;
+        }
 
-    if (c->resp.status == 200) {
-        ret = process_events(ctx, c->resp.payload, c->resp.payload_size);
-    }
-    else {
-        if (c->resp.payload_size > 0) {
-            flb_plg_error(ctx->ins, "http_status=%i:\n%s", c->resp.status, c->resp.payload);
+        if (c->resp.status == 200) {
+            ret = process_events(ctx, c->resp.payload, c->resp.payload_size, &max_resource_version, &continue_token);
         }
         else {
-            flb_plg_error(ctx->ins, "http_status=%i", c->resp.status);
+            if (c->resp.payload_size > 0) {
+                flb_plg_error(ctx->ins, "http_status=%i:\n%s", c->resp.status, c->resp.payload);
+            }
+            else {
+                flb_plg_error(ctx->ins, "http_status=%i", c->resp.status);
+            }
         }
+        flb_http_client_destroy(c);
+        c = NULL;
+    } while(continue_token != NULL);
+
+    if (max_resource_version > ctx->last_resource_version) {
+        flb_plg_debug(ctx->ins, "set last resourceVersion=%lu", max_resource_version);
+        ctx->last_resource_version = max_resource_version;
     }
 
 exit:
@@ -412,6 +735,16 @@ static int k8s_events_init(struct flb_input_instance *ins,
                                                 ctx->interval_sec,
                                                 ctx->interval_nsec,
                                                 config);
+
+#ifdef FLB_HAVE_SQLDB
+    if (ctx->db) {
+        ctx->coll_cleanup_id = flb_input_set_collector_time(ins,
+                                                            k8s_events_cleanup_db,
+                                                            ctx->interval_sec,
+                                                            ctx->interval_nsec,
+                                                            config);
+    }
+#endif
 
     return 0;
 }
@@ -498,6 +831,31 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct k8s_events, token_ttl),
      "kubernetes token ttl, until it is reread from the token file. Default: 10m"
     },
+
+    {
+     FLB_CONFIG_MAP_INT, "kube_request_limit", "0",
+     0, FLB_TRUE, offsetof(struct k8s_events, limit_request),
+     "kubernetes limit parameter for events query, no limit applied when set to 0"
+    },
+
+    {
+      FLB_CONFIG_MAP_TIME, "kube_retention_time", "1h",
+      0, FLB_TRUE, offsetof(struct k8s_events, retention_time),
+      "kubernetes retention time for events. Default: 1h"
+    },
+
+#ifdef FLB_HAVE_SQLDB
+    {
+      FLB_CONFIG_MAP_STR, "db", NULL,
+      0, FLB_FALSE, 0,
+      "set a database file to keep track of recorded kubernetes events."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "db.sync", "normal",
+     0, FLB_FALSE, 0,
+     "set a database sync method. values: extra, full, normal and off."
+    },
+#endif
 
     /* EOF */
     {0}
