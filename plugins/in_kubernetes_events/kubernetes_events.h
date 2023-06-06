@@ -77,6 +77,9 @@ struct k8s_events {
     struct flb_config *config;
     struct flb_upstream *upstream;
     struct flb_input_instance *ins;
+
+    /* concurrency lock */
+    pthread_mutex_t lock;
 };
 
 #endif

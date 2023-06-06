@@ -67,6 +67,7 @@ struct k8s_events *k8s_events_conf_create(struct flb_input_instance *ins)
     const char *url;
     const char *tmp;
     struct k8s_events *ctx = NULL;
+    pthread_mutexattr_t attr;
 
     ctx = flb_calloc(1, sizeof(struct k8s_events));
     if (!ctx) {
@@ -74,6 +75,9 @@ struct k8s_events *k8s_events_conf_create(struct flb_input_instance *ins)
         return NULL;
     }
     ctx->ins = ins;
+
+    pthread_mutexattr_init(&attr);
+    pthread_mutex_init(&ctx->lock, &attr);
 
     /* Load the config map */
     ret = flb_input_config_map_set(ins, (void *) ctx);
