@@ -24,10 +24,14 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_record_accessor.h>
+#define DEFAULT_INTERVAL_SEC "0"
+#define DEFAULT_INTERVAL_NSEC "500000"
 
 /* Filter context */
 struct k8s_events {
     int coll_id;
+    int interval_sec;             /* interval collection time (Second)     */
+    int interval_nsec;            /* interval collection time (Nanosecond) */
 
     /* Configuration parameters */
     char *api_host;

@@ -37,6 +37,7 @@
 #include "kubernetes_events.h"
 #include "kubernetes_events_conf.h"
 
+
 static int file_to_buffer(const char *path,
                           char **out_buf, size_t *out_size)
 {
@@ -408,8 +409,10 @@ static int k8s_events_init(struct flb_input_instance *ins,
 
     ctx->coll_id = flb_input_set_collector_time(ins,
                                                 k8s_events_collect,
-                                                1,
-                                                0, config);
+                                                ctx->interval_sec,
+                                                ctx->interval_nsec,
+                                                config);
+
     return 0;
 }
 
@@ -432,6 +435,18 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "kube_url", "https://kubernetes.default.svc",
      0, FLB_FALSE, 0,
      "Kubernetes API server URL"
+    },
+
+    /* Refresh interval */
+    {
+      FLB_CONFIG_MAP_INT, "interval_sec", DEFAULT_INTERVAL_SEC,
+      0, FLB_TRUE, offsetof(struct k8s_events, interval_sec),
+      "Set the polling interval for each channel"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "interval_nsec", DEFAULT_INTERVAL_NSEC,
+      0, FLB_TRUE, offsetof(struct k8s_events, interval_nsec),
+      "Set the polling interval for each channel (sub seconds)"
     },
 
     /* TLS: set debug 'level' */
