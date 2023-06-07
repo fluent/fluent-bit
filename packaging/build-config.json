@@ -13,6 +13,10 @@
           "type": "rpm"
         },
         {
+          "target": "amazonlinux/2023.arm64v8",
+          "type": "rpm"
+        },
+        {
           "target": "centos/7",
           "type": "rpm"
         },

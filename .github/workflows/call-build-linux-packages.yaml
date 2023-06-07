@@ -105,7 +105,7 @@ jobs:
   call-build-linux-packages:
     name: ${{ matrix.distro }} package build and stage to S3
     environment: ${{ inputs.environment }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (contains(matrix.distro, 'arm' ) && 'actuated-aarch64') || 'ubuntu-latest' }}
     permissions:
       contents: read
     strategy:
