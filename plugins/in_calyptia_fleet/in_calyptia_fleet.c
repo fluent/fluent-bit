@@ -429,6 +429,10 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
     cfgname = time_fleet_config_filename(ctx, time_last_modified);
     if (access(cfgname, F_OK) == -1 && errno == ENOENT) {
         cfgfp = fopen(cfgname, "w+");
+        if (cfgfp == NULL) {
+            flb_plg_error(ctx->ins, "unable to open configuration file: %s", cfgname);
+            goto http_error;
+        }
         header = flb_sds_create_size(4096);
         flb_sds_printf(&header, 
                        "[INPUT]\n"
@@ -707,5 +711,5 @@ struct flb_input_plugin in_calyptia_fleet_plugin = {
     .cb_flush_buf = NULL,
     .cb_exit      = in_calyptia_fleet_exit,
     .config_map   = config_map,
-    .flags        = FLB_INPUT_NET|FLB_INPUT_CORO|FLB_IO_OPT_TLS
+    .flags        = FLB_INPUT_NET|FLB_INPUT_CORO|FLB_IO_OPT_TLS|FLB_INPUT_PRIVATE
 };
