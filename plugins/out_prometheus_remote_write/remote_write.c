@@ -188,7 +188,8 @@ static int http_post(struct prometheus_remote_write_context *ctx,
          * - 205: Reset content
          *
          */
-        if (c->resp.status < 200 || c->resp.status > 205) {
+        if ((c->resp.status < 200 || c->resp.status > 205) &&
+            c->resp.status != 400) {
             if (ctx->log_response_payload &&
                 c->resp.payload && c->resp.payload_size > 0) {
                 flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
@@ -200,6 +201,21 @@ static int http_post(struct prometheus_remote_write_context *ctx,
                               ctx->host, ctx->port, c->resp.status);
             }
             out_ret = FLB_RETRY;
+        }
+        else if (c->resp.status == 400) {
+            /* Returned 400 status means unrecoverable. Immidiately
+             * returning as a error. */
+            if (ctx->log_response_payload &&
+                c->resp.payload && c->resp.payload_size > 0) {
+                flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                              ctx->host, ctx->port,
+                              c->resp.status, c->resp.payload);
+            }
+            else {
+                flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
+                              ctx->host, ctx->port, c->resp.status);
+            }
+            out_ret = FLB_ERROR;
         }
         else {
             if (ctx->log_response_payload &&
