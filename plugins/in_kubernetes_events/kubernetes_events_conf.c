@@ -160,7 +160,7 @@ struct k8s_events *k8s_events_conf_create(struct flb_input_instance *ins)
     ctx->encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
     if (!ctx->encoder) {
         flb_plg_error(ins, "could not initialize event encoder");
-        flb_free(ctx);
+        k8s_events_conf_destroy(ctx);
         return NULL;
     }
 
@@ -169,14 +169,14 @@ struct k8s_events *k8s_events_conf_create(struct flb_input_instance *ins)
     if (!ctx->ra_timestamp) {
         flb_plg_error(ctx->ins,
                       "could not create record accessor for metadata items");
-        flb_free(ctx);
+        k8s_events_conf_destroy(ctx);
         return NULL;
     }
 
     ctx->ra_resource_version = flb_ra_create(K8S_EVENTS_RA_RESOURCE_VERSION, FLB_TRUE);
     if (!ctx->ra_resource_version) {
         flb_plg_error(ctx->ins, "could not create record accessor for resource version");
-        flb_free(ctx);
+        k8s_events_conf_destroy(ctx);
         return NULL;
     }
 
@@ -200,7 +200,7 @@ struct k8s_events *k8s_events_conf_create(struct flb_input_instance *ins)
             ctx->api_https = FLB_TRUE;
         }
         else {
-            flb_free(ctx);
+            k8s_events_conf_destroy(ctx);
             return NULL;
         }
 
@@ -227,7 +227,7 @@ struct k8s_events *k8s_events_conf_create(struct flb_input_instance *ins)
     /* network setup */
     ret = network_init(ctx, ins->config);
     if (ret == -1) {
-        flb_free(ctx);
+        k8s_events_conf_destroy(ctx);
         return NULL;
     }
 
@@ -238,7 +238,7 @@ struct k8s_events *k8s_events_conf_create(struct flb_input_instance *ins)
         ctx->db = flb_kubernetes_event_db_open(tmp, ins, ctx, ins->config);
         if (!ctx->db) {
             flb_plg_error(ctx->ins, "could not open/create database");
-            flb_free(ctx);
+            k8s_events_conf_destroy(ctx);
             return NULL;
         }
     }
@@ -251,7 +251,7 @@ struct k8s_events *k8s_events_conf_create(struct flb_input_instance *ins)
                                  0);
         if (ret != SQLITE_OK) {
             flb_plg_error(ctx->ins, "error preparing database SQL statement: stmt_get_kubernetes_event_exists_by_uid");
-            flb_free(ctx);
+            k8s_events_conf_destroy(ctx);
             return NULL;
         }
 
@@ -262,7 +262,7 @@ struct k8s_events *k8s_events_conf_create(struct flb_input_instance *ins)
                                  0);
         if (ret != SQLITE_OK) {
             flb_plg_error(ctx->ins, "error preparing database SQL statement: stmt_insert_kubernetes_event");
-            flb_free(ctx);
+            k8s_events_conf_destroy(ctx);
             return NULL;
         }
 
@@ -273,7 +273,7 @@ struct k8s_events *k8s_events_conf_create(struct flb_input_instance *ins)
                                  0);
         if (ret != SQLITE_OK) {
             flb_plg_error(ctx->ins, "error preparing database SQL statement: stmt_delete_old_kubernetes_events");
-            flb_free(ctx);
+            k8s_events_conf_destroy(ctx);
             return NULL;
         }
     }
