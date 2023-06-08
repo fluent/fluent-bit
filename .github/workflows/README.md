@@ -160,9 +160,9 @@ It can take a while to find the one for the specific tag...
 All builds are carried out in containers and intended to be run on a valid Ubuntu host to match a standard Github Actions runner.
 This can take some time for ARM as we have to emulate the architecture via QEMU.
 
-<https://github.com/fluent/fluent-bit/pull/7527> introduces support to run ARM builds on a dedicated <actuated.dev> ephemeral VM runner.
-A self-hosted ARM runner is set up and provisioned for this per the [documentation](https://docs.actuated.dev/provision-server/).
-For forks, this should all be skipped and run on a normal Ubuntu Github hosted runner but be aware this may take some time.
+<https://github.com/fluent/fluent-bit/pull/7527> introduces support to run ARM builds on a dedicated [actuated.dev](https://docs.actuated.dev/) ephemeral VM runner.
+A self-hosted ARM runner is sponsored by [Equinix Metal](https://deploy.equinix.com/metal/) and provisioned for this per the [documentation](https://docs.actuated.dev/provision-server/).
+For fork workflows, this should all be skipped and run on a normal Ubuntu Github hosted runner but be aware this may take some time.
 
 ### Manual release
 
