@@ -1,4 +1,5 @@
 #!/bin/bash
+# Build a specific Linux target using the local source code via a container image
 set -eux
 
 # Never rely on PWD so we can invoke from anywhere
