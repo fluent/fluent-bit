@@ -268,25 +268,55 @@ static int record_get_field_uint64(msgpack_object *obj, const char *fieldname, u
     return -1;
 }
 
+static int item_get_timestamp(msgpack_object *obj, time_t *event_time)
+{
+    int ret;
+    msgpack_object *metadata;
+
+    // some events can have lastTimestamp and firstTimestamp set to
+    // NULL while having metadata.creationTimestamp set.
+    ret = record_get_field_time(obj, "lastTimestamp", event_time);
+    if (ret != -1) {
+        return FLB_TRUE;
+    }
+
+    ret = record_get_field_time(obj, "firstTimestamp", event_time);
+    if (ret != -1) {
+        return FLB_TRUE;
+    }
+
+    metadata = record_get_field_ptr(obj, "metadata");
+    if (metadata == NULL) {
+        return FLB_FALSE;
+    }
+
+    ret = record_get_field_time(metadata, "creationTimestamp", event_time);
+    if (ret != -1) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 static bool check_event_is_filtered(struct k8s_events *ctx, msgpack_object *obj)
 {
     int ret;
-    time_t last;
+    time_t event_time;
     time_t now;
     msgpack_object *metadata;
     flb_sds_t uid;
     uint64_t resource_version;
 
-    ret = record_get_field_time(obj, "lastTimestamp", &last);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "Cannot get lastTimestamp for item in response");
+    ret = item_get_timestamp(obj, &event_time);
+    if (ret == -FLB_FALSE) {
+        flb_plg_error(ctx->ins, "Cannot get timestamp for item in response");
         return FLB_FALSE;
     }
 
     now = (time_t)(cfl_time_now() / 1000000000);
-    if (last < (now - ctx->retention_time)) {
+    if (event_time < (now - ctx->retention_time)) {
         flb_plg_debug(ctx->ins, "Item is older than retention_time: %ld < %ld",
-                      last,  (now - ctx->retention_time));
+                      event_time,  (now - ctx->retention_time));
         return FLB_TRUE;
     }
 
@@ -599,12 +629,12 @@ static int k8s_events_sql_insert_event(struct k8s_events *ctx, msgpack_object *i
         return -1;
     }
 
-    ret = record_get_field_time(item, "lastTimestamp", &last);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "unable to find lastTimestamp in event to save it");
-        flb_sds_destroy(uid);
+    ret = item_get_timestamp(item, &last);
+    if (ret == -FLB_FALSE) {
+        flb_plg_error(ctx->ins, "Cannot get timestamp for item to save it");
         return -1;
     }
+
     if (ret == -2) {
         flb_plg_error(ctx->ins, "unable to parse lastTimestamp in item to save event");
         flb_sds_destroy(uid);
