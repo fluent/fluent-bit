@@ -21,7 +21,7 @@
 | Label name | Description |
 | :----------|-------------|
 | docs-required| default tag used to request documentation, has to be removed before merge |
-| ok-package-test | run all package tests |
+| ok-package-test | Build for all possible targets |
 | ok-to-test | run all integration tests |
 | ok-to-merge | run mergebot and merge (rebase) current PR |
 | ci/integration-docker-ok | integration test is able to build docker image |
@@ -155,6 +155,15 @@ If not then ask a maintainer to retrigger.
 
 It can take a while to find the one for the specific tag...
 
+#### ARM builds
+
+All builds are carried out in containers and intended to be run on a valid Ubuntu host to match a standard Github Actions runner.
+This can take some time for ARM as we have to emulate the architecture via QEMU.
+
+<https://github.com/fluent/fluent-bit/pull/7527> introduces support to run ARM builds on a dedicated <actuated.dev> ephemeral VM runner.
+A self-hosted ARM runner is set up and provisioned for this per the [documentation](https://docs.actuated.dev/provision-server/).
+For forks, this should all be skipped and run on a normal Ubuntu Github hosted runner but be aware this may take some time.
+
 ### Manual release
 
 As long as it is built to staging we can manually publish packages as well via the script here: <https://github.com/fluent/fluent-bit/blob/master/packaging/update-repos.sh>
@@ -171,3 +180,48 @@ Once releases are published we need to provide PRs for the following documentati
 <https://github.com/fluent/fluent-bit-docs> is the repo for updates to docs.
 
 Take the checksums from the release process above, the AppVeyor stage provides them all and we attempt to auto-create the PR with it.
+
+## Unstable/nightly builds
+
+These happen every 24 hours and [reuse the same workflow](./cron-unstable-build.yaml) as the staging build so are identical except they skip the upload to S3 step.
+This means all targets are built nightly for `master` and `2.0` branches including container images and Linux, macOS and Windows packages.
+
+The container images are available here (the tag refers to the branch):
+
+* [ghcr.io/fluent/fluent-bit/unstable:2.0](ghcr.io/fluent/fluent-bit/unstable:2.0)
+* [ghcr.io/fluent/fluent-bit/unstable:master](ghcr.io/fluent/fluent-bit/unstable:master)
+* [ghcr.io/fluent/fluent-bit/unstable:windows-2019-2.0](ghcr.io/fluent/fluent-bit/unstable:windows-2019-2.0)
+* [ghcr.io/fluent/fluent-bit/unstable:windows-2019-master](ghcr.io/fluent/fluent-bit/unstable:windows-2019-master)
+
+The Linux, macOS and Windows packages are available to download from the specific workflow run.
+
+## Integration tests
+
+On every commit to `master` we rebuild the [packages](./build-master-packages.yaml) and [container images](./master-integration-test.yaml).
+The container images are then used to [run the integration tests](./master-integration-test.yaml) from the <https://github.com/fluent/fluent-bit-ci> repository.
+The container images are available as:
+
+* [ghcr.io/fluent/fluent-bit/master:x86_64](ghcr.io/fluent/fluent-bit/master:x86_64)
+
+## PR checks
+
+Various workflows are run for PRs automatically:
+
+* [Unit tests](./unit-tests.yaml)
+* [Compile checks on CentOS 7 compilers](./pr-compile-check.yaml)
+* [Linting](./pr-lint.yaml)
+* [Windows builds](./pr-windows-build.yaml)
+* [Fuzzing](./pr-fuzz.yaml)
+* [Container image builds](./pr-image-tests.yaml)
+* [Install script checks](./pr-install-script.yaml)
+
+We try to guard these to only trigger when relevant files are changed to reduce any delays or resources used.
+**All should be able to be triggered manually for explicit branches as well.**
+
+The following workflows can be triggered manually for specific PRs too:
+
+* [Integration tests](./pr-integration-test.yaml): Build a container image and run the integration tests as per commits to `master`.
+* [Performance tests](./pr-perf-test.yaml): WIP to trigger a performance test on a dedicated VM and collect the results as a PR comment.
+* [Full package build](./pr-package-tests.yaml): builds all Linux, macOs and Windows packages as well as container images.
+
+To trigger these, apply the relevant label.
