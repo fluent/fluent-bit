@@ -66,14 +66,108 @@ For some reason this is not automatically done via permission inheritance or sim
 
 Each major version (e.g. 1.8 & 1.9) supports different targets to build for, e.g. 1.9 includes a CentOS 8 target and 1.8 has some other legacy targets.
 
-This is all handled by the [build matrix generation composite action](../actions/generate-package-build-matrix/action.yaml) so make sure to update appropriately.
-The build matrix is then fed into the reusable job that builds packages which will then fire for the appropriate targets.
+This is all handled by the [build matrix generation composite action](../actions/generate-package-build-matrix/action.yaml).
+This uses a [JSON file](../../packaging/build-config.json) to specify the targets so ensure this is updated.
+The build matrix is then fed into the [reusable job](./call-build-linux-packages.yaml) that builds packages which will then fire for the appropriate targets.
+The reusable job is used for all package builds including unstable/nightly and the PR `ok-package-test` triggered ones.
 
 ## Releases
 
-Currently the process is as follows:
+The process at a high level is as follows:
 
-1. Tag the source with whatever tag you like on master.
-2. The [`Deploy to staging`](./staging-build.yaml) workflow will then kick in to build everything and upload it either to the S3 staging bucket (packages) or ghcr.io (containers).
-3. Once this completes, the [`Test staging`](./staging-test.yaml) workflow will then run to carry out smoke tests on these packages and containers.
-4. The [`Release from staging`](./staging-release.yaml) workflow can then be manually initiated to promote staging to release.
+1. Tag created with `v` prefix.
+2. [Deploy to staging](https://github.com/fluent/fluent-bit/actions/workflows/staging-build.yaml) workflow runs.
+3. [Test staging](https://github.com/fluent/fluent-bit/actions/workflows/staging-test.yaml) workflow runs.
+4. Manually initiate [release from staging](https://github.com/fluent/fluent-bit/actions/workflows/staging-release.yaml) workflow.
+5. A PR is auto-created to increment the minor version now for Fluent Bit using the [`update_version.sh`](../../update_version.sh) script.
+6. Create PRs for doc updates - Windows & container versions. (WIP to automate).
+
+Breaking the steps down.
+
+### Deploy to staging and test
+
+This should run automatically when a tag is created matching the `v*` regex.
+It currently copes with 1.8+ builds although automation is only exercised for 1.9+ releases.
+
+Once this is completed successfully the staging tests should also run automatically.
+
+![Workflows for staging and test example](./resources/auto-build-test-workflow.png "Example of workflows for build and test")
+
+If both complete successfully then we are good to go.
+
+Occasional failures are seen with package builds not downloading dependencies (CentOS 7 in particular seems bad for this).
+A re-run of failed jobs should resolve this.
+
+The workflow builds all Linux, macOS and Windows targets to a staging S3 bucket plus the container images to ghcr.io.
+
+### Release from staging workflow
+
+This is a manually initiated workflow, the intention is multiple staging builds can happen but we only release one.
+Note that currently we do not support parallel staging builds of different versions, e.g. master and 1.9 branches.
+**We can only release the previous staging build and there is a check to confirm version.**
+
+Ensure AppVeyor build for the tag has completed successfully as well.
+
+To trigger: <https://github.com/fluent/fluent-bit/actions/workflows/staging-release.yaml>
+
+All this job does is copy the various artefacts from staging locations to release ones, it does not rebuild them.
+
+![Workflow for release example](./resources/release-from-staging-workflow-incorrect-version.png "Example of workflow for release")
+
+With this example you can see we used the wrong `version` as it requires it without the `v` prefix (it is used for container tag, etc.) and so it fails.
+
+![Workflow for release failure example](./resources/release-version-failure.png "Example of failing workflow for release")
+
+Make sure to provide without the `v` prefix.
+
+![Workflow for release example](./resources/release-from-staging-workflow.png "Example of successful workflow for release")
+
+Once this workflow is initiated you then also need to have it approved by the designated "release team" otherwise it will not progress.
+
+![Release approval example](./resources/release-approval.png "Release approval example")
+
+They will be notified for approval by Github.
+Unfortunately it has to be approved for each job in the sequence rather than a global approval for the whole workflow although that can be useful to check between jobs.
+
+![Release approval per-job required](./resources/release-approval-per-job.png "Release approval per-job required")
+
+This is quite useful to delay the final smoke test of packages until after the manual steps are done as it will then verify them all for you.
+
+#### Packages server sync
+
+The workflow above ensures all release artefacts are pushed to the appropriate container registry and S3 bucket for official releases.
+The packages server then periodically syncs from this bucket to pull down and serve the new packages so there may be a delay (up to 1 hour) before it serves the new versions.
+The syncs happen hourly.
+See <https://github.com/fluent/fluent-bit-infra/blob/main/terraform/provision/package-server-provision.sh.tftpl> for details of the dedicated packages server.
+
+The main reason for a separate server is to accurately track download statistics.
+Container images are handled by ghcr.io and Docker Hub, not this server.
+
+#### Transient container publishing failures
+
+The parallel publishing of multiple container tags for the same image seems to fail occasionally with network errors, particularly more for ghcr.io than DockerHub.
+This can be resolved by just re-running the failed jobs.
+
+#### Windows builds from AppVeyor
+
+This is automated, however confirm that the actual build is successful for the tag: <https://ci.appveyor.com/project/fluent/fluent-bit-2e87g/history>
+If not then ask a maintainer to retrigger.
+
+It can take a while to find the one for the specific tag...
+
+### Manual release
+
+As long as it is built to staging we can manually publish packages as well via the script here: <https://github.com/fluent/fluent-bit/blob/master/packaging/update-repos.sh>
+
+Containers can be promoted manually too, ensure to include all architectures and signatures.
+
+### Create PRs
+
+Once releases are published we need to provide PRs for the following documentation updates:
+
+1. Windows checksums: <https://docs.fluentbit.io/manual/installation/windows#installation-packages>
+2. Container versions: <https://docs.fluentbit.io/manual/installation/docker#tags-and-versions>
+
+<https://github.com/fluent/fluent-bit-docs> is the repo for updates to docs.
+
+Take the checksums from the release process above, the AppVeyor stage provides them all and we attempt to auto-create the PR with it.
