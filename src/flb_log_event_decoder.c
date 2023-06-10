@@ -301,50 +301,65 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
                                            &context->unpacked_event.data);
 }
 
-const char* flb_log_event_encoder_strerror(int result)
+const char *flb_log_event_decoder_get_error_description(int error_code)
 {
-    switch (result) {
+    const char *ret;
+
+    switch (error_code) {
     case FLB_EVENT_DECODER_SUCCESS:
-        return "Success";
+        ret = "Success";
+        break;
 
     case FLB_EVENT_DECODER_ERROR_INITIALIZATION_FAILURE:
-        return "Initialization failure";
+        ret = "Initialization failure";
+        break;
 
     case FLB_EVENT_DECODER_ERROR_INVALID_CONTEXT:
-        return "Invlaid context";
+        ret = "Invalid context";
+        break;
 
     case FLB_EVENT_DECODER_ERROR_INVALID_ARGUMENT:
-        return "Invalid argument";
+        ret = "Invalid argument";
+        break;
 
     case FLB_EVENT_DECODER_ERROR_WRONG_ROOT_TYPE:
-        return "Wrong root type";
+        ret = "Wrong root type";
+        break;
 
     case FLB_EVENT_DECODER_ERROR_WRONG_ROOT_SIZE:
-        return "Wrong root size";
+        ret = "Wrong root size";
+        break;
 
     case FLB_EVENT_DECODER_ERROR_WRONG_HEADER_TYPE:
-        return "Wrong header type";
+        ret = "Wrong header type";
+        break;
 
     case FLB_EVENT_DECODER_ERROR_WRONG_HEADER_SIZE:
-        return "Wrong header size";
+        ret = "Wrong header size";
+        break;
 
     case FLB_EVENT_DECODER_ERROR_WRONG_TIMESTAMP_TYPE:
-        return "Wrong timestamp type";
+        ret = "Wrong timestamp type";
+        break;
 
     case FLB_EVENT_DECODER_ERROR_WRONG_METADATA_TYPE:
-        return "Wrong metadata type";
+        ret = "Wrong metadata type";
+        break;
 
     case FLB_EVENT_DECODER_ERROR_WRONG_BODY_TYPE:
-        return "Wrong body type";
+        ret = "Wrong body type";
+        break;
 
     case FLB_EVENT_DECODER_ERROR_DESERIALIZATION_FAILURE:
-        return "Deserialization failure";
+        ret = "Deserialization failure";
+        break;
 
     case FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA:
-        return "Insufficient data";
+        ret = "Insufficient data";
+        break;
 
     default:
-        return "Unknown error";
+        ret = "Unknown error";
     }
-    return "Never come";
+    return ret;
 }
