@@ -250,6 +250,8 @@ int flb_log_event_encoder_append_root_values_unsafe(
         struct flb_log_event_encoder *context,
         ...);
 
+const char* flb_log_event_encoder_strerror(int result);
+
 #define flb_log_event_encoder_append_metadata_values(context,  ...) \
                 flb_log_event_encoder_append_metadata_values_unsafe( \
                         context, \
