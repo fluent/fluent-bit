@@ -349,3 +349,34 @@ int flb_log_event_encoder_append_root_values_unsafe(
 
     return result;
 }
+
+const char *flb_log_event_decoder_strerror(int result)
+{
+    switch (result) {
+    case FLB_EVENT_ENCODER_SUCCESS:
+        return "Success";
+
+    case FLB_EVENT_ENCODER_ERROR_UNSPECIFIED:
+        return "Unspecified";
+
+    case FLB_EVENT_ENCODER_ERROR_ALLOCATION_ERROR:
+        return "Allocation error";
+
+    case FLB_EVENT_ENCODER_ERROR_INVALID_CONTEXT:
+        return "Invalid context";
+
+    case FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT:
+        return "Invalid argument";
+
+    case FLB_EVENT_ENCODER_ERROR_SERIALIZATION_FAILURE:
+        return "Serializatoin failure";
+
+    case FLB_EVENT_ENCODER_ERROR_INVALID_VALUE_TYPE:
+        return "Invalid value type";
+
+    default:
+        return "Unknown error";
+    }
+
+    return "Never come";
+}
