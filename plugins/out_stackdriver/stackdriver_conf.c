@@ -279,6 +279,13 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         return NULL;
     }
 
+    /* Compress (gzip) */
+    tmp = flb_output_get_property("compress", ins);
+    ctx->compress_gzip = FLB_FALSE;
+    if (tmp && strcasecmp(tmp, "gzip") == 0) {
+        ctx->compress_gzip = FLB_TRUE;
+    }
+
     /* labels */
     flb_kv_init(&ctx->config_labels);
     ret = parse_configuration_labels((void *)ctx);
@@ -552,12 +559,6 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
                                                         "retried_records_total",
                                                         "Total number of retried records.",
                                                         2, (char *[]) {"status", "name"});
-    /* Compress (gzip) */
-    tmp = flb_output_get_property("compress", ins);
-    ctx->compress_gzip = FLB_FALSE;
-    if (tmp && strcasecmp(tmp, "gzip") == 0) {
-        ctx->compress_gzip = FLB_TRUE;
-    }
 
     /* OLD api */
     flb_metrics_add(FLB_STACKDRIVER_SUCCESSFUL_REQUESTS,

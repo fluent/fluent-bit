@@ -2524,32 +2524,12 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    compressed_payload_buffer = (flb_sds_t) payload_buf;
-    compressed_payload_size = flb_sds_len(payload_buf);
-    if (ctx->compress_gzip == FLB_TRUE) {
-        ret = flb_gzip_compress((void *) payload_buf, flb_sds_len(payload_buf),
-                                &compressed_payload_buffer, &compressed_payload_size);
-        if (ret == -1) {
-            flb_error("[out_stackdriver] cannot gzip payload, disabling compression");
-        } else {
-            compressed = FLB_TRUE;
-            flb_sds_destroy(payload_buf);
-        }
-    }
-
     /* Get or renew Token */
     token = get_google_token(ctx);
     if (!token) {
         flb_plg_error(ctx->ins, "cannot retrieve oauth2 token");
         flb_upstream_conn_release(u_conn);
-        if (compressed == FLB_TRUE) {
-            if (compressed_payload_buffer) {
-                flb_free(compressed_payload_buffer);
-            }
-        }
-        else {
-            flb_sds_destroy(payload_buf);
-        }
+        flb_sds_destroy(payload_buf);
 #ifdef FLB_HAVE_METRICS
         cmt_counter_inc(ctx->cmt_failed_requests,
                         ts, 1, (char *[]) {name});
@@ -2558,6 +2538,19 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
 #endif
         FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    compressed_payload_buffer = payload_buf;
+    compressed_payload_size = flb_sds_len(payload_buf);
+    if (ctx->compress_gzip == FLB_TRUE) {
+        ret = flb_gzip_compress((void *) payload_buf, flb_sds_len(payload_buf),
+                                &compressed_payload_buffer, &compressed_payload_size);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "[out_stackdriver] cannot gzip payload, disabling compression");
+        } else {
+            compressed = FLB_TRUE;
+            flb_sds_destroy(payload_buf);
+        }
     }
 
     /* Compose HTTP Client request */
@@ -2647,9 +2640,7 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
 
     /* Cleanup */
     if (compressed == FLB_TRUE) {
-        if (compressed_payload_buffer) {
-           flb_free(compressed_payload_buffer);
-        }
+        flb_free(compressed_payload_buffer);
     }
     else {
         flb_sds_destroy(payload_buf);
@@ -2773,7 +2764,7 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, "compress", NULL,
-     0, FLB_TRUE, offsetof(struct flb_stackdriver, compress),
+     0, FLB_FALSE, offsetof(struct flb_stackdriver, compress),
       "Set log payload compression method. Option available is 'gzip'"
     },
     {
