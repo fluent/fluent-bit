@@ -70,6 +70,7 @@ void flb_log_event_decoder_reset(struct flb_log_event_decoder *context,
     context->offset = 0;
     context->buffer = input_buffer;
     context->length = input_length;
+    context->decode_result = FLB_EVENT_DECODER_ERROR_NO_INCOMING_DATA;
 
     msgpack_unpacked_destroy(&context->unpacked_event);
     msgpack_unpacked_init(&context->unpacked_event);
@@ -261,21 +262,36 @@ int flb_event_decoder_decode_object(struct flb_log_event_decoder *context,
     return FLB_EVENT_DECODER_SUCCESS;
 }
 
+int flb_log_event_decoder_get_decode_result(struct flb_log_event_decoder *context)
+{
+    if (context->decode_result == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA &&
+        context->offset == context->length) {
+        context->decode_result = FLB_EVENT_DECODER_SUCCESS;
+    }
+
+    return context->decode_result;
+}
+
 int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
                                struct flb_log_event *event)
 {
     size_t previous_offset;
     int    result;
 
-    context->record_base = NULL;
-    context->record_length = 0;
-
     if (context == NULL) {
         return FLB_EVENT_DECODER_ERROR_INVALID_CONTEXT;
     }
+    if (context->length == 0) {
+        context->decode_result = FLB_EVENT_DECODER_ERROR_NO_INCOMING_DATA;
+        goto flb_log_event_decoder_next_end;
+    }
+
+    context->record_base = NULL;
+    context->record_length = 0;
 
     if (event == NULL) {
-        return FLB_EVENT_DECODER_ERROR_INVALID_ARGUMENT;
+        context->decode_result = FLB_EVENT_DECODER_ERROR_INVALID_ARGUMENT;
+        goto flb_log_event_decoder_next_end;
     }
 
     memset(event, 0, sizeof(struct flb_log_event));
@@ -288,15 +304,18 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
                                  &context->offset);
 
     if (result == MSGPACK_UNPACK_CONTINUE) {
-        return FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA;
+        context->decode_result = FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA;
+        goto flb_log_event_decoder_next_end;
     }
     else if (result != MSGPACK_UNPACK_SUCCESS) {
-        return FLB_EVENT_DECODER_ERROR_DESERIALIZATION_FAILURE;
+        context->decode_result = FLB_EVENT_DECODER_ERROR_DESERIALIZATION_FAILURE;
+        goto flb_log_event_decoder_next_end;
     }
 
     context->previous_offset = previous_offset;
-
-    return flb_event_decoder_decode_object(context,
-                                           event,
-                                           &context->unpacked_event.data);
+    context->decode_result = flb_event_decoder_decode_object(context,
+                                                              event,
+                                                              &context->unpacked_event.data);
+ flb_log_event_decoder_next_end:
+    return context->decode_result;
 }

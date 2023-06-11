@@ -27,6 +27,7 @@
 
 #include <msgpack.h>
 
+
 #define FLB_EVENT_DECODER_SUCCESS                        0
 #define FLB_EVENT_DECODER_ERROR_INITIALIZATION_FAILURE  -1
 #define FLB_EVENT_DECODER_ERROR_INVALID_CONTEXT         -2
@@ -40,6 +41,7 @@
 #define FLB_EVENT_DECODER_ERROR_WRONG_BODY_TYPE         -10
 #define FLB_EVENT_DECODER_ERROR_DESERIALIZATION_FAILURE -11
 #define FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA       -12
+#define FLB_EVENT_DECODER_ERROR_NO_INCOMING_DATA        -13
 
 #define FLB_LOG_EVENT_EXPECTED_ROOT_ELEMENT_COUNT        2
 #define FLB_LOG_EVENT_EXPECTED_HEADER_ELEMENT_COUNT      2
@@ -56,6 +58,7 @@ struct flb_log_event_decoder {
     const char       *buffer;
     size_t            offset;
     size_t            length;
+    int               decode_result;
 };
 
 void flb_log_event_decoder_reset(struct flb_log_event_decoder *context,
@@ -77,7 +80,7 @@ int flb_log_event_decoder_decode_timestamp(msgpack_object *input,
 int flb_event_decoder_decode_object(struct flb_log_event_decoder *context,
                                     struct flb_log_event *event,
                                     msgpack_object *input);
-
+int flb_log_event_decoder_get_decode_result(struct flb_log_event_decoder *context);
 int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
                                struct flb_log_event *record);
 
