@@ -36,6 +36,8 @@
 #include <Shlwapi.h>
 #endif
 
+#include <time.h>
+
 #include "file.h"
 
 #ifdef FLB_SYSTEM_WINDOWS
@@ -51,6 +53,7 @@ struct flb_file_conf {
     const char *delimiter;
     const char *label_delimiter;
     const char *template;
+    int rotation;
     int format;
     int csv_column_names;
     int mkdir;
@@ -76,12 +79,21 @@ static char *check_delimiter(const char *str)
     return NULL;
 }
 
+static int check_integer(const char *str)
+{
+    if (str == NULL) {
+        return 0;
+    }
+    return(atoi(str));
+}
+
 
 static int cb_file_init(struct flb_output_instance *ins,
                         struct flb_config *config,
                         void *data)
 {
     int ret;
+    int rotation;
     const char *tmp;
     char *ret_str;
     (void) config;
@@ -98,13 +110,20 @@ static int cb_file_init(struct flb_output_instance *ins,
     ctx->delimiter = NULL;
     ctx->label_delimiter = NULL;
     ctx->template = NULL;
+    ctx->rotation = 1;
 
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
         flb_free(ctx);
         return -1;
     }
-
+    tmp = flb_output_get_property("Rotation", ins);
+    if(tmp) {
+        rotation = check_integer(tmp);
+        if((rotation > 0) && (rotation <= 1440)) {
+            ctx->rotation = rotation;
+        }
+    }
     /* Optional, file format */
     tmp = flb_output_get_property("Format", ins);
     if (tmp) {
@@ -468,23 +487,46 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
 
     (void) config;
 
+    time_t t = time(NULL);
+    struct tm current_timestamp = *localtime(&t);
+    static struct tm last_timestamp;
+    static struct tm file_timestamp;
+    static int first_time_flag = 1;
+
+    if(first_time_flag==1) {
+        first_time_flag = 0;
+        last_timestamp = current_timestamp;
+        file_timestamp = current_timestamp;
+    }
+
+    if(current_timestamp.tm_min >= last_timestamp.tm_min + ctx->rotation) {
+        file_timestamp = current_timestamp;
+        last_timestamp = current_timestamp;
+    }
+
     /* Set the right output file */
     if (ctx->out_path) {
         if (ctx->out_file) {
-            snprintf(out_file, PATH_MAX - 1, "%s/%s",
-                     ctx->out_path, ctx->out_file);
+            snprintf(out_file, PATH_MAX - 1, "%s/%04d%02d%02d_%02d%02d%02d-%s",
+                ctx->out_path, 1900+file_timestamp.tm_year, file_timestamp.tm_mon+1, file_timestamp.tm_mday,
+                file_timestamp.tm_hour, file_timestamp.tm_min, file_timestamp.tm_sec, ctx->out_file);
         }
         else {
-            snprintf(out_file, PATH_MAX - 1, "%s/%s",
-                     ctx->out_path, event_chunk->tag);
+            snprintf(out_file, PATH_MAX - 1, "%s/%04d%02d%02d_%02d%02d%02d-%s",
+                ctx->out_path, 1900+file_timestamp.tm_year, file_timestamp.tm_mon+1, file_timestamp.tm_mday,
+                file_timestamp.tm_hour, file_timestamp.tm_min, file_timestamp.tm_sec, event_chunk->tag);
         }
     }
     else {
         if (ctx->out_file) {
-            snprintf(out_file, PATH_MAX - 1, "%s", ctx->out_file);
+            snprintf(out_file, PATH_MAX - 1, "%04d%02d%02d_%02d%02d%02d-%s",
+                1900+file_timestamp.tm_year, file_timestamp.tm_mon+1, file_timestamp.tm_mday,
+                file_timestamp.tm_hour, file_timestamp.tm_min, file_timestamp.tm_sec, ctx->out_file);
         }
         else {
-            snprintf(out_file, PATH_MAX - 1, "%s", event_chunk->tag);
+            snprintf(out_file, PATH_MAX - 1, "%04d%02d%02d_%02d%02d%02d-%s",
+                1900+file_timestamp.tm_year, file_timestamp.tm_mon+1, file_timestamp.tm_mday,
+                file_timestamp.tm_hour, file_timestamp.tm_min, file_timestamp.tm_sec, event_chunk->tag);
         }
     }
 
@@ -674,6 +716,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "template", "{time} {message}",
      0, FLB_TRUE, offsetof(struct flb_file_conf, template),
      "Set a custom template format for the data"
+    },
+
+    {
+     FLB_CONFIG_MAP_INT, "rotation", "{time} {message}",
+     1, FLB_TRUE, 0,
+     "Set a custom rotation frequency for the data"
     },
 
     {
