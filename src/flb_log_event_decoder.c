@@ -70,7 +70,7 @@ void flb_log_event_decoder_reset(struct flb_log_event_decoder *context,
     context->offset = 0;
     context->buffer = input_buffer;
     context->length = input_length;
-    context->last_result = FLB_EVENT_DECODER_ERROR_NO_INCOMING_DATA;
+    context->last_result = FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA;
 
     msgpack_unpacked_destroy(&context->unpacked_event);
     msgpack_unpacked_init(&context->unpacked_event);
