@@ -58,7 +58,7 @@ struct flb_log_event_decoder {
     const char       *buffer;
     size_t            offset;
     size_t            length;
-    int               decode_result;
+    int               last_result;
 };
 
 void flb_log_event_decoder_reset(struct flb_log_event_decoder *context,
@@ -80,7 +80,7 @@ int flb_log_event_decoder_decode_timestamp(msgpack_object *input,
 int flb_event_decoder_decode_object(struct flb_log_event_decoder *context,
                                     struct flb_log_event *event,
                                     msgpack_object *input);
-int flb_log_event_decoder_get_decode_result(struct flb_log_event_decoder *context);
+int flb_log_event_decoder_get_last_result(struct flb_log_event_decoder *context);
 int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
                                struct flb_log_event *record);
 
