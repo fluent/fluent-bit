@@ -22,8 +22,13 @@
 
 #include "ne.h"
 
+#define THERMAL_ZONE_BASE "/class/thermal/thermal_zone"
+#define THERMAL_ZONE_PATTERN THERMAL_ZONE_BASE "[0-9]*"
+#define COOLING_DEVICE_BASE "/class/thermal/cooling_device"
+#define COOLING_DEVICE_PATTERN COOLING_DEVICE_BASE "[0-9]*"
+
 int ne_thermalzone_init(struct flb_ne *ctx);
 int ne_thermalzone_update_thermal_zones(struct flb_ne *ctx);
 int ne_thermalzone_update_cooling_devices(struct flb_ne *ctx);
 
-#endif // FLB_IN_NE_THERMALZONE_LINUX_H
+#endif
