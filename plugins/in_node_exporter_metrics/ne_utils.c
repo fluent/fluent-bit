@@ -179,14 +179,13 @@ int ne_utils_file_read_lines(const char *mount, const char *path, struct mk_list
 }
 
 /*
- * Read a file and every non-empty line is stored as a flb_slist_entry in the
- * given list.
+ * Read a file and store the first line as a string.
  */
 int ne_utils_file_read_sds(const char *mount, 
                            const char *path, 
-			   const char *join_a, 
-			   const char *join_b,
-			   flb_sds_t *str)
+                           const char *join_a, 
+                           const char *join_b,
+                           flb_sds_t *str)
 {
     int fd;
     int len;
@@ -211,15 +210,27 @@ int ne_utils_file_read_sds(const char *mount,
     flb_sds_cat_safe(&p, path, len);
 
     if (join_a) {
-        flb_sds_cat_safe(&p, "/", 1);
+        if (flb_sds_cat_safe(&p, "/", 1) < 0) {
+            flb_sds_destroy(p);
+            return -1;
+        }
         len = strlen(join_a);
-        flb_sds_cat_safe(&p, join_a, len);
+        if (flb_sds_cat_safe(&p, join_a, len) < 0) {
+            flb_sds_destroy(p);
+            return -1;
+        }
     }
 
     if (join_b) {
-        flb_sds_cat_safe(&p, "/", 1);
+        if (flb_sds_cat_safe(&p, "/", 1) < 0) {
+            flb_sds_destroy(p);
+            return -1;
+        }
         len = strlen(join_b);
-        flb_sds_cat_safe(&p, join_b, len);
+        if (flb_sds_cat_safe(&p, join_b, len) < 0) {
+            flb_sds_destroy(p);
+            return -1;
+        }
     }
 
     fd = open(p, O_RDONLY);
@@ -238,9 +249,9 @@ int ne_utils_file_read_sds(const char *mount,
     close(fd);
 
     for (i = bytes-1; i > 0; i--) {
-	if (tmp[i] != '\n' && tmp[i] != '\r') {
-		break;
-	}
+        if (tmp[i] != '\n' && tmp[i] != '\r') {
+            break;
+        }
     }
 
     *str = flb_sds_create_len(tmp, i+1);
