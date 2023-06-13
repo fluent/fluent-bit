@@ -338,10 +338,16 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
         flb_input_set_property(ctx->fleet, "api_key", ctx->api_key);
         flb_input_set_property(ctx->fleet, "host", ctx->cloud_host);
         flb_input_set_property(ctx->fleet, "port", ctx->cloud_port);
-        flb_input_set_property(ctx->fleet, "tls", 
-                               (ctx->cloud_tls == 1 ? "on" : "off"));
-        flb_input_set_property(ctx->fleet, "tls.verify",
-                               (ctx->cloud_tls_verify == 1 ? "on" : "off"));
+        if (ctx->cloud_tls == 1) {
+            flb_input_set_property(ctx->fleet, "tls", "on");
+        } else {
+            flb_input_set_property(ctx->fleet, "tls", "off");
+        }
+        if (ctx->cloud_tls_verify == 1) {
+            flb_input_set_property(ctx->fleet, "tls.verify", "on");
+        } else {
+            flb_input_set_property(ctx->fleet, "tls.verify", "off");
+        }
         if (ctx->fleet_config_dir) {
             flb_input_set_property(ctx->fleet, "config_dir", ctx->fleet_config_dir);
         }
