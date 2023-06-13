@@ -89,6 +89,7 @@ include(ExternalProject)
 include(cmake/FindJournald.cmake)
 include(cmake/FindMonkey.cmake)
 include(cmake/macros.cmake)
+include(cmake/platform_feature_checks.cmake)
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/sanitizers-cmake/cmake" ${CMAKE_MODULE_PATH})
 find_package(Sanitizers)
 
