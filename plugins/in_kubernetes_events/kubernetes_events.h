@@ -44,6 +44,7 @@ struct k8s_events {
     int tls_debug;
     int tls_verify;
     int kube_token_ttl;
+    flb_sds_t namespace;
 
     /* API Server end point */
     char kube_url[1024];
