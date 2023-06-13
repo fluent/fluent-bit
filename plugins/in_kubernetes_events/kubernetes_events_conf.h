@@ -29,7 +29,10 @@
 /* Kubernetes API server info */
 #define K8S_EVENTS_KUBE_API_HOST "kubernetes.default.svc"
 #define K8S_EVENTS_KUBE_API_PORT 443
-#define K8S_EVENTS_KUBE_API_URI  "/api/v1/events/"
+// /apis/events.k8s.io/v1/events
+// /apis/events.k8s.io/v1/namespaces/{namespace}/events
+#define K8S_EVENTS_KUBE_API_URI  "/api/v1/events"
+#define K8S_EVENTS_KUBE_NAMESPACE_API_URI  "/api/v1/namespaces/%s/events"
 
 /* secrets */
 #define K8S_EVENTS_KUBE_TOKEN          "/var/run/secrets/kubernetes.io/serviceaccount/token"
