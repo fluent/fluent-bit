@@ -43,34 +43,32 @@
 
 int ne_thermalzone_init(struct flb_ne *ctx)
 {
-    struct cmt_gauge *g;
-
-    g = cmt_gauge_create(ctx->cmt, "node", "thermal_zone", "temp",
-                           "Zone temperature in Celsius",
-                           2, (char *[]) {"zone", "type"});
-    if (!g) {
+    ctx->thermalzone_temp = cmt_gauge_create(ctx->cmt, "node", "thermal_zone", "temp",
+                                             "Zone temperature in Celsius",
+                                             2, (char *[]) {"zone", "type"});
+    if (!ctx->thermalzone_temp) {
         flb_plg_error(ctx->ins, "could not initialize thermal zone metrics");
         return -1;
     }
-    ctx->thermalzone_temp = g;
 
-    g = cmt_gauge_create(ctx->cmt, "node", "cooling_device", "cur_state",
-                         "Current throttle state of the cooling device",
-                          2, (char *[]) {"name", "type"});
-    if (!g) {
+    ctx->cooling_device_cur_state = cmt_gauge_create(ctx->cmt, 
+                                                     "node", "cooling_device", "cur_state",
+                                                     "Current throttle state of the cooling device",
+                                                     2, (char *[]) {"name", "type"});
+    if (!ctx->cooling_device_cur_state) {
         flb_plg_error(ctx->ins, "could not initialize cooling device cur_state metric");
         return -1;
     }
-    ctx->cooling_device_cur_state = g;
 
-    g = cmt_gauge_create(ctx->cmt, "node", "cooling_device", "max_state",
-                         "Maximum throttle state of the cooling device",
-                          2, (char *[]) {"name", "type"});
-    if (!g) {
+    ctx->cooling_device_max_state = cmt_gauge_create(ctx->cmt,
+                                                     "node", "cooling_device", "max_state",
+                                                     "Maximum throttle state of the cooling device",
+                                                     2, (char *[]) {"name", "type"});
+    if (!ctx->cooling_device_max_state) {
         flb_plg_error(ctx->ins, "could not initialize cooling device max_state metric");
         return -1;
     }
-    ctx->cooling_device_max_state = g;
+
     return 0;
 }
 
