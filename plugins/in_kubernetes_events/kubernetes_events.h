@@ -27,7 +27,7 @@
 #include <fluent-bit/flb_sqldb.h>
 
 #define DEFAULT_INTERVAL_SEC "0"
-#define DEFAULT_INTERVAL_NSEC "500000"
+#define DEFAULT_INTERVAL_NSEC "500000000"
 
 /* Filter context */
 struct k8s_events {
