@@ -163,7 +163,7 @@ jobs:
         # For ubuntu map to codename using the disto-info list (CSV)
         run: |
           sudo apt-get update
-          sudo apt-get install -y distro-info
+          sudo apt-get install -y distro-info awscli
           TARGET=${DISTRO%*.arm64v8}
           if [[ "$TARGET" == "ubuntu/"* ]]; then
               UBUNTU_CODENAME=$(cut -d ',' -f 1,3 < "/usr/share/distro-info/ubuntu.csv"|grep "${TARGET##*/}"|cut -d ',' -f 2)
@@ -221,7 +221,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y createrepo-c aptly
+          sudo apt-get install -y createrepo-c aptly awscli
 
       - name: Checkout code for repo metadata construction - always latest
         uses: actions/checkout@v3
