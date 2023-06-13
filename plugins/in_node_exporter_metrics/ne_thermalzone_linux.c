@@ -31,18 +31,7 @@
 
 /*
  * See kernel documentation for a description:
- * https://www.kernel.org/doc/html/latest/filesystems/proc.html
- *
- * user: normal processes executing in user mode
- * nice: niced processes executing in user mode
- * system: processes executing in kernel mode
- * idle: twiddling thumbs
- * iowait: In a word, iowait stands for waiting for I/O to complete. But there are several problems:
- * irq: servicing interrupts
- * softirq: servicing softirqs
- * steal: involuntary wait
- * guest: running a normal guest
- * guest_nice: running a niced guest
+ * https://www.kernel.org/doc/html/latest/driver-api/thermal/sysfs-api.html
  *
  * Ensure to pick the correct version of the documentation, older versions here:
  * https://github.com/torvalds/linux/tree/master/Documentation
