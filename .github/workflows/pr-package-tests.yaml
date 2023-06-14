@@ -9,8 +9,12 @@ on:
     branches:
       - master
 
-jobs:
+# Cancel any running on push
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
 
+jobs:
   # This job provides this metadata for the other jobs to use.
   pr-package-test-build-get-meta:
     # This is a long test to run so only on-demand for certain PRs

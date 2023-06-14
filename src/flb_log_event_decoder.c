@@ -300,3 +300,66 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
                                            event,
                                            &context->unpacked_event.data);
 }
+
+const char *flb_log_event_decoder_get_error_description(int error_code)
+{
+    const char *ret;
+
+    switch (error_code) {
+    case FLB_EVENT_DECODER_SUCCESS:
+        ret = "Success";
+        break;
+
+    case FLB_EVENT_DECODER_ERROR_INITIALIZATION_FAILURE:
+        ret = "Initialization failure";
+        break;
+
+    case FLB_EVENT_DECODER_ERROR_INVALID_CONTEXT:
+        ret = "Invalid context";
+        break;
+
+    case FLB_EVENT_DECODER_ERROR_INVALID_ARGUMENT:
+        ret = "Invalid argument";
+        break;
+
+    case FLB_EVENT_DECODER_ERROR_WRONG_ROOT_TYPE:
+        ret = "Wrong root type";
+        break;
+
+    case FLB_EVENT_DECODER_ERROR_WRONG_ROOT_SIZE:
+        ret = "Wrong root size";
+        break;
+
+    case FLB_EVENT_DECODER_ERROR_WRONG_HEADER_TYPE:
+        ret = "Wrong header type";
+        break;
+
+    case FLB_EVENT_DECODER_ERROR_WRONG_HEADER_SIZE:
+        ret = "Wrong header size";
+        break;
+
+    case FLB_EVENT_DECODER_ERROR_WRONG_TIMESTAMP_TYPE:
+        ret = "Wrong timestamp type";
+        break;
+
+    case FLB_EVENT_DECODER_ERROR_WRONG_METADATA_TYPE:
+        ret = "Wrong metadata type";
+        break;
+
+    case FLB_EVENT_DECODER_ERROR_WRONG_BODY_TYPE:
+        ret = "Wrong body type";
+        break;
+
+    case FLB_EVENT_DECODER_ERROR_DESERIALIZATION_FAILURE:
+        ret = "Deserialization failure";
+        break;
+
+    case FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA:
+        ret = "Insufficient data";
+        break;
+
+    default:
+        ret = "Unknown error";
+    }
+    return ret;
+}

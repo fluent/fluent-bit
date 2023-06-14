@@ -184,6 +184,8 @@ struct flb_ne {
     flb_sds_t           systemd_regex_exclude_list_text;
     struct flb_regex   *systemd_regex_include_list;
     struct flb_regex   *systemd_regex_exclude_list;
+    double              libsystemd_version;
+    char               *libsystemd_version_text;
 };
 
 #endif

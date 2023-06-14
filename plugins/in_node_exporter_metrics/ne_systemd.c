@@ -458,17 +458,15 @@ static int ne_systemd_update_unit_state(struct flb_ne *ctx)
                 result = 1;
             }
 
-            if (!ctx->systemd_initialization_flag) {
-                for(index = 0 ; index < 5 ; index++) {
-                    cmt_gauge_set(ctx->systemd_unit_state,
-                                  timestamp,
-                                  0,
-                                  3,
-                                  (char *[]){ unit.name,
-                                              unit_states[index],
-                                              unit.type
-                                            });
-                }
+            for(index = 0 ; index < 5 ; index++) {
+                cmt_gauge_add(ctx->systemd_unit_state,
+                              timestamp,
+                              0,
+                              3,
+                              (char *[]){ unit.name,
+                                          unit_states[index],
+                                          unit.type
+                                        });
             }
 
             cmt_gauge_inc(ctx->systemd_unit_state,
@@ -541,13 +539,21 @@ static int ne_systemd_update_system_state(struct flb_ne *ctx)
             return -1;
         }
 
+        ctx->libsystemd_version_text = version;
+        ctx->libsystemd_version = strtod(version, NULL);
+
         cmt_gauge_set(ctx->systemd_version,
                       timestamp,
-                      strtod(version, NULL),
+                      ctx->libsystemd_version,
                       1,
-                      (char *[]){ version });
-
-        free(version);
+                      (char *[]){ ctx->libsystemd_version_text });
+    }
+    else {
+        cmt_gauge_add(ctx->systemd_version,
+                      timestamp,
+                      0,
+                      1,
+                      (char *[]){ ctx->libsystemd_version_text });
     }
 
     result = get_system_state(ctx, &state);
@@ -794,5 +800,8 @@ int ne_systemd_exit(struct flb_ne *ctx)
         flb_regex_destroy(ctx->systemd_regex_exclude_list);
     }
 
+    if (ctx->libsystemd_version_text != NULL) {
+        flb_free(ctx->libsystemd_version_text);
+    }
     return 0;
 }

@@ -114,7 +114,6 @@ int in_emitter_add_record(const char *tag, int tag_len,
     struct mk_list *head;
     struct em_chunk *ec;
     struct flb_emitter *ctx;
-    int ret;
 
     ctx = (struct flb_emitter *) in->context;
     ec = NULL;

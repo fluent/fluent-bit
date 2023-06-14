@@ -380,6 +380,10 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
         return -3;
     }
 
+    if (old_config->ensure_thread_safety_on_hot_reloading) {
+        old_config->grace = -1;
+    }
+
     /* Normally, we should create a service section before using this cf
      * context. However, this context of config format will be used
      * for copying contents from other one. So, we just need to create

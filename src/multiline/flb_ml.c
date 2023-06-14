@@ -234,7 +234,6 @@ static int package_content(struct flb_ml_stream *mst,
     }
     else {
         if (mst->last_stream_group != stream_group) {
-            flb_ml_flush_stream_group(parser, mst, mst->last_stream_group, FLB_FALSE);
             mst->last_stream_group = stream_group;
         }
     }

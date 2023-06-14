@@ -209,6 +209,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   REGISTER_IN_PLUGIN("in_podman_metrics")
 endif()
 
+REGISTER_IN_PLUGIN("in_kubernetes_events")
 REGISTER_IN_PLUGIN("in_kafka")
 REGISTER_IN_PLUGIN("in_fluentbit_metrics")
 REGISTER_IN_PLUGIN("in_prometheus_scrape")
