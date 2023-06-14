@@ -481,15 +481,23 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 return YAML_FAILURE;
             }
 
-            /* value is the 'custom plugin name', create a section instance */
-            if (flb_cf_section_property_add(cf, s->cf_section->properties,
-                                            "name", 4,
-                                            value, len) < 0) {
-                return YAML_FAILURE;
-            }
+            if (strcmp(value, "name") != 0) {
+                /* value is the 'custom plugin name', create a section instance */
+                if (flb_cf_section_property_add(cf, s->cf_section->properties,
+                                                "name", 4,
+                                                value, len) < 0) {
+                    return YAML_FAILURE;
+                }
 
-            /* next state are key value pairs for the custom plugin*/
-            s->state = STATE_CUSTOM_KEY_VALUE_PAIR;
+                /* next state are key value pairs for the custom plugin*/
+                s->state = STATE_CUSTOM_KEY_VALUE_PAIR;
+                flb_warn("using old 'name: *properties' format for custom section. "
+                         "this format is deprecated.");
+            } else {
+                s->state = STATE_CUSTOM_VAL;
+                value = (char *) event->data.scalar.value;
+                s->key = flb_sds_create(value);
+            }
             break;
         case YAML_MAPPING_START_EVENT:
             break;
