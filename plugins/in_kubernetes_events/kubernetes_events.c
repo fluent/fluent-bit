@@ -260,9 +260,7 @@ static int record_get_field_uint64(msgpack_object *obj, const char *fieldname, u
         }
         return 0;
     }
-
-    if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
-        v->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
+    if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
         *val = v->via.u64;
         return 0;
     }
