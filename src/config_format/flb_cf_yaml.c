@@ -92,6 +92,8 @@ enum state {
     STATE_GROUP_KEY,
     STATE_GROUP_VAL,
 
+    STATE_SLIST,
+
     STATE_INPUT_PROCESSOR,
     STATE_INPUT_PROCESSOR_LOGS_KEY,
     STATE_INPUT_PROCESSOR_LOGS_VAL,
@@ -1068,13 +1070,20 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 yaml_error_event(ctx, s, event);
                 return YAML_FAILURE;
             }
-            s->state = STATE_GROUP_KEY;
+            s->state = STATE_SLIST;
             s->cf_group = flb_cf_group_create(cf, s->cf_section,
                                               s->key, flb_sds_len(s->key));
-            flb_sds_destroy(s->key);
             if (!s->cf_group) {
                 return YAML_FAILURE;
             }
+            s->values = flb_cf_section_property_add_list(cf,
+                                                         s->cf_section->properties,
+                                                         s->key, flb_sds_len(s->key));
+            if (s->values == NULL) {
+                return YAML_FAILURE;
+            }
+            flb_sds_destroy(s->key);
+            s->key = NULL;
             break;
         case YAML_SEQUENCE_END_EVENT:   /* end of group */
             s->state = STATE_PLUGIN_KEY;
@@ -1168,6 +1177,25 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             s->key = NULL;
             s->val = NULL;
 
+            break;
+        default:
+            yaml_error_event(ctx, s, event);
+            return YAML_FAILURE;
+        }
+        break;
+
+    /* groups: a group is a sub-section and here we handle the key/value pairs */
+    case STATE_SLIST:
+        switch(event->type) {
+        case YAML_SCALAR_EVENT:
+            if (s->values == NULL) {
+                return YAML_FAILURE;
+            }
+            cfl_array_append_string(s->values, (char *)event->data.scalar.value);
+            break;
+        case YAML_SEQUENCE_END_EVENT:
+            s->state = STATE_PLUGIN_KEY;
+            s->cf_group = NULL;
             break;
         default:
             yaml_error_event(ctx, s, event);
