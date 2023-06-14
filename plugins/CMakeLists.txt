@@ -283,6 +283,7 @@ REGISTER_PROCESSOR_PLUGIN("processor_attributes")
 # =======
 REGISTER_OUT_PLUGIN("out_azure")
 REGISTER_OUT_PLUGIN("out_azure_blob")
+REGISTER_OUT_PLUGIN("out_azure_logs_ingestion")
 REGISTER_OUT_PLUGIN("out_azure_kusto")
 REGISTER_OUT_PLUGIN("out_bigquery")
 REGISTER_OUT_PLUGIN("out_calyptia")
