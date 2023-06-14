@@ -26,11 +26,6 @@ if(FLB_PARSER)
 endif()
 
 if(MSVC)
-  set(src
-    ${src}
-    win32/stat.c
-    win32/io.c
-    )
   FLB_PLUGIN(in_tail "${src}" "Shlwapi")
 else()
   FLB_PLUGIN(in_tail "${src}" "")
