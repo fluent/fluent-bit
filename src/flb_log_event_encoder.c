@@ -129,6 +129,14 @@ int flb_log_event_encoder_emit_raw_record(struct flb_log_event_encoder *context,
 {
     int result;
 
+    if (context == NULL) {
+        return FLB_EVENT_ENCODER_ERROR_INVALID_CONTEXT;
+    }
+
+    if (buffer == NULL || length == 0) {
+        return FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT;
+    }
+
     result = msgpack_pack_str_body(&context->packer, buffer, length);
 
     if (result != 0) {
@@ -229,6 +237,10 @@ int flb_log_event_encoder_emit_record(struct flb_log_event_encoder *context)
 
 int flb_log_event_encoder_reset_record(struct flb_log_event_encoder *context)
 {
+    if (context == NULL) {
+        return FLB_EVENT_ENCODER_ERROR_INVALID_CONTEXT;
+    }
+
     flb_log_event_encoder_dynamic_field_reset(&context->metadata);
     flb_log_event_encoder_dynamic_field_reset(&context->body);
     flb_log_event_encoder_dynamic_field_reset(&context->root);
