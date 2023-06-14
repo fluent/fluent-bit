@@ -22,21 +22,21 @@ static void check_equals(flb_sds_t result, const char *expected)
 
 static void test_file_read_text_file()
 {
-    flb_sds_t result = flb_file_read(TEXT_FILE);
+    flb_sds_t result = flb_file_read_contents(TEXT_FILE);
     check_equals(result, "Some text file\n\nline 3\n\nline 5\n");
     flb_sds_destroy(result);
 }
 
 static void test_file_read_empty_file()
 {
-    flb_sds_t result = flb_file_read(EMPTY_FILE);
+    flb_sds_t result = flb_file_read_contents(EMPTY_FILE);
     check_equals(result, "");
     flb_sds_destroy(result);
 }
 
 static void test_file_read_missing()
 {
-    flb_sds_t result = flb_file_read(TEXT_FILE ".missing");
+    flb_sds_t result = flb_file_read_contents(TEXT_FILE ".missing");
     TEST_CHECK(result == NULL);
 }
 
