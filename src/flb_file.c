@@ -18,14 +18,16 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_file.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_str.h>
 
 #include <stdio.h>
 
-flb_sds_t flb_file_read(const char *path)
+flb_sds_t flb_file_read_contents(const char *path)
 {
     long flen;
     FILE *f = NULL;
