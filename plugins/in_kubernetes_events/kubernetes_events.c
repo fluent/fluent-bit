@@ -101,7 +101,7 @@ static int get_http_auth_header(struct k8s_events *ctx)
     char *tk = NULL;
     size_t tk_size = 0;
 
-    if (!ctx->token_file) {
+    if (!ctx->token_file || strlen(ctx->token_file) == 0) {
         return 0;
     }
 
@@ -147,6 +147,10 @@ static int refresh_token_if_needed(struct k8s_events *ctx)
 {
     int expired = FLB_FALSE;
     int ret;
+
+    if (!ctx->token_file || strlen(ctx->token_file) == 0) {
+        return 0;
+    }
 
     if (ctx->token_created > 0) {
         if (time(NULL) > ctx->token_created + ctx->token_ttl) {
@@ -257,7 +261,8 @@ static int record_get_field_uint64(msgpack_object *obj, const char *fieldname, u
         return 0;
     }
 
-    if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER || MSGPACK_OBJECT_NEGATIVE_INTEGER) {
+    if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
+        v->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
         *val = v->via.u64;
         return 0;
     }
