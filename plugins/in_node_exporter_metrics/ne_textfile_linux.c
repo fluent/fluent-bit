@@ -143,7 +143,7 @@ static int textfile_update(struct flb_ne *ctx)
     mk_list_foreach(head, &list) {
         entry = mk_list_entry(head, struct flb_slist_entry, _head);
         /* Update metrics from text file */
-        contents = flb_file_read(entry->str);
+        contents = flb_file_read_contents(entry->str);
         if (flb_sds_len(contents) == 0) {
             flb_plg_debug(ctx->ins, "skip empty payload of prometheus: %s",
                           entry->str);
