@@ -20,6 +20,7 @@
 #define _DEFAULT_SOURCE
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_file.h>
 #include <fluent-bit/flb_input_plugin.h>
 
 #include <sys/types.h>
@@ -30,16 +31,12 @@
 #include "tail_config.h"
 #include "tail_signal.h"
 
-#ifdef FLB_SYSTEM_WINDOWS
-#include "win32.h"
-#endif
-
 struct fs_stat {
     /* last time check */
     time_t checked;
 
     /* previous status */
-    struct stat st;
+    struct flb_file_stat st;
 };
 
 static int tail_fs_event(struct flb_input_instance *ins,
@@ -51,7 +48,7 @@ static int tail_fs_event(struct flb_input_instance *ins,
     struct flb_tail_config *ctx = in_context;
     struct flb_tail_file *file = NULL;
     struct fs_stat *fst;
-    struct stat st;
+    struct flb_file_stat st;
     time_t t;
 
     t = time(NULL);
@@ -62,17 +59,17 @@ static int tail_fs_event(struct flb_input_instance *ins,
         fst = file->fs_backend;
 
         /* Check current status of the file */
-        ret = fstat(file->fd, &st);
+        ret = flb_file_fstat(file->fd, &st);
         if (ret == -1) {
             flb_errno();
             continue;
         }
 
         /* Check if the file was modified */
-        if ((fst->st.st_mtime != st.st_mtime) ||
-            (fst->st.st_size != st.st_size)) {
+        if ((fst->st.modification_time != st.modification_time) ||
+            (fst->st.size != st.size)) {
             /* Update stat info and trigger the notification */
-            memcpy(&fst->st, &st, sizeof(struct stat));
+            memcpy(&fst->st, &st, sizeof(struct flb_file_stat));
             fst->checked = t;
             in_tail_collect_event(file, config);
         }
@@ -92,14 +89,14 @@ static int tail_fs_check(struct flb_input_instance *ins,
     struct flb_tail_config *ctx = in_context;
     struct flb_tail_file *file = NULL;
     struct fs_stat *fst;
-    struct stat st;
+    struct flb_file_stat st;
 
     /* Lookup watched file */
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
         fst = file->fs_backend;
 
-        ret = fstat(file->fd, &st);
+        ret = flb_file_fstat(file->fd, &st);
         if (ret == -1) {
             flb_plg_debug(ctx->ins, "error stat(2) %s, removing", file->name);
             flb_tail_file_remove(file);
@@ -107,7 +104,7 @@ static int tail_fs_check(struct flb_input_instance *ins,
         }
 
         /* Check if the file have been deleted */
-        if (st.st_nlink == 0) {
+        if (st.hard_link_count == 0) {
             flb_plg_debug(ctx->ins, "file has been deleted: %s", file->name);
 #ifdef FLB_HAVE_SQLDB
             if (ctx->db) {
@@ -120,8 +117,8 @@ static int tail_fs_check(struct flb_input_instance *ins,
         }
 
         /* Check if the file was truncated */
-        if (file->offset > st.st_size) {
-            offset = lseek(file->fd, 0, SEEK_SET);
+        if (file->offset > st.size) {
+            offset = flb_file_lseek(file->fd, 0, SEEK_SET);
             if (offset == -1) {
                 flb_errno();
                 return -1;
@@ -130,7 +127,7 @@ static int tail_fs_check(struct flb_input_instance *ins,
             flb_plg_debug(ctx->ins, "file truncated %s", file->name);
             file->offset = offset;
             file->buf_len = 0;
-            memcpy(&fst->st, &st, sizeof(struct stat));
+            memcpy(&fst->st, &st, sizeof(struct flb_file_stat));
 
 #ifdef FLB_HAVE_SQLDB
             /* Update offset in database file */
@@ -140,8 +137,8 @@ static int tail_fs_check(struct flb_input_instance *ins,
 #endif
         }
 
-        if (file->offset < st.st_size) {
-            file->pending_bytes = (st.st_size - file->offset);
+        if (file->offset < st.size) {
+            file->pending_bytes = (st.size - file->offset);
             tail_signal_pending(ctx);
         }
         else {
@@ -150,7 +147,7 @@ static int tail_fs_check(struct flb_input_instance *ins,
 
 
         /* Discover the current file name for the open file descriptor */
-        name = flb_tail_file_name(file);
+        name = flb_file_get_path(file->fd);
         if (!name) {
             flb_plg_debug(ctx->ins, "could not resolve %s, removing", file->name);
             flb_tail_file_remove(file);
@@ -227,7 +224,7 @@ int flb_tail_fs_stat_add(struct flb_tail_file *file)
     }
 
     fst->checked = time(NULL);
-    ret = stat(file->name, &fst->st);
+    ret = flb_file_stat(file->name, &fst->st);
     if (ret == -1) {
         flb_errno();
         flb_free(fst);

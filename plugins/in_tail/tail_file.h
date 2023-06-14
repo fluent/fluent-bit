@@ -25,92 +25,41 @@
 
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_file.h>
 
 #include "tail.h"
 #include "tail_fs.h"
 #include "tail_config.h"
 #include "tail_file_internal.h"
 
-#ifdef FLB_SYSTEM_WINDOWS
-#include "win32.h"
-#endif
-
 #ifdef FLB_HAVE_REGEX
 #define FLB_HASH_TABLE_SIZE 50
 #endif
 
-/* return the file modification time in seconds since epoch */
-static inline int64_t flb_tail_stat_mtime(struct stat *st)
-{
-#if defined(FLB_HAVE_WINDOWS)
-    return (int64_t) st->st_mtime;
-#elif defined(__APPLE__) && !defined(_POSIX_C_SOURCE)
-    return (int64_t) st->st_mtimespec.tv_sec;
-#elif (_POSIX_C_SOURCE >= 200809L ||                                \
-    defined(_BSD_SOURCE) || defined(_SVID_SOURCE) ||                \
-    defined(__BIONIC__) || (defined (__SVR4) && defined (__sun)) || \
-    defined(__FreeBSD__) || defined (__linux__))
-    return (int64_t) st->st_mtim.tv_sec;
-#elif defined(_AIX)
-    return (int64_t) st->st_mtime;
-#else
-    return (int64_t) st->st_mtime;
-#endif
-
-    /* backend unsupported: submit a PR :) */
-    return -1;
-}
-
 static inline int flb_tail_target_file_name_cmp(char *name,
                                                 struct flb_tail_file *file)
 {
-    int ret;
-    char *name_a = NULL;
-    char *name_b = NULL;
-    char *base_a = NULL;
-    char *base_b = NULL;
+    char *base_a;
+    char *base_b;
+    int   ret;
 
-    name_a = flb_strdup(name);
-    if (!name_a) {
-        flb_errno();
-        ret = -1;
-        goto out;
+    base_a = NULL;
+    base_b = NULL;
+    ret = -1;
+
+    base_a = flb_file_basename(name);
+
+    if (base_a != NULL) {
+        base_b = flb_file_basename(file->real_name);
+
+        if (base_b != NULL) {
+            ret = strcasecmp(base_a, base_b);
+
+            flb_free(base_b);
+        }
+
+        flb_free(base_a);
     }
-
-    base_a = flb_strdup(basename(name_a));
-    if (!base_a) {
-        flb_errno();
-        ret = -1;
-        goto out;
-    }
-
-#if defined(FLB_SYSTEM_WINDOWS)
-    name_b = flb_strdup(file->real_name);
-    if (!name_b) {
-        flb_errno();
-        ret = -1;
-        goto out;
-    }
-
-    base_b = basename(name_b);
-    ret = _stricmp(base_a, base_b);
-#else
-    name_b = flb_strdup(file->real_name);
-    if (!name_b) {
-        flb_errno();
-        ret = -1;
-        goto out;
-    }
-    base_b = basename(name_b);
-    ret = strcmp(base_a, base_b);
-#endif
-
- out:
-    flb_free(name_a);
-    flb_free(name_b);
-    flb_free(base_a);
-
-    /* FYI: 'base_b' never points to a new allocation, no flb_free is needed */
 
     return ret;
 }
@@ -118,11 +67,10 @@ static inline int flb_tail_target_file_name_cmp(char *name,
 int flb_tail_file_name_dup(char *path, struct flb_tail_file *file);
 int flb_tail_file_to_event(struct flb_tail_file *file);
 int flb_tail_file_chunk(struct flb_tail_file *file);
-int flb_tail_file_append(char *path, struct stat *st, int mode,
+int flb_tail_file_append(char *path, struct flb_file_stat *st, int mode,
                          struct flb_tail_config *ctx);
 void flb_tail_file_remove(struct flb_tail_file *file);
 int flb_tail_file_remove_all(struct flb_tail_config *ctx);
-char *flb_tail_file_name(struct flb_tail_file *file);
 int flb_tail_file_is_rotated(struct flb_tail_config *ctx,
                              struct flb_tail_file *file);
 int flb_tail_file_rotated(struct flb_tail_file *file);

@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_file.h>
 
 #include <shlwapi.h>
 
@@ -33,8 +34,6 @@
 #include "tail_file.h"
 #include "tail_signal.h"
 #include "tail_config.h"
-
-#include "win32.h"
 
 static int tail_is_excluded(char *path, struct flb_tail_config *ctx)
 {
@@ -56,45 +55,6 @@ static int tail_is_excluded(char *path, struct flb_tail_config *ctx)
 }
 
 /*
- * This function is a thin wrapper over flb_tail_file_append(),
- * adding normalization and sanity checks on top of it.
- */
-static int tail_register_file(const char *target, struct flb_tail_config *ctx,
-                              time_t ts)
-{
-    int64_t mtime;
-    struct stat st;
-    char path[MAX_PATH];
-
-    if (_fullpath(path, target, MAX_PATH) == NULL) {
-        flb_plg_error(ctx->ins, "cannot get absolute path of %s", target);
-        return -1;
-    }
-
-    if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) {
-        return -1;
-    }
-
-    if (ctx->ignore_older > 0) {
-        mtime = flb_tail_stat_mtime(&st);
-        if (mtime > 0) {
-            if ((ts - ctx->ignore_older) > mtime) {
-                flb_plg_debug(ctx->ins, "excluded=%s (ignore_older)",
-                              target);
-                return -1;
-            }
-        }
-    }
-
-    if (tail_is_excluded(path, ctx) == FLB_TRUE) {
-        flb_plg_trace(ctx->ins, "skip '%s' (excluded)", path);
-        return -1;
-    }
-
-    return flb_tail_file_append(path, &st, FLB_TAIL_STATIC, ctx);
-}
-
-/*
  * Perform patern match on the given path string. This function
  * supports patterns with "nested" wildcards like below.
  *
@@ -105,141 +65,148 @@ static int tail_register_file(const char *target, struct flb_tail_config *ctx,
  */
 static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
 {
-    char *star, *p0, *p1;
-    char pattern[MAX_PATH];
-    char buf[MAX_PATH];
-    int ret;
-    int n_added = 0;
-    time_t now;
-    int64_t mtime;
-    HANDLE h;
-    WIN32_FIND_DATA data;
+    struct flb_file_glob_context glob_context;
+    char                        *filename;
+    int                          count;
+    time_t                       now;
+    int                          ret;
 
-    if (strlen(path) > MAX_PATH - 1) {
-        flb_plg_error(ctx->ins, "path too long '%s'");
+    ret = flb_file_glob_start(&glob_context,
+                              path,
+                              FLB_FILE_GLOB_ABORT_ON_ERROR);
+
+    if (ret != FLB_FILE_GLOB_ERROR_SUCCESS) {
+        if (ret == FLB_FILE_GLOB_ERROR_NO_MEMORY) {
+            flb_plg_error(ctx->ins, "no memory space available");
+        }
+        else if (ret == FLB_FILE_GLOB_ERROR_ABORTED) {
+            flb_plg_error(ctx->ins, "read error, check permissions: %s", path);
+        }
+        else if (ret == FLB_FILE_GLOB_ERROR_NO_FILE) {
+            flb_plg_debug(ctx->ins, "cannot read info from: %s", path);
+        }
+        else if (ret == FLB_FILE_GLOB_ERROR_NO_ACCESS) {
+            flb_plg_error(ctx->ins, "no read access for path: %s", path);
+        }
+        else if (ret == FLB_FILE_GLOB_ERROR_NO_MATCHES) {
+            flb_plg_debug(ctx->ins, "no matches for path: %s", path);
+        }
+
+        flb_file_glob_clean(&glob_context);
+
         return -1;
-    }
-
-    star = strchr(path, '*');
-    if (star == NULL) {
-        return -1;
-    }
-
-    /*
-     * C:\data\tmp\input_*.conf
-     *            0<-----|
-     */
-    p0 = star;
-    while (path <= p0 && *p0 != '\\') {
-        p0--;
-    }
-
-    /*
-     * C:\data\tmp\input_*.conf
-     *                   |---->1
-     */
-    p1 = star;
-    while (*p1 && *p1 != '\\') {
-        p1++;
-    }
-
-    memcpy(pattern, path, (p1 - path));
-    pattern[p1 - path] = '\0';
-
-    h = FindFirstFileA(pattern, &data);
-    if (h == INVALID_HANDLE_VALUE) {
-        return 0;  /* none matched */
     }
 
     now = time(NULL);
-    do {
-        /* Ignore the current and parent dirs */
-        if (!strcmp(".", data.cFileName) || !strcmp("..", data.cFileName)) {
-            continue;
-        }
+    count = 0;
 
-        /* Avoid an infinite loop */
-        if (strchr(data.cFileName, '*')) {
-            continue;
-        }
-
-        /* Create a path (prefix + filename + suffix) */
-        memcpy(buf, path, p0 - path + 1);
-        buf[p0 - path + 1] = '\0';
-
-        if (strlen(buf) + strlen(data.cFileName) + strlen(p1) > MAX_PATH - 1) {
-            flb_plg_warn(ctx->ins, "'%s%s%s' is too long", buf, data.cFileName, p1);
-            continue;
-        }
-        strcat(buf, data.cFileName);
-        strcat(buf, p1);
-
-        if (strchr(p1, '*')) {
-            ret = tail_scan_pattern(buf, ctx); /* recursive */
-            if (ret >= 0) {
-                n_added += ret;
-            }
-            continue;
-        }
+    while(flb_file_glob_fetch(&glob_context,
+                              &filename) == FLB_FILE_GLOB_ERROR_SUCCESS) {
 
         /* Try to register the target file */
-        ret = tail_register_file(buf, ctx, now);
+        ret = tail_register_file(filename, ctx, now);
+
         if (ret == 0) {
-            n_added++;
+            count++;
         }
-    } while (FindNextFileA(h, &data) != 0);
-
-    FindClose(h);
-    return n_added;
-}
-
-static int tail_filepath(char *buf, int len, const char *basedir, const char *filename)
-{
-    char drive[_MAX_DRIVE];
-    char dir[_MAX_DIR];
-    char fname[_MAX_FNAME];
-    char ext[_MAX_EXT];
-    char tmp[MAX_PATH];
-    int ret;
-
-    ret = _splitpath_s(basedir, drive, _MAX_DRIVE, dir, _MAX_DIR, NULL, 0, NULL, 0);
-    if (ret) {
-        return -1;
     }
 
-    ret = _splitpath_s(filename, NULL, 0, NULL, 0, fname, _MAX_FNAME, ext, _MAX_EXT);
-    if (ret) {
-        return -1;
-    }
+    flb_file_glob_clean(&glob_context);
 
-    ret = _makepath_s(tmp, MAX_PATH, drive, dir, fname, ext);
-    if (ret) {
-        return -1;
-    }
-
-    if (_fullpath(buf, tmp, len) == NULL) {
-        return -1;
-    }
-
-    return 0;
+    return count;
 }
 
 static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
 {
-    int ret;
-    int n_added = 0;
-    time_t now;
+    struct flb_file_glob_context glob_context;
+    char                        *file_path;
+    int64_t                      mtime;
+    int                          count;
+    time_t                       now;
+    int                          ret;
+    struct flb_file_stat         st;
 
-    if (strchr(path, '*')) {
-        return tail_scan_pattern(path, ctx);
+    ret = flb_file_glob_start(&glob_context,
+                              path,
+                              FLB_FILE_GLOB_ABORT_ON_ERROR);
+
+    if (ret != FLB_FILE_GLOB_ERROR_SUCCESS) {
+        if (ret == FLB_FILE_GLOB_ERROR_NO_MEMORY) {
+            flb_plg_error(ctx->ins, "no memory space available");
+        }
+        else if (ret == FLB_FILE_GLOB_ERROR_ABORTED) {
+            flb_plg_error(ctx->ins, "read error, check permissions: %s", path);
+        }
+        else if (ret == FLB_FILE_GLOB_ERROR_NO_FILE) {
+            flb_plg_debug(ctx->ins, "cannot read info from: %s", path);
+        }
+        else if (ret == FLB_FILE_GLOB_ERROR_NO_ACCESS) {
+            flb_plg_error(ctx->ins, "no read access for path: %s", path);
+        }
+        else if (ret == FLB_FILE_GLOB_ERROR_NO_MATCHES) {
+            flb_plg_debug(ctx->ins, "no matches for path: %s", path);
+        }
+        else if (ret == FLB_FILE_GLOB_ERROR_OVERSIZED_PATH) {
+            flb_plg_debug(ctx->ins, "oversized path or entry: %s", path);
+        }
+
+        flb_file_glob_clean(&glob_context);
+
+        return -1;
     }
 
-    /* No wildcard involved. Let's just handle the file... */
     now = time(NULL);
-    ret = tail_register_file(path, ctx, now);
-    if (ret == 0) {
-        n_added++;
+    count = 0;
+
+
+    while(flb_file_glob_fetch(&glob_context, &file_path) ==
+          FLB_FILE_GLOB_ERROR_SUCCESS) {
+
+        ret = flb_file_stat(file_path, &st);
+
+        if (ret == 0 && FLB_FILE_ISREG(st.mode)) {
+            /* Check if this file is blacklisted */
+            if (tail_is_excluded(file_path, ctx) == FLB_TRUE) {
+                flb_plg_debug(ctx->ins, "excluded=%s", file_path);
+                continue;
+            }
+
+            if (ctx->ignore_older > 0) {
+                mtime = st.modification_time;
+                if (mtime > 0) {
+                    if ((now - ctx->ignore_older) > mtime) {
+                        flb_plg_debug(ctx->ins, "excluded=%s (ignore_older)",
+                                      file_path);
+                        continue;
+                    }
+                }
+            }
+
+            /* Append file to list */
+            ret = flb_tail_file_append(file_path, &st,
+                                       FLB_TAIL_STATIC, ctx);
+            if (ret == 0) {
+                flb_plg_debug(ctx->ins,
+                              "scan_glob add(): %s, inode %"PRIu64,
+                              file_path,
+                              (uint64_t) st.inode);
+
+                count++;
+            }
+            else {
+                flb_plg_debug(ctx->ins,
+                              "scan_blog add(): dismissed: %s, inode %"PRIu64,
+                              file_path,
+                              (uint64_t) st.inode);
+            }
+        }
+        else {
+            flb_plg_debug(ctx->ins, "skip (invalid) entry=%s",
+                          file_path);
+        }
     }
 
-    return n_added;
+    flb_file_glob_clean(&glob_context);
+
+    return count;
 }
