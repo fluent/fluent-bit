@@ -1,0 +1,346 @@
+/*
+ * Copyright (C) 2021 Intel Corporation.  All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+ */
+
+/**
+ * @file   jit-ir.def
+ *
+ * @brief  Definition of JIT IR instructions and annotations.
+ */
+
+/**
+ * @def INSN (NAME, OPND_KIND, OPND_NUM, FIRST_USE)
+ *
+ * Definition of IR instructions
+ *
+ * @param NAME name of the opcode
+ * @param OPND_KIND kind of the operand(s)
+ * @param OPND_NUM number of the operand(s)
+ * @param FIRST_USE index of the first use register
+ *
+ * @p OPND_KIND and @p OPND_NUM together determine the format of an
+ * instruction.  There are four kinds of formats:
+ *
+ * 1) Reg: fixed-number register operands, @p OPND_NUM specifies the
+ * number of operands;
+ *
+ * 2) VReg: variable-number register operands, @p OPND_NUM specifies
+ * the number of fixed register operands;
+ *
+ * 3) TableSwitch: tableswitch instruction's format, @p OPND_NUM must
+ * be 1;
+ *
+ * 4) LookupSwitch: lookupswitch instruction's format, @p OPND_NUM
+ * must be 1.
+ *
+ * Instruction operands are all registers and they are organized in an
+ * order that all registers defined by the instruction, if any, appear
+ * before the registers used by the instruction. The @p FIRST_USE is
+ * the index of the first use register in the register vector sorted
+ * in this order. Use @c jit_insn_opnd_regs to get the register
+ * vector in this order and use @c jit_insn_opnd_first_use to get the
+ * index of the first use register.
+ *
+ * Every instruction with name @p NAME has the following definitions:
+ *
+ * @c JEFF_OP_NAME: the enum opcode of insn NAME
+ * @c jit_insn_new_NAME (...): creates a new instance of insn NAME
+ *
+ * An instruction is deleted by function:
+ *
+ * @c jit_insn_delete (@p insn)
+ *
+ * In the scope of this IR's terminology, operand and argument have
+ * different meanings. The operand is a general notation, which
+ * denotes every raw operand of an instruction, while the argument
+ * only denotes the variable part of operands of instructions of VReg
+ * kind. For example, a VReg instruction phi node "r0 = phi(r1, r2)"
+ * has three operands opnd[0]: r0, opnd[1]: r1 and opnd[2]: r2, but
+ * only two arguments arg[0]: r1 and arg[1]: r2.  Operands or
+ * arguments of instructions with various formats can be access
+ * through the following APIs:
+ *
+ * @c jit_insn_opnd (@p insn, @p n): for Reg_N formats
+ * @c jit_insn_opndv (@p insn, @p n): for VReg_N formats
+ * @c jit_insn_opndv_num (@p insn): for VReg_N formats
+ * @c jit_insn_opndts (@p insn): for TableSwitch_1 format
+ * @c jit_insn_opndls (@p insn): for LookupSwitch_1 format
+ */
+
+#ifndef INSN
+#define INSN(NAME, OPND_KIND, OPND_NUM, FIRST_USE)
+#endif
+
+/* Move and conversion instructions that transfer values among
+   registers of the same kind (move) or different kinds (convert) */
+INSN(MOV, Reg, 2, 1)
+INSN(PHI, VReg, 1, 1)
+
+/* conversion. will extend or truncate */
+INSN(I8TOI32, Reg, 2, 1)
+INSN(I8TOI64, Reg, 2, 1)
+INSN(I16TOI32, Reg, 2, 1)
+INSN(I16TOI64, Reg, 2, 1)
+INSN(I32TOI8, Reg, 2, 1)
+INSN(I32TOU8, Reg, 2, 1)
+INSN(I32TOI16, Reg, 2, 1)
+INSN(I32TOU16, Reg, 2, 1)
+INSN(I32TOI64, Reg, 2, 1)
+INSN(I32TOF32, Reg, 2, 1)
+INSN(I32TOF64, Reg, 2, 1)
+INSN(U32TOI64, Reg, 2, 1)
+INSN(U32TOF32, Reg, 2, 1)
+INSN(U32TOF64, Reg, 2, 1)
+INSN(I64TOI8, Reg, 2, 1)
+INSN(I64TOI16, Reg, 2, 1)
+INSN(I64TOI32, Reg, 2, 1)
+INSN(I64TOF32, Reg, 2, 1)
+INSN(I64TOF64, Reg, 2, 1)
+INSN(F32TOI32, Reg, 2, 1)
+INSN(F32TOI64, Reg, 2, 1)
+INSN(F32TOF64, Reg, 2, 1)
+INSN(F32TOU32, Reg, 2, 1)
+INSN(F64TOI32, Reg, 2, 1)
+INSN(F64TOI64, Reg, 2, 1)
+INSN(F64TOF32, Reg, 2, 1)
+INSN(F64TOU32, Reg, 2, 1)
+
+/**
+ * Re-interpret binary presentations:
+ *   *(i32 *)&f32, *(i64 *)&f64, *(f32 *)&i32, *(f64 *)&i64
+ */
+INSN(I32CASTF32, Reg, 2, 1)
+INSN(I64CASTF64, Reg, 2, 1)
+INSN(F32CASTI32, Reg, 2, 1)
+INSN(F64CASTI64, Reg, 2, 1)
+
+/* Arithmetic and bitwise instructions: */
+INSN(NEG, Reg, 2, 1)
+INSN(NOT, Reg, 2, 1)
+INSN(ADD, Reg, 3, 1)
+INSN(SUB, Reg, 3, 1)
+INSN(MUL, Reg, 3, 1)
+INSN(DIV_S, Reg, 3, 1)
+INSN(REM_S, Reg, 3, 1)
+INSN(DIV_U, Reg, 3, 1)
+INSN(REM_U, Reg, 3, 1)
+INSN(SHL, Reg, 3, 1)
+INSN(SHRS, Reg, 3, 1)
+INSN(SHRU, Reg, 3, 1)
+INSN(ROTL, Reg, 3, 1)
+INSN(ROTR, Reg, 3, 1)
+INSN(OR, Reg, 3, 1)
+INSN(XOR, Reg, 3, 1)
+INSN(AND, Reg, 3, 1)
+INSN(CMP, Reg, 3, 1)
+INSN(MAX, Reg, 3, 1)
+INSN(MIN, Reg, 3, 1)
+INSN(CLZ, Reg, 2, 1)
+INSN(CTZ, Reg, 2, 1)
+INSN(POPCNT, Reg, 2, 1)
+
+/* Select instruction: */
+INSN(SELECTEQ, Reg, 4, 1)
+INSN(SELECTNE, Reg, 4, 1)
+INSN(SELECTGTS, Reg, 4, 1)
+INSN(SELECTGES, Reg, 4, 1)
+INSN(SELECTLTS, Reg, 4, 1)
+INSN(SELECTLES, Reg, 4, 1)
+INSN(SELECTGTU, Reg, 4, 1)
+INSN(SELECTGEU, Reg, 4, 1)
+INSN(SELECTLTU, Reg, 4, 1)
+INSN(SELECTLEU, Reg, 4, 1)
+
+/* Memory access instructions: */
+INSN(LDEXECENV, Reg, 1, 1)
+INSN(LDJITINFO, Reg, 1, 1)
+INSN(LDI8, Reg, 3, 1)
+INSN(LDU8, Reg, 3, 1)
+INSN(LDI16, Reg, 3, 1)
+INSN(LDU16, Reg, 3, 1)
+INSN(LDI32, Reg, 3, 1)
+INSN(LDU32, Reg, 3, 1)
+INSN(LDI64, Reg, 3, 1)
+INSN(LDU64, Reg, 3, 1)
+INSN(LDF32, Reg, 3, 1)
+INSN(LDF64, Reg, 3, 1)
+INSN(LDPTR, Reg, 3, 1)
+INSN(LDV64, Reg, 3, 1)
+INSN(LDV128, Reg, 3, 1)
+INSN(LDV256, Reg, 3, 1)
+INSN(STI8, Reg, 3, 0)
+INSN(STI16, Reg, 3, 0)
+INSN(STI32, Reg, 3, 0)
+INSN(STI64, Reg, 3, 0)
+INSN(STF32, Reg, 3, 0)
+INSN(STF64, Reg, 3, 0)
+INSN(STPTR, Reg, 3, 0)
+INSN(STV64, Reg, 3, 1)
+INSN(STV128, Reg, 3, 1)
+INSN(STV256, Reg, 3, 1)
+
+/* Control instructions */
+INSN(JMP, Reg, 1, 0)
+INSN(BEQ, Reg, 3, 0)
+INSN(BNE, Reg, 3, 0)
+INSN(BGTS, Reg, 3, 0)
+INSN(BGES, Reg, 3, 0)
+INSN(BLTS, Reg, 3, 0)
+INSN(BLES, Reg, 3, 0)
+INSN(BGTU, Reg, 3, 0)
+INSN(BGEU, Reg, 3, 0)
+INSN(BLTU, Reg, 3, 0)
+INSN(BLEU, Reg, 3, 0)
+INSN(LOOKUPSWITCH, LookupSwitch, 1, 0)
+
+/* Call and return instructions */
+INSN(CALLNATIVE, VReg, 2, 1)
+INSN(CALLBC, Reg, 4, 2)
+INSN(RETURNBC, Reg, 3, 0)
+INSN(RETURN, Reg, 1, 0)
+
+#if WASM_ENABLE_SHARED_MEMORY != 0
+/* Atomic Memory Accesses */
+/* op1(replacement val) op2(expected val) op3(mem data) op4(offset)
+ * and in x86, the result is stored in register al/ax/eax/rax */
+INSN(AT_CMPXCHGU8, Reg, 4, 0)
+INSN(AT_CMPXCHGU16, Reg, 4, 0)
+INSN(AT_CMPXCHGI32, Reg, 4, 0)
+INSN(AT_CMPXCHGU32, Reg, 4, 0)
+INSN(AT_CMPXCHGI64, Reg, 4, 0)
+/* rmw operations:
+ * op1(read value) op2(operand value) op3(mem data) op4(offset) */
+INSN(AT_ADDU8, Reg, 4, 1)
+INSN(AT_ADDU16, Reg, 4, 1)
+INSN(AT_ADDI32, Reg, 4, 1)
+INSN(AT_ADDU32, Reg, 4, 1)
+INSN(AT_ADDI64, Reg, 4, 1)
+INSN(AT_SUBU8, Reg, 4, 1)
+INSN(AT_SUBU16, Reg, 4, 1)
+INSN(AT_SUBI32, Reg, 4, 1)
+INSN(AT_SUBU32, Reg, 4, 1)
+INSN(AT_SUBI64, Reg, 4, 1)
+INSN(AT_ANDU8, Reg, 4, 1)
+INSN(AT_ANDU16, Reg, 4, 1)
+INSN(AT_ANDI32, Reg, 4, 1)
+INSN(AT_ANDU32, Reg, 4, 1)
+INSN(AT_ANDI64, Reg, 4, 1)
+INSN(AT_ORU8, Reg, 4, 1)
+INSN(AT_ORU16, Reg, 4, 1)
+INSN(AT_ORI32, Reg, 4, 1)
+INSN(AT_ORU32, Reg, 4, 1)
+INSN(AT_ORI64, Reg, 4, 1)
+INSN(AT_XORU8, Reg, 4, 1)
+INSN(AT_XORU16, Reg, 4, 1)
+INSN(AT_XORI32, Reg, 4, 1)
+INSN(AT_XORU32, Reg, 4, 1)
+INSN(AT_XORI64, Reg, 4, 1)
+INSN(AT_XCHGU8, Reg, 4, 1)
+INSN(AT_XCHGU16, Reg, 4, 1)
+INSN(AT_XCHGI32, Reg, 4, 1)
+INSN(AT_XCHGU32, Reg, 4, 1)
+INSN(AT_XCHGI64, Reg, 4, 1)
+INSN(FENCE, Reg, 0, 0)
+#endif
+
+#undef INSN
+
+/**
+ * @def ANN_LABEL (TYPE, NAME)
+ *
+ * Definition of label annotations.
+ *
+ * @param TYPE type of the annotation
+ * @param NAME name of the annotation
+ *
+ * Each defined annotation with name NAME has the following APIs:
+ *
+ * @c jit_annl_NAME (cc, label): accesses the annotation NAME of
+ * label @p label
+ * @c jit_annl_enable_NAME (cc): enables the annotation NAME
+ * @c jit_annl_disable_NAME (cc): disables the annotation NAME
+ * @c jit_annl_is_enabled_NAME (cc): check whether the annotation NAME
+ * is enabled
+ */
+
+#ifndef ANN_LABEL
+#define ANN_LABEL(TYPE, NAME)
+#endif
+
+/* Basic Block of a label.  */
+ANN_LABEL(JitBasicBlock *, basic_block)
+/* Predecessor number of the block that is only used in
+   jit_cc_update_cfg for updating the CFG.  */
+ANN_LABEL(uint16, pred_num)
+/* Execution frequency of a block.  We can split critical edges with
+   empty blocks so we don't need to store frequencies of edges.  */
+ANN_LABEL(uint16, freq)
+/* Begin bytecode instruction pointer of the block.  */
+ANN_LABEL(uint8 *, begin_bcip)
+/* End bytecode instruction pointer of the block.  */
+ANN_LABEL(uint8 *, end_bcip)
+/* Stack pointer offset at the end of the block.  */
+ANN_LABEL(uint16, end_sp)
+/* The label of the next physically adjacent block.  */
+ANN_LABEL(JitReg, next_label)
+/* Compiled code address of the block.  */
+ANN_LABEL(void *, jitted_addr)
+
+#undef ANN_LABEL
+
+/**
+ * @def ANN_INSN (TYPE, NAME)
+ *
+ * Definition of instruction annotations.
+ *
+ * @param TYPE type of the annotation
+ * @param NAME name of the annotation
+ *
+ * Each defined annotation with name NAME has the following APIs:
+ *
+ * @c jit_anni_NAME (cc, insn): accesses the annotation NAME of
+ * instruction @p insn
+ * @c jit_anni_enable_NAME (cc): enables the annotation NAME
+ * @c jit_anni_disable_NAME (cc): disables the annotation NAME
+ * @c jit_anni_is_enabled_NAME (cc): check whether the annotation NAME
+ * is enabled
+ */
+
+#ifndef ANN_INSN
+#define ANN_INSN(TYPE, NAME)
+#endif
+
+/* A private annotation for linking instructions with the same hash
+   value, which is only used by the compilation context's hash table
+   of instructions.  */
+ANN_INSN(JitInsn *, _hash_link)
+
+#undef ANN_INSN
+
+/**
+ * @def ANN_REG (TYPE, NAME)
+ *
+ * Definition of register annotations.
+ *
+ * @param TYPE type of the annotation
+ * @param NAME name of the annotation
+ *
+ * Each defined annotation with name NAME has the following APIs:
+ *
+ * @c jit_annr_NAME (cc, reg): accesses the annotation NAME of
+ * register @p reg
+ * @c jit_annr_enable_NAME (cc): enables the annotation NAME
+ * @c jit_annr_disable_NAME (cc): disables the annotation NAME
+ * @c jit_annr_is_enabled_NAME (cc): check whether the annotation NAME
+ * is enabled
+ */
+
+#ifndef ANN_REG
+#define ANN_REG(TYPE, NAME)
+#endif
+
+/* Defining instruction of registers satisfying SSA property.  */
+ANN_REG(JitInsn *, def_insn)
+
+#undef ANN_REG

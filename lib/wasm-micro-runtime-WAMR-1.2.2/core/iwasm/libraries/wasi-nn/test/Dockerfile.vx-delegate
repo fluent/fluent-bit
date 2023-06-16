@@ -1,0 +1,99 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+FROM ubuntu:20.04 AS base
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+
+RUN apt-get update && apt-get install -y \
+    cmake build-essential git curl libssl-dev python3
+
+
+# Build TensorFlow Lite VX delegate default built for x86-64 simulator
+WORKDIR /tmp
+RUN git clone https://github.com/VeriSilicon/TIM-VX.git tim-vx
+RUN git clone https://github.com/VeriSilicon/tflite-vx-delegate.git
+RUN git clone https://github.com/tensorflow/tensorflow.git
+
+
+# Build TIM-VX
+WORKDIR /tmp/tim-vx/host_build
+RUN cmake -DCMAKE_INSTALL_PREFIX=/usr/local  ../
+RUN make -j$(grep -c ^processor /proc/cpuinfo)
+RUN make install
+
+WORKDIR /tmp/tim-vx
+#RUN mkdir -p prebuilt-sdk/x86_64_linux/lib/include 
+#RUN cp prebuilt-sdk/x86_64_linux/include/CL prebuilt-sdk/x86_64_linux/lib/include -fr
+
+
+# Build TensorFlow Lite
+WORKDIR /tmp/tensorflow/build
+RUN cmake \
+  -DBUILD_SHARED_LIBS=ON=on \
+  -DTFLITE_ENABLE_RUY=on \
+  -DTFLITE_ENABLE_NNAPI=off \
+  -DTFLITE_ENABLE_XNNPACK=on \
+  -DTFLITE_ENABLE_EXTERNAL_DELEGATE=on \
+  ../tensorflow/lite/
+RUN make -j$(grep -c ^processor /proc/cpuinfo)
+RUN make install
+RUN cp --no-preserve=ownership -d lib*.so* /usr/local/lib
+RUN cp -r --no-preserve=ownership -d flatbuffers/include/flatbuffers /usr/local/include
+# install header files
+RUN install -d /usr/local/include/tensorflow/lite && \
+    cd /tmp/tensorflow/tensorflow/lite && \
+    cp --parents \
+        $(find . -name "*.h*") \
+        /usr/local/include/tensorflow/lite
+# install version.h from core
+RUN install -d /usr/local/include/tensorflow/core/public && \
+    cp /tmp/tensorflow/tensorflow/core/public/version.h /usr/local/include/tensorflow/core/public
+
+
+# Build Vx Delegate default built for x86-64 simulator
+WORKDIR /tmp/tflite-vx-delegate/build
+RUN cmake \
+   -DBUILD_SHARED_LIBS=ON \
+   -DFETCHCONTENT_SOURCE_DIR_TENSORFLOW=/tmp/tensorflow \
+   -DTFLITE_LIB_LOC=/usr/local/lib/libtensorflow-lite.so \
+   -DTIM_VX_INSTALL=/usr/local \
+   -DCMAKE_INSTALL_PREFIX=/usr/  \
+   ../
+RUN make vx_delegate -j$(grep -c ^processor /proc/cpuinfo)
+RUN make install
+RUN cp --no-preserve=ownership -d lib*.so* /usr/lib
+# install header files
+RUN install -d /usr/local/include/tensorflow-lite-vx-delegate && \
+    cd  /tmp/tflite-vx-delegate/ && \
+    cp --parents \
+        $(find . -name "*.h*") \
+        /usr/local/include/tensorflow-lite-vx-delegate
+
+ENV VIVANTE_SDK_DIR=/tmp/tim-vx/prebuilt-sdk/x86_64_linux/
+ENV VSIMULATOR_CONFIG=czl
+
+ENV LD_LIBRARY_PATH=/tmp/tim-vx/prebuilt-sdk/x86_64_linux/lib:/usr/local/lib:/lib/x86_64-linux-gnu/:/lib64/:/usr/lib:$LD_LIBRARY_PATH 
+
+
+# Build WASI-NN
+WORKDIR /home/wamr
+
+COPY . .
+
+WORKDIR /home/wamr/core/iwasm/libraries/wasi-nn/test/build
+
+RUN cmake \
+    -DCMAKE_LIBRARY_PATH=${CMAKE_LIBRARY_PATH}:/usr/local/lib/ \
+    -DCMAKE_INCLUDE_PATH=${CMAKE_INCLUDE_PATH}:/usr/local/include/ \
+    -DWAMR_BUILD_WASI_NN=1 \
+    -DWAMR_BUILD_WASI_NN_ENABLE_EXT=1 \
+    -DWASI_NN_EXT_DELEGATE_PATH="/usr/lib/libvx_delegate.so" \
+    ..
+
+RUN make -j $(grep -c ^processor /proc/cpuinfo)
+
+RUN cp /home/wamr/core/iwasm/libraries/wasi-nn/test/build/iwasm /run/iwasm
+
+ENTRYPOINT [ "/run/iwasm" ]
