@@ -291,7 +291,7 @@ void flb_test_in_elasticsearch_version_configured()
     size_t b_sent;
     char *expected = "\"version\":{\"number\":\"8.1.2\",\"build_flavor\"";
     char *buf = NULL;
-    int port = 9210;
+    int port = 9202;
     char sport[16];
 
     snprintf(sport, 16, "%d", port);
@@ -447,12 +447,12 @@ void flb_test_in_elasticsearch(char *write_op, int port, char *tag)
 
 void flb_test_in_elasticsearch_index_op()
 {
-    flb_test_in_elasticsearch("index", 9202, NULL);
+    flb_test_in_elasticsearch("index", 9203, NULL);
 }
 
 void flb_test_in_elasticsearch_create_op()
 {
-    flb_test_in_elasticsearch("create", 9203, NULL);
+    flb_test_in_elasticsearch("create", 9204, NULL);
 }
 
 void flb_test_in_elasticsearch_invalid(char *write_op, int status, char *expected_op, int port)
@@ -542,17 +542,17 @@ void flb_test_in_elasticsearch_invalid(char *write_op, int status, char *expecte
 
 void flb_test_in_elasticsearch_update_op()
 {
-    flb_test_in_elasticsearch_invalid("update", 403, "update", 9204);
+    flb_test_in_elasticsearch_invalid("update", 403, "update", 9205);
 }
 
 void flb_test_in_elasticsearch_delete_op()
 {
-    flb_test_in_elasticsearch_invalid("delete", 404, "delete", 9205);
+    flb_test_in_elasticsearch_invalid("delete", 404, "delete", 9206);
 }
 
 void flb_test_in_elasticsearch_nonexistent_op()
 {
-    flb_test_in_elasticsearch_invalid("nonexistent", 400, "unknown", 9206);
+    flb_test_in_elasticsearch_invalid("nonexistent", 400, "unknown", 9207);
 }
 
 void flb_test_in_elasticsearch_multi_ops()
@@ -562,7 +562,7 @@ void flb_test_in_elasticsearch_multi_ops()
     struct flb_http_client *c;
     int ret;
     int num;
-    int port = 9207;
+    int port = 9208;
     char sport[16];
     size_t b_sent;
     char *buf = NDJSON_BULK;
@@ -645,7 +645,7 @@ void flb_test_in_elasticsearch_multi_ops_gzip()
     struct flb_http_client *c;
     int ret;
     int num;
-    int port = 9208;
+    int port = 9209;
     char sport[16];
     size_t b_sent;
     char *buf = NDJSON_BULK;
@@ -737,7 +737,7 @@ void flb_test_in_elasticsearch_node_info()
     struct test_ctx *ctx;
     struct flb_http_client *c;
     int ret;
-    int port = 9208;
+    int port = 9210;
     char sport[16];
     size_t b_sent;
     char *expected = "{\"_nodes\":{\"total\":1,\"successful\":1,\"failed\":0},\"nodes\":{\"";
@@ -807,7 +807,7 @@ void flb_test_in_elasticsearch_tag_key()
     int ret;
     int num;
     size_t b_sent;
-    int port = 9209;
+    int port = 9211;
     char sport[16];
 
     char *buf = "{\"index\":{\"_index\":\"fluent-bit\"}}\n{\"test\":\"msg\",\"tag\":\"new_tag\"}\n";
