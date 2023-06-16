@@ -1,0 +1,40 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+FROM ubuntu:20.04 AS base
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    cmake build-essential git
+
+WORKDIR /home/wamr
+
+COPY . .
+
+WORKDIR /home/wamr/core/iwasm/libraries/wasi-nn/test/build
+
+RUN cmake \
+  -DWAMR_BUILD_WASI_NN=1 \
+  -DWASI_NN_ENABLE_GPU=1 \
+  ..
+
+RUN make -j $(grep -c ^processor /proc/cpuinfo)
+
+FROM nvidia/cuda:11.3.0-runtime-ubuntu20.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ocl-icd-libopencl1 \
+        ocl-icd-opencl-dev \
+        clinfo && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /etc/OpenCL/vendors && \
+    echo "libnvidia-opencl.so.1" > /etc/OpenCL/vendors/nvidia.icd
+
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+COPY --from=base /home/wamr/core/iwasm/libraries/wasi-nn/test/build/iwasm /run/iwasm
+
+ENTRYPOINT [ "/run/iwasm" ]
