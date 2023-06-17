@@ -53,9 +53,11 @@ int flb_es_conf_set_cloud_credentials(const char *cloud_auth,
         entry = mk_list_entry(head, struct flb_split_entry, _head);
         if (items == 1) {
             ec->cloud_user = flb_strdup(entry->value);
+            ec->own_cloud_user = FLB_TRUE;
         }
         if (items == 2) {
             ec->cloud_passwd = flb_strdup(entry->value);
+            ec->own_cloud_passwd = FLB_TRUE;
         }
     }
     flb_utils_split_free(toks);
@@ -194,6 +196,7 @@ int flb_es_set_aws_unsigned_headers(struct flb_elasticsearch_config *ec)
         flb_errno();
         return -1;
     }
+    ec->own_aws_unsigned_headers = FLB_TRUE;
 
     flb_slist_create(ec->aws_unsigned_headers);
     ret = flb_slist_add(ec->aws_unsigned_headers, "Content-Length");
@@ -240,6 +243,7 @@ static int set_aws_sts_provider(const char *aws_external_id,
         flb_free(aws_session_name);
         return -1;
     }
+    ec->own_aws_sts_tls = FLB_TRUE;
 
     ec->aws_provider = flb_sts_provider_create(config,
                                                ec->aws_sts_tls,
@@ -251,6 +255,9 @@ static int set_aws_sts_provider(const char *aws_external_id,
                                                ec->aws_sts_endpoint,
                                                NULL,
                                                flb_aws_client_generator());
+    ec->own_base_aws_provider = ec->own_aws_provider;
+    ec->own_aws_provider = FLB_TRUE;
+
     /* Session name can be freed once provider is created */
     flb_free(aws_session_name);
 
@@ -271,6 +278,9 @@ int flb_es_conf_set_aws_provider(const char *aws_external_id,
     int ret;
 
     if (ec->has_aws_auth == FLB_FALSE) {
+        ec->aws_tls = NULL;
+        ec->aws_provider = NULL;
+        ec->base_aws_provider = NULL;
         return 0;
     }
 
@@ -295,6 +305,7 @@ int flb_es_conf_set_aws_provider(const char *aws_external_id,
         flb_errno();
         return -1;
     }
+    ec->own_aws_tls = FLB_TRUE;
 
     ec->aws_provider = flb_standard_chain_provider_create(config,
                                                           ec->aws_tls,
@@ -307,6 +318,7 @@ int flb_es_conf_set_aws_provider(const char *aws_external_id,
         flb_error("[out_es] Failed to create AWS Credential Provider");
         return -1;
     }
+    ec->own_aws_provider = FLB_TRUE;
 
     ret = set_aws_sts_provider(aws_external_id, aws_role_arn, ec, ctx, config);
     if (ret != 0) {
