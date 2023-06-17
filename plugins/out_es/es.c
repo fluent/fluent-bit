@@ -37,6 +37,7 @@
 
 #include "es.h"
 #include "es_conf.h"
+#include "es_conf_prop.h"
 #include "es_bulk.h"
 #include "murmur3.h"
 
@@ -1141,53 +1142,53 @@ static int cb_es_exit(void *data, struct flb_config *config)
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
-     FLB_CONFIG_MAP_STR, "index", FLB_ES_DEFAULT_INDEX,
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_INDEX, FLB_ES_DEFAULT_INDEX,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, index),
      "Set an index name"
     },
     {
-     FLB_CONFIG_MAP_STR, "type", FLB_ES_DEFAULT_TYPE,
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_TYPE, FLB_ES_DEFAULT_TYPE,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, type),
      "Set the document type property"
     },
     {
-     FLB_CONFIG_MAP_BOOL, "suppress_type_name", "false",
+     FLB_CONFIG_MAP_BOOL, FLB_ES_CONFIG_PROPERTY_SUPPRESS_TYPE_NAME, "false",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, suppress_type_name),
      "If true, mapping types is removed. (for v7.0.0 or later)"
     },
 
     /* HTTP Authentication */
     {
-     FLB_CONFIG_MAP_STR, "http_user", NULL,
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_HTTP_USER, NULL,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, http_user),
      "Optional username credential for Elastic X-Pack access"
     },
     {
-     FLB_CONFIG_MAP_STR, "http_passwd", "",
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_HTTP_PASSWD, "",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, http_passwd),
      "Password for user defined in HTTP_User"
     },
     {
-    FLB_CONFIG_MAP_STR, "http_api_key", NULL,
+    FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_HTTP_API_KEY, NULL,
     0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, http_api_key),
     "Base-64 encoded API key credential for Elasticsearch"
     },
 
     /* HTTP Compression */
     {
-     FLB_CONFIG_MAP_STR, "compress", NULL,
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_COMPRESS, NULL,
      0, FLB_FALSE, 0,
      "Set payload compression mechanism. Option available is 'gzip'"
     },
 
     /* Cloud Authentication */
     {
-     FLB_CONFIG_MAP_STR, "cloud_id", NULL,
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_CLOUD_ID, NULL,
      0, FLB_FALSE, 0,
      "Elastic cloud ID of the cluster to connect to"
     },
     {
-     FLB_CONFIG_MAP_STR, "cloud_auth", NULL,
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_CLOUD_AUTH, NULL,
      0, FLB_FALSE, 0,
      "Elastic cloud authentication credentials"
     },
@@ -1195,37 +1196,37 @@ static struct flb_config_map config_map[] = {
     /* AWS Authentication */
 #ifdef FLB_HAVE_AWS
     {
-     FLB_CONFIG_MAP_BOOL, "aws_auth", "false",
+     FLB_CONFIG_MAP_BOOL, FLB_ES_CONFIG_PROPERTY_AWS_AUTH, "false",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, has_aws_auth),
      "Enable AWS Sigv4 Authentication"
     },
     {
-     FLB_CONFIG_MAP_STR, "aws_region", NULL,
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_AWS_REGION, NULL,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, aws_region),
      "AWS Region of your Amazon OpenSearch Service cluster"
     },
     {
-     FLB_CONFIG_MAP_STR, "aws_sts_endpoint", NULL,
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_AWS_STS_ENDPOINT, NULL,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, aws_sts_endpoint),
      "Custom endpoint for the AWS STS API, used with the AWS_Role_ARN option"
     },
     {
-     FLB_CONFIG_MAP_STR, "aws_role_arn", NULL,
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_AWS_ROLE_ARN, NULL,
      0, FLB_FALSE, 0,
      "AWS IAM Role to assume to put records to your Amazon OpenSearch cluster"
     },
     {
-     FLB_CONFIG_MAP_STR, "aws_external_id", NULL,
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_AWS_EXTERNAL_ID, NULL,
      0, FLB_FALSE, 0,
      "External ID for the AWS IAM Role specified with `aws_role_arn`"
     },
     {
-     FLB_CONFIG_MAP_STR, "aws_service_name", "es",
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_AWS_SERVICE_NAME, "es",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, aws_service_name),
      "AWS Service Name"
     },
     {
-     FLB_CONFIG_MAP_STR, "aws_profile", NULL,
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_AWS_PROFILE, NULL,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, aws_profile),
      "AWS Profile name. AWS Profiles can be configured with AWS CLI and are usually stored in "
      "$HOME/.aws/ directory."
@@ -1234,12 +1235,12 @@ static struct flb_config_map config_map[] = {
 
     /* Logstash compatibility */
     {
-     FLB_CONFIG_MAP_BOOL, "logstash_format", "false",
+     FLB_CONFIG_MAP_BOOL, FLB_ES_CONFIG_PROPERTY_LOGSTASH_FORMAT, "false",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, logstash_format),
      "Enable Logstash format compatibility"
     },
     {
-     FLB_CONFIG_MAP_STR, "logstash_prefix", FLB_ES_DEFAULT_PREFIX,
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_LOGSTASH_PREFIX, FLB_ES_DEFAULT_PREFIX,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, logstash_prefix),
      "When Logstash_Format is enabled, the Index name is composed using a prefix "
      "and the date, e.g: If Logstash_Prefix is equals to 'mydata' your index will "
@@ -1247,12 +1248,12 @@ static struct flb_config_map config_map[] = {
      "when the data is being generated"
     },
     {
-     FLB_CONFIG_MAP_STR, "logstash_prefix_separator", "-",
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_LOGSTASH_PREFIX_SEPARATOR, "-",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, logstash_prefix_separator),
      "Set a separator between logstash_prefix and date."
     },
     {
-     FLB_CONFIG_MAP_STR, "logstash_prefix_key", NULL,
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_LOGSTASH_PREFIX_KEY, NULL,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, logstash_prefix_key),
      "When included: the value in the record that belongs to the key will be looked "
      "up and over-write the Logstash_Prefix for index generation. If the key/value "
@@ -1260,42 +1261,42 @@ static struct flb_config_map config_map[] = {
      "fallback. Nested keys are supported through record accessor pattern"
     },
     {
-     FLB_CONFIG_MAP_STR, "logstash_dateformat", FLB_ES_DEFAULT_TIME_FMT,
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_LOGSTASH_DATEFORMAT, FLB_ES_DEFAULT_TIME_FMT,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, logstash_dateformat),
      "Time format (based on strftime) to generate the second part of the Index name"
     },
 
     /* Custom Time and Tag keys */
     {
-     FLB_CONFIG_MAP_STR, "time_key", FLB_ES_DEFAULT_TIME_KEY,
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_TIME_KEY, FLB_ES_DEFAULT_TIME_KEY,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, time_key),
      "When Logstash_Format is enabled, each record will get a new timestamp field. "
      "The Time_Key property defines the name of that field"
     },
     {
-     FLB_CONFIG_MAP_STR, "time_key_format", FLB_ES_DEFAULT_TIME_KEYF,
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_TIME_KEY_FORMAT, FLB_ES_DEFAULT_TIME_KEYF,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, time_key_format),
      "When Logstash_Format is enabled, this property defines the format of the "
      "timestamp"
     },
     {
-     FLB_CONFIG_MAP_BOOL, "time_key_nanos", "false",
+     FLB_CONFIG_MAP_BOOL, FLB_ES_CONFIG_PROPERTY_TIME_KEY_NANOS, "false",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, time_key_nanos),
      "When Logstash_Format is enabled, enabling this property sends nanosecond "
      "precision timestamps"
     },
     {
-     FLB_CONFIG_MAP_BOOL, "include_tag_key", "false",
+     FLB_CONFIG_MAP_BOOL, FLB_ES_CONFIG_PROPERTY_INCLUDE_TAG_KEY, "false",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, include_tag_key),
      "When enabled, it append the Tag name to the record"
     },
     {
-     FLB_CONFIG_MAP_STR, "tag_key", FLB_ES_DEFAULT_TAG_KEY,
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_TAG_KEY, FLB_ES_DEFAULT_TAG_KEY,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, tag_key),
      "When Include_Tag_Key is enabled, this property defines the key name for the tag"
     },
     {
-     FLB_CONFIG_MAP_SIZE, "buffer_size", FLB_ES_DEFAULT_HTTP_MAX,
+     FLB_CONFIG_MAP_SIZE, FLB_ES_CONFIG_PROPERTY_BUFFER_SIZE, FLB_ES_DEFAULT_HTTP_MAX,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, buffer_size),
      "Specify the buffer size used to read the response from the Elasticsearch HTTP "
      "service. This option is useful for debugging purposes where is required to read "
@@ -1306,7 +1307,7 @@ static struct flb_config_map config_map[] = {
 
     /* Elasticsearch specifics */
     {
-     FLB_CONFIG_MAP_STR, "path", NULL,
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_PATH, NULL,
      0, FLB_FALSE, 0,
      "Elasticsearch accepts new data on HTTP query path '/_bulk'. But it is also "
      "possible to serve Elasticsearch behind a reverse proxy on a subpath. This "
@@ -1314,7 +1315,7 @@ static struct flb_config_map config_map[] = {
      "prefix in the indexing HTTP POST URI"
     },
     {
-     FLB_CONFIG_MAP_STR, "pipeline", NULL,
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_PIPELINE, NULL,
      0, FLB_FALSE, 0,
      "Newer versions of Elasticsearch allows to setup filters called pipelines. "
      "This option allows to define which pipeline the database should use. For "
@@ -1322,48 +1323,48 @@ static struct flb_config_map config_map[] = {
      "Fluent Bit side, avoid pipelines"
     },
     {
-     FLB_CONFIG_MAP_BOOL, "generate_id", "false",
+     FLB_CONFIG_MAP_BOOL, FLB_ES_CONFIG_PROPERTY_GENERATE_ID, "false",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, generate_id),
      "When enabled, generate _id for outgoing records. This prevents duplicate "
      "records when retrying ES"
     },
     {
-     FLB_CONFIG_MAP_STR, "write_operation", "create",
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_WRITE_OPERATION, "create",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, write_operation),
      "Operation to use to write in bulk requests"
     },
     {
-     FLB_CONFIG_MAP_STR, "id_key", NULL,
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_ID_KEY, NULL,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, id_key),
      "If set, _id will be the value of the key from incoming record."
     },
     {
-     FLB_CONFIG_MAP_BOOL, "replace_dots", "false",
+     FLB_CONFIG_MAP_BOOL, FLB_ES_CONFIG_PROPERTY_REPLACE_DOTS, "false",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, replace_dots),
      "When enabled, replace field name dots with underscore, required by Elasticsearch "
      "2.0-2.3."
     },
 
     {
-     FLB_CONFIG_MAP_BOOL, "current_time_index", "false",
+     FLB_CONFIG_MAP_BOOL, FLB_ES_CONFIG_PROPERTY_CURRENT_TIME_INDEX, "false",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, current_time_index),
      "Use current time for index generation instead of message record"
     },
 
     /* Trace */
     {
-     FLB_CONFIG_MAP_BOOL, "trace_output", "false",
+     FLB_CONFIG_MAP_BOOL, FLB_ES_CONFIG_PROPERTY_TRACE_OUTPUT, "false",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, trace_output),
      "When enabled print the Elasticsearch API calls to stdout (for diag only)"
     },
     {
-     FLB_CONFIG_MAP_BOOL, "trace_error", "false",
+     FLB_CONFIG_MAP_BOOL, FLB_ES_CONFIG_PROPERTY_TRACE_ERROR, "false",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, trace_error),
      "When enabled print the Elasticsearch exception to stderr (for diag only)"
     },
 
     {
-     FLB_CONFIG_MAP_STR, "upstream", NULL,
+     FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_UPSTREAM, NULL,
      0, FLB_FALSE, 0,
      "Path to 'upstream' configuration file (define multiple nodes)"
     },
