@@ -26,6 +26,11 @@ struct flb_upstream_node;
 struct flb_elasticsearch;
 struct flb_elasticsearch_config;
 
+#define FLB_ES_WRITE_OP_INDEX  "index"
+#define FLB_ES_WRITE_OP_CREATE "create"
+#define FLB_ES_WRITE_OP_UPDATE "update"
+#define FLB_ES_WRITE_OP_UPSERT "upsert"
+
 struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                                              struct flb_config *config);
 
