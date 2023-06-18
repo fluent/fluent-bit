@@ -620,9 +620,6 @@ static int get_ec2_metadata_base(struct flb_filter_aws *ctx)
 
     ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_BASE].last_execution = time(NULL);
 
-    /* TODO: check this during review, I added this line -- I think it makes it more correct. */
-    /* it also might be fine to just delete new_keys as it's not really used anywhere */
-    ctx->new_keys = 0;
     if (ctx->instance_id_include && !ctx->instance_id) {
         ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_INSTANCE_ID_PATH,
                                    &ctx->instance_id,
@@ -631,7 +628,6 @@ static int get_ec2_metadata_base(struct flb_filter_aws *ctx)
             flb_plg_error(ctx->ins, "Failed to get instance ID");
             return -1;
         }
-        ctx->new_keys++;
     }
 
     if (ctx->availability_zone_include && !ctx->availability_zone) {
@@ -643,7 +639,6 @@ static int get_ec2_metadata_base(struct flb_filter_aws *ctx)
             flb_plg_error(ctx->ins, "Failed to get instance AZ");
             return -1;
         }
-        ctx->new_keys++;
     }
 
     if (ctx->instance_type_include && !ctx->instance_type) {
@@ -654,7 +649,6 @@ static int get_ec2_metadata_base(struct flb_filter_aws *ctx)
             flb_plg_error(ctx->ins, "Failed to get instance type");
             return -1;
         }
-        ctx->new_keys++;
     }
 
     if (ctx->private_ip_include && !ctx->private_ip) {
@@ -665,7 +659,6 @@ static int get_ec2_metadata_base(struct flb_filter_aws *ctx)
             flb_plg_error(ctx->ins, "Failed to get instance private IP");
             return -1;
         }
-        ctx->new_keys++;
     }
 
     if (ctx->vpc_id_include && !ctx->vpc_id) {
@@ -675,7 +668,6 @@ static int get_ec2_metadata_base(struct flb_filter_aws *ctx)
             flb_plg_error(ctx->ins, "Failed to get instance VPC ID");
             return -1;
         }
-        ctx->new_keys++;
     }
 
     if (ctx->ami_id_include && !ctx->ami_id) {
@@ -686,7 +678,6 @@ static int get_ec2_metadata_base(struct flb_filter_aws *ctx)
             flb_plg_error(ctx->ins, "Failed to get AMI ID");
             return -1;
         }
-        ctx->new_keys++;
     }
 
     if (ctx->account_id_include && !ctx->account_id) {
@@ -698,7 +689,6 @@ static int get_ec2_metadata_base(struct flb_filter_aws *ctx)
             flb_plg_error(ctx->ins, "Failed to get Account ID");
             return -1;
         }
-        ctx->new_keys++;
     }
 
     if (ctx->hostname_include && !ctx->hostname) {
@@ -709,7 +699,6 @@ static int get_ec2_metadata_base(struct flb_filter_aws *ctx)
             flb_plg_error(ctx->ins, "Failed to get Hostname");
             return -1;
         }
-        ctx->new_keys++;
     }
 
     return 0;
@@ -718,7 +707,6 @@ static int get_ec2_metadata_base(struct flb_filter_aws *ctx)
 static int get_ec2_metadata_tags(struct flb_filter_aws *ctx)
 {
     int ret;
-    int i;
 
     ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_TAGS].last_execution = time(NULL);
 
@@ -727,11 +715,6 @@ static int get_ec2_metadata_tags(struct flb_filter_aws *ctx)
         if (ret < 0) {
             flb_plg_error(ctx->ins, "Failed to get instance EC2 Tags");
             return ret;
-        }
-        for (i = 0; i < ctx->tags_count; i++) {
-            if (ctx->tag_is_enabled[i] == FLB_TRUE) {
-                ctx->new_keys++;
-            }
         }
     }
 

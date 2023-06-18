@@ -141,9 +141,6 @@ struct flb_filter_aws {
     /* e.g.: if tag_is_enabled[0] = FALSE, then filter aws should not inject first tag */
     int *tag_is_enabled;
 
-    /* number of new keys added by this plugin */
-    int new_keys;
-
     /* metadata groups contains information for potential retries and
      * if group was already fetched successfully */
     struct flb_filter_aws_metadata_group metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_NUM];
