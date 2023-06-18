@@ -618,6 +618,8 @@ static int get_ec2_metadata_base(struct flb_filter_aws *ctx)
 {
     int ret;
 
+    ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_BASE].last_execution = time(NULL);
+
     /* TODO: check this during review, I added this line -- I think it makes it more correct. */
     /* it also might be fine to just delete new_keys as it's not really used anywhere */
     ctx->new_keys = 0;
@@ -718,6 +720,8 @@ static int get_ec2_metadata_tags(struct flb_filter_aws *ctx)
     int ret;
     int i;
 
+    ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_TAGS].last_execution = time(NULL);
+
     if (ctx->tags_enabled && !ctx->tags_fetched) {
         ret = get_ec2_tags(ctx);
         if (ret < 0) {
@@ -734,13 +738,37 @@ static int get_ec2_metadata_tags(struct flb_filter_aws *ctx)
     return 0;
 }
 
+static int ec2_metadata_group_should_fetch(struct flb_filter_aws *ctx, int group)
+{
+    time_t now, required_interval, interval;
+
+    required_interval = ctx->metadata_groups[group].retry_required_interval;
+    if (required_interval == 0) {
+        return FLB_TRUE;
+    }
+
+    now = time(NULL);
+
+    interval = now - ctx->metadata_groups[group].last_execution;
+
+    if (interval < required_interval) {
+        return FLB_FALSE;
+    }
+    return FLB_TRUE;
+}
+
 /*
  * Fetches all metadata values, including tags, from IMDS.
+ * Function handles retries as configured for each metadata group.
+ *
+ * Returns 0 on success, negative values on failures.
+ * Returns FLB_FILTER_AWS_CONFIGURATION_ERROR in case of configuration error.
  */
 static int get_ec2_metadata(struct flb_filter_aws *ctx)
 {
     int ret;
     int failures = 0;
+    int fetches_skipped = 0;
 
     if (!ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_BASE].done) {
         ret = get_ec2_metadata_base(ctx);
@@ -751,20 +779,22 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
     }
 
     if (!ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_TAGS].done) {
-        /* TODO: retries with Fixed Interval Rate */
-        /* at the moment it will retry with every flush */
-        ret = get_ec2_metadata_tags(ctx);
-        if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
-            return ret;
-        }
-        if (ret == 0) {
-            ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_TAGS].done = FLB_TRUE;
+        if (!ec2_metadata_group_should_fetch(ctx, FLB_FILTER_AWS_METADATA_GROUP_TAGS)) {
+            fetches_skipped++;
         } else {
-            failures++;
+            ret = get_ec2_metadata_tags(ctx);
+            if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
+                return ret;
+            }
+            if (ret == 0) {
+                ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_TAGS].done = FLB_TRUE;
+            } else {
+                failures++;
+            }
         }
     }
 
-    if (failures == 0) {
+    if (failures == 0 && fetches_skipped == 0) {
         ctx->metadata_retrieved = FLB_TRUE;
     }
 
@@ -1100,6 +1130,12 @@ static struct flb_config_map config_map[] = {
      "tag keys must be separated by \",\" character; "
      "if both tags_include and tags_exclude are specified, configuration is invalid"
      " and plugin fails"
+    },
+    {
+     FLB_CONFIG_MAP_INT, "tags_retry_interval_s", "5",
+     0, FLB_TRUE, offsetof(struct flb_filter_aws,
+             metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_TAGS].retry_required_interval),
+     "Defines minimum duration between retries for fetching EC2 instance tags"
     },
     {0}
 };

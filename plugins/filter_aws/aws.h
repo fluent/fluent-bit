@@ -60,7 +60,12 @@ struct flb_filter_aws_metadata_group {
     /* defines if information was already exposed in the filter for envs */
     int exposed;
 
-    // TODO: possibly it will need new_keys or something related to injecting into the msgpack
+    /* defines a timestamp of last execution of fetch method related to the group */
+    /* unit: seconds */
+    time_t last_execution;
+    /* defines a minimal interval before consecutive retries */
+    /* unit: seconds */
+    time_t retry_required_interval;
 };
 
 
