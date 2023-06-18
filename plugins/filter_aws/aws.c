@@ -740,6 +740,7 @@ static int get_ec2_metadata_tags(struct flb_filter_aws *ctx)
 static int get_ec2_metadata(struct flb_filter_aws *ctx)
 {
     int ret;
+    int failures = 0;
 
     if (!ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_BASE].done) {
         ret = get_ec2_metadata_base(ctx);
@@ -750,16 +751,23 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
     }
 
     if (!ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_TAGS].done) {
-        /* TODO: retries */
+        /* TODO: retries with Fixed Interval Rate */
+        /* at the moment it will retry with every flush */
         ret = get_ec2_metadata_tags(ctx);
-
-        if (ret < 0) {
+        if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
             return ret;
         }
-        ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_TAGS].done = FLB_TRUE;
+        if (ret == 0) {
+            ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_TAGS].done = FLB_TRUE;
+        } else {
+            failures++;
+        }
     }
 
-    ctx->metadata_retrieved = FLB_TRUE;
+    if (failures == 0) {
+        ctx->metadata_retrieved = FLB_TRUE;
+    }
+
     return 0;
 }
 
