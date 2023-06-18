@@ -54,53 +54,60 @@ static void expose_aws_meta(struct flb_filter_aws *ctx)
 
     flb_env_set(env, "aws", "enabled");
 
-    if (ctx->availability_zone_include) {
-        flb_env_set(env,
-                    "aws." FLB_FILTER_AWS_AVAILABILITY_ZONE_KEY,
-                    ctx->availability_zone);
+    if (ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_BASE].done &&
+            !ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_BASE].exposed) {
+        if (ctx->availability_zone_include) {
+            flb_env_set(env,
+                        "aws." FLB_FILTER_AWS_AVAILABILITY_ZONE_KEY,
+                        ctx->availability_zone);
+        }
+
+        if (ctx->instance_id_include) {
+            flb_env_set(env,
+                        "aws." FLB_FILTER_AWS_INSTANCE_ID_KEY,
+                        ctx->instance_id);
+        }
+
+        if (ctx->instance_type_include) {
+            flb_env_set(env,
+                        "aws." FLB_FILTER_AWS_INSTANCE_TYPE_KEY,
+                        ctx->instance_type);
+        }
+
+        if (ctx->private_ip_include) {
+            flb_env_set(env,
+                        "aws." FLB_FILTER_AWS_PRIVATE_IP_KEY,
+                        ctx->private_ip);
+        }
+
+        if (ctx->vpc_id_include) {
+            flb_env_set(env,
+                        "aws." FLB_FILTER_AWS_VPC_ID_KEY,
+                        ctx->vpc_id);
+        }
+
+        if (ctx->ami_id_include) {
+            flb_env_set(env,
+                        "aws." FLB_FILTER_AWS_AMI_ID_KEY,
+                        ctx->ami_id);
+        }
+
+        if (ctx->account_id_include) {
+            flb_env_set(env,
+                        "aws." FLB_FILTER_AWS_ACCOUNT_ID_KEY,
+                        ctx->account_id);
+        }
+
+        if (ctx->hostname_include) {
+            flb_env_set(env,
+                        "aws." FLB_FILTER_AWS_HOSTNAME_KEY,
+                        ctx->hostname);
+        }
+
+        ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_BASE].exposed = FLB_TRUE;
     }
 
-    if (ctx->instance_id_include) {
-        flb_env_set(env,
-                    "aws." FLB_FILTER_AWS_INSTANCE_ID_KEY,
-                    ctx->instance_id);
-    }
-
-    if (ctx->instance_type_include) {
-        flb_env_set(env,
-                    "aws." FLB_FILTER_AWS_INSTANCE_TYPE_KEY,
-                    ctx->instance_type);
-    }
-
-    if (ctx->private_ip_include) {
-        flb_env_set(env,
-                    "aws." FLB_FILTER_AWS_PRIVATE_IP_KEY,
-                    ctx->private_ip);
-    }
-
-    if (ctx->vpc_id_include) {
-        flb_env_set(env,
-                    "aws." FLB_FILTER_AWS_VPC_ID_KEY,
-                    ctx->vpc_id);
-    }
-
-    if (ctx->ami_id_include) {
-        flb_env_set(env,
-                    "aws." FLB_FILTER_AWS_AMI_ID_KEY,
-                    ctx->ami_id);
-    }
-
-    if (ctx->account_id_include) {
-        flb_env_set(env,
-                    "aws." FLB_FILTER_AWS_ACCOUNT_ID_KEY,
-                    ctx->account_id);
-    }
-
-    if (ctx->hostname_include) {
-        flb_env_set(env,
-                    "aws." FLB_FILTER_AWS_HOSTNAME_KEY,
-                    ctx->hostname);
-    }
+    /* TODO: expose aws ec2 tags in flb_env_set */
 }
 
 static int cb_aws_init(struct flb_filter_instance *f_ins,
@@ -185,16 +192,14 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
         return -1;
     }
 
-    ctx->metadata_retrieved = FLB_FALSE;
-
     /* Retrieve metadata */
     ret = get_ec2_metadata(ctx);
     if (ret < 0) {
         /* If the metadata fetch fails, the plugin continues to work. */
         /* Every flush will attempt to fetch ec2 metadata, if needed. */
-        /* If the error is unrecoverable (-3), it exits and does not retry. */
+        /* If the error is unrecoverable, it exits and does not retry. */
         /* e.g.: unrecoverable errors might be related to invalid configuration. */
-        if (ret == -3) {
+        if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
             flb_free(ctx);
             return -1;
         }
@@ -529,7 +534,7 @@ static int get_ec2_tag_enabled(struct flb_filter_aws *ctx)
     if (tags_include && tags_exclude) {
         flb_plg_error(ctx->ins, "configuration is invalid, both tags_include"
                 " and tags_exclude are specified at the same time");
-        return -3;
+        return FLB_FILTER_AWS_CONFIGURATION_ERROR;
     }
     if (!tags_include && tags_exclude) {
         /* copy const string in order to use strtok which modifes the string */
@@ -607,12 +612,15 @@ static int get_ec2_tags(struct flb_filter_aws *ctx)
 /*
  * Makes a call to IMDS to set get the values of all metadata fields.
  * It can be called repeatedly if some metadata calls initially do not succeed.
+ * However, if function succeeds, the expectation is that it shouldn't be called again.
  */
-static int get_ec2_metadata(struct flb_filter_aws *ctx)
+static int get_ec2_metadata_base(struct flb_filter_aws *ctx)
 {
     int ret;
-    int i;
 
+    /* TODO: check this during review, I added this line -- I think it makes it more correct. */
+    /* it also might be fine to just delete new_keys as it's not really used anywhere */
+    ctx->new_keys = 0;
     if (ctx->instance_id_include && !ctx->instance_id) {
         ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_INSTANCE_ID_PATH,
                                    &ctx->instance_id,
@@ -702,6 +710,14 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
         ctx->new_keys++;
     }
 
+    return 0;
+}
+
+static int get_ec2_metadata_tags(struct flb_filter_aws *ctx)
+{
+    int ret;
+    int i;
+
     if (ctx->tags_enabled && !ctx->tags_fetched) {
         ret = get_ec2_tags(ctx);
         if (ret < 0) {
@@ -713,6 +729,34 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
                 ctx->new_keys++;
             }
         }
+    }
+
+    return 0;
+}
+
+/*
+ * Fetches all metadata values, including tags, from IMDS.
+ */
+static int get_ec2_metadata(struct flb_filter_aws *ctx)
+{
+    int ret;
+
+    if (!ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_BASE].done) {
+        ret = get_ec2_metadata_base(ctx);
+        if (ret < 0) {
+            return ret;
+        }
+        ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_BASE].done = FLB_TRUE;
+    }
+
+    if (!ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_TAGS].done) {
+        /* TODO: retries */
+        ret = get_ec2_metadata_tags(ctx);
+
+        if (ret < 0) {
+            return ret;
+        }
+        ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_TAGS].done = FLB_TRUE;
     }
 
     ctx->metadata_retrieved = FLB_TRUE;
