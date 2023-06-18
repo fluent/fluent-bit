@@ -144,7 +144,7 @@ void flb_log_event_decoder_destroy(struct flb_log_event_decoder *context)
         context->initialized = FLB_FALSE;
 
         if (dynamically_allocated) {
-            free(context);
+            flb_free(context);
         }
     }
 }
