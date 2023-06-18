@@ -40,6 +40,30 @@
 #define FLB_FILTER_AWS_HOSTNAME_KEY                       "hostname"
 #define FLB_FILTER_AWS_HOSTNAME_KEY_LEN                   8
 
+/* defines returned value for cases when configuration is invalid and program should exit */
+#define FLB_FILTER_AWS_CONFIGURATION_ERROR -100
+
+/* defines a group of information, is used as an index in the ctx->metadata_groups
+ * to be specific, it is an index at array flb_filter_aws->metadata_groups */
+#define FLB_FILTER_AWS_METADATA_GROUP_BASE 0
+#define FLB_FILTER_AWS_METADATA_GROUP_TAGS 1
+
+#define FLB_FILTER_AWS_METADATA_GROUP_NUM 2 /* used to define required memory */
+
+struct flb_filter_aws_metadata_group {
+    /* defines if fetch function for the information group was already done successfully
+     * if set to FLB_FALSE after first attempt, then most likely another retry will be
+     * required
+     * done set to FLB_TRUE does not mean that information was retrieved, as it might
+     * be disabled */
+    int done;
+    /* defines if information was already exposed in the filter for envs */
+    int exposed;
+
+    // TODO: possibly it will need new_keys or something related to injecting into the msgpack
+};
+
+
 struct flb_filter_aws {
     struct flb_filter_aws_init_options *options;
 
@@ -115,6 +139,9 @@ struct flb_filter_aws {
     /* number of new keys added by this plugin */
     int new_keys;
 
+    /* metadata groups contains information for potential retries and
+     * if group was already fetched successfully */
+    struct flb_filter_aws_metadata_group metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_NUM];
     int metadata_retrieved;
 
     /* Plugin can use EC2 metadata v1 or v2; default is v2 */
