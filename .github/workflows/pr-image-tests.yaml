@@ -7,6 +7,7 @@ on:
       - synchronize
     paths:
       - 'dockerfiles/Dockerfile'
+      - 'dockerfiles/Dockerfile.windows'
       - 'conf/**'
 
   workflow_dispatch:
@@ -79,3 +80,54 @@ jobs:
           # Ensure we disable buildkit
           DOCKER_BUILDKIT: 0
         shell: bash
+    pr-image-tests-build-windows-images:
+      name: PR - Buildkit docker windows build test
+      runs-on: windows-latest
+      permissions:
+        contents: read
+      steps:
+        - name: Checkout repository
+          uses: actions/checkout@v3
+
+        - name: Set up Docker Buildx
+          uses: docker/setup-buildx-action@v2
+
+        - name: Extract metadata from Github
+          id: meta
+          uses: docker/metadata-action@v4
+          with:
+            images: ${{ github.repository }}/pr-${{ github.event.pull_request.number }}
+            tags: |
+              type=sha
+            flavor: |
+              suffix=-windows
+    
+        - name: Build the windows images
+          id: build
+          uses: docker/build-push-action@v4
+          with:
+            file: ./dockerfiles/Dockerfile.windows
+            context: .
+            platforms: windows/amd64
+            target: production
+            push: false
+            load: true
+            tags: ${{ steps.meta.outputs.tags }}
+            labels: ${{ steps.meta.outputs.labels }}
+
+        - name: Sanity check it runs
+          # We do this for a simple check of dependencies
+          run: |
+            docker run --rm -t ${{ steps.meta.outputs.tags }} --help
+          shell: bash
+        
+        - name: Build the debug multi-arch images
+          uses: docker/build-push-action@v4
+          with:
+            file: ./dockerfiles/Dockerfile.windows
+            context: .
+            platforms: windows/amd64
+            target: debug
+            push: false
+            load: false
+
