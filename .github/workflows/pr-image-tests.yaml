@@ -81,8 +81,8 @@ jobs:
           DOCKER_BUILDKIT: 0
         shell: bash
     pr-image-tests-build-windows-images:
-      name: PR - Buildkit docker windows build test
-      runs-on: windows-latest
+      name: PR - Docker windows build test, windows 2019
+      runs-on: windows-2019
       permissions:
         contents: read
       steps:
