@@ -82,7 +82,14 @@ jobs:
         shell: bash
     pr-image-tests-build-windows-images:
       name: PR - Docker windows build test, windows 2019
-      runs-on: windows-2019
+      runs-on: windows-${{ matrix.windows-base-version }}
+      strategy:
+        fail-fast: true
+        matrix:
+          windows-base-version: 
+            # https://github.com/fluent/fluent-bit/blob/1d366594a889624ec3003819fe18588aac3f17cd/dockerfiles/Dockerfile.windows#L3
+            - '2019'
+            - '2022'
       permissions:
         contents: read
       steps:
@@ -97,12 +104,12 @@ jobs:
             tags: |
               type=sha
             flavor: |
-              suffix=-windows
+              suffix=-windows-${{ matrix.windows-base-version }}
     
         - name: Build the windows images
           id: build
           run: |
-            docker build -t ${{ steps.meta.outputs.tags }} -f ./dockerfiles/Dockerfile.windows .
+            docker build -t ${{ steps.meta.outputs.tags }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/Dockerfile.windows .
 
         - name: Sanity check it runs
           # We do this for a simple check of dependencies
