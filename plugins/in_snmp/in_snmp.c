@@ -30,63 +30,82 @@ int mock_snmp_synch_response(netsnmp_session *ss, netsnmp_pdu *pdu, netsnmp_pdu 
     size_t mock_objid_len;
 
     mock_status = getenv("TEST_SNMP_RESPONSE");
+    if ((mock_response = flb_calloc(1, sizeof(netsnmp_pdu))) == NULL) {
+        goto error;
+    }
 
-    if (strcmp(mock_status, "normal") == 0) {
-        // if ((mock_response = flb_calloc(1, sizeof(netsnmp_pdu))) == NULL) {
-        //     flb_errno();
-        //     flb_free(mock_status);
-        //     return NULL;
-        // }
+    if (strcmp(mock_status, "snmp_get") == 0) {
+        if ((mock_netsnmp_variable_list = flb_calloc(1, sizeof(netsnmp_variable_list))) == NULL) {
+            goto error;
+        }
+        // sysUpTime
+        mock_objid_len = MAX_OID_LEN;
+        if (snmp_parse_oid("1.3.6.1.2.1.1.3.0", mock_objid, &mock_objid_len) == NULL) {
+            goto error;
+        }
 
-        // if ((mock_netsnmp_variable_list = flb_calloc(1, sizeof(netsnmp_variable_list))) == NULL) {
-        //     flb_errno();
-        //     flb_free(mock_response);
-        //     flb_free(mock_status);
-        //     return NULL;
-        // }
+        if (snmp_set_var_objid(mock_netsnmp_variable_list, mock_objid, mock_objid_len)) {
+            goto error;
+        }
 
-        // // sysUpTime
-        // mock_objid_len = MAX_OID_LEN;
-        // if (snmp_parse_oid("1.3.6.1.2.1.1.3.0", mock_objid, &mock_objid_len) == NULL) {
-        //     flb_errno();
-        //     flb_free(mock_netsnmp_variable_list);
-        //     flb_free(mock_response);
-        //     flb_free(mock_status);
-        //     return NULL;
-        // }
+        if (snmp_set_var_typed_integer(mock_netsnmp_variable_list, ASN_TIMETICKS, 123)) {
+            goto error;
+        }
 
-        // mock_netsnmp_variable_list->next_variable = NULL;
-        // mock_netsnmp_variable_list->name = NULL;
-        // mock_netsnmp_variable_list->val.string = NULL;
-        // mock_netsnmp_variable_list->val_len = 0;
-        // mock_netsnmp_variable_list->data = NULL;
-        // mock_netsnmp_variable_list->dataFreeHook = NULL;
-        // mock_netsnmp_variable_list->index = 0;
-
-        // if (snmp_set_var_objid(mock_netsnmp_variable_list, mock_objid, mock_objid_len)) {
-        //     flb_errno();
-        //     flb_free(mock_netsnmp_variable_list);
-        //     flb_free(mock_response);
-        //     flb_free(mock_status);
-        //     return NULL;
-        // }
-
-        // if (snmp_set_var_typed_integer(mock_netsnmp_variable_list, ASN_TIMETICKS, 123)) {
-        //     flb_errno();
-        //     flb_free(mock_netsnmp_variable_list);
-        //     flb_free(mock_response);
-        //     flb_free(mock_status);
-        //     return NULL;
-        // }
-
-        // mock_response->variables = mock_netsnmp_variable_list;
-        // mock_response->errstat == SNMP_ERR_NOERROR;
-        // *response = mock_response;
-
-        // flb_free(mock_status);
+        mock_response->variables = mock_netsnmp_variable_list;
+        mock_response->errstat = SNMP_ERR_NOERROR;
+        *response = mock_response;
 
         return STAT_SUCCESS;
+    } else if (strcmp(mock_status, "snmp_walk") == 0) {
+        if ((mock_netsnmp_variable_list = flb_calloc(1, sizeof(netsnmp_variable_list))) == NULL) {
+            goto error;
+        }
+        // ifName.1
+        mock_objid_len = MAX_OID_LEN;
+        if (snmp_parse_oid("1.3.6.1.2.1.31.1.1.1.1.1", mock_objid, &mock_objid_len) == NULL) {
+            goto error;
+        }
+
+        if (snmp_set_var_objid(mock_netsnmp_variable_list, mock_objid, mock_objid_len)) {
+            goto error;
+        }
+
+        if (snmp_set_var_typed_value(mock_netsnmp_variable_list, ASN_OCTET_STR, "Fa0/0", strlen("Fa0/0"))) {
+            goto error;
+        }
+
+        if ((mock_netsnmp_variable_list->next_variable = flb_calloc(1, sizeof(netsnmp_variable_list))) == NULL) {
+            goto error;
+        }
+        // ifName.2
+        mock_objid_len = MAX_OID_LEN;
+        if (snmp_parse_oid("1.3.6.1.2.1.31.1.1.1.1.2", mock_objid, &mock_objid_len) == NULL) {
+            goto error;
+        }
+
+        if (snmp_set_var_objid(mock_netsnmp_variable_list->next_variable, mock_objid, mock_objid_len)) {
+            goto error;
+        }
+
+        if (snmp_set_var_typed_value(mock_netsnmp_variable_list->next_variable, ASN_OCTET_STR, "Fa0/1", strlen("Fa0/1"))) {
+            goto error;
+        }
+
+        mock_response->variables = mock_netsnmp_variable_list;
+        mock_response->errstat = SNMP_ERR_NOERROR;
+        *response = mock_response;
+
+        return STAT_SUCCESS;
+    } else {
+        return STAT_ERROR;
     }
+
+error:
+    flb_errno();
+    if (mock_netsnmp_variable_list) flb_free(mock_netsnmp_variable_list);
+    if (mock_response) flb_free(mock_response);
+    return STAT_ERROR;
 }
 
 static int in_snmp_collect(struct flb_input_instance *ins, struct flb_config *config, void *in_context)
@@ -175,20 +194,18 @@ static int in_snmp_collect(struct flb_input_instance *ins, struct flb_config *co
             pdu = snmp_pdu_create(SNMP_MSG_GETNEXT);
         } else {
             pdu = snmp_pdu_create(SNMP_MSG_GET);
+            running = 0;
         }
 
         snmp_add_null_var(pdu, name, name_len);
 
         if (snmp_plugin_under_test() == FLB_TRUE) {
-            flb_plg_error(ctx->ins, "Ha Ha");
-
             status = mock_snmp_synch_response(ss, pdu, &response);
         } else {
             status = snmp_synch_response(ss, pdu, &response);
         }
 
         if (status == STAT_SUCCESS && response->errstat == SNMP_ERR_NOERROR) {
-                        
             for(vars = response->variables; vars; vars = vars->next_variable) {
                 if (is_walk && snmp_oid_compare(end_oid, end_len,
                         vars->name, vars->name_length) <= 0) {
@@ -206,7 +223,7 @@ static int in_snmp_collect(struct flb_input_instance *ins, struct flb_config *co
                 } else {
                     netsnmp_sprint_realloc_objid_tree(&oid_buf, &oid_buf_len, &oid_out_len,
                                           1, &buf_overflow,
-                                          vars->name, vars->name_length);                    
+                                          vars->name, vars->name_length);
                     if (buf_overflow) {
                         flb_plg_error(ctx->ins, "[TRUNCATED]");
                         return -1;
