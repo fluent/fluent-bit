@@ -81,7 +81,7 @@ jobs:
           DOCKER_BUILDKIT: 0
         shell: bash
     pr-image-tests-build-windows-images:
-      name: PR - Docker windows build test, windows 2019
+      name: PR - Docker windows build test, windows 2019 and 2022
       runs-on: windows-${{ matrix.windows-base-version }}
       strategy:
         fail-fast: true
