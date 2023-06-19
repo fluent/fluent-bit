@@ -1565,7 +1565,16 @@ static void cb_forward_flush(struct flb_event_chunk *event_chunk,
         }
 
         if (!u_conn) {
-            flb_plg_error(ctx->ins, "no upstream connections available");
+            if (ctx->ha_mode) {
+                flb_plg_error(ctx->ins, "no upstream connections available to %s:%i",
+                              node->u->tcp_host, node->u->tcp_port);
+            }
+            else {
+                flb_plg_error(ctx->ins, "no upstream connections available to %s:%i",
+                              ctx->u->tcp_host, ctx->u->tcp_port);
+
+            }
+
             msgpack_sbuffer_destroy(&mp_sbuf);
             if (fc->time_as_integer == FLB_TRUE) {
                 flb_free(out_buf);
