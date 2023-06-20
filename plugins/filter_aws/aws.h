@@ -48,7 +48,7 @@
 #define FLB_FILTER_AWS_METADATA_GROUP_BASE 0
 #define FLB_FILTER_AWS_METADATA_GROUP_TAGS 1
 
-#define FLB_FILTER_AWS_METADATA_GROUP_NUM 2 /* used to define required memory */
+#define FLB_FILTER_AWS_METADATA_GROUP_LEN 2 /* used to define required memory */
 
 struct flb_filter_aws_metadata_group {
     /* defines if fetch function for the information group was already done successfully
@@ -61,8 +61,8 @@ struct flb_filter_aws_metadata_group {
     int exposed;
 
     /* defines a timestamp of last execution of fetch method related to the group */
-    /* unit: seconds */
-    time_t last_execution;
+    /* unit: timestamp in seconds */
+    time_t last_fetch_attempt;
     /* defines a minimal interval before consecutive retries */
     /* unit: seconds */
     time_t retry_required_interval;
@@ -143,7 +143,7 @@ struct flb_filter_aws {
 
     /* metadata groups contains information for potential retries and
      * if group was already fetched successfully */
-    struct flb_filter_aws_metadata_group metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_NUM];
+    struct flb_filter_aws_metadata_group metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_LEN];
     int metadata_retrieved;
 
     /* Plugin can use EC2 metadata v1 or v2; default is v2 */
