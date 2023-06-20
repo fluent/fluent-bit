@@ -248,19 +248,14 @@ static int in_kafka_init(struct flb_input_instance *ins,
         goto init_error;
     }
 
-    conf = flb_input_get_property("data_format", ins);
-    if (!conf) {
-        conf = "none";
-    }
-
-    if (strcasecmp(conf, "none") == 0) {
+    if (strcasecmp(ctx->data_format_str, "none") == 0) {
         ctx->data_format = FLB_IN_KAFKA_DATA_FORMAT_NONE;
     }
-    else if (strcasecmp(conf, "json") == 0) {
+    else if (strcasecmp(ctx->data_format_str, "json") == 0) {
         ctx->data_format = FLB_IN_KAFKA_DATA_FORMAT_JSON;
     }
     else {
-        flb_plg_error(ins, "config: invalid data_format \"%s\"", conf);
+        flb_plg_error(ins, "config: invalid data_format \"%s\"", ctx->data_format_str);
         goto init_error;
     }
 
@@ -346,8 +341,8 @@ static struct flb_config_map config_map[] = {
     "Set the kafka topics, delimited by commas."
    },
    {
-    FLB_CONFIG_MAP_STR, "data_format", (char *)NULL,
-    0, FLB_FALSE, 0,
+    FLB_CONFIG_MAP_STR, "data_format", FLB_IN_KAFKA_DEFAULT_DATA_FORMAT,
+    0, FLB_TRUE, offsetof(struct flb_in_kafka_config, data_format_str),
     "Set the data format which will be used for parsing records."
    },
    {
