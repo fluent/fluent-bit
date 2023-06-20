@@ -42,6 +42,7 @@ struct flb_in_kafka_config {
     struct flb_log_event_encoder *log_encoder;
     int poll_ms;
     int data_format;
+    char *data_format_str;
 };
 
 #endif
