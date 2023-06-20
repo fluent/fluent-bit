@@ -191,7 +191,7 @@ static double wmi_get_value(struct flb_we *ctx, struct wmi_query_spec *spec, IWb
     wproperty = we_convert_str(spec->wmi_property);
     hr = class_obj->lpVtbl->Get(class_obj, wproperty, 0, &prop, 0, 0);
     if (FAILED(hr)) {
-        flb_plg_warn(ctx->ins, "Retrive prop failed. Error code = %x", hr);
+        flb_plg_warn(ctx->ins, "Retrive prop '%s' failed. Error code = %x", spec->wmi_property, hr);
     }
     strprop = convert_prop_to_str(&prop, FLB_FALSE);
     if (strprop == NULL) {
@@ -217,7 +217,7 @@ static double wmi_get_property_value(struct flb_we *ctx, char *raw_property_key,
     wproperty = we_convert_str(raw_property_key);
     hr = class_obj->lpVtbl->Get(class_obj, wproperty, 0, &prop, 0, 0);
     if (FAILED(hr)) {
-        flb_plg_warn(ctx->ins, "Retrive prop failed. Error code = %x", hr);
+        flb_plg_warn(ctx->ins, "Retrive prop '%s' failed. Error code = %x", raw_property_key, hr);
     }
     strprop = convert_prop_to_str(&prop, FLB_FALSE);
     if (strprop == NULL) {
@@ -245,7 +245,7 @@ static char *wmi_get_property_str_value(struct flb_we *ctx, char *raw_property_k
     wproperty = we_convert_str(raw_property_key);
     hr = class_obj->lpVtbl->Get(class_obj, wproperty, 0, &prop, 0, 0);
     if (FAILED(hr)) {
-        flb_plg_warn(ctx->ins, "Retrive prop failed. Error code = %x", hr);
+        flb_plg_warn(ctx->ins, "Retrive prop '%s' failed. Error code = %x", raw_property_key, hr);
     }
     str_val = convert_prop_to_str(&prop, FLB_TRUE);
     VariantClear(&prop);
