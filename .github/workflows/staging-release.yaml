@@ -409,8 +409,6 @@ jobs:
         tag: [
           "${{ github.event.inputs.version }}",
           "${{ needs.staging-release-version-check.outputs.major-version }}",
-          "${{ github.event.inputs.version }}-debug",
-          "${{ needs.staging-release-version-check.outputs.major-version }}-debug",
         ]
     permissions:
       packages: write
@@ -442,7 +440,6 @@ jobs:
         shell: bash
 
       - name: Promote container images from staging to GHCR.io
-        if: ${{ startsWith(github.event.inputs.version, '2.0') || ! startsWith(matrix.tag, 'latest') }}
         run: |
           docker run --rm  \
             quay.io/skopeo/stable:latest \
@@ -459,6 +456,39 @@ jobs:
           TAG: ${{ matrix.tag }}
         shell: bash
 
+      - name: Promote container images from staging to Dockerhub
+        run: |
+          docker run --rm  \
+            quay.io/skopeo/stable:latest \
+            copy \
+              --all \
+              --retry-times 10 \
+              --src-no-creds \
+              --dest-creds "$RELEASE_CREDS" \
+              "docker://$STAGING_IMAGE_NAME:2.1.5-windows-artifact-fix-debug" \
+              "docker://$RELEASE_IMAGE_NAME:$TAG-debug"
+        env:
+          RELEASE_IMAGE_NAME: docker.io/${{ github.event.inputs.docker-image || secrets.DOCKERHUB_ORGANIZATION }}
+          RELEASE_CREDS: ${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }}
+          TAG: ${{ matrix.tag }}
+        shell: bash
+
+      - name: Promote container images from staging to GHCR.io
+        run: |
+          docker run --rm  \
+            quay.io/skopeo/stable:latest \
+            copy \
+              --all \
+              --retry-times 10 \
+              --src-no-creds \
+              --dest-creds "$RELEASE_CREDS" \
+              "docker://$STAGING_IMAGE_NAME:2.1.5-windows-artifact-fix-debug" \
+              "docker://$RELEASE_IMAGE_NAME:$TAG-debug"
+        env:
+          RELEASE_IMAGE_NAME: ghcr.io/${{ github.event.inputs.github-image || github.repository }}
+          RELEASE_CREDS: ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ matrix.tag }}
+        shell: bash
   staging-release-images-latest-tags:
     # Only update latest tags for 2.1 releases
     if: startsWith(github.event.inputs.version, '2.1') 
@@ -480,7 +510,7 @@ jobs:
       # Primarily because the skopeo errors are hard to parse and non-obvious
       - name: Check the image exists
         run: |
-          docker pull "$STAGING_IMAGE_NAME:2.1.5-windows-artifact-fix"
+          docker pull "$STAGING_IMAGE_NAME:$TAG"
         env:
           TAG: ${{ matrix.tag }}
         shell: bash
@@ -495,7 +525,7 @@ jobs:
               --retry-times 10 \
               --src-no-creds \
               --dest-creds "$RELEASE_CREDS" \
-              "docker://$STAGING_IMAGE_NAME:2.1.5-windows-artifact-fix" \
+              "docker://$STAGING_IMAGE_NAME:$TAG" \
               "docker://$RELEASE_IMAGE_NAME:$TAG"
         env:
           RELEASE_IMAGE_NAME: docker.io/${{ github.event.inputs.docker-image || secrets.DOCKERHUB_ORGANIZATION }}
@@ -512,7 +542,7 @@ jobs:
               --retry-times 10 \
               --src-no-creds \
               --dest-creds "$RELEASE_CREDS" \
-              "docker://$STAGING_IMAGE_NAME:2.1.5-windows-artifact-fix" \
+              "docker://$STAGING_IMAGE_NAME:$TAG" \
               "docker://$RELEASE_IMAGE_NAME:$TAG"
         env:
           RELEASE_IMAGE_NAME: ghcr.io/${{ github.event.inputs.github-image || github.repository }}
@@ -546,14 +576,14 @@ jobs:
 
       - name: Check the image exists
         run: |
-          docker pull "$STAGING_IMAGE_NAME:2.1.5-windows-artifact-fix"
+          docker pull "$STAGING_IMAGE_NAME:$TAG-windows-artifact-fix"
         env:
           TAG: ${{ matrix.tag }}
         shell: bash
 
       - name: Promote container images from staging to GHCR.io
         run: |
-          docker tag "$STAGING_IMAGE_NAME:2.1.5-windows-artifact-fix" "$RELEASE_IMAGE_NAME:$TAG"
+          docker tag "$STAGING_IMAGE_NAME:$TAG-windows-artifact-fix" "$RELEASE_IMAGE_NAME:$TAG"
           docker push "$RELEASE_IMAGE_NAME:$TAG"
         env:
           RELEASE_IMAGE_NAME: ghcr.io/${{ github.event.inputs.github-image || github.repository }}
@@ -569,7 +599,7 @@ jobs:
 
       - name: Promote container images from staging to Dockerhub
         run: |
-          docker tag "$STAGING_IMAGE_NAME:2.1.5-windows-artifact-fix" "$RELEASE_IMAGE_NAME:$TAG"
+          docker tag "$STAGING_IMAGE_NAME:$TAG-windows-artifact-fix" "$RELEASE_IMAGE_NAME:$TAG"
           docker push "$RELEASE_IMAGE_NAME:$TAG"
         env:
           RELEASE_IMAGE_NAME: docker.io/${{ github.event.inputs.docker-image || secrets.DOCKERHUB_ORGANIZATION }}
