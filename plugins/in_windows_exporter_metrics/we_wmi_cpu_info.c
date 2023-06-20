@@ -84,6 +84,7 @@ int we_wmi_cpu_info_init(struct flb_we *ctx)
     ctx->wmi_cpu_info->info->label_property_keys[4] = "l2cachesize" ;
     ctx->wmi_cpu_info->info->label_property_keys[5] = "l3cachesize" ;
     ctx->wmi_cpu_info->info->label_property_keys[6] = "name" ;
+    ctx->wmi_cpu_info->info->where_clause = NULL;
 
     ctx->wmi_cpu_info->operational = FLB_TRUE;
 
