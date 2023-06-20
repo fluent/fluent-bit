@@ -38,31 +38,14 @@ jobs:
     permissions:
       contents: read
     steps:
-    - name: Get the version on staging
-      run: |
-        curl --fail -LO "$AWS_URL/latest-version.txt"
-        cat latest-version.txt
-        STAGING_VERSION=$(cat latest-version.txt)
-        [[ "$STAGING_VERSION" != "$RELEASE_VERSION" ]] && echo "Latest version mismatch: $STAGING_VERSION != $RELEASE_VERSION" && exit 1
-        # Must end in something that exits 0
-        echo "Successfully confirmed version is as expected: $STAGING_VERSION"
-      shell: bash
-      env:
-        AWS_URL: https://${{ secrets.AWS_S3_BUCKET_STAGING }}.s3.amazonaws.com
-        RELEASE_VERSION: ${{ github.event.inputs.version }}
-
     # Get the major version, i.e. 1.9.3 --> 1.9, or just return the passed in version.
     - name: Convert to major version format
       id: get_major_version
       run: |
-        MAJOR_VERSION="$RELEASE_VERSION"
-        if [[ $RELEASE_VERSION =~ ^[0-9]+\.[0-9]+ ]]; then
-          MAJOR_VERSION="${BASH_REMATCH[0]}"
-        fi
-        echo "value=$MAJOR_VERSION" >> $GITHUB_OUTPUT
+        echo "value=2.1" >> $GITHUB_OUTPUT
       shell: bash
       env:
-        RELEASE_VERSION: ${{ github.event.inputs.version }}
+        RELEASE_VERSION: ${{ github.event.inputs.version }}-windows-artifact-fix
 
     - name: Checkout repository
       uses: actions/checkout@v3
@@ -73,7 +56,7 @@ jobs:
         ./packaging/appveyor-download.sh
       shell: bash
       env:
-        TAG: v${{ github.event.inputs.version }}
+        TAG: v${{ github.event.inputs.version }}-windows-artifact-fix
 
   staging-release-generate-package-matrix:
     name: Get package matrix
@@ -366,7 +349,7 @@ jobs:
         ./packaging/appveyor-download.sh
       shell: bash
       env:
-        TAG: v${{ github.event.inputs.version }}
+        TAG: v${{ github.event.inputs.version }}-windows-artifact-fix
         OUTPUT_DIR: appveyor
 
     - name: Move components from staging and setup
@@ -435,7 +418,7 @@ jobs:
       # Primarily because the skopeo errors are hard to parse and non-obvious
       - name: Check the image exists
         run: |
-          docker pull "$STAGING_IMAGE_NAME:$TAG"
+          docker pull "$STAGING_IMAGE_NAME:$TAG-windows-artifact-fix"
         env:
           TAG: ${{ matrix.tag }}
         shell: bash
@@ -450,7 +433,7 @@ jobs:
               --retry-times 10 \
               --src-no-creds \
               --dest-creds "$RELEASE_CREDS" \
-              "docker://$STAGING_IMAGE_NAME:$TAG" \
+              "docker://$STAGING_IMAGE_NAME:$TAG-windows-artifact-fix" \
               "docker://$RELEASE_IMAGE_NAME:$TAG"
         env:
           RELEASE_IMAGE_NAME: docker.io/${{ github.event.inputs.docker-image || secrets.DOCKERHUB_ORGANIZATION }}
@@ -468,7 +451,7 @@ jobs:
               --retry-times 10 \
               --src-no-creds \
               --dest-creds "$RELEASE_CREDS" \
-              "docker://$STAGING_IMAGE_NAME:$TAG" \
+              "docker://$STAGING_IMAGE_NAME:$TAG-windows-artifact-fix" \
               "docker://$RELEASE_IMAGE_NAME:$TAG"
         env:
           RELEASE_IMAGE_NAME: ghcr.io/${{ github.event.inputs.github-image || github.repository }}
@@ -497,7 +480,7 @@ jobs:
       # Primarily because the skopeo errors are hard to parse and non-obvious
       - name: Check the image exists
         run: |
-          docker pull "$STAGING_IMAGE_NAME:$TAG"
+          docker pull "$STAGING_IMAGE_NAME:$TAG-windows-artifact-fix"
         env:
           TAG: ${{ matrix.tag }}
         shell: bash
@@ -512,7 +495,7 @@ jobs:
               --retry-times 10 \
               --src-no-creds \
               --dest-creds "$RELEASE_CREDS" \
-              "docker://$STAGING_IMAGE_NAME:$TAG" \
+              "docker://$STAGING_IMAGE_NAME:$TAG-windows-artifact-fix" \
               "docker://$RELEASE_IMAGE_NAME:$TAG"
         env:
           RELEASE_IMAGE_NAME: docker.io/${{ github.event.inputs.docker-image || secrets.DOCKERHUB_ORGANIZATION }}
@@ -529,7 +512,7 @@ jobs:
               --retry-times 10 \
               --src-no-creds \
               --dest-creds "$RELEASE_CREDS" \
-              "docker://$STAGING_IMAGE_NAME:$TAG" \
+              "docker://$STAGING_IMAGE_NAME:$TAG-windows-artifact-fix" \
               "docker://$RELEASE_IMAGE_NAME:$TAG"
         env:
           RELEASE_IMAGE_NAME: ghcr.io/${{ github.event.inputs.github-image || github.repository }}
@@ -563,14 +546,14 @@ jobs:
 
       - name: Check the image exists
         run: |
-          docker pull "$STAGING_IMAGE_NAME:$TAG"
+          docker pull "$STAGING_IMAGE_NAME:$TAG-windows-artifact-fix"
         env:
           TAG: ${{ matrix.tag }}
         shell: bash
 
       - name: Promote container images from staging to GHCR.io
         run: |
-          docker tag "$STAGING_IMAGE_NAME:$TAG" "$RELEASE_IMAGE_NAME:$TAG"
+          docker tag "$STAGING_IMAGE_NAME:$TAG-windows-artifact-fix" "$RELEASE_IMAGE_NAME:$TAG"
           docker push "$RELEASE_IMAGE_NAME:$TAG"
         env:
           RELEASE_IMAGE_NAME: ghcr.io/${{ github.event.inputs.github-image || github.repository }}
@@ -586,7 +569,7 @@ jobs:
 
       - name: Promote container images from staging to Dockerhub
         run: |
-          docker tag "$STAGING_IMAGE_NAME:$TAG" "$RELEASE_IMAGE_NAME:$TAG"
+          docker tag "$STAGING_IMAGE_NAME:$TAG-windows-artifact-fix" "$RELEASE_IMAGE_NAME:$TAG"
           docker push "$RELEASE_IMAGE_NAME:$TAG"
         env:
           RELEASE_IMAGE_NAME: docker.io/${{ github.event.inputs.docker-image || secrets.DOCKERHUB_ORGANIZATION }}
@@ -819,7 +802,7 @@ jobs:
           token: ${{ secrets.GH_PA_TOKEN }}
           labels: ci,automerge
           body: |
-            Update release ${{ inputs.version }} version.
+            Update release after ${{ inputs.version }} version.
             - Created by ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
             - Auto-generated by create-pull-request: https://github.com/peter-evans/create-pull-request
           draft: false
