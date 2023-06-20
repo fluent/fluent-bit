@@ -1117,7 +1117,9 @@ static struct flb_config_map config_map[] = {
      " and plugin fails"
     },
     {
-     FLB_CONFIG_MAP_INT, "tags_retry_interval_s", "300",
+     FLB_CONFIG_MAP_INT, "retry_interval_s", "300",
+     /* for the time being, the only group which has retries is ec2 tags */
+     /* therefore configuration immediately sets this value just for ec2 tags */
      0, FLB_TRUE, offsetof(struct flb_filter_aws,
              metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_TAGS].retry_required_interval),
      "Defines minimum duration between retries for fetching EC2 instance tags"
