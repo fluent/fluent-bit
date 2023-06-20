@@ -50,7 +50,12 @@
 #define FLB_TASK_SET(ret, task_id, out_id)              \
     (uint32_t) ((ret << 28) | (task_id << 14) | out_id)
 
+#define FLB_TASK_ROUTE_INACTIVE 0
+#define FLB_TASK_ROUTE_ACTIVE   1
+#define FLB_TASK_ROUTE_DROPPED  2
+
 struct flb_task_route {
+    int                         status;
     struct flb_output_instance *out;
     struct mk_list _head;
 };
@@ -86,6 +91,8 @@ struct flb_task {
     struct mk_list _head;                /* link to input_instance        */
     struct flb_input_instance *i_ins;    /* input instance                */
     struct flb_config *config;           /* parent flb config             */
+
+    pthread_mutex_t lock;
 };
 
 /*

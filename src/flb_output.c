@@ -1112,6 +1112,7 @@ int flb_output_init_all(struct flb_config *config)
          * into the Engine when the event is triggered.
          */
         ins->event.type = FLB_ENGINE_EV_OUTPUT;
+        ins->event.priority = FLB_ENGINE_PRIORITY_TOP;
 
         /* Metrics */
 #ifdef FLB_HAVE_METRICS

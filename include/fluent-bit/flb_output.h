@@ -484,6 +484,7 @@ struct flb_out_flush_params {
     struct flb_event_chunk *event_chunk;        /* event chunk           */
     struct flb_output_flush *out_flush;         /* output flush          */
     struct flb_input_instance *i_ins;           /* input instance        */
+    struct flb_output_instance *o_ins;          /* output instance        */
     struct flb_output_plugin *out_plugin;       /* output plugin context */
     void *out_context;                          /* custom plugin context */
     struct flb_config *config;                  /* Fluent Bit context    */
@@ -492,10 +493,83 @@ struct flb_out_flush_params {
 
 extern FLB_TLS_DEFINE(struct flb_out_flush_params, out_flush_params);
 
+
+#define FLB_OUTPUT_RETURN(x)                                            \
+    flb_output_return_do(x);                                            \
+    return
+
+static inline void flb_output_return_do(int x);
+
+static FLB_INLINE int flb_output_task_get_route_status(struct flb_task *task,
+                       struct flb_output_instance *o_ins)
+{
+    struct mk_list        *iterator;
+    int                    result;
+    struct flb_task_route *route;
+
+    result = FLB_FALSE;
+
+    mk_list_foreach(iterator, &task->routes) {
+        route = mk_list_entry(iterator, struct flb_task_route, _head);
+
+        if (route->out == o_ins) {
+            result = route->status;
+            break;
+        }
+    }
+
+    return result;
+}
+
+static FLB_INLINE void flb_output_task_set_route_status(struct flb_task *task,
+                       struct flb_output_instance *o_ins,
+                       int new_status)
+{
+    struct mk_list        *iterator;
+    struct flb_task_route *route;
+
+    mk_list_foreach(iterator, &task->routes) {
+        route = mk_list_entry(iterator, struct flb_task_route, _head);
+
+        if (route->out == o_ins) {
+            route->status = new_status;
+            break;
+        }
+    }
+}
+
+static FLB_INLINE void flb_output_task_acquire_lock(struct flb_task *task)
+{
+    pthread_mutex_lock(&task->lock);
+}
+
+static FLB_INLINE void flb_output_task_release_lock(struct flb_task *task)
+{
+    pthread_mutex_unlock(&task->lock);
+}
+
+static FLB_INLINE void flb_output_task_activate_route(struct flb_task *task,
+                       struct flb_output_instance *o_ins)
+{
+    flb_output_task_set_route_status(task, o_ins, FLB_TASK_ROUTE_ACTIVE);
+}
+
+static FLB_INLINE void flb_output_task_deactivate_route(struct flb_task *task,
+                       struct flb_output_instance *o_ins)
+{
+    flb_output_task_set_route_status(task, o_ins, FLB_TASK_ROUTE_INACTIVE);
+}
+
+static FLB_INLINE void flb_output_task_drop_route(struct flb_task *task,
+                       struct flb_output_instance *o_ins)
+{
+    flb_output_task_set_route_status(task, o_ins, FLB_TASK_ROUTE_DROPPED);
+}
+
 static FLB_INLINE void output_params_set(struct flb_output_flush *out_flush,
                                          struct flb_coro *coro,
                                          struct flb_task *task,
-                                         struct flb_output_plugin *out_plugin,
+                                         struct flb_output_instance *out_instance,
                                          void *out_context,
                                          struct flb_config *config)
 {
@@ -520,9 +594,10 @@ static FLB_INLINE void output_params_set(struct flb_output_flush *out_flush,
     }
     params->out_flush   = out_flush;
     params->i_ins       = task->i_ins;
+    params->o_ins       = out_instance;
     params->out_context = out_context;
     params->config      = config;
-    params->out_plugin  = out_plugin;
+    params->out_plugin  = out_instance->p;
     params->coro        = coro;
 
     FLB_TLS_SET(out_flush_params, params);
@@ -555,6 +630,26 @@ static FLB_INLINE void output_pre_cb_flush(void)
 
     /* Continue, we will resume later */
     out_p = persisted_params.out_plugin;
+
+    flb_output_task_acquire_lock(persisted_params.out_flush->task);
+
+    {
+        int route_status;
+
+        route_status = flb_output_task_get_route_status(persisted_params.out_flush->task,
+                                                        persisted_params.o_ins);
+
+        if (route_status == FLB_TASK_ROUTE_DROPPED) {
+            flb_output_task_release_lock(persisted_params.out_flush->task);
+
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
+    }
+
+    flb_output_task_activate_route(persisted_params.out_flush->task,
+                                   persisted_params.o_ins);
+
+    flb_output_task_release_lock(persisted_params.out_flush->task);
 
     out_p->cb_flush(persisted_params.event_chunk,
                     persisted_params.out_flush,
@@ -877,7 +972,7 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
     }
 
     /* Workaround for makecontext() */
-    output_params_set(out_flush, coro, task, o_ins->p, o_ins->context, config);
+    output_params_set(out_flush, coro, task, o_ins, o_ins->context, config);
     return out_flush;
 }
 
@@ -902,6 +997,12 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     out_flush = (struct flb_output_flush *) co->data;
     o_ins = out_flush->o_ins;
     task = out_flush->task;
+
+    flb_output_task_acquire_lock(task);
+
+    flb_output_task_deactivate_route(task, o_ins);
+
+    flb_output_task_release_lock(task);
 
     if (out_flush->processed_event_chunk) {
         if (task->event_chunk->data != out_flush->processed_event_chunk->data) {
@@ -984,10 +1085,6 @@ static inline void flb_output_return_do(int x)
      */
     flb_coro_yield(coro, FLB_TRUE);
 }
-
-#define FLB_OUTPUT_RETURN(x)                                            \
-    flb_output_return_do(x);                                            \
-    return
 
 static inline int flb_output_config_map_set(struct flb_output_instance *ins,
                                             void *context)

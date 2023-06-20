@@ -88,7 +88,9 @@ static int flb_input_chunk_safe_delete(struct flb_input_chunk *ic,
                                        struct flb_input_chunk *old_ic,
                                        uint64_t o_id);
 
-static int flb_input_chunk_is_task_safe_delete(struct flb_task *task);
+static int flb_input_chunk_is_task_safe_delete(
+                struct flb_task *task,
+                struct flb_output_instance *o_ins);
 
 static ssize_t flb_input_chunk_get_real_size(struct flb_input_chunk *ic);
 
@@ -113,7 +115,8 @@ static ssize_t flb_input_chunk_get_releasable_space(
 
         if (flb_input_chunk_safe_delete(new_input_chunk, old_input_chunk,
                                         output_plugin->id) == FLB_FALSE ||
-            flb_input_chunk_is_task_safe_delete(old_input_chunk->task) == FLB_FALSE) {
+            flb_input_chunk_is_task_safe_delete(old_input_chunk->task,
+                                                output_plugin) == FLB_FALSE) {
             continue;
         }
 
@@ -157,7 +160,7 @@ static int flb_input_chunk_release_space(
         if (flb_input_chunk_safe_delete(new_input_chunk,
                                         old_input_chunk,
                                         output_plugin->id) == FLB_FALSE ||
-            flb_input_chunk_is_task_safe_delete(old_input_chunk->task) == FLB_FALSE) {
+            flb_input_chunk_is_task_safe_delete(old_input_chunk->task, output_plugin) == FLB_FALSE) {
             continue;
         }
 
@@ -302,17 +305,39 @@ int flb_input_chunk_write_at(void *data, off_t offset,
  * For input_chunk referenced by an outgoing task, we need to check
  * whether the chunk is in the middle of output flush callback
  */
-static int flb_input_chunk_is_task_safe_delete(struct flb_task *task)
+static int flb_input_chunk_is_task_safe_delete(struct flb_task *task,
+                       struct flb_output_instance *output_plugin)
 {
+    int route_status;
+    int result;
+
     if (!task) {
         return FLB_TRUE;
     }
 
+    result = FLB_TRUE;
+
     if (task->users != 0) {
-        return FLB_FALSE;
+        result = FLB_FALSE;
+
+        if (output_plugin != NULL) {
+            flb_output_task_acquire_lock(task);
+
+            route_status = flb_output_task_get_route_status(task, output_plugin);
+
+            if (route_status == FLB_TASK_ROUTE_INACTIVE) {
+                flb_output_task_set_route_status(task,
+                                                 output_plugin,
+                                                 FLB_TASK_ROUTE_DROPPED);
+
+                result = FLB_TRUE;
+            }
+
+            flb_output_task_release_lock(task);
+        }
     }
 
-    return FLB_TRUE;
+    return result;
 }
 
 static int flb_input_chunk_safe_delete(struct flb_input_chunk *ic,
@@ -471,7 +496,7 @@ int flb_intput_chunk_count_dropped_chunks(struct flb_input_chunk *ic,
         old_ic = mk_list_entry(head, struct flb_input_chunk, _head);
 
         if (flb_input_chunk_safe_delete(ic, old_ic, o_ins->id) == FLB_FALSE ||
-            flb_input_chunk_is_task_safe_delete(old_ic->task) == FLB_FALSE) {
+            flb_input_chunk_is_task_safe_delete(old_ic->task, o_ins) == FLB_FALSE) {
             continue;
         }
 
@@ -578,6 +603,14 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
                 }
             }
 
+/* Uncomment this if you want fluent-bit to exit as soon as it detects the
+   error
+ */
+/*
+            sleep(30);
+            exit(0);
+*/
+
             continue;
         }
 
@@ -591,7 +624,7 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
             old_ic = mk_list_entry(head_chunk, struct flb_input_chunk, _head);
 
             if (flb_input_chunk_safe_delete(ic, old_ic, o_ins->id) == FLB_FALSE ||
-                flb_input_chunk_is_task_safe_delete(old_ic->task) == FLB_FALSE) {
+                flb_input_chunk_is_task_safe_delete(old_ic->task, o_ins) == FLB_FALSE) {
                 continue;
             }
 
@@ -1211,6 +1244,7 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
     int new_chunk = FLB_FALSE;
     size_t out_size;
     struct flb_input_chunk *ic = NULL;
+    size_t expected_chunk_size;
 
     if (tag_len > FLB_INPUT_CHUNK_TAG_MAX) {
         flb_plg_warn(in,
@@ -1262,6 +1296,19 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
             *set_down = FLB_TRUE;
         }
     }
+
+/* Uncomment this if you want to enforce a chunk size limit
+ */
+/*
+    if (ic != NULL) {
+        expected_chunk_size = flb_input_chunk_get_real_size(ic);
+        expected_chunk_size += chunk_size;
+
+        if (expected_chunk_size >= 1000000) {
+            ic = NULL;
+        }
+    }
+*/
 
     /* No chunk was found, we need to create a new one */
     if (!ic) {
@@ -1507,7 +1554,7 @@ static int memrb_input_chunk_release_space(struct flb_input_instance *ins,
         ic = mk_list_entry(head, struct flb_input_chunk, _head);
 
         /* check if is there any task or no users associated */
-        ret = flb_input_chunk_is_task_safe_delete(ic->task);
+        ret = flb_input_chunk_is_task_safe_delete(ic->task, NULL);
         if (ret == FLB_FALSE) {
             continue;
         }
