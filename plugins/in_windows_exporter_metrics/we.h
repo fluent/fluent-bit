@@ -145,6 +145,15 @@ struct we_wmi_system_counters {
     int                    operational;
 };
 
+struct we_wmi_service_counters {
+    struct wmi_query_spec *info;
+    struct cmt_gauge *information;
+    struct cmt_gauge *state;
+    struct cmt_gauge *start_mode;
+    struct cmt_gauge *status;
+    int operational;
+};
+
 struct we_os_counters {
     struct cmt_gauge *info;
     struct cmt_gauge *users;
@@ -178,6 +187,7 @@ struct flb_we {
     char *raw_allowing_disk;
     char *raw_denying_disk;
     char *raw_allowing_nic;
+    char *raw_where_clause;
 
     struct flb_regex *allowing_disk_regex;
     struct flb_regex *denying_disk_regex;
@@ -203,6 +213,7 @@ struct flb_we {
     int wmi_cpu_info_scrape_interval;
     int wmi_logon_scrape_interval;
     int wmi_system_scrape_interval;
+    int wmi_service_scrape_interval;
 
     int coll_cpu_fd;                                    /* collector fd (cpu)    */
     int coll_net_fd;                                    /* collector fd (net)  */
@@ -213,6 +224,7 @@ struct flb_we {
     int coll_wmi_cpu_info_fd;                           /* collector fd (wmi_cpu_info) */
     int coll_wmi_logon_fd;                              /* collector fd (wmi_logon)    */
     int coll_wmi_system_fd;                             /* collector fd (wmi_system)    */
+    int coll_wmi_service_fd;                            /* collector fd (wmi_service) */
 
     /*
      * Metrics Contexts
@@ -228,7 +240,7 @@ struct flb_we {
     struct we_wmi_cpu_info_counters *wmi_cpu_info;
     struct we_wmi_logon_counters *wmi_logon;
     struct we_wmi_system_counters *wmi_system;
-
+    struct we_wmi_service_counters *wmi_service;
 };
 
 typedef int (*collector_cb)(struct flb_we *);

@@ -34,6 +34,7 @@ struct wmi_query_spec {
     char *wmi_property;
     int label_property_count;
     char **label_property_keys;
+    char *where_clause;
 };
 
 int we_wmi_init(struct flb_we *ctx);
@@ -50,6 +51,8 @@ int we_wmi_coinitialize(struct flb_we *ctx);
 int we_wmi_execute_query(struct flb_we *ctx, struct wmi_query_spec *spec, IEnumWbemClassObject **out_enumerator);
 double we_wmi_get_value(struct flb_we *ctx, struct wmi_query_spec *spec, IWbemClassObject *class_obj);
 double we_wmi_get_property_value(struct flb_we *ctx, char *raw_property_key, IWbemClassObject *class_obj);
+char *we_wmi_get_property_str_value(struct flb_we *ctx, char *raw_property_key,
+                                    IWbemClassObject *class_obj);
 int we_wmi_update_counters(struct flb_we *ctx, struct wmi_query_spec *spec,
                            uint64_t timestamp, double val, int metric_label_count, char **metric_label_set);
 

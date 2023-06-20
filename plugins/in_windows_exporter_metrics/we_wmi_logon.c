@@ -70,6 +70,7 @@ int we_wmi_logon_init(struct flb_we *ctx)
     ctx->wmi_logon->info->wmi_property = "LogonType";
     ctx->wmi_logon->info->label_property_count = 1;
     ctx->wmi_logon->info->label_property_keys[0] = "status" ;
+    ctx->wmi_logon->info->where_clause = NULL;
 
     ctx->wmi_logon->operational = FLB_TRUE;
 
