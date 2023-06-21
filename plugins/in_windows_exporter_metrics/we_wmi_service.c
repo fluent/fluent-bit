@@ -100,6 +100,8 @@ int we_wmi_service_init(struct flb_we *ctx)
 
 int we_wmi_service_exit(struct flb_we *ctx)
 {
+    ctx->wmi_service->operational = FLB_FALSE;
+
     flb_free(ctx->wmi_service->info);
     flb_free(ctx->wmi_service);
 
