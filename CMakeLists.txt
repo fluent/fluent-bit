@@ -448,6 +448,7 @@ endif()
 if(FLB_SECURITY STREQUAL "On" OR (FLB_SECURITY STREQUAL "ReleaseOnly" AND FLB_RELEASE))
   if (NOT MSVC)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wl,-z,relro,-z,now")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wl,-z,noexecstack")
     if(NOT FLB_SMALL)
       set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fstack-protector")
       # Fortify requires optimization
