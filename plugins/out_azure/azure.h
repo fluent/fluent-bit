@@ -30,11 +30,13 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_record_accessor.h>
 
 struct flb_azure {
     /* account setup */
     flb_sds_t customer_id;
     flb_sds_t log_type;
+    flb_sds_t log_type_key;
     flb_sds_t shared_key;
     flb_sds_t dec_shared_key;
 
@@ -45,6 +47,7 @@ struct flb_azure {
 
     /* records */
     flb_sds_t time_key;
+    struct flb_record_accessor *ra_prefix_key;
 
     /* time_generated: on/off */
     int time_generated;
