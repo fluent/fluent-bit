@@ -916,6 +916,16 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_we, raw_where_clause),
      "Specify the where clause for retrieving service metrics."
     },
+    {
+     FLB_CONFIG_MAP_STR, "we.service.include", NULL,
+     0, FLB_TRUE, offsetof(struct flb_we, raw_service_include),
+     "Specify the key value condition pairs for includeing condition to construct where clause of service metrics."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "we.service.exclude", NULL,
+     0, FLB_TRUE, offsetof(struct flb_we, raw_service_exclude),
+     "Specify the key value condition pairs for excludeing condition to construct where clause of service metrics."
+    },
     /* EOF */
     {0}
 };
