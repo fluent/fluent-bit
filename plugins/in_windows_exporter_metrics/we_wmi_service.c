@@ -34,8 +34,268 @@ static double nop_adjust(double value)
     return value;
 }
 
+static int construct_include_clause(struct flb_we *ctx, flb_sds_t *clause)
+{
+    int ret = -1;
+    size_t off = 0;
+    msgpack_unpacked result;
+    msgpack_object key;
+    msgpack_object val;
+    msgpack_object map;
+    int map_size;
+    int i;
+    int idx = 0;
+    int use_like = FLB_FALSE;
+    char *key_str = NULL;
+    size_t key_str_size = 0;
+    char *val_str = NULL;
+    size_t val_str_size = 0;
+    flb_sds_t val_buf;
+
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result,
+                               ctx->service_include_buffer,
+                               ctx->service_include_buffer_size,
+                               &off) == MSGPACK_UNPACK_SUCCESS) {
+        if (result.data.type != MSGPACK_OBJECT_MAP) {
+            flb_plg_error(ctx->ins, "Invalid include buffer");
+            ret = -2;
+
+            goto cleanup;
+        }
+
+        map = result.data;
+        map_size = map.via.map.size;
+
+        for (i = 0; i < map_size; i++) {
+            use_like = FLB_FALSE;
+            if (idx == 0) {
+                flb_sds_cat_safe(clause, "(", 1);
+            }
+            else {
+                flb_sds_cat_safe(clause, " OR ", 4);
+            }
+
+            key = map.via.map.ptr[i].key;
+            val = map.via.map.ptr[i].val;
+            if (key.type == MSGPACK_OBJECT_BIN) {
+                key_str  = (char *) key.via.bin.ptr;
+                key_str_size = key.via.bin.size;
+            }
+            else if (key.type == MSGPACK_OBJECT_STR) {
+                key_str  = (char *) key.via.str.ptr;
+                key_str_size = key.via.str.size;
+            }
+            if (val.type == MSGPACK_OBJECT_BIN) {
+                val_str  = (char *) val.via.bin.ptr;
+                val_str_size = val.via.bin.size;
+                val_buf = flb_sds_create_len(val_str, val_str_size);
+                if (val_buf == NULL) {
+                    flb_plg_error(ctx->ins, "val_buf creation is failed");
+                    ret = -3;
+
+                    goto cleanup;
+                }
+            }
+            else if (val.type == MSGPACK_OBJECT_STR) {
+                val_str  = (char *) val.via.str.ptr;
+                val_str_size = val.via.str.size;
+                val_buf = flb_sds_create_len(val_str, val_str_size);
+                if (val_buf == NULL) {
+                    flb_plg_error(ctx->ins, "val_buf creation is failed");
+                    ret = -3;
+
+                    goto cleanup;
+                }
+            }
+
+            if (val_str != NULL && strstr(val_buf, "%") != NULL) {
+                use_like = FLB_TRUE;
+                flb_sds_destroy(val_buf);
+            }
+            flb_sds_cat_safe(clause, key_str, key_str_size);
+            if (use_like == FLB_TRUE) {
+                flb_sds_cat_safe(clause, " LIKE ", 6);
+            }
+            else {
+                flb_sds_cat_safe(clause, "=", 1);
+            }
+            flb_sds_cat_safe(clause, "'", 1);
+            flb_sds_cat_safe(clause, val_str, val_str_size);
+            flb_sds_cat_safe(clause, "'", 1);
+            idx++;
+        }
+        flb_sds_cat_safe(clause, ")", 1);
+    }
+    msgpack_unpacked_destroy(&result);
+
+    return 0;
+
+cleanup:
+    msgpack_unpacked_destroy(&result);
+
+    return ret;
+}
+
+static int construct_exclude_clause(struct flb_we *ctx, flb_sds_t *clause)
+{
+    int ret = -1;
+    size_t off = 0;
+    msgpack_unpacked result;
+    msgpack_object key;
+    msgpack_object val;
+    msgpack_object map;
+    int map_size;
+    int i;
+    int idx = 0;
+    int use_like = FLB_FALSE;
+    char *key_str = NULL;
+    size_t key_str_size = 0;
+    char *val_str = NULL;
+    size_t val_str_size = 0;
+    flb_sds_t val_buf;
+
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result,
+                               ctx->service_exclude_buffer,
+                               ctx->service_exclude_buffer_size,
+                               &off) == MSGPACK_UNPACK_SUCCESS) {
+        if (result.data.type != MSGPACK_OBJECT_MAP) {
+            flb_plg_error(ctx->ins, "Invalid exclude buffer");
+            ret = -2;
+
+            goto cleanup;
+        }
+
+        map = result.data;
+        map_size = map.via.map.size;
+
+        for (i = 0; i < map_size; i++) {
+            use_like = FLB_FALSE;
+            if (idx == 0) {
+                flb_sds_cat_safe(clause, "(", 1);
+            }
+            else {
+                flb_sds_cat_safe(clause, " AND ", 5);
+            }
+
+            key = map.via.map.ptr[i].key;
+            val = map.via.map.ptr[i].val;
+            if (key.type == MSGPACK_OBJECT_BIN) {
+                key_str  = (char *) key.via.bin.ptr;
+                key_str_size = key.via.bin.size;
+            }
+            else if (key.type == MSGPACK_OBJECT_STR) {
+                key_str  = (char *) key.via.str.ptr;
+                key_str_size = key.via.str.size;
+            }
+            if (val.type == MSGPACK_OBJECT_BIN) {
+                val_str  = (char *) val.via.bin.ptr;
+                val_str_size = val.via.bin.size;
+                val_buf = flb_sds_create_len(val_str, val_str_size);
+                if (val_buf == NULL) {
+                    flb_plg_error(ctx->ins, "val_buf creation is failed");
+                    ret = -3;
+
+                    goto cleanup;
+                }
+            }
+            else if (val.type == MSGPACK_OBJECT_STR) {
+                val_str  = (char *) val.via.str.ptr;
+                val_str_size = val.via.str.size;
+                val_buf = flb_sds_create_len(val_str, val_str_size);
+                if (val_buf == NULL) {
+                    flb_plg_error(ctx->ins, "val_buf creation is failed");
+                    ret = -3;
+
+                    goto cleanup;
+                }
+            }
+
+            if (val_str != NULL && strstr(val_buf, "%") != NULL) {
+                use_like = FLB_TRUE;
+                flb_sds_destroy(val_buf);
+            }
+            if (use_like == FLB_TRUE) {
+                flb_sds_cat_safe(clause, "NOT ", 4);
+            }
+            flb_sds_cat_safe(clause, key_str, key_str_size);
+            if (use_like == FLB_TRUE) {
+                flb_sds_cat_safe(clause, " LIKE ", 6);
+            }
+            else {
+                flb_sds_cat_safe(clause, "!=", 2);
+            }
+            flb_sds_cat_safe(clause, "'", 1);
+            flb_sds_cat_safe(clause, val_str, val_str_size);
+            flb_sds_cat_safe(clause, "'", 1);
+            idx++;
+        }
+        flb_sds_cat_safe(clause, ")", 1);
+    }
+    msgpack_unpacked_destroy(&result);
+
+    return 0;
+
+cleanup:
+    msgpack_unpacked_destroy(&result);
+
+    return ret;
+}
+
+static int construct_where_clause(struct flb_we *ctx)
+{
+    int ret;
+    flb_sds_t clause;
+
+    clause = flb_sds_create_size(256);
+    if (!clause) {
+        return -1;
+    }
+
+    if (ctx->service_include_buffer != NULL && ctx->service_include_buffer_size > 0) {
+        ret = construct_include_clause(ctx, &clause);
+        if (ret != 0) {
+            goto cleanup;
+        }
+    }
+
+    if (ctx->service_exclude_buffer != NULL && ctx->service_exclude_buffer_size > 0) {
+        if (flb_sds_len(clause) > 0) {
+            flb_sds_cat_safe(&clause, " AND ", 5);
+        }
+        ret = construct_exclude_clause(ctx, &clause);
+        if (ret != 0) {
+            goto cleanup;
+        }
+    }
+
+    if (ctx->raw_where_clause != NULL){
+        if (flb_sds_len(clause) > 0) {
+            flb_sds_cat_safe(&clause, " AND (", 6);
+            flb_sds_cat_safe(&clause, ctx->raw_where_clause, strlen(ctx->raw_where_clause));
+            flb_sds_cat_safe(&clause, ")", 1);
+        }
+        else {
+            flb_sds_cat_safe(&clause, ctx->raw_where_clause, strlen(ctx->raw_where_clause));
+        }
+    }
+
+    if (flb_sds_len(clause) > 0) {
+        ctx->wmi_service->info->where_clause = clause;
+    }
+
+    return 0;
+
+cleanup:
+    flb_sds_destroy(clause);
+
+    return ret;
+}
+
 int we_wmi_service_init(struct flb_we *ctx)
 {
+    int ret;
     struct cmt_gauge *g;
 
     ctx->wmi_service = flb_calloc(1, sizeof(struct we_wmi_service_counters));
@@ -91,7 +351,11 @@ int we_wmi_service_init(struct flb_we *ctx)
     ctx->wmi_service->info->wmi_property = "";
     ctx->wmi_service->info->label_property_count = 0;
     ctx->wmi_service->info->label_property_keys = NULL;
-    ctx->wmi_service->info->where_clause = ctx->raw_where_clause;
+    ctx->wmi_service->info->where_clause = NULL;
+    ret = construct_where_clause(ctx);
+    if (ret != 0) {
+        return ret;
+    }
 
     ctx->wmi_service->operational = FLB_TRUE;
 
@@ -102,6 +366,9 @@ int we_wmi_service_exit(struct flb_we *ctx)
 {
     ctx->wmi_service->operational = FLB_FALSE;
 
+    if (ctx->wmi_service->info->where_clause != NULL) {
+        flb_sds_destroy(ctx->wmi_service->info->where_clause);
+    }
     flb_free(ctx->wmi_service->info);
     flb_free(ctx->wmi_service);
 

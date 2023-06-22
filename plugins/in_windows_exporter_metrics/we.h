@@ -188,6 +188,12 @@ struct flb_we {
     char *raw_denying_disk;
     char *raw_allowing_nic;
     char *raw_where_clause;
+    char *raw_service_include;
+    char *raw_service_exclude;
+    char *service_include_buffer;
+    int   service_include_buffer_size;
+    char *service_exclude_buffer;
+    int   service_exclude_buffer_size;
 
     struct flb_regex *allowing_disk_regex;
     struct flb_regex *denying_disk_regex;
