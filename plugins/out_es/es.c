@@ -31,6 +31,7 @@
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_upstream_node.h>
 
 #include "es.h"
 #include "es_conf.h"
@@ -647,7 +648,7 @@ static struct flb_elasticsearch_config *flb_elasticsearch_target(
     struct flb_upstream_node *target_node;
 
     if (ctx->ha_mode == FLB_FALSE) {
-        ec = mk_list_entry_first(&ctx->configs, struct flb_elasticsearch_config, _head);
+        ec = flb_es_upstream_conf(ctx, NULL);
         *node = NULL;
         return ec;
     }
@@ -658,8 +659,7 @@ static struct flb_elasticsearch_config *flb_elasticsearch_target(
         return NULL;
     }
 
-    /* Get elasticsearch_config stored in node opaque data */
-    ec = flb_upstream_node_get_data(target_node);
+    ec = flb_es_upstream_conf(ctx, target_node);
     *node = target_node;
 
     return ec;
