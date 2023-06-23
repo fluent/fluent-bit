@@ -148,10 +148,9 @@ static int cpu_thermal_update(struct flb_ne *ctx, uint64_t ts)
                                         "thermal_throttle", "core_throttle_count",
                                         &core_throttle_count);
         if (ret != 0) {
-            flb_plg_error(ctx->ins,
+            flb_plg_debug(ctx->ins,
                           "CPU is missing core_throttle_count: %s",
                           entry->str);
-            continue;
         }
 
         snprintf(tmp1, sizeof(tmp1) -1, "%" PRIu64, core_id);
@@ -175,10 +174,9 @@ static int cpu_thermal_update(struct flb_ne *ctx, uint64_t ts)
                                         "thermal_throttle", "package_throttle_count",
                                         &package_throttle_count);
         if (ret != 0) {
-            flb_plg_error(ctx->ins,
+            flb_plg_debug(ctx->ins,
                           "CPU is missing package_throttle_count: %s",
                           entry->str);
-            continue;
         }
 
         /* Set new value */
