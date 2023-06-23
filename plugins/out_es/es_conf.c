@@ -445,3 +445,19 @@ void flb_es_conf_destroy(struct flb_elasticsearch *ctx)
 
     flb_free(ctx);
 }
+
+struct flb_elasticsearch_config *flb_es_upstream_conf(struct flb_elasticsearch *ctx,
+                                                      struct flb_upstream_node *node)
+{
+    if (!ctx) {
+        return NULL;
+    }
+    if (node) {
+        /* Get elasticsearch_config stored in node opaque data */
+        return flb_upstream_node_get_data(node);
+    }
+    if (mk_list_is_empty(&ctx->configs) == 0) {
+        return NULL;
+    }
+    return mk_list_entry_last(&ctx->configs, struct flb_elasticsearch_config, _head);
+}
