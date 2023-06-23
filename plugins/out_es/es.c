@@ -30,6 +30,7 @@
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_upstream_node.h>
 #include <msgpack.h>
 
 #include <time.h>
@@ -651,7 +652,7 @@ static struct flb_elasticsearch_config *flb_elasticsearch_target(
     struct flb_upstream_node *target_node;
 
     if (ctx->ha_mode == FLB_FALSE) {
-        ec = mk_list_entry_first(&ctx->configs, struct flb_elasticsearch_config, _head);
+        ec = flb_es_upstream_conf(ctx, NULL);
         *node = NULL;
         return ec;
     }
@@ -662,8 +663,7 @@ static struct flb_elasticsearch_config *flb_elasticsearch_target(
         return NULL;
     }
 
-    /* Get elasticsearch_config stored in node opaque data */
-    ec = flb_upstream_node_get_data(target_node);
+    ec = flb_es_upstream_conf(ctx, target_node);
     *node = target_node;
 
     return ec;
@@ -1169,7 +1169,7 @@ static struct flb_config_map config_map[] = {
     },
     {
     FLB_CONFIG_MAP_STR, "http_api_key", NULL,
-    0, FLB_TRUE, offsetof(struct flb_elasticsearch, http_api_key),
+    0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, http_api_key),
     "Base-64 encoded API key credential for Elasticsearch"
     },
 
