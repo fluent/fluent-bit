@@ -99,9 +99,9 @@ struct flb_config_map upstream_net[] = {
     },
 
     {
-     FLB_CONFIG_MAP_INT, "net.max_connections", "0",
-     0, FLB_TRUE, offsetof(struct flb_net_setup, max_connections),
-     "Set the maximum number of active TCP connections that can be used."
+     FLB_CONFIG_MAP_INT, "net.max_worker_connections", "0",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, max_worker_connections),
+     "Set the maximum number of active TCP connections that can be used per worker thread."
     },
 
     /* EOF */
@@ -625,17 +625,17 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
               "net.source_address         = %s\n"
               "net.keepalive              = %s\n"
               "net.keepalive_idle_timeout = %i seconds\n"
-              "net.max_connections        = %i",
+              "net.max_worker_connections = %i",
               u->tcp_host, u->tcp_port,
               u->base.net.connect_timeout,
               u->base.net.source_address ? u->base.net.source_address: "any",
               u->base.net.keepalive ? "enabled": "disabled",
               u->base.net.keepalive_idle_timeout,
-              u->base.net.max_connections);
+              u->base.net.max_worker_connections);
 
 
     /* If the upstream is limited by max connections, check current state */
-    if (u->base.net.max_connections > 0) {
+    if (u->base.net.max_worker_connections > 0) {
         flb_stream_acquire_lock(&u->base, FLB_TRUE);
 
         total_connections  = mk_list_size(&uq->av_queue);
@@ -643,9 +643,9 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
 
         flb_stream_release_lock(&u->base);
 
-        if (total_connections >= u->base.net.max_connections) {
-            flb_debug("[upstream] max connections=%i reached to: %s:%i, cannot connect",
-                      u->base.net.max_connections, u->tcp_host, u->tcp_port);
+        if (total_connections >= u->base.net.max_worker_connections) {
+            flb_debug("[upstream] max worker connections=%i reached to: %s:%i, cannot connect",
+                      u->base.net.max_worker_connections, u->tcp_host, u->tcp_port);
             return NULL;
         }
     }
