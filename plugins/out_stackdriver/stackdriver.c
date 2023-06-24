@@ -2546,7 +2546,7 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
         ret = flb_gzip_compress((void *) payload_buf, flb_sds_len(payload_buf),
                                 &compressed_payload_buffer, &compressed_payload_size);
         if (ret == -1) {
-            flb_plg_error(ctx->ins, "[out_stackdriver] cannot gzip payload, disabling compression");
+            flb_plg_error(ctx->ins, "cannot gzip payload, disabling compression");
         } else {
             compressed = FLB_TRUE;
             flb_sds_destroy(payload_buf);
@@ -2765,7 +2765,7 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, "compress", NULL,
-     0, FLB_FALSE, offsetof(struct flb_stackdriver, compress),
+     0, FLB_FALSE, 0,
       "Set log payload compression method. Option available is 'gzip'"
     },
     {
