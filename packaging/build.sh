@@ -10,6 +10,7 @@ FLB_DISTRO=${FLB_DISTRO:-}
 FLB_OUT_DIR=${FLB_OUT_DIR:-}
 FLB_NIGHTLY_BUILD=${FLB_NIGHTLY_BUILD:-}
 FLB_JEMALLOC=${FLB_JEMALLOC:-On}
+FLB_WAMRC=${FLB_WAMRC:-Off}
 
 # Use this to pass special arguments to docker build
 FLB_ARG=${FLB_ARG:-}
@@ -75,6 +76,7 @@ echo "IMAGE_CONTEXT_DIR     => $IMAGE_CONTEXT_DIR"
 echo "CMAKE_INSTALL_PREFIX  => $CMAKE_INSTALL_PREFIX"
 echo "FLB_NIGHTLY_BUILD     => $FLB_NIGHTLY_BUILD"
 echo "FLB_JEMALLOC          => $FLB_JEMALLOC"
+echo "FLB_WAMRC             => $FLB_WAMRC"
 
 export DOCKER_BUILDKIT=1
 
@@ -84,6 +86,7 @@ if ! docker build \
     --build-arg CMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     --build-arg FLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     --build-arg FLB_JEMALLOC="$FLB_JEMALLOC" \
+    --build-arg FLB_WAMRC="$FLB_WAMRC" \
     --build-arg FLB_TD="$FLB_TD" \
     $FLB_ARG \
     -t "$MAIN_IMAGE" \
