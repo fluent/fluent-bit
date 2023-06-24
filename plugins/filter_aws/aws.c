@@ -54,8 +54,8 @@ static void expose_aws_meta(struct flb_filter_aws *ctx)
 
     flb_env_set(env, "aws", "enabled");
 
-    if (ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_BASE].done &&
-            !ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_BASE].exposed) {
+    if (ctx->group_base.done &&
+            !ctx->group_base.exposed) {
         if (ctx->availability_zone_include) {
             flb_env_set(env,
                         "aws." FLB_FILTER_AWS_AVAILABILITY_ZONE_KEY,
@@ -104,7 +104,7 @@ static void expose_aws_meta(struct flb_filter_aws *ctx)
                         ctx->hostname);
         }
 
-        ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_BASE].exposed = FLB_TRUE;
+        ctx->group_base.exposed = FLB_TRUE;
     }
 
     /* TODO: expose aws ec2 tags in flb_env_set */
@@ -618,7 +618,7 @@ static int get_ec2_metadata_base(struct flb_filter_aws *ctx)
 {
     int ret;
 
-    ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_BASE].
+    ctx->group_base.
         last_fetch_attempt = time(NULL);
 
     if (ctx->instance_id_include && !ctx->instance_id) {
@@ -709,7 +709,7 @@ static int get_ec2_metadata_tags(struct flb_filter_aws *ctx)
 {
     int ret;
 
-    ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_TAGS].
+    ctx->group_tag.
         last_fetch_attempt = time(NULL);
 
     if (ctx->tags_enabled && !ctx->tags_fetched) {
@@ -723,18 +723,18 @@ static int get_ec2_metadata_tags(struct flb_filter_aws *ctx)
     return 0;
 }
 
-static int ec2_metadata_group_should_fetch(struct flb_filter_aws *ctx, int group)
+static int ec2_metadata_group_should_fetch(struct flb_filter_aws_metadata_group *group)
 {
     time_t now, required_interval, interval;
 
-    required_interval = ctx->metadata_groups[group].retry_required_interval;
+    required_interval = group->retry_required_interval;
     if (required_interval == 0) {
         return FLB_TRUE;
     }
 
     now = time(NULL);
 
-    interval = now - ctx->metadata_groups[group].last_fetch_attempt;
+    interval = now - group->last_fetch_attempt;
 
     if (interval < required_interval) {
         return FLB_FALSE;
@@ -755,16 +755,16 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
     int no_failures = FLB_TRUE;
     int no_fetches_skipped = FLB_TRUE;
 
-    if (!ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_BASE].done) {
+    if (!ctx->group_base.done) {
         ret = get_ec2_metadata_base(ctx);
         if (ret < 0) {
             return ret;
         }
-        ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_BASE].done = FLB_TRUE;
+        ctx->group_base.done = FLB_TRUE;
     }
 
-    if (!ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_TAGS].done) {
-        if (!ec2_metadata_group_should_fetch(ctx, FLB_FILTER_AWS_METADATA_GROUP_TAGS)) {
+    if (!ctx->group_tag.done) {
+        if (!ec2_metadata_group_should_fetch(&ctx->group_tag)) {
             no_fetches_skipped = FLB_FALSE;
         } else {
             ret = get_ec2_metadata_tags(ctx);
@@ -772,7 +772,7 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
                 return ret;
             }
             if (ret == 0) {
-                ctx->metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_TAGS].done = FLB_TRUE;
+                ctx->group_tag.done = FLB_TRUE;
             } else {
                 no_failures = FLB_FALSE;
             }
@@ -1121,7 +1121,7 @@ static struct flb_config_map config_map[] = {
      /* for the time being, the only group which has retries is ec2 tags */
      /* therefore configuration immediately sets this value just for ec2 tags */
      0, FLB_TRUE, offsetof(struct flb_filter_aws,
-             metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_TAGS].retry_required_interval),
+             group_tag.retry_required_interval),
      "Defines minimum duration between retries for fetching EC2 instance tags"
     },
     {0}
