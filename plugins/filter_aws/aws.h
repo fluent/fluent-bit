@@ -43,13 +43,6 @@
 /* defines returned value for cases when configuration is invalid and program should exit */
 #define FLB_FILTER_AWS_CONFIGURATION_ERROR -100
 
-/* defines a group of information, is used as an index in the ctx->metadata_groups
- * to be specific, it is an index at array flb_filter_aws->metadata_groups */
-#define FLB_FILTER_AWS_METADATA_GROUP_BASE 0
-#define FLB_FILTER_AWS_METADATA_GROUP_TAGS 1
-
-#define FLB_FILTER_AWS_METADATA_GROUP_LEN 2 /* used to define required memory */
-
 struct flb_filter_aws_metadata_group {
     /* defines if fetch function for the information group was already done successfully
      * if set to FLB_FALSE after first attempt, then most likely another retry will be
@@ -141,9 +134,10 @@ struct flb_filter_aws {
     /* e.g.: if tag_is_enabled[0] = FALSE, then filter aws should not inject first tag */
     int *tag_is_enabled;
 
-    /* metadata groups contains information for potential retries and
+    /* metadata group contains information for potential retries and
      * if group was already fetched successfully */
-    struct flb_filter_aws_metadata_group metadata_groups[FLB_FILTER_AWS_METADATA_GROUP_LEN];
+    struct flb_filter_aws_metadata_group group_base;
+    struct flb_filter_aws_metadata_group group_tag;
     int metadata_retrieved;
 
     /* Plugin can use EC2 metadata v1 or v2; default is v2 */
