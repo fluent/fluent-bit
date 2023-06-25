@@ -2764,8 +2764,8 @@ static struct flb_config_map config_map[] = {
       "Set the resource task id"
     },
     {
-     FLB_CONFIG_MAP_STR, "compress", NULL,
-     0, FLB_FALSE, 0,
+      FLB_CONFIG_MAP_STR, "compress", NULL,
+      0, FLB_FALSE, 0,
       "Set log payload compression method. Option available is 'gzip'"
     },
     {
