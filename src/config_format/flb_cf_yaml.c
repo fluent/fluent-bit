@@ -169,6 +169,9 @@ static int add_section_type(struct flb_cf *cf, struct parser_state *s)
     else if (s->section == SECTION_OUTPUT) {
         s->cf_section = flb_cf_section_create(cf, "OUTPUT", 0);
     }
+    else if (s->section == SECTION_CUSTOM) {
+        s->cf_section = flb_cf_section_create(cf, "customs", 0);
+    }
 
     if (!s->cf_section) {
         return -1;
@@ -208,6 +211,116 @@ static char *event_type_str(yaml_event_t *event)
     }
 }
 
+static char *state_str(enum state val)
+{
+    char* ret;
+    switch(val) {
+    case STATE_START:
+        ret = "start";
+        break;
+    case STATE_STREAM:
+        ret = "stream";
+        break;
+    case STATE_DOCUMENT:
+        ret = "document";
+        break;
+    case STATE_SECTION:
+        ret = "section";
+        break;
+    case STATE_SECTION_KEY:
+        ret = "section-key";
+        break;
+    case STATE_SECTION_VAL:
+        ret = "section-val";
+        break;
+    case STATE_SERVICE:
+        ret = "service";
+        break;
+    case STATE_INCLUDE:
+        ret = "include";
+        break;
+    case STATE_OTHER:
+        ret = "other";
+        break;
+    case STATE_PIPELINE:
+        ret = "pipeline";
+        break;
+    case STATE_PLUGIN_INPUT:
+        ret = "plugin-input";
+        break;
+    case STATE_PLUGIN_FILTER:
+        ret = "plugin-filter";
+        break;
+    case STATE_PLUGIN_OUTPUT:
+        ret = "plugin-output";
+        break;
+    case STATE_CUSTOM:
+        ret = "custom";
+        break;
+    case STATE_CUSTOM_SEQUENCE:
+        ret = "custom-sequence";
+        break;
+    case STATE_CUSTOM_KEY_VALUE_PAIR:
+        ret = "custom-key-value-pair";
+        break;
+    case STATE_CUSTOM_KEY:
+        ret = "custom-key";
+        break;
+    case STATE_CUSTOM_VAL:
+        ret = "custom-val";
+        break;
+    case STATE_PLUGIN_TYPE:
+        ret = "plugin-type";
+        break;
+    case STATE_PLUGIN_KEY:
+        ret = "plugin-key";
+        break;
+    case STATE_PLUGIN_VAL:
+        ret = "plugin-val";
+        break;
+    case STATE_PLUGIN_VAL_LIST:
+        ret = "plugin-val-list";
+        break;
+    case STATE_GROUP_KEY:
+        ret = "group-key";
+        break;
+    case STATE_GROUP_VAL:
+        ret = "group-val";
+        break;
+    case STATE_INPUT_PROCESSOR:
+        ret = "input-processor";
+        break;
+    case STATE_INPUT_PROCESSOR_LOGS_KEY:
+        ret = "input-processor-logs-key";
+        break;
+    case STATE_INPUT_PROCESSOR_LOGS_VAL:
+        ret = "input-processor-logs-val";
+        break;
+    case STATE_INPUT_PROCESSOR_METRICS_KEY:
+        ret = "input-processor-metrics-key";
+        break;
+    case STATE_INPUT_PROCESSOR_METRICS_VAL:
+        ret = "input-processor-metrics-val";
+        break;
+    case STATE_INPUT_PROCESSOR_TRACES_KEY:
+        ret = "input-processor-traces-key";
+        break;
+    case STATE_INPUT_PROCESSOR_TRACES_VAL:
+        ret = "input-processor-traces-val";
+        break;
+    case STATE_ENV:
+        ret = "env";
+        break;
+    case STATE_STOP:
+        ret = "stop";
+        break;
+
+    default:
+        ret = "UNKNOWN";
+    }
+    return ret;
+}
+
 static char *get_last_included_file(struct local_ctx *ctx)
 {
     struct flb_slist_entry *e;
@@ -224,9 +337,9 @@ static void yaml_error_event(struct local_ctx *ctx, struct parser_state *s,
     e = mk_list_entry_last(&ctx->includes, struct flb_slist_entry, _head);
 
     flb_error("[config] YAML error found in file \"%s\", line %zu, column %zu: "
-              "unexpected event '%s' (%d) in state %d.",
+              "unexpected event '%s' (%d) in state '%s' (%d).",
               e->str, event->start_mark.line + 1, event->start_mark.column,
-              event_type_str(event), event->type, s->state);
+              event_type_str(event), event->type, state_str(s->state), s->state);
 }
 
 static void yaml_error_definition(struct local_ctx *ctx, struct parser_state *s,
@@ -453,7 +566,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
     case STATE_CUSTOM:
         switch (event->type) {
         case YAML_SEQUENCE_START_EVENT:
-            s->state = STATE_CUSTOM_SEQUENCE;
+            s->state = STATE_PLUGIN_TYPE;
             break;
 
         case YAML_SEQUENCE_END_EVENT:
@@ -562,6 +675,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 return YAML_FAILURE;
             }
             break;
+
         default:
             yaml_error_event(ctx, s, event);
             return YAML_FAILURE;
@@ -807,7 +921,13 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
         case YAML_MAPPING_END_EVENT:
             break;
         case YAML_SEQUENCE_END_EVENT:
-            s->state = STATE_PIPELINE;
+            if (s->section == SECTION_CUSTOM) {
+                /* 'customs' is a top level. So we get back to 'section'. */
+                s->state = STATE_SECTION;
+            }
+            else {
+                s->state = STATE_PIPELINE;
+            }
             break;
         default:
             yaml_error_event(ctx, s, event);
