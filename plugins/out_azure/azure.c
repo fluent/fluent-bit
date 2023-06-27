@@ -109,7 +109,7 @@ static int azure_format(const void *in_buf, size_t in_bytes,
                 flb_plg_error(ctx->ins, "Tagged record translation failed!");
             }
             else if (flb_sds_is_empty(tmp)) {
-                flb_plg_debug(ctx->ins, "Record accessor key not matched");
+                flb_plg_warn(ctx->ins, "Record accessor key not matched");
                 flb_sds_destroy(tmp);
             }
             else {
