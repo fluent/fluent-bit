@@ -550,7 +550,7 @@ int flb_input_set_property(struct flb_input_instance *ins,
         flb_sds_destroy(tmp);
     }
     else if (prop_key_check("tls.verify", k, len) == 0 && tmp) {
-        ins->tls_verify = flb_utils_bool(tmp)
+        ins->tls_verify = flb_utils_bool(tmp);
         flb_sds_destroy(tmp);
     }
     else if (prop_key_check("tls.debug", k, len) == 0 && tmp) {
