@@ -1084,10 +1084,10 @@ int flb_engine_shutdown(struct flb_config *config)
     flb_router_exit(config);
 
     /* cleanup plugins */
-    flb_input_exit_all(config);
     flb_filter_exit(config);
     flb_output_exit(config);
     flb_custom_exit(config);
+    flb_input_exit_all(config);
 
     /* Destroy the storage context */
     flb_storage_destroy(config);

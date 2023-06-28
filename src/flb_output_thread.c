@@ -248,8 +248,9 @@ static void output_thread(void *data)
     /* Thread event loop */
     while (running) {
         mk_event_wait(th_ins->evl);
+
         flb_event_priority_live_foreach(event, th_ins->evl_bktq, th_ins->evl,
-                                      FLB_ENGINE_LOOP_MAX_ITER) {
+                                        FLB_ENGINE_LOOP_MAX_ITER) {
             /*
              * FIXME
              * -----
@@ -443,7 +444,7 @@ int flb_output_thread_pool_create(struct flb_config *config,
         upstream_thread_create(th_ins, ins);
 
         /* Create the event loop for this thread */
-        evl = mk_event_loop_create(64);
+        evl = mk_event_loop_create(256);
         if (!evl) {
             flb_plg_error(ins, "could not create thread event loop");
             flb_free(th_ins);
@@ -544,13 +545,7 @@ void flb_output_thread_pool_destroy(struct flb_output_instance *ins)
         }
 
         th_ins = th->params.data;
-        n = flb_pipe_w(th_ins->ch_parent_events[1], &stop, sizeof(stop));
-        if (n < 0) {
-            flb_errno();
-            flb_plg_error(th_ins->ins, "could not signal worker thread");
-            flb_free(th_ins);
-            continue;
-        }
+
         pthread_join(th->tid, NULL);
         flb_free(th_ins);
     }

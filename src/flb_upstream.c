@@ -184,6 +184,7 @@ struct flb_upstream_queue *flb_upstream_queue_get(struct flb_upstream *u)
              * As a fallback mechanism: just cross our fingers and return the
              * principal upstream queue.
              */
+            // printf("THERE IS NO LIST\n");
             return (struct flb_upstream_queue *) &u->queue;
         }
 
@@ -201,6 +202,7 @@ struct flb_upstream_queue *flb_upstream_queue_get(struct flb_upstream *u)
         uq = &th_u->queue;
     }
     else {
+        // printf("NOT THREAD SAFE\n");
         uq = &u->queue;
     }
 

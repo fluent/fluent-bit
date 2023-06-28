@@ -500,6 +500,25 @@ extern FLB_TLS_DEFINE(struct flb_out_flush_params, out_flush_params);
 
 static inline void flb_output_return_do(int x);
 
+static FLB_INLINE int flb_output_task_get_active_route_count(struct flb_task *task)
+{
+    struct mk_list        *iterator;
+    int                    result;
+    struct flb_task_route *route;
+
+    result = 0;
+
+    mk_list_foreach(iterator, &task->routes) {
+        route = mk_list_entry(iterator, struct flb_task_route, _head);
+
+        if (route->status == FLB_TASK_ROUTE_ACTIVE) {
+            result++;
+        }
+    }
+
+    return result;
+}
+
 static FLB_INLINE int flb_output_task_get_route_status(struct flb_task *task,
                        struct flb_output_instance *o_ins)
 {
