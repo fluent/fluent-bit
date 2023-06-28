@@ -1,7 +1,6 @@
 FROM ghcr.io/verrazzano/verrazzano-base-ol9:v1.0.0-20230627070315-744eefa as builder-base
 
 RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log
-RUN microdnf update
 
 RUN microdnf -y module enable postgresql:15 \
     && microdnf --enablerepo=ol9_codeready_builder install -y \
