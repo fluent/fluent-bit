@@ -39,9 +39,9 @@ struct mem_metrics {
     int coll_fd;
     struct flb_input_instance *ins;
     flb_sds_t procfs_path;
-    flb_sds_t chosen_cmd;
-    flb_sds_t chosen_exec;
-    pid_t chosen_pid;
+    struct mk_list *chosen_cmd;
+    struct mk_list *chosen_exec;
+    struct mk_list *chosen_pid;
 
     int interval_sec;
     int interval_nsec;
@@ -66,64 +66,158 @@ struct mem_metrics {
     struct cmt_gauge *locked;
 };
 
-static int is_chosen(struct mem_metrics *ctx, const char *proc_path)
+static inline int is_empty_choice(struct mk_list *choice)
+{
+    if (choice == NULL || mk_list_size(choice) == 0) {
+        return FLB_TRUE;
+    }
+    return FLB_FALSE;
+}
+
+static inline int is_chosen_exec(struct mem_metrics *ctx, const char *proc_path)
 {
     char real_path[2048] = {0};
     char exe_path[2048] = {0};
+    struct mk_list *head = NULL;
+    struct flb_slist_entry *cur;
+
+
+    if (is_empty_choice(ctx->chosen_exec)) {
+        return FLB_FALSE;
+    }
+
+    snprintf(real_path, sizeof(real_path) - 1, "%s/exe", proc_path);
+    readlink(real_path, exe_path, sizeof(exe_path)-1);
+
+    mk_list_foreach(head, ctx->chosen_exec) {
+        cur = mk_list_entry(head, struct flb_slist_entry, _head);
+        if (strcmp(exe_path, cur->str) == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
+static inline int is_chosen_cmd(struct mem_metrics *ctx, const char *proc_path)
+{
+    char real_path[2048] = {0};
     char cmdline[2048] = {0};
-    char *ppid;
-    pid_t pid;
     int fd;
     int rc;
+    struct mk_list *head = NULL;
+    struct flb_slist_entry *cur;
 
-    if (ctx->chosen_exec != NULL) {
-        snprintf(real_path, sizeof(real_path) - 1, "%s/exe", proc_path);
-        readlink(real_path, exe_path, sizeof(exe_path)-1);
-
-        if (strcmp(exe_path, ctx->chosen_exec) == 0) {
-            return FLB_TRUE;
-        }
+    if (is_empty_choice(ctx->chosen_cmd)) {
         return FLB_FALSE;
     }
 
-    if (ctx->chosen_cmd != NULL) {
-        snprintf(real_path, sizeof(real_path) - 1, "%s/cmdline", proc_path); 
-        fd = open(real_path, O_RDONLY);
-        if (fd == -1) {
-            return FLB_FALSE;
-        }
-
-        rc = read(fd, cmdline, sizeof(cmdline)-1);
-        if (rc == -1) {
-            close(fd);
-            return FLB_FALSE;
-        }
-        close(fd);
-        cmdline[rc] = '\0';
-
-        if (strcmp(cmdline, ctx->chosen_cmd) == 0) {
-            return FLB_TRUE;
-        }
+    snprintf(real_path, sizeof(real_path) - 1, "%s/cmdline", proc_path);
+    fd = open(real_path, O_RDONLY);
+    if (fd == -1) {
         return FLB_FALSE;
     }
 
-    if (ctx->chosen_pid != -1) {
-        ppid = strrchr(proc_path, '/');
-        if (ppid == NULL) {
-            return FLB_FALSE;
-        }
-        ppid++;
-        if (ctx->chosen_pid == 0 && strcmp(ppid, "self") == 0) {
-            return FLB_TRUE;
-        }
-        pid = strtoul(ppid, NULL, 10);
-        if (pid == ctx->chosen_pid) {
-            return FLB_TRUE;
-        }
+    rc = read(fd, cmdline, sizeof(cmdline)-1);
+    close(fd);
+    if (rc == -1) {
         return FLB_FALSE;
     }
 
-    return FLB_TRUE;
+    cmdline[rc] = '\0';
+
+    mk_list_foreach(head, ctx->chosen_cmd) {
+        cur = mk_list_entry(head, struct flb_slist_entry, _head);
+        if (strcmp(cmdline, cur->str) == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
+static inline int is_chosen_pid(struct mem_metrics *ctx, const char *proc_path)
+{
+    char *pid;
+    pid_t my_pid = getpid();
+    pid_t ppid;
+    struct mk_list *head = NULL;
+    struct flb_slist_entry *cur;
+
+    if (is_empty_choice(ctx->chosen_pid)) {
+        return FLB_FALSE;
+    }
+
+    pid = strrchr(proc_path, '/');
+    if (pid == NULL) {
+        return FLB_FALSE;
+    }
+    pid++;
+
+    mk_list_foreach(head, ctx->chosen_pid) {
+        cur = mk_list_entry(head, struct flb_slist_entry, _head);
+        if (strcmp(pid, cur->str) == 0) {
+            return FLB_TRUE;
+        }
+        // special case for self and 0
+        if (strcmp(cur->str, "self") == 0 || strcmp(cur->str, "0") == 0) {
+            ppid = (pid_t) strtoul(pid, NULL, 10);
+            if (ppid == my_pid) {
+                return FLB_TRUE;
+            }
+        }
+    }
+
+    return FLB_FALSE;
+}
+
+static inline int is_chosen_pid_self(struct mem_metrics *ctx)
+{
+    struct mk_list *head = NULL;
+    struct flb_slist_entry *cur;
+
+    if (ctx->chosen_pid == NULL) {
+        return FLB_FALSE;
+    }
+
+    if (mk_list_size(ctx->chosen_pid) != 1) {
+        return FLB_FALSE;
+    }
+
+    mk_list_foreach(head, ctx->chosen_pid) {
+        cur = mk_list_entry(head, struct flb_slist_entry, _head);
+        // special case for self and 0
+        if (strcmp(cur->str, "self") == 0 || strcmp(cur->str, "0") == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
+static int is_chosen(struct mem_metrics *ctx, const char *proc_path)
+{
+    // choose all processes if no filters are set.
+    if (is_empty_choice(ctx->chosen_cmd) &&
+        is_empty_choice(ctx->chosen_exec) &&
+        is_empty_choice(ctx->chosen_pid)) {
+        return FLB_TRUE;
+    }
+
+    if (is_chosen_exec(ctx, proc_path) == FLB_TRUE) {
+        return FLB_TRUE;
+    }
+
+    if (is_chosen_cmd(ctx, proc_path) == FLB_TRUE) {
+        return FLB_TRUE;
+    }
+
+    if (is_chosen_pid(ctx, proc_path) == FLB_TRUE) {
+        return FLB_TRUE;
+    }
+
+    // filters are set and none have been chosen.
+    return FLB_FALSE;
 }
 
 static void mmtx_parse_proc(struct mem_metrics *ctx, uint64_t ts, const char *proc_path)
@@ -315,10 +409,10 @@ static int cb_collector_time(struct flb_input_instance *ins,
                              struct flb_config *config, void *in_context)
 {
     struct mem_metrics *ctx = (struct mem_metrics *)in_context;
-    if (ctx->chosen_pid == 0) {
-	mmtx_parse_proc(ctx, cfl_time_now(), "/proc/self");
+    if (is_chosen_pid_self(ctx)) {
+        mmtx_parse_proc(ctx, cfl_time_now(), "/proc/self");
     } else {
-	mmtx_utils_path_scan_procs(ctx, cfl_time_now());
+    	mmtx_utils_path_scan_procs(ctx, cfl_time_now());
     }
     flb_input_metrics_append(ins, NULL, 0, ctx->cmt);
     FLB_INPUT_RETURN(0);
@@ -414,17 +508,17 @@ static struct flb_config_map config_map[] = {
      "The path of the proc pseudo filesystem, default: /proc"
     },
     {
-     FLB_CONFIG_MAP_STR, "filter_exec", NULL,
+     FLB_CONFIG_MAP_CLIST_1, "filter_exec", NULL,
      0, FLB_TRUE, offsetof(struct mem_metrics, chosen_exec),
      "Filter for a single executable"
     },
     {
-     FLB_CONFIG_MAP_STR, "filter_cmd", NULL,
+     FLB_CONFIG_MAP_CLIST_1, "filter_cmd", NULL,
      0, FLB_TRUE, offsetof(struct mem_metrics, chosen_cmd),
      "Filter by the command line"
     },
     {
-      FLB_CONFIG_MAP_INT, "filter_pid", "-1",
+      FLB_CONFIG_MAP_CLIST_1, "filter_pid", NULL,
       0, FLB_TRUE, offsetof(struct mem_metrics, chosen_pid),
       "Filter by PID"
     },
