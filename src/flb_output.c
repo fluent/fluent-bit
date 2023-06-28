@@ -862,10 +862,9 @@ int flb_output_set_property(struct flb_output_instance *ins,
     else if (prop_key_check("tls", k, len) == 0 && tmp) {
         ins->use_tls = flb_utils_bool(tmp);
         if (ins->use_tls == FLB_TRUE && ((ins->flags & FLB_IO_TLS) == 0)) {
-                flb_error("[config] %s does not support TLS", ins->name);
-                flb_sds_destroy(tmp);
-                return -1;
-            }
+            flb_error("[config] %s does not support TLS", ins->name);
+            flb_sds_destroy(tmp);
+            return -1;
         }
         flb_sds_destroy(tmp);
     }
