@@ -185,8 +185,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
 
     ctx->create_group = FLB_FALSE;
     tmp = flb_output_get_property("auto_create_group", ins);
-    if (tmp)
-    {
+    if (tmp) {
         ctx->create_group = flb_utils_bool(tmp);
     }
 
