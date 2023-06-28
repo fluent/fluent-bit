@@ -471,6 +471,7 @@ int sb_release_output_queue_space(struct flb_output_instance *output_plugin,
         chunk = mk_list_entry(chunk_iterator, struct sb_out_chunk, _head);
 
         released_space += chunk->size;
+        underlying_chunk = chunk->chunk;
 
         sb_remove_chunk_from_segregated_backlogs(underlying_chunk, context);
         cio_chunk_close(underlying_chunk, FLB_TRUE);
