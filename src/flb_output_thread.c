@@ -546,6 +546,14 @@ void flb_output_thread_pool_destroy(struct flb_output_instance *ins)
 
         th_ins = th->params.data;
 
+        n = flb_pipe_w(th_ins->ch_parent_events[1], &stop, sizeof(stop));
+        if (n < 0) {
+            flb_errno();
+            flb_plg_error(th_ins->ins, "could not signal worker thread");
+            flb_free(th_ins);
+            continue;
+        }
+
         pthread_join(th->tid, NULL);
         flb_free(th_ins);
     }
