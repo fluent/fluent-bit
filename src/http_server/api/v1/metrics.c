@@ -397,15 +397,45 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
                 }
 
                 sds_metric = flb_sds_cat(sds_metric, "fluentbit_", 10);
+                if (sds_metric == NULL) {
+                    goto error;
+                }
                 sds_metric = flb_sds_cat(sds_metric, k.via.str.ptr, k.via.str.size);
+                if (sds_metric == NULL) {
+                    goto error;
+                }
                 sds_metric = flb_sds_cat(sds_metric, "_", 1);
+                if (sds_metric == NULL) {
+                    goto error;
+                }
                 sds_metric = flb_sds_cat(sds_metric, mk.via.str.ptr, mk.via.str.size);
+                if (sds_metric == NULL) {
+                    goto error;
+                }
                 sds_metric = flb_sds_cat(sds_metric, "_total{name=\"", 13);
+                if (sds_metric == NULL) {
+                    goto error;
+                }
                 sds_metric = flb_sds_cat(sds_metric, sk.via.str.ptr, sk.via.str.size);
+                if (sds_metric == NULL) {
+                    goto error;
+                }
                 sds_metric = flb_sds_cat(sds_metric, "\"} ", 3);
+                if (sds_metric == NULL) {
+                    goto error;
+                }
                 sds_metric = flb_sds_cat(sds_metric, tmp, len);
+                if (sds_metric == NULL) {
+                    goto error;
+                }
                 sds_metric = flb_sds_cat(sds_metric, time_str, time_len);
+                if (sds_metric == NULL) {
+                    goto error;
+                }
                 sds_metric = flb_sds_cat(sds_metric, "\n", 1);
+                if (sds_metric == NULL) {
+                    goto error;
+                }
                 metrics_arr[index] = sds_metric;
                 index++;
             }
