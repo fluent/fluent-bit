@@ -38,3 +38,4 @@ jobs:
         # Path to SARIF file relative to the root of the repository
         sarif_file: cifuzz-sarif/results.sarif
         checkout_path: cifuzz-sarif
+        category: CIFuzz
