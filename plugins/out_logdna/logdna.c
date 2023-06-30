@@ -305,7 +305,6 @@ static struct flb_logdna *logdna_config_create(struct flb_output_instance *ins,
         tmp = NULL;
         hostname = (char *) flb_env_get(config->env, "HOSTNAME");
         if (hostname) {
-            len = strlen(hostname);
             ctx->_hostname = flb_sds_create(hostname);
         }
         else {
