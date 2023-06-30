@@ -135,6 +135,11 @@ static int process_config(struct flb_rewrite_tag *ctx)
 
         /* key */
         entry = flb_slist_entry_get(val->val.list, 0);
+        if (entry == NULL) {
+            flb_plg_error(ctx->ins, "failed to get entry");
+            flb_free(rule);
+            return -1;
+        }
         rule->ra_key = flb_ra_create(entry->str, FLB_FALSE);
         if (!rule->ra_key) {
             flb_plg_error(ctx->ins, "invalid record accessor key ? '%s'",
