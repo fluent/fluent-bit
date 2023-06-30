@@ -26,6 +26,7 @@ LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
     struct cfl_list decoded_contexts;
     struct cmt *cmt = NULL;
     size_t off = 0;
+    uint8_t decider;
     int result;
 
     /* At least one byte is needed for deciding which decoder to use */
@@ -33,7 +34,7 @@ LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         return 0;
     }
 
-    uint8_t decider = data[0] % 2;
+    decider = data[0] % 2;
 
     /* Adjust data pointer since the first byte is used */
     data += 1;
