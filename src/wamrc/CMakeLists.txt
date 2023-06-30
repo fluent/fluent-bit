@@ -32,14 +32,12 @@ if (NOT DEFINED WAMR_BUILD_TARGET)
     set (WAMR_BUILD_TARGET "ARM")
   elseif (CMAKE_SYSTEM_PROCESSOR STREQUAL "riscv64")
     set (WAMR_BUILD_TARGET "RISCV64")
-  elseif (CMAKE_SIZEOF_VOID_P EQUAL 8)
-    # Build as X86_64 by default in 64-bit platform
+  elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "^(amd|x86_)64")
     set (WAMR_BUILD_TARGET "X86_64")
-  elseif (CMAKE_SIZEOF_VOID_P EQUAL 4)
-    # Build as X86_32 by default in 32-bit platform
+  elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "^i.86")
     set (WAMR_BUILD_TARGET "X86_32")
   else ()
-    message(SEND_ERROR "Unsupported build target platform!")
+    set (WAMR_BUILD_INVOKE_NATIVE_GENERAL 1)
   endif ()
 endif ()
 
