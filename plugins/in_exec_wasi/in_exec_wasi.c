@@ -61,6 +61,7 @@ static int in_exec_wasi_collect(struct flb_input_instance *ins,
 
     /* Validate the temporary file was created */
     if (stdoutp == NULL) {
+        flb_plg_error(ctx->ins, "failed to created temporary file");
         return -1;
     }
 
