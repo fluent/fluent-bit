@@ -752,8 +752,7 @@ static int ec2_metadata_group_should_fetch(struct flb_filter_aws_metadata_group 
 static int get_ec2_metadata(struct flb_filter_aws *ctx)
 {
     int ret;
-    int no_failures = FLB_TRUE;
-    int no_fetches_skipped = FLB_TRUE;
+    int metadata_fetched = FLB_TRUE;
 
     if (!ctx->group_base.done) {
         ret = get_ec2_metadata_base(ctx);
@@ -765,7 +764,7 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
 
     if (!ctx->group_tag.done) {
         if (!ec2_metadata_group_should_fetch(&ctx->group_tag)) {
-            no_fetches_skipped = FLB_FALSE;
+            metadata_fetched = FLB_FALSE;
         } else {
             ret = get_ec2_metadata_tags(ctx);
             if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
@@ -774,12 +773,12 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
             if (ret == 0) {
                 ctx->group_tag.done = FLB_TRUE;
             } else {
-                no_failures = FLB_FALSE;
+                metadata_fetched = FLB_FALSE;
             }
         }
     }
 
-    if (no_failures && no_fetches_skipped) {
+    if (metadata_fetched) {
         ctx->metadata_retrieved = FLB_TRUE;
     }
 
