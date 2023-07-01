@@ -56,11 +56,7 @@ struct flb_filter_aws_metadata_group {
     /* defines a timestamp of last execution of fetch method related to the group */
     /* unit: timestamp in seconds */
     time_t last_fetch_attempt;
-    /* defines a minimal interval before consecutive retries */
-    /* unit: seconds */
-    time_t retry_required_interval;
 };
-
 
 struct flb_filter_aws {
     struct flb_filter_aws_init_options *options;
@@ -136,8 +132,19 @@ struct flb_filter_aws {
 
     /* metadata group contains information for potential retries and
      * if group was already fetched successfully */
-    struct flb_filter_aws_metadata_group group_base;
+    struct flb_filter_aws_metadata_group group_az;
+    struct flb_filter_aws_metadata_group group_instance_id;
+    struct flb_filter_aws_metadata_group group_instance_type;
+    struct flb_filter_aws_metadata_group group_private_ip;
+    struct flb_filter_aws_metadata_group group_vpc_id;
+    struct flb_filter_aws_metadata_group group_ami_id;
+    struct flb_filter_aws_metadata_group group_account_id;
+    struct flb_filter_aws_metadata_group group_hostname;
     struct flb_filter_aws_metadata_group group_tag;
+    /* defines a minimal interval before consecutive retries */
+    /* unit: seconds */
+    time_t retry_required_interval;
+    /* defines if all metadata groups were fetched successfully */
     int metadata_retrieved;
 
     /* Plugin can use EC2 metadata v1 or v2; default is v2 */
