@@ -991,9 +991,9 @@ static int cb_syslog_format_test(struct flb_config *config,
         return -1;
     }
 
-    if ((ret = flb_log_event_decoder_next(
-                &log_decoder,
-                &log_event)) != FLB_EVENT_DECODER_SUCCESS) {
+    flb_log_event_decoder_next(&log_decoder, &log_event);
+    ret = flb_log_event_decoder_get_last_result(&log_decoder);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
         flb_error("msgpack_unpack_next failed");
 
         flb_log_event_decoder_destroy(&log_decoder);
