@@ -54,57 +54,84 @@ static void expose_aws_meta(struct flb_filter_aws *ctx)
 
     flb_env_set(env, "aws", "enabled");
 
-    if (ctx->group_base.done &&
-            !ctx->group_base.exposed) {
+    if (ctx->group_az.done &&
+            !ctx->group_az.exposed) {
         if (ctx->availability_zone_include) {
             flb_env_set(env,
                         "aws." FLB_FILTER_AWS_AVAILABILITY_ZONE_KEY,
                         ctx->availability_zone);
         }
+        ctx->group_az.exposed = FLB_TRUE;
+    }
 
+    if (ctx->group_instance_id.done &&
+            !ctx->group_instance_id.exposed) {
         if (ctx->instance_id_include) {
             flb_env_set(env,
                         "aws." FLB_FILTER_AWS_INSTANCE_ID_KEY,
                         ctx->instance_id);
         }
+        ctx->group_instance_id.exposed = FLB_TRUE;
+    }
 
+    if (ctx->group_instance_type.done &&
+            !ctx->group_instance_type.exposed) {
         if (ctx->instance_type_include) {
             flb_env_set(env,
                         "aws." FLB_FILTER_AWS_INSTANCE_TYPE_KEY,
                         ctx->instance_type);
         }
+        ctx->group_instance_type.exposed = FLB_TRUE;
+    }
 
+    if (ctx->group_private_ip.done &&
+            !ctx->group_private_ip.exposed) {
         if (ctx->private_ip_include) {
             flb_env_set(env,
                         "aws." FLB_FILTER_AWS_PRIVATE_IP_KEY,
                         ctx->private_ip);
         }
+        ctx->group_private_ip.exposed = FLB_TRUE;
+    }
 
+    if (ctx->group_vpc_id.done &&
+            !ctx->group_vpc_id.exposed) {
         if (ctx->vpc_id_include) {
             flb_env_set(env,
                         "aws." FLB_FILTER_AWS_VPC_ID_KEY,
                         ctx->vpc_id);
         }
+        ctx->group_vpc_id.exposed = FLB_TRUE;
+    }
 
+    if (ctx->group_ami_id.done &&
+            !ctx->group_ami_id.exposed) {
         if (ctx->ami_id_include) {
             flb_env_set(env,
                         "aws." FLB_FILTER_AWS_AMI_ID_KEY,
                         ctx->ami_id);
         }
+        ctx->group_ami_id.exposed = FLB_TRUE;
+    }
 
+    if (ctx->group_account_id.done &&
+            !ctx->group_account_id.exposed) {
         if (ctx->account_id_include) {
             flb_env_set(env,
                         "aws." FLB_FILTER_AWS_ACCOUNT_ID_KEY,
                         ctx->account_id);
         }
+        ctx->group_account_id.exposed = FLB_TRUE;
+    }
 
+    if (ctx->group_hostname.done &&
+            !ctx->group_hostname.exposed) {
         if (ctx->hostname_include) {
             flb_env_set(env,
                         "aws." FLB_FILTER_AWS_HOSTNAME_KEY,
                         ctx->hostname);
         }
-
-        ctx->group_base.exposed = FLB_TRUE;
+        ctx->group_hostname.exposed = FLB_TRUE;
     }
 
     /* TODO: expose aws ec2 tags in flb_env_set */
@@ -609,17 +636,9 @@ static int get_ec2_tags(struct flb_filter_aws *ctx)
     return 0;
 }
 
-/*
- * Makes a call to IMDS to set get the values of all metadata fields.
- * It can be called repeatedly if some metadata calls initially do not succeed.
- * However, if function succeeds, the expectation is that it shouldn't be called again.
- */
-static int get_ec2_metadata_base(struct flb_filter_aws *ctx)
+static int get_ec2_metadata_instance_id(struct flb_filter_aws *ctx)
 {
     int ret;
-
-    ctx->group_base.
-        last_fetch_attempt = time(NULL);
 
     if (ctx->instance_id_include && !ctx->instance_id) {
         ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_INSTANCE_ID_PATH,
@@ -631,16 +650,12 @@ static int get_ec2_metadata_base(struct flb_filter_aws *ctx)
         }
     }
 
-    if (ctx->availability_zone_include && !ctx->availability_zone) {
-        ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_AZ_PATH,
-                           &ctx->availability_zone,
-                           &ctx->availability_zone_len);
+    return 0;
+}
 
-        if (ret < 0) {
-            flb_plg_error(ctx->ins, "Failed to get instance AZ");
-            return -1;
-        }
-    }
+static int get_ec2_metadata_instance_type(struct flb_filter_aws *ctx)
+{
+    int ret;
 
     if (ctx->instance_type_include && !ctx->instance_type) {
         ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_INSTANCE_TYPE_PATH,
@@ -652,6 +667,13 @@ static int get_ec2_metadata_base(struct flb_filter_aws *ctx)
         }
     }
 
+    return 0;
+}
+
+static int get_ec2_metadata_private_ip(struct flb_filter_aws *ctx)
+{
+    int ret;
+
     if (ctx->private_ip_include && !ctx->private_ip) {
         ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_PRIVATE_IP_PATH,
                            &ctx->private_ip, &ctx->private_ip_len);
@@ -662,6 +684,13 @@ static int get_ec2_metadata_base(struct flb_filter_aws *ctx)
         }
     }
 
+    return 0;
+}
+
+static int get_ec2_metadata_vpc_id(struct flb_filter_aws *ctx)
+{
+    int ret;
+
     if (ctx->vpc_id_include && !ctx->vpc_id) {
         ret = get_vpc_id(ctx);
 
@@ -670,6 +699,13 @@ static int get_ec2_metadata_base(struct flb_filter_aws *ctx)
             return -1;
         }
     }
+
+    return 0;
+}
+
+static int get_ec2_metadata_ami_id(struct flb_filter_aws *ctx)
+{
+    int ret;
 
     if (ctx->ami_id_include && !ctx->ami_id) {
         ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_AMI_ID_PATH,
@@ -681,6 +717,13 @@ static int get_ec2_metadata_base(struct flb_filter_aws *ctx)
         }
     }
 
+    return 0;
+}
+
+static int get_ec2_metadata_account_id(struct flb_filter_aws *ctx)
+{
+    int ret;
+
     if (ctx->account_id_include && !ctx->account_id) {
         ret = flb_aws_imds_request_by_key(ctx->client_imds, FLB_AWS_IMDS_ACCOUNT_ID_PATH,
                                   &ctx->account_id, &ctx->account_id_len,
@@ -691,6 +734,14 @@ static int get_ec2_metadata_base(struct flb_filter_aws *ctx)
             return -1;
         }
     }
+
+
+    return 0;
+}
+
+static int get_ec2_metadata_hostname(struct flb_filter_aws *ctx)
+{
+    int ret;
 
     if (ctx->hostname_include && !ctx->hostname) {
         ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_HOSTNAME_PATH,
@@ -705,12 +756,28 @@ static int get_ec2_metadata_base(struct flb_filter_aws *ctx)
     return 0;
 }
 
-static int get_ec2_metadata_tags(struct flb_filter_aws *ctx)
+static int get_ec2_metadata_az(struct flb_filter_aws *ctx)
 {
     int ret;
 
-    ctx->group_tag.
-        last_fetch_attempt = time(NULL);
+    if (ctx->availability_zone_include && !ctx->availability_zone) {
+        ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_AZ_PATH,
+                           &ctx->availability_zone,
+                           &ctx->availability_zone_len);
+
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "Failed to get instance AZ");
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+
+static int get_ec2_metadata_tags(struct flb_filter_aws *ctx)
+{
+    int ret;
 
     if (ctx->tags_enabled && !ctx->tags_fetched) {
         ret = get_ec2_tags(ctx);
@@ -723,11 +790,12 @@ static int get_ec2_metadata_tags(struct flb_filter_aws *ctx)
     return 0;
 }
 
-static int ec2_metadata_group_should_fetch(struct flb_filter_aws_metadata_group *group)
+static int ec2_metadata_group_should_fetch(struct flb_filter_aws *ctx,
+                                           struct flb_filter_aws_metadata_group *group)
 {
     time_t now, required_interval, interval;
 
-    required_interval = group->retry_required_interval;
+    required_interval = ctx->retry_required_interval;
     if (required_interval == 0) {
         return FLB_TRUE;
     }
@@ -742,6 +810,25 @@ static int ec2_metadata_group_should_fetch(struct flb_filter_aws_metadata_group 
     return FLB_TRUE;
 }
 
+static int get_ec2_metadata_group(struct flb_filter_aws *ctx,
+                                  struct flb_filter_aws_metadata_group *group,
+                                  int (*fetch_func)(struct flb_filter_aws *ctx))
+{
+    int ret;
+    if (group->done) {
+        return 0;
+    }
+    if (!ec2_metadata_group_should_fetch(ctx, group)) {
+        return -1;
+    }
+    group->last_fetch_attempt = time(NULL);
+    ret = fetch_func(ctx);
+    if (ret == 0) {
+        group->done = FLB_TRUE;
+    }
+    return ret;
+}
+
 /*
  * Fetches all metadata values, including tags, from IMDS.
  * Function handles retries as configured for each metadata group.
@@ -754,28 +841,84 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
     int ret;
     int metadata_fetched = FLB_TRUE;
 
-    if (!ctx->group_base.done) {
-        ret = get_ec2_metadata_base(ctx);
-        if (ret < 0) {
-            return ret;
-        }
-        ctx->group_base.done = FLB_TRUE;
+    if (ctx->metadata_retrieved) {
+        return 0;
     }
 
-    if (!ctx->group_tag.done) {
-        if (!ec2_metadata_group_should_fetch(&ctx->group_tag)) {
-            metadata_fetched = FLB_FALSE;
-        } else {
-            ret = get_ec2_metadata_tags(ctx);
-            if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
-                return ret;
-            }
-            if (ret == 0) {
-                ctx->group_tag.done = FLB_TRUE;
-            } else {
-                metadata_fetched = FLB_FALSE;
-            }
+    ret = get_ec2_metadata_group(ctx, &ctx->group_instance_id,
+                                 get_ec2_metadata_instance_id);
+    if (ret < 0) {
+        if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
+            return ret;
         }
+        metadata_fetched = FLB_FALSE;
+    }
+
+    ret = get_ec2_metadata_group(ctx, &ctx->group_account_id,
+                                 get_ec2_metadata_account_id);
+    if (ret < 0) {
+        if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
+            return ret;
+        }
+        metadata_fetched = FLB_FALSE;
+    }
+
+    ret = get_ec2_metadata_group(ctx, &ctx->group_instance_type,
+                                 get_ec2_metadata_instance_type);
+    if (ret < 0) {
+        if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
+            return ret;
+        }
+        metadata_fetched = FLB_FALSE;
+    }
+
+    ret = get_ec2_metadata_group(ctx, &ctx->group_private_ip,
+                                 get_ec2_metadata_private_ip);
+    if (ret < 0) {
+        if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
+            return ret;
+        }
+        metadata_fetched = FLB_FALSE;
+    }
+
+    ret = get_ec2_metadata_group(ctx, &ctx->group_vpc_id, get_ec2_metadata_vpc_id);
+    if (ret < 0) {
+        if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
+            return ret;
+        }
+        metadata_fetched = FLB_FALSE;
+    }
+
+    ret = get_ec2_metadata_group(ctx, &ctx->group_ami_id, get_ec2_metadata_ami_id);
+    if (ret < 0) {
+        if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
+            return ret;
+        }
+        metadata_fetched = FLB_FALSE;
+    }
+
+    ret = get_ec2_metadata_group(ctx, &ctx->group_hostname, get_ec2_metadata_hostname);
+    if (ret < 0) {
+        if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
+            return ret;
+        }
+        metadata_fetched = FLB_FALSE;
+    }
+
+    ret = get_ec2_metadata_group(ctx, &ctx->group_az, get_ec2_metadata_az);
+    if (ret < 0) {
+        if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
+            return ret;
+        }
+        metadata_fetched = FLB_FALSE;
+    }
+
+    ret = get_ec2_metadata_group(ctx, &ctx->group_tag, get_ec2_metadata_tags);
+    if (ret < 0) {
+        if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
+            return ret;
+        }
+        metadata_fetched = FLB_FALSE;
     }
 
     if (metadata_fetched) {
@@ -808,10 +951,11 @@ static int cb_aws_filter(const void *data, size_t bytes,
 
     /* First check that the metadata has been retrieved */
     if (!ctx->metadata_retrieved) {
-        ret = get_ec2_metadata(ctx);
-        if (ret < 0) {
-            return FLB_FILTER_NOTOUCH;
-        }
+        get_ec2_metadata(ctx); /* ignore the error */
+        /* it assumes the error cannot be the configuration error, as it would fail */
+        /* during the _init function; */
+        /* even if get_ec2_metadata failed, it may have been able to fetch some groups */
+        /* therefore we continue flushing the logs with what we've got */
         expose_aws_meta(ctx);
     }
 
@@ -864,6 +1008,7 @@ static int cb_aws_filter(const void *data, size_t bytes,
 
         /* append new keys */
         if (ctx->availability_zone_include &&
+            ctx->group_az.done &&
             ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     &log_encoder,
@@ -873,6 +1018,7 @@ static int cb_aws_filter(const void *data, size_t bytes,
         }
 
         if (ctx->instance_id_include &&
+            ctx->group_instance_id.done &&
             ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     &log_encoder,
@@ -882,6 +1028,7 @@ static int cb_aws_filter(const void *data, size_t bytes,
         }
 
         if (ctx->instance_type_include &&
+            ctx->group_instance_type.done &&
             ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     &log_encoder,
@@ -891,6 +1038,7 @@ static int cb_aws_filter(const void *data, size_t bytes,
         }
 
         if (ctx->private_ip_include &&
+            ctx->group_private_ip.done &&
             ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     &log_encoder,
@@ -900,6 +1048,7 @@ static int cb_aws_filter(const void *data, size_t bytes,
         }
 
         if (ctx->vpc_id_include &&
+            ctx->group_vpc_id.done &&
             ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     &log_encoder,
@@ -909,6 +1058,7 @@ static int cb_aws_filter(const void *data, size_t bytes,
         }
 
         if (ctx->ami_id_include &&
+            ctx->group_ami_id.done &&
             ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     &log_encoder,
@@ -918,6 +1068,7 @@ static int cb_aws_filter(const void *data, size_t bytes,
         }
 
         if (ctx->account_id_include &&
+            ctx->group_account_id.done &&
             ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     &log_encoder,
@@ -927,6 +1078,7 @@ static int cb_aws_filter(const void *data, size_t bytes,
         }
 
         if (ctx->hostname_include &&
+            ctx->group_hostname.done &&
             ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_values(
                     &log_encoder,
@@ -1117,11 +1269,8 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_INT, "retry_interval_s", "300",
-     /* for the time being, the only group which has retries is ec2 tags */
-     /* therefore configuration immediately sets this value just for ec2 tags */
-     0, FLB_TRUE, offsetof(struct flb_filter_aws,
-             group_tag.retry_required_interval),
-     "Defines minimum duration between retries for fetching EC2 instance tags"
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, retry_required_interval),
+     "Defines minimum duration between retries for fetching metadata groups"
     },
     {0}
 };
