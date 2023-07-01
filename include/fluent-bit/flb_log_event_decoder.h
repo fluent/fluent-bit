@@ -83,6 +83,6 @@ int flb_log_event_decoder_get_last_result(struct flb_log_event_decoder *context)
 int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
                                struct flb_log_event *record);
 
-const char *flb_log_event_encoder_strerror(int error_code);
+const char *flb_log_event_decoder_get_error_description(int error_code);
 
 #endif
