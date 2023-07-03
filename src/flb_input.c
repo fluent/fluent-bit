@@ -477,7 +477,7 @@ int flb_input_set_property(struct flb_input_instance *ins,
 
     /* Check if the key is a known/shared property */
     if (prop_key_check("tag", k, len) == 0 && tmp) {
-        ins->tag     = tmp;
+        flb_utils_set_plugin_string_property("tag", &ins->tag, tmp);
         ins->tag_len = flb_sds_len(tmp);
         ins->tag_default = FLB_FALSE;
     }
@@ -502,7 +502,7 @@ int flb_input_set_property(struct flb_input_instance *ins,
         flb_sds_destroy(tmp);
     }
     else if (prop_key_check("alias", k, len) == 0 && tmp) {
-        ins->alias = tmp;
+        flb_utils_set_plugin_string_property("alias", &ins->alias, tmp);
     }
     else if (prop_key_check("mem_buf_limit", k, len) == 0 && tmp) {
         limit = flb_utils_size_to_bytes(tmp);
@@ -513,10 +513,10 @@ int flb_input_set_property(struct flb_input_instance *ins,
         ins->mem_buf_limit = (size_t) limit;
     }
     else if (prop_key_check("listen", k, len) == 0) {
-        ins->host.listen = tmp;
+        flb_utils_set_plugin_string_property("listen", &ins->host.listen, tmp);
     }
     else if (prop_key_check("host", k, len) == 0) {
-        ins->host.name   = tmp;
+        flb_utils_set_plugin_string_property("host", &ins->host.name, tmp);
     }
     else if (prop_key_check("port", k, len) == 0) {
         if (tmp) {
@@ -558,22 +558,22 @@ int flb_input_set_property(struct flb_input_instance *ins,
         flb_sds_destroy(tmp);
     }
     else if (prop_key_check("tls.vhost", k, len) == 0) {
-        ins->tls_vhost = tmp;
+        flb_utils_set_plugin_string_property("tls.vhost", &ins->tls_vhost, tmp);
     }
     else if (prop_key_check("tls.ca_path", k, len) == 0) {
-        ins->tls_ca_path = tmp;
+        flb_utils_set_plugin_string_property("tls.ca_path", &ins->tls_ca_path, tmp);
     }
     else if (prop_key_check("tls.ca_file", k, len) == 0) {
-        ins->tls_ca_file = tmp;
+        flb_utils_set_plugin_string_property("tls.ca_file", &ins->tls_ca_file, tmp);
     }
     else if (prop_key_check("tls.crt_file", k, len) == 0) {
-        ins->tls_crt_file = tmp;
+        flb_utils_set_plugin_string_property("tls.crt_file", &ins->tls_crt_file, tmp);
     }
     else if (prop_key_check("tls.key_file", k, len) == 0) {
-        ins->tls_key_file = tmp;
+        flb_utils_set_plugin_string_property("tls.key_file", &ins->tls_key_file, tmp);
     }
     else if (prop_key_check("tls.key_passwd", k, len) == 0) {
-        ins->tls_key_passwd = tmp;
+        flb_utils_set_plugin_string_property("tls.key_passwd", &ins->tls_key_passwd, tmp);
     }
 #endif
     else if (prop_key_check("storage.type", k, len) == 0 && tmp) {
