@@ -565,6 +565,9 @@ static void flb_signal_handler(int signal)
     struct tm *cur;
     flb_ctx_t *ctx = flb_context_get();
     struct flb_cf *cf_opts = flb_cf_context_get();
+    char *crash_trigger;
+
+    crash_trigger = NULL;
 
     now = time(NULL);
     cur = localtime(&now);
@@ -602,8 +605,21 @@ static void flb_signal_handler(int signal)
 #endif
         abort();
 #ifndef FLB_SYSTEM_WINDOWS
+    case SIGUSR1:
+        flb_dump(ctx->config);
+
+        exit(0);
+
+        break;
+    case SIGUSR2:
+        flb_dump(ctx->config);
+
+        crash_trigger[1] = '!';
+
+        break;
     case SIGCONT:
         flb_dump(ctx->config);
+        sleep(5);
         break;
     case SIGHUP:
 #ifndef FLB_HAVE_STATIC_CONF
@@ -629,6 +645,8 @@ static void flb_signal_init()
     signal(SIGQUIT, &flb_signal_handler_break_loop);
     signal(SIGHUP,  &flb_signal_handler);
     signal(SIGCONT, &flb_signal_handler);
+    signal(SIGUSR1, &flb_signal_handler);
+    signal(SIGUSR2, &flb_signal_handler);
 #endif
     signal(SIGTERM, &flb_signal_handler_break_loop);
     signal(SIGSEGV, &flb_signal_handler);

@@ -25,6 +25,8 @@
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_event.h>
+#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_thread_pool.h>
 
 #ifdef FLB_DUMP_STACKTRACE
 #include <fluent-bit/flb_stacktrace.h>
@@ -51,6 +53,7 @@ static void dump_input_chunks(struct flb_config *ctx)
     /* tasks */
     int task_new;
     int task_running;
+    int task_executing;
 
     /* chunks */
     int up;
@@ -66,6 +69,17 @@ static void dump_input_chunks(struct flb_config *ctx)
     struct flb_input_instance *i;
     struct flb_input_chunk *ic;
     struct flb_task *task;
+
+    struct flb_tp_thread *th;
+    struct mk_list *h_worker;
+    struct mk_list *h_flush;
+    struct flb_output_instance *o;
+    struct flb_out_thread_instance *th_ins;
+    struct flb_output_flush *out_flush;
+
+    void **coroutine_context;
+    void **coroutine_stack;
+    void *coroutine_yield_instruction;
 
     fprintf(stderr, "\n===== Input =====\n");
 
@@ -115,6 +129,8 @@ static void dump_input_chunks(struct flb_config *ctx)
         size = 0;
         task_new = 0;
         task_running = 0;
+        task_executing = 0;
+
         /* Iterate tasks and print a summary */
         mk_list_foreach(h_task, &i->tasks) {
             task = mk_list_entry(h_task, struct flb_task, _head);
@@ -125,12 +141,17 @@ static void dump_input_chunks(struct flb_config *ctx)
             else if (task->status == FLB_TASK_RUNNING) {
                 task_running++;
             }
+
+            flb_output_task_acquire_lock(task);
+            task_executing += flb_output_task_get_active_route_count(task);
+            flb_output_task_release_lock(task);
         }
 
         flb_utils_bytes_to_human_readable_size(size, tmp, sizeof(tmp) - 1);
 
         fprintf(stderr, "│  ├─ new           : %i\n", task_new);
         fprintf(stderr, "│  ├─ running       : %i\n", task_running);
+        fprintf(stderr, "│  ├─ executing     : %i\n", task_executing);
         fprintf(stderr, "│  └─ size          : %s (%lu bytes)\n", tmp, size);
 
         /*
@@ -195,6 +216,35 @@ static void dump_input_chunks(struct flb_config *ctx)
         fprintf(stderr, "         └─ size err: %i\n", busy_size_err);
         fprintf(stderr, "\n");
     }
+
+    fprintf(stderr, "\n\n");
+
+    fprintf(stderr, "\n===== Output =====\n");
+    mk_list_foreach(head, &ctx->outputs) {
+        o = mk_list_entry(head, struct flb_output_instance, _head);
+        fprintf(stderr, "%s (%s)\n", flb_output_name(o), o->p->name);
+
+        mk_list_foreach(h_worker, &o->tp->list_threads) {
+            th = mk_list_entry(h_worker, struct flb_tp_thread, _head);
+            fprintf(stderr, "worker : %d\n", th->id);
+
+            th_ins = (struct flb_out_thread_instance *) th->params.data;
+            fprintf(stderr, "worker context : %p (%p)\n", th_ins, th_ins->ins);
+
+            mk_list_foreach(h_flush, &th_ins->flush_list) {
+                out_flush = mk_list_entry(h_flush, struct flb_output_flush, _head);
+
+                coroutine_context = (void **) out_flush->coro->callee;
+                coroutine_stack = (void **) coroutine_context[0];
+                coroutine_yield_instruction = coroutine_stack[6];
+
+                fprintf(stderr, "flush : %p - %d - %p\n", out_flush->task, out_flush->id, coroutine_yield_instruction);
+                fprintf(stderr, "\n");
+            }
+        }
+    }
+
+    fprintf(stderr, "\n\n");
 }
 
 /*
