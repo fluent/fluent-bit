@@ -97,6 +97,50 @@ static int send_json_message_response(struct in_elasticsearch_bulk_conn *conn, i
     return 0;
 }
 
+static int send_version_message_response(struct flb_in_elasticsearch *ctx,
+                                         struct in_elasticsearch_bulk_conn *conn, int http_status)
+{
+    size_t    sent;
+    int       len;
+    flb_sds_t out;
+    flb_sds_t resp;
+
+    out = flb_sds_create_size(256);
+    if (!out) {
+        return -1;
+    }
+    resp = flb_sds_create_size(384);
+    if (!resp) {
+        flb_sds_destroy(out);
+        return -1;
+    }
+
+    flb_sds_printf(&resp,
+                   ES_VERSION_RESPONSE_TEMPLATE,
+                   ctx->es_version);
+
+    len = flb_sds_len(resp);
+
+    if (http_status == 200) {
+        flb_sds_printf(&out,
+                       "HTTP/1.1 200 OK\r\n"
+                       "Content-Type: application/json\r\n"
+                       "Content-Length: %i\r\n\r\n%s",
+                       len, resp);
+    }
+
+    /* We should check this operations result */
+    flb_io_net_write(conn->connection,
+                     (void *) out,
+                     flb_sds_len(out),
+                     &sent);
+
+    flb_sds_destroy(resp);
+    flb_sds_destroy(out);
+
+    return 0;
+}
+
 static int send_dummy_sniffer_response(struct in_elasticsearch_bulk_conn *conn, int http_status,
                                        struct flb_in_elasticsearch *ctx)
 {
@@ -785,7 +829,7 @@ int in_elasticsearch_bulk_prot_handle(struct flb_in_elasticsearch *ctx,
             send_dummy_sniffer_response(conn, 200, ctx);
         }
         else if (strlen(uri) == 1 && strncmp(uri, "/", 1) == 0) {
-            send_json_message_response(conn, 200, ES_VERSION_RESPONSE);
+            send_version_message_response(ctx, conn, 200);
         }
         else {
             send_json_message_response(conn, 200, "{}");

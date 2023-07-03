@@ -219,6 +219,12 @@ static struct flb_config_map config_map[] = {
      "Specify hostname or FQDN. This parameter is effective for sniffering node information."
     },
 
+    {
+     FLB_CONFIG_MAP_STR, "version", "8.0.0",
+     0, FLB_TRUE, offsetof(struct flb_in_elasticsearch, es_version),
+     "Specify returning Elasticsearch server version."
+    },
+
     /* EOF */
     {0}
 };
