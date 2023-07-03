@@ -376,7 +376,7 @@ const char *flb_log_event_encoder_get_error_description(int error_code)
         break;
 
     case FLB_EVENT_ENCODER_ERROR_SERIALIZATION_FAILURE:
-        ret = "Serializatoin failure";
+        ret = "Serialization failure";
         break;
 
     case FLB_EVENT_ENCODER_ERROR_INVALID_VALUE_TYPE:
