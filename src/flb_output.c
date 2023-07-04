@@ -1382,9 +1382,6 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
     /* Set flags */
     flb_stream_enable_flags(&u->base, flags);
 
-    /* Set metrics context */
-    flb_stream_set_metrics_context(&u->base, ins->cmt);
-
     /*
      * If the output plugin flush callbacks will run in multiple threads, enable
      * the thread safe mode for the Upstream context.
