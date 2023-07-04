@@ -1176,6 +1176,23 @@ int flb_output_init_all(struct flb_config *config)
                                              1, (char *[]) {"name"});
         cmt_counter_set(ins->cmt_retried_records, ts, 0, 1, (char *[]) {name});
 
+        /* fluentbit_output_tasks */
+        ins->cmt_tasks = cmt_gauge_create(ins->cmt,
+                                          "fluentbit",
+                                          "output",
+                                          "tasks",
+                                          "Number of flush tasks",
+                                          1, (char *[]) {"name"});
+
+        if (ins->cmt_tasks == NULL) {
+            flb_output_instance_destroy(ins);
+
+            return -1;
+        }
+
+        cmt_gauge_set(ins->cmt_tasks, ts, 0, 1, (char *[]) {name});
+
+
         /* old API */
         ins->metrics = flb_metrics_create(name);
         if (ins->metrics) {
@@ -1365,6 +1382,9 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
     /* Set flags */
     flb_stream_enable_flags(&u->base, flags);
 
+    /* Set metrics context */
+    flb_stream_set_metrics_context(&u->base, ins->cmt);
+
     /*
      * If the output plugin flush callbacks will run in multiple threads, enable
      * the thread safe mode for the Upstream context.
@@ -1406,4 +1426,60 @@ int flb_output_set_http_debug_callbacks(struct flb_output_instance *ins)
 #else
     return 0;
 #endif
+}
+
+size_t flb_output_get_task_count(struct flb_output_instance *instance)
+{
+    double   task_count;
+    int      result;
+
+    task_count = 0;
+
+    result = cmt_gauge_get_val(instance->cmt_tasks,
+                               1, (char *[]) {flb_output_name(instance)},
+                               &task_count);
+
+    if (result != 0) {
+        flb_error("[output] could not get task count for '%s' plugin",
+                  flb_output_name(instance));
+    }
+
+    return (size_t) task_count;
+}
+
+int flb_output_increment_task_count(struct flb_output_instance *instance)
+{
+    cmt_gauge_inc(instance->cmt_tasks,
+                  cfl_time_now(),
+                  1, (char *[]) {instance->name});
+
+    return 0;
+}
+
+int flb_output_decrement_task_count(struct flb_output_instance *instance)
+{
+    cmt_gauge_dec(instance->cmt_tasks,
+                  cfl_time_now(),
+                  1, (char *[]) {instance->name});
+
+    return 0;
+}
+
+int flb_output_verify_limits(struct flb_output_instance *instance)
+{
+    size_t task_count;
+
+    if ((instance->flags & FLB_OUTPUT_NET) == 0) {
+        return FLB_TRUE;
+    }
+
+    if (instance->net_setup.max_worker_connections > 0) {
+        task_count = flb_output_get_task_count(instance);
+
+        if (task_count < instance->net_setup.max_worker_connections) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
 }

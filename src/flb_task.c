@@ -349,9 +349,45 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     struct flb_input_chunk *task_ic;
     struct mk_list *i_head;
     struct mk_list *o_head;
+    int result;
 
     /* No error status */
     *err = FLB_FALSE;
+
+    /* Direct connects betweek input <> outputs (API based) */
+    if (mk_list_size(&i_ins->routes_direct) > 0) {
+        mk_list_foreach(i_head, &i_ins->routes_direct) {
+            route_path = mk_list_entry(i_head, struct flb_router_path, _head);
+            result = flb_output_verify_limits(route_path->ins);
+
+            if (!result) {
+                *err = FLB_TRUE;
+
+                return NULL;
+            }
+        }
+    }
+
+    /* Find matching routes for the incoming task */
+    mk_list_foreach(o_head, &config->outputs) {
+        o_ins = mk_list_entry(o_head,
+                              struct flb_output_instance, _head);
+
+        /* skip output plugins that don't handle proper event types */
+        if (!flb_router_match_type(ic->event_type, o_ins)) {
+            continue;
+        }
+
+        if (flb_routes_mask_get_bit(ic->routes_mask, o_ins->id) != 0) {
+            result = flb_output_verify_limits(o_ins);
+
+            if (!result) {
+                *err = FLB_TRUE;
+
+                return NULL;
+            }
+        }
+    }
 
     /* allocate task */
     task = task_alloc(config);
@@ -404,6 +440,8 @@ struct flb_task *flb_task_create(uint64_t ref_id,
 
             route->out = o_ins;
             mk_list_add(&route->_head, &task->routes);
+
+            flb_output_increment_task_count(o_ins);
         }
         flb_debug("[task] created direct task=%p id=%i OK", task, task->id);
         return task;
@@ -429,6 +467,8 @@ struct flb_task *flb_task_create(uint64_t ref_id,
             route->out = o_ins;
             mk_list_add(&route->_head, &task->routes);
             count++;
+
+            flb_output_increment_task_count(o_ins);
         }
     }
 
@@ -460,6 +500,7 @@ void flb_task_destroy(struct flb_task *task, int del)
     /* Remove routes */
     mk_list_foreach_safe(head, tmp, &task->routes) {
         route = mk_list_entry(head, struct flb_task_route, _head);
+        flb_output_decrement_task_count(route->out);
         mk_list_del(&route->_head);
         flb_free(route);
     }

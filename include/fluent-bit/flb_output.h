@@ -359,6 +359,7 @@ struct flb_output_instance {
     struct cmt_counter *cmt_retries_failed;  /* m: output_retries_failed  */
     struct cmt_counter *cmt_dropped_records; /* m: output_dropped_records */
     struct cmt_counter *cmt_retried_records; /* m: output_retried_records */
+    struct cmt_gauge   *cmt_tasks;           /* m: output_tasks           */
 
     /* OLD Metrics API */
 #ifdef FLB_HAVE_METRICS
@@ -1060,5 +1061,10 @@ int flb_output_set_http_debug_callbacks(struct flb_output_instance *ins);
 int flb_output_task_flush(struct flb_task *task,
                           struct flb_output_instance *out_ins,
                           struct flb_config *config);
+
+size_t flb_output_get_task_count(struct flb_output_instance *instance);
+int flb_output_increment_task_count(struct flb_output_instance *instance);
+int flb_output_decrement_task_count(struct flb_output_instance *instance);
+int flb_output_verify_limits(struct flb_output_instance *instance);
 
 #endif

@@ -633,23 +633,6 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
               u->base.net.keepalive_idle_timeout,
               u->base.net.max_worker_connections);
 
-
-    /* If the upstream is limited by max connections, check current state */
-    if (u->base.net.max_worker_connections > 0) {
-        flb_stream_acquire_lock(&u->base, FLB_TRUE);
-
-        total_connections  = mk_list_size(&uq->av_queue);
-        total_connections += mk_list_size(&uq->busy_queue);
-
-        flb_stream_release_lock(&u->base);
-
-        if (total_connections >= u->base.net.max_worker_connections) {
-            flb_debug("[upstream] max worker connections=%i reached to: %s:%i, cannot connect",
-                      u->base.net.max_worker_connections, u->tcp_host, u->tcp_port);
-            return NULL;
-        }
-    }
-
     conn = NULL;
 
     /*
