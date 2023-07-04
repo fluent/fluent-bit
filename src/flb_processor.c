@@ -264,10 +264,25 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
     return pu;
 }
 
-int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k, const char *v)
+int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k, struct cfl_variant *v)
 {
+    struct cfl_variant *val;
+    int i;
+    int ret;
+
     if (pu->unit_type == FLB_PROCESSOR_UNIT_FILTER) {
-        return flb_filter_set_property(pu->ctx, k, v);
+        if (v->type == CFL_VARIANT_STRING) {
+            return flb_filter_set_property(pu->ctx, k, v->data.as_string);
+        } else if (v->type == CFL_VARIANT_ARRAY) {
+            for (i = 0; i < v->data.as_array->entry_count; i++) {
+                val = v->data.as_array->entries[i];
+                ret = flb_filter_set_property(pu->ctx, k, val->data.as_string);
+                if (ret == -1) {
+                    return ret;
+                }
+            }
+            return 0;
+        }
     }
 
     return flb_processor_instance_set_property(
@@ -708,9 +723,6 @@ static int load_from_config_format_group(struct flb_processor *proc, int type, s
                 continue;
             }
 
-            if (pair->val->type != CFL_VARIANT_STRING) {
-                continue;
-            }
             /* If filter plugin in processor unit has its own match rule,
              * we must release the pre-allocated '*' match at first.
              */
@@ -724,7 +736,7 @@ static int load_from_config_format_group(struct flb_processor *proc, int type, s
                 }
             }
 
-            ret = flb_processor_unit_set_property(pu, pair->key, pair->val->data.as_string);
+            ret = flb_processor_unit_set_property(pu, pair->key, pair->val);
             if (ret == -1) {
                 flb_error("cannot set property '%s' for processor '%s'", pair->key, name);
                 return -1;

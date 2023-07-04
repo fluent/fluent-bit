@@ -67,6 +67,10 @@ static void processor()
     size_t mp_size;
     void *out_buf = NULL;
     size_t out_size;
+    struct cfl_variant var = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = flb_sds_create("hostname monox")
+    };
 
     printf("\n\n");
 
@@ -84,7 +88,7 @@ static void processor()
     pu = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "modify");
     TEST_CHECK(pu != NULL);
 
-    ret = flb_processor_unit_set_property(pu, "add", "hostname monox");
+    ret = flb_processor_unit_set_property(pu, "add", &var);
     TEST_CHECK(ret == 0);
 
     pu = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "stdout");
