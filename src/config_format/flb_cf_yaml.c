@@ -142,7 +142,6 @@ static char *state_names[] = {
     "processors",
     "processor",
     "processor-map",
-
     /* environment variables */
     "env",
 
@@ -541,6 +540,9 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
     s = get_current_state(ctx);
     print_current_state(ctx, s, event);
 
+    s = get_current_state(ctx);
+    print_current_state(ctx, s, event);
+
     switch (s->state) {
     case STATE_START:
         switch (event->type) {
@@ -803,7 +805,6 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                     return YAML_FAILURE;
                 }
             }
-
             s = state_pop(ctx);
             if (s->state != STATE_SECTION_KEY) {
                 yaml_error_event(ctx, s, event);
@@ -1104,7 +1105,6 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 return YAML_FAILURE;
         };
         break;
-
     case STATE_INPUT_PROCESSOR:
         switch(event->type) {
             case YAML_SEQUENCE_START_EVENT:
@@ -1114,10 +1114,6 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 break;
             case YAML_MAPPING_START_EVENT:
                 s = state_push_withvals(ctx, s, STATE_PLUGIN_START);
-                s->section = SECTION_PROCESSOR;
-                break;
-            case YAML_MAPPING_END_EVENT:
-                return YAML_FAILURE;
                 break;
             default:
                 yaml_error_event(ctx, s, event);
