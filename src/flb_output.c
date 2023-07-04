@@ -934,6 +934,11 @@ int flb_output_set_property(struct flb_output_instance *ins,
         ins->tp_workers = atoi(tmp);
         flb_sds_destroy(tmp);
     }
+    else if (prop_key_check("concurrent_flush_limit", k, len) == 0 && tmp) {
+        /* Set the number of concurrent flush coroutines */
+        ins->concurrent_flush_limit = atoi(tmp);
+        flb_sds_destroy(tmp);
+    }
     else {
         /*
          * Create the property, we don't pass the value since we will
@@ -1090,6 +1095,11 @@ int flb_output_init_all(struct flb_config *config)
             ins->log_level = config->log->level;
         }
         p = ins->p;
+
+
+        pthread_mutex_init(&ins->coroutine_activation_lock, NULL);
+        ins->active_coroutine_count = 0;
+
 
         /* Output Events Channel */
         ret = mk_event_channel_create(config->evl,

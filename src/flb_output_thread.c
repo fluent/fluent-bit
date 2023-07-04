@@ -172,6 +172,7 @@ static void output_thread(void *data)
     int stopping = FLB_FALSE;
     int thread_id;
     char tmp[64];
+    struct mk_event event_coroutine;
     struct mk_event event_local;
     struct mk_event *event;
     struct flb_sched *sched;
@@ -229,6 +230,15 @@ static void output_thread(void *data)
     snprintf(tmp, sizeof(tmp) - 1, "flb-out-%s-w%i", ins->name, thread_id);
     mk_utils_worker_rename(tmp);
 
+    memset(&event_coroutine, 0, sizeof(struct mk_event));
+
+    ret = mk_event_channel_create(th_ins->evl,
+                                  &th_ins->ch_coroutine_events[0],
+                                  &th_ins->ch_coroutine_events[1],
+                                  &event_coroutine);
+
+    event_coroutine.type = FLB_ENGINE_EV_THREAD_WAKEUP;
+
     memset(&event_local, 0, sizeof(struct mk_event));
 
     /* Channel used by flush callbacks to notify it return status */
@@ -267,6 +277,20 @@ static void output_thread(void *data)
                  * thread or threaded by some output plugin.
                  */
                 flb_sched_event_handler(sched->config, event);
+            }
+            else if (event->type == FLB_ENGINE_EV_THREAD_WAKEUP) {
+                /* Read the task reference */
+                n = flb_pipe_r(event->fd, &out_flush, sizeof(struct out_flush *));
+                if (n <= 0) {
+                    flb_errno();
+                    continue;
+                }
+
+                if (!out_flush) {
+                    continue;
+                }
+
+                flb_coro_resume(out_flush->coro);
             }
             else if (event->type == FLB_ENGINE_EV_THREAD_OUTPUT) {
                 /* Read the task reference */

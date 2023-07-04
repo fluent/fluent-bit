@@ -230,7 +230,9 @@ static void dump_input_chunks(struct flb_config *ctx)
 
             th_ins = (struct flb_out_thread_instance *) th->params.data;
             fprintf(stderr, "worker context : %p (%p)\n", th_ins, th_ins->ins);
+            fprintf(stderr, "worker active coroutines : %zu\n", o->active_coroutine_count);
 
+            if(1)
             mk_list_foreach(h_flush, &th_ins->flush_list) {
                 out_flush = mk_list_entry(h_flush, struct flb_output_flush, _head);
 

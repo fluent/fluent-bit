@@ -395,6 +395,8 @@ struct flb_output_instance {
     /* Queue for singleplexed tasks */
     struct flb_task_queue *singleplex_queue;
 
+    int concurrent_flush_limit;
+
     /* Thread Pool: this is optional for the caller */
     int tp_workers;
     struct flb_tp *tp;
@@ -430,6 +432,9 @@ struct flb_output_instance {
     int flush_id;
     struct mk_list flush_list;
     struct mk_list flush_list_destroy;
+
+    pthread_mutex_t coroutine_activation_lock;
+    size_t active_coroutine_count;
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
@@ -629,6 +634,7 @@ static FLB_INLINE void output_pre_cb_flush(void)
     struct flb_output_plugin *out_p;
     struct flb_out_flush_params *params;
     struct flb_out_flush_params persisted_params;
+    struct flb_output_instance *o_ins;
 
     params = (struct flb_out_flush_params *) FLB_TLS_GET(out_flush_params);
     if (!params) {
@@ -649,6 +655,29 @@ static FLB_INLINE void output_pre_cb_flush(void)
 
     /* Continue, we will resume later */
     out_p = persisted_params.out_plugin;
+    o_ins = persisted_params.o_ins;
+
+    pthread_mutex_lock(&o_ins->coroutine_activation_lock);
+
+    while (o_ins->concurrent_flush_limit > 0 &&
+           o_ins->active_coroutine_count >= o_ins->concurrent_flush_limit) {
+        if (o_ins->is_threaded == FLB_TRUE) {
+            struct flb_out_thread_instance *th_ins;
+
+            th_ins = flb_output_thread_instance_get();
+
+            flb_pipe_w(th_ins->ch_coroutine_events[1], &persisted_params.out_flush, sizeof(struct flb_output_flush*));
+        }
+        else {
+            flb_pipe_w(o_ins->config->ch_self_events[1], &persisted_params.out_flush, sizeof(struct flb_output_flush*));
+        }
+
+        pthread_mutex_unlock(&o_ins->coroutine_activation_lock);
+        co_switch(coro->caller);
+        pthread_mutex_lock(&o_ins->coroutine_activation_lock);
+    }
+
+    persisted_params.o_ins->active_coroutine_count++;
 
     flb_output_task_acquire_lock(persisted_params.out_flush->task);
 
@@ -661,6 +690,8 @@ static FLB_INLINE void output_pre_cb_flush(void)
         if (route_status == FLB_TASK_ROUTE_DROPPED) {
             flb_output_task_release_lock(persisted_params.out_flush->task);
 
+            pthread_mutex_unlock(&o_ins->coroutine_activation_lock);
+
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
     }
@@ -669,6 +700,8 @@ static FLB_INLINE void output_pre_cb_flush(void)
                                    persisted_params.o_ins);
 
     flb_output_task_release_lock(persisted_params.out_flush->task);
+
+    pthread_mutex_unlock(&o_ins->coroutine_activation_lock);
 
     out_p->cb_flush(persisted_params.event_chunk,
                     persisted_params.out_flush,
@@ -1017,11 +1050,14 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     o_ins = out_flush->o_ins;
     task = out_flush->task;
 
+    pthread_mutex_lock(&o_ins->coroutine_activation_lock);
     flb_output_task_acquire_lock(task);
 
     flb_output_task_deactivate_route(task, o_ins);
+    o_ins->active_coroutine_count--;
 
     flb_output_task_release_lock(task);
+    pthread_mutex_unlock(&o_ins->coroutine_activation_lock);
 
     if (out_flush->processed_event_chunk) {
         if (task->event_chunk->data != out_flush->processed_event_chunk->data) {
