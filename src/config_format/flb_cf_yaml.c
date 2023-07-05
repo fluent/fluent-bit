@@ -499,6 +499,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 s->state = STATE_CUSTOM_VAL;
                 value = (char *) event->data.scalar.value;
                 s->key = flb_sds_create(value);
+                if (s->key == NULL) {
+                    flb_error("unable to allocate memory for custom section property key");
+                    return YAML_FAILURE;
+                }
             }
             break;
         case YAML_MAPPING_START_EVENT:
@@ -536,6 +540,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             s->state = STATE_CUSTOM_VAL;
             value = (char *) event->data.scalar.value;
             s->key = flb_sds_create(value);
+             if (s->key == NULL) {
+                 flb_error("unable to allocate memory for custom section property key");
+                 return YAML_FAILURE;
+             }
             break;
         case YAML_MAPPING_START_EVENT:
             s->state = STATE_CUSTOM;
@@ -555,6 +563,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             s->state = STATE_CUSTOM_KEY;
             value = (char *) event->data.scalar.value;
             s->val = flb_sds_create(value);
+            if (s->key == NULL) {
+                flb_error("unable to allocate memory for custom section property value");
+                return YAML_FAILURE;
+            }
 
             /* register key/value pair as a property */
             flb_cf_section_property_add(cf, s->cf_section->properties,
@@ -724,6 +736,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             s->state = STATE_SECTION_VAL;
             value = (char *) event->data.scalar.value;
             s->key = flb_sds_create(value);
+            if (s->key == NULL) {
+                flb_error("unable to allocate memory for section property key");
+                return YAML_FAILURE;
+            }
             break;
         case YAML_MAPPING_END_EVENT:
             s->state = STATE_SECTION;
@@ -740,6 +756,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             s->state = STATE_SECTION_KEY;
             value = (char *) event->data.scalar.value;
             s->val = flb_sds_create(value);
+            if (s->val == NULL) {
+                flb_error("unable to allocate memory for section property value");
+                return YAML_FAILURE;
+            }
 
             /* Check if the incoming k/v pair set a config environment variable */
             if (s->section == SECTION_ENV) {
@@ -831,6 +851,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             s->state = STATE_PLUGIN_VAL;
             value = (char *) event->data.scalar.value;
             s->key = flb_sds_create(value);
+            if (s->key == NULL) {
+                flb_error("unable to allocate memory for plugin property key");
+                return YAML_FAILURE;
+            }
             break;
         case YAML_MAPPING_START_EVENT:
             s->state = STATE_PLUGIN_TYPE;
@@ -919,6 +943,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 /* Check if we are entering a 'logs', 'metrics' or 'traces' section */
                 value = (char *) event->data.scalar.value;
                 s->key = flb_sds_create(value);
+                if (s->key == NULL) {
+                    flb_error("unable to allocate memory for processor property key");
+                    return YAML_FAILURE;
+                }
                 s->state = STATE_INPUT_PROCESSOR_LOGS_VAL;
                 break;
             default:
@@ -971,6 +999,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             case YAML_SCALAR_EVENT:
                 value = (char *) event->data.scalar.value;
                 s->key = flb_sds_create(value);
+                if (s->key == NULL) {
+                    flb_error("unable to allocate memory for processor property key");
+                    return YAML_FAILURE;
+                }
                 s->state = STATE_INPUT_PROCESSOR_METRICS_VAL;
                 break;
             default:
@@ -1020,6 +1052,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             case YAML_SCALAR_EVENT:
                 value = (char *) event->data.scalar.value;
                 s->key = flb_sds_create(value);
+                if (s->key == NULL) {
+                    flb_error("unable to allocate memory for processor property key");
+                    return YAML_FAILURE;
+                }
                 s->state = STATE_INPUT_PROCESSOR_TRACES_VAL;
                 break;
             default:
@@ -1058,6 +1094,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             s->state = STATE_PLUGIN_KEY;
             value = (char *) event->data.scalar.value;
             s->val = flb_sds_create(value);
+            if (s->key == NULL) {
+                flb_error("unable to allocate memory for plugin property value");
+                return YAML_FAILURE;
+            }
 
             /* register key/value pair as a property */
             if (flb_cf_section_property_add(cf, s->cf_section->properties,
@@ -1146,6 +1186,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             /* grab current value (key) */
             value = (char *) event->data.scalar.value;
             s->key = flb_sds_create(value);
+            if (s->key == NULL) {
+                flb_error("unable to allocate memory for group property key");
+                return YAML_FAILURE;
+            }
             break;
         case YAML_MAPPING_START_EVENT:
             break;
@@ -1168,6 +1212,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             s->state = STATE_GROUP_KEY;
             value = (char *) event->data.scalar.value;
             s->val = flb_sds_create(value);
+            if (s->key == NULL) {
+                flb_error("unable to allocate memory for group property value");
+                return YAML_FAILURE;
+            }
 
             /* add the kv pair to the active group properties */
             flb_cf_section_property_add(cf, s->cf_group->properties,
