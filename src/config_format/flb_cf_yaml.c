@@ -483,9 +483,11 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
 
             if (strcasecmp(value, "name") != 0) {
                 /* value is the 'custom plugin name', create a section instance */
-                if (flb_cf_section_property_add(cf, s->cf_section->properties,
-                                                "name", 4,
-                                                value, len) < 0) {
+                ret = flb_cf_section_property_add(cf, s->cf_section->properties,
+                                                  "name", 4,
+                                                  value, len);
+                if (ret < 0) {
+                    flb_error("unable to create section: %s", value);
                     return YAML_FAILURE;
                 }
 
