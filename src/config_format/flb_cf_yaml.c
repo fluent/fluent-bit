@@ -1105,6 +1105,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 return YAML_FAILURE;
         };
         break;
+
     case STATE_INPUT_PROCESSOR:
         switch(event->type) {
             case YAML_SEQUENCE_START_EVENT:
