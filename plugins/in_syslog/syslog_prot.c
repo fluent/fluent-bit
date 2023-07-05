@@ -333,13 +333,21 @@ int syslog_prot_process(struct syslog_conn *conn)
     return 0;
 }
 
-int syslog_prot_process_udp(char *buf, size_t size,
-                            struct flb_syslog *ctx, struct flb_connection *connection)
+int syslog_prot_process_udp(struct syslog_conn *conn)
 {
     int ret;
     void *out_buf;
     size_t out_size;
     struct flb_time out_time = {0};
+    char *buf;
+    size_t size;
+    struct flb_syslog *ctx;
+    struct flb_connection *connection;
+
+    buf = conn->buf_data;
+    size = conn->buf_len;
+    ctx = conn->ctx;
+    connection = conn->connection;
 
     ret = flb_parser_do(ctx->parser, buf, size,
                         &out_buf, &out_size, &out_time);
