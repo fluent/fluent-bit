@@ -103,7 +103,6 @@ enum state {
 
     STATE_INPUT_PROCESSORS,
     STATE_INPUT_PROCESSOR,
-    STATE_INPUT_PROCESSOR_MAP,
 
     /* environment variables */
     STATE_ENV,
@@ -143,7 +142,7 @@ static char *state_names[] = {
     "processors",
     "processor",
     "processor-map",
-    
+
     /* environment variables */
     "env",
 
@@ -174,23 +173,19 @@ struct parser_state {
     /* active section (if any) */
     enum section section;
 
-    /* temporary key value pair */
-    flb_sds_t key;
-
-    /* section key/value list */
-    struct cfl_kvlist *keyvals;
-    /* are we the owner of the values? */
-    int allocation_flags;
-
     /* active section */
     struct flb_cf_section *cf_section;
+    /* active group */
+    struct flb_cf_group *cf_group;
+
+    /* key value */
+    flb_sds_t key;
+    /* section key/value list */
+    struct cfl_kvlist *keyvals;
     /* pointer to current values in a list. */
     struct cfl_array *values;
     /* are we the owner of the values? */
-    int values_owner;
-
-    /* active group */
-    struct flb_cf_group *cf_group;
+    int allocation_flags;
 
     struct file_state *file;
 
@@ -216,7 +211,7 @@ static struct parser_state *state_push_witharr(struct local_ctx *,
                                                enum state);
 static struct parser_state *state_push_section(struct local_ctx *, enum state,
                                                enum section);
-static struct parser_state *state_push_key(struct local_ctx *, enum state, 
+static struct parser_state *state_push_key(struct local_ctx *, enum state,
                                            const char *key);
 static int state_create_section(struct flb_cf *, struct parser_state *, char *);
 static int state_create_group(struct flb_cf *, struct parser_state *, char *);
@@ -565,6 +560,52 @@ static void print_current_state(struct local_ctx *ctx, struct parser_state *s,
     printf("%s->%s\n", state_names[s->state], event_type_str(event));
 }
 
+static void print_current_properties(struct parser_state *s)
+{
+    struct cfl_list *head;
+    struct cfl_kvpair *kv;
+    struct cfl_variant *var;
+
+    for (int i = 0; i < s->level; i++ ) {
+        putchar(' ');
+        putchar(' ');
+    }
+    printf("[%s] PROPERTIES:\n", section_names[s->section]);
+
+    cfl_list_foreach(head, &s->keyvals->list) {
+        kv = cfl_list_entry(head, struct cfl_kvpair, _head);
+        switch (kv->val->type) {
+        case CFL_VARIANT_STRING:
+            for (int i = 0; i < s->level+2; i++) {
+                putchar(' ');
+                putchar(' ');
+            }
+            printf("%s: %s\n", kv->key, kv->val->data.as_string);
+            break;
+        case CFL_VARIANT_ARRAY:
+            for (int i = 0; i < s->level+2; i++) {
+                putchar(' ');
+                putchar(' ');
+            }
+            printf("%s: [\n", kv->key);
+            for (int i = 0; i < kv->val->data.as_array->entry_count; i++) {
+                var = cfl_array_fetch_by_index(kv->val->data.as_array, i);
+                for (int i = 0; i < s->level+3; i++) {
+                    putchar(' ');
+                    putchar(' ');
+                }
+                printf("%s\n", var->data.as_string);
+            }
+            for (int i = 0; i < s->level+2; i++) {
+                putchar(' ');
+                putchar(' ');
+            }
+            printf("]\n");
+            break;
+        }
+    }
+}
+
 static struct parser_state *get_current_state(struct local_ctx *ctx)
 {
     struct parser_state *s;
@@ -722,7 +763,6 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
         break;
 
     case STATE_SECTION:
-        // state_push(ctx, SECTION_OTHER);
         switch (event->type) {
         case YAML_SCALAR_EVENT:
             value = (char *)event->data.scalar.value;
@@ -847,7 +887,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                     return YAML_FAILURE;
                 }
             }
-            
+
             s = state_pop(ctx);
             if (s->state != STATE_SECTION_KEY) {
                 yaml_error_event(ctx, s, event);
@@ -897,7 +937,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
     case STATE_PLUGIN_START:
         switch(event->type) {
         case YAML_SCALAR_EVENT:
-            /* Here is where we process all the plugin properties for customs, pipelines 
+            /* Here is where we process all the plugin properties for customs, pipelines
              * and processors.
              */
             s = state_push_key(ctx, STATE_PLUGIN_VAL, (char *) event->data.scalar.value);
@@ -907,58 +947,54 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             struct cfl_kvpair *kv;
             struct cfl_variant *var;
             struct cfl_array *arr;
+            struct cfl_array *carr;
 
-            for (int i = 0; i < s->level; i++ ) {
-                putchar(' ');
-                putchar(' ');
-            }
-            printf("[%s] PROPERTIES:\n", section_names[s->section]);
+            print_current_properties(s);
 
             if (s->section == SECTION_PROCESSOR) {
+                struct cfl_kvlist *copy;
+
                 if (s->cf_group == NULL) {
                     flb_error("no group for processor properties");
                     return YAML_FAILURE;
                 }
 
-                arr = cfl_array_create(1);
-                cfl_array_resizable(arr, CFL_TRUE);
-                cfl_array_append_kvlist(arr, s->keyvals);
-                // create this a bit higher up as well....
-                cfl_kvlist_insert_array(s->cf_group->properties, "logs", arr);
+                arr = cfl_kvlist_fetch(s->cf_group->properties, s->key);
+                if (arr == NULL) {
+                    arr = cfl_array_create(1);
+                    cfl_array_resizable(arr, CFL_TRUE);
+                    cfl_kvlist_insert_array(s->cf_group->properties, s->key, arr);
+                }
 
+                copy = cfl_kvlist_create();
                 cfl_list_foreach(head, &s->keyvals->list) {
                     kv = cfl_list_entry(head, struct cfl_kvpair, _head);
                     switch (kv->val->type) {
                     case CFL_VARIANT_STRING:
-                        for (int i = 0; i < s->level+2; i++) {
-                            putchar(' ');
-                            putchar(' ');
-                        }
-                        printf("%s: %s\n", kv->key, kv->val->data.as_string);
+                        cfl_kvlist_insert_string(copy, kv->key, kv->val->data.as_string);
                         break;
                     case CFL_VARIANT_ARRAY:
-                        for (int i = 0; i < s->level+2; i++) {
-                            putchar(' ');
-                            putchar(' ');
-                        }
-                        printf("%s: [\n", kv->key);
+                        carr = cfl_array_create(kv->val->data.as_array->entry_count);
                         for (int i = 0; i < kv->val->data.as_array->entry_count; i++) {
                             var = cfl_array_fetch_by_index(kv->val->data.as_array, i);
-                            for (int i = 0; i < s->level+3; i++) {
-                                putchar(' ');
-                                putchar(' ');
+                            switch (var->type) {
+                            case CFL_VARIANT_STRING:
+                                cfl_array_append_string(carr, var->data.as_string);
+                                break;
+                            default:
+                                flb_error("unable to copy value for property");
+                                return YAML_FAILURE;
                             }
-                            printf("%s\n", var->data.as_string);
                         }
-                       for (int i = 0; i < s->level+2; i++) {
-                            putchar(' ');
-                            putchar(' ');
-                        }
-                        printf("]\n");
+                        cfl_kvlist_insert_array(copy, kv->key, carr);
                         break;
+                    default:
+                        flb_error("unknown value type for properties: %d", kv->val->type);
+                        return YAML_FAILURE;
                     }
                 }
 
+                cfl_array_append_kvlist(arr, copy);
                 state_pop(ctx);
                 break;
             }
@@ -967,16 +1003,11 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 kv = cfl_list_entry(head, struct cfl_kvpair, _head);
                 switch (kv->val->type) {
                 case CFL_VARIANT_STRING:
-                    for (int i = 0; i < s->level+2; i++ ) {
-                        putchar(' ');
-                        putchar(' ');
-                    }
-                    printf("%s: %s\n", kv->key, kv->val->data.as_string);
                     var = flb_cf_section_property_add(cf,
                                                     s->cf_section->properties,
-                                                    kv->key, 
+                                                    kv->key,
                                                     cfl_sds_len(kv->key),
-                                                    kv->val->data.as_string, 
+                                                    kv->val->data.as_string,
                                                     cfl_sds_len(kv->val->data.as_string));
                     if (var == NULL) {
                         flb_error("unable to add variant value property");
@@ -984,27 +1015,19 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                     }
                     break;
                 case CFL_VARIANT_ARRAY:
-                    for (int i = 0; i < s->level+2; i++ ) {
-                        putchar(' ');
-                        putchar(' ');
-                    }
-                    printf("%s: [\n", kv->key);
                     arr = flb_cf_section_property_add_list(cf, s->cf_section->properties,
                                                            kv->key, cfl_sds_len(kv->key));
                     for (int i = 0; i < kv->val->data.as_array->entry_count; i++) {
                         var = cfl_array_fetch_by_index(kv->val->data.as_array, i);
-                        cfl_array_append(arr, var);
-                         for (int i = 0; i < s->level+3; i++ ) {
-                            putchar(' ');
-                            putchar(' ');
+                        switch (var->type) {
+                        case CFL_VARIANT_STRING:
+                            cfl_array_append_string(arr, var->data.as_string);
+                            break;
+                        default:
+                            flb_error("unable to copy value for property");
+                            return YAML_FAILURE;
                         }
-                        printf("%s\n", var->data.as_string);
                     }
-                     for (int i = 0; i < s->level+2; i++ ) {
-                        putchar(' ');
-                        putchar(' ');
-                    }
-                    printf("]\n");
                     break;
                 default:
                     flb_error("unknown value type for properties: %d", kv->val->type);
@@ -1040,7 +1063,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
     case STATE_PLUGIN_KEY:
         switch(event->type) {
         case YAML_SCALAR_EVENT:
-            /* Here is where we process all the plugin properties for customs, pipelines 
+            /* Here is where we process all the plugin properties for customs, pipelines
              * and processors.
              */
             s = state_push_key(ctx, STATE_PLUGIN_VAL, (char *) event->data.scalar.value);
@@ -1099,7 +1122,6 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             g->cf_group = flb_cf_group_create(cf, s->cf_section, s->key, strlen(s->key));
             break;
         case YAML_SEQUENCE_END_EVENT:   /* end of group */
-            // s->state = STATE_PLUGIN_KEY;
             s = state_pop(ctx);
             if (s->state != STATE_PLUGIN_KEY) {
                 yaml_error_event(ctx, s, event);
@@ -1176,6 +1198,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 return YAML_FAILURE;
         };
         break;
+
     case STATE_INPUT_PROCESSOR:
         switch(event->type) {
             case YAML_SEQUENCE_START_EVENT:
@@ -1184,45 +1207,11 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 s = state_pop(ctx);
                 break;
             case YAML_MAPPING_START_EVENT:
-                // s->keyvals = cfl_kvlist_create();
                 s = state_push_withvals(ctx, s, STATE_PLUGIN_START);
-                /* create the array for definitions found under 'log' */
                 s->section = SECTION_PROCESSOR;
                 break;
             case YAML_MAPPING_END_EVENT:
                 return YAML_FAILURE;
-                break;
-            case YAML_SCALAR_EVENT:
-                /* Check if we are entering a 'logs', 'metrics' or 'traces' section */
-                value = (char *) event->data.scalar.value;
-                s = state_push_key(ctx, STATE_INPUT_PROCESSOR_MAP, value);
-                break;
-            default:
-                yaml_error_event(ctx, s, event);
-                return YAML_FAILURE;
-        };
-        break;
-
-    case STATE_INPUT_PROCESSOR_MAP:
-        switch(event->type) {
-            case YAML_SEQUENCE_START_EVENT:
-                // s->state = STATE_INPUT_PROCESSOR_LOGS_KEY;
-                break;
-            case YAML_SEQUENCE_END_EVENT:
-                break;
-            case YAML_MAPPING_START_EVENT:
-                break;
-            case YAML_MAPPING_END_EVENT:
-                break;
-            case YAML_SCALAR_EVENT:
-                value = (char *) event->data.scalar.value;
-                if (s->key == NULL) {
-                    s->key = flb_sds_create(value);
-                } else {
-                    cfl_kvlist_insert_string(s->keyvals, s->key, value);
-                    flb_sds_destroy(s->key);
-                    s->key = NULL;
-                }
                 break;
             default:
                 yaml_error_event(ctx, s, event);
@@ -1263,8 +1252,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             /* add the kv pair to the active group properties */
             flb_cf_section_property_add(cf, s->cf_group->properties,
                                         s->key, flb_sds_len(s->key),
-                                        value, flb_sds_len(value));
-            flb_sds_destroy(s->key);
+                                        value, strlen(value));
             s = state_pop(ctx);
             break;
         default:
@@ -1337,7 +1325,7 @@ static struct parser_state *state_push(struct local_ctx *ctx, enum state state)
 {
     struct parser_state *l = NULL;
     struct parser_state *s;
-    
+
     if (cfl_list_size(&ctx->states) <= 0) {
         return NULL;
     }
@@ -1358,23 +1346,24 @@ static struct parser_state *state_push(struct local_ctx *ctx, enum state state)
     return s;
 }
 
-static struct parser_state *state_push_section(struct local_ctx *ctx, 
+static struct parser_state *state_push_section(struct local_ctx *ctx,
                                                enum state state,
                                                enum section section)
 {
     struct parser_state *s;
-    
+
     s = state_push(ctx, state);
     s->section = section;
 
     return s;
 }
 
-static struct parser_state *state_push_key(struct local_ctx *ctx, enum state state, 
+static struct parser_state *state_push_key(struct local_ctx *ctx, enum state state,
                                            const char *key)
 {
     struct parser_state *s = state_push(ctx, state);
     s->key = flb_sds_create(key);
+    s->allocation_flags |= HAS_KEY;
     return s;
 }
 
@@ -1384,8 +1373,12 @@ static struct parser_state *state_push_withvals(struct local_ctx *ctx,
 {
     struct parser_state *s;
 
-    parent->keyvals = cfl_kvlist_create();
+    // if (parent->keyvals != NULL) {
+    //    cfl_kvlist_destroy(parent->keyvals);
+    // }
     s = state_push(ctx, state);
+    s->keyvals = cfl_kvlist_create();
+    s->allocation_flags |= HAS_KEYVALS;
 
     return s;
 }
@@ -1434,6 +1427,13 @@ static struct parser_state *state_pop(struct local_ctx *ctx)
     }
     last = cfl_list_entry_last(&ctx->states, struct parser_state, _head);
     cfl_list_del(&last->_head);
+
+    if (last->allocation_flags & HAS_KEY) {
+        flb_sds_destroy(last->key);
+    }
+    if (last->allocation_flags & HAS_KEYVALS) {
+        cfl_kvlist_destroy(last->keyvals);
+    }
     state_destroy(last);
 
     if (cfl_list_is_empty(&ctx->states)) {
@@ -1587,6 +1587,9 @@ done:
 
     fclose(fh);
     ctx->level--;
+
+    flb_sds_destroy(include_file);
+    flb_sds_destroy(file);
 
     return code;
 }
