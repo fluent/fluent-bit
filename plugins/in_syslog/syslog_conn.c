@@ -144,7 +144,7 @@ int syslog_dgram_conn_event(void *data)
         conn->buf_data[bytes] = '\0';
         conn->buf_len = bytes;
 
-        syslog_prot_process_udp(conn->buf_data, conn->buf_len, ctx);
+        syslog_prot_process_udp(conn->buf_data, conn->buf_len, ctx, connection);
     }
     else {
         flb_errno();

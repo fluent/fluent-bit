@@ -91,16 +91,80 @@ static int append_raw_message_to_record_data(char **result_buffer,
     return result;
 }
 
+static int append_source_address_to_record_data(char **result_buffer,
+                                                size_t *result_size,
+                                                flb_sds_t source_address_key,
+                                                char *source_address,
+                                                char *base_object_buffer,
+                                                size_t base_object_size)
+{
+    int                i;
+    int                result;
+    size_t             unpacker_offset;
+    msgpack_sbuffer    mp_sbuf;
+    msgpack_packer     mp_pck;
+    msgpack_unpacked   unpacked_buffer;
+    *result_buffer = NULL;
+    *result_size = 0;
+
+    unpacker_offset = 0;
+    msgpack_unpacked_init(&unpacked_buffer);
+    result = msgpack_unpack_next(&unpacked_buffer,
+                                 base_object_buffer,
+                                 base_object_size,
+                                 &unpacker_offset);
+
+    if (result != MSGPACK_UNPACK_SUCCESS) {
+        return -1;
+    }
+
+    if (unpacker_offset != base_object_size) {
+        msgpack_unpacked_destroy(&unpacked_buffer);
+        return -2;
+    }
+
+    if (unpacked_buffer.data.type != MSGPACK_OBJECT_MAP) {
+        msgpack_unpacked_destroy(&unpacked_buffer);
+        return -3;
+    }
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_map(&mp_pck, unpacked_buffer.data.via.map.size + 1);
+
+    for (i = 0; i < unpacked_buffer.data.via.map.size; i++) {
+        msgpack_pack_object(&mp_pck, unpacked_buffer.data.via.map.ptr[i].key);
+        msgpack_pack_object(&mp_pck, unpacked_buffer.data.via.map.ptr[i].val);
+    }
+
+    msgpack_pack_str(&mp_pck, flb_sds_len(source_address_key));
+    msgpack_pack_str_body(&mp_pck, source_address_key, flb_sds_len(source_address_key));
+    msgpack_pack_str(&mp_pck, strlen(source_address));
+    msgpack_pack_str_body(&mp_pck, source_address, strlen(source_address));
+
+    *result_buffer = mp_sbuf.data;
+    *result_size = mp_sbuf.size;
+
+    msgpack_unpacked_destroy(&unpacked_buffer);
+    return result;
+}
+
 static inline int pack_line(struct flb_syslog *ctx,
                             struct flb_time *time,
+                            struct flb_connection *connection,
                             char *data, size_t data_size,
                             char *raw_data, size_t raw_data_size)
 {
     char   *modified_data_buffer;
     size_t  modified_data_size;
+    char   *appended_address_buffer;
+    size_t  appended_address_size;
     int     result;
+    char   *source_address;
 
     modified_data_buffer = NULL;
+    appended_address_buffer = NULL;
 
     if (ctx->raw_message_key != NULL) {
         result = append_raw_message_to_record_data(&modified_data_buffer,
@@ -116,6 +180,32 @@ static inline int pack_line(struct flb_syslog *ctx,
         }
     }
 
+    if (ctx->source_address_key != NULL) {
+        source_address = flb_connection_get_remote_address(connection);
+        if (source_address != NULL) {
+            if (modified_data_buffer != NULL) {
+                result = append_source_address_to_record_data(&appended_address_buffer,
+                                                              &appended_address_size,
+                                                              ctx->source_address_key,
+                                                              source_address,
+                                                              modified_data_buffer,
+                                                              modified_data_size);
+            }
+            else {
+                result = append_source_address_to_record_data(&appended_address_buffer,
+                                                              &appended_address_size,
+                                                              ctx->source_address_key,
+                                                              source_address,
+                                                              data,
+                                                              data_size);
+            }
+
+            if (result != 0) {
+                flb_plg_debug(ctx->ins, "error appending source_address : %d", result);
+            }
+        }
+    }
+
     result = flb_log_event_encoder_begin_record(ctx->log_encoder);
 
     if (result == FLB_EVENT_ENCODER_SUCCESS) {
@@ -123,7 +213,11 @@ static inline int pack_line(struct flb_syslog *ctx,
     }
 
     if (result == FLB_EVENT_ENCODER_SUCCESS) {
-        if (modified_data_buffer != NULL) {
+        if (appended_address_buffer != NULL) {
+            result = flb_log_event_encoder_set_body_from_raw_msgpack(
+                    ctx->log_encoder, appended_address_buffer, appended_address_size);
+        }
+        else if (modified_data_buffer != NULL) {
             result = flb_log_event_encoder_set_body_from_raw_msgpack(
                     ctx->log_encoder, modified_data_buffer, modified_data_size);
         }
@@ -153,6 +247,9 @@ static inline int pack_line(struct flb_syslog *ctx,
 
     if (modified_data_buffer != NULL) {
         flb_free(modified_data_buffer);
+    }
+    if (appended_address_buffer != NULL) {
+        flb_free(appended_address_buffer);
     }
 
     return result;
@@ -210,6 +307,7 @@ int syslog_prot_process(struct syslog_conn *conn)
                 flb_time_get(&out_time);
             }
             pack_line(ctx, &out_time,
+                      conn->connection,
                       out_buf, out_size,
                       p, len);
             flb_free(out_buf);
@@ -235,7 +333,8 @@ int syslog_prot_process(struct syslog_conn *conn)
     return 0;
 }
 
-int syslog_prot_process_udp(char *buf, size_t size, struct flb_syslog *ctx)
+int syslog_prot_process_udp(char *buf, size_t size,
+                            struct flb_syslog *ctx, struct flb_connection *connection)
 {
     int ret;
     void *out_buf;
@@ -249,6 +348,7 @@ int syslog_prot_process_udp(char *buf, size_t size, struct flb_syslog *ctx)
             flb_time_get(&out_time);
         }
         pack_line(ctx, &out_time,
+                  connection,
                   out_buf, out_size,
                   buf, size);
         flb_free(out_buf);
