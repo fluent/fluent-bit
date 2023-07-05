@@ -481,7 +481,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 return YAML_FAILURE;
             }
 
-            if (strcmp(value, "name") != 0) {
+            if (strcasecmp(value, "name") != 0) {
                 /* value is the 'custom plugin name', create a section instance */
                 if (flb_cf_section_property_add(cf, s->cf_section->properties,
                                                 "name", 4,
