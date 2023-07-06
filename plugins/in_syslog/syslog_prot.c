@@ -154,6 +154,7 @@ static inline int pack_line(struct flb_syslog *ctx,
     int     result;
     char   *source_address;
 
+    source_address = NULL;
     modified_data_buffer = NULL;
     appended_address_buffer = NULL;
 
