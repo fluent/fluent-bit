@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_pack.h>
 
 #include "syslog.h"
 #include "syslog_conn.h"
@@ -39,55 +40,50 @@ static int append_raw_message_to_record_data(char **result_buffer,
                                              char *raw_message_buffer,
                                              size_t raw_message_size)
 {
-    int                i;
     int                result;
-    size_t             unpacker_offset;
+    char              *modified_data_buffer;
+    int                modified_data_size;
+    msgpack_object_kv *new_map_entries[1];
+    msgpack_object_kv  raw_message_entry;
     msgpack_sbuffer    mp_sbuf;
-    msgpack_packer     mp_pck;
-    msgpack_unpacked   unpacked_buffer;
     *result_buffer = NULL;
     *result_size = 0;
-
-    unpacker_offset = 0;
-    msgpack_unpacked_init(&unpacked_buffer);
-    result = msgpack_unpack_next(&unpacked_buffer,
-                                 base_object_buffer,
-                                 base_object_size,
-                                 &unpacker_offset);
-
-    if (result != MSGPACK_UNPACK_SUCCESS) {
-        return -1;
-    }
-
-    if (unpacker_offset != base_object_size) {
-        msgpack_unpacked_destroy(&unpacked_buffer);
-        return -2;
-    }
-
-    if (unpacked_buffer.data.type != MSGPACK_OBJECT_MAP) {
-        msgpack_unpacked_destroy(&unpacked_buffer);
-        return -3;
-    }
+    modified_data_buffer = NULL;
 
     msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    msgpack_pack_map(&mp_pck, unpacked_buffer.data.via.map.size + 1);
+    if (raw_message_key_name != NULL) {
+        new_map_entries[0] = &raw_message_entry;
 
-    for (i = 0; i < unpacked_buffer.data.via.map.size; i++) {
-        msgpack_pack_object(&mp_pck, unpacked_buffer.data.via.map.ptr[i].key);
-        msgpack_pack_object(&mp_pck, unpacked_buffer.data.via.map.ptr[i].val);
+        raw_message_entry.key.type = MSGPACK_OBJECT_STR;
+        raw_message_entry.key.via.str.size = flb_sds_len(raw_message_key_name);
+        raw_message_entry.key.via.str.ptr  = raw_message_key_name;
+
+        raw_message_entry.val.type = MSGPACK_OBJECT_BIN;
+        raw_message_entry.val.via.bin.size = raw_message_size;
+        raw_message_entry.val.via.bin.ptr  = raw_message_buffer;
+
+        result = flb_msgpack_expand_map(base_object_buffer,
+                                        base_object_size,
+                                        new_map_entries, 1,
+                                        &modified_data_buffer,
+                                        &modified_data_size);
     }
 
-    msgpack_pack_str(&mp_pck, flb_sds_len(raw_message_key_name));
-    msgpack_pack_str_body(&mp_pck, raw_message_key_name, flb_sds_len(raw_message_key_name));
-    msgpack_pack_str(&mp_pck, raw_message_size);
-    msgpack_pack_str_body(&mp_pck, raw_message_buffer, raw_message_size);
+    if (modified_data_buffer != NULL) {
+        msgpack_sbuffer_write(&mp_sbuf, modified_data_buffer, modified_data_size);
+    }
+    else {
+        msgpack_sbuffer_write(&mp_sbuf, base_object_buffer, base_object_size);
+    }
 
     *result_buffer = mp_sbuf.data;
     *result_size = mp_sbuf.size;
 
-    msgpack_unpacked_destroy(&unpacked_buffer);
+    if (modified_data_buffer != NULL) {
+        flb_free(modified_data_buffer);
+    }
+
     return result;
 }
 
@@ -98,55 +94,50 @@ static int append_source_address_to_record_data(char **result_buffer,
                                                 char *base_object_buffer,
                                                 size_t base_object_size)
 {
-    int                i;
     int                result;
-    size_t             unpacker_offset;
+    char              *modified_data_buffer;
+    int                modified_data_size;
+    msgpack_object_kv *new_map_entries[1];
+    msgpack_object_kv  source_address_entry;
     msgpack_sbuffer    mp_sbuf;
-    msgpack_packer     mp_pck;
-    msgpack_unpacked   unpacked_buffer;
     *result_buffer = NULL;
     *result_size = 0;
+     modified_data_buffer = NULL;
 
-    unpacker_offset = 0;
-    msgpack_unpacked_init(&unpacked_buffer);
-    result = msgpack_unpack_next(&unpacked_buffer,
-                                 base_object_buffer,
-                                 base_object_size,
-                                 &unpacker_offset);
+     msgpack_sbuffer_init(&mp_sbuf);
 
-    if (result != MSGPACK_UNPACK_SUCCESS) {
-        return -1;
+    if (source_address_key != NULL) {
+        new_map_entries[0] = &source_address_entry;
+
+        source_address_entry.key.type = MSGPACK_OBJECT_STR;
+        source_address_entry.key.via.str.size = strlen(source_address_key);
+        source_address_entry.key.via.str.ptr  = source_address_key;
+
+        source_address_entry.val.type = MSGPACK_OBJECT_STR;
+        source_address_entry.val.via.bin.size = strlen(source_address);
+        source_address_entry.val.via.bin.ptr  = source_address;
+
+        result = flb_msgpack_expand_map(base_object_buffer,
+                                        base_object_size,
+                                        new_map_entries, 1,
+                                        &modified_data_buffer,
+                                        &modified_data_size);
     }
 
-    if (unpacker_offset != base_object_size) {
-        msgpack_unpacked_destroy(&unpacked_buffer);
-        return -2;
+    if (modified_data_buffer != NULL) {
+        msgpack_sbuffer_write(&mp_sbuf, modified_data_buffer, modified_data_size);
     }
-
-    if (unpacked_buffer.data.type != MSGPACK_OBJECT_MAP) {
-        msgpack_unpacked_destroy(&unpacked_buffer);
-        return -3;
+    else {
+        msgpack_sbuffer_write(&mp_sbuf, base_object_buffer, base_object_size);
     }
-
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
-    msgpack_pack_map(&mp_pck, unpacked_buffer.data.via.map.size + 1);
-
-    for (i = 0; i < unpacked_buffer.data.via.map.size; i++) {
-        msgpack_pack_object(&mp_pck, unpacked_buffer.data.via.map.ptr[i].key);
-        msgpack_pack_object(&mp_pck, unpacked_buffer.data.via.map.ptr[i].val);
-    }
-
-    msgpack_pack_str(&mp_pck, flb_sds_len(source_address_key));
-    msgpack_pack_str_body(&mp_pck, source_address_key, flb_sds_len(source_address_key));
-    msgpack_pack_str(&mp_pck, strlen(source_address));
-    msgpack_pack_str_body(&mp_pck, source_address, strlen(source_address));
 
     *result_buffer = mp_sbuf.data;
     *result_size = mp_sbuf.size;
 
-    msgpack_unpacked_destroy(&unpacked_buffer);
+    if (modified_data_buffer != NULL) {
+        flb_free(modified_data_buffer);
+    }
+
     return result;
 }
 
