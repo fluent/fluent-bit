@@ -1,4 +1,0 @@
-self-hosted-runner:
-  labels:
-    - actuated
-    - actuated-aarch64
