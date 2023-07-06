@@ -646,7 +646,7 @@ static int cb_es_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static struct flb_elasticsearch_config *flb_elasticsearch_target(
+struct flb_elasticsearch_config *flb_elasticsearch_target(
         struct flb_elasticsearch *ctx, struct flb_upstream_node **node)
 {
     struct flb_elasticsearch_config *ec;
