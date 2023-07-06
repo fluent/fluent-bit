@@ -22,6 +22,7 @@
 
 #include <monkey/mk_core/mk_list.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_upstream_node.h>
 
 #define FLB_ES_DEFAULT_HOST       "127.0.0.1"
 #define FLB_ES_DEFAULT_PORT       9200
@@ -172,5 +173,8 @@ struct flb_elasticsearch {
     /* Plugin output instance reference */
     struct flb_output_instance *ins;
 };
+
+struct flb_elasticsearch_config *flb_elasticsearch_target(
+        struct flb_elasticsearch *ctx, struct flb_upstream_node **node);
 
 #endif
