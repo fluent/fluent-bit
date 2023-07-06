@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "in_exec_win32_compat.h"
 
 #include "in_exec.h"
 
@@ -37,6 +38,8 @@ static int in_exec_collect(struct flb_input_instance *ins,
                            struct flb_config *config, void *in_context)
 {
     int ret = -1;
+    int cmdret;
+    int flb_exit_code;
     uint64_t val;
     size_t str_len = 0;
     FILE *cmdp = NULL;
@@ -56,7 +59,7 @@ static int in_exec_collect(struct flb_input_instance *ins,
         }
     }
 
-    cmdp = popen(ctx->cmd, "r");
+    cmdp = flb_popen(ctx->cmd, "r");
     if (cmdp == NULL) {
         flb_plg_debug(ctx->ins, "command %s failed", ctx->cmd);
         goto collect_end;
@@ -165,7 +168,73 @@ static int in_exec_collect(struct flb_input_instance *ins,
 
  collect_end:
     if(cmdp != NULL){
-        pclose(cmdp);
+        /*
+         * If we're propagating the child exit code to the fluent-bit exit code
+         * in one-shot mode, popen() will have invoked our child command via
+         * its own shell, so unless the shell itself exited on a signal the
+         * translation is already done for us.
+         * For references on exit code handling in wrappers see
+         * https://www.gnu.org/software/bash/manual/html_node/Exit-Status.html
+         * and
+         * https://skarnet.org/software/execline/exitcodes.html
+         */
+        cmdret = flb_pclose(cmdp);
+        if (cmdret == -1) {
+            flb_errno();
+            flb_plg_debug(ctx->ins,
+                    "unexpected error while waiting for exit of command %s ",
+                    ctx->cmd);
+            /*
+             * The exit code of the shell run by popen() could not be
+             * determined; exit with 128, which is not a code that could be
+             * returned through a shell by a real child command.
+             */
+            flb_exit_code = 128;
+        } else if (FLB_WIFEXITED(cmdret)) {
+            flb_plg_debug(ctx->ins, "command %s exited with code %d",
+                    ctx->cmd, FLB_WEXITSTATUS(cmdret));
+            /*
+             * Propagate shell exit code, which may encode a normal or signal
+             * exit for the real child process, directly to the caller. This
+             * could be greater than 127 if the shell encoded a signal exit
+             * status from the child process into its own return code.
+             */
+            flb_exit_code = FLB_WEXITSTATUS(cmdret);
+        } else if (FLB_WIFSIGNALED(cmdret)) {
+            flb_plg_debug(ctx->ins, "command %s exited with signal %d",
+                    ctx->cmd, FLB_WTERMSIG(cmdret));
+            /*
+             * Follow the shell convention of returning 128+signo for signal
+             * exits. The consumer of fluent-bit's exit code will be unable to
+             * differentiate between the shell exiting on a signal and the
+             * process called by the shell exiting on a signal.
+             */
+            flb_exit_code = 128 + FLB_WTERMSIG(cmdret);
+        } else {
+            flb_plg_debug(ctx->ins, "command %s exited with unknown status",
+                    ctx->cmd);
+            flb_exit_code = 128;
+        }
+
+        /*
+         * In one-shot mode, exit fluent-bit once the child process terminates.
+         */
+        if (ctx->exit_after_oneshot == FLB_TRUE) {
+            /*
+             * propagate the child process exit code as the fluent-bit exit
+             * code so fluent-bit with the exec plugin can be used as a
+             * command wrapper.
+             */
+            if (ctx->propagate_exit_code == FLB_TRUE) {
+                config->exit_status_code = flb_exit_code;
+            }
+            flb_plg_info(ctx->ins,
+                    "one-shot command exited, terminating fluent-bit");
+            flb_engine_exit(config);
+        } else {
+            flb_plg_debug(ctx->ins,
+                    "one-shot command exited but exit_after_oneshot not set");
+        }
     }
 
     return ret;
@@ -210,6 +279,23 @@ static int in_exec_config_read(struct flb_exec *ctx,
         /* Illegal settings. Override them. */
         ctx->interval_sec = atoi(DEFAULT_INTERVAL_SEC);
         ctx->interval_nsec = atoi(DEFAULT_INTERVAL_NSEC);
+    }
+
+    /*
+     * propagate_exit_code is not being forced to imply exit_after_oneshot in
+     * case somebody in future wishes to make the exec plugin exit on nonzero
+     * exit codes for normal repeating commands.
+     */
+    if (ctx->propagate_exit_code && !ctx->exit_after_oneshot) {
+        flb_plg_error(in,
+                "propagate_exit_code=True option makes no sense without "
+                "exit_after_oneshot=True");
+        return -1;
+    }
+
+    if (ctx->exit_after_oneshot && !ctx->oneshot) {
+        flb_plg_debug(in, "exit_after_oneshot implies oneshot mode, enabling");
+        ctx->oneshot = FLB_TRUE;
     }
 
     if (ctx->oneshot) {
@@ -377,6 +463,17 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_BOOL, "oneshot", "false",
       0, FLB_TRUE, offsetof(struct flb_exec, oneshot),
       "execute the command only once"
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "exit_after_oneshot", "false",
+      0, FLB_TRUE, offsetof(struct flb_exec, exit_after_oneshot),
+      "exit fluent-bit after the command terminates in one-shot mode"
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "propagate_exit_code", "false",
+      0, FLB_TRUE, offsetof(struct flb_exec, propagate_exit_code),
+      "propagate oneshot exit command fluent-bit exit code using "
+      "shell exit code translation conventions"
     },
     /* EOF */
     {0}

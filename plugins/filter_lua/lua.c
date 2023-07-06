@@ -379,9 +379,6 @@ static int pack_result (struct lua_filter *ctx, struct flb_time *ts,
     size_t off = 0;
     msgpack_object *entry;
     msgpack_unpacked result;
-    int map_detected;
-    struct flb_log_event_decoder log_decoder;
-    struct flb_log_event log_event;
 
     msgpack_unpacked_init(&result);
 
@@ -445,8 +442,6 @@ static int cb_lua_filter(const void *data, size_t bytes,
                          struct flb_config *config)
 {
     int ret;
-    size_t record_end;
-    size_t record_begining;
     double ts = 0;
     struct flb_time t_orig;
     struct flb_time t;
@@ -485,13 +480,9 @@ static int cb_lua_filter(const void *data, size_t bytes,
         return FLB_FILTER_NOTOUCH;
     }
 
-    record_begining = 0;
-
     while ((ret = flb_log_event_decoder_next(
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
-        record_end = log_decoder.offset;
-
         msgpack_sbuffer_init(&data_sbuf);
         msgpack_packer_init(&data_pck, &data_sbuf, msgpack_sbuffer_write);
 
@@ -566,9 +557,6 @@ static int cb_lua_filter(const void *data, size_t bytes,
 
         if (l_code == -1) { /* Skip record */
             msgpack_sbuffer_destroy(&data_sbuf);
-
-            record_begining = record_end;
-
             continue;
         }
         else if (l_code == 1 || l_code == 2) { /* Modified, pack new data */
@@ -616,8 +604,6 @@ static int cb_lua_filter(const void *data, size_t bytes,
         }
 
         msgpack_sbuffer_destroy(&data_sbuf);
-
-        record_begining = record_end;
     }
 
     if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA) {

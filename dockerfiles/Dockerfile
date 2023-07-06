@@ -11,7 +11,7 @@
 # docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7" -f ./dockerfiles/Dockerfile.multiarch --build-arg FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v1.8.11.tar.gz ./dockerfiles/
 
 # Set this to the current release version: it gets done so as part of the release.
-ARG RELEASE_VERSION=2.1.3
+ARG RELEASE_VERSION=2.1.7
 
 # For multi-arch builds - assumption is running on an AMD64 host
 FROM multiarch/qemu-user-static:x86_64-arm as qemu-arm32
@@ -120,7 +120,7 @@ RUN echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/
     libzstd1 \
     liblz4-1 \
     libgssapi-krb5-2 \
-    libldap-2.5-0/bullseye-backports \
+    libldap-2.4-2 \
     libgpg-error0 \
     libkrb5-3 \
     libk5crypto3 \

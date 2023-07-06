@@ -185,9 +185,8 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
 
     ctx->create_group = FLB_FALSE;
     tmp = flb_output_get_property("auto_create_group", ins);
-    /* native plugins use On/Off as bool, the old Go plugin used true/false */
-    if (tmp && (strcasecmp(tmp, "On") == 0 || strcasecmp(tmp, "true") == 0)) {
-        ctx->create_group = FLB_TRUE;
+    if (tmp) {
+        ctx->create_group = flb_utils_bool(tmp);
     }
 
     ctx->retry_requests = FLB_TRUE;
@@ -211,16 +210,6 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     tmp = flb_output_get_property("sts_endpoint", ins);
     if (tmp) {
         ctx->sts_endpoint = (char *) tmp;
-    }
-
-    /* init log streams */
-    if (ctx->log_stream_name) {
-        ctx->stream.name = flb_sds_create(ctx->log_stream_name);
-        if (!ctx->stream.name) {
-            flb_errno();
-            goto error;
-        }
-        ctx->stream_created = FLB_FALSE;
     }
 
     /* one tls instance for provider, one for cw client */
@@ -484,19 +473,10 @@ void flb_cloudwatch_ctx_destroy(struct flb_cloudwatch *ctx)
             flb_sds_destroy(ctx->stream_name);
         }
 
-        if (ctx->log_stream_name) {
-            if (ctx->stream.name) {
-                flb_sds_destroy(ctx->stream.name);
-            }
-            if (ctx->stream.sequence_token) {
-                flb_sds_destroy(ctx->stream.sequence_token);
-            }
-        } else {
-            mk_list_foreach_safe(head, tmp, &ctx->streams) {
-                stream = mk_list_entry(head, struct log_stream, _head);
-                mk_list_del(&stream->_head);
-                log_stream_destroy(stream);
-            }
+        mk_list_foreach_safe(head, tmp, &ctx->streams) {
+            stream = mk_list_entry(head, struct log_stream, _head);
+            mk_list_del(&stream->_head);
+            log_stream_destroy(stream);
         }
         flb_free(ctx);
     }

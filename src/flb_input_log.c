@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_processor.h>
 
 static int input_log_append(struct flb_input_instance *ins,
+                            size_t processor_starting_stage,
                             size_t records,
                             const char *tag, size_t tag_len,
                             const void *buf, size_t buf_size)
@@ -47,7 +48,12 @@ static int input_log_append(struct flb_input_instance *ins,
             }
         }
 
-        ret = flb_processor_run(ins->processor, FLB_PROCESSOR_LOGS, tag, tag_len, (char *) buf, buf_size, &out_buf, &out_size);
+        ret = flb_processor_run(ins->processor,
+                                processor_starting_stage,
+                                FLB_PROCESSOR_LOGS,
+                                tag, tag_len,
+                                (char *) buf, buf_size,
+                                &out_buf, &out_size);
         if (ret == -1) {
             return -1;
         }
@@ -81,10 +87,26 @@ int flb_input_log_append(struct flb_input_instance *ins,
     size_t records;
 
     records = flb_mp_count(buf, buf_size);
-    ret = input_log_append(ins, records, tag, tag_len, buf, buf_size);
+    ret = input_log_append(ins, 0, records, tag, tag_len, buf, buf_size);
     return ret;
 }
 
+/* Take a msgpack serialized record and enqueue it as a chunk */
+int flb_input_log_append_skip_processor_stages(struct flb_input_instance *ins,
+                                               size_t processor_starting_stage,
+                                               const char *tag,
+                                               size_t tag_len,
+                                               const void *buf,
+                                               size_t buf_size)
+{
+    return input_log_append(ins,
+                            processor_starting_stage,
+                            flb_mp_count(buf, buf_size),
+                            tag,
+                            tag_len,
+                            buf,
+                            buf_size);
+}
 
 /* Take a msgpack serialized record and enqueue it as a chunk */
 int flb_input_log_append_records(struct flb_input_instance *ins,
@@ -94,7 +116,7 @@ int flb_input_log_append_records(struct flb_input_instance *ins,
 {
     int ret;
 
-    ret = input_log_append(ins, records, tag, tag_len, buf, buf_size);
+    ret = input_log_append(ins, 0, records, tag, tag_len, buf, buf_size);
     return ret;
 }
 

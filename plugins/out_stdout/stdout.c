@@ -222,9 +222,8 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
 
-        while ((result = flb_log_event_decoder_next(
-                            &log_decoder,
-                            &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        while (flb_log_event_decoder_next(&log_decoder,
+                                           &log_event) == FLB_EVENT_DECODER_SUCCESS) {
             printf("[%zd] %s: [[", cnt++, event_chunk->tag);
 
             printf("%"PRIu32".%09lu, ",
@@ -239,10 +238,7 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
 
             printf("]\n");
         }
-
-        if (result != FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA) {
-            flb_plg_error(ctx->ins, "decoder error : %d", result);
-        }
+        result = flb_log_event_decoder_get_last_result(&log_decoder);
 
         flb_log_event_decoder_destroy(&log_decoder);
     }
@@ -250,6 +246,7 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
     fflush(stdout);
 
     if (result != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins, "Log event decoder error : %d", result);
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 

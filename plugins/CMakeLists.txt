@@ -209,6 +209,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   REGISTER_IN_PLUGIN("in_podman_metrics")
 endif()
 
+REGISTER_IN_PLUGIN("in_kubernetes_events")
 REGISTER_IN_PLUGIN("in_kafka")
 REGISTER_IN_PLUGIN("in_fluentbit_metrics")
 REGISTER_IN_PLUGIN("in_prometheus_scrape")
@@ -223,6 +224,7 @@ REGISTER_IN_PLUGIN("in_statsd")
 REGISTER_IN_PLUGIN("in_opentelemetry")
 REGISTER_IN_PLUGIN("in_elasticsearch")
 REGISTER_IN_PLUGIN("in_calyptia_fleet")
+REGISTER_IN_PLUGIN("in_splunk")
 
 # Test the event loop messaging when used in threaded mode
 REGISTER_IN_PLUGIN("in_event_test")
@@ -282,6 +284,7 @@ REGISTER_PROCESSOR_PLUGIN("processor_attributes")
 # =======
 REGISTER_OUT_PLUGIN("out_azure")
 REGISTER_OUT_PLUGIN("out_azure_blob")
+REGISTER_OUT_PLUGIN("out_azure_logs_ingestion")
 REGISTER_OUT_PLUGIN("out_azure_kusto")
 REGISTER_OUT_PLUGIN("out_bigquery")
 REGISTER_OUT_PLUGIN("out_calyptia")

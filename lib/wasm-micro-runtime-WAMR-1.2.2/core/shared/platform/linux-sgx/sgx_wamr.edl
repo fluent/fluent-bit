@@ -1,0 +1,158 @@
+/*
+ * Copyright (C) 2019 Intel Corporation.  All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+ */
+
+enclave {
+    include "stdint.h"
+    include "stdbool.h"
+    include "unistd.h"
+
+    untrusted {
+        int ocall_open([in, string]const char *pathname, int flags,
+                       bool has_mode, unsigned mode);
+        int ocall_openat(int dirfd,
+                         [in, string]const char *pathname, int flags,
+                         bool has_mode, unsigned mode);
+        int ocall_close(int fd);
+        ssize_t ocall_read(int fd, [out, size=read_size]void *buf,
+                           size_t read_size);
+        off_t ocall_lseek(int fd, off_t offset, int whence);
+        int ocall_ftruncate(int fd, off_t length);
+        int ocall_fsync(int fd);
+        int ocall_fdatasync(int fd);
+        int ocall_isatty(int fd);
+        void ocall_fdopendir(int fd, [out]void **p_dirp);
+        /* implementation related to multiple thread */
+        void *ocall_readdir([user_check]void *dirp);
+        void ocall_rewinddir([user_check]void *dirp);
+        void ocall_seekdir([user_check]void *dirp, long loc);
+        long ocall_telldir([user_check]void *dirp);
+        int ocall_closedir([user_check]void *dirp);
+
+        int ocall_stat([in, string]const char *pathname,
+                       [out, size=buf_len]void *buf,
+                       unsigned int buf_len);
+        int ocall_fstat(int fd, [out, size=buf_len]void *buf,
+                        unsigned int buf_len);
+        int ocall_fstatat(int dirfd, [in, string]const char *pathname,
+                          [out, size=buf_len]void *buf,
+                          unsigned int buf_len, int flags);
+
+        int ocall_mkdirat(int dirfd, [in, string]const char *pathname,
+                          unsigned mode);
+        int ocall_link([in, string] const char *oldpath,
+                       [in, string] const char *newpath);
+        int ocall_linkat(int olddirfd, [in, string]const char *oldpath,
+                         int newdirfd, [in, string]const char *newpath,
+                         int flags);
+        int ocall_unlinkat(int dirfd, [in, string]const char *pathname,
+                           int flags);
+        ssize_t ocall_readlink([in, string]const char *pathname,
+                               [out, size=bufsiz]char *buf,
+                               size_t bufsiz);
+        ssize_t ocall_readlinkat(int dirfd,
+                                 [in, string]const char *pathname,
+                                 [out, size=bufsiz]char *buf,
+                                 size_t bufsiz);
+        int ocall_renameat(int olddirfd,
+                           [in, string]const char *oldpath,
+                           int newdirfd,
+                           [in, string]const char *newpath);
+        int ocall_symlinkat([in ,string]const char *target,
+                            int newdirfd,
+                            [in, string]const char *linkpath);
+
+        int ocall_ioctl(int fd, unsigned long request,
+                        [out, size=arg_len]void *arg,
+                        unsigned int arg_len);
+        int ocall_fcntl(int fd, int cmd);
+        int ocall_fcntl_long(int fd, int cmd, long arg);
+
+        int ocall_realpath([in, string]const char *path,
+                           [out, size=buf_len]char *buf,
+                           unsigned int buf_len);
+        int ocall_posix_fallocate(int fd, off_t offset, off_t len);
+        int ocall_poll([in, out, size=fds_len]void *fds, unsigned nfds,
+                       int timeout, unsigned int fds_len);
+
+        int ocall_getopt(int argc,
+                         [in, size=argv_buf_len]char *argv_buf,
+                         unsigned int argv_buf_len,
+                         [in, string]const char *optstring);
+        ssize_t ocall_readv(int fd,
+                            [in, out, size=buf_size]char *iov_buf,
+                            unsigned int buf_size, int iovcnt,
+                            bool has_offset, off_t offset);
+        ssize_t ocall_writev(int fd,
+                             [in, size=buf_size]char *iov_buf,
+                             unsigned int buf_size, int iovcnt,
+                             bool has_offset, off_t offset);
+
+        /* time clock */
+        int ocall_clock_gettime(unsigned clock_id,
+                                [out, size=tp_buf_size]void *tp_buf,
+                                unsigned int tp_buf_size);
+        int ocall_clock_getres(int clock_id,
+                               [out, size=res_buf_size]void *res_buf,
+                               unsigned int res_buf_size);
+        int ocall_utimensat(int dirfd, [in, string]const char *pathname,
+                            [in, size=times_buf_size]const void *times_buf,
+                            unsigned int times_buf_size, int flags);
+        int ocall_futimens(int fd, [in, size=times_buf_size]const void *times_buf,
+                           unsigned int times_buf_size);
+        int ocall_clock_nanosleep(unsigned clock_id, int flags,
+                                  [in, size=req_buf_size]const void *req_buf,
+                                  unsigned int req_buf_size,
+                                  [out, size=rem_buf_size]void *rem_buf,
+                                  unsigned int rem_buf_size);
+
+        int ocall_raise(int sig);
+
+        int ocall_sched_yield();
+
+        int ocall_pthread_rwlock_init([out]void **rwlock, [user_check]void *attr);
+        int ocall_pthread_rwlock_destroy([user_check]void *rwlock);
+        int ocall_pthread_rwlock_rdlock([user_check]void *rwlock);
+        int ocall_pthread_rwlock_wrlock([user_check]void *rwlock);
+        int ocall_pthread_rwlock_unlock([user_check]void *rwlock);
+
+        int ocall_get_errno();
+
+        /* sockets */
+        int ocall_accept(int sockfd, [in, size=addr_size]void *addr,
+                  [in, size=4] uint32_t *addrlen, uint32_t addr_size);
+        int ocall_bind(int sockfd, [in, size=addrlen]const void *addr,
+                 uint32_t addrlen);
+        int ocall_connect(int sockfd, [in, size=addrlen]void *addr, uint32_t addrlen);
+        int ocall_getsockname(int sockfd, [out, size=addr_size]void *addr,
+                              [in, out, size=4]uint32_t *addrlen, uint32_t addr_size);
+        int ocall_getpeername(int sockfd, [out, size=addr_size]void *addr,
+                              [in, out, size=4]uint32_t *addrlen, uint32_t addr_size);
+        int ocall_getsockopt(int sockfd, int level, int optname,
+                             [out, size=val_buf_size]void *val_buf,
+                             unsigned int val_buf_size,
+                             [in, out, size=4]void *len_buf);
+        int ocall_listen(int sockfd, int backlog);
+        int ocall_recv(int sockfd, [out, size=len]void *buf, size_t len, int flags);
+        ssize_t ocall_recvfrom(int sockfd, [out, size=len]void *buf, size_t len, int flags,
+                               [out, size=addr_size]void *src_addr,
+                               [in, out, size=4]uint32_t *addrlen, uint32_t addr_size);
+        ssize_t ocall_recvmsg(int sockfd,
+                              [in, out, size=msg_buf_size]void *msg_buf,
+                              unsigned int msg_buf_size,
+                              int flags);
+        int ocall_send(int sockfd, [in, size=len]const void *buf, size_t len, int flags);
+        ssize_t ocall_sendto(int sockfd, [in, size=len]const void *buf, size_t len, int flags,
+                             [in, size=addrlen]void *dest_addr, uint32_t addrlen);
+        ssize_t ocall_sendmsg(int sockfd,
+                              [in, size=msg_buf_size]void *msg_buf,
+                              unsigned int msg_buf_size,
+                              int flags);
+        int ocall_setsockopt(int sockfd, int level, int optname,
+                             [in, size=optlen]void *optval,
+                             unsigned int optlen);
+        int ocall_shutdown(int sockfd, int how);
+        int ocall_socket(int domain, int type, int protocol);
+    };
+};

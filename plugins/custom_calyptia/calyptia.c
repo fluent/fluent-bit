@@ -35,7 +35,6 @@ struct calyptia {
     flb_sds_t cloud_host;
     flb_sds_t cloud_port;
     flb_sds_t machine_id;
-    flb_sds_t fleet_id;
 
 /* used for reporting chunk trace records. */
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -51,7 +50,14 @@ struct calyptia {
     /* instances */
     struct flb_input_instance *i;
     struct flb_output_instance *o;
+    struct flb_input_instance *fleet;
     struct flb_custom_instance *ins;
+
+    /* Fleet configuration */
+    flb_sds_t fleet_id;                   /* fleet-id  */
+    flb_sds_t fleet_config_dir;           /* fleet configuration directory */
+    int fleet_interval_sec;
+    int fleet_interval_nsec;
 };
 
 /*
@@ -297,10 +303,6 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
         flb_output_set_property(ctx->o, "machine_id", ctx->machine_id);
     }
 
-    if (ctx->fleet_id) {
-        flb_output_set_property(ctx->o, "fleet_id", ctx->fleet_id);
-    }
-
     /* Override network details: development purposes only */
     if (ctx->cloud_host) {
         flb_output_set_property(ctx->o, "cloud_host", ctx->cloud_host);
@@ -323,6 +325,35 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
     else {
         flb_output_set_property(ctx->o, "tls.verify", "false");
     }
+
+    if (ctx->fleet_id) {
+        flb_output_set_property(ctx->o, "fleet_id", ctx->fleet_id);
+
+        ctx->fleet =  flb_input_new(config, "calyptia_fleet", NULL, FLB_FALSE);
+        if (!ctx->fleet) {
+            flb_plg_error(ctx->ins, "could not load Calyptia Fleet plugin");
+            return -1;
+        }
+
+        flb_input_set_property(ctx->fleet, "api_key", ctx->api_key);
+        flb_input_set_property(ctx->fleet, "host", ctx->cloud_host);
+        flb_input_set_property(ctx->fleet, "port", ctx->cloud_port);
+        if (ctx->cloud_tls == 1) {
+            flb_input_set_property(ctx->fleet, "tls", "on");
+        } else {
+            flb_input_set_property(ctx->fleet, "tls", "off");
+        }
+        if (ctx->cloud_tls_verify == 1) {
+            flb_input_set_property(ctx->fleet, "tls.verify", "on");
+        } else {
+            flb_input_set_property(ctx->fleet, "tls.verify", "off");
+        }
+        if (ctx->fleet_config_dir) {
+            flb_input_set_property(ctx->fleet, "config_dir", ctx->fleet_config_dir);
+        }
+        flb_input_set_property(ctx->fleet, "fleet_id", ctx->fleet_id);
+    }
+
 
 #ifdef FLB_HAVE_CHUNK_TRACE
     flb_output_set_property(ctx->o, "pipeline_id", ctx->pipeline_id);
@@ -359,13 +390,13 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-     FLB_CONFIG_MAP_STR, "calyptia_host", NULL,
+     FLB_CONFIG_MAP_STR, "calyptia_host", "cloud-api.calyptia.com",
      0, FLB_TRUE, offsetof(struct calyptia, cloud_host),
      ""
     },
 
     {
-     FLB_CONFIG_MAP_STR, "calyptia_port", NULL,
+     FLB_CONFIG_MAP_STR, "calyptia_port", "443",
      0, FLB_TRUE, offsetof(struct calyptia, cloud_port),
      ""
     },
@@ -396,6 +427,21 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "fleet_id", NULL,
      0, FLB_TRUE, offsetof(struct calyptia, fleet_id),
      "Fleet id to be used when registering agent in a fleet"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "fleet.config_dir", NULL,
+     0, FLB_TRUE, offsetof(struct calyptia, fleet_config_dir),
+     "Base path for the configuration directory."
+    },
+    {
+      FLB_CONFIG_MAP_INT, "fleet.interval_sec", "-1",
+      0, FLB_TRUE, offsetof(struct calyptia, fleet_interval_sec),
+      "Set the collector interval"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "fleet.interval_nsec", "-1",
+      0, FLB_TRUE, offsetof(struct calyptia, fleet_interval_nsec),
+      "Set the collector interval (nanoseconds)"
     },
 
 #ifdef FLB_HAVE_CHUNK_TRACE

@@ -621,7 +621,9 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
     if (flb_processor_is_active(o_ins->processor)) {
         if (evc->type == FLB_EVENT_TYPE_LOGS) {
             /* run the processor */
-            ret = flb_processor_run(o_ins->processor, FLB_PROCESSOR_LOGS,
+            ret = flb_processor_run(o_ins->processor,
+                                    0,
+                                    FLB_PROCESSOR_LOGS,
                                     evc->tag, flb_sds_len(evc->tag),
                                     evc->data, evc->size,
                                     &p_buf, &p_size);
@@ -669,6 +671,7 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
                             evc->size,
                             &chunk_offset)) == CMT_DECODE_MSGPACK_SUCCESS) {
                 ret = flb_processor_run(o_ins->processor,
+                                        0,
                                         FLB_PROCESSOR_METRICS,
                                         evc->tag,
                                         flb_sds_len(evc->tag),
@@ -765,6 +768,7 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
                             evc->size,
                             &chunk_offset)) == CTR_DECODE_MSGPACK_SUCCESS) {
                 ret = flb_processor_run(o_ins->processor,
+                                        0,
                                         FLB_PROCESSOR_TRACES,
                                         evc->tag,
                                         flb_sds_len(evc->tag),

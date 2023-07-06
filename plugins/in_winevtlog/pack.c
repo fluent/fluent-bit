@@ -280,6 +280,9 @@ static int pack_sid(struct winevtlog_config *ctx, PSID sid)
 static void pack_string_inserts(struct winevtlog_config *ctx, PEVT_VARIANT values, DWORD count)
 {
     int i;
+    int ret;
+
+    ret = flb_log_event_encoder_body_begin_array(ctx->log_encoder);
 
     for (i = 0; i < count; i++) {
         if (values[i].Type & EVT_VARIANT_TYPE_ARRAY) {
@@ -301,37 +304,37 @@ static void pack_string_inserts(struct winevtlog_config *ctx, PEVT_VARIANT value
             }
             break;
         case EvtVarTypeSByte:
-            flb_log_event_encoder_append_body_int8(ctx, values[i].SByteVal);
+            flb_log_event_encoder_append_body_int8(ctx->log_encoder, values[i].SByteVal);
             break;
         case EvtVarTypeByte:
-            flb_log_event_encoder_append_body_uint8(ctx, values[i].ByteVal);
+            flb_log_event_encoder_append_body_uint8(ctx->log_encoder, values[i].ByteVal);
             break;
         case EvtVarTypeInt16:
-            flb_log_event_encoder_append_body_int16(ctx, values[i].Int16Val);
+            flb_log_event_encoder_append_body_int16(ctx->log_encoder, values[i].Int16Val);
             break;
         case EvtVarTypeUInt16:
-            flb_log_event_encoder_append_body_uint16(ctx, values[i].UInt16Val);
+            flb_log_event_encoder_append_body_uint16(ctx->log_encoder, values[i].UInt16Val);
             break;
         case EvtVarTypeInt32:
-            flb_log_event_encoder_append_body_int32(ctx, values[i].Int32Val);
+            flb_log_event_encoder_append_body_int32(ctx->log_encoder, values[i].Int32Val);
             break;
         case EvtVarTypeUInt32:
-            flb_log_event_encoder_append_body_uint32(ctx, values[i].UInt32Val);
+            flb_log_event_encoder_append_body_uint32(ctx->log_encoder, values[i].UInt32Val);
             break;
         case EvtVarTypeInt64:
-            flb_log_event_encoder_append_body_int64(ctx, values[i].Int64Val);
+            flb_log_event_encoder_append_body_int64(ctx->log_encoder, values[i].Int64Val);
             break;
         case EvtVarTypeUInt64:
-            flb_log_event_encoder_append_body_uint64(ctx, values[i].UInt64Val);
+            flb_log_event_encoder_append_body_uint64(ctx->log_encoder, values[i].UInt64Val);
             break;
         case EvtVarTypeSingle:
-            flb_log_event_encoder_append_body_double(ctx, values[i].SingleVal);
+            flb_log_event_encoder_append_body_double(ctx->log_encoder, values[i].SingleVal);
             break;
         case EvtVarTypeDouble:
-            flb_log_event_encoder_append_body_double(ctx, values[i].DoubleVal);
+            flb_log_event_encoder_append_body_double(ctx->log_encoder, values[i].DoubleVal);
             break;
         case EvtVarTypeBoolean:
-            flb_log_event_encoder_append_body_boolean(ctx, (int) values[i].BooleanVal);
+            flb_log_event_encoder_append_body_boolean(ctx->log_encoder, (int) values[i].BooleanVal);
             break;
         case EvtVarTypeGuid:
             if (pack_guid(ctx, values[i].GuidVal)) {
@@ -339,7 +342,7 @@ static void pack_string_inserts(struct winevtlog_config *ctx, PEVT_VARIANT value
             }
             break;
         case EvtVarTypeSizeT:
-            flb_log_event_encoder_append_body_uint64(ctx, values[i].SizeTVal);
+            flb_log_event_encoder_append_body_uint64(ctx->log_encoder, values[i].SizeTVal);
             break;
         case EvtVarTypeFileTime:
             if (pack_filetime(ctx, values[i].FileTimeVal)) {
@@ -377,10 +380,14 @@ static void pack_string_inserts(struct winevtlog_config *ctx, PEVT_VARIANT value
             }
             break;
         default:
-            msgpack_pack_str(ctx, 1);
-            msgpack_pack_str_body(ctx, "?", 1);
+            flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "?");
         }
     }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_body_commit_array(ctx->log_encoder);
+    }
+
 }
 
 void winevtlog_pack_xml_event(WCHAR *system_xml, WCHAR *message,

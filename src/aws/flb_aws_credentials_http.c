@@ -98,7 +98,7 @@ struct flb_aws_credentials *get_credentials_fn_http(struct flb_aws_provider
         return NULL;
     }
 
-    creds = flb_malloc(sizeof(struct flb_aws_credentials));
+    creds = flb_calloc(1, sizeof(struct flb_aws_credentials));
     if (!creds) {
         flb_errno();
         goto error;
@@ -249,6 +249,8 @@ struct flb_aws_provider *flb_http_provider_create(struct flb_config *config,
         flb_errno();
         return NULL;
     }
+
+    pthread_mutex_init(&provider->lock, NULL);
 
     implementation = flb_calloc(1, sizeof(struct flb_aws_provider_http));
 

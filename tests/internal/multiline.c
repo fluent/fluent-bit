@@ -110,8 +110,8 @@ struct record_check container_mix_input[] = {
 struct record_check container_mix_output[] = {
   {"a1\n"},
   {"a2\n"},
-  {"bbcc"},
   {"ddee\n"},
+  {"bbcc"},
   {"single full"},
   {"1a. some multiline log"},
   {"1b. some multiline log"},
@@ -1389,9 +1389,7 @@ static void test_issue_5504()
 
     /* Initialize environment */
     config = flb_config_init();
-    ml = flb_ml_create(config, "5504-test");
-    TEST_CHECK(ml != NULL);
-    
+
     /* Create the event loop */
     evl = config->evl;
     config->evl = mk_event_loop_create(32);
@@ -1401,6 +1399,13 @@ static void test_issue_5504()
     sched = config->sched;
     config->sched = flb_sched_create(config, config->evl);
     TEST_CHECK(config->sched != NULL);
+
+    /* Set the thread local scheduler */
+    flb_sched_ctx_init();
+    flb_sched_ctx_set(config->sched);
+
+    ml = flb_ml_create(config, "5504-test");
+    TEST_CHECK(ml != NULL);
 
     /* Generate an instance of any multiline parser */
     mlp_i = flb_ml_parser_instance_create(ml, "cri");
@@ -1426,7 +1431,7 @@ static void test_issue_5504()
     }
     TEST_CHECK(cb != NULL);
 
-    /* Trigger the callback without delay */ 
+    /* Trigger the callback without delay */
     cb(config, ml);
     /* This should not update the last_flush since it is before the timeout */
     TEST_CHECK(ml->last_flush == last_flush);

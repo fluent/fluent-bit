@@ -72,7 +72,7 @@ extern void win32_started(void);
 flb_ctx_t *ctx;
 struct flb_config *config;
 volatile sig_atomic_t exit_signal = 0;
-volatile sig_atomic_t flb_bin_restarting = 0;
+volatile sig_atomic_t flb_bin_restarting = FLB_RELOAD_IDLE;
 
 #ifdef FLB_HAVE_LIBBACKTRACE
 struct flb_stacktrace flb_st;
@@ -150,6 +150,7 @@ static void flb_help(int rc, struct flb_config *config)
     print_opt("-q, --quiet", "quiet mode");
     print_opt("-S, --sosreport", "support report for Enterprise customers");
     print_opt("-Y, --enable-hot-reload", "enable for hot reloading");
+    print_opt("-W, --disable-thread-safety-on-hot-reloading", "disable thread safety on hot reloading");
     print_opt("-V, --version", "show version number");
     print_opt("-h, --help", "print this help");
 
@@ -606,8 +607,15 @@ static void flb_signal_handler(int signal)
         break;
     case SIGHUP:
 #ifndef FLB_HAVE_STATIC_CONF
-        /* reload by using same config files/path */
-        flb_reload(ctx, cf_opts);
+        if (flb_bin_restarting == FLB_RELOAD_IDLE) {
+            flb_bin_restarting = FLB_RELOAD_IN_PROGRESS;
+            /* reload by using same config files/path */
+            flb_reload(ctx, cf_opts);
+            flb_bin_restarting = FLB_RELOAD_IDLE;
+        }
+        else {
+            flb_utils_error(FLB_ERR_RELOADING_IN_PROGRESS);
+        }
         break;
 #endif
 #endif
@@ -797,6 +805,7 @@ int flb_main(int argc, char **argv)
 #ifdef FLB_HAVE_CHUNK_TRACE
         { "enable-chunk-trace",    no_argument, NULL, 'Z' },
 #endif
+        { "disable-thread-safety-on-hot-reload", no_argument, NULL, 'W' },
         { NULL, 0, NULL, 0 }
     };
 
@@ -823,7 +832,7 @@ int flb_main(int argc, char **argv)
     /* Parse the command line options */
     while ((opt = getopt_long(argc, argv,
                               "b:c:dDf:C:i:m:o:R:F:p:e:"
-                              "t:T:l:vw:qVhJL:HP:s:SYZ",
+                              "t:T:l:vw:qVhJL:HP:s:SWYZ",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -980,6 +989,10 @@ int flb_main(int argc, char **argv)
             break;
         case 'Y':
             flb_cf_section_property_add(cf_opts, service->properties, FLB_CONF_STR_HOT_RELOAD, 0, "on", 0);
+            break;
+        case 'W':
+            flb_cf_section_property_add(cf_opts, service->properties,
+                                        FLB_CONF_STR_HOT_RELOAD_ENSURE_THREAD_SAFETY, 0, "off", 0);
             break;
 #ifdef FLB_HAVE_CHUNK_TRACE
         case 'Z':

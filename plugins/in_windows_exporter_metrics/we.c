@@ -35,6 +35,13 @@
 #include "we_logical_disk.h"
 #include "we_cs.h"
 
+/* wmi collectors */
+#include "we_wmi_cpu_info.h"
+#include "we_wmi_logon.h"
+#include "we_wmi_system.h"
+#include "we_wmi_thermalzone.h"
+#include "we_wmi_service.h"
+
 static int we_timer_cpu_metrics_cb(struct flb_input_instance *ins,
                                    struct flb_config *config, void *in_context)
 {
@@ -121,6 +128,16 @@ static int we_timer_wmi_system_metrics_cb(struct flb_input_instance *ins,
     struct flb_ne *ctx = in_context;
 
     we_wmi_system_update(ctx);
+
+    return 0;
+}
+
+static int we_timer_wmi_service_metrics_cb(struct flb_input_instance *ins,
+                                           struct flb_config *config, void *in_context)
+{
+    struct flb_ne *ctx = in_context;
+
+    we_wmi_service_update(ctx);
 
     return 0;
 }
@@ -240,6 +257,13 @@ static void we_wmi_system_update_cb(char *name, void *p1, void *p2)
     we_wmi_system_update(ctx);
 }
 
+static void we_wmi_service_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_we *ctx = p1;
+
+    we_wmi_service_update(ctx);
+}
+
 static int we_update_cb(struct flb_we *ctx, char *name)
 {
     int ret;
@@ -262,6 +286,7 @@ struct flb_we_callback ne_callbacks[] = {
     { "thermalzone", we_wmi_thermalzone_update_cb },
     { "logon", we_wmi_logon_update_cb },
     { "system", we_wmi_system_update_cb },
+    { "service", we_wmi_service_update_cb },
     { 0 }
 };
 
@@ -295,6 +320,7 @@ static int in_we_init(struct flb_input_instance *in,
     ctx->coll_wmi_cpu_info_fd = -1;
     ctx->coll_wmi_logon_fd = -1;
     ctx->coll_wmi_system_fd = -1;
+    ctx->coll_wmi_service_fd = -1;
 
     ctx->callback = flb_callback_create(in->name);
     if (!ctx->callback) {
@@ -574,6 +600,31 @@ static int in_we_init(struct flb_input_instance *in,
                         return -1;
                     }
                 }
+                else if (strncmp(entry->str, "service", 7) == 0) {
+                    if (ctx->wmi_service_scrape_interval == 0) {
+                        flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                        metric_idx = 9;
+                    }
+                    else {
+                        /* Create the service collector */
+                        ret = flb_input_set_collector_time(in,
+                                                           we_timer_wmi_service_metrics_cb,
+                                                           ctx->wmi_service_scrape_interval, 0,
+                                                           config);
+                        if (ret == -1) {
+                            flb_plg_error(ctx->ins,
+                                          "could not set service collector for Windows Exporter Metrics plugin");
+                            return -1;
+                        }
+                        ctx->coll_wmi_service_fd = ret;
+                    }
+
+                    /* Initialize service metric collectors */
+                    ret = we_wmi_service_init(ctx);
+                    if (ret) {
+                        return -1;
+                    }
+                }
                 else {
                     flb_plg_warn(ctx->ins, "Unknown metrics: %s", entry->str);
                     metric_idx = -1;
@@ -644,6 +695,9 @@ static int in_we_exit(void *data, struct flb_config *config)
                 else if (strncmp(entry->str, "system", 6) == 0) {
                     we_wmi_system_exit(ctx);
                 }
+                else if (strncmp(entry->str, "service", 7) == 0) {
+                    we_wmi_service_exit(ctx);
+                }
                 else {
                     flb_plg_warn(ctx->ins, "Unknown metrics: %s", entry->str);
                 }
@@ -680,6 +734,9 @@ static int in_we_exit(void *data, struct flb_config *config)
     }
     if (ctx->coll_wmi_system_fd != -1) {
         we_wmi_system_exit(ctx);
+    }
+    if (ctx->coll_wmi_service_fd != -1) {
+        we_wmi_service_exit(ctx);
     }
 
     flb_we_config_destroy(ctx);
@@ -721,6 +778,9 @@ static void in_we_pause(void *data, struct flb_config *config)
     if (ctx->coll_wmi_system_fd != -1) {
         flb_input_collector_pause(ctx->coll_wmi_system_fd, ctx->ins);
     }
+    if (ctx->coll_wmi_service_fd != -1) {
+        flb_input_collector_pause(ctx->coll_wmi_service_fd, ctx->ins);
+    }
 }
 
 static void in_we_resume(void *data, struct flb_config *config)
@@ -756,6 +816,9 @@ static void in_we_resume(void *data, struct flb_config *config)
     }
     if (ctx->coll_wmi_system_fd != -1) {
         flb_input_collector_resume(ctx->coll_wmi_system_fd, ctx->ins);
+    }
+    if (ctx->coll_wmi_service_fd != -1) {
+        flb_input_collector_resume(ctx->coll_wmi_service_fd, ctx->ins);
     }
 }
 
@@ -823,8 +886,13 @@ static struct flb_config_map config_map[] = {
      "scrape interval to collect system metrics from the node."
     },
     {
+     FLB_CONFIG_MAP_TIME, "collector.service.scrape_interval", "0",
+     0, FLB_TRUE, offsetof(struct flb_we, wmi_service_scrape_interval),
+     "scrape interval to collect service metrics from the node."
+    },
+    {
      FLB_CONFIG_MAP_CLIST, "metrics",
-     "cpu,cpu_info,os,net,logical_disk,cs,thermalzone,logon,system",
+     "cpu,cpu_info,os,net,logical_disk,cs,thermalzone,logon,system,service",
      0, FLB_TRUE, offsetof(struct flb_we, metrics),
      "Comma separated list of keys to enable metrics."
     },
@@ -842,6 +910,21 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "we.net.allow_nic_regex", "/.+/",
      0, FLB_TRUE, offsetof(struct flb_we, raw_allowing_nic),
      "Specify to be scribable regex for net metrics by name of NIC."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "we.service.where", NULL,
+     0, FLB_TRUE, offsetof(struct flb_we, raw_where_clause),
+     "Specify the where clause for retrieving service metrics."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "we.service.include", NULL,
+     0, FLB_TRUE, offsetof(struct flb_we, raw_service_include),
+     "Specify the key value condition pairs for includeing condition to construct where clause of service metrics."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "we.service.exclude", NULL,
+     0, FLB_TRUE, offsetof(struct flb_we, raw_service_exclude),
+     "Specify the key value condition pairs for excludeing condition to construct where clause of service metrics."
     },
     /* EOF */
     {0}

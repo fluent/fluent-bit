@@ -14,6 +14,7 @@ set(src
   we_wmi_cpu_info.c
   we_wmi_logon.c
   we_wmi_system.c
+  we_wmi_service.c
   )
 
 set(libs

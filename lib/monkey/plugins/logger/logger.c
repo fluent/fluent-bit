@@ -548,7 +548,7 @@ int mk_logger_stage40(struct mk_http_session *cs, struct mk_http_request *sr)
                     MK_FALSE);
 
     /* Date/time when object was requested */
-    date = mk_api->time_human();
+    date = mk_api->time_human(cs->server);
     mk_api->iov_add(iov,
                     date->data, date->len,
                     MK_FALSE);

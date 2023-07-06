@@ -331,8 +331,11 @@ int fill_counters_with_sysfs_data_v1(struct flb_in_metrics *ctx)
         cnt->cpu_user = get_data_from_sysfs(ctx, cpu_path, V1_SYSFS_FILE_CPU_USER, NULL);
         cnt->cpu = get_data_from_sysfs(ctx, cpu_path, V1_SYSFS_FILE_CPU, NULL);
         pid = get_data_from_sysfs(ctx, systemd_path, V1_SYSFS_FILE_PIDS, NULL);
-        if (pid) {
+        if (pid && pid != UINT64_MAX) {
             get_net_data_from_proc(ctx, cnt, pid);
+        }
+        else {
+            flb_plg_warn(ctx->ins, "Failed to collect PID for %s", cnt->name);
         }
     }
     return 0;
@@ -364,8 +367,14 @@ int fill_counters_with_sysfs_data_v2(struct flb_in_metrics *ctx)
         cnt->cpu_user = get_data_from_sysfs(ctx, path, V2_SYSFS_FILE_CPU_STAT, STAT_KEY_CPU_USER);
         cnt->cpu = get_data_from_sysfs(ctx, path, V2_SYSFS_FILE_CPU_STAT, STAT_KEY_CPU);
         pid = get_data_from_sysfs(ctx, path, V2_SYSFS_FILE_PIDS, NULL);
-        if (pid) {
+        if (!pid || pid == UINT64_MAX) {
+            pid = get_data_from_sysfs(ctx, path, V2_SYSFS_FILE_PIDS_ALT, NULL);
+        }
+        if (pid && pid != UINT64_MAX) {
             get_net_data_from_proc(ctx, cnt, pid);
+        }
+        else {
+            flb_plg_warn(ctx->ins, "Failed to collect PID for %s", cnt->name);
         }
     }
     return 0;

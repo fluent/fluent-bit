@@ -45,6 +45,8 @@ struct flb_exec {
     int interval_sec;
     int interval_nsec;
     struct flb_log_event_encoder log_encoder;
+    int exit_after_oneshot;
+    int propagate_exit_code;
 };
 
 #endif /* FLB_IN_EXEC_H */

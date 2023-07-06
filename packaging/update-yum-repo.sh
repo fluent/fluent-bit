@@ -1,6 +1,8 @@
 #!/bin/bash
 set -eux
 
+# Used to update a Yum repo, e.g. during a staging build or release process
+
 #("amazonlinux/2" "amazonlinux/2022" "centos/7" "centos/8" "centos/9")
 RPM_REPO=${RPM_REPO:?}
 

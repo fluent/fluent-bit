@@ -1,4 +1,5 @@
 #!/bin/bash
+# Used during the release process to automatically pull the tagged build from AppVeyor
 set -eux
 
 TAG=${TAG:?}

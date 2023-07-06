@@ -97,6 +97,50 @@ static int send_json_message_response(struct in_elasticsearch_bulk_conn *conn, i
     return 0;
 }
 
+static int send_version_message_response(struct flb_in_elasticsearch *ctx,
+                                         struct in_elasticsearch_bulk_conn *conn, int http_status)
+{
+    size_t    sent;
+    int       len;
+    flb_sds_t out;
+    flb_sds_t resp;
+
+    out = flb_sds_create_size(256);
+    if (!out) {
+        return -1;
+    }
+    resp = flb_sds_create_size(384);
+    if (!resp) {
+        flb_sds_destroy(out);
+        return -1;
+    }
+
+    flb_sds_printf(&resp,
+                   ES_VERSION_RESPONSE_TEMPLATE,
+                   ctx->es_version);
+
+    len = flb_sds_len(resp);
+
+    if (http_status == 200) {
+        flb_sds_printf(&out,
+                       "HTTP/1.1 200 OK\r\n"
+                       "Content-Type: application/json\r\n"
+                       "Content-Length: %i\r\n\r\n%s",
+                       len, resp);
+    }
+
+    /* We should check this operations result */
+    flb_io_net_write(conn->connection,
+                     (void *) out,
+                     flb_sds_len(out),
+                     &sent);
+
+    flb_sds_destroy(resp);
+    flb_sds_destroy(out);
+
+    return 0;
+}
+
 static int send_dummy_sniffer_response(struct in_elasticsearch_bulk_conn *conn, int http_status,
                                        struct flb_in_elasticsearch *ctx)
 {
@@ -704,26 +748,33 @@ int in_elasticsearch_bulk_prot_handle(struct flb_in_elasticsearch *ctx,
         uri[diff] = '\0';
     }
 
-    /* Compose the query string using the URI */
-    len = strlen(uri);
-
-    if (len == 1) {
-        tag = NULL; /* use default tag */
-    }
-    else {
-        tag = flb_sds_create_size(len);
-        if (!tag) {
-            mk_mem_free(uri);
+    /* Refer the tag at first*/
+    if (ctx->ins->tag && !ctx->ins->tag_default) {
+        tag = flb_sds_create(ctx->ins->tag);
+        if (tag == NULL) {
             return -1;
         }
+    }
+    else {
+        /* Compose the query string using the URI */
+        len = strlen(uri);
 
-        /* New tag skipping the URI '/' */
-        flb_sds_cat(tag, uri + 1, len - 1);
+        if (len == 1) {
+            tag = NULL; /* use default tag */
+        }
+        else {
+            /* New tag skipping the URI '/' */
+            tag = flb_sds_create_len(&uri[1], len - 1);
+            if (!tag) {
+                mk_mem_free(uri);
+                return -1;
+            }
 
-        /* Sanitize, only allow alphanum chars */
-        for (i = 0; i < flb_sds_len(tag); i++) {
-            if (!isalnum(tag[i]) && tag[i] != '_' && tag[i] != '.') {
-                tag[i] = '_';
+            /* Sanitize, only allow alphanum chars */
+            for (i = 0; i < flb_sds_len(tag); i++) {
+                if (!isalnum(tag[i]) && tag[i] != '_' && tag[i] != '.') {
+                    tag[i] = '_';
+                }
             }
         }
     }
@@ -778,7 +829,7 @@ int in_elasticsearch_bulk_prot_handle(struct flb_in_elasticsearch *ctx,
             send_dummy_sniffer_response(conn, 200, ctx);
         }
         else if (strlen(uri) == 1 && strncmp(uri, "/", 1) == 0) {
-            send_json_message_response(conn, 200, ES_VERSION_RESPONSE);
+            send_version_message_response(ctx, conn, 200);
         }
         else {
             send_json_message_response(conn, 200, "{}");

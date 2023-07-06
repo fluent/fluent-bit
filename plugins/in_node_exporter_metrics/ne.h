@@ -30,6 +30,14 @@
 #include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_metrics.h>
 
+/* filesystem: regex for ignoring mount points and filesystem types */
+
+#define IGNORED_MOUNT_POINTS "^/(dev|proc|run/credentials/.+|sys|var/lib/docker/.+|var/lib/containers/storage/.+)($|/)"
+#define IGNORED_FS_TYPES     "^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$"
+
+/* diskstats: regex for ignoring devices */
+#define IGNORED_DEVICES  "^(ram|loop|fd|(h|s|v|xv)d[a-z]|nvme\\d+n\\d+p)\\d+$"
+
 struct flb_ne {
     /* configuration */
     flb_sds_t path_procfs;
@@ -103,6 +111,7 @@ struct flb_ne {
     /* diskstats: abbreviation 'dt' */
     void *dt_metrics;
     struct flb_regex *dt_regex_skip_devices;
+    flb_sds_t dt_regex_skip_devices_text;
 
     /* uname */
     struct cmt_gauge *uname;
@@ -142,6 +151,8 @@ struct flb_ne {
     struct cmt_gauge *fs_free_bytes;
     struct cmt_gauge *fs_readonly;
     struct cmt_gauge *fs_size_bytes;
+    flb_sds_t fs_regex_ingore_mount_point_text;
+    flb_sds_t fs_regex_ingore_filesystem_type_text;
 
     struct flb_regex *fs_regex_read_only;
     struct flb_regex *fs_regex_skip_mount;
@@ -173,6 +184,8 @@ struct flb_ne {
     flb_sds_t           systemd_regex_exclude_list_text;
     struct flb_regex   *systemd_regex_include_list;
     struct flb_regex   *systemd_regex_exclude_list;
+    double              libsystemd_version;
+    char               *libsystemd_version_text;
 };
 
 #endif
