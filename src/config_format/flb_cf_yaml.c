@@ -597,6 +597,13 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
     char *value;
     struct flb_kv *kv;
     char *last_included = get_last_included_file(ctx);
+    struct cfl_list *head;
+    struct cfl_kvpair *kvp;
+    struct cfl_variant *var;
+    struct cfl_variant *varr;
+    struct cfl_array *arr;
+    struct cfl_array *carr;
+    struct cfl_kvlist *copy;
 
     s = get_current_state(ctx);
     print_current_state(ctx, s, event);
@@ -919,17 +926,9 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             s = state_push_key(ctx, STATE_PLUGIN_VAL, (char *) event->data.scalar.value);
             break;
         case YAML_MAPPING_END_EVENT:
-            struct cfl_list *head;
-            struct cfl_kvpair *kv;
-            struct cfl_variant *var;
-            struct cfl_variant *varr;
-            struct cfl_array *arr;
-            struct cfl_array *carr;
-
             print_current_properties(s);
 
             if (s->section == SECTION_PROCESSOR) {
-                struct cfl_kvlist *copy;
 
                 if (s->cf_group == NULL) {
                     flb_error("no group for processor properties");
@@ -947,15 +946,15 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
 
                 copy = cfl_kvlist_create();
                 cfl_list_foreach(head, &s->keyvals->list) {
-                    kv = cfl_list_entry(head, struct cfl_kvpair, _head);
-                    switch (kv->val->type) {
+                    kvp = cfl_list_entry(head, struct cfl_kvpair, _head);
+                    switch (kvp->val->type) {
                     case CFL_VARIANT_STRING:
-                        cfl_kvlist_insert_string(copy, kv->key, kv->val->data.as_string);
+                        cfl_kvlist_insert_string(copy, kvp->key, kvp->val->data.as_string);
                         break;
                     case CFL_VARIANT_ARRAY:
-                        carr = cfl_array_create(kv->val->data.as_array->entry_count);
-                        for (int i = 0; i < kv->val->data.as_array->entry_count; i++) {
-                            var = cfl_array_fetch_by_index(kv->val->data.as_array, i);
+                        carr = cfl_array_create(kvp->val->data.as_array->entry_count);
+                        for (int i = 0; i < kvp->val->data.as_array->entry_count; i++) {
+                            var = cfl_array_fetch_by_index(kvp->val->data.as_array, i);
                             switch (var->type) {
                             case CFL_VARIANT_STRING:
                                 cfl_array_append_string(carr, var->data.as_string);
@@ -965,10 +964,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                                 return YAML_FAILURE;
                             }
                         }
-                        cfl_kvlist_insert_array(copy, kv->key, carr);
+                        cfl_kvlist_insert_array(copy, kvp->key, carr);
                         break;
                     default:
-                        flb_error("unknown value type for properties: %d", kv->val->type);
+                        flb_error("unknown value type for properties: %d", kvp->val->type);
                         return YAML_FAILURE;
                     }
                 }
@@ -979,15 +978,15 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             }
 
             cfl_list_foreach(head, &s->keyvals->list) {
-                kv = cfl_list_entry(head, struct cfl_kvpair, _head);
-                switch (kv->val->type) {
+                kvp = cfl_list_entry(head, struct cfl_kvpair, _head);
+                switch (kvp->val->type) {
                 case CFL_VARIANT_STRING:
                     var = flb_cf_section_property_add(cf,
                                                     s->cf_section->properties,
-                                                    kv->key,
-                                                    cfl_sds_len(kv->key),
-                                                    kv->val->data.as_string,
-                                                    cfl_sds_len(kv->val->data.as_string));
+                                                    kvp->key,
+                                                    cfl_sds_len(kvp->key),
+                                                    kvp->val->data.as_string,
+                                                    cfl_sds_len(kvp->val->data.as_string));
                     if (var == NULL) {
                         flb_error("unable to add variant value property");
                         return YAML_FAILURE;
@@ -995,9 +994,9 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                     break;
                 case CFL_VARIANT_ARRAY:
                     arr = flb_cf_section_property_add_list(cf, s->cf_section->properties,
-                                                           kv->key, cfl_sds_len(kv->key));
-                    for (int i = 0; i < kv->val->data.as_array->entry_count; i++) {
-                        var = cfl_array_fetch_by_index(kv->val->data.as_array, i);
+                                                           kvp->key, cfl_sds_len(kvp->key));
+                    for (int i = 0; i < kvp->val->data.as_array->entry_count; i++) {
+                        var = cfl_array_fetch_by_index(kvp->val->data.as_array, i);
                         switch (var->type) {
                         case CFL_VARIANT_STRING:
                             cfl_array_append_string(arr, var->data.as_string);
@@ -1009,14 +1008,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                     }
                     break;
                 default:
-                    flb_error("unknown value type for properties: %d", kv->val->type);
+                    flb_error("unknown value type for properties: %d", kvp->val->type);
                     return YAML_FAILURE;
                 }
             }
-            // if (cfl_kvlist_count(s->cf_section->properties) != cfl_kvlist_count(s->keyvals)) {
-            //    flb_error("wrong property count for new section");
-            //    return YAML_FAILURE;
-            // }
             s = state_pop(ctx);
             break;
         case YAML_SEQUENCE_START_EVENT: /* start a new group */
@@ -1202,9 +1197,6 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
     case STATE_GROUP_KEY:
         switch(event->type) {
         case YAML_SCALAR_EVENT:
-            /* next state */
-            // s->state = STATE_GROUP_VAL;
-
             /* grab current value (key) */
             value = (char *) event->data.scalar.value;
             s = state_push_key(ctx, STATE_GROUP_VAL, value);
