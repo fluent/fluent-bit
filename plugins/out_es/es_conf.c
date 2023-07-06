@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_signv4.h>
+#include <fluent-bit/flb_upstream_node.h>
 
 #include "es.h"
 #include "es_conf_parse.h"
