@@ -922,6 +922,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             struct cfl_list *head;
             struct cfl_kvpair *kv;
             struct cfl_variant *var;
+            struct cfl_variant *varr;
             struct cfl_array *arr;
             struct cfl_array *carr;
 
@@ -935,11 +936,13 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                     return YAML_FAILURE;
                 }
 
-                arr = cfl_kvlist_fetch(s->cf_group->properties, s->key);
-                if (arr == NULL) {
+                varr = cfl_kvlist_fetch(s->cf_group->properties, s->key);
+                if (varr == NULL) {
                     arr = cfl_array_create(1);
                     cfl_array_resizable(arr, CFL_TRUE);
                     cfl_kvlist_insert_array(s->cf_group->properties, s->key, arr);
+                } else {
+                    arr = varr->data.as_array;
                 }
 
                 copy = cfl_kvlist_create();
