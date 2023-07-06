@@ -11,7 +11,7 @@
 # docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7" -f ./dockerfiles/Dockerfile.multiarch --build-arg FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v1.8.11.tar.gz ./dockerfiles/
 
 # Set this to the current release version: it gets done so as part of the release.
-ARG RELEASE_VERSION=2.1.7
+ARG RELEASE_VERSION=2.1.6
 
 # For multi-arch builds - assumption is running on an AMD64 host
 FROM multiarch/qemu-user-static:x86_64-arm as qemu-arm32
@@ -69,7 +69,7 @@ RUN cmake -DFLB_RELEASE=On \
     -DFLB_SHARED_LIB=Off \
     -DFLB_EXAMPLES=Off \
     -DFLB_HTTP_SERVER=On \
-    -DFLB_IN_EXEC=Off \
+    -DFLB_IN_EXEC=On \
     -DFLB_IN_SYSTEMD=On \
     -DFLB_OUT_KAFKA=On \
     -DFLB_OUT_PGSQL=On \
@@ -95,94 +95,6 @@ COPY conf/fluent-bit.conf \
 # Generate schema and include as part of the container image
 RUN /fluent-bit/bin/fluent-bit -J > /fluent-bit/etc/schema.json
 
-# Simple example of how to properly extract packages for reuse in distroless
-# Taken from: https://github.com/GoogleContainerTools/distroless/issues/863
-FROM debian:bullseye-slim as deb-extractor
-COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
-COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
-
-# We download all debs locally then extract them into a directory we can use as the root for distroless.
-# We also include some extra handling for the status files that some tooling uses for scanning, etc.
-WORKDIR /tmp
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-RUN echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/sources.list && \
-    apt-get update && \
-    apt-get download \
-    libssl1.1 \
-    libsasl2-2 \
-    pkg-config \
-    libpq5 \
-    libsystemd0/bullseye-backports \
-    zlib1g \
-    ca-certificates \
-    libatomic1 \
-    libgcrypt20 \
-    libzstd1 \
-    liblz4-1 \
-    libgssapi-krb5-2 \
-    libldap-2.4-2 \
-    libgpg-error0 \
-    libkrb5-3 \
-    libk5crypto3 \
-    libcom-err2 \
-    libkrb5support0 \
-    libgnutls30 \
-    libkeyutils1 \
-    libp11-kit0 \
-    libidn2-0 \
-    libunistring2 \
-    libtasn1-6 \
-    libnettle8 \
-    libhogweed6 \
-    libgmp10 \
-    libffi7 \
-    liblzma5 \
-    libyaml-0-2 && \
-    mkdir -p /dpkg/var/lib/dpkg/status.d/ && \
-    for deb in *.deb; do \
-    package_name=$(dpkg-deb -I "${deb}" | awk '/^ Package: .*$/ {print $2}'); \
-    echo "Processing: ${package_name}"; \
-    dpkg --ctrl-tarfile "$deb" | tar -Oxf - ./control > "/dpkg/var/lib/dpkg/status.d/${package_name}"; \
-    dpkg --extract "$deb" /dpkg || exit 10; \
-    done
-
-# Remove unnecessary files extracted from deb packages like man pages and docs etc.
-RUN find /dpkg/ -type d -empty -delete && \
-    rm -r /dpkg/usr/share/doc/
-
-# We want latest at time of build
-# hadolint ignore=DL3006
-FROM gcr.io/distroless/cc-debian11 as production
-ARG RELEASE_VERSION
-ENV FLUENT_BIT_VERSION=${RELEASE_VERSION}
-LABEL description="Fluent Bit multi-architecture container image" \
-    vendor="Fluent Organization" \
-    version="${RELEASE_VERSION}" \
-    author="Eduardo Silva <eduardo@calyptia.com>" \
-    org.opencontainers.image.description="Fluent Bit container image" \
-    org.opencontainers.image.title="Fluent Bit" \
-    org.opencontainers.image.licenses="Apache-2.0" \
-    org.opencontainers.image.vendor="Fluent Organization" \
-    org.opencontainers.image.version="${RELEASE_VERSION}" \
-    org.opencontainers.image.source="https://github.com/fluent/fluent-bit" \
-    org.opencontainers.image.documentation="https://docs.fluentbit.io/" \
-    org.opencontainers.image.authors="Eduardo Silva <eduardo@calyptia.com>"
-
-# Copy the libraries from the extractor stage into root
-COPY --from=deb-extractor /dpkg /
-
-# Copy certificates
-COPY --from=builder /etc/ssl/certs /etc/ssl/certs
-
-# Finally the binaries as most likely to change
-COPY --from=builder /fluent-bit /fluent-bit
-
-EXPOSE 2020
-
-# Entry point
-ENTRYPOINT [ "/fluent-bit/bin/fluent-bit" ]
-CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
-
 FROM debian:bullseye-slim as debug
 ARG RELEASE_VERSION
 ENV FLUENT_BIT_VERSION=${RELEASE_VERSION}
@@ -207,6 +119,7 @@ ENV DEBIAN_FRONTEND noninteractive
 RUN echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/sources.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
+    auditd  \
     libssl1.1 \
     libsasl2-2 \
     pkg-config \
@@ -232,7 +145,12 @@ RUN echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/
 RUN rm -f /usr/bin/qemu-*-static
 COPY --from=builder /fluent-bit /fluent-bit
 
+## Copy AWS plugins
+COPY --from=amazon/aws-for-fluent-bit:latest /fluent-bit/kinesis.so /fluent-bit/kinesis.so
+COPY --from=amazon/aws-for-fluent-bit:latest /fluent-bit/firehose.so /fluent-bit/firehose.so
+COPY --from=amazon/aws-for-fluent-bit:latest /fluent-bit/cloudwatch.so /fluent-bit/cloudwatch.so
+
 EXPOSE 2020
 
 # No entry point so we can just shell in
-CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
+CMD ["/fluent-bit/bin/fluent-bit", "-e", "/fluent-bit/firehose.so", "-e", "/fluent-bit/cloudwatch.so", "-e", "/fluent-bit/kinesis.so", "-c", "/fluent-bit/etc/fluent-bit.conf"]

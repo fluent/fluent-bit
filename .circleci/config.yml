@@ -1,0 +1,61 @@
+version: 2.1
+
+orbs:
+  architect: giantswarm/architect@4.29.0
+workflows:
+  build:
+    jobs:
+      - architect/push-to-docker:
+          name: push-to-docker
+          context: "architect"
+          image: "docker.io/giantswarm/fluent-bit-audited"
+          username_envar: "DOCKER_USERNAME"
+          password_envar: "DOCKER_PASSWORD"
+          build-context: "."
+          dockerfile: "./Dockerfile"
+          filters:
+            tags:
+              only: /^v.*/
+
+      - architect/push-to-docker:
+          name: push-to-quay
+          context: "architect"
+          image: "quay.io/giantswarm/fluent-bit-audited"
+          username_envar: "QUAY_USERNAME"
+          password_envar: "QUAY_PASSWORD"
+          build-context: "."
+          dockerfile: "./Dockerfile"
+          filters:
+            tags:
+              only: /^v.*/
+
+      - aliyun-approval:
+          type: approval
+
+      - architect/push-to-docker:
+          name: push-to-aliyun-pr
+          context: "architect"
+          image: "giantswarm-registry.cn-shanghai.cr.aliyuncs.com/giantswarm/fluent-bit-audited"
+          username_envar: "ALIYUN_USERNAME"
+          password_envar: "ALIYUN_PASSWORD"
+          build-context: "."
+          dockerfile: "./Dockerfile"
+          requires:
+            - aliyun-approval
+          filters:
+            tags:
+              ignore: /^v.*/
+
+      - architect/push-to-docker:
+          name: push-to-aliyun
+          context: "architect"
+          image: "giantswarm-registry.cn-shanghai.cr.aliyuncs.com/giantswarm/fluent-bit-audited"
+          username_envar: "ALIYUN_USERNAME"
+          password_envar: "ALIYUN_PASSWORD"
+          build-context: "."
+          dockerfile: "./Dockerfile"
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^v.*/
