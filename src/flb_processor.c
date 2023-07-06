@@ -287,7 +287,7 @@ int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k
 
     return flb_processor_instance_set_property(
             (struct flb_processor_instance *) pu->ctx,
-            k, v);
+            k, v->data.as_string);
 }
 
 void flb_processor_unit_destroy(struct flb_processor_unit *pu)
