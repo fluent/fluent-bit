@@ -152,8 +152,6 @@ static char *state_names[] = {
 
 static char *state_str(enum state val)
 {
-    char* ret;
-
     if (val < 0 || val > STATE_STOP) {
 	return "unknown";
     }
@@ -484,8 +482,6 @@ static int read_glob(struct flb_cf *cf, struct parser_state *ctx, const char *pa
 static void print_current_state(struct local_ctx *ctx, struct parser_state *s,
                                 yaml_event_t *event)
 {
-    int i;
-
     flb_debug("%*s%s->%s", s->level*2, "", state_str(s->state),
              event_type_str(event));
 }
@@ -1209,13 +1205,6 @@ static char *get_real_path(char *file, char *path, size_t size)
     return path;
 }
 
-static void file_state_destroy(struct file_state *f)
-{
-    flb_sds_destroy(f->name);
-    flb_sds_destroy(f->path);
-    flb_free(f);
-}
-
 static struct parser_state *state_start(struct local_ctx *ctx, struct file_state *file)
 {
     struct parser_state *s;
@@ -1357,8 +1346,6 @@ static void state_destroy(struct parser_state *s)
 
 static struct parser_state *state_create(struct file_state *parent, struct file_state *file)
 {
-    int ret;
-    char *p;
     struct parser_state *s;
 
     /* allocate context */
