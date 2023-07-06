@@ -150,6 +150,17 @@ static char *state_names[] = {
     "stop"            /* end state */
 };
 
+static char *state_str(enum state val)
+{
+    char* ret;
+
+    if (val < 0 || val > STATE_STOP) {
+	return "unknown";
+    }
+
+    return state_names[val];
+}
+
 struct file_state {
     /* file */
     flb_sds_t name;                /* file name */
@@ -279,83 +290,6 @@ static char *event_type_str(yaml_event_t *event)
     default:
         return "unknown";
     }
-}
-
-static char *state_str(enum state val)
-{
-    char* ret;
-    switch(val) {
-    case STATE_START:
-        ret = "start";
-        break;
-    case STATE_STREAM:
-        ret = "stream";
-        break;
-    case STATE_DOCUMENT:
-        ret = "document";
-        break;
-    case STATE_SECTION:
-        ret = "section";
-        break;
-    case STATE_SECTION_KEY:
-        ret = "section-key";
-        break;
-    case STATE_SECTION_VAL:
-        ret = "section-val";
-        break;
-    case STATE_SERVICE:
-        ret = "service";
-        break;
-    case STATE_INCLUDE:
-        ret = "include";
-        break;
-    case STATE_OTHER:
-        ret = "other";
-        break;
-    case STATE_PIPELINE:
-        ret = "pipeline";
-        break;
-    case STATE_PLUGIN_INPUT:
-        ret = "plugin-input";
-        break;
-    case STATE_PLUGIN_FILTER:
-        ret = "plugin-filter";
-        break;
-    case STATE_PLUGIN_OUTPUT:
-        ret = "plugin-output";
-        break;
-    case STATE_CUSTOM:
-        ret = "custom";
-        break;
-    case STATE_PLUGIN_KEY:
-        ret = "plugin-key";
-        break;
-    case STATE_PLUGIN_VAL:
-        ret = "plugin-val";
-        break;
-    case STATE_PLUGIN_VAL_LIST:
-        ret = "plugin-val-list";
-        break;
-    case STATE_GROUP_KEY:
-        ret = "group-key";
-        break;
-    case STATE_GROUP_VAL:
-        ret = "group-val";
-        break;
-    case STATE_INPUT_PROCESSOR:
-        ret = "input-processor";
-        break;
-    case STATE_ENV:
-        ret = "env";
-        break;
-    case STATE_STOP:
-        ret = "stop";
-        break;
-
-    default:
-        ret = "UNKNOWN";
-    }
-    return ret;
 }
 
 static char *get_last_included_file(struct local_ctx *ctx)
@@ -552,7 +486,7 @@ static void print_current_state(struct local_ctx *ctx, struct parser_state *s,
 {
     int i;
 
-    flb_debug("%*s%s->%s", s->level*2, "", state_names[s->state], 
+    flb_debug("%*s%s->%s", s->level*2, "", state_str(s->state),
              event_type_str(event));
 }
 
@@ -831,7 +765,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             case STATE_OTHER:
                 break;
             default:
-                printf("BAD STATE FOR SECTION KEY POP=%s\n", state_names[s->state]);
+                printf("BAD STATE FOR SECTION KEY POP=%s\n", state_str(s->state));
                 yaml_error_event(ctx, s, event);
                 return YAML_FAILURE;
             }
