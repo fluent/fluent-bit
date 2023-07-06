@@ -32,19 +32,19 @@ static inline void consume_bytes(char *buf, int bytes, int length)
     memmove(buf, buf + bytes, length - bytes);
 }
 
-static int append_raw_message_to_record_data(char **result_buffer,
-                                             size_t *result_size,
-                                             flb_sds_t raw_message_key_name,
-                                             char *base_object_buffer,
-                                             size_t base_object_size,
-                                             char *raw_message_buffer,
-                                             size_t raw_message_size)
+static int append_message_to_record_data(char **result_buffer,
+                                         size_t *result_size,
+                                         flb_sds_t message_key_name,
+                                         char *base_object_buffer,
+                                         size_t base_object_size,
+                                         char *message_buffer,
+                                         size_t message_size)
 {
     int                result;
     char              *modified_data_buffer;
     int                modified_data_size;
     msgpack_object_kv *new_map_entries[1];
-    msgpack_object_kv  raw_message_entry;
+    msgpack_object_kv  message_entry;
     msgpack_sbuffer    mp_sbuf;
     *result_buffer = NULL;
     *result_size = 0;
@@ -52,70 +52,16 @@ static int append_raw_message_to_record_data(char **result_buffer,
 
     msgpack_sbuffer_init(&mp_sbuf);
 
-    if (raw_message_key_name != NULL) {
-        new_map_entries[0] = &raw_message_entry;
+    if (message_key_name != NULL) {
+        new_map_entries[0] = &message_entry;
 
-        raw_message_entry.key.type = MSGPACK_OBJECT_STR;
-        raw_message_entry.key.via.str.size = flb_sds_len(raw_message_key_name);
-        raw_message_entry.key.via.str.ptr  = raw_message_key_name;
+        message_entry.key.type = MSGPACK_OBJECT_STR;
+        message_entry.key.via.str.size = flb_sds_len(message_key_name);
+        message_entry.key.via.str.ptr  = message_key_name;
 
-        raw_message_entry.val.type = MSGPACK_OBJECT_BIN;
-        raw_message_entry.val.via.bin.size = raw_message_size;
-        raw_message_entry.val.via.bin.ptr  = raw_message_buffer;
-
-        result = flb_msgpack_expand_map(base_object_buffer,
-                                        base_object_size,
-                                        new_map_entries, 1,
-                                        &modified_data_buffer,
-                                        &modified_data_size);
-    }
-
-    if (modified_data_buffer != NULL) {
-        msgpack_sbuffer_write(&mp_sbuf, modified_data_buffer, modified_data_size);
-    }
-    else {
-        msgpack_sbuffer_write(&mp_sbuf, base_object_buffer, base_object_size);
-    }
-
-    *result_buffer = mp_sbuf.data;
-    *result_size = mp_sbuf.size;
-
-    if (modified_data_buffer != NULL) {
-        flb_free(modified_data_buffer);
-    }
-
-    return result;
-}
-
-static int append_source_address_to_record_data(char **result_buffer,
-                                                size_t *result_size,
-                                                flb_sds_t source_address_key,
-                                                char *source_address,
-                                                char *base_object_buffer,
-                                                size_t base_object_size)
-{
-    int                result;
-    char              *modified_data_buffer;
-    int                modified_data_size;
-    msgpack_object_kv *new_map_entries[1];
-    msgpack_object_kv  source_address_entry;
-    msgpack_sbuffer    mp_sbuf;
-    *result_buffer = NULL;
-    *result_size = 0;
-     modified_data_buffer = NULL;
-
-     msgpack_sbuffer_init(&mp_sbuf);
-
-    if (source_address_key != NULL) {
-        new_map_entries[0] = &source_address_entry;
-
-        source_address_entry.key.type = MSGPACK_OBJECT_STR;
-        source_address_entry.key.via.str.size = strlen(source_address_key);
-        source_address_entry.key.via.str.ptr  = source_address_key;
-
-        source_address_entry.val.type = MSGPACK_OBJECT_STR;
-        source_address_entry.val.via.bin.size = strlen(source_address);
-        source_address_entry.val.via.bin.ptr  = source_address;
+        message_entry.val.type = MSGPACK_OBJECT_BIN;
+        message_entry.val.via.bin.size = message_size;
+        message_entry.val.via.bin.ptr  = message_buffer;
 
         result = flb_msgpack_expand_map(base_object_buffer,
                                         base_object_size,
@@ -159,13 +105,13 @@ static inline int pack_line(struct flb_syslog *ctx,
     appended_address_buffer = NULL;
 
     if (ctx->raw_message_key != NULL) {
-        result = append_raw_message_to_record_data(&modified_data_buffer,
-                                                   &modified_data_size,
-                                                   ctx->raw_message_key,
-                                                   data,
-                                                   data_size,
-                                                   raw_data,
-                                                   raw_data_size);
+        result = append_message_to_record_data(&modified_data_buffer,
+                                               &modified_data_size,
+                                               ctx->raw_message_key,
+                                               data,
+                                               data_size,
+                                               raw_data,
+                                               raw_data_size);
 
         if (result != 0) {
             flb_plg_debug(ctx->ins, "error appending raw message : %d", result);
@@ -176,20 +122,22 @@ static inline int pack_line(struct flb_syslog *ctx,
         source_address = flb_connection_get_remote_address(connection);
         if (source_address != NULL) {
             if (modified_data_buffer != NULL) {
-                result = append_source_address_to_record_data(&appended_address_buffer,
-                                                              &appended_address_size,
-                                                              ctx->source_address_key,
-                                                              source_address,
-                                                              modified_data_buffer,
-                                                              modified_data_size);
+                result = append_message_to_record_data(&appended_address_buffer,
+                                                       &appended_address_size,
+                                                       ctx->source_address_key,
+                                                       modified_data_buffer,
+                                                       modified_data_size,
+                                                       source_address,
+                                                       strlen(source_address));
             }
             else {
-                result = append_source_address_to_record_data(&appended_address_buffer,
-                                                              &appended_address_size,
-                                                              ctx->source_address_key,
-                                                              source_address,
-                                                              data,
-                                                              data_size);
+                result = append_message_to_record_data(&appended_address_buffer,
+                                                       &appended_address_size,
+                                                       ctx->source_address_key,
+                                                       data,
+                                                       data_size,
+                                                       source_address,
+                                                       strlen(source_address));
             }
 
             if (result != 0) {
