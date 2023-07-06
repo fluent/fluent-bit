@@ -2567,14 +2567,13 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     else {
         flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
     }
+
+    flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
+    flb_http_add_header(c, "Authorization", 13, token, flb_sds_len(token));
     /* Content Encoding: gzip */
     if (compressed == FLB_TRUE) {
-        flb_http_add_header(c, "Content-Type", 12, "text/plain", 10);
         flb_http_set_content_encoding_gzip(c);
-    } else {
-        flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
     }
-    flb_http_add_header(c, "Authorization", 13, token, flb_sds_len(token));
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
