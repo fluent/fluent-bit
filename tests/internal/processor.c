@@ -67,14 +67,19 @@ static void processor()
     size_t mp_size;
     void *out_buf = NULL;
     size_t out_size;
+    flb_sds_t hostname_prop_key;
     struct cfl_variant var = {
         .type = CFL_VARIANT_STRING,
-        .data.as_string = flb_sds_create("hostname monox")
+        .data.as_string = NULL,
     };
 
     printf("\n\n");
 
     flb_init_env();
+
+    hostname_prop_key = flb_sds_create("hostname monox");
+    TEST_CHECK(hostname_prop_key != NULL);
+    var.data.as_string = hostname_prop_key;
 
     config = flb_config_init();
     TEST_CHECK(config != NULL);
@@ -111,6 +116,7 @@ static void processor()
     flb_processor_destroy(proc);
     flb_config_exit(config);
 
+    flb_sds_destroy(hostname_prop_key);
 }
 
 TEST_LIST = {
