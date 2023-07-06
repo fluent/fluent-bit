@@ -491,6 +491,7 @@ static void print_current_properties(struct parser_state *s)
     struct cfl_list *head;
     struct cfl_kvpair *kv;
     struct cfl_variant *var;
+    int idx;
 
     flb_debug("%*s[%s] PROPERTIES:", s->level*2, "", section_names[s->section]);
 
@@ -502,8 +503,8 @@ static void print_current_properties(struct parser_state *s)
             break;
         case CFL_VARIANT_ARRAY:
             flb_debug("%*s%s: [", (s->level+2)*2, "", kv->key);
-            for (int i = 0; i < kv->val->data.as_array->entry_count; i++) {
-                var = cfl_array_fetch_by_index(kv->val->data.as_array, i);
+            for (idx = 0; idx < kv->val->data.as_array->entry_count; idx++) {
+                var = cfl_array_fetch_by_index(kv->val->data.as_array, idx);
                 flb_debug("%*s%s", (s->level+3)*2, "", var->data.as_string);
             }
             flb_debug("%*s]", (s->level+2)*2, "");
@@ -525,6 +526,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
     struct parser_state *s;
     struct parser_state *g;
     int ret;
+    int idx;
     char *value;
     struct flb_kv *kv;
     char *last_included = get_last_included_file(ctx);
@@ -884,8 +886,8 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                         break;
                     case CFL_VARIANT_ARRAY:
                         carr = cfl_array_create(kvp->val->data.as_array->entry_count);
-                        for (int i = 0; i < kvp->val->data.as_array->entry_count; i++) {
-                            var = cfl_array_fetch_by_index(kvp->val->data.as_array, i);
+                        for (idx = 0; idx < kvp->val->data.as_array->entry_count; idx++) {
+                            var = cfl_array_fetch_by_index(kvp->val->data.as_array, idx);
                             switch (var->type) {
                             case CFL_VARIANT_STRING:
                                 cfl_array_append_string(carr, var->data.as_string);
@@ -926,8 +928,8 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 case CFL_VARIANT_ARRAY:
                     arr = flb_cf_section_property_add_list(cf, s->cf_section->properties,
                                                            kvp->key, cfl_sds_len(kvp->key));
-                    for (int i = 0; i < kvp->val->data.as_array->entry_count; i++) {
-                        var = cfl_array_fetch_by_index(kvp->val->data.as_array, i);
+                    for (idx = 0; idx < kvp->val->data.as_array->entry_count; idx++) {
+                        var = cfl_array_fetch_by_index(kvp->val->data.as_array, idx);
                         switch (var->type) {
                         case CFL_VARIANT_STRING:
                             cfl_array_append_string(arr, var->data.as_string);
