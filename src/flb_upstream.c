@@ -634,16 +634,14 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
      * entries exists, just create a new one.
      */
     if (u->base.net.keepalive) {
-        mk_list_foreach_safe(head, tmp, &uq->av_queue) {
-            conn = mk_list_entry(head, struct flb_connection, _head);
+        flb_stream_acquire_lock(&u->base, FLB_TRUE);
 
-            flb_stream_acquire_lock(&u->base, FLB_TRUE);
+        mk_list_foreach_safe(head, tmp, &u->queue.av_queue) {
+            conn = mk_list_entry(head, struct flb_connection, _head);
 
             /* This connection works, let's move it to the busy queue */
             mk_list_del(&conn->_head);
             mk_list_add(&conn->_head, &uq->busy_queue);
-
-            flb_stream_release_lock(&u->base);
 
             /* Reset errno */
             conn->net_error = -1;
@@ -675,6 +673,8 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
 
             break;
         }
+
+        flb_stream_release_lock(&u->base);
     }
 
     /* There are keepalive connections available or
@@ -726,7 +726,7 @@ int flb_upstream_conn_release(struct flb_connection *conn)
         flb_stream_acquire_lock(&u->base, FLB_TRUE);
 
         mk_list_del(&conn->_head);
-        mk_list_add(&conn->_head, &uq->av_queue);
+        mk_list_add(&conn->_head, &u->queue.av_queue);
 
         flb_stream_release_lock(&u->base);
 
@@ -858,6 +858,17 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
 
         /* Check every available Keepalive connection */
         mk_list_foreach_safe(u_head, tmp, &uq->av_queue) {
+            u_conn = mk_list_entry(u_head, struct flb_connection, _head);
+
+            if ((now - u_conn->ts_available) >= u->base.net.keepalive_idle_timeout) {
+                prepare_destroy_conn(u_conn);
+                flb_debug("[upstream] drop keepalive connection #%i to %s:%i "
+                          "(keepalive idle timeout)",
+                          u_conn->fd, u->tcp_host, u->tcp_port);
+            }
+        }
+
+        mk_list_foreach_safe(u_head, tmp, &u->queue.av_queue) {
             u_conn = mk_list_entry(u_head, struct flb_connection, _head);
 
             if ((now - u_conn->ts_available) >= u->base.net.keepalive_idle_timeout) {
