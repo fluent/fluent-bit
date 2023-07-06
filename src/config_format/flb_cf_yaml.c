@@ -523,6 +523,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                          yaml_event_t *event)
 {
     struct parser_state *s;
+    struct parser_state *g;
     int ret;
     char *value;
     struct flb_kv *kv;
@@ -1006,7 +1007,6 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             s = state_push_witharr(ctx, s, STATE_PLUGIN_VAL_LIST);
             break;
         case YAML_MAPPING_START_EVENT:
-            struct parser_state *g;
             /* Special handling for input processor */
             if (strcmp(s->key, "processors") == 0) {
                 s = state_push(ctx, STATE_INPUT_PROCESSORS);
