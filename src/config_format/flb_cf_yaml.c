@@ -552,12 +552,8 @@ static void print_current_state(struct local_ctx *ctx, struct parser_state *s,
 {
     int i;
 
-    s = cfl_list_entry_last(&ctx->states, struct parser_state, _head);
-    for (i = 0; i < s->level; i++) {
-        putchar(' ');
-        putchar(' ');
-    }
-    printf("%s->%s\n", state_names[s->state], event_type_str(event));
+    flb_debug("%*s%s->%s", s->level*2, "", state_names[s->state], 
+             event_type_str(event));
 }
 
 static void print_current_properties(struct parser_state *s)
@@ -566,41 +562,21 @@ static void print_current_properties(struct parser_state *s)
     struct cfl_kvpair *kv;
     struct cfl_variant *var;
 
-    for (int i = 0; i < s->level; i++ ) {
-        putchar(' ');
-        putchar(' ');
-    }
-    printf("[%s] PROPERTIES:\n", section_names[s->section]);
+    flb_debug("%*s[%s] PROPERTIES:", s->level*2, "", section_names[s->section]);
 
     cfl_list_foreach(head, &s->keyvals->list) {
         kv = cfl_list_entry(head, struct cfl_kvpair, _head);
         switch (kv->val->type) {
         case CFL_VARIANT_STRING:
-            for (int i = 0; i < s->level+2; i++) {
-                putchar(' ');
-                putchar(' ');
-            }
-            printf("%s: %s\n", kv->key, kv->val->data.as_string);
+            flb_debug("%*s%s: %s", (s->level+2)*2, "", kv->key, kv->val->data.as_string);
             break;
         case CFL_VARIANT_ARRAY:
-            for (int i = 0; i < s->level+2; i++) {
-                putchar(' ');
-                putchar(' ');
-            }
-            printf("%s: [\n", kv->key);
+            flb_debug("%*s%s: [", (s->level+2)*2, "", kv->key);
             for (int i = 0; i < kv->val->data.as_array->entry_count; i++) {
                 var = cfl_array_fetch_by_index(kv->val->data.as_array, i);
-                for (int i = 0; i < s->level+3; i++) {
-                    putchar(' ');
-                    putchar(' ');
-                }
-                printf("%s\n", var->data.as_string);
+                flb_debug("%*s%s", (s->level+3)*2, "", var->data.as_string);
             }
-            for (int i = 0; i < s->level+2; i++) {
-                putchar(' ');
-                putchar(' ');
-            }
-            printf("]\n");
+            flb_debug("%*s]", (s->level+2)*2, "");
             break;
         }
     }
@@ -1537,7 +1513,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
         return -1;
     }
 
-    printf("============ %s ============\n", cfg_file);
+    flb_debug("============ %s ============", cfg_file);
     fh = fopen(include_file, "r");
     if (!fh) {
         flb_errno();
@@ -1575,7 +1551,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
         state = cfl_list_entry_last(&ctx->states, struct parser_state, _head);
     } while (state->state != STATE_STOP);
 
-    printf("==============================\n");
+    flb_debug("==============================");
 done:
     if (code == -1) {
         yaml_event_delete(&event);
