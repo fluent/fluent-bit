@@ -24,6 +24,7 @@
 
 #include "syslog.h"
 #include "syslog_conn.h"
+#include "syslog_prot.h"
 
 #include <string.h>
 
@@ -38,7 +39,8 @@ static int append_message_to_record_data(char **result_buffer,
                                          char *base_object_buffer,
                                          size_t base_object_size,
                                          char *message_buffer,
-                                         size_t message_size)
+                                         size_t message_size,
+                                         int message_type)
 {
     int                result;
     char              *modified_data_buffer;
@@ -50,8 +52,6 @@ static int append_message_to_record_data(char **result_buffer,
     *result_size = 0;
     modified_data_buffer = NULL;
 
-    msgpack_sbuffer_init(&mp_sbuf);
-
     if (message_key_name != NULL) {
         new_map_entries[0] = &message_entry;
 
@@ -59,30 +59,40 @@ static int append_message_to_record_data(char **result_buffer,
         message_entry.key.via.str.size = flb_sds_len(message_key_name);
         message_entry.key.via.str.ptr  = message_key_name;
 
-        message_entry.val.type = MSGPACK_OBJECT_BIN;
-        message_entry.val.via.bin.size = message_size;
-        message_entry.val.via.bin.ptr  = message_buffer;
+        if (message_type == MSGPACK_OBJECT_BIN) {
+            message_entry.val.type = MSGPACK_OBJECT_BIN;
+            message_entry.val.via.bin.size = message_size;
+            message_entry.val.via.bin.ptr  = message_buffer;
+        }
+        else if (message_type == MSGPACK_OBJECT_STR) {
+            message_entry.val.type = MSGPACK_OBJECT_BIN;
+            message_entry.val.via.str.size = message_size;
+            message_entry.val.via.str.ptr  = message_buffer;
+        }
+        else {
+            result = FLB_MAP_NOT_MODIFIED;
+
+            return result;
+        }
 
         result = flb_msgpack_expand_map(base_object_buffer,
                                         base_object_size,
                                         new_map_entries, 1,
                                         &modified_data_buffer,
                                         &modified_data_size);
+        if (result == 0) {
+            result = FLB_MAP_EXPAND_SUCCESS;
+        }
     }
 
-    if (modified_data_buffer != NULL) {
-        msgpack_sbuffer_write(&mp_sbuf, modified_data_buffer, modified_data_size);
-    }
-    else {
-        msgpack_sbuffer_write(&mp_sbuf, base_object_buffer, base_object_size);
+    if (result != FLB_MAP_EXPAND_SUCCESS) {
+        result = FLB_MAP_EXPANSION_ERROR;
+
+        return result;
     }
 
-    *result_buffer = mp_sbuf.data;
-    *result_size = mp_sbuf.size;
-
-    if (modified_data_buffer != NULL) {
-        flb_free(modified_data_buffer);
-    }
+    *result_buffer = modified_data_buffer;
+    *result_size = modified_data_size;
 
     return result;
 }
@@ -111,7 +121,8 @@ static inline int pack_line(struct flb_syslog *ctx,
                                                data,
                                                data_size,
                                                raw_data,
-                                               raw_data_size);
+                                               raw_data_size,
+                                               MSGPACK_OBJECT_BIN);
 
         if (result != 0) {
             flb_plg_debug(ctx->ins, "error appending raw message : %d", result);
@@ -128,7 +139,8 @@ static inline int pack_line(struct flb_syslog *ctx,
                                                        modified_data_buffer,
                                                        modified_data_size,
                                                        source_address,
-                                                       strlen(source_address));
+                                                       strlen(source_address),
+                                                       MSGPACK_OBJECT_STR);
             }
             else {
                 result = append_message_to_record_data(&appended_address_buffer,
@@ -137,7 +149,8 @@ static inline int pack_line(struct flb_syslog *ctx,
                                                        data,
                                                        data_size,
                                                        source_address,
-                                                       strlen(source_address));
+                                                       strlen(source_address),
+                                                       MSGPACK_OBJECT_STR);
             }
 
             if (result != 0) {

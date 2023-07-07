@@ -24,6 +24,10 @@
 
 #include "syslog.h"
 
+#define FLB_MAP_EXPAND_SUCCESS   0
+#define FLB_MAP_NOT_MODIFIED    -1
+#define FLB_MAP_EXPANSION_ERROR -2
+
 int syslog_prot_process(struct syslog_conn *conn);
 int syslog_prot_process_udp(struct syslog_conn *conn);
 
