@@ -55,6 +55,7 @@ struct calyptia {
 
     /* Fleet configuration */
     flb_sds_t fleet_id;                   /* fleet-id  */
+    flb_sds_t fleet_name;
     flb_sds_t fleet_config_dir;           /* fleet configuration directory */
     int fleet_interval_sec;
     int fleet_interval_nsec;
@@ -326,8 +327,15 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
         flb_output_set_property(ctx->o, "tls.verify", "false");
     }
 
-    if (ctx->fleet_id) {
-        flb_output_set_property(ctx->o, "fleet_id", ctx->fleet_id);
+    if (ctx->fleet_id || ctx->fleet_name) {
+        if (ctx->fleet_name) {
+            // TODO: set this once the fleet_id has been retrieved...
+            // flb_output_set_property(ctx->o, "fleet_id", ctx->fleet_id);
+            flb_input_set_property(ctx->fleet, "fleet_name", ctx->fleet_name);            
+        } else {
+            flb_output_set_property(ctx->o, "fleet_id", ctx->fleet_id);
+            flb_input_set_property(ctx->fleet, "fleet_id", ctx->fleet_id);
+        }
 
         ctx->fleet =  flb_input_new(config, "calyptia_fleet", NULL, FLB_FALSE);
         if (!ctx->fleet) {
@@ -351,7 +359,6 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
         if (ctx->fleet_config_dir) {
             flb_input_set_property(ctx->fleet, "config_dir", ctx->fleet_config_dir);
         }
-        flb_input_set_property(ctx->fleet, "fleet_id", ctx->fleet_id);
     }
 
 
@@ -442,6 +449,11 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_INT, "fleet.interval_nsec", "-1",
       0, FLB_TRUE, offsetof(struct calyptia, fleet_interval_nsec),
       "Set the collector interval (nanoseconds)"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "fleet_name", NULL,
+     0, FLB_TRUE, offsetof(struct calyptia, fleet_name),
+     "Fleet name to be used when registering agent in a fleet"
     },
 
 #ifdef FLB_HAVE_CHUNK_TRACE
