@@ -328,6 +328,12 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
     }
 
     if (ctx->fleet_id || ctx->fleet_name) {
+        ctx->fleet =  flb_input_new(config, "calyptia_fleet", NULL, FLB_FALSE);
+        if (!ctx->fleet) {
+            flb_plg_error(ctx->ins, "could not load Calyptia Fleet plugin");
+            return -1;
+        }
+
         if (ctx->fleet_name) {
             // TODO: set this once the fleet_id has been retrieved...
             // flb_output_set_property(ctx->o, "fleet_id", ctx->fleet_id);
@@ -335,12 +341,6 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
         } else {
             flb_output_set_property(ctx->o, "fleet_id", ctx->fleet_id);
             flb_input_set_property(ctx->fleet, "fleet_id", ctx->fleet_id);
-        }
-
-        ctx->fleet =  flb_input_new(config, "calyptia_fleet", NULL, FLB_FALSE);
-        if (!ctx->fleet) {
-            flb_plg_error(ctx->ins, "could not load Calyptia Fleet plugin");
-            return -1;
         }
 
         flb_input_set_property(ctx->fleet, "api_key", ctx->api_key);
