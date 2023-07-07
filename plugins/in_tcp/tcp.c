@@ -166,6 +166,11 @@ static struct flb_config_map config_map[] = {
       0, FLB_TRUE, offsetof(struct flb_in_tcp_config, buffer_size_str),
       "Set the buffer size"
     },
+    {
+      FLB_CONFIG_MAP_STR, "source_address_key", (char *) NULL,
+      0, FLB_TRUE, offsetof(struct flb_in_tcp_config, source_address_key),
+      "Key where the source address will be injected"
+    },
     /* EOF */
     {0}
 };
