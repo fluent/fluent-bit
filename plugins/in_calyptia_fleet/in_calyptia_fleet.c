@@ -564,7 +564,7 @@ static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ct
     }
 
     if (client->resp.status != 200) {
-        flb_plg_error(ctx->ins, "http status code error: %d", client->resp.status);
+        flb_plg_error(ctx->ins, "search http status code error: %d", client->resp.status);
         return -1;
     }
 
@@ -573,8 +573,14 @@ static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ct
         return -1;
     }
 
-    parse_fleet_search_json(ctx, client->resp.payload, client->resp.payload_size);
+    if (parse_fleet_search_json(ctx, client->resp.payload, client->resp.payload_size) == -1) {
+        flb_plg_error(ctx->ins, "unable to find fleet: %s", ctx->fleet_name);
+        return -1;
+    }
 
+    if (ctx->fleet_id == NULL) {
+        return -1;
+    }
     return 0;
 }
 
@@ -608,7 +614,10 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
     }
 
     if (ctx->fleet_id == NULL) {
-        get_calyptia_fleet_id_by_name(ctx, u_conn, config);
+        if (get_calyptia_fleet_id_by_name(ctx, u_conn, config) == -1) {
+            flb_plg_error(ctx->ins, "unable to find fleet: %s", ctx->fleet_name);
+            goto conn_error;
+        }
     }
 
     if (ctx->fleet_url == NULL) {
@@ -768,97 +777,6 @@ static void load_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
             execute_reload(ctx, new_fleet_config_filename(ctx));
         }
     }
-}
-
-static ssize_t parse_fleets_json(struct flb_in_calyptia_fleet_config *ctx, uint64_t ts,
-                                 char *payload, size_t size)
-{
-    int ret;
-    int out_size;
-    char *pack;
-    struct flb_pack_state pack_state;
-    size_t off = 0;
-    msgpack_unpacked result;
-    msgpack_object_kv *cur;
-    msgpack_object_str *key;
-    msgpack_object_map *fleet = NULL;
-    int i = 0;
-
-    /* Initialize packer */
-    flb_pack_state_init(&pack_state);
-
-    /* Pack JSON as msgpack */
-    ret = flb_pack_json_state(payload, size,
-                              &pack, &out_size, &pack_state);
-    flb_pack_state_reset(&pack_state);
-
-    /* Handle exceptions */
-    if (ret == FLB_ERR_JSON_PART) {
-        flb_plg_warn(ctx->ins, "JSON data is incomplete, skipping");
-        return -1;
-    }
-    else if (ret == FLB_ERR_JSON_INVAL) {
-        flb_plg_warn(ctx->ins, "invalid JSON message, skipping");
-        return -1;
-    }
-    else if (ret == -1) {
-        return -1;
-    }
-
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, payload, size, &off) == MSGPACK_UNPACK_SUCCESS) {
-        if (result.data.type == MSGPACK_OBJECT_MAP) {
-            for (i = 0; i < result.data.via.map.size; i++) {
-                cur = &result.data.via.map.ptr[i];
-                key = &cur->key.via.str;
-
-                if (strncmp(key->ptr, "items", key->size) == 0) {
-                    if (cur->val.type != MSGPACK_OBJECT_ARRAY || cur->val.via.array.size != 1) {
-                        flb_plg_error(ctx->ins, "unable to find fleet by name");
-                        msgpack_unpacked_destroy(&result);
-                        return -1;
-                    }
-                }
-
-                if (cur->val.via.array.ptr[0].type != MSGPACK_OBJECT_MAP) {
-                    flb_plg_error(ctx->ins, "invalid fleet response");
-                    msgpack_unpacked_destroy(&result);
-                    return -1;
-                }
-
-                fleet = &cur->val.via.array.ptr[0].via.map;
-                break;
-            }
-            break;
-        }
-    }
-
-    if (fleet == NULL) {
-        flb_plg_error(ctx->ins, "unable to find fleet in API response");
-        msgpack_unpacked_destroy(&result);
-        return -1;
-    }
-
-    for (i = 0; i < fleet->size; i++) {
-        cur = &fleet->ptr[i];
-        key = &cur->key.via.str;
-
-        if (strncasecmp(key->ptr, "id", key->size) == 0) {
-            if (ctx->fleet_id != NULL) {
-                flb_sds_destroy(ctx->fleet_id);
-            }
-            ctx->fleet_id = flb_sds_create_len(cur->val.via.str.ptr, 
-                                               cur->val.via.str.size);
-        }
-    }
-
-    msgpack_unpacked_destroy(&result);
-    flb_free(pack);
-
-    if (ctx->fleet_id == NULL) {
-        return -1;
-    }
-    return 0;
 }
 
 static int in_calyptia_fleet_init(struct flb_input_instance *in,
