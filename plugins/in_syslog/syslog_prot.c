@@ -47,7 +47,6 @@ static int append_message_to_record_data(char **result_buffer,
     int                modified_data_size;
     msgpack_object_kv *new_map_entries[1];
     msgpack_object_kv  message_entry;
-    msgpack_sbuffer    mp_sbuf;
     *result_buffer = NULL;
     *result_size = 0;
     modified_data_buffer = NULL;
