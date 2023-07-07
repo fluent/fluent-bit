@@ -32,14 +32,84 @@ static inline void consume_bytes(char *buf, int bytes, int length)
     memmove(buf, buf + bytes, length - bytes);
 }
 
+static int append_message_to_record_data(char **result_buffer,
+                                         size_t *result_size,
+                                         flb_sds_t message_key_name,
+                                         char *base_object_buffer,
+                                         size_t base_object_size,
+                                         char *message_buffer,
+                                         size_t message_size,
+                                         int message_type)
+{
+    int                result;
+    char              *modified_data_buffer;
+    int                modified_data_size;
+    msgpack_object_kv *new_map_entries[1];
+    msgpack_object_kv  message_entry;
+    *result_buffer = NULL;
+    *result_size = 0;
+    modified_data_buffer = NULL;
+
+    if (message_key_name != NULL) {
+        new_map_entries[0] = &message_entry;
+
+        message_entry.key.type = MSGPACK_OBJECT_STR;
+        message_entry.key.via.str.size = flb_sds_len(message_key_name);
+        message_entry.key.via.str.ptr  = message_key_name;
+
+        if (message_type == MSGPACK_OBJECT_BIN) {
+            message_entry.val.type = MSGPACK_OBJECT_BIN;
+            message_entry.val.via.bin.size = message_size;
+            message_entry.val.via.bin.ptr  = message_buffer;
+        }
+        else if (message_type == MSGPACK_OBJECT_STR) {
+            message_entry.val.type = MSGPACK_OBJECT_BIN;
+            message_entry.val.via.str.size = message_size;
+            message_entry.val.via.str.ptr  = message_buffer;
+        }
+        else {
+            result = FLB_MAP_NOT_MODIFIED;
+
+            return result;
+        }
+
+        result = flb_msgpack_expand_map(base_object_buffer,
+                                        base_object_size,
+                                        new_map_entries, 1,
+                                        &modified_data_buffer,
+                                        &modified_data_size);
+        if (result == 0) {
+            result = FLB_MAP_EXPAND_SUCCESS;
+        }
+    }
+
+    if (result != FLB_MAP_EXPAND_SUCCESS) {
+        result = FLB_MAP_EXPANSION_ERROR;
+
+        return result;
+    }
+
+    *result_buffer = modified_data_buffer;
+    *result_size = modified_data_size;
+
+    return result;
+}
+
 static inline int process_pack(struct tcp_conn *conn,
                                char *pack, size_t size)
 {
     int ret;
     size_t off = 0;
     msgpack_unpacked result;
+    msgpack_sbuffer sbuf;
+    msgpack_packer  pck;
     msgpack_object entry;
     struct flb_in_tcp_config *ctx;
+    char   *appended_address_buffer;
+    size_t  appended_address_size;
+    char   *source_address;
+    int i;
+    int len;
 
     ctx = conn->ctx;
 
@@ -50,22 +120,72 @@ static inline int process_pack(struct tcp_conn *conn,
     while (msgpack_unpack_next(&result, pack, size, &off) == MSGPACK_UNPACK_SUCCESS) {
         entry = result.data;
 
+        appended_address_buffer = NULL;
+        source_address = NULL;
+
         ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
 
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_set_current_timestamp(ctx->log_encoder);
         }
 
+        if (ctx->source_address_key != NULL) {
+            source_address = flb_connection_get_remote_address(conn->connection);
+        }
+
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
             if (entry.type == MSGPACK_OBJECT_MAP) {
-                ret = flb_log_event_encoder_set_body_from_msgpack_object(
-                        ctx->log_encoder, &entry);
+                if (source_address != NULL) {
+                    msgpack_sbuffer_init(&sbuf);
+                    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
+
+                    len = entry.via.map.size;
+                    msgpack_pack_map(&pck, len);
+
+                    for (i=0; i<len; i++) {
+                        msgpack_pack_object(&pck, entry.via.map.ptr[i].key);
+                        msgpack_pack_object(&pck, entry.via.map.ptr[i].val);
+                    }
+
+                    ret = append_message_to_record_data(&appended_address_buffer,
+                                                        &appended_address_size,
+                                                        ctx->source_address_key,
+                                                        sbuf.data,
+                                                        sbuf.size,
+                                                        source_address,
+                                                        strlen(source_address),
+                                                        MSGPACK_OBJECT_STR);
+                    msgpack_sbuffer_destroy(&sbuf);
+                }
+
+                if (ret == FLB_MAP_EXPANSION_ERROR) {
+                    flb_plg_debug(ctx->ins, "error expanding source_address : %d", ret);
+                }
+
+                if (appended_address_buffer != NULL) {
+                    ret = flb_log_event_encoder_set_body_from_raw_msgpack(
+                            ctx->log_encoder, appended_address_buffer, appended_address_size);
+                }
+                else {
+                    ret = flb_log_event_encoder_set_body_from_msgpack_object(
+                            ctx->log_encoder, &entry);
+                }
             }
             else if (entry.type == MSGPACK_OBJECT_ARRAY) {
-                ret = flb_log_event_encoder_append_body_values(
+                if (source_address != NULL) {
+                    ret = flb_log_event_encoder_append_body_values(
+                        ctx->log_encoder,
+                        FLB_LOG_EVENT_CSTRING_VALUE("msg"),
+                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&entry),
+                        FLB_LOG_EVENT_CSTRING_VALUE(ctx->source_address_key),
+                        FLB_LOG_EVENT_CSTRING_VALUE(source_address));
+                }
+                else {
+                    ret = flb_log_event_encoder_append_body_values(
                         ctx->log_encoder,
                         FLB_LOG_EVENT_CSTRING_VALUE("msg"),
                         FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&entry));
+                }
             }
             else {
                 ret = FLB_EVENT_ENCODER_ERROR_INVALID_VALUE_TYPE;
@@ -73,6 +193,10 @@ static inline int process_pack(struct tcp_conn *conn,
 
             if (ret == FLB_EVENT_ENCODER_SUCCESS) {
                 ret = flb_log_event_encoder_commit_record(ctx->log_encoder);
+            }
+
+            if (appended_address_buffer != NULL) {
+                flb_free(appended_address_buffer);
             }
 
             if (ret != FLB_EVENT_ENCODER_SUCCESS) {
