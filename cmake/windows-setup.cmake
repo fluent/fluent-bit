@@ -30,7 +30,7 @@ if(FLB_WINDOWS_DEFAULTS)
   # =============
   set(FLB_IN_CPU                 No)
   set(FLB_IN_DISK                No)
-  set(FLB_IN_EXEC                No)
+  set(FLB_IN_EXEC                Yes)
   set(FLB_IN_EXEC_WASI           No)
   set(FLB_IN_FORWARD            Yes)
   set(FLB_IN_HEALTH              No)
