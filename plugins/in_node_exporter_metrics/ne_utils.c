@@ -91,18 +91,33 @@ int ne_utils_file_read_uint64(const char *mount,
     }
 
     len = strlen(path);
-    flb_sds_cat_safe(&p, path, len);
+    if (flb_sds_cat_safe(&p, path, len) < 0) {
+        flb_sds_destroy(p);
+        return -1;
+    }
 
     if (join_a) {
-        flb_sds_cat_safe(&p, "/", 1);
+        if (flb_sds_cat_safe(&p, "/", 1) < 0) {
+            flb_sds_destroy(p);
+            return -1;
+        }
         len = strlen(join_a);
-        flb_sds_cat_safe(&p, join_a, len);
+        if (flb_sds_cat_safe(&p, join_a, len) < 0) {
+            flb_sds_destroy(p);
+            return -1;
+        }
     }
 
     if (join_b) {
-        flb_sds_cat_safe(&p, "/", 1);
+        if (flb_sds_cat_safe(&p, "/", 1) < 0) {
+            flb_sds_destroy(p);
+            return -1;
+        }
         len = strlen(join_b);
-        flb_sds_cat_safe(&p, join_b, len);
+        if (flb_sds_cat_safe(&p, join_b, len) < 0) {
+            flb_sds_destroy(p);
+            return -1;
+        }
     }
 
     fd = open(p, O_RDONLY);
