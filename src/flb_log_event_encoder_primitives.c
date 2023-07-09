@@ -58,6 +58,9 @@ int flb_log_event_encoder_append_value(
         if (result == FLB_EVENT_ENCODER_SUCCESS) {
             if (value_type == FLB_LOG_EVENT_STRING_LENGTH_VALUE_TYPE) {
                 result = msgpack_pack_str(&field->packer, value_length);
+                if (result != 0) {
+                    flb_error("result=%d len=%d", result, value_length);
+                }
             }
             else if (value_type == FLB_LOG_EVENT_BINARY_LENGTH_VALUE_TYPE) {
                 result = msgpack_pack_bin(&field->packer, value_length);
@@ -78,6 +81,9 @@ int flb_log_event_encoder_append_value(
                     result = msgpack_pack_str_body(&field->packer,
                                                    value_buffer,
                                                    value_length);
+                    if (result != 0) {
+                        flb_error("result=%d str=%s len=%d", result, value_buffer, value_length);
+                    }
                 }
                 else if (value_type == FLB_LOG_EVENT_BINARY_BODY_VALUE_TYPE) {
                     result = msgpack_pack_bin_body(&field->packer,
