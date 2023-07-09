@@ -50,6 +50,7 @@
 #include <fluent-bit/flb_processor.h>
 
 #include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_decode_msgpack.h>
 #include <cmetrics/cmt_encode_msgpack.h>
@@ -360,6 +361,13 @@ struct flb_output_instance {
     struct cmt_counter *cmt_dropped_records; /* m: output_dropped_records */
     struct cmt_counter *cmt_retried_records; /* m: output_retried_records */
 
+    /* m: output_network_keepalive */
+    struct cmt_gauge   *cmt_keepalive_status;
+    /* m: output_network_total_connections */
+    struct cmt_gauge   *cmt_network_total_connections;
+    /* m: output_network_busy_connections */
+    struct cmt_gauge   *cmt_network_busy_connections;
+
     /* OLD Metrics API */
 #ifdef FLB_HAVE_METRICS
     struct flb_metrics *metrics;         /* metrics                      */
@@ -435,6 +443,7 @@ struct flb_output_instance {
 
     pthread_mutex_t coroutine_activation_lock;
     size_t active_coroutine_count;
+    size_t scheduled_coroutine_count;
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
@@ -460,6 +469,8 @@ struct flb_output_flush {
      * receives new data.
      */
     struct flb_event_chunk *processed_event_chunk;
+
+    struct mk_list _delay_head;              /* Link to flb_task->threads */
 
     struct mk_list _head;              /* Link to flb_task->threads */
 };
@@ -628,6 +639,10 @@ static FLB_INLINE void output_params_set(struct flb_output_flush *out_flush,
     co_switch(coro->callee);
 }
 
+
+struct mk_list *flb_engine_pending_coroutine_list_get();
+
+
 static FLB_INLINE void output_pre_cb_flush(void)
 {
     struct flb_coro *coro;
@@ -659,22 +674,24 @@ static FLB_INLINE void output_pre_cb_flush(void)
 
     pthread_mutex_lock(&o_ins->coroutine_activation_lock);
 
+    persisted_params.o_ins->scheduled_coroutine_count--;
+
     while (o_ins->concurrent_flush_limit > 0 &&
            o_ins->active_coroutine_count >= o_ins->concurrent_flush_limit) {
-        if (o_ins->is_threaded == FLB_TRUE) {
-            struct flb_out_thread_instance *th_ins;
 
-            th_ins = flb_output_thread_instance_get();
+{
+        struct mk_list *coroutine_list;
 
-            flb_pipe_w(th_ins->ch_coroutine_events[1], &persisted_params.out_flush, sizeof(struct flb_output_flush*));
-        }
-        else {
-            flb_pipe_w(o_ins->config->ch_self_events[1], &persisted_params.out_flush, sizeof(struct flb_output_flush*));
-        }
+        coroutine_list = flb_engine_pending_coroutine_list_get();
+
+        mk_list_add(&persisted_params.out_flush->_delay_head, coroutine_list);
+}
 
         pthread_mutex_unlock(&o_ins->coroutine_activation_lock);
         co_switch(coro->caller);
         pthread_mutex_lock(&o_ins->coroutine_activation_lock);
+
+        persisted_params.o_ins->scheduled_coroutine_count--;
     }
 
     persisted_params.o_ins->active_coroutine_count++;
@@ -1028,6 +1045,45 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
     return out_flush;
 }
 
+static inline void flb_output_awaken_coroutines(struct flb_output_instance *o_ins)
+{
+    ssize_t available_execution_slots;
+    struct mk_list *coroutine_list;
+    struct mk_list *iterator_backup;
+    struct mk_list *iterator;
+    struct flb_output_flush *delayed_flush;
+
+    available_execution_slots = o_ins->concurrent_flush_limit - o_ins->active_coroutine_count - o_ins->scheduled_coroutine_count;
+
+    coroutine_list = flb_engine_pending_coroutine_list_get();
+
+    mk_list_foreach_safe(iterator, iterator_backup, coroutine_list) {
+        if (available_execution_slots <= 0) {
+            break;
+        }
+
+        delayed_flush = mk_list_entry(iterator, struct flb_output_flush, _delay_head);
+
+        if (delayed_flush->o_ins == o_ins) {
+            mk_list_del(&delayed_flush->_delay_head);
+
+            if (o_ins->is_threaded == FLB_TRUE) {
+                struct flb_out_thread_instance *th_ins;
+
+                th_ins = flb_output_thread_instance_get();
+
+                flb_pipe_w(th_ins->ch_coroutine_events[1], &delayed_flush, sizeof(struct flb_output_flush*));
+            }
+            else {
+                flb_pipe_w(o_ins->config->ch_self_events[1], &delayed_flush, sizeof(struct flb_output_flush*));
+            }
+
+            available_execution_slots--;
+            o_ins->scheduled_coroutine_count++;
+        }
+    }
+}
+
 /*
  * This function is used by the output plugins to return. It's mandatory
  * as it will take care to signal the event loop letting know the flush
@@ -1055,6 +1111,8 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
 
     flb_output_task_deactivate_route(task, o_ins);
     o_ins->active_coroutine_count--;
+
+    flb_output_awaken_coroutines(o_ins);
 
     flb_output_task_release_lock(task);
     pthread_mutex_unlock(&o_ins->coroutine_activation_lock);

@@ -41,4 +41,9 @@ void flb_engine_evl_init();
 struct mk_event_loop *flb_engine_evl_get();
 void flb_engine_evl_set(struct mk_event_loop *evl);
 
+
+void flb_engine_pending_coroutine_list_init();
+struct mk_list *flb_engine_pending_coroutine_list_get();
+void flb_engine_pending_coroutine_list_set(struct mk_list *list);
+
 #endif

@@ -123,6 +123,7 @@ static int upstream_thread_create(struct flb_out_thread_instance *th_ins,
             flb_errno();
             return -1;
         }
+
         th_u->parent_upstream = u;
         flb_upstream_queue_init(&th_u->queue);
         mk_list_add(&th_u->base._head, &th_ins->upstreams);
@@ -184,6 +185,13 @@ static void output_thread(void *data)
     struct flb_out_flush_params *params;
     struct flb_net_dns dns_ctx;
 
+    struct mk_list pending_coroutine_list;
+
+    mk_list_init(&pending_coroutine_list);
+
+    flb_engine_pending_coroutine_list_set(&pending_coroutine_list);
+
+
     /* Register thread instance */
     flb_output_thread_instance_set(th_ins);
 
@@ -238,6 +246,7 @@ static void output_thread(void *data)
                                   &event_coroutine);
 
     event_coroutine.type = FLB_ENGINE_EV_THREAD_WAKEUP;
+    event_coroutine.priority = FLB_ENGINE_PRIORITY_FLUSH;
 
     memset(&event_local, 0, sizeof(struct mk_event));
 
@@ -319,6 +328,11 @@ static void output_thread(void *data)
                 if (!out_flush) {
                     continue;
                 }
+
+                pthread_mutex_lock(&ins->coroutine_activation_lock);
+                ins->scheduled_coroutine_count++;
+                pthread_mutex_unlock(&ins->coroutine_activation_lock);
+
                 flb_coro_resume(out_flush->coro);
             }
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
@@ -350,6 +364,10 @@ static void output_thread(void *data)
                 flb_plg_warn(ins, "unhandled event type => %i\n", event->type);
             }
         }
+
+        pthread_mutex_lock(&ins->coroutine_activation_lock);
+        flb_output_awaken_coroutines(ins);
+        pthread_mutex_unlock(&ins->coroutine_activation_lock);
 
         flb_net_dns_lookup_context_cleanup(&dns_ctx);
 

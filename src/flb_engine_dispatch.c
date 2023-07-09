@@ -257,10 +257,18 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
     struct flb_input_plugin *p;
     struct flb_input_chunk *ic;
     struct flb_task *task = NULL;
+    struct flb_output_instance *o_ins;
 
     p = in->p;
     if (!p) {
         return 0;
+    }
+
+    mk_list_foreach(head, &config->outputs) {
+        o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+        pthread_mutex_lock(&o_ins->coroutine_activation_lock);
+        flb_output_awaken_coroutines(o_ins);
+        pthread_mutex_unlock(&o_ins->coroutine_activation_lock);
     }
 
     /* Look for chunks ready to go */

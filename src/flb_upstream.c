@@ -459,6 +459,8 @@ static int prepare_destroy_conn(struct flb_connection *u_conn)
     /* Add node to destroy queue */
     mk_list_add(&u_conn->_head, &uq->destroy_queue);
 
+    flb_stream_decrement_total_connections_count(&u->base);
+
     /*
      * note: the connection context is destroyed by the engine once all events
      * have been processed.
@@ -526,6 +528,8 @@ static struct flb_connection *create_conn(struct flb_upstream *u)
     /* Link new connection to the busy queue */
     uq = flb_upstream_queue_get(u);
     mk_list_add(&conn->_head, &uq->busy_queue);
+
+    flb_stream_increment_total_connections_count(&u->base);
 
     flb_stream_release_lock(&u->base);
 
@@ -641,6 +645,13 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
 
             /* This connection works, let's move it to the busy queue */
             mk_list_del(&conn->_head);
+
+            if (MK_EVENT_IS_REGISTERED((&conn->event))) {
+                mk_event_del(conn->evl, &conn->event);
+            }
+
+            conn->evl = flb_engine_evl_get();
+
             mk_list_add(&conn->_head, &uq->busy_queue);
 
             /* Reset errno */
@@ -652,7 +663,8 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
                 flb_debug("[upstream] KA connection #%i is in a failed state "
                           "to: %s:%i, cleaning up",
                           conn->fd, u->tcp_host, u->tcp_port);
-                prepare_destroy_conn_safe(conn);
+                prepare_destroy_conn(conn);
+
                 conn = NULL;
                 continue;
             }
@@ -686,6 +698,7 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
 
     if (conn != NULL) {
         flb_connection_reset_io_timeout(conn);
+        flb_stream_increment_busy_connections_count(&u->base);
     }
 
     return conn;
@@ -711,9 +724,8 @@ int flb_upstream_conn_release(struct flb_connection *conn)
 {
     int ret;
     struct flb_upstream *u = conn->upstream;
-    struct flb_upstream_queue *uq;
 
-    uq = flb_upstream_queue_get(u);
+    flb_stream_decrement_busy_connections_count(&u->base);
 
     /* If this is a valid KA connection just recycle */
     if (u->base.net.keepalive == FLB_TRUE &&
@@ -726,6 +738,13 @@ int flb_upstream_conn_release(struct flb_connection *conn)
         flb_stream_acquire_lock(&u->base, FLB_TRUE);
 
         mk_list_del(&conn->_head);
+
+        if (MK_EVENT_IS_REGISTERED((&conn->event))) {
+            mk_event_del(conn->evl, &conn->event);
+        }
+
+        conn->evl = flb_engine_evl_get();
+
         mk_list_add(&conn->_head, &u->queue.av_queue);
 
         flb_stream_release_lock(&u->base);
@@ -853,6 +872,8 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
                                     u_conn->event.mask,
                                     FLB_TRUE);
                 }
+
+                flb_stream_decrement_busy_connections_count(&u->base);
             }
         }
 

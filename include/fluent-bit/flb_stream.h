@@ -25,6 +25,9 @@
 #include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_config.h>
 
+#include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_gauge.h>
+
 #define FLB_DOWNSTREAM            1
 #define FLB_UPSTREAM              2
 
@@ -41,6 +44,14 @@ struct flb_stream {
     int                  transport;
     int                  flags;
     int                  type;
+
+    /* m: output_network_total_connections */
+    struct cmt_gauge    *cmt_network_total_connections;
+    /* m: output_network_busy_connections */
+    struct cmt_gauge    *cmt_network_busy_connections;
+
+    const char          *cmt_network_total_connections_label;
+    const char          *cmt_network_busy_connections_label;
 
     pthread_mutex_t      list_mutex;
     struct flb_tls      *tls_context;
@@ -63,12 +74,16 @@ static inline void flb_stream_setup(struct flb_stream *stream,
                                     struct flb_config *config,
                                     struct flb_net_setup *net_setup)
 {
-    stream->thread_safety_flag = FLB_FALSE;
-    stream->tls_context        = tls_context;
-    stream->transport          = transport;
-    stream->config             = config;
-    stream->flags              = flags;
-    stream->type               = type;
+    stream->cmt_network_total_connections_label = NULL;
+    stream->cmt_network_busy_connections_label  = NULL;
+    stream->cmt_network_total_connections       = NULL;
+    stream->cmt_network_busy_connections        = NULL;
+    stream->thread_safety_flag                  = FLB_FALSE;
+    stream->tls_context                         = tls_context;
+    stream->transport                           = transport;
+    stream->config                              = config;
+    stream->flags                               = flags;
+    stream->type                                = type;
 
     /* Set default networking setup values */
     if (net_setup == NULL) {
@@ -156,6 +171,118 @@ static inline void flb_stream_enable_thread_safety(struct flb_stream *stream)
      */
     if (mk_list_entry_orphan(&stream->_head) == 0) {
         mk_list_del(&stream->_head);
+    }
+}
+
+static inline void flb_stream_set_total_connections_label(
+                    struct flb_stream *stream,
+                    const char *label_value)
+{
+    stream->cmt_network_total_connections_label = label_value;
+}
+
+static inline void flb_stream_set_total_connections_gauge(
+                    struct flb_stream *stream,
+                    struct cmt_gauge *gauge_instance)
+{
+    stream->cmt_network_total_connections = gauge_instance;
+}
+
+static inline void flb_stream_increment_total_connections_count(
+                    struct flb_stream *stream)
+{
+    if (stream->cmt_network_total_connections != NULL) {
+        if (stream->cmt_network_total_connections_label != NULL) {
+            cmt_gauge_inc(
+                stream->cmt_network_total_connections,
+                cfl_time_now(),
+                1,
+                (char *[]) {
+                    (char *) stream->cmt_network_total_connections_label
+                });
+        }
+        else {
+            cmt_gauge_inc(stream->cmt_network_total_connections,
+                          cfl_time_now(),
+                          0, NULL);
+        }
+    }
+}
+
+static inline void flb_stream_decrement_total_connections_count(
+                    struct flb_stream *stream)
+{
+    if (stream->cmt_network_total_connections != NULL) {
+        if (stream->cmt_network_total_connections_label != NULL) {
+            cmt_gauge_dec(
+                stream->cmt_network_total_connections,
+                cfl_time_now(),
+                1,
+                (char *[]) {
+                    (char *) stream->cmt_network_total_connections_label
+                });
+        }
+        else {
+            cmt_gauge_dec(stream->cmt_network_total_connections,
+                          cfl_time_now(),
+                          0, NULL);
+        }
+    }
+}
+
+static inline void flb_stream_set_busy_connections_label(
+                    struct flb_stream *stream,
+                    const char *label_value)
+{
+    stream->cmt_network_busy_connections_label = label_value;
+}
+
+static inline void flb_stream_set_busy_connections_gauge(
+                    struct flb_stream *stream,
+                    struct cmt_gauge *gauge_instance)
+{
+    stream->cmt_network_busy_connections  = gauge_instance;
+}
+
+static inline void flb_stream_increment_busy_connections_count(
+                    struct flb_stream *stream)
+{
+    if (stream->cmt_network_busy_connections != NULL) {
+        if (stream->cmt_network_busy_connections_label != NULL) {
+            cmt_gauge_inc(
+                stream->cmt_network_busy_connections,
+                cfl_time_now(),
+                1,
+                (char *[]) {
+                    (char *) stream->cmt_network_busy_connections_label
+                });
+        }
+        else {
+            cmt_gauge_inc(stream->cmt_network_busy_connections,
+                          cfl_time_now(),
+                          0, NULL);
+        }
+    }
+}
+
+static inline void flb_stream_decrement_busy_connections_count(
+                    struct flb_stream *stream)
+{
+    if (stream->cmt_network_busy_connections != NULL) {
+        if (stream->cmt_network_busy_connections_label != NULL) {
+            cmt_gauge_dec(
+                stream->cmt_network_busy_connections,
+                cfl_time_now(),
+                1,
+                (char *[]) {
+                    (char *) stream->cmt_network_busy_connections_label
+                });
+        }
+        else {
+            cmt_gauge_dec(stream->cmt_network_busy_connections,
+                          cfl_time_now(),
+                          0, NULL);
+        }
     }
 }
 

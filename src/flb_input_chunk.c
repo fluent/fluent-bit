@@ -96,42 +96,6 @@ static int flb_input_chunk_is_task_safe_delete(
 
 static ssize_t flb_input_chunk_get_real_size(struct flb_input_chunk *ic);
 
-static ssize_t flb_input_chunk_get_releasable_space(
-                                    struct flb_input_chunk     *new_input_chunk,
-                                    struct flb_input_instance  *input_plugin,
-                                    struct flb_output_instance *output_plugin,
-                                    size_t                      required_space)
-{
-    struct mk_list         *input_chunk_iterator;
-    ssize_t                 releasable_space;
-    struct flb_input_chunk *old_input_chunk;
-
-    releasable_space = 0;
-
-    mk_list_foreach(input_chunk_iterator, &input_plugin->chunks) {
-        old_input_chunk = mk_list_entry(input_chunk_iterator, struct flb_input_chunk, _head);
-
-        if (!flb_routes_mask_get_bit(old_input_chunk->routes_mask, output_plugin->id)) {
-            continue;
-        }
-
-        if (flb_input_chunk_safe_delete(new_input_chunk, old_input_chunk,
-                                        output_plugin->id) == FLB_FALSE ||
-            flb_input_chunk_is_task_safe_delete(old_input_chunk->task,
-                                                output_plugin) == FLB_FALSE) {
-            continue;
-        }
-
-        releasable_space += flb_input_chunk_get_real_size(old_input_chunk);
-
-        if (releasable_space >= required_space) {
-            break;
-        }
-    }
-
-    return releasable_space;
-}
-
 static int flb_input_chunk_release_space(
                     struct flb_input_chunk     *new_input_chunk,
                     struct flb_input_instance  *input_plugin,
@@ -440,56 +404,6 @@ int flb_input_chunk_release_space_compound(
     *local_release_requirement = (size_t) required_space_remainder;
 
     return 0;
-}
-
-/*
- * Returns how many chunks needs to be dropped in order to get enough space to
- * buffer the incoming data (with size chunk_size)
- */
-int flb_intput_chunk_count_dropped_chunks(struct flb_input_chunk *ic,
-                                          struct flb_output_instance *o_ins,
-                                          size_t chunk_size)
-{
-    int count = 0;
-    int enough_space = FLB_FALSE;
-    ssize_t bytes_remained;
-    struct mk_list *head;
-    struct flb_input_chunk *old_ic;
-
-    FS_CHUNK_SIZE_DEBUG(o_ins);
-    bytes_remained = o_ins->total_limit_size -
-                     o_ins->fs_chunks_size -
-                     o_ins->fs_backlog_chunks_size;
-
-    mk_list_foreach(head, &ic->in->chunks) {
-        old_ic = mk_list_entry(head, struct flb_input_chunk, _head);
-
-        if (flb_input_chunk_safe_delete(ic, old_ic, o_ins->id) == FLB_FALSE ||
-            flb_input_chunk_is_task_safe_delete(old_ic->task, o_ins) == FLB_FALSE) {
-            continue;
-        }
-
-        bytes_remained += flb_input_chunk_get_real_size(old_ic);
-        count++;
-        if (bytes_remained >= (ssize_t) chunk_size) {
-            enough_space = FLB_TRUE;
-            break;
-        }
-    }
-
-    /*
-     * flb_intput_chunk_count_dropped_chunks(3) will only be called if the chunk will
-     * be flushing to the output instance passed in and the instance will reach its
-     * limit after appending the new data. This function will try to count how many
-     * chunks need to be dropped in order to place the incoing chunk.
-     *
-     * Return '0' means that we cannot find a slot to ingest the incoming data.
-     */
-    if (enough_space == FLB_FALSE) {
-        return 0;
-    }
-
-    return count;
 }
 
 /*

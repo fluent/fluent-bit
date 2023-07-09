@@ -359,6 +359,11 @@ int flb_output_task_flush(struct flb_task *task,
 
             return -1;
         }
+
+        pthread_mutex_lock(&out_ins->coroutine_activation_lock);
+        out_ins->scheduled_coroutine_count++;
+        pthread_mutex_unlock(&out_ins->coroutine_activation_lock);
+
     }
 
     return 0;
@@ -1099,6 +1104,7 @@ int flb_output_init_all(struct flb_config *config)
 
         pthread_mutex_init(&ins->coroutine_activation_lock, NULL);
         ins->active_coroutine_count = 0;
+        ins->scheduled_coroutine_count = 0;
 
 
         /* Output Events Channel */
@@ -1197,6 +1203,42 @@ int flb_output_init_all(struct flb_config *config)
                                              "Number of retried records.",
                                              1, (char *[]) {"name"});
         cmt_counter_set(ins->cmt_retried_records, ts, 0, 1, (char *[]) {name});
+
+        /* output_network_keepalive */
+        ins->cmt_keepalive_status = cmt_gauge_create(ins->cmt,
+                                                     "fluentbit",
+                                                     "output",
+                                                     "network_keepalive",
+                                                     "Keepalive status.",
+                                                     1, (char *[]) {"name"});
+        cmt_gauge_set(ins->cmt_keepalive_status,
+                      ts,
+                      ins->net_setup.keepalive,
+                      1, (char *[]) {name});
+
+        /* output_network_total_connections */
+        ins->cmt_network_total_connections = cmt_gauge_create(ins->cmt,
+                                                              "fluentbit",
+                                                              "output",
+                                                              "network_total_connections",
+                                                              "Total Connection count.",
+                                                              1, (char *[]) {"name"});
+        cmt_gauge_set(ins->cmt_network_total_connections,
+                      ts,
+                      0,
+                      1, (char *[]) {name});
+
+        /* output_network_total_connections */
+        ins->cmt_network_busy_connections = cmt_gauge_create(ins->cmt,
+                                                             "fluentbit",
+                                                             "output",
+                                                             "network_busy_connections",
+                                                             "Busy Connection count.",
+                                                             1, (char *[]) {"name"});
+        cmt_gauge_set(ins->cmt_network_busy_connections,
+                      ts,
+                      0,
+                      1, (char *[]) {name});
 
         /* old API */
         ins->metrics = flb_metrics_create(name);
@@ -1386,6 +1428,18 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
 
     /* Set flags */
     flb_stream_enable_flags(&u->base, flags);
+
+    flb_stream_set_total_connections_label(&u->base,
+                                           flb_output_name(ins));
+
+    flb_stream_set_total_connections_gauge(&u->base,
+                                           ins->cmt_network_total_connections);
+
+    flb_stream_set_busy_connections_label(&u->base,
+                                           flb_output_name(ins));
+
+    flb_stream_set_busy_connections_gauge(&u->base,
+                                          ins->cmt_network_busy_connections);
 
     /*
      * If the output plugin flush callbacks will run in multiple threads, enable

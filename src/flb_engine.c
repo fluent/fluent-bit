@@ -72,6 +72,36 @@ extern struct flb_aws_error_reporter *error_reporter;
 
 #include <ctraces/ctr_version.h>
 
+
+static pthread_once_t local_thread_engine_pending_coroutine_list_init = PTHREAD_ONCE_INIT;
+FLB_TLS_DEFINE(struct mk_list, flb_engine_pending_coroutine_list);
+
+static void flb_engine_pending_coroutine_list_init_private()
+{
+    FLB_TLS_INIT(flb_engine_pending_coroutine_list);
+}
+
+void flb_engine_pending_coroutine_list_init()
+{
+    pthread_once(&local_thread_engine_pending_coroutine_list_init, flb_engine_pending_coroutine_list_init_private);
+}
+
+struct mk_list *flb_engine_pending_coroutine_list_get()
+{
+    struct mk_list *list;
+
+    list = FLB_TLS_GET(flb_engine_pending_coroutine_list);
+
+    return list;
+}
+
+void flb_engine_pending_coroutine_list_set(struct mk_list *list)
+{
+    FLB_TLS_SET(flb_engine_pending_coroutine_list, list);
+}
+
+
+
 static pthread_once_t local_thread_engine_evl_init = PTHREAD_ONCE_INIT;
 FLB_TLS_DEFINE(struct mk_event_loop, flb_engine_evl);
 
@@ -659,6 +689,12 @@ int flb_engine_start(struct flb_config *config)
     struct flb_bucket_queue *evl_bktq;
     struct flb_sched *sched;
     struct flb_net_dns dns_ctx;
+
+    struct mk_list pending_coroutine_list;
+
+    mk_list_init(&pending_coroutine_list);
+
+    flb_engine_pending_coroutine_list_set(&pending_coroutine_list);
 
     /* Initialize the networking layer */
     flb_net_lib_init();
