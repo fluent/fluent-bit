@@ -82,6 +82,7 @@ int flb_log_event_encoder_append_value(
                                                    value_buffer,
                                                    value_length);
                     if (result != 0) {
+                        flb_errno();
                         flb_error("result=%d str=%s len=%d", result, value_buffer, value_length);
                     }
                 }
