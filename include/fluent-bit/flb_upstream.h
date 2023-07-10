@@ -98,4 +98,7 @@ void flb_upstream_thread_safe(struct flb_upstream *u);
 struct mk_list *flb_upstream_get_config_map(struct flb_config *config);
 int flb_upstream_needs_proxy(const char *host, const char *proxy, const char *no_proxy);
 
+int flb_upstream_acquire_lock(struct flb_upstream *stream, int wait_flag);
+int flb_upstream_release_lock(struct flb_upstream *stream);
+
 #endif

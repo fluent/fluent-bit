@@ -523,15 +523,15 @@ static struct flb_connection *create_conn(struct flb_upstream *u)
         flb_upstream_conn_recycle(conn, FLB_FALSE);
     }
 
-    flb_stream_acquire_lock(&u->base, FLB_TRUE);
-
     /* Link new connection to the busy queue */
     uq = flb_upstream_queue_get(u);
     mk_list_add(&conn->_head, &uq->busy_queue);
 
+    flb_upstream_acquire_lock(u, FLB_TRUE);
+
     flb_stream_increment_total_connections_count(&u->base);
 
-    flb_stream_release_lock(&u->base);
+    flb_upstream_release_lock(u);
 
     flb_connection_reset_connection_timeout(conn);
 
@@ -638,7 +638,7 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
      * entries exists, just create a new one.
      */
     if (u->base.net.keepalive) {
-        flb_stream_acquire_lock(&u->base, FLB_TRUE);
+        flb_upstream_acquire_lock(u, FLB_TRUE);
 
         mk_list_foreach_safe(head, tmp, &u->queue.av_queue) {
             conn = mk_list_entry(head, struct flb_connection, _head);
@@ -686,7 +686,7 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
             break;
         }
 
-        flb_stream_release_lock(&u->base);
+        flb_upstream_release_lock(u);
     }
 
     /* There are keepalive connections available or
@@ -717,6 +717,7 @@ static int cb_upstream_conn_ka_dropped(void *data)
     flb_debug("[upstream] KA connection #%i to %s:%i has been disconnected "
               "by the remote service",
               conn->fd, conn->upstream->tcp_host, conn->upstream->tcp_port);
+
     return prepare_destroy_conn_safe(conn);
 }
 
@@ -735,7 +736,7 @@ int flb_upstream_conn_release(struct flb_connection *conn)
          * This connection is still useful, move it to the 'available' queue and
          * initialize variables.
          */
-        flb_stream_acquire_lock(&u->base, FLB_TRUE);
+        flb_upstream_acquire_lock(u, FLB_TRUE);
 
         mk_list_del(&conn->_head);
 
@@ -747,7 +748,7 @@ int flb_upstream_conn_release(struct flb_connection *conn)
 
         mk_list_add(&conn->_head, &u->queue.av_queue);
 
-        flb_stream_release_lock(&u->base);
+        flb_upstream_release_lock(u);
 
         conn->ts_available = time(NULL);
 
@@ -816,7 +817,7 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
         u = mk_list_entry(head, struct flb_upstream, base._head);
         uq = flb_upstream_queue_get(u);
 
-        flb_stream_acquire_lock(&u->base, FLB_TRUE);
+        flb_upstream_acquire_lock(u, FLB_TRUE);
 
         /* Iterate every busy connection */
         mk_list_foreach_safe(u_head, tmp, &uq->busy_queue) {
@@ -861,11 +862,14 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
                 }
 
                 inject = FLB_FALSE;
+
                 if (u_conn->event.status != MK_EVENT_NONE) {
                     inject = FLB_TRUE;
                 }
+
                 u_conn->net_error = ETIMEDOUT;
                 prepare_destroy_conn(u_conn);
+
                 if (inject == FLB_TRUE) {
                     mk_event_inject(u_conn->evl,
                                     &u_conn->event,
@@ -900,7 +904,7 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
             }
         }
 
-        flb_stream_release_lock(&u->base);
+        flb_upstream_release_lock(u);
     }
 
     return 0;
@@ -915,16 +919,12 @@ int flb_upstream_conn_pending_destroy(struct flb_upstream *u)
 
     uq = flb_upstream_queue_get(u);
 
-    flb_stream_acquire_lock(&u->base, FLB_TRUE);
-
     /* Real destroy of connections context */
     mk_list_foreach_safe(head, tmp, &uq->destroy_queue) {
         u_conn = mk_list_entry(head, struct flb_connection, _head);
 
         destroy_conn(u_conn);
     }
-
-    flb_stream_release_lock(&u->base);
 
     return 0;
 }
@@ -982,3 +982,22 @@ int flb_upstream_is_async(struct flb_upstream *u)
 {
     return flb_stream_is_async(&u->base);
 }
+
+int flb_upstream_acquire_lock(struct flb_upstream *stream, int wait_flag)
+{
+    if (stream->parent_upstream != NULL) {
+        return flb_upstream_acquire_lock(stream->parent_upstream, wait_flag);
+    }
+
+    return flb_stream_acquire_lock(&stream->base, wait_flag);
+}
+
+int flb_upstream_release_lock(struct flb_upstream *stream)
+{
+    if (stream->parent_upstream != NULL) {
+        return flb_upstream_release_lock(stream->parent_upstream);
+    }
+
+    return flb_stream_release_lock(&stream->base);
+}
+
