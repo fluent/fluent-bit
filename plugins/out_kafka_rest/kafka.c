@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_config_map.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 #include <msgpack.h>
 
 #include "kafka.h"
@@ -100,33 +101,33 @@ static flb_sds_t kafka_rest_format(const void *data, size_t bytes,
     int arr_size = 0;
     int map_size;
     size_t s;
-    size_t off = 0;
     flb_sds_t out_buf;
     char time_formatted[256];
-    msgpack_unpacked result;
-    msgpack_object root;
     msgpack_object map;
-    msgpack_object *obj;
     msgpack_object key;
     msgpack_object val;
     struct tm tm;
-    struct flb_time tms;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    int ret;
+
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return NULL;
+    }
 
     /* Init temporary buffers */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    /* Iterate the original buffer and perform adjustments */
-    msgpack_unpacked_init(&result);
-
     /* Count number of entries */
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        arr_size++;
-    }
-    msgpack_unpacked_destroy(&result);
-    off = 0;
+    arr_size = flb_mp_count(data, bytes);
 
     /* Root map */
     msgpack_pack_map(&mp_pck, 1);
@@ -136,14 +137,11 @@ static flb_sds_t kafka_rest_format(const void *data, size_t bytes,
     msgpack_pack_array(&mp_pck, arr_size);
 
     /* Iterate and compose array content */
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        root = result.data;
-
-        map = root.via.array.ptr[1];
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        map = *log_event.body;
         map_size = 1;
-
-        flb_time_pop_from_msgpack(&tms, &result, &obj);
 
         if (ctx->partition >= 0) {
             map_size++;
@@ -185,11 +183,11 @@ static flb_sds_t kafka_rest_format(const void *data, size_t bytes,
         msgpack_pack_str_body(&mp_pck, ctx->time_key, ctx->time_key_len);
 
         /* Format the time */
-        gmtime_r(&tms.tm.tv_sec, &tm);
+        gmtime_r(&log_event.timestamp.tm.tv_sec, &tm);
         s = strftime(time_formatted, sizeof(time_formatted) - 1,
                      ctx->time_key_format, &tm);
         len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,
-                       ".%09" PRIu64 "Z", (uint64_t) tms.tm.tv_nsec);
+                       ".%09" PRIu64 "Z", (uint64_t) log_event.timestamp.tm.tv_nsec);
         s += len;
         msgpack_pack_str(&mp_pck, s);
         msgpack_pack_str_body(&mp_pck, time_formatted, s);
@@ -210,7 +208,7 @@ static flb_sds_t kafka_rest_format(const void *data, size_t bytes,
             msgpack_pack_object(&mp_pck, val);
         }
     }
-    msgpack_unpacked_destroy(&result);
+    flb_log_event_decoder_destroy(&log_decoder);
 
     /* Convert to JSON */
     out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
@@ -220,6 +218,7 @@ static flb_sds_t kafka_rest_format(const void *data, size_t bytes,
     }
 
     *out_size = flb_sds_len(out_buf);
+
     return out_buf;
 }
 

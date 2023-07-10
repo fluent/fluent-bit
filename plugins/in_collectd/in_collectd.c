@@ -135,8 +135,23 @@ static int in_collectd_init(struct flb_input_instance *in,
     }
     ctx->coll_fd = ret;
 
+    ret = flb_log_event_encoder_init(&ctx->log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins, "error initializing event encoder : %d", ret);
+
+        flb_socket_close(ctx->server_fd);
+        typesdb_destroy(ctx->tdb);
+        flb_free(ctx->buf);
+        flb_free(ctx);
+
+        return -1;
+    }
+
     flb_plg_info(ctx->ins, "start listening to %s:%s",
                  ctx->listen, ctx->port);
+
     return 0;
 }
 
@@ -144,8 +159,6 @@ static int in_collectd_callback(struct flb_input_instance *i_ins,
                                 struct flb_config *config, void *in_context)
 {
     int len;
-    msgpack_packer pck;
-    msgpack_sbuffer sbuf;
     struct flb_in_collectd_config *ctx = in_context;
 
     len = recv(ctx->server_fd, ctx->buf, ctx->bufsize, 0);
@@ -157,18 +170,20 @@ static int in_collectd_callback(struct flb_input_instance *i_ins,
         return 0;
     }
 
-    msgpack_sbuffer_init(&sbuf);
-    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
+    flb_log_event_encoder_reset(&ctx->log_encoder);
 
-    if (netprot_to_msgpack(ctx->buf, len, ctx->tdb, &pck)) {
+    if (netprot_to_msgpack(ctx->buf, len, ctx->tdb, &ctx->log_encoder)) {
         flb_plg_error(ctx->ins, "netprot_to_msgpack fails");
-        msgpack_sbuffer_destroy(&sbuf);
+
         return -1;
     }
 
-    flb_input_log_append(i_ins, NULL, 0, sbuf.data, sbuf.size);
+    if (ctx->log_encoder.output_length > 0) {
+        flb_input_log_append(i_ins, NULL, 0,
+                             ctx->log_encoder.output_buffer,
+                             ctx->log_encoder.output_length);
+    }
 
-    msgpack_sbuffer_destroy(&sbuf);
     return 0;
 }
 
@@ -176,6 +191,7 @@ static int in_collectd_exit(void *data, struct flb_config *config)
 {
     struct flb_in_collectd_config *ctx = data;
 
+    flb_log_event_encoder_destroy(&ctx->log_encoder);
     flb_socket_close(ctx->server_fd);
     flb_pipe_close(ctx->coll_fd);
     typesdb_destroy(ctx->tdb);

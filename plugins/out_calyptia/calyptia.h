@@ -65,6 +65,7 @@ struct flb_calyptia {
     flb_sds_t agent_id;
     flb_sds_t agent_token;
     flb_sds_t machine_id;                 /* machine-id  */
+    flb_sds_t fleet_id;                   /* fleet-id  */
     flb_sds_t metrics_endpoint;           /* metrics endpoint */
     struct flb_fstore *fs;                /* fstore ctx */
     struct flb_fstore_stream *fs_stream;  /* fstore stream */

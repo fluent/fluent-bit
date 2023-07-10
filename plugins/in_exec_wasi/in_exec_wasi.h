@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/wasm/flb_wasm.h>
 
 #include <msgpack.h>
@@ -47,6 +48,8 @@ struct flb_exec_wasi {
     flb_pipefd_t ch_manager[2];
     int interval_sec;
     int interval_nsec;
+    struct flb_log_event_encoder log_encoder;
+    int coll_fd;
 };
 
 #endif /* FLB_IN_EXEC_WASI_H */

@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_metrics.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 #include <msgpack.h>
 
 #include <stdio.h>
@@ -453,7 +454,6 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
     int ret;
     int column_names;
     FILE * fp;
-    msgpack_unpacked result;
     size_t off = 0;
     size_t last_off = 0;
     size_t alloc_size = 0;
@@ -461,11 +461,12 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
     char out_file[PATH_MAX];
     char *buf;
     long file_pos;
-    msgpack_object *obj;
     struct flb_file_conf *ctx = out_context;
-    struct flb_time tm;
-    (void) config;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
     char* out_file_copy;
+
+    (void) config;
 
     /* Set the right output file */
     if (ctx->out_path) {
@@ -547,31 +548,40 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(FLB_OK);
     }
 
+    ret = flb_log_event_decoder_init(&log_decoder,
+                                     (char *) event_chunk->data,
+                                     event_chunk->size);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        fclose(fp);
+        FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
+
     /*
      * Upon flush, for each array, lookup the time and the first field
      * of the map to use as a data point.
      */
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result,
-                               event_chunk->data,
-                               event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS) {
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         alloc_size = (off - last_off) + 128; /* JSON is larger than msgpack */
         last_off = off;
 
-        flb_time_pop_from_msgpack(&tm, &result, &obj);
-
         switch (ctx->format){
         case FLB_OUT_FILE_FMT_JSON:
-            buf = flb_msgpack_to_json_str(alloc_size, obj);
+            buf = flb_msgpack_to_json_str(alloc_size, log_event.body);
             if (buf) {
                 fprintf(fp, "%s: [%"PRIu64".%09lu, %s]" NEWLINE,
                         event_chunk->tag,
-                        tm.tm.tv_sec, tm.tm.tv_nsec,
+                        log_event.timestamp.tm.tv_sec, log_event.timestamp.tm.tv_nsec,
                         buf);
                 flb_free(buf);
             }
             else {
-                msgpack_unpacked_destroy(&result);
+                flb_log_event_decoder_destroy(&log_decoder);
                 fclose(fp);
                 FLB_OUTPUT_RETURN(FLB_RETRY);
             }
@@ -584,21 +594,30 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
             else {
                 column_names = FLB_FALSE;
             }
-            csv_output(fp, column_names, &tm, obj, ctx);
+            csv_output(fp, column_names,
+                       &log_event.timestamp,
+                       log_event.body, ctx);
             break;
         case FLB_OUT_FILE_FMT_LTSV:
-            ltsv_output(fp, &tm, obj, ctx);
+            ltsv_output(fp,
+                        &log_event.timestamp,
+                        log_event.body, ctx);
             break;
         case FLB_OUT_FILE_FMT_PLAIN:
-            plain_output(fp, obj, alloc_size);
+            plain_output(fp, log_event.body, alloc_size);
+
             break;
         case FLB_OUT_FILE_FMT_TEMPLATE:
-            template_output(fp, &tm, obj, ctx);
+            template_output(fp,
+                            &log_event.timestamp,
+                            log_event.body, ctx);
+
             break;
         }
     }
 
-    msgpack_unpacked_destroy(&result);
+    flb_log_event_decoder_destroy(&log_decoder);
+
     fclose(fp);
 
     FLB_OUTPUT_RETURN(FLB_OK);

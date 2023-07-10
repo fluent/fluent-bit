@@ -28,8 +28,6 @@
 #include <unistd.h>
 #include <math.h>
 
-#include <msgpack.h>
-
 #include "cpu.h"
 
 static inline void snapshot_key_format(int cpus, struct cpu_snapshot *snap_arr)
@@ -363,8 +361,7 @@ static int cpu_collect_system(struct flb_input_instance *ins,
     struct flb_cpu *ctx = in_context;
     struct cpu_stats *cstats = &ctx->cstats;
     struct cpu_snapshot *s;
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
+
     (void) config;
 
     /* Get overall system CPU usage */
@@ -376,46 +373,67 @@ static int cpu_collect_system(struct flb_input_instance *ins,
 
     s = snapshot_percent(cstats, ctx);
 
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
 
-    /*
-     * Store the new data into the MessagePack buffer,
-     */
-    msgpack_pack_array(&mp_pck, 2);
-    flb_pack_time_now(&mp_pck);
-    msgpack_pack_map(&mp_pck, (ctx->n_processors * 3 ) + 3);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_current_timestamp(
+                &ctx->log_encoder);
+    }
 
-    /* All CPU */
-    msgpack_pack_str(&mp_pck, 5);
-    msgpack_pack_str_body(&mp_pck, "cpu_p", 5);
-    msgpack_pack_double(&mp_pck, s[0].p_cpu);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_append_body_values(
+                &ctx->log_encoder,
+                FLB_LOG_EVENT_CSTRING_VALUE("cpu_p"),
+                FLB_LOG_EVENT_DOUBLE_VALUE(s[0].p_cpu),
 
-    /* User space CPU % */
-    msgpack_pack_str(&mp_pck, 6);
-    msgpack_pack_str_body(&mp_pck, "user_p", 6);
-    msgpack_pack_double(&mp_pck, s[0].p_user);
+                FLB_LOG_EVENT_CSTRING_VALUE("user_p"),
+                FLB_LOG_EVENT_DOUBLE_VALUE(s[0].p_user),
 
-    /* System CPU % */
-    msgpack_pack_str(&mp_pck, 8);
-    msgpack_pack_str_body(&mp_pck, "system_p", 8);
-    msgpack_pack_double(&mp_pck, s[0].p_system);
+                FLB_LOG_EVENT_CSTRING_VALUE("system_p"),
+                FLB_LOG_EVENT_DOUBLE_VALUE(s[0].p_system));
+    }
 
-    for (i = 1; i < ctx->n_processors + 1; i++) {
+    for (i = 1;
+         i < ctx->n_processors + 1 &&
+         ret == FLB_EVENT_ENCODER_SUCCESS;
+         i++) {
         struct cpu_snapshot *e = &s[i];
 
-        CPU_PACK_SNAP(e, cpu);
-        CPU_PACK_SNAP(e, user);
-        CPU_PACK_SNAP(e, system);
+        ret = flb_log_event_encoder_append_body_values(
+                &ctx->log_encoder,
+                FLB_LOG_EVENT_CSTRING_VALUE(e->k_cpu.name),
+                FLB_LOG_EVENT_DOUBLE_VALUE(e->p_cpu),
+
+                FLB_LOG_EVENT_CSTRING_VALUE(e->k_user.name),
+                FLB_LOG_EVENT_DOUBLE_VALUE(e->p_user),
+
+                FLB_LOG_EVENT_CSTRING_VALUE(e->k_system.name),
+                FLB_LOG_EVENT_DOUBLE_VALUE(e->p_system));
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
     }
 
     snapshots_switch(cstats);
+
     flb_plg_trace(ins, "CPU %0.2f%%", s->p_cpu);
 
-    flb_input_log_append(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        flb_input_log_append(ins, NULL, 0,
+                             ctx->log_encoder.output_buffer,
+                             ctx->log_encoder.output_length);
+        ret = 0;
+    }
+    else {
+        flb_plg_error(ctx->ins, "Error encoding record : %d", ret);
 
-    return 0;
+        ret = -1;
+    }
+
+    flb_log_event_encoder_reset(&ctx->log_encoder);
+
+    return ret;
 }
 
 static int cpu_collect_pid(struct flb_input_instance *ins,
@@ -425,8 +443,7 @@ static int cpu_collect_pid(struct flb_input_instance *ins,
     struct flb_cpu *ctx = in_context;
     struct cpu_stats *cstats = &ctx->cstats;
     struct cpu_snapshot *s;
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
+
     (void) config;
 
     /* Get overall system CPU usage */
@@ -438,38 +455,49 @@ static int cpu_collect_pid(struct flb_input_instance *ins,
 
     s = snapshot_pid_percent(cstats, ctx);
 
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
 
-    /*
-     * Store the new data into the MessagePack buffer,
-     */
-    msgpack_pack_array(&mp_pck, 2);
-    flb_pack_time_now(&mp_pck);
-    msgpack_pack_map(&mp_pck, 3);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_current_timestamp(
+                &ctx->log_encoder);
+    }
 
-    /* All CPU */
-    msgpack_pack_str(&mp_pck, 5);
-    msgpack_pack_str_body(&mp_pck, "cpu_p", 5);
-    msgpack_pack_double(&mp_pck, s->p_cpu);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_append_body_values(
+                &ctx->log_encoder,
+                FLB_LOG_EVENT_CSTRING_VALUE("cpu_p"),
+                FLB_LOG_EVENT_DOUBLE_VALUE(s->p_cpu),
 
-    /* User space CPU % */
-    msgpack_pack_str(&mp_pck, 6);
-    msgpack_pack_str_body(&mp_pck, "user_p", 6);
-    msgpack_pack_double(&mp_pck, s->p_user);
+                FLB_LOG_EVENT_CSTRING_VALUE("user_p"),
+                FLB_LOG_EVENT_DOUBLE_VALUE(s->p_user),
 
-    /* System CPU % */
-    msgpack_pack_str(&mp_pck, 8);
-    msgpack_pack_str_body(&mp_pck, "system_p", 8);
-    msgpack_pack_double(&mp_pck, s->p_system);
+                FLB_LOG_EVENT_CSTRING_VALUE("system_p"),
+                FLB_LOG_EVENT_DOUBLE_VALUE(s->p_system));
+    }
 
     snapshots_switch(cstats);
     flb_plg_trace(ctx->ins, "PID %i CPU %0.2f%%", ctx->pid, s->p_cpu);
 
-    flb_input_log_append(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+    }
 
-    return 0;
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        flb_input_log_append(ins, NULL, 0,
+                             ctx->log_encoder.output_buffer,
+                             ctx->log_encoder.output_length);
+
+        ret = 0;
+    }
+    else {
+        flb_plg_error(ctx->ins, "Error encoding record : %d", ret);
+
+        ret = -1;
+    }
+
+    flb_log_event_encoder_reset(&ctx->log_encoder);
+
+    return ret;
 }
 
 /* Callback to gather CPU usage between now and previous snapshot */
@@ -558,6 +586,22 @@ static int cb_cpu_init(struct flb_input_instance *in,
     }
     ctx->coll_fd = ret;
 
+    ret = flb_log_event_encoder_init(&ctx->log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins, "error initializing event encoder : %d", ret);
+
+        /* Release snapshots */
+        flb_free(ctx->cstats.snap_a);
+        flb_free(ctx->cstats.snap_b);
+
+        /* done */
+        flb_free(ctx);
+
+        return -1;
+    }
+
     return 0;
 }
 
@@ -578,6 +622,8 @@ static int cb_cpu_exit(void *data, struct flb_config *config)
     (void) *config;
     struct flb_cpu *ctx = data;
     struct cpu_stats *cs;
+
+    flb_log_event_encoder_destroy(&ctx->log_encoder);
 
     /* Release snapshots */
     cs = &ctx->cstats;

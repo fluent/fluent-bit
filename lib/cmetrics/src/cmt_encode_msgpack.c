@@ -126,12 +126,17 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
         /* 'buckets' (histogram buckets) */
         mpack_write_cstr(writer, "buckets");
 
-        mpack_start_array(writer, histogram->buckets->count);
+        if (histogram->buckets != NULL) {
+            mpack_start_array(writer, histogram->buckets->count);
 
-        for (index = 0 ;
-             index < histogram->buckets->count ;
-             index++) {
-            mpack_write_double(writer, histogram->buckets->upper_bounds[index]);
+            for (index = 0 ;
+                 index < histogram->buckets->count ;
+                 index++) {
+                mpack_write_double(writer, histogram->buckets->upper_bounds[index]);
+            }
+        }
+        else {
+            mpack_start_array(writer, 0);
         }
 
         mpack_finish_array(writer);

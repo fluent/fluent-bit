@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 #include <msgpack.h>
 
 #include "td.h"
@@ -40,80 +41,38 @@
  * This function returns a new msgpack buffer and store the bytes length
  * in the out_size variable.
  */
-static char *td_format(const void *data, size_t bytes, int *out_size)
+static char *td_format(struct flb_td *ctx, const void *data, size_t bytes, int *out_size)
 {
     int i;
     int ret;
     int n_size;
-    size_t off = 0;
     time_t atime;
     char *buf;
     struct msgpack_sbuffer mp_sbuf;
     struct msgpack_packer mp_pck;
-    msgpack_unpacked result;
-    msgpack_object root;
     msgpack_object map;
     msgpack_sbuffer *sbuf;
-    msgpack_object *obj;
-    struct flb_time tm;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
 
     /* Initialize contexts for new output */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    /* Iterate the original buffer and perform adjustments */
-    msgpack_unpacked_init(&result);
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
-    /* Perform some format validation */
-    ret = msgpack_unpack_next(&result, data, bytes, &off);
-    if (ret == MSGPACK_UNPACK_CONTINUE) {
-        msgpack_unpacked_destroy(&result);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
         return NULL;
     }
 
-    /* We 'should' get an array */
-    if (result.data.type != MSGPACK_OBJECT_ARRAY) {
-        /*
-         * If we got a different format, we assume the caller knows what he is
-         * doing, we just duplicate the content in a new buffer and cleanup.
-         */
-        buf = flb_malloc(bytes);
-        if (!buf) {
-            flb_errno();
-            msgpack_unpacked_destroy(&result);
-            return NULL;
-        }
-
-        memcpy(buf, data, bytes);
-        *out_size = bytes;
-        msgpack_unpacked_destroy(&result);
-        return buf;
-    }
-
-    root = result.data;
-    if (root.via.array.size == 0) {
-        msgpack_unpacked_destroy(&result);
-        return NULL;
-    }
-
-    off = 0;
-    msgpack_unpacked_destroy(&result);
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        if (result.data.type != MSGPACK_OBJECT_ARRAY) {
-            continue;
-        }
-
-        /* Each array must have two entries: time and record */
-        root = result.data;
-        if (root.via.array.size != 2) {
-            continue;
-        }
-
-        flb_time_pop_from_msgpack(&tm, &result, &obj);
-
-        atime = tm.tm.tv_sec;
-        map   = root.via.array.ptr[1];
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        atime = log_event.timestamp.tm.tv_sec;
+        map   = *log_event.body;
 
         n_size = map.via.map.size + 1;
         msgpack_pack_map(&mp_pck, n_size);
@@ -126,7 +85,8 @@ static char *td_format(const void *data, size_t bytes, int *out_size)
             msgpack_pack_object(&mp_pck, map.via.map.ptr[i].val);
         }
     }
-    msgpack_unpacked_destroy(&result);
+
+    flb_log_event_decoder_destroy(&log_decoder);
 
     /* Create new buffer */
     sbuf = &mp_sbuf;
@@ -196,7 +156,7 @@ static void cb_td_flush(struct flb_event_chunk *event_chunk,
     (void) i_ins;
 
     /* Convert format */
-    pack = td_format(event_chunk->data, event_chunk->size, &bytes_out);
+    pack = td_format(ctx, event_chunk->data, event_chunk->size, &bytes_out);
     if (!pack) {
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }

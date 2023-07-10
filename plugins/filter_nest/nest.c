@@ -25,6 +25,8 @@
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 #include <msgpack.h>
 
 #include "nest.h"
@@ -172,67 +174,63 @@ static int configure(struct filter_nest_ctx *ctx,
 
 }
 
-static void helper_pack_string(msgpack_packer * packer, const char *str,
-                               int len)
-{
-    if (str == NULL) {
-        msgpack_pack_nil(packer);
-    }
-    else {
-        msgpack_pack_str(packer, len);
-        msgpack_pack_str_body(packer, str, len);
-    }
-}
-
-static void helper_pack_string_remove_prefix(msgpack_packer * packer,
+static void helper_pack_string_remove_prefix(
+        struct flb_log_event_encoder *log_encoder,
         struct filter_nest_ctx *ctx,
         const char *str,
         int len)
 {
-    int size;
-
     if (strncmp(str, ctx->prefix, ctx->prefix_len) == 0) {
-        size = len - ctx->prefix_len;
-        msgpack_pack_str(packer, size);
-        msgpack_pack_str_body(packer, (str + ctx->prefix_len), size);
+        flb_log_event_encoder_append_body_string(
+            log_encoder,
+            (char *) &str[ctx->prefix_len],
+            len - ctx->prefix_len);
     }
     else {
         /* Key does not contain specified prefix */
-        msgpack_pack_str(packer, len);
-        msgpack_pack_str_body(packer, str, len);
+        flb_log_event_encoder_append_body_string(
+            log_encoder, (char *) str, len);
     }
 }
 
-static void helper_pack_string_add_prefix(msgpack_packer * packer,
+static void helper_pack_string_add_prefix(struct flb_log_event_encoder *log_encoder,
         struct filter_nest_ctx *ctx,
         const char *str,
         int len)
 {
-    msgpack_pack_str(packer, ctx->prefix_len + len);
-    msgpack_pack_str_body(packer, ctx->prefix, ctx->prefix_len);
-    msgpack_pack_str_body(packer, str, len);
+    flb_log_event_encoder_append_body_values(
+        log_encoder,
+        FLB_LOG_EVENT_STRING_LENGTH_VALUE(ctx->prefix_len + len),
+        FLB_LOG_EVENT_STRING_BODY_VALUE(ctx->prefix, ctx->prefix_len),
+        FLB_LOG_EVENT_STRING_BODY_VALUE(str, len));
 }
 
-static inline void map_pack_each_fn(msgpack_packer * packer,
+static inline void map_pack_each_fn(struct flb_log_event_encoder *log_encoder,
                                     msgpack_object * map,
                                     struct filter_nest_ctx *ctx,
                                     bool(*f) (msgpack_object_kv * kv,
-                                              struct filter_nest_ctx * ctx)
-    )
+                                              struct filter_nest_ctx * ctx))
 {
     int i;
-    msgpack_object *key;
+    int ret;
 
-    for (i = 0; i < map->via.map.size; i++) {
+    ret = FLB_EVENT_ENCODER_SUCCESS;
+    for (i = 0;
+         i < map->via.map.size &&
+         ret == FLB_EVENT_ENCODER_SUCCESS;
+         i++) {
         if ((*f) (&map->via.map.ptr[i], ctx)) {
-            key = &map->via.map.ptr[i].key;
-            msgpack_pack_object(packer, *key);
-            msgpack_pack_object(packer, map->via.map.ptr[i].val);
+            ret = flb_log_event_encoder_append_body_values(
+                    log_encoder,
+                    FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(
+                        &map->via.map.ptr[i].key),
+                    FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(
+                        &map->via.map.ptr[i].val));
         }
     }
 }
 
-static inline void map_transform_and_pack_each_fn(msgpack_packer * packer,
+static inline void map_transform_and_pack_each_fn(struct flb_log_event_encoder *log_encoder,
                                     msgpack_object * map,
                                     struct filter_nest_ctx *ctx,
                                     bool(*f) (msgpack_object_kv * kv,
@@ -240,22 +238,32 @@ static inline void map_transform_and_pack_each_fn(msgpack_packer * packer,
     )
 {
     int i;
+    int ret;
     msgpack_object *key;
 
-    for (i = 0; i < map->via.map.size; i++) {
+    ret = FLB_EVENT_ENCODER_SUCCESS;
+    for (i = 0;
+         i < map->via.map.size &&
+         ret == FLB_EVENT_ENCODER_SUCCESS ;
+         i++) {
         if ((*f) (&map->via.map.ptr[i], ctx)) {
             key = &map->via.map.ptr[i].key;
+
             if (ctx->add_prefix) {
-                helper_pack_string_add_prefix(packer, ctx, key->via.str.ptr, key->via.str.size);
+                helper_pack_string_add_prefix(log_encoder, ctx, key->via.str.ptr, key->via.str.size);
             }
             else if (ctx->remove_prefix) {
-                helper_pack_string_remove_prefix(packer, ctx, key->via.str.ptr, key->via.str.size);
+                helper_pack_string_remove_prefix(log_encoder, ctx, key->via.str.ptr, key->via.str.size);
             }
             else {
-                msgpack_pack_object(packer, *key);
+                ret = flb_log_event_encoder_append_body_msgpack_object(
+                        log_encoder, key);
             }
 
-            msgpack_pack_object(packer, map->via.map.ptr[i].val);
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_append_body_msgpack_object(
+                        log_encoder, &map->via.map.ptr[i].val);
+            }
         }
     }
 }
@@ -400,30 +408,41 @@ static inline int count_items_to_lift(msgpack_object * map,
     return count;
 }
 
-static inline void pack_map(msgpack_packer * packer, msgpack_object * map,
-                            struct filter_nest_ctx *ctx)
+static inline void pack_map(
+    struct flb_log_event_encoder *log_encoder,
+    msgpack_object * map,
+    struct filter_nest_ctx *ctx)
 {
     int i;
-
+    int ret;
     msgpack_object *key;
 
-    for (i = 0; i < map->via.map.size; i++) {
+    ret = FLB_EVENT_ENCODER_SUCCESS;
+
+    for (i = 0;
+         i < map->via.map.size &&
+         ret == FLB_EVENT_ENCODER_SUCCESS ;
+         i++) {
         key = &map->via.map.ptr[i].key;
 
         if (ctx->add_prefix) {
-            helper_pack_string_add_prefix(packer, ctx, key->via.str.ptr, key->via.str.size);
+            helper_pack_string_add_prefix(log_encoder, ctx, key->via.str.ptr, key->via.str.size);
         }
         else if (ctx->remove_prefix) {
-            helper_pack_string_remove_prefix(packer, ctx, key->via.str.ptr, key->via.str.size);
+            helper_pack_string_remove_prefix(log_encoder, ctx, key->via.str.ptr, key->via.str.size);
         }
         else {
-            msgpack_pack_object(packer, *key);
+            ret = flb_log_event_encoder_append_body_msgpack_object(log_encoder, key);
         }
-        msgpack_pack_object(packer, map->via.map.ptr[i].val);
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_msgpack_object(log_encoder,
+                    &map->via.map.ptr[i].val);
+        }
     }
 }
 
-static inline void map_lift_each_fn(msgpack_packer * packer,
+static inline void map_lift_each_fn(struct flb_log_event_encoder *log_encoder,
                                     msgpack_object * map,
                                     struct filter_nest_ctx *ctx,
                                     bool(*f) (msgpack_object_kv * kv,
@@ -436,17 +455,17 @@ static inline void map_lift_each_fn(msgpack_packer * packer,
     for (i = 0; i < map->via.map.size; i++) {
         kv = &map->via.map.ptr[i];
         if ((*f) (kv, ctx)) {
-            pack_map(packer, &kv->val, ctx);
+            pack_map(log_encoder, &kv->val, ctx);
         }
     }
 }
 
-static inline int apply_lifting_rules(msgpack_packer * packer,
-                                      msgpack_object * root,
+static inline int apply_lifting_rules(struct flb_log_event_encoder *log_encoder,
+                                      struct flb_log_event *log_event,
                                       struct filter_nest_ctx *ctx)
 {
-    msgpack_object ts = root->via.array.ptr[0];
-    msgpack_object map = root->via.array.ptr[1];
+    int ret;
+    msgpack_object map = *log_event->body;
 
     int items_to_lift = map_count_fn(&map, ctx, &is_kv_to_lift);
 
@@ -468,33 +487,47 @@ static inline int apply_lifting_rules(msgpack_packer * packer,
                   "lifting %d record(s)",
                   map.via.map.size, toplevel_items, items_to_lift);
 
-    /* Record array init(2) */
-    msgpack_pack_array(packer, 2);
+    ret = flb_log_event_encoder_begin_record(log_encoder);
 
-    /* Record array item 1/2 */
-    msgpack_pack_object(packer, ts);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -1;
+    }
 
-    /*
-     * Record array item 2/2
-     * Create a new map with top-level number of items
-     */
-    msgpack_pack_map(packer, (size_t) toplevel_items);
+    ret = flb_log_event_encoder_set_timestamp(
+            log_encoder, &log_event->timestamp);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -2;
+    }
+
+    ret = flb_log_event_encoder_set_metadata_from_msgpack_object(
+            log_encoder, log_event->metadata);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -3;
+    }
 
     /* Pack all current top-level items excluding the key keys */
-    map_pack_each_fn(packer, &map, ctx, &is_not_kv_to_lift);
+    map_pack_each_fn(log_encoder, &map, ctx, &is_not_kv_to_lift);
 
     /* Lift and pack all elements in key keys */
-    map_lift_each_fn(packer, &map, ctx, &is_kv_to_lift);
+    map_lift_each_fn(log_encoder, &map, ctx, &is_kv_to_lift);
+
+    ret = flb_log_event_encoder_commit_record(log_encoder);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -2;
+    }
 
     return 1;
 }
 
-static inline int apply_nesting_rules(msgpack_packer *packer,
-                                      msgpack_object *root,
+static inline int apply_nesting_rules(struct flb_log_event_encoder *log_encoder,
+                                      struct flb_log_event *log_event,
                                       struct filter_nest_ctx *ctx)
 {
-    msgpack_object ts = root->via.array.ptr[0];
-    msgpack_object map = root->via.array.ptr[1];
+    int ret;
+    msgpack_object map = *log_event->body;
 
     size_t items_to_nest = map_count_fn(&map, ctx, &is_kv_to_nest);
 
@@ -509,27 +542,55 @@ static inline int apply_nesting_rules(msgpack_packer *packer,
                   "map size will be %lu",
                   map.via.map.size, toplevel_items, items_to_nest);
 
-    /* Record array init(2) */
-    msgpack_pack_array(packer, 2);
+    ret = flb_log_event_encoder_begin_record(log_encoder);
 
-    /* Record array item 1/2 */
-    msgpack_pack_object(packer, ts);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_set_timestamp(
+            log_encoder, &log_event->timestamp);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -2;
+    }
+
+    ret = flb_log_event_encoder_set_metadata_from_msgpack_object(
+            log_encoder, log_event->metadata);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -3;
+    }
 
     /*
      * Record array item 2/2
      * Create a new map with toplevel items +1 for nested map
      */
-    msgpack_pack_map(packer, toplevel_items);
-    map_pack_each_fn(packer, &map, ctx, &is_not_kv_to_nest);
+    map_pack_each_fn(log_encoder, &map, ctx, &is_not_kv_to_nest);
 
     /* Pack the nested map key */
-    helper_pack_string(packer, ctx->key, ctx->key_len);
+    ret = flb_log_event_encoder_append_body_string(
+            log_encoder, ctx->key, ctx->key_len);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -4;
+    }
 
     /* Create the nest map value */
-    msgpack_pack_map(packer, items_to_nest);
+    ret = flb_log_event_encoder_body_begin_map(log_encoder);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -5;
+    }
 
     /* Pack the nested items */
-    map_transform_and_pack_each_fn(packer, &map, ctx, &is_kv_to_nest);
+    map_transform_and_pack_each_fn(log_encoder, &map, ctx, &is_kv_to_nest);
+
+    ret = flb_log_event_encoder_commit_record(log_encoder);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -6;
+    }
 
     return 1;
 }
@@ -564,69 +625,85 @@ static int cb_nest_filter(const void *data, size_t bytes,
                           struct flb_input_instance *i_ins,
                           void *context, struct flb_config *config)
 {
-    msgpack_unpacked result;
-    size_t off = 0;
+    struct flb_log_event_encoder log_encoder;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    struct filter_nest_ctx *ctx = context;
+    int modified_records = 0;
+    int ret;
+
     (void) f_ins;
     (void) i_ins;
     (void) config;
 
-    struct filter_nest_ctx *ctx = context;
-    int modified_records = 0;
-    int total_modified_records = 0;
 
-    msgpack_sbuffer buffer;
-    msgpack_sbuffer_init(&buffer);
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
-    msgpack_packer packer;
-    msgpack_packer_init(&packer, &buffer, msgpack_sbuffer_write);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
 
-    /*
-     * Records come in the format,
-     *
-     * [ TIMESTAMP, { K1=>V1, K2=>V2, ...} ],
-     * [ TIMESTAMP, { K1=>V1, K2=>V2, ...} ]
-     *
-     * Example record,
-     * [1123123, {"Mem.total"=>4050908, "Mem.used"=>476, "Mem.free"=>3574332 }]
-     */
-
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        modified_records = 0;
-        if (result.data.type == MSGPACK_OBJECT_ARRAY) {
-            if (ctx->operation == NEST) {
-                modified_records =
-                    apply_nesting_rules(&packer, &result.data, ctx);
-            }
-            else {
-                modified_records =
-                    apply_lifting_rules(&packer, &result.data, ctx);
-            }
-
-
-            if (modified_records == 0) {
-                // not matched, so copy original event.
-                msgpack_pack_object(&packer, result.data);
-            }
-            total_modified_records += modified_records;
-        }
-        else {
-            flb_plg_debug(ctx->ins, "Record is NOT an array, skipping");
-            msgpack_pack_object(&packer, result.data);
-        }
-    }
-    msgpack_unpacked_destroy(&result);
-
-    *out_buf = buffer.data;
-    *out_size = buffer.size;
-
-    if (total_modified_records == 0) {
-        msgpack_sbuffer_destroy(&buffer);
         return FLB_FILTER_NOTOUCH;
     }
-    else {
-        return FLB_FILTER_MODIFIED;
+
+    ret = flb_log_event_encoder_init(&log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder initialization error : %d", ret);
+
+        flb_log_event_decoder_destroy(&log_decoder);
+
+        return FLB_FILTER_NOTOUCH;
     }
+
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        modified_records = 0;
+
+        if (ctx->operation == NEST) {
+            modified_records =
+                apply_nesting_rules(&log_encoder, &log_event, ctx);
+        }
+        else {
+            modified_records =
+                apply_lifting_rules(&log_encoder, &log_event, ctx);
+        }
+
+        if (modified_records == 0) {
+            ret = flb_log_event_encoder_emit_raw_record(
+                    &log_encoder,
+                    log_decoder.record_base,
+                    log_decoder.record_length);
+        }
+    }
+
+    if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA &&
+        log_decoder.offset == bytes) {
+        ret = FLB_EVENT_ENCODER_SUCCESS;
+    }
+
+    if (log_encoder.output_length > 0) {
+        *out_buf  = log_encoder.output_buffer;
+        *out_size = log_encoder.output_length;
+
+        ret = FLB_FILTER_MODIFIED;
+
+        flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
+    }
+    else {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder error : %d", ret);
+
+        ret = FLB_FILTER_NOTOUCH;
+    }
+
+    flb_log_event_decoder_destroy(&log_decoder);
+    flb_log_event_encoder_destroy(&log_encoder);
+
+    return ret;
 }
 
 static int cb_nest_exit(void *data, struct flb_config *config)

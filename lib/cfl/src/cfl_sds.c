@@ -211,8 +211,8 @@ cfl_sds_t cfl_sds_printf(cfl_sds_t *sds, const char *fmt, ...)
     }
     va_end(ap);
 
-    if (size > cfl_sds_avail(s)) {
-        tmp = cfl_sds_increase(s, size);
+    if (size >= cfl_sds_avail(s)) {
+        tmp = cfl_sds_increase(s, size - cfl_sds_avail(s) + 1);
         if (!tmp) {
             return NULL;
         }

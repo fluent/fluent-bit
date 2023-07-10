@@ -27,7 +27,7 @@ endif()
 # CTraces Version
 set(CTR_VERSION_MAJOR  0)
 set(CTR_VERSION_MINOR  3)
-set(CTR_VERSION_PATCH  0)
+set(CTR_VERSION_PATCH  1)
 set(CTR_VERSION_STR "${CTR_VERSION_MAJOR}.${CTR_VERSION_MINOR}.${CTR_VERSION_PATCH}")
 
 # Define __FILENAME__ consistently across Operating Systems

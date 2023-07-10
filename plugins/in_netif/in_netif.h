@@ -24,6 +24,7 @@
 #include <unistd.h>
 
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 #include <msgpack.h>
 
 #define DEFAULT_INTERVAL_SEC  "1"
@@ -63,6 +64,7 @@ struct flb_in_netif_config {
 
     int map_num;
     struct flb_input_instance *ins;
+    struct flb_log_event_encoder *log_encoder;
 };
 
 #endif /*FLB_IN_NETIF_H*/

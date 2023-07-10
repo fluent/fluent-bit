@@ -873,16 +873,11 @@ static int multiline_parser_conf_file(const char *cfg, struct flb_cf *cf,
     return -1;
 }
 
-/* Load parsers from a configuration file */
-int flb_parser_conf_file(const char *file, struct flb_config *config)
+int flb_parser_conf_file_stat(const char *file, struct flb_config *config)
 {
     int ret;
-    char tmp[PATH_MAX + 1];
-    char *cfg = NULL;
     struct stat st;
-    struct flb_cf *cf = NULL;
 
-#ifndef FLB_HAVE_STATIC_CONF
     ret = stat(file, &st);
     if (ret == -1 && errno == ENOENT) {
         /* Try to resolve the real path (if exists) */
@@ -892,9 +887,32 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
         }
 
         if (config->conf_path) {
-            snprintf(tmp, PATH_MAX, "%s%s", config->conf_path, file);
-            cfg = tmp;
+            /* Handle as special case here. */
+            return -2;
         }
+
+        return -1;
+    }
+
+    return 0;
+}
+
+/* Load parsers from a configuration file */
+int flb_parser_conf_file(const char *file, struct flb_config *config)
+{
+    int ret;
+    char tmp[PATH_MAX + 1];
+    char *cfg = NULL;
+    struct flb_cf *cf = NULL;
+
+#ifndef FLB_HAVE_STATIC_CONF
+    ret = flb_parser_conf_file_stat(file, config);
+    if (ret == -1) {
+        return -1;
+    }
+    else if (ret == -2) {
+        snprintf(tmp, PATH_MAX, "%s%s", config->conf_path, file);
+        cfg = tmp;
     }
     else {
         cfg = (char *) file;

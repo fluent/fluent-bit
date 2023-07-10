@@ -192,83 +192,79 @@ static int generate_record_linux(struct flb_input_instance *i_ins,
                                  uint64_t fds)
 {
     int i;
-    int map_num = 3;    /* 3 = alive, proc_name, pid */
+    int ret;
     struct flb_in_proc_config *ctx = in_context;
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
 
     if (ctx->alive == FLB_TRUE && ctx->alert == FLB_TRUE) {
         return 0;
     }
 
-    if (ctx->mem == FLB_TRUE) {
-        map_num += sizeof(mem_linux)/sizeof(struct flb_in_proc_mem_offset)-1;
-    }
-    if (ctx->fds == FLB_TRUE) {
-        map_num++;
-    }
+    ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
 
-    /*
-     * Store the new data into the MessagePack buffer,
-     */
-
-    /* Initialize local msgpack buffer */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
-    /* Pack data */
-    msgpack_pack_array(&mp_pck, 2);
-    flb_pack_time_now(&mp_pck);
-
-    /* 3 = alive, proc_name, pid */
-    msgpack_pack_map(&mp_pck, map_num);
-
-    /* Status */
-    msgpack_pack_str(&mp_pck, 5);
-    msgpack_pack_str_body(&mp_pck, "alive", 5);
-
-    if (ctx->alive) {
-        msgpack_pack_true(&mp_pck);
-    }
-    else {
-        msgpack_pack_false(&mp_pck);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_current_timestamp(ctx->log_encoder);
     }
 
-    /* proc name */
-    msgpack_pack_str(&mp_pck, strlen("proc_name"));
-    msgpack_pack_str_body(&mp_pck, "proc_name", strlen("proc_name"));
-    msgpack_pack_str(&mp_pck, ctx->len_proc_name);
-    msgpack_pack_str_body(&mp_pck, ctx->proc_name, ctx->len_proc_name);
-
-    /* pid */
-    msgpack_pack_str(&mp_pck, strlen("pid"));
-    msgpack_pack_str_body(&mp_pck, "pid", strlen("pid"));
-    msgpack_pack_int64(&mp_pck, ctx->pid);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_append_body_values(
+                ctx->log_encoder,
+                FLB_LOG_EVENT_CSTRING_VALUE("alive"),
+                FLB_LOG_EVENT_BOOLEAN_VALUE(ctx->alive),
+                /* proc name */
+                FLB_LOG_EVENT_CSTRING_VALUE("proc_name"),
+                FLB_LOG_EVENT_CSTRING_VALUE(ctx->proc_name),
+                /* pid */
+                FLB_LOG_EVENT_CSTRING_VALUE("pid"),
+                FLB_LOG_EVENT_INT64_VALUE(ctx->pid));
+    }
 
     /* memory */
     if (ctx->mem == FLB_TRUE) {
         char *str = NULL;
         uint64_t *val = NULL;
-        for (i = 0; mem_linux[i].key != NULL; i++) {
+        for (i = 0;
+             mem_linux[i].key != NULL &&
+             ret == FLB_EVENT_ENCODER_SUCCESS;
+             i++) {
             str = mem_linux[i].msgpack_key;
             val = (uint64_t*)((char*)mem_stat + mem_linux[i].offset);
-            msgpack_pack_str(&mp_pck, strlen(str));
-            msgpack_pack_str_body(&mp_pck, str, strlen(str));
-            msgpack_pack_uint64(&mp_pck, *val);
+
+            ret = flb_log_event_encoder_append_body_values(
+                    ctx->log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE(str),
+                    FLB_LOG_EVENT_UINT64_VALUE(*val));
         }
     }
 
     /* file descriptor */
-    if (ctx->fds == FLB_TRUE) {
-        msgpack_pack_str(&mp_pck, strlen("fd"));
-        msgpack_pack_str_body(&mp_pck, "fd", strlen("fd"));
-        msgpack_pack_uint64(&mp_pck, fds);
+    if (ctx->fds) {
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    ctx->log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE("fd"),
+                    FLB_LOG_EVENT_UINT64_VALUE(fds));
+        }
     }
 
-    flb_input_log_append(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_commit_record(ctx->log_encoder);
+    }
 
-    return 0;
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        flb_input_log_append(i_ins, NULL, 0,
+                             ctx->log_encoder->output_buffer,
+                             ctx->log_encoder->output_length);
+        ret = 0;
+    }
+    else {
+        flb_plg_error(i_ins, "log event encoding error : %d", ret);
+
+        ret = -1;
+    }
+
+    flb_log_event_encoder_reset(ctx->log_encoder);
+
+    return ret;
 }
 
 static void update_alive(struct flb_in_proc_config *ctx)
@@ -435,6 +431,15 @@ static int in_proc_init(struct flb_input_instance *in,
     ctx->pid = -1;
     ctx->ins = in;
 
+    ctx->log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ctx->log_encoder == NULL) {
+        flb_plg_error(in, "event encoder initialization error");
+        flb_free(ctx);
+
+        return -1;
+    }
+
     configure(ctx, in);
 
     if (ctx->proc_name == NULL) {
@@ -468,6 +473,10 @@ static int in_proc_exit(void *data, struct flb_config *config)
 
     if (!ctx) {
         return 0;
+    }
+
+    if (ctx->log_encoder != NULL) {
+        flb_log_event_encoder_destroy(ctx->log_encoder);
     }
 
     /* Destroy context */

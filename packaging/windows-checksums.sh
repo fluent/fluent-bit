@@ -1,6 +1,8 @@
 #!/bin/bash
 set -eu
 
+# Generate checksums for local Windows binaries
+
 SOURCE_DIR=${SOURCE_DIR:?}
 
 pushd "$SOURCE_DIR"

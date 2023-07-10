@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/flb_metrics.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 
 #include <msgpack.h>
 #include "splunk.h"
@@ -354,11 +355,6 @@ static inline int splunk_format(const void *in_buf, size_t in_bytes,
                                 struct flb_splunk *ctx)
 {
     int ret;
-    size_t off = 0;
-    struct flb_time tm;
-    msgpack_unpacked result;
-    msgpack_object root;
-    msgpack_object *obj;
     msgpack_object map;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
@@ -366,6 +362,8 @@ static inline int splunk_format(const void *in_buf, size_t in_bytes,
     flb_sds_t tmp;
     flb_sds_t record;
     flb_sds_t json_out;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
 
     json_out = flb_sds_create_size(in_bytes * 1.5);
     if (!json_out) {
@@ -373,43 +371,42 @@ static inline int splunk_format(const void *in_buf, size_t in_bytes,
         return -1;
     }
 
-    /* Iterate the original buffer and perform adjustments */
-    msgpack_unpacked_init(&result);
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) in_buf, in_bytes);
 
-    while (msgpack_unpack_next(&result, in_buf, in_bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        if (result.data.type != MSGPACK_OBJECT_ARRAY) {
-            continue;
-        }
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
 
-        root = result.data;
-        if (root.via.array.size != 2) {
-            continue;
-        }
+        flb_sds_destroy(json_out);
 
-        /* Get timestamp */
-        flb_time_pop_from_msgpack(&tm, &result, &obj);
+        return -1;
+    }
+
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
 
         /* Create temporary msgpack buffer */
         msgpack_sbuffer_init(&mp_sbuf);
         msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-        map = root.via.array.ptr[1];
+        map = *log_event.body;
 
         if (ctx->event_key) {
             /* Pack the value of a event key */
-            ret = pack_event_key(ctx, &mp_pck, &tm, map, tag, tag_len);
+            ret = pack_event_key(ctx, &mp_pck, &log_event.timestamp, map, tag, tag_len);
             if (ret != 0) {
                 /*
                  * if pack_event_key fails due to missing content in the
                  * record, we just warn the user and try to pack it
                  * as a normal map.
                  */
-                ret = pack_map(ctx, &mp_pck, &tm, map, tag, tag_len);
+                ret = pack_map(ctx, &mp_pck, &log_event.timestamp, map, tag, tag_len);
             }
         }
         else {
             /* Pack as a map */
-            ret = pack_map(ctx, &mp_pck, &tm, map, tag, tag_len);
+            ret = pack_map(ctx, &mp_pck, &log_event.timestamp, map, tag, tag_len);
         }
 
         /* Validate packaging */
@@ -430,7 +427,7 @@ static inline int splunk_format(const void *in_buf, size_t in_bytes,
         if (!record) {
             flb_errno();
             msgpack_sbuffer_destroy(&mp_sbuf);
-            msgpack_unpacked_destroy(&result);
+            flb_log_event_decoder_destroy(&log_decoder);
             flb_sds_destroy(json_out);
             return -1;
         }
@@ -451,7 +448,7 @@ static inline int splunk_format(const void *in_buf, size_t in_bytes,
         else {
             flb_errno();
             msgpack_sbuffer_destroy(&mp_sbuf);
-            msgpack_unpacked_destroy(&result);
+            flb_log_event_decoder_destroy(&log_decoder);
             flb_sds_destroy(json_out);
             return -1;
         }
@@ -460,6 +457,8 @@ static inline int splunk_format(const void *in_buf, size_t in_bytes,
 
     *out_buf = json_out;
     *out_size = flb_sds_len(json_out);
+
+    flb_log_event_decoder_destroy(&log_decoder);
 
     return 0;
 }

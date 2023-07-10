@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 #include <msgpack.h>
 
 #include "azure.h"
@@ -52,12 +53,7 @@ static int azure_format(const void *in_buf, size_t in_bytes,
     int i;
     int array_size = 0;
     int map_size;
-    size_t off = 0;
     double t;
-    struct flb_time tm;
-    msgpack_unpacked result;
-    msgpack_object root;
-    msgpack_object *obj;
     msgpack_object map;
     msgpack_object k;
     msgpack_object v;
@@ -70,28 +66,35 @@ static int azure_format(const void *in_buf, size_t in_bytes,
     size_t s;
     struct tm tms;
     int len;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    int ret;
 
     /* Count number of items */
     array_size = flb_mp_count(in_buf, in_bytes);
-    msgpack_unpacked_init(&result);
+
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) in_buf, in_bytes);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return -1;
+    }
 
     /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
     msgpack_pack_array(&mp_pck, array_size);
 
-    off = 0;
-    while (msgpack_unpack_next(&result, in_buf, in_bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        root = result.data;
-
-        /* Get timestamp */
-        flb_time_pop_from_msgpack(&tm, &result, &obj);
-
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         /* Create temporary msgpack buffer */
         msgpack_sbuffer_init(&tmp_sbuf);
         msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
-        map = root.via.array.ptr[1];
+        map = *log_event.body;
         map_size = map.via.map.size;
 
         msgpack_pack_map(&mp_pck, map_size + 1);
@@ -104,20 +107,23 @@ static int azure_format(const void *in_buf, size_t in_bytes,
 
         if (ctx->time_generated == FLB_TRUE) {
             /* Append the time value as ISO 8601 */
-            gmtime_r(&tm.tm.tv_sec, &tms);
+            gmtime_r(&log_event.timestamp.tm.tv_sec, &tms);
+
             s = strftime(time_formatted, sizeof(time_formatted) - 1,
                             FLB_PACK_JSON_DATE_ISO8601_FMT, &tms);
 
             len = snprintf(time_formatted + s,
                             sizeof(time_formatted) - 1 - s,
                             ".%03" PRIu64 "Z",
-                            (uint64_t) tm.tm.tv_nsec / 1000000);
+                            (uint64_t) log_event.timestamp.tm.tv_nsec / 1000000);
+
             s += len;
             msgpack_pack_str(&mp_pck, s);
             msgpack_pack_str_body(&mp_pck, time_formatted, s);
         } else {
             /* Append the time value as millis.nanos */
-            t = flb_time_to_double(&tm);
+            t = flb_time_to_double(&log_event.timestamp);
+
             msgpack_pack_double(&mp_pck, t);
         }
 
@@ -136,13 +142,16 @@ static int azure_format(const void *in_buf, size_t in_bytes,
     record = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
     if (!record) {
         flb_errno();
+
+        flb_log_event_decoder_destroy(&log_decoder);
         msgpack_sbuffer_destroy(&mp_sbuf);
-        msgpack_unpacked_destroy(&result);
+
         return -1;
     }
 
+    flb_log_event_decoder_destroy(&log_decoder);
+
     msgpack_sbuffer_destroy(&mp_sbuf);
-    msgpack_unpacked_destroy(&result);
 
     *out_buf = record;
     *out_size = flb_sds_len(record);

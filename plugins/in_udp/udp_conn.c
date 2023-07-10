@@ -35,47 +35,68 @@ static inline void consume_bytes(char *buf, int bytes, int length)
 static inline int process_pack(struct udp_conn *conn,
                                char *pack, size_t size)
 {
+    int ret;
     size_t off = 0;
     msgpack_unpacked result;
     msgpack_object entry;
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
+    struct flb_in_udp_config *ctx;
 
-    /* Initialize local msgpack buffer */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    ctx = conn->ctx;
+
+    flb_log_event_encoder_reset(ctx->log_encoder);
 
     /* First pack the results, iterate concatenated messages */
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, pack, size, &off) == MSGPACK_UNPACK_SUCCESS) {
         entry = result.data;
 
-        msgpack_pack_array(&mp_pck, 2);
-        flb_pack_time_now(&mp_pck);
 
-        if (entry.type == MSGPACK_OBJECT_MAP) {
-            msgpack_pack_object(&mp_pck, entry);
+        ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_set_current_timestamp(ctx->log_encoder);
         }
-        else if (entry.type == MSGPACK_OBJECT_ARRAY) {
-            msgpack_pack_map(&mp_pck, 1);
-            msgpack_pack_str(&mp_pck, 3);
-            msgpack_pack_str_body(&mp_pck, "msg", 3);
-            msgpack_pack_object(&mp_pck, entry);
-        }
-        else {
-            flb_plg_debug(conn->ins, "record is not a JSON map or array");
-            msgpack_unpacked_destroy(&result);
-            msgpack_sbuffer_destroy(&mp_sbuf);
-            return -1;
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            if (entry.type == MSGPACK_OBJECT_MAP) {
+                ret = flb_log_event_encoder_set_body_from_msgpack_object(
+                        ctx->log_encoder, &entry);
+            }
+            else if (entry.type == MSGPACK_OBJECT_ARRAY) {
+                ret = flb_log_event_encoder_append_body_values(
+                        ctx->log_encoder,
+                        FLB_LOG_EVENT_CSTRING_VALUE("msg"),
+                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&entry));
+            }
+            else {
+                ret = FLB_EVENT_ENCODER_ERROR_INVALID_VALUE_TYPE;
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_commit_record(ctx->log_encoder);
+            }
+
+            if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                break;
+            }
         }
     }
 
     msgpack_unpacked_destroy(&result);
 
-    flb_input_log_append(conn->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        flb_input_log_append(conn->ins, NULL, 0,
+                             ctx->log_encoder->output_buffer,
+                             ctx->log_encoder->output_length);
+        ret = 0;
+    }
+    else {
+        flb_plg_error(ctx->ins, "log event encoding error : %d", ret);
 
-    return 0;
+        ret = -1;
+    }
+
+    return ret;
 }
 
 /* Process a JSON payload, return the number of processed bytes */
@@ -114,23 +135,24 @@ static ssize_t parse_payload_json(struct udp_conn *conn)
  */
 static ssize_t parse_payload_none(struct udp_conn *conn)
 {
+    int ret;
     int len;
     int sep_len;
     size_t consumed = 0;
     char *buf;
     char *s;
     char *separator;
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
+    struct flb_in_udp_config *ctx;
+
+    ctx = conn->ctx;
 
     separator = conn->ctx->separator;
     sep_len = flb_sds_len(conn->ctx->separator);
 
-    /* Initialize local msgpack buffer */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
     buf = conn->buf_data;
+    ret = FLB_EVENT_ENCODER_SUCCESS;
+
+    flb_log_event_encoder_reset(ctx->log_encoder);
 
     while ((s = strstr(buf, separator))) {
         len = (s - buf);
@@ -138,13 +160,27 @@ static ssize_t parse_payload_none(struct udp_conn *conn)
             break;
         }
         else if (len > 0) {
-            msgpack_pack_array(&mp_pck, 2);
-            flb_pack_time_now(&mp_pck);
-            msgpack_pack_map(&mp_pck, 1);
-            msgpack_pack_str(&mp_pck, 3);
-            msgpack_pack_str_body(&mp_pck, "log", 3);
-            msgpack_pack_str(&mp_pck, len);
-            msgpack_pack_str_body(&mp_pck, buf, len);
+            ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_set_current_timestamp(ctx->log_encoder);
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_append_body_values(
+                        ctx->log_encoder,
+                        FLB_LOG_EVENT_CSTRING_VALUE("log"),
+                        FLB_LOG_EVENT_STRING_VALUE(buf, len));
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_commit_record(ctx->log_encoder);
+            }
+
+            if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                break;
+            }
+
             consumed += len + 1;
             buf += len + sep_len;
         }
@@ -153,8 +189,14 @@ static ssize_t parse_payload_none(struct udp_conn *conn)
         }
     }
 
-    flb_input_log_append(conn->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        flb_input_log_append(conn->ins, NULL, 0,
+                             ctx->log_encoder->output_buffer,
+                             ctx->log_encoder->output_length);
+    }
+    else {
+        flb_plg_error(ctx->ins, "log event encoding error : %d", ret);
+    }
 
     return consumed;
 }

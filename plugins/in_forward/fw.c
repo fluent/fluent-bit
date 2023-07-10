@@ -168,6 +168,7 @@ static int in_fw_init(struct flb_input_instance *ins,
     if (!ctx) {
         return -1;
     }
+
     ctx->coll_fd = -1;
     ctx->ins = ins;
     mk_list_init(&ctx->connections);

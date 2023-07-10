@@ -86,6 +86,9 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
             file->size = st.st_size;
             file->pending_bytes = (file->size - file->offset);
         }
+        else {
+            memset(&st, 0, sizeof(struct stat));
+        }
 
         if (file->pending_bytes <= 0) {
             continue;

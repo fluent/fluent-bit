@@ -19,6 +19,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_engine.h>
@@ -41,52 +42,83 @@
 #include "in_serial.h"
 #include "in_serial_config.h"
 
-static inline int process_line(msgpack_packer *mp_pck, const char *line, int len,
+static inline int process_line(const char *line, int len,
                                struct flb_in_serial_config *ctx)
 {
+    int ret;
 
-    /*
-     * Store the new data into the MessagePack buffer,
-     * we handle this as a list of maps.
-     */
-    msgpack_pack_array(mp_pck, 2);
-    flb_pack_time_now(mp_pck);
-    msgpack_pack_map(mp_pck, 1);
-    msgpack_pack_str(mp_pck, 3);
-    msgpack_pack_str_body(mp_pck, "msg", 3);
-    msgpack_pack_str(mp_pck, len);
-    msgpack_pack_str_body(mp_pck, line, len);
+    ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_current_timestamp(ctx->log_encoder);
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_append_body_values(
+                ctx->log_encoder,
+                FLB_LOG_EVENT_CSTRING_VALUE("msg"),
+                FLB_LOG_EVENT_STRING_VALUE(line, len));
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_commit_record(ctx->log_encoder);
+    }
 
     flb_debug("[in_serial] message '%s'", line);
 
-    return 0;
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = 0;
+    }
+    else {
+        ret = -1;
+    }
+
+    return ret;
 }
 
-static inline int process_pack(msgpack_packer *mp_pck,
-                               struct flb_in_serial_config *ctx,
+static inline int process_pack(struct flb_in_serial_config *ctx,
                                char *pack, size_t size)
 {
+    int ret;
     size_t off = 0;
     msgpack_unpacked result;
     msgpack_object entry;
+
+    ret = FLB_EVENT_ENCODER_SUCCESS;
 
     /* First pack the results, iterate concatenated messages */
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, pack, size, &off) == MSGPACK_UNPACK_SUCCESS) {
         entry = result.data;
 
-        msgpack_pack_array(mp_pck, 2);
-        msgpack_pack_uint64(mp_pck, time(NULL));
+        ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
 
-        msgpack_pack_map(mp_pck, 1);
-        msgpack_pack_str(mp_pck, 3);
-        msgpack_pack_str_body(mp_pck, "msg", 3);
-        msgpack_pack_object(mp_pck, entry);
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_set_current_timestamp(ctx->log_encoder);
+        }
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    ctx->log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE("msg"),
+                    FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&entry));
+        }
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_commit_record(ctx->log_encoder);
+        }
     }
 
     msgpack_unpacked_destroy(&result);
 
-    return 0;
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = 0;
+    }
+    else {
+        ret = -1;
+    }
+
+    return ret;
 }
 
 static inline void consume_bytes(char *buf, int bytes, int length)
@@ -106,27 +138,30 @@ static int cb_serial_collect(struct flb_input_instance *in,
     char *sep;
     char *buf;
     struct flb_in_serial_config *ctx = in_context;
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
 
-    /* Initialize local msgpack buffer */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    flb_log_event_encoder_reset(ctx->log_encoder);
+
+    ret = 0;
 
     while (1) {
         available = (sizeof(ctx->buf_data) -1) - ctx->buf_len;
         if (available > 1) {
             bytes = read(ctx->fd, ctx->buf_data + ctx->buf_len, available);
+
             if (bytes == -1) {
-                msgpack_sbuffer_destroy(&mp_sbuf);
                 if (errno == EPIPE || errno == EINTR) {
-                    return -1;
+                    ret = -1;
                 }
-                return 0;
+                else {
+                    ret = 0;
+                }
+
+                break;
             }
             else if (bytes == 0) {
-                msgpack_sbuffer_destroy(&mp_sbuf);
-                return 0;
+                ret = 0;
+
+                break;
             }
         }
         ctx->buf_len += bytes;
@@ -168,7 +203,7 @@ static int cb_serial_collect(struct flb_input_instance *in,
                 len = (sep - ctx->buf_data);
                 if (len > 0) {
                     /* process the line based in the separator position */
-                    process_line(&mp_pck, buf, len, ctx);
+                    process_line(buf, len, ctx);
                     consume_bytes(ctx->buf_data, len + ctx->sep_len, ctx->buf_len);
                     ctx->buf_len -= (len + ctx->sep_len);
                     hits++;
@@ -183,8 +218,9 @@ static int cb_serial_collect(struct flb_input_instance *in,
             if (hits == 0 && available <= 1) {
                 flb_debug("[in_serial] no separator found, no more space");
                 ctx->buf_len = 0;
-                msgpack_sbuffer_destroy(&mp_sbuf);
-                return 0;
+                ret = 0;
+
+                break;
             }
         }
         else if (ctx->format == FLB_SERIAL_FORMAT_JSON) {
@@ -196,23 +232,27 @@ static int cb_serial_collect(struct flb_input_instance *in,
                                       &pack, &out_size, &ctx->pack_state);
             if (ret == FLB_ERR_JSON_PART) {
                 flb_debug("[in_serial] JSON incomplete, waiting for more data...");
-                msgpack_sbuffer_destroy(&mp_sbuf);
-                return 0;
+
+                ret = 0;
+
+                break;
             }
             else if (ret == FLB_ERR_JSON_INVAL) {
                 flb_debug("[in_serial] invalid JSON message, skipping");
                 flb_pack_state_reset(&ctx->pack_state);
                 flb_pack_state_init(&ctx->pack_state);
                 ctx->pack_state.multiple = FLB_TRUE;
-                msgpack_sbuffer_destroy(&mp_sbuf);
-                return -1;
+
+                ret = -1;
+
+                break;
             }
 
             /*
              * Given the Tokens used for the packaged message, append
              * the records and then adjust buffer.
              */
-            process_pack(&mp_pck, ctx, pack, out_size);
+            process_pack(ctx, pack, out_size);
             flb_free(pack);
 
             consume_bytes(ctx->buf_data, ctx->pack_state.last_byte, ctx->buf_len);
@@ -225,15 +265,20 @@ static int cb_serial_collect(struct flb_input_instance *in,
         }
         else {
             /* Process and enqueue the received line */
-            process_line(&mp_pck, ctx->buf_data, ctx->buf_len, ctx);
+            process_line(ctx->buf_data, ctx->buf_len, ctx);
             ctx->buf_len = 0;
         }
     }
 
-    flb_input_log_append(in, NULL, 0, mp_sbuf.data, mp_sbuf.size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    if (ctx->log_encoder->output_length > 0) {
+        flb_input_log_append(in, NULL, 0,
+                             ctx->log_encoder->output_buffer,
+                             ctx->log_encoder->output_length);
+    }
 
-    return 0;
+    flb_log_event_encoder_reset(ctx->log_encoder);
+
+    return ret;
 }
 
 /* Cleanup serial input */
@@ -243,6 +288,10 @@ static int cb_serial_exit(void *in_context, struct flb_config *config)
 
     flb_trace("[in_serial] Restoring original termios...");
     tcsetattr(ctx->fd, TCSANOW, &ctx->tio_orig);
+
+    if (ctx->log_encoder != NULL) {
+        flb_log_event_encoder_destroy(ctx->log_encoder);
+    }
 
     flb_pack_state_reset(&ctx->pack_state);
     flb_free(ctx);
@@ -267,7 +316,17 @@ static int cb_serial_init(struct flb_input_instance *in,
     }
     ctx->format = FLB_SERIAL_FORMAT_NONE;
 
+    ctx->log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ctx->log_encoder == NULL) {
+        flb_plg_error(in, "could not initialize event encoder");
+        flb_free(ctx);
+
+        return -1;
+    }
+
     if (!serial_config_read(ctx, in)) {
+        flb_log_event_encoder_destroy(ctx->log_encoder);
         flb_free(ctx);
         return -1;
     }
@@ -289,6 +348,7 @@ static int cb_serial_init(struct flb_input_instance *in,
     if (fd == -1) {
         perror("open");
         flb_error("[in_serial] Could not open serial port device");
+        flb_log_event_encoder_destroy(ctx->log_encoder);
         flb_free(ctx);
         return -1;
     }
@@ -333,6 +393,7 @@ static int cb_serial_init(struct flb_input_instance *in,
 #endif
 
     if (ret == -1) {
+        flb_log_event_encoder_destroy(ctx->log_encoder);
         return -1;
     }
 

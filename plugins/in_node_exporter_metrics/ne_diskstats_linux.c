@@ -72,7 +72,6 @@
 
 #define KNOWN_FIELDS     17
 #define SECTOR_SIZE      512
-#define IGNORED_DEVICES  "^(ram|loop|fd|(h|s|v|xv)d[a-z]|nvme\\d+n\\d+p)\\d+$"
 
 struct dt_metric {
     void *metric;
@@ -155,7 +154,7 @@ static int ne_diskstats_configure(struct flb_ne *ctx)
     }
 
     /* Initialize regex for skipped devices */
-    ctx->dt_regex_skip_devices = flb_regex_create(IGNORED_DEVICES);
+    ctx->dt_regex_skip_devices = flb_regex_create(ctx->dt_regex_skip_devices_text);
     if (!ctx->dt_regex_skip_devices) {
         flb_plg_error(ctx->ins,
                       "could not initialize regex pattern for ignored "

@@ -43,16 +43,16 @@ static void debug_cb_request_payload(char *name, void *p1, void *p2)
     if (c->body_len > 3) {
         ptr = (unsigned char *) c->body_buf;
         if (ptr[0] == 0x1F && ptr[1] == 0x8B && ptr[2] == 0x08) {
-            flb_idebug("[http] request payload (%lu bytes)\n[GZIP binary content...]",
+            flb_idebug("[http] request payload (%d bytes)\n[GZIP binary content...]",
                        c->body_len);
         }
         else {
-            flb_idebug("[http] request payload (%lu bytes)\n%s",
+            flb_idebug("[http] request payload (%d bytes)\n%s",
                        c->body_len, c->body_buf);
         }
     }
     else {
-        flb_idebug("[http] request payload (%lu bytes)\n%s",
+        flb_idebug("[http] request payload (%d bytes)\n%s",
                    c->body_len, c->body_buf);
     }
 }

@@ -126,6 +126,7 @@ static void serve_content(mk_request_t *request, struct vivo_stream *vs)
     if (flb_sds_len(payload) == 0) {
         mk_http_status(request, 200);
         headers_set(request, vs);
+        flb_sds_destroy(payload);
         return;
     }
 

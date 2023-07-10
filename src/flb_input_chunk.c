@@ -1808,8 +1808,8 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     real_size = flb_input_chunk_get_real_size(ic);
     real_diff = real_size - pre_real_size;
     if (real_diff != 0) {
-        flb_debug("[input chunk] update output instances with new chunk size diff=%zu",
-                  real_diff);
+        flb_debug("[input chunk] update output instances with new chunk size diff=%zd, records=%zu, input=%s",
+                  real_diff, n_records, flb_input_name(in));
         flb_input_chunk_update_output_instances(ic, real_diff);
     }
 
@@ -1915,6 +1915,24 @@ retry:
     return 0;
 }
 
+/* iterate input instance ring buffer and remove any enqueued input_chunk_raw */
+void flb_input_chunk_ring_buffer_cleanup(struct flb_input_instance *ins)
+{
+    int ret;
+    struct input_chunk_raw *cr;
+
+    if (!ins->rb) {
+        return;
+    }
+
+    while ((ret = flb_ring_buffer_read(ins->rb, (void *) &cr, sizeof(cr))) == 0) {
+        if (cr) {
+            destroy_chunk_raw(cr);
+            cr = NULL;
+        }
+    }
+}
+
 void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data)
 {
     int ret;
@@ -1984,8 +2002,8 @@ const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size)
     ssize_t diff_size;
     char *buf = NULL;
 
-
     pre_size = flb_input_chunk_get_real_size(ic);
+
     if (cio_chunk_is_up(ic->chunk) == CIO_FALSE) {
         ret = cio_chunk_up(ic->chunk);
         if (ret == -1) {
@@ -1993,12 +2011,21 @@ const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size)
         }
     }
 
+    /* Lock the internal chunk
+     *
+     * This operation has to be performed before getting the chunk data
+     * pointer because in certain situations it could cause the chunk
+     * mapping to be relocated (ie. macos / windows on trim)
+     */
+    cio_chunk_lock(ic->chunk);
+
     /*
      * msgpack-c internal use a raw buffer for it operations, since we
      * already appended data we just can take out the references to avoid
      * a new memory allocation and skip a copy operation.
      */
     ret = cio_chunk_get_content(ic->chunk, &buf, size);
+
     if (ret == -1) {
         flb_error("[input chunk] error retrieving chunk content");
         return NULL;
@@ -2011,9 +2038,6 @@ const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size)
 
     /* Set it busy as it likely it's a reference for an outgoing task */
     ic->busy = FLB_TRUE;
-
-    /* Lock the internal chunk */
-    cio_chunk_lock(ic->chunk);
 
     post_size = flb_input_chunk_get_real_size(ic);
     if (post_size != pre_size) {

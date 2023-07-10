@@ -26,6 +26,8 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #include <msgpack.h>
 #include "filter_modifier.h"
@@ -303,7 +305,6 @@ static int cb_modifier_filter(const void *data, size_t bytes,
 {
     struct record_modifier_ctx *ctx = context;
     char is_modified = FLB_FALSE;
-    size_t off = 0;
     int i;
     int removed_map_num  = 0;
     int map_num          = 0;
@@ -311,39 +312,56 @@ static int cb_modifier_filter(const void *data, size_t bytes,
     char uuid[40] = {0};
     size_t uuid_len = 0;
     bool_map_t *bool_map = NULL;
-    (void) f_ins;
-    (void) i_ins;
-    (void) config;
     struct flb_time tm;
     struct modifier_record *mod_rec;
-    msgpack_sbuffer tmp_sbuf;
-    msgpack_packer tmp_pck;
-    msgpack_unpacked result;
     msgpack_object  *obj;
     msgpack_object_kv *kv;
     struct mk_list *tmp;
     struct mk_list *head;
+    struct flb_log_event_encoder log_encoder;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
 
-    /* Create temporary msgpack buffer */
-    msgpack_sbuffer_init(&tmp_sbuf);
-    msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
+    (void) f_ins;
+    (void) i_ins;
+    (void) config;
+
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    ret = flb_log_event_encoder_init(&log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder initialization error : %d", ret);
+
+        flb_log_event_decoder_destroy(&log_decoder);
+
+        return FLB_FILTER_NOTOUCH;
+    }
 
     /* Iterate each item to know map number */
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         map_num = 0;
         removed_map_num = 0;
         uuid_len = 0;
+
         if (bool_map != NULL) {
             flb_free(bool_map);
             bool_map = NULL;
         }
 
-        if (result.data.type != MSGPACK_OBJECT_ARRAY) {
-            continue;
-        }
-
-        flb_time_pop_from_msgpack(&tm, &result, &obj);
+        flb_time_copy(&tm, &log_event.timestamp);
+        obj = log_event.body;
 
         /* grep keys */
         if (obj->type == MSGPACK_OBJECT_MAP) {
@@ -383,59 +401,80 @@ static int cb_modifier_filter(const void *data, size_t bytes,
             continue;
         }
 
-        msgpack_pack_array(&tmp_pck, 2);
-        flb_time_append_to_msgpack(&tm, &tmp_pck, 0);
+        ret = flb_log_event_encoder_begin_record(&log_encoder);
 
-        msgpack_pack_map(&tmp_pck, removed_map_num);
+        ret = flb_log_event_encoder_set_timestamp(&log_encoder, &tm);
+
+        ret = flb_log_event_encoder_set_metadata_from_msgpack_object(
+                &log_encoder, log_event.metadata);
+
         kv = obj->via.map.ptr;
-        for(i=0; bool_map[i] != TAIL_OF_ARRAY; i++) {
+        for(i=0;
+            bool_map[i] != TAIL_OF_ARRAY &&
+            ret == FLB_EVENT_ENCODER_SUCCESS;
+            i++) {
             if (bool_map[i] == TO_BE_REMAINED) {
-                msgpack_pack_object(&tmp_pck, (kv+i)->key);
-                msgpack_pack_object(&tmp_pck, (kv+i)->val);
+                ret = flb_log_event_encoder_append_body_values(
+                        &log_encoder,
+                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].key),
+                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].val));
             }
         }
+
         flb_free(bool_map);
         bool_map = NULL;
 
         /* append record */
         if (ctx->records_num > 0) {
             is_modified = FLB_TRUE;
+
             mk_list_foreach_safe(head, tmp, &ctx->records) {
                 mod_rec = mk_list_entry(head, struct modifier_record,  _head);
-                msgpack_pack_str(&tmp_pck, mod_rec->key_len);
-                msgpack_pack_str_body(&tmp_pck,
-                                      mod_rec->key, mod_rec->key_len);
-                msgpack_pack_str(&tmp_pck, mod_rec->val_len);
-                msgpack_pack_str_body(&tmp_pck,
-                                      mod_rec->val, mod_rec->val_len);
+
+                ret = flb_log_event_encoder_append_body_values(
+                        &log_encoder,
+                        FLB_LOG_EVENT_STRING_VALUE(mod_rec->key, mod_rec->key_len),
+                        FLB_LOG_EVENT_STRING_VALUE(mod_rec->val, mod_rec->val_len));
+
+                if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                    break;
+                }
             }
         }
+
         if (uuid_len > 0) {
             is_modified = FLB_TRUE;
-            msgpack_pack_str(&tmp_pck, flb_sds_len(ctx->uuid_key));
-            msgpack_pack_str_body(&tmp_pck,
-                                  ctx->uuid_key, flb_sds_len(ctx->uuid_key));
-            msgpack_pack_str(&tmp_pck, uuid_len);
-            msgpack_pack_str_body(&tmp_pck,
-                                  &uuid[0], uuid_len);
-            
+
+            ret = flb_log_event_encoder_append_body_values(
+                    &log_encoder,
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->uuid_key, flb_sds_len(ctx->uuid_key)),
+                    FLB_LOG_EVENT_STRING_VALUE(&uuid[0], uuid_len));
         }
+
+        flb_log_event_encoder_commit_record(&log_encoder);
     }
-    msgpack_unpacked_destroy(&result);
+
     if (bool_map != NULL) {
         flb_free(bool_map);
     }
 
-    if (is_modified != FLB_TRUE) {
-        /* Destroy the buffer to avoid more overhead */
-        msgpack_sbuffer_destroy(&tmp_sbuf);
-        return FLB_FILTER_NOTOUCH;
+    if (is_modified &&
+        log_encoder.output_length > 0) {
+        *out_buf  = log_encoder.output_buffer;
+        *out_size = log_encoder.output_length;
+
+        ret = FLB_FILTER_MODIFIED;
+
+        flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
+    }
+    else {
+        ret = FLB_FILTER_NOTOUCH;
     }
 
-    /* link new buffers */
-    *out_buf  = tmp_sbuf.data;
-    *out_size = tmp_sbuf.size;
-    return FLB_FILTER_MODIFIED;
+    flb_log_event_decoder_destroy(&log_decoder);
+    flb_log_event_encoder_destroy(&log_encoder);
+
+    return ret;
 }
 
 static int cb_modifier_exit(void *data, struct flb_config *config)

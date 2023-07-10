@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #ifdef FLB_HAVE_PARSER
 #include <fluent-bit/multiline/flb_ml.h>
@@ -63,7 +64,6 @@ struct flb_tail_file {
     int mult_skipping;          /* skipping because ignode_older than ?  */
     int mult_keys;              /* total number of buffered keys         */
 
-
     int mult_records;           /* multiline records counter mult_sbuf   */
     msgpack_sbuffer mult_sbuf;  /* temporary msgpack buffer              */
     msgpack_packer mult_pck;    /* temporary msgpack packer              */
@@ -78,8 +78,6 @@ struct flb_tail_file {
 
     /* multiline engine: file stream_id and local buffers */
     uint64_t ml_stream_id;
-    msgpack_sbuffer ml_sbuf;  /* temporary msgpack buffer              */
-    msgpack_packer ml_pck;    /* temporary msgpack packer              */
 
     /* content parsing, positions and buffer */
     size_t parsed;
@@ -113,6 +111,15 @@ struct flb_tail_file {
 
     uint64_t hash_bits;
     flb_sds_t hash_key;
+
+    /* There are dedicated log event encoders for
+     * single and multi line events because I am respecting
+     * the old behavior which resulted in grouping both types
+     * of logs in tail_file.c but I don't know if this is
+     * strictly necessary.
+     */
+    struct flb_log_event_encoder *ml_log_event_encoder;
+    struct flb_log_event_encoder *sl_log_event_encoder;
 
     /* reference */
     int tail_mode;

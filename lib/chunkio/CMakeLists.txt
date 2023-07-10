@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0)
-project(chunk-io)
+project(chunk-io C)
 
 set(CIO_VERSION_MAJOR  1)
 set(CIO_VERSION_MINOR  4)

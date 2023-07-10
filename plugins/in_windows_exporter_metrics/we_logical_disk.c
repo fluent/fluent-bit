@@ -121,9 +121,9 @@ struct we_perflib_metric_spec logical_disk_metric_specs[] = {
                                 "Total amount of writeing time to the disk",
                                 "volume"),
 
-        WE_PERFLIB_COUNTER_SPEC("free_megabytes",
-                                "Free megabytes on the disk",
-                                "volume"),
+        WE_PERFLIB_GAUGE_SPEC("free_megabytes",
+                              "Free megabytes on the disk",
+                              "volume"),
 
         /* WE_PERFLIB_COUNTER_SPEC("size_megabytes", */
         /*                         "Total amount of free megabytes on the disk", */

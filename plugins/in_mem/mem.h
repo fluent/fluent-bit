@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 #include <msgpack.h>
 
 #define DEFAULT_INTERVAL_SEC  "1"
@@ -44,6 +45,7 @@ struct flb_in_mem_config {
     int    interval_nsec;
     pid_t  pid;
     struct flb_input_instance *ins;
+    struct flb_log_event_encoder log_encoder;
 };
 
 #endif

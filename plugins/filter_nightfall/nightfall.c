@@ -28,6 +28,8 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/tls/flb_tls.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #include "nightfall.h"
 #include "nightfall_api.h"
@@ -153,10 +155,7 @@ static int redact_record(msgpack_object *data, char **to_redact_data, size_t *to
     msgpack_sbuffer_init(&new_rec_sbuf);
     msgpack_packer_init(&new_rec_pk, &new_rec_sbuf, msgpack_sbuffer_write);
 
-    msgpack_pack_array(&new_rec_pk, 2);
-    flb_time_append_to_msgpack(&t, &new_rec_pk, 0);
-
-    new_obj = flb_malloc(sizeof(struct nested_obj));
+    new_obj = flb_calloc(1, sizeof(struct nested_obj));
     new_obj->obj = data;
     new_obj->cur_index = 0;
     new_obj->start_at_val = FLB_FALSE;
@@ -463,22 +462,23 @@ static int cb_nightfall_filter(const void *data, size_t bytes,
                                struct flb_config *config)
 {
     struct flb_filter_nightfall *ctx = context;
-    (void) f_ins;
-    (void) i_ins;
-    (void) config;
     int ret;
     char is_modified = FLB_FALSE;
 
     struct flb_time tmp;
-    size_t off = 0;
-    msgpack_object *p;
-    msgpack_unpacked result;
 
     char *to_redact;
     size_t to_redact_size;
     char is_sensitive = FLB_FALSE;
 
     msgpack_sbuffer new_rec_sbuf;
+    struct flb_log_event_encoder log_encoder;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+
+    (void) f_ins;
+    (void) i_ins;
+    (void) config;
 
     /* 
      * Generate a random double between 0 and 1, if it is over the sampling rate 
@@ -488,39 +488,98 @@ static int cb_nightfall_filter(const void *data, size_t bytes,
         return FLB_FILTER_NOTOUCH;
     }
 
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        flb_time_pop_from_msgpack(&tmp, &result, &p);
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
-        ret = scan_log(ctx, &result.data, &to_redact, &to_redact_size, &is_sensitive);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    ret = flb_log_event_encoder_init(&log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder initialization error : %d", ret);
+
+        flb_log_event_decoder_destroy(&log_decoder);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        ret = scan_log(ctx, log_event.body, &to_redact, &to_redact_size, &is_sensitive);
         if (ret != 0) {
             flb_plg_error(ctx->ins, "scanning error");
-            msgpack_unpacked_destroy(&result);
+
+            flb_log_event_decoder_destroy(&log_decoder);
+            flb_log_event_encoder_destroy(&log_encoder);
+
             return FLB_FILTER_NOTOUCH;
         }
 
         if (is_sensitive == FLB_TRUE) {
-            ret = redact_record(p, &to_redact, &to_redact_size, tmp, &new_rec_sbuf);
+            ret = redact_record(log_event.body, &to_redact, &to_redact_size, tmp, &new_rec_sbuf);
             if (ret != 0) {
                 flb_plg_error(ctx->ins, "redaction error");
                 flb_free(to_redact);
-                msgpack_unpacked_destroy(&result);
                 msgpack_sbuffer_destroy(&new_rec_sbuf);
+                flb_log_event_decoder_destroy(&log_decoder);
+                flb_log_event_encoder_destroy(&log_encoder);
                 return FLB_FILTER_NOTOUCH;
             }
             is_modified = FLB_TRUE;
         }
+
+        if (is_modified) {
+            ret = flb_log_event_encoder_begin_record(&log_encoder);
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_set_timestamp(
+                        &log_encoder, &log_event.timestamp);
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_set_metadata_from_msgpack_object(
+                        &log_encoder, log_event.metadata);
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_set_body_from_raw_msgpack(
+                        &log_encoder, new_rec_sbuf.data, new_rec_sbuf.size);
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_commit_record(
+                        &log_encoder);
+            }
+        }
     }
     flb_free(to_redact);
-    msgpack_unpacked_destroy(&result);
 
-    if (!is_modified) {
-        return FLB_FILTER_NOTOUCH;
+    if (log_encoder.output_length > 0) {
+        *out_buf  = log_encoder.output_buffer;
+        *out_size = log_encoder.output_length;
+
+        ret = FLB_FILTER_MODIFIED;
+
+        flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
+    }
+    else {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder error : %d", ret);
+
+        ret = FLB_FILTER_NOTOUCH;
     }
 
-    *out_buf = new_rec_sbuf.data;
-    *out_size = new_rec_sbuf.size;
-    return FLB_FILTER_MODIFIED;
+    flb_log_event_decoder_destroy(&log_decoder);
+    flb_log_event_encoder_destroy(&log_encoder);
+
+    return ret;
 }
 
 static int cb_nightfall_exit(void *data, struct flb_config *config)

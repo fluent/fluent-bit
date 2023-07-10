@@ -58,7 +58,7 @@ static int decode_json(struct flb_parser_dec *dec,
         return -1;
     }
 
-    ret = flb_pack_json_recs(p, len, &buf, &size, &root_type, &records);
+    ret = flb_pack_json_recs(p, len, &buf, &size, &root_type, &records, NULL);
     if (ret != 0) {
         return -1;
     }

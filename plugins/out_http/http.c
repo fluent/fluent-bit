@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 #include <msgpack.h>
 
 #ifdef FLB_HAVE_SIGNV4
@@ -315,13 +316,11 @@ static int compose_payload_gelf(struct flb_out_http *ctx,
 {
     flb_sds_t s;
     flb_sds_t tmp = NULL;
-    msgpack_unpacked result;
-    size_t off = 0;
     size_t size = 0;
-    msgpack_object root;
     msgpack_object map;
-    msgpack_object *obj;
-    struct flb_time tm;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    int ret;
 
     size = bytes * 1.5;
 
@@ -332,27 +331,31 @@ static int compose_payload_gelf(struct flb_out_http *ctx,
         return FLB_RETRY;
     }
 
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) ==
-           MSGPACK_UNPACK_SUCCESS) {
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
-        if (result.data.type != MSGPACK_OBJECT_ARRAY) {
-            continue;
-        }
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
 
-        root = result.data;
-        if (root.via.array.size != 2) {
-            continue;
-        }
+        flb_sds_destroy(s);
 
-        flb_time_pop_from_msgpack(&tm, &result, &obj);
-        map = root.via.array.ptr[1];
+        return FLB_RETRY;
+    }
 
-        tmp = flb_msgpack_to_gelf(&s, &map, &tm, &(ctx->gelf_fields));
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        map = *log_event.body;
+
+        tmp = flb_msgpack_to_gelf(&s, &map,
+                                  &log_event.timestamp,
+                                  &(ctx->gelf_fields));
         if (!tmp) {
             flb_plg_error(ctx->ins, "error encoding to GELF");
+
             flb_sds_destroy(s);
-            msgpack_unpacked_destroy(&result);
+            flb_log_event_decoder_destroy(&log_decoder);
+
             return FLB_ERROR;
         }
 
@@ -360,16 +363,20 @@ static int compose_payload_gelf(struct flb_out_http *ctx,
         tmp = flb_sds_cat(s, "\n", 1);
         if (!tmp) {
             flb_plg_error(ctx->ins, "error concatenating records");
+
             flb_sds_destroy(s);
-            msgpack_unpacked_destroy(&result);
+            flb_log_event_decoder_destroy(&log_decoder);
+
             return FLB_RETRY;
         }
+
         s = tmp;
     }
+
     *out_body = s;
     *out_size = flb_sds_len(s);
 
-    msgpack_unpacked_destroy(&result);
+    flb_log_event_decoder_destroy(&log_decoder);
 
     return FLB_OK;
 }
@@ -466,17 +473,14 @@ err:
     }
     return NULL;
 }
+
 static int post_all_requests(struct flb_out_http *ctx,
                              const char *data, size_t size,
                              flb_sds_t body_key,
                              flb_sds_t headers_key,
                              struct flb_event_chunk *event_chunk)
 {
-    struct flb_time t;
-    msgpack_unpacked result;
-    msgpack_object root;
     msgpack_object map;
-    msgpack_object *obj;
     msgpack_object *k;
     msgpack_object *v;
     msgpack_object *start_key;
@@ -485,31 +489,29 @@ static int post_all_requests(struct flb_out_http *ctx,
     bool body_found;
     bool headers_found;
     char **headers;
-    size_t off = 0;
     size_t record_count = 0;
     int ret = 0;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
 
-    msgpack_unpacked_init(&result);
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, size);
 
-    while (msgpack_unpack_next(&result, data, size, &off) == MSGPACK_UNPACK_SUCCESS) {
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return -1;
+    }
+
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         headers = NULL;
         body_found = false;
         headers_found = false;
-        root = result.data;
 
-        if (root.type != MSGPACK_OBJECT_ARRAY) {
-            ret = -1;
-            break;
-        }
+        map = *log_event.body;
 
-        if (root.via.array.size != 2) {
-            ret = -1;
-            break;
-        }
-
-        flb_time_pop_from_msgpack(&t, &result, &obj);
-
-        map = root.via.array.ptr[1];
         if (map.type != MSGPACK_OBJECT_MAP) {
             ret = -1;
             break;
@@ -556,7 +558,8 @@ static int post_all_requests(struct flb_out_http *ctx,
         flb_free(headers);
     }
 
-    msgpack_unpacked_destroy(&result);
+    flb_log_event_decoder_destroy(&log_decoder);
+
     return ret;
 }
 

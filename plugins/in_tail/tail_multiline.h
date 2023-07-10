@@ -47,9 +47,7 @@ int flb_tail_mult_process_content(time_t now,
                                   struct flb_tail_file *file,
                                   struct flb_tail_config *ctx,
                                   size_t processed_bytes);
-int flb_tail_mult_flush(msgpack_sbuffer *mp_sbuf,
-                        msgpack_packer *mp_pck,
-                        struct flb_tail_file *file,
+int flb_tail_mult_flush(struct flb_tail_file *file,
                         struct flb_tail_config *ctx);
 
 int flb_tail_mult_pending_flush(struct flb_input_instance *ins,

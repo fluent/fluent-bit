@@ -37,7 +37,7 @@ msgpack_unpacked test_init(avro_value_t *aobject, avro_schema_t *aschema, const 
 
     size_t len = strlen(data);
 
-    TEST_CHECK(flb_pack_json(data, len, &out_buf, &out_size, &root_type) == 0);
+    TEST_CHECK(flb_pack_json(data, len, &out_buf, &out_size, &root_type, NULL) == 0);
 
     msgpack_unpacked msg;
     msgpack_unpacked_init(&msg);

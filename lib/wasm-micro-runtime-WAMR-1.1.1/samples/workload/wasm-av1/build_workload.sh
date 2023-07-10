@@ -1,1 +1,0 @@
-../docker/build_workload.sh

@@ -51,7 +51,8 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     if (ret == -1) {
         flb_plg_error(ins, "unable to load configuration.");
         flb_free(ctx);
-        return -1;
+
+        return NULL;
     }
 
     /* rdkafka config context */

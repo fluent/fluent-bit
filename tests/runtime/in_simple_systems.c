@@ -82,7 +82,7 @@ int callback_add_record(void* data, size_t size, void* cb_data)
                            flb_calloc(1, sizeof(struct callback_record));
         } else {
             ctx->records = (struct callback_record *)
-                           flb_realloc(ctx->records, 
+                           flb_realloc(ctx->records,
                                        (ctx->num_records+1)*sizeof(struct callback_record));
         }
         if (ctx->records ==  NULL) {
@@ -105,7 +105,7 @@ void do_test(char *system, ...)
     char *key;
     char *value;
     struct flb_lib_out_cb cb;
-    
+
     cb.cb   = callback_test;
     cb.data = NULL;
 
@@ -214,9 +214,9 @@ void do_test_records(char *system, void (*records_cb)(struct callback_records *)
 
     /* 4 sec passed. It must have flushed */
     sleep(5);
-    
+
     records_cb(records);
-    
+
     flb_stop(ctx);
 
     for (i = 0; i < records->num_records; i++) {
@@ -314,7 +314,7 @@ void flb_test_in_proc_flush()
 }
 void flb_test_in_head_flush()
 {
-    do_test("head", 
+    do_test("head",
             "interval_sec", "0",
             "interval_nsec", "500000000",
             "File", "/dev/urandom",
@@ -336,14 +336,15 @@ void flb_test_dummy_records_1234(struct callback_records *records)
     msgpack_object *obj;
     size_t off = 0;
     struct flb_time ftm;
-    
+
     TEST_CHECK(records->num_records > 0);
     for (i = 0; i < records->num_records; i++) {
         msgpack_unpacked_init(&result);
-        
-        while (msgpack_unpack_next(&result, records->records[i].data, 
+
+        while (msgpack_unpack_next(&result, records->records[i].data,
                                    records->records[i].size, &off) == MSGPACK_UNPACK_SUCCESS) {
             flb_time_pop_from_msgpack(&ftm, &result, &obj);
+
             TEST_CHECK(ftm.tm.tv_sec == 1234);
             TEST_CHECK(ftm.tm.tv_nsec == 1234);
         }
@@ -358,12 +359,12 @@ void flb_test_dummy_records_1999(struct callback_records *records)
     msgpack_object *obj;
     size_t off = 0;
     struct flb_time ftm;
-    
+
     TEST_CHECK(records->num_records > 0);
     for (i = 0; i < records->num_records; i++) {
         msgpack_unpacked_init(&result);
-        
-        while (msgpack_unpack_next(&result, records->records[i].data, 
+
+        while (msgpack_unpack_next(&result, records->records[i].data,
                                    records->records[i].size, &off) == MSGPACK_UNPACK_SUCCESS) {
             flb_time_pop_from_msgpack(&ftm, &result, &obj);
             TEST_CHECK(ftm.tm.tv_sec == 1999);
@@ -390,7 +391,7 @@ void flb_test_dummy_records_today(struct callback_records *records)
     for (i = 0; i < records->num_records; i++) {
         msgpack_unpacked_init(&result);
 
-        while (msgpack_unpack_next(&result, records->records[i].data, 
+        while (msgpack_unpack_next(&result, records->records[i].data,
                                    records->records[i].size, &off) == MSGPACK_UNPACK_SUCCESS) {
             flb_time_pop_from_msgpack(&ftm, &result, &obj);
             TEST_CHECK(ftm.tm.tv_sec >= now.tm.tv_sec);
@@ -411,7 +412,7 @@ void flb_test_dummy_records_message(struct callback_records *records)
     for (i = 0; i < records->num_records; i++) {
         msgpack_unpacked_init(&result);
 
-        while (msgpack_unpack_next(&result, records->records[i].data, 
+        while (msgpack_unpack_next(&result, records->records[i].data,
                                    records->records[i].size, &off) == MSGPACK_UNPACK_SUCCESS) {
             flb_time_pop_from_msgpack(&ftm, &result, &obj);
             TEST_CHECK(obj->type == MSGPACK_OBJECT_MAP);
@@ -438,7 +439,7 @@ void flb_test_dummy_records_message_default(struct callback_records *records)
     for (i = 0; i < records->num_records; i++) {
         msgpack_unpacked_init(&result);
 
-        while (msgpack_unpack_next(&result, records->records[i].data, 
+        while (msgpack_unpack_next(&result, records->records[i].data,
                                    records->records[i].size, &off) == MSGPACK_UNPACK_SUCCESS) {
             flb_time_pop_from_msgpack(&ftm, &result, &obj);
             TEST_CHECK(obj->type == MSGPACK_OBJECT_MAP);
@@ -481,13 +482,15 @@ void flb_test_in_dummy_flush()
     do_test_records("dummy", flb_test_dummy_records_message_default,
                     "dummy", "{\"bad_json}",
                     NULL);
-    do_test_records("dummy", flb_test_dummy_records_1234, 
+    do_test_records("dummy", flb_test_dummy_records_1234,
                     "start_time_sec", "1234",
                     "start_time_nsec", "1234",
+                    "fixed_timestamp", "on",
                     NULL);
     do_test_records("dummy", flb_test_dummy_records_1999,
                     "start_time_sec", "1999",
                     "start_time_nsec", "1999",
+                    "fixed_timestamp", "on",
                     NULL);
     do_test_records_single("dummy", flb_test_dummy_records_message_copies_1,
 	                   "copies", "1",

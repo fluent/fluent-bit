@@ -27,6 +27,7 @@
 #define FLB_PLUGIN_INPUT     1
 #define FLB_PLUGIN_FILTER    2
 #define FLB_PLUGIN_OUTPUT    3
+#define FLB_PLUGIN_PROCESSOR 4
 
 /* Informational contexts for discovered dynamic plugins */
 struct flb_plugin {
@@ -38,6 +39,7 @@ struct flb_plugin {
 
 struct flb_plugins {
     struct mk_list input;
+    struct mk_list processor;
     struct mk_list filter;
     struct mk_list output;
 };

@@ -218,7 +218,7 @@ struct flb_me *flb_me_create(struct flb_config *ctx)
     struct flb_me *me;
 
     /* Context */
-    me = flb_malloc(sizeof(struct flb_me));
+    me = flb_calloc(1, sizeof(struct flb_me));
     if (!me) {
         flb_errno();
         return NULL;

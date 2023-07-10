@@ -79,4 +79,11 @@ FLB_EXPORT int flb_loop(flb_ctx_t *ctx);
 FLB_EXPORT int flb_lib_push(flb_ctx_t *ctx, int ffd, const void *data, size_t len);
 FLB_EXPORT int flb_lib_config_file(flb_ctx_t *ctx, const char *path);
 
+/* library context handling */
+FLB_EXPORT void flb_context_set(flb_ctx_t *ctx);
+FLB_EXPORT flb_ctx_t *flb_context_get();
+
+FLB_EXPORT void flb_cf_context_set(struct flb_cf *cf);
+FLB_EXPORT struct flb_cf *flb_cf_context_get();
+
 #endif

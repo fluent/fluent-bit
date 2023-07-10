@@ -9,7 +9,11 @@ Enter `[N/A]` in the box, if an item is not applicable to your change.
 Before we can approve your change; please submit the following in a comment:
 - [ ] Example configuration file for the change
 - [ ] Debug log output from testing the change
-<!-- Invoke Fluent Bit and Valgrind as: $ valgrind ./bin/fluent-bit <args> -->
+<!--  
+Please refer to the Developer Guide for instructions on building Fluent Bit with Valgrind support: 
+https://github.com/fluent/fluent-bit/blob/master/DEVELOPER_GUIDE.md#valgrind
+Invoke Fluent Bit and Valgrind as: $ valgrind --leak-check=full ./bin/fluent-bit <args>
+-->
 - [ ] Attached [Valgrind](https://valgrind.org/docs/manual/quick-start.html) output that shows no leaks or memory corruption was found
 
 If this is a change to packaging of containers or native binaries then please confirm it works for all targets.

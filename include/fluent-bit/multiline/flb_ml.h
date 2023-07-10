@@ -28,6 +28,8 @@
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 /* Types available */
 #define FLB_ML_REGEX     1    /* pattern is a regular expression    */
@@ -43,6 +45,7 @@
 #define FLB_ML_TYPE_TEXT        0    /* raw text */
 #define FLB_ML_TYPE_RECORD      1    /* Fluent Bit msgpack record */
 #define FLB_ML_TYPE_MAP         2    /* msgpack object/map (k/v pairs) */
+#define FLB_ML_TYPE_EVENT       3    /* Fluent Bit decoded event */
 
 #define FLB_ML_FLUSH_TIMEOUT    4000 /* Flush timeout default (milliseconds) */
 
@@ -97,9 +100,12 @@ struct flb_ml_stream_group {
     struct flb_ml_rule *rule_to_state;
 
     /* packaging buffers */
-    msgpack_sbuffer mp_sbuf;  /* temporary msgpack buffer              */
-    msgpack_packer mp_pck;    /* temporary msgpack packer              */
-    struct flb_time mp_time;  /* multiline time parsed from first line */
+    msgpack_sbuffer mp_md_sbuf; /* temporary msgpack buffer              */
+    msgpack_packer mp_md_pck;   /* temporary msgpack packer              */
+
+    msgpack_sbuffer mp_sbuf;    /* temporary msgpack buffer              */
+    msgpack_packer mp_pck;      /* temporary msgpack packer              */
+    struct flb_time mp_time;    /* multiline time parsed from first line */
 
     struct mk_list _head;
 };
@@ -121,6 +127,9 @@ struct flb_ml_stream {
 
     /* runtime flags */
     int forced_flush;
+
+    /* parent context */
+    struct flb_ml *ml;
 
     /* reference to parent instance */
     struct flb_ml_parser_ins *parser;
@@ -259,11 +268,13 @@ struct flb_ml_group {
 };
 
 struct flb_ml {
-    flb_sds_t name;                /* name of this multiline setup */
-    int flush_ms;                  /* max flush interval found in groups/parsers */
-    uint64_t last_flush;           /* last flush time (involving groups) */
-    struct mk_list groups;         /* list head for flb_ml_group(s) */
-    struct flb_config *config;     /* Fluent Bit context */
+    flb_sds_t name;                        /* name of this multiline setup */
+    int flush_ms;                          /* max flush interval found in groups/parsers */
+    uint64_t last_flush;                   /* last flush time (involving groups) */
+    struct mk_list groups;                 /* list head for flb_ml_group(s) */
+    struct flb_log_event_encoder log_event_encoder;
+    struct flb_log_event_decoder log_event_decoder;
+    struct flb_config *config;             /* Fluent Bit context */
 };
 
 struct flb_ml *flb_ml_create(struct flb_config *ctx, char *name);
@@ -272,12 +283,28 @@ int flb_ml_destroy(struct flb_ml *ml);
 int flb_ml_register_context(struct flb_ml_stream_group *group,
                             struct flb_time *tm, msgpack_object *map);
 
-int flb_ml_append(struct flb_ml *ml, uint64_t stream_id,
-                  int type,
-                  struct flb_time *tm, void *buf, size_t size);
+int flb_ml_append_text(struct flb_ml *ml,
+                  uint64_t stream_id,
+                  struct flb_time *tm,
+                  void *buf,
+                  size_t size);
 
-int flb_ml_append_object(struct flb_ml *ml, uint64_t stream_id,
-                         struct flb_time *tm, msgpack_object *obj);
+int flb_ml_append_object(struct flb_ml *ml,
+                         uint64_t stream_id,
+                         struct flb_time *tm,
+                         msgpack_object *metadata,
+                         msgpack_object *obj);
+
+int flb_ml_append_event(struct flb_ml *ml,
+                        uint64_t stream_id,
+                        struct flb_log_event *event);
+
+
+// int flb_ml_append_object(struct flb_ml *ml, uint64_t stream_id,
+//                          struct flb_time *tm, msgpack_object *obj);
+
+// int flb_ml_append_log_event(struct flb_ml *ml, uint64_t stream_id,
+//                             struct flb_log_event *event);
 
 int flb_ml_parsers_init(struct flb_config *ctx);
 

@@ -22,6 +22,8 @@
 #define FLB_FILTER_MULTILINE_CONCAT_H
 
 #include <fluent-bit/flb_filter_plugin.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #define FLB_MULTILINE_MEM_BUF_LIMIT_DEFAULT  "10M"
 #define FLB_MULTILINE_METRIC_EMITTED         200
@@ -45,8 +47,9 @@ struct split_message_packer {
     flb_sds_t partial_id;
 
     /* packaging buffers */
-    msgpack_sbuffer mp_sbuf;  /* temporary msgpack buffer              */
-    msgpack_packer mp_pck;    /* temporary msgpack packer              */
+    // msgpack_sbuffer mp_sbuf;  /* temporary msgpack buffer              */
+    // msgpack_packer mp_pck;    /* temporary msgpack packer              */
+    struct flb_log_event_encoder log_encoder;
 
     flb_sds_t buf;
 
@@ -73,7 +76,8 @@ int ml_split_message_packer_write(struct split_message_packer *packer,
                                   msgpack_object *map, char *multiline_key_content);
 void ml_split_message_packer_complete(struct split_message_packer *packer);
 void ml_split_message_packer_destroy(struct split_message_packer *packer);
-void ml_append_complete_record(char *data, size_t bytes, msgpack_packer *tmp_pck);
+void ml_append_complete_record(struct split_message_packer *packer,
+                               struct flb_log_event_encoder *log_encoder);
 unsigned long long ml_current_timestamp();
 
 

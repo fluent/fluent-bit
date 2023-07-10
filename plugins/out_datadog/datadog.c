@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_version.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 
 #include <msgpack.h>
 
@@ -98,17 +99,12 @@ static int datadog_format(struct flb_config *config,
     int ret;
     /* for msgpack global structs */
     size_t array_size = 0;
-    size_t off = 0;
-    msgpack_unpacked result;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     /* for sub msgpack objs */
     int map_size;
-    struct flb_time tms;
     int64_t timestamp;
-    msgpack_object *obj;
     msgpack_object map;
-    msgpack_object root;
     msgpack_object k;
     msgpack_object v;
     struct flb_out_datadog *ctx = plugin_context;
@@ -118,6 +114,8 @@ static int datadog_format(struct flb_config *config,
     flb_sds_t out_buf;
     flb_sds_t remapped_tags = NULL;
     flb_sds_t tmp = NULL;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
 
     /* in normal flush callback we have the event_chunk set as flush context
      * so we don't need to calculate the event len.
@@ -130,6 +128,15 @@ static int datadog_format(struct flb_config *config,
         array_size = flb_mp_count(data, bytes);
     }
 
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return -1;
+    }
+
     /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
@@ -137,16 +144,12 @@ static int datadog_format(struct flb_config *config,
     /* Prepare array for all entries */
     msgpack_pack_array(&mp_pck, array_size);
 
-    off = 0;
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        root = result.data;
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        timestamp = timestamp_format(&log_event.timestamp);
 
-        /* Get timestamp and object */
-        flb_time_pop_from_msgpack(&tms, &result, &obj);
-        timestamp = timestamp_format(&tms);
-
-        map = root.via.array.ptr[1];
+        map = *log_event.body;
         map_size = map.via.map.size;
 
         /*
@@ -176,7 +179,7 @@ static int datadog_format(struct flb_config *config,
                 if (!remapped_tags) {
                     flb_errno();
                     msgpack_sbuffer_destroy(&mp_sbuf);
-                    msgpack_unpacked_destroy(&result);
+                    flb_log_event_decoder_destroy(&log_decoder);
                     return -1;
                 }
             }
@@ -186,7 +189,7 @@ static int datadog_format(struct flb_config *config,
                     flb_errno();
                     flb_sds_destroy(remapped_tags);
                     msgpack_sbuffer_destroy(&mp_sbuf);
-                    msgpack_unpacked_destroy(&result);
+                    flb_log_event_decoder_destroy(&log_decoder);
                     return -1;
                 }
                 remapped_tags = tmp;
@@ -288,7 +291,7 @@ static int datadog_format(struct flb_config *config,
                     flb_errno();
                     flb_sds_destroy(remapped_tags);
                     msgpack_sbuffer_destroy(&mp_sbuf);
-                    msgpack_unpacked_destroy(&result);
+                    flb_log_event_decoder_destroy(&log_decoder);
                     return -1;
                 }
                 remapped_tags = tmp;
@@ -297,7 +300,7 @@ static int datadog_format(struct flb_config *config,
                     flb_errno();
                     flb_sds_destroy(remapped_tags);
                     msgpack_sbuffer_destroy(&mp_sbuf);
-                    msgpack_unpacked_destroy(&result);
+                    flb_log_event_decoder_destroy(&log_decoder);
                     return -1;
                 }
                 remapped_tags = tmp;
@@ -324,7 +327,7 @@ static int datadog_format(struct flb_config *config,
         if (remapped_tags) {
             flb_sds_destroy(remapped_tags);
         }
-        msgpack_unpacked_destroy(&result);
+        flb_log_event_decoder_destroy(&log_decoder);
         return -1;
     }
 
@@ -332,7 +335,8 @@ static int datadog_format(struct flb_config *config,
     *out_size = flb_sds_len(out_buf);
 
     /* Cleanup */
-    msgpack_unpacked_destroy(&result);
+    flb_log_event_decoder_destroy(&log_decoder);
+
     if (remapped_tags) {
         flb_sds_destroy(remapped_tags);
     }

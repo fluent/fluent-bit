@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_input_plugin.h>
 
 #include "in_elasticsearch.h"
+#include "in_elasticsearch_config.h"
 #include "in_elasticsearch_bulk_conn.h"
 
 struct flb_in_elasticsearch *in_elasticsearch_config_create(struct flb_input_instance *ins)
@@ -58,13 +59,28 @@ struct flb_in_elasticsearch *in_elasticsearch_config_create(struct flb_input_ins
      * moment so we want to make sure that it stays that way!
      */
 
+    ret = flb_log_event_encoder_init(&ctx->log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins, "error initializing event encoder : %d", ret);
+
+        in_elasticsearch_config_destroy(ctx);
+
+        return ctx = NULL;
+    }
+
+
     return ctx;
 }
 
 int in_elasticsearch_config_destroy(struct flb_in_elasticsearch *ctx)
 {
+    flb_log_event_encoder_destroy(&ctx->log_encoder);
+
     /* release all connections */
     in_elasticsearch_bulk_conn_release_all(ctx);
+
 
     if (ctx->collector_id != -1) {
         flb_input_collector_delete(ctx->collector_id, ctx->ins);
@@ -79,8 +95,11 @@ int in_elasticsearch_config_destroy(struct flb_in_elasticsearch *ctx)
     if (ctx->server) {
         flb_free(ctx->server);
     }
+
     flb_sds_destroy(ctx->listen);
     flb_sds_destroy(ctx->tcp_port);
+
     flb_free(ctx);
+
     return 0;
 }

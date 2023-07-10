@@ -387,7 +387,7 @@ static int process_response(const char *resp, size_t resp_size,
     msgpack_object byteRange;
 
     /* Convert json response body to msgpack */
-    ret = flb_pack_json(resp, resp_size, &buf, &size, &root_type);
+    ret = flb_pack_json(resp, resp_size, &buf, &size, &root_type, NULL);
     if (ret != 0) {
         flb_errno();
         return -1;

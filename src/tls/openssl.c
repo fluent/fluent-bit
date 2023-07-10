@@ -433,6 +433,8 @@ static int tls_net_read(struct flb_tls_session *session,
             flb_errno();
             ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
             flb_error("[tls] syscall error: %s", err_buf);
+
+            ret = -1;
         }
         else if (ret < 0) {
             ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);

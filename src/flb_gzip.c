@@ -21,9 +21,13 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_compression.h>
 #include <miniz/miniz.h>
 
 #define FLB_GZIP_HEADER_OFFSET 10
+#define FLB_GZIP_HEADER_SIZE   FLB_GZIP_HEADER_OFFSET
+
+#define FLB_GZIP_MAGIC_NUMBER  0x8B1F
 
 typedef enum {
     FTEXT    = 1,
@@ -32,6 +36,22 @@ typedef enum {
     FNAME    = 8,
     FCOMMENT = 16
 } flb_tinf_gzip_flag;
+
+#pragma pack(push, 1)
+struct flb_gzip_header {
+    uint16_t magic_number;
+    uint8_t  compression_method;
+    uint8_t  header_flags;
+    uint32_t timestamp;
+    uint8_t  compression_flags;
+    uint8_t  operating_system_id;
+};
+#pragma pack(pop)
+
+struct flb_gzip_decompression_context {
+    struct flb_gzip_header gzip_header;
+    mz_stream              miniz_stream;
+};
 
 static unsigned int read_le16(const unsigned char *p)
 {
@@ -63,6 +83,65 @@ static inline void gzip_header(void *buf)
     *p++ = 0;
     *p++ = 0xFF;
 }
+
+
+#include <ctype.h>
+
+static inline void flb_hex_dump(uint8_t *buffer, size_t buffer_length, size_t line_length) {
+    char  *printable_line;
+    size_t buffer_index;
+    size_t filler_index;
+
+    if (40 < line_length)
+    {
+        line_length = 40;
+    }
+
+    printable_line = alloca(line_length + 1);
+
+    if (NULL == printable_line)
+    {
+        printf("Alloca returned NULL\n");
+
+        return;
+    }
+
+    memset(printable_line, '\0', line_length + 1);
+
+    for (buffer_index = 0 ; buffer_index < buffer_length ; buffer_index++) {
+        if (0 != buffer_index &&
+            0 == (buffer_index % line_length)) {
+
+            printf("%s\n", printable_line);
+
+            memset(printable_line, '\0', line_length + 1);
+        }
+
+        if (0 != isprint(buffer[buffer_index])) {
+            printable_line[(buffer_index % line_length)] = buffer[buffer_index];
+        }
+        else {
+            printable_line[(buffer_index % line_length)] = '.';
+        }
+
+        printf("%02X ", buffer[buffer_index]);
+    }
+
+    if (0 != buffer_index &&
+        0 != (buffer_index % line_length)) {
+
+        for (filler_index = 0 ;
+             filler_index < (line_length - (buffer_index % line_length)) ;
+             filler_index++) {
+            printf("   ");
+        }
+
+        printf("%s\n", printable_line);
+
+        memset(printable_line, '.', line_length);
+    }
+}
+
 
 int flb_gzip_compress(void *in_data, size_t in_len,
                       void **out_data, size_t *out_len)
@@ -332,4 +411,337 @@ int flb_gzip_uncompress(void *in_data, size_t in_len,
     *out_data = out_buf;
 
     return 0;
+}
+
+
+/* Stateful gzip decompressor */
+
+static int flb_gzip_decompressor_process_header(
+            struct flb_decompression_context *context)
+{
+    struct flb_gzip_decompression_context *inner_context;
+
+    inner_context = (struct flb_gzip_decompression_context *) \
+                        context->inner_context;
+
+    /* Minimal length: header + crc32 */
+    if (context->input_buffer_length < FLB_GZIP_HEADER_SIZE) {
+        flb_error("[gzip] unexpected content length");
+
+        return FLB_DECOMPRESSOR_FAILURE;
+    }
+
+    memcpy(&inner_context->gzip_header,
+           context->read_buffer,
+           FLB_GZIP_HEADER_SIZE);
+
+    context->read_buffer = &context->read_buffer[FLB_GZIP_HEADER_SIZE];
+    context->input_buffer_length -= FLB_GZIP_HEADER_SIZE;
+
+    /* Magic bytes */
+    if (inner_context->gzip_header.magic_number != FLB_GZIP_MAGIC_NUMBER) {
+        context->state = FLB_DECOMPRESSOR_STATE_FAILED;
+
+        flb_error("[gzip] invalid magic bytes : %04x",
+                  inner_context->gzip_header.magic_number);
+
+        return FLB_DECOMPRESSOR_FAILURE;
+    }
+
+    if (inner_context->gzip_header.compression_method != MZ_DEFLATED) {
+        context->state = FLB_DECOMPRESSOR_STATE_FAILED;
+
+        flb_error("[gzip] invalid method : %u",
+                  inner_context->gzip_header.compression_method);
+
+        return FLB_DECOMPRESSOR_FAILURE;
+    }
+
+    /* Flag processing */
+    /* Reserved bits */
+    if (inner_context->gzip_header.header_flags & 0xE0) {
+        context->state = FLB_DECOMPRESSOR_STATE_FAILED;
+
+        flb_error("[gzip] invalid flag mask : %x",
+                  inner_context->gzip_header.header_flags);
+
+        return FLB_DECOMPRESSOR_FAILURE;
+    }
+
+    context->state = FLB_DECOMPRESSOR_STATE_EXPECTING_OPTIONAL_HEADERS;
+
+    return FLB_DECOMPRESSOR_SUCCESS;
+}
+
+static int flb_gzip_decompressor_process_optional_headers(
+            struct flb_decompression_context *context)
+{
+    struct flb_gzip_decompression_context *inner_context;
+    int                                    status;
+    uint16_t                               hcrc;
+    uint16_t                               xlen;
+    uint16_t                               crc;
+
+    inner_context = (struct flb_gzip_decompression_context *) \
+                        context->inner_context;
+
+    /* Skip extra data if present */
+    if (inner_context->gzip_header.header_flags & FEXTRA) {
+        if (context->input_buffer_length <= sizeof(uint16_t)) {
+            return FLB_DECOMPRESSOR_INSUFFICIENT_DATA;
+        }
+
+        xlen = sizeof(uint16_t) + read_le16(context->read_buffer);
+
+        if (context->input_buffer_length < xlen) {
+            return FLB_DECOMPRESSOR_INSUFFICIENT_DATA;
+        }
+
+        context->read_buffer = &context->read_buffer[xlen];
+        context->input_buffer_length -= xlen;
+
+        inner_context->gzip_header.header_flags &= (~FEXTRA);
+    }
+
+    if (inner_context->gzip_header.header_flags != 0 &&
+        context->input_buffer_length == 0) {
+        return FLB_DECOMPRESSOR_INSUFFICIENT_DATA;
+    }
+
+    /* Skip file name if present */
+    if (inner_context->gzip_header.header_flags & FNAME) {
+        xlen = strnlen((char *) context->read_buffer,
+                       context->input_buffer_length);
+
+        if (xlen == 0 ||
+            xlen == context->input_buffer_length) {
+            return FLB_DECOMPRESSOR_INSUFFICIENT_DATA;
+        }
+
+        xlen++;
+
+        context->read_buffer = &context->read_buffer[xlen];
+        context->input_buffer_length -= xlen;
+
+        inner_context->gzip_header.header_flags &= (~FNAME);
+    }
+
+    if (inner_context->gzip_header.header_flags != 0 &&
+        context->input_buffer_length == 0) {
+        return FLB_DECOMPRESSOR_INSUFFICIENT_DATA;
+    }
+
+    /* Skip file comment if present */
+    if (inner_context->gzip_header.header_flags & FCOMMENT) {
+        xlen = strnlen((char *) context->read_buffer,
+                       context->input_buffer_length);
+
+        if (xlen == 0 ||
+            xlen == context->input_buffer_length) {
+            return FLB_DECOMPRESSOR_INSUFFICIENT_DATA;
+        }
+
+        context->read_buffer = &context->read_buffer[xlen];
+        context->input_buffer_length -= xlen;
+
+        inner_context->gzip_header.header_flags &= (~FCOMMENT);
+    }
+
+    if (inner_context->gzip_header.header_flags != 0 &&
+        context->input_buffer_length == 0) {
+        return FLB_DECOMPRESSOR_INSUFFICIENT_DATA;
+    }
+
+    /* Check header crc if present (lower 16 bits of the checksum)*/
+    if (inner_context->gzip_header.header_flags & FHCRC) {
+        if (context->input_buffer_length <= sizeof(uint16_t)) {
+            return FLB_DECOMPRESSOR_INSUFFICIENT_DATA;
+        }
+
+        hcrc = read_le16(context->read_buffer);
+
+        crc = mz_crc32(MZ_CRC32_INIT,
+                       (const unsigned char *) &inner_context->gzip_header,
+                       FLB_GZIP_HEADER_SIZE);
+
+        crc &= 0x0000FFFF;
+
+        if (hcrc != crc) {
+            context->state = FLB_DECOMPRESSOR_STATE_FAILED;
+
+            return FLB_DECOMPRESSOR_CORRUPTED_HEADER;
+        }
+
+        xlen = sizeof(uint16_t);
+
+        context->read_buffer = &context->read_buffer[xlen];
+        context->input_buffer_length -= xlen;
+
+        inner_context->gzip_header.header_flags &= (~FHCRC);
+    }
+
+    status = mz_inflateInit2(&inner_context->miniz_stream,
+                             -Z_DEFAULT_WINDOW_BITS);
+
+    if (status != MZ_OK) {
+        context->state = FLB_DECOMPRESSOR_STATE_FAILED;
+
+        return FLB_DECOMPRESSOR_FAILURE;
+    }
+
+    context->state = FLB_DECOMPRESSOR_STATE_EXPECTING_BODY;
+
+    return FLB_DECOMPRESSOR_SUCCESS;
+}
+
+static int flb_gzip_decompressor_process_body_chunk(
+                struct flb_decompression_context *context,
+                void *output_buffer,
+                size_t *output_length)
+{
+    size_t                                 processed_bytes;
+    struct flb_gzip_decompression_context *inner_context;
+    int                                    status;
+
+    if (*output_length == 0) {
+        return FLB_DECOMPRESSOR_SUCCESS;
+    }
+
+    inner_context = (struct flb_gzip_decompression_context *) \
+                        context->inner_context;
+
+    inner_context->miniz_stream.next_in = context->read_buffer;
+    inner_context->miniz_stream.avail_in = context->input_buffer_length;
+    inner_context->miniz_stream.next_out = output_buffer;
+    inner_context->miniz_stream.avail_out = *output_length;
+
+    status = mz_inflate(&inner_context->miniz_stream, MZ_PARTIAL_FLUSH);
+
+    if (status != MZ_OK && status != MZ_STREAM_END) {
+        context->state = FLB_DECOMPRESSOR_STATE_FAILED;
+
+        mz_inflateEnd(&inner_context->miniz_stream);
+
+        *output_length = 0;
+
+        return FLB_DECOMPRESSOR_FAILURE;
+    }
+
+    processed_bytes  = context->input_buffer_length;;
+    processed_bytes -= inner_context->miniz_stream.avail_in;
+
+    *output_length  -= inner_context->miniz_stream.avail_out;
+
+#ifdef FLB_DECOMPRESSOR_ERASE_DECOMPRESSED_DATA
+    if (processed_bytes > 0) {
+        memset(context->read_buffer, processed_bytes);
+    }
+#endif
+
+    context->read_buffer = &context->read_buffer[processed_bytes];
+    context->input_buffer_length = inner_context->miniz_stream.avail_in;
+
+    if (status == MZ_STREAM_END) {
+        mz_inflateEnd(&inner_context->miniz_stream);
+
+        context->state = FLB_DECOMPRESSOR_STATE_EXPECTING_FOOTER;
+
+        memset(&inner_context->miniz_stream, 0, sizeof(mz_stream));
+    }
+
+    return FLB_DECOMPRESSOR_SUCCESS;
+}
+
+
+static int flb_gzip_decompressor_process_footer(
+            struct flb_decompression_context *context)
+{
+    if (context->input_buffer_length <  (sizeof(uint32_t) * 2)) {
+        return FLB_DECOMPRESSOR_INSUFFICIENT_DATA;
+    }
+
+    context->input_buffer_length -= (sizeof(uint32_t) * 2);
+
+    if (context->input_buffer_length > 0) {
+        context->read_buffer = &context->read_buffer[sizeof(uint32_t) * 2];
+    }
+    else {
+        context->read_buffer = context->input_buffer;
+    }
+
+    context->state = FLB_DECOMPRESSOR_STATE_EXPECTING_HEADER;
+
+    return FLB_DECOMPRESSOR_SUCCESS;
+}
+
+int flb_gzip_decompressor_dispatch(struct flb_decompression_context *context,
+                                   void *output_buffer,
+                                   size_t *output_length)
+{
+    size_t output_buffer_size;
+    int    status;
+
+    output_buffer_size = *output_length;
+
+    *output_length = 0;
+
+    status = FLB_DECOMPRESSOR_SUCCESS;
+
+    if (context == NULL ||
+        context->inner_context == NULL) {
+        status = FLB_DECOMPRESSOR_FAILURE;
+    }
+
+    if (context->input_buffer_length == 0) {
+        flb_debug("[gzip] unexpected call with an empty input buffer");
+
+        status = FLB_DECOMPRESSOR_INSUFFICIENT_DATA;
+    }
+
+    if (status == FLB_DECOMPRESSOR_SUCCESS &&
+        context->state == FLB_DECOMPRESSOR_STATE_EXPECTING_HEADER) {
+        status = flb_gzip_decompressor_process_header(context);
+    }
+
+    if (status == FLB_DECOMPRESSOR_SUCCESS &&
+        context->state == FLB_DECOMPRESSOR_STATE_EXPECTING_OPTIONAL_HEADERS) {
+        status = flb_gzip_decompressor_process_optional_headers(context);
+    }
+
+    if (status == FLB_DECOMPRESSOR_SUCCESS &&
+        context->state == FLB_DECOMPRESSOR_STATE_EXPECTING_BODY) {
+        *output_length = output_buffer_size;
+
+        status = flb_gzip_decompressor_process_body_chunk(
+                    context,
+                    output_buffer,
+                    output_length);
+    }
+
+    if (status == FLB_DECOMPRESSOR_SUCCESS &&
+        context->state == FLB_DECOMPRESSOR_STATE_EXPECTING_FOOTER) {
+        status = flb_gzip_decompressor_process_footer(context);
+    }
+
+    return status;
+}
+
+void *flb_gzip_decompression_context_create()
+{
+    struct flb_gzip_decompression_context *context;
+
+    context = flb_calloc(1, sizeof(struct flb_gzip_decompression_context));
+
+    if (context == NULL) {
+        flb_errno();
+    }
+
+    return (void *) context;
+}
+
+void flb_gzip_decompression_context_destroy(void *context)
+{
+    if (context != NULL) {
+        flb_free(context);
+    }
 }

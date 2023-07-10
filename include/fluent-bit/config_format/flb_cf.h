@@ -62,20 +62,20 @@ enum section_type {
 };
 
 struct flb_cf_group {
-    flb_sds_t name;               /* group name */
-    struct cfl_kvlist *properties;    /* key value properties */
-    struct mk_list _head;         /* link to struct flb_cf_section->groups */
+    flb_sds_t name;                /* group name */
+    struct cfl_kvlist *properties; /* key value properties */
+    struct mk_list _head;          /* link to struct flb_cf_section->groups */
 };
 
 struct flb_cf_section {
     int type;
-    flb_sds_t name;               /* name (used for FLB_CF_OTHER type) */
-    struct cfl_kvlist *properties;    /* key value properties              */
+    flb_sds_t name;                /* name (used for FLB_CF_OTHER type) */
+    struct cfl_kvlist *properties; /* key value properties              */
 
-    struct mk_list groups;        /* list of groups */
+    struct mk_list groups;         /* list of groups */
 
-    struct mk_list _head;         /* link to struct flb_cf->sections */
-    struct mk_list _head_section; /* link to section type, e.g: inputs, filters.. */
+    struct mk_list _head;          /* link to struct flb_cf->sections */
+    struct mk_list _head_section;  /* link to section type, e.g: inputs, filters.. */
 };
 
 struct flb_cf {
@@ -138,6 +138,9 @@ void flb_cf_meta_destroy_all(struct flb_cf *cf);
 /* groups */
 struct flb_cf_group *flb_cf_group_create(struct flb_cf *cf, struct flb_cf_section *s,
                                          char *name, int len);
+struct flb_cf_group *flb_cf_group_get(struct flb_cf *cf, struct flb_cf_section *s, char *name);
+void flb_cf_group_print(struct flb_cf_group *g);
+
 void flb_cf_group_destroy(struct flb_cf_group *g);
 
 /* sections */

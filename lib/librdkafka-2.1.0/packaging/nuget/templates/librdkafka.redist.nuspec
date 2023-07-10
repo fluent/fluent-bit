@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2011/10/nuspec.xsd">
+  <metadata>
+    <id>librdkafka.redist</id>
+    <version>${version}</version>
+    <title>librdkafka - redistributable</title>
+    <authors>Magnus Edenhill, edenhill</authors>
+    <owners>Confluent Inc.</owners>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <licenseUrl>https://github.com/confluentinc/librdkafka/blob/master/LICENSES.txt</licenseUrl>
+    <projectUrl>https://github.com/confluentinc/librdkafka</projectUrl>
+    <description>The Apache Kafka C/C++ client library - redistributable</description>
+    <summary>The Apache Kafka C/C++ client library</summary>
+    <releaseNotes>Release of librdkafka</releaseNotes>
+    <copyright>Copyright 2012-2023</copyright>
+    <tags>native apache kafka librdkafka C C++ nativepackage</tags>
+  </metadata>
+  <files>
+    <file src="**" />
+  </files>
+</package>

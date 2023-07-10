@@ -11,7 +11,7 @@ RELEASE_VERSION=${FLUENT_BIT_RELEASE_VERSION:-}
 INSTALL_CMD_PREFIX=${FLUENT_BIT_INSTALL_COMMAND_PREFIX:-}
 # Optionally set the name of th package to install, e.g. for legacy td-agent-bit.
 INSTALL_PACKAGE_NAME=${FLUENT_BIT_INSTALL_PACKAGE_NAME:-fluent-bit}
-# Optional Apt/Yum additional parameters (e.g. releasever for AL2022)
+# Optional Apt/Yum additional parameters (e.g. releasever for AL2022/AL2023)
 APT_PARAMETERS=${FLUENT_BIT_INSTALL_APT_PARAMETERS:-}
 YUM_PARAMETERS=${FLUENT_BIT_INSTALL_YUM_PARAMETERS:-}
 
@@ -57,26 +57,25 @@ fi
 # Will require sudo
 case ${OS} in
     amzn|amazonlinux)
-        # We need variable expansion and non-expansion on the URL line to pick up the base URL.
-        # Therefore we combine things with sed to handle it.
         $SUDO sh <<SCRIPT
 rpm --import $RELEASE_KEY
 cat << EOF > /etc/yum.repos.d/fluent-bit.repo
 [fluent-bit]
 name = Fluent Bit
 # Legacy server style
-baseurl = $RELEASE_URL/amazonlinux/VERSION_SUBSTR
+baseurl = $RELEASE_URL/amazonlinux/$VERSION
 gpgcheck=1
 repo_gpgcheck=1
 gpgkey=$RELEASE_KEY
 enabled=1
 EOF
-sed -i 's|VERSION_SUBSTR|\$releasever/|g' /etc/yum.repos.d/fluent-bit.repo
 cat /etc/yum.repos.d/fluent-bit.repo
 $INSTALL_CMD_PREFIX yum -y $YUM_PARAMETERS install $INSTALL_PACKAGE_NAME$YUM_VERSION
 SCRIPT
     ;;
     centos|centoslinux|rhel|redhatenterpriselinuxserver|fedora|rocky|almalinux)
+        # We need variable expansion and non-expansion on the URL line to pick up the base URL.
+        # Therefore we combine things with sed to handle it.
         $SUDO sh <<SCRIPT
 rpm --import $RELEASE_KEY
 cat << EOF > /etc/yum.repos.d/fluent-bit.repo

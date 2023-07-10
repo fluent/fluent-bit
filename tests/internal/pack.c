@@ -56,7 +56,7 @@ void test_json_pack()
 
     len = strlen(data);
 
-    ret = flb_pack_json(data, len, &out_buf, &out_size, &root_type);
+    ret = flb_pack_json(data, len, &out_buf, &out_size, &root_type, NULL);
     TEST_CHECK(ret == 0);
 
     flb_free(data);
@@ -273,7 +273,7 @@ void test_json_dup_keys()
     TEST_CHECK(data_out != NULL);
 
     /* Pack raw JSON as msgpack */
-    ret = flb_pack_json(data_in, len_in, &out_buf, &out_size, &type);
+    ret = flb_pack_json(data_in, len_in, &out_buf, &out_size, &type, NULL);
     TEST_CHECK(ret == 0);
 
     d = flb_sds_create("date");
@@ -592,7 +592,7 @@ void test_json_pack_bug1278()
         }
         /* Put JSON string in a map and convert it to msgpack */
         snprintf(tmp, sizeof(tmp) -1 , "{\"log\": %s}", json);
-        ret = flb_pack_json(tmp, strlen(tmp), &out_buf, &out_size, &type);
+        ret = flb_pack_json(tmp, strlen(tmp), &out_buf, &out_size, &type, NULL);
         TEST_CHECK(ret == 0);
         if (ret != 0) {
             printf("failed packaging to JSON\n");

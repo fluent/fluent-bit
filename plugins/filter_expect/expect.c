@@ -24,6 +24,8 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #include "expect.h"
 #include <msgpack.h>
@@ -402,31 +404,33 @@ static int cb_expect_filter(const void *data, size_t bytes,
                             struct flb_config *config)
 {
     int ret;
-    msgpack_unpacked result;
-    size_t off = 0;
+    int i;
+    int rule_matched = FLB_TRUE;
+    msgpack_object_kv *kv;
+    struct flb_expect *ctx = filter_context;
+    struct flb_log_event_encoder log_encoder;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+
     (void) out_buf;
     (void) out_bytes;
     (void) f_ins;
     (void) i_ins;
     (void) config;
-    msgpack_object map;
-    msgpack_object root;
-    struct flb_expect *ctx = filter_context;
 
-    int i;
-    int rule_matched = FLB_TRUE;
-    struct flb_time tm;
-    msgpack_object *obj;
-    msgpack_sbuffer tmp_sbuf;
-    msgpack_packer tmp_pck;
-    msgpack_object_kv *kv;
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        root = result.data;
-        map = root.via.array.ptr[1];
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
 
-        ret = rule_apply(ctx, map);
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        ret = rule_apply(ctx, *log_event.body);
         if (ret == FLB_TRUE) {
             /* rule matches, we are good */
             continue;
@@ -444,46 +448,89 @@ static int cb_expect_filter(const void *data, size_t bytes,
             break;
         }
     }
-    msgpack_unpacked_destroy(&result);
 
+    ret = 0;
     /* Append result key when action is "result_key"*/
     if (ctx->action == FLB_EXP_RESULT_KEY) {
-        off = 0;
-        msgpack_unpacked_init(&result);
+        flb_log_event_decoder_reset(&log_decoder, (char *) data, bytes);
 
-        /* Create temporary msgpack buffer */
-        msgpack_sbuffer_init(&tmp_sbuf);
-        msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
+        ret = flb_log_event_encoder_init(&log_encoder,
+                                         FLB_LOG_EVENT_FORMAT_DEFAULT);
 
-        while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-            flb_time_pop_from_msgpack(&tm, &result, &obj);
-            msgpack_pack_array(&tmp_pck, 2);
-            flb_time_append_to_msgpack(&tm, &tmp_pck, 0);
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_plg_error(ctx->ins,
+                          "Log event encoder initialization error : %d", ret);
 
-            msgpack_pack_map(&tmp_pck, obj->via.map.size + 1);
-            msgpack_pack_str(&tmp_pck, flb_sds_len(ctx->result_key));
-            msgpack_pack_str_body(&tmp_pck, ctx->result_key,
-                                  flb_sds_len(ctx->result_key));
-            if (rule_matched) {
-                msgpack_pack_true(&tmp_pck);
+            flb_log_event_decoder_destroy(&log_decoder);
+
+            return FLB_FILTER_NOTOUCH;
+        }
+
+        while ((ret = flb_log_event_decoder_next(
+                        &log_decoder,
+                        &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+            ret = flb_log_event_encoder_begin_record(&log_encoder);
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_set_timestamp(
+                        &log_encoder, &log_event.timestamp);
             }
-            else {
-                msgpack_pack_false(&tmp_pck);
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_set_metadata_from_msgpack_object(&log_encoder,
+                        log_event.metadata);
             }
 
-            kv = obj->via.map.ptr;
-            for (i=0; i<map.via.map.size; i++) {
-                msgpack_pack_object(&tmp_pck, (kv+i)->key);
-                msgpack_pack_object(&tmp_pck, (kv+i)->val);
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_append_body_values(
+                        &log_encoder,
+                        FLB_LOG_EVENT_STRING_VALUE(ctx->result_key, flb_sds_len(ctx->result_key)),
+                        FLB_LOG_EVENT_BOOLEAN_VALUE(rule_matched));
+            }
+
+            kv = log_event.body->via.map.ptr;
+            for (i=0 ;
+                 i < log_event.body->via.map.size &&
+                 ret == FLB_EVENT_ENCODER_SUCCESS ;
+                 i++) {
+                ret = flb_log_event_encoder_append_body_values(
+                        &log_encoder,
+                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].key),
+                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].val));
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_commit_record(&log_encoder);
             }
         }
-        msgpack_unpacked_destroy(&result);
 
-        *out_buf   = tmp_sbuf.data;
-        *out_bytes = tmp_sbuf.size;
+        if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA &&
+            log_decoder.offset == bytes) {
+            ret = FLB_EVENT_ENCODER_SUCCESS;
+        }
 
-        return FLB_FILTER_MODIFIED;
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            *out_buf   = log_encoder.output_buffer;
+            *out_bytes = log_encoder.output_length;
+
+            ret = FLB_FILTER_MODIFIED;
+
+            flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
+        }
+        else {
+            flb_plg_error(ctx->ins,
+                          "Log event encoder error : %d", ret);
+
+            ret = FLB_FILTER_NOTOUCH;
+        }
+
+        flb_log_event_decoder_destroy(&log_decoder);
+        flb_log_event_encoder_destroy(&log_encoder);
+
+        return ret;
     }
+
+    flb_log_event_decoder_destroy(&log_decoder);
 
     return FLB_FILTER_NOTOUCH;
 }

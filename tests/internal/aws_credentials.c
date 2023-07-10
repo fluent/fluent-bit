@@ -326,7 +326,8 @@ static void test_standard_chain_provider()
     provider = flb_standard_chain_provider_create(config, NULL, "us-west-2",
                                                   "https://sts.us-west-2.amazonaws.com",
                                                   NULL,
-                                                  flb_aws_client_generator());
+                                                  flb_aws_client_generator(),
+                                                  NULL);
     if (!provider) {
         flb_errno();
         flb_config_exit(config);

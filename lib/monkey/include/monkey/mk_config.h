@@ -56,6 +56,9 @@ typedef uint32_t gid_t;
 #define MK_CAP_SOCK_PLAIN  4
 #define MK_CAP_SOCK_TLS    8
 
+struct plugin_api;
+struct mk_clock_context;
+
 struct mk_config_listener
 {
     char *address;                /* address to bind */
@@ -188,6 +191,9 @@ struct mk_server
      * because it has to be local to each mk_server instance.
      */
     int             worker_id;
+
+    struct plugin_api *api;
+    struct mk_clock_context *clock_context;
 
     /* Direct map to Stage plugins */
     struct mk_list stage10_handler;

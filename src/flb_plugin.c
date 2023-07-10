@@ -59,6 +59,15 @@ static int is_filter(char *name)
     return FLB_FALSE;
 }
 
+static int is_processor(char *name)
+{
+    if (strncmp(name, "processor_", 10) == 0) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 static int is_output(char *name)
 {
     if (strncmp(name, "out_", 4) == 0) {
@@ -144,6 +153,7 @@ static char *path_to_plugin_name(char *path)
 
     /* Validate expected plugin type */
     if (is_input(name) == FLB_FALSE &&
+        is_processor(name) == FLB_FALSE &&
         is_filter(name) == FLB_FALSE &&
         is_output(name) == FLB_FALSE) {
         flb_error("[plugin] invalid plugin type: %s", name);
@@ -180,6 +190,7 @@ struct flb_plugins *flb_plugin_create()
     }
 
     mk_list_init(&ctx->input);
+    mk_list_init(&ctx->processor);
     mk_list_init(&ctx->filter);
     mk_list_init(&ctx->output);
 
@@ -195,6 +206,7 @@ int flb_plugin_load(char *path, struct flb_plugins *ctx,
     char *plugin_stname;
     struct flb_plugin *plugin;
     struct flb_input_plugin *input;
+    struct flb_processor_plugin *processor;
     struct flb_filter_plugin *filter;
     struct flb_output_plugin *output;
 
@@ -237,6 +249,18 @@ int flb_plugin_load(char *path, struct flb_plugins *ctx,
         }
         memcpy(input, symbol, sizeof(struct flb_input_plugin));
         mk_list_add(&input->_head, &config->in_plugins);
+    }
+    else if (is_processor(plugin_stname) == FLB_TRUE) {
+        type = FLB_PLUGIN_PROCESSOR;
+        processor = flb_malloc(sizeof(struct flb_processor_plugin));
+        if (processor == NULL) {
+            flb_errno();
+            flb_free(plugin_stname);
+            dlclose(dso_handle);
+            return -1;
+        }
+        memcpy(processor, symbol, sizeof(struct flb_processor_plugin));
+        mk_list_add(&processor->_head, &config->processor_plugins);
     }
     else if (is_filter(plugin_stname) == FLB_TRUE) {
         type = FLB_PLUGIN_FILTER;
@@ -285,6 +309,9 @@ int flb_plugin_load(char *path, struct flb_plugins *ctx,
     /* Link by type to the plugins parent context */
     if (type == FLB_PLUGIN_INPUT) {
         mk_list_add(&plugin->_head, &ctx->input);
+    }
+    else if (type == FLB_PLUGIN_PROCESSOR) {
+        mk_list_add(&plugin->_head, &ctx->processor);
     }
     else if (type == FLB_PLUGIN_FILTER) {
         mk_list_add(&plugin->_head, &ctx->filter);
@@ -402,6 +429,11 @@ void flb_plugin_destroy(struct flb_plugins *ctx)
     struct flb_plugin *plugin;
 
     mk_list_foreach_safe(head, tmp, &ctx->input) {
+        plugin = mk_list_entry(head, struct flb_plugin, _head);
+        destroy_plugin(plugin);
+    }
+
+    mk_list_foreach_safe(head, tmp, &ctx->processor) {
         plugin = mk_list_entry(head, struct flb_plugin, _head);
         destroy_plugin(plugin);
     }

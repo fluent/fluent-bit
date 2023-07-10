@@ -6317,6 +6317,8 @@ else $as_nop
   cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
+#define static_assert _Static_assert
+
   template <typename T>
     struct check
     {
@@ -6393,6 +6395,8 @@ else $as_nop
          CXXFLAGS="$CXXFLAGS $switch"
          cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
+
+#define static_assert _Static_assert
 
   template <typename T>
     struct check

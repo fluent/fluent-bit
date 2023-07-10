@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_plugin.h>
+#include <fluent-bit/flb_log_event.h>
 #include <fluent-bit/flb_kernel.h>
 #include <fluent-bit/flb_pack.h>
 
@@ -161,6 +162,15 @@ static int in_mem_init(struct flb_input_instance *in,
         return -1;
     }
 
+    ret = flb_log_event_encoder_init(&ctx->log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins, "error initializing event encoder : %d", ret);
+
+        return -1;
+    }
+
     return 0;
 }
 
@@ -168,13 +178,9 @@ static int in_mem_collect(struct flb_input_instance *i_ins,
                           struct flb_config *config, void *in_context)
 {
     int ret;
-    int len;
-    int entries = 6;/* (total,used,free) * (memory, swap) */
     struct proc_task *task = NULL;
     struct flb_in_mem_config *ctx = in_context;
     struct flb_in_mem_info info;
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
 
     if (ctx->pid) {
         task = proc_stat(ctx->pid, ctx->page_size);
@@ -193,56 +199,46 @@ static int in_mem_collect(struct flb_input_instance *i_ins,
         return -1;
     }
 
-    if (task) {
-        entries += 2;
+    ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_current_timestamp(
+                &ctx->log_encoder);
     }
 
-    /* Initialize local msgpack buffer */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_append_body_values(
+                &ctx->log_encoder,
+                FLB_LOG_EVENT_CSTRING_VALUE("Mem.total"),
+                FLB_LOG_EVENT_UINT64_VALUE(info.mem_total),
 
-    /* Pack the data */
-    msgpack_pack_array(&mp_pck, 2);
-    flb_pack_time_now(&mp_pck);
-    msgpack_pack_map(&mp_pck, entries);
+                FLB_LOG_EVENT_CSTRING_VALUE("Mem.used"),
+                FLB_LOG_EVENT_UINT64_VALUE(info.mem_used),
 
-    msgpack_pack_str(&mp_pck, 9);
-    msgpack_pack_str_body(&mp_pck, "Mem.total", 9);
-    msgpack_pack_uint64(&mp_pck, info.mem_total);
+                FLB_LOG_EVENT_CSTRING_VALUE("Mem.free"),
+                FLB_LOG_EVENT_UINT64_VALUE(info.mem_free),
 
-    msgpack_pack_str(&mp_pck, 8);
-    msgpack_pack_str_body(&mp_pck, "Mem.used", 8);
-    msgpack_pack_uint64(&mp_pck, info.mem_used);
+                FLB_LOG_EVENT_CSTRING_VALUE("Swap.total"),
+                FLB_LOG_EVENT_UINT64_VALUE(info.swap_total),
 
-    msgpack_pack_str(&mp_pck, 8);
-    msgpack_pack_str_body(&mp_pck, "Mem.free", 8);
-    msgpack_pack_uint64(&mp_pck, info.mem_free);
+                FLB_LOG_EVENT_CSTRING_VALUE("Swap.used"),
+                FLB_LOG_EVENT_UINT64_VALUE(info.swap_used),
 
-    msgpack_pack_str(&mp_pck, 10);
-    msgpack_pack_str_body(&mp_pck, "Swap.total", 10);
-    msgpack_pack_uint64(&mp_pck, info.swap_total);
+                FLB_LOG_EVENT_CSTRING_VALUE("Swap.free"),
+                FLB_LOG_EVENT_UINT64_VALUE(info.swap_free));
+    }
 
-    msgpack_pack_str(&mp_pck, 9);
-    msgpack_pack_str_body(&mp_pck, "Swap.used", 9);
-    msgpack_pack_uint64(&mp_pck, info.swap_used);
-
-    msgpack_pack_str(&mp_pck, 9);
-    msgpack_pack_str_body(&mp_pck, "Swap.free", 9);
-    msgpack_pack_uint64(&mp_pck, info.swap_free);
-
-
-    if (task) {
+    if (task != NULL &&
+        ret == FLB_EVENT_ENCODER_SUCCESS) {
         /* RSS bytes */
-        msgpack_pack_str(&mp_pck, 10);
-        msgpack_pack_str_body(&mp_pck, "proc_bytes", 10);
-        msgpack_pack_uint64(&mp_pck, task->proc_rss);
 
-        /* RSS Human readable format */
-        len = strlen(task->proc_rss_hr);
-        msgpack_pack_str(&mp_pck, 7);
-        msgpack_pack_str_body(&mp_pck, "proc_hr", 7);
-        msgpack_pack_str(&mp_pck, len);
-        msgpack_pack_str_body(&mp_pck, task->proc_rss_hr, len);
+        ret = flb_log_event_encoder_append_body_values(
+                &ctx->log_encoder,
+                FLB_LOG_EVENT_CSTRING_VALUE("proc_bytes"),
+                FLB_LOG_EVENT_UINT64_VALUE(task->proc_rss),
+
+                FLB_LOG_EVENT_CSTRING_VALUE("proc_hr"),
+                FLB_LOG_EVENT_UINT64_VALUE(task->proc_rss_hr));
 
         proc_free(task);
     }
@@ -253,8 +249,24 @@ static int in_mem_collect(struct flb_input_instance *i_ins,
                   info.swap_total, info.swap_used, info.swap_free);
     ++ctx->idx;
 
-    flb_input_log_append(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        flb_input_log_append(i_ins, NULL, 0,
+                             ctx->log_encoder.output_buffer,
+                             ctx->log_encoder.output_length);
+
+        ret = 0;
+    }
+    else {
+        flb_plg_error(i_ins, "Error encoding record : %d", ret);
+
+        ret = -1;
+    }
+
+    flb_log_event_encoder_reset(&ctx->log_encoder);
 
     return 0;
 }
@@ -267,6 +279,8 @@ static int in_mem_exit(void *data, struct flb_config *config)
     if (!ctx) {
         return 0;
     }
+
+    flb_log_event_encoder_destroy(&ctx->log_encoder);
 
     /* done */
     flb_free(ctx);

@@ -20,7 +20,6 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_pack.h>
-#include <msgpack.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 
@@ -236,8 +235,6 @@ static int in_de_collect(struct flb_input_instance *ins,
     int error;
     size_t str_len = 0;
     struct flb_in_de_config *ctx = in_context;
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
 
     /* variables for parser */
     int parser_ret = -1;
@@ -251,25 +248,39 @@ static int in_de_collect(struct flb_input_instance *ins,
         str_len = ret;
         ctx->buf[str_len] = '\0';
 
+        ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
+
         if (!ctx->parser) {
             /* Initialize local msgpack buffer */
-            msgpack_sbuffer_init(&mp_sbuf);
-            msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_set_current_timestamp(
+                        &ctx->log_encoder);
+            }
 
-            msgpack_pack_array(&mp_pck, 2);
-            flb_pack_time_now(&mp_pck);
-            msgpack_pack_map(&mp_pck, 1);
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_append_body_values(
+                        &ctx->log_encoder,
+                        FLB_LOG_EVENT_CSTRING_VALUE(ctx->key),
+                        FLB_LOG_EVENT_STRING_VALUE(ctx->buf, str_len));
+            }
 
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->key));
-            msgpack_pack_str_body(&mp_pck, ctx->key, flb_sds_len(ctx->key));
-            msgpack_pack_str(&mp_pck, str_len);
-            msgpack_pack_str_body(&mp_pck, ctx->buf, str_len);
-            flb_input_log_append(ins, NULL, 0, mp_sbuf.data,
-                                       mp_sbuf.size);
-            msgpack_sbuffer_destroy(&mp_sbuf);
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                flb_input_log_append(ins, NULL, 0,
+                                     ctx->log_encoder.output_buffer,
+                                     ctx->log_encoder.output_length);
+
+            }
+            else {
+                flb_plg_error(ctx->ins, "Error encoding record : %d", ret);
+            }
         }
         else {
             flb_time_get(&out_time);
+
             parser_ret = flb_parser_do(ctx->parser, ctx->buf, str_len - 1,
                                        &out_buf, &out_size, &out_time);
             if (parser_ret >= 0) {
@@ -277,17 +288,34 @@ static int in_de_collect(struct flb_input_instance *ins,
                     flb_time_get(&out_time);
                 }
 
-                /* Initialize local msgpack buffer */
-                msgpack_sbuffer_init(&mp_sbuf);
-                msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                    ret = flb_log_event_encoder_set_timestamp(
+                            &ctx->log_encoder,
+                            &out_time);
+                }
 
-                msgpack_pack_array(&mp_pck, 2);
-                flb_time_append_to_msgpack(&out_time, &mp_pck, 0);
-                msgpack_sbuffer_write(&mp_sbuf, out_buf, out_size);
+                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                    ret = flb_log_event_encoder_set_body_from_raw_msgpack(
+                            &ctx->log_encoder,
+                            out_buf,
+                            out_size);
+                }
 
-                flb_input_log_append(ins, NULL, 0,
-                                           mp_sbuf.data, mp_sbuf.size);
-                msgpack_sbuffer_destroy(&mp_sbuf);
+                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                    ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+                }
+
+                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                    flb_input_log_append(ins, NULL, 0,
+                                         ctx->log_encoder.output_buffer,
+                                         ctx->log_encoder.output_length);
+
+                }
+                else {
+                    flb_plg_error(ctx->ins, "Error encoding record : %d", ret);
+                }
+
+
                 flb_free(out_buf);
             }
             else {
@@ -297,6 +325,8 @@ static int in_de_collect(struct flb_input_instance *ins,
                               parser_ret);
             }
         }
+
+        flb_log_event_encoder_reset(&ctx->log_encoder);
     }
     else if (ret == 0) {
         /* EOF */

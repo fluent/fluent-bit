@@ -48,4 +48,7 @@
 /* Coroutine errors */
 #define FLB_ERR_CORO_STACK_SIZE      -600
 
+/* Reloading */
+#define FLB_ERR_RELOADING_IN_PROGRESS 700
+
 #endif

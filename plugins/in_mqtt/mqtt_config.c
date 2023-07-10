@@ -37,6 +37,16 @@ struct flb_in_mqtt_config *mqtt_config_init(struct flb_input_instance *ins)
         return NULL;
     }
 
+    config->log_encoder = flb_log_event_encoder_create(
+                            FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (config->log_encoder == NULL) {
+        flb_plg_error(ins, "could not initialize event encoder");
+        mqtt_config_free(config);
+
+        return NULL;
+    }
+
     /* Listen interface (if not set, defaults to 0.0.0.0) */
     flb_input_net_default_listener("0.0.0.0", 1883, ins);
 
@@ -53,6 +63,10 @@ void mqtt_config_free(struct flb_in_mqtt_config *config)
 {
     if (config->downstream != NULL) {
         flb_downstream_destroy(config->downstream);
+    }
+
+    if (config->log_encoder != NULL) {
+        flb_log_event_encoder_destroy(config->log_encoder);
     }
 
     flb_free(config->tcp_port);

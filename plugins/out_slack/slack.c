@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 
 #include "slack.h"
 
@@ -153,18 +154,16 @@ static void cb_slack_flush(struct flb_event_chunk *event_chunk,
     int out_ret = FLB_OK;
     size_t size;
     size_t printed = 0;
-    size_t off = 0;
     size_t b_sent;
     flb_sds_t json;
     flb_sds_t out_buf;
-    msgpack_unpacked result;
-    struct flb_time tmp;
-    msgpack_object *p;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     struct flb_http_client *c;
     struct flb_connection *u_conn;
     struct flb_slack *ctx = out_context;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
 
     size = event_chunk->size * 4;
     json = flb_sds_create_size(size);
@@ -173,22 +172,37 @@ static void cb_slack_flush(struct flb_event_chunk *event_chunk,
     }
     memset(json, '\0', size);
 
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result,
-                               event_chunk->data,
-                               event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS) {
-        flb_time_pop_from_msgpack(&tmp, &result, &p);
+    ret = flb_log_event_decoder_init(&log_decoder,
+                                     (char *) event_chunk->data,
+                                     event_chunk->size);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        flb_sds_destroy(json);
+
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
 
         ret = snprintf(json + printed, size - printed,
                        "[\"timestamp\": %" PRIu32 ".%09lu, ",
-                       (uint32_t) tmp.tm.tv_sec, tmp.tm.tv_nsec);
+                       (uint32_t) log_event.timestamp.tm.tv_sec,
+                       log_event.timestamp.tm.tv_nsec);
         printed += ret;
 
-        ret = msgpack_object_print_buffer(json + printed, size - printed, *p);
+        ret = msgpack_object_print_buffer(json + printed,
+                                          size - printed,
+                                          *log_event.body);
         if (ret < 0) {
             flb_plg_error(ctx->ins, "error formatting payload");
             flb_sds_destroy(json);
-            msgpack_unpacked_destroy(&result);
+            flb_log_event_decoder_destroy(&log_decoder);
+
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
 
@@ -197,7 +211,8 @@ static void cb_slack_flush(struct flb_event_chunk *event_chunk,
         json[printed++] = ']';
         json[printed++] = '\n';
     }
-    msgpack_unpacked_destroy(&result);
+
+    flb_log_event_decoder_destroy(&log_decoder);
 
     /* Take formatted message and convert it to msgpack */
     msgpack_sbuffer_init(&mp_sbuf);

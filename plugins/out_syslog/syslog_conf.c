@@ -125,6 +125,10 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
         }
     }
 
+    if (ctx->parsed_format == FLB_SYSLOG_RFC5424 && ctx->allow_longer_sd_id == FLB_TRUE) {
+        flb_plg_warn(ctx->ins, "Allow longer SD-ID. It may violate RFC5424.");
+    }
+
     /* validate preset values */
     ret = is_valid_severity(ctx->ins, ctx->severity_preset, ctx->parsed_format);
     if (ret != 0) {

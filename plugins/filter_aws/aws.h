@@ -90,8 +90,9 @@ struct flb_filter_aws {
     int hostname_include;
 
     /* tags_* fields are related to exposing EC2 tags in log labels
-     * tags_include defines if EC2 tags functionality is enabled */
-    int tags_include;
+     * tags_enabled defines if EC2 tags functionality is enabled */
+    int tags_enabled;
+
     /* tags_fetched defines if tag keys and values were fetched successfully
      * and might be used to inject into msgpack */
     int tags_fetched;
@@ -107,6 +108,9 @@ struct flb_filter_aws {
     flb_sds_t *tag_values;
     /* tag_values_len is an array of lengths related to tag_values items */
     size_t *tag_values_len;
+    /* tag_is_enabled is an array of bools which define if corresponding tag should be injected */
+    /* e.g.: if tag_is_enabled[0] = FALSE, then filter aws should not inject first tag */
+    int *tag_is_enabled;
 
     /* number of new keys added by this plugin */
     int new_keys;
@@ -122,7 +126,6 @@ struct flb_filter_aws {
 
 struct flb_filter_aws_init_options {
     struct flb_aws_client_generator *client_generator;
-    flb_sds_t name;
 };
 
 #endif

@@ -1,7 +1,7 @@
 FROM debian:bullseye-slim as builder
 ENV DEBIAN_FRONTEND noninteractive
-ENV KAFKA_URL https://dlcdn.apache.org/kafka/3.0.0/kafka_2.13-3.0.0.tgz
-ENV KAFKA_SHA256 a82728166bbccf406009747a25e1fe52dbcb4d575e4a7a8616429b5818cd02d1
+ENV KAFKA_URL https://downloads.apache.org/kafka/3.4.0/kafka_2.13-3.4.0.tgz
+ENV KAFKA_SHA256 67025feb03eb963a8852d4adc5b2810744f493a672c5992728955e38bed43da8
 
 # hadolint ignore=DL3008
 RUN apt-get update && \
@@ -13,6 +13,7 @@ RUN apt-get update && \
     cmake \
     pkg-config \
     libsasl2-dev \
+    libssl-dev \
     flex \
     openjdk-11-jre-headless \
     bison \
@@ -32,8 +33,9 @@ COPY . /source
 RUN cmake -DFLB_DEV=On \
           -DFLB_IN_KAFKA=On \
           -DFLB_OUT_KAFKA=On \
+          -DFLB_CONFIG_YAML=Off \
           /source && \
-    make -j "$(getconf _NPROCESSORS_ONLN)"
+    cmake --build . --parallel
 
 FROM builder as runner
 COPY --from=builder /build/bin/fluent-bit /usr/local/bin/fluent-bit

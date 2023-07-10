@@ -106,7 +106,7 @@ void test_accessor_keys_remove()
 
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &buf, &size, &type);
+    ret = flb_pack_json(json, len, &buf, &size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);
@@ -178,7 +178,7 @@ void test_keys_remove_subkey_key()
 
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &buf, &size, &type);
+    ret = flb_pack_json(json, len, &buf, &size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);
@@ -266,7 +266,7 @@ void remove_subkey_keys(char *list[], int list_size, int index_start)
 
     /* Convert to msgpack */
     len = strlen(json);
-    ret = flb_pack_json(json, len, &buf, &size, &type);
+    ret = flb_pack_json(json, len, &buf, &size, &type, NULL);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
         exit(EXIT_FAILURE);

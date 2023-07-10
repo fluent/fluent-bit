@@ -37,6 +37,9 @@ HjefwKEk9HjZfejC5WuCS173qFrU9kNb4IrYhnK+wmRzzJfgpWUwerdiJKBz95j1iW9rP1a\
 #define SKID_WEIRDWHITESPACE_PROFILE "skidweird"
 #define TOKEN_WEIRDWHITESPACE_PROFILE "tokenweird///token=="
 
+#define CUSTOM_PROFILE_ACCESS_KEY_ID "custom_access_key_id"
+#define CUSTOM_PROFILE_SECRET_ACCESS_KEY "custom_secret_access_key"
+
 static void test_profile_default()
 {
     struct flb_aws_provider *provider;
@@ -55,7 +58,7 @@ static void test_profile_default()
     ret = setenv("AWS_SHARED_CREDENTIALS_FILE", TEST_CREDENTIALS_FILE, 1);
     TEST_ASSERT(ret == 0);
 
-    provider = flb_profile_provider_create();
+    provider = flb_profile_provider_create(NULL);
     TEST_ASSERT(provider != NULL);
 
     /* repeated calls to get credentials should return the same set */
@@ -74,6 +77,54 @@ static void test_profile_default()
     TEST_CHECK(strcmp(AKID_DEFAULT_PROFILE, creds->access_key_id) == 0);
     TEST_CHECK(strcmp(SKID_DEFAULT_PROFILE, creds->secret_access_key) == 0);
     TEST_CHECK(strcmp(TOKEN_DEFAULT_PROFILE, creds->session_token) == 0);
+
+    flb_aws_credentials_destroy(creds);
+
+    /* refresh should return 0 (success) */
+    ret = provider->provider_vtable->refresh(provider);
+    TEST_CHECK(ret == 0);
+
+    flb_aws_provider_destroy(provider);
+    flb_config_exit(config);
+
+    TEST_CHECK(unset_profile_env() == 0);
+}
+
+static void test_profile_custom()
+{
+    struct flb_aws_provider *provider;
+    struct flb_aws_credentials*creds;
+    struct flb_config *config;
+    int ret;
+
+    config = flb_config_init();
+
+    if (config == NULL) {
+        return;
+    }
+
+    TEST_CHECK(unset_profile_env() == 0);
+
+    ret = setenv("AWS_SHARED_CREDENTIALS_FILE", TEST_CREDENTIALS_FILE, 1);
+    TEST_ASSERT(ret == 0);
+
+    provider = flb_profile_provider_create("custom");
+    TEST_ASSERT(provider != NULL);
+
+    /* repeated calls to get credentials should return the same set */
+    creds = provider->provider_vtable->get_credentials(provider);
+    TEST_ASSERT(creds != NULL);
+
+    TEST_CHECK(strcmp(CUSTOM_PROFILE_ACCESS_KEY_ID, creds->access_key_id) == 0);
+    TEST_CHECK(strcmp(CUSTOM_PROFILE_SECRET_ACCESS_KEY, creds->secret_access_key) == 0);
+
+    flb_aws_credentials_destroy(creds);
+
+    creds = provider->provider_vtable->get_credentials(provider);
+    TEST_ASSERT(creds != NULL);
+
+    TEST_CHECK(strcmp(CUSTOM_PROFILE_ACCESS_KEY_ID, creds->access_key_id) == 0);
+    TEST_CHECK(strcmp(CUSTOM_PROFILE_SECRET_ACCESS_KEY, creds->secret_access_key) == 0);
 
     flb_aws_credentials_destroy(creds);
 
@@ -108,7 +159,7 @@ static void test_profile_non_default()
     ret = setenv("AWS_PROFILE", "nondefault", 1);
     TEST_ASSERT(ret == 0);
 
-    provider = flb_profile_provider_create();
+    provider = flb_profile_provider_create(NULL);
     TEST_ASSERT(provider != NULL);
 
     /* repeated calls to get credentials should return the same set */
@@ -161,7 +212,7 @@ static void test_profile_no_space()
     ret = setenv("AWS_DEFAULT_PROFILE", "nospace", 1);
     TEST_ASSERT(ret == 0);
 
-    provider = flb_profile_provider_create();
+    provider = flb_profile_provider_create(NULL);
     TEST_ASSERT(provider != NULL);
 
     /* repeated calls to get credentials should return the same set */
@@ -214,7 +265,7 @@ static void test_profile_weird_whitespace()
     ret = setenv("AWS_DEFAULT_PROFILE", "weirdwhitespace", 1);
     TEST_ASSERT(ret == 0);
 
-    provider = flb_profile_provider_create();
+    provider = flb_profile_provider_create(NULL);
     TEST_ASSERT(provider != NULL);
 
     /* repeated calls to get credentials should return the same set */
@@ -275,7 +326,7 @@ static void test_profile_missing()
     ret = setenv("AWS_DEFAULT_PROFILE", "missing", 1);
     TEST_ASSERT(ret == 0);
 
-    provider = flb_profile_provider_create();
+    provider = flb_profile_provider_create(NULL);
     TEST_ASSERT(provider != NULL);
 
     /* repeated calls to get credentials should return the same set */
@@ -317,7 +368,7 @@ static void test_profile_nodefault()
     ret = setenv("AWS_SHARED_CREDENTIALS_FILE", TEST_CREDENTIALS_NODEFAULT, 1);
     TEST_ASSERT(ret == 0);
 
-    provider = flb_profile_provider_create();
+    provider = flb_profile_provider_create(NULL);
     TEST_ASSERT(provider != NULL);
 
     /* repeated calls to get credentials should return the same set */
@@ -349,5 +400,6 @@ TEST_LIST = {
     { "test_profile_weird_whitespace", test_profile_weird_whitespace },
     { "test_profile_missing", test_profile_missing },
     { "test_profile_nodefault", test_profile_nodefault },
+    { "test_profile_custom", test_profile_custom },
     { 0 }
 };

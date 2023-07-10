@@ -51,6 +51,12 @@ struct flb_aws_error_reporter *error_reporter;
 /* thread initializator */
 static pthread_once_t flb_lib_once = PTHREAD_ONCE_INIT;
 
+/* reference to the last 'flb_lib_ctx' context started through flb_start() */
+FLB_TLS_DEFINE(flb_ctx_t, flb_lib_active_context);
+
+/* reference to the last 'flb_cf' context started through flb_start() */
+FLB_TLS_DEFINE(struct flb_cf, flb_lib_active_cf_context);
+
 #ifdef FLB_SYSTEM_WINDOWS
 static inline int flb_socket_init_win32(void)
 {
@@ -121,6 +127,9 @@ void flb_init_env()
     flb_upstream_init();
     flb_downstream_init();
     flb_output_prepare();
+
+    FLB_TLS_INIT(flb_lib_active_context);
+    FLB_TLS_INIT(flb_lib_active_cf_context);
 
     /* libraries */
     cmt_initialize();
@@ -196,7 +205,7 @@ flb_ctx_t *flb_create()
                                   ctx->event_channel);
     if (ret != 0) {
         flb_error("[lib] could not create notification channels");
-        flb_config_exit(ctx->config);
+        flb_stop(ctx);
         flb_destroy(ctx);
         return NULL;
     }
@@ -226,7 +235,7 @@ void flb_destroy(flb_ctx_t *ctx)
     mk_event_loop_destroy(ctx->event_loop);
 
     /* cfg->is_running is set to false when flb_engine_shutdown has been invoked (event loop) */
-    if(ctx->config) {
+    if (ctx->config) {
         if (ctx->config->is_running == FLB_TRUE) {
             flb_engine_shutdown(ctx->config);
         }
@@ -599,7 +608,6 @@ int flb_lib_push(flb_ctx_t *ctx, int ffd, const void *data, size_t len)
     int ret;
     struct flb_input_instance *i_ins;
 
-
     if (ctx->status == FLB_LIB_NONE || ctx->status == FLB_LIB_ERROR) {
         flb_error("[lib] cannot push data, engine is not running");
         return -1;
@@ -625,6 +633,7 @@ static void flb_lib_worker(void *data)
     struct flb_config *config;
 
     config = ctx->config;
+    flb_context_set(ctx);
     mk_utils_worker_rename("flb-pipeline");
     ret = flb_engine_start(config);
     if (ret == -1) {
@@ -657,6 +666,12 @@ int flb_start(flb_ctx_t *ctx)
 
     pthread_once(&flb_lib_once, flb_init_env);
 
+    flb_debug("[lib] context set: %p", ctx);
+
+    /* set context as the last active one */
+    flb_context_set(ctx);
+
+    /* spawn worker thread */
     config = ctx->config;
     ret = mk_utils_worker_spawn(flb_lib_worker, ctx, &tid);
     if (ret == -1) {
@@ -692,6 +707,9 @@ int flb_start(flb_ctx_t *ctx)
             ctx->status = FLB_LIB_ERROR;
             return -1;
         }
+        else {
+            flb_error("[lib] other error");
+        }
     }
 
     return 0;
@@ -710,6 +728,8 @@ int flb_stop(flb_ctx_t *ctx)
 {
     int ret;
     pthread_t tid;
+
+    flb_debug("[lib] ctx stop address: %p, config context=%p\n", ctx, ctx->config);
 
     tid = ctx->config->worker;
 
@@ -747,4 +767,31 @@ int flb_stop(flb_ctx_t *ctx)
     flb_debug("[lib] Fluent Bit engine stopped");
 
     return ret;
+}
+
+
+void flb_context_set(flb_ctx_t *ctx)
+{
+    FLB_TLS_SET(flb_lib_active_context, ctx);
+}
+
+flb_ctx_t *flb_context_get()
+{
+    flb_ctx_t *ctx;
+
+    ctx = FLB_TLS_GET(flb_lib_active_context);
+    return ctx;
+}
+
+void flb_cf_context_set(struct flb_cf *cf)
+{
+    FLB_TLS_SET(flb_lib_active_cf_context, cf);
+}
+
+struct flb_cf *flb_cf_context_get()
+{
+    struct flb_cf *cf;
+
+    cf = FLB_TLS_GET(flb_lib_active_cf_context);
+    return cf;
 }

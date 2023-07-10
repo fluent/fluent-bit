@@ -74,6 +74,7 @@
 /tests/internal/aws             @pettitwesley
 /tests/internal/aws_*           @pettitwesley
 /tests/runtime/filter_ecs.c     @pettitwesley
+/tests/runtime/filter_aws.c     @pettitwesley
 /tests/runtime/out_cloudwatch.c @pettitwesley
 /tests/runtime/out_firehose.c   @pettitwesley
 /tests/runtime/out_kinesis.c    @pettitwesley

@@ -51,10 +51,34 @@ struct cfl_list {
     struct cfl_list *prev, *next;
 };
 
+static inline int cfl_list_is_empty(struct cfl_list *head)
+{
+    if (head->next == head) {
+        return 1;
+    }
+
+    return 0;
+}
+
 static inline void cfl_list_init(struct cfl_list *list)
 {
     list->next = list;
     list->prev = list;
+}
+
+static inline void __cfl_list_del(struct cfl_list *prev,
+                                  struct cfl_list *next)
+{
+    prev->next = next;
+    next->prev = prev;
+}
+
+static inline void cfl_list_del(struct cfl_list *entry)
+{
+    __cfl_list_del(entry->prev, entry->next);
+
+    entry->prev = NULL;
+    entry->next = NULL;
 }
 
 static inline void __cfl_list_add(struct cfl_list *_new,
@@ -79,41 +103,58 @@ static inline void cfl_list_add_after(struct cfl_list *_new,
 {
     struct cfl_list *next;
 
-    if (head->prev == head->next ||
-        head->prev == prev) {
-        cfl_list_add(_new, head);
+    if (_new == NULL || prev == NULL || head == NULL) {
+        return;
+    }
+
+    next = prev->next;
+    next->prev = prev;
+    _new->next = next;
+    _new->prev = prev;
+    prev->next = _new;
+}
+
+static inline void cfl_list_add_before(struct cfl_list *_new,
+                                       struct cfl_list *next,
+                                       struct cfl_list *head)
+{
+    struct cfl_list *prev;
+
+    if (_new == NULL || next == NULL || head == NULL) {
+        return;
+    }
+
+    prev = next->prev;
+    _new->next = next;
+    _new->prev = prev;
+    prev->next = _new;
+    next->prev = _new;
+}
+
+static inline void cfl_list_append(struct cfl_list *_new,
+                                   struct cfl_list *head)
+{
+    if (cfl_list_is_empty(head)) {
+        __cfl_list_add(_new, head->prev, head);
     }
     else {
-        next = prev->next;
-        next->prev = prev;
-        _new->next = next;
-        _new->prev = prev;
-        prev->next = _new;
+        cfl_list_add_after(_new,
+                           head->prev,
+                           head);
     }
 }
 
-static inline void __cfl_list_del(struct cfl_list *prev,
-                                  struct cfl_list *next)
+static inline void cfl_list_prepend(struct cfl_list *_new,
+                                    struct cfl_list *head)
 {
-    prev->next = next;
-    next->prev = prev;
-}
-
-static inline void cfl_list_del(struct cfl_list *entry)
-{
-    __cfl_list_del(entry->prev, entry->next);
-
-    entry->prev = NULL;
-    entry->next = NULL;
-}
-
-static inline int cfl_list_is_empty(struct cfl_list *head)
-{
-    if (head->next == head) {
-        return 1;
+    if (cfl_list_is_empty(head)) {
+        __cfl_list_add(_new, head->prev, head);
     }
-
-    return 0;
+    else {
+        cfl_list_add_before(_new,
+                           head->next,
+                           head);
+    }
 }
 
 static inline int cfl_list_size(struct cfl_list *head)

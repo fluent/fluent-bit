@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 
 #include "skywalking.h"
 
@@ -228,36 +229,38 @@ static int sw_format(struct flb_output_sw* ctx, const void *data, size_t bytes,
 {
     int ret = 0;
     int chunk_size = 0;
-    size_t off = 0;
     uint32_t map_size;
     msgpack_sbuffer sbuf;
     msgpack_packer pk;
-    msgpack_unpacked result;
-    msgpack_object root;
     msgpack_object map;
-    msgpack_object* obj;
-    struct flb_time tms;
     int64_t timestamp;
     flb_sds_t out_str;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return -1;
+    }
 
     msgpack_sbuffer_init(&sbuf);
     msgpack_packer_init(&pk, &sbuf, msgpack_sbuffer_write);
-    msgpack_unpacked_init(&result);
 
     chunk_size = flb_mp_count(data, bytes);
     flb_plg_debug(ctx->ins, "%i messages flushed", chunk_size);
 
     msgpack_pack_array(&pk, chunk_size);
 
-    while (msgpack_unpack_next(&result, data, bytes, &off)
-           == MSGPACK_UNPACK_SUCCESS) {
-        root = result.data;
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        timestamp = timestamp_format(&log_event.timestamp);
 
-        /* Get timestamp and object */
-        flb_time_pop_from_msgpack(&tms, &result, &obj);
-        timestamp = timestamp_format(&tms);
-
-        map = root.via.array.ptr[1];
+        map = *log_event.body;
         map_size = map.via.map.size;
 
         msgpack_pack_map(&pk, 4);
@@ -275,13 +278,16 @@ static int sw_format(struct flb_output_sw* ctx, const void *data, size_t bytes,
         ret = -1;
         goto done;
     }
+    else {
+        ret = 0;
+    }
 
     *buf = out_str;
     *buf_len = flb_sds_len(out_str);
 
 done:
     msgpack_sbuffer_destroy(&sbuf);
-    msgpack_unpacked_destroy(&result);
+    flb_log_event_decoder_destroy(&log_decoder);
 
     return ret;
 }

@@ -19,8 +19,16 @@
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_snappy.h>
+#include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_kv.h>
+
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+#include <fluent-bit/flb_aws_credentials.h>
+#include <fluent-bit/flb_signv4.h>
+#endif
+#endif
 
 #include "remote_write.h"
 #include "remote_write_conf.h"
@@ -41,6 +49,7 @@ static int http_post(struct prometheus_remote_write_context *ctx,
     struct flb_config_map_val *mv;
     struct flb_slist_entry *key = NULL;
     struct flb_slist_entry *val = NULL;
+    flb_sds_t signature = NULL;
 
     /* Get upstream context and connection */
     u = ctx->u;
@@ -52,8 +61,23 @@ static int http_post(struct prometheus_remote_write_context *ctx,
     }
 
     /* Map payload */
-    ret = flb_snappy_compress((void *) body, body_len,
-                              &payload_buf, &payload_size);
+
+    if (strcasecmp(ctx->compression, "snappy") == 0) {
+        ret = flb_snappy_compress((void *) body, body_len,
+                                  (char **) &payload_buf,
+                                  &payload_size);
+    }
+    else if (strcasecmp(ctx->compression, "gzip") == 0) {
+        ret = flb_gzip_compress((void *) body, body_len,
+                                &payload_buf, &payload_size);
+    }
+    else {
+        payload_buf = body;
+        payload_size = body_len;
+
+        ret = 0;
+    }
+
     if (ret != 0) {
         flb_upstream_conn_release(u_conn);
 
@@ -96,6 +120,21 @@ static int http_post(struct prometheus_remote_write_context *ctx,
                         FLB_PROMETHEUS_REMOTE_WRITE_VERSION_LITERAL,
                         sizeof(FLB_PROMETHEUS_REMOTE_WRITE_VERSION_LITERAL) - 1);
 
+    if (strcasecmp(ctx->compression, "snappy") == 0) {
+        flb_http_add_header(c,
+                            "Content-Encoding",
+                            strlen("Content-Encoding"),
+                            "snappy",
+                            strlen("snappy"));
+    }
+    else if (strcasecmp(ctx->compression, "gzip") == 0) {
+        flb_http_add_header(c,
+                            "Content-Encoding",
+                            strlen("Content-Encoding"),
+                            "gzip",
+                            strlen("gzip"));
+    }
+
     /* Basic Auth headers */
     if (ctx->http_user && ctx->http_passwd) {
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
@@ -112,6 +151,30 @@ static int http_post(struct prometheus_remote_write_context *ctx,
                             val->str, flb_sds_len(val->str));
     }
 
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+    /* AWS SigV4 headers */
+    if (ctx->has_aws_auth == FLB_TRUE) {
+        flb_plg_debug(ctx->ins, "signing request with AWS Sigv4");
+        signature = flb_signv4_do(c,
+                                  FLB_TRUE,  /* normalize URI ? */
+                                  FLB_TRUE,  /* add x-amz-date header ? */
+                                  time(NULL),
+                                  (char *) ctx->aws_region,
+                                  (char *) ctx->aws_service,
+                                  0, NULL,
+                                  ctx->aws_provider);
+
+        if (!signature) {
+            flb_plg_error(ctx->ins, "could not sign request with sigv4");
+            out_ret = FLB_RETRY;
+            goto cleanup;
+        }
+        flb_sds_destroy(signature);
+    }
+#endif
+#endif
+
     ret = flb_http_do(c, &b_sent);
     if (ret == 0) {
         /*
@@ -125,7 +188,8 @@ static int http_post(struct prometheus_remote_write_context *ctx,
          * - 205: Reset content
          *
          */
-        if (c->resp.status < 200 || c->resp.status > 205) {
+        if ((c->resp.status < 200 || c->resp.status > 205) &&
+            c->resp.status != 400) {
             if (ctx->log_response_payload &&
                 c->resp.payload && c->resp.payload_size > 0) {
                 flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
@@ -137,6 +201,21 @@ static int http_post(struct prometheus_remote_write_context *ctx,
                               ctx->host, ctx->port, c->resp.status);
             }
             out_ret = FLB_RETRY;
+        }
+        else if (c->resp.status == 400) {
+            /* Returned 400 status means unrecoverable. Immidiately
+             * returning as a error. */
+            if (ctx->log_response_payload &&
+                c->resp.payload && c->resp.payload_size > 0) {
+                flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                              ctx->host, ctx->port,
+                              c->resp.status, c->resp.payload);
+            }
+            else {
+                flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
+                              ctx->host, ctx->port, c->resp.status);
+            }
+            out_ret = FLB_ERROR;
         }
         else {
             if (ctx->log_response_payload &&
@@ -158,6 +237,7 @@ static int http_post(struct prometheus_remote_write_context *ctx,
         out_ret = FLB_RETRY;
     }
 
+cleanup:
     /*
      * If the payload buffer is different than incoming records in body, means
      * we generated a different payload and must be freed.
@@ -332,6 +412,27 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct prometheus_remote_write_context, http_passwd),
      "Set HTTP auth password"
     },
+    {
+     FLB_CONFIG_MAP_STR, "compression", "snappy",
+     0, FLB_TRUE, offsetof(struct prometheus_remote_write_context, compression),
+     "Compress the payload with either snappy, gzip if set"
+    },
+
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+    {
+     FLB_CONFIG_MAP_BOOL, "aws_auth", "false",
+     0, FLB_TRUE, offsetof(struct prometheus_remote_write_context, has_aws_auth),
+     "Enable AWS SigV4 authentication"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "aws_service", "aps",
+     0, FLB_TRUE, offsetof(struct prometheus_remote_write_context, aws_service),
+     "AWS destination service code, used by SigV4 authentication"
+    },
+    FLB_AWS_CREDENTIAL_BASE_CONFIG_MAP(FLB_PROMETHEUS_REMOTE_WRITE_CREDENTIAL_PREFIX),
+#endif
+#endif
     {
      FLB_CONFIG_MAP_SLIST_1, "header", NULL,
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct prometheus_remote_write_context, headers),

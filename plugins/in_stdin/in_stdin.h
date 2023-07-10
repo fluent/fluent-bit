@@ -22,6 +22,8 @@
 
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #define DEFAULT_BUF_SIZE 16000
 
@@ -38,6 +40,7 @@ struct flb_in_stdin_config {
     struct flb_parser *parser;
     struct flb_pack_state pack_state;
     struct flb_input_instance *ins;
+    struct flb_log_event_encoder *log_encoder;
 };
 
 extern struct flb_input_plugin in_stdin_plugin;

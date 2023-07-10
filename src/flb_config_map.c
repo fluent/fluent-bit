@@ -469,6 +469,11 @@ int flb_config_map_properties_check(char *context_name,
             continue;
         }
 
+        if (strcasecmp(kv->key, "active") == 0) {
+            /* Accept 'active' property ... */
+            continue;
+        }
+
         /* Lookup the key into the provided map */
         mk_list_foreach(m_head, map) {
             m = mk_list_entry(m_head, struct flb_config_map, _head);

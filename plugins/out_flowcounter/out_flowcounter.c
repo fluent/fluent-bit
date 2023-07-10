@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 
 #include <msgpack.h>
 
@@ -115,12 +116,13 @@ static void output_fcount(FILE *f, struct flb_flowcounter *ctx,
     /* TODO filtering with tag? */
 }
 
-static void count_up(msgpack_object *obj,
+static void count_up(struct flb_log_event *log_event,
                      struct flb_out_fcount_buffer *ctx, uint64_t size)
 {
     ctx->counts++;
     ctx->bytes += size;
-    /*TODO parse obj and count up specific data */
+
+    /*TODO extract specific data from log_event */
 }
 
 static int out_fcount_init(struct flb_output_instance *ins, struct flb_config *config,
@@ -194,18 +196,30 @@ static void out_fcount_flush(struct flb_event_chunk *event_chunk,
     uint64_t last_off   = 0;
     uint64_t byte_data  = 0;
     struct flb_time tm;
-    msgpack_unpacked result;
-    msgpack_object *obj;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    int ret;
+
     (void) i_ins;
     (void) config;
 
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result,
-                               event_chunk->data,
-                               event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS) {
-        flb_time_pop_from_msgpack(&tm, &result, &obj);
+    ret = flb_log_event_decoder_init(&log_decoder,
+                                     (char *) event_chunk->data,
+                                     event_chunk->size);
 
-        if (ctx->event_based == FLB_FALSE) {
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        if (ctx->event_based) {
+            flb_time_copy(&tm, &log_event.timestamp);
+        }
+        else {
             flb_time_get(&tm);
         }
         t = tm.tm.tv_sec;
@@ -233,10 +247,12 @@ static void out_fcount_flush(struct flb_event_chunk *event_chunk,
         }
 
         if (buf != NULL) {
-            count_up(&result.data, buf, byte_data);
+            count_up(&log_event, buf, byte_data);
         }
     }
-    msgpack_unpacked_destroy(&result);
+
+    flb_log_event_decoder_destroy(&log_decoder);
+
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 

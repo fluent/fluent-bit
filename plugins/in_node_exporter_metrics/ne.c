@@ -39,6 +39,8 @@
 #include "ne_loadavg.h"
 #include "ne_vmstat_linux.h"
 #include "ne_netdev.h"
+#include "ne_textfile.h"
+#include "ne_systemd.h"
 
 static int ne_timer_cpu_metrics_cb(struct flb_input_instance *ins,
                                    struct flb_config *config, void *in_context)
@@ -160,6 +162,25 @@ static int ne_timer_filefd_metrics_cb(struct flb_input_instance *ins,
     return 0;
 }
 
+static int ne_timer_textfile_metrics_cb(struct flb_input_instance *ins,
+                                        struct flb_config *config, void *in_context)
+{
+    struct flb_ne *ctx = in_context;
+
+    ne_textfile_update(ctx);
+
+    return 0;
+}
+
+static int ne_timer_systemd_metrics_cb(struct flb_input_instance *ins,
+                                       struct flb_config *config, void *in_context)
+{
+    struct flb_ne *ctx = in_context;
+
+    ne_systemd_update(ctx);
+
+    return 0;
+}
 
 struct flb_ne_callback {
     char *name;
@@ -294,6 +315,20 @@ static void ne_filefd_update_cb(char *name, void *p1, void *p2)
     ne_filefd_update(ctx);
 }
 
+static void ne_textfile_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_ne *ctx = p1;
+
+    ne_textfile_update(ctx);
+}
+
+static void ne_systemd_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_ne *ctx = p1;
+
+    ne_systemd_update(ctx);
+}
+
 static int ne_update_cb(struct flb_ne *ctx, char *name)
 {
     int ret;
@@ -319,6 +354,8 @@ struct flb_ne_callback ne_callbacks[] = {
     { "vmstat", ne_vmstat_update_cb },
     { "netdev", ne_netdev_update_cb },
     { "filefd", ne_filefd_update_cb },
+    { "textfile", ne_textfile_update_cb },
+    { "systemd", ne_systemd_update_cb },
     { 0 }
 };
 
@@ -353,6 +390,7 @@ static int in_ne_init(struct flb_input_instance *in,
     ctx->coll_vmstat_fd = -1;
     ctx->coll_netdev_fd = -1;
     ctx->coll_filefd_fd = -1;
+    ctx->coll_textfile_fd = -1;
 
     ctx->callback = flb_callback_create(in->name);
     if (!ctx->callback) {
@@ -622,6 +660,46 @@ static int in_ne_init(struct flb_input_instance *in,
                     }
                     ne_filefd_init(ctx);
                 }
+                else if (strncmp(entry->str, "textfile", 8) == 0) {
+                    if (ctx->textfile_scrape_interval == 0) {
+                        flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                        metric_idx = 12;
+                    }
+                    else if (ctx->textfile_scrape_interval > 0) {
+                        /* Create the filefd collector */
+                        ret = flb_input_set_collector_time(in,
+                                                           ne_timer_textfile_metrics_cb,
+                                                           ctx->textfile_scrape_interval, 0,
+                                                           config);
+                        if (ret == -1) {
+                            flb_plg_error(ctx->ins,
+                                          "could not set textfile collector for Node Exporter Metrics plugin");
+                            return -1;
+                        }
+                        ctx->coll_textfile_fd = ret;
+                    }
+                    ne_textfile_init(ctx);
+                }
+                else if (strncmp(entry->str, "systemd", 8) == 0) {
+                    if (ctx->systemd_scrape_interval == 0) {
+                        flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                        metric_idx = 13;
+                    }
+                    else if (ctx->textfile_scrape_interval > 0) {
+                        /* Create the filefd collector */
+                        ret = flb_input_set_collector_time(in,
+                                                           ne_timer_systemd_metrics_cb,
+                                                           ctx->systemd_scrape_interval, 0,
+                                                           config);
+                        if (ret == -1) {
+                            flb_plg_error(ctx->ins,
+                                          "could not set systemd collector for Node Exporter Metrics plugin");
+                            return -1;
+                        }
+                        ctx->coll_systemd_fd = ret;
+                    }
+                    ne_systemd_init(ctx);
+                }
                 else {
                     flb_plg_warn(ctx->ins, "Unknown metrics: %s", entry->str);
                     metric_idx = -1;
@@ -701,6 +779,12 @@ static int in_ne_exit(void *data, struct flb_config *config)
                 else if (strncmp(entry->str, "filefd", 6) == 0) {
                     /* nop */
                 }
+                else if (strncmp(entry->str, "textfile", 8) == 0) {
+                    /* nop */
+                }
+                else if (strncmp(entry->str, "systemd", 8) == 0) {
+                    ne_systemd_exit(ctx);
+                }
                 else {
                     flb_plg_warn(ctx->ins, "Unknown metrics: %s", entry->str);
                 }
@@ -776,6 +860,12 @@ static void in_ne_pause(void *data, struct flb_config *config)
     if (ctx->coll_filefd_fd != -1) {
         flb_input_collector_pause(ctx->coll_filefd_fd, ctx->ins);
     }
+    if (ctx->coll_textfile_fd != -1) {
+        flb_input_collector_pause(ctx->coll_textfile_fd, ctx->ins);
+    }
+    if (ctx->coll_systemd_fd != -1) {
+        flb_input_collector_pause(ctx->coll_systemd_fd, ctx->ins);
+    }
 }
 
 static void in_ne_resume(void *data, struct flb_config *config)
@@ -818,6 +908,12 @@ static void in_ne_resume(void *data, struct flb_config *config)
     }
     if (ctx->coll_filefd_fd != -1) {
         flb_input_collector_resume(ctx->coll_filefd_fd, ctx->ins);
+    }
+    if (ctx->coll_textfile_fd != -1) {
+        flb_input_collector_resume(ctx->coll_textfile_fd, ctx->ins);
+    }
+    if (ctx->coll_systemd_fd != -1) {
+        flb_input_collector_resume(ctx->coll_systemd_fd, ctx->ins);
     }
 }
 
@@ -902,10 +998,28 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_TIME, "collector.textfile.scrape_interval", "0",
+     0, FLB_TRUE, offsetof(struct flb_ne, textfile_scrape_interval),
+     "scrape interval to collect textfile metrics from the node."
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "collector.systemd.scrape_interval", "0",
+     0, FLB_TRUE, offsetof(struct flb_ne, systemd_scrape_interval),
+     "scrape interval to collect systemd metrics from the node."
+    },
+
+    {
      FLB_CONFIG_MAP_CLIST, "metrics",
-     "cpu,cpufreq,meminfo,diskstats,filesystem,uname,stat,time,loadavg,vmstat,netdev,filefd",
+     "cpu,cpufreq,meminfo,diskstats,filesystem,uname,stat,time,loadavg,vmstat,netdev,filefd,systemd",
      0, FLB_TRUE, offsetof(struct flb_ne, metrics),
      "Comma separated list of keys to enable metrics."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "collector.textfile.path", NULL,
+     0, FLB_TRUE, offsetof(struct flb_ne, path_textfile),
+     "Specify file path or directory to collect textfile metrics from the node."
     },
 
     {
@@ -920,6 +1034,56 @@ static struct flb_config_map config_map[] = {
      "sysfs mount point"
     },
 
+    /* Systemd specific settings */
+    {
+     FLB_CONFIG_MAP_BOOL, "systemd_service_restart_metrics", "false",
+     0, FLB_TRUE, offsetof(struct flb_ne, systemd_include_service_restarts),
+     "include systemd service restart metrics"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "systemd_unit_start_time_metrics", "false",
+     0, FLB_TRUE, offsetof(struct flb_ne, systemd_include_unit_start_times),
+     "include systemd unit start time metrics"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "systemd_include_service_task_metrics", "false",
+     0, FLB_TRUE, offsetof(struct flb_ne, systemd_include_service_task_metrics),
+     "include systemd service task metrics"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "systemd_include_pattern", NULL,
+     0, FLB_TRUE, offsetof(struct flb_ne, systemd_regex_include_list_text),
+     "include list regular expression"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "systemd_exclude_pattern", ".+\\.(automount|device|mount|scope|slice)",
+     0, FLB_TRUE, offsetof(struct flb_ne, systemd_regex_exclude_list_text),
+     "exclude list regular expression"
+    },
+
+    /* filesystem specific settings */
+    {
+     FLB_CONFIG_MAP_STR, "filesystem.ignore_mount_point_regex", IGNORED_MOUNT_POINTS,
+     0, FLB_TRUE, offsetof(struct flb_ne, fs_regex_ingore_mount_point_text),
+     "ignore regular expression for mount points"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "filesystem.ignore_filesystem_type_regex", IGNORED_FS_TYPES,
+     0, FLB_TRUE, offsetof(struct flb_ne, fs_regex_ingore_filesystem_type_text),
+     "ignore regular expression for filesystem types"
+    },
+
+    /* diskstats specific settings */
+    {
+     FLB_CONFIG_MAP_STR, "diskstats.ignore_device_regex", IGNORED_DEVICES,
+     0, FLB_TRUE, offsetof(struct flb_ne, dt_regex_skip_devices_text),
+     "ignore regular expression for disk devices"
+    },
     /* EOF */
     {0}
 };

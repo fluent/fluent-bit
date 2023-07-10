@@ -40,6 +40,7 @@ RUN Start-Process /local/vc_redist.x64.exe -ArgumentList '/install', '/quiet', '
 
 # Install Chocolatey and OpenSSL: https://github.com/StefanScherer/dockerfiles-windows/blob/main/openssl/Dockerfile
 ENV chocolateyUseWindowsCompression false
+ENV chocolateyVersion '1.4.0'
 RUN iex ((new-object net.webclient).DownloadString('https://chocolatey.org/install.ps1')); `
     choco feature disable --name showDownloadProgress ; `
     choco install -y openssl;

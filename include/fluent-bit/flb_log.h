@@ -30,6 +30,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <inttypes.h>
 #include <errno.h>
+#include <stdarg.h>
 
 /* FIXME: this extern should be auto-populated from flb_thread_storage.h */
 extern FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
@@ -130,6 +131,35 @@ struct flb_log_cache_entry *flb_log_cache_get_target(struct flb_log_cache *cache
 
 int flb_log_cache_check_suppress(struct flb_log_cache *cache, char *msg_buf, size_t msg_size);
 
+
+static inline int flb_log_suppress_check(int log_suppress_interval, const char *fmt, ...)
+{
+    int ret;
+    size_t size;
+    va_list args;
+    char buf[4096];
+    struct flb_worker *w;
+
+    if (log_suppress_interval <= 0) {
+        return FLB_FALSE;
+    }
+
+    va_start(args, fmt);
+    size = vsnprintf(buf, sizeof(buf) - 1, fmt, args);
+    va_end(args);
+
+    if (size == -1) {
+        return FLB_FALSE;
+    }
+
+    w = flb_worker_get();
+    if (!w) {
+        return FLB_FALSE;
+    }
+
+    ret = flb_log_cache_check_suppress(w->log_cache, buf, size);
+    return ret;
+}
 
 
 /* Logging macros */

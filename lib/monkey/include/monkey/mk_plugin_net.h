@@ -26,13 +26,15 @@
  * Network plugin: a plugin that provides a network layer, eg: plain
  * sockets or SSL.
  */
+struct mk_plugin;
 struct mk_plugin_network {
-    int (*read) (int, void *, int);
-    int (*write) (int, const void *, size_t);
-    int (*writev) (int, struct mk_iov *);
-    int (*close) (int);
-    int (*send_file) (int, int, off_t *, size_t);
+    int (*read) (struct mk_plugin *, int, void *, int);
+    int (*write) (struct mk_plugin *, int, const void *, size_t);
+    int (*writev) (struct mk_plugin *, int, struct mk_iov *);
+    int (*close) (struct mk_plugin *, int);
+    int (*send_file) (struct mk_plugin *, int, int, off_t *, size_t);
     int buffer_size;
+    struct mk_plugin *plugin;
 };
 
 #endif

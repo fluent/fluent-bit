@@ -23,7 +23,10 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_mp.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 #include <msgpack.h>
+
 #include "type_converter.h"
 
 static int delete_conv_entry(struct conv_entry *conv)
@@ -61,11 +64,12 @@ static int config_rule(struct type_converter_ctx *ctx, char* type_name,
         return -1;
     }
 
-    entry = flb_malloc(sizeof(struct conv_entry));
+    entry = flb_calloc(1, sizeof(struct conv_entry));
     if (entry == NULL) {
         flb_errno();
         return -1;
     }
+
     entry->rule = NULL;
     if (mk_list_size(mv->val.list) != 3) {
         flb_plg_error(ctx->ins, "invalid record parameters, "
@@ -73,6 +77,7 @@ static int config_rule(struct type_converter_ctx *ctx, char* type_name,
         flb_free(entry);
         return -1;
     }
+
     /* from_key name */
     sentry          = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
     entry->from_key = flb_sds_create_len(sentry->str, flb_sds_len(sentry->str));
@@ -94,6 +99,7 @@ static int config_rule(struct type_converter_ctx *ctx, char* type_name,
         delete_conv_entry(entry);
         return -1;
     }
+
     mk_list_add(&entry->_head, &ctx->conv_entries);
 
     return 0;
@@ -176,23 +182,20 @@ static int cb_type_converter_init(struct flb_filter_instance *ins,
 static int cb_type_converter_filter(const void *data, size_t bytes,
                                     const char *tag, int tag_len,
                                     void **out_buf, size_t *out_bytes,
-                                    struct flb_filter_instance *ins,
+                                    struct flb_filter_instance *f_ins,
                                     struct flb_input_instance *i_ins,
                                     void *filter_context,
                                     struct flb_config *config)
 {
     struct type_converter_ctx *ctx = filter_context;
     struct flb_time tm;
-    size_t off = 0;
     int i;
     int map_num;
     int is_record_modified = FLB_FALSE;
     int ret;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer  tmp_pck;
-    msgpack_unpacked result;
     msgpack_object  *obj;
-    struct flb_mp_map_header mh;
     struct conv_entry *entry;
     struct mk_list *tmp;
     struct mk_list *head;
@@ -200,72 +203,155 @@ static int cb_type_converter_filter(const void *data, size_t bytes,
     msgpack_object *start_key;
     msgpack_object *out_key;
     msgpack_object *out_val;
+    struct flb_log_event_encoder log_encoder;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+
+    (void) f_ins;
+    (void) i_ins;
+    (void) config;
+
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(f_ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    ret = flb_log_event_encoder_init(&log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(f_ins,
+                      "Log event encoder initialization error : %d", ret);
+
+        flb_log_event_decoder_destroy(&log_decoder);
+
+        return FLB_FILTER_NOTOUCH;
+    }
 
     /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
     /* Iterate each item to know map number */
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        if (result.data.type != MSGPACK_OBJECT_ARRAY) {
-            continue;
-        }
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
 
-        flb_time_pop_from_msgpack(&tm, &result, &obj);
-        if (obj->type != MSGPACK_OBJECT_MAP) {
-            continue;
-        }
+        flb_time_copy(&tm, &log_event.timestamp);
+        obj = log_event.body;
+
         map_num = obj->via.map.size;
 
-        msgpack_pack_array(&tmp_pck, 2);
-        flb_time_append_to_msgpack(&tm, &tmp_pck, 0);
+        ret = flb_log_event_encoder_begin_record(&log_encoder);
 
-        flb_mp_map_header_init(&mh, &tmp_pck);
-        /* write original k/v */
-        for (i=0; i<map_num; i++) {
-            flb_mp_map_header_append(&mh);
-            msgpack_pack_object(&tmp_pck, obj->via.map.ptr[i].key);
-            msgpack_pack_object(&tmp_pck, obj->via.map.ptr[i].val);
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_set_timestamp(&log_encoder, &tm);
         }
+
+        ret = flb_log_event_encoder_set_metadata_from_msgpack_object(
+                &log_encoder,
+                log_event.metadata);
+
+        /* write original k/v */
+        for (i = 0;
+             i < map_num &&
+             ret == FLB_EVENT_ENCODER_SUCCESS;
+             i++) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &log_encoder,
+                    FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&obj->via.map.ptr[i].key),
+                    FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&obj->via.map.ptr[i].val));
+        }
+
         mk_list_foreach_safe(head, tmp, &ctx->conv_entries) {
             start_key = NULL;
             out_key   = NULL;
             out_val   = NULL;
+
             entry = mk_list_entry(head, struct conv_entry, _head);
             ret = flb_ra_get_kv_pair(entry->from_ra, *obj, &start_key, &out_key, &out_val);
             if (start_key == NULL || out_key == NULL || out_val == NULL) {
+                ret = FLB_EVENT_ENCODER_SUCCESS;
+
                 continue;
             }
+
             /* key is found. try to convert. */
-            flb_mp_map_header_append(&mh);
-            msgpack_pack_str(&tmp_pck, flb_sds_len(entry->to_key));
-            msgpack_pack_str_body(&tmp_pck, entry->to_key, flb_sds_len(entry->to_key));
+            ret = flb_log_event_encoder_append_body_string(
+                    &log_encoder,
+                    entry->to_key,
+                    flb_sds_len(entry->to_key));
+
             ret = flb_typecast_pack(*out_val, entry->rule, &tmp_pck);
             if (ret < 0) {
                 /* failed. try to write original val... */
                 flb_plg_error(ctx->ins, "failed to convert. key=%s", entry->from_key);
-                msgpack_pack_object(&tmp_pck, *out_val);
+
+                ret = flb_log_event_encoder_append_body_msgpack_object(
+                        &log_encoder,
+                        out_val);
+
                 continue;
             }
+            else {
+                ret = flb_log_event_encoder_append_body_raw_msgpack(
+                        &log_encoder,
+                        tmp_sbuf.data, tmp_sbuf.size);
+
+                msgpack_sbuffer_clear(&tmp_sbuf);
+            }
+
             is_record_modified = FLB_TRUE;
         }
 
-        flb_mp_map_header_end(&mh);
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            flb_log_event_encoder_commit_record(&log_encoder);
+        }
+        else {
+            flb_log_event_encoder_rollback_record(&log_encoder);
+        }
+
     }
-    msgpack_unpacked_destroy(&result);
+    msgpack_sbuffer_destroy(&tmp_sbuf);
 
     if (is_record_modified != FLB_TRUE) {
         /* Destroy the buffer to avoid more overhead */
         flb_plg_trace(ctx->ins, "no touch");
-        msgpack_sbuffer_destroy(&tmp_sbuf);
-        return FLB_FILTER_NOTOUCH;
+
+        ret = FLB_FILTER_NOTOUCH;
     }
-    /* link new buffers */
-    *out_buf   = tmp_sbuf.data;
-    *out_bytes = tmp_sbuf.size;
-    return FLB_FILTER_MODIFIED;
+    else {
+        if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA &&
+            log_decoder.offset == bytes) {
+            ret = FLB_EVENT_ENCODER_SUCCESS;
+        }
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            *out_buf   = log_encoder.output_buffer;
+            *out_bytes = log_encoder.output_length;
+
+            ret = FLB_FILTER_MODIFIED;
+
+            flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
+        }
+        else {
+            flb_plg_error(ctx->ins,
+                          "Log event encoder error : %d", ret);
+
+            ret = FLB_FILTER_NOTOUCH;
+        }
+    }
+
+    flb_log_event_decoder_destroy(&log_decoder);
+    flb_log_event_encoder_destroy(&log_encoder);
+
+    return ret;
 }
+
 static int cb_type_converter_exit(void *data, struct flb_config *config) {
     struct type_converter_ctx *ctx = data;
 

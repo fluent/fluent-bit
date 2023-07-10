@@ -20,12 +20,16 @@
 #include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #include <msgpack.h>
 
 struct flb_alter_size {
     int add;
     int remove;
+    struct flb_log_event_decoder *log_decoder;
+    struct flb_log_event_encoder *log_encoder;
 };
 
 static int cb_alter_size_init(struct flb_filter_instance *ins,
@@ -36,20 +40,41 @@ static int cb_alter_size_init(struct flb_filter_instance *ins,
     (void) data;
     struct flb_alter_size *ctx;
 
-    ctx = flb_malloc(sizeof(struct flb_alter_size));
+    ctx = flb_calloc(1, sizeof(struct flb_alter_size));
     if (!ctx) {
         flb_errno();
         return -1;
     }
 
+    ctx->log_decoder = flb_log_event_decoder_create(NULL, 0);
+
+    if (ctx->log_decoder == NULL) {
+        flb_plg_error(ins, "could not initialize event decoder");
+
+        return -1;
+    }
+
+    ctx->log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ctx->log_encoder == NULL) {
+        flb_plg_error(ins, "could not initialize event encoder");
+        flb_log_event_decoder_destroy(ctx->log_decoder);
+
+        return -1;
+    }
+
     ret = flb_filter_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
+        flb_log_event_decoder_destroy(ctx->log_decoder);
+        flb_log_event_encoder_destroy(ctx->log_encoder);
         flb_free(ctx);
         return -1;
     }
 
     if (ctx->add > 0 && ctx->remove > 0) {
         flb_plg_error(ins, "cannot use 'add' and 'remove' at the same time");
+        flb_log_event_decoder_destroy(ctx->log_decoder);
+        flb_log_event_encoder_destroy(ctx->log_encoder);
         flb_free(ctx);
         return -1;
     }
@@ -67,40 +92,45 @@ static int cb_alter_size_filter(const void *data, size_t bytes,
                                 struct flb_config *config)
 {
     int i;
-    int ok = MSGPACK_UNPACK_SUCCESS;
     int len;
+    int ret;
     int total;
     int count = 0;
-    size_t off = 0;
+    char tmp[32];
+    struct flb_log_event event;
+    struct flb_alter_size *ctx;
+
     (void) config;
     (void) i_ins;
-    char tmp[32];
-    msgpack_unpacked result;
-    msgpack_object root;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
 
-    struct flb_alter_size *ctx = filter_context;
-
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    ctx = (struct flb_alter_size *) filter_context;
 
     if (ctx->add > 0) {
         flb_plg_debug(ins, "add %i records", ctx->add);
 
         /* append old data */
-        msgpack_sbuffer_write(&mp_sbuf, data, bytes);
+        ret = flb_log_event_encoder_emit_raw_record(
+                ctx->log_encoder, data, bytes);
 
         for (i = 0; i < ctx->add; i++) {
-            msgpack_pack_array(&mp_pck, 2);
-            flb_time_append_to_msgpack(NULL, &mp_pck, FLB_TIME_ETFMT_V1_FIXEXT);
+            ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_set_current_timestamp(ctx->log_encoder);
+            }
 
             len = snprintf(tmp, sizeof(tmp) - 1, "alter_size %i", i);
-            msgpack_pack_map(&mp_pck, 1);
-            msgpack_pack_str(&mp_pck, 3);
-            msgpack_pack_str_body(&mp_pck, "key", 3);
-            msgpack_pack_str(&mp_pck, len);
-            msgpack_pack_str_body(&mp_pck, tmp, len);
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_append_body_values(
+                        ctx->log_encoder,
+                        FLB_LOG_EVENT_CSTRING_VALUE("key"),
+                        FLB_LOG_EVENT_STRING_VALUE(tmp, len));
+            }
+        }
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_commit_record(ctx->log_encoder);
         }
     }
     else if (ctx->remove > 0) {
@@ -115,20 +145,30 @@ static int cb_alter_size_filter(const void *data, size_t bytes,
             goto exit;
         }
 
-        msgpack_unpacked_init(&result);
+        ret = flb_log_event_decoder_init(ctx->log_decoder,
+                                         (char *) data,
+                                         bytes);
+
         while (count < total &&
-               msgpack_unpack_next(&result, data, bytes, &off) == ok) {
-            root = result.data;
-            msgpack_pack_object(&mp_pck, root);
+               flb_log_event_decoder_next(
+                ctx->log_decoder, &event) == FLB_EVENT_DECODER_SUCCESS) {
+
+            ret = flb_log_event_encoder_emit_raw_record(
+                    ctx->log_encoder,
+                    ctx->log_decoder->record_base,
+                    ctx->log_decoder->record_length);
+
             count++;
         }
-        msgpack_unpacked_destroy(&result);
     }
 
     exit:
     /* link new buffers */
-    *out_buf  = mp_sbuf.data;
-    *out_size = mp_sbuf.size;
+    *out_buf  = ctx->log_encoder->output_buffer;
+    *out_size = ctx->log_encoder->output_length;
+
+    flb_log_event_encoder_claim_internal_buffer_ownership(
+        ctx->log_encoder);
 
     return FLB_FILTER_MODIFIED;
 }

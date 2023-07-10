@@ -17,15 +17,24 @@
  *  limitations under the License.
  */
 
-#ifdef MK_HAVE_C_TLS
-
 #ifndef MK_CACHE_TLS_H
 #define MK_CACHE_TLS_H
+
+#ifdef MK_HAVE_C_TLS  /* Use Compiler Thread Local Storage (TLS) */
 
 __thread mk_ptr_t *mk_tls_cache_header_cl;
 __thread mk_ptr_t *mk_tls_cache_header_lm;
 __thread struct tm *mk_tls_cache_gmtime;
 __thread struct mk_gmt_cache *mk_tls_cache_gmtext;
 
-#endif
+#else
+
+pthread_key_t mk_tls_cache_iov_header;
+pthread_key_t mk_tls_cache_header_cl;
+pthread_key_t mk_tls_cache_header_lm;
+pthread_key_t mk_tls_cache_gmtime;
+pthread_key_t mk_tls_cache_gmtext;
+
 #endif /* MK_HACE_C_TLS */
+
+#endif

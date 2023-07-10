@@ -90,9 +90,6 @@ static int flb_proxy_input_cb_collect(struct flb_input_instance *ins,
         }
 
         flb_input_log_append(ins, NULL, 0, data, len);
-        if (!data) {
-            free(data);
-        }
 
         ret = proxy_go_input_cleanup(ctx->proxy, data);
         if (ret == -1) {

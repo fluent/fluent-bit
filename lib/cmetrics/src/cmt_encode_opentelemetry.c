@@ -26,14 +26,10 @@
 #include <cmetrics/cmt_histogram.h>
 #include <cmetrics/cmt_encode_opentelemetry.h>
 
-
-#define CMT_PRIVATE_ATTRIBUTE_PREFIX "__cmetrics__"
-
-
-
 static Opentelemetry__Proto__Metrics__V1__ScopeMetrics **
     initialize_scope_metrics_list(
     size_t element_count);
+
 static void destroy_scope_metric_list(
     Opentelemetry__Proto__Metrics__V1__ScopeMetrics **metric_list);
 
@@ -1607,7 +1603,6 @@ static Opentelemetry__Proto__Metrics__V1__HistogramDataPoint *
     data_point->n_bucket_counts = bucket_count;
 
     data_point->sum = sum;
-    // data_point->_sum_case = OPENTELEMETRY__PROTO__METRICS__V1__HISTOGRAM_DATA_POINT___SUM_SUM;
 
     if (bucket_count > 0) {
         data_point->bucket_counts = calloc(bucket_count, sizeof(uint64_t));
@@ -1901,26 +1896,26 @@ static Opentelemetry__Proto__Metrics__V1__Metric *
         metric->sum->n_data_points = data_point_count;
     }
     else if (type == CMT_UNTYPED) {
-        metric->sum = calloc(1, sizeof(Opentelemetry__Proto__Metrics__V1__Sum));
+        metric->gauge = calloc(1, sizeof(Opentelemetry__Proto__Metrics__V1__Gauge));
 
-        if (metric->sum == NULL) {
+        if (metric->gauge == NULL) {
             destroy_metric(metric);
 
             return NULL;
         }
 
-        opentelemetry__proto__metrics__v1__sum__init(metric->sum);
+        opentelemetry__proto__metrics__v1__gauge__init(metric->gauge);
 
-        metric->data_case = OPENTELEMETRY__PROTO__METRICS__V1__METRIC__DATA_SUM;
-        metric->sum->data_points = initialize_numerical_data_point_list(data_point_count);
+        metric->data_case = OPENTELEMETRY__PROTO__METRICS__V1__METRIC__DATA_GAUGE;
+        metric->gauge->data_points = initialize_numerical_data_point_list(data_point_count);
 
-        if (metric->sum->data_points == NULL) {
+        if (metric->gauge->data_points == NULL) {
             destroy_metric(metric);
 
             return NULL;
         }
 
-        metric->sum->n_data_points = data_point_count;
+        metric->gauge->n_data_points = data_point_count;
     }
     else if (type == CMT_GAUGE) {
         metric->gauge = calloc(1, sizeof(Opentelemetry__Proto__Metrics__V1__Gauge));
@@ -2487,13 +2482,15 @@ static cfl_sds_t render_opentelemetry_context_to_sds(
     cfl_sds_t result_buffer;
     size_t    result_size;
 
-    result_size = opentelemetry__proto__metrics__v1__metrics_data__get_packed_size(context->metrics_data);
+    result_size = opentelemetry__proto__metrics__v1__metrics_data__get_packed_size(
+                    context->metrics_data);
 
     result_buffer = cfl_sds_create_size(result_size);
 
     if(result_buffer != NULL) {
-        opentelemetry__proto__metrics__v1__metrics_data__pack(context->metrics_data,
-                                                              (uint8_t *) result_buffer);
+        opentelemetry__proto__metrics__v1__metrics_data__pack(
+            context->metrics_data,
+            (uint8_t *) result_buffer);
 
         cfl_sds_set_len(result_buffer, result_size);
     }

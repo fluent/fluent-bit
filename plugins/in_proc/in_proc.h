@@ -23,6 +23,7 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 #include <msgpack.h>
 
 #define DEFAULT_INTERVAL_SEC  "1"
@@ -71,6 +72,7 @@ struct flb_in_proc_config {
     uint8_t fds;
 
     struct flb_input_instance *ins;
+    struct flb_log_event_encoder *log_encoder;
 };
 
 #endif /*FLB_IN_PROC_H*/

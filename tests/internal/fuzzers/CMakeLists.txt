@@ -3,6 +3,7 @@ set(UNIT_TESTS_FILES
   aws_credentials_fuzzer.c
   base64_fuzzer.c
   engine_fuzzer.c
+  cmetrics_decode_fuzz.c
   config_fuzzer.c
   config_random_fuzzer.c
   ctrace_fuzzer.c

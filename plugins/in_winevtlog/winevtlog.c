@@ -509,7 +509,7 @@ static int winevtlog_next(struct winevtlog_channel *ch, int hit_threshold)
 /*
  * Read from an open Windows Event Log channel.
  */
-int winevtlog_read(struct winevtlog_channel *ch, msgpack_packer *mp_pck, struct winevtlog_config *ctx,
+int winevtlog_read(struct winevtlog_channel *ch, struct winevtlog_config *ctx,
                    unsigned int *read)
 {
     DWORD status = ERROR_SUCCESS;
@@ -534,7 +534,7 @@ int winevtlog_read(struct winevtlog_channel *ch, msgpack_packer *mp_pck, struct 
                 if (system_xml) {
                     /* Caluculate total allocated size: system + message + string_inserts */
                     read_size += (system_size + message_size + string_inserts_size);
-                    winevtlog_pack_xml_event(mp_pck, system_xml, message, string_inserts,
+                    winevtlog_pack_xml_event(system_xml, message, string_inserts,
                                              count_inserts, ch, ctx);
 
                     flb_free(string_inserts);
@@ -550,7 +550,7 @@ int winevtlog_read(struct winevtlog_channel *ch, msgpack_packer *mp_pck, struct 
                 if (rendered_system) {
                     /* Caluculate total allocated size: system + message + string_inserts */
                     read_size += (system_size + message_size + string_inserts_size);
-                    winevtlog_pack_event(mp_pck, rendered_system, message, string_inserts,
+                    winevtlog_pack_event(rendered_system, message, string_inserts,
                                          count_inserts, ch, ctx);
 
                     flb_free(string_inserts);

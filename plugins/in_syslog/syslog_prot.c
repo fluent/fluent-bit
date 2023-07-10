@@ -96,11 +96,9 @@ static inline int pack_line(struct flb_syslog *ctx,
                             char *data, size_t data_size,
                             char *raw_data, size_t raw_data_size)
 {
-    char           *modified_data_buffer;
-    size_t          modified_data_size;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer  mp_pck;
-    int             result;
+    char   *modified_data_buffer;
+    size_t  modified_data_size;
+    int     result;
 
     modified_data_buffer = NULL;
 
@@ -118,28 +116,46 @@ static inline int pack_line(struct flb_syslog *ctx,
         }
     }
 
-    /* Initialize local msgpack buffer */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    result = flb_log_event_encoder_begin_record(ctx->log_encoder);
 
-    msgpack_pack_array(&mp_pck, 2);
-    flb_time_append_to_msgpack(time, &mp_pck, 0);
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_set_timestamp(ctx->log_encoder, time);
+    }
 
-    if (modified_data_buffer != NULL) {
-        msgpack_sbuffer_write(&mp_sbuf, modified_data_buffer, modified_data_size);
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        if (modified_data_buffer != NULL) {
+            result = flb_log_event_encoder_set_body_from_raw_msgpack(
+                    ctx->log_encoder, modified_data_buffer, modified_data_size);
+        }
+        else {
+            result = flb_log_event_encoder_set_body_from_raw_msgpack(
+                        ctx->log_encoder, data, data_size);
+        }
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_commit_record(ctx->log_encoder);
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        flb_input_log_append(ctx->ins, NULL, 0,
+                             ctx->log_encoder->output_buffer,
+                             ctx->log_encoder->output_length);
+        result = 0;
     }
     else {
-        msgpack_sbuffer_write(&mp_sbuf, data, data_size);
+        flb_plg_error(ctx->ins, "log event encoding error : %d", result);
+
+        result = -1;
     }
 
-    flb_input_log_append(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    flb_log_event_encoder_reset(ctx->log_encoder);
 
     if (modified_data_buffer != NULL) {
         flb_free(modified_data_buffer);
     }
 
-    return 0;
+    return result;
 }
 
 int syslog_prot_process(struct syslog_conn *conn)

@@ -78,6 +78,12 @@ int ne_utils_file_read_uint64(const char *mount,
     ssize_t bytes;
     char tmp[32];
 
+    /* Check the path starts with the mount point to prevent duplication. */
+    if (strncasecmp(path, mount, strlen(mount)) == 0 &&
+        path[strlen(mount)] == '/') {
+        mount = "";
+    }
+
     /* Compose the final path */
     p = flb_sds_create(mount);
     if (!p) {
@@ -136,6 +142,12 @@ int ne_utils_file_read_lines(const char *mount, const char *path, struct mk_list
     char real_path[2048];
 
     mk_list_init(list);
+
+    /* Check the path starts with the mount point to prevent duplication. */
+    if (strncasecmp(path, mount, strlen(mount)) == 0 &&
+        path[strlen(mount)] == '/') {
+        mount = "";
+    }
 
     snprintf(real_path, sizeof(real_path) - 1, "%s%s", mount, path);
     f = fopen(real_path, "r");

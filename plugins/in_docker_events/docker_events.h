@@ -23,6 +23,7 @@
 #include <msgpack.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #define DEFAULT_BUF_SIZE            8192
 #define MIN_BUF_SIZE                2048
@@ -47,6 +48,7 @@ struct flb_in_de_config
     int retry_coll_id;
 
     struct flb_parser *parser;
+    struct flb_log_event_encoder log_encoder;
     struct flb_input_instance *ins; /* Input plugin instace */
 
 };

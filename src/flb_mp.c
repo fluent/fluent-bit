@@ -120,7 +120,9 @@ int flb_mp_validate_log_chunk(const void *data, size_t bytes,
     unsigned char *ptr;
     msgpack_object array;
     msgpack_object ts;
+    msgpack_object header;
     msgpack_object record;
+    msgpack_object metadata;
     msgpack_unpacked result;
 
     msgpack_unpacked_init(&result);
@@ -162,8 +164,24 @@ int flb_mp_validate_log_chunk(const void *data, size_t bytes,
             goto error;
         }
 
-        ts = array.via.array.ptr[0];
+        header = array.via.array.ptr[0];
         record = array.via.array.ptr[1];
+
+        if (header.type == MSGPACK_OBJECT_ARRAY) {
+            if (header.via.array.size != 2) {
+                goto error;
+            }
+
+            ts = header.via.array.ptr[0];
+            metadata = header.via.array.ptr[1];
+
+            if (metadata.type != MSGPACK_OBJECT_MAP) {
+                goto error;
+            }
+        }
+        else {
+            ts = header;
+        }
 
         if (ts.type != MSGPACK_OBJECT_POSITIVE_INTEGER &&
             ts.type != MSGPACK_OBJECT_FLOAT &&

@@ -70,7 +70,7 @@ static int create_simple_json(char **out_buf, size_t *size)
     int ret;
     char json[] = "[\"test\", 1234567890,{\"test\":\"msg\"} ]";
 
-    ret = flb_pack_json(&json[0], strlen(json), out_buf, size, &root_type);
+    ret = flb_pack_json(&json[0], strlen(json), out_buf, size, &root_type, NULL);
     TEST_CHECK(ret==0);
 
     return ret;

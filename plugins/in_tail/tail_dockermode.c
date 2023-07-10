@@ -237,9 +237,7 @@ int flb_tail_dmode_process_content(time_t now,
                                    char* line, size_t line_len,
                                    char **repl_line, size_t *repl_line_len,
                                    struct flb_tail_file *file,
-                                   struct flb_tail_config *ctx,
-                                   msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck
-                                   )
+                                   struct flb_tail_config *ctx)
 {
     char* val = NULL;
     size_t val_len;
@@ -274,14 +272,14 @@ int flb_tail_dmode_process_content(time_t now,
             * as current line meets first-line requirement
             */
             if(ret >= 0) {
-                flb_tail_dmode_flush(mp_sbuf, mp_pck, file, ctx);
+                flb_tail_dmode_flush(file, ctx);
             }
 
             /*
             * Flush the buffer if multiline has not been detected yet
             */
             if (!file->dmode_firstline) {
-                flb_tail_dmode_flush(mp_sbuf, mp_pck, file, ctx);
+                flb_tail_dmode_flush(file, ctx);
             }
         }
     }
@@ -322,18 +320,17 @@ int flb_tail_dmode_process_content(time_t now,
             file->dmode_complete = true;
 #ifdef FLB_HAVE_REGEX
             if (!ctx->docker_mode_parser) {
-                flb_tail_dmode_flush(mp_sbuf, mp_pck, file, ctx);
+                flb_tail_dmode_flush(file, ctx);
             }
 #else
-            flb_tail_dmode_flush(mp_sbuf, mp_pck, file, ctx);
+            flb_tail_dmode_flush(file, ctx);
 #endif
         }
     }
     return ret;
 }
 
-void flb_tail_dmode_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
-                          struct flb_tail_file *file, struct flb_tail_config *ctx)
+void flb_tail_dmode_flush(struct flb_tail_file *file, struct flb_tail_config *ctx)
 {
     int ret;
     char *repl_line = NULL;
@@ -349,7 +346,8 @@ void flb_tail_dmode_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
 
     flb_time_zero(&out_time);
 
-    ret = modify_json_cond(file->dmode_lastline, flb_sds_len(file->dmode_lastline),
+    ret = modify_json_cond(file->dmode_lastline,
+                           flb_sds_len(file->dmode_lastline),
                            NULL, NULL,
                            &repl_line, &repl_line_len,
                            NULL,
@@ -373,14 +371,15 @@ void flb_tail_dmode_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
             if (ctx->ignore_older > 0 && (now - ctx->ignore_older) > out_time.tm.tv_sec) {
                 goto dmode_flush_end;
             }
-            flb_tail_pack_line_map(mp_sbuf, mp_pck, &out_time,
-                                   (char**) &out_buf, &out_size, file, 0);
-            goto dmode_flush_end;        }
+
+            flb_tail_pack_line_map(&out_time, (char**) &out_buf, &out_size, file, 0);
+
+            goto dmode_flush_end;
+        }
     }
 #endif
-    flb_time_get(&out_time);
-    flb_tail_file_pack_line(mp_sbuf, mp_pck, &out_time,
-                            repl_line, repl_line_len, file, 0);
+
+    flb_tail_file_pack_line(NULL, repl_line, repl_line_len, file, 0);
 
  dmode_flush_end:
     flb_free(repl_line);
@@ -390,9 +389,6 @@ void flb_tail_dmode_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
 static void file_pending_flush(struct flb_tail_config *ctx,
                                struct flb_tail_file *file, time_t now)
 {
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
-
     if (file->dmode_flush_timeout > now) {
         return;
     }
@@ -401,17 +397,17 @@ static void file_pending_flush(struct flb_tail_config *ctx,
         return;
     }
 
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    flb_tail_dmode_flush(file, ctx);
 
-    flb_tail_dmode_flush(&mp_sbuf, &mp_pck, file, ctx);
+    if (file->sl_log_event_encoder->output_length > 0) {
+        flb_input_log_append(ctx->ins,
+                             file->tag_buf,
+                             file->tag_len,
+                             file->sl_log_event_encoder->output_buffer,
+                             file->sl_log_event_encoder->output_length);
 
-    flb_input_log_append(ctx->ins,
-                               file->tag_buf,
-                               file->tag_len,
-                               mp_sbuf.data,
-                               mp_sbuf.size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
+        flb_log_event_encoder_reset(file->sl_log_event_encoder);
+    }
 }
 
 int flb_tail_dmode_pending_flush_all(struct flb_tail_config *ctx)

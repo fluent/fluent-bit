@@ -282,7 +282,76 @@ void flb_test_in_elasticsearch_version()
     test_ctx_destroy(ctx);
 }
 
-void flb_test_in_elasticsearch(char *write_op, int port)
+void flb_test_in_elasticsearch_version_configured()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+    int ret;
+    size_t b_sent;
+    char *expected = "\"version\":{\"number\":\"8.1.2\",\"build_flavor\"";
+    char *buf = NULL;
+    int port = 9202;
+    char sport[16];
+
+    snprintf(sport, 16, "%d", port);
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "port", sport,
+                        "version", "8.1.2",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ctx->httpc = in_elasticsearch_client_ctx_create(port);
+    TEST_CHECK(ctx->httpc != NULL);
+
+    c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_GET, "/", NULL, 0,
+                        "127.0.0.1", port, NULL, 0);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("in_elasticsearch_client failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_http_do(c, &b_sent);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("ret error. ret=%d\n", ret);
+    }
+    else if (!TEST_CHECK(b_sent > 0)){
+        TEST_MSG("b_sent size error. b_sent = %lu\n", b_sent);
+    }
+    else if (!TEST_CHECK(c->resp.status == 200)) {
+        TEST_MSG("http response code error. expect: 200, got: %d\n", c->resp.status);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    buf = strstr(c->resp.payload, expected);
+    if (!TEST_CHECK(buf != NULL)) {
+      TEST_MSG("http request for version info failed");
+    }
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(ctx->httpc->u_conn);
+    test_ctx_destroy(ctx);
+}
+
+void flb_test_in_elasticsearch(char *write_op, int port, char *tag)
 {
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
@@ -314,12 +383,27 @@ void flb_test_in_elasticsearch(char *write_op, int port)
                         "port", sport,
                         NULL);
     TEST_CHECK(ret == 0);
+    if (tag != NULL) {
+        ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                            "tag", tag,
+                            NULL);
+        TEST_CHECK(ret == 0);
+    }
 
-    ret = flb_output_set(ctx->flb, ctx->o_ffd,
-                         "match", "*",
-                         "format", "json",
-                         NULL);
-    TEST_CHECK(ret == 0);
+    if (tag != NULL) {
+        ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                             "match", tag,
+                             "format", "json",
+                             NULL);
+        TEST_CHECK(ret == 0);
+    }
+    else {
+        ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                             "match", "*",
+                             "format", "json",
+                             NULL);
+        TEST_CHECK(ret == 0);
+    }
 
     /* Start the engine */
     ret = flb_start(ctx->flb);
@@ -363,12 +447,12 @@ void flb_test_in_elasticsearch(char *write_op, int port)
 
 void flb_test_in_elasticsearch_index_op()
 {
-    flb_test_in_elasticsearch("index", 9202);
+    flb_test_in_elasticsearch("index", 9203, NULL);
 }
 
 void flb_test_in_elasticsearch_create_op()
 {
-    flb_test_in_elasticsearch("create", 9203);
+    flb_test_in_elasticsearch("create", 9204, NULL);
 }
 
 void flb_test_in_elasticsearch_invalid(char *write_op, int status, char *expected_op, int port)
@@ -458,17 +542,17 @@ void flb_test_in_elasticsearch_invalid(char *write_op, int status, char *expecte
 
 void flb_test_in_elasticsearch_update_op()
 {
-    flb_test_in_elasticsearch_invalid("update", 403, "update", 9204);
+    flb_test_in_elasticsearch_invalid("update", 403, "update", 9205);
 }
 
 void flb_test_in_elasticsearch_delete_op()
 {
-    flb_test_in_elasticsearch_invalid("delete", 404, "delete", 9205);
+    flb_test_in_elasticsearch_invalid("delete", 404, "delete", 9206);
 }
 
 void flb_test_in_elasticsearch_nonexistent_op()
 {
-    flb_test_in_elasticsearch_invalid("nonexistent", 400, "unknown", 9206);
+    flb_test_in_elasticsearch_invalid("nonexistent", 400, "unknown", 9207);
 }
 
 void flb_test_in_elasticsearch_multi_ops()
@@ -478,7 +562,7 @@ void flb_test_in_elasticsearch_multi_ops()
     struct flb_http_client *c;
     int ret;
     int num;
-    int port = 9207;
+    int port = 9208;
     char sport[16];
     size_t b_sent;
     char *buf = NDJSON_BULK;
@@ -561,7 +645,7 @@ void flb_test_in_elasticsearch_multi_ops_gzip()
     struct flb_http_client *c;
     int ret;
     int num;
-    int port = 9208;
+    int port = 9209;
     char sport[16];
     size_t b_sent;
     char *buf = NDJSON_BULK;
@@ -653,7 +737,7 @@ void flb_test_in_elasticsearch_node_info()
     struct test_ctx *ctx;
     struct flb_http_client *c;
     int ret;
-    int port = 9208;
+    int port = 9210;
     char sport[16];
     size_t b_sent;
     char *expected = "{\"_nodes\":{\"total\":1,\"successful\":1,\"failed\":0},\"nodes\":{\"";
@@ -723,7 +807,7 @@ void flb_test_in_elasticsearch_tag_key()
     int ret;
     int num;
     size_t b_sent;
-    int port = 9209;
+    int port = 9211;
     char sport[16];
 
     char *buf = "{\"index\":{\"_index\":\"fluent-bit\"}}\n{\"test\":\"msg\",\"tag\":\"new_tag\"}\n";
@@ -793,8 +877,14 @@ void flb_test_in_elasticsearch_tag_key()
     test_ctx_destroy(ctx);
 }
 
+void flb_test_in_elasticsearch_index_op_with_plugin_tag()
+{
+    flb_test_in_elasticsearch("index", 9210, "es.index");
+}
+
 TEST_LIST = {
     {"version", flb_test_in_elasticsearch_version},
+    {"configured_version", flb_test_in_elasticsearch_version_configured},
     {"index_op", flb_test_in_elasticsearch_index_op},
     {"create_op", flb_test_in_elasticsearch_create_op},
     {"update_op", flb_test_in_elasticsearch_update_op},
@@ -802,6 +892,7 @@ TEST_LIST = {
     {"nonexistent_op", flb_test_in_elasticsearch_nonexistent_op},
     {"multi_ops", flb_test_in_elasticsearch_multi_ops},
     {"multi_ops_gzip", flb_test_in_elasticsearch_multi_ops_gzip},
+    {"index_op_with_plugin_tag", flb_test_in_elasticsearch_index_op_with_plugin_tag},
     {"node_info", flb_test_in_elasticsearch_node_info},
     {"tag_key", flb_test_in_elasticsearch_tag_key},
     {NULL, NULL}

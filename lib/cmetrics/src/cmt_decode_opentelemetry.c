@@ -50,6 +50,9 @@ static struct cfl_variant *clone_variant(Opentelemetry__Proto__Common__V1__AnyVa
     struct cfl_variant *result_instance = NULL;
     int                 result;
 
+    if (source == NULL) {
+        return NULL;
+    }
     if (source->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE) {
         result_instance = cfl_variant_create_from_string(source->string_value);
     }
