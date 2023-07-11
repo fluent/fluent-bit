@@ -3,6 +3,7 @@
 #include <string.h>
 #include <net-snmp/net-snmp-config.h>
 #include <net-snmp/net-snmp-includes.h>
+#include <openssl/crypto.h>
 #include <msgpack.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_time.h>
@@ -131,10 +132,13 @@ static int in_snmp_collect(struct flb_input_instance *ins, struct flb_config *co
 
     char *err;
 
+
+    init_snmp(PLUGIN_NAME);
+    
     init_snmp(PLUGIN_NAME);
     snmp_sess_init(&session);
 
-    session.peername = strdup(ctx->target_host);
+    session.peername = ctx->target_host;
 
     if (strcmp(ctx->version, "1") == 0) {
         session.version = SNMP_VERSION_1;
@@ -154,10 +158,9 @@ static int in_snmp_collect(struct flb_input_instance *ins, struct flb_config *co
         return -1;
     }
 
-    session.community = (u_char *) strdup(ctx->community);
+    session.community = (u_char *) ctx->community;
     session.community_len = strlen(ctx->community);
 
-    SOCK_STARTUP;
     ss = snmp_open(&session);
     if (!ss) {
         snmp_error(ss, NULL, NULL, &err);
@@ -167,7 +170,7 @@ static int in_snmp_collect(struct flb_input_instance *ins, struct flb_config *co
     }
 
     anOID_len = MAX_OID_LEN;
-    if (snmp_parse_oid(strdup(ctx->oid), anOID, &anOID_len) == NULL) {
+    if (snmp_parse_oid(ctx->oid, anOID, &anOID_len) == NULL) {
         flb_plg_error(ctx->ins, "Fail to parse oid");
         SOCK_CLEANUP;
         return -1;
@@ -304,10 +307,8 @@ static int in_snmp_collect(struct flb_input_instance *ins, struct flb_config *co
 
     snmp_close(ss);
 
-    flb_free(buf);
-    flb_free(oid_buf);
-
-    SOCK_CLEANUP;
+    if (buf) flb_free(buf);
+    if (oid_buf) flb_free(oid_buf);
 
     return ret;
 }
@@ -367,6 +368,9 @@ static int in_snmp_init(struct flb_input_instance *in,
     netsnmp_ds_set_boolean(NETSNMP_DS_LIBRARY_ID, NETSNMP_DS_LIB_NUMERIC_TIMETICKS, 1);
     netsnmp_ds_set_boolean(NETSNMP_DS_LIBRARY_ID, NETSNMP_DS_LIB_QUICK_PRINT, 1);
 
+    SOCK_STARTUP;
+    init_snmp(PLUGIN_NAME);
+
     return 0;
 }
 
@@ -392,6 +396,12 @@ static int in_snmp_exit(void *data, struct flb_config *config)
     flb_log_event_encoder_destroy(&ctx->log_encoder);
 
     flb_free(ctx);
+    snmp_shutdown(PLUGIN_NAME);
+    
+    unload_all_mibs();
+    SOCK_CLEANUP;
+
+    OPENSSL_cleanup();
 
     return 0;
 }
