@@ -114,7 +114,7 @@ static int in_snmp_collect(struct flb_input_instance *ins, struct flb_config *co
     int ret = 0;
     struct flb_snmp *ctx = in_context;
 
-    netsnmp_session session, *ss;
+    netsnmp_session *ss;
     netsnmp_pdu *pdu;
     netsnmp_pdu *response;
 
@@ -131,24 +131,7 @@ static int in_snmp_collect(struct flb_input_instance *ins, struct flb_config *co
     bool is_walk = false;
 
     char *err;
-
-
-    init_snmp(PLUGIN_NAME);
     
-    init_snmp(PLUGIN_NAME);
-    snmp_sess_init(&session);
-
-    session.peername = ctx->target_host;
-
-    if (strcmp(ctx->version, "1") == 0) {
-        session.version = SNMP_VERSION_1;
-    } else if (strcmp(ctx->version, "2c") == 0) {
-        session.version = SNMP_VERSION_2c;
-    } else {
-        flb_plg_error(ctx->ins, "Unsupported SNMP version : %s", ctx->version);
-        return -1;
-    }
-
     if (strcmp(ctx->oid_type, "get") == 0) {
         is_walk = false;
     } else if (strcmp(ctx->oid_type, "walk") == 0) {
@@ -158,10 +141,7 @@ static int in_snmp_collect(struct flb_input_instance *ins, struct flb_config *co
         return -1;
     }
 
-    session.community = (u_char *) ctx->community;
-    session.community_len = strlen(ctx->community);
-
-    ss = snmp_open(&session);
+    ss = snmp_open(&ctx->session);
     if (!ss) {
         snmp_error(ss, NULL, NULL, &err);
         flb_plg_error(ctx->ins, "%s", err);
@@ -275,7 +255,7 @@ static int in_snmp_collect(struct flb_input_instance *ins, struct flb_config *co
                 flb_plg_error(ctx->ins, "Error in packet. Reason: %s", snmp_errstring(response->errstat));
                 running = 0;
             } else if (status == STAT_TIMEOUT) {
-                flb_plg_error(ctx->ins, "Timeout: No response from %s", session.peername);
+                flb_plg_error(ctx->ins, "Timeout: No response from %s", ctx->session.peername);
                 running = 0;
             } else {
                 snmp_error(ss, NULL, NULL, &err);
@@ -367,9 +347,30 @@ static int in_snmp_init(struct flb_input_instance *in,
 
     netsnmp_ds_set_boolean(NETSNMP_DS_LIBRARY_ID, NETSNMP_DS_LIB_NUMERIC_TIMETICKS, 1);
     netsnmp_ds_set_boolean(NETSNMP_DS_LIBRARY_ID, NETSNMP_DS_LIB_QUICK_PRINT, 1);
+    netsnmp_ds_set_boolean(NETSNMP_DS_LIBRARY_ID, NETSNMP_DS_LIB_DISABLE_PERSISTENT_LOAD, 1);
+    netsnmp_ds_set_boolean(NETSNMP_DS_LIBRARY_ID, NETSNMP_DS_LIB_DISABLE_PERSISTENT_SAVE, 1);
+    netsnmp_ds_set_int(NETSNMP_DS_LIBRARY_ID, NETSNMP_DS_LIB_TIMEOUT, ctx->timeout);
+    netsnmp_ds_set_int(NETSNMP_DS_LIBRARY_ID, NETSNMP_DS_LIB_RETRIES, ctx->retries);
 
     SOCK_STARTUP;
     init_snmp(PLUGIN_NAME);
+
+    snmp_sess_init(&ctx->session);
+
+    ctx->session.peername = ctx->target_host;
+
+    if (strcmp(ctx->version, "1") == 0) {
+        ctx->session.version = SNMP_VERSION_1;
+    } else if (strcmp(ctx->version, "2c") == 0) {
+        ctx->session.version = SNMP_VERSION_2c;
+    } else {
+        flb_plg_error(ctx->ins, "Unsupported SNMP version : %s", ctx->version);
+        flb_free(ctx);
+        return -1;
+    }
+
+    ctx->session.community = (u_char *) ctx->community;
+    ctx->session.community_len = strlen(ctx->community);
 
     return 0;
 }
@@ -447,11 +448,6 @@ static struct flb_config_map config_map[] = {
     FLB_CONFIG_MAP_STR, "oid", "1.3.6.1.2.1.1.3.0",
     0, FLB_TRUE, offsetof(struct flb_snmp, oid),
     "set the OID of the SNMP request."
-   },
-   {
-    FLB_CONFIG_MAP_STR, "name", "",
-    0, FLB_TRUE, offsetof(struct flb_snmp, name),
-    "set the name for the variable from SNMP request."
    },
    {0}
 };
