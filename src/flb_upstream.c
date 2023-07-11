@@ -636,11 +636,30 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
 
     /* If the upstream is limited by max connections, check current state */
     if (u->base.net.max_worker_connections > 0) {
+        /*
+         * Connections are linked to one of these lists:
+         *
+         *  - av_queue  : connections ready to be used (available)
+         *  - busy_queue: connections that are busy (someone is using them)
+         *  - drop_queue: connections in the cleanup phase (to be drop)
+         *
+         * Fluent Bit don't create connections ahead of time, just on demand. When
+         * a connection is created is placed into the busy_queue, when is not longer
+         * needed one of these things happen:
+         *
+         *   - if keepalive is enabled (default), the connection is moved to the 'av_queue'.
+         *   - if keepalive is disabled, the connection is moved to 'drop_queue' then is
+         *     closed and destroyed.
+         *
+         * Based on the logic described above, to limit the number of total connections
+         * in the worker, we only need to count the number of connections linked into
+         * the 'busy_queue' list because if there are connections available 'av_queue' it
+         * won't create a one.
+         */
+
+        /* Count the number of relevant connections */
         flb_stream_acquire_lock(&u->base, FLB_TRUE);
-
-        total_connections  = mk_list_size(&uq->av_queue);
-        total_connections += mk_list_size(&uq->busy_queue);
-
+        total_connections = mk_list_size(&uq->busy_queue);
         flb_stream_release_lock(&u->base);
 
         if (total_connections >= u->base.net.max_worker_connections) {
@@ -701,8 +720,9 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
         }
     }
 
-    /* There are keepalive connections available or
-     * keepalive is disable so we need to create a new one
+    /*
+     * There are no keepalive connections available or keepalive is disabled
+     * so we need to create a new one.
      */
     if (conn == NULL) {
         conn = create_conn(u);
