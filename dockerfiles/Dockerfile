@@ -53,6 +53,7 @@ RUN echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/
     flex \
     bison \
     libyaml-dev \
+    libsnmp-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
