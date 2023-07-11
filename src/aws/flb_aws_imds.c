@@ -70,6 +70,7 @@ struct flb_aws_imds *flb_aws_imds_create(const struct flb_aws_imds_config *imds_
      */
     ctx->imds_version = imds_config->use_imds_version;
     ctx->imds_v2_token = flb_sds_create_len("INVALID_TOKEN", 13);
+    ctx->imds_v2_token_len = 13;
 
     /* Detect IMDS support */
     if (!ec2_imds_client->upstream) {
