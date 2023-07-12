@@ -228,7 +228,7 @@ jobs:
           bats-version: 1.9.0
 
       - name: Create k8s Kind Cluster
-        uses: helm/kind-action@v1.7.0
+        uses: helm/kind-action@v1.8.0
         with:
           node_image: kindest/node:${{ matrix.k8s-release }}
           cluster_name: kind
