@@ -1346,6 +1346,9 @@ int flb_main(int argc, char **argv)
      if (trace_input != NULL) {
         disable_trace_input(ctx, trace_input);
      }
+     if (trace_output) {
+         flb_free(trace_output);
+     }
 #endif
 
     flb_stop(ctx);
