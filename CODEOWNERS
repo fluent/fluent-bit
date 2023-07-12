@@ -69,6 +69,7 @@
 /plugins/out_kinesis_firehose @pettitwesley
 /plugins/out_kinesis_streams  @pettitwesley
 /plugins/out_opensearch       @pettitwesley @edsiper
+/plugins/out_stackdriver      @braydonk @igorpeshansky @qingling128
 
 # AWS test code
 /tests/internal/aws             @pettitwesley
