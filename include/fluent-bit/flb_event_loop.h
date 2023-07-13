@@ -93,9 +93,13 @@ static inline void flb_event_load_injected_events(struct flb_bucket_queue *bktq,
             mk_event_wait_2(evl, 0),                                                    \
             flb_event_load_bucket_queue(bktq, evl) : 0,                                 \
         __flb_event_priority_live_foreach_n_events = evl->n_events,                     \
-        event = flb_bucket_queue_find_min(bktq) ?                                       \
-                mk_list_entry(                                                          \
-                    flb_bucket_queue_pop_min(bktq), struct mk_event, _priority_head) :  \
+        event = (__flb_event_priority_live_foreach_iter < live_iters ||                 \
+                flb_bucket_queue_seek(bktq) == 0) ?                                     \
+                    (flb_bucket_queue_find_min(bktq) ?                                  \
+                        mk_list_entry(                                                  \
+                            flb_bucket_queue_pop_min(bktq), struct mk_event,            \
+                            _priority_head) :                                           \
+                        NULL) :                                                         \
                 NULL                                                                    \
     )
 

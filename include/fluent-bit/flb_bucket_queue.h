@@ -70,11 +70,14 @@ static inline int flb_bucket_queue_is_empty(struct flb_bucket_queue *bucket_queu
     return bucket_queue->top == (bucket_queue->buckets + bucket_queue->n_buckets);
 }
 
-static inline void flb_bucket_queue_seek(struct flb_bucket_queue *bucket_queue) {
+static inline int flb_bucket_queue_seek(struct flb_bucket_queue *bucket_queue) {
+    size_t top_priority = 0;
     while (!flb_bucket_queue_is_empty(bucket_queue)
           && (mk_list_is_empty(bucket_queue->top) == 0)) {
         ++bucket_queue->top;
     }
+    top_priority = bucket_queue->top - bucket_queue->buckets;
+    return top_priority;
 }
 
 static inline int flb_bucket_queue_add(struct flb_bucket_queue *bucket_queue,
