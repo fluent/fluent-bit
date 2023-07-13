@@ -249,7 +249,7 @@ static void output_thread(void *data)
     while (running) {
         mk_event_wait(th_ins->evl);
         flb_event_priority_live_foreach(event, th_ins->evl_bktq, th_ins->evl,
-                                      FLB_ENGINE_LOOP_MAX_ITER) {
+                                      FLB_ENGINE_LOOP_MAX_LIVE_ITER) {
             /*
              * FIXME
              * -----

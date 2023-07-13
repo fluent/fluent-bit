@@ -71,7 +71,7 @@ static inline void flb_event_load_injected_events(struct flb_bucket_queue *bktq,
     }
 }
 
-#define flb_event_priority_live_foreach(event, bktq, evl, max_iter)                     \
+#define flb_event_priority_live_foreach(event, bktq, evl, live_iters)                   \
     int __flb_event_priority_live_foreach_iter = 0;                                     \
     int __flb_event_priority_live_foreach_n_events = evl->n_events;                     \
     for (                                                                               \
@@ -83,16 +83,16 @@ static inline void flb_event_load_injected_events(struct flb_bucket_queue *bktq,
                 NULL;                                                                   \
                                                                                         \
         /* condition */                                                                 \
-        event != NULL &&                                                                \
-        (__flb_event_priority_live_foreach_iter < max_iter || max_iter == -1);          \
+        event != NULL;                                                                  \
                                                                                         \
         /* update */                                                                    \
         ++__flb_event_priority_live_foreach_iter,                                       \
         flb_event_load_injected_events(bktq, evl,                                       \
                                       __flb_event_priority_live_foreach_n_events),      \
-        mk_event_wait_2(evl, 0),                                                        \
+        (__flb_event_priority_live_foreach_iter < live_iters || live_iters == -1) ?     \
+            mk_event_wait_2(evl, 0),                                                    \
+            flb_event_load_bucket_queue(bktq, evl) : 0,                                 \
         __flb_event_priority_live_foreach_n_events = evl->n_events,                     \
-        flb_event_load_bucket_queue(bktq, evl),                                         \
         event = flb_bucket_queue_find_min(bktq) ?                                       \
                 mk_list_entry(                                                          \
                     flb_bucket_queue_pop_min(bktq), struct mk_event, _priority_head) :  \

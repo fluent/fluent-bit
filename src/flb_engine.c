@@ -860,8 +860,13 @@ int flb_engine_start(struct flb_config *config)
     while (1) {
         rb_flush_flag = FLB_FALSE;
 
-        mk_event_wait(evl); /* potentially conditional mk_event_wait or mk_event_wait_2 based on bucket queue capacity for one shot events */
-        flb_event_priority_live_foreach(event, evl_bktq, evl, FLB_ENGINE_LOOP_MAX_ITER) {
+        /* 
+         * note: add conditional mk_event_wait or mk_event_wait_2 based on bucket
+         * queue capacity for one shot events (currently oneshot events not used)
+         **/
+        mk_event_wait(evl);
+        flb_event_priority_live_foreach(event, evl_bktq, evl,
+                                        FLB_ENGINE_LOOP_MAX_LIVE_ITER) {
             if (event->type == FLB_ENGINE_EV_CORE) {
                 ret = flb_engine_handle_event(event->fd, event->mask, config);
                 if (ret == FLB_ENGINE_STOP) {

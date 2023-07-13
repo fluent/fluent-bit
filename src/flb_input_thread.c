@@ -371,7 +371,8 @@ static void input_thread(void *data)
 
     while (1) {
         mk_event_wait(thi->evl);
-        flb_event_priority_live_foreach(event, evl_bktq, thi->evl, FLB_ENGINE_LOOP_MAX_ITER) {
+        flb_event_priority_live_foreach(event, evl_bktq, thi->evl,
+                                        FLB_ENGINE_LOOP_MAX_LIVE_ITER) {
             if (event->type == FLB_ENGINE_EV_CORE) {
                 ret = engine_handle_event(event->fd, event->mask,
                                           ins, thi->config);
