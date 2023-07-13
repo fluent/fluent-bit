@@ -620,10 +620,8 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_TIME, "ignore_older", "0",
      0, FLB_TRUE, offsetof(struct flb_tail_config, ignore_older),
-     "ignore records older than 'ignore_older'. Supports m,h,d (minutes, "
-     "hours, days) syntax. Default behavior is to read all records. Option "
-     "only available when a Parser is specified and it can parse the time "
-     "of a record."
+     "ignore files older than 'ignore_older'. Supports m,h,d (minutes, "
+     "hours, days) syntax. Default behavior is to read all the files."
     },
     {
      FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", FLB_TAIL_CHUNK,
