@@ -715,10 +715,10 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
     if (ret < 0){
         send_response(conn, 401, "error: unauthroized\n");
         if (ret == SPLUNK_AUTH_MISSING_CRED) {
-            flb_plg_warn(ctx->ins, "missing credentials in request headers", ret);
+            flb_plg_warn(ctx->ins, "missing credentials in request headers");
         }
         else if (ret == SPLUNK_AUTH_UNAUTHORIZED) {
-            flb_plg_warn(ctx->ins, "wrong credentials in request headers", ret);
+            flb_plg_warn(ctx->ins, "wrong credentials in request headers");
         }
 
         flb_sds_destroy(tag);
