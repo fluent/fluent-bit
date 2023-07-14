@@ -68,18 +68,24 @@ static inline int msgpack_sbuffer_write(void* data, const char* buf, size_t len)
         void* tmp;
         size_t nsize = (sbuf->alloc) ?
                 sbuf->alloc * 2 : MSGPACK_SBUFFER_INIT_SIZE;
-
+        printf("A:sbuf->alloc=%zu sbuf->size=%zu len=%zu nsize=%zu\n",sbuf->alloc, sbuf->size, len, nsize);
         while(nsize < sbuf->size + len) {
             size_t tmp_nsize = nsize * 2;
+          printf("AA:sbuf->alloc=%zu sbuf->size=%zu len=%zu nsize=%zu\n",sbuf->alloc, sbuf->size, len, nsize);
             if (tmp_nsize <= nsize) {
+              printf("AB:sbuf->alloc=%zu sbuf->size=%zu len=%zu nsize=%zu\n",sbuf->alloc, sbuf->size, len, nsize);
                 nsize = sbuf->size + len;
                 break;
             }
             nsize = tmp_nsize;
+            printf("AC:sbuf->alloc=%zu sbuf->size=%zu len=%zu nsize=%zu\n",sbuf->alloc, sbuf->size, len, nsize);
         }
-
+        printf("B:sbuf->alloc=%zu sbuf->size=%zu len=%zu nsize=%zu\n",sbuf->alloc, sbuf->size, len, nsize);
         tmp = realloc(sbuf->data, nsize);
-        if(!tmp) { return -1; }
+        if(!tmp) { 
+          printf("C:sbuf->alloc=%zu sbuf->size=%zu len=%zu nsize=%zu\n",sbuf->alloc, sbuf->size, len, nsize);
+          return -1;
+        }
 
         sbuf->data = (char*)tmp;
         sbuf->alloc = nsize;
