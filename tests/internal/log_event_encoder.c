@@ -650,6 +650,33 @@ static void emit_raw_record()
     flb_log_event_encoder_destroy(&encoder);
 }
 
+void dummy()
+{
+    void *data = NULL;
+    size_t alloc = 8192;
+    size_t size = 6;
+    size_t nsize = 16384;
+    size_t len = 4;
+    void *tmp;
+
+    printf("A:sbuf->alloc=%ld sbuf->size=%ld len=%ld nsize=%ld\n", alloc, size, len, nsize);
+    while(nsize < size + len) {
+        size_t tmp_nsize = nsize * 2;
+        if (tmp_nsize <= nsize) {
+            nsize = size + len;
+            break;
+        }
+        nsize = tmp_nsize;
+    }
+    printf("B:sbuf->alloc=%ld sbuf->size=%ld len=%ld nsize=%ld\n",alloc, size, len, nsize);
+    tmp = realloc(data, nsize);
+    if (!tmp) {
+        printf("C:sbuf->alloc=%ld sbuf->size=%ld len=%ld nsize=%ld\n",alloc, size, len, nsize);
+        return;
+    }
+    free(tmp);
+}
+
 TEST_LIST = {
     { "basic_format_fluent_bit_v2", basic_format_fluent_bit_v2},
     { "basic_format_fluent_bit_v1", basic_format_fluent_bit_v1},
@@ -659,5 +686,6 @@ TEST_LIST = {
     { "init_destroy", init_destroy},
     { "init_unsupported_format", init_unsupported_format},
     { "emit_raw_record", emit_raw_record},
+    { "DUMMY", dummy},
     { NULL, NULL }
 };
