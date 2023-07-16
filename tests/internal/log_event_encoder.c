@@ -656,10 +656,10 @@ void dummy()
     size_t alloc = 8192;
     size_t size = 6;
     size_t nsize = 16384;
-    size_t len = 4;
+    size_t len = strlen("key1");
     void *tmp;
 
-    printf("A:sbuf->alloc=%ld sbuf->size=%ld len=%ld nsize=%ld\n", alloc, size, len, nsize);
+    printf("A:sbuf->alloc=%zu sbuf->size=%zu len=%zu nsize=%zu\n", alloc, size, len, nsize);
     while(nsize < size + len) {
         size_t tmp_nsize = nsize * 2;
         if (tmp_nsize <= nsize) {
@@ -668,10 +668,10 @@ void dummy()
         }
         nsize = tmp_nsize;
     }
-    printf("B:sbuf->alloc=%ld sbuf->size=%ld len=%ld nsize=%ld\n",alloc, size, len, nsize);
+    printf("B:sbuf->alloc=%zu sbuf->size=%zu len=%zu nsize=%zu\n",alloc, size, len, nsize);
     tmp = realloc(data, nsize);
     if (!tmp) {
-        printf("C:sbuf->alloc=%ld sbuf->size=%ld len=%ld nsize=%ld\n",alloc, size, len, nsize);
+        printf("C:sbuf->alloc=%zu sbuf->size=%zu len=%zu nsize=%zu\n",alloc, size, len, nsize);
         return;
     }
     free(tmp);
