@@ -26,6 +26,7 @@
 #include <float.h>
 #include <math.h>
 #include "flb_tests_internal.h"
+#include <stdarg.h>
 
 static int msgpack_strncmp(char* str, size_t str_len, msgpack_object obj)
 {
@@ -650,31 +651,72 @@ static void emit_raw_record()
     flb_log_event_encoder_destroy(&encoder);
 }
 
+void Test(int dummy,...)
+{
+    va_list arg;
+    int type1;
+    int type2;
+    char *str;
+    size_t len;
+    int i;
+    va_start(arg, dummy);
+
+    for (i=0; i<4; i++) {
+        type1 = va_arg(arg, int);
+        TEST_CHECK(type1 == 1);
+
+        len = va_arg(arg, size_t);
+        if(!TEST_CHECK(len == 4)) {
+            TEST_MSG("%d: len error. len=%zu",i, len);
+        }
+
+        type2 = va_arg(arg, int);
+        TEST_CHECK(type2 == 2);
+
+        str = va_arg(arg, char*);
+        TEST_CHECK(strcmp(str, "key1") == 0);
+
+        len = va_arg(arg, size_t);
+        if(!TEST_CHECK(len == 4)) {
+            TEST_MSG("%d: len error. len=%zu",i, len);
+        }
+    }
+
+    va_end(arg);
+}
+
 void dummy()
 {
-    void *data = NULL;
-    size_t alloc = 8192;
-    size_t size = 6;
-    size_t nsize = 16384;
-    size_t len = strlen("key1");
-    void *tmp;
+    int dummy = 100;
+    /*
+    int type1 = 1;
+    int type2 = 2;
+    char *str = "key1";
+    size_t len = strlen(str);
+    */
 
-    printf("A:sbuf->alloc=%zu sbuf->size=%zu len=%zu nsize=%zu\n", alloc, size, len, nsize);
-    while(nsize < size + len) {
-        size_t tmp_nsize = nsize * 2;
-        if (tmp_nsize <= nsize) {
-            nsize = size + len;
-            break;
-        }
-        nsize = tmp_nsize;
-    }
-    printf("B:sbuf->alloc=%zu sbuf->size=%zu len=%zu nsize=%zu\n",alloc, size, len, nsize);
-    tmp = realloc(data, nsize);
-    if (!tmp) {
-        printf("C:sbuf->alloc=%zu sbuf->size=%zu len=%zu nsize=%zu\n",alloc, size, len, nsize);
-        return;
-    }
-    free(tmp);
+    //    Test(dummy, type1, len, type2, str, len);
+    Test(dummy,
+         FLB_LOG_EVENT_CSTRING_VALUE("key1"),
+         FLB_LOG_EVENT_CSTRING_VALUE("key1"),
+         FLB_LOG_EVENT_STRING_VALUE("key1", 4),
+         FLB_LOG_EVENT_STRING_VALUE("key1", 4)
+         );
+}
+
+void dummy2()
+{
+    int dummy = 100;
+    int type1 = 1;
+    int type2 = 2;
+    char *str = "key1";
+    size_t len = strlen(str);
+
+    Test(dummy, 
+         type1, strlen(str), type2, str, strlen(str),
+         type1, strlen(str), type2, str, strlen(str),
+         type1, 4UL, type2, str, 4UL,
+         type1, 4UL, type2, str, 4UL);
 }
 
 TEST_LIST = {
@@ -687,5 +729,6 @@ TEST_LIST = {
     { "init_unsupported_format", init_unsupported_format},
     { "emit_raw_record", emit_raw_record},
     { "DUMMY", dummy},
+    { "DUMMY2", dummy2},
     { NULL, NULL }
 };
