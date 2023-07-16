@@ -83,7 +83,7 @@ int flb_log_event_encoder_append_value(
                                                    value_length);
                     if (result != 0) {
                         flb_errno();
-                        flb_error("result=%d str=%s len=%d", result, value_buffer, value_length);
+                        flb_error("result=%d str=%s strp=%p len=%zu", result, value_buffer, value_buffer, value_length);
                     }
                 }
                 else if (value_type == FLB_LOG_EVENT_BINARY_BODY_VALUE_TYPE) {
