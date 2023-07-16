@@ -572,22 +572,27 @@ int flb_log_event_encoder_append_values_unsafe(
          result == FLB_EVENT_ENCODER_SUCCESS ;
          processed_values++) {
         value_type = va_arg(arguments, int);
-
+        flb_error("value_type=%d", value_type);
         if (value_type == FLB_LOG_EVENT_APPEND_TERMINATOR_VALUE_TYPE) {
             break;
         }
         else if (value_type == FLB_LOG_EVENT_STRING_LENGTH_VALUE_TYPE) {
+            size_t size = va_arg(arguments, size_t);
+            flb_error("length_value_type: size=%zu", size);
             result = flb_log_event_encoder_append_string_length(context,
                         target_field,
-                        va_arg(arguments, size_t));
+                        size);
         }
         else if (value_type == FLB_LOG_EVENT_STRING_BODY_VALUE_TYPE) {
+            size_t size;
             buffer_address = va_arg(arguments, char *);
+            size = va_arg(arguments, size_t);
+            flb_error("sizeof(size)=%zu size=%zu", sizeof(size), size);
 
             result = flb_log_event_encoder_append_string_body(context,
                         target_field,
                         buffer_address,
-                        va_arg(arguments, size_t));
+                        size);
         }
         else if (value_type == FLB_LOG_EVENT_BINARY_LENGTH_VALUE_TYPE) {
             result = flb_log_event_encoder_append_binary_length(context,
