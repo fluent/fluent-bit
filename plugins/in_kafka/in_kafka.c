@@ -19,7 +19,6 @@
  */
 
 #include <fluent-bit/flb_input_plugin.h>
-#include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_time.h>
@@ -129,7 +128,7 @@ static int process_message(struct flb_in_kafka_config *ctx,
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         if (rkm->payload) {
-            if (ctx->data_format != FLB_IN_KAFKA_DATA_FORMAT_JSON ||
+            if (ctx->format != FLB_IN_KAFKA_FORMAT_JSON ||
                     try_json(log_encoder, rkm)) {
                 ret = flb_log_event_encoder_append_body_string(log_encoder,
                                                                rkm->payload,
@@ -248,14 +247,14 @@ static int in_kafka_init(struct flb_input_instance *ins,
         goto init_error;
     }
 
-    if (strcasecmp(ctx->data_format_str, "none") == 0) {
-        ctx->data_format = FLB_IN_KAFKA_DATA_FORMAT_NONE;
+    if (strcasecmp(ctx->format_str, "none") == 0) {
+        ctx->format = FLB_IN_KAFKA_FORMAT_NONE;
     }
-    else if (strcasecmp(ctx->data_format_str, "json") == 0) {
-        ctx->data_format = FLB_IN_KAFKA_DATA_FORMAT_JSON;
+    else if (strcasecmp(ctx->format_str, "json") == 0) {
+        ctx->format = FLB_IN_KAFKA_FORMAT_JSON;
     }
     else {
-        flb_plg_error(ins, "config: invalid data_format \"%s\"", ctx->data_format_str);
+        flb_plg_error(ins, "config: invalid format \"%s\"", ctx->format_str);
         goto init_error;
     }
 
@@ -341,8 +340,8 @@ static struct flb_config_map config_map[] = {
     "Set the kafka topics, delimited by commas."
    },
    {
-    FLB_CONFIG_MAP_STR, "data_format", FLB_IN_KAFKA_DEFAULT_DATA_FORMAT,
-    0, FLB_TRUE, offsetof(struct flb_in_kafka_config, data_format_str),
+    FLB_CONFIG_MAP_STR, "format", FLB_IN_KAFKA_DEFAULT_FORMAT,
+    0, FLB_TRUE, offsetof(struct flb_in_kafka_config, format_str),
     "Set the data format which will be used for parsing records."
    },
    {

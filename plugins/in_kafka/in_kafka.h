@@ -29,11 +29,11 @@
 
 
 #define FLB_IN_KAFKA_DEFAULT_POLL_MS       "500"
-#define FLB_IN_KAFKA_DEFAULT_DATA_FORMAT   "none"
+#define FLB_IN_KAFKA_DEFAULT_FORMAT        "none"
 
 enum {
-    FLB_IN_KAFKA_DATA_FORMAT_NONE,
-    FLB_IN_KAFKA_DATA_FORMAT_JSON,
+    FLB_IN_KAFKA_FORMAT_NONE,
+    FLB_IN_KAFKA_FORMAT_JSON,
 };
 
 struct flb_in_kafka_config {
@@ -41,8 +41,8 @@ struct flb_in_kafka_config {
     struct flb_input_instance *ins;
     struct flb_log_event_encoder *log_encoder;
     int poll_ms;
-    int data_format;
-    char *data_format_str;
+    int format;
+    char *format_str;
 };
 
 #endif
