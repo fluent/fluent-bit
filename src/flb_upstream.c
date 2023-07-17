@@ -1033,6 +1033,11 @@ void flb_upstream_set_total_connections_gauge(
 static void flb_upstream_increment_total_connections_count(
                 struct flb_upstream *stream)
 {
+    if (stream->parent_upstream != NULL) {
+        stream = (struct flb_upstream *) stream->parent_upstream;
+
+        flb_upstream_increment_total_connections_count(stream);
+    }
     if (stream->cmt_total_connections != NULL) {
         if (stream->cmt_total_connections_label != NULL) {
             cmt_gauge_inc(
@@ -1054,7 +1059,12 @@ static void flb_upstream_increment_total_connections_count(
 static void flb_upstream_decrement_total_connections_count(
                 struct flb_upstream *stream)
 {
-    if (stream->cmt_total_connections != NULL) {
+    if (stream->parent_upstream != NULL) {
+        stream = (struct flb_upstream *) stream->parent_upstream;
+
+        flb_upstream_decrement_total_connections_count(stream);
+    }
+    else if (stream->cmt_total_connections != NULL) {
         if (stream->cmt_total_connections_label != NULL) {
             cmt_gauge_dec(
                 stream->cmt_total_connections,
@@ -1089,7 +1099,12 @@ void flb_upstream_set_busy_connections_gauge(
 static void flb_upstream_increment_busy_connections_count(
                 struct flb_upstream *stream)
 {
-    if (stream->cmt_busy_connections != NULL) {
+    if (stream->parent_upstream != NULL) {
+        stream = (struct flb_upstream *) stream->parent_upstream;
+
+        flb_upstream_increment_busy_connections_count(stream);
+    }
+    else if (stream->cmt_busy_connections != NULL) {
         if (stream->cmt_busy_connections_label != NULL) {
             cmt_gauge_inc(
                 stream->cmt_busy_connections,
@@ -1110,7 +1125,12 @@ static void flb_upstream_increment_busy_connections_count(
 static void flb_upstream_decrement_busy_connections_count(
                 struct flb_upstream *stream)
 {
-    if (stream->cmt_busy_connections != NULL) {
+    if (stream->parent_upstream != NULL) {
+        stream = (struct flb_upstream *) stream->parent_upstream;
+
+        flb_upstream_decrement_busy_connections_count(stream);
+    }
+    else if (stream->cmt_busy_connections != NULL) {
         if (stream->cmt_busy_connections_label != NULL) {
             cmt_gauge_dec(
                 stream->cmt_busy_connections,
