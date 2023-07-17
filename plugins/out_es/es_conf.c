@@ -293,7 +293,6 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     /* Set index record accessor */
     if (ctx->target_index) {
         ctx->ra_target_index = flb_ra_create(ctx->target_index, FLB_TRUE);
-        fprintf(stderr, "record accessor at %p", ctx->ra_target_index);
         if (!ctx->ra_target_index) {
             flb_plg_error(ctx->ins, "invalid record accessor expression for index '%s'", ctx->target_index);
             flb_es_conf_destroy(ctx);
