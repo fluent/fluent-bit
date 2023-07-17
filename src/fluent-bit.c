@@ -857,6 +857,8 @@ static int parse_trace_pipeline(flb_ctx_t *ctx, const char *pipeline, char **tra
     }
 
     mk_list_foreach(cur, parts) {
+	key = NULL;
+	value = NULL;
         part = mk_list_entry(cur, struct flb_split_entry, _head);
         if (parse_trace_pipeline_prop(ctx, part->value, &key, &value) == FLB_ERROR) {
             return FLB_ERROR;
@@ -893,8 +895,15 @@ static int parse_trace_pipeline(flb_ctx_t *ctx, const char *pipeline, char **tra
                                    (char *)propname, strlen(propname),
                                    (char *)propval, strlen(propval));
         }
+	if (key != NULL) {
+		mk_mem_free(key);
+	}
+	if (value != NULL) {
+		flb_free(value);
+	}
     }
 
+    flb_utils_split_free(parts);
     return FLB_OK;
 }
 #endif
@@ -1345,6 +1354,7 @@ int flb_main(int argc, char **argv)
 #ifdef FLB_HAVE_CHUNK_TRACE
      if (trace_input != NULL) {
         disable_trace_input(ctx, trace_input);
+        flb_free(trace_input);
      }
      if (trace_output) {
          flb_free(trace_output);
