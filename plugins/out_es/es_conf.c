@@ -290,6 +290,17 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         snprintf(ctx->uri, sizeof(ctx->uri) - 1, "%s/_bulk", path);
     }
 
+    /* Set index record accessor */
+    if (ctx->target_index) {
+        ctx->ra_target_index = flb_ra_create(ctx->target_index, FLB_TRUE);
+        fprintf(stderr, "record accessor at %p", ctx->ra_target_index);
+        if (!ctx->ra_target_index) {
+            flb_plg_error(ctx->ins, "invalid record accessor expression for index '%s'", ctx->target_index);
+            flb_es_conf_destroy(ctx);
+            return NULL;
+        }
+    }
+
     if (ctx->id_key) {
         ctx->ra_id_key = flb_ra_create(ctx->id_key, FLB_FALSE);
         if (ctx->ra_id_key == NULL) {
@@ -497,6 +508,10 @@ int flb_es_conf_destroy(struct flb_elasticsearch *ctx)
     if (ctx->ra_id_key) {
         flb_ra_destroy(ctx->ra_id_key);
         ctx->ra_id_key = NULL;
+    }
+    if (ctx->ra_target_index) {
+        flb_ra_destroy(ctx->ra_target_index);
+        ctx->ra_target_index = NULL;
     }
     if (ctx->es_action) {
         flb_free(ctx->es_action);

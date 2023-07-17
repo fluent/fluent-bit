@@ -118,6 +118,10 @@ struct flb_elasticsearch {
     flb_sds_t id_key;
     struct flb_record_accessor *ra_id_key;
 
+    /* target_index */
+    flb_sds_t target_index;
+    struct flb_record_accessor *ra_target_index;
+
     /* include_tag_key */
     int include_tag_key;
     flb_sds_t tag_key;

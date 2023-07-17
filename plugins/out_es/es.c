@@ -295,6 +295,7 @@ static int elasticsearch_format(struct flb_config *config,
     size_t off = 0;
     size_t off_prev = 0;
     char *es_index;
+    char target_index_value[256];
     char logstash_index[256];
     char time_formatted[256];
     char index_formatted[256];
@@ -350,13 +351,15 @@ static int elasticsearch_format(struct flb_config *config,
     }
 
     /*
-     * If logstash format and id generation are disabled, pre-generate
-     * the index line for all records.
+     * If logstash format, target_index record accessor and id generation are disabled,
+     * pre-generate the index line for all records.
      *
      * The header stored in 'j_index' will be used for the all records on
      * this payload.
      */
-    if (ctx->logstash_format == FLB_FALSE && ctx->generate_id == FLB_FALSE) {
+    if (ctx->logstash_format == FLB_FALSE &&
+        ctx->generate_id == FLB_FALSE && ctx->ra_target_index == NULL) {
+
         flb_time_get(&tms);
         gmtime_r(&tms.tm.tv_sec, &tm);
         strftime(index_formatted, sizeof(index_formatted) - 1,
@@ -453,6 +456,42 @@ static int elasticsearch_format(struct flb_config *config,
         msgpack_pack_str_body(&tmp_pck, time_formatted, s);
 
         es_index = ctx->index;
+        if (ctx->ra_target_index) {
+            flb_sds_t v = flb_ra_translate_check (ctx->ra_target_index,
+                    (char *) tag, tag_len,
+                    map, NULL, FLB_TRUE);
+            if (v) {
+                len = flb_sds_len(v);
+                if (len > 128) {
+                    len = 128;
+                }
+                memcpy(target_index_value, v, len);
+                target_index_value[len] = '\0';
+                es_index_custom_len = len;
+                flb_sds_destroy(v);
+                es_index = target_index_value;
+            }
+            else {
+                flb_plg_warn(ctx->ins,
+                             "the value of %s is missing for target_index_key",
+                             ctx->target_index);
+            }
+            if (ctx->generate_id == FLB_FALSE) {
+                if (ctx->suppress_type_name) {
+                    index_len = flb_sds_snprintf (&j_index,
+                                                  flb_sds_alloc (j_index),
+                                                  ES_BULK_INDEX_FMT_WITHOUT_TYPE,
+                                                  ctx->es_action, es_index);
+                }
+                else {
+                    index_len = flb_sds_snprintf (&j_index,
+                                                  flb_sds_alloc (j_index),
+                                                  ES_BULK_INDEX_FMT,
+                                                  ctx->es_action,
+                                                  es_index, ctx->type);
+                }
+            }
+        }
         if (ctx->logstash_format == FLB_TRUE) {
             ret = compose_index_header(ctx, es_index_custom_len,
                                        &logstash_index[0], sizeof(logstash_index),
@@ -1179,6 +1218,13 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "id_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, id_key),
      "If set, _id will be the value of the key from incoming record."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "target_index", NULL,
+     0, FLB_TRUE, offsetof(struct flb_elasticsearch, target_index),
+     "Compose index name using record accessor syntax. If any record accessor "
+     "variable is invalid (i.e.: The key is not present in event) the value of 'index' "
+     "will be used."
     },
     {
      FLB_CONFIG_MAP_BOOL, "replace_dots", "false",
