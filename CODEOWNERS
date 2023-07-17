@@ -63,13 +63,14 @@
 /plugins/out_datadog     @nokute78 @edsiper
 /plugins/out_es          @pettitwesley @edsiper
 /plugins/out_pgsql       @sxd
+/plugins/out_stackdriver @braydonk @igorpeshansky @qingling128
+
 # AWS Plugins 
 /plugins/out_s3               @pettitwesley
 /plugins/out_cloudwatch_logs  @pettitwesley
 /plugins/out_kinesis_firehose @pettitwesley
 /plugins/out_kinesis_streams  @pettitwesley
 /plugins/out_opensearch       @pettitwesley @edsiper
-/plugins/out_stackdriver      @braydonk @igorpeshansky @qingling128
 
 # AWS test code
 /tests/internal/aws             @pettitwesley
@@ -81,6 +82,10 @@
 /tests/runtime/out_kinesis.c    @pettitwesley
 /tests/runtime/out_opensearch.c @pettitwesley @edsiper
 /tests/runtime/out_s3.c         @pettitwesley
+
+# Google test code
+# --------------
+/tests/runtime/out_stackdriver.c @braydonk @igorpeshansky @qingling128
 
 # Devcontainer
 /.devcontainer                  @patrick-stephens @niedbalski @edsiper
