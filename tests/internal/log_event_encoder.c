@@ -402,8 +402,8 @@ static void basic_format_fluent_bit_v2()
                 FLB_LOG_EVENT_CSTRING_VALUE("key1"),
                 FLB_LOG_EVENT_CSTRING_VALUE("value1"),
 
-                FLB_LOG_EVENT_STRING_VALUE("key2", 4),
-                FLB_LOG_EVENT_STRING_VALUE("value2", 6));
+                FLB_LOG_EVENT_STRING_VALUE("key2", (size_t)4),
+                FLB_LOG_EVENT_STRING_VALUE("value2", (size_t)6));
 
     if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
         TEST_MSG("flb_log_event_encoder_append_body_values failed. ret=%s",
@@ -466,8 +466,8 @@ static void basic_format_fluent_bit_v1()
                 FLB_LOG_EVENT_CSTRING_VALUE("key1"),
                 FLB_LOG_EVENT_CSTRING_VALUE("value1"),
 
-                FLB_LOG_EVENT_STRING_VALUE("key2", 4),
-                FLB_LOG_EVENT_STRING_VALUE("value2", 6));
+                FLB_LOG_EVENT_STRING_VALUE("key2", (size_t)4),
+                FLB_LOG_EVENT_STRING_VALUE("value2", (size_t)6));
 
     if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
         TEST_MSG("flb_log_event_encoder_append_body_values failed. ret=%s",
@@ -536,8 +536,8 @@ static void basic_metadata_format_fluent_bit_v2()
                 FLB_LOG_EVENT_CSTRING_VALUE("key1"),
                 FLB_LOG_EVENT_CSTRING_VALUE("value1"),
 
-                FLB_LOG_EVENT_STRING_VALUE("key2", 4),
-                FLB_LOG_EVENT_STRING_VALUE("value2", 6));
+                FLB_LOG_EVENT_STRING_VALUE("key2", (size_t)4),
+                FLB_LOG_EVENT_STRING_VALUE("value2", (size_t)6));
 
     if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
         TEST_MSG("flb_log_event_encoder_append_body_values failed. ret=%s",
@@ -715,8 +715,23 @@ void dummy2()
     Test(dummy, 
          type1, strlen(str), type2, str, strlen(str),
          type1, strlen(str), type2, str, strlen(str),
-         type1, 4UL, type2, str, 4UL,
-         type1, 4UL, type2, str, 4UL);
+         type1, (size_t)4, type2, str, (size_t)4,
+         type1, (size_t)4, type2, str, (size_t)4);
+}
+
+void dummy3()
+{
+    int dummy = 100;
+    int type1 = 1;
+    int type2 = 2;
+    char *str = "key1";
+    size_t len = strlen(str);
+
+    Test(dummy, 
+         type1, strlen(str), type2, str, strlen(str),
+         type1, strlen(str), type2, str, strlen(str),
+         type1, len, type2, str, len,
+         type1, len, type2, str, len);
 }
 
 TEST_LIST = {
@@ -730,5 +745,6 @@ TEST_LIST = {
     { "emit_raw_record", emit_raw_record},
     { "DUMMY", dummy},
     { "DUMMY2", dummy2},
+    { "DUMMY3", dummy3},
     { NULL, NULL }
 };
