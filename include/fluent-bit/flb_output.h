@@ -50,6 +50,7 @@
 #include <fluent-bit/flb_processor.h>
 
 #include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_decode_msgpack.h>
 #include <cmetrics/cmt_encode_msgpack.h>
@@ -359,6 +360,11 @@ struct flb_output_instance {
     struct cmt_counter *cmt_retries_failed;  /* m: output_retries_failed  */
     struct cmt_counter *cmt_dropped_records; /* m: output_dropped_records */
     struct cmt_counter *cmt_retried_records; /* m: output_retried_records */
+
+    /* m: output_upstream_total_connections */
+    struct cmt_gauge   *cmt_upstream_total_connections;
+    /* m: output_upstream_busy_connections */
+    struct cmt_gauge   *cmt_upstream_busy_connections;
 
     /* OLD Metrics API */
 #ifdef FLB_HAVE_METRICS
