@@ -111,6 +111,18 @@ struct flb_config_map upstream_net[] = {
 int flb_upstream_needs_proxy(const char *host, const char *proxy,
                              const char *no_proxy);
 
+static void flb_upstream_increment_busy_connections_count(
+                struct flb_upstream *stream);
+
+static void flb_upstream_decrement_busy_connections_count(
+                struct flb_upstream *stream);
+
+static void flb_upstream_increment_total_connections_count(
+                struct flb_upstream *stream);
+
+static void flb_upstream_decrement_total_connections_count(
+                struct flb_upstream *stream);
+
 /* Enable thread-safe mode for upstream connection */
 void flb_upstream_thread_safe(struct flb_upstream *u)
 {
@@ -463,6 +475,8 @@ static int prepare_destroy_conn(struct flb_connection *u_conn)
     /* Add node to destroy queue */
     mk_list_add(&u_conn->_head, &uq->destroy_queue);
 
+    flb_upstream_decrement_total_connections_count(u);
+
     /*
      * note: the connection context is destroyed by the engine once all events
      * have been processed.
@@ -530,6 +544,8 @@ static struct flb_connection *create_conn(struct flb_upstream *u)
     /* Link new connection to the busy queue */
     uq = flb_upstream_queue_get(u);
     mk_list_add(&conn->_head, &uq->busy_queue);
+
+    flb_upstream_increment_total_connections_count(u);
 
     flb_stream_release_lock(&u->base);
 
@@ -730,6 +746,7 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
 
     if (conn != NULL) {
         flb_connection_reset_io_timeout(conn);
+        flb_upstream_increment_busy_connections_count(u);
     }
 
     return conn;
@@ -756,6 +773,8 @@ int flb_upstream_conn_release(struct flb_connection *conn)
     int ret;
     struct flb_upstream *u = conn->upstream;
     struct flb_upstream_queue *uq;
+
+    flb_upstream_decrement_busy_connections_count(u);
 
     uq = flb_upstream_queue_get(u);
 
@@ -897,6 +916,8 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
                                     u_conn->event.mask,
                                     FLB_TRUE);
                 }
+
+                flb_upstream_decrement_busy_connections_count(u);
             }
         }
 
@@ -993,4 +1014,116 @@ int flb_upstream_conn_pending_destroy_list(struct mk_list *list)
 int flb_upstream_is_async(struct flb_upstream *u)
 {
     return flb_stream_is_async(&u->base);
+}
+
+void flb_upstream_set_total_connections_label(
+        struct flb_upstream *stream,
+        const char *label_value)
+{
+    stream->cmt_total_connections_label = label_value;
+}
+
+void flb_upstream_set_total_connections_gauge(
+        struct flb_upstream *stream,
+        struct cmt_gauge *gauge_instance)
+{
+    stream->cmt_total_connections = gauge_instance;
+}
+
+static void flb_upstream_increment_total_connections_count(
+                struct flb_upstream *stream)
+{
+    if (stream->cmt_total_connections != NULL) {
+        if (stream->cmt_total_connections_label != NULL) {
+            cmt_gauge_inc(
+                stream->cmt_total_connections,
+                cfl_time_now(),
+                1,
+                (char *[]) {
+                    (char *) stream->cmt_total_connections_label
+                });
+        }
+        else {
+            cmt_gauge_inc(stream->cmt_total_connections,
+                          cfl_time_now(),
+                          0, NULL);
+        }
+    }
+}
+
+static void flb_upstream_decrement_total_connections_count(
+                struct flb_upstream *stream)
+{
+    if (stream->cmt_total_connections != NULL) {
+        if (stream->cmt_total_connections_label != NULL) {
+            cmt_gauge_dec(
+                stream->cmt_total_connections,
+                cfl_time_now(),
+                1,
+                (char *[]) {
+                    (char *) stream->cmt_total_connections_label
+                });
+        }
+        else {
+            cmt_gauge_dec(stream->cmt_total_connections,
+                          cfl_time_now(),
+                          0, NULL);
+        }
+    }
+}
+
+void flb_upstream_set_busy_connections_label(
+        struct flb_upstream *stream,
+        const char *label_value)
+{
+    stream->cmt_busy_connections_label = label_value;
+}
+
+void flb_upstream_set_busy_connections_gauge(
+        struct flb_upstream *stream,
+        struct cmt_gauge *gauge_instance)
+{
+    stream->cmt_busy_connections = gauge_instance;
+}
+
+static void flb_upstream_increment_busy_connections_count(
+                struct flb_upstream *stream)
+{
+    if (stream->cmt_busy_connections != NULL) {
+        if (stream->cmt_busy_connections_label != NULL) {
+            cmt_gauge_inc(
+                stream->cmt_busy_connections,
+                cfl_time_now(),
+                1,
+                (char *[]) {
+                    (char *) stream->cmt_busy_connections_label
+                });
+        }
+        else {
+            cmt_gauge_inc(stream->cmt_busy_connections,
+                          cfl_time_now(),
+                          0, NULL);
+        }
+    }
+}
+
+static void flb_upstream_decrement_busy_connections_count(
+                struct flb_upstream *stream)
+{
+    if (stream->cmt_busy_connections != NULL) {
+        if (stream->cmt_busy_connections_label != NULL) {
+            cmt_gauge_dec(
+                stream->cmt_busy_connections,
+                cfl_time_now(),
+                1,
+                (char *[]) {
+                    (char *) stream->cmt_busy_connections_label
+                });
+        }
+        else {
+            cmt_gauge_dec(stream->cmt_busy_connections,
+                          cfl_time_now(),
+                          0, NULL);
+        }
+    }
 }
