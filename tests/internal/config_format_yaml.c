@@ -3,6 +3,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_config_format.h>
 
 #include <cfl/cfl.h>
@@ -247,7 +248,7 @@ void test_parser_conf()
 
     config = flb_config_init();
     TEST_CHECK(config != NULL);
-    config->conf_path = FLB_TESTS_CONF_PATH "/parsers/";
+    config->conf_path = flb_strdup(FLB_TESTS_CONF_PATH "/parsers/");
 
     // count the parsers registered automatically by fluent-bit
     cnt = mk_list_size(&config->parsers);
@@ -266,6 +267,7 @@ void test_parser_conf()
 
     flb_cf_dump(cf);
     flb_cf_destroy(cf);
+    flb_config_exit(config);
 }
 
 TEST_LIST = {
