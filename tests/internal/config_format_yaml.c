@@ -235,6 +235,9 @@ void test_slist_odd()
 void test_parser_conf()
 {
     struct flb_cf *cf;
+    struct flb_config *config;
+    int ret;
+    int cnt;
 
     cf = flb_cf_yaml_create(NULL, FLB_TESTS_CONF_PATH "/parsers/parsers-conf.yaml", NULL, 0);
     TEST_CHECK(cf != NULL);
@@ -242,9 +245,23 @@ void test_parser_conf()
         exit(EXIT_FAILURE);
     }
 
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+    config->conf_path = FLB_TESTS_CONF_PATH "/parsers/";
+
+    // count the parsers registered automatically by fluent-bit
+    cnt = mk_list_size(&config->parsers);
+    // load the parsers from the configuration
+    ret = flb_config_load_config_format(config, cf);
+    if (ret != 0) {
+        exit(EXIT_FAILURE);;
+    }
+
     /* Total number of inputs */
-    if(!TEST_CHECK(mk_list_size(&cf->parsers) == 1)) {
-        TEST_MSG("Section number error. Got=%d expect=1", mk_list_size(&cf->parsers));
+    if(!TEST_CHECK(mk_list_size(&config->parsers) == cnt+1)) {
+        TEST_MSG("Section number error. Got=%d expect=%d", 
+	         mk_list_size(&config->parsers),
+		 cnt+1);
     }
 
     flb_cf_dump(cf);
