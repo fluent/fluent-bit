@@ -10,8 +10,22 @@
 
 #include "flb_tests_internal.h"
 
-#define FLB_000 FLB_TESTS_DATA_PATH "/data/config_format/yaml/fluent-bit.yaml"
-#define FLB_001 FLB_TESTS_DATA_PATH "/data/config_format/yaml/issue_7559.yaml"
+#define FLB_TESTS_CONF_PATH FLB_TESTS_DATA_PATH "/data/config_format/yaml"
+#define FLB_000 FLB_TESTS_CONF_PATH "/fluent-bit.yaml"
+#define FLB_001 FLB_TESTS_CONF_PATH "/issue_7559.yaml"
+
+/*
+ * Configurations to test:
+ *  * basic single input to single output
+ *  * basic single input to single output with a filter
+ *  * includes
+ *  * slist
+ *  * conf parsers
+ *  * yaml parsers
+ *  * customs
+ *  * service
+ *  * env
+ */
 
 /* data/config_format/fluent-bit.yaml */
 void test_basic()
@@ -20,6 +34,8 @@ void test_basic()
     struct flb_cf *cf;
     struct flb_cf_section *s;
     struct flb_cf_group *g;
+    struct cfl_variant *v;
+    int idx = 0;
 
     cf = flb_cf_yaml_create(NULL, FLB_000, NULL, 0);
     TEST_CHECK(cf != NULL);
@@ -44,6 +60,69 @@ void test_basic()
     TEST_CHECK(mk_list_size(&cf->filters) == 1);
     TEST_CHECK(mk_list_size(&cf->outputs) == 2);
     TEST_CHECK(mk_list_size(&cf->others) == 1);
+
+    /* check inputs */
+    idx = 0;
+    mk_list_foreach(head, &cf->inputs) {
+        s = mk_list_entry(head, struct flb_cf_section, _head_section);
+        switch (idx) {
+        case 0:
+            v = flb_cf_section_property_get(cf, s, "name");
+            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+            TEST_CHECK(strcmp(v->data.as_string, "dummy") == 0);
+            break;
+        case 1:
+            v = flb_cf_section_property_get(cf, s, "name");
+            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+            TEST_CHECK(strcmp(v->data.as_string, "tail") == 0);
+            v = flb_cf_section_property_get(cf, s, "path");
+            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+            TEST_CHECK(strcmp(v->data.as_string, "./test.log") == 0);
+            break;
+        case 2:
+            v = flb_cf_section_property_get(cf, s, "name");
+            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+            TEST_CHECK(strcmp(v->data.as_string, "tail") == 0);
+            v = flb_cf_section_property_get(cf, s, "path");
+            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+            TEST_CHECK(strcmp(v->data.as_string, "./test.log") == 0);
+            break;
+        }
+        idx++;
+    }
+
+    /* check outputs */
+    idx = 0;
+    mk_list_foreach(head, &cf->outputs) {
+        s = mk_list_entry(head, struct flb_cf_section, _head_section);
+        switch (idx) {
+        case 0:
+            v = flb_cf_section_property_get(cf, s, "name");
+            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+            TEST_CHECK(strcmp(v->data.as_string, "stdout") == 0);
+            break;
+        case 1:
+            v = flb_cf_section_property_get(cf, s, "name");
+            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+            TEST_CHECK(strcmp(v->data.as_string, "stdout") == 0);
+            break;
+        }
+        idx++;
+    }
+
+    /* check filters */
+    idx = 0;
+    mk_list_foreach(head, &cf->filters) {
+        s = mk_list_entry(head, struct flb_cf_section, _head_section);
+        switch (idx) {
+        case 0:
+            v = flb_cf_section_property_get(cf, s, "name");
+            TEST_CHECK(v->type == CFL_VARIANT_STRING);
+            TEST_CHECK(strcmp(v->data.as_string, "record_modifier") == 0);
+            break;
+        }
+        idx++;
+    }
 
     /* groups */
     s = flb_cf_section_get_by_name(cf, "input");
@@ -87,8 +166,76 @@ void test_customs_section()
     flb_cf_destroy(cf);
 }
 
+void test_slist_even()
+{
+    struct flb_cf *cf;
+    struct flb_cf_section *s;
+    struct cfl_variant *v;
+    struct mk_list *head;
+
+    cf = flb_cf_yaml_create(NULL, FLB_TESTS_CONF_PATH "/pipelines/slist/even.yaml", NULL, 0);
+    TEST_CHECK(cf != NULL);
+    if (!cf) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Total number of inputs */
+    if(!TEST_CHECK(mk_list_size(&cf->inputs) == 1)) {
+        TEST_MSG("Section number error. Got=%d expect=1", mk_list_size(&cf->inputs));
+    }
+
+    mk_list_foreach(head, &cf->inputs) {
+        s = mk_list_entry(head, struct flb_cf_section, _head_section);
+        TEST_CHECK(s != NULL);
+
+        v = flb_cf_section_property_get(cf, s, "success_header");
+        TEST_CHECK(v->type == CFL_VARIANT_ARRAY);
+        if (!TEST_CHECK(v->data.as_array->entry_count == 2)) {
+            TEST_MSG("Section number error. Got=%lud expect=2", v->data.as_array->entry_count);
+        }
+    }
+
+    flb_cf_dump(cf);
+    flb_cf_destroy(cf);
+}
+
+void test_slist_odd()
+{
+    struct flb_cf *cf;
+    struct flb_cf_section *s;
+    struct cfl_variant *v;
+    struct mk_list *head;
+
+    cf = flb_cf_yaml_create(NULL, FLB_TESTS_CONF_PATH "/pipelines/slist/odd.yaml", NULL, 0);
+    TEST_CHECK(cf != NULL);
+    if (!cf) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Total number of inputs */
+    if(!TEST_CHECK(mk_list_size(&cf->inputs) == 1)) {
+        TEST_MSG("Section number error. Got=%d expect=1", mk_list_size(&cf->inputs));
+    }
+
+    mk_list_foreach(head, &cf->inputs) {
+        s = mk_list_entry(head, struct flb_cf_section, _head_section);
+        TEST_CHECK(s != NULL);
+
+        v = flb_cf_section_property_get(cf, s, "success_header");
+        TEST_CHECK(v->type == CFL_VARIANT_ARRAY);
+        if (!TEST_CHECK(v->data.as_array->entry_count == 3)) {
+            TEST_MSG("Section number error. Got=%lud expect=3", v->data.as_array->entry_count);
+        }
+    }
+
+    flb_cf_dump(cf);
+    flb_cf_destroy(cf);
+}
+
 TEST_LIST = {
     { "basic"    , test_basic},
     { "customs section", test_customs_section},
+    { "slist odd", test_slist_odd},
+    { "slist even", test_slist_even},
     { 0 }
 };
