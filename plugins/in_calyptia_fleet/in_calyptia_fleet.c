@@ -349,6 +349,14 @@ static int execute_reload(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t cf
     return FLB_TRUE;
 }
 
+static char *tls_setting_string(int use_tls)
+{
+    if (use_tls) {
+        return "On";
+    }
+    return "Off";
+}
+
 /* cb_collect callback */
 static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
                             struct flb_config *config, void *in_context)
@@ -435,35 +443,22 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
         }
         header = flb_sds_create_size(4096);
         flb_sds_printf(&header, 
-                       "[INPUT]\n"
-                       "    Name          calyptia_fleet\n"
-                       "    Api_Key       %s\n"
-                       "    fleet_id      %s\n"
-                       "    Host          %s\n"
-                       "    Port          %d\n"
-                       "    Config_Dir    %s\n"
-                       "    TLS           %s\n"
                        "[CUSTOM]\n"
                        "    Name          calyptia\n"
                        "    api_key       %s\n"
-                       "    log_level     debug\n"
                        "    fleet_id      %s\n"
                        "    add_label     fleet_id %s\n"
+                       "    Fleet.Config_Dir    %s\n"
                        "    calyptia_host %s\n"
                        "    calyptia_port %d\n"
                        "    calyptia_tls  %s\n",
                        ctx->api_key,
                        ctx->fleet_id,
-                       ctx->ins->host.name,
-                       ctx->ins->host.port,
+                       ctx->fleet_id,
                        ctx->config_dir,
-                       (ctx->ins->tls ? "On" : "Off"),
-                       ctx->api_key,
-                       ctx->fleet_id,
-                       ctx->fleet_id,
                        ctx->ins->host.name,
                        ctx->ins->host.port,
-                       (ctx->ins->tls ? "On" : "Off")
+                       tls_setting_string(ctx->ins->use_tls)
         );
         fwrite(header, strlen(header), 1, cfgfp);
         flb_sds_destroy(header);
@@ -596,7 +591,6 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
     upstream_flags = FLB_IO_TCP;
 
     if (in->use_tls) {
-        flb_plg_error(in, "using TLS");
         upstream_flags |= FLB_IO_TLS;
     }
 
