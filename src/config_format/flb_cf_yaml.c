@@ -393,7 +393,21 @@ static int read_glob(struct flb_cf *cf, struct local_ctx *ctx,
     return ret;
 }
 #else
-static int read_glob(struct flb_cf *cf, struct parser_state *ctx, const char *path)
+static char *dirname(char *path)
+{
+	char *ptr;
+	
+	
+	ptr = strrchr(path, '\\');
+	if (ptr == NULL) {
+		return path;
+	}
+	*ptr++='\0';
+	return path;
+}
+
+static int read_glob(struct flb_cf *cf, struct local_ctx *ctx,
+                     struct parser_state *state, const char *path)
 {
     char *star, *p0, *p1;
     char pattern[MAX_PATH];
@@ -461,13 +475,13 @@ static int read_glob(struct flb_cf *cf, struct parser_state *ctx, const char *pa
         }
 
         if (strchr(p1, '*')) {
-            read_glob(cf, ctx, buf); /* recursive */
+            read_glob(cf, ctx, state, buf); /* recursive */
             continue;
         }
 
         ret = stat(buf, &st);
         if (ret == 0 && (st.st_mode & S_IFMT) == S_IFREG) {
-            if (read_config(cf, ctx, state->file, buf) < 0) {
+            if (read_config(cf, ctx, state, buf) < 0) {
                 return -1;
             }
         }
