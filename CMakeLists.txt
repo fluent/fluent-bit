@@ -180,7 +180,7 @@ option(FLB_IN_FORWARD                  "Enable Forward input plugin"            
 option(FLB_IN_HEALTH                   "Enable Health input plugin"                   Yes)
 option(FLB_IN_HTTP                     "Enable HTTP input plugin"                     Yes)
 option(FLB_IN_MEM                      "Enable Memory input plugin"                   Yes)
-option(FLB_IN_KUBERNETES_EVENTS        "Enabke Kubernetes Events plugin"              Yes)
+option(FLB_IN_KUBERNETES_EVENTS        "Enable Kubernetes Events plugin"              Yes)
 option(FLB_IN_KAFKA                    "Enable Kafka input plugin"                    Yes)
 option(FLB_IN_KMSG                     "Enable Kernel log input plugin"               Yes)
 option(FLB_IN_LIB                      "Enable library mode input plugin"             Yes)
