@@ -270,6 +270,7 @@ static void *do_reload(void *data)
 {
     struct reload_ctx *reload = (struct reload_ctx *)data;
     // avoid reloading the current configuration... just use our new one!
+    flb_context_set(reload->flb);
     reload->flb->config->enable_hot_reload = FLB_TRUE;
     reload->flb->config->conf_path_file = reload->cfg_path;
     sleep(5);
@@ -328,6 +329,10 @@ static int execute_reload(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t cf
     flb_ctx_t *flb = flb_context_get();
 
 
+    if (flb == NULL) {
+        flb_plg_error(ctx->ins, "unable to get fluent-bit context.");
+        return FLB_FALSE;
+    }
     // fix execution in valgrind...
     // otherwise flb_reload errors out with:
     //    [error] [reload] given flb context is NULL
@@ -372,7 +377,7 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
     FILE *cfgfp;
     const char *fbit_last_modified;
     int fbit_last_modified_len;
-    struct flb_tm tm_last_modified;
+    struct flb_tm tm_last_modified = { 0 };
     time_t time_last_modified;
     char *data;
     size_t b_sent;
