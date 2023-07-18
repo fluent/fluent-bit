@@ -232,10 +232,30 @@ void test_slist_odd()
     flb_cf_destroy(cf);
 }
 
+void test_parser_conf()
+{
+    struct flb_cf *cf;
+
+    cf = flb_cf_yaml_create(NULL, FLB_TESTS_CONF_PATH "/parsers/parsers-conf.yaml", NULL, 0);
+    TEST_CHECK(cf != NULL);
+    if (!cf) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Total number of inputs */
+    if(!TEST_CHECK(mk_list_size(&cf->parsers) == 1)) {
+        TEST_MSG("Section number error. Got=%d expect=1", mk_list_size(&cf->parsers));
+    }
+
+    flb_cf_dump(cf);
+    flb_cf_destroy(cf);
+}
+
 TEST_LIST = {
     { "basic"    , test_basic},
     { "customs section", test_customs_section},
     { "slist odd", test_slist_odd},
     { "slist even", test_slist_even},
+    { "parsers file conf", test_parser_conf},
     { 0 }
 };
