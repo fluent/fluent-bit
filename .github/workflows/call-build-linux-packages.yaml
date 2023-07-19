@@ -105,8 +105,8 @@ jobs:
   call-build-linux-packages:
     name: ${{ matrix.distro }} package build and stage to S3
     environment: ${{ inputs.environment }}
-    # Ensure for OSS Fluent Bit repo we enable usage of Actuated runners for ARM builds, for forks it should keep existing ubuntu-latest usage.
-    runs-on: ${{ (contains(matrix.distro, 'arm' ) && (github.repository == 'fluent/fluent-bit') && 'actuated-aarch64') || 'ubuntu-latest' }}
+    # Ensure for OSS Fluent Bit repo we enable usage of Actuated runners for ARM/Raspbian builds, for forks it should keep existing ubuntu-latest usage.
+    runs-on: ${{ ( ( contains(matrix.distro, 'arm' ) || contains(matrix.distro, 'raspbian') ) && (github.repository == 'fluent/fluent-bit') && 'actuated-aarch64') || 'ubuntu-latest' }}
     permissions:
       contents: read
     strategy:
