@@ -72,7 +72,7 @@ jobs:
         config:
           - name: "Windows 32bit"
             arch: x86
-            openssl_dir: C:\Program Files (x86)\OpenSSL-Win32
+            openssl_dir: C:\vcpkg\packages\openssl_x86-windows-static
             chocolatey_opt: --x86
             cmake_additional_opt: ""
             vcpkg_triplet: x86-windows-static
