@@ -85,12 +85,10 @@ static int append_message_to_record_data(char **result_buffer,
 
     if (result != FLB_MAP_EXPAND_SUCCESS) {
         result = FLB_MAP_EXPANSION_ERROR;
-
-        return result;
+    } else {
+        *result_buffer = modified_data_buffer;
+        *result_size = modified_data_size;
     }
-
-    *result_buffer = modified_data_buffer;
-    *result_size = modified_data_size;
 
     return result;
 }
