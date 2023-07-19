@@ -515,6 +515,9 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
             /* after a successful line read, restore "fgets_ptr" to point to the
              * beginning of buffer */
             fgets_ptr = buf;
+        } else if (feof(f)) {
+            /* handle EOF without a newline(CRLF or LF) */
+            fgets_ptr = buf;
         }
 #ifndef FLB_HAVE_STATIC_CONF
         else {
