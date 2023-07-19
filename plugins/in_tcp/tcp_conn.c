@@ -63,7 +63,7 @@ static int append_message_to_record_data(char **result_buffer,
             message_entry.val.via.bin.ptr  = message_buffer;
         }
         else if (message_type == MSGPACK_OBJECT_STR) {
-            message_entry.val.type = MSGPACK_OBJECT_BIN;
+            message_entry.val.type = MSGPACK_OBJECT_STR;
             message_entry.val.via.str.size = message_size;
             message_entry.val.via.str.ptr  = message_buffer;
         }
