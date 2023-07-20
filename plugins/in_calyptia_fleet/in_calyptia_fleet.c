@@ -379,6 +379,7 @@ static flb_sds_t parse_api_key_json(struct flb_in_calyptia_fleet_config *ctx,
     msgpack_unpacked result;
     msgpack_object_kv *cur;
     msgpack_object_str *key;
+    flb_sds_t project_id;
     int i = 0;
 
     /* Initialize packer */
@@ -415,9 +416,11 @@ static flb_sds_t parse_api_key_json(struct flb_in_calyptia_fleet_config *ctx,
                         msgpack_unpacked_destroy(&result);
                         return NULL;
                     }
+                    project_id = flb_sds_create_len(cur->val.via.str.ptr, 
+		                                    cur->val.via.str.size);
                     msgpack_unpacked_destroy(&result);
                     flb_free(pack);
-                    return flb_sds_create(cur->val.via.str.ptr);
+                    return project_id;
                 }
             }
         }
