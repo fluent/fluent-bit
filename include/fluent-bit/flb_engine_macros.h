@@ -55,7 +55,7 @@
 #define FLB_ENGINE_IN_CORO      3
 
 /* Engine priority queue configuration */
-#define FLB_ENGINE_LOOP_MAX_ITER        -1 /* Max events processed per round */
+#define FLB_ENGINE_LOOP_MAX_ITER        10 /* Max events processed per round */
 
 /* Engine event priorities: min value prioritized */
 #define FLB_ENGINE_PRIORITY_DEFAULT     MK_EVENT_PRIORITY_DEFAULT
