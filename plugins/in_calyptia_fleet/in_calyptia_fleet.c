@@ -692,7 +692,7 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
                         "    api_key       %s\n"
                         "    fleet_id      %s\n"
                         "    add_label     fleet_id %s\n"
-                        "    Fleet.Config_Dir    %s\n"
+                        "    fleet.config_dir    %s\n"
                         "    calyptia_host %s\n"
                         "    calyptia_port %d\n"
                         "    calyptia_tls  %s\n",
@@ -712,7 +712,7 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
                         "    fleet_name    %s\n"
                         "    fleet_id      %s\n"
                         "    add_label     fleet_id %s\n"
-                        "    Fleet.Config_Dir    %s\n"
+                        "    fleet.config_dir    %s\n"
                         "    calyptia_host %s\n"
                         "    calyptia_port %d\n"
                         "    calyptia_tls  %s\n",
