@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_compat.h>
+#include <fluent-bit/flb_utils.h>
 
 #include <monkey/mk_core.h>
 
@@ -428,6 +429,11 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     struct flb_cf_section *current_section = NULL;
     struct flb_cf_group *current_group = NULL;
     struct cfl_variant *var;
+    unsigned long line_hard_limit;
+    unsigned long line_warn_limit;
+
+    line_hard_limit = flb_utils_size_to_bytes("2GB");
+    line_warn_limit = flb_utils_size_to_bytes("512MB");
 
     FILE *f = NULL;
 
@@ -523,6 +529,15 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
         else {
             /* resize the line buffer */
             bufsize *= 2;
+            if (bufsize >= line_hard_limit) {
+                flb_error("reading line is exceeded to the limit size of %lu. Current size is: %zu",
+                          line_hard_limit, bufsize);
+                goto error;
+            }
+            else if (bufsize >= line_warn_limit) {
+                flb_warn("reading line is exceeded to the warn limit size of %lu. Current size is: %zu",
+                         line_warn_limit, bufsize);
+            }
             buf = flb_realloc(buf, bufsize);
             if (!buf) {
                 flb_error("failed to resize line buffer to %zu", bufsize);
