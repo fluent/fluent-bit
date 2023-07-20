@@ -685,24 +685,47 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
             goto http_error;
         }
         header = flb_sds_create_size(4096);
-        flb_sds_printf(&header, 
-                       "[CUSTOM]\n"
-                       "    Name          calyptia\n"
-                       "    api_key       %s\n"
-                       "    fleet_id      %s\n"
-                       "    add_label     fleet_id %s\n"
-                       "    Fleet.Config_Dir    %s\n"
-                       "    calyptia_host %s\n"
-                       "    calyptia_port %d\n"
-                       "    calyptia_tls  %s\n",
-                       ctx->api_key,
-                       ctx->fleet_id,
-                       ctx->fleet_id,
-                       ctx->config_dir,
-                       ctx->ins->host.name,
-                       ctx->ins->host.port,
-                       tls_setting_string(ctx->ins->use_tls)
-        );
+        if (ctx->fleet_name == NULL) {
+            flb_sds_printf(&header,
+                        "[CUSTOM]\n"
+                        "    Name          calyptia\n"
+                        "    api_key       %s\n"
+                        "    fleet_id      %s\n"
+                        "    add_label     fleet_id %s\n"
+                        "    Fleet.Config_Dir    %s\n"
+                        "    calyptia_host %s\n"
+                        "    calyptia_port %d\n"
+                        "    calyptia_tls  %s\n",
+                        ctx->api_key,
+                        ctx->fleet_id,
+                        ctx->fleet_id,
+                        ctx->config_dir,
+                        ctx->ins->host.name,
+                        ctx->ins->host.port,
+                        tls_setting_string(ctx->ins->use_tls)
+            );
+        } else {
+            flb_sds_printf(&header,
+                        "[CUSTOM]\n"
+                        "    Name          calyptia\n"
+                        "    api_key       %s\n"
+                        "    fleet_name    %s\n"
+                        "    fleet_id      %s\n"
+                        "    add_label     fleet_id %s\n"
+                        "    Fleet.Config_Dir    %s\n"
+                        "    calyptia_host %s\n"
+                        "    calyptia_port %d\n"
+                        "    calyptia_tls  %s\n",
+                        ctx->api_key,
+                        ctx->fleet_name,
+                        ctx->fleet_id,
+                        ctx->fleet_id,
+                        ctx->config_dir,
+                        ctx->ins->host.name,
+                        ctx->ins->host.port,
+                        tls_setting_string(ctx->ins->use_tls)
+            );
+        }
         fwrite(header, strlen(header), 1, cfgfp);
         flb_sds_destroy(header);
         fwrite(data, client->resp.payload_size, 1, cfgfp);
