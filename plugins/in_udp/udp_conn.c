@@ -41,7 +41,7 @@ static int append_message_to_record_data(char **result_buffer,
                                          size_t message_size,
                                          int message_type)
 {
-    int                result;
+    int                result = FLB_MAP_NOT_MODIFIED;
     char              *modified_data_buffer;
     int                modified_data_size;
     msgpack_object_kv *new_map_entries[1];
@@ -68,24 +68,25 @@ static int append_message_to_record_data(char **result_buffer,
             message_entry.val.via.str.ptr  = message_buffer;
         }
         else {
-            result = FLB_MAP_NOT_MODIFIED;
-
-            return result;
+            result = FLB_MAP_EXPANSION_INVALID_VALUE_TYPE;
         }
 
-        result = flb_msgpack_expand_map(base_object_buffer,
-                                        base_object_size,
-                                        new_map_entries, 1,
-                                        &modified_data_buffer,
-                                        &modified_data_size);
-        if (result == 0) {
-            result = FLB_MAP_EXPAND_SUCCESS;
+        if (result == FLB_MAP_NOT_MODIFIED) {
+            result = flb_msgpack_expand_map(base_object_buffer,
+                                            base_object_size,
+                                            new_map_entries, 1,
+                                            &modified_data_buffer,
+                                            &modified_data_size);
+            if (result == 0) {
+                result = FLB_MAP_EXPAND_SUCCESS;
+            }
+            else {
+                result = FLB_MAP_EXPANSION_ERROR;
+            }
         }
     }
 
-    if (result != FLB_MAP_EXPAND_SUCCESS) {
-        result = FLB_MAP_EXPANSION_ERROR;
-    } else {
+    if (result == FLB_MAP_EXPAND_SUCCESS) {
         *result_buffer = modified_data_buffer;
         *result_size = modified_data_size;
     }
