@@ -588,14 +588,16 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         /* Append buffer content to a chunk */
         *bytes = processed_bytes;
 
-        flb_input_log_append_records(ctx->ins,
-                                     lines,
-                                     file->tag_buf,
-                                     file->tag_len,
-                                     file->sl_log_event_encoder->output_buffer,
-                                     file->sl_log_event_encoder->output_length);
+        if (file->sl_log_event_encoder->output_length > 0) {
+            flb_input_log_append_records(ctx->ins,
+                                         lines,
+                                         file->tag_buf,
+                                         file->tag_len,
+                                         file->sl_log_event_encoder->output_buffer,
+                                         file->sl_log_event_encoder->output_length);
 
-        flb_log_event_encoder_reset(file->sl_log_event_encoder);
+            flb_log_event_encoder_reset(file->sl_log_event_encoder);
+        }
     }
     else if (file->skip_next) {
         *bytes = file->buf_len;
