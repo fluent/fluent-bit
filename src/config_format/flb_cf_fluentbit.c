@@ -418,7 +418,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     int val_len;
     char *buf;
     char *fgets_ptr;
-    size_t bufsize = 4096;
+    size_t bufsize = FLB_DEFAULT_CF_BUF_SIZE;
     char tmp[PATH_MAX];
     flb_sds_t section = NULL;
     flb_sds_t indent = NULL;
