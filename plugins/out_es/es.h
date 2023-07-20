@@ -39,6 +39,8 @@
 struct flb_elasticsearch {
     /* Elasticsearch index (database) and type (table) */
     char *index;
+    struct flb_record_accessor *ra_index;
+
     char *type;
     char suppress_type_name;
 
@@ -117,10 +119,6 @@ struct flb_elasticsearch {
     /* id_key */
     flb_sds_t id_key;
     struct flb_record_accessor *ra_id_key;
-
-    /* target_index */
-    flb_sds_t target_index;
-    struct flb_record_accessor *ra_target_index;
 
     /* include_tag_key */
     int include_tag_key;

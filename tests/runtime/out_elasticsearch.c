@@ -167,7 +167,7 @@ static void cb_check_id_key(void *ctx, int ffd,
     flb_free(res_data);
 }
 
-static void cb_check_target_index(void *ctx, int ffd,
+static void cb_check_index_ra(void *ctx, int ffd,
                                   int res_ret, void *res_data, size_t res_size,
                                   void *data)
 {
@@ -177,22 +177,6 @@ static void cb_check_target_index(void *ctx, int ffd,
 
     p = strstr(out_js, index_line);
     TEST_CHECK(p != NULL);
-    flb_free(res_data);
-}
-
-static void cb_check_target_index_default(void *ctx, int ffd,
-                                          int res_ret, void *res_data, size_t res_size,
-                                          void *data)
-{
-    char *p;
-    char *out_js = res_data;
-    char *index_line = "{\"create\":{\"_index\":\"default\",\"_type\":\"_doc\"}";
-
-    p = strstr(out_js, index_line);
-    TEST_CHECK(p != NULL);
-    if(!TEST_CHECK(p != NULL)) {
-        TEST_MSG("Got: %s", out_js);
-    }
     flb_free(res_data);
 }
 
@@ -828,7 +812,7 @@ void flb_test_logstash_prefix_separator()
     flb_destroy(ctx);
 }
 
-void flb_test_target_index()
+void flb_test_index_ra()
 {
     int ret;
     int size = sizeof(JSON_ES) - 1;
@@ -852,57 +836,12 @@ void flb_test_target_index()
 
     /* Override defaults of index and type */
     flb_output_set(ctx, out_ffd,
-                   "target_index", "aaa-$END_KEY",
+                   "index", "aaa-$END_KEY",
                    NULL);
 
     /* Enable test mode */
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_target_index,
-                              NULL, NULL);
-
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
-    /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) JSON_ES, size);
-
-    sleep(2);
-    flb_stop(ctx);
-    flb_destroy(ctx);
-}
-
-void flb_test_target_index_default()
-{
-    int ret;
-    int size = sizeof(JSON_ES) - 1;
-    flb_ctx_t *ctx;
-    int in_ffd;
-    int out_ffd;
-
-    /* Create context, flush every second (some checks omitted here) */
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    /* Lib input mode */
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    /* Elasticsearch output */
-    out_ffd = flb_output(ctx, (char *) "es", NULL);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   NULL);
-
-    /* Override defaults of index and type */
-    flb_output_set(ctx, out_ffd,
-                   "target_index", "aaa-$not_found_key",
-                   "index", "default",
-                   NULL);
-
-    /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_target_index_default,
+                              cb_check_index_ra,
                               NULL, NULL);
 
     /* Start */
@@ -926,13 +865,12 @@ TEST_LIST = {
     {"write_operation_update", flb_test_write_operation_update },
     {"write_operation_upsert", flb_test_write_operation_upsert },
     {"index_type"            , flb_test_index_type },
+    {"index_ra"              , flb_test_index_ra},
     {"logstash_format"       , flb_test_logstash_format },
     {"logstash_format_nanos" , flb_test_logstash_format_nanos },
     {"tag_key"               , flb_test_tag_key },
     {"replace_dots"          , flb_test_replace_dots },
     {"id_key"                , flb_test_id_key },
     {"logstash_prefix_separator" , flb_test_logstash_prefix_separator },
-    {"target_index"          , flb_test_target_index },
-    {"target_index_default"  , flb_test_target_index_default },
     {NULL, NULL}
 };
