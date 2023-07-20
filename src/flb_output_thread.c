@@ -486,7 +486,7 @@ int flb_output_thread_pool_create(struct flb_config *config,
         upstream_thread_create(th_ins, ins);
 
         /* Create the event loop for this thread */
-        evl = mk_event_loop_create(256);
+        evl = mk_event_loop_create(64);
         if (!evl) {
             flb_plg_error(ins, "could not create thread event loop");
             flb_free(th_ins);
