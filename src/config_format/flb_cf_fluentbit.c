@@ -428,6 +428,9 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     struct flb_cf_section *current_section = NULL;
     struct flb_cf_group *current_group = NULL;
     struct cfl_variant *var;
+    unsigned long line_hard_limit;
+
+    line_hard_limit = 32 * 1024 * 1024; /* 32MiB */
 
     FILE *f = NULL;
 
@@ -523,6 +526,11 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
         else {
             /* resize the line buffer */
             bufsize *= 2;
+            if (bufsize > line_hard_limit) {
+                flb_error("reading line is exceeded to the limit size of %lu. Current size is: %zu",
+                          line_hard_limit, bufsize);
+                goto error;
+            }
             buf = flb_realloc(buf, bufsize);
             if (!buf) {
                 flb_error("failed to resize line buffer to %zu", bufsize);
