@@ -221,18 +221,95 @@ flb_sds_t custom_calyptia_pipeline_config_get(struct flb_config *ctx)
     return buf;
 }
 
+static struct flb_output_instance *setup_cloud_output(struct flb_config *config, struct calyptia *ctx)
+{
+    int ret;
+    struct flb_output_instance *cloud;
+    struct mk_list *head;
+    struct flb_slist_entry *k = NULL;
+    struct flb_slist_entry *v = NULL;
+    flb_sds_t kv;
+    struct flb_config_map_val *mv;
+
+    cloud = flb_output_new(config, "calyptia", ctx, FLB_FALSE);
+    if (!cloud) {
+        flb_plg_error(ctx->ins, "could not load Calyptia Cloud connector");
+        flb_free(ctx);
+        return NULL;
+    }
+
+    /* direct connect / routing */
+    ret = flb_router_connect_direct(ctx->i, cloud);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "could not load Calyptia Cloud connector");
+        flb_free(ctx);
+        return NULL;
+    }
+
+    if (ctx->add_labels && mk_list_size(ctx->add_labels) > 0) {
+        /* iterate all 'add_label' definitions */
+        flb_config_map_foreach(head, mv, ctx->add_labels) {
+            k = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+            v = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
+            kv = flb_sds_create_size(strlen(k->str) + strlen(v->str) + 1);
+            if(!kv) {
+                flb_free(ctx);
+                return NULL;
+            }
+
+            flb_sds_printf(&kv, "%s %s", k->str, v->str);
+            flb_output_set_property(cloud, "add_label", kv);
+            flb_sds_destroy(kv);
+        }
+    }
+
+    flb_output_set_property(cloud, "match", "_calyptia_cloud");
+    flb_output_set_property(cloud, "api_key", ctx->api_key);
+    if (ctx->store_path) {
+        flb_output_set_property(cloud, "store_path", ctx->store_path);
+    }
+
+    if (ctx->machine_id) {
+        flb_output_set_property(cloud, "machine_id", ctx->machine_id);
+    }
+
+    /* Override network details: development purposes only */
+    if (ctx->cloud_host) {
+        flb_output_set_property(cloud, "cloud_host", ctx->cloud_host);
+    }
+
+    if (ctx->cloud_port) {
+        flb_output_set_property(cloud, "cloud_port", ctx->cloud_port);
+    }
+
+    if (ctx->cloud_tls) {
+        flb_output_set_property(cloud, "tls", "true");
+    }
+    else {
+        flb_output_set_property(cloud, "tls", "false");
+    }
+
+    if (ctx->cloud_tls_verify) {
+        flb_output_set_property(cloud, "tls.verify", "true");
+    }
+    else {
+        flb_output_set_property(cloud, "tls.verify", "false");
+    }
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+    flb_output_set_property(cloud, "pipeline_id", ctx->pipeline_id);
+#endif /* FLB_HAVE_CHUNK_TRACE */
+
+    return cloud;
+}
+
 static int cb_calyptia_init(struct flb_custom_instance *ins,
                             struct flb_config *config,
                             void *data)
 {
     int ret;
     struct calyptia *ctx;
-    struct mk_list *head;
-    struct flb_config_map_val *mv;
-    struct flb_slist_entry *k = NULL;
-    struct flb_slist_entry *v = NULL;
     (void) data;
-    flb_sds_t kv;
 
     ctx = flb_calloc(1, sizeof(struct calyptia));
     if (!ctx) {
@@ -262,69 +339,11 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
     flb_input_set_property(ctx->i, "scrape_interval", "30");
 
     /* output cloud connector */
-    ctx->o = flb_output_new(config, "calyptia", ctx, FLB_FALSE);
-    if (!ctx->o) {
-        flb_plg_error(ctx->ins, "could not load Calyptia Cloud connector");
-        flb_free(ctx);
-        return -1;
-    }
-
-    /* direct connect / routing */
-    ret = flb_router_connect_direct(ctx->i, ctx->o);
-    if (ret != 0) {
-        flb_plg_error(ctx->ins, "could not load Calyptia Cloud connector");
-        flb_free(ctx);
-        return -1;
-    }
-
-    if (ctx->add_labels && mk_list_size(ctx->add_labels) > 0) {
-        /* iterate all 'add_label' definitions */
-        flb_config_map_foreach(head, mv, ctx->add_labels) {
-            k = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
-            v = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
-            kv = flb_sds_create_size(strlen(k->str) + strlen(v->str) + 1);
-            if(!kv) {
-                flb_free(ctx);
-                return -1;
-            }
-
-            flb_sds_printf(&kv, "%s %s", k->str, v->str);
-            flb_output_set_property(ctx->o, "add_label", kv);
-            flb_sds_destroy(kv);
+    if (ctx->fleet_id != NULL) {
+        ctx->o = setup_cloud_output(config, ctx);
+        if (ctx->o == NULL) {
+            return -1;
         }
-    }
-
-    flb_output_set_property(ctx->o, "match", "_calyptia_cloud");
-    flb_output_set_property(ctx->o, "api_key", ctx->api_key);
-    if (ctx->store_path) {
-        flb_output_set_property(ctx->o, "store_path", ctx->store_path);
-    }
-
-    if (ctx->machine_id) {
-        flb_output_set_property(ctx->o, "machine_id", ctx->machine_id);
-    }
-
-    /* Override network details: development purposes only */
-    if (ctx->cloud_host) {
-        flb_output_set_property(ctx->o, "cloud_host", ctx->cloud_host);
-    }
-
-    if (ctx->cloud_port) {
-        flb_output_set_property(ctx->o, "cloud_port", ctx->cloud_port);
-    }
-
-    if (ctx->cloud_tls) {
-        flb_output_set_property(ctx->o, "tls", "true");
-    }
-    else {
-        flb_output_set_property(ctx->o, "tls", "false");
-    }
-
-    if (ctx->cloud_tls_verify) {
-        flb_output_set_property(ctx->o, "tls.verify", "true");
-    }
-    else {
-        flb_output_set_property(ctx->o, "tls.verify", "false");
     }
 
     if (ctx->fleet_id || ctx->fleet_name) {
@@ -361,12 +380,9 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
         }
     }
 
-
-#ifdef FLB_HAVE_CHUNK_TRACE
-    flb_output_set_property(ctx->o, "pipeline_id", ctx->pipeline_id);
-#endif /* FLB_HAVE_CHUNK_TRACE */
-
-    flb_router_connect(ctx->i, ctx->o);
+    if (ctx->o) {
+        flb_router_connect(ctx->i, ctx->o);
+    }
     flb_plg_info(ins, "custom initialized!");
     return 0;
 }
