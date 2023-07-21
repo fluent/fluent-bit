@@ -682,12 +682,6 @@ static inline bool kv_key_matches_str(msgpack_object_kv * kv,
     return helper_msgpack_object_matches_str(&kv->key, str, len);
 }
 
-static inline bool kv_val_matches_str(msgpack_object_kv * kv,
-                                      char *str, int len)
-{
-    return helper_msgpack_object_matches_str(&kv->val, str, len);
-}
-
 static inline bool kv_key_matches_str_rule_key(msgpack_object_kv * kv,
                                                struct modify_rule *rule)
 {
