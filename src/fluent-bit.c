@@ -1338,6 +1338,10 @@ int flb_main(int argc, char **argv)
      if (trace_output) {
          flb_free(trace_output);
      }
+     if (trace_props != NULL) {
+         flb_kv_release(trace_props);
+         flb_free(trace_props);
+     }
 #endif
 
     flb_stop(ctx);
