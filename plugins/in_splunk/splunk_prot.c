@@ -446,7 +446,7 @@ static int validate_auth_header(struct flb_splunk *ctx, struct mk_http_request *
 static int handle_hec_payload(struct flb_splunk *ctx, int content_type,
                               flb_sds_t tag, char *buf, size_t size)
 {
-    int ret;
+    int ret = -1;
 
     if (content_type == HTTP_CONTENT_JSON) {
         ret = parse_hec_payload_json(ctx, tag, buf, size);
