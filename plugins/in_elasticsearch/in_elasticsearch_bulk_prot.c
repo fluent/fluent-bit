@@ -359,7 +359,6 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
     msgpack_object *obj;
     flb_sds_t tag_from_record = NULL;
     int idx = 0;
-    int cursor = 0;
     flb_sds_t write_op;
     size_t op_str_size = 0;
     int op_ret = FLB_FALSE;
@@ -544,7 +543,6 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
 
         proceed:
             idx++;
-            cursor++;
         }
         else {
             flb_plg_error(ctx->ins, "skip record from invalid type: %i",
