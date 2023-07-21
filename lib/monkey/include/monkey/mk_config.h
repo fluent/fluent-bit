@@ -216,8 +216,8 @@ void mk_config_error(const char *path, int line, const char *msg);
 struct mk_config_listener *mk_config_listener_add(char *address,
                                                   char *port, int flags,
                                                   struct mk_server *server);
-int mk_config_listen_check_busy();
-void mk_config_listeners_free();
+int mk_config_listen_check_busy(struct mk_server *server);
+void mk_config_listeners_free(struct mk_server *server);
 
 int mk_config_get_bool(char *value);
 void mk_config_read_hosts(char *path);

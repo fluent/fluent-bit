@@ -68,8 +68,8 @@ struct mk_list *mk_server_listen_init(struct mk_server *server);
 unsigned int mk_server_capacity(struct mk_server *server);
 void mk_server_launch_workers(struct mk_server *server);
 void mk_server_worker_loop(struct mk_server *server);
-void mk_server_loop_balancer();
-void mk_server_worker_loop();
+void mk_server_loop_balancer(struct mk_server *server);
+void mk_server_worker_loop(struct mk_server *server);
 void mk_server_loop(struct mk_server *server);
 
 #endif
