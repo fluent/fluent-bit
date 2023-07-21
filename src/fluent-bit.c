@@ -524,8 +524,6 @@ static void flb_signal_exit(int signal)
     char s[] = "[engine] caught signal (";
     time_t now;
     struct tm *cur;
-    flb_ctx_t *ctx = flb_context_get();
-    struct flb_cf *cf_opts = flb_cf_context_get();
 
     now = time(NULL);
     cur = localtime(&now);
@@ -550,25 +548,6 @@ static void flb_signal_exit(int signal)
         flb_print_signal(SIGTERM);
         flb_print_signal(SIGSEGV);
     };
-
-    /* Signal handlers */
-    /* SIGSEGV is not handled here to preserve stacktrace */
-    switch (signal) {
-    case SIGINT:
-    case SIGTERM:
-#ifndef FLB_SYSTEM_WINDOWS
-    case SIGQUIT:
-    case SIGHUP:
-#endif
-        if (cf_opts != NULL) {
-            flb_cf_destroy(cf_opts);
-        }
-        flb_stop(ctx);
-        flb_destroy(ctx);
-        _exit(EXIT_SUCCESS);
-    default:
-        break;
-    }
 }
 
 static void flb_signal_handler(int signal)
