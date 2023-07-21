@@ -72,6 +72,7 @@ FLB_EXPORT double flb_time_now();
 
 /* start stop the engine */
 FLB_EXPORT int flb_start(flb_ctx_t *ctx);
+FLB_EXPORT int flb_start_trace(flb_ctx_t *ctx);
 FLB_EXPORT int flb_stop(flb_ctx_t *ctx);
 FLB_EXPORT int flb_loop(flb_ctx_t *ctx);
 
