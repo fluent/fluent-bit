@@ -34,7 +34,7 @@ struct flb_luajit {
     struct mk_list _head;  /* Link to flb_config->lua */
 };
 
-struct flb_luajit *flb_luajit_create();
+struct flb_luajit *flb_luajit_create(struct flb_config *config);
 int flb_luajit_load_script(struct flb_luajit *lj, char *script);
 int flb_luajit_load_buffer(struct flb_luajit *lj, char *string, size_t len, char *name);
 
