@@ -148,7 +148,7 @@ static void flb_help(int rc, struct flb_config *config)
     print_opt("-vv", "trace mode (available)");
 #endif
 #ifdef FLB_HAVE_CHUNK_TRACE
-    print_opt("-Z, --enable-chunk-trace", "enable chunk tracing. activating it requires using the HTTP Server API.");
+    print_opt("-Z, --enable-chunk-trace", "enable chunk tracing, it can be activated either through the http api or the command line");
     print_opt("--trace-input", "input to start tracing on startup.");
     print_opt("--trace-output", "output to use for tracing on startup.");
     print_opt("--trace-output-property", "set a property for output tracing on startup.");
