@@ -167,7 +167,6 @@ void mk_server_listen_exit(struct mk_list *list)
 
 struct mk_list *mk_server_listen_init(struct mk_server *server)
 {
-    int i = 0;
     int server_fd;
     int reuse_port = MK_FALSE;
     struct mk_list *head;
@@ -254,7 +253,6 @@ struct mk_list *mk_server_listen_init(struct mk_server *server)
                    listen->port);
             return NULL;
         }
-        i += 1;
     }
 
     if (reuse_port == MK_TRUE) {
