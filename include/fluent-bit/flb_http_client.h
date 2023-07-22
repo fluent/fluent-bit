@@ -26,6 +26,7 @@
 
 /* Buffer size */
 #define FLB_HTTP_BUF_SIZE        2048
+#define FLB_HTTP_BUF_MAX         8192
 #define FLB_HTTP_DATA_SIZE_MAX   4096
 #define FLB_HTTP_DATA_CHUNK     32768
 
