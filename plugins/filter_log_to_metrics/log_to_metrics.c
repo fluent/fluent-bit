@@ -224,13 +224,17 @@ static inline int grep_filter_data(msgpack_object map,
 }
 
 static int set_labels(struct log_to_metrics_ctx *ctx,
+                      char **label_accessors,
                       char **label_keys,
                       int *label_counter,
                       struct flb_filter_instance *f_ins)
 {
 
     struct mk_list *head;
+    struct mk_list *split;
+    flb_sds_t tmp;
     struct flb_kv *kv;
+    struct flb_split_entry *sentry;
     int counter = 0;
     int i;
     if (MAX_LABEL_COUNT < NUMBER_OF_KUBERNETES_LABELS){
@@ -249,14 +253,37 @@ static int set_labels(struct log_to_metrics_ctx *ctx,
     mk_list_foreach(head, &f_ins->properties) {
         kv = mk_list_entry(head, struct flb_kv, _head);
 
-        if (strcasecmp(kv->key, "label_field") != 0) {
-            continue;
-        }
-
         if (counter >= MAX_LABEL_COUNT) {
             return MAX_LABEL_COUNT;
         }
-        snprintf(label_keys[counter++], MAX_LABEL_LENGTH - 1, "%s", kv->val);
+
+        if (strcasecmp(kv->key, "label_field") == 0) {
+            snprintf(label_accessors[counter], MAX_LABEL_LENGTH - 1, "%s", kv->val);
+            snprintf(label_keys[counter], MAX_LABEL_LENGTH - 1, "%s", kv->val);
+            counter++;
+        }
+        else if (strcasecmp(kv->key, "label") == 0) {
+            split = flb_utils_split(kv->val, ' ', 1);
+            if (mk_list_size(split) != 2) {
+                flb_plg_error(ctx->ins, "invalid label, expected name and key");
+                flb_utils_split_free(split);
+                return -1;
+            }
+
+            sentry = mk_list_entry_first(split, struct flb_split_entry, _head);
+            tmp = flb_sds_create_len(sentry->value, sentry->len);
+            snprintf(label_keys[counter], MAX_LABEL_LENGTH - 1, "%s", tmp);
+
+            sentry = mk_list_entry_last(split, struct flb_split_entry, _head);
+            tmp = flb_sds_create_len(sentry->value, sentry->len);
+            snprintf(label_accessors[counter], MAX_LABEL_LENGTH - 1, "%s", tmp);
+            counter++;
+
+            flb_utils_split_free(split);
+        }
+        else {
+            continue;
+        }
     }
     *label_counter = counter;
     return counter;
@@ -346,7 +373,7 @@ static int set_buckets(struct log_to_metrics_ctx *ctx,
 static int fill_labels(struct log_to_metrics_ctx *ctx, char **label_values,
             char kubernetes_label_values
                 [NUMBER_OF_KUBERNETES_LABELS][MAX_LABEL_LENGTH],
-            char **label_keys, int label_counter, msgpack_object map)
+            char **label_accessors, int label_counter, msgpack_object map)
 {
     int label_iterator_start = 0;
     int i;
@@ -372,7 +399,7 @@ static int fill_labels(struct log_to_metrics_ctx *ctx, char **label_values,
     }
 
     for (i = label_iterator_start; i < label_counter; i++){
-        ra = flb_ra_create(label_keys[i], FLB_TRUE);
+        ra = flb_ra_create(label_accessors[i], FLB_TRUE);
         if (!ra) {
             flb_warn("invalid record accessor key, aborting");
             break;
@@ -460,6 +487,11 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
         return -1;
     }
 
+    ctx->label_accessors = NULL;
+    ctx->label_accessors = (char **) flb_malloc(MAX_LABEL_COUNT * sizeof(char *));
+    for (i = 0; i < MAX_LABEL_COUNT; i++) {
+        ctx->label_accessors[i] = flb_malloc(MAX_LABEL_LENGTH * sizeof(char));
+    }
     /* Set label keys */
     ctx->label_keys = NULL;
     ctx->label_keys = (char **) flb_malloc(MAX_LABEL_COUNT * sizeof(char *));
@@ -468,7 +500,7 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
     }
     ctx->label_counter = NULL;
     ctx->label_counter = flb_malloc(sizeof(int));
-    label_count = set_labels(ctx, ctx->label_keys, ctx->label_counter, f_ins);
+    label_count = set_labels(ctx, ctx->label_accessors, ctx->label_keys, ctx->label_counter, f_ins);
     if (label_count < 0){
         log_to_metrics_destroy(ctx);
         return -1;
@@ -713,7 +745,7 @@ static int cb_log_to_metrics_filter(const void *data, size_t bytes,
                 }
 
                 label_count = fill_labels(ctx, label_values,
-                                    kubernetes_label_values, ctx->label_keys,
+                                    kubernetes_label_values, ctx->label_accessors,
                                     *ctx->label_counter, map);
                 if (label_count != *ctx->label_counter){
                     label_count = 0;
@@ -890,6 +922,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "kubernetes_mode", "false",
      0, FLB_TRUE, offsetof(struct log_to_metrics_ctx, kubernetes_mode),
      "Enable kubernetes log metric fields"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "label", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Specify message field that should be included in the metric"
     },
     {
      FLB_CONFIG_MAP_STR, "label_field", NULL,
