@@ -80,6 +80,12 @@ static int log_to_metrics_destroy(struct log_to_metrics_ctx *ctx)
 
     delete_rules(ctx);
 
+    if (ctx->label_accessors != NULL) {
+        for (i = 0; i < MAX_LABEL_COUNT; i++) {
+            flb_free(ctx->label_accessors[i]);
+        }
+        flb_free(ctx->label_accessors);
+    }
     if (ctx->label_keys != NULL) {
         for (i = 0; i < MAX_LABEL_COUNT; i++) {
             flb_free(ctx->label_keys[i]);
@@ -273,10 +279,12 @@ static int set_labels(struct log_to_metrics_ctx *ctx,
             sentry = mk_list_entry_first(split, struct flb_split_entry, _head);
             tmp = flb_sds_create_len(sentry->value, sentry->len);
             snprintf(label_keys[counter], MAX_LABEL_LENGTH - 1, "%s", tmp);
+            flb_sds_destroy(tmp);
 
             sentry = mk_list_entry_last(split, struct flb_split_entry, _head);
             tmp = flb_sds_create_len(sentry->value, sentry->len);
             snprintf(label_accessors[counter], MAX_LABEL_LENGTH - 1, "%s", tmp);
+            flb_sds_destroy(tmp);
             counter++;
 
             flb_utils_split_free(split);
