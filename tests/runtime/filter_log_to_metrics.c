@@ -114,15 +114,6 @@ void flb_test_log_to_metrics_label(void);
 	"\"direction\": \"left\""		        \
 	"}]"
 
-#define JSON_MSG4 "["         \
-    "1448403341,"             \
-    "{"                       \
-    "\"message\": \"hello\"," \
-    "\"data\":{"              \
-    "\"key\":\"val\""         \
-    "}"                       \
-    "}]"
-
 /* Test list */
 TEST_LIST = {
     {"counter_k8s",            flb_test_log_to_metrics_counter_k8s            },
@@ -653,9 +644,10 @@ void flb_test_log_to_metrics_label(void)
     int out_ffd;
     char *result = NULL;
     struct flb_lib_out_cb cb_data;
-    char *input = JSON_MSG4;
+    char *input = JSON_MSG1;
     char finalString[32768] = "";
-    const char *expected = "\"value\":5.0,\"labels\":[\"val\"]";
+    const char *expected_label_name = ",\"labels\":[\"pod_name\"],";
+    const char *expected_label_value = "\"value\":2.0,\"labels\":[\"testpod\"]";
 
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "0.200000000", "Grace", "1", "Log_Level",
@@ -677,7 +669,7 @@ void flb_test_log_to_metrics_label(void)
                          "metric_name", "test",
                          "metric_description", "Counts messages",
                          "kubernetes_mode", "off",
-                         "label", "name $data['key']",
+                         "label", "pod_name $kubernetes['pod_name']",
                          NULL);
 
     out_ffd = flb_output(ctx, (char *) "lib", (void *)&cb_data);
@@ -689,13 +681,17 @@ void flb_test_log_to_metrics_label(void)
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
 
-    for (i = 0; i < 5; i++){
+    for (i = 0; i < 2; i++){
         flb_lib_push(ctx, in_ffd, input, strlen(input));
     }
-    wait_with_timeout(2000, finalString);
-    result = strstr(finalString, expected);
+    wait_with_timeout(500, finalString);
+    result = strstr(finalString, expected_label_name);
     if (!TEST_CHECK(result != NULL)) {
-        TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected, finalString);
+        TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected_label_name, finalString);
+    }
+    result = strstr(finalString, expected_label_value);
+    if (!TEST_CHECK(result != NULL)) {
+        TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected_label_value, finalString);
     }
     filter_test_destroy(ctx);
 
