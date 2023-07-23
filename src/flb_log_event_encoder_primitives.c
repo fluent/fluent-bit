@@ -130,7 +130,7 @@ int flb_log_event_encoder_append_value(
                                                  *((double *) value_buffer));
                 }
                 else if (value_type == FLB_LOG_EVENT_BOOLEAN_VALUE_TYPE) {
-                    if (*((int *) value_buffer)) {
+                    if (*((char *) value_buffer)) {
                         result = msgpack_pack_true(&field->packer);
                     }
                     else {
@@ -330,7 +330,7 @@ int flb_log_event_encoder_append_double(
 int flb_log_event_encoder_append_boolean(
     struct flb_log_event_encoder *context,
     int target_field,
-    int value)
+    char value)
 {
     return flb_log_event_encoder_append_value(
             context, target_field, FLB_TRUE,
@@ -554,7 +554,7 @@ int flb_log_event_encoder_append_values_unsafe(
     int8_t  current_ext_type;
     size_t  processed_values;
     char   *buffer_address;
-    int     value_type;
+    flb_log_event_type_t value_type;
     int     result;
 
     processed_values = 0;
@@ -564,7 +564,7 @@ int flb_log_event_encoder_append_values_unsafe(
          processed_values < FLB_EVENT_ENCODER_VALUE_LIMIT &&
          result == FLB_EVENT_ENCODER_SUCCESS ;
          processed_values++) {
-        value_type = va_arg(arguments, int);
+        value_type = va_arg(arguments, flb_log_event_type_t);
 
         if (value_type == FLB_LOG_EVENT_APPEND_TERMINATOR_VALUE_TYPE) {
             break;
@@ -596,7 +596,7 @@ int flb_log_event_encoder_append_values_unsafe(
                         va_arg(arguments, size_t));
         }
         else if (value_type == FLB_LOG_EVENT_EXT_LENGTH_VALUE_TYPE) {
-            current_ext_type = (int8_t) va_arg(arguments, int);
+            current_ext_type = (int8_t)va_arg(arguments, int32_t);
 
             result = flb_log_event_encoder_append_ext_length(context,
                         target_field,
@@ -618,17 +618,17 @@ int flb_log_event_encoder_append_values_unsafe(
         else if (value_type == FLB_LOG_EVENT_CHAR_VALUE_TYPE) {
             result = flb_log_event_encoder_append_character(context,
                         target_field,
-                        (char) va_arg(arguments, int));
+                        (char)va_arg(arguments, int32_t));
         }
         else if (value_type == FLB_LOG_EVENT_INT8_VALUE_TYPE) {
             result = flb_log_event_encoder_append_int8(context,
                         target_field,
-                        (int8_t) va_arg(arguments, int));
+                        (int8_t)va_arg(arguments, int32_t));
         }
         else if (value_type == FLB_LOG_EVENT_INT16_VALUE_TYPE) {
             result = flb_log_event_encoder_append_int16(context,
                         target_field,
-                        (int16_t) va_arg(arguments, int));
+                        (int16_t)va_arg(arguments, int32_t));
         }
         else if (value_type == FLB_LOG_EVENT_INT32_VALUE_TYPE) {
             result = flb_log_event_encoder_append_int32(context,
@@ -643,12 +643,12 @@ int flb_log_event_encoder_append_values_unsafe(
         else if (value_type == FLB_LOG_EVENT_UINT8_VALUE_TYPE) {
             result = flb_log_event_encoder_append_uint8(context,
                         target_field,
-                        (uint8_t) va_arg(arguments, unsigned int));
+                        (uint8_t)va_arg(arguments, uint32_t));
         }
         else if (value_type == FLB_LOG_EVENT_UINT16_VALUE_TYPE) {
             result = flb_log_event_encoder_append_uint16(context,
                         target_field,
-                        (uint16_t) va_arg(arguments, unsigned int));
+                        (uint16_t)va_arg(arguments, uint32_t));
         }
         else if (value_type == FLB_LOG_EVENT_UINT32_VALUE_TYPE) {
             result = flb_log_event_encoder_append_uint32(context,
@@ -668,7 +668,7 @@ int flb_log_event_encoder_append_values_unsafe(
         else if (value_type == FLB_LOG_EVENT_BOOLEAN_VALUE_TYPE) {
             result = flb_log_event_encoder_append_boolean(context,
                         target_field,
-                        va_arg(arguments, int));
+                        (char)va_arg(arguments, int32_t));
         }
         else if (value_type == FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE_TYPE) {
             result = flb_log_event_encoder_append_msgpack_object(context,

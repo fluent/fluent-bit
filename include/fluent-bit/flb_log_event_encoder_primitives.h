@@ -107,7 +107,7 @@ int flb_log_event_encoder_append_double(
 int flb_log_event_encoder_append_boolean(
     struct flb_log_event_encoder *context,
     int target_field,
-    int value);
+    char value);
 
 int flb_log_event_encoder_append_character(
         struct flb_log_event_encoder *context,

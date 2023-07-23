@@ -401,8 +401,8 @@ static void basic_format_fluent_bit_v2()
                 FLB_LOG_EVENT_CSTRING_VALUE("key1"),
                 FLB_LOG_EVENT_CSTRING_VALUE("value1"),
 
-                FLB_LOG_EVENT_STRING_VALUE("key2", 4),
-                FLB_LOG_EVENT_STRING_VALUE("value2", 6));
+                FLB_LOG_EVENT_STRING_VALUE("key2", (size_t)4),
+                FLB_LOG_EVENT_STRING_VALUE("value2", (size_t)6));
 
     if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
         TEST_MSG("flb_log_event_encoder_append_body_values failed. ret=%s",
@@ -465,8 +465,8 @@ static void basic_format_fluent_bit_v1()
                 FLB_LOG_EVENT_CSTRING_VALUE("key1"),
                 FLB_LOG_EVENT_CSTRING_VALUE("value1"),
 
-                FLB_LOG_EVENT_STRING_VALUE("key2", 4),
-                FLB_LOG_EVENT_STRING_VALUE("value2", 6));
+                FLB_LOG_EVENT_STRING_VALUE("key2", (size_t)4),
+                FLB_LOG_EVENT_STRING_VALUE("value2", (size_t)6));
 
     if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
         TEST_MSG("flb_log_event_encoder_append_body_values failed. ret=%s",
@@ -535,8 +535,8 @@ static void basic_metadata_format_fluent_bit_v2()
                 FLB_LOG_EVENT_CSTRING_VALUE("key1"),
                 FLB_LOG_EVENT_CSTRING_VALUE("value1"),
 
-                FLB_LOG_EVENT_STRING_VALUE("key2", 4),
-                FLB_LOG_EVENT_STRING_VALUE("value2", 6));
+                FLB_LOG_EVENT_STRING_VALUE("key2", (size_t)4),
+                FLB_LOG_EVENT_STRING_VALUE("value2", (size_t)6));
 
     if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
         TEST_MSG("flb_log_event_encoder_append_body_values failed. ret=%s",
