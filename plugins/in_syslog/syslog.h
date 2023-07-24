@@ -65,6 +65,7 @@ struct flb_syslog {
     flb_sds_t parser_name;
     struct flb_parser *parser;
     flb_sds_t raw_message_key;
+    flb_sds_t source_address_key;
 
     int dgram_mode_flag;
     int collector_id;
