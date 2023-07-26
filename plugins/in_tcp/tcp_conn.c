@@ -99,16 +99,13 @@ static inline int process_pack(struct tcp_conn *conn,
 {
     int ret;
     size_t off = 0;
+    size_t prev_off = 0;
     msgpack_unpacked result;
-    msgpack_sbuffer sbuf;
-    msgpack_packer  pck;
     msgpack_object entry;
     struct flb_in_tcp_config *ctx;
     char   *appended_address_buffer;
     size_t  appended_address_size;
     char   *source_address;
-    int i;
-    int len;
 
     ctx = conn->ctx;
 
@@ -135,26 +132,14 @@ static inline int process_pack(struct tcp_conn *conn,
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
             if (entry.type == MSGPACK_OBJECT_MAP) {
                 if (ctx->source_address_key != NULL && source_address != NULL) {
-                    msgpack_sbuffer_init(&sbuf);
-                    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
-
-                    len = entry.via.map.size;
-                    msgpack_pack_map(&pck, len);
-
-                    for (i=0; i<len; i++) {
-                        msgpack_pack_object(&pck, entry.via.map.ptr[i].key);
-                        msgpack_pack_object(&pck, entry.via.map.ptr[i].val);
-                    }
-
                     ret = append_message_to_record_data(&appended_address_buffer,
                                                         &appended_address_size,
                                                         ctx->source_address_key,
-                                                        sbuf.data,
-                                                        sbuf.size,
+                                                        pack + prev_off,
+                                                        size,
                                                         source_address,
                                                         strlen(source_address),
                                                         MSGPACK_OBJECT_STR);
-                    msgpack_sbuffer_destroy(&sbuf);
                 }
 
                 if (ret == FLB_MAP_EXPANSION_ERROR) {
@@ -202,6 +187,7 @@ static inline int process_pack(struct tcp_conn *conn,
                 break;
             }
         }
+        prev_off = off;
     }
 
     msgpack_unpacked_destroy(&result);
