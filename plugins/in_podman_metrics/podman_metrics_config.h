@@ -106,6 +106,7 @@
 #define V2_SYSFS_FILE_MEMORY_LIMIT     "memory.max"
 #define V2_SYSFS_FILE_CPU_STAT         "cpu.stat"
 #define V2_SYSFS_FILE_PIDS             "cgroup.procs"
+#define V2_SYSFS_FILE_PIDS_ALT         "containers/cgroup.procs"
 
 /* Values used to construct counters/gauges names and descriptions */
 #define COUNTER_PREFIX                  "container"

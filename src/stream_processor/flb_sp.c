@@ -1393,7 +1393,6 @@ int sp_process_data_aggr(const char *buf_data, size_t buf_size,
     int ret;
     int map_size;
     int key_id;
-    int values_found;
     size_t off;
     int64_t ival;
     double dval;
@@ -1455,7 +1454,6 @@ int sp_process_data_aggr(const char *buf_data, size_t buf_size,
 
         nums = aggr_node->nums;
 
-        values_found = 0;
         /* Iterate each map key and see if it matches any command key */
         for (i = 0; i < map_size; i++) {
             key = map.via.map.ptr[i].key;
@@ -1491,8 +1489,6 @@ int sp_process_data_aggr(const char *buf_data, size_t buf_size,
                     key_id++;
                     continue;
                 }
-
-                values_found++;
 
                 /*
                  * Convert value to a numeric representation only if key has an

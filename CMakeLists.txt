@@ -8,7 +8,7 @@ set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  2)
 set(FLB_VERSION_MINOR  1)
-set(FLB_VERSION_PATCH  5)
+set(FLB_VERSION_PATCH  9)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -78,10 +78,14 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "FreeBSD")
   set(CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS} -lutil")
 endif()
 
-# *BSD is not supported platform for wasm-micro-runtime. Now, we should be disabled for these platforms.
-if(${CMAKE_SYSTEM_NAME} MATCHES "BSD")
+# *BSD is not supported platform for wasm-micro-runtime except for FreeBSD.
+# Now, we should be disabled for these platforms.
+if(NOT FLB_SYSTEM_FREEBSD AND ${CMAKE_SYSTEM_NAME} MATCHES "BSD")
   message(STATUS "This platform is not supported for WASM feature so disabled.")
   set(FLB_WASM OFF)
+elseif(FLB_SYSTEM_FREEBSD)
+  message(STATUS "Some of FreeBSD environment do not work with hardware boundary check so disabled.")
+  set(WAMR_DISABLE_STACK_HW_BOUND_CHECK 1)
 endif()
 
 include(GNUInstallDirs)
@@ -170,7 +174,7 @@ option(FLB_IN_FORWARD                  "Enable Forward input plugin"            
 option(FLB_IN_HEALTH                   "Enable Health input plugin"                   Yes)
 option(FLB_IN_HTTP                     "Enable HTTP input plugin"                     Yes)
 option(FLB_IN_MEM                      "Enable Memory input plugin"                   Yes)
-option(FLB_IN_KUBERNETES_EVENTS        "Enabke Kubernetes Events plugin"              Yes)
+option(FLB_IN_KUBERNETES_EVENTS        "Enable Kubernetes Events plugin"              Yes)
 option(FLB_IN_KAFKA                    "Enable Kafka input plugin"                    Yes)
 option(FLB_IN_KMSG                     "Enable Kernel log input plugin"               Yes)
 option(FLB_IN_LIB                      "Enable library mode input plugin"             Yes)
@@ -204,6 +208,7 @@ option(FLB_IN_PODMAN_METRICS           "Enable Podman Metrics input plugin"     
 option(FLB_IN_OPENTELEMETRY            "Enable OpenTelemetry input plugin"            Yes)
 option(FLB_IN_ELASTICSEARCH            "Enable Elasticsearch (Bulk API) input plugin" Yes)
 option(FLB_IN_CALYPTIA_FLEET           "Enable Calyptia Fleet input plugin"           Yes)
+option(FLB_IN_SPLUNK                   "Enable Splunk HTTP HEC input plugin"          Yes)
 option(FLB_OUT_AZURE                   "Enable Azure output plugin"                   Yes)
 option(FLB_OUT_AZURE_BLOB              "Enable Azure output plugin"                   Yes)
 option(FLB_OUT_AZURE_LOGS_INGESTION    "Enable Azure Logs Ingestion output plugin"    Yes)
@@ -250,6 +255,7 @@ option(FLB_OUT_PROMETHEUS_REMOTE_WRITE "Enable Prometheus remote write plugin"  
 option(FLB_OUT_S3                      "Enable AWS S3 output plugin"                  Yes)
 option(FLB_OUT_VIVO_EXPORTER           "Enabel Vivo exporter output plugin"           Yes)
 option(FLB_OUT_WEBSOCKET               "Enable Websocket output plugin"               Yes)
+option(FLB_OUT_CHRONICLE               "Enable Google Chronicle output plugin"        Yes)
 option(FLB_FILTER_ALTER_SIZE           "Enable alter_size filter"                     Yes)
 option(FLB_FILTER_AWS                  "Enable aws filter"                            Yes)
 option(FLB_FILTER_ECS                  "Enable AWS ECS filter"                        Yes)

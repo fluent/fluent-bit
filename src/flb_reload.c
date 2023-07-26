@@ -367,7 +367,6 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     struct flb_cf *new_cf;
     struct flb_cf *original_cf;
     int verbose;
-    int enable_reloading;
 
     if (ctx == NULL) {
         flb_error("[reload] given flb context is NULL");
@@ -394,7 +393,7 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
         return -1;
     }
 
-    flb_info("reloading instance pid=%lu tid=%u", getpid(), pthread_self());
+    flb_info("reloading instance pid=%lu tid=%p", (long unsigned) getpid(), pthread_self());
 
     if (old_config->conf_path_file) {
         file = flb_sds_create(old_config->conf_path_file);

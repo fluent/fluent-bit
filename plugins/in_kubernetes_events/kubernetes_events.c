@@ -101,7 +101,7 @@ static int get_http_auth_header(struct k8s_events *ctx)
     char *tk = NULL;
     size_t tk_size = 0;
 
-    if (!ctx->token_file) {
+    if (!ctx->token_file || strlen(ctx->token_file) == 0) {
         return 0;
     }
 
@@ -147,6 +147,10 @@ static int refresh_token_if_needed(struct k8s_events *ctx)
 {
     int expired = FLB_FALSE;
     int ret;
+
+    if (!ctx->token_file || strlen(ctx->token_file) == 0) {
+        return 0;
+    }
 
     if (ctx->token_created > 0) {
         if (time(NULL) > ctx->token_created + ctx->token_ttl) {
@@ -256,8 +260,7 @@ static int record_get_field_uint64(msgpack_object *obj, const char *fieldname, u
         }
         return 0;
     }
-
-    if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER || MSGPACK_OBJECT_NEGATIVE_INTEGER) {
+    if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
         *val = v->via.u64;
         return 0;
     }
@@ -555,12 +558,19 @@ static struct flb_http_client *make_event_api_request(struct k8s_events *ctx,
     struct flb_http_client *c;
 
 
-    if (continue_token == NULL && ctx->limit_request == 0) {
+    if (continue_token == NULL && ctx->limit_request == 0 && ctx->namespace == NULL) {
         return flb_http_client(u_conn, FLB_HTTP_GET, K8S_EVENTS_KUBE_API_URI,
-                               NULL, 0, ctx->api_host, ctx->api_port, NULL, 0);
+                            NULL, 0, ctx->api_host, ctx->api_port, NULL, 0);
     }
 
-    url = flb_sds_create(K8S_EVENTS_KUBE_API_URI);
+    if (ctx->namespace == NULL) {
+        url = flb_sds_create(K8S_EVENTS_KUBE_API_URI);
+    } else {
+        url = flb_sds_create_size(strlen(K8S_EVENTS_KUBE_NAMESPACE_API_URI) + 
+                                  strlen(ctx->namespace));
+        flb_sds_printf(&url, K8S_EVENTS_KUBE_NAMESPACE_API_URI, ctx->namespace);
+    }
+
     flb_sds_cat_safe(&url, "?", 1);
     if (ctx->limit_request) {
         if (continue_token != NULL) {
@@ -872,6 +882,12 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_TIME, "kube_retention_time", "1h",
       0, FLB_TRUE, offsetof(struct k8s_events, retention_time),
       "kubernetes retention time for events. Default: 1h"
+    },
+
+    {
+      FLB_CONFIG_MAP_STR, "kube_namespace", NULL,
+      0, FLB_TRUE, offsetof(struct k8s_events, namespace),
+      "kubernetes namespace to get events from, gets event from all namespaces by default."
     },
 
 #ifdef FLB_HAVE_SQLDB

@@ -63,6 +63,8 @@
 /plugins/out_datadog     @nokute78 @edsiper
 /plugins/out_es          @pettitwesley @edsiper
 /plugins/out_pgsql       @sxd
+/plugins/out_stackdriver @braydonk @igorpeshansky @qingling128
+
 # AWS Plugins 
 /plugins/out_s3               @pettitwesley
 /plugins/out_cloudwatch_logs  @pettitwesley
@@ -81,5 +83,13 @@
 /tests/runtime/out_opensearch.c @pettitwesley @edsiper
 /tests/runtime/out_s3.c         @pettitwesley
 
+# Google test code
+# --------------
+/tests/runtime/out_stackdriver.c @braydonk @igorpeshansky @qingling128
+
 # Devcontainer
 /.devcontainer                  @patrick-stephens @niedbalski @edsiper
+
+# Calytia Fleet
+/plugins/custom_calyptia/       @pwhelan
+/plugins/in_calyptia_fleet/     @pwhelan

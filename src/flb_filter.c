@@ -296,10 +296,10 @@ int flb_filter_set_property(struct flb_filter_instance *ins,
     else
 #endif
     if (prop_key_check("match", k, len) == 0) {
-        ins->match = tmp;
+        flb_utils_set_plugin_string_property("match", &ins->match, tmp);
     }
     else if (prop_key_check("alias", k, len) == 0 && tmp) {
-        ins->alias = tmp;
+        flb_utils_set_plugin_string_property("alias", &ins->alias, tmp);
     }
     else if (prop_key_check("log_level", k, len) == 0 && tmp) {
         ret = flb_log_get_level_str(tmp);

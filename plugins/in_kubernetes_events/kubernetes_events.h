@@ -27,7 +27,7 @@
 #include <fluent-bit/flb_sqldb.h>
 
 #define DEFAULT_INTERVAL_SEC "0"
-#define DEFAULT_INTERVAL_NSEC "500000"
+#define DEFAULT_INTERVAL_NSEC "500000000"
 
 /* Filter context */
 struct k8s_events {
@@ -44,6 +44,7 @@ struct k8s_events {
     int tls_debug;
     int tls_verify;
     int kube_token_ttl;
+    flb_sds_t namespace;
 
     /* API Server end point */
     char kube_url[1024];

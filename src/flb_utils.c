@@ -1399,3 +1399,29 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
 
     return -1;
 }
+
+void flb_utils_set_plugin_string_property(const char *name,
+                                          flb_sds_t *field_storage,
+                                          flb_sds_t  new_value)
+{
+    if (field_storage == NULL) {
+        flb_error("[utils] invalid field storage pointer for property '%s'",
+                  name);
+
+        return;
+    }
+
+    if (*field_storage != NULL) {
+        flb_warn("[utils] property '%s' is already specified with value '%s'."
+                 " Overwriting with '%s'",
+                 name,
+                 *field_storage,
+                 new_value);
+
+        flb_sds_destroy(*field_storage);
+
+        *field_storage = NULL;
+    }
+
+    *field_storage = new_value;
+}

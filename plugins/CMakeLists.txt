@@ -224,6 +224,7 @@ REGISTER_IN_PLUGIN("in_statsd")
 REGISTER_IN_PLUGIN("in_opentelemetry")
 REGISTER_IN_PLUGIN("in_elasticsearch")
 REGISTER_IN_PLUGIN("in_calyptia_fleet")
+REGISTER_IN_PLUGIN("in_splunk")
 
 # Test the event loop messaging when used in threaded mode
 REGISTER_IN_PLUGIN("in_event_test")
@@ -331,6 +332,7 @@ REGISTER_OUT_PLUGIN("out_prometheus_exporter")
 REGISTER_OUT_PLUGIN("out_prometheus_remote_write")
 REGISTER_OUT_PLUGIN("out_s3")
 REGISTER_OUT_PLUGIN("out_vivo_exporter")
+REGISTER_OUT_PLUGIN("out_chronicle")
 
 # FILTERS
 # =======

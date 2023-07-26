@@ -72,7 +72,7 @@ jobs:
         config:
           - name: "Windows 32bit"
             arch: x86
-            openssl_dir: C:\Program Files (x86)\OpenSSL-Win32
+            openssl_dir: C:\vcpkg\packages\openssl_x86-windows-static
             chocolatey_opt: --x86
             cmake_additional_opt: ""
             vcpkg_triplet: x86-windows-static
@@ -111,7 +111,7 @@ jobs:
         shell: pwsh
 
       - name: Get dependencies w/ chocolatey
-        if: ${{ matrix.config.arch != 'amd64_arm64' }}
+        if: ${{ matrix.config.arch == 'x64' }}
         uses: crazy-max/ghaction-chocolatey@v2
         with:
           args: install ${{ matrix.config.chocolatey_opt }} openssl -y
@@ -122,7 +122,7 @@ jobs:
           arch: ${{ matrix.config.arch }}
 
       - name: Build openssl with vcpkg
-        if: ${{ matrix.config.arch == 'amd64_arm64' }}
+        if: ${{ matrix.config.arch != 'x64' }}
         run: |
           C:\vcpkg\vcpkg install --recurse openssl --triplet ${{ matrix.config.vcpkg_triplet }}
         shell: cmd

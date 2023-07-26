@@ -70,6 +70,7 @@ void flb_log_event_decoder_reset(struct flb_log_event_decoder *context,
     context->offset = 0;
     context->buffer = input_buffer;
     context->length = input_length;
+    context->last_result = FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA;
 
     msgpack_unpacked_destroy(&context->unpacked_event);
     msgpack_unpacked_init(&context->unpacked_event);
@@ -144,7 +145,7 @@ void flb_log_event_decoder_destroy(struct flb_log_event_decoder *context)
         context->initialized = FLB_FALSE;
 
         if (dynamically_allocated) {
-            free(context);
+            flb_free(context);
         }
     }
 }
@@ -261,21 +262,36 @@ int flb_event_decoder_decode_object(struct flb_log_event_decoder *context,
     return FLB_EVENT_DECODER_SUCCESS;
 }
 
+int flb_log_event_decoder_get_last_result(struct flb_log_event_decoder *context)
+{
+    if (context->last_result == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA &&
+        context->offset == context->length) {
+        context->last_result = FLB_EVENT_DECODER_SUCCESS;
+    }
+
+    return context->last_result;
+}
+
 int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
                                struct flb_log_event *event)
 {
     size_t previous_offset;
     int    result;
 
-    context->record_base = NULL;
-    context->record_length = 0;
-
     if (context == NULL) {
         return FLB_EVENT_DECODER_ERROR_INVALID_CONTEXT;
     }
+    if (context->length == 0) {
+        context->last_result = FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA;
+        return context->last_result;
+    }
+
+    context->record_base = NULL;
+    context->record_length = 0;
 
     if (event == NULL) {
-        return FLB_EVENT_DECODER_ERROR_INVALID_ARGUMENT;
+        context->last_result = FLB_EVENT_DECODER_ERROR_INVALID_ARGUMENT;
+        return context->last_result;
     }
 
     memset(event, 0, sizeof(struct flb_log_event));
@@ -288,17 +304,19 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
                                  &context->offset);
 
     if (result == MSGPACK_UNPACK_CONTINUE) {
-        return FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA;
+        context->last_result = FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA;
+        return context->last_result;
     }
     else if (result != MSGPACK_UNPACK_SUCCESS) {
-        return FLB_EVENT_DECODER_ERROR_DESERIALIZATION_FAILURE;
+        context->last_result = FLB_EVENT_DECODER_ERROR_DESERIALIZATION_FAILURE;
+        return context->last_result;
     }
 
     context->previous_offset = previous_offset;
-
-    return flb_event_decoder_decode_object(context,
-                                           event,
-                                           &context->unpacked_event.data);
+    context->last_result = flb_event_decoder_decode_object(context,
+                                                              event,
+                                                              &context->unpacked_event.data);
+    return context->last_result;
 }
 
 const char *flb_log_event_decoder_get_error_description(int error_code)

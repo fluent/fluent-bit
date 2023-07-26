@@ -35,6 +35,7 @@
 #include <fluent-bit/flb_reload.h>
 #include <fluent-bit/flb_lib.h>
 #include <fluent-bit/config_format/flb_cf_fluentbit.h>
+#include <fluent-bit/flb_base64.h>
 
 
 #define CALYPTIA_H_PROJECT       "X-Project-Token"
@@ -62,6 +63,7 @@ struct flb_in_calyptia_fleet_config {
 
     flb_sds_t api_key;
     flb_sds_t fleet_id;
+    flb_sds_t fleet_name;
     flb_sds_t config_dir;
     flb_sds_t cloud_host;
     flb_sds_t cloud_port;
@@ -166,7 +168,11 @@ static flb_sds_t fleet_config_filename(struct flb_in_calyptia_fleet_config *ctx,
     flb_sds_t cfgname;
 
     cfgname = flb_sds_create_size(4096);
-    flb_sds_printf(&cfgname, "%s" PATH_SEPARATOR "%s" PATH_SEPARATOR "%s.ini", ctx->config_dir, ctx->fleet_id, fname);
+    if (ctx->fleet_name != NULL) {
+        flb_sds_printf(&cfgname, "%s" PATH_SEPARATOR "%s" PATH_SEPARATOR "%s.ini", ctx->config_dir, ctx->fleet_name, fname);
+    } else {
+        flb_sds_printf(&cfgname, "%s" PATH_SEPARATOR "%s" PATH_SEPARATOR "%s.ini", ctx->config_dir, ctx->fleet_id, fname);
+    }
 
     return cfgname;
 }
@@ -270,6 +276,7 @@ static void *do_reload(void *data)
 {
     struct reload_ctx *reload = (struct reload_ctx *)data;
     // avoid reloading the current configuration... just use our new one!
+    flb_context_set(reload->flb);
     reload->flb->config->enable_hot_reload = FLB_TRUE;
     reload->flb->config->conf_path_file = reload->cfg_path;
     sleep(5);
@@ -328,6 +335,10 @@ static int execute_reload(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t cf
     flb_ctx_t *flb = flb_context_get();
 
 
+    if (flb == NULL) {
+        flb_plg_error(ctx->ins, "unable to get fluent-bit context.");
+        return FLB_FALSE;
+    }
     // fix execution in valgrind...
     // otherwise flb_reload errors out with:
     //    [error] [reload] given flb context is NULL
@@ -349,9 +360,237 @@ static int execute_reload(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t cf
     return FLB_TRUE;
 }
 
+static char *tls_setting_string(int use_tls)
+{
+    if (use_tls) {
+        return "On";
+    }
+    return "Off";
+}
+
+static flb_sds_t parse_api_key_json(struct flb_in_calyptia_fleet_config *ctx,
+                                    char *payload, size_t size)
+{
+    int ret;
+    int out_size;
+    char *pack;
+    struct flb_pack_state pack_state;
+    size_t off = 0;
+    msgpack_unpacked result;
+    msgpack_object_kv *cur;
+    msgpack_object_str *key;
+    flb_sds_t project_id;
+    int i = 0;
+
+    /* Initialize packer */
+    flb_pack_state_init(&pack_state);
+
+    /* Pack JSON as msgpack */
+    ret = flb_pack_json_state(payload, size,
+                              &pack, &out_size, &pack_state);
+    flb_pack_state_reset(&pack_state);
+
+    /* Handle exceptions */
+    if (ret == FLB_ERR_JSON_PART) {
+        flb_plg_warn(ctx->ins, "JSON data is incomplete, skipping");
+        return NULL;
+    }
+    else if (ret == FLB_ERR_JSON_INVAL) {
+        flb_plg_warn(ctx->ins, "invalid JSON message, skipping");
+        return NULL;
+    }
+    else if (ret == -1) {
+        return NULL;
+    }
+
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, pack, out_size, &off) == MSGPACK_UNPACK_SUCCESS) {
+        if (result.data.type == MSGPACK_OBJECT_MAP) {
+            for (i = 0; i < result.data.via.map.size; i++) {
+                cur = &result.data.via.map.ptr[i];
+                key = &cur->key.via.str;
+
+                if (strncmp(key->ptr, "ProjectID", key->size) == 0) {
+                    if (cur->val.type != MSGPACK_OBJECT_STR) {
+                        flb_plg_error(ctx->ins, "unable to find fleet by name");
+                        msgpack_unpacked_destroy(&result);
+                        return NULL;
+                    }
+                    project_id = flb_sds_create_len(cur->val.via.str.ptr, 
+		                                    cur->val.via.str.size);
+                    msgpack_unpacked_destroy(&result);
+                    flb_free(pack);
+                    return project_id;
+                }
+            }
+        }
+    }
+
+    msgpack_unpacked_destroy(&result);
+    flb_free(pack);
+
+    return NULL;
+}
+
+static ssize_t parse_fleet_search_json(struct flb_in_calyptia_fleet_config *ctx,
+                                       char *payload, size_t size)
+{
+    int ret;
+    int out_size;
+    char *pack;
+    struct flb_pack_state pack_state;
+    size_t off = 0;
+    msgpack_unpacked result;
+    msgpack_object_array *results;
+    msgpack_object_kv *cur;
+    msgpack_object_str *key;
+    int i = 0;
+
+    /* Initialize packer */
+    flb_pack_state_init(&pack_state);
+
+    /* Pack JSON as msgpack */
+    ret = flb_pack_json_state(payload, size,
+                              &pack, &out_size, &pack_state);
+    flb_pack_state_reset(&pack_state);
+
+    /* Handle exceptions */
+    if (ret == FLB_ERR_JSON_PART) {
+        flb_plg_warn(ctx->ins, "JSON data is incomplete, skipping");
+        return -1;
+    }
+    else if (ret == FLB_ERR_JSON_INVAL) {
+        flb_plg_warn(ctx->ins, "invalid JSON message, skipping");
+        return -1;
+    }
+    else if (ret == -1) {
+        return -1;
+    }
+
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, pack, out_size, &off) == MSGPACK_UNPACK_SUCCESS) {
+        if (result.data.type == MSGPACK_OBJECT_ARRAY) {
+            results = &result.data.via.array;
+            if (results->ptr[0].type == MSGPACK_OBJECT_MAP) {
+                for (i = 0; i < results->ptr[0].via.map.size; i++) {
+                    cur = &results->ptr[0].via.map.ptr[i];
+                    key = &cur->key.via.str;
+
+                    if (strncasecmp(key->ptr, "id", key->size) == 0) {
+                        if (cur->val.type != MSGPACK_OBJECT_STR) {
+                            flb_plg_error(ctx->ins, "unable to find fleet by name");
+                            msgpack_unpacked_destroy(&result);
+                            return -1;
+                        }
+                        ctx->fleet_id = flb_sds_create_len(cur->val.via.str.ptr,
+                                                           cur->val.via.str.size);
+                        break;
+                    }
+                    break;
+                }
+                break;
+            }
+        }
+    }
+
+    msgpack_unpacked_destroy(&result);
+    flb_free(pack);
+
+    if (ctx->fleet_id == NULL) {
+        return -1;
+    }
+    return 0;
+}
+
+static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ctx,
+                                         struct flb_connection *u_conn,
+                                         struct flb_config *config)
+{
+    struct flb_http_client *client;
+    flb_sds_t url;
+    flb_sds_t project_id;
+    unsigned char token[512] = {0};
+    unsigned char encoded[256];
+    size_t elen;
+    size_t tlen;
+    char *api_token_sep;
+    size_t b_sent;
+    int ret;
+
+    api_token_sep = strchr(ctx->api_key, '.');
+    if (api_token_sep == NULL) {
+        return -1;
+    }
+
+    elen = api_token_sep-ctx->api_key;
+    elen = elen + (4 - (elen % 4));
+    if (elen > sizeof(encoded)) {
+        flb_plg_error(ctx->ins, "API Token is too large");
+        return -1;
+    }
+
+    memset(encoded, '=', sizeof(encoded));
+    memcpy(encoded, ctx->api_key, api_token_sep-ctx->api_key);
+
+    ret = flb_base64_decode(token, sizeof(token)-1, &tlen,
+                            encoded, elen); 
+    if (ret != 0) {
+        return ret;
+    }
+
+    project_id = parse_api_key_json(ctx, (char *)token, tlen);
+    if (project_id == NULL) {
+        return -1;
+    }
+
+    url = flb_sds_create_size(4096);
+    flb_sds_printf(&url, "/v1/search?project_id=%s&resource=fleet&term=%s", 
+                   project_id, ctx->fleet_name);
+
+    client = flb_http_client(u_conn, FLB_HTTP_GET, url, NULL, 0,
+                             ctx->ins->host.name, ctx->ins->host.port, NULL, 0);
+    if (!client) {
+        flb_plg_error(ctx->ins, "unable to create http client");
+        return -1;
+    }
+
+    flb_http_buffer_size(client, 8192);
+
+    flb_http_add_header(client,
+                        CALYPTIA_H_PROJECT, sizeof(CALYPTIA_H_PROJECT) - 1,
+                        ctx->api_key, flb_sds_len(ctx->api_key));
+
+    ret = flb_http_do(client, &b_sent);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "http do error");
+        return -1;
+    }
+
+    if (client->resp.status != 200) {
+        flb_plg_error(ctx->ins, "search http status code error: %d", client->resp.status);
+        return -1;
+    }
+
+    if (client->resp.payload_size <= 0) {
+        flb_plg_error(ctx->ins, "empty response");
+        return -1;
+    }
+
+    if (parse_fleet_search_json(ctx, client->resp.payload, client->resp.payload_size) == -1) {
+        flb_plg_error(ctx->ins, "unable to find fleet: %s", ctx->fleet_name);
+        return -1;
+    }
+
+    if (ctx->fleet_id == NULL) {
+        return -1;
+    }
+    return 0;
+}
+
 /* cb_collect callback */
 static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
-                            struct flb_config *config, void *in_context)
+                                     struct flb_config *config, 
+                                     void *in_context)
 {
     struct flb_in_calyptia_fleet_config *ctx = in_context;
     struct flb_connection *u_conn;
@@ -364,7 +603,7 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
     FILE *cfgfp;
     const char *fbit_last_modified;
     int fbit_last_modified_len;
-    struct flb_tm tm_last_modified;
+    struct flb_tm tm_last_modified = { 0 };
     time_t time_last_modified;
     char *data;
     size_t b_sent;
@@ -375,6 +614,18 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
         flb_plg_error(ctx->ins, "could not get an upstream connection to %s:%u",
                       ctx->ins->host.name, ctx->ins->host.port);
         goto conn_error;
+    }
+
+    if (ctx->fleet_id == NULL) {
+        if (get_calyptia_fleet_id_by_name(ctx, u_conn, config) == -1) {
+            flb_plg_error(ctx->ins, "unable to find fleet: %s", ctx->fleet_name);
+            goto conn_error;
+        }
+    }
+
+    if (ctx->fleet_url == NULL) {
+        ctx->fleet_url = flb_sds_create_size(4096);
+        flb_sds_printf(&ctx->fleet_url, "/v1/fleets/%s/config?format=ini", ctx->fleet_id);
     }
 
     client = flb_http_client(u_conn, FLB_HTTP_GET, ctx->fleet_url,
@@ -429,38 +680,52 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
     cfgname = time_fleet_config_filename(ctx, time_last_modified);
     if (access(cfgname, F_OK) == -1 && errno == ENOENT) {
         cfgfp = fopen(cfgname, "w+");
+        if (cfgfp == NULL) {
+            flb_plg_error(ctx->ins, "unable to open configuration file: %s", cfgname);
+            goto http_error;
+        }
         header = flb_sds_create_size(4096);
-        flb_sds_printf(&header, 
-                       "[INPUT]\n"
-                       "    Name          calyptia_fleet\n"
-                       "    Api_Key       %s\n"
-                       "    fleet_id      %s\n"
-                       "    Host          %s\n"
-                       "    Port          %d\n"
-                       "    Config_Dir    %s\n"
-                       "    TLS           %s\n"
-                       "[CUSTOM]\n"
-                       "    Name          calyptia\n"
-                       "    api_key       %s\n"
-                       "    log_level     debug\n"
-                       "    fleet_id      %s\n"
-                       "    add_label     fleet_id %s\n"
-                       "    calyptia_host %s\n"
-                       "    calyptia_port %d\n"
-                       "    calyptia_tls  %s\n",
-                       ctx->api_key,
-                       ctx->fleet_id,
-                       ctx->ins->host.name,
-                       ctx->ins->host.port,
-                       ctx->config_dir,
-                       (ctx->ins->tls ? "On" : "Off"),
-                       ctx->api_key,
-                       ctx->fleet_id,
-                       ctx->fleet_id,
-                       ctx->ins->host.name,
-                       ctx->ins->host.port,
-                       (ctx->ins->tls ? "On" : "Off")
-        );
+        if (ctx->fleet_name == NULL) {
+            flb_sds_printf(&header,
+                        "[CUSTOM]\n"
+                        "    Name          calyptia\n"
+                        "    api_key       %s\n"
+                        "    fleet_id      %s\n"
+                        "    add_label     fleet_id %s\n"
+                        "    fleet.config_dir    %s\n"
+                        "    calyptia_host %s\n"
+                        "    calyptia_port %d\n"
+                        "    calyptia_tls  %s\n",
+                        ctx->api_key,
+                        ctx->fleet_id,
+                        ctx->fleet_id,
+                        ctx->config_dir,
+                        ctx->ins->host.name,
+                        ctx->ins->host.port,
+                        tls_setting_string(ctx->ins->use_tls)
+            );
+        } else {
+            flb_sds_printf(&header,
+                        "[CUSTOM]\n"
+                        "    Name          calyptia\n"
+                        "    api_key       %s\n"
+                        "    fleet_name    %s\n"
+                        "    fleet_id      %s\n"
+                        "    add_label     fleet_id %s\n"
+                        "    fleet.config_dir    %s\n"
+                        "    calyptia_host %s\n"
+                        "    calyptia_port %d\n"
+                        "    calyptia_tls  %s\n",
+                        ctx->api_key,
+                        ctx->fleet_name,
+                        ctx->fleet_id,
+                        ctx->fleet_id,
+                        ctx->config_dir,
+                        ctx->ins->host.name,
+                        ctx->ins->host.port,
+                        tls_setting_string(ctx->ins->use_tls)
+            );
+        }
         fwrite(header, strlen(header), 1, cfgfp);
         flb_sds_destroy(header);
         fwrite(data, client->resp.payload_size, 1, cfgfp);
@@ -512,8 +777,11 @@ static void create_fleet_directory(struct flb_in_calyptia_fleet_config *ctx)
     }
 
     myfleetdir = flb_sds_create_size(256);
-    flb_sds_printf(&myfleetdir, "%s" PATH_SEPARATOR "%s", ctx->config_dir, ctx->fleet_id);
-
+    if (ctx->fleet_name != NULL) {
+        flb_sds_printf(&myfleetdir, "%s" PATH_SEPARATOR "%s", ctx->config_dir, ctx->fleet_name);
+    } else {
+        flb_sds_printf(&myfleetdir, "%s" PATH_SEPARATOR "%s", ctx->config_dir, ctx->fleet_id);
+    }
     if (access(myfleetdir, F_OK)) {
         mkdir(myfleetdir, 0700);
     }
@@ -561,7 +829,7 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
         flb_errno();
         return -1;
     }
-    ctx->ins      = in;
+    ctx->ins = in;
 
 
     /* Load the config map */
@@ -592,7 +860,6 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
     upstream_flags = FLB_IO_TCP;
 
     if (in->use_tls) {
-        flb_plg_error(in, "using TLS");
         upstream_flags |= FLB_IO_TLS;
     }
 
@@ -611,12 +878,9 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
         ctx->interval_nsec = atoi(DEFAULT_INTERVAL_NSEC);
     }
 
-    ctx->fleet_url = flb_sds_create_size(4096);
-    flb_sds_printf(&ctx->fleet_url, "/v1/fleets/%s/config?format=ini", ctx->fleet_id);
-
     /* Set the context */
     flb_input_set_context(in, ctx);
-
+        
     /* Set our collector based on time */
     ret = flb_input_set_collector_time(in,
                                        in_calyptia_fleet_collect,
@@ -677,6 +941,11 @@ static struct flb_config_map config_map[] = {
      "Calyptia Fleet ID."
     },
     {
+     FLB_CONFIG_MAP_STR, "fleet_name", NULL,
+     0, FLB_TRUE, offsetof(struct flb_in_calyptia_fleet_config, fleet_name),
+     "Calyptia Fleet Name (used to lookup the fleet ID via the cloud API)."
+    },
+    {
       FLB_CONFIG_MAP_INT, "event_fd", "-1",
       0, FLB_TRUE, offsetof(struct flb_in_calyptia_fleet_config, event_fd),
       "Used internally to set the event fd."
@@ -707,5 +976,5 @@ struct flb_input_plugin in_calyptia_fleet_plugin = {
     .cb_flush_buf = NULL,
     .cb_exit      = in_calyptia_fleet_exit,
     .config_map   = config_map,
-    .flags        = FLB_INPUT_NET|FLB_INPUT_CORO|FLB_IO_OPT_TLS
+    .flags        = FLB_INPUT_NET|FLB_INPUT_CORO|FLB_IO_OPT_TLS|FLB_INPUT_PRIVATE
 };

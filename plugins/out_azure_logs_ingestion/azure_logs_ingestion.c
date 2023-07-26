@@ -251,7 +251,7 @@ static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
     size_t final_payload_size;
     flb_sds_t token;
     struct flb_connection *u_conn;
-    struct flb_http_client *c;
+    struct flb_http_client *c = NULL;
     int is_compressed = FLB_FALSE;
     flb_sds_t json_payload = NULL;
     struct flb_az_li *ctx = out_context;

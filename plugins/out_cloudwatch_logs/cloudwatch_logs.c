@@ -185,9 +185,8 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
 
     ctx->create_group = FLB_FALSE;
     tmp = flb_output_get_property("auto_create_group", ins);
-    /* native plugins use On/Off as bool, the old Go plugin used true/false */
-    if (tmp && (strcasecmp(tmp, "On") == 0 || strcasecmp(tmp, "true") == 0)) {
-        ctx->create_group = FLB_TRUE;
+    if (tmp) {
+        ctx->create_group = flb_utils_bool(tmp);
     }
 
     ctx->retry_requests = FLB_TRUE;
