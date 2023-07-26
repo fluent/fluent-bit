@@ -22,7 +22,7 @@ RUN apt-get update && \
     apt-get install -y --reinstall lsb-base lsb-release
 
 # raspbian/bullseye base image
-FROM balenalib/raspberrypi3::bullseye as raspbian-bullseye-base
+FROM balenalib/raspberrypi3:bullseye as raspbian-bullseye-base
 ENV DEBIAN_FRONTEND noninteractive
 
 # hadolint ignore=DL3008,DL3015
