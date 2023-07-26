@@ -25,11 +25,6 @@
 
 #define FLB_IN_TCP_CHUNK "32768"
 
-#define FLB_MAP_EXPAND_SUCCESS   0
-#define FLB_MAP_NOT_MODIFIED    -1
-#define FLB_MAP_EXPANSION_ERROR -2
-#define FLB_MAP_EXPANSION_INVALID_VALUE_TYPE -3
-
 enum {
     TCP_NEW        = 1,  /* it's a new connection                */
     TCP_CONNECTED  = 2,  /* MQTT connection per protocol spec OK */
