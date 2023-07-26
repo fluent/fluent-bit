@@ -6,7 +6,7 @@ ARG BASE_BUILDER
 # Lookup the name to use below but should follow the '<distro>-base' convention with slashes replaced.
 # Use buildkit to skip unused base images: DOCKER_BUILDKIT=1
 
-FROM balenalib/rpi-raspbian3:buster as raspbian-buster-base
+FROM balenalib/raspberrypi3:buster as raspbian-buster-base
 ENV DEBIAN_FRONTEND noninteractive
 
 # Builder image so dependencies can be latest, recommended and no need to wipe
@@ -22,7 +22,7 @@ RUN apt-get update && \
     apt-get install -y --reinstall lsb-base lsb-release
 
 # raspbian/bullseye base image
-FROM balenalib/rpi-raspbian3:bullseye as raspbian-bullseye-base
+FROM balenalib/raspberrypi3::bullseye as raspbian-bullseye-base
 ENV DEBIAN_FRONTEND noninteractive
 
 # hadolint ignore=DL3008,DL3015
