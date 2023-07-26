@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_error.h>
+#include <fluent-bit/flb_msgpack_append_message.h>
 
 #include "tcp.h"
 #include "tcp_conn.h"
@@ -30,68 +31,6 @@
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
     memmove(buf, buf + bytes, length - bytes);
-}
-
-static int append_message_to_record_data(char **result_buffer,
-                                         size_t *result_size,
-                                         flb_sds_t message_key_name,
-                                         char *base_object_buffer,
-                                         size_t base_object_size,
-                                         char *message_buffer,
-                                         size_t message_size,
-                                         int message_type)
-{
-    int                result = FLB_MAP_NOT_MODIFIED;
-    char              *modified_data_buffer;
-    int                modified_data_size;
-    msgpack_object_kv *new_map_entries[1];
-    msgpack_object_kv  message_entry;
-    *result_buffer = NULL;
-    *result_size = 0;
-    modified_data_buffer = NULL;
-
-    if (message_key_name != NULL) {
-        new_map_entries[0] = &message_entry;
-
-        message_entry.key.type = MSGPACK_OBJECT_STR;
-        message_entry.key.via.str.size = flb_sds_len(message_key_name);
-        message_entry.key.via.str.ptr  = message_key_name;
-
-        if (message_type == MSGPACK_OBJECT_BIN) {
-            message_entry.val.type = MSGPACK_OBJECT_BIN;
-            message_entry.val.via.bin.size = message_size;
-            message_entry.val.via.bin.ptr  = message_buffer;
-        }
-        else if (message_type == MSGPACK_OBJECT_STR) {
-            message_entry.val.type = MSGPACK_OBJECT_STR;
-            message_entry.val.via.str.size = message_size;
-            message_entry.val.via.str.ptr  = message_buffer;
-        }
-        else {
-            result = FLB_MAP_EXPANSION_INVALID_VALUE_TYPE;
-        }
-
-        if (result == FLB_MAP_NOT_MODIFIED) {
-            result = flb_msgpack_expand_map(base_object_buffer,
-                                            base_object_size,
-                                            new_map_entries, 1,
-                                            &modified_data_buffer,
-                                            &modified_data_size);
-            if (result == 0) {
-                result = FLB_MAP_EXPAND_SUCCESS;
-            }
-            else {
-                result = FLB_MAP_EXPANSION_ERROR;
-            }
-        }
-    }
-
-    if (result == FLB_MAP_EXPAND_SUCCESS) {
-        *result_buffer = modified_data_buffer;
-        *result_size = modified_data_size;
-    }
-
-    return result;
 }
 
 static inline int process_pack(struct tcp_conn *conn,
@@ -132,14 +71,14 @@ static inline int process_pack(struct tcp_conn *conn,
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
             if (entry.type == MSGPACK_OBJECT_MAP) {
                 if (ctx->source_address_key != NULL && source_address != NULL) {
-                    ret = append_message_to_record_data(&appended_address_buffer,
-                                                        &appended_address_size,
-                                                        ctx->source_address_key,
-                                                        pack + prev_off,
-                                                        size,
-                                                        source_address,
-                                                        strlen(source_address),
-                                                        MSGPACK_OBJECT_STR);
+                    ret = flb_msgpack_append_message_to_record(&appended_address_buffer,
+                                                               &appended_address_size,
+                                                               ctx->source_address_key,
+                                                               pack + prev_off,
+                                                               size,
+                                                               source_address,
+                                                               strlen(source_address),
+                                                               MSGPACK_OBJECT_STR);
                 }
 
                 if (ret == FLB_MAP_EXPANSION_ERROR) {

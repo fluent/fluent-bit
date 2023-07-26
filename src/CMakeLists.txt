@@ -78,6 +78,7 @@ set(src
   flb_log_event_encoder_dynamic_field.c
   flb_processor.c
   flb_reload.c
+  flb_msgpack_append_message.c
   )
 
 # Config format
