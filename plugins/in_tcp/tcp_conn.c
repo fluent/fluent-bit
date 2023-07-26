@@ -134,7 +134,7 @@ static inline int process_pack(struct tcp_conn *conn,
 
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
             if (entry.type == MSGPACK_OBJECT_MAP) {
-                if (source_address != NULL) {
+                if (ctx->source_address_key != NULL && source_address != NULL) {
                     msgpack_sbuffer_init(&sbuf);
                     msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
 
@@ -171,7 +171,7 @@ static inline int process_pack(struct tcp_conn *conn,
                 }
             }
             else if (entry.type == MSGPACK_OBJECT_ARRAY) {
-                if (source_address != NULL) {
+                if (ctx->source_address_key != NULL && source_address != NULL) {
                     ret = flb_log_event_encoder_append_body_values(
                         ctx->log_encoder,
                         FLB_LOG_EVENT_CSTRING_VALUE("msg"),
