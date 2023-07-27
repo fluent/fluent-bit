@@ -162,6 +162,7 @@ void do_test(char *system, const char *target, ...)
     int out_ffd;
     char path[PATH_MAX];
     struct tail_test_result result = {0};
+    char storage_path[PATH_MAX];
 
     result.nMatched = 0;
     result.target = target;
@@ -175,10 +176,12 @@ void do_test(char *system, const char *target, ...)
 
     ctx = flb_create();
 
+    snprintf(storage_path, sizeof(storage_path) - 1, "/tmp/input-chunk-test-%s", target);
+
     /* create chunks in /tmp folder */
     ret = flb_service_set(ctx,
                           "Parsers_File", DPATH "parser.conf",
-                          "storage.path", "/tmp/input-chunk-test/",
+                          "storage.path", storage_path,
                           "Log_Level", "error",
                           NULL);
     TEST_CHECK_(ret == 0, "setting service options");
