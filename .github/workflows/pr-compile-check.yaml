@@ -29,3 +29,4 @@ jobs:
         # No need to use after this so discard completely
         push: false
         load: false
+        provenance: false
