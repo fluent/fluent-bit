@@ -73,19 +73,16 @@ jobs:
           - name: "Windows 32bit"
             arch: x86
             openssl_dir: C:\vcpkg\packages\openssl_x86-windows-static
-            chocolatey_opt: --x86
             cmake_additional_opt: ""
             vcpkg_triplet: x86-windows-static
           - name: "Windows 64bit"
             arch: x64
-            openssl_dir: C:\Program Files\OpenSSL-Win64
-            chocolatey_opt: --x64
+            openssl_dir: C:\vcpkg\packages\openssl_x64-windows-static
             cmake_additional_opt: ""
             vcpkg_triplet: x64-windows-static
           - name: "Windows 64bit (Arm64)"
             arch: amd64_arm64
             openssl_dir: C:\vcpkg\packages\openssl_arm64-windows-static
-            chocolatey_opt: ""
             cmake_additional_opt: "-DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_VERSION=10.0 -DCMAKE_SYSTEM_PROCESSOR=ARM64"
             vcpkg_triplet: arm64-windows-static
     permissions:
@@ -110,19 +107,12 @@ jobs:
           WINFLEXBISON: https://github.com/lexxmark/winflexbison/releases/download/v2.5.22/win_flex_bison-2.5.22.zip
         shell: pwsh
 
-      - name: Get dependencies w/ chocolatey
-        if: ${{ matrix.config.arch == 'x64' }}
-        uses: crazy-max/ghaction-chocolatey@v2
-        with:
-          args: install ${{ matrix.config.chocolatey_opt }} openssl -y
-
       - name: Set up with Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.config.arch }}
 
       - name: Build openssl with vcpkg
-        if: ${{ matrix.config.arch != 'x64' }}
         run: |
           C:\vcpkg\vcpkg install --recurse openssl --triplet ${{ matrix.config.vcpkg_triplet }}
         shell: cmd
