@@ -43,6 +43,7 @@ static int cb_azure_logs_ingestion_init(struct flb_output_instance *ins,
     /* Allocate and initialize a context from configuration */
     ctx = flb_az_li_ctx_create(ins, config);
     if (!ctx) {
+        flb_plg_error(ins, "configuration failed");
         return -1;
     }
 
