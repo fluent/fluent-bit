@@ -237,7 +237,7 @@ jobs:
     environment: ${{ inputs.environment }}
     steps:
       - name: Install cosign
-        uses: sigstore/cosign-installer@v2
+        uses: sigstore/cosign-installer@v3
 
       - name: Cosign keyless signing using Rektor public transparency log
         # This step uses the identity token to provision an ephemeral certificate
