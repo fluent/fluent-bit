@@ -70,6 +70,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
           target: production
+          provenance: false
           push: true
           load: false
 
@@ -103,6 +104,7 @@ jobs:
           context: .
           tags: ${{ steps.meta-debug.outputs.tags }}
           labels: ${{ steps.meta-debug.outputs.labels }}
+          provenance: false
           target: debug
           platforms: linux/amd64
           push: true
