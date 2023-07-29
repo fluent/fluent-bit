@@ -262,7 +262,6 @@ void not_current_dir_files()
 /* data/config_format/nolimitline.conf */
 void test_nolimit_line()
 {
-    struct mk_list *head;
     struct flb_cf *cf;
     struct flb_cf_section *s;
     struct cfl_list *p_head;
