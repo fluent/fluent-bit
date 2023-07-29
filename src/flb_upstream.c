@@ -442,10 +442,6 @@ struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
  */
 static void shutdown_connection(struct flb_connection *u_conn)
 {
-    struct flb_upstream *u;
-
-    u = u_conn->upstream;
-
     if (u_conn->fd > 0 &&
         !u_conn->shutdown_flag) {
         shutdown(u_conn->fd, SHUT_RDWR);
