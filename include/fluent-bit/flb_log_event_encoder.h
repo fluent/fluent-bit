@@ -36,33 +36,35 @@
 #define FLB_EVENT_ENCODER_ERROR_SERIALIZATION_FAILURE   -5
 #define FLB_EVENT_ENCODER_ERROR_INVALID_VALUE_TYPE      -6
 
-#define FLB_LOG_EVENT_APPEND_TERMINATOR_VALUE_TYPE       0
+#define flb_log_event_type_t int32_t
 
-#define FLB_LOG_EVENT_STRING_LENGTH_VALUE_TYPE           1
-#define FLB_LOG_EVENT_STRING_BODY_VALUE_TYPE             2
-#define FLB_LOG_EVENT_BINARY_LENGTH_VALUE_TYPE           3
-#define FLB_LOG_EVENT_BINARY_BODY_VALUE_TYPE             4
-#define FLB_LOG_EVENT_EXT_LENGTH_VALUE_TYPE              5
-#define FLB_LOG_EVENT_EXT_BODY_VALUE_TYPE                6
-#define FLB_LOG_EVENT_NULL_VALUE_TYPE                    7
-#define FLB_LOG_EVENT_CHAR_VALUE_TYPE                    8
-#define FLB_LOG_EVENT_INT8_VALUE_TYPE                    9
-#define FLB_LOG_EVENT_INT16_VALUE_TYPE                   10
-#define FLB_LOG_EVENT_INT32_VALUE_TYPE                   11
-#define FLB_LOG_EVENT_INT64_VALUE_TYPE                   12
-#define FLB_LOG_EVENT_UINT8_VALUE_TYPE                   13
-#define FLB_LOG_EVENT_UINT16_VALUE_TYPE                  14
-#define FLB_LOG_EVENT_UINT32_VALUE_TYPE                  15
-#define FLB_LOG_EVENT_UINT64_VALUE_TYPE                  16
-#define FLB_LOG_EVENT_DOUBLE_VALUE_TYPE                  17
-#define FLB_LOG_EVENT_BOOLEAN_VALUE_TYPE                 18
-#define FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE_TYPE          19
-#define FLB_LOG_EVENT_MSGPACK_RAW_VALUE_TYPE             20
-#define FLB_LOG_EVENT_TIMESTAMP_VALUE_TYPE               21
-#define FLB_LOG_EVENT_LEGACY_TIMESTAMP_VALUE_TYPE        22
-#define FLB_LOG_EVENT_FORWARD_V1_TIMESTAMP_VALUE_TYPE    23
-#define FLB_LOG_EVENT_FLUENT_BIT_V1_TIMESTAMP_VALUE_TYPE 24
-#define FLB_LOG_EVENT_FLUENT_BIT_V2_TIMESTAMP_VALUE_TYPE 25
+#define FLB_LOG_EVENT_APPEND_TERMINATOR_VALUE_TYPE       (flb_log_event_type_t)0
+
+#define FLB_LOG_EVENT_STRING_LENGTH_VALUE_TYPE           (flb_log_event_type_t)1
+#define FLB_LOG_EVENT_STRING_BODY_VALUE_TYPE             (flb_log_event_type_t)2
+#define FLB_LOG_EVENT_BINARY_LENGTH_VALUE_TYPE           (flb_log_event_type_t)3
+#define FLB_LOG_EVENT_BINARY_BODY_VALUE_TYPE             (flb_log_event_type_t)4
+#define FLB_LOG_EVENT_EXT_LENGTH_VALUE_TYPE              (flb_log_event_type_t)5
+#define FLB_LOG_EVENT_EXT_BODY_VALUE_TYPE                (flb_log_event_type_t)6
+#define FLB_LOG_EVENT_NULL_VALUE_TYPE                    (flb_log_event_type_t)7
+#define FLB_LOG_EVENT_CHAR_VALUE_TYPE                    (flb_log_event_type_t)8
+#define FLB_LOG_EVENT_INT8_VALUE_TYPE                    (flb_log_event_type_t)9
+#define FLB_LOG_EVENT_INT16_VALUE_TYPE                   (flb_log_event_type_t)10
+#define FLB_LOG_EVENT_INT32_VALUE_TYPE                   (flb_log_event_type_t)11
+#define FLB_LOG_EVENT_INT64_VALUE_TYPE                   (flb_log_event_type_t)12
+#define FLB_LOG_EVENT_UINT8_VALUE_TYPE                   (flb_log_event_type_t)13
+#define FLB_LOG_EVENT_UINT16_VALUE_TYPE                  (flb_log_event_type_t)14
+#define FLB_LOG_EVENT_UINT32_VALUE_TYPE                  (flb_log_event_type_t)15
+#define FLB_LOG_EVENT_UINT64_VALUE_TYPE                  (flb_log_event_type_t)16
+#define FLB_LOG_EVENT_DOUBLE_VALUE_TYPE                  (flb_log_event_type_t)17
+#define FLB_LOG_EVENT_BOOLEAN_VALUE_TYPE                 (flb_log_event_type_t)18
+#define FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE_TYPE          (flb_log_event_type_t)19
+#define FLB_LOG_EVENT_MSGPACK_RAW_VALUE_TYPE             (flb_log_event_type_t)20
+#define FLB_LOG_EVENT_TIMESTAMP_VALUE_TYPE               (flb_log_event_type_t)21
+#define FLB_LOG_EVENT_LEGACY_TIMESTAMP_VALUE_TYPE        (flb_log_event_type_t)22
+#define FLB_LOG_EVENT_FORWARD_V1_TIMESTAMP_VALUE_TYPE    (flb_log_event_type_t)23
+#define FLB_LOG_EVENT_FLUENT_BIT_V1_TIMESTAMP_VALUE_TYPE (flb_log_event_type_t)24
+#define FLB_LOG_EVENT_FLUENT_BIT_V2_TIMESTAMP_VALUE_TYPE (flb_log_event_type_t)25
 
 #define FLB_LOG_EVENT_STRING_MIN_VALUE_TYPE              FLB_LOG_EVENT_STRING_LENGTH_VALUE_TYPE
 #define FLB_LOG_EVENT_STRING_MAX_VALUE_TYPE              FLB_LOG_EVENT_FLUENT_BIT_V2_TIMESTAMP_VALUE_TYPE
@@ -75,7 +77,7 @@
 
 #define FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR            -1
 
-#define flb_log_event_type_t int32_t
+
 
 #define FLB_LOG_EVENT_VALUE_LIST_TERMINATOR() \
             (flb_log_event_type_t) FLB_LOG_EVENT_APPEND_TERMINATOR_VALUE_TYPE

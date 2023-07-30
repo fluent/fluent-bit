@@ -36,7 +36,7 @@ int flb_log_event_encoder_append_value(
         struct flb_log_event_encoder *context,
         int target_field,
         int increment_entry_count,
-        int value_type,
+        flb_log_event_type_t value_type,
         char *value_buffer,
         size_t value_length)
 {
@@ -450,7 +450,7 @@ int flb_log_event_encoder_append_msgpack_object(
     int target_field,
     msgpack_object *value)
 {
-    const int value_type = FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE_TYPE;
+    const flb_log_event_type_t value_type = FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE_TYPE;
 
     return flb_log_event_encoder_append_value(context, target_field,
                                               FLB_TRUE, value_type,
@@ -463,7 +463,7 @@ int flb_log_event_encoder_append_raw_msgpack(
     char *value_buffer,
     size_t value_size)
 {
-    const int value_type = FLB_LOG_EVENT_MSGPACK_RAW_VALUE_TYPE;
+    const flb_log_event_type_t value_type = FLB_LOG_EVENT_MSGPACK_RAW_VALUE_TYPE;
 
     return flb_log_event_encoder_append_value(context, target_field,
                                               FLB_TRUE, value_type,
@@ -502,7 +502,7 @@ int flb_log_event_encoder_append_legacy_timestamp(
     int target_field,
     struct flb_time *value)
 {
-    const int value_type = FLB_LOG_EVENT_UINT64_VALUE_TYPE;
+    const flb_log_event_type_t value_type = FLB_LOG_EVENT_UINT64_VALUE_TYPE;
     uint64_t  timestamp;
 
     timestamp = value->tm.tv_sec;
