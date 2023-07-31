@@ -119,6 +119,7 @@ jobs:
           path: |
             C:\vcpkg\packages
           key: ${{ runner.os }}-${{ matrix.config.arch }}-vcpkg
+          enableCrossOsArchive: false
 
       - name: Build openssl with vcpkg
         run: |
@@ -137,6 +138,7 @@ jobs:
           path: |
             C:\vcpkg\packages
           key: ${{ steps.cache-vcpkg-sources.outputs.cache-primary-key }}
+          enableCrossOsArchive: false
 
       - name: Build Fluent Bit packages
         # If we are using 2.0.* or earlier we need to exclude the ARM64 build as the dependencies fail to compile.
