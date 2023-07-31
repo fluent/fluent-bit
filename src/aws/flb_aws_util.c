@@ -908,8 +908,8 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
     flb_sds_destroy(tmp);
     tmp = NULL;
 
-    /* A string no longer than S3_KEY_SIZE is created to store the formatted timestamp. */
-    key = flb_calloc(1, S3_KEY_SIZE * sizeof(char));
+    /* A string no longer than S3_KEY_SIZE + 1 is created to store the formatted timestamp. */
+    key = flb_calloc(1, (S3_KEY_SIZE + 1) * sizeof(char));
     if (!key) {
         goto error;
     }
