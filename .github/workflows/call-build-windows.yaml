@@ -117,6 +117,13 @@ jobs:
         with:
           args: install gzip -y
 
+      # http://man7.org/linux/man-pages/man1/date.1.html
+      - name: Get Date
+        id: get-date
+        run: |
+          echo "date=$(/bin/date -u "+%Y%m%d")" >> $GITHUB_OUTPUT
+        shell: bash
+
       - name: Restore cached packages of vcpkg
         id: cache-vcpkg-sources
         uses: actions/cache/restore@v3
@@ -142,7 +149,7 @@ jobs:
         with:
           path: |
             C:\vcpkg\packages
-          key: ${{ steps.cache-vcpkg-sources.outputs.cache-primary-key }}
+          key: ${{ steps.cache-vcpkg-sources.outputs.cache-primary-key }}-${{ steps.get-date.outputs.date }}
           enableCrossOsArchive: false
 
       - name: Build Fluent Bit packages
