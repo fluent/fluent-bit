@@ -112,6 +112,14 @@ jobs:
         with:
           arch: ${{ matrix.config.arch }}
 
+      - name: Restore cached packages of vcpkg
+        id: cache-vcpkg-sources
+        uses: actions/cache/restore@v3
+        with:
+          path: |
+            C:\vcpkg\packages
+          key: ${{ runner.os }}-${{ matrix.config.arch }}-vcpkg
+
       - name: Build openssl with vcpkg
         run: |
           C:\vcpkg\vcpkg install --recurse openssl --triplet ${{ matrix.config.vcpkg_triplet }}
@@ -121,6 +129,14 @@ jobs:
         run: |
           C:\vcpkg\vcpkg install --recurse libyaml --triplet ${{ matrix.config.vcpkg_triplet }}
         shell: cmd
+
+      - name: Save packages of vcpkg
+        id: save-vcpkg-sources
+        uses: actions/cache/save@v3
+        with:
+          path: |
+            C:\vcpkg\packages
+          key: ${{ steps.cache-vcpkg-sources.outputs.cache-primary-key }}
 
       - name: Build Fluent Bit packages
         # If we are using 2.0.* or earlier we need to exclude the ARM64 build as the dependencies fail to compile.
