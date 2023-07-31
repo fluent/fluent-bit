@@ -111,52 +111,35 @@ enum state {
     STATE_STOP            /* end state */
 };
 
-static char *state_names[] = {
-    "start",           /* start state */
-    "stream",          /* start/end stream */
-    "document",        /* start/end document */
-
-    "section",         /* top level */
-    "section-key",
-    "section-value",
-
-    "service",         /* 'service' section */
-    "include",         /* 'includes' section */
-    "other",           /* any other unknown section */
-
-    "custom",          /* custom plugins */
-    "pipeline",        /* pipeline groups customs inputs, filters and outputs */
-
-    "input",    /* input plugins section */
-    "filter",   /* filter plugins section */
-    "output",   /* output plugins section */
-
-    "plugin-start",
-    "plugin-key",
-    "plugin-value",
-    "plugin-values",
-
-    "group-key",
-    "group-value",
-
-    "processors",
-    "processor",
-    "processor-map",
-
-    /* environment variables */
-    "env",
-
-
-    "stop"            /* end state */
-};
-
 static char *state_str(enum state val)
 {
-    if (val < 0 || val > STATE_STOP) {
-	return "unknown";
+    switch (val) {
+        case STATE_START: return "start";
+        case STATE_STREAM: return "stream";
+        case STATE_DOCUMENT: return "document";
+        case STATE_SECTION: return "section";
+        case STATE_SECTION_KEY: return "section-key";
+        case STATE_SECTION_VAL: return "section-value";
+        case STATE_SERVICE: return "service";
+        case STATE_INCLUDE: return "include";
+        case STATE_OTHER: return "other";
+        case STATE_CUSTOM: return "custom";
+        case STATE_PIPELINE: return "pipeline";
+        case STATE_PLUGIN_INPUT: return "input";
+        case STATE_PLUGIN_FILTER: return "filter";
+        case STATE_PLUGIN_OUTPUT: return "output";
+        case STATE_PLUGIN_START: return "plugin-start";
+        case STATE_PLUGIN_KEY: return "plugin-key";
+        case STATE_PLUGIN_VAL: return "plugin-value";
+        case STATE_PLUGIN_VAL_LIST: return "plugin-values";
+        case STATE_GROUP_KEY: return "group-key";
+        case STATE_GROUP_VAL: return "group-val";
+        case STATE_INPUT_PROCESSORS: return "processors";
+        case STATE_INPUT_PROCESSOR: return "processor";
+        case STATE_ENV: return "env";
+        case STATE_STOP: return "stop";
+        default: return "unknown";
     }
-
-    return state_names[val];
 }
 
 struct file_state {
