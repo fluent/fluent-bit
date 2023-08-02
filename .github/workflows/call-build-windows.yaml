@@ -130,7 +130,9 @@ jobs:
         with:
           path: |
             C:\vcpkg\packages
-          key: ${{ runner.os }}-${{ matrix.config.arch }}-vcpkg
+          key: ${{ runner.os }}-${{ matrix.config.arch }}-vcpkg-${{ steps.get-date.outputs.date }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.config.arch }}-vcpkg-
           enableCrossOsArchive: false
 
       - name: Build openssl with vcpkg
