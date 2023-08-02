@@ -379,15 +379,15 @@ static int read_glob(struct flb_cf *cf, struct local_ctx *ctx,
 #else
 static char *dirname(char *path)
 {
-	char *ptr;
-	
-	
-	ptr = strrchr(path, '\\');
-	if (ptr == NULL) {
-		return path;
-	}
-	*ptr++='\0';
-	return path;
+    char *ptr;
+
+
+    ptr = strrchr(path, '\\');
+    if (ptr == NULL) {
+        return path;
+    }
+    *ptr++='\0';
+    return path;
 }
 
 static int read_glob(struct flb_cf *cf, struct local_ctx *ctx,
@@ -561,9 +561,17 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
         switch (event->type) {
         case YAML_DOCUMENT_START_EVENT:
             state = state_push(ctx, STATE_DOCUMENT);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
             break;
         case YAML_STREAM_END_EVENT:
             state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             break;
         default:
             yaml_error_event(ctx, state, event);
@@ -575,9 +583,17 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
         switch (event->type) {
         case YAML_MAPPING_START_EVENT:
             state = state_push(ctx, STATE_SECTION);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
             break;
         case YAML_DOCUMENT_END_EVENT:
             state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             break;
         default:
             yaml_error_event(ctx, state, event);
@@ -595,6 +611,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             break;
         case YAML_SEQUENCE_END_EVENT:
             state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             if (state->state != STATE_SECTION) {
                 yaml_error_event(ctx, state, event);
                 return YAML_FAILURE;
@@ -634,10 +654,21 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             break;
         case YAML_MAPPING_START_EVENT:
             state = state_push_withvals(ctx, state, STATE_PLUGIN_START);
-            add_section_type(cf, state);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
+            if (add_section_type(cf, state) == -1) {
+                flb_error("unable to add section type");
+                return YAML_FAILURE;
+            }
             break;
         case YAML_SEQUENCE_END_EVENT:
-            state_pop(ctx);
+            state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             break;
         default:
             yaml_error_event(ctx, state, event);
@@ -663,11 +694,19 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 yaml_error_plugin_category(ctx, state, event, value);
                 return YAML_FAILURE;
             }
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
             break;
         case YAML_MAPPING_START_EVENT:
             break;
         case YAML_MAPPING_END_EVENT:
             state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             break;
         default:
             yaml_error_event(ctx, state, event);
@@ -681,9 +720,17 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             value = (char *)event->data.scalar.value;
             if (strcasecmp(value, "env") == 0) {
                 state = state_push_section(ctx, STATE_ENV, SECTION_ENV);
+                if (state == NULL) {
+                    flb_error("unable to allocate state");
+                    return YAML_FAILURE;
+                }
             }
             else if (strcasecmp(value, "pipeline") == 0) {
                 state = state_push_section(ctx, STATE_PIPELINE, SECTION_PIPELINE);
+                if (state == NULL) {
+                    flb_error("unable to allocate state");
+                    return YAML_FAILURE;
+                }
             }
             else if (strcasecmp(value, "service") == 0) {
                 if (ctx->service_set) {
@@ -691,8 +738,11 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                     return YAML_FAILURE;
                 }
                 state = state_push_section(ctx, STATE_SERVICE, SECTION_SERVICE);
-                state_create_section(cf, state, value);
-                if (!state->cf_section) {
+                if (state == NULL) {
+                    flb_error("unable to allocate state");
+                    return YAML_FAILURE;
+                }
+                if (state_create_section(cf, state, value) == -1) {
                     flb_error("unable to allocate section: %s", value);
                     return YAML_FAILURE;
                 }
@@ -700,15 +750,26 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             }
             else if (strcasecmp(value, "customs") == 0) {
                 state = state_push_section(ctx, STATE_CUSTOM, SECTION_CUSTOM);
+                if (state == NULL) {
+                    flb_error("unable to allocate state");
+                    return YAML_FAILURE;
+                }
             }
             else if (strcasecmp(value, "includes") == 0) {
                 state = state_push_section(ctx, STATE_INCLUDE, SECTION_INCLUDE);
+                if (state == NULL) {
+                    flb_error("unable to allocate state");
+                    return YAML_FAILURE;
+                }
             }
             else {
                 /* any other main section definition (e.g: similar to STATE_SERVICE) */
                 state = state_push(ctx, STATE_OTHER);
-                state_create_section(cf, state, value);
-                if (!state->cf_section) {
+                if (state == NULL) {
+                    flb_error("unable to allocate state");
+                    return YAML_FAILURE;
+                }
+                if (state_create_section(cf, state, value) == -1) {
                     flb_error("unable to allocate section: %s", value);
                     return YAML_FAILURE;
                 }
@@ -716,9 +777,17 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             break;
         case YAML_MAPPING_END_EVENT:
             state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             break;
         case YAML_DOCUMENT_END_EVENT:
             state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             break;
         default:
             yaml_error_event(ctx, state, event);
@@ -732,10 +801,14 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
     case STATE_OTHER:
         switch(event->type) {
         case YAML_MAPPING_START_EVENT:
-            state_push(ctx, STATE_SECTION_KEY);
+            state = state_push(ctx, STATE_SECTION_KEY);
             break;
         case YAML_MAPPING_END_EVENT:
             state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             if (state->state != STATE_SECTION) {
                 yaml_error_event(ctx, state, event);
                 return YAML_FAILURE;
@@ -752,6 +825,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
         case YAML_SCALAR_EVENT:
             value = (char *) event->data.scalar.value;
             state = state_push_key(ctx, STATE_SECTION_VAL, value);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
             break;
         case YAML_MAPPING_END_EVENT:
             state = state_pop(ctx);
@@ -766,6 +843,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 return YAML_FAILURE;
             }
             state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             break;
         default:
             yaml_error_event(ctx, state, event);
@@ -802,6 +883,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             }
 
             state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             if (state->state != STATE_SECTION_KEY) {
                 yaml_error_event(ctx, state, event);
                 return YAML_FAILURE;
@@ -825,10 +910,21 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             break;
         case YAML_MAPPING_START_EVENT:
             state = state_push_withvals(ctx, state, STATE_PLUGIN_START);
-            add_section_type(cf, state);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
+            if (add_section_type(cf, state) == -1) {
+                flb_error("unable to add section type");
+                return YAML_FAILURE;
+            }
             break;
         case YAML_SCALAR_EVENT:
             state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             if (state->state != STATE_SECTION) {
                 yaml_error_event(ctx, state, event);
                 return YAML_FAILURE;
@@ -836,6 +932,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             break;
         case YAML_MAPPING_END_EVENT:
             state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             if (state->state != STATE_SECTION_KEY) {
                 yaml_error_event(ctx, state, event);
                 return YAML_FAILURE;
@@ -854,6 +954,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
              * and processors.
              */
             state = state_push_key(ctx, STATE_PLUGIN_VAL, (char *) event->data.scalar.value);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
             break;
         case YAML_MAPPING_END_EVENT:
             print_current_properties(state);
@@ -875,6 +979,11 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 }
 
                 copy = cfl_kvlist_create();
+                if (copy == NULL) {
+                    flb_error("unable to allocate kvlist");
+                    return YAML_FAILURE;
+                }
+
                 cfl_list_foreach(head, &state->keyvals->list) {
                     kvp = cfl_list_entry(head, struct cfl_kvpair, _head);
                     switch (kvp->val->type) {
@@ -903,7 +1012,11 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 }
 
                 cfl_array_append_kvlist(arr, copy);
-                state_pop(ctx);
+                state = state_pop(ctx);
+                if (state == NULL) {
+                    flb_error("no state left");
+                    return YAML_FAILURE;
+                }
                 break;
             }
 
@@ -943,6 +1056,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 }
             }
             state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             break;
         case YAML_SEQUENCE_START_EVENT: /* start a new group */
             if (strcmp(state->key, "processors") == 0) {
@@ -953,10 +1070,18 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 flb_error("no key");
                 return YAML_FAILURE;
             }
-            state_push_witharr(ctx, state, STATE_PLUGIN_VAL_LIST);
+            state = state_push_witharr(ctx, state, STATE_PLUGIN_VAL_LIST);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
             break;
         case YAML_SEQUENCE_END_EVENT:
             state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             break;
         default:
             yaml_error_event(ctx, state, event);
@@ -971,9 +1096,17 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
              * and processors.
              */
             state = state_push_key(ctx, STATE_PLUGIN_VAL, (char *) event->data.scalar.value);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
             break;
         case YAML_MAPPING_START_EVENT:
             state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             if (state->state != STATE_PLUGIN_START) {
                 yaml_error_event(ctx, state, event);
                 return YAML_FAILURE;
@@ -981,6 +1114,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             break;
         case YAML_MAPPING_END_EVENT:
             state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             if (state->state != STATE_PLUGIN_START) {
                 yaml_error_event(ctx, state, event);
                 return YAML_FAILURE;
@@ -988,6 +1125,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             break;
         case YAML_SEQUENCE_END_EVENT:
             state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             break;
         default:
             yaml_error_event(ctx, state, event);
@@ -1001,9 +1142,17 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             /* register key/value pair as a property */
             cfl_kvlist_insert_string(state->keyvals, state->key, (char *)event->data.scalar.value);
             state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             break;
         case YAML_SEQUENCE_START_EVENT: /* start a new group */
             state = state_push_witharr(ctx, state, STATE_PLUGIN_VAL_LIST);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
             break;
         case YAML_MAPPING_START_EVENT:
             /* Special handling for input processor */
@@ -1026,11 +1175,19 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             break;
         case YAML_SEQUENCE_END_EVENT:   /* end of group */
             state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             if (state->state != STATE_PLUGIN_KEY) {
                 yaml_error_event(ctx, state, event);
                 return YAML_FAILURE;
             }
             state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             if (state->state != STATE_PLUGIN_KEY) {
                 yaml_error_event(ctx, state, event);
                 return YAML_FAILURE;
@@ -1038,6 +1195,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             break;
         case YAML_MAPPING_END_EVENT:
             state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             break;
         default:
             yaml_error_event(ctx, state, event);
@@ -1058,7 +1219,15 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             /* register key/value pair as a property */
             cfl_kvlist_insert_array(state->keyvals, state->key, state->values);
             state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             break;
         default:
             yaml_error_event(ctx, state, event);
@@ -1071,9 +1240,16 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             case YAML_MAPPING_START_EVENT:
                 break;
             case YAML_MAPPING_END_EVENT:
-                state_pop(ctx);
-                // this is NO BUENO!
-                state_pop(ctx);
+                state = state_pop(ctx);
+                if (state == NULL) {
+                    flb_error("no state left");
+                    return YAML_FAILURE;
+                }
+                state = state_pop(ctx);
+                if (state == NULL) {
+                    flb_error("no state left");
+                    return YAML_FAILURE;
+                }
                 break;
             case YAML_SCALAR_EVENT:
                 /* Check if we are entering a 'logs', 'metrics' or 'traces' section */
@@ -1095,6 +1271,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                     yaml_error_event(ctx, state, event);
                     return YAML_FAILURE;
                 }
+                if (state == NULL) {
+                    flb_error("unable to allocate state");
+                    return YAML_FAILURE;
+                }
                 break;
             default:
                 yaml_error_event(ctx, state, event);
@@ -1108,9 +1288,17 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 break;
             case YAML_SEQUENCE_END_EVENT:
                 state = state_pop(ctx);
+                if (state == NULL) {
+                    flb_error("no state left");
+                    return YAML_FAILURE;
+                }
                 break;
             case YAML_MAPPING_START_EVENT:
                 state = state_push_withvals(ctx, state, STATE_PLUGIN_START);
+                if (state == NULL) {
+                    flb_error("unable to allocate state");
+                    return YAML_FAILURE;
+                }
                 state->section = SECTION_PROCESSOR;
                 break;
             case YAML_MAPPING_END_EVENT:
@@ -1129,14 +1317,26 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             /* grab current value (key) */
             value = (char *) event->data.scalar.value;
             state = state_push_key(ctx, STATE_GROUP_VAL, value);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
             break;
         case YAML_MAPPING_START_EVENT:
             break;
         case YAML_MAPPING_END_EVENT:
-            state_pop(ctx);
+            state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             // This is also the end of the plugin values mapping.
             // So we pop an additional state off the stack.
-            state_pop(ctx);
+            state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             break;
         default:
             yaml_error_event(ctx, state, event);
@@ -1154,6 +1354,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                                         state->key, flb_sds_len(state->key),
                                         value, strlen(value));
             state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             break;
         default:
             yaml_error_event(ctx, state, event);
@@ -1209,7 +1413,9 @@ static struct parser_state *state_start(struct local_ctx *ctx, struct file_state
     struct parser_state *state;
 
     state = state_create(NULL, file);
-    cfl_list_add(&state->_head, &ctx->states);
+    if (state != NULL) {
+        cfl_list_add(&state->_head, &ctx->states);
+    }
 
     return state;
 }
@@ -1225,6 +1431,9 @@ static struct parser_state *state_push(struct local_ctx *ctx, enum state state_n
 
     last = cfl_list_entry_last(&ctx->states, struct parser_state, _head);
     state = state_create(last->file, last->file);
+    if (state == NULL) {
+        return NULL;
+    }
     state->section = last->section;
     state->keyvals = last->keyvals;
     state->cf_section = last->cf_section;
@@ -1246,6 +1455,9 @@ static struct parser_state *state_push_section(struct local_ctx *ctx,
     struct parser_state *state;
 
     state = state_push(ctx, state_num);
+    if (state == NULL) {
+        return NULL;
+    }
     state->section = section;
 
     return state;
@@ -1255,8 +1467,19 @@ static struct parser_state *state_push_key(struct local_ctx *ctx,
                                            enum state state_num,
                                            const char *key)
 {
-    struct parser_state *state = state_push(ctx, state_num);
-    state->key = flb_sds_create(key);
+    struct parser_state *state;
+    flb_sds_t skey;
+
+    skey = flb_sds_create(key);
+    if (skey == NULL) {
+        return NULL;
+    }
+    state = state_push(ctx, state_num);
+    if (state == NULL) {
+        flb_sds_destroy(skey);
+        return NULL;
+    }
+    state->key = skey;
     state->allocation_flags |= HAS_KEY;
     return state;
 }
@@ -1266,9 +1489,18 @@ static struct parser_state *state_push_withvals(struct local_ctx *ctx,
                                                 enum state state_num)
 {
     struct parser_state *state;
+    struct cfl_kvlist *kvlist;
 
+    kvlist = cfl_kvlist_create();
+    if (kvlist == NULL) {
+        return NULL;
+    }
     state = state_push(ctx, state_num);
-    state->keyvals = cfl_kvlist_create();
+    if (state == NULL) {
+        cfl_kvlist_destroy(kvlist);
+        return NULL;
+    }
+    state->keyvals = kvlist;
     state->allocation_flags |= HAS_KEYVALS;
 
     return state;
@@ -1295,6 +1527,9 @@ static struct parser_state *state_push_witharr(struct local_ctx *ctx,
 static int state_create_section(struct flb_cf *cf, struct parser_state *state, char *name)
 {
     state->cf_section = flb_cf_section_create(cf, name, 0);
+    if (state->cf_section == NULL) {
+        return -1;
+    }
     return 0;
 }
 
@@ -1335,9 +1570,6 @@ static struct parser_state *state_pop(struct local_ctx *ctx)
 
 static void state_destroy(struct parser_state *s)
 {
-    //if (s->file) {
-    //    file_state_destroy(s->file);
-    //}
     flb_free(s);
 }
 
