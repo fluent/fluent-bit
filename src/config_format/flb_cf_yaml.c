@@ -220,22 +220,22 @@ enum status {
 static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
                        struct file_state *parent, char *cfg_file);
 
-static int add_section_type(struct flb_cf *cf, struct parser_state *s)
+static int add_section_type(struct flb_cf *cf, struct parser_state *state)
 {
-    if (s->section == SECTION_INPUT) {
-        s->cf_section = flb_cf_section_create(cf, "INPUT", 0);
+    if (state->section == SECTION_INPUT) {
+        state->cf_section = flb_cf_section_create(cf, "INPUT", 0);
     }
-    else if (s->section == SECTION_FILTER) {
-        s->cf_section = flb_cf_section_create(cf, "FILTER", 0);
+    else if (state->section == SECTION_FILTER) {
+        state->cf_section = flb_cf_section_create(cf, "FILTER", 0);
     }
-    else if (s->section == SECTION_OUTPUT) {
-        s->cf_section = flb_cf_section_create(cf, "OUTPUT", 0);
+    else if (state->section == SECTION_OUTPUT) {
+        state->cf_section = flb_cf_section_create(cf, "OUTPUT", 0);
     }
-    else if (s->section == SECTION_CUSTOM) {
-        s->cf_section = flb_cf_section_create(cf, "customs", 0);
+    else if (state->section == SECTION_CUSTOM) {
+        state->cf_section = flb_cf_section_create(cf, "customs", 0);
     }
 
-    if (!s->cf_section) {
+    if (!state->cf_section) {
         return -1;
     }
 
@@ -337,7 +337,7 @@ static int read_glob(struct flb_cf *cf, struct local_ctx *ctx,
     char tmp[PATH_MAX];
 
     const char *glb_path;
-    size_t i;
+    size_t idx;
     int ret_glb = -1;
 
     if (state->file->path && path[0] != '/') {
@@ -366,8 +366,8 @@ static int read_glob(struct flb_cf *cf, struct local_ctx *ctx,
         return ret;
     }
 
-    for (i = 0; i < glb.gl_pathc; i++) {
-        ret = read_config(cf, ctx, state->file, glb.gl_pathv[i]);
+    for (idx = 0; idx < glb.gl_pathc; idx++) {
+        ret = read_config(cf, ctx, state->file, glb.gl_pathv[idx]);
         if (ret < 0) {
             break;
         }
@@ -398,7 +398,7 @@ static int read_glob(struct flb_cf *cf, struct local_ctx *ctx,
     char buf[MAX_PATH];
     int ret;
     struct stat st;
-    HANDLE h;
+    HANDLE hnd;
     WIN32_FIND_DATA data;
 
     if (strlen(path) > MAX_PATH - 1) {
@@ -431,8 +431,8 @@ static int read_glob(struct flb_cf *cf, struct local_ctx *ctx,
     memcpy(pattern, path, (p1 - path));
     pattern[p1 - path] = '\0';
 
-    h = FindFirstFileA(pattern, &data);
-    if (h == INVALID_HANDLE_VALUE) {
+    hnd = FindFirstFileA(pattern, &data);
+    if (hnd == INVALID_HANDLE_VALUE) {
         return 0;
     }
 
@@ -469,42 +469,42 @@ static int read_glob(struct flb_cf *cf, struct local_ctx *ctx,
                 return -1;
             }
         }
-    } while (FindNextFileA(h, &data) != 0);
+    } while (FindNextFileA(hnd, &data) != 0);
 
-    FindClose(h);
+    FindClose(hnd);
     return 0;
 }
 #endif
 
-static void print_current_state(struct local_ctx *ctx, struct parser_state *s,
+static void print_current_state(struct local_ctx *ctx, struct parser_state *state,
                                 yaml_event_t *event)
 {
-    flb_debug("%*s%s->%s", s->level*2, "", state_str(s->state),
+    flb_debug("%*s%s->%s", state->level*2, "", state_str(state->state),
              event_type_str(event));
 }
 
-static void print_current_properties(struct parser_state *s)
+static void print_current_properties(struct parser_state *state)
 {
     struct cfl_list *head;
     struct cfl_kvpair *kv;
     struct cfl_variant *var;
     int idx;
 
-    flb_debug("%*s[%s] PROPERTIES:", s->level*2, "", section_names[s->section]);
+    flb_debug("%*s[%s] PROPERTIES:", state->level*2, "", section_names[state->section]);
 
-    cfl_list_foreach(head, &s->keyvals->list) {
+    cfl_list_foreach(head, &state->keyvals->list) {
         kv = cfl_list_entry(head, struct cfl_kvpair, _head);
         switch (kv->val->type) {
         case CFL_VARIANT_STRING:
-            flb_debug("%*s%s: %s", (s->level+2)*2, "", kv->key, kv->val->data.as_string);
+            flb_debug("%*s%s: %s", (state->level+2)*2, "", kv->key, kv->val->data.as_string);
             break;
         case CFL_VARIANT_ARRAY:
-            flb_debug("%*s%s: [", (s->level+2)*2, "", kv->key);
+            flb_debug("%*s%s: [", (state->level+2)*2, "", kv->key);
             for (idx = 0; idx < kv->val->data.as_array->entry_count; idx++) {
                 var = cfl_array_fetch_by_index(kv->val->data.as_array, idx);
-                flb_debug("%*s%s", (s->level+3)*2, "", var->data.as_string);
+                flb_debug("%*s%s", (state->level+3)*2, "", var->data.as_string);
             }
-            flb_debug("%*s]", (s->level+2)*2, "");
+            flb_debug("%*s]", (state->level+2)*2, "");
             break;
         }
     }
@@ -512,16 +512,16 @@ static void print_current_properties(struct parser_state *s)
 
 static struct parser_state *get_current_state(struct local_ctx *ctx)
 {
-    struct parser_state *s;
-    s = cfl_list_entry_last(&ctx->states, struct parser_state, _head);
-    return s;
+    struct parser_state *state;
+    state = cfl_list_entry_last(&ctx->states, struct parser_state, _head);
+    return state;
 }
 
 static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                          yaml_event_t *event)
 {
-    struct parser_state *s;
-    struct parser_state *g;
+    struct parser_state *state;
+    struct parser_state *group_key;
     int ret;
     int idx;
     char *value;
@@ -535,24 +535,24 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
     struct cfl_array *carr;
     struct cfl_kvlist *copy;
 
-    s = get_current_state(ctx);
-    print_current_state(ctx, s, event);
+    state = get_current_state(ctx);
+    print_current_state(ctx, state, event);
 
-    switch (s->state) {
+    switch (state->state) {
     case STATE_START:
         switch (event->type) {
         case YAML_STREAM_START_EVENT:
-            s = state_push(ctx, STATE_STREAM);
-            if (s == NULL) {
+            state = state_push(ctx, STATE_STREAM);
+            if (state == NULL) {
                 flb_error("unable to allocate state");
                 return YAML_FAILURE;
             }
             break;
         case YAML_NO_EVENT:
-            s->state = STATE_STOP;
+            state->state = STATE_STOP;
             break;
         default:
-            yaml_error_event(ctx, s, event);
+            yaml_error_event(ctx, state, event);
             return YAML_FAILURE;
         }
         break;
@@ -560,13 +560,13 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
      case STATE_STREAM:
         switch (event->type) {
         case YAML_DOCUMENT_START_EVENT:
-            s = state_push(ctx, STATE_DOCUMENT);
+            state = state_push(ctx, STATE_DOCUMENT);
             break;
         case YAML_STREAM_END_EVENT:
-            s = state_pop(ctx);
+            state = state_pop(ctx);
             break;
         default:
-            yaml_error_event(ctx, s, event);
+            yaml_error_event(ctx, state, event);
             return YAML_FAILURE;
         }
         break;
@@ -574,13 +574,13 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
      case STATE_DOCUMENT:
         switch (event->type) {
         case YAML_MAPPING_START_EVENT:
-            s = state_push(ctx, STATE_SECTION);
+            state = state_push(ctx, STATE_SECTION);
             break;
         case YAML_DOCUMENT_END_EVENT:
-            s = state_pop(ctx);
+            state = state_pop(ctx);
             break;
         default:
-            yaml_error_event(ctx, s, event);
+            yaml_error_event(ctx, state, event);
             return YAML_FAILURE;
         }
         break;
@@ -594,9 +594,9 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
         case YAML_SEQUENCE_START_EVENT:
             break;
         case YAML_SEQUENCE_END_EVENT:
-            s = state_pop(ctx);
-            if (s->state != STATE_SECTION) {
-                yaml_error_event(ctx, s, event);
+            state = state_pop(ctx);
+            if (state->state != STATE_SECTION) {
+                yaml_error_event(ctx, state, event);
                 return YAML_FAILURE;
             }
             break;
@@ -604,10 +604,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             value = (char *) event->data.scalar.value;
             flb_debug("[config yaml] including: %s", value);
             if (strchr(value, '*') != NULL) {
-                ret = read_glob(cf, ctx, s, value);
+                ret = read_glob(cf, ctx, state, value);
             }
             else {
-                ret = read_config(cf, ctx, s->file, value);
+                ret = read_config(cf, ctx, state->file, value);
             }
             if (ret == -1) {
                 flb_error("[config] including file '%s' at %s:%zu",
@@ -618,7 +618,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             ctx->level++;
             break;
         default:
-            yaml_error_event(ctx, s, event);
+            yaml_error_event(ctx, state, event);
             return YAML_FAILURE;
         }
         break;
@@ -633,14 +633,14 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
         case YAML_SEQUENCE_START_EVENT:
             break;
         case YAML_MAPPING_START_EVENT:
-            s = state_push_withvals(ctx, s, STATE_PLUGIN_START);
-            add_section_type(cf, s);
+            state = state_push_withvals(ctx, state, STATE_PLUGIN_START);
+            add_section_type(cf, state);
             break;
         case YAML_SEQUENCE_END_EVENT:
             state_pop(ctx);
             break;
         default:
-            yaml_error_event(ctx, s, event);
+            yaml_error_event(ctx, state, event);
             return YAML_FAILURE;
         }
         break;
@@ -651,16 +651,16 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
         case YAML_SCALAR_EVENT:
             value = (char *)event->data.scalar.value;
             if (strcasecmp(value, "inputs") == 0) {
-                s = state_push_section(ctx, STATE_PLUGIN_INPUT, SECTION_INPUT);
+                state = state_push_section(ctx, STATE_PLUGIN_INPUT, SECTION_INPUT);
             }
             else if (strcasecmp(value, "filters") == 0) {
-                s = state_push_section(ctx, STATE_PLUGIN_FILTER, SECTION_FILTER);
+                state = state_push_section(ctx, STATE_PLUGIN_FILTER, SECTION_FILTER);
             }
             else if (strcasecmp(value, "outputs") == 0) {
-                s = state_push_section(ctx, STATE_PLUGIN_OUTPUT, SECTION_OUTPUT);
+                state = state_push_section(ctx, STATE_PLUGIN_OUTPUT, SECTION_OUTPUT);
             }
             else {
-                yaml_error_plugin_category(ctx, s, event, value);
+                yaml_error_plugin_category(ctx, state, event, value);
                 return YAML_FAILURE;
             }
             break;
@@ -670,7 +670,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             state_pop(ctx);
             break;
         default:
-            yaml_error_event(ctx, s, event);
+            yaml_error_event(ctx, state, event);
             return YAML_FAILURE;
         }
         break;
@@ -680,48 +680,48 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
         case YAML_SCALAR_EVENT:
             value = (char *)event->data.scalar.value;
             if (strcasecmp(value, "env") == 0) {
-                s = state_push_section(ctx, STATE_ENV, SECTION_ENV);
+                state = state_push_section(ctx, STATE_ENV, SECTION_ENV);
             }
             else if (strcasecmp(value, "pipeline") == 0) {
-                s = state_push_section(ctx, STATE_PIPELINE, SECTION_PIPELINE);
+                state = state_push_section(ctx, STATE_PIPELINE, SECTION_PIPELINE);
             }
             else if (strcasecmp(value, "service") == 0) {
                 if (ctx->service_set) {
-                    yaml_error_definition(ctx, s, event, value);
+                    yaml_error_definition(ctx, state, event, value);
                     return YAML_FAILURE;
                 }
-                s = state_push_section(ctx, STATE_SERVICE, SECTION_SERVICE);
-                state_create_section(cf, s, value);
-                if (!s->cf_section) {
+                state = state_push_section(ctx, STATE_SERVICE, SECTION_SERVICE);
+                state_create_section(cf, state, value);
+                if (!state->cf_section) {
                     flb_error("unable to allocate section: %s", value);
                     return YAML_FAILURE;
                 }
                 ctx->service_set = 1;
             }
             else if (strcasecmp(value, "customs") == 0) {
-                s = state_push_section(ctx, STATE_CUSTOM, SECTION_CUSTOM);
+                state = state_push_section(ctx, STATE_CUSTOM, SECTION_CUSTOM);
             }
             else if (strcasecmp(value, "includes") == 0) {
-                s = state_push_section(ctx, STATE_INCLUDE, SECTION_INCLUDE);
+                state = state_push_section(ctx, STATE_INCLUDE, SECTION_INCLUDE);
             }
             else {
                 /* any other main section definition (e.g: similar to STATE_SERVICE) */
-                s = state_push(ctx, STATE_OTHER);
-                state_create_section(cf, s, value);
-                if (!s->cf_section) {
+                state = state_push(ctx, STATE_OTHER);
+                state_create_section(cf, state, value);
+                if (!state->cf_section) {
                     flb_error("unable to allocate section: %s", value);
                     return YAML_FAILURE;
                 }
             }
             break;
         case YAML_MAPPING_END_EVENT:
-            s = state_pop(ctx);
+            state = state_pop(ctx);
             break;
         case YAML_DOCUMENT_END_EVENT:
-            s = state_pop(ctx);
+            state = state_pop(ctx);
             break;
         default:
-            yaml_error_event(ctx, s, event);
+            yaml_error_event(ctx, state, event);
             return YAML_FAILURE;
         }
         break;
@@ -735,14 +735,14 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             state_push(ctx, STATE_SECTION_KEY);
             break;
         case YAML_MAPPING_END_EVENT:
-            s = state_pop(ctx);
-            if (s->state != STATE_SECTION) {
-                yaml_error_event(ctx, s, event);
+            state = state_pop(ctx);
+            if (state->state != STATE_SECTION) {
+                yaml_error_event(ctx, state, event);
                 return YAML_FAILURE;
             }
             break;
         default:
-            yaml_error_event(ctx, s, event);
+            yaml_error_event(ctx, state, event);
             return YAML_FAILURE;
         }
         break;
@@ -751,24 +751,24 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
         switch(event->type) {
         case YAML_SCALAR_EVENT:
             value = (char *) event->data.scalar.value;
-            s = state_push_key(ctx, STATE_SECTION_VAL, value);
+            state = state_push_key(ctx, STATE_SECTION_VAL, value);
             break;
         case YAML_MAPPING_END_EVENT:
-            s = state_pop(ctx);
-            switch (s->state) {
+            state = state_pop(ctx);
+            switch (state->state) {
             case STATE_SERVICE:
             case STATE_ENV:
             case STATE_OTHER:
                 break;
             default:
-                printf("BAD STATE FOR SECTION KEY POP=%s\n", state_str(s->state));
-                yaml_error_event(ctx, s, event);
+                printf("BAD STATE FOR SECTION KEY POP=%s\n", state_str(state->state));
+                yaml_error_event(ctx, state, event);
                 return YAML_FAILURE;
             }
-            s = state_pop(ctx);
+            state = state_pop(ctx);
             break;
         default:
-            yaml_error_event(ctx, s, event);
+            yaml_error_event(ctx, state, event);
             return YAML_FAILURE;
         }
         break;
@@ -778,9 +778,9 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
         case YAML_SCALAR_EVENT:
             value = (char *) event->data.scalar.value;
             /* Check if the incoming k/v pair set a config environment variable */
-            if (s->section == SECTION_ENV) {
+            if (state->section == SECTION_ENV) {
                 kv = flb_cf_env_property_add(cf,
-                                             s->key, flb_sds_len(s->key),
+                                             state->key, flb_sds_len(state->key),
                                              value, strlen(value));
                 if (kv == NULL) {
                     flb_error("unable to add key value");
@@ -789,26 +789,26 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             }
             else {
                 /* register key/value pair as a property */
-                if (s->cf_section == NULL) {
+                if (state->cf_section == NULL) {
                     flb_error("no section to register key value to");
                     return YAML_FAILURE;
                 }
-                if (flb_cf_section_property_add(cf, s->cf_section->properties,
-                                                s->key, flb_sds_len(s->key),
+                if (flb_cf_section_property_add(cf, state->cf_section->properties,
+                                                state->key, flb_sds_len(state->key),
                                                 value, strlen(value)) < 0) {
                     flb_error("unable to add property");
                     return YAML_FAILURE;
                 }
             }
 
-            s = state_pop(ctx);
-            if (s->state != STATE_SECTION_KEY) {
-                yaml_error_event(ctx, s, event);
+            state = state_pop(ctx);
+            if (state->state != STATE_SECTION_KEY) {
+                yaml_error_event(ctx, state, event);
                 return YAML_FAILURE;
             }
             break;
         default:
-            yaml_error_event(ctx, s, event);
+            yaml_error_event(ctx, state, event);
             return YAML_FAILURE;
         }
         break;
@@ -821,28 +821,28 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
         case YAML_SEQUENCE_START_EVENT:
             break;
         case YAML_SEQUENCE_END_EVENT:
-            s = state_pop(ctx);
+            state = state_pop(ctx);
             break;
         case YAML_MAPPING_START_EVENT:
-            s = state_push_withvals(ctx, s, STATE_PLUGIN_START);
-            add_section_type(cf, s);
+            state = state_push_withvals(ctx, state, STATE_PLUGIN_START);
+            add_section_type(cf, state);
             break;
         case YAML_SCALAR_EVENT:
-            s = state_pop(ctx);
-            if (s->state != STATE_SECTION) {
-                yaml_error_event(ctx, s, event);
+            state = state_pop(ctx);
+            if (state->state != STATE_SECTION) {
+                yaml_error_event(ctx, state, event);
                 return YAML_FAILURE;
             }
             break;
         case YAML_MAPPING_END_EVENT:
-            s = state_pop(ctx);
-            if (s->state != STATE_SECTION_KEY) {
-                yaml_error_event(ctx, s, event);
+            state = state_pop(ctx);
+            if (state->state != STATE_SECTION_KEY) {
+                yaml_error_event(ctx, state, event);
                 return YAML_FAILURE;
             }
             break;
         default:
-            yaml_error_event(ctx, s, event);
+            yaml_error_event(ctx, state, event);
             return YAML_FAILURE;
         }
         break;
@@ -853,29 +853,29 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             /* Here is where we process all the plugin properties for customs, pipelines
              * and processors.
              */
-            s = state_push_key(ctx, STATE_PLUGIN_VAL, (char *) event->data.scalar.value);
+            state = state_push_key(ctx, STATE_PLUGIN_VAL, (char *) event->data.scalar.value);
             break;
         case YAML_MAPPING_END_EVENT:
-            print_current_properties(s);
+            print_current_properties(state);
 
-            if (s->section == SECTION_PROCESSOR) {
+            if (state->section == SECTION_PROCESSOR) {
 
-                if (s->cf_group == NULL) {
+                if (state->cf_group == NULL) {
                     flb_error("no group for processor properties");
                     return YAML_FAILURE;
                 }
 
-                varr = cfl_kvlist_fetch(s->cf_group->properties, s->key);
+                varr = cfl_kvlist_fetch(state->cf_group->properties, state->key);
                 if (varr == NULL) {
                     arr = cfl_array_create(1);
                     cfl_array_resizable(arr, CFL_TRUE);
-                    cfl_kvlist_insert_array(s->cf_group->properties, s->key, arr);
+                    cfl_kvlist_insert_array(state->cf_group->properties, state->key, arr);
                 } else {
                     arr = varr->data.as_array;
                 }
 
                 copy = cfl_kvlist_create();
-                cfl_list_foreach(head, &s->keyvals->list) {
+                cfl_list_foreach(head, &state->keyvals->list) {
                     kvp = cfl_list_entry(head, struct cfl_kvpair, _head);
                     switch (kvp->val->type) {
                     case CFL_VARIANT_STRING:
@@ -907,12 +907,12 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 break;
             }
 
-            cfl_list_foreach(head, &s->keyvals->list) {
+            cfl_list_foreach(head, &state->keyvals->list) {
                 kvp = cfl_list_entry(head, struct cfl_kvpair, _head);
                 switch (kvp->val->type) {
                 case CFL_VARIANT_STRING:
                     var = flb_cf_section_property_add(cf,
-                                                    s->cf_section->properties,
+                                                    state->cf_section->properties,
                                                     kvp->key,
                                                     cfl_sds_len(kvp->key),
                                                     kvp->val->data.as_string,
@@ -923,7 +923,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                     }
                     break;
                 case CFL_VARIANT_ARRAY:
-                    arr = flb_cf_section_property_add_list(cf, s->cf_section->properties,
+                    arr = flb_cf_section_property_add_list(cf, state->cf_section->properties,
                                                            kvp->key, cfl_sds_len(kvp->key));
                     for (idx = 0; idx < kvp->val->data.as_array->entry_count; idx++) {
                         var = cfl_array_fetch_by_index(kvp->val->data.as_array, idx);
@@ -942,24 +942,24 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                     return YAML_FAILURE;
                 }
             }
-            s = state_pop(ctx);
+            state = state_pop(ctx);
             break;
         case YAML_SEQUENCE_START_EVENT: /* start a new group */
-            if (strcmp(s->key, "processors") == 0) {
-                yaml_error_event(ctx, s, event);
+            if (strcmp(state->key, "processors") == 0) {
+                yaml_error_event(ctx, state, event);
                 return YAML_FAILURE;
             }
-            if (s->key == NULL) {
+            if (state->key == NULL) {
                 flb_error("no key");
                 return YAML_FAILURE;
             }
-            state_push_witharr(ctx, s, STATE_PLUGIN_VAL_LIST);
+            state_push_witharr(ctx, state, STATE_PLUGIN_VAL_LIST);
             break;
         case YAML_SEQUENCE_END_EVENT:
-            s = state_pop(ctx);
+            state = state_pop(ctx);
             break;
         default:
-            yaml_error_event(ctx, s, event);
+            yaml_error_event(ctx, state, event);
             return YAML_FAILURE;
         }
         break;
@@ -970,27 +970,27 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             /* Here is where we process all the plugin properties for customs, pipelines
              * and processors.
              */
-            s = state_push_key(ctx, STATE_PLUGIN_VAL, (char *) event->data.scalar.value);
+            state = state_push_key(ctx, STATE_PLUGIN_VAL, (char *) event->data.scalar.value);
             break;
         case YAML_MAPPING_START_EVENT:
-            s = state_pop(ctx);
-            if (s->state != STATE_PLUGIN_START) {
-                yaml_error_event(ctx, s, event);
+            state = state_pop(ctx);
+            if (state->state != STATE_PLUGIN_START) {
+                yaml_error_event(ctx, state, event);
                 return YAML_FAILURE;
             }
             break;
         case YAML_MAPPING_END_EVENT:
-            s = state_pop(ctx);
-            if (s->state != STATE_PLUGIN_START) {
-                yaml_error_event(ctx, s, event);
+            state = state_pop(ctx);
+            if (state->state != STATE_PLUGIN_START) {
+                yaml_error_event(ctx, state, event);
                 return YAML_FAILURE;
             }
             break;
         case YAML_SEQUENCE_END_EVENT:
-            s = state_pop(ctx);
+            state = state_pop(ctx);
             break;
         default:
-            yaml_error_event(ctx, s, event);
+            yaml_error_event(ctx, state, event);
             return YAML_FAILURE;
         }
         break;
@@ -999,48 +999,48 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
         switch(event->type) {
         case YAML_SCALAR_EVENT:
             /* register key/value pair as a property */
-            cfl_kvlist_insert_string(s->keyvals, s->key, (char *)event->data.scalar.value);
-            s = state_pop(ctx);
+            cfl_kvlist_insert_string(state->keyvals, state->key, (char *)event->data.scalar.value);
+            state = state_pop(ctx);
             break;
         case YAML_SEQUENCE_START_EVENT: /* start a new group */
-            s = state_push_witharr(ctx, s, STATE_PLUGIN_VAL_LIST);
+            state = state_push_witharr(ctx, state, STATE_PLUGIN_VAL_LIST);
             break;
         case YAML_MAPPING_START_EVENT:
             /* Special handling for input processor */
-            if (strcmp(s->key, "processors") == 0) {
-                s = state_push(ctx, STATE_INPUT_PROCESSORS);
-                state_create_group(cf, s, "processors");
+            if (strcmp(state->key, "processors") == 0) {
+                state = state_push(ctx, STATE_INPUT_PROCESSORS);
+                state_create_group(cf, state, "processors");
                 break;
             }
 
-            g = state_push(ctx, STATE_GROUP_KEY);
+            group_key = state_push(ctx, STATE_GROUP_KEY);
             /* create group */
-            s->values = flb_cf_section_property_add_list(cf,
-                                                         s->cf_section->properties,
-                                                         s->key, flb_sds_len(s->key));
-            if (s->values == NULL) {
+            state->values = flb_cf_section_property_add_list(cf,
+                                                             state->cf_section->properties,
+                                                             state->key, flb_sds_len(state->key));
+            if (state->values == NULL) {
                 flb_error("no values");
                 return YAML_FAILURE;
             }
-            g->cf_group = flb_cf_group_create(cf, s->cf_section, s->key, strlen(s->key));
+            group_key->cf_group = flb_cf_group_create(cf, state->cf_section, state->key, strlen(state->key));
             break;
         case YAML_SEQUENCE_END_EVENT:   /* end of group */
-            s = state_pop(ctx);
-            if (s->state != STATE_PLUGIN_KEY) {
-                yaml_error_event(ctx, s, event);
+            state = state_pop(ctx);
+            if (state->state != STATE_PLUGIN_KEY) {
+                yaml_error_event(ctx, state, event);
                 return YAML_FAILURE;
             }
-            s = state_pop(ctx);
-            if (s->state != STATE_PLUGIN_KEY) {
-                yaml_error_event(ctx, s, event);
+            state = state_pop(ctx);
+            if (state->state != STATE_PLUGIN_KEY) {
+                yaml_error_event(ctx, state, event);
                 return YAML_FAILURE;
             }
             break;
         case YAML_MAPPING_END_EVENT:
-            s = state_pop(ctx);
+            state = state_pop(ctx);
             break;
         default:
-            yaml_error_event(ctx, s, event);
+            yaml_error_event(ctx, state, event);
             return YAML_FAILURE;
         }
         break;
@@ -1048,20 +1048,20 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
     case STATE_PLUGIN_VAL_LIST:
         switch(event->type) {
         case YAML_SCALAR_EVENT:
-            if (s->values == NULL) {
+            if (state->values == NULL) {
                 flb_error("unable to add values to list");
                 return YAML_FAILURE;
             }
-            cfl_array_append_string(s->values, (char *)event->data.scalar.value);
+            cfl_array_append_string(state->values, (char *)event->data.scalar.value);
             break;
         case YAML_SEQUENCE_END_EVENT:
             /* register key/value pair as a property */
-            cfl_kvlist_insert_array(s->keyvals, s->key, s->values);
-            s = state_pop(ctx);
-            s = state_pop(ctx);
+            cfl_kvlist_insert_array(state->keyvals, state->key, state->values);
+            state = state_pop(ctx);
+            state = state_pop(ctx);
             break;
         default:
-            yaml_error_event(ctx, s, event);
+            yaml_error_event(ctx, state, event);
             return YAML_FAILURE;
         }
         break;
@@ -1080,24 +1080,24 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 value = (char *) event->data.scalar.value;
                 if (strcasecmp(value, "logs") == 0) {
                     /* logs state */
-                    s = state_push_key(ctx, STATE_INPUT_PROCESSOR, "logs");
+                    state = state_push_key(ctx, STATE_INPUT_PROCESSOR, "logs");
                 }
                 else if (strcasecmp(value, "metrics") == 0) {
                     /* metrics state */
-                    s = state_push_key(ctx, STATE_INPUT_PROCESSOR, "metrics");
+                    state = state_push_key(ctx, STATE_INPUT_PROCESSOR, "metrics");
                 }
                 else if (strcasecmp(value, "traces") == 0) {
                     /* metrics state */
-                    s = state_push_key(ctx, STATE_INPUT_PROCESSOR, "traces");
+                    state = state_push_key(ctx, STATE_INPUT_PROCESSOR, "traces");
                 }
                 else {
                     flb_error("[config] unknown processor '%s'", value);
-                    yaml_error_event(ctx, s, event);
+                    yaml_error_event(ctx, state, event);
                     return YAML_FAILURE;
                 }
                 break;
             default:
-                yaml_error_event(ctx, s, event);
+                yaml_error_event(ctx, state, event);
                 return YAML_FAILURE;
         };
         break;
@@ -1107,17 +1107,17 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             case YAML_SEQUENCE_START_EVENT:
                 break;
             case YAML_SEQUENCE_END_EVENT:
-                s = state_pop(ctx);
+                state = state_pop(ctx);
                 break;
             case YAML_MAPPING_START_EVENT:
-                s = state_push_withvals(ctx, s, STATE_PLUGIN_START);
-                s->section = SECTION_PROCESSOR;
+                state = state_push_withvals(ctx, state, STATE_PLUGIN_START);
+                state->section = SECTION_PROCESSOR;
                 break;
             case YAML_MAPPING_END_EVENT:
                 return YAML_FAILURE;
                 break;
             default:
-                yaml_error_event(ctx, s, event);
+                yaml_error_event(ctx, state, event);
                 return YAML_FAILURE;
         };
         break;
@@ -1128,7 +1128,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
         case YAML_SCALAR_EVENT:
             /* grab current value (key) */
             value = (char *) event->data.scalar.value;
-            s = state_push_key(ctx, STATE_GROUP_VAL, value);
+            state = state_push_key(ctx, STATE_GROUP_VAL, value);
             break;
         case YAML_MAPPING_START_EVENT:
             break;
@@ -1139,7 +1139,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             state_pop(ctx);
             break;
         default:
-            yaml_error_event(ctx, s, event);
+            yaml_error_event(ctx, state, event);
             return YAML_FAILURE;
         }
         break;
@@ -1150,13 +1150,13 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             // s->state = STATE_GROUP_KEY;
             value = (char *) event->data.scalar.value;
             /* add the kv pair to the active group properties */
-            flb_cf_section_property_add(cf, s->cf_group->properties,
-                                        s->key, flb_sds_len(s->key),
+            flb_cf_section_property_add(cf, state->cf_group->properties,
+                                        state->key, flb_sds_len(state->key),
                                         value, strlen(value));
-            s = state_pop(ctx);
+            state = state_pop(ctx);
             break;
         default:
-            yaml_error_event(ctx, s, event);
+            yaml_error_event(ctx, state, event);
             return YAML_FAILURE;
         }
         break;
@@ -1206,81 +1206,79 @@ static char *get_real_path(char *file, char *path, size_t size)
 
 static struct parser_state *state_start(struct local_ctx *ctx, struct file_state *file)
 {
-    struct parser_state *s;
+    struct parser_state *state;
 
-    s = state_create(NULL, file);
-    cfl_list_add(&s->_head, &ctx->states);
+    state = state_create(NULL, file);
+    cfl_list_add(&state->_head, &ctx->states);
 
-    return s;
+    return state;
 }
 
-static struct parser_state *state_push(struct local_ctx *ctx, enum state state)
+static struct parser_state *state_push(struct local_ctx *ctx, enum state state_num)
 {
-    struct parser_state *l = NULL;
-    struct parser_state *s;
+    struct parser_state *last = NULL;
+    struct parser_state *state;
 
     if (cfl_list_size(&ctx->states) <= 0) {
         return NULL;
     }
 
-    l = cfl_list_entry_last(&ctx->states, struct parser_state, _head);
-    s = state_create(l->file, l->file);
-    s->section = l->section;
-    s->keyvals = l->keyvals;
-    s->cf_section = l->cf_section;
-    s->cf_group = l->cf_group;
-    s->values = l->values;
-    s->file = l->file;
-    s->state = state;
-    s->level = l->level + 1;
-    s->key = l->key;
+    last = cfl_list_entry_last(&ctx->states, struct parser_state, _head);
+    state = state_create(last->file, last->file);
+    state->section = last->section;
+    state->keyvals = last->keyvals;
+    state->cf_section = last->cf_section;
+    state->cf_group = last->cf_group;
+    state->values = last->values;
+    state->file = last->file;
+    state->state = state_num;
+    state->level = last->level + 1;
+    state->key = last->key;
 
-    cfl_list_add(&s->_head, &ctx->states);
-    return s;
+    cfl_list_add(&state->_head, &ctx->states);
+    return state;
 }
 
 static struct parser_state *state_push_section(struct local_ctx *ctx,
-                                               enum state state,
+                                               enum state state_num,
                                                enum section section)
 {
-    struct parser_state *s;
+    struct parser_state *state;
 
-    s = state_push(ctx, state);
-    s->section = section;
+    state = state_push(ctx, state_num);
+    state->section = section;
 
-    return s;
+    return state;
 }
 
-static struct parser_state *state_push_key(struct local_ctx *ctx, enum state state,
+static struct parser_state *state_push_key(struct local_ctx *ctx,
+                                           enum state state_num,
                                            const char *key)
 {
-    struct parser_state *s = state_push(ctx, state);
-    s->key = flb_sds_create(key);
-    s->allocation_flags |= HAS_KEY;
-    return s;
+    struct parser_state *state = state_push(ctx, state_num);
+    state->key = flb_sds_create(key);
+    state->allocation_flags |= HAS_KEY;
+    return state;
 }
 
 static struct parser_state *state_push_withvals(struct local_ctx *ctx,
                                                 struct parser_state *parent,
-                                                enum state state)
+                                                enum state state_num)
 {
-    struct parser_state *s;
+    struct parser_state *state;
 
-    // if (parent->keyvals != NULL) {
-    //    cfl_kvlist_destroy(parent->keyvals);
-    // }
-    s = state_push(ctx, state);
-    s->keyvals = cfl_kvlist_create();
-    s->allocation_flags |= HAS_KEYVALS;
+    state = state_push(ctx, state_num);
+    state->keyvals = cfl_kvlist_create();
+    state->allocation_flags |= HAS_KEYVALS;
 
-    return s;
+    return state;
 }
 
 static struct parser_state *state_push_witharr(struct local_ctx *ctx,
                                                struct parser_state *parent,
-                                               enum state state)
+                                               enum state state_num)
 {
-    struct parser_state *s;
+    struct parser_state *state;
 
     parent->values = cfl_array_create(4);
     if (parent->values == NULL) {
@@ -1289,22 +1287,22 @@ static struct parser_state *state_push_witharr(struct local_ctx *ctx,
     }
     cfl_array_resizable(parent->values, CFL_TRUE);
 
-    s = state_push(ctx, state);
+    state = state_push(ctx, state_num);
 
-    return s;
+    return state;
 }
 
-static int state_create_section(struct flb_cf *cf, struct parser_state *s, char *name)
+static int state_create_section(struct flb_cf *cf, struct parser_state *state, char *name)
 {
-    s->cf_section = flb_cf_section_create(cf, name, 0);
+    state->cf_section = flb_cf_section_create(cf, name, 0);
     return 0;
 }
 
-static int state_create_group(struct flb_cf *cf, struct parser_state *s, char *name)
+static int state_create_group(struct flb_cf *cf, struct parser_state *state, char *name)
 {
-    s->cf_group = flb_cf_group_create(cf, s->cf_section,
-                                    "processors", strlen("processors"));
-    if (s->cf_group == NULL) {
+    state->cf_group = flb_cf_group_create(cf, state->cf_section,
+                                          "processors", strlen("processors"));
+    if (state->cf_group == NULL) {
         flb_error("unable to create new processors section group");
         return YAML_FAILURE;
     }
@@ -1345,42 +1343,26 @@ static void state_destroy(struct parser_state *s)
 
 static struct parser_state *state_create(struct file_state *parent, struct file_state *file)
 {
-    struct parser_state *s;
+    struct parser_state *state;
 
     /* allocate context */
-    s = flb_calloc(1, sizeof(struct parser_state));
-    if (!s) {
+    state = flb_calloc(1, sizeof(struct parser_state));
+    if (!state) {
         flb_errno();
         return NULL;
     }
 
-    s->file = file;
+    state->file = file;
 #ifndef FLB_HAVE_STATIC_CONF
     if (parent) {
-       s->file->parent = parent;
+       state->file->parent = parent;
     }
-
-    /* resolve real path for caller file and target file */
-    /* check if the file exists */
-    /*
-    ret = stat(file, &st);
-    if (ret == 0) {
-        p = get_real_path(file, file_path, PATH_MAX + 1);
-        s->file->name = flb_sds_create(file);
-        s->file->path = flb_sds_create(file_path);
-    }
-    else if (errno == ENOENT && parent && parent->path != NULL) {
-        snprintf(file_path, PATH_MAX, "%s/%s", parent->path, file);
-        s->file->name = flb_sds_create(file_path);
-        s->file->path = flb_sds_create(parent->path);
-    }
-    */
 #else
     s->file->name = flb_sds_create("***static***");
     s->file->path = flb_sds_create("***static***");
 #endif
 
-    return s;
+    return state;
 }
 
 static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
@@ -1395,7 +1377,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     yaml_parser_t parser;
     yaml_event_t event;
     FILE *fh;
-    struct file_state f;
+    struct file_state fstate;
 
     if (parent && cfg_file[0] != '/') {
         file = flb_sds_create_size(strlen(cfg_file) + strlen(parent->path));
@@ -1409,12 +1391,12 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     }
 
     include_file = flb_sds_create(file);
-    f.name = basename(file);
-    f.path = dirname(file);
+    fstate.name = basename(file);
+    fstate.path = dirname(file);
 
-    f.parent = parent;
+    fstate.parent = parent;
 
-    state = state_start(ctx, &f);
+    state = state_start(ctx, &fstate);
     if (!state) {
         flb_error("unable to push initial include file state: %s", cfg_file);
         return -1;
