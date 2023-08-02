@@ -151,7 +151,7 @@ jobs:
         with:
           path: |
             C:\vcpkg\packages
-          key: ${{ steps.cache-vcpkg-sources.outputs.cache-primary-key }}-${{ steps.get-date.outputs.date }}
+          key: ${{ steps.cache-vcpkg-sources.outputs.cache-primary-key }}
           enableCrossOsArchive: false
 
       - name: Build Fluent Bit packages
