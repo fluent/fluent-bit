@@ -699,14 +699,14 @@ int cio_file_delete(struct cio_ctx *ctx, struct cio_stream *st, const char *name
     char *path;
     int   ret;
 
-    ret = cio_file_native_filename_check(name);
+    ret = cio_file_native_filename_check((char *) name);
     if (ret != CIO_OK) {
         cio_log_error(ctx, "[cio file] invalid file name");
 
         return CIO_ERROR;
     }
 
-    path = cio_file_native_compose_path(ctx->options.root_path, st->name, name);
+    path = cio_file_native_compose_path(ctx->options.root_path, st->name, (char *) name);
     if (path == NULL) {
         return CIO_ERROR;
     }
@@ -890,6 +890,7 @@ void cio_file_close(struct cio_chunk *ch, int delete)
     free(cf);
 }
 
+
 int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
 {
     int ret;
@@ -920,19 +921,14 @@ int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
     /* get available size */
     av_size = get_available_size(cf, &meta_len);
 
+    cf->realloc_size = (512 * 1024);
+
     /* validate there is enough space, otherwise resize */
     if (av_size < count) {
-        /* Set the pre-content size (chunk header + metadata) */
         pre_content = (CIO_FILE_HEADER_MIN + meta_len);
-
         new_size = cf->alloc_size + cf->realloc_size;
-        while (new_size < (pre_content + cf->data_size + count)) {
-            new_size += cf->realloc_size;
-        }
 
-        old_size = cf->alloc_size;
         new_size = ROUND_UP(new_size, ch->ctx->page_size);
-
         ret = cio_file_resize(cf, new_size);
 
         if (ret != CIO_OK) {
@@ -1069,7 +1065,7 @@ int cio_file_sync(struct cio_chunk *ch)
         return -1;
     }
 
-    /* If there are extra space, truncate the file size */
+    /* If there are extra space, truncate the file size 
     av_size = get_available_size(cf, &meta_len);
 
     if (av_size > 0) {
@@ -1093,7 +1089,7 @@ int cio_file_sync(struct cio_chunk *ch)
             return ret;
         }
     }
-
+    */
     /* Finalize CRC32 checksum */
     if (ch->ctx->options.flags & CIO_CHECKSUM) {
         finalize_checksum(cf);
