@@ -1634,6 +1634,8 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     state = state_start(ctx, &fstate);
     if (!state) {
         flb_error("unable to push initial include file state: %s", cfg_file);
+        flb_sds_destroy(cfg_file);
+        flb_sds_destroy(include_file);
         return -1;
     }
 
@@ -1641,6 +1643,8 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     ret = is_file_included(ctx, include_file);
     if (ret) {
         flb_error("[config] file '%s' is already included", cfg_file);
+        flb_sds_destroy(cfg_file);
+        flb_sds_destroy(include_file);
         state_destroy(state);
         return -1;
     }
@@ -1649,6 +1653,8 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     fh = fopen(include_file, "r");
     if (!fh) {
         flb_errno();
+        flb_sds_destroy(cfg_file);
+        flb_sds_destroy(include_file);
         state_destroy(state);
         return -1;
     }
@@ -1658,6 +1664,8 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     if (ret == -1) {
         flb_error("[config] could not register file %s", cfg_file);
         fclose(fh);
+        flb_sds_destroy(cfg_file);
+        flb_sds_destroy(include_file);
         state_destroy(state);
         return -1;
     }
@@ -1690,7 +1698,6 @@ done:
     }
 
     yaml_parser_delete(&parser);
-    // state_destroy(state);
     state_pop(ctx);
 
     fclose(fh);
