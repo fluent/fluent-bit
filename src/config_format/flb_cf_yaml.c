@@ -334,14 +334,17 @@ static int read_glob(struct flb_cf *cf, struct local_ctx *ctx,
 {
     int ret = -1;
     glob_t glb;
-    char tmp[PATH_MAX];
+    char tmp[PATH_MAX+1];
 
     const char *glb_path;
     size_t idx;
     int ret_glb = -1;
 
     if (state->file->path && path[0] != '/') {
-        snprintf(tmp, PATH_MAX, "%s/%s", state->file->path, path);
+        ret = snprintf(tmp, PATH_MAX, "%s/%s", state->file->path, path);
+        if (ret > PATH_MAX) {
+            return -1;
+        }
         glb_path = tmp;
     }
     else {
