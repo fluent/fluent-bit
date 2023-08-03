@@ -1518,7 +1518,7 @@ static struct parser_state *state_push_witharr(struct local_ctx *ctx,
     parent->values = cfl_array_create(4);
     if (parent->values == NULL) {
         flb_error("no value");
-        return YAML_FAILURE;
+        return NULL;
     }
     cfl_array_resizable(parent->values, CFL_TRUE);
 
