@@ -706,19 +706,21 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
             mk_list_del(&conn->_head);
             mk_list_add(&conn->_head, &uq->busy_queue);
 
-            /* Reset errno */
-            conn->net_error = -1;
-
             err = flb_socket_error(conn->fd);
 
             if (!FLB_EINPROGRESS(err) && err != 0) {
                 flb_debug("[upstream] KA connection #%i is in a failed state "
                           "to: %s:%i, cleaning up",
                           conn->fd, u->tcp_host, u->tcp_port);
-                prepare_destroy_conn_safe(conn);
+
+                prepare_destroy_conn(conn);
                 conn = NULL;
+
                 continue;
             }
+
+            /* Reset errno */
+            conn->net_error = -1;
 
             /* Connect timeout */
             conn->ts_assigned = time(NULL);
@@ -788,7 +790,8 @@ int flb_upstream_conn_release(struct flb_connection *conn)
     /* If this is a valid KA connection just recycle */
     if (u->base.net.keepalive == FLB_TRUE &&
         conn->recycle == FLB_TRUE &&
-        conn->fd > -1) {
+        conn->fd > -1 &&
+        conn->net_error == -1) {
         /*
          * This connection is still useful, move it to the 'available' queue and
          * initialize variables.
