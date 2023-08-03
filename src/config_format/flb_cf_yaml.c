@@ -111,37 +111,6 @@ enum state {
     STATE_STOP            /* end state */
 };
 
-static char *state_str(enum state val)
-{
-    switch (val) {
-        case STATE_START: return "start";
-        case STATE_STREAM: return "stream";
-        case STATE_DOCUMENT: return "document";
-        case STATE_SECTION: return "section";
-        case STATE_SECTION_KEY: return "section-key";
-        case STATE_SECTION_VAL: return "section-value";
-        case STATE_SERVICE: return "service";
-        case STATE_INCLUDE: return "include";
-        case STATE_OTHER: return "other";
-        case STATE_CUSTOM: return "custom";
-        case STATE_PIPELINE: return "pipeline";
-        case STATE_PLUGIN_INPUT: return "input";
-        case STATE_PLUGIN_FILTER: return "filter";
-        case STATE_PLUGIN_OUTPUT: return "output";
-        case STATE_PLUGIN_START: return "plugin-start";
-        case STATE_PLUGIN_KEY: return "plugin-key";
-        case STATE_PLUGIN_VAL: return "plugin-value";
-        case STATE_PLUGIN_VAL_LIST: return "plugin-values";
-        case STATE_GROUP_KEY: return "group-key";
-        case STATE_GROUP_VAL: return "group-val";
-        case STATE_INPUT_PROCESSORS: return "processors";
-        case STATE_INPUT_PROCESSOR: return "processor";
-        case STATE_ENV: return "env";
-        case STATE_STOP: return "stop";
-        default: return "unknown";
-    }
-}
-
 struct file_state {
     /* file */
     flb_sds_t name;                /* file name */
@@ -193,6 +162,12 @@ struct local_ctx {
     int service_set;
 };
 
+/* yaml_* functions return 1 on success and 0 on failure. */
+enum status {
+    YAML_SUCCESS = 1,
+    YAML_FAILURE = 0
+};
+
 static struct parser_state *state_push(struct local_ctx *, enum state);
 static struct parser_state *state_push_withvals(struct local_ctx *,
                                                 struct parser_state *,
@@ -210,14 +185,40 @@ static struct parser_state *state_pop(struct local_ctx *ctx);
 static struct parser_state *state_create(struct file_state *parent, struct file_state *file);
 static void state_destroy(struct parser_state *s);
 
-/* yaml_* functions return 1 on success and 0 on failure. */
-enum status {
-    YAML_SUCCESS = 1,
-    YAML_FAILURE = 0
-};
 
 static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
                        struct file_state *parent, char *cfg_file);
+
+static char *state_str(enum state val)
+{
+    switch (val) {
+        case STATE_START: return "start";
+        case STATE_STREAM: return "stream";
+        case STATE_DOCUMENT: return "document";
+        case STATE_SECTION: return "section";
+        case STATE_SECTION_KEY: return "section-key";
+        case STATE_SECTION_VAL: return "section-value";
+        case STATE_SERVICE: return "service";
+        case STATE_INCLUDE: return "include";
+        case STATE_OTHER: return "other";
+        case STATE_CUSTOM: return "custom";
+        case STATE_PIPELINE: return "pipeline";
+        case STATE_PLUGIN_INPUT: return "input";
+        case STATE_PLUGIN_FILTER: return "filter";
+        case STATE_PLUGIN_OUTPUT: return "output";
+        case STATE_PLUGIN_START: return "plugin-start";
+        case STATE_PLUGIN_KEY: return "plugin-key";
+        case STATE_PLUGIN_VAL: return "plugin-value";
+        case STATE_PLUGIN_VAL_LIST: return "plugin-values";
+        case STATE_GROUP_KEY: return "group-key";
+        case STATE_GROUP_VAL: return "group-val";
+        case STATE_INPUT_PROCESSORS: return "processors";
+        case STATE_INPUT_PROCESSOR: return "processor";
+        case STATE_ENV: return "env";
+        case STATE_STOP: return "stop";
+        default: return "unknown";
+    }
+}
 
 static int add_section_type(struct flb_cf *cf, struct parser_state *state)
 {
