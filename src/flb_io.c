@@ -624,6 +624,9 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_coro *co,
 
             goto retry_read;
         }
+        else {
+            net_io_propagate_critical_error(connection);
+        }
 
         ret = -1;
     }
