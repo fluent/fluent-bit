@@ -401,6 +401,8 @@ struct flb_output_instance {
     /* Queue for singleplexed tasks */
     struct flb_task_queue *singleplex_queue;
 
+    int concurrent_flush_limit;
+
     /* Thread Pool: this is optional for the caller */
     int tp_workers;
     struct flb_tp *tp;
@@ -437,9 +439,99 @@ struct flb_output_instance {
     struct mk_list flush_list;
     struct mk_list flush_list_destroy;
 
+    /*
+     * flush activation and concurrent flush limit
+     * -------------------------------------------
+     * In order to be able to limit how many flush coroutines run concurrently
+     * for a specific route when operating in threaded mode we need to have a
+     * lock, a counter that accounts for those coroutines that are currently
+     * running and those that are scheduled to be resumed in the next cycle.
+     *
+     * We need to keep the scheduled flush counter because the resumption
+     * mechanism is based on a signal that's delivered through a pipe which
+     * is not immediate and thus could cause other worker threads to exceed
+     * the limit by mistake.
+     */
+
+    pthread_mutex_t flush_activation_lock;
+    size_t active_flush_count;
+    size_t scheduled_flush_count;
+
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
 };
+
+static inline void flb_output_acquire_flush_activation_lock(
+                        struct flb_output_instance *instance)
+{
+    pthread_mutex_lock(&instance->flush_activation_lock);
+}
+
+static inline void flb_output_release_flush_activation_lock(
+                        struct flb_output_instance *instance)
+{
+    pthread_mutex_unlock(&instance->flush_activation_lock);
+}
+
+static inline void flb_output_increment_active_flush_count(
+                        struct flb_output_instance *instance,
+                        int aquire_lock)
+{
+    if (aquire_lock == FLB_TRUE) {
+        flb_output_acquire_flush_activation_lock(instance);
+    }
+
+    instance->active_flush_count++;
+
+    if (aquire_lock == FLB_TRUE) {
+        flb_output_release_flush_activation_lock(instance);
+    }
+}
+
+static inline void flb_output_decrement_active_flush_count(
+                        struct flb_output_instance *instance,
+                        int aquire_lock)
+{
+    if (aquire_lock == FLB_TRUE) {
+        flb_output_acquire_flush_activation_lock(instance);
+    }
+
+    instance->active_flush_count--;
+
+    if (aquire_lock == FLB_TRUE) {
+        flb_output_release_flush_activation_lock(instance);
+    }
+}
+
+static inline void flb_output_increment_scheduled_flush_count(
+                        struct flb_output_instance *instance,
+                        int aquire_lock)
+{
+    if (aquire_lock == FLB_TRUE) {
+        flb_output_acquire_flush_activation_lock(instance);
+    }
+
+    instance->scheduled_flush_count++;
+
+    if (aquire_lock == FLB_TRUE) {
+        flb_output_release_flush_activation_lock(instance);
+    }
+}
+
+static inline void flb_output_decrement_scheduled_flush_count(
+                        struct flb_output_instance *instance,
+                        int aquire_lock)
+{
+    if (aquire_lock == FLB_TRUE) {
+        pthread_mutex_lock(&instance->flush_activation_lock);
+    }
+
+    instance->scheduled_flush_count--;
+
+    if (aquire_lock == FLB_TRUE) {
+        pthread_mutex_unlock(&instance->flush_activation_lock);
+    }
+}
 
 /*
  * [note] this has been renamed from flb_output_coro to flb_output_flush.
@@ -463,6 +555,11 @@ struct flb_output_flush {
     struct flb_event_chunk *processed_event_chunk;
 
     struct mk_list _head;              /* Link to flb_task->threads */
+    struct mk_list _delay_head;
+                                       /* Link to the scheduled flush list.
+                                        * This is the list that's used by
+                                        * the concurrent flush limit system.
+                                        */
 };
 
 static FLB_INLINE int flb_output_is_threaded(struct flb_output_instance *ins)
@@ -541,6 +638,8 @@ static FLB_INLINE void output_params_set(struct flb_output_flush *out_flush,
     co_switch(coro->callee);
 }
 
+struct mk_list *flb_engine_scheduled_flush_list_get();
+
 static FLB_INLINE void output_pre_cb_flush(void)
 {
     int route_status;
@@ -548,6 +647,8 @@ static FLB_INLINE void output_pre_cb_flush(void)
     struct flb_output_plugin *out_p;
     struct flb_out_flush_params *params;
     struct flb_out_flush_params persisted_params;
+    struct mk_list *flush_list;
+    struct flb_output_instance *o_ins;
 
     params = (struct flb_out_flush_params *) FLB_TLS_GET(out_flush_params);
     if (!params) {
@@ -569,6 +670,32 @@ static FLB_INLINE void output_pre_cb_flush(void)
 
     /* Continue, we will resume later */
     out_p = persisted_params.out_plugin;
+    o_ins = (struct flb_output_instance *) persisted_params.out_flush->o_ins;
+
+    flb_output_acquire_flush_activation_lock(o_ins);
+
+    flb_output_decrement_scheduled_flush_count(o_ins, FLB_FALSE);
+
+    flush_list = flb_engine_scheduled_flush_list_get();
+
+    while (o_ins->concurrent_flush_limit > 0 &&
+           (o_ins->active_flush_count >= o_ins->concurrent_flush_limit)) {
+        if (mk_list_entry_orphan(&persisted_params.out_flush->_delay_head) == 0) {
+            mk_list_del(&persisted_params.out_flush->_delay_head);
+        }
+
+        mk_list_add(&persisted_params.out_flush->_delay_head, flush_list);
+
+        flb_output_release_flush_activation_lock(o_ins);
+
+        co_switch(coro->caller);
+
+        flb_output_acquire_flush_activation_lock(o_ins);
+
+        flb_output_decrement_scheduled_flush_count(o_ins, FLB_FALSE);
+    }
+
+    flb_output_increment_active_flush_count(o_ins, FLB_FALSE);
 
     flb_task_acquire_lock(persisted_params.out_flush->task);
 
@@ -579,6 +706,8 @@ static FLB_INLINE void output_pre_cb_flush(void)
     if (route_status == FLB_TASK_ROUTE_DROPPED) {
         flb_task_release_lock(persisted_params.out_flush->task);
 
+        flb_output_release_flush_activation_lock(o_ins);
+
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
@@ -586,6 +715,8 @@ static FLB_INLINE void output_pre_cb_flush(void)
                             persisted_params.out_flush->o_ins);
 
     flb_task_release_lock(persisted_params.out_flush->task);
+
+    flb_output_release_flush_activation_lock(o_ins);
 
     out_p->cb_flush(persisted_params.event_chunk,
                     persisted_params.out_flush,
@@ -912,6 +1043,63 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
     return out_flush;
 }
 
+static inline void flb_output_schedule_delayed_flush_coroutines(
+                        struct flb_output_instance *o_ins,
+                        int acquire_lock)
+{
+    ssize_t                         available_execution_slots;
+    struct flb_out_thread_instance *thread_instance;
+    struct mk_list                 *iterator_backup;
+    struct mk_list                 *flush_list;
+    struct mk_list                 *iterator;
+    struct flb_output_flush        *flush;
+
+    if (acquire_lock == FLB_TRUE) {
+        flb_output_acquire_flush_activation_lock(o_ins);
+    }
+
+    available_execution_slots = o_ins->concurrent_flush_limit - \
+                                o_ins->active_flush_count - \
+                                o_ins->scheduled_flush_count;
+
+    flush_list = flb_engine_scheduled_flush_list_get();
+
+    mk_list_foreach_safe(iterator, iterator_backup, flush_list) {
+        if (available_execution_slots <= 0) {
+            break;
+        }
+
+        flush = mk_list_entry(iterator,
+                              struct flb_output_flush,
+                              _delay_head);
+
+        if (flush->o_ins == o_ins) {
+            mk_list_del(&flush->_delay_head);
+
+            if (o_ins->is_threaded == FLB_TRUE) {
+                thread_instance = flb_output_thread_instance_get();
+
+                flb_pipe_w(thread_instance->ch_coroutine_events[1],
+                           &flush,
+                           sizeof(struct flb_output_flush*));
+            }
+            else {
+                flb_pipe_w(o_ins->config->ch_self_events[1],
+                           &flush,
+                           sizeof(struct flb_output_flush*));
+            }
+
+            available_execution_slots--;
+
+            flb_output_increment_scheduled_flush_count(o_ins, FLB_FALSE);
+        }
+    }
+
+    if (acquire_lock == FLB_TRUE) {
+        flb_output_release_flush_activation_lock(o_ins);
+    }
+}
+
 /*
  * This function is used by the output plugins to return. It's mandatory
  * as it will take care to signal the event loop letting know the flush
@@ -934,11 +1122,19 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     o_ins = out_flush->o_ins;
     task = out_flush->task;
 
+    flb_output_acquire_flush_activation_lock(o_ins);
+
     flb_task_acquire_lock(task);
 
     flb_task_deactivate_route(task, o_ins);
 
+    flb_output_decrement_active_flush_count(o_ins, FLB_FALSE);
+
+    flb_output_schedule_delayed_flush_coroutines(o_ins, FLB_FALSE);
+
     flb_task_release_lock(task);
+
+    flb_output_release_flush_activation_lock(o_ins);
 
     if (out_flush->processed_event_chunk) {
         if (task->event_chunk->data != out_flush->processed_event_chunk->data) {
