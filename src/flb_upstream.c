@@ -442,10 +442,6 @@ struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
  */
 static void shutdown_connection(struct flb_connection *u_conn)
 {
-    struct flb_upstream *u;
-
-    u = u_conn->upstream;
-
     if (u_conn->fd > 0 &&
         !u_conn->shutdown_flag) {
         shutdown(u_conn->fd, SHUT_RDWR);
@@ -491,8 +487,17 @@ static int prepare_destroy_conn(struct flb_connection *u_conn)
         u_conn->event.fd = -1;
     }
 
-    /* remove connection from the queue */
-    mk_list_del(&u_conn->_head);
+    /* when a keepalive connection reaches its recyle
+     * limit (net.keepalive_max_recycle) the connection
+     * is destroyed while not being linked to any of the
+     * available connection lists (to keep other threads
+     * from picking it when net.max_worker_connections is
+     * used without monopolizing the stream lock).
+     */
+
+    if (mk_list_entry_orphan(&u_conn->_head) == 0) {
+        mk_list_del(&u_conn->_head);
+    }
 
     /* Add node to destroy queue */
     mk_list_add(&u_conn->_head, &uq->destroy_queue);
@@ -650,11 +655,11 @@ int flb_upstream_conn_recycle(struct flb_connection *conn, int val)
 struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
 {
     int err;
-    int total_connections = 0;
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_connection *conn;
     struct flb_upstream_queue *uq;
+    struct mk_list *connection_list;
 
     uq = flb_upstream_queue_get(u);
 
@@ -671,42 +676,6 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
               u->base.net.keepalive_idle_timeout,
               u->base.net.max_worker_connections);
 
-
-    /* If the upstream is limited by max connections, check current state */
-    if (u->base.net.max_worker_connections > 0) {
-        /*
-         * Connections are linked to one of these lists:
-         *
-         *  - av_queue  : connections ready to be used (available)
-         *  - busy_queue: connections that are busy (someone is using them)
-         *  - drop_queue: connections in the cleanup phase (to be drop)
-         *
-         * Fluent Bit don't create connections ahead of time, just on demand. When
-         * a connection is created is placed into the busy_queue, when is not longer
-         * needed one of these things happen:
-         *
-         *   - if keepalive is enabled (default), the connection is moved to the 'av_queue'.
-         *   - if keepalive is disabled, the connection is moved to 'drop_queue' then is
-         *     closed and destroyed.
-         *
-         * Based on the logic described above, to limit the number of total connections
-         * in the worker, we only need to count the number of connections linked into
-         * the 'busy_queue' list because if there are connections available 'av_queue' it
-         * won't create a one.
-         */
-
-        /* Count the number of relevant connections */
-        flb_stream_acquire_lock(&u->base, FLB_TRUE);
-        total_connections = mk_list_size(&uq->busy_queue);
-        flb_stream_release_lock(&u->base);
-
-        if (total_connections >= u->base.net.max_worker_connections) {
-            flb_debug("[upstream] max worker connections=%i reached to: %s:%i, cannot connect",
-                      u->base.net.max_worker_connections, u->tcp_host, u->tcp_port);
-            return NULL;
-        }
-    }
-
     conn = NULL;
 
     /*
@@ -715,16 +684,27 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
      * entries exists, just create a new one.
      */
     if (u->base.net.keepalive) {
-        mk_list_foreach_safe(head, tmp, &uq->av_queue) {
+        /* If max_worker_connections is enabled idle keepalive connections
+         * are stored in the shared upstream connection list which means
+         * this operation needs to acquire the upstream lock.
+         */
+
+        if (u->base.net.max_worker_connections > 0) {
+            flb_upstream_acquire_lock(u, FLB_TRUE);
+
+            connection_list = &u->queue.av_queue;
+        }
+        else {
+            connection_list = &uq->av_queue;
+        }
+
+        mk_list_foreach_safe(head, tmp, connection_list) {
             conn = mk_list_entry(head, struct flb_connection, _head);
 
-            flb_stream_acquire_lock(&u->base, FLB_TRUE);
-
             /* This connection works, let's move it to the busy queue */
+
             mk_list_del(&conn->_head);
             mk_list_add(&conn->_head, &uq->busy_queue);
-
-            flb_stream_release_lock(&u->base);
 
             /* Reset errno */
             conn->net_error = -1;
@@ -755,6 +735,10 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
              */
 
             break;
+        }
+
+        if (u->base.net.max_worker_connections > 0) {
+            flb_upstream_release_lock(u);
         }
     }
 
@@ -795,6 +779,7 @@ int flb_upstream_conn_release(struct flb_connection *conn)
     int ret;
     struct flb_upstream *u = conn->upstream;
     struct flb_upstream_queue *uq;
+    struct mk_list *connection_list;
 
     flb_upstream_decrement_busy_connections_count(u);
 
@@ -808,39 +793,23 @@ int flb_upstream_conn_release(struct flb_connection *conn)
          * This connection is still useful, move it to the 'available' queue and
          * initialize variables.
          */
-        flb_stream_acquire_lock(&u->base, FLB_TRUE);
 
-        mk_list_del(&conn->_head);
-        mk_list_add(&conn->_head, &uq->av_queue);
-
-        flb_stream_release_lock(&u->base);
-
-        conn->ts_available = time(NULL);
-
-        /*
-         * The socket at this point is not longer monitored, so if we want to be
-         * notified if the 'available keepalive connection' gets disconnected by
-         * the remote endpoint we need to add it again.
+        /* If max_worker_connections is enabled idle keepalive connections
+         * are stored in the shared upstream connection list which means
+         * this operation needs to acquire the upstream lock.
          */
-        conn->event.handler = cb_upstream_conn_ka_dropped;
 
-        ret = mk_event_add(conn->evl,
-                           conn->fd,
-                           FLB_ENGINE_EV_CUSTOM,
-                           MK_EVENT_CLOSE,
-                           &conn->event);
+        if (u->base.net.max_worker_connections > 0) {
+            flb_upstream_acquire_lock(u, FLB_TRUE);
 
-        conn->event.priority = FLB_ENGINE_PRIORITY_CONNECT;
-        if (ret == -1) {
-            /* We failed the registration, for safety just destroy the connection */
-            flb_debug("[upstream] KA connection #%i to %s:%i could not be "
-                      "registered, closing.",
-                      conn->fd, u->tcp_host, u->tcp_port);
-            return prepare_destroy_conn_safe(conn);
+            connection_list = &u->queue.av_queue;
+        }
+        else {
+            connection_list = &uq->av_queue;
         }
 
-        flb_debug("[upstream] KA connection #%i to %s:%i is now available",
-                  conn->fd, u->tcp_host, u->tcp_port);
+        mk_list_del(&conn->_head);
+
         conn->ka_count++;
 
         /* if we have exceeded our max number of uses of this connection, destroy it */
@@ -851,8 +820,56 @@ int flb_upstream_conn_release(struct flb_connection *conn)
                       conn->ka_count,
                       conn->net->keepalive_max_recycle);
 
+            if (u->base.net.max_worker_connections > 0) {
+                flb_upstream_release_lock(u);
+            }
+
             return prepare_destroy_conn_safe(conn);
         }
+
+        mk_list_add(&conn->_head, connection_list);
+
+        conn->ts_available = time(NULL);
+
+        /* We need to remove the connection from the event loop
+         * because when max_worker_connections is used we can't
+         * monitor the connection, otherwise we would end up with
+         * a concurrency issue we are not able to deal with optimally
+         * at the moment.
+         */
+        if (MK_EVENT_IS_REGISTERED((&conn->event))) {
+            mk_event_del(conn->evl, &conn->event);
+        }
+
+        if (u->base.net.max_worker_connections > 0) {
+            flb_upstream_release_lock(u);
+        }
+        else {
+            /*
+             * The socket at this point is not longer monitored, so if we want to be
+             * notified if the 'available keepalive connection' gets disconnected by
+             * the remote endpoint we need to add it again.
+             */
+            conn->event.handler = cb_upstream_conn_ka_dropped;
+
+            ret = mk_event_add(conn->evl,
+                               conn->fd,
+                               FLB_ENGINE_EV_CUSTOM,
+                               MK_EVENT_CLOSE,
+                               &conn->event);
+
+            conn->event.priority = FLB_ENGINE_PRIORITY_CONNECT;
+            if (ret == -1) {
+                /* We failed the registration, for safety just destroy the connection */
+                flb_debug("[upstream] KA connection #%i to %s:%i could not be "
+                          "registered, closing.",
+                          conn->fd, u->tcp_host, u->tcp_port);
+                return prepare_destroy_conn_safe(conn);
+            }
+        }
+
+        flb_debug("[upstream] KA connection #%i to %s:%i is now available",
+                  conn->fd, u->tcp_host, u->tcp_port);
 
         return 0;
     }
@@ -873,6 +890,7 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
     struct flb_connection *u_conn;
     struct flb_upstream_queue *uq;
     int elapsed_time;
+    struct mk_list *connection_list;
 
     now = time(NULL);
 
@@ -880,8 +898,6 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
     mk_list_foreach(head, list) {
         u = mk_list_entry(head, struct flb_upstream, base._head);
         uq = flb_upstream_queue_get(u);
-
-        flb_stream_acquire_lock(&u->base, FLB_TRUE);
 
         /* Iterate every busy connection */
         mk_list_foreach_safe(u_head, tmp, &uq->busy_queue) {
@@ -977,8 +993,23 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
             }
         }
 
-        /* Check every available Keepalive connection */
-        mk_list_foreach_safe(u_head, tmp, &uq->av_queue) {
+        /* If max_worker_connections is enabled idle keepalive connections
+         * are stored in the shared upstream connection list which means
+         * this operation needs to acquire the upstream lock and transverse
+         * shared list.
+         */
+
+        if (u->base.net.max_worker_connections > 0) {
+            flb_upstream_acquire_lock(u, FLB_TRUE);
+
+            connection_list = &u->queue.av_queue;
+        }
+        else {
+            connection_list = &uq->av_queue;
+        }
+
+        /* Enforce idle keepalive connection timeouts */
+        mk_list_foreach_safe(u_head, tmp, connection_list) {
             u_conn = mk_list_entry(u_head, struct flb_connection, _head);
 
             if ((now - u_conn->ts_available) >= u->base.net.keepalive_idle_timeout) {
@@ -989,7 +1020,9 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
             }
         }
 
-        flb_stream_release_lock(&u->base);
+        if (u->base.net.max_worker_connections > 0) {
+            flb_upstream_release_lock(u);
+        }
     }
 
     return 0;
@@ -1202,4 +1235,22 @@ static void flb_upstream_decrement_busy_connections_count(
                           0, NULL);
         }
     }
+}
+
+int flb_upstream_acquire_lock(struct flb_upstream *stream, int wait_flag)
+{
+    if (stream->parent_upstream != NULL) {
+        return flb_upstream_acquire_lock(stream->parent_upstream, wait_flag);
+    }
+
+    return flb_stream_acquire_lock(&stream->base, wait_flag);
+}
+
+int flb_upstream_release_lock(struct flb_upstream *stream)
+{
+    if (stream->parent_upstream != NULL) {
+        return flb_upstream_release_lock(stream->parent_upstream);
+    }
+
+    return flb_stream_release_lock(&stream->base);
 }
