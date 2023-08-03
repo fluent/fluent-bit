@@ -273,7 +273,7 @@ static char *event_type_str(yaml_event_t *event)
     }
 }
 
-static char *get_last_included_file(struct local_ctx *ctx)
+static char *state_get_last(struct local_ctx *ctx)
 {
     struct flb_slist_entry *e;
 
@@ -526,7 +526,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
     int idx;
     char *value;
     struct flb_kv *kv;
-    char *last_included = get_last_included_file(ctx);
+    char *last_included = state_get_last(ctx);
     struct cfl_list *head;
     struct cfl_kvpair *kvp;
     struct cfl_variant *var;
