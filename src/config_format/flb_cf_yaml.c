@@ -151,10 +151,9 @@ struct file_state {
     struct file_state *parent;
 };
 
-enum parser_state_allocations {
-    HAS_KEY     = (1 << 0),
-    HAS_KEYVALS = (1 << 1)
-};
+// state allocation flags
+#define HAS_KEY     (1 << 0)
+#define HAS_KEYVALS (1 << 1)
 
 struct parser_state {
     /* tokens state */
