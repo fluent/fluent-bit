@@ -73,6 +73,31 @@ static char *section_names[] = {
     "other"
 };
 
+struct file_state {
+    /* file */
+    flb_sds_t name;                /* file name */
+    flb_sds_t path;           /* file root path */
+
+    /* parent file state */
+    struct file_state *parent;
+};
+
+struct local_ctx {
+    int level;                     /* inclusion level */
+
+    struct cfl_list states;
+
+    struct mk_list includes;
+
+    int service_set;
+};
+
+/* yaml_* functions return 1 on success and 0 on failure. */
+enum status {
+    YAML_SUCCESS = 1,
+    YAML_FAILURE = 0
+};
+
 enum state {
     STATE_START,           /* start state */
     STATE_STREAM,          /* start/end stream */
@@ -111,15 +136,6 @@ enum state {
     STATE_STOP            /* end state */
 };
 
-struct file_state {
-    /* file */
-    flb_sds_t name;                /* file name */
-    flb_sds_t path;           /* file root path */
-
-    /* parent file state */
-    struct file_state *parent;
-};
-
 // state allocation flags
 #define HAS_KEY     (1 << 0)
 #define HAS_KEYVALS (1 << 1)
@@ -152,22 +168,6 @@ struct parser_state {
     struct cfl_list _head;
 };
 
-struct local_ctx {
-    int level;                     /* inclusion level */
-
-    struct cfl_list states;
-
-    struct mk_list includes;
-
-    int service_set;
-};
-
-/* yaml_* functions return 1 on success and 0 on failure. */
-enum status {
-    YAML_SUCCESS = 1,
-    YAML_FAILURE = 0
-};
-
 static struct parser_state *state_push(struct local_ctx *, enum state);
 static struct parser_state *state_push_withvals(struct local_ctx *,
                                                 struct parser_state *,
@@ -192,31 +192,56 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
 static char *state_str(enum state val)
 {
     switch (val) {
-        case STATE_START: return "start";
-        case STATE_STREAM: return "stream";
-        case STATE_DOCUMENT: return "document";
-        case STATE_SECTION: return "section";
-        case STATE_SECTION_KEY: return "section-key";
-        case STATE_SECTION_VAL: return "section-value";
-        case STATE_SERVICE: return "service";
-        case STATE_INCLUDE: return "include";
-        case STATE_OTHER: return "other";
-        case STATE_CUSTOM: return "custom";
-        case STATE_PIPELINE: return "pipeline";
-        case STATE_PLUGIN_INPUT: return "input";
-        case STATE_PLUGIN_FILTER: return "filter";
-        case STATE_PLUGIN_OUTPUT: return "output";
-        case STATE_PLUGIN_START: return "plugin-start";
-        case STATE_PLUGIN_KEY: return "plugin-key";
-        case STATE_PLUGIN_VAL: return "plugin-value";
-        case STATE_PLUGIN_VAL_LIST: return "plugin-values";
-        case STATE_GROUP_KEY: return "group-key";
-        case STATE_GROUP_VAL: return "group-val";
-        case STATE_INPUT_PROCESSORS: return "processors";
-        case STATE_INPUT_PROCESSOR: return "processor";
-        case STATE_ENV: return "env";
-        case STATE_STOP: return "stop";
-        default: return "unknown";
+    case STATE_START:
+        return "start";
+    case STATE_STREAM:
+        return "stream";
+    case STATE_DOCUMENT:
+        return "document";
+    case STATE_SECTION:
+        return "section";
+    case STATE_SECTION_KEY:
+        return "section-key";
+    case STATE_SECTION_VAL:
+        return "section-value";
+    case STATE_SERVICE:
+        return "service";
+    case STATE_INCLUDE:
+        return "include";
+    case STATE_OTHER:
+        return "other";
+    case STATE_CUSTOM:
+        return "custom";
+    case STATE_PIPELINE:
+        return "pipeline";
+    case STATE_PLUGIN_INPUT:
+        return "input";
+    case STATE_PLUGIN_FILTER:
+        return "filter";
+    case STATE_PLUGIN_OUTPUT:
+        return "output";
+    case STATE_PLUGIN_START:
+        return "plugin-start";
+    case STATE_PLUGIN_KEY:
+        return "plugin-key";
+    case STATE_PLUGIN_VAL:
+        return "plugin-value";
+    case STATE_PLUGIN_VAL_LIST:
+        return "plugin-values";
+    case STATE_GROUP_KEY:
+        return "group-key";
+    case STATE_GROUP_VAL:
+        return "group-val";
+    case STATE_INPUT_PROCESSORS:
+        return "processors";
+    case STATE_INPUT_PROCESSOR:
+        return "processor";
+    case STATE_ENV:
+        return "env";
+    case STATE_STOP:
+        return "stop";
+    default:
+        return "unknown";
     }
 }
 
