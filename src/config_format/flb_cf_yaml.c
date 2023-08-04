@@ -568,6 +568,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
 
     last_included = state_get_last(ctx)
     state = get_current_state(ctx);
+    if (state == NULL) {
+        flb_error("unable to parse yaml: no state");
+        return YAML_FAILURE;
+    }
     print_current_state(ctx, state, event);
 
     switch (state->state) {
