@@ -1653,7 +1653,10 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
             flb_error("unable to create filename");
             return -1;
         }
-        flb_sds_printf(&file, "%s/%s", parent->path, cfg_file);
+        if (flb_sds_printf(&file, "%s/%s", parent->path, cfg_file) == NULL) {
+            flb_error("unable to create full filename");
+            return -1;
+        }
     } else {
         file = flb_sds_create(cfg_file);
     }
