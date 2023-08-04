@@ -306,17 +306,35 @@ static char *state_get_last(struct local_ctx *ctx)
     return e->str;
 }
 
-static void yaml_error_event(struct local_ctx *ctx, struct parser_state *s,
+static void yaml_error_event(struct local_ctx *ctx, struct parser_state *state,
                              yaml_event_t *event)
 {
     struct flb_slist_entry *e;
 
+    if (event == NULL) {
+        flb_error("[config] YAML error found but with no state or event");
+        return;
+    }
+    if (state == NULL) {
+        flb_error("[config] YAML error found but with no state, line %zu, column %zu: "
+                  "unexpected event '%s' (%d).",
+                  event->start_mark.line + 1, event->start_mark.column,
+                  event_type_str(event), event->type);
+        return;
+    }
     e = mk_list_entry_last(&ctx->includes, struct flb_slist_entry, _head);
+    if (e == NULL) {
+        flb_error("[config] YAML error found (no file info), line %zu, column %zu: "
+                  "unexpected event '%s' (%d) in state '%s' (%d).",
+                  event->start_mark.line + 1, event->start_mark.column,
+                  event_type_str(event), event->type, state_str(state->state), state->state);
+        return;
+    }
 
     flb_error("[config] YAML error found in file \"%s\", line %zu, column %zu: "
               "unexpected event '%s' (%d) in state '%s' (%d).",
               e->str, event->start_mark.line + 1, event->start_mark.column,
-              event_type_str(event), event->type, state_str(s->state), s->state);
+              event_type_str(event), event->type, state_str(state->state), state->state);
 }
 
 static void yaml_error_definition(struct local_ctx *ctx, struct parser_state *s,
