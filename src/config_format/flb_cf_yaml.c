@@ -566,7 +566,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
     struct cfl_array *carr;
     struct cfl_kvlist *copy;
 
-    last_included = state_get_last(ctx)
+    last_included = state_get_last(ctx);
     state = get_current_state(ctx);
     if (state == NULL) {
         flb_error("unable to parse yaml: no state");
@@ -838,6 +838,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
         switch(event->type) {
         case YAML_MAPPING_START_EVENT:
             state = state_push(ctx, STATE_SECTION_KEY);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
             break;
         case YAML_MAPPING_END_EVENT:
             state = state_pop(ctx);
