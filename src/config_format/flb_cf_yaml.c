@@ -557,7 +557,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
     int idx;
     char *value;
     struct flb_kv *kv;
-    char *last_included = state_get_last(ctx);
+    char *last_included;
     struct cfl_list *head;
     struct cfl_kvpair *kvp;
     struct cfl_variant *var;
@@ -566,6 +566,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
     struct cfl_array *carr;
     struct cfl_kvlist *copy;
 
+    last_included = state_get_last(ctx)
     state = get_current_state(ctx);
     print_current_state(ctx, state, event);
 
