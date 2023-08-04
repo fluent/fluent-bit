@@ -541,6 +541,9 @@ static void print_current_properties(struct parser_state *state)
 static struct parser_state *get_current_state(struct local_ctx *ctx)
 {
     struct parser_state *state;
+    if (cfl_list_size(&ctx->states) <= 0) {
+        return NULL;
+    }
     state = cfl_list_entry_last(&ctx->states, struct parser_state, _head);
     return state;
 }
