@@ -38,7 +38,7 @@ int flb_log_event_encoder_append_value(
         int increment_entry_count,
         flb_log_event_type_t value_type,
         char *value_buffer,
-        size_t value_length)
+        flb_log_event_size_t value_length)
 {
     int                                         result;
     struct flb_log_event_encoder_dynamic_field *field;
@@ -162,7 +162,7 @@ int flb_log_event_encoder_append_value(
 int flb_log_event_encoder_append_binary_length(
         struct flb_log_event_encoder *context,
         int target_field,
-        size_t length)
+        flb_log_event_size_t length)
 {
     return flb_log_event_encoder_append_value(
             context, target_field, FLB_TRUE,
@@ -174,7 +174,7 @@ int flb_log_event_encoder_append_binary_body(
         struct flb_log_event_encoder *context,
         int target_field,
         char *value,
-        size_t length)
+        flb_log_event_size_t length)
 {
     return flb_log_event_encoder_append_value(
             context, target_field, FLB_FALSE,
@@ -186,7 +186,7 @@ int flb_log_event_encoder_append_ext_length(
         struct flb_log_event_encoder *context,
         int target_field,
         int8_t type,
-        size_t length)
+        flb_log_event_size_t length)
 {
     return flb_log_event_encoder_append_value(
             context, target_field, FLB_TRUE,
@@ -198,7 +198,7 @@ int flb_log_event_encoder_append_ext_body(
         struct flb_log_event_encoder *context,
         int target_field,
         char *value,
-        size_t length)
+        flb_log_event_size_t length)
 {
     return flb_log_event_encoder_append_value(
             context, target_field, FLB_FALSE,
@@ -209,7 +209,7 @@ int flb_log_event_encoder_append_ext_body(
 int flb_log_event_encoder_append_string_length(
         struct flb_log_event_encoder *context,
         int target_field,
-        size_t length)
+        flb_log_event_size_t length)
 {
     return flb_log_event_encoder_append_value(
             context, target_field, FLB_TRUE,
@@ -221,7 +221,7 @@ int flb_log_event_encoder_append_string_body(
         struct flb_log_event_encoder *context,
         int target_field,
         char *value,
-        size_t length)
+        flb_log_event_size_t length)
 {
     return flb_log_event_encoder_append_value(
             context, target_field, FLB_FALSE,
@@ -363,7 +363,7 @@ int flb_log_event_encoder_append_binary(
         struct flb_log_event_encoder *context,
         int target_field,
         char *value,
-        size_t length)
+        flb_log_event_size_t length)
 {
     int result;
 
@@ -387,7 +387,7 @@ int flb_log_event_encoder_append_string(
         struct flb_log_event_encoder *context,
         int target_field,
         char *value,
-        size_t length)
+        flb_log_event_size_t length)
 {
     int result;
 
@@ -412,7 +412,7 @@ int flb_log_event_encoder_append_ext(
         int target_field,
         int8_t type,
         char *value,
-        size_t length)
+        flb_log_event_size_t length)
 {
     int result;
 
@@ -461,7 +461,7 @@ int flb_log_event_encoder_append_raw_msgpack(
     struct flb_log_event_encoder *context,
     int target_field,
     char *value_buffer,
-    size_t value_size)
+    flb_log_event_size_t value_size)
 {
     const flb_log_event_type_t value_type = FLB_LOG_EVENT_MSGPACK_RAW_VALUE_TYPE;
 
@@ -572,7 +572,7 @@ int flb_log_event_encoder_append_values_unsafe(
         else if (value_type == FLB_LOG_EVENT_STRING_LENGTH_VALUE_TYPE) {
             result = flb_log_event_encoder_append_string_length(context,
                         target_field,
-                        va_arg(arguments, size_t));
+                        va_arg(arguments, flb_log_event_size_t));
         }
         else if (value_type == FLB_LOG_EVENT_STRING_BODY_VALUE_TYPE) {
             buffer_address = va_arg(arguments, char *);
@@ -580,12 +580,12 @@ int flb_log_event_encoder_append_values_unsafe(
             result = flb_log_event_encoder_append_string_body(context,
                         target_field,
                         buffer_address,
-                        va_arg(arguments, size_t));
+                        va_arg(arguments, flb_log_event_size_t));
         }
         else if (value_type == FLB_LOG_EVENT_BINARY_LENGTH_VALUE_TYPE) {
             result = flb_log_event_encoder_append_binary_length(context,
                         target_field,
-                        va_arg(arguments, size_t));
+                        va_arg(arguments, flb_log_event_size_t));
         }
         else if (value_type == FLB_LOG_EVENT_BINARY_BODY_VALUE_TYPE) {
             buffer_address = va_arg(arguments, char *);
@@ -593,7 +593,7 @@ int flb_log_event_encoder_append_values_unsafe(
             result = flb_log_event_encoder_append_binary_body(context,
                         target_field,
                         buffer_address,
-                        va_arg(arguments, size_t));
+                        va_arg(arguments, flb_log_event_size_t));
         }
         else if (value_type == FLB_LOG_EVENT_EXT_LENGTH_VALUE_TYPE) {
             current_ext_type = (int8_t)va_arg(arguments, int32_t);
@@ -601,7 +601,7 @@ int flb_log_event_encoder_append_values_unsafe(
             result = flb_log_event_encoder_append_ext_length(context,
                         target_field,
                         current_ext_type,
-                        va_arg(arguments, size_t));
+                        va_arg(arguments, flb_log_event_size_t));
         }
         else if (value_type == FLB_LOG_EVENT_EXT_BODY_VALUE_TYPE) {
             buffer_address = va_arg(arguments, char *);
@@ -609,7 +609,7 @@ int flb_log_event_encoder_append_values_unsafe(
             result = flb_log_event_encoder_append_ext_body(context,
                         target_field,
                         buffer_address,
-                        va_arg(arguments, size_t));
+                        va_arg(arguments, flb_log_event_size_t));
         }
         else if (value_type == FLB_LOG_EVENT_NULL_VALUE_TYPE) {
             result = flb_log_event_encoder_append_null(context,
@@ -681,7 +681,7 @@ int flb_log_event_encoder_append_values_unsafe(
             result = flb_log_event_encoder_append_raw_msgpack(context,
                         target_field,
                         buffer_address,
-                        va_arg(arguments, size_t));
+                        va_arg(arguments, flb_log_event_size_t));
         }
         else if (value_type == FLB_LOG_EVENT_TIMESTAMP_VALUE_TYPE) {
             result = flb_log_event_encoder_append_timestamp(context,

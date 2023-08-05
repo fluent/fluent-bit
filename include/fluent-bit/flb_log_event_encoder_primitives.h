@@ -20,6 +20,16 @@
 #ifndef FLB_LOG_EVENT_ENCODER_PRIMITIVES_H
 #define FLB_LOG_EVENT_ENCODER_PRIMITIVES_H
 
+#ifdef FLB_SYSTEM_WINDOWS
+/* Fluent-bit on Windows x86_64 passes size_t as dword if it is compiled using /O2.
+ * It causes encoder error since encoder functions handles size_t as qword.
+ * We define dword size flb_log_event_size_t to prevent invalid casting as a workaround.
+ */
+#define flb_log_event_size_t uint32_t
+#else
+#define flb_log_event_size_t size_t
+#endif
+
 int flb_log_event_encoder_append_values_unsafe(
         struct flb_log_event_encoder *context,
         int field,
@@ -28,36 +38,36 @@ int flb_log_event_encoder_append_values_unsafe(
 int flb_log_event_encoder_append_binary_length(
         struct flb_log_event_encoder *context,
         int target_field,
-        size_t length);
+        flb_log_event_size_t length);
 
 int flb_log_event_encoder_append_binary_body(
         struct flb_log_event_encoder *context,
         int target_field,
         char *value,
-        size_t length);
+        flb_log_event_size_t length);
 
 int flb_log_event_encoder_append_ext_length(
         struct flb_log_event_encoder *context,
         int target_field,
         int8_t type,
-        size_t length);
+        flb_log_event_size_t length);
 
 int flb_log_event_encoder_append_ext_body(
         struct flb_log_event_encoder *context,
         int target_field,
         char *value,
-        size_t length);
+        flb_log_event_size_t length);
 
 int flb_log_event_encoder_append_string_length(
         struct flb_log_event_encoder *context,
         int target_field,
-        size_t length);
+        flb_log_event_size_t length);
 
 int flb_log_event_encoder_append_string_body(
         struct flb_log_event_encoder *context,
         int target_field,
         char *value,
-        size_t length);
+        flb_log_event_size_t length);
 
 int flb_log_event_encoder_append_int8(
         struct flb_log_event_encoder *context,
@@ -118,20 +128,20 @@ int flb_log_event_encoder_append_binary(
         struct flb_log_event_encoder *context,
         int target_field,
         char *value,
-        size_t length);
+        flb_log_event_size_t length);
 
 int flb_log_event_encoder_append_string(
         struct flb_log_event_encoder *context,
         int target_field,
         char *value,
-        size_t length);
+        flb_log_event_size_t length);
 
 int flb_log_event_encoder_append_ext(
         struct flb_log_event_encoder *context,
         int target_field,
         int8_t type,
         char *value,
-        size_t length);
+        flb_log_event_size_t length);
 
 int flb_log_event_encoder_append_cstring(
         struct flb_log_event_encoder *context,
@@ -151,7 +161,7 @@ int flb_log_event_encoder_append_raw_msgpack(
     struct flb_log_event_encoder *context,
     int target_field,
     char *value_buffer,
-    size_t value_size);
+    flb_log_event_size_t value_size);
 
 int flb_log_event_encoder_append_timestamp(
     struct flb_log_event_encoder *context,
