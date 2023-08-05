@@ -22,6 +22,8 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/flb_sqldb.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #include "checklist.h"
 #include <ctype.h>
@@ -231,8 +233,8 @@ static int init_config(struct checklist *ctx)
     /* record accessor pattern / key name */
     ctx->ra_lookup_key = flb_ra_create(ctx->lookup_key, FLB_TRUE);
     if (!ctx->ra_lookup_key) {
-        flb_plg_error(ctx->ins, "invalid ra_lookup_key pattern: %s",
-                      ctx->ra_lookup_key);
+        flb_plg_error(ctx->ins, "invalid lookup_key pattern: %s",
+                      ctx->lookup_key);
         return -1;
     }
 
@@ -286,26 +288,42 @@ static int cb_checklist_init(struct flb_filter_instance *ins,
     return 0;
 }
 
-static int set_record(struct checklist *ctx, msgpack_packer *mp_pck,
-                      struct flb_time *tm, msgpack_object *map)
+static int set_record(struct checklist *ctx,
+                      struct flb_log_event_encoder *log_encoder,
+                      struct flb_log_event *log_event)
 {
     int i;
     int len;
+    int ret;
     int skip;
     msgpack_object k;
     msgpack_object v;
+    msgpack_object *map;
     struct mk_list *head;
     struct flb_slist_entry *r_key;
     struct flb_slist_entry *r_val;
-    struct flb_mp_map_header mh;
     struct flb_config_map_val *mv;
 
-    /* array: timestamp + map */
-    msgpack_pack_array(mp_pck, 2);
-    flb_time_append_to_msgpack(tm, mp_pck, 0);
+    ret = flb_log_event_encoder_begin_record(log_encoder);
 
-    /* append map header */
-    flb_mp_map_header_init(&mh, mp_pck);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_set_timestamp(log_encoder, &log_event->timestamp);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -2;
+    }
+
+    ret = flb_log_event_encoder_set_metadata_from_msgpack_object(log_encoder,
+            log_event->metadata);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -3;
+    }
+
+    map = log_event->body;
 
     for (i = 0; i < map->via.map.size; i++) {
         k = map->via.map.ptr[i].key;
@@ -340,10 +358,14 @@ static int set_record(struct checklist *ctx, msgpack_packer *mp_pck,
             continue;
         }
 
-        /* pack current key/value pair */
-        flb_mp_map_header_append(&mh);
-        msgpack_pack_object(mp_pck, k);
-        msgpack_pack_object(mp_pck, v);
+        ret = flb_log_event_encoder_append_body_values(
+                log_encoder,
+                FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&k),
+                FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&v));
+
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            return -4;
+        }
     }
 
     /* Pack custom records */
@@ -351,29 +373,43 @@ static int set_record(struct checklist *ctx, msgpack_packer *mp_pck,
         r_key = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
         r_val = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
 
-        flb_mp_map_header_append(&mh);
-        len = flb_sds_len(r_key->str);
-        msgpack_pack_str(mp_pck, len);
-        msgpack_pack_str_body(mp_pck, r_key->str, len);
+        ret = flb_log_event_encoder_append_body_string(
+                log_encoder, r_key->str, flb_sds_len(r_key->str));
 
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            return -5;
+        }
 
         if (strcasecmp(r_val->str, "true") == 0) {
-            msgpack_pack_true(mp_pck);
+            ret = flb_log_event_encoder_append_body_boolean(
+                    log_encoder, FLB_TRUE);
         }
         else if (strcasecmp(r_val->str, "false") == 0) {
-            msgpack_pack_false(mp_pck);
+            ret = flb_log_event_encoder_append_body_boolean(
+                    log_encoder, FLB_FALSE);
         }
         else if (strcasecmp(r_val->str, "null") == 0) {
-            msgpack_pack_nil(mp_pck);
+            ret = flb_log_event_encoder_append_body_null(
+                    log_encoder);
         }
         else {
-            len = flb_sds_len(r_val->str);
-            msgpack_pack_str(mp_pck, len);
-            msgpack_pack_str_body(mp_pck, r_val->str, len);
+            ret = flb_log_event_encoder_append_body_string(
+                    log_encoder, r_val->str, flb_sds_len(r_val->str));
+        }
+
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            return -3;
         }
     }
 
-    flb_mp_map_header_end(&mh);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_commit_record(log_encoder);
+    }
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -4;
+    }
+
     return 0;
 }
 
@@ -395,30 +431,47 @@ static int cb_checklist_filter(const void *data, size_t bytes,
     char *cmp_buf;
     char *tmp_buf;
     size_t tmp_size;
-    struct flb_time tm;
     struct checklist *ctx = filter_context;
-    msgpack_object *map;
-    msgpack_unpacked result;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
     struct flb_ra_value *rval;
     struct flb_time t0;
     struct flb_time t1;
     struct flb_time t_diff;
+    struct flb_log_event_encoder log_encoder;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    int ret;
 
     (void) ins;
     (void) i_ins;
     (void) config;
 
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    ret = flb_log_event_encoder_init(&log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ins, "Log event encoder initialization error : %d", ret);
+
+        flb_log_event_decoder_destroy(&log_decoder);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        off = log_decoder.offset;
         found = FLB_FALSE;
 
-        flb_time_pop_from_msgpack(&tm, &result, &map);
-        rval = flb_ra_get_value_object(ctx->ra_lookup_key, *map);
+        rval = flb_ra_get_value_object(ctx->ra_lookup_key, *log_event.body);
         if (rval) {
             if (ctx->print_query_time) {
                 flb_time_get(&t0);
@@ -465,14 +518,12 @@ static int cb_checklist_filter(const void *data, size_t bytes,
                 flb_time_get(&t1);
                 flb_time_diff(&t1, &t0, &t_diff);
 
-                tmp_buf = flb_calloc(1, rval->o.via.str.size + 1);
-                if (!tmp_buf) {
-                    flb_errno();
-                }
-                memcpy(tmp_buf, rval->o.via.str.ptr, rval->o.via.str.size);
-                flb_plg_info(ctx->ins, "query time (sec.ns): %lu.%lu : '%s'",
-                             t_diff.tm.tv_sec, t_diff.tm.tv_nsec, tmp_buf);
-                flb_free(tmp_buf);
+                flb_plg_info(ctx->ins,
+                             "query time (sec.ns): %lu.%lu : '%.*s'",
+                             t_diff.tm.tv_sec,
+                             t_diff.tm.tv_nsec,
+                             (int) rval->o.via.str.size,
+                             rval->o.via.str.ptr);
             }
 
             flb_ra_key_value_destroy(rval);
@@ -480,30 +531,49 @@ static int cb_checklist_filter(const void *data, size_t bytes,
 
         if (found) {
             /* add any previous content that not matched */
-            if (mp_sbuf.size == 0 && pre > 0) {
-                msgpack_sbuffer_write(&mp_sbuf, data, pre);
+            if (log_encoder.output_length == 0 && pre > 0) {
+                ret = flb_log_event_encoder_emit_raw_record(
+                        &log_encoder,
+                        data,
+                        pre);
             }
-            set_record(ctx, &mp_pck, &tm, map);
+
+            ret = set_record(ctx, &log_encoder, &log_event);
+
+            if (ret < -1) {
+                flb_log_event_encoder_rollback_record(&log_encoder);
+            }
+
             matches++;
         }
         else {
-            if (mp_sbuf.size > 0) {
+            if (log_encoder.output_length > 0) {
                 /* append current record to new buffer */
-                msgpack_sbuffer_write(&mp_sbuf, (char *) data + pre, off - pre);
+                ret = flb_log_event_encoder_emit_raw_record(
+                        &log_encoder,
+                        &((char *) data)[pre],
+                        off - pre);
             }
         }
         pre = off;
     }
-    msgpack_unpacked_destroy(&result);
 
-    if (matches > 0) {
-        *out_buf = mp_sbuf.data;
-        *out_bytes = mp_sbuf.size;
-        return FLB_FILTER_MODIFIED;
+    if (log_encoder.output_length > 0 && matches > 0) {
+        *out_buf   = log_encoder.output_buffer;
+        *out_bytes = log_encoder.output_length;
+
+        flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
+
+        ret = FLB_FILTER_MODIFIED;
+    }
+    else {
+        ret = FLB_FILTER_NOTOUCH;
     }
 
-    msgpack_sbuffer_destroy(&mp_sbuf);
-    return FLB_FILTER_NOTOUCH;
+    flb_log_event_decoder_destroy(&log_decoder);
+    flb_log_event_encoder_destroy(&log_encoder);
+
+    return ret;
 }
 
 static int cb_exit(void *data, struct flb_config *config)

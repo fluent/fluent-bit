@@ -150,6 +150,35 @@ static int wmi_update_counters(struct wmi_query_spec *spec, uint64_t timestamp, 
     return 0;
 }
 
+static char *convert_prop_to_str(VARIANT *prop, int handle_null)
+{
+    char *strlabel = NULL;
+    char *newstr = NULL;
+
+    if (handle_null == FLB_TRUE && prop->vt == VT_NULL) {
+        newstr = strdup("");
+        if (newstr == NULL) {
+            return NULL;
+        }
+    }
+    else {
+        if (VariantChangeType(prop, prop, 0, VT_BSTR) != S_OK) {
+            return NULL;
+        }
+        strlabel = we_convert_wstr(prop->bstrVal, CP_UTF8);
+        if (strlabel == NULL) {
+            return NULL;
+        }
+        newstr = strdup(strlabel);
+        if (newstr == NULL) {
+            free(strlabel);
+            return NULL;
+        }
+        free(strlabel);
+    }
+    return newstr;
+}
+
 static double wmi_get_value(struct flb_we *ctx, struct wmi_query_spec *spec, IWbemClassObject *class_obj)
 {
     VARIANT prop;
@@ -161,18 +190,15 @@ static double wmi_get_value(struct flb_we *ctx, struct wmi_query_spec *spec, IWb
     VariantInit(&prop);
     wproperty = we_convert_str(spec->wmi_property);
     hr = class_obj->lpVtbl->Get(class_obj, wproperty, 0, &prop, 0, 0);
-    switch(prop.vt) {
-    case VT_I4:
-        val = prop.lVal;
-        break;
-    case VT_BSTR:
-        strprop = we_convert_wstr(prop.bstrVal, CP_UTF8);
-        wmi_utils_str_to_double(strprop, &val);
-        flb_free(strprop);
-        break;
-    default:
-        break;
+    if (FAILED(hr)) {
+        flb_plg_warn(ctx->ins, "Retrive prop '%s' failed. Error code = %x", spec->wmi_property, hr);
     }
+    strprop = convert_prop_to_str(&prop, FLB_FALSE);
+    if (strprop == NULL) {
+        return 0;
+    }
+    wmi_utils_str_to_double(strprop, &val);
+    flb_free(strprop);
     VariantClear(&prop);
     flb_free(wproperty);
 
@@ -190,24 +216,43 @@ static double wmi_get_property_value(struct flb_we *ctx, char *raw_property_key,
     VariantInit(&prop);
     wproperty = we_convert_str(raw_property_key);
     hr = class_obj->lpVtbl->Get(class_obj, wproperty, 0, &prop, 0, 0);
-    switch(prop.vt) {
-    case VT_I4:
-        val = prop.lVal;
-        break;
-    case VT_BSTR:
-        strprop = we_convert_wstr(prop.bstrVal, CP_UTF8);
-        wmi_utils_str_to_double(strprop, &val);
-        flb_free(strprop);
-        break;
-    default:
-        break;
+    if (FAILED(hr)) {
+        flb_plg_warn(ctx->ins, "Retrive prop '%s' failed. Error code = %x", raw_property_key, hr);
     }
+    strprop = convert_prop_to_str(&prop, FLB_FALSE);
+    if (strprop == NULL) {
+        return 0;
+    }
+    wmi_utils_str_to_double(strprop, &val);
+    flb_free(strprop);
     VariantClear(&prop);
     flb_free(wproperty);
 
     return val;
 }
 
+static char *wmi_get_property_str_value(struct flb_we *ctx, char *raw_property_key,
+                                        IWbemClassObject *class_obj)
+{
+    VARIANT prop;
+    char *strprop;
+    char *str_val = NULL;
+    HRESULT hr;
+    wchar_t *wproperty;
+
+
+    VariantInit(&prop);
+    wproperty = we_convert_str(raw_property_key);
+    hr = class_obj->lpVtbl->Get(class_obj, wproperty, 0, &prop, 0, 0);
+    if (FAILED(hr)) {
+        flb_plg_warn(ctx->ins, "Retrive prop '%s' failed. Error code = %x", raw_property_key, hr);
+    }
+    str_val = convert_prop_to_str(&prop, FLB_TRUE);
+    VariantClear(&prop);
+    flb_free(wproperty);
+
+    return str_val;
+}
 
 static inline int wmi_update_metrics(struct flb_we *ctx, struct wmi_query_spec *spec,
                                      double val, IWbemClassObject *class_obj, uint64_t timestamp)
@@ -216,32 +261,26 @@ static inline int wmi_update_metrics(struct flb_we *ctx, struct wmi_query_spec *
     VARIANT prop;
     int label_index = 0;
     HRESULT hr;
-    char *strlabel;
     char *metric_label_set[WE_WMI_METRIC_LABEL_LIST_SIZE];
     int metric_label_count = 0;
     char buf[16] = {0};
     wchar_t *wlabel;
+    char *newstr = NULL;
 
     VariantInit(&prop);
     metric_label_count = 0;
     for (label_index = 0; label_index < spec->label_property_count; label_index++) {
         wlabel = we_convert_str(spec->label_property_keys[label_index]);
         hr = class_obj->lpVtbl->Get(class_obj, wlabel, 0, &prop, 0, 0);
-        switch(prop.vt) {
-        case VT_I4:
-            snprintf(buf, 16, "%d", prop.lVal);
-            metric_label_set[label_index] = strdup(buf);
-            metric_label_count++;
-            break;
-        case VT_BSTR:
-            strlabel = we_convert_wstr(prop.bstrVal, CP_UTF8);
-            metric_label_set[label_index] = strdup(strlabel);
-            metric_label_count++;
-            free(strlabel);
-            break;
-        default:
-            break;
+        if (FAILED(hr)) {
+            flb_plg_warn(ctx->ins, "Retrive prop failed. Error code = %x", hr);
         }
+        newstr = convert_prop_to_str(&prop, FLB_TRUE);
+        if (newstr == NULL) {
+            continue;
+        }
+        metric_label_set[label_index] = newstr;
+        metric_label_count++;
         VariantClear(&prop);
         flb_free(wlabel);
     }
@@ -262,12 +301,21 @@ static inline int wmi_execute_query(struct flb_we *ctx, struct wmi_query_spec *s
     size_t size;
 
     size = 14 + strlen(spec->wmi_counter);
+    if (spec->where_clause != NULL) {
+        size += 7 + strlen(spec->where_clause);
+    }
     query = flb_calloc(size, sizeof(char *));
     if (!query) {
         flb_errno();
         return -1;
     }
-    snprintf(query, size, "SELECT * FROM %s", spec->wmi_counter);
+    if (spec->where_clause != NULL) {
+        snprintf(query, size, "SELECT * FROM %s WHERE %s", spec->wmi_counter, spec->where_clause);
+    }
+    else {
+        snprintf(query, size, "SELECT * FROM %s", spec->wmi_counter);
+    }
+    flb_trace("[wmi] query = %s", query);
     wquery = we_convert_str(query);
     flb_free(query);
 
@@ -500,6 +548,12 @@ double we_wmi_get_value(struct flb_we *ctx, struct wmi_query_spec *spec, IWbemCl
 double we_wmi_get_property_value(struct flb_we *ctx, char *raw_property_key, IWbemClassObject *class_obj)
 {
     return wmi_get_property_value(ctx, raw_property_key, class_obj);
+}
+
+char *we_wmi_get_property_str_value(struct flb_we *ctx, char *raw_property_key,
+                                    IWbemClassObject *class_obj)
+{
+    return wmi_get_property_str_value(ctx, raw_property_key, class_obj);
 }
 
 int we_wmi_update_counters(struct flb_we *ctx, struct wmi_query_spec *spec, uint64_t timestamp, double val, int metric_label_count, char **metric_label_set)

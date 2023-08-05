@@ -155,9 +155,19 @@ static int in_thermal_init(struct flb_input_instance *in,
     }
     ctx->ins = in;
 
+    ctx->log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ctx->log_encoder == NULL) {
+        flb_plg_error(in, "could not initialize event encoder");
+        flb_free(ctx);
+
+        return -1;
+    }
+
     /* Load the config map */
     ret = flb_input_config_map_set(in, (void *)ctx);
     if (ret == -1) {
+        flb_log_event_encoder_destroy(ctx->log_encoder);
         flb_free(ctx);
         flb_plg_error(in, "unable to load configuration");
         return -1;
@@ -203,6 +213,10 @@ static int in_thermal_init(struct flb_input_instance *in,
     if (ret == -1) {
         flb_plg_error(ctx->ins,
                       "Could not set collector for temperature input plugin");
+
+        flb_log_event_encoder_destroy(ctx->log_encoder);
+        flb_free(ctx);
+
         return -1;
     }
     ctx->coll_fd = ret;
@@ -216,11 +230,11 @@ int in_thermal_collect(struct flb_input_instance *i_ins,
 {
     int n;
     int i;
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
-    (void) config;
+    int ret;
     struct temp_info info[IN_THERMAL_N_MAX];
     struct flb_in_thermal_config *ctx = in_context;
+
+    (void) config;
 
     /* Get the current temperature(s) */
     n = proc_temperature(ctx, info, IN_THERMAL_N_MAX);
@@ -233,37 +247,50 @@ int in_thermal_collect(struct flb_input_instance *i_ins,
         return 0;
     }
 
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
     /*
      * Store the new data into the MessagePack buffer
      */
 
     for (i = 0; i < n; ++i) {
-        msgpack_pack_array(&mp_pck, 2);
-        flb_pack_time_now(&mp_pck);
-        msgpack_pack_map(&mp_pck, 3);
+        ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
 
-        msgpack_pack_str(&mp_pck, 4);
-        msgpack_pack_str_body(&mp_pck, "name", 4);
-        msgpack_pack_str(&mp_pck, strlen(info[i].name));
-        msgpack_pack_str_body(&mp_pck, info[i].name, strlen(info[i].name));
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_set_current_timestamp(ctx->log_encoder);
+        }
 
-        msgpack_pack_str(&mp_pck, 4);
-        msgpack_pack_str_body(&mp_pck, "type", 4);
-        msgpack_pack_str(&mp_pck, strlen(info[i].type));
-        msgpack_pack_str_body(&mp_pck, info[i].type, strlen(info[i].type));
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    ctx->log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE("name"),
+                    FLB_LOG_EVENT_CSTRING_VALUE(info[i].name),
 
-        msgpack_pack_str(&mp_pck, 4);
-        msgpack_pack_str_body(&mp_pck, "temp", 4);
-        msgpack_pack_double(&mp_pck, info[i].temp);
+                    FLB_LOG_EVENT_CSTRING_VALUE("type"),
+                    FLB_LOG_EVENT_CSTRING_VALUE(info[i].type),
+
+                    FLB_LOG_EVENT_CSTRING_VALUE("temp"),
+                    FLB_LOG_EVENT_DOUBLE_VALUE(info[i].temp));
+        }
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_commit_record(ctx->log_encoder);
+        }
 
         flb_plg_trace(ctx->ins, "%s temperature %0.2f", info[i].name, info[i].temp);
     }
 
-    flb_input_log_append(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        flb_input_log_append(ctx->ins, NULL, 0,
+                             ctx->log_encoder->output_buffer,
+                             ctx->log_encoder->output_length);
+        ret = 0;
+    }
+    else {
+        flb_plg_error(ctx->ins, "log event encoding error : %d", ret);
+
+        ret = -1;
+    }
+
+    flb_log_event_encoder_reset(ctx->log_encoder);
 
     return 0;
 }
@@ -284,6 +311,11 @@ static int in_thermal_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_in_thermal_config *ctx = data;
+
+    if (ctx->log_encoder != NULL) {
+        flb_log_event_encoder_destroy(ctx->log_encoder);
+    }
+
 #ifdef FLB_HAVE_REGEX
     if (ctx && ctx->name_regex) {
         flb_regex_destroy(ctx->name_regex);
@@ -292,7 +324,9 @@ static int in_thermal_exit(void *data, struct flb_config *config)
         flb_regex_destroy(ctx->type_regex);
     }
 #endif
+
     flb_free(ctx);
+
     return 0;
 }
 

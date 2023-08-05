@@ -1337,8 +1337,9 @@ static int get_output_num()
 static int callback_count(void* data, size_t size, void* cb_data)
 {
     if (size > 0) {
-        flb_debug("[test_filter_modify] received message: %s", data);
+        flb_debug("[test_filter_modify] received message: %s", (char*)data);
         add_output_num(); /* success */
+        flb_free(data);
     }
     return 0;
 }
@@ -1453,7 +1454,7 @@ static void flb_test_issue_4319()
 }
 
 
-/* 
+/*
  * to check issue https://github.com/fluent/fluent-bit/issues/4319
    Key_value_does_not_match case
 */
@@ -1503,6 +1504,125 @@ static void flb_test_issue_4319_2()
     filter_test_destroy(ctx);
 }
 
+/* https://github.com/fluent/fluent-bit/issues/1225 */
+static void flb_test_issue_1225()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "condition", "key_value_matches \"key 1\" \".*with spaces.*\"",
+                         "add", "\"key 2\" \"second value with spaces\"",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"key 1\":\"first value with spaces\","\
+                   "\"key 2\":\"second value with spaces\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0,{\"key 1\":\"first value with spaces\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
+
+/*
+ * to check issue https://github.com/fluent/fluent-bit/issues/7075
+*/
+static void flb_test_issue_7075()
+{
+    char *p;
+    int len;
+    int ret;
+    int bytes;
+
+    struct filter_test *ctx;
+    struct flb_lib_out_cb cb_data;
+
+    clear_output_num();
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"matched\":true";
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         /* set key which doesn't exist */
+                         "condition", "key_value_matches ok true",
+                         "rename", "ok matched",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+        /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest event */
+    p = "[0, {\"ok\":true}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    sleep(1); /* waiting flush */
+
+    filter_test_destroy(ctx);
+}
+
+static void flb_test_issue_7368()
+{
+    int ret;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "remove_wildcard", "*s3",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"r1\":\"someval\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret != 0);
+
+    filter_test_destroy(ctx);
+}
+
 TEST_LIST = {
     /* Operations / Commands */
     {"op_set_append"            , flb_test_op_set_append },
@@ -1546,6 +1666,9 @@ TEST_LIST = {
     {"multiple events are not dropped", flb_test_not_drop_multi_event },
     {"cond_key_value_does_not_equal and key does not exist", flb_test_issue_4319 },
     {"cond_key_value_does_not_matches and key does not exist", flb_test_issue_4319_2 },
+    {"Key_value_matches and value is bool type", flb_test_issue_7075},
+    {"operation_with_whitespace", flb_test_issue_1225 },
+    {"invalid_wildcard", flb_test_issue_7368 },
 
     {NULL, NULL}
 };

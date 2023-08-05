@@ -51,6 +51,10 @@
 #define OS_BULK_UPDATE_OP_BODY       "{\"doc\":"
 #define OS_BULK_UPSERT_OP_BODY       "{\"doc_as_upsert\":true,\"doc\":"
 
+/* Supported compression algorithms */
+#define FLB_OS_COMPRESSION_NONE 0
+#define FLB_OS_COMPRESSION_GZIP 1
+
 struct flb_opensearch {
     /* OpenSearch index (database) and type (table) */
     flb_sds_t index;
@@ -68,6 +72,7 @@ struct flb_opensearch {
     int has_aws_auth;
     char *aws_region;
     char *aws_sts_endpoint;
+    char *aws_profile;
     struct flb_aws_provider *aws_provider;
     struct flb_aws_provider *base_aws_provider;
     /* tls instances can't be re-used; aws provider requires a separate one */
@@ -100,6 +105,7 @@ struct flb_opensearch {
 
     /* prefix */
     flb_sds_t logstash_prefix;
+    flb_sds_t logstash_prefix_separator;
 
     /* prefix key */
     flb_sds_t logstash_prefix_key;
@@ -125,7 +131,7 @@ struct flb_opensearch {
     /* id_key */
     flb_sds_t id_key;
     struct flb_record_accessor *ra_id_key;
-    
+
     /* include_tag_key */
     int include_tag_key;
     flb_sds_t tag_key;
@@ -140,6 +146,10 @@ struct flb_opensearch {
 
     /* Plugin output instance reference */
     struct flb_output_instance *ins;
+
+    /* Compression algorithm */
+    int compression;
+    flb_sds_t compression_str;
 };
 
 #endif

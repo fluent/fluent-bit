@@ -38,12 +38,13 @@ void flb_utils_warn_c(const char *msg);
 void flb_message(int type, const char *file, int line, const char *fmt, ...);
 
 #ifdef FLB_HAVE_FORK
-int flb_utils_set_daemon();
+int flb_utils_set_daemon(struct flb_config *config);
 #endif
 
 void flb_utils_print_setup(struct flb_config *config);
 
 struct mk_list *flb_utils_split(const char *line, int separator, int max_split);
+struct mk_list *flb_utils_split_quoted(const char *line, int separator, int max_split);
 void flb_utils_split_free_entry(struct flb_split_entry *entry);
 void flb_utils_split_free(struct mk_list *list);
 int flb_utils_timer_consume(flb_pipefd_t fd);
@@ -69,5 +70,8 @@ int flb_utils_read_file(char *path, char **out_buf, size_t *out_size);
 char *flb_utils_get_os_name();
 int flb_utils_uuid_v4_gen(char *buf);
 int flb_utils_get_machine_id(char **out_id, size_t *out_size);
+void flb_utils_set_plugin_string_property(const char *name,
+                                          flb_sds_t *field_storage,
+                                          flb_sds_t  new_value);
 
 #endif

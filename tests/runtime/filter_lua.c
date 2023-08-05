@@ -39,6 +39,13 @@ void set_output(char *val)
     pthread_mutex_unlock(&result_mutex);
 }
 
+void clear_output()
+{
+    pthread_mutex_lock(&result_mutex);
+    output = NULL;
+    pthread_mutex_unlock(&result_mutex);
+}
+
 char *get_output(void)
 {
     char *val;
@@ -92,7 +99,7 @@ static int cb_count_msgpack_events(void *record, size_t size, void *data)
 int callback_test(void* data, size_t size, void* cb_data)
 {
     if (size > 0) {
-        flb_debug("[test_filter_lua] received message: %s", data);
+        flb_debug("[test_filter_lua] received message: %s", (char*)data);
         set_output(data); /* success */
     }
     return 0;
@@ -102,9 +109,10 @@ int callback_cat(void* data, size_t size, void* cb_data)
 {
     flb_sds_t *outbuf = cb_data;
     if (size > 0) {
-        flb_debug("[test_filter_lua] received message: %s", data);
+        flb_debug("[test_filter_lua] received message: %s", (char*)data);
         pthread_mutex_lock(&result_mutex);
         flb_sds_cat_safe(outbuf, data, size);
+        flb_free(data);
         pthread_mutex_unlock(&result_mutex);
     }
     return 0;
@@ -182,6 +190,8 @@ void flb_test_type_int_key(void)
       "    return 1, timestamp, new_record\n"
       "end\n";
 
+    clear_output();
+
     /* Create context, flush every second (some checks omitted here) */
     ctx = flb_create();
     flb_service_set(ctx, "flush", FLUSH_INTERVAL, "grace", "1", NULL);
@@ -256,6 +266,8 @@ void flb_test_type_int_key_multi(void)
       "    new_record[\"lua_int_2\"] = 100.2\n"
       "    return 1, timestamp, new_record\n"
       "end\n";
+
+    clear_output();
 
     /* Create context, flush every second (some checks omitted here) */
     ctx = flb_create();
@@ -463,6 +475,8 @@ void flb_test_type_array_key(void)
       "    return 1, timestamp, new_record\n"
       "end\n";
 
+    clear_output();
+
     /* Create context, flush every second (some checks omitted here) */
     ctx = flb_create();
     flb_service_set(ctx, "flush", FLUSH_INTERVAL, "grace", "1", NULL);
@@ -537,6 +551,8 @@ void flb_test_array_contains_null(void)
       "    new_record[\"modify\"] = \"yes\"\n"
       "    return 1, timestamp, new_record\n"
       "end\n";
+
+    clear_output();
 
     /* Create context, flush every second (some checks omitted here) */
     ctx = flb_create();
@@ -684,6 +700,8 @@ void flb_test_split_record(void)
       "function lua_main(tag, timestamp, record)\n"
       "    return 1, 5, record.x\n"
       "end\n";
+
+    clear_output();
 
     /* Create context, flush every second (some checks omitted here) */
     ctx = flb_create();

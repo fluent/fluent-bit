@@ -230,7 +230,7 @@ struct flb_chunk_trace_context *flb_chunk_trace_context_new(void *trace_input,
     ctx->input = (void *)input;
     ctx->trace_prefix = flb_sds_create(trace_prefix);
 
-    flb_start(ctx->flb);
+    flb_start_trace(ctx->flb);
 
     in->chunk_trace_ctxt = ctx;
     pthread_mutex_unlock(&in->chunk_trace_lock);

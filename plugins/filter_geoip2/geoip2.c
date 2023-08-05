@@ -29,6 +29,8 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_filter_plugin.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 #include <msgpack.h>
 
 #include "geoip2.h"
@@ -194,7 +196,7 @@ static MMDB_lookup_result_s mmdb_lookup(struct geoip2_ctx *ctx, const char *ip)
 static void add_geoip_fields(msgpack_object *map,
                              struct flb_hash_table *lookup_keys,
                              struct geoip2_ctx *ctx,
-                             msgpack_packer *packer)
+                             struct flb_log_event_encoder *encoder)
 {
     int ret;
     struct mk_list *head;
@@ -219,19 +221,19 @@ static void add_geoip_fields(msgpack_object *map,
     mk_list_foreach_safe(head, tmp, &ctx->records) {
         record = mk_list_entry(head, struct geoip2_record, _head);
 
-        msgpack_pack_str(packer, record->key_len);
-        msgpack_pack_str_body(packer, record->key, record->key_len);
+        flb_log_event_encoder_append_body_string(
+            encoder, record->key, record->key_len);
 
         ret = flb_hash_table_get(lookup_keys, record->lookup_key, record->lookup_key_len,
                                  (void *) &ip, &ip_size);
         if (ret == -1) {
-            msgpack_pack_nil(packer);
+            flb_log_event_encoder_append_body_null(encoder);
             continue;
         }
 
         result = mmdb_lookup(ctx, ip);
         if (!result.found_entry) {
-            msgpack_pack_nil(packer);
+            flb_log_event_encoder_append_body_null(encoder);
             continue;
         }
         entry = result.entry;
@@ -256,60 +258,65 @@ static void add_geoip_fields(msgpack_object *map,
         flb_free(path);
         if (status != MMDB_SUCCESS) {
             flb_plg_warn(ctx->ins, "cannot get value: %s", MMDB_strerror(status));
-            msgpack_pack_nil(packer);
+            flb_log_event_encoder_append_body_null(encoder);
             continue;
         }
         if (!entry_data.has_data) {
             flb_plg_warn(ctx->ins, "found entry does not have data");
-            msgpack_pack_nil(packer);
+            flb_log_event_encoder_append_body_null(encoder);
             continue;
         }
         if (entry_data.type == MMDB_DATA_TYPE_MAP ||
             entry_data.type == MMDB_DATA_TYPE_ARRAY) {
             flb_plg_warn(ctx->ins, "Not supported MAP and ARRAY");
-            msgpack_pack_nil(packer);
+            flb_log_event_encoder_append_body_null(encoder);
             continue;
         }
 
         switch (entry_data.type) {
         case MMDB_DATA_TYPE_EXTENDED:
             /* TODO: not implemented */
-            msgpack_pack_nil(packer);
+            flb_log_event_encoder_append_body_null(encoder);
             break;
         case MMDB_DATA_TYPE_POINTER:
             /* TODO: not implemented */
-            msgpack_pack_nil(packer);
+            flb_log_event_encoder_append_body_null(encoder);
             break;
         case MMDB_DATA_TYPE_UTF8_STRING:
-            msgpack_pack_str(packer, entry_data.data_size);
-            msgpack_pack_str_body(packer,
-                                  entry_data.utf8_string,
-                                  entry_data.data_size);
+            flb_log_event_encoder_append_body_string(
+                encoder,
+                (char *) entry_data.utf8_string,
+                entry_data.data_size);
             break;
         case MMDB_DATA_TYPE_DOUBLE:
-            msgpack_pack_double(packer, entry_data.double_value);
+            flb_log_event_encoder_append_body_double(
+                encoder, entry_data.double_value);
             break;
         case MMDB_DATA_TYPE_BYTES:
-            msgpack_pack_str(packer, entry_data.data_size);
-            msgpack_pack_str_body(packer,
-                                  entry_data.bytes,
-                                  entry_data.data_size);
+            flb_log_event_encoder_append_body_string(
+                encoder,
+                (char *) entry_data.bytes,
+                entry_data.data_size);
             break;
         case MMDB_DATA_TYPE_UINT16:
-            msgpack_pack_uint16(packer, entry_data.uint16);
+            flb_log_event_encoder_append_body_uint16(
+                encoder, entry_data.uint16);
             break;
         case MMDB_DATA_TYPE_UINT32:
-            msgpack_pack_uint32(packer, entry_data.uint32);
+            flb_log_event_encoder_append_body_uint32(
+                encoder, entry_data.uint32);
             break;
         case MMDB_DATA_TYPE_MAP:
             /* TODO: not implemented */
-            msgpack_pack_nil(packer);
+            flb_log_event_encoder_append_body_null(encoder);
             break;
         case MMDB_DATA_TYPE_INT32:
-            msgpack_pack_int32(packer, entry_data.int32);
+            flb_log_event_encoder_append_body_int32(
+                encoder, entry_data.int32);
             break;
         case MMDB_DATA_TYPE_UINT64:
-            msgpack_pack_uint64(packer, entry_data.uint64);
+            flb_log_event_encoder_append_body_uint64(
+                encoder, entry_data.uint64);
             break;
         case MMDB_DATA_TYPE_UINT128:
 #if !(MMDB_UINT128_IS_BYTE_ARRAY)
@@ -318,29 +325,30 @@ static void add_geoip_fields(msgpack_object *map,
 #else
             flb_warn("Not implemented when MMDB_UINT128_IS_BYTE_ARRAY");
 #endif
-            msgpack_pack_nil(packer);
+            flb_log_event_encoder_append_body_null(encoder);
             break;
         case MMDB_DATA_TYPE_ARRAY:
             /* TODO: not implemented */
-            msgpack_pack_nil(packer);
+            flb_log_event_encoder_append_body_null(encoder);
             break;
         case MMDB_DATA_TYPE_CONTAINER:
             /* TODO: not implemented */
-            msgpack_pack_nil(packer);
+            flb_log_event_encoder_append_body_null(encoder);
             break;
         case MMDB_DATA_TYPE_END_MARKER:
             break;
         case MMDB_DATA_TYPE_BOOLEAN:
-            entry_data.boolean ? msgpack_pack_true(packer) : msgpack_pack_false(packer);
+            flb_log_event_encoder_append_body_boolean(
+                encoder, (int) entry_data.boolean);
             break;
         case MMDB_DATA_TYPE_FLOAT:
-            msgpack_pack_float(packer, entry_data.float_value);
+            flb_log_event_encoder_append_body_double(
+                encoder, entry_data.float_value);
             break;
         default:
             flb_error("Unknown type: %d", entry_data.type);
             break;
         }
-
     }
 }
 
@@ -377,58 +385,93 @@ static int cb_geoip2_filter(const void *data, size_t bytes,
                             void *context,
                             struct flb_config *config)
 {
-    (void) i_ins;
     struct geoip2_ctx *ctx = context;
-    size_t off = 0;
-    int map_num = 0;
-    struct flb_time tm;
-    msgpack_sbuffer sbuffer;
-    msgpack_packer packer;
-    msgpack_unpacked unpacked;
-    msgpack_object *obj;
     msgpack_object_kv *kv;
     struct flb_hash_table *lookup_keys_hash;
+    struct flb_log_event_encoder log_encoder;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    int ret;
+    int i;
 
-    /* Create temporal msgpack buffer */
-    msgpack_sbuffer_init(&sbuffer);
-    msgpack_packer_init(&packer, &sbuffer, msgpack_sbuffer_write);
+    (void) i_ins;
 
-    /* Iterate each item to know map number */
-    msgpack_unpacked_init(&unpacked);
-    while (msgpack_unpack_next(&unpacked, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        if (unpacked.data.type != MSGPACK_OBJECT_ARRAY) {
-            continue;
-        }
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
-        flb_time_pop_from_msgpack(&tm, &unpacked, &obj);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
 
-        if (obj->type == MSGPACK_OBJECT_MAP) {
-            map_num = obj->via.map.size;
-        }
-        else {
-            continue;
-        }
-
-        msgpack_pack_array(&packer, 2);
-        flb_time_append_to_msgpack(&tm, &packer, 0);
-
-        msgpack_pack_map(&packer, map_num + ctx->records_num);
-        kv = obj->via.map.ptr;
-        for (int i = 0; i < map_num; i++) {
-            msgpack_pack_object(&packer, (kv + i)->key);
-            msgpack_pack_object(&packer, (kv + i)->val);
-        }
-
-        lookup_keys_hash = prepare_lookup_keys(obj, ctx);
-        add_geoip_fields(obj, lookup_keys_hash, ctx, &packer);
-        flb_hash_table_destroy(lookup_keys_hash);
+        return FLB_FILTER_NOTOUCH;
     }
-    msgpack_unpacked_destroy(&unpacked);
 
-    /* link new buffers */
-    *out_buf = sbuffer.data;
-    *out_size = sbuffer.size;
-    return FLB_FILTER_MODIFIED;
+    ret = flb_log_event_encoder_init(&log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder initialization error : %d", ret);
+
+        flb_log_event_decoder_destroy(&log_decoder);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+
+        ret = flb_log_event_encoder_begin_record(&log_encoder);
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_set_timestamp(
+                    &log_encoder, &log_event.timestamp);
+        }
+
+        kv = log_event.body->via.map.ptr;
+        for (i = 0;
+             i < log_event.body->via.map.size &&
+             ret == FLB_EVENT_ENCODER_SUCCESS ;
+             i++) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &log_encoder,
+                    FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].key),
+                    FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].val));
+        }
+
+        lookup_keys_hash = prepare_lookup_keys(log_event.body, ctx);
+        add_geoip_fields(log_event.body, lookup_keys_hash, ctx, &log_encoder);
+        flb_hash_table_destroy(lookup_keys_hash);
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_commit_record(&log_encoder);
+        }
+    }
+
+    if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA &&
+        log_decoder.offset == bytes) {
+        ret = FLB_EVENT_ENCODER_SUCCESS;
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        *out_buf  = log_encoder.output_buffer;
+        *out_size = log_encoder.output_length;
+
+        ret = FLB_FILTER_MODIFIED;
+
+        flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
+    }
+    else {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder error : %d", ret);
+
+        ret = FLB_FILTER_NOTOUCH;
+    }
+
+    flb_log_event_decoder_destroy(&log_decoder);
+    flb_log_event_encoder_destroy(&log_encoder);
+
+    return ret;
 }
 
 static int cb_geoip2_exit(void *data, struct flb_config *config)

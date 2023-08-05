@@ -8,7 +8,7 @@ set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  2)
 set(FLB_VERSION_MINOR  1)
-set(FLB_VERSION_PATCH  0)
+set(FLB_VERSION_PATCH  9)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -78,10 +78,14 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "FreeBSD")
   set(CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS} -lutil")
 endif()
 
-# *BSD is not supported platform for wasm-micro-runtime. Now, we should be disabled for these platforms.
-if(${CMAKE_SYSTEM_NAME} MATCHES "BSD")
+# *BSD is not supported platform for wasm-micro-runtime except for FreeBSD.
+# Now, we should be disabled for these platforms.
+if(NOT FLB_SYSTEM_FREEBSD AND ${CMAKE_SYSTEM_NAME} MATCHES "BSD")
   message(STATUS "This platform is not supported for WASM feature so disabled.")
   set(FLB_WASM OFF)
+elseif(FLB_SYSTEM_FREEBSD)
+  message(STATUS "Some of FreeBSD environment do not work with hardware boundary check so disabled.")
+  set(WAMR_DISABLE_STACK_HW_BOUND_CHECK 1)
 endif()
 
 include(GNUInstallDirs)
@@ -89,6 +93,7 @@ include(ExternalProject)
 include(cmake/FindJournald.cmake)
 include(cmake/FindMonkey.cmake)
 include(cmake/macros.cmake)
+include(cmake/platform_feature_checks.cmake)
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/sanitizers-cmake/cmake" ${CMAKE_MODULE_PATH})
 find_package(Sanitizers)
 
@@ -169,7 +174,8 @@ option(FLB_IN_FORWARD                  "Enable Forward input plugin"            
 option(FLB_IN_HEALTH                   "Enable Health input plugin"                   Yes)
 option(FLB_IN_HTTP                     "Enable HTTP input plugin"                     Yes)
 option(FLB_IN_MEM                      "Enable Memory input plugin"                   Yes)
-option(FLB_IN_KAFKA                    "Enable Kafka input plugin"                     No)
+option(FLB_IN_KUBERNETES_EVENTS        "Enable Kubernetes Events plugin"              Yes)
+option(FLB_IN_KAFKA                    "Enable Kafka input plugin"                    Yes)
 option(FLB_IN_KMSG                     "Enable Kernel log input plugin"               Yes)
 option(FLB_IN_LIB                      "Enable library mode input plugin"             Yes)
 option(FLB_IN_RANDOM                   "Enable random input plugin"                   Yes)
@@ -198,10 +204,14 @@ option(FLB_IN_STORAGE_BACKLOG          "Enable storage backlog input plugin"    
 option(FLB_IN_EMITTER                  "Enable emitter input plugin"                  Yes)
 option(FLB_IN_NODE_EXPORTER_METRICS    "Enable node exporter metrics input plugin"    Yes)
 option(FLB_IN_WINDOWS_EXPORTER_METRICS "Enable windows exporter metrics input plugin" Yes)
+option(FLB_IN_PODMAN_METRICS           "Enable Podman Metrics input plugin"           Yes)
 option(FLB_IN_OPENTELEMETRY            "Enable OpenTelemetry input plugin"            Yes)
 option(FLB_IN_ELASTICSEARCH            "Enable Elasticsearch (Bulk API) input plugin" Yes)
+option(FLB_IN_CALYPTIA_FLEET           "Enable Calyptia Fleet input plugin"           Yes)
+option(FLB_IN_SPLUNK                   "Enable Splunk HTTP HEC input plugin"          Yes)
 option(FLB_OUT_AZURE                   "Enable Azure output plugin"                   Yes)
 option(FLB_OUT_AZURE_BLOB              "Enable Azure output plugin"                   Yes)
+option(FLB_OUT_AZURE_LOGS_INGESTION    "Enable Azure Logs Ingestion output plugin"    Yes)
 option(FLB_OUT_AZURE_KUSTO             "Enable Azure Kusto output plugin"             Yes)
 option(FLB_OUT_BIGQUERY                "Enable BigQuery output plugin"                Yes)
 option(FLB_OUT_CALYPTIA                "Enable Calyptia monitoring plugin"            Yes)
@@ -234,7 +244,7 @@ option(FLB_OUT_NULL                    "Enable dev null output plugin"          
 option(FLB_OUT_FLOWCOUNTER             "Enable flowcount output plugin"               Yes)
 option(FLB_OUT_LOGDNA                  "Enable LogDNA output plugin"                  Yes)
 option(FLB_OUT_LOKI                    "Enable Loki output plugin"                    Yes)
-option(FLB_OUT_KAFKA                   "Enable Kafka output plugin"                    No)
+option(FLB_OUT_KAFKA                   "Enable Kafka output plugin"                   Yes)
 option(FLB_OUT_KAFKA_REST              "Enable Kafka Rest output plugin"              Yes)
 option(FLB_OUT_CLOUDWATCH_LOGS         "Enable AWS CloudWatch output plugin"          Yes)
 option(FLB_OUT_KINESIS_FIREHOSE        "Enable AWS Firehose output plugin"            Yes)
@@ -243,7 +253,9 @@ option(FLB_OUT_OPENTELEMETRY           "Enable OpenTelemetry plugin"            
 option(FLB_OUT_PROMETHEUS_EXPORTER     "Enable Prometheus exporter plugin"            Yes)
 option(FLB_OUT_PROMETHEUS_REMOTE_WRITE "Enable Prometheus remote write plugin"        Yes)
 option(FLB_OUT_S3                      "Enable AWS S3 output plugin"                  Yes)
+option(FLB_OUT_VIVO_EXPORTER           "Enabel Vivo exporter output plugin"           Yes)
 option(FLB_OUT_WEBSOCKET               "Enable Websocket output plugin"               Yes)
+option(FLB_OUT_CHRONICLE               "Enable Google Chronicle output plugin"        Yes)
 option(FLB_FILTER_ALTER_SIZE           "Enable alter_size filter"                     Yes)
 option(FLB_FILTER_AWS                  "Enable aws filter"                            Yes)
 option(FLB_FILTER_ECS                  "Enable AWS ECS filter"                        Yes)
@@ -260,14 +272,16 @@ option(FLB_FILTER_THROTTLE_SIZE        "Enable throttle size filter"            
 option(FLB_FILTER_TYPE_CONVERTER       "Enable type converter filter"                 Yes)
 option(FLB_FILTER_MULTILINE            "Enable multiline filter"                      Yes)
 option(FLB_FILTER_NEST                 "Enable nest filter"                           Yes)
+option(FLB_FILTER_LOG_TO_METRICS       "Enable log-derived metrics filter"            Yes)
 option(FLB_FILTER_LUA                  "Enable Lua scripting filter"                  Yes)
-option(FLB_FILTER_LUA_USE_MPACK        "Enable mpack on the lua filter"               Yes)
+option(FLB_FILTER_LUA_USE_MPACK        "Enable mpack on the lua filter"                No)
 option(FLB_FILTER_RECORD_MODIFIER      "Enable record_modifier filter"                Yes)
 option(FLB_FILTER_TENSORFLOW           "Enable tensorflow filter"                      No)
 option(FLB_FILTER_GEOIP2               "Enable geoip2 filter"                         Yes)
 option(FLB_FILTER_NIGHTFALL            "Enable Nightfall filter"                      Yes)
 option(FLB_FILTER_WASM                 "Enable WASM filter"                           Yes)
-
+option(FLB_PROCESSOR_LABELS            "Enable metrics label manipulation processor"  Yes)
+option(FLB_PROCESSOR_ATTRIBUTES        "Enable atributes manipulation processor"      Yes)
 
 if(DEFINED FLB_NIGHTLY_BUILD AND NOT "${FLB_NIGHTLY_BUILD}" STREQUAL "")
   FLB_DEFINITION_VAL(FLB_NIGHTLY_BUILD ${FLB_NIGHTLY_BUILD})
@@ -688,6 +702,16 @@ endif()
 # Systemd Journald support
 if(JOURNALD_FOUND)
   FLB_DEFINITION(FLB_HAVE_SYSTEMD)
+
+  check_c_source_compiles("
+    #include <systemd/sd-bus.h>
+    int main() {
+       return 0;
+    }" FLB_HAVE_SYSTEMD_SDBUS)
+
+  if(FLB_HAVE_SYSTEMD_SDBUS)
+    FLB_DEFINITION(FLB_HAVE_SYSTEMD_SDBUS)
+  endif()
 else()
   FLB_OPTION(FLB_IN_SYSTEMD OFF)
 endif()
@@ -797,22 +821,35 @@ if(FLB_CONFIG_YAML)
     include_directories(${LIBYAML_INCLUDEDIR})
     link_directories(${LIBYAML_LIBRARY_DIRS})
   else()
-    # Requires libyaml support
-    check_c_source_compiles("
+    if (FLB_LIBYAML_DIR)
+      set(LIBYAML_LIBRARY_DIRS "${FLB_LIBYAML_DIR}/lib")
+      set(LIBYAML_INCLUDEDIR "${FLB_LIBYAML_DIR}/include")
+      message(STATUS "specified libyaml dir: ${FLB_LIBYAML_DIR}")
+      if (MSVC)
+        FLB_DEFINITION(YAML_DECLARE_STATIC)
+      endif ()
+      set(FLB_HAVE_LIBYAML 1)
+      FLB_DEFINITION(FLB_HAVE_LIBYAML)
+      include_directories(${LIBYAML_INCLUDEDIR})
+      link_directories(${LIBYAML_LIBRARY_DIRS})
+    else ()
+      # Requires libyaml support
+      check_c_source_compiles("
       #include <yaml.h>
       int main() {
         yaml_parser_t parser;
         return 0;
       }" FLB_HAVE_LIBYAML)
 
-    if(NOT FLB_HAVE_LIBYAML)
-      message(FATAL_ERROR
-        "YAML development dependencies required for YAML configuration format handling.\n"
-        "This is a build time dependency, you can either install the "
-        "dependencies or disable the feature setting the CMake option "
-        "-DFLB_CONFIG_YAML=Off ."
+      if(NOT FLB_HAVE_LIBYAML)
+        message(FATAL_ERROR
+          "YAML development dependencies required for YAML configuration format handling.\n"
+          "This is a build time dependency, you can either install the "
+          "dependencies or disable the feature setting the CMake option "
+          "-DFLB_CONFIG_YAML=Off ."
         )
-    endif()
+      endif()
+    endif ()
 
     FLB_DEFINITION(FLB_HAVE_LIBYAML)
   endif()

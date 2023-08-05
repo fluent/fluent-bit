@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_random.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 #include <msgpack.h>
 
 #include <stdio.h>
@@ -41,17 +42,18 @@ struct flb_in_random_config {
 
     /* Internal */
     int              samples_count;
+    int              coll_fd;
 
     struct flb_input_instance *ins;
+    struct flb_log_event_encoder *log_encoder;
 };
 
 /* cb_collect callback */
 static int in_random_collect(struct flb_input_instance *ins,
                              struct flb_config *config, void *in_context)
 {
+    int ret;
     uint64_t val;
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
     struct flb_in_random_config *ctx = in_context;
 
     if (ctx->samples == 0) {
@@ -66,22 +68,37 @@ static int in_random_collect(struct flb_input_instance *ins,
         val = time(NULL);
     }
 
-    /* Initialize local msgpack buffer */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
 
-    /* Pack data */
-    msgpack_pack_array(&mp_pck, 2);
-    flb_pack_time_now(&mp_pck);
-    msgpack_pack_map(&mp_pck, 1);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_current_timestamp(ctx->log_encoder);
+    }
 
-    msgpack_pack_str(&mp_pck, 10);
-    msgpack_pack_str_body(&mp_pck, "rand_value", 10);
-    msgpack_pack_uint64(&mp_pck, val);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_append_body_values(
+                ctx->log_encoder,
+                FLB_LOG_EVENT_CSTRING_VALUE("rand_value"),
+                FLB_LOG_EVENT_UINT64_VALUE(val));
+    }
 
-    flb_input_log_append(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_commit_record(ctx->log_encoder);
+    }
 
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        flb_input_log_append(ctx->ins, NULL, 0,
+                             ctx->log_encoder->output_buffer,
+                             ctx->log_encoder->output_length);
+        ret = 0;
+    }
+    else {
+        flb_plg_error(ctx->ins, "log event encoding error : %d", ret);
+
+        ret = -1;
+    }
+
+    flb_log_event_encoder_reset(ctx->log_encoder);
+
     ctx->samples_count++;
 
     return 0;
@@ -120,12 +137,21 @@ static int in_random_init(struct flb_input_instance *in,
     struct flb_in_random_config *ctx = NULL;
 
     /* Allocate space for the configuration */
-    ctx = flb_malloc(sizeof(struct flb_in_random_config));
+    ctx = flb_calloc(1, sizeof(struct flb_in_random_config));
     if (!ctx) {
         return -1;
     }
     ctx->samples_count = 0;
     ctx->ins = in;
+
+    ctx->log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ctx->log_encoder == NULL) {
+        flb_plg_error(in, "could not initialize event encoder");
+        flb_free(ctx);
+
+        return -1;
+    }
 
     /* Initialize head config */
     ret = in_random_config_read(ctx, in);
@@ -144,17 +170,36 @@ static int in_random_init(struct flb_input_instance *in,
         flb_free(ctx);
         return -1;
     }
-
+    ctx->coll_fd = ret;
     return 0;
+}
+
+static void in_random_pause(void *data, struct flb_config *config)
+{
+    struct flb_in_random_config *ctx = data;
+
+    flb_input_collector_pause(ctx->coll_fd, ctx->ins);
+
+}
+
+static void in_random_resume(void *data, struct flb_config *config)
+{
+    struct flb_in_random_config *ctx = data;
+
+    flb_input_collector_resume(ctx->coll_fd, ctx->ins);
 }
 
 static int in_random_exit(void *data, struct flb_config *config)
 {
-    (void) *config;
     struct flb_in_random_config *ctx = data;
+    (void) *config;
 
     if (!ctx) {
         return 0;
+    }
+
+    if (ctx->log_encoder != NULL) {
+        flb_log_event_encoder_destroy(ctx->log_encoder);
     }
 
     flb_free(ctx);
@@ -193,6 +238,8 @@ struct flb_input_plugin in_random_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = in_random_collect,
     .cb_flush_buf = NULL,
+    .cb_pause     = in_random_pause,
+    .cb_resume    = in_random_resume,
     .cb_exit      = in_random_exit,
     .config_map   = config_map
 };

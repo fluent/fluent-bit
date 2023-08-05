@@ -55,4 +55,22 @@ static inline int flb_str_emptyval(const char *s)
     return FLB_FALSE;
 }
 
+/*
+ Trim the `c` character sequence to the right of the `*str` string and return a copy.
+ * @param *str Source string;
+ * @param c Character to be trimmed.
+ * @returns a new string, which is a trimmed copy of `*str`.
+*/
+static inline char *flb_rtrim(const char *str, char c) {
+    ssize_t pos = strlen(str);
+
+    while(c == str[--pos]);
+
+    if (pos < 0){
+        return NULL;
+    }
+
+    return flb_strndup(str, pos+1);
+}
+
 #endif

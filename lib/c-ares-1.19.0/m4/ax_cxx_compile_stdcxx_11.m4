@@ -37,6 +37,9 @@
 #serial 9
 
 m4_define([_AX_CXX_COMPILE_STDCXX_11_testbody], [[
+
+#define static_assert _Static_assert
+
   template <typename T>
     struct check
     {

@@ -522,8 +522,8 @@ int create_multipart_upload(struct flb_s3 *ctx,
         flb_plg_debug(ctx->ins, "CreateMultipartUpload http status=%d",
                       c->resp.status);
         if (c->resp.status == 200) {
-            tmp = flb_xml_get_val(c->resp.payload, c->resp.payload_size,
-                                  "<UploadId>");
+            tmp = flb_aws_xml_get_val(c->resp.payload, c->resp.payload_size,
+                                  "<UploadId>", "</UploadId>");
             if (!tmp) {
                 flb_plg_error(ctx->ins, "Could not find upload ID in "
                               "CreateMultipartUpload response");

@@ -98,9 +98,6 @@ jobs:
           path: ci
 
       - name: ${{ matrix.flb_option }}
-        # Currently MacOS is unsupported so we do not want to fail on any errors here, the unit tests are for information
-        # during review - they should pass still.
-        continue-on-error: true
         run: |
           echo "CC = $CC, CXX = $CXX, FLB_OPT = $FLB_OPT"
           brew update

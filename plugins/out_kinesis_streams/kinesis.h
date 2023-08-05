@@ -92,6 +92,7 @@ struct flb_kinesis {
     int retry_requests;
     char *sts_endpoint;
     int custom_endpoint;
+    char *profile;
 
     /* in this plugin the 'random' partition key is a uuid + fluent tag + timestamp */
     char *uuid;

@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_metrics.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 
 #include <msgpack.h>
 
@@ -65,41 +66,24 @@ static char *influxdb_format(const char *tag, int tag_len,
     int ret;
     int n_size;
     uint64_t seq = 0;
-    size_t off = 0;
     char *buf;
     char *str = NULL;
     size_t str_size;
     char tmp[128];
-    msgpack_unpacked result;
-    msgpack_object root;
     msgpack_object map;
-    msgpack_object *obj;
     struct flb_time tm;
     struct influxdb_bulk *bulk = NULL;
     struct influxdb_bulk *bulk_head = NULL;
     struct influxdb_bulk *bulk_body = NULL;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
 
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
-    /* Iterate the original buffer and perform adjustments */
-    msgpack_unpacked_init(&result);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
 
-    /* Perform some format validation */
-    ret = msgpack_unpack_next(&result, data, bytes, &off);
-    if (!ret) {
-        return NULL;
-    }
-
-    /* We 'should' get an array */
-    if (result.data.type != MSGPACK_OBJECT_ARRAY) {
-        /*
-         * If we got a different format, we assume the caller knows what he is
-         * doing, we just duplicate the content in a new buffer and cleanup.
-         */
-        return NULL;
-    }
-
-    root = result.data;
-    if (root.via.array.size == 0) {
         return NULL;
     }
 
@@ -119,23 +103,12 @@ static char *influxdb_format(const char *tag, int tag_len,
         goto error;
     }
 
-    off = 0;
-    msgpack_unpacked_destroy(&result);
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        if (result.data.type != MSGPACK_OBJECT_ARRAY) {
-            continue;
-        }
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        flb_time_copy(&tm, &log_event.timestamp);
 
-        /* Each array must have two entries: time and record */
-        root = result.data;
-        if (root.via.array.size != 2) {
-            continue;
-        }
-
-
-        flb_time_pop_from_msgpack(&tm, &result, &obj);
-        map    = root.via.array.ptr[1];
+        map    = *log_event.body;
         n_size = map.via.map.size + 1;
 
         seq = ctx->seq;
@@ -293,7 +266,7 @@ static char *influxdb_format(const char *tag, int tag_len,
         bulk_body->len = 0;
     }
 
-    msgpack_unpacked_destroy(&result);
+    flb_log_event_decoder_destroy(&log_decoder);
 
     *out_size = bulk->len;
     buf = bulk->ptr;
@@ -319,7 +292,9 @@ error:
     if (bulk_body != NULL) {
         influxdb_bulk_destroy(bulk_body);
     }
-    msgpack_unpacked_destroy(&result);
+
+    flb_log_event_decoder_destroy(&log_decoder);
+
     return NULL;
 }
 

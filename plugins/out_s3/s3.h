@@ -61,7 +61,7 @@
 struct upload_queue {
     struct s3_file *upload_file;
     struct multipart_upload *m_upload_file;
-    char *tag;
+    flb_sds_t tag;
     int tag_len;
 
     int retry_counter;
@@ -112,6 +112,7 @@ struct flb_s3 {
     char *storage_class;
     char *log_key;
     char *external_id;
+    char *profile;
     int free_endpoint;
     int retry_requests;
     int use_put_object;

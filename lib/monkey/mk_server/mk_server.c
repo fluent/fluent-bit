@@ -124,7 +124,7 @@ struct mk_sched_conn *mk_server_listen_handler(struct mk_sched_worker *sched,
 
 error:
     if (client_fd != -1) {
-        listener->network->network->close(client_fd);
+        listener->network->network->close(listener->network, client_fd);
     }
 
     return NULL;
@@ -167,7 +167,6 @@ void mk_server_listen_exit(struct mk_list *list)
 
 struct mk_list *mk_server_listen_init(struct mk_server *server)
 {
-    int i = 0;
     int server_fd;
     int reuse_port = MK_FALSE;
     struct mk_list *head;
@@ -203,7 +202,7 @@ struct mk_list *mk_server_listen_init(struct mk_server *server)
 #endif
             }
 
-            listener = mk_mem_alloc(sizeof(struct mk_server_listen));
+            listener = mk_mem_alloc_z(sizeof(struct mk_server_listen));
 
             /* configure the internal event_state */
             event = &listener->event;
@@ -254,7 +253,6 @@ struct mk_list *mk_server_listen_init(struct mk_server *server)
                    listen->port);
             return NULL;
         }
-        i += 1;
     }
 
     if (reuse_port == MK_TRUE) {
@@ -500,7 +498,7 @@ void mk_server_worker_loop(struct mk_server *server)
     }
 
     /* create a new timeout file descriptor */
-    server_timeout = mk_mem_alloc(sizeof(struct mk_server_timeout));
+    server_timeout = mk_mem_alloc_z(sizeof(struct mk_server_timeout));
     MK_TLS_SET(mk_tls_server_timeout, server_timeout);
     timeout_fd = mk_event_timeout_create(evl, server->timeout, 0, server_timeout);
 

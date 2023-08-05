@@ -7,6 +7,9 @@ changes to Fluent Bit.
 
 - [Beginners Guide to Contributing to Fluent Bit](#beginners-guide-to-contributing-to-fluent-bit)
   - [Table of Contents](#table-of-contents)
+  - [Development Environment](#development-environment)
+    - [Devcontainer](#devcontainer)
+    - [Vagrant](#vagrant)
   - [Libraries](#libraries)
     - [Memory Management](#memory-management)
     - [Strings](#strings)
@@ -26,6 +29,62 @@ changes to Fluent Bit.
   - [Testing](#testing)
     - [Valgrind](#valgrind)
   - [Need more help?](#need-more-help)
+
+## Development Environment
+
+Development environments allow to work without any dependency locally.
+
+### Devcontainer
+
+A Development Container (or Dev Container for short) allows you to use a container as a full-featured development environment.
+
+Thanks to [Visual Studio Code integration](https://code.visualstudio.com/docs/devcontainers/containers), devcontainers are managed easily.
+
+#### Prerequirements
+
+Please refer to the [devcontainer documentation](https://code.visualstudio.com/docs/devcontainers/containers#_system-requirements) for full details on pre-requisites and installation.
+
+#### Using without optional tools
+
+```shell
+docker run \
+    --name devcontainer-fluent-bit \
+    --volume $PWD/:/workspaces/fluent-bit \
+    --user $UID:$GID \
+    --tty \
+    --detach \
+    fluent/fluent-bit:latest-debug
+
+docker exec --user root devcontainer-fluent-bit addgroup --system --gid $GID fluent-bit
+docker exec --user root devcontainer-fluent-bit useradd --create-home --system --uid $UID --gid $GID fluent-bit
+docker exec --user root devcontainer-fluent-bit sh -c 'mkdir -p /etc/sudoers.d; echo "fluent-bit   ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/fluent-bit'
+docker exec -it devcontainer-fluent-bit bash
+
+cd /workspaces/fluent-bit
+```
+
+If local applications need to access fluent-bit server or tcp/udp inputs, the ports must be publish with --publish flag. ex:
+
+```text
+docker run \
+--publish 2020:2020 \
+--publish 80:80 \
+...
+```
+
+### Vagrant
+Vagrant enables the creation and configuration of lightweight, reproducible, and portable development environments.
+
+#### Prerequirements
+- [vagrant](https://www.vagrantup.com)
+- [vagrant providers](https://developer.hashicorp.com/vagrant/docs/providers)
+
+#### Using
+
+```shell
+vagrant up
+vagrant ssh
+```
 
 ## Libraries
 
@@ -590,6 +649,13 @@ SUCCESS: All unit tests have passed.
 ### Valgrind
 
 [Valgrind](https://valgrind.org/) is a tool that will help you detect and diagnose memory issues in your code. It will check for memory leaks and invalid memory accesses.
+
+When you use Valgrind, you should compile Fluent Bit with the following options:
+
+```
+$ cmake -DFLB_DEV=On -DFLB_VALGRIND=On ../
+$ make
+```
 
 To use it while developing, invoke it before Fluent Bit:
 

@@ -32,13 +32,12 @@
 
 #define BINDATA(evt) ((unsigned char *) (evt) + (evt)->DataOffset)
 
-static void pack_nullstr(msgpack_packer *mp_pck)
+static int pack_nullstr(struct winevtlog_config *ctx)
 {
-    msgpack_pack_str(mp_pck, 0);
-    msgpack_pack_str_body(mp_pck, "", 0);
+    flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "");
 }
 
-static int pack_wstr(msgpack_packer *mp_pck, const wchar_t *wstr, struct winevtlog_config *ctx)
+static int pack_wstr(struct winevtlog_config *ctx, const wchar_t *wstr)
 {
     int size;
     char *buf;
@@ -69,13 +68,13 @@ static int pack_wstr(msgpack_packer *mp_pck, const wchar_t *wstr, struct winevtl
     }
 
     /* Pack buf except the trailing '\0' */
-    msgpack_pack_str(mp_pck, size - 1);
-    msgpack_pack_str_body(mp_pck, buf, size - 1);
+    flb_log_event_encoder_append_body_string(ctx->log_encoder, buf, size - 1);
+
     flb_free(buf);
     return 0;
 }
 
-static int pack_binary(msgpack_packer *mp_pck, PBYTE bin, size_t length)
+static int pack_binary(struct winevtlog_config *ctx, PBYTE bin, size_t length)
 {
     const char *HEX_TABLE = "0123456789ABCDEF";
     char *buffer;
@@ -84,7 +83,7 @@ static int pack_binary(msgpack_packer *mp_pck, PBYTE bin, size_t length)
     unsigned int idx = 0;
 
     if (length == 0) {
-        pack_nullstr(mp_pck);
+        pack_nullstr(ctx->log_encoder);
         return 0;
     }
 
@@ -100,21 +99,22 @@ static int pack_binary(msgpack_packer *mp_pck, PBYTE bin, size_t length)
             buffer[2*i+(1-j)] = HEX_TABLE[idx];
         }
     }
-    msgpack_pack_str(mp_pck, size);
-    msgpack_pack_str_body(mp_pck, buffer, size);
+
+    flb_log_event_encoder_append_body_string(ctx->log_encoder, buffer, size);
+
     flb_free(buffer);
 
     return 0;
 }
 
-static int pack_guid(msgpack_packer *mp_pck, const GUID *guid, struct winevtlog_config *ctx)
+static int pack_guid(struct winevtlog_config *ctx, const GUID *guid)
 {
     LPOLESTR p = NULL;
 
     if (FAILED(StringFromCLSID(guid, &p))) {
         return -1;
     }
-    if (pack_wstr(mp_pck, p, ctx)) {
+    if (pack_wstr(ctx, p)) {
         CoTaskMemFree(p);
         return -1;
     }
@@ -124,7 +124,7 @@ static int pack_guid(msgpack_packer *mp_pck, const GUID *guid, struct winevtlog_
     return 0;
 }
 
-static int pack_hex32(msgpack_packer *mp_pck, int32_t hex)
+static int pack_hex32(struct winevtlog_config *ctx, int32_t hex)
 {
     CHAR buffer[32];
     size_t size = _countof(buffer);
@@ -136,8 +136,7 @@ static int pack_hex32(msgpack_packer *mp_pck, int32_t hex)
                 hex);
     size = strlen(buffer);
     if (size > 0) {
-        msgpack_pack_str(mp_pck, size);
-        msgpack_pack_str_body(mp_pck, buffer, size);
+        flb_log_event_encoder_append_body_cstring(ctx->log_encoder, buffer);
 
         return 0;
     }
@@ -145,7 +144,7 @@ static int pack_hex32(msgpack_packer *mp_pck, int32_t hex)
     return -1;
 }
 
-static int pack_hex64(msgpack_packer *mp_pck, int64_t hex)
+static int pack_hex64(struct winevtlog_config *ctx, int64_t hex)
 {
     CHAR buffer[32];
     size_t size = _countof(buffer);
@@ -158,8 +157,7 @@ static int pack_hex64(msgpack_packer *mp_pck, int64_t hex)
 
     size = strlen(buffer);
     if (size > 0) {
-        msgpack_pack_str(mp_pck, size);
-        msgpack_pack_str_body(mp_pck, buffer, size);
+        flb_log_event_encoder_append_body_cstring(ctx->log_encoder, buffer);
 
         return 0;
     }
@@ -168,7 +166,7 @@ static int pack_hex64(msgpack_packer *mp_pck, int64_t hex)
 }
 
 
-static int pack_keywords(msgpack_packer *mp_pck, uint64_t keywords)
+static int pack_keywords(struct winevtlog_config *ctx, uint64_t keywords)
 {
     CHAR buffer[32];
     size_t size = _countof(buffer);
@@ -180,13 +178,13 @@ static int pack_keywords(msgpack_packer *mp_pck, uint64_t keywords)
                 keywords);
 
     size = strlen(buffer);
-    msgpack_pack_str(mp_pck, size);
-    msgpack_pack_str_body(mp_pck, buffer, size);
+
+    flb_log_event_encoder_append_body_cstring(ctx->log_encoder, buffer);
 
     return 0;
 }
 
-static int pack_systemtime(msgpack_packer *mp_pck, SYSTEMTIME *st)
+static int pack_systemtime(struct winevtlog_config *ctx, SYSTEMTIME *st)
 {
     CHAR buf[64];
     size_t len = 0;
@@ -217,8 +215,8 @@ static int pack_systemtime(msgpack_packer *mp_pck, SYSTEMTIME *st)
             return -1;
         }
         _free_locale(locale);
-        msgpack_pack_str(mp_pck, len);
-        msgpack_pack_str_body(mp_pck, buf, len);
+
+        flb_log_event_encoder_append_body_string(ctx->log_encoder, buf, len);
     }
     else {
         return -1;
@@ -227,7 +225,7 @@ static int pack_systemtime(msgpack_packer *mp_pck, SYSTEMTIME *st)
     return 0;
 }
 
-static int pack_filetime(msgpack_packer *mp_pck, ULONGLONG filetime)
+static int pack_filetime(struct winevtlog_config *ctx, ULONGLONG filetime)
 {
     LARGE_INTEGER timestamp;
     CHAR buf[64];
@@ -253,8 +251,8 @@ static int pack_filetime(msgpack_packer *mp_pck, ULONGLONG filetime)
             return -1;
         }
         _free_locale(locale);
-        msgpack_pack_str(mp_pck, len);
-        msgpack_pack_str_body(mp_pck, buf, len);
+
+        flb_log_event_encoder_append_body_string(ctx->log_encoder, buf, len);
     }
     else {
         return -1;
@@ -263,14 +261,14 @@ static int pack_filetime(msgpack_packer *mp_pck, ULONGLONG filetime)
     return 0;
 }
 
-static int pack_sid(msgpack_packer *mp_pck, PSID sid, struct winevtlog_config *ctx)
+static int pack_sid(struct winevtlog_config *ctx, PSID sid)
 {
     size_t size;
     LPWSTR wide_sid = NULL;
     int ret = -1;
 
     if (ConvertSidToStringSidW(sid, &wide_sid)) {
-        ret = pack_wstr(mp_pck, wide_sid, ctx);
+        ret = pack_wstr(ctx, wide_sid);
 
         LocalFree(wide_sid);
         return ret;
@@ -279,11 +277,12 @@ static int pack_sid(msgpack_packer *mp_pck, PSID sid, struct winevtlog_config *c
     return ret;
 }
 
-static void pack_string_inserts(msgpack_packer *mp_pck, PEVT_VARIANT values, DWORD count, struct winevtlog_config *ctx)
+static void pack_string_inserts(struct winevtlog_config *ctx, PEVT_VARIANT values, DWORD count)
 {
     int i;
+    int ret;
 
-    msgpack_pack_array(mp_pck, count);
+    ret = flb_log_event_encoder_body_begin_array(ctx->log_encoder);
 
     for (i = 0; i < count; i++) {
         if (values[i].Type & EVT_VARIANT_TYPE_ARRAY) {
@@ -292,141 +291,146 @@ static void pack_string_inserts(msgpack_packer *mp_pck, PEVT_VARIANT values, DWO
 
         switch (values[i].Type & EVT_VARIANT_TYPE_MASK) {
         case EvtVarTypeNull:
-            pack_nullstr(mp_pck);
+            pack_nullstr(ctx);
             break;
         case EvtVarTypeString:
-            if (pack_wstr(mp_pck, values[i].StringVal, ctx)) {
-                pack_nullstr(mp_pck);
+            if (pack_wstr(ctx, values[i].StringVal)) {
+                pack_nullstr(ctx);
             }
             break;
         case EvtVarTypeAnsiString:
-            if (pack_wstr(mp_pck, values[i].AnsiStringVal, ctx)) {
-                pack_nullstr(mp_pck);
+            if (pack_wstr(ctx, values[i].AnsiStringVal)) {
+                pack_nullstr(ctx);
             }
             break;
         case EvtVarTypeSByte:
-            msgpack_pack_int8(mp_pck, values[i].SByteVal);
+            flb_log_event_encoder_append_body_int8(ctx->log_encoder, values[i].SByteVal);
             break;
         case EvtVarTypeByte:
-            msgpack_pack_uint8(mp_pck, values[i].ByteVal);
+            flb_log_event_encoder_append_body_uint8(ctx->log_encoder, values[i].ByteVal);
             break;
         case EvtVarTypeInt16:
-            msgpack_pack_int16(mp_pck, values[i].Int16Val);
+            flb_log_event_encoder_append_body_int16(ctx->log_encoder, values[i].Int16Val);
             break;
         case EvtVarTypeUInt16:
-            msgpack_pack_uint16(mp_pck, values[i].UInt16Val);
+            flb_log_event_encoder_append_body_uint16(ctx->log_encoder, values[i].UInt16Val);
             break;
         case EvtVarTypeInt32:
-            msgpack_pack_int32(mp_pck, values[i].Int32Val);
+            flb_log_event_encoder_append_body_int32(ctx->log_encoder, values[i].Int32Val);
             break;
         case EvtVarTypeUInt32:
-            msgpack_pack_uint32(mp_pck, values[i].UInt32Val);
+            flb_log_event_encoder_append_body_uint32(ctx->log_encoder, values[i].UInt32Val);
             break;
         case EvtVarTypeInt64:
-            msgpack_pack_int64(mp_pck, values[i].Int64Val);
+            flb_log_event_encoder_append_body_int64(ctx->log_encoder, values[i].Int64Val);
             break;
         case EvtVarTypeUInt64:
-            msgpack_pack_uint64(mp_pck, values[i].UInt64Val);
+            flb_log_event_encoder_append_body_uint64(ctx->log_encoder, values[i].UInt64Val);
             break;
         case EvtVarTypeSingle:
-            msgpack_pack_float(mp_pck, values[i].SingleVal);
+            flb_log_event_encoder_append_body_double(ctx->log_encoder, values[i].SingleVal);
             break;
         case EvtVarTypeDouble:
-            msgpack_pack_double(mp_pck, values[i].DoubleVal);
+            flb_log_event_encoder_append_body_double(ctx->log_encoder, values[i].DoubleVal);
             break;
         case EvtVarTypeBoolean:
-            if (values[i].BooleanVal) {
-                msgpack_pack_true(mp_pck);
-            }
-            else {
-                msgpack_pack_false(mp_pck);
-            }
+            flb_log_event_encoder_append_body_boolean(ctx->log_encoder, (int) values[i].BooleanVal);
             break;
         case EvtVarTypeGuid:
-            if (pack_guid(mp_pck, values[i].GuidVal, ctx)) {
-                pack_nullstr(mp_pck);
+            if (pack_guid(ctx, values[i].GuidVal)) {
+                pack_nullstr(ctx);
             }
             break;
         case EvtVarTypeSizeT:
-            msgpack_pack_uint64(mp_pck, values[i].SizeTVal);
+            flb_log_event_encoder_append_body_uint64(ctx->log_encoder, values[i].SizeTVal);
             break;
         case EvtVarTypeFileTime:
-            if (pack_filetime(mp_pck, values[i].FileTimeVal)) {
-                pack_nullstr(mp_pck);
+            if (pack_filetime(ctx, values[i].FileTimeVal)) {
+                pack_nullstr(ctx);
             }
             break;
         case EvtVarTypeSysTime:
-            if (pack_systemtime(mp_pck, values[i].SysTimeVal)) {
-                pack_nullstr(mp_pck);
+            if (pack_systemtime(ctx, values[i].SysTimeVal)) {
+                pack_nullstr(ctx);
             }
             break;
         case EvtVarTypeSid:
-            if (pack_sid(mp_pck, values[i].SidVal, ctx)) {
-                pack_nullstr(mp_pck);
+            if (pack_sid(ctx, values[i].SidVal)) {
+                pack_nullstr(ctx);
             }
             break;
         case EvtVarTypeHexInt32:
-            if (pack_hex32(mp_pck, values[i].Int32Val)) {
-                pack_nullstr(mp_pck);
+            if (pack_hex32(ctx, values[i].Int32Val)) {
+                pack_nullstr(ctx);
             }
             break;
         case EvtVarTypeHexInt64:
-            if (pack_hex64(mp_pck, values[i].Int64Val)) {
-                pack_nullstr(mp_pck);
+            if (pack_hex64(ctx, values[i].Int64Val)) {
+                pack_nullstr(ctx);
             }
             break;
         case EvtVarTypeEvtXml:
-            if (pack_wstr(mp_pck, values[i].XmlVal, ctx)) {
-                pack_nullstr(mp_pck);
+            if (pack_wstr(ctx, values[i].XmlVal, ctx)) {
+                pack_nullstr(ctx);
             }
             break;
         case EvtVarTypeBinary:
-            if (pack_binary(mp_pck, values[i].BinaryVal, values[i].Count)) {
-                pack_nullstr(mp_pck);
+            if (pack_binary(ctx, values[i].BinaryVal, values[i].Count)) {
+                pack_nullstr(ctx);
             }
+            break;
         default:
-            msgpack_pack_str(mp_pck, 1);
-            msgpack_pack_str_body(mp_pck, "?", 1);
+            flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "?");
         }
     }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_body_commit_array(ctx->log_encoder);
+    }
+
 }
 
-void winevtlog_pack_xml_event(msgpack_packer *mp_pck, WCHAR *system_xml, WCHAR *message,
+void winevtlog_pack_xml_event(WCHAR *system_xml, WCHAR *message,
                               PEVT_VARIANT string_inserts, UINT count_inserts, struct winevtlog_channel *ch,
                               struct winevtlog_config *ctx)
 {
-    int count = 2;
+    int ret;
 
-    msgpack_pack_array(mp_pck, 2);
-    flb_pack_time_now(mp_pck);
+    ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_current_timestamp(ctx->log_encoder);
+    }
+
+
+    ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "System");
+
+    if (pack_wstr(ctx, system_xml)) {
+        pack_nullstr(ctx);
+    }
+
+    ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "Message");
+
+    if (pack_wstr(ctx, message)) {
+        pack_nullstr(ctx);
+    }
 
     if (ctx->string_inserts) {
-        count++;
+        ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "StringInserts");
+
+        pack_string_inserts(ctx, string_inserts, count_inserts);
     }
 
-    msgpack_pack_map(mp_pck, count);
-
-    msgpack_pack_str(mp_pck, 6);
-    msgpack_pack_str_body(mp_pck, "System", 6);
-    if (pack_wstr(mp_pck, system_xml, ctx)) {
-        pack_nullstr(mp_pck);
-    }
-    msgpack_pack_str(mp_pck, 7);
-    msgpack_pack_str_body(mp_pck, "Message", 7);
-    if (pack_wstr(mp_pck, message, ctx)) {
-        pack_nullstr(mp_pck);
-    }
-    if (ctx->string_inserts) {
-        msgpack_pack_str(mp_pck, 13);
-        msgpack_pack_str_body(mp_pck, "StringInserts", 13);
-        pack_string_inserts(mp_pck, string_inserts, count_inserts, ctx);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_commit_record(ctx->log_encoder);
     }
 }
 
-void winevtlog_pack_event(msgpack_packer *mp_pck, PEVT_VARIANT system, WCHAR *message,
+void winevtlog_pack_event(PEVT_VARIANT system, WCHAR *message,
                           PEVT_VARIANT string_inserts, UINT count_inserts, struct winevtlog_channel *ch,
                           struct winevtlog_config *ctx)
 {
+    int ret;
     size_t len;
     int count = 19;
 
@@ -434,182 +438,188 @@ void winevtlog_pack_event(msgpack_packer *mp_pck, PEVT_VARIANT system, WCHAR *me
         count++;
     }
 
-    msgpack_pack_array(mp_pck, 2);
-    flb_pack_time_now(mp_pck);
+    ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
 
-    msgpack_pack_map(mp_pck, count);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_current_timestamp(ctx->log_encoder);
+    }
 
     /* ProviderName */
-    msgpack_pack_str(mp_pck, 12);
-    msgpack_pack_str_body(mp_pck, "ProviderName", 12);
-    if (pack_wstr(mp_pck, system[EvtSystemProviderName].StringVal, ctx)) {
-        pack_nullstr(mp_pck);
+    ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "ProviderName");
+
+    if (pack_wstr(ctx, system[EvtSystemProviderName].StringVal)) {
+        pack_nullstr(ctx);
     }
 
     /* ProviderGuid */
-    msgpack_pack_str(mp_pck, 12);
-    msgpack_pack_str_body(mp_pck, "ProviderGuid", 12);
+    ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "ProviderGuid");
+
     if (EvtVarTypeNull != system[EvtSystemProviderGuid].Type) {
-        if (pack_guid(mp_pck, system[EvtSystemProviderGuid].GuidVal, ctx)) {
-            pack_nullstr(mp_pck);
+        if (pack_guid(ctx, system[EvtSystemProviderGuid].GuidVal)) {
+            pack_nullstr(ctx);
         }
     }
     else {
-        pack_nullstr(mp_pck);
+        pack_nullstr(ctx);
     }
 
     /* Qualifiers */
-    msgpack_pack_str(mp_pck, 10);
-    msgpack_pack_str_body(mp_pck, "Qualifiers", 10);
+    ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "Qualifiers");
+
     if (EvtVarTypeNull != system[EvtSystemQualifiers].Type) {
-        msgpack_pack_uint16(mp_pck, system[EvtSystemQualifiers].UInt16Val);
+        flb_log_event_encoder_append_body_uint16(ctx->log_encoder, system[EvtSystemQualifiers].UInt16Val);
     }
     else {
-        pack_nullstr(mp_pck);
+        pack_nullstr(ctx);
     }
 
     /* EventID */
-    msgpack_pack_str(mp_pck, 7);
-    msgpack_pack_str_body(mp_pck, "EventID", 7);
+    ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "EventID");
+
     if (EvtVarTypeNull != system[EvtSystemEventID].Type) {
-        msgpack_pack_uint16(mp_pck, system[EvtSystemEventID].UInt16Val);
+        flb_log_event_encoder_append_body_uint16(ctx->log_encoder, system[EvtSystemEventID].UInt16Val);
     }
     else {
-        pack_nullstr(mp_pck);
+        pack_nullstr(ctx);
     }
 
     /* Version */
-    msgpack_pack_str(mp_pck, 7);
-    msgpack_pack_str_body(mp_pck, "Version", 7);
+    ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "Version");
+
     if (EvtVarTypeNull != system[EvtSystemVersion].Type) {
-        msgpack_pack_uint8(mp_pck, system[EvtSystemVersion].ByteVal);
+        flb_log_event_encoder_append_body_uint8(ctx->log_encoder, system[EvtSystemVersion].ByteVal);
     }
     else {
-        msgpack_pack_uint8(mp_pck, 0);
+        flb_log_event_encoder_append_body_uint8(ctx->log_encoder, 0);
     }
 
     /* Level */
-    msgpack_pack_str(mp_pck, 5);
-    msgpack_pack_str_body(mp_pck, "Level", 5);
+    ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "Level");
+
     if (EvtVarTypeNull != system[EvtSystemLevel].Type) {
-        msgpack_pack_uint8(mp_pck, system[EvtSystemLevel].ByteVal);
+        flb_log_event_encoder_append_body_uint8(ctx->log_encoder, system[EvtSystemLevel].ByteVal);
     }
     else {
-        msgpack_pack_uint8(mp_pck, 0);
+        flb_log_event_encoder_append_body_uint8(ctx->log_encoder, 0);
     }
 
     /* Task */
-    msgpack_pack_str(mp_pck, 4);
-    msgpack_pack_str_body(mp_pck, "Task", 4);
+    ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "Task");
+
     if (EvtVarTypeNull != system[EvtSystemTask].Type) {
-        msgpack_pack_uint16(mp_pck, system[EvtSystemTask].UInt16Val);
+        flb_log_event_encoder_append_body_uint16(ctx->log_encoder, system[EvtSystemTask].UInt16Val);
     }
     else {
-        msgpack_pack_uint16(mp_pck, 0);
+        flb_log_event_encoder_append_body_uint16(ctx->log_encoder, 0);
     }
 
     /* Opcode */
-    msgpack_pack_str(mp_pck, 6);
-    msgpack_pack_str_body(mp_pck, "Opcode", 6);
+    ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "Opcode");
+
     if (EvtVarTypeNull != system[EvtSystemOpcode].Type) {
-        msgpack_pack_uint8(mp_pck, system[EvtSystemOpcode].ByteVal);
+        flb_log_event_encoder_append_body_uint8(ctx->log_encoder, system[EvtSystemOpcode].ByteVal);
     }
     else {
-        msgpack_pack_uint8(mp_pck, 0);
+        flb_log_event_encoder_append_body_uint8(ctx->log_encoder, 0);
     }
 
     /* Keywords */
-    msgpack_pack_str(mp_pck, 8);
-    msgpack_pack_str_body(mp_pck, "Keywords", 8);
+    ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "Keywords");
+
     if (EvtVarTypeNull != system[EvtSystemKeywords].Type) {
-        pack_keywords(mp_pck, system[EvtSystemKeywords].UInt64Val);
+        pack_keywords(ctx, system[EvtSystemKeywords].UInt64Val);
     }
     else {
-        msgpack_pack_uint64(mp_pck, 0);
+        flb_log_event_encoder_append_body_uint64(ctx->log_encoder, 0);
     }
 
     /* TimeCreated */
-    msgpack_pack_str(mp_pck, 11);
-    msgpack_pack_str_body(mp_pck, "TimeCreated", 11);
-    if (pack_filetime(mp_pck, system[EvtSystemTimeCreated].FileTimeVal)) {
-        pack_nullstr(mp_pck);
+    ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "TimeCreated");
+
+    if (pack_filetime(ctx, system[EvtSystemTimeCreated].FileTimeVal)) {
+        pack_nullstr(ctx);
     }
 
     /* EventRecordID */
-    msgpack_pack_str(mp_pck, 13);
-    msgpack_pack_str_body(mp_pck, "EventRecordID", 13);
+    ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "EventRecordID");
+
     if (EvtVarTypeNull != system[EvtSystemEventRecordId].Type) {
-        msgpack_pack_uint64(mp_pck, system[EvtSystemEventRecordId].UInt64Val);
+        flb_log_event_encoder_append_body_uint64(ctx->log_encoder, system[EvtSystemEventRecordId].UInt64Val);
     }
     else {
-        msgpack_pack_uint64(mp_pck, 0);
+        flb_log_event_encoder_append_body_uint64(ctx->log_encoder, 0);
     }
 
     /* ActivityID */
-    msgpack_pack_str(mp_pck, 10);
-    msgpack_pack_str_body(mp_pck, "ActivityID", 10);
-    if (pack_guid(mp_pck, system[EvtSystemActivityID].GuidVal, ctx)) {
-        pack_nullstr(mp_pck);
+    ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "ActivityID");
+
+    if (pack_guid(ctx, system[EvtSystemActivityID].GuidVal)) {
+        pack_nullstr(ctx);
     }
 
     /* Related ActivityID */
-    msgpack_pack_str(mp_pck, 17);
-    msgpack_pack_str_body(mp_pck, "RelatedActivityID", 17);
-    if (pack_guid(mp_pck, system[EvtSystemRelatedActivityID].GuidVal, ctx)) {
-        pack_nullstr(mp_pck);
+    ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "RelatedActivityID");
+
+    if (pack_guid(ctx, system[EvtSystemRelatedActivityID].GuidVal)) {
+        pack_nullstr(ctx);
     }
 
     /* ProcessID */
-    msgpack_pack_str(mp_pck, 9);
-    msgpack_pack_str_body(mp_pck, "ProcessID", 9);
+    ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "ProcessID");
+
     if (EvtVarTypeNull != system[EvtSystemProcessID].Type) {
-        msgpack_pack_uint32(mp_pck, system[EvtSystemProcessID].UInt32Val);
+        flb_log_event_encoder_append_body_uint32(ctx->log_encoder, system[EvtSystemProcessID].UInt32Val);
     }
     else {
-        msgpack_pack_uint32(mp_pck, 0);
+        flb_log_event_encoder_append_body_uint32(ctx->log_encoder, 0);
     }
 
     /* ThreadID */
-    msgpack_pack_str(mp_pck, 8);
-    msgpack_pack_str_body(mp_pck, "ThreadID", 8);
+    ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "ThreadID");
+
     if (EvtVarTypeNull != system[EvtSystemThreadID].Type) {
-        msgpack_pack_uint32(mp_pck, system[EvtSystemThreadID].UInt32Val);
+        flb_log_event_encoder_append_body_uint32(ctx->log_encoder, system[EvtSystemThreadID].UInt32Val);
     }
     else {
-        msgpack_pack_uint32(mp_pck, 0);
+        flb_log_event_encoder_append_body_uint32(ctx->log_encoder, 0);
     }
 
     /* Channel */
-    msgpack_pack_str(mp_pck, 7);
-    msgpack_pack_str_body(mp_pck, "Channel", 7);
-    if (pack_wstr(mp_pck, system[EvtSystemChannel].StringVal, ctx)) {
-        pack_nullstr(mp_pck);
+    ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "Channel");
+
+    if (pack_wstr(ctx, system[EvtSystemChannel].StringVal)) {
+        pack_nullstr(ctx);
     }
+
     /* Computer */
-    msgpack_pack_str(mp_pck, 8);
-    msgpack_pack_str_body(mp_pck, "Computer", 8);
-    if (pack_wstr(mp_pck, system[EvtSystemComputer].StringVal, ctx)) {
-        pack_nullstr(mp_pck);
+    ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "Computer");
+
+    if (pack_wstr(ctx, system[EvtSystemComputer].StringVal)) {
+        pack_nullstr(ctx);
     }
 
     /* UserID */
-    msgpack_pack_str(mp_pck, 6);
-    msgpack_pack_str_body(mp_pck, "UserID", 6);
-    if (pack_sid(mp_pck, system[EvtSystemUserID].SidVal, ctx)) {
-        pack_nullstr(mp_pck);
+    ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "UserID");
+
+    if (pack_sid(ctx, system[EvtSystemUserID].SidVal)) {
+        pack_nullstr(ctx);
     }
 
     /* Message */
-    msgpack_pack_str(mp_pck, 7);
-    msgpack_pack_str_body(mp_pck, "Message", 7);
-    if (pack_wstr(mp_pck, message, ctx)) {
-        pack_nullstr(mp_pck);
+    ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "Message");
+
+    if (pack_wstr(ctx, message)) {
+        pack_nullstr(ctx);
     }
 
     /* String Inserts */
     if (ctx->string_inserts) {
-        msgpack_pack_str(mp_pck, 13);
-        msgpack_pack_str_body(mp_pck, "StringInserts", 13);
-        pack_string_inserts(mp_pck, string_inserts, count_inserts, ctx);
+        ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "StringInserts");
+
+        pack_string_inserts(ctx, string_inserts, count_inserts);
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_commit_record(ctx->log_encoder);
     }
 }

@@ -1,6 +1,8 @@
 #!/bin/bash
 set -eux
 
+# Used to update a Yum repo, e.g. during a staging build or release process
+
 #("amazonlinux/2" "amazonlinux/2022" "centos/7" "centos/8" "centos/9")
 RPM_REPO=${RPM_REPO:?}
 
@@ -15,6 +17,7 @@ fi
 DISABLE_SIGNING=${DISABLE_SIGNING:-false}
 if [[ "$DISABLE_SIGNING" != "true" ]]; then
     echo "INFO: RPM signing configuration"
+    rpm --showrc|grep gpg
     rpm -q gpg-pubkey --qf '%{name}-%{version}-%{release} --> %{summary}\n'
 fi
 
@@ -39,7 +42,7 @@ fi
 echo "INFO: updating $RPM_REPO"
 
 REPO_DIR=$( realpath -sm "$BASE_PATH/$RPM_REPO" )
-if [[ -d "$REPO_DIR" ]] ; then
+if [[ ! -d "$REPO_DIR" ]] ; then
     echo "ERROR: missing $REPO_DIR"
     exit 1
 fi

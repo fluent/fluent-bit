@@ -94,7 +94,7 @@ char *flb_aws_endpoint(char* service, char* region)
     len += strlen(region);
     len++; /* null byte */
 
-    endpoint = flb_malloc(len);
+    endpoint = flb_calloc(len, sizeof(char));
     if (!endpoint) {
         flb_errno();
         return NULL;
@@ -136,7 +136,7 @@ int flb_read_file(const char *path, char **out_buf, size_t *out_size)
         return -1;
     }
 
-    buf = flb_malloc(st.st_size + sizeof(char));
+    buf = flb_calloc(st.st_size + 1, sizeof(char));
     if (!buf) {
         flb_errno();
         close(fd);
@@ -508,13 +508,13 @@ void flb_aws_print_xml_error(char *response, size_t response_len,
     flb_sds_t error;
     flb_sds_t message;
 
-    error = flb_xml_get_val(response, response_len, "<Code>");
+    error = flb_aws_xml_get_val(response, response_len, "<Code>", "</Code>");
     if (!error) {
         flb_plg_error(ins, "%s: Could not parse response", api);
         return;
     }
 
-    message = flb_xml_get_val(response, response_len, "<Message>");
+    message = flb_aws_xml_get_val(response, response_len, "<Message>", "</Message>");
     if (!message) {
         /* just print the error */
         flb_plg_error(ins, "%s API responded with error='%s'", api, error);
@@ -531,14 +531,15 @@ void flb_aws_print_xml_error(char *response, size_t response_len,
 /* Parses AWS XML API Error responses and returns the value of the <code> tag */
 flb_sds_t flb_aws_xml_error(char *response, size_t response_len)
 {
-    return flb_xml_get_val(response, response_len, "<code>");
+    return flb_aws_xml_get_val(response, response_len, "<Code>", "</Code>");
 }
 
 /*
  * Parses an XML document and returns the value of the given tag
  * Param `tag` should include angle brackets; ex "<code>"
+ * And param `end` should include end brackets: "</code>"
  */
-flb_sds_t flb_xml_get_val(char *response, size_t response_len, char *tag)
+flb_sds_t flb_aws_xml_get_val(char *response, size_t response_len, char *tag, char *tag_end)
 {
     flb_sds_t val = NULL;
     char *node = NULL;
@@ -557,7 +558,7 @@ flb_sds_t flb_xml_get_val(char *response, size_t response_len, char *tag)
     /* advance to end of tag */
     node += strlen(tag);
 
-    end = strchr(node, '<');
+    end = strstr(node, tag_end);
     if (!end) {
         flb_error("[aws] Could not find end of '%s' node in xml", tag);
         return NULL;
@@ -700,7 +701,7 @@ static char* replace_uri_tokens(const char* original_string, const char* current
     i = 0;
     while (*original_string) {
         if (strstr(original_string, current_word) == original_string) {
-            strcpy(&result[i], new_word);
+            strncpy(&result[i], new_word, new_word_len);
             i += new_word_len;
             original_string += old_word_len;
         }
@@ -812,8 +813,12 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
             flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
         }
 
+        if (buf != tmp) {
+            flb_sds_destroy(buf);
+        }
         flb_sds_destroy(tmp);
         tmp = NULL;
+        buf = NULL;
         flb_sds_destroy(s3_key);
         s3_key = tmp_key;
         tmp_key = NULL;
@@ -851,7 +856,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
     /* Find all occurences of $INDEX and replace with the appropriate index. */
     if (strstr((char *) format, INDEX_STRING)) {
         seq_index_len = snprintf(NULL, 0, "%"PRIu64, seq_index);
-        seq_index_str = flb_malloc(seq_index_len + 1);
+        seq_index_str = flb_calloc(seq_index_len + 1, sizeof(char));
         if (seq_index_str == NULL) {
             goto error;
         }
@@ -859,7 +864,10 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
         sprintf(seq_index_str, "%"PRIu64, seq_index);
         seq_index_str[seq_index_len] = '\0';
         tmp_key = replace_uri_tokens(s3_key, INDEX_STRING, seq_index_str);
-
+        if (tmp_key == NULL) {
+            flb_free(seq_index_str);
+            goto error;
+        }
         if (strlen(tmp_key) > S3_KEY_SIZE) {
             flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
         }
@@ -935,7 +943,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
         if (s3_key){
             flb_sds_destroy(s3_key);
         }
-        if (buf){
+        if (buf && buf != tmp){
             flb_sds_destroy(buf);
         }
         if (tmp){

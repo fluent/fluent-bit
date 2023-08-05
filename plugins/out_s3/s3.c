@@ -31,6 +31,7 @@
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_base64.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 #include <stdlib.h>
 #include <sys/stat.h>
 
@@ -105,7 +106,7 @@ static char *mock_error_response(char *error_env_var)
 
     err_val = getenv(error_env_var);
     if (err_val != NULL && strlen(err_val) > 0) {
-        error = flb_malloc(strlen(err_val) + sizeof(char));
+        error = flb_calloc(strlen(err_val) + 1, sizeof(char));
         if (error == NULL) {
             flb_errno();
             return NULL;
@@ -158,7 +159,7 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
         return 0;
     }
 
-    s3_headers = flb_malloc(sizeof(struct flb_aws_header) * headers_len);
+    s3_headers = flb_calloc(headers_len, sizeof(struct flb_aws_header));
     if (s3_headers == NULL) {
         flb_errno();
         return -1;
@@ -243,7 +244,7 @@ struct flb_http_client *mock_s3_call(char *error_env_var, char *api)
                               "Server: AmazonS3";
             /* since etag is in the headers, this code uses resp.data */
             len = strlen(resp);
-            c->resp.data = flb_malloc(len + 1);
+            c->resp.data = flb_calloc(len + 1, sizeof(char));
             if (!c->resp.data) {
                 flb_errno();
                 return NULL;
@@ -400,7 +401,7 @@ static int init_seq_index(void *context) {
             return -1;
         }
         flb_plg_info(ctx->ins, "Successfully recovered index. "
-                     "Continuing at index=%d", ctx->seq_index);
+                     "Continuing at index=%"PRIu64, ctx->seq_index);
     }
     return 0;
 }
@@ -804,7 +805,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
                                                        ctx->region,
                                                        ctx->sts_endpoint,
                                                        NULL,
-                                                       flb_aws_client_generator());
+                                                       flb_aws_client_generator(),
+                                                       ctx->profile);
 
     if (!ctx->provider) {
         flb_plg_error(ctx->ins, "Failed to create AWS Credential Provider");
@@ -1038,7 +1040,7 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
         }
         else {
             if (ctx->use_put_object == FLB_FALSE && ctx->compression == FLB_AWS_COMPRESS_GZIP) {
-                flb_plg_info(ctx->ins, "Pre-compression upload_chunk_size= %d, After compression, chunk is only %d bytes, "
+                flb_plg_info(ctx->ins, "Pre-compression upload_chunk_size= %zu, After compression, chunk is only %zu bytes, "
                                        "the chunk was too small, using PutObject to upload", preCompress_size, body_size);
             }
             goto put_object;
@@ -1118,15 +1120,6 @@ multipart:
         if (chunk) {
             s3_store_file_unlock(chunk);
             chunk->failures += 1;
-        }
-        if (ctx->key_fmt_has_seq_index) {
-            ctx->seq_index--;
-
-            ret = write_seq_index(ctx->seq_index_file, ctx->seq_index);
-            if (ret < 0) {
-                flb_plg_error(ctx->ins, "Failed to decrement index after request error");
-                return -1;
-            }
         }
         return FLB_RETRY;
     }
@@ -1231,7 +1224,7 @@ static int put_all_chunks(struct flb_s3 *ctx)
                 if (ret == -1) {
                     flb_plg_error(ctx->ins, "Failed to compress data, uploading uncompressed data instead to prevent data loss");
                 } else {
-                    flb_plg_info(ctx->ins, "Pre-compression chunk size is %d, After compression, chunk is %d bytes", buffer_size, payload_size);
+                    flb_plg_info(ctx->ins, "Pre-compression chunk size is %zu, After compression, chunk is %zu bytes", buffer_size, payload_size);
                     buffer = (void *) payload_buf;
                     buffer_size = payload_size;
                 }
@@ -1565,10 +1558,10 @@ static int add_to_queue(struct flb_s3 *ctx, struct s3_file *upload_file,
                  struct multipart_upload *m_upload_file, const char *tag, int tag_len)
 {
     struct upload_queue *upload_contents;
-    char *tag_cpy;
+    flb_sds_t tag_cpy;
 
     /* Create upload contents object and add to upload queue */
-    upload_contents = flb_malloc(sizeof(struct upload_queue));
+    upload_contents = flb_calloc(1, sizeof(struct upload_queue));
     if (upload_contents == NULL) {
         flb_plg_error(ctx->ins, "Error allocating memory for upload_queue entry");
         flb_errno();
@@ -1581,15 +1574,14 @@ static int add_to_queue(struct flb_s3 *ctx, struct s3_file *upload_file,
     upload_contents->upload_time = -1;
 
     /* Necessary to create separate string for tag to prevent corruption */
-    tag_cpy = flb_malloc(tag_len);
-    if (tag_cpy == NULL) {
-        flb_free(upload_contents);
-        flb_plg_error(ctx->ins, "Error allocating memory for tag in add_to_queue");
+    tag_cpy = flb_sds_create_len(tag, tag_len);
+    if (!tag_cpy) {
         flb_errno();
+        flb_free(upload_contents);
         return -1;
     }
-    strncpy(tag_cpy, tag, tag_len);
     upload_contents->tag = tag_cpy;
+
 
     /* Add entry to upload queue */
     mk_list_add(&upload_contents->_head, &ctx->upload_queue);
@@ -1600,7 +1592,7 @@ static int add_to_queue(struct flb_s3 *ctx, struct s3_file *upload_file,
 void remove_from_queue(struct upload_queue *entry)
 {
     mk_list_del(&entry->_head);
-    flb_free(entry->tag);
+    flb_sds_destroy(entry->tag);
     flb_free(entry);
     return;
 }
@@ -1865,15 +1857,14 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     char *val_buf;
     char *key_str = NULL;
     size_t key_str_size = 0;
-    size_t off = 0;
     size_t msgpack_size = bytes + bytes / 4;
     size_t val_offset = 0;
     flb_sds_t out_buf;
-    msgpack_unpacked result;
-    msgpack_object root;
     msgpack_object map;
     msgpack_object key;
     msgpack_object val;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
 
     /* Iterate the original buffer and perform adjustments */
     records = flb_mp_count(data, bytes);
@@ -1882,7 +1873,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     }
 
     /* Allocate buffer to store log_key contents */
-    val_buf = flb_malloc(msgpack_size);
+    val_buf = flb_calloc(1, msgpack_size);
     if (val_buf == NULL) {
         flb_plg_error(ctx->ins, "Could not allocate enough "
                       "memory to read record");
@@ -1890,23 +1881,30 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
         return NULL;
     }
 
-    msgpack_unpacked_init(&result);
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        flb_free(val_buf);
+
+        return NULL;
+    }
+
+
     while (!alloc_error &&
-           msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        /* Each array must have two entries: time and record */
-        root = result.data;
-        if (root.type != MSGPACK_OBJECT_ARRAY) {
-            continue;
-        }
-        if (root.via.array.size != 2) {
-            continue;
-        }
+           (ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
 
         /* Get the record/map */
-        map = root.via.array.ptr[1];
+        map = *log_event.body;
+
         if (map.type != MSGPACK_OBJECT_MAP) {
             continue;
         }
+
         map_size = map.via.map.size;
 
         /* Reset variables for found log_key and correct type */
@@ -1978,8 +1976,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
                       ctx->log_key, log_key_missing);
     }
 
-    /* Release the unpacker */
-    msgpack_unpacked_destroy(&result);
+    flb_log_event_decoder_destroy(&log_decoder);
 
     /* If nothing was read, destroy buffer */
     if (val_offset == 0) {
@@ -2090,11 +2087,9 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     struct s3_file *upload_file = NULL;
     struct flb_s3 *ctx = out_context;
     struct multipart_upload *m_upload_file = NULL;
-    msgpack_unpacked result;
-    msgpack_object *obj;
-    size_t off = 0;
-    struct flb_time tms;
     time_t file_first_log_time = 0;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
 
     /* Cleanup old buffers and initialize upload timer */
     flush_init(ctx);
@@ -2124,21 +2119,29 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
                                     flb_sds_len(event_chunk->tag));
 
     if (upload_file == NULL) {
-        /* unpack msgpack */
-        msgpack_unpacked_init(&result);
+        ret = flb_log_event_decoder_init(&log_decoder,
+                                         (char *) event_chunk->data,
+                                         event_chunk->size);
 
-        /* Get the first record timestamp */
-        while (msgpack_unpack_next(&result,
-                                   event_chunk->data,
-                                   event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS) {
-            flb_time_pop_from_msgpack(&tms, &result, &obj);
-            if (&tms.tm.tv_sec != 0) {
-                file_first_log_time = tms.tm.tv_sec;
+        if (ret != FLB_EVENT_DECODER_SUCCESS) {
+            flb_plg_error(ctx->ins,
+                          "Log event decoder initialization error : %d", ret);
+
+            flb_sds_destroy(chunk);
+
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
+
+        while ((ret = flb_log_event_decoder_next(
+                        &log_decoder,
+                        &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+            if (log_event.timestamp.tm.tv_sec != 0) {
+                file_first_log_time = log_event.timestamp.tm.tv_sec;
                 break;
             }
         }
 
-        msgpack_unpacked_destroy(&result);
+        flb_log_event_decoder_destroy(&log_decoder);
     }
     else {
         /* Get file_first_log_time from upload_file */
@@ -2469,6 +2472,13 @@ static struct flb_config_map config_map[] = {
      0, FLB_FALSE, 0,
      "Specify the storage class for S3 objects. If this option is not specified, objects "
      "will be stored with the default 'STANDARD' storage class."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "profile", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, profile),
+     "AWS Profile name. AWS Profiles can be configured with AWS CLI and are usually stored in "
+     "$HOME/.aws/ directory."
     },
 
     /* EOF */

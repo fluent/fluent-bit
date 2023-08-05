@@ -92,7 +92,7 @@ void test_multiline_parser(msgpack_object *root2, int rand_val) {
             struct flb_time tm;
             flb_time_get(&tm);
             for (int i = 0; i < 4; i++) {
-                flb_ml_append_object(ml, stream_ids[i], &tm, root2);
+                flb_ml_append_object(ml, stream_ids[i], &tm, NULL, root2);
             }
         }
 
@@ -103,20 +103,16 @@ void test_multiline_parser(msgpack_object *root2, int rand_val) {
             for (int j = 0; j < 5; j++) {
                 if (random_strings[i] != NULL && stream_ids[j] != NULL) {
                     /* stream_ids index by j, random_strings index by i */
-                    flb_ml_append(ml, stream_ids[j], FLB_ML_TYPE_TEXT, &tm2,
-                                  random_strings[i], strlen(random_strings[i]));
-                    flb_ml_append(ml, stream_ids[j],
-                                  flb_ml_type_lookup("endswith"), &tm2,
-                                  random_strings[i], strlen(random_strings[i]));
-                    flb_ml_append(ml, stream_ids[j],
-                                  flb_ml_type_lookup("regex"), &tm2,
-                                  random_strings[i], strlen(random_strings[i]));
-                    flb_ml_append(ml, stream_ids[j], flb_ml_type_lookup("eq"),
-                                  &tm2, random_strings[i],
-                                  strlen(random_strings[i]));
-                    flb_ml_append(ml, stream_ids[j],
-                                  flb_ml_type_lookup("equal"), &tm2,
-                                  random_strings[i], strlen(random_strings[i]));
+                    flb_ml_append_text(ml, stream_ids[j], &tm2,
+                                       random_strings[i], strlen(random_strings[i]));
+                    flb_ml_append_text(ml, stream_ids[j], &tm2,
+                                       random_strings[i], strlen(random_strings[i]));
+                    flb_ml_append_text(ml, stream_ids[j], &tm2,
+                                       random_strings[i], strlen(random_strings[i]));
+                    flb_ml_append_text(ml, stream_ids[j], &tm2,
+                                       random_strings[i],strlen(random_strings[i]));
+                    flb_ml_append_text(ml, stream_ids[j], &tm2,
+                                       random_strings[i], strlen(random_strings[i]));
                 }
             }
         }
@@ -157,7 +153,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     size_t out_size;
     int root_type;
     int ret =
-        flb_pack_json((char *)data, size, &out_buf, &out_size, &root_type);
+        flb_pack_json((char *)data, size, &out_buf, &out_size, &root_type, NULL);
     if (ret == 0) {
         size_t off = 0;
         msgpack_unpacked result;

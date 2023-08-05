@@ -25,11 +25,24 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_thread.h>
 #include <fluent-bit/flb_kafka.h>
+#include <fluent-bit/flb_log_event_encoder.h>
+
+
+#define FLB_IN_KAFKA_DEFAULT_POLL_MS       "500"
+#define FLB_IN_KAFKA_DEFAULT_FORMAT        "none"
+
+enum {
+    FLB_IN_KAFKA_FORMAT_NONE,
+    FLB_IN_KAFKA_FORMAT_JSON,
+};
 
 struct flb_in_kafka_config {
     struct flb_kafka kafka;
     struct flb_input_instance *ins;
-    struct flb_input_thread it;
+    struct flb_log_event_encoder *log_encoder;
+    int poll_ms;
+    int format;
+    char *format_str;
 };
 
 #endif

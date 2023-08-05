@@ -73,6 +73,7 @@ int we_wmi_thermalzone_init(struct flb_we *ctx)
     ctx->wmi_thermals->temperature_celsius->wmi_property = "HighPrecisionTemperature";
     ctx->wmi_thermals->temperature_celsius->label_property_count = 1;
     ctx->wmi_thermals->temperature_celsius->label_property_keys[0] = "name" ;
+    ctx->wmi_thermals->temperature_celsius->where_clause = NULL;
 
     g = cmt_gauge_create(ctx->cmt, "windows", "thermalzone", "percent_passive_limit",
                          "The limit of passive limit (percent).",
@@ -100,6 +101,7 @@ int we_wmi_thermalzone_init(struct flb_we *ctx)
     ctx->wmi_thermals->percent_passive_limit->wmi_property = "PercentPassiveLimit";
     ctx->wmi_thermals->percent_passive_limit->label_property_count = 1;
     ctx->wmi_thermals->percent_passive_limit->label_property_keys[0] = "name";
+    ctx->wmi_thermals->percent_passive_limit->where_clause = NULL;
 
     g = cmt_gauge_create(ctx->cmt, "windows", "thermalzone", "throttle_reasons",
                          "The reason of throttle.",
@@ -125,6 +127,7 @@ int we_wmi_thermalzone_init(struct flb_we *ctx)
     ctx->wmi_thermals->throttle_reasons->wmi_property = "ThrottleReasons";
     ctx->wmi_thermals->throttle_reasons->label_property_count = 1;
     ctx->wmi_thermals->throttle_reasons->label_property_keys[0] = "name";
+    ctx->wmi_thermals->throttle_reasons->where_clause = NULL;
 
     ctx->wmi_thermals->operational = FLB_TRUE;
 

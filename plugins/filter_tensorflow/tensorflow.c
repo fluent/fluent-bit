@@ -24,6 +24,8 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_config_map.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #include "tensorflow/lite/c/c_api.h"
 #include "tensorflow/lite/c/common.h"
@@ -249,26 +251,14 @@ static int cb_tensorflow_filter(const void *data, size_t bytes,
                                 void *filter_context,
                                 struct flb_config *config)
 {
-    size_t off = 0;
     int i;
     int j;
     int input_data_type;
-    (void) out_buf;
-    (void) out_bytes;
-    (void) f_ins;
-    (void) i_ins;
     int map_size;
 
-    msgpack_object root;
     msgpack_object map;
     msgpack_object key;
     msgpack_object value;
-
-    struct flb_time tm;
-    msgpack_unpacked result;
-    msgpack_object *obj;
-    msgpack_sbuffer tmp_sbuf;
-    msgpack_packer tmp_pck;
 
     struct flb_tensorflow* ctx;
 
@@ -279,24 +269,48 @@ static int cb_tensorflow_filter(const void *data, size_t bytes,
     clock_t start, end;
     double inference_time;
 
+    struct flb_log_event_encoder log_encoder;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    int ret;
+
+    (void) out_buf;
+    (void) out_bytes;
+    (void) f_ins;
+    (void) i_ins;
+
     /* initializations */
     ctx = filter_context;
     inference_time = 0;
     start = clock();
 
-    msgpack_sbuffer_init(&tmp_sbuf);
-    msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        root = result.data;
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
 
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    ret = flb_log_event_encoder_init(&log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder initialization error : %d", ret);
+
+        flb_log_event_decoder_destroy(&log_decoder);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         /* TODO check if msgpack type is map */
-        map = root.via.array.ptr[1];
+        map = *log_event.body;
         map_size = map.via.map.size;
-
-        /* get timestamp from msgpack record */
-        flb_time_pop_from_msgpack(&tm, &result, &obj);
 
         for (i = 0; i < map_size; i++) {
             key = map.via.map.ptr[i].key;
@@ -403,45 +417,83 @@ static int cb_tensorflow_filter(const void *data, size_t bytes,
             end = clock();
             inference_time = ((double) (end - start)) / CLOCKS_PER_SEC;
 
-            msgpack_pack_array(&tmp_pck, 2);
-            flb_time_append_to_msgpack(&tm, &tmp_pck, 0);
-            /* one more field for the result */
-            if (ctx->include_input_fields) {
-                msgpack_pack_map(&tmp_pck, map_size + 2);
-            }
-            else {
-                msgpack_pack_map(&tmp_pck, 2);
+            ret = flb_log_event_encoder_begin_record(&log_encoder);
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_set_timestamp(
+                        &log_encoder, &log_event.timestamp);
             }
 
             if (ctx->include_input_fields) {
-                for (j = 0; j < map_size; j++) {
-                    msgpack_pack_object(&tmp_pck, map.via.map.ptr[j].key);
-                    msgpack_pack_object(&tmp_pck, map.via.map.ptr[j].val);
+                for (j = 0;
+                     j < map_size &&
+                     ret == FLB_EVENT_ENCODER_SUCCESS;
+                     j++) {
+                    ret = flb_log_event_encoder_append_body_values(
+                            &log_encoder,
+                            FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&map.via.map.ptr[j].key),
+                            FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&map.via.map.ptr[j].val));
                 }
             }
 
-            msgpack_pack_str(&tmp_pck, strlen("inference_time"));
-            msgpack_pack_str_body(&tmp_pck, "inference_time", strlen("inference_time"));
-            msgpack_pack_float(&tmp_pck, inference_time);
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_append_body_values(
+                        &log_encoder,
+                        FLB_LOG_EVENT_CSTRING_VALUE("inference_time"),
+                        FLB_LOG_EVENT_DOUBLE_VALUE(inference_time),
 
-            msgpack_pack_str(&tmp_pck, strlen("output"));
-            msgpack_pack_str_body(&tmp_pck, "output", 6);
+                        FLB_LOG_EVENT_CSTRING_VALUE("output"));
+            }
 
-            msgpack_pack_array(&tmp_pck, ctx->output_size);
-            for (i=0; i < ctx->output_size; i++) {
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_body_begin_array(&log_encoder);
+            }
+
+            for (i=0;
+                 i < ctx->output_size &&
+                 ret == FLB_EVENT_ENCODER_SUCCESS;
+                 i++) {
                 if (ctx->output_tensor_type == kTfLiteFloat32) {
-                    msgpack_pack_float(&tmp_pck, ((float*) ctx->output)[i]);
+                    ret = flb_log_event_encoder_append_body_double(
+                            &log_encoder, ((float*) ctx->output)[i]);
                 }
                 /* TODO: work out other types */
             }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_body_commit_array(&log_encoder);
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_body_commit_record(&log_encoder);
+            }
+            else {
+                flb_log_event_encoder_body_rollback_record(&log_encoder);
+            }
+
             break;
         }
     }
-    msgpack_unpacked_destroy(&result);
 
-    *out_buf  = tmp_sbuf.data;
-    *out_bytes = tmp_sbuf.size;
-    return FLB_FILTER_MODIFIED;
+    if (log_encoder.output_length > 0) {
+        *out_buf   = log_encoder.output_buffer;
+        *out_bytes = log_encoder.output_length;
+
+        ret = FLB_FILTER_MODIFIED;
+
+        flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
+    }
+    else {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder error : %d", ret);
+
+        ret = FLB_FILTER_NOTOUCH;
+    }
+
+    flb_log_event_decoder_destroy(&log_decoder);
+    flb_log_event_encoder_destroy(&log_encoder);
+
+    return ret;
 }
 
 static int cb_tensorflow_exit(void *data, struct flb_config *config)

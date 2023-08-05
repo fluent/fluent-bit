@@ -11,6 +11,7 @@
 #include "flb_tests_internal.h"
 
 #define FLB_000 FLB_TESTS_DATA_PATH "/data/config_format/yaml/fluent-bit.yaml"
+#define FLB_001 FLB_TESTS_DATA_PATH "/data/config_format/yaml/issue_7559.yaml"
 
 /* data/config_format/fluent-bit.yaml */
 void test_basic()
@@ -59,7 +60,35 @@ void test_basic()
     flb_cf_destroy(cf);
 }
 
+/* https://github.com/fluent/fluent-bit/issues/7559 */
+void test_customs_section()
+{
+    struct flb_cf *cf;
+    struct flb_cf_section *s;
+
+    cf = flb_cf_yaml_create(NULL, FLB_001, NULL, 0);
+    TEST_CHECK(cf != NULL);
+    if (!cf) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Total number of sections */
+    if(!TEST_CHECK(mk_list_size(&cf->sections) == 3)) {
+        TEST_MSG("Section number error. Got=%d expect=3", mk_list_size(&cf->sections));
+    }
+
+    s = flb_cf_section_get_by_name(cf, "customs");
+    TEST_CHECK(s != NULL);
+    if (!TEST_CHECK(s->type == FLB_CF_CUSTOM)) {
+        TEST_MSG("Section type error. Got=%d expect=%d", s->type, FLB_CF_CUSTOM);
+    }
+
+    flb_cf_dump(cf);
+    flb_cf_destroy(cf);
+}
+
 TEST_LIST = {
     { "basic"    , test_basic},
+    { "customs section", test_customs_section},
     { 0 }
 };

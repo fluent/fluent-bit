@@ -114,6 +114,7 @@ struct flb_cloudwatch {
     const char *log_key;
     const char *extra_user_agent;
     const char *external_id;
+    const char *profile;
     int custom_endpoint;
     /* Should the plugin create the log group */
     int create_group;
@@ -134,10 +135,7 @@ struct flb_cloudwatch {
     struct flb_record_accessor *ra_group;
     struct flb_record_accessor *ra_stream;
 
-    /* if we're writing to a static log stream, we'll use this */
-    struct log_stream stream;
-    int stream_created;
-    /* if the log stream is dynamic, we'll use this */
+    /* stores log streams we're putting to */
     struct mk_list streams;
 
     /* buffers for data processing and request payload */

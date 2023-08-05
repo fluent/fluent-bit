@@ -1,6 +1,8 @@
 #!/bin/bash
 set -eux
 
+# Used to update a Debian Apt repo, e.g. during a staging build or release process
+
 # Where the base of all the repos is
 BASE_PATH=${BASE_PATH:?}
 if [[ ! -d "$BASE_PATH" ]]; then
@@ -11,9 +13,11 @@ fi
 # "debian/bookworm" "debian/bullseye" "debian/buster" "ubuntu/xenial" "ubuntu/bionic" "ubuntu/focal" "ubuntu/jammy" "raspbian/buster" "raspbian/bullseye"
 DEB_REPO=${DEB_REPO:?}
 
+# Set true to prevent signing
+DISABLE_SIGNING=${DISABLE_SIGNING:-false}
+
 REPO_DIR=$(realpath -sm "$BASE_PATH/$DEB_REPO" )
-REPO_DIR=$( realpath -sm "$BASE_PATH/$RPM_REPO" )
-if [[ -d "$REPO_DIR" ]] ; then
+if [[ ! -d "$REPO_DIR" ]] ; then
     echo "ERROR: missing $REPO_DIR"
     exit 1
 fi

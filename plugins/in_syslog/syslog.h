@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 /* Syslog modes */
 #define FLB_SYSLOG_UNIX_TCP  1
@@ -64,6 +65,7 @@ struct flb_syslog {
     flb_sds_t parser_name;
     struct flb_parser *parser;
     flb_sds_t raw_message_key;
+    flb_sds_t source_address_key;
 
     int dgram_mode_flag;
     int collector_id;
@@ -74,6 +76,7 @@ struct flb_syslog {
     /* List for connections and event loop */
     struct mk_list connections;
     struct flb_input_instance *ins;
+    struct flb_log_event_encoder *log_encoder;
 };
 
 #endif

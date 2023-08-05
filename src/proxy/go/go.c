@@ -255,6 +255,13 @@ int proxy_go_input_cleanup(struct flb_plugin_proxy *ctx,
     if (plugin->cb_cleanup) {
         ret = plugin->cb_cleanup(allocated_data);
     }
+    else {
+        /* If cleanup callback is not registered, we need to cleanup
+         * allocated memory on fluent-bit side. */
+        if (allocated_data != NULL) {
+            free(allocated_data);
+        }
+    }
 
     return ret;
 }

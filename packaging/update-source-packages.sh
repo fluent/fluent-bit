@@ -1,6 +1,9 @@
 #!/bin/bash
 set -eux
 
+# We provide the source code as a standalone checksummed package along with the JSON schema and AppVeyor binaries.
+# This is hosted at releases.fluentbit.io
+
 WINDOWS_SOURCE_DIR=${WINDOWS_SOURCE_DIR:-ignore}
 VERSION=${VERSION:-$1}
 MAJOR_VERSION=${MAJOR_VERSION:-}
@@ -25,6 +28,8 @@ if [[ ! -d "$TARGET_DIR" ]]; then
     echo "Missing target directory: $TARGET_DIR"
     exit 1
 fi
+# create MAJOR_VERSION dir if not exist
+mkdir -p "$TARGET_DIR/$MAJOR_VERSION"
 
 # Handle the JSON schema by copying in the new versions (if they exist).
 echo "Updating JSON schema"
@@ -60,8 +65,12 @@ else
 fi
 
 # Source - we do want word splitting and ensure some files exist
-if compgen -G "$SOURCE_DIR/source/*$VERSION*" > /dev/null; then
+if compgen -G "$SOURCE_DIR/source-$VERSION*" > /dev/null; then
     echo "Copying source artefacts"
+    # shellcheck disable=SC2086
+    cp -vf "$SOURCE_DIR"/source-$VERSION* "$TARGET_DIR/$MAJOR_VERSION/"
+elif compgen -G "$SOURCE_DIR/source/*$VERSION*" > /dev/null; then
+    echo "Copying (legacy) source artefacts"
     # shellcheck disable=SC2086
     cp -vf "$SOURCE_DIR"/source/*$VERSION* "$TARGET_DIR/$MAJOR_VERSION/"
 else

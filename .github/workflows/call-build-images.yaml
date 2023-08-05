@@ -122,6 +122,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64, linux/arm64, linux/arm/v7
           target: production
+          # Must be disabled to provide legacy format images from the registry
+          provenance: false
           push: true
           load: false
           build-args: |
@@ -146,6 +148,8 @@ jobs:
           tags: ${{ steps.debug-meta.outputs.tags }}
           labels: ${{ steps.debug-meta.outputs.labels }}
           platforms: linux/amd64, linux/arm64, linux/arm/v7
+          # Must be disabled to provide legacy format images from the registry
+          provenance: false
           target: debug
           push: true
           load: false
@@ -285,7 +289,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        windows-base-version: 
+        windows-base-version:
           - '2019'
           - '2022'
     permissions:
@@ -308,7 +312,7 @@ jobs:
         run: |
           docker build -t ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }} --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/Dockerfile.windows .
           docker push ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }}
-        
+
         # We cannot use this action as it requires privileged mode
         # uses: docker/build-push-action@v4
         # with:
