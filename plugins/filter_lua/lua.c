@@ -503,7 +503,7 @@ static int cb_lua_filter(const void *data, size_t bytes,
             lua_pushnumber(ctx->lua->state, ts);
         }
 
-        flb_lua_pushmsgpack(ctx->lua->state, log_event.body);
+        flb_lua_pushmsgpack(ctx->lua->state, log_event.body, ctx->l2cc.l2c_nil_str);
         if (ctx->protected_mode) {
             ret = lua_pcall(ctx->lua->state, 3, 3, 0);
             if (ret != 0) {
@@ -670,6 +670,13 @@ static struct flb_config_map config_map[] = {
      0, FLB_FALSE, 0,
      "If these keys are matched, the fields are converted to array. "
      "If more than one key, delimit by space."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "nil_str", NULL,
+     0, FLB_TRUE, offsetof(struct lua_filter, nil_str),
+     "If set, nil value will be replaced by this string in Lua. "
+     "It is to prevent remove nil value from record "
+     "since nil value is to delete key/value from associative array in Lua."
     },
     {
      FLB_CONFIG_MAP_BOOL, "protected_mode", "true",

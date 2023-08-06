@@ -127,6 +127,12 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
     }
 
     lf->l2cc.l2c_types_num = 0;
+    if (lf->nil_str) {
+        lf->l2cc.l2c_nil_str = flb_sds_create(lf->nil_str);
+    }
+    else {
+        lf->l2cc.l2c_nil_str = NULL;
+    }
     tmp = flb_filter_get_property("type_int_key", ins);
     if (tmp) {
         split = flb_utils_split(tmp, ' ', FLB_LUA_L2C_TYPES_NUM_MAX);
@@ -188,6 +194,9 @@ void lua_config_destroy(struct lua_filter *lf)
 
     if (lf->buffer) {
         flb_sds_destroy(lf->buffer);
+    }
+    if (lf->l2cc.l2c_nil_str) {
+        flb_sds_destroy(lf->l2cc.l2c_nil_str);
     }
 
     mk_list_foreach_safe(head, tmp_list, &lf->l2cc.l2c_types) {

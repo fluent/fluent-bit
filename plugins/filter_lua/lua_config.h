@@ -33,6 +33,7 @@ struct lua_filter {
     flb_sds_t script;                 /* lua script path */
     flb_sds_t call;                   /* function name   */
     flb_sds_t buffer;                 /* json dec buffer */
+    flb_sds_t nil_str;                /* The string to represent nil value in Lua */
     int    protected_mode;            /* exec lua function in protected mode */
     int    time_as_table;             /* timestamp as a Lua table */
     struct flb_lua_l2c_config l2cc;   /* lua -> C config */
