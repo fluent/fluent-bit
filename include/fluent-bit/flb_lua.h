@@ -44,14 +44,15 @@ struct flb_lua_l2c_type {
 
 struct flb_lua_l2c_config {
     int    l2c_types_num;      /* number of l2c_types */
+    flb_sds_t l2c_nil_str;     /* string to represent nil value */
     struct mk_list l2c_types;  /* data types (lua -> C) */
 };
 
 int flb_lua_arraylength(lua_State *l);
 void flb_lua_pushtimetable(lua_State *l, struct flb_time *tm);
 int flb_lua_is_valid_func(lua_State *l, flb_sds_t func);
-int flb_lua_pushmpack(lua_State *l, mpack_reader_t *reader);
-void flb_lua_pushmsgpack(lua_State *l, msgpack_object *o);
+int flb_lua_pushmpack(lua_State *l, mpack_reader_t *reader, flb_sds_t nil_str);
+void flb_lua_pushmsgpack(lua_State *l, msgpack_object *o, flb_sds_t nil_str);
 void flb_lua_tomsgpack(lua_State *l,
                        msgpack_packer *pck,
                        int index,

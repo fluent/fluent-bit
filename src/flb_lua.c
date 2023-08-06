@@ -53,7 +53,7 @@ int flb_lua_is_valid_func(lua_State *lua, flb_sds_t func)
     return ret;
 }
 
-int flb_lua_pushmpack(lua_State *l, mpack_reader_t *reader)
+int flb_lua_pushmpack(lua_State *l, mpack_reader_t *reader, flb_sds_t nil_str)
 {
     int ret = 0;
     mpack_tag_t tag;
@@ -63,7 +63,17 @@ int flb_lua_pushmpack(lua_State *l, mpack_reader_t *reader)
     tag = mpack_read_tag(reader);
     switch (mpack_tag_type(&tag)) {
         case mpack_type_nil:
-            lua_pushnil(l);
+            if (nil_str) {
+                /*
+                  The nil value is a special value to delete key/value from associative array.
+                  It means that pairs that contain nil value will disappear.
+                  For that reason, we push "nil" string instead of the nil value.
+                */
+                lua_pushlstring(l, nil_str, flb_sds_len(nil_str));
+            }
+            else {
+                lua_pushnil(l);
+            }
             break;
         case mpack_type_bool:
             lua_pushboolean(l, mpack_tag_bool_value(&tag));
@@ -91,7 +101,7 @@ int flb_lua_pushmpack(lua_State *l, mpack_reader_t *reader)
             length = mpack_tag_array_count(&tag);
             lua_createtable(l, length, 0);
             for (i = 0; i < length; i++) {
-                ret = flb_lua_pushmpack(l, reader);
+                ret = flb_lua_pushmpack(l, reader, nil_str);
                 if (ret) {
                     return ret;
                 }
@@ -102,11 +112,11 @@ int flb_lua_pushmpack(lua_State *l, mpack_reader_t *reader)
             length = mpack_tag_map_count(&tag);
             lua_createtable(l, length, 0);
             for (i = 0; i < length; i++) {
-                ret = flb_lua_pushmpack(l, reader);
+                ret = flb_lua_pushmpack(l, reader, nil_str);
                 if (ret) {
                     return ret;
                 }
-                ret = flb_lua_pushmpack(l, reader);
+                ret = flb_lua_pushmpack(l, reader, nil_str);
                 if (ret) {
                     return ret;
                 }
@@ -119,7 +129,7 @@ int flb_lua_pushmpack(lua_State *l, mpack_reader_t *reader)
     return 0;
 }
 
-void flb_lua_pushmsgpack(lua_State *l, msgpack_object *o)
+void flb_lua_pushmsgpack(lua_State *l, msgpack_object *o, flb_sds_t nil_str)
 {
     int i;
     int size;
@@ -128,7 +138,17 @@ void flb_lua_pushmsgpack(lua_State *l, msgpack_object *o)
 
     switch(o->type) {
         case MSGPACK_OBJECT_NIL:
-            lua_pushnil(l);
+            if (nil_str) {
+                /*
+                  The nil value is a special value to delete key/value from associative array.
+                  It means that pairs that contain nil value will disappear.
+                  For that reason, we push "nil" string instead of the nil value.
+                */
+                lua_pushlstring(l, nil_str, flb_sds_len(nil_str));
+            }
+            else {
+                lua_pushnil(l);
+            }
             break;
 
         case MSGPACK_OBJECT_BOOLEAN:
@@ -166,7 +186,7 @@ void flb_lua_pushmsgpack(lua_State *l, msgpack_object *o)
             if (size != 0) {
                 msgpack_object *p = o->via.array.ptr;
                 for (i = 0; i < size; i++) {
-                    flb_lua_pushmsgpack(l, p+i);
+                    flb_lua_pushmsgpack(l, p+i, nil_str);
                     lua_rawseti (l, -2, i+1);
                 }
             }
@@ -178,8 +198,8 @@ void flb_lua_pushmsgpack(lua_State *l, msgpack_object *o)
             if (size != 0) {
                 msgpack_object_kv *p = o->via.map.ptr;
                 for (i = 0; i < size; i++) {
-                    flb_lua_pushmsgpack(l, &(p+i)->key);
-                    flb_lua_pushmsgpack(l, &(p+i)->val);
+                    flb_lua_pushmsgpack(l, &(p+i)->key, nil_str);
+                    flb_lua_pushmsgpack(l, &(p+i)->val, nil_str);
                     lua_settable(l, -3);
                 }
             }
@@ -419,8 +439,13 @@ void flb_lua_tompack(lua_State *l,
                 size_t len;
 
                 str = lua_tolstring(l, -1 + index, &len);
-
-                mpack_write_str(writer, str, len);
+                if (l2cc->l2c_nil_str && strlen(str) ==  flb_sds_len(l2cc->l2c_nil_str) &&
+                    !strncmp(str, l2cc->l2c_nil_str, flb_sds_len(l2cc->l2c_nil_str))) {
+                    mpack_write_nil(writer);
+                }
+                else {
+                    mpack_write_str(writer, str, len);
+                }
             }
             break;
         case LUA_TNUMBER:
@@ -509,9 +534,14 @@ void flb_lua_tomsgpack(lua_State *l,
                 size_t len;
 
                 str = lua_tolstring(l, -1 + index, &len);
-
-                msgpack_pack_str(pck, len);
-                msgpack_pack_str_body(pck, str, len);
+                if (l2cc->l2c_nil_str && strlen(str) ==  flb_sds_len(l2cc->l2c_nil_str) &&
+                    !strncmp(str, l2cc->l2c_nil_str, flb_sds_len(l2cc->l2c_nil_str))) {
+                    msgpack_pack_nil(pck);
+                }
+                else {
+                    msgpack_pack_str(pck, len);
+                    msgpack_pack_str_body(pck, str, len);
+                }
             }
             break;
         case LUA_TNUMBER:

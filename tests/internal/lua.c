@@ -112,7 +112,7 @@ static void test_pushmsgpack()
 
     msgpack_unpacked_init(&msg);
     msgpack_unpack_next(&msg, sbuf.data, sbuf.size, NULL);
-    flb_lua_pushmsgpack(l, &msg.data);
+    flb_lua_pushmsgpack(l, &msg.data, NULL);
     check_equals(l, "{ [1] = { [key] = value } [2] = msgpack-str [3] = 4 }");
 
     msgpack_unpacked_destroy(&msg);
@@ -137,7 +137,7 @@ static void test_pushmpack()
     msgpack_pack_int(&pck, 4);
 
     mpack_reader_init_data(&reader, sbuf.data, sbuf.size);
-    flb_lua_pushmpack(l, &reader);
+    flb_lua_pushmpack(l, &reader, NULL);
     check_equals(l, "{ [1] = { [key] = value } [2] = msgpack-str [3] = 4 }");
 
     msgpack_sbuffer_destroy(&sbuf);
@@ -158,6 +158,7 @@ static void test_tomsgpack()
     msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
     mk_list_init(&l2cc.l2c_types);
     l2cc.l2c_types_num = 0;
+    l2cc.l2c_nil_str = NULL;
 
     lua_getglobal(l, "obj");
     flb_lua_tomsgpack(l, &pck, 0, &l2cc);
@@ -188,6 +189,7 @@ static void test_tompack()
     mpack_writer_init(&writer, buf, sizeof(buf));
     mk_list_init(&l2cc.l2c_types);
     l2cc.l2c_types_num = 0;
+    l2cc.l2c_nil_str = NULL;
 
     lua_getglobal(l, "obj");
     flb_lua_tompack(l, &writer, 0, &l2cc);
