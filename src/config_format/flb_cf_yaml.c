@@ -300,9 +300,12 @@ static char *event_type_str(yaml_event_t *event)
 
 static char *state_get_last(struct local_ctx *ctx)
 {
-    struct flb_slist_entry *e;
+    struct flb_slist_entry *entry;
 
-    e = mk_list_entry_last(&ctx->includes, struct flb_slist_entry, _head);
+    entry = mk_list_entry_last(&ctx->includes, struct flb_slist_entry, _head);
+    if (entry == NULL) {
+        return NULL;
+    }
     return e->str;
 }
 
@@ -686,6 +689,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
     char *last_included;
 
     last_included = state_get_last(ctx);
+    if (last_included == NULL) {
+        last_included = "**unknown**";
+    }
+
     state = get_current_state(ctx);
     if (state == NULL) {
         flb_error("unable to parse yaml: no state");
