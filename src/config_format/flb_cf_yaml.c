@@ -525,7 +525,7 @@ static int read_glob(struct flb_cf *cf, struct local_ctx *ctx,
 static void print_current_state(struct local_ctx *ctx, struct parser_state *state,
                                 yaml_event_t *event)
 {
-    flb_debug("%*s%s->%s", state->level*2, "", state_str(state->state),
+    flb_error("%*s%s->%s", state->level*2, "", state_str(state->state),
              event_type_str(event));
 }
 
@@ -536,21 +536,21 @@ static void print_current_properties(struct parser_state *state)
     struct cfl_variant *var;
     int idx;
 
-    flb_debug("%*s[%s] PROPERTIES:", state->level*2, "", section_names[state->section]);
+    flb_error("%*s[%s] PROPERTIES:", state->level*2, "", section_names[state->section]);
 
     cfl_list_foreach(head, &state->keyvals->list) {
         kv = cfl_list_entry(head, struct cfl_kvpair, _head);
         switch (kv->val->type) {
         case CFL_VARIANT_STRING:
-            flb_debug("%*s%s: %s", (state->level+2)*2, "", kv->key, kv->val->data.as_string);
+            flb_error("%*s%s: %s", (state->level+2)*2, "", kv->key, kv->val->data.as_string);
             break;
         case CFL_VARIANT_ARRAY:
-            flb_debug("%*s%s: [", (state->level+2)*2, "", kv->key);
+            flb_error("%*s%s: [", (state->level+2)*2, "", kv->key);
             for (idx = 0; idx < kv->val->data.as_array->entry_count; idx++) {
                 var = cfl_array_fetch_by_index(kv->val->data.as_array, idx);
-                flb_debug("%*s%s", (state->level+3)*2, "", var->data.as_string);
+                flb_error("%*s%s", (state->level+3)*2, "", var->data.as_string);
             }
-            flb_debug("%*s]", (state->level+2)*2, "");
+            flb_error("%*s]", (state->level+2)*2, "");
             break;
         }
     }
@@ -566,6 +566,114 @@ static struct parser_state *get_current_state(struct local_ctx *ctx)
     return state;
 }
 
+static enum status state_copy_into_group(struct parser_state *state, struct flb_cf_group *cf_group)
+{
+    struct cfl_list *head;
+    struct cfl_kvpair *kvp;
+    struct cfl_variant *var;
+    struct cfl_variant *varr;
+    struct cfl_array *arr;
+    struct cfl_array *carr;
+    struct cfl_kvlist *copy;
+    int idx;
+
+    if (cf_group == NULL) {
+        flb_error("no group for processor properties");
+        return YAML_FAILURE;
+    }
+
+    varr = cfl_kvlist_fetch(cf_group->properties, state->key);
+    if (varr == NULL) {
+        arr = cfl_array_create(1);
+        cfl_array_resizable(arr, CFL_TRUE);
+        cfl_kvlist_insert_array(cf_group->properties, state->key, arr);
+    } else {
+        arr = varr->data.as_array;
+    }
+
+    copy = cfl_kvlist_create();
+    if (copy == NULL) {
+        flb_error("unable to allocate kvlist");
+        return YAML_FAILURE;
+        }
+
+    cfl_list_foreach(head, &state->keyvals->list) {
+        kvp = cfl_list_entry(head, struct cfl_kvpair, _head);
+        switch (kvp->val->type) {
+        case CFL_VARIANT_STRING:
+            cfl_kvlist_insert_string(copy, kvp->key, kvp->val->data.as_string);
+            break;
+        case CFL_VARIANT_ARRAY:
+            carr = cfl_array_create(kvp->val->data.as_array->entry_count);
+            for (idx = 0; idx < kvp->val->data.as_array->entry_count; idx++) {
+                var = cfl_array_fetch_by_index(kvp->val->data.as_array, idx);
+                switch (var->type) {
+                case CFL_VARIANT_STRING:
+                    cfl_array_append_string(carr, var->data.as_string);
+                    break;
+                default:
+                    flb_error("unable to copy value for property");
+                    return YAML_FAILURE;
+                }
+            }
+            cfl_kvlist_insert_array(copy, kvp->key, carr);
+            break;
+        default:
+            flb_error("unknown value type for properties: %d", kvp->val->type);
+            return YAML_FAILURE;
+        }
+    }
+
+    cfl_array_append_kvlist(arr, copy);
+    return YAML_SUCCESS;
+}
+
+static enum status state_copy_into_properties(struct parser_state *state, struct flb_cf * cf, struct cfl_kvlist *properties)
+{
+    struct cfl_list *head;
+    struct cfl_kvpair *kvp;
+    struct cfl_variant *var;
+    struct cfl_array *arr;
+    int idx;
+
+    cfl_list_foreach(head, &state->keyvals->list) {
+        kvp = cfl_list_entry(head, struct cfl_kvpair, _head);
+        switch (kvp->val->type) {
+        case CFL_VARIANT_STRING:
+            var = flb_cf_section_property_add(cf,
+                                            properties,
+                                            kvp->key,
+                                            cfl_sds_len(kvp->key),
+                                            kvp->val->data.as_string,
+                                            cfl_sds_len(kvp->val->data.as_string));
+            if (var == NULL) {
+                flb_error("unable to add variant value property");
+                return YAML_FAILURE;
+            }
+            break;
+        case CFL_VARIANT_ARRAY:
+            arr = flb_cf_section_property_add_list(cf, properties,
+                                                    kvp->key, cfl_sds_len(kvp->key));
+            for (idx = 0; idx < kvp->val->data.as_array->entry_count; idx++) {
+                var = cfl_array_fetch_by_index(kvp->val->data.as_array, idx);
+                switch (var->type) {
+                case CFL_VARIANT_STRING:
+                    cfl_array_append_string(arr, var->data.as_string);
+                    break;
+                default:
+                    flb_error("unable to copy value for property");
+                    return YAML_FAILURE;
+                }
+            }
+            break;
+        default:
+            flb_error("unknown value type for properties: %d", kvp->val->type);
+            return YAML_FAILURE;
+        }
+    }
+    return YAML_SUCCESS;
+}
+
 static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                          yaml_event_t *event)
 {
@@ -576,13 +684,6 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
     char *value;
     struct flb_kv *kv;
     char *last_included;
-    struct cfl_list *head;
-    struct cfl_kvpair *kvp;
-    struct cfl_variant *var;
-    struct cfl_variant *varr;
-    struct cfl_array *arr;
-    struct cfl_array *carr;
-    struct cfl_kvlist *copy;
 
     last_included = state_get_last(ctx);
     state = get_current_state(ctx);
@@ -676,7 +777,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             break;
         case YAML_SCALAR_EVENT:
             value = (char *) event->data.scalar.value;
-            flb_debug("[config yaml] including: %s", value);
+            flb_error("[config yaml] including: %s", value);
             if (strchr(value, '*') != NULL) {
                 ret = read_glob(cf, ctx, state, value);
             }
@@ -965,6 +1066,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             break;
         case YAML_SEQUENCE_END_EVENT:
             state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
             break;
         case YAML_MAPPING_START_EVENT:
             state = state_push_withvals(ctx, state, STATE_PLUGIN_START);
@@ -1021,94 +1126,16 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             print_current_properties(state);
 
             if (state->section == SECTION_PROCESSOR) {
-
-                if (state->cf_group == NULL) {
-                    flb_error("no group for processor properties");
-                    return YAML_FAILURE;
-                }
-
-                varr = cfl_kvlist_fetch(state->cf_group->properties, state->key);
-                if (varr == NULL) {
-                    arr = cfl_array_create(1);
-                    if (arr == NULL) {
-                        flb_error("unable to set value");
-                        return YAML_FAILURE;
-                    }
-                    cfl_array_resizable(arr, CFL_TRUE);
-                    if (cfl_kvlist_insert_array(state->cf_group->properties, state->key, arr) < 0) {
-                        flb_error("unable to set value");
-                        cfl_array_destroy(arr);
-                        return YAML_FAILURE;
-                    }
-                } else {
-                    arr = varr->data.as_array;
-                }
-
-                copy = cfl_kvlist_create();
-                if (copy == NULL) {
-                    flb_error("unable to allocate kvlist");
-                    cfl_array_destroy(arr);
-                    return YAML_FAILURE;
-                }
-
-                cfl_list_foreach(head, &state->keyvals->list) {
-                    kvp = cfl_list_entry(head, struct cfl_kvpair, _head);
-                    switch (kvp->val->type) {
-                    case CFL_VARIANT_STRING:
-                        if (cfl_kvlist_insert_string(copy, kvp->key, kvp->val->data.as_string) < 0) {
-                            flb_error("unable to set value");
-                            cfl_array_destroy(arr);
-                            cfl_kvlist_destroy(copy);
-                            return YAML_FAILURE;
-                        }
-                        break;
-                    case CFL_VARIANT_ARRAY:
-                        carr = cfl_array_create(kvp->val->data.as_array->entry_count);
-                        for (idx = 0; idx < kvp->val->data.as_array->entry_count; idx++) {
-                            var = cfl_array_fetch_by_index(kvp->val->data.as_array, idx);
-                            switch (var->type) {
-                            case CFL_VARIANT_STRING:
-                                if (cfl_array_append_string(carr, var->data.as_string) < 0) {
-                                    cfl_array_destroy(arr);
-                                    cfl_kvlist_destroy(copy);
-                                }
-                                break;
-                            default:
-                                flb_error("unable to copy value for property");
-                                cfl_array_destroy(arr);
-                                cfl_kvlist_destroy(copy);
-                                return YAML_FAILURE;
-                            }
-                        }
-                        if (cfl_kvlist_insert_array(copy, kvp->key, carr) < 0) {
-                            flb_error("unable to append array");
-                            cfl_array_destroy(arr);
-                            cfl_kvlist_destroy(copy);
-                            return YAML_FAILURE;
-                        }
-                        break;
-                    default:
-                        flb_error("unknown value type for properties: %d", kvp->val->type);
-                        cfl_array_destroy(arr);
-                        cfl_kvlist_destroy(copy);
-                        return YAML_FAILURE;
-                    }
-                }
-
-                if (cfl_array_append_kvlist(arr, copy) < 0) {
-                    flb_error("unable to append list");
-                    cfl_array_destroy(arr);
-                    cfl_kvlist_destroy(copy);
-                    return YAML_FAILURE;
-                }
-                state = state_pop(ctx);
-                if (state == NULL) {
-                    flb_error("no state left");
-                    return YAML_FAILURE;
-                }
-		break;
+                state_copy_into_group(state, state->cf_group);
+            } else {
+                state_copy_into_properties(state, cf, state->cf_section->properties);
             }
-            break;
+            state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
+    		break;
         case YAML_SEQUENCE_START_EVENT: /* start a new group */
             if (strcmp(state->key, "processors") == 0) {
                 yaml_error_event(ctx, state, event);
@@ -1723,7 +1750,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
         return -1;
     }
 
-    flb_debug("============ %s ============", cfg_file);
+    flb_error("============ %s ============", cfg_file);
     fh = fopen(include_file, "r");
     if (!fh) {
         flb_errno();
@@ -1765,7 +1792,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
         state = cfl_list_entry_last(&ctx->states, struct parser_state, _head);
     } while (state->state != STATE_STOP);
 
-    flb_debug("==============================");
+    flb_error("==============================");
 done:
     if (code == -1) {
         yaml_event_delete(&event);
