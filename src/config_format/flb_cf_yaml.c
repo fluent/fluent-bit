@@ -306,7 +306,7 @@ static char *state_get_last(struct local_ctx *ctx)
     if (entry == NULL) {
         return NULL;
     }
-    return e->str;
+    return entry->str;
 }
 
 static void yaml_error_event(struct local_ctx *ctx, struct parser_state *state,
@@ -683,7 +683,6 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
     struct parser_state *state;
     struct parser_state *group_key;
     int ret;
-    int idx;
     char *value;
     struct flb_kv *kv;
     char *last_included;
