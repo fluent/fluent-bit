@@ -247,6 +247,9 @@ static char *state_str(enum state val)
 
 static int add_section_type(struct flb_cf *cf, struct parser_state *state)
 {
+    if (cf == NULL || state == NULL) {
+        return -1;
+    }
     if (state->section == SECTION_INPUT) {
         state->cf_section = flb_cf_section_create(cf, "INPUT", 0);
     }
@@ -312,7 +315,7 @@ static char *state_get_last(struct local_ctx *ctx)
 static void yaml_error_event(struct local_ctx *ctx, struct parser_state *state,
                              yaml_event_t *event)
 {
-    struct flb_slist_entry *e;
+    struct flb_slist_entry *entry;
 
     if (event == NULL) {
         flb_error("[config] YAML error found but with no state or event");
@@ -325,8 +328,8 @@ static void yaml_error_event(struct local_ctx *ctx, struct parser_state *state,
                   event_type_str(event), event->type);
         return;
     }
-    e = mk_list_entry_last(&ctx->includes, struct flb_slist_entry, _head);
-    if (e == NULL) {
+    entry = mk_list_entry_last(&ctx->includes, struct flb_slist_entry, _head);
+    if (entry == NULL) {
         flb_error("[config] YAML error found (no file info), line %zu, column %zu: "
                   "unexpected event '%s' (%d) in state '%s' (%d).",
                   event->start_mark.line + 1, event->start_mark.column,
@@ -336,37 +339,37 @@ static void yaml_error_event(struct local_ctx *ctx, struct parser_state *state,
 
     flb_error("[config] YAML error found in file \"%s\", line %zu, column %zu: "
               "unexpected event '%s' (%d) in state '%s' (%d).",
-              e->str, event->start_mark.line + 1, event->start_mark.column,
+              entry->str, event->start_mark.line + 1, event->start_mark.column,
               event_type_str(event), event->type, state_str(state->state), state->state);
 }
 
-static void yaml_error_definition(struct local_ctx *ctx, struct parser_state *s,
+static void yaml_error_definition(struct local_ctx *ctx, struct parser_state *state,
                                   yaml_event_t *event, char *value)
 {
     flb_error("[config] YAML error found in file \"%s\", line %zu, column %zu: "
               "duplicated definition of '%s'",
-              s->file->name, event->start_mark.line + 1, event->start_mark.column,
+              state->file->name, event->start_mark.line + 1, event->start_mark.column,
               value);
 }
 
-static void yaml_error_plugin_category(struct local_ctx *ctx, struct parser_state *s,
+static void yaml_error_plugin_category(struct local_ctx *ctx, struct parser_state *state,
                                        yaml_event_t *event, char *value)
 {
     flb_error("[config] YAML error found in file \"%s\", line %zu, column %zu: "
               "the pipeline component '%s' is not valid. Try one of these values: "
               "customs, inputs, filters or outputs.",
-              s->file->name, event->start_mark.line + 1, event->start_mark.column,
+              state->file->name, event->start_mark.line + 1, event->start_mark.column,
               value);
 }
 
 static int is_file_included(struct local_ctx *ctx, const char *path)
 {
     struct mk_list *head;
-    struct flb_slist_entry *e;
+    struct flb_slist_entry *entry;
 
     mk_list_foreach(head, &ctx->includes) {
-        e = mk_list_entry(head, struct flb_slist_entry, _head);
-        if (strcmp(e->str, path) == 0) {
+        entry = mk_list_entry(head, struct flb_slist_entry, _head);
+        if (strcmp(entry->str, path) == 0) {
             return FLB_TRUE;
         }
     }
@@ -375,7 +378,7 @@ static int is_file_included(struct local_ctx *ctx, const char *path)
 }
 
 #ifndef _WIN32
-static int read_glob(struct flb_cf *cf, struct local_ctx *ctx,
+static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
                      struct parser_state *state, const char *path)
 {
     int ret = -1;
@@ -416,7 +419,7 @@ static int read_glob(struct flb_cf *cf, struct local_ctx *ctx,
     }
 
     for (idx = 0; idx < glb.gl_pathc; idx++) {
-        ret = read_config(cf, ctx, state->file, glb.gl_pathv[idx]);
+        ret = read_config(conf, ctx, state->file, glb.gl_pathv[idx]);
         if (ret < 0) {
             break;
         }
@@ -439,7 +442,7 @@ static char *dirname(char *path)
     return path;
 }
 
-static int read_glob(struct flb_cf *cf, struct local_ctx *ctx,
+static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
                      struct parser_state *state, const char *path)
 {
     char *star, *p0, *p1;
@@ -514,7 +517,7 @@ static int read_glob(struct flb_cf *cf, struct local_ctx *ctx,
 
         ret = stat(buf, &st);
         if (ret == 0 && (st.st_mode & S_IFMT) == S_IFREG) {
-            if (read_config(cf, ctx, state, buf) < 0) {
+            if (read_config(conf, ctx, state, buf) < 0) {
                 return -1;
             }
         }
@@ -569,7 +572,7 @@ static struct parser_state *get_current_state(struct local_ctx *ctx)
     return state;
 }
 
-static enum status state_copy_into_group(struct parser_state *state, struct flb_cf_group *cf_group)
+static enum status state_copy_into_config_group(struct parser_state *state, struct flb_cf_group *cf_group)
 {
     struct cfl_list *head;
     struct cfl_kvpair *kvp;
@@ -588,40 +591,68 @@ static enum status state_copy_into_group(struct parser_state *state, struct flb_
     varr = cfl_kvlist_fetch(cf_group->properties, state->key);
     if (varr == NULL) {
         arr = cfl_array_create(1);
+        if (arr == NULL) {
+            flb_error("unable to allocate array");
+            return YAML_FAILURE;
+        }
         cfl_array_resizable(arr, CFL_TRUE);
-        cfl_kvlist_insert_array(cf_group->properties, state->key, arr);
+        if (cfl_kvlist_insert_array(cf_group->properties, state->key, arr) < 0) {
+            cfl_array_destroy(arr);
+            flb_error("unable to insert into array");
+            return YAML_FAILURE;
+        }
     } else {
         arr = varr->data.as_array;
     }
 
     copy = cfl_kvlist_create();
     if (copy == NULL) {
+        cfl_array_destroy(arr);
         flb_error("unable to allocate kvlist");
         return YAML_FAILURE;
-        }
+    }
 
     cfl_list_foreach(head, &state->keyvals->list) {
         kvp = cfl_list_entry(head, struct cfl_kvpair, _head);
         switch (kvp->val->type) {
         case CFL_VARIANT_STRING:
-            cfl_kvlist_insert_string(copy, kvp->key, kvp->val->data.as_string);
+            if (cfl_kvlist_insert_string(copy, kvp->key, kvp->val->data.as_string) < 0) {
+                flb_error("unable to insert into array");
+                cfl_array_destroy(arr);
+                return YAML_FAILURE;
+            }
             break;
         case CFL_VARIANT_ARRAY:
             carr = cfl_array_create(kvp->val->data.as_array->entry_count);
             for (idx = 0; idx < kvp->val->data.as_array->entry_count; idx++) {
                 var = cfl_array_fetch_by_index(kvp->val->data.as_array, idx);
+                if (var == NULL) {
+                    cfl_array_destroy(arr);
+                    flb_error("unable to fetch from array by index");
+                    return YAML_FAILURE;
+                }
                 switch (var->type) {
                 case CFL_VARIANT_STRING:
-                    cfl_array_append_string(carr, var->data.as_string);
+                    if (cfl_array_append_string(carr, var->data.as_string) < 0) {
+                        cfl_array_destroy(arr);
+                        flb_error("unable to fetch from array by index");
+                        return YAML_FAILURE;
+                    }
                     break;
                 default:
+                    cfl_array_destroy(arr);
                     flb_error("unable to copy value for property");
                     return YAML_FAILURE;
                 }
             }
-            cfl_kvlist_insert_array(copy, kvp->key, carr);
+            if (cfl_kvlist_insert_array(copy, kvp->key, carr) < 0) {
+                cfl_array_destroy(arr);
+                flb_error("unabelt to insert into array");
+                return YAML_FAILURE;
+            }
             break;
         default:
+            cfl_array_destroy(arr);
             flb_error("unknown value type for properties: %d", kvp->val->type);
             return YAML_FAILURE;
         }
@@ -657,11 +688,22 @@ static enum status state_copy_into_properties(struct parser_state *state, struct
         case CFL_VARIANT_ARRAY:
             arr = flb_cf_section_property_add_list(cf, properties,
                                                     kvp->key, cfl_sds_len(kvp->key));
+            if (arr == NULL) {
+                flb_error("unable to add property list");
+                return YAML_FAILURE;
+            }
             for (idx = 0; idx < kvp->val->data.as_array->entry_count; idx++) {
                 var = cfl_array_fetch_by_index(kvp->val->data.as_array, idx);
+                if (var == NULL) {
+                    flb_error("unable to retrieve from array by index");
+                    return YAML_FAILURE;
+                }
                 switch (var->type) {
                 case CFL_VARIANT_STRING:
-                    cfl_array_append_string(arr, var->data.as_string);
+                    if (cfl_array_append_string(arr, var->data.as_string) < 0) {
+                        flb_error("unable to append string to array");
+                        return YAML_FAILURE;
+                    }
                     break;
                 default:
                     flb_error("unable to copy value for property");
@@ -681,7 +723,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                          yaml_event_t *event)
 {
     struct parser_state *state;
-    struct parser_state *group_key;
+    enum status status;
     int ret;
     char *value;
     struct flb_kv *prop;
@@ -1132,16 +1174,22 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             print_current_properties(state);
 
             if (state->section == SECTION_PROCESSOR) {
-                state_copy_into_group(state, state->cf_group);
+                status = state_copy_into_config_group(state, state->cf_group);
+                if (status != YAML_SUCCESS) {
+                    return status;
+                }
             } else {
-                state_copy_into_properties(state, cf, state->cf_section->properties);
+                status = state_copy_into_properties(state, cf, state->cf_section->properties);
+                if (status != YAML_SUCCESS) {
+                    return status;
+                }
             }
             state = state_pop(ctx);
             if (state == NULL) {
                 flb_error("no state left");
                 return YAML_FAILURE;
             }
-    		break;
+            break;
         case YAML_SEQUENCE_START_EVENT: /* start a new group */
             if (strcmp(state->key, "processors") == 0) {
                 yaml_error_event(ctx, state, event);
@@ -1250,7 +1298,11 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 break;
             }
 
-            group_key = state_push(ctx, STATE_GROUP_KEY);
+            state = state_push(ctx, STATE_GROUP_KEY);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
             /* create group */
             state->values = flb_cf_section_property_add_list(cf,
                                                              state->cf_section->properties,
@@ -1259,7 +1311,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 flb_error("no values");
                 return YAML_FAILURE;
             }
-            group_key->cf_group = flb_cf_group_create(cf, state->cf_section, state->key, strlen(state->key));
+            state->cf_group = flb_cf_group_create(cf, state->cf_section, state->key, strlen(state->key));
             break;
         case YAML_SEQUENCE_END_EVENT:   /* end of group */
             state = state_pop(ctx);
@@ -1424,8 +1476,9 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 flb_error("no state left");
                 return YAML_FAILURE;
             }
-            // This is also the end of the plugin values mapping.
-            // So we pop an additional state off the stack.
+            /* This is also the end of the plugin values mapping.
+             * So we pop an additional state off the stack.
+             */
             state = state_pop(ctx);
             if (state == NULL) {
                 flb_error("no state left");
@@ -1468,42 +1521,6 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
     return YAML_SUCCESS;
 }
 
-static char *get_real_path(char *file, char *path, size_t size)
-{
-    int len;
-    char *p;
-    char *end;
-
-#ifdef _MSC_VER
-    p = _fullpath(path, file, size);
-#else
-    p = realpath(file, path);
-#endif
-
-    if (!p) {
-        len = strlen(file);
-        if (len > size) {
-            return NULL;
-        }
-        memcpy(path, file, len);
-        path[len] = '\0';
-    }
-
-    /* lookup path ending and truncate */
-#ifdef _MSC_VER
-    end = strrchr(path, '\\');
-#else
-    end = strrchr(path, '/');
-#endif
-
-    if (end) {
-        end++;
-        *end = '\0';
-    }
-
-    return path;
-}
-
 static struct parser_state *state_start(struct local_ctx *ctx, struct file_state *file)
 {
     struct parser_state *state;
@@ -1526,6 +1543,9 @@ static struct parser_state *state_push(struct local_ctx *ctx, enum state state_n
     }
 
     last = cfl_list_entry_last(&ctx->states, struct parser_state, _head);
+    if (last == NULL) {
+        return NULL;
+    }
     state = state_create(last->file, last->file);
     if (state == NULL) {
         return NULL;
@@ -1625,6 +1645,9 @@ static struct parser_state *state_push_witharr(struct local_ctx *ctx,
 
 static int state_create_section(struct flb_cf *cf, struct parser_state *state, char *name)
 {
+    if (state == NULL || cf == NULL || name == NULL) {
+        return -1;
+    }
     state->cf_section = flb_cf_section_create(cf, name, 0);
     if (state->cf_section == NULL) {
         return -1;
@@ -1634,6 +1657,9 @@ static int state_create_section(struct flb_cf *cf, struct parser_state *state, c
 
 static int state_create_group(struct flb_cf *cf, struct parser_state *state, char *name)
 {
+    if (state == NULL || cf == NULL || name == NULL) {
+        return -1;
+    }
     state->cf_group = flb_cf_group_create(cf, state->cf_section,
                                           "processors", strlen("processors"));
     if (state->cf_group == NULL) {
@@ -1647,6 +1673,9 @@ static struct parser_state *state_pop(struct local_ctx *ctx)
 {
     struct parser_state *last;
 
+    if (ctx == NULL) {
+        return NULL;
+    }
     if (cfl_list_size(&ctx->states) <= 0) {
         return NULL;
     }
