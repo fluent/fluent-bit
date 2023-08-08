@@ -71,7 +71,7 @@ int ne_thermalzone_init(struct flb_ne *ctx)
 
 int ne_thermalzone_update_thermal_zones(struct flb_ne *ctx)
 {
-    uint64_t ts;
+    uint64_t tstamp;
     int ret;
     uint64_t temp = 0;
     struct mk_list *head;
@@ -82,7 +82,7 @@ int ne_thermalzone_update_thermal_zones(struct flb_ne *ctx)
     int path_sysfs_len;
     char *num;
 
-    ts = cfl_time_now();
+    tstamp = cfl_time_now();
 
     ret = ne_utils_path_scan(ctx, ctx->path_sysfs, THERMAL_ZONE_PATTERN, NE_SCAN_DIR, &list);
     if (ret != 0) {
@@ -142,7 +142,7 @@ int ne_thermalzone_update_thermal_zones(struct flb_ne *ctx)
             num = entry->str;
         }
 
-        cmt_gauge_set(ctx->thermalzone_temp, ts, ((double) temp)/1000.0,
+        cmt_gauge_set(ctx->thermalzone_temp, tstamp, ((double) temp)/1000.0,
                     2, (char *[]) {num, type});
 
         flb_sds_destroy(type);
@@ -156,7 +156,7 @@ int ne_thermalzone_update_thermal_zones(struct flb_ne *ctx)
 
 int ne_thermalzone_update_cooling_devices(struct flb_ne *ctx)
 {
-    uint64_t ts;
+    uint64_t tstamp;
     int ret;
     uint64_t cur_state = 0;
     uint64_t max_state = 0;
@@ -168,7 +168,7 @@ int ne_thermalzone_update_cooling_devices(struct flb_ne *ctx)
     flb_sds_t full_path_sysfs;
     int path_sysfs_len;
 
-    ts = cfl_time_now();
+    tstamp = cfl_time_now();
 
     ret = ne_utils_path_scan(ctx, ctx->path_sysfs, COOLING_DEVICE_PATTERN, NE_SCAN_DIR, &list);
     if (ret != 0) {
@@ -234,9 +234,9 @@ int ne_thermalzone_update_cooling_devices(struct flb_ne *ctx)
             num = entry->str;
         }
 
-        cmt_gauge_set(ctx->cooling_device_cur_state, ts, ((double)cur_state),
+        cmt_gauge_set(ctx->cooling_device_cur_state, tstamp, ((double)cur_state),
                     2, (char *[]) {num, type});
-        cmt_gauge_set(ctx->cooling_device_max_state, ts, ((double)max_state),
+        cmt_gauge_set(ctx->cooling_device_max_state, tstamp, ((double)max_state),
                     2, (char *[]) {num, type});
         flb_sds_destroy(type);
     }
