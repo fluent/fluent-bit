@@ -103,15 +103,13 @@ int ne_thermalzone_update_thermal_zones(struct flb_ne *ctx)
     if (ctx->path_sysfs[strlen(ctx->path_sysfs)-1] == '/') {
         path_sysfs_len--;
     }
-    path_sysfs_len = strlen(ctx->path_sysfs);
-    if (ctx->path_sysfs[strlen(ctx->path_sysfs)-1] == '/') {
-        path_sysfs_len--;
-    }
+    /* Set the full_path to the sysfs path */
     if (flb_sds_cat_safe(&full_path_sysfs, ctx->path_sysfs, path_sysfs_len) < 0) {
         flb_slist_destroy(&list);
         flb_sds_destroy(full_path_sysfs);
         return -1;
     }
+    /* Concatenate the base for all thermalzone objects */
     if (flb_sds_cat_safe(&full_path_sysfs, THERMAL_ZONE_BASE,
                          strlen(THERMAL_ZONE_BASE)) < 0) {
         flb_slist_destroy(&list);
