@@ -310,13 +310,15 @@ static struct flb_logdna *logdna_config_create(struct flb_output_instance *ins,
         else {
             ctx->_hostname = flb_sds_create("unknown");
         }
-        if (!ctx->_hostname) {
-            flb_free(ctx);
-            return NULL;
-        }
     }
     else {
         ctx->_hostname = flb_sds_create(ctx->hostname);
+    }
+
+    /* Bail if unsuccessful hostname creation */
+    if (!ctx->_hostname) {
+        flb_free(ctx);
+        return NULL;
     }
 
     /* Create Upstream connection context */
