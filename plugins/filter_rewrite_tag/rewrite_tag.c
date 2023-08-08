@@ -97,6 +97,8 @@ static int emitter_create(struct flb_rewrite_tag *ctx)
     if (ret == -1) {
         flb_plg_error(ctx->ins, "cannot initialize storage for stream '%s'",
                       ctx->emitter_name);
+        flb_input_instance_exit(ins, ctx->config);
+        flb_input_instance_destroy(ins);
         return -1;
     }
     ctx->ins_emitter = ins;
