@@ -535,22 +535,22 @@ static void print_current_state(struct local_ctx *ctx, struct parser_state *stat
 static void print_current_properties(struct parser_state *state)
 {
     struct cfl_list *head;
-    struct cfl_kvpair *kv;
+    struct cfl_kvpair *prop;
     struct cfl_variant *var;
     int idx;
 
     flb_error("%*s[%s] PROPERTIES:", state->level*2, "", section_names[state->section]);
 
     cfl_list_foreach(head, &state->keyvals->list) {
-        kv = cfl_list_entry(head, struct cfl_kvpair, _head);
-        switch (kv->val->type) {
+        prop = cfl_list_entry(head, struct cfl_kvpair, _head);
+        switch (prop->val->type) {
         case CFL_VARIANT_STRING:
-            flb_error("%*s%s: %s", (state->level+2)*2, "", kv->key, kv->val->data.as_string);
+            flb_error("%*s%s: %s", (state->level+2)*2, "", prop->key, prop->val->data.as_string);
             break;
         case CFL_VARIANT_ARRAY:
-            flb_error("%*s%s: [", (state->level+2)*2, "", kv->key);
-            for (idx = 0; idx < kv->val->data.as_array->entry_count; idx++) {
-                var = cfl_array_fetch_by_index(kv->val->data.as_array, idx);
+            flb_error("%*s%s: [", (state->level+2)*2, "", prop->key);
+            for (idx = 0; idx < prop->val->data.as_array->entry_count; idx++) {
+                var = cfl_array_fetch_by_index(prop->val->data.as_array, idx);
                 flb_error("%*s%s", (state->level+3)*2, "", var->data.as_string);
             }
             flb_error("%*s]", (state->level+2)*2, "");
@@ -684,7 +684,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
     struct parser_state *group_key;
     int ret;
     char *value;
-    struct flb_kv *kv;
+    struct flb_kv *prop;
     char *last_included;
 
     last_included = state_get_last(ctx);
@@ -1025,10 +1025,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             value = (char *) event->data.scalar.value;
             /* Check if the incoming k/v pair set a config environment variable */
             if (state->section == SECTION_ENV) {
-                kv = flb_cf_env_property_add(cf,
-                                             state->key, flb_sds_len(state->key),
-                                             value, strlen(value));
-                if (kv == NULL) {
+                prop = flb_cf_env_property_add(cf,
+                                               state->key, flb_sds_len(state->key),
+                                               value, strlen(value));
+                if (prop == NULL) {
                     flb_error("unable to add key value");
                     return YAML_FAILURE;
                 }
