@@ -68,6 +68,7 @@ static int in_exec_wasi_collect(struct flb_input_instance *ins,
     if (ctx->oneshot == FLB_TRUE) {
         ret = flb_pipe_r(ctx->ch_manager[0], &val, sizeof(val));
         if (ret == -1) {
+            fclose(stdoutp);
             flb_errno();
             return -1;
         }
