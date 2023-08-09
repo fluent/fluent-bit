@@ -781,7 +781,9 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
                 continue;
             }
 
-            // mark as error by default.
+            /* set ret to -1 to ensure that we treat any unhandled plugin or
+             * value types as errors.
+             */
             ret = -1;
 
             if (type == FLB_CF_CUSTOM) {
