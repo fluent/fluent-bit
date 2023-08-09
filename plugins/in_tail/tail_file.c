@@ -1774,7 +1774,6 @@ static int check_purge_deleted_file(struct flb_tail_config *ctx,
                                     struct flb_tail_file *file, time_t ts)
 {
     int ret;
-    int64_t mtime;
     struct stat st;
 
     ret = fstat(file->fd, &st);
@@ -1796,18 +1795,6 @@ static int check_purge_deleted_file(struct flb_tail_config *ctx,
         /* Remove file from the monitored list */
         flb_tail_file_remove(file);
         return FLB_TRUE;
-    }
-
-    if (ctx->ignore_older > 0) {
-        mtime = flb_tail_stat_mtime(&st);
-        if (mtime > 0) {
-            if ((ts - ctx->ignore_older) > mtime) {
-                flb_plg_debug(ctx->ins, "purge: monitored file (ignore older): %s",
-                              file->name);
-                flb_tail_file_remove(file);
-                return FLB_TRUE;
-            }
-        }
     }
 
     return FLB_FALSE;
