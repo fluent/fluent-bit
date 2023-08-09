@@ -30,6 +30,8 @@ struct flb_kafka_rest {
     char *topic;
     int message_key_len;
     char *message_key;
+    int message_key_field_len;
+    char *message_key_field;
 
     /* HTTP Auth */
     char *http_user;
