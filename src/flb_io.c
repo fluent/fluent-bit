@@ -184,7 +184,7 @@ static void net_io_propagate_critical_error(
     case ENOTCONN:
     case EPIPE:
     case EACCES:
-    case EIO:
+    case ENOTTY:
     case ENETDOWN:
     case ENETUNREACH:
         connection->net_error = errno;
