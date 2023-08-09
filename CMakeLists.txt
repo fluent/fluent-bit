@@ -369,8 +369,6 @@ endif()
 
 if (FLB_TESTS_OSSFUZZ)
   FLB_DEFINITION(FLB_HAVE_TESTS_OSSFUZZ)
-  # Disable for fuzz testing
-  set(FLB_CONFIG_YAML Off)
 endif()
 
 if (FLB_WASM)
