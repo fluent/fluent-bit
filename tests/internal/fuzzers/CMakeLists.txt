@@ -24,6 +24,7 @@ set(UNIT_TESTS_FILES
   utils_fuzzer.c
   config_map_fuzzer.c
   record_ac_fuzzer.c
+  config_yaml_fuzzer.c
   )
 
 # Prepare list of unit tests
