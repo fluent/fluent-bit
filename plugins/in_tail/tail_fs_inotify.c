@@ -306,29 +306,42 @@ static int in_tail_progress_check_callback(struct flb_input_instance *ins,
     struct mk_list *head;
     struct flb_tail_config *ctx = context;
     struct flb_tail_file *file;
+    int pending_data_detected;
     struct stat st;
+
     (void) config;
+
+    pending_data_detected = FLB_FALSE;
 
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
 
-        // skip fstat if we know there is still data left to read.
         if (file->offset < file->size) {
-            flb_tail_file_chunk(file);
+            pending_data_detected = FLB_TRUE;
+
             continue;
         }
 
         ret = fstat(file->fd, &st);
         if (ret == -1) {
+            flb_errno();
             flb_plg_error(ins, "fstat error");
+
             continue;
         }
 
         if (file->offset < st.st_size) {
             file->size = st.st_size;
-            flb_tail_file_chunk(file);
+            file->pending_bytes = (file->size - file->offset);
+
+            pending_data_detected = FLB_TRUE;
         }
     }
+
+    if (pending_data_detected) {
+       tail_signal_pending(ctx);
+    }
+
     return 0;
 }
 
