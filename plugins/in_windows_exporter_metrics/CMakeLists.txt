@@ -15,6 +15,7 @@ set(src
   we_wmi_logon.c
   we_wmi_system.c
   we_wmi_service.c
+  we_wmi_memory.c
   )
 
 set(libs

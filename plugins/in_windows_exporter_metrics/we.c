@@ -41,6 +41,7 @@
 #include "we_wmi_system.h"
 #include "we_wmi_thermalzone.h"
 #include "we_wmi_service.h"
+#include "we_wmi_memory.h"
 
 static int we_timer_cpu_metrics_cb(struct flb_input_instance *ins,
                                    struct flb_config *config, void *in_context)
@@ -138,6 +139,16 @@ static int we_timer_wmi_service_metrics_cb(struct flb_input_instance *ins,
     struct flb_ne *ctx = in_context;
 
     we_wmi_service_update(ctx);
+
+    return 0;
+}
+
+static int we_timer_wmi_memory_metrics_cb(struct flb_input_instance *ins,
+                                      struct flb_config *config, void *in_context)
+{
+    struct flb_ne *ctx = in_context;
+
+    we_wmi_memory_update(ctx);
 
     return 0;
 }
@@ -264,6 +275,13 @@ static void we_wmi_service_update_cb(char *name, void *p1, void *p2)
     we_wmi_service_update(ctx);
 }
 
+static void we_wmi_memory_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_we *ctx = p1;
+
+    we_wmi_memory_update(ctx);
+}
+
 static int we_update_cb(struct flb_we *ctx, char *name)
 {
     int ret;
@@ -287,6 +305,7 @@ struct flb_we_callback ne_callbacks[] = {
     { "logon", we_wmi_logon_update_cb },
     { "system", we_wmi_system_update_cb },
     { "service", we_wmi_service_update_cb },
+    { "memory", we_wmi_memory_update_cb },
     { 0 }
 };
 
@@ -321,6 +340,7 @@ static int in_we_init(struct flb_input_instance *in,
     ctx->coll_wmi_logon_fd = -1;
     ctx->coll_wmi_system_fd = -1;
     ctx->coll_wmi_service_fd = -1;
+    ctx->coll_wmi_memory_fd = -1;
 
     ctx->callback = flb_callback_create(in->name);
     if (!ctx->callback) {
@@ -625,6 +645,30 @@ static int in_we_init(struct flb_input_instance *in,
                         return -1;
                     }
                 }
+                else if (strncmp(entry->str, "memory", 6) == 0) {
+                    if (ctx->wmi_memory_scrape_interval == 0) {
+                        flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                        metric_idx = 10;
+                    } else {
+                        /* Create the memory collector */
+                        ret = flb_input_set_collector_time(in,
+                                                           we_timer_wmi_memory_metrics_cb,
+                                                           ctx->wmi_memory_scrape_interval, 0,
+                                                           config);
+                        if (ret == -1) {
+                            flb_plg_error(ctx->ins,
+                                          "could not set memory collector for Windows Exporter Metrics plugin");
+                            return -1;
+                        }
+                        ctx->coll_wmi_memory_fd = ret;
+                    }
+
+                    /* Initialize memory metric collectors */
+                    ret = we_wmi_memory_init(ctx);
+                    if (ret) {
+                        return -1;
+                    }
+                }
                 else {
                     flb_plg_warn(ctx->ins, "Unknown metrics: %s", entry->str);
                     metric_idx = -1;
@@ -698,6 +742,9 @@ static int in_we_exit(void *data, struct flb_config *config)
                 else if (strncmp(entry->str, "service", 7) == 0) {
                     we_wmi_service_exit(ctx);
                 }
+                else if (strncmp(entry->str, "memory", 6) == 0) {
+                    we_wmi_memory_exit(ctx);
+                }
                 else {
                     flb_plg_warn(ctx->ins, "Unknown metrics: %s", entry->str);
                 }
@@ -737,6 +784,9 @@ static int in_we_exit(void *data, struct flb_config *config)
     }
     if (ctx->coll_wmi_service_fd != -1) {
         we_wmi_service_exit(ctx);
+    }
+    if (ctx->coll_wmi_memory_fd != -1) {
+        we_wmi_memory_exit(ctx);
     }
 
     flb_we_config_destroy(ctx);
@@ -781,6 +831,9 @@ static void in_we_pause(void *data, struct flb_config *config)
     if (ctx->coll_wmi_service_fd != -1) {
         flb_input_collector_pause(ctx->coll_wmi_service_fd, ctx->ins);
     }
+    if (ctx->coll_wmi_memory_fd != -1) {
+        flb_input_collector_pause(ctx->coll_wmi_memory_fd, ctx->ins);
+    }
 }
 
 static void in_we_resume(void *data, struct flb_config *config)
@@ -819,6 +872,9 @@ static void in_we_resume(void *data, struct flb_config *config)
     }
     if (ctx->coll_wmi_service_fd != -1) {
         flb_input_collector_resume(ctx->coll_wmi_service_fd, ctx->ins);
+    }
+    if (ctx->coll_wmi_memory_fd != -1) {
+        flb_input_collector_resume(ctx->coll_wmi_memory_fd, ctx->ins);
     }
 }
 
@@ -890,6 +946,13 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_we, wmi_service_scrape_interval),
      "scrape interval to collect service metrics from the node."
     },
+
+    {
+     FLB_CONFIG_MAP_TIME, "collector.memory.scrape_interval", "0",
+     0, FLB_TRUE, offsetof(struct flb_we, wmi_memory_scrape_interval),
+     "scrape interval to collect memory metrics from the node."
+    },
+
     {
      FLB_CONFIG_MAP_CLIST, "metrics",
      "cpu,cpu_info,os,net,logical_disk,cs,thermalzone,logon,system,service",
