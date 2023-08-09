@@ -1695,7 +1695,13 @@ int flb_input_pause(struct flb_input_instance *ins)
 int flb_input_resume(struct flb_input_instance *ins)
 {
     if (ins->p->cb_resume) {
-        ins->p->cb_resume(ins->context, ins->config);
+        if (flb_input_is_threaded(ins)) {
+            /* signal the thread event loop about the 'resume' operation */
+            flb_input_thread_instance_resume(ins);
+        }
+        else {
+            ins->p->cb_resume(ins->context, ins->config);
+        }
     }
 
     return 0;
