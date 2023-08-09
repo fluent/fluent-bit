@@ -455,7 +455,6 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
 {
     int ret;
     int stag_len;
-    int c = 0;
     int event_type;
     int contain_options = FLB_FALSE;
     size_t index = 0;
@@ -705,8 +704,6 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                     out_tag, flb_sds_len(out_tag),
                     &root, &entry, &map, chunk_id,
                     metadata_id);
-
-                c++;
             }
             else if (entry.type == MSGPACK_OBJECT_STR ||
                      entry.type == MSGPACK_OBJECT_BIN) {

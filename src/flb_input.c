@@ -1528,7 +1528,6 @@ static int collector_start(struct flb_input_collector *coll,
 int flb_input_collector_start(int coll_id, struct flb_input_instance *in)
 {
     int ret;
-    int c = 0;
     struct mk_list *head;
     struct flb_input_collector *coll;
 
@@ -1542,7 +1541,6 @@ int flb_input_collector_start(int coll_id, struct flb_input_instance *in)
             }
             return ret;
         }
-        c++;
     }
 
     return -1;

@@ -314,7 +314,6 @@ static void process_flb_log_append(struct flb_splunk *ctx, msgpack_object *recor
 
 static int process_json_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char *buf, size_t size)
 {
-    int ret;
     size_t off = 0;
     msgpack_unpacked result;
     struct flb_time tm;
@@ -447,7 +446,7 @@ static int validate_auth_header(struct flb_splunk *ctx, struct mk_http_request *
 static int handle_hec_payload(struct flb_splunk *ctx, int content_type,
                               flb_sds_t tag, char *buf, size_t size)
 {
-    int ret;
+    int ret = -1;
 
     if (content_type == HTTP_CONTENT_JSON) {
         ret = parse_hec_payload_json(ctx, tag, buf, size);
@@ -546,7 +545,6 @@ static int process_hec_raw_payload(struct flb_splunk *ctx, struct splunk_conn *c
                                    struct mk_http_request *request)
 {
     int ret = -1;
-    int type = -1;
     struct mk_http_header *header;
 
     header = &session->parser.headers[MK_HEADER_CONTENT_TYPE];
@@ -554,14 +552,10 @@ static int process_hec_raw_payload(struct flb_splunk *ctx, struct splunk_conn *c
         send_response(conn, 400, "error: header 'Content-Type' is not set\n");
         return -1;
     }
-    else if (header->val.len == 10 &&
-        strncasecmp(header->val.data, "text/plain", 10) == 0) {
-        type = HTTP_CONTENT_TEXT;
-    }
-    else {
+    else if (header->val.len != 10 ||
+             strncasecmp(header->val.data, "text/plain", 10) != 0) {
         /* Not neccesary to specify content-type for Splunk HEC. */
         flb_plg_debug(ctx->ins, "Mark as unknown type for ingested payloads");
-        type = HTTP_CONTENT_UNKNOWN;
     }
 
     if (request->data.len <= 0) {
@@ -715,10 +709,10 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
     if (ret < 0){
         send_response(conn, 401, "error: unauthroized\n");
         if (ret == SPLUNK_AUTH_MISSING_CRED) {
-            flb_plg_warn(ctx->ins, "missing credentials in request headers", ret);
+            flb_plg_warn(ctx->ins, "missing credentials in request headers");
         }
         else if (ret == SPLUNK_AUTH_UNAUTHORIZED) {
-            flb_plg_warn(ctx->ins, "wrong credentials in request headers", ret);
+            flb_plg_warn(ctx->ins, "wrong credentials in request headers");
         }
 
         flb_sds_destroy(tag);

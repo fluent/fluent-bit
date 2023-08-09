@@ -18,18 +18,6 @@ on:
       gcp-service-account-key:
         description: The GCP service account key to use.
         required: true
-      azure-client-id:
-        description: The Azure client ID to use.
-        required: true
-      azure-client-secret:
-        description: The Azure client secret to use.
-        required: true
-      azure-subscription-id:
-        description: The Azure subscription to use.
-        required: true
-      azure-tenant-id:
-        description: The Azure tenant ID to use.
-        required: true
     inputs:
       image_name:
         description: The image repository and name to use.
@@ -53,19 +41,10 @@ jobs:
     permissions:
       packages: read
     outputs:
-      aks-cluster-name: ${{ steps.aks-cluster-name.outputs.stdout }}
-      aks-cluster-resource-group: ${{ steps.aks-cluster-resource-group.outputs.stdout }}
       aws-opensearch-endpoint: ${{ steps.aws-opensearch-endpoint.outputs.stdout }}
       gke-cluster-name: ${{ steps.gke-cluster-name.outputs.stdout }}
       gke-cluster-region: ${{ steps.gke-cluster-region.outputs.stdout }}
       gke-cluster-zone: ${{ steps.gke-cluster-zone.outputs.stdout }}
-    env:
-      # https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/guides/service_principal_client_secret
-      # Note these have to be set in the Terraform Cloud workspace as well
-      ARM_CLIENT_ID: ${{ secrets.azure-client-id }}
-      ARM_CLIENT_SECRET: ${{ secrets.azure-client-secret }}
-      ARM_SUBSCRIPTION_ID: ${{ secrets.azure-subscription-id }}
-      ARM_TENANT_ID: ${{ secrets.azure-tenant-id }}
     steps:
       - uses: actions/checkout@v3
         with:
@@ -90,11 +69,6 @@ jobs:
           sed -i -e "s|\$OPENSEARCH_AWS_ACCESS_ID|${{ secrets.opensearch_aws_access_id }}|g" default.auto.tfvars
           sed -i -e "s|\$OPENSEARCH_AWS_SECRET_KEY|${{ secrets.opensearch_aws_secret_key }}|g" default.auto.tfvars
           sed -i -e "s|\$OPENSEARCH_ADMIN_PASSWORD|${{ secrets.opensearch_admin_password }}|g" default.auto.tfvars
-
-          sed -i -e "s|\$AZURE_CLIENT_ID|${{ secrets.azure-client-id }}|g" default.auto.tfvars
-          sed -i -e "s|\$AZURE_CLIENT_SECRET|${{ secrets.azure-client-secret }}|g" default.auto.tfvars
-          sed -i -e "s|\$AZURE_SUBSCRIPTION_ID|${{ secrets.azure-subscription-id }}|g" default.auto.tfvars
-          sed -i -e "s|\$AZURE_TENANT_ID|${{ secrets.azure-tenant-id }}|g" default.auto.tfvars
 
           cat <<EOT >> default.auto.tfvars
           gcp_sa_key    =  <<-EOF
@@ -184,16 +158,6 @@ jobs:
         working-directory: terraform
         shell: bash
 
-      - id: aks-cluster-name
-        run: terraform output -no-color -raw aks_cluster_name
-        working-directory: terraform
-        shell: bash
-
-      - id: aks-cluster-resource-group
-        run: terraform output -no-color -raw aks_resource_group
-        working-directory: terraform
-        shell: bash
-
   call-run-integration-kind:
     name: Run integration tests on KIND
     needs:
@@ -266,7 +230,6 @@ jobs:
       fail-fast: false
       matrix:
         cloud:
-          - aks
           - gke
     env:
       USE_GKE_GCLOUD_AUTH_PLUGIN: true
@@ -305,20 +268,6 @@ jobs:
         with:
           cluster_name: ${{ needs.call-run-terraform-setup.outputs.gke-cluster-name }}
           location: ${{ needs.call-run-terraform-setup.outputs.gke-cluster-zone }}
-
-      - name: Get the AKS Kubeconfig
-        if: matrix.cloud == 'aks'
-        run: |
-          az login --username="$ARM_CLIENT_ID" --password="$ARM_CLIENT_SECRET" --tenant="$ARM_TENANT_ID" --service-principal
-          az aks get-credentials --name "$AKS_CLUSTER_NAME" --resource-group "$AKS_CLUSTER_RG" --admin
-        shell: bash
-        env:
-          AKS_CLUSTER_NAME: ${{ needs.call-run-terraform-setup.outputs.aks-cluster-name }}
-          AKS_CLUSTER_RG: ${{ needs.call-run-terraform-setup.outputs.aks-cluster-resource-group }}
-          ARM_CLIENT_ID: ${{ secrets.azure-client-id }}
-          ARM_CLIENT_SECRET: ${{ secrets.azure-client-secret }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.azure-subscription-id }}
-          ARM_TENANT_ID: ${{ secrets.azure-tenant-id }}
 
       - name: Check Kubeconfig set up
         run: |

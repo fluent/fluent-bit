@@ -72,7 +72,7 @@ static int http_post(struct prometheus_remote_write_context *ctx,
                                 &payload_buf, &payload_size);
     }
     else {
-        payload_buf = body;
+        payload_buf = (void *) body;
         payload_size = body_len;
 
         ret = 0;

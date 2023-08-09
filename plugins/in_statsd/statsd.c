@@ -382,5 +382,5 @@ struct flb_input_plugin in_statsd_plugin = {
     .cb_resume    = cb_statsd_resume,
     .cb_exit      = cb_statsd_exit,
     .config_map   = config_map,
-    .flags        = 0
+    .flags        = FLB_INPUT_NET_SERVER,
 };

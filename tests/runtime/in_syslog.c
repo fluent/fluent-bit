@@ -43,6 +43,18 @@ char *RFC5424_EXPECTED_STRS_1[] = {"\"pri\":\"34\"", "\"message\":\"'su root' fa
                                    "\"ident\":\"su\""
 };
 
+char *RFC5424_EXPECTED_STRS_TCP[] = {"\"pri\":\"34\"", "\"message\":\"'su root' failed for lonvick on /dev/pts/8\"",
+                                     "\"host\":\"mymachine.example.com\"", "\"msgid\":\"ID47\"","\"time\":\"2003-10-11T22:14:15.003Z\"",
+                                     "\"ident\":\"su\"",
+                                     "\"source_host\":\"tcp://"
+};
+
+char *RFC5424_EXPECTED_STRS_UDP[] = {"\"pri\":\"34\"", "\"message\":\"'su root' failed for lonvick on /dev/pts/8\"",
+                                     "\"host\":\"mymachine.example.com\"", "\"msgid\":\"ID47\"","\"time\":\"2003-10-11T22:14:15.003Z\"",
+                                     "\"ident\":\"su\"",
+                                     "\"source_host\":\"udp://"
+};
+
 char *RFC3164_EXPECTED_STRS_1[] = {"\"pri\":\"34\"", "\"message\":\"'su root' failed for lonvick on /dev/pts/8\"",
                                    "\"host\":\"mymachine\"", "\"time\":\"Oct 11 22:14:15\"", "\"ident\":\"su\""
 };
@@ -425,6 +437,71 @@ void flb_test_syslog_tcp_port()
     test_ctx_destroy(ctx);
 }
 
+void flb_test_syslog_tcp_source_address()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    flb_sockfd_t fd;
+    int ret;
+    int num;
+    ssize_t w_size;
+
+    struct str_list expected = {
+                                .size = sizeof(RFC5424_EXPECTED_STRS_TCP)/sizeof(char*),
+                                .lists = &RFC5424_EXPECTED_STRS_TCP[0],
+    };
+
+    char *buf = RFC5424_EXAMPLE_1;
+    size_t size = strlen(buf);
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_json_str_list;
+    cb_data.data = &expected;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "mode", "tcp",
+                        "source_address_key", "source_host",
+                        "parser", PARSER_NAME_RFC5424,
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* use default host/port */
+    fd = connect_tcp(NULL, -1);
+    if (!TEST_CHECK(fd >= 0)) {
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    w_size = send(fd, buf, size, 0);
+    if (!TEST_CHECK(w_size == size)) {
+        TEST_MSG("failed to send, errno=%d", errno);
+        flb_socket_close(fd);
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+
+    flb_socket_close(fd);
+    test_ctx_destroy(ctx);
+}
 
 void flb_test_syslog_unknown_mode()
 {
@@ -655,6 +732,73 @@ void flb_test_syslog_udp_port()
     test_ctx_destroy(ctx);
 }
 
+void flb_test_syslog_udp_source_address()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct sockaddr_in addr;
+    flb_sockfd_t fd;
+    int ret;
+    int num;
+    ssize_t w_size;
+
+    struct str_list expected = {
+                                .size = sizeof(RFC5424_EXPECTED_STRS_UDP)/sizeof(char*),
+                                .lists = &RFC5424_EXPECTED_STRS_UDP[0],
+    };
+
+    char *buf = RFC5424_EXAMPLE_1;
+    size_t size = strlen(buf);
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_json_str_list;
+    cb_data.data = &expected;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "mode", "udp",
+                        "source_address_key", "source_host",
+                        "parser", PARSER_NAME_RFC5424,
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* use default host/port */
+    fd = init_udp(NULL, -1, &addr);
+    if (!TEST_CHECK(fd >= 0)) {
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    w_size = sendto(fd, buf, size, 0, (const struct sockaddr *)&addr, sizeof(addr));
+    if (!TEST_CHECK(w_size == size)) {
+        TEST_MSG("failed to send, errno=%d", errno);
+        flb_socket_close(fd);
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+
+    flb_socket_close(fd);
+    test_ctx_destroy(ctx);
+}
+
 #ifdef FLB_HAVE_UNIX_SOCKET
 void flb_test_syslog_tcp_unix()
 {
@@ -860,7 +1004,9 @@ TEST_LIST = {
     {"syslog_tcp", flb_test_syslog_tcp},
     {"syslog_udp", flb_test_syslog_udp},
     {"syslog_tcp_port", flb_test_syslog_tcp_port},
+    {"syslog_tcp_source_address", flb_test_syslog_tcp_source_address},
     {"syslog_udp_port", flb_test_syslog_udp_port},
+    {"syslog_udp_source_address", flb_test_syslog_udp_source_address},
     {"syslog_unknown_mode", flb_test_syslog_unknown_mode},
 #ifdef FLB_HAVE_UNIX_SOCKET
     {"syslog_unix_perm", flb_test_syslog_unix_perm},
