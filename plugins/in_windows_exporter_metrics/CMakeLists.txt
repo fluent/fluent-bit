@@ -16,6 +16,7 @@ set(src
   we_wmi_system.c
   we_wmi_service.c
   we_wmi_memory.c
+  we_wmi_paging_file.c
   )
 
 set(libs

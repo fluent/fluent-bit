@@ -191,6 +191,14 @@ struct we_wmi_memory_counters {
     int                    operational;
 };
 
+struct we_wmi_paging_file_counters {
+    struct wmi_query_spec *info;
+    struct cmt_gauge      *allocated_base_size_megabytes;
+    struct cmt_gauge      *current_usage_megabytes;
+    struct cmt_gauge      *peak_usage_megabytes;
+    int                    operational;
+};
+
 struct we_os_counters {
     struct cmt_gauge *info;
     struct cmt_gauge *users;
@@ -258,6 +266,7 @@ struct flb_we {
     int wmi_system_scrape_interval;
     int wmi_service_scrape_interval;
     int wmi_memory_scrape_interval;
+    int wmi_paging_file_scrape_interval;
 
     int coll_cpu_fd;                                    /* collector fd (cpu)    */
     int coll_net_fd;                                    /* collector fd (net)  */
@@ -270,6 +279,7 @@ struct flb_we {
     int coll_wmi_system_fd;                             /* collector fd (wmi_system)    */
     int coll_wmi_service_fd;                            /* collector fd (wmi_service) */
     int coll_wmi_memory_fd;                             /* collector fd (wmi_memory)    */
+    int coll_wmi_paging_file_fd;                        /* collector fd (wmi_paging_file) */
 
     /*
      * Metrics Contexts
@@ -287,6 +297,7 @@ struct flb_we {
     struct we_wmi_system_counters *wmi_system;
     struct we_wmi_service_counters *wmi_service;
     struct we_wmi_memory_counters *wmi_memory;
+    struct we_wmi_paging_file_counters *wmi_paging_file;
 };
 
 typedef int (*collector_cb)(struct flb_we *);
