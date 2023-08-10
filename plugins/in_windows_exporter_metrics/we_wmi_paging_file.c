@@ -36,14 +36,14 @@ static double nop_adjust(double value)
 
 int we_wmi_paging_file_init(struct flb_we *ctx)
 {
+    struct cmt_gauge *g;
+
     ctx->wmi_paging_file = flb_calloc(1, sizeof(struct we_wmi_paging_file_counters));
     if (!ctx->wmi_paging_file) {
         flb_errno();
         return -1;
     }
     ctx->wmi_paging_file->operational = FLB_FALSE;
-
-    struct cmt_gauge *g;
 
     g = cmt_gauge_create(ctx->cmt, "windows", "paging_file", "allocated_base_size_megabytes",
                          "The value indicates the actual amount of disk space allocated "\

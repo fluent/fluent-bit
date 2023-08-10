@@ -36,14 +36,14 @@ static double nop_adjust(double value)
 
 int we_wmi_memory_init(struct flb_we *ctx)
 {
+    struct cmt_gauge *g;
+
     ctx->wmi_memory = flb_calloc(1, sizeof(struct we_wmi_memory_counters));
     if (!ctx->wmi_memory) {
         flb_errno();
         return -1;
     }
     ctx->wmi_memory->operational = FLB_FALSE;
-
-    struct cmt_gauge *g;
 
     g = cmt_gauge_create(ctx->cmt, "windows", "memory", "available_bytes",
                          "The amount of physical memory, in bytes, immediately available " \
