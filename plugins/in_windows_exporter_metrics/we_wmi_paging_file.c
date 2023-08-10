@@ -132,7 +132,7 @@ int we_wmi_paging_file_update(struct flb_we *ctx)
     while(enumerator) {
         hr = enumerator->lpVtbl->Next(enumerator, WBEM_INFINITE, 1, &class_obj, &ret);
 
-        if(0 == ret) {
+        if(ret == 0) {
             break;
         }
 
