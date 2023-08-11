@@ -147,6 +147,12 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STORAGE_DELETE_IRRECOVERABLE_CHUNKS,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, storage_del_bad_chunks)},
+    {FLB_CONF_STORAGE_DISABLE_TRUNCATION_CHUNKS,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, storage_disable_truncation_chunks)},
+    {FLB_CONF_STORAGE_REALLOC_SIZE_HINT,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, storage_realloc_size_hint)},
 
     /* Coroutines */
     {FLB_CONF_STR_CORO_STACK_SIZE,
@@ -268,6 +274,8 @@ struct flb_config *flb_config_init()
     config->storage_path = NULL;
     config->storage_input_plugin = NULL;
     config->storage_metrics = FLB_TRUE;
+    config->storage_disable_truncation_chunks = FLB_FALSE;
+    config->storage_realloc_size_hint = NULL;
 
     config->sched_cap  = FLB_SCHED_CAP;
     config->sched_base = FLB_SCHED_BASE;
@@ -498,6 +506,9 @@ void flb_config_exit(struct flb_config *config)
     }
     if (config->storage_bl_mem_limit) {
         flb_free(config->storage_bl_mem_limit);
+    }
+    if (config->storage_realloc_size_hint) {
+        flb_free(config->storage_realloc_size_hint);
     }
 
 #ifdef FLB_HAVE_STREAM_PROCESSOR

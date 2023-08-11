@@ -593,6 +593,7 @@ int flb_storage_create(struct flb_config *ctx)
     struct flb_input_instance *in = NULL;
     struct cio_ctx *cio;
     struct cio_options opts = {0};
+    int realloc_size_hint_bytes = 0;
 
     /* always use read/write mode */
     flags = CIO_OPEN;
@@ -622,11 +623,27 @@ int flb_storage_create(struct flb_config *ctx)
         flags |= CIO_CHECKSUM;
     }
 
+    /* initialize chunkio options */
+    cio_options_init(&opts);
+
     /* chunkio options */
     opts.root_path = ctx->storage_path;
     opts.flags = flags;
     opts.log_cb = log_cb;
     opts.log_level = CIO_LOG_INFO;
+    if (ctx->storage_disable_truncation_chunks == FLB_TRUE) {
+        opts.truncate = CIO_FALSE;
+    }
+    else {
+        opts.truncate = CIO_TRUE;
+    }
+    if (!ctx->storage_realloc_size_hint) {
+        realloc_size_hint_bytes = flb_utils_size_to_bytes(ctx->storage_realloc_size_hint);
+        opts.realloc_size_hint = realloc_size_hint_bytes;
+    }
+    else {
+        opts.realloc_size_hint = CIO_DISABLE_REALLOC_HINT;
+    }
 
     /* Create chunkio context */
     cio = cio_create(&opts);

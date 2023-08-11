@@ -224,6 +224,8 @@ struct flb_config {
     int   storage_max_chunks_up;    /* max number of chunks 'up' in memory */
     int   storage_del_bad_chunks;   /* delete irrecoverable chunks */
     char *storage_bl_mem_limit;     /* storage backlog memory limit */
+    int   storage_disable_truncation_chunks;   /* disable truncation chunks */
+    char *storage_realloc_size_hint; /* storage realloc size hint */
     struct flb_storage_metrics *storage_metrics_ctx; /* storage metrics context */
 
     /* Embedded SQL Database support (SQLite3) */
@@ -354,6 +356,10 @@ enum conf_type {
 #define FLB_CONF_STORAGE_MAX_CHUNKS_UP "storage.max_chunks_up"
 #define FLB_CONF_STORAGE_DELETE_IRRECOVERABLE_CHUNKS \
                                        "storage.delete_irrecoverable_chunks"
+#define FLB_CONF_STORAGE_DISABLE_TRUNCATION_CHUNKS \
+                                       "storage.disable_truncation_chunks"
+#define FLB_CONF_STORAGE_REALLOC_SIZE_HINT \
+                                       "storage.realloc_size_hint"
 
 /* Coroutines */
 #define FLB_CONF_STR_CORO_STACK_SIZE "Coro_Stack_Size"
