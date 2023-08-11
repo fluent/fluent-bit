@@ -109,7 +109,9 @@ static int cb_collector_time(struct flb_input_instance *ins,
 
     now = time(NULL);
     diff = now - config->init_time;
-    if (diff > CALLBACK_TIME) {
+    /* For macOS, we sometimes get the +1 longer time elapse.
+     * To handle this, we simply add +1 as a delta for checking interval. */
+    if (diff > (CALLBACK_TIME + 1)) {
         flb_plg_error(ins, "cb_collector_time difference failed: %i seconds", diff);
         set_unit_test_status(ctx, 0, STATUS_ERROR);
         flb_engine_exit(config);
