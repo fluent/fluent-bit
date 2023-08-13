@@ -60,7 +60,7 @@ static inline int flb_lua_absindex(lua_State *l , int index)
     return index;
 }
 
-int flb_lua_arraylength(lua_State *l);
+int flb_lua_arraylength(lua_State *l, int index);
 void flb_lua_pushtimetable(lua_State *l, struct flb_time *tm);
 int flb_lua_is_valid_func(lua_State *l, flb_sds_t func);
 int flb_lua_pushmpack(lua_State *l, mpack_reader_t *reader);
