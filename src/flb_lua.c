@@ -584,3 +584,87 @@ void flb_lua_tomsgpack(lua_State *l,
            break;
     }
 }
+
+static void print_lua_value(FILE *out, lua_State *l, int index, int depth)
+{
+    int i;
+    int i_depth;
+    int type;
+    size_t len_s;
+    double val_d;
+    int64_t val_i;
+    int len_t;
+
+    index = flb_lua_absindex(l, index);
+
+    type = lua_type(l, index);
+    fprintf(out, "%s:", lua_typename(l, type));
+    switch(type){
+    case LUA_TSTRING:
+        fprintf(out, " %s\n", lua_tolstring(l,index, &len_s));
+        break;
+    case LUA_TBOOLEAN:
+        fprintf(out, " %s\n", lua_toboolean(l, index) ? "true":"false");
+        break;
+    case LUA_TNUMBER:
+        val_i = lua_tointeger(l, index);
+        val_d = lua_tonumber(l, index);
+        fprintf(out, " d=%lf i=%ld\n", val_d, val_i);
+        break;
+    case LUA_TTABLE:
+        len_t = flb_lua_arraylength(l);
+        fprintf(out, " size=%d ", len_t);
+        if (len_t > 0) {
+            fprintf(out, "array\n");
+            for (i=1; i<=len_t; i++) {
+                for (i_depth=0; i_depth<depth; i_depth++) {
+                    fputc(' ', stdout);
+                }
+                fprintf(out, "%03d: ", i);
+                lua_rawgeti(l, index, i);
+                print_lua_value(out, l, -1, depth+2);
+                lua_pop(l, 1);
+            }
+            fprintf(out, "\n");
+            break;
+        }
+
+        lua_pushnil(l);
+        fprintf(out, "map\n");
+        while (lua_next(l, index) != 0) {
+            for (i_depth=0; i_depth<depth; i_depth++) {
+                fputc(' ', stdout);
+            }
+            fprintf(out, "val: ");
+            print_lua_value(out, l,-1, depth+2); /* val */
+            for (i_depth=0; i_depth<depth; i_depth++) {
+                fputc(' ', stdout);
+            }
+            fprintf(out, "key: ");
+            print_lua_value(out, l,-2, depth+2); /* key */
+            lua_pop(l, 1); /* pop value */
+        }
+
+        break;
+    default:
+        fprintf(out, " (not supported value)\n");
+    }
+}
+
+void flb_lua_dump_stack(FILE *out, lua_State *l)
+{
+    int top;
+    int i;
+
+    top = lua_gettop(l);
+    if (top == 0) {
+        fprintf(out, "stack is empty\n");
+        return;
+    }
+    fprintf(out, "top index =%d ======\n", top);
+    for (i=top; i>=1; i--) {
+        fprintf(out, "%03d: ", i);
+        print_lua_value(out, l, i, 2);
+    }
+    fprintf(out, "======\n");
+}
