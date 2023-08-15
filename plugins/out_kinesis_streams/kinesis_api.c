@@ -771,7 +771,7 @@ static int process_api_response(struct flb_kinesis *ctx,
                             (strncmp(response_val.via.str.ptr,
                                     ERR_CODE_EXCEEDED_THROUGHPUT, 38) == 0)) {
                                         throughput_exceeded = FLB_TRUE;
-                                        flb_plg_error(ctx->ins, "Thoughput limits may have been exceeded, %s",
+                                        flb_plg_error(ctx->ins, "Throughput limits may have been exceeded, %s",
                                                       ctx->stream_name);
                         }
                         flb_plg_debug(ctx->ins, "Record %i failed with err_code=%.*s",

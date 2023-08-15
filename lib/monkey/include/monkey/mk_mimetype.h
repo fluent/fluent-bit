@@ -37,9 +37,9 @@ struct mk_mimetype
 
 int mk_mimetype_init(struct mk_server *server);
 int mk_mimetype_add(struct mk_server *server, char *name, const char *type);
-int mk_mimetype_read_config();
+int mk_mimetype_read_config(struct mk_server *server);
 struct mk_mimetype *mk_mimetype_find(struct mk_server *server, mk_ptr_t *filename);
 struct mk_mimetype *mk_mimetype_lookup(struct mk_server *server, char *name);
-void mk_mimetype_free_all();
+void mk_mimetype_free_all(struct mk_server *server);
 
 #endif

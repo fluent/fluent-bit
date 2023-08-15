@@ -50,6 +50,7 @@
 #include <fluent-bit/flb_processor.h>
 
 #include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_decode_msgpack.h>
 #include <cmetrics/cmt_encode_msgpack.h>
@@ -360,6 +361,11 @@ struct flb_output_instance {
     struct cmt_counter *cmt_dropped_records; /* m: output_dropped_records */
     struct cmt_counter *cmt_retried_records; /* m: output_retried_records */
 
+    /* m: output_upstream_total_connections */
+    struct cmt_gauge   *cmt_upstream_total_connections;
+    /* m: output_upstream_busy_connections */
+    struct cmt_gauge   *cmt_upstream_busy_connections;
+
     /* OLD Metrics API */
 #ifdef FLB_HAVE_METRICS
     struct flb_metrics *metrics;         /* metrics                      */
@@ -492,6 +498,12 @@ struct flb_out_flush_params {
 
 extern FLB_TLS_DEFINE(struct flb_out_flush_params, out_flush_params);
 
+#define FLB_OUTPUT_RETURN(x)                                            \
+    flb_output_return_do(x);                                            \
+    return
+
+static inline void flb_output_return_do(int x);
+
 static FLB_INLINE void output_params_set(struct flb_output_flush *out_flush,
                                          struct flb_coro *coro,
                                          struct flb_task *task,
@@ -531,6 +543,7 @@ static FLB_INLINE void output_params_set(struct flb_output_flush *out_flush,
 
 static FLB_INLINE void output_pre_cb_flush(void)
 {
+    int route_status;
     struct flb_coro *coro;
     struct flb_output_plugin *out_p;
     struct flb_out_flush_params *params;
@@ -551,10 +564,28 @@ static FLB_INLINE void output_pre_cb_flush(void)
      */
     coro = params->coro;
     persisted_params = *params;
+
     co_switch(coro->caller);
 
     /* Continue, we will resume later */
     out_p = persisted_params.out_plugin;
+
+    flb_task_acquire_lock(persisted_params.out_flush->task);
+
+    route_status = flb_task_get_route_status(
+                    persisted_params.out_flush->task,
+                    persisted_params.out_flush->o_ins);
+
+    if (route_status == FLB_TASK_ROUTE_DROPPED) {
+        flb_task_release_lock(persisted_params.out_flush->task);
+
+        FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
+
+    flb_task_activate_route(persisted_params.out_flush->task,
+                            persisted_params.out_flush->o_ins);
+
+    flb_task_release_lock(persisted_params.out_flush->task);
 
     out_p->cb_flush(persisted_params.event_chunk,
                     persisted_params.out_flush,
@@ -902,6 +933,12 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     out_flush = (struct flb_output_flush *) co->data;
     o_ins = out_flush->o_ins;
     task = out_flush->task;
+
+    flb_task_acquire_lock(task);
+
+    flb_task_deactivate_route(task, o_ins);
+
+    flb_task_release_lock(task);
 
     if (out_flush->processed_event_chunk) {
         if (task->event_chunk->data != out_flush->processed_event_chunk->data) {

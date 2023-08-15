@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2023 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,18 +17,13 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_CONFIG_FORMAT_H
-#define FLB_CONFIG_FORMAT_H
+#ifndef FLB_OUT_CHRONICLE_CONF_H
+#define FLB_OUT_CHRONICLE_CONF_H
 
-#include <fluent-bit/flb_info.h>
+#include "chronicle.h"
 
-#include "config_format/flb_cf.h"
-#include "config_format/flb_cf_fluentbit.h"
-
-#ifdef FLB_HAVE_LIBYAML
-#include "config_format/flb_cf_yaml.h"
-#endif
-
-#define FLB_DEFAULT_CF_BUF_SIZE 4096
+struct flb_chronicle *flb_chronicle_conf_create(struct flb_output_instance *ins,
+                                              struct flb_config *config);
+int flb_chronicle_conf_destroy(struct flb_chronicle *ctx);
 
 #endif

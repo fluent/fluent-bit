@@ -7,6 +7,7 @@ set(UNIT_TESTS_FILES
   config_fuzzer.c
   config_random_fuzzer.c
   ctrace_fuzzer.c
+  input_fuzzer.c
   signv4_fuzzer.c
   flb_json_fuzzer.c
   filter_stdout_fuzzer.c

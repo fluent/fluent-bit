@@ -225,7 +225,6 @@ static int pack_map_content(struct flb_log_event_encoder *log_encoder,
     int i;
     int map_size = 0;
     int merge_status = -1;
-    int new_map_size = 0;
     int log_index = -1;
     int log_buf_entries = 0;
     size_t off = 0;
@@ -295,9 +294,6 @@ static int pack_map_content(struct flb_log_event_encoder *log_encoder,
         return -1;
     }
 
-    /* Determinate the size of the new map */
-    new_map_size = map_size;
-
     /* If a merged status exists, check the number of entries to merge */
     if (log_index != -1) {
         if (merge_status == MERGE_PARSED) {
@@ -316,23 +312,8 @@ static int pack_map_content(struct flb_log_event_encoder *log_encoder,
         }
     }
 
-    /* Kubernetes metadata */
-    if (kube_buf && kube_size > 0) {
-        new_map_size++;
-    }
-
-    if (log_buf_entries > 0) {
-        if (ctx->merge_log_key != NULL) {
-            new_map_size++;
-        }
-        else {
-            new_map_size += log_buf_entries;
-        }
-    }
-
     if ((merge_status == MERGE_PARSED || merge_status == MERGE_MAP) &&
         ctx->keep_log == FLB_FALSE) {
-        new_map_size--;
     }
 
     /* Original map */

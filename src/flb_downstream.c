@@ -181,10 +181,6 @@ struct flb_downstream *flb_downstream_create(int transport, int flags,
  */
 static int prepare_destroy_conn(struct flb_connection *connection)
 {
-    struct flb_stream *stream;
-
-    stream = connection->stream;
-
     flb_trace("[downstream] destroy connection #%i to %s",
               connection->fd, flb_connection_get_remote_address(connection));
 

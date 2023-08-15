@@ -402,7 +402,7 @@ literal:
 				int64_t i64;
 				if (!(_conv_num64(&bp, &i64, 0, INT64_MAX)))
 					return (NULL);
-				if (!gmtime_r(&i64, &tm->tm))
+				if (!gmtime_r((const time_t *) &i64, &tm->tm))
 					return (NULL);
 				fields = 0xffff;	 /* everything */
 			}
