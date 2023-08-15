@@ -960,7 +960,7 @@ if(FLB_BACKTRACE)
     BUILD_COMMAND $(MAKE)
     INSTALL_COMMAND $(MAKE) DESTDIR= install
     )
-  add_library(libbacktrace STATIC IMPORTED GLOBAL plugins/out_oci_logan/oci_client.c plugins/out_oci_logan/oci_client.h)
+  add_library(libbacktrace STATIC IMPORTED GLOBAL)
   set_target_properties(libbacktrace PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/lib/libbacktrace.a")
   add_dependencies(libbacktrace backtrace)
   include_directories("${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/include/")
