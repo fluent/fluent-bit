@@ -304,6 +304,7 @@ REGISTER_OUT_PLUGIN("out_nats")
 REGISTER_OUT_PLUGIN("out_nrlogs")
 REGISTER_OUT_PLUGIN("out_null")
 REGISTER_OUT_PLUGIN("out_opensearch")
+REGISTER_OUT_PLUGIN("out_oci_logan")
 
 if (NOT CMAKE_SYSTEM_NAME MATCHES "Windows")
   REGISTER_OUT_PLUGIN("out_plot")
