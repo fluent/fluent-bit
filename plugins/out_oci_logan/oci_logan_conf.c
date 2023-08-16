@@ -155,7 +155,6 @@ static int load_oci_credentials(struct flb_oci_logan *ctx)
 
 static int global_metadata_fields_create(struct flb_oci_logan *ctx)
 {
-    int i = 0;
     struct mk_list *head;
     struct flb_slist_entry *kname;
     struct flb_slist_entry *val;
@@ -196,7 +195,6 @@ static int global_metadata_fields_create(struct flb_oci_logan *ctx)
 
 static int log_event_metadata_create(struct flb_oci_logan *ctx)
 {
-    int i = 0;
     struct mk_list *head;
     struct flb_slist_entry *kname;
     struct flb_slist_entry *val;

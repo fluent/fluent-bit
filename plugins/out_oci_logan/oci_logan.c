@@ -858,7 +858,7 @@ static int get_and_pack_oci_fields_from_record(msgpack_packer *packer,
                                                struct flb_oci_logan *ctx)
 {
     int map_size = map.via.map.size;
-    int pck_size = 1;
+    int pck_size = 1, i;
     msgpack_object *log_group_id= NULL;
     msgpack_object *log_set_id = NULL;
     msgpack_object *entity_id = NULL;
@@ -868,7 +868,7 @@ static int get_and_pack_oci_fields_from_record(msgpack_packer *packer,
     msgpack_object *global_metadata = NULL;
     msgpack_object *metadata = NULL;
 
-    for(int i = 0; i < map_size; i++) {
+    for(i = 0; i < map_size; i++) {
         if (check_config_from_record(map.via.map.ptr[i].key,
                                      FLB_OCI_LOG_GROUP_ID_KEY,
                                      FLB_OCI_LOG_GROUP_ID_KEY_SIZE) == FLB_TRUE) {
@@ -1047,15 +1047,12 @@ static int total_flush(struct flb_event_chunk *event_chunk,
                        struct flb_config *config)
 {
     struct flb_oci_logan *ctx = out_context;
-    struct flb_http_client *c;
     flb_sds_t out_buf = NULL;
-    size_t out_size;
-    int ret = 0, res = FLB_OK, ret1 = 0;
+    int ret = 0, res = FLB_OK, ret1 = 0, i;
     msgpack_object map;
     int map_size;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
-    msgpack_object tmp;
     int msg = -1, log = -1;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
@@ -1112,7 +1109,7 @@ static int total_flush(struct flb_event_chunk *event_chunk,
         // msgpack_pack_str_body(&mp_pck, map.via.map.ptr[0].val.via.str.ptr, map.via.map.ptr[0].val.via.str.size);
 
 
-        for(int i = 0; i < map_size; i++) {
+        for(i = 0; i < map_size; i++) {
             if (check_config_from_record(map.via.map.ptr[i].key,
                                          "message",
                                          7) == FLB_TRUE) {
