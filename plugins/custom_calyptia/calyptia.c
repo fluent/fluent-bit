@@ -339,7 +339,7 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
     flb_input_set_property(ctx->i, "scrape_interval", "30");
 
     /* output cloud connector */
-    if (ctx->fleet_id != NULL) {
+    if (ctx->fleet_id != NULL || ctx->fleet_name == NULL) {
         ctx->o = setup_cloud_output(config, ctx);
         if (ctx->o == NULL) {
             return -1;
