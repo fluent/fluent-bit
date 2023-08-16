@@ -309,6 +309,7 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
 {
     int ret;
     struct calyptia *ctx;
+    int is_fleet_mode;
     (void) data;
 
     ctx = flb_calloc(1, sizeof(struct calyptia));
@@ -338,8 +339,14 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
     flb_input_set_property(ctx->i, "scrape_on_start", "true");
     flb_input_set_property(ctx->i, "scrape_interval", "30");
 
+    if (ctx->fleet_name || ctx->fleet_id) {
+        is_fleet_mode = FLB_TRUE;
+    } else {
+        is_fleet_mode = FLB_FALSE;
+    }
     /* output cloud connector */
-    if (ctx->fleet_id != NULL || ctx->fleet_name == NULL) {
+    if ((is_fleet_mode == FLB_TRUE && ctx->fleet_id != NULL) ||
+        (is_fleet_mode == FLB_FALSE)) {
         ctx->o = setup_cloud_output(config, ctx);
         if (ctx->o == NULL) {
             return -1;
