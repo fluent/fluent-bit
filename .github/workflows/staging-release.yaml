@@ -66,7 +66,7 @@ jobs:
 
     - name: Checkout repository
       uses: actions/checkout@v3
-  
+
     # Check we can download the AppVeyor build which confirms it matches the version to release as well as being a successful build
     - name: Get Appveyor binaries
       run: |
@@ -90,13 +90,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
         shell: bash
-        
+
       # Cope with 1.9 as well as 2.0
       - uses: ./.github/actions/generate-package-build-matrix
         id: get-matrix
         with:
           ref: v${{ inputs.version }}
-      
+
       # Now annotate with whether it is Yum or Apt based
 
   # 1. Take packages from the staging bucket
@@ -109,7 +109,7 @@ jobs:
     name: S3 - update YUM packages bucket
     runs-on: ubuntu-22.04 # no createrepo on Ubuntu 20.04
     environment: release
-    needs: 
+    needs:
       - staging-release-version-check
       - staging-release-generate-package-matrix
     permissions:
@@ -182,7 +182,7 @@ jobs:
     name: S3 - update APT packages bucket
     runs-on: ubuntu-latest
     environment: release
-    needs: 
+    needs:
       - staging-release-version-check
       - staging-release-generate-package-matrix
     permissions:
@@ -215,7 +215,7 @@ jobs:
       shell: bash
       env:
         DISTRO: ${{ matrix.distro }}
-        
+
     - name: Import GPG key for signing
       id: import_gpg
       uses: crazy-max/ghaction-import-gpg@v5
@@ -260,7 +260,7 @@ jobs:
     name: Update Windows and macOS packages
     runs-on: ubuntu-22.04
     environment: release
-    needs: 
+    needs:
       - staging-release-version-check
     permissions:
       contents: none
@@ -297,7 +297,7 @@ jobs:
     name: Update top-level bucket info
     runs-on: ubuntu-22.04
     environment: release
-    needs: 
+    needs:
       - staging-release-apt-packages
       - staging-release-yum-packages
     permissions:
@@ -337,7 +337,7 @@ jobs:
     name: S3 - update source bucket
     runs-on: ubuntu-latest
     environment: release
-    needs: 
+    needs:
       - staging-release-version-check
     permissions:
       contents: read
@@ -352,7 +352,7 @@ jobs:
 
     - name: Sync packages from buckets on S3
       run: |
-        mkdir -p release staging 
+        mkdir -p release staging
         aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE_SOURCES }}" release/ --no-progress
         aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}/source/" staging/ --no-progress
       env:
@@ -382,7 +382,7 @@ jobs:
         VERSION: ${{ github.event.inputs.version }}
         MAJOR_VERSION: ${{ needs.staging-release-version-check.outputs.major-version }}
       shell: bash
-      
+
     - name: Sync to bucket on S3
       run: |
         aws s3 sync release/ "s3://${{ secrets.AWS_S3_BUCKET_RELEASE_SOURCES }}" --delete --follow-symlinks --no-progress
@@ -476,9 +476,77 @@ jobs:
           TAG: ${{ matrix.tag }}
         shell: bash
 
+  # Part of resolution for: https://github.com/fluent/fluent-bit/issues/7748
+  # More recent build-push-actions may mean legacy format is not preserved so we provide arch-specific tags just in case
+  staging-release-images-arch-specific-legacy-tags:
+    # TODO: remove next release once we are happy this all works, for now though do not block a release
+    continue-on-error: true
+    #
+    name: Release ${{ matrix.arch }} legacy format Linux container images
+    runs-on: ubuntu-latest
+    needs:
+      - staging-release-images
+    environment: release
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - amd64
+          - arm64
+          - arm/v7
+    permissions:
+      packages: write
+    env:
+      RELEASE_IMAGE_NAME: ${{ github.event.inputs.docker-image || secrets.DOCKERHUB_ORGANIZATION }}
+      RELEASE_TAG: ${{ github.event.inputs.version }}
+    steps:
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Convert arch to tag
+        id: get-tag
+        run: |
+          TAG="${RELEASE_TAG}-${{ matrix.arch }}"
+          echo "Input value: $TAG"
+          TAG=${TAG/\//-}
+          echo "Using tag: $TAG"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Pull release image
+        run: docker pull --platform='linux/${{ matrix.arch }}' "$RELEASE_IMAGE_NAME:$RELEASE_TAG"
+        shell: bash
+
+      - name: Tag and push legacy format image to DockerHub
+        run: |
+          docker tag "$RELEASE_IMAGE_NAME:$RELEASE_TAG" docker.io/"$RELEASE_IMAGE_NAME:$TAG"
+          docker push docker.io/"$RELEASE_IMAGE_NAME:$TAG"
+        shell: bash
+        env:
+          TAG: ${{ steps.get-tag.outputs.tag }}
+
+      - name: Tag and push legacy format image to Github Container Registry
+        run: |
+          docker tag "$RELEASE_IMAGE_NAME:$RELEASE_TAG" ghcr.io/"$RELEASE_IMAGE_NAME:$TAG"
+          docker push ghcr.io/"$RELEASE_IMAGE_NAME:$TAG"
+        shell: bash
+        env:
+          TAG: ${{ steps.get-tag.outputs.tag }}
+
   staging-release-images-latest-tags:
     # Only update latest tags for 2.1 releases
-    if: startsWith(github.event.inputs.version, '2.1') 
+    if: startsWith(github.event.inputs.version, '2.1')
     name: Release latest Linux container images
     runs-on: ubuntu-latest
     needs:
@@ -599,7 +667,7 @@ jobs:
     permissions: write-all
     runs-on: ubuntu-latest
     environment: release
-    needs: 
+    needs:
       - staging-release-images
     env:
       DH_RELEASE_IMAGE_NAME: docker.io/${{ github.event.inputs.docker-image || secrets.DOCKERHUB_ORGANIZATION }}
@@ -634,7 +702,7 @@ jobs:
             "$GHCR_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}" \
             "$GHCR_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}-debug" \
             "$DH_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}" \
-            "$DH_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}-debug" 
+            "$DH_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}-debug"
           rm -f /tmp/my_cosign.key
         shell: bash
         env:
@@ -670,7 +738,7 @@ jobs:
     steps:
       - name: Install cosign
         uses: sigstore/cosign-installer@v2
-      
+
       - name: Get public key and add to S3 bucket
         # Only run if we have a key defined
         if: ${{ env.COSIGN_PRIVATE_KEY }}
@@ -765,7 +833,7 @@ jobs:
 
   staging-release-create-docs-pr:
     name: Create docs updates for new release
-    needs: 
+    needs:
       - staging-release-images
       - staging-release-source-s3
     permissions:
@@ -832,7 +900,7 @@ jobs:
 
   staging-release-create-version-update-pr:
     name: Create version update PR for new release
-    needs: 
+    needs:
       - staging-release-create-release
     permissions:
       contents: write

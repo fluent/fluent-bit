@@ -338,7 +338,6 @@ static int mqtt_handle_ping(struct mqtt_conn *conn)
 int mqtt_prot_parser(struct mqtt_conn *conn)
 {
     int ret;
-    int bytes = 0;
     int length = 0;
     int pos = conn->buf_pos;
     int mult;
@@ -370,7 +369,7 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
             /* Get the remaining length */
             mult   = 1;
             length = 0;
-            bytes  = 0;
+
             do {
                 if (conn->buf_pos + 1 > conn->buf_len) {
                     conn->buf_pos = pos;
@@ -379,7 +378,6 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
                     return MQTT_MORE;
                 }
 
-                bytes++;
                 length += (BUFC() & 127) * mult;
                 mult *= 128;
                 if (mult > 128*128*128) {

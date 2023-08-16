@@ -124,7 +124,7 @@ int flb_snappy_uncompress_framed_data(char *in_data, size_t in_len,
     size_t                        uncompressed_chunk_count;
     int                           stream_identifier_found;
     char                         *aggregated_data_buffer;
-    size_t                        aggregated_data_length;
+    size_t                        aggregated_data_length = 0;
     size_t                        aggregated_data_offset;
     size_t                        compressed_chunk_count;
     struct cfl_list              *iterator_backup;

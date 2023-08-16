@@ -256,6 +256,8 @@ static struct flb_task *task_alloc(struct flb_config *config)
     mk_list_init(&task->routes);
     mk_list_init(&task->retries);
 
+    pthread_mutex_init(&task->lock, NULL);
+
     return task;
 }
 
@@ -420,12 +422,13 @@ struct flb_task *flb_task_create(uint64_t ref_id,
         }
 
         if (flb_routes_mask_get_bit(task_ic->routes_mask, o_ins->id) != 0) {
-            route = flb_malloc(sizeof(struct flb_task_route));
+            route = flb_calloc(1, sizeof(struct flb_task_route));
             if (!route) {
                 flb_errno();
                 continue;
             }
 
+            route->status = FLB_TASK_ROUTE_INACTIVE;
             route->out = o_ins;
             mk_list_add(&route->_head, &task->routes);
             count++;
