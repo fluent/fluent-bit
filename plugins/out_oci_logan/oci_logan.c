@@ -1270,12 +1270,12 @@ static struct flb_config_map config_map[] = {
     },
     {
         FLB_CONFIG_MAP_SLIST_2, "oci_la_global_metadata", NULL,
-        0, FLB_TRUE, offsetof(struct flb_oci_logan, oci_la_global_metadata),
+        FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_oci_logan, oci_la_global_metadata),
             ""
     },
     {
         FLB_CONFIG_MAP_SLIST_2, "oci_la_metadata", NULL,
-        0, FLB_TRUE, offsetof(struct flb_oci_logan, oci_la_metadata),
+        FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_oci_logan, oci_la_metadata),
         ""
     },
     {

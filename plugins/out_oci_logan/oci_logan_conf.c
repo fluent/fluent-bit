@@ -208,6 +208,7 @@ static int log_event_metadata_create(struct flb_oci_logan *ctx)
     }
 
     flb_config_map_foreach(head, mv, ctx->oci_la_metadata) {
+        flb_plg_info(ctx->ins, "lul0");
         kname = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
         val = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
 
@@ -273,6 +274,7 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
         }
     }
     if (ctx->oci_la_global_metadata != NULL) {
+        mk_list_init(&ctx->global_metadata_fields);
         ret = global_metadata_fields_create(ctx);
         if (ret != 0) {
             flb_errno();
@@ -282,6 +284,7 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
     }
 
     if (ctx->oci_la_metadata != NULL) {
+        mk_list_init(&ctx->log_event_metadata_fields);
         ret = log_event_metadata_create(ctx);
         if (ret != 0) {
             flb_errno();
