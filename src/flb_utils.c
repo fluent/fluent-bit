@@ -1303,7 +1303,9 @@ int flb_utils_read_file(char *path, char **out_buf, size_t *out_size)
 
     bytes = fread(buf, st.st_size, 1, fp);
     if (bytes < 1) {
-        flb_errno();
+        if (bytes < 0) {
+            flb_errno();
+        }
         flb_free(buf);
         fclose(fp);
         return -1;
