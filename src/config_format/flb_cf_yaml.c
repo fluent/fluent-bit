@@ -1748,7 +1748,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     int status;
     int code = 0;
     struct parser_state *state;
-    flb_sds_t file = NULL;
+    flb_sds_t include_dir = NULL;
     flb_sds_t include_file = NULL;
     yaml_parser_t parser;
     yaml_event_t event;
@@ -1756,38 +1756,38 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     struct file_state fstate;
 
     if (parent && cfg_file[0] != '/') {
-        file = flb_sds_create_size(strlen(cfg_file) + strlen(parent->path));
-        if (file == NULL) {
+        include_dir = flb_sds_create_size(strlen(cfg_file) + strlen(parent->path));
+        if (include_dir == NULL) {
             flb_error("unable to create filename");
             return -1;
         }
-        if (flb_sds_printf(&file, "%s/%s", parent->path, cfg_file) == NULL) {
+        if (flb_sds_printf(&include_dir, "%s/%s", parent->path, cfg_file) == NULL) {
             flb_error("unable to create full filename");
             return -1;
         }
     } else {
-        file = flb_sds_create(cfg_file);
-        if (file == NULL) {
+        include_dir = flb_sds_create(cfg_file);
+        if (include_dir == NULL) {
             flb_error("unable to create filename");
             return -1;
         }
     }
 
-    include_file = flb_sds_create(file);
+    include_file = flb_sds_create(include_dir);
     if (include_file == NULL) {
         flb_error("unable to create include filename");
-        flb_sds_destroy(file);
+        flb_sds_destroy(include_dir);
         return -1;
     }
-    fstate.name = basename(file);
-    fstate.path = dirname(file);
+    fstate.name = basename(include_dir);
+    fstate.path = dirname(include_dir);
 
     fstate.parent = parent;
 
     state = state_start(ctx, &fstate);
     if (!state) {
         flb_error("unable to push initial include file state: %s", cfg_file);
-        flb_sds_destroy(file);
+        flb_sds_destroy(include_dir);
         flb_sds_destroy(include_file);
         return -1;
     }
@@ -1796,7 +1796,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     ret = is_file_included(ctx, include_file);
     if (ret) {
         flb_error("[config] file '%s' is already included", cfg_file);
-        flb_sds_destroy(file);
+        flb_sds_destroy(include_dir);
         flb_sds_destroy(include_file);
         state_destroy(state);
         return -1;
@@ -1806,7 +1806,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     fh = fopen(include_file, "r");
     if (!fh) {
         flb_errno();
-        flb_sds_destroy(file);
+        flb_sds_destroy(include_dir);
         flb_sds_destroy(include_file);
         state_destroy(state);
         return -1;
@@ -1817,7 +1817,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     if (ret == -1) {
         flb_error("[config] could not register file %s", cfg_file);
         fclose(fh);
-        flb_sds_destroy(file);
+        flb_sds_destroy(include_dir);
         flb_sds_destroy(include_file);
         state_destroy(state);
         return -1;
@@ -1857,7 +1857,7 @@ done:
     ctx->level--;
 
     flb_sds_destroy(include_file);
-    flb_sds_destroy(file);
+    flb_sds_destroy(include_dir);
 
     return code;
 }
