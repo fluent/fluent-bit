@@ -245,22 +245,22 @@ static char *state_str(enum state val)
     }
 }
 
-static int add_section_type(struct flb_cf *cf, struct parser_state *state)
+static int add_section_type(struct flb_cf *conf, struct parser_state *state)
 {
-    if (cf == NULL || state == NULL) {
+    if (conf == NULL || state == NULL) {
         return -1;
     }
     if (state->section == SECTION_INPUT) {
-        state->cf_section = flb_cf_section_create(cf, "INPUT", 0);
+        state->cf_section = flb_cf_section_create(conf, "INPUT", 0);
     }
     else if (state->section == SECTION_FILTER) {
-        state->cf_section = flb_cf_section_create(cf, "FILTER", 0);
+        state->cf_section = flb_cf_section_create(conf, "FILTER", 0);
     }
     else if (state->section == SECTION_OUTPUT) {
-        state->cf_section = flb_cf_section_create(cf, "OUTPUT", 0);
+        state->cf_section = flb_cf_section_create(conf, "OUTPUT", 0);
     }
     else if (state->section == SECTION_CUSTOM) {
-        state->cf_section = flb_cf_section_create(cf, "customs", 0);
+        state->cf_section = flb_cf_section_create(conf, "customs", 0);
     }
 
     if (!state->cf_section) {
@@ -511,7 +511,7 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
         }
 
         if (strchr(p1, '*')) {
-            read_glob(cf, ctx, state, buf); /* recursive */
+            read_glob(conf, ctx, state, buf); /* recursive */
             continue;
         }
 
@@ -662,7 +662,7 @@ static enum status state_copy_into_config_group(struct parser_state *state, stru
     return YAML_SUCCESS;
 }
 
-static enum status state_copy_into_properties(struct parser_state *state, struct flb_cf * cf, struct cfl_kvlist *properties)
+static enum status state_copy_into_properties(struct parser_state *state, struct flb_cf *conf, struct cfl_kvlist *properties)
 {
     struct cfl_list *head;
     struct cfl_kvpair *kvp;
@@ -674,7 +674,7 @@ static enum status state_copy_into_properties(struct parser_state *state, struct
         kvp = cfl_list_entry(head, struct cfl_kvpair, _head);
         switch (kvp->val->type) {
         case CFL_VARIANT_STRING:
-            var = flb_cf_section_property_add(cf,
+            var = flb_cf_section_property_add(conf,
                                             properties,
                                             kvp->key,
                                             cfl_sds_len(kvp->key),
@@ -686,7 +686,7 @@ static enum status state_copy_into_properties(struct parser_state *state, struct
             }
             break;
         case CFL_VARIANT_ARRAY:
-            arr = flb_cf_section_property_add_list(cf, properties,
+            arr = flb_cf_section_property_add_list(conf, properties,
                                                     kvp->key, cfl_sds_len(kvp->key));
             if (arr == NULL) {
                 flb_error("unable to add property list");
@@ -719,14 +719,14 @@ static enum status state_copy_into_properties(struct parser_state *state, struct
     return YAML_SUCCESS;
 }
 
-static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
+static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                          yaml_event_t *event)
 {
     struct parser_state *state;
     enum status status;
     int ret;
     char *value;
-    struct flb_kv *prop;
+    struct flb_kv *keyval;
     char *last_included;
 
     last_included = state_get_last(ctx);
@@ -827,10 +827,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             value = (char *) event->data.scalar.value;
             flb_error("[config yaml] including: %s", value);
             if (strchr(value, '*') != NULL) {
-                ret = read_glob(cf, ctx, state, value);
+                ret = read_glob(conf, ctx, state, value);
             }
             else {
-                ret = read_config(cf, ctx, state->file, value);
+                ret = read_config(conf, ctx, state->file, value);
             }
             if (ret == -1) {
                 flb_error("[config] including file '%s' at %s:%zu",
@@ -861,7 +861,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 flb_error("unable to allocate state");
                 return YAML_FAILURE;
             }
-            if (add_section_type(cf, state) == -1) {
+            if (add_section_type(conf, state) == -1) {
                 flb_error("unable to add section type");
                 return YAML_FAILURE;
             }
@@ -945,7 +945,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                     flb_error("unable to allocate state");
                     return YAML_FAILURE;
                 }
-                if (state_create_section(cf, state, value) == -1) {
+                if (state_create_section(conf, state, value) == -1) {
                     flb_error("unable to allocate section: %s", value);
                     return YAML_FAILURE;
                 }
@@ -972,7 +972,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                     flb_error("unable to allocate state");
                     return YAML_FAILURE;
                 }
-                if (state_create_section(cf, state, value) == -1) {
+                if (state_create_section(conf, state, value) == -1) {
                     flb_error("unable to allocate section: %s", value);
                     return YAML_FAILURE;
                 }
@@ -1067,10 +1067,10 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             value = (char *) event->data.scalar.value;
             /* Check if the incoming k/v pair set a config environment variable */
             if (state->section == SECTION_ENV) {
-                prop = flb_cf_env_property_add(cf,
-                                               state->key, flb_sds_len(state->key),
-                                               value, strlen(value));
-                if (prop == NULL) {
+                keyval = flb_cf_env_property_add(conf,
+                                                 state->key, flb_sds_len(state->key),
+                                                 value, strlen(value));
+                if (keyval == NULL) {
                     flb_error("unable to add key value");
                     return YAML_FAILURE;
                 }
@@ -1081,7 +1081,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                     flb_error("no section to register key value to");
                     return YAML_FAILURE;
                 }
-                if (flb_cf_section_property_add(cf, state->cf_section->properties,
+                if (flb_cf_section_property_add(conf, state->cf_section->properties,
                                                 state->key, flb_sds_len(state->key),
                                                 value, strlen(value)) < 0) {
                     flb_error("unable to add property");
@@ -1125,7 +1125,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 flb_error("unable to allocate state");
                 return YAML_FAILURE;
             }
-            if (add_section_type(cf, state) == -1) {
+            if (add_section_type(conf, state) == -1) {
                 flb_error("unable to add section type");
                 return YAML_FAILURE;
             }
@@ -1179,7 +1179,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                     return status;
                 }
             } else {
-                status = state_copy_into_properties(state, cf, state->cf_section->properties);
+                status = state_copy_into_properties(state, conf, state->cf_section->properties);
                 if (status != YAML_SUCCESS) {
                     return status;
                 }
@@ -1294,7 +1294,9 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                     flb_error("unable to allocate state");
                     return YAML_FAILURE;
                 }
-                state_create_group(cf, state, "processors");
+                if (state_create_group(conf, state, "processors") == YAML_FAILURE) {
+                    return YAML_FAILURE;
+                }
                 break;
             }
 
@@ -1304,14 +1306,18 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
                 return YAML_FAILURE;
             }
             /* create group */
-            state->values = flb_cf_section_property_add_list(cf,
+            state->values = flb_cf_section_property_add_list(conf,
                                                              state->cf_section->properties,
                                                              state->key, flb_sds_len(state->key));
             if (state->values == NULL) {
                 flb_error("no values");
                 return YAML_FAILURE;
             }
-            state->cf_group = flb_cf_group_create(cf, state->cf_section, state->key, strlen(state->key));
+            state->cf_group = flb_cf_group_create(conf, state->cf_section, state->key, strlen(state->key));
+            if (state->cf_group == NULL) {
+                flb_error("unable to create group");
+                return YAML_FAILURE;
+            }
             break;
         case YAML_SEQUENCE_END_EVENT:   /* end of group */
             state = state_pop(ctx);
@@ -1496,7 +1502,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
         case YAML_SCALAR_EVENT:
             value = (char *) event->data.scalar.value;
             /* add the kv pair to the active group properties */
-            if (flb_cf_section_property_add(cf, state->cf_group->properties,
+            if (flb_cf_section_property_add(conf, state->cf_group->properties,
                                             state->key, flb_sds_len(state->key),
                                             value, strlen(value)) == NULL) {
                 flb_error("unable to add property");
@@ -1643,28 +1649,27 @@ static struct parser_state *state_push_witharr(struct local_ctx *ctx,
     return state;
 }
 
-static int state_create_section(struct flb_cf *cf, struct parser_state *state, char *name)
+static int state_create_section(struct flb_cf *conf, struct parser_state *state, char *name)
 {
-    if (state == NULL || cf == NULL || name == NULL) {
+    if (state == NULL || conf == NULL || name == NULL) {
         return -1;
     }
-    state->cf_section = flb_cf_section_create(cf, name, 0);
+    state->cf_section = flb_cf_section_create(conf, name, 0);
     if (state->cf_section == NULL) {
         return -1;
     }
     return 0;
 }
 
-static int state_create_group(struct flb_cf *cf, struct parser_state *state, char *name)
+static int state_create_group(struct flb_cf *conf, struct parser_state *state, char *name)
 {
-    if (state == NULL || cf == NULL || name == NULL) {
+    if (state == NULL || conf == NULL || name == NULL) {
         return -1;
     }
-    state->cf_group = flb_cf_group_create(cf, state->cf_section,
+    state->cf_group = flb_cf_group_create(conf, state->cf_section,
                                           "processors", strlen("processors"));
     if (state->cf_group == NULL) {
-        flb_error("unable to create new processors section group");
-        return YAML_FAILURE;
+        return -1;
     }
     return YAML_SUCCESS;
 }
@@ -1725,7 +1730,7 @@ static struct parser_state *state_create(struct file_state *parent, struct file_
     return state;
 }
 
-static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
+static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
                        struct file_state *parent, char *cfg_file)
 {
     int ret;
@@ -1817,7 +1822,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
             code = -1;
             goto done;
         }
-        status = consume_event(cf, ctx, &event);
+        status = consume_event(conf, ctx, &event);
         if (status == YAML_FAILURE) {
             flb_error("yaml error");
             code = -1;
@@ -1861,15 +1866,15 @@ static void local_exit(struct local_ctx *ctx)
     flb_slist_destroy(&ctx->includes);
 }
 
-struct flb_cf *flb_cf_yaml_create(struct flb_cf *cf, char *file_path,
+struct flb_cf *flb_cf_yaml_create(struct flb_cf *conf, char *file_path,
                                   char *buf, size_t size)
 {
     int ret;
     struct local_ctx ctx;
 
-    if (!cf) {
-        cf = flb_cf_create();
-        if (!cf) {
+    if (!conf) {
+        conf = flb_cf_create();
+        if (!conf) {
             return NULL;
         }
     }
@@ -1877,18 +1882,18 @@ struct flb_cf *flb_cf_yaml_create(struct flb_cf *cf, char *file_path,
     /* initialize the parser state */
     ret = local_init(&ctx);
     if (ret == -1) {
-        flb_cf_destroy(cf);
+        flb_cf_destroy(conf);
         return NULL;
     }
 
     /* process the entry poing config file */
-    ret = read_config(cf, &ctx, NULL, file_path);
+    ret = read_config(conf, &ctx, NULL, file_path);
     if (ret == -1) {
-        flb_cf_destroy(cf);
+        flb_cf_destroy(conf);
         local_exit(&ctx);
         return NULL;
     }
 
     local_exit(&ctx);
-    return cf;
+    return conf;
 }
