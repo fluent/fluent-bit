@@ -63,6 +63,7 @@ if(FLB_WINDOWS_DEFAULTS)
   # disable calyptia fleet management for now
   set(FLB_IN_CALYPTIA_FLEET     No)
   set(FLB_IN_SPLUNK             Yes)
+  set(FLB_IN_SNMP                No)
 
   # OUTPUT plugins
   # ==============

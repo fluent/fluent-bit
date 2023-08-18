@@ -17,7 +17,7 @@ RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
-    postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel && \
+    postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel libsnmp-devel && \
     wget -q http://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm && \
     rpm -ivh epel-release-latest-7.noarch.rpm && \
     yum install -y cmake3 && \
@@ -36,7 +36,7 @@ RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
-    postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel && \
+    postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel libsnmp-devel && \
     wget -q http://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm && \
     rpm -ivh epel-release-latest-7.noarch.rpm && \
     yum install -y cmake3 && \
@@ -66,7 +66,7 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
-    libyaml-devel zlib-devel && \
+    libyaml-devel libsnmp-devel zlib-devel && \
     yum clean all
 
 ARG FLB_OUT_PGSQL=On
@@ -90,7 +90,7 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
-    libyaml-devel zlib-devel && \
+    libyaml-devel libsnmp-devel zlib-devel && \
     yum clean all
 
 ARG FLB_OUT_PGSQL=On
@@ -109,7 +109,7 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
-    libyaml-devel zlib-devel && \
+    libyaml-devel libsnmp-devel zlib-devel && \
     dnf clean all
 
 ARG FLB_OUT_PGSQL=On
@@ -127,7 +127,7 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel  \
-    libyaml-devel zlib-devel && \
+    libyaml-devel libsnmp-devel zlib-devel && \
     dnf clean all
 
 ARG FLB_OUT_PGSQL=On
