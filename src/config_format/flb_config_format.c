@@ -449,6 +449,10 @@ struct flb_cf_group *flb_cf_group_create(struct flb_cf *cf, struct flb_cf_sectio
 
     /* initialize lists */
     g->properties = cfl_kvlist_create();
+    if (g->properties == NULL) {
+	flb_free(g);
+	return NULL;
+    }
 
     /* determinate type by name */
     if (len <= 0) {
@@ -458,6 +462,7 @@ struct flb_cf_group *flb_cf_group_create(struct flb_cf *cf, struct flb_cf_sectio
     /* create a NULL terminated name */
     g->name = flb_sds_create_len(name, len);
     if (!g->name) {
+        cfl_kvlist_destroy(g->properties);
         flb_free(g);
         return NULL;
     }

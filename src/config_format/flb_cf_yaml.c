@@ -617,13 +617,18 @@ static enum status state_copy_into_config_group(struct parser_state *state, stru
         switch (kvp->val->type) {
         case CFL_VARIANT_STRING:
             if (cfl_kvlist_insert_string(copy, kvp->key, kvp->val->data.as_string) < 0) {
-                flb_error("unable to insert into array");
-                cfl_array_destroy(arr);
+                flb_error("unable to allocate kvlist");
+                cfl_kvlist_destroy(copy);
                 return YAML_FAILURE;
             }
             break;
         case CFL_VARIANT_ARRAY:
             carr = cfl_array_create(kvp->val->data.as_array->entry_count);
+            if (carr) {
+                flb_error("unable to allocate array");
+                cfl_kvlist_destroy(copy);
+                return YAML_FAILURE;
+            }
             for (idx = 0; idx < kvp->val->data.as_array->entry_count; idx++) {
                 var = cfl_array_fetch_by_index(kvp->val->data.as_array, idx);
                 if (var == NULL) {
@@ -634,31 +639,38 @@ static enum status state_copy_into_config_group(struct parser_state *state, stru
                 switch (var->type) {
                 case CFL_VARIANT_STRING:
                     if (cfl_array_append_string(carr, var->data.as_string) < 0) {
-                        cfl_array_destroy(arr);
-                        flb_error("unable to fetch from array by index");
+                        flb_error("unable to append string");
+                        cfl_kvlist_destroy(copy);
+                        cfl_array_destroy(carr);
                         return YAML_FAILURE;
                     }
                     break;
                 default:
                     cfl_array_destroy(arr);
                     flb_error("unable to copy value for property");
+                    cfl_kvlist_destroy(copy);
+                    cfl_array_destroy(carr);
                     return YAML_FAILURE;
                 }
             }
             if (cfl_kvlist_insert_array(copy, kvp->key, carr) < 0) {
                 cfl_array_destroy(arr);
                 flb_error("unabelt to insert into array");
-                return YAML_FAILURE;
+                flb_error("unable to insert array into kvlist");
             }
             break;
         default:
-            cfl_array_destroy(arr);
             flb_error("unknown value type for properties: %d", kvp->val->type);
+            cfl_kvlist_destroy(copy);
             return YAML_FAILURE;
         }
     }
 
-    cfl_array_append_kvlist(arr, copy);
+    if (cfl_array_append_kvlist(arr, copy) < 0) {
+        flb_error("unable to insert array into kvlist");
+        cfl_kvlist_destroy(copy);
+        return YAML_FAILURE;
+    }
     return YAML_SUCCESS;
 }
 
@@ -1287,7 +1299,6 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             }
             break;
         case YAML_MAPPING_START_EVENT:
-            /* Special handling for input processor */
             if (strcmp(state->key, "processors") == 0) {
                 state = state_push(ctx, STATE_INPUT_PROCESSORS);
                 if (state == NULL) {
@@ -1763,8 +1774,9 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     }
 
     include_file = flb_sds_create(file);
-    if (file == NULL) {
+    if (include_file == NULL) {
         flb_error("unable to create include filename");
+        flb_sds_destroy(file);
         return -1;
     }
     fstate.name = basename(file);
