@@ -136,7 +136,7 @@ enum state {
     STATE_STOP            /* end state */
 };
 
-// parser state allocation flags
+/* parser state allocation flags */
 #define HAS_KEY     (1 << 0)
 #define HAS_KEYVALS (1 << 1)
 
@@ -1456,7 +1456,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
         };
         break;
 
-    // groups: a group is a sub-section and here we handle the key/value pairs.
+    /* groups: a group is a sub-section and here we handle the key/value pairs. */
     case STATE_GROUP_KEY:
         switch(event->type) {
         case YAML_SCALAR_EVENT:
