@@ -1356,19 +1356,23 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
     char *dbus_etc = "/etc/machine-id";
 
     /* dbus */
-    ret = machine_id_read_and_sanitize(dbus_var, &id, &bytes);
-    if (ret == 0) {
-        *out_id = id;
-        *out_size = bytes;
-        return 0;
+    if (access(dbus_var, F_OK) == 0) { /* check if the file exists first */
+        ret = machine_id_read_and_sanitize(dbus_var, &id, &bytes);
+        if (ret == 0) {
+            *out_id = id;
+            *out_size = bytes;
+            return 0;
+        }
     }
 
     /* etc */
-    ret = machine_id_read_and_sanitize(dbus_etc, &id, &bytes);
-    if (ret == 0) {
-        *out_id = id;
-        *out_size = bytes;
-        return 0;
+    if (access(dbus_etc, F_OK) == 0) { /* check if the file exists first */
+        ret = machine_id_read_and_sanitize(dbus_etc, &id, &bytes);
+        if (ret == 0) {
+            *out_id = id;
+            *out_size = bytes;
+            return 0;
+        }
     }
 #elif defined(__FreeBSD__) || defined(__NetBSD__) || \
       defined(__OpenBSD__) || defined(__DragonFly__)

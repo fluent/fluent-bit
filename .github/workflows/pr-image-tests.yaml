@@ -33,7 +33,7 @@ jobs:
             images: ${{ github.repository }}/pr-${{ github.event.pull_request.number }}
             tags: |
               type=sha
-    
+
         - name: Build the multi-arch images
           id: build
           uses: docker/build-push-action@v4
@@ -42,6 +42,7 @@ jobs:
             context: .
             platforms: linux/amd64
             target: production
+            provenance: false
             push: false
             load: true
             tags: ${{ steps.meta.outputs.tags }}
@@ -52,7 +53,7 @@ jobs:
           run: |
             docker run --rm -t ${{ steps.meta.outputs.tags }} --help
           shell: bash
-        
+
         - name: Build the debug multi-arch images
           uses: docker/build-push-action@v4
           with:
@@ -60,6 +61,7 @@ jobs:
             context: .
             platforms: linux/amd64
             target: debug
+            provenance: false
             push: false
             load: false
 
@@ -86,7 +88,7 @@ jobs:
       strategy:
         fail-fast: true
         matrix:
-          windows-base-version: 
+          windows-base-version:
             # https://github.com/fluent/fluent-bit/blob/1d366594a889624ec3003819fe18588aac3f17cd/dockerfiles/Dockerfile.windows#L3
             - '2019'
             - '2022'
@@ -105,7 +107,7 @@ jobs:
               type=sha
             flavor: |
               suffix=-windows-${{ matrix.windows-base-version }}
-    
+
         - name: Build the windows images
           id: build
           run: |

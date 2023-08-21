@@ -13,17 +13,17 @@
 
 # Build System & Portability
 # --------------------------
-/CMakeLists.txt          @fujimotos @niedbalski @patrick-stephens
-/cmake/                  @fujimotos @niedbalski @patrick-stephens
+/CMakeLists.txt          @fujimotos @niedbalski @patrick-stephens @celalettin1286
+/cmake/                  @fujimotos @niedbalski @patrick-stephens @celalettin1286
 
 # CI 
 # -------------------------
-/.github/                @niedbalski @patrick-stephens
-/appveyor.yml            @niedbalski @patrick-stephens
-/dockerfiles/            @niedbalski @patrick-stephens
-/packaging/              @niedbalski @patrick-stephens
-/codebase-structure.svg  @niedbalski @patrick-stephens
-/install.sh              @niedbalski @patrick-stephens
+/.github/                @niedbalski @patrick-stephens @celalettin1286
+/appveyor.yml            @niedbalski @patrick-stephens @celalettin1286
+/dockerfiles/            @niedbalski @patrick-stephens @celalettin1286
+/packaging/              @niedbalski @patrick-stephens @celalettin1286
+/codebase-structure.svg  @niedbalski @patrick-stephens @celalettin1286
+/install.sh              @niedbalski @patrick-stephens @celalettin1286
 
 # Core: Signv4
 # ------------

@@ -420,6 +420,9 @@ struct flb_kv *flb_cf_meta_property_add(struct flb_cf *cf, char *meta, int len)
 
     p = meta;
     tmp = strchr(p, ' ');
+    if (tmp == NULL) {
+        return NULL;
+    }
     xlen = (tmp - p);
 
     /* create k/v pair */

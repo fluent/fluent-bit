@@ -781,6 +781,11 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
                 continue;
             }
 
+            /* set ret to -1 to ensure that we treat any unhandled plugin or
+             * value types as errors.
+             */
+            ret = -1;
+
             if (type == FLB_CF_CUSTOM) {
                 if (kv->val->type == CFL_VARIANT_STRING) {
                     ret = flb_custom_set_property(ins, kv->key, kv->val->data.as_string);
