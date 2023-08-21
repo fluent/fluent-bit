@@ -73,11 +73,10 @@ static void test_fs_write()
 
     flags = CIO_CHECKSUM;
 
-    memset(&cio_opts, 0, sizeof(cio_opts));
+    cio_options_init(&cio_opts);
 
     cio_opts.root_path = CIO_ENV;
     cio_opts.log_cb = log_cb;
-    cio_opts.log_level = CIO_LOG_INFO;
     cio_opts.flags = flags;
 
     /* cleanup environment */
@@ -160,7 +159,7 @@ static void test_fs_write()
     free(in_data);
     cio_destroy(ctx);
 
-    memset(&cio_opts, 0, sizeof(cio_opts));
+    cio_options_init(&cio_opts);
 
     cio_opts.root_path = CIO_ENV;
     cio_opts.log_cb = log_cb;
@@ -221,11 +220,10 @@ static void test_fs_checksum()
     /* cleanup environment */
     cio_utils_recursive_delete(CIO_ENV);
 
-    memset(&cio_opts, 0, sizeof(cio_opts));
+    cio_options_init(&cio_opts);
 
     cio_opts.root_path = CIO_ENV;
     cio_opts.log_cb = log_cb;
-    cio_opts.log_level = CIO_LOG_INFO;
     cio_opts.flags = flags;
 
     ctx = cio_create(&cio_opts);
@@ -336,7 +334,7 @@ static void test_fs_up_down()
     /* cleanup environment */
     cio_utils_recursive_delete(CIO_ENV);
 
-    memset(&cio_opts, 0, sizeof(cio_opts));
+    cio_options_init(&cio_opts);
 
     cio_opts.root_path = CIO_ENV;
     cio_opts.log_cb = log_cb;
@@ -442,7 +440,7 @@ static void test_issue_51()
     struct cio_options cio_opts;
 
     /* Create a temporal storage */
-    memset(&cio_opts, 0, sizeof(cio_opts));
+    cio_options_init(&cio_opts);
 
     cio_opts.root_path = "tmp";
     cio_opts.log_cb = log_cb;
@@ -495,7 +493,7 @@ static void test_issue_flb_2025()
     cio_utils_recursive_delete("tmp");
 
     /* Create a temporal storage */
-    memset(&cio_opts, 0, sizeof(cio_opts));
+    cio_options_init(&cio_opts);
 
     cio_opts.root_path = "tmp";
     cio_opts.log_cb = log_cb;
@@ -547,7 +545,7 @@ void test_fs_size_chunks_up()
 
     flags = CIO_CHECKSUM;
 
-    memset(&cio_opts, 0, sizeof(cio_opts));
+    cio_options_init(&cio_opts);
 
     cio_opts.root_path = CIO_ENV;
     cio_opts.log_cb = log_cb;
@@ -646,7 +644,7 @@ void test_issue_write_at()
     cio_utils_recursive_delete(CIO_ENV);
 
     /* create Chunk I/O context */
-    memset(&cio_opts, 0, sizeof(cio_opts));
+    cio_options_init(&cio_opts);
 
     cio_opts.root_path = CIO_ENV;
     cio_opts.log_cb = log_cb;
@@ -740,7 +738,7 @@ void test_fs_up_down_up_append()
     cio_utils_recursive_delete(CIO_ENV);
 
     /* create Chunk I/O context */
-    memset(&cio_opts, 0, sizeof(cio_opts));
+    cio_options_init(&cio_opts);
 
     cio_opts.root_path = CIO_ENV;
     cio_opts.log_cb = log_cb;
@@ -818,7 +816,7 @@ static void test_deep_hierarchy()
     cio_utils_recursive_delete("tmp");
 
     /* Create a temporal storage */
-    memset(&cio_opts, 0, sizeof(cio_opts));
+    cio_options_init(&cio_opts);
 
     cio_opts.root_path = "tmp/deep/log/dir";
     cio_opts.log_cb = log_cb;

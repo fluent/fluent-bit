@@ -46,10 +46,8 @@ static void test_context()
 
     flags = CIO_CHECKSUM;
 
-    memset(&cio_opts, 0, sizeof(cio_opts));
-
+    cio_options_init(&cio_opts);
     cio_opts.flags = flags;
-    cio_opts.log_cb = NULL;
 
     /* Invalid path */
     cio_opts.root_path = "";
@@ -97,10 +95,7 @@ static void test_log_level()
     struct cio_ctx *ctx;
     struct cio_options cio_opts;
 
-    memset(&cio_opts, 0, sizeof(cio_opts));
-
-    cio_opts.flags = 0;
-    cio_opts.log_cb = NULL;
+    cio_options_init(&cio_opts);
 
     /* Logging with unset callback at creation, but set later */
     log_check = 0;
@@ -159,8 +154,29 @@ static void test_log_level()
     cio_destroy(ctx);
 }
 
+static void test_open_flags()
+{
+    struct cio_ctx *ctx;
+    struct cio_options cio_opts;
+
+    cio_options_init(&cio_opts);
+    TEST_CHECK(cio_opts.flags & CIO_OPEN_RW);
+
+    /* reset flags */
+    cio_opts.flags = 0;
+
+    /* check that after context creation a default has been set */
+    ctx = cio_create(&cio_opts);
+    TEST_CHECK(ctx != NULL);
+    TEST_CHECK(cio_opts.flags & CIO_OPEN_RW);
+    
+    /* destroy context */
+    cio_destroy(ctx);
+}
+
 TEST_LIST = {
     {"context",     test_context},
     {"log_level",   test_log_level},
+    {"open_flags",  test_open_flags},
     { 0 }
 };

@@ -591,7 +591,12 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
 
     cf->fd = -1;
     cf->flags = flags;
-    cf->realloc_size = cio_getpagesize() * 8;
+    if (ctx->realloc_size_hint > 0) {
+        cf->realloc_size = ctx->realloc_size_hint;
+    }
+    else {
+        cf->realloc_size = cio_getpagesize() * 8;
+    }
     cf->st_content = NULL;
     cf->crc_cur = cio_crc32_init();
     cf->path = path;
@@ -699,14 +704,14 @@ int cio_file_delete(struct cio_ctx *ctx, struct cio_stream *st, const char *name
     char *path;
     int   ret;
 
-    ret = cio_file_native_filename_check(name);
+    ret = cio_file_native_filename_check((char *) name);
     if (ret != CIO_OK) {
         cio_log_error(ctx, "[cio file] invalid file name");
 
         return CIO_ERROR;
     }
 
-    path = cio_file_native_compose_path(ctx->options.root_path, st->name, name);
+    path = cio_file_native_compose_path(ctx->options.root_path, st->name, (char *) name);
     if (path == NULL) {
         return CIO_ERROR;
     }
@@ -890,6 +895,7 @@ void cio_file_close(struct cio_chunk *ch, int delete)
     free(cf);
 }
 
+
 int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
 {
     int ret;
@@ -1069,28 +1075,30 @@ int cio_file_sync(struct cio_chunk *ch)
         return -1;
     }
 
-    /* If there are extra space, truncate the file size */
-    av_size = get_available_size(cf, &meta_len);
+    if (ch->ctx->truncate == CIO_TRUE) {
+        /* If there are extra space, truncate the file size */
+        av_size = get_available_size(cf, &meta_len);
 
-    if (av_size > 0) {
-        desired_size = cf->alloc_size - av_size;
-    }
-    else if (cf->alloc_size > file_size) {
-        desired_size = cf->alloc_size;
-    }
-    else {
-        desired_size = file_size;
-    }
+        if (av_size > 0) {
+            desired_size = cf->alloc_size - av_size;
+        }
+        else if (cf->alloc_size > file_size) {
+            desired_size = cf->alloc_size;
+        }
+        else {
+            desired_size = file_size;
+        }
 
-    if (desired_size != file_size) {
-        ret = cio_file_resize(cf, desired_size);
+        if (desired_size != file_size) {
+            ret = cio_file_resize(cf, desired_size);
 
-        if (ret != CIO_OK) {
-            cio_log_error(ch->ctx,
-                          "[cio file sync] error adjusting size at: "
-                          " %s/%s", ch->st->name, ch->name);
+            if (ret != CIO_OK) {
+                cio_log_error(ch->ctx,
+                              "[cio file sync] error adjusting size at: "
+                              " %s/%s", ch->st->name, ch->name);
 
-            return ret;
+                return ret;
+            }
         }
     }
 
