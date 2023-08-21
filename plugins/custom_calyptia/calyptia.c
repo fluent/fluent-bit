@@ -157,6 +157,7 @@ flb_sds_t custom_calyptia_pipeline_config_get(struct flb_config *ctx)
     /* Config: [FILTER] */
     mk_list_foreach(head, &ctx->filters) {
         f_ins = mk_list_entry(head, struct flb_filter_instance, _head);
+
         flb_sds_printf(&buf, "[FILTER]\n");
         flb_sds_printf(&buf, "    name  %s\n", f_ins->name);
         flb_sds_printf(&buf, "    match %s\n", f_ins->match);
@@ -168,6 +169,7 @@ flb_sds_t custom_calyptia_pipeline_config_get(struct flb_config *ctx)
     /* Config: [OUTPUT] */
     mk_list_foreach(head, &ctx->outputs) {
         o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+
         flb_sds_printf(&buf, "[OUTPUT]\n");
         flb_sds_printf(&buf, "    name  %s\n", o_ins->name);
 
@@ -231,9 +233,9 @@ static struct flb_output_instance *setup_cloud_output(struct flb_config *config,
     int ret;
     struct flb_output_instance *cloud;
     struct mk_list *head;
-    struct flb_slist_entry *k = NULL;
-    struct flb_slist_entry *v = NULL;
-    flb_sds_t kv;
+    struct flb_slist_entry *key = NULL;
+    struct flb_slist_entry *val = NULL;
+    flb_sds_t label;
     struct flb_config_map_val *mv;
 
     cloud = flb_output_new(config, "calyptia", ctx, FLB_FALSE);
@@ -254,20 +256,22 @@ static struct flb_output_instance *setup_cloud_output(struct flb_config *config,
     }
 
     if (ctx->add_labels && mk_list_size(ctx->add_labels) > 0) {
+
         /* iterate all 'add_label' definitions */
         flb_config_map_foreach(head, mv, ctx->add_labels) {
-            k = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
-            v = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
-            kv = flb_sds_create_size(strlen(k->str) + strlen(v->str) + 1);
+            key = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+            val = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
 
-            if(!kv) {
+            label = flb_sds_create_size(strlen(key->str) + strlen(val->str) + 1);
+
+            if(!label) {
                 flb_free(ctx);
                 return NULL;
             }
 
-            flb_sds_printf(&kv, "%s %s", k->str, v->str);
-            flb_output_set_property(cloud, "add_label", kv);
-            flb_sds_destroy(kv);
+            flb_sds_printf(&label, "%s %s", key->str, val->str);
+            flb_output_set_property(cloud, "add_label", label);
+            flb_sds_destroy(label);
         }
     }
 
@@ -347,6 +351,7 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
         flb_plg_error(ctx->ins, "could not load metrics collector");
         return -1;
     }
+
     flb_input_set_property(ctx->i, "tag", "_calyptia_cloud");
     flb_input_set_property(ctx->i, "scrape_on_start", "true");
     flb_input_set_property(ctx->i, "scrape_interval", "30");
