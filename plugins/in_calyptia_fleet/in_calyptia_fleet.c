@@ -81,60 +81,61 @@ struct flb_in_calyptia_fleet_config {
     int collect_fd;
 };
 
-static char *find_case_header(struct flb_http_client *c, const char *header)
+static char *find_case_header(struct flb_http_client *cli, const char *header)
 {
-    char *p;
+    char *ptr;
     char *headstart;
 
 
-    headstart = strstr(c->resp.data, "\r\n");
+    headstart = strstr(cli->resp.data, "\r\n");
 
     if (headstart == NULL) {
         return NULL;
     }
 
     /* Lookup the beginning of the header */
-    for (p = headstart; p != NULL && p+2 < c->resp.payload; p = strstr(p, "\r\n")) {
+    for (ptr = headstart; ptr != NULL && ptr+2 < cli->resp.payload; ptr = strstr(ptr, "\r\n")) {
 
-        if (p + 4 < c->resp.payload && strcmp(p, "\r\n\r\n") == 0) {
+        if (ptr + 4 < cli->resp.payload && strcmp(ptr, "\r\n\r\n") == 0) {
             return NULL;
         }
 
-        p+=2;
+        ptr+=2;
 
         // no space left for header
-        if (p + strlen(header)+2 >= c->resp.payload) {
+        if (ptr + strlen(header)+2 >= cli->resp.payload) {
             return NULL;
         }
 
         // matched header and the delimiter
-        if (strncasecmp(p, header, strlen(header)) == 0) {
+        if (strncasecmp(ptr, header, strlen(header)) == 0) {
 
-            if (p[strlen(header)] == ':' && p[strlen(header)+1] == ' ') {
-                return p;                
+            if (ptr[strlen(header)] == ':' && ptr[strlen(header)+1] == ' ') {
+                return ptr;                
             }
         }
     }
+
     return NULL;
 }
 
 /* Try to find a header value in the buffer. Copied from flb_http_client.c. */
-static int case_header_lookup(struct flb_http_client *c,
+static int case_header_lookup(struct flb_http_client *cli,
                          const char *header, int header_len,
                          const char **out_val, int *out_len)
 {
-    char *p;
+    char *ptr;
     char *crlf;
     char *end;
 
-    if (!c->resp.data) {
+    if (!cli->resp.data) {
         return -1;
     }
 
-    p = find_case_header(c, header);
-    end = strstr(c->resp.data, "\r\n\r\n");
+    ptr = find_case_header(cli, header);
+    end = strstr(cli->resp.data, "\r\n\r\n");
 
-    if (!p) {
+    if (!ptr) {
 
         if (end) {
             /* The headers are complete but the header is not there */
@@ -146,21 +147,21 @@ static int case_header_lookup(struct flb_http_client *c,
     }
 
     /* Exclude matches in the body */
-    if (end && p > end) {
+    if (end && ptr > end) {
         return -1;
     }
 
     /* Lookup CRLF (end of line \r\n) */
-    crlf = strstr(p, "\r\n");
+    crlf = strstr(ptr, "\r\n");
 
     if (!crlf) {
         return -1;
     }
 
-    p += header_len + 2;
+    ptr += header_len + 2;
 
-    *out_val = p;
-    *out_len = (crlf - p);
+    *out_val = ptr;
+    *out_len = (crlf - ptr);
 
     return 0;
 }
@@ -177,10 +178,12 @@ static flb_sds_t fleet_config_filename(struct flb_in_calyptia_fleet_config *ctx,
     cfgname = flb_sds_create_size(4096);
 
     if (ctx->fleet_name != NULL) {
-        flb_sds_printf(&cfgname, "%s" PATH_SEPARATOR "%s" PATH_SEPARATOR "%s.ini", ctx->config_dir, ctx->fleet_name, fname);
+        flb_sds_printf(&cfgname, "%s" PATH_SEPARATOR "%s" PATH_SEPARATOR "%s.ini", 
+	               ctx->config_dir, ctx->fleet_name, fname);
     }
     else {
-        flb_sds_printf(&cfgname, "%s" PATH_SEPARATOR "%s" PATH_SEPARATOR "%s.ini", ctx->config_dir, ctx->fleet_id, fname);
+        flb_sds_printf(&cfgname, "%s" PATH_SEPARATOR "%s" PATH_SEPARATOR "%s.ini", 
+	               ctx->config_dir, ctx->fleet_id, fname);
     }
 
     return cfgname;
@@ -289,10 +292,12 @@ static int exists_cur_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
 static void *do_reload(void *data)
 {
     struct reload_ctx *reload = (struct reload_ctx *)data;
+
     // avoid reloading the current configuration... just use our new one!
     flb_context_set(reload->flb);
     reload->flb->config->enable_hot_reload = FLB_TRUE;
     reload->flb->config->conf_path_file = reload->cfg_path;
+
     sleep(5);
     kill(getpid(), SIGHUP);
 
@@ -302,7 +307,7 @@ static void *do_reload(void *data)
 static int test_config_is_valid(flb_sds_t cfgpath)
 {
     struct flb_config *config;
-    struct flb_cf *cf;
+    struct flb_cf *conf;
     int ret = FLB_FALSE;
 
 
@@ -312,19 +317,19 @@ static int test_config_is_valid(flb_sds_t cfgpath)
         goto config_init_error;
     }
 
-    cf = flb_cf_create();
+    conf = flb_cf_create();
 
-    if (cf == NULL) {
+    if (conf == NULL) {
         goto cf_create_error;
     } 
 
-    cf = flb_cf_create_from_file(cf, cfgpath);
+    conf = flb_cf_create_from_file(conf, cfgpath);
 
-    if (cf == NULL) {
+    if (conf == NULL) {
         goto cf_create_from_file_error;
     } 
 
-    if (flb_config_load_config_format(config, cf)) {
+    if (flb_config_load_config_format(config, conf)) {
         goto cf_load_config_format_error;
     }
 
@@ -337,7 +342,7 @@ static int test_config_is_valid(flb_sds_t cfgpath)
 cf_property_check_error:
 cf_load_config_format_error:
 cf_create_from_file_error:
-    flb_cf_destroy(cf);
+    flb_cf_destroy(conf);
 cf_create_error:
     flb_config_exit(config);
 config_init_error:
@@ -399,7 +404,7 @@ static flb_sds_t parse_api_key_json(struct flb_in_calyptia_fleet_config *ctx,
     msgpack_object_kv *cur;
     msgpack_object_str *key;
     flb_sds_t project_id;
-    int i = 0;
+    int idx = 0;
 
     /* Initialize packer */
     flb_pack_state_init(&pack_state);
@@ -426,8 +431,8 @@ static flb_sds_t parse_api_key_json(struct flb_in_calyptia_fleet_config *ctx,
     while (msgpack_unpack_next(&result, pack, out_size, &off) == MSGPACK_UNPACK_SUCCESS) {
 
         if (result.data.type == MSGPACK_OBJECT_MAP) {
-            for (i = 0; i < result.data.via.map.size; i++) {
-                cur = &result.data.via.map.ptr[i];
+            for (idx = 0; idx < result.data.via.map.size; idx++) {
+                cur = &result.data.via.map.ptr[idx];
                 key = &cur->key.via.str;
 
                 if (strncmp(key->ptr, "ProjectID", key->size) == 0) {
@@ -437,10 +442,13 @@ static flb_sds_t parse_api_key_json(struct flb_in_calyptia_fleet_config *ctx,
                         msgpack_unpacked_destroy(&result);
                         return NULL;
                     }
+
                     project_id = flb_sds_create_len(cur->val.via.str.ptr, 
 		                                    cur->val.via.str.size);
+
                     msgpack_unpacked_destroy(&result);
                     flb_free(pack);
+
                     return project_id;
                 }
             }
@@ -465,7 +473,7 @@ static ssize_t parse_fleet_search_json(struct flb_in_calyptia_fleet_config *ctx,
     msgpack_object_array *results;
     msgpack_object_kv *cur;
     msgpack_object_str *key;
-    int i = 0;
+    int idx = 0;
 
     /* Initialize packer */
     flb_pack_state_init(&pack_state);
@@ -495,8 +503,9 @@ static ssize_t parse_fleet_search_json(struct flb_in_calyptia_fleet_config *ctx,
             results = &result.data.via.array;
 
             if (results->ptr[0].type == MSGPACK_OBJECT_MAP) {
-                for (i = 0; i < results->ptr[0].via.map.size; i++) {
-                    cur = &results->ptr[0].via.map.ptr[i];
+
+                for (idx = 0; idx < results->ptr[0].via.map.size; idx++) {
+                    cur = &results->ptr[0].via.map.ptr[idx];
                     key = &cur->key.via.str;
 
                     if (strncasecmp(key->ptr, "id", key->size) == 0) {
@@ -506,6 +515,7 @@ static ssize_t parse_fleet_search_json(struct flb_in_calyptia_fleet_config *ctx,
                             msgpack_unpacked_destroy(&result);
                             return -1;
                         }
+
                         ctx->fleet_id = flb_sds_create_len(cur->val.via.str.ptr,
                                                            cur->val.via.str.size);
                         break;
@@ -796,7 +806,8 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
             flb_sds_destroy(cfgcurname);
             flb_sds_destroy(cfgoldname);
             goto reload_error;
-        } else {
+        }
+	else {
             FLB_INPUT_RETURN(0);
         }
     }
@@ -846,7 +857,8 @@ static void load_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
         // check which one and load it
         if (exists_cur_fleet_config(ctx) == FLB_TRUE) {
             execute_reload(ctx, cur_fleet_config_filename(ctx));
-        } else if (exists_new_fleet_config(ctx) == FLB_TRUE) {
+        }
+	else if (exists_new_fleet_config(ctx) == FLB_TRUE) {
             execute_reload(ctx, new_fleet_config_filename(ctx));
         }
     }
@@ -968,7 +980,7 @@ static void cb_in_calyptia_fleet_resume(void *data, struct flb_config *config)
 static int in_calyptia_fleet_exit(void *data, struct flb_config *config)
 {
     (void) *config;
-    struct flb_in_calyptia_fleet_config *ctx = data;
+    struct flb_in_calyptia_fleet_config *ctx = (struct flb_in_calyptia_fleet_config *)data;
 
     flb_input_collector_delete(ctx->collect_fd, ctx->ins);
     flb_upstream_destroy(ctx->u);
