@@ -88,12 +88,14 @@ static char *find_case_header(struct flb_http_client *c, const char *header)
 
 
     headstart = strstr(c->resp.data, "\r\n");
+
     if (headstart == NULL) {
         return NULL;
     }
 
     /* Lookup the beginning of the header */
     for (p = headstart; p != NULL && p+2 < c->resp.payload; p = strstr(p, "\r\n")) {
+
         if (p + 4 < c->resp.payload && strcmp(p, "\r\n\r\n") == 0) {
             return NULL;
         }
@@ -104,8 +106,10 @@ static char *find_case_header(struct flb_http_client *c, const char *header)
         if (p + strlen(header)+2 >= c->resp.payload) {
             return NULL;
         }
+
         // matched header and the delimiter
         if (strncasecmp(p, header, strlen(header)) == 0) {
+
             if (p[strlen(header)] == ':' && p[strlen(header)+1] == ' ') {
                 return p;                
             }
@@ -129,7 +133,9 @@ static int case_header_lookup(struct flb_http_client *c,
 
     p = find_case_header(c, header);
     end = strstr(c->resp.data, "\r\n\r\n");
+
     if (!p) {
+
         if (end) {
             /* The headers are complete but the header is not there */
             return -1;
@@ -146,6 +152,7 @@ static int case_header_lookup(struct flb_http_client *c,
 
     /* Lookup CRLF (end of line \r\n) */
     crlf = strstr(p, "\r\n");
+
     if (!crlf) {
         return -1;
     }
@@ -168,9 +175,11 @@ static flb_sds_t fleet_config_filename(struct flb_in_calyptia_fleet_config *ctx,
     flb_sds_t cfgname;
 
     cfgname = flb_sds_create_size(4096);
+
     if (ctx->fleet_name != NULL) {
         flb_sds_printf(&cfgname, "%s" PATH_SEPARATOR "%s" PATH_SEPARATOR "%s.ini", ctx->config_dir, ctx->fleet_name, fname);
-    } else {
+    }
+    else {
         flb_sds_printf(&cfgname, "%s" PATH_SEPARATOR "%s" PATH_SEPARATOR "%s.ini", ctx->config_dir, ctx->fleet_id, fname);
     }
 
@@ -209,7 +218,9 @@ static int is_new_fleet_config(struct flb_in_calyptia_fleet_config *ctx, struct 
     if (cfg->conf_path_file == NULL) {
         return FLB_FALSE;
     }
+
     cfgnewname = new_fleet_config_filename(ctx);
+
     if (strcmp(cfgnewname, cfg->conf_path_file) == 0) {
         ret = FLB_TRUE;
     }
@@ -228,7 +239,9 @@ static int is_cur_fleet_config(struct flb_in_calyptia_fleet_config *ctx, struct 
     if (cfg->conf_path_file == NULL) {
         return FLB_FALSE;
     }
+
     cfgcurname = cur_fleet_config_filename(ctx);
+
     if (strcmp(cfgcurname, cfg->conf_path_file) == 0) {
         ret = FLB_TRUE;
     }
@@ -243,6 +256,7 @@ static int is_fleet_config(struct flb_in_calyptia_fleet_config *ctx, struct flb_
     if (cfg->conf_path_file == NULL) {
         return FLB_FALSE;
     }
+
     return is_new_fleet_config(ctx, cfg) || is_cur_fleet_config(ctx, cfg);
 }
 
@@ -293,16 +307,19 @@ static int test_config_is_valid(flb_sds_t cfgpath)
 
 
     config = flb_config_init();
+
     if (config == NULL) {
         goto config_init_error;
     }
 
     cf = flb_cf_create();
+
     if (cf == NULL) {
         goto cf_create_error;
     } 
 
     cf = flb_cf_create_from_file(cf, cfgpath);
+
     if (cf == NULL) {
         goto cf_create_from_file_error;
     } 
@@ -339,6 +356,7 @@ static int execute_reload(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t cf
         flb_plg_error(ctx->ins, "unable to get fluent-bit context.");
         return FLB_FALSE;
     }
+
     // fix execution in valgrind...
     // otherwise flb_reload errors out with:
     //    [error] [reload] given flb context is NULL
@@ -365,6 +383,7 @@ static char *tls_setting_string(int use_tls)
     if (use_tls) {
         return "On";
     }
+
     return "Off";
 }
 
@@ -405,12 +424,14 @@ static flb_sds_t parse_api_key_json(struct flb_in_calyptia_fleet_config *ctx,
 
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, pack, out_size, &off) == MSGPACK_UNPACK_SUCCESS) {
+
         if (result.data.type == MSGPACK_OBJECT_MAP) {
             for (i = 0; i < result.data.via.map.size; i++) {
                 cur = &result.data.via.map.ptr[i];
                 key = &cur->key.via.str;
 
                 if (strncmp(key->ptr, "ProjectID", key->size) == 0) {
+
                     if (cur->val.type != MSGPACK_OBJECT_STR) {
                         flb_plg_error(ctx->ins, "unable to find fleet by name");
                         msgpack_unpacked_destroy(&result);
@@ -469,14 +490,17 @@ static ssize_t parse_fleet_search_json(struct flb_in_calyptia_fleet_config *ctx,
 
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, pack, out_size, &off) == MSGPACK_UNPACK_SUCCESS) {
+
         if (result.data.type == MSGPACK_OBJECT_ARRAY) {
             results = &result.data.via.array;
+
             if (results->ptr[0].type == MSGPACK_OBJECT_MAP) {
                 for (i = 0; i < results->ptr[0].via.map.size; i++) {
                     cur = &results->ptr[0].via.map.ptr[i];
                     key = &cur->key.via.str;
 
                     if (strncasecmp(key->ptr, "id", key->size) == 0) {
+
                         if (cur->val.type != MSGPACK_OBJECT_STR) {
                             flb_plg_error(ctx->ins, "unable to find fleet by name");
                             msgpack_unpacked_destroy(&result);
@@ -499,6 +523,7 @@ static ssize_t parse_fleet_search_json(struct flb_in_calyptia_fleet_config *ctx,
     if (ctx->fleet_id == NULL) {
         return -1;
     }
+
     return 0;
 }
 
@@ -518,12 +543,14 @@ static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ct
     int ret;
 
     api_token_sep = strchr(ctx->api_key, '.');
+
     if (api_token_sep == NULL) {
         return -1;
     }
 
     elen = api_token_sep-ctx->api_key;
     elen = elen + (4 - (elen % 4));
+
     if (elen > sizeof(encoded)) {
         flb_plg_error(ctx->ins, "API Token is too large");
         return -1;
@@ -534,11 +561,13 @@ static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ct
 
     ret = flb_base64_decode(token, sizeof(token)-1, &tlen,
                             encoded, elen); 
+
     if (ret != 0) {
         return ret;
     }
 
     project_id = parse_api_key_json(ctx, (char *)token, tlen);
+
     if (project_id == NULL) {
         return -1;
     }
@@ -549,6 +578,7 @@ static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ct
 
     client = flb_http_client(u_conn, FLB_HTTP_GET, url, NULL, 0,
                              ctx->ins->host.name, ctx->ins->host.port, NULL, 0);
+
     if (!client) {
         flb_plg_error(ctx->ins, "unable to create http client");
         return -1;
@@ -561,6 +591,7 @@ static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ct
                         ctx->api_key, flb_sds_len(ctx->api_key));
 
     ret = flb_http_do(client, &b_sent);
+
     if (ret != 0) {
         flb_plg_error(ctx->ins, "http do error");
         return -1;
@@ -610,6 +641,7 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
     int ret = -1;
 
     u_conn = flb_upstream_conn_get(ctx->u);
+
     if (!u_conn) {
         flb_plg_error(ctx->ins, "could not get an upstream connection to %s:%u",
                       ctx->ins->host.name, ctx->ins->host.port);
@@ -617,6 +649,7 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
     }
 
     if (ctx->fleet_id == NULL) {
+
         if (get_calyptia_fleet_id_by_name(ctx, u_conn, config) == -1) {
             flb_plg_error(ctx->ins, "unable to find fleet: %s", ctx->fleet_name);
             goto conn_error;
@@ -631,6 +664,7 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
     client = flb_http_client(u_conn, FLB_HTTP_GET, ctx->fleet_url,
                              NULL, 0, 
                              ctx->ins->host.name, ctx->ins->host.port, NULL, 0);
+
     if (!client) {
         flb_plg_error(ins, "unable to create http client");
         goto client_error;
@@ -643,6 +677,7 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
                         ctx->api_key, flb_sds_len(ctx->api_key));
 
     ret = flb_http_do(client, &b_sent);
+
     if (ret != 0) {
         flb_plg_error(ins, "http do error");
         goto http_error;
@@ -660,6 +695,7 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
 
     /* copy and NULL terminate the payload */
     data = flb_sds_create_size(client->resp.payload_size + 1);
+
     if (!data) {
         goto http_error;
     }
@@ -668,6 +704,7 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
 
     ret = case_header_lookup(client, "Last-modified", strlen("Last-modified"),
                         &fbit_last_modified, &fbit_last_modified_len);
+
     if (ret == -1) {
         flb_plg_error(ctx->ins, "unable to get last-modified header");
         goto http_error;
@@ -678,13 +715,17 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
     time_last_modified = mktime(&tm_last_modified.tm);
 
     cfgname = time_fleet_config_filename(ctx, time_last_modified);
+
     if (access(cfgname, F_OK) == -1 && errno == ENOENT) {
         cfgfp = fopen(cfgname, "w+");
+
         if (cfgfp == NULL) {
             flb_plg_error(ctx->ins, "unable to open configuration file: %s", cfgname);
             goto http_error;
         }
+
         header = flb_sds_create_size(4096);
+
         if (ctx->fleet_name == NULL) {
             flb_sds_printf(&header,
                         "[CUSTOM]\n"
@@ -704,7 +745,8 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
                         ctx->ins->host.port,
                         tls_setting_string(ctx->ins->use_tls)
             );
-        } else {
+        }
+        else {
             flb_sds_printf(&header,
                         "[CUSTOM]\n"
                         "    Name          calyptia\n"
@@ -732,12 +774,14 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
         fclose(cfgfp);
 
         cfgnewname = new_fleet_config_filename(ctx);
+
         if (exists_new_fleet_config(ctx) == FLB_TRUE) {
             cfgoldname = old_fleet_config_filename(ctx);
             rename(cfgnewname, cfgoldname);
             unlink(cfgnewname);
             flb_sds_destroy(cfgoldname);
         }
+
         link(cfgname, cfgnewname);
 
         // FORCE THE RELOAD!!!
@@ -777,11 +821,14 @@ static void create_fleet_directory(struct flb_in_calyptia_fleet_config *ctx)
     }
 
     myfleetdir = flb_sds_create_size(256);
+
     if (ctx->fleet_name != NULL) {
         flb_sds_printf(&myfleetdir, "%s" PATH_SEPARATOR "%s", ctx->config_dir, ctx->fleet_name);
-    } else {
+    }
+    else {
         flb_sds_printf(&myfleetdir, "%s" PATH_SEPARATOR "%s", ctx->config_dir, ctx->fleet_id);
     }
+
     if (access(myfleetdir, F_OK)) {
         mkdir(myfleetdir, 0700);
     }
@@ -818,6 +865,7 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
 #endif
 
     flb_plg_info(in, "initializing calyptia fleet input.");
+
     if (in->host.name == NULL) {
         flb_plg_error(in, "no input 'Host' provided");
         return -1;
@@ -825,6 +873,7 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
 
     /* Allocate space for the configuration */
     ctx = flb_calloc(1, sizeof(struct flb_in_calyptia_fleet_config));
+
     if (!ctx) {
         flb_errno();
         return -1;
@@ -834,6 +883,7 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
 
     /* Load the config map */
     ret = flb_input_config_map_set(in, (void *)ctx);
+
     if (ret == -1) {
         flb_free(ctx);
         flb_plg_error(in, "unable to load configuration");
@@ -843,12 +893,14 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
 #ifdef _WIN32
     if (ctx->config_dir == NULL) {
         tmpdir = getenv("TEMP");
+
         if (tmpdir == NULL) {
             flb_plg_error(in, "unable to find temporary directory (%%TEMP%%).");
             return -1;
         }
 
         ctx->config_dir = flb_sds_create_size(4096);
+
         if (ctx->config_dir == NULL) {
             flb_plg_error(in, "unable to allocate config-dir.");
             return -1;
@@ -887,6 +939,7 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
                                        ctx->interval_sec,
                                        ctx->interval_nsec,
                                        config);
+
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not set collector for Health input plugin");
         flb_free(ctx);
