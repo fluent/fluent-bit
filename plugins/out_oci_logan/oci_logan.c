@@ -481,27 +481,33 @@ static int retry_error(struct flb_http_client *c, struct flb_oci_logan *ctx)
             && (tmp_len == sizeof(FLB_OCI_ERROR_CODE_RELATED_RESOURCE_NOT_FOUND) - 1)
             && strncasecmp(error_response->code, FLB_OCI_ERROR_CODE_RELATED_RESOURCE_NOT_FOUND, tmp_len) == 0) {
             ret = FLB_TRUE;
-        } else if( c->resp.status == 401
+        }
+        else if( c->resp.status == 401
             &&( tmp_len == sizeof(FLB_OCI_ERROR_CODE_NOT_AUTHENTICATED)-1 )
             && strncasecmp(error_response->code, FLB_OCI_ERROR_CODE_NOT_AUTHENTICATED, tmp_len) == 0) {
             ret = FLB_TRUE;
-        } else if (c->resp.status == 404
+        }
+        else if (c->resp.status == 404
             && (tmp_len == sizeof(FLB_OCI_ERROR_CODE_NOT_AUTHENTICATEDORNOTFOUND) - 1)
             && strncasecmp(error_response->code, FLB_OCI_ERROR_CODE_NOT_AUTHENTICATEDORNOTFOUND, tmp_len) == 0) {
             ret = FLB_TRUE;
-        } else if (c->resp.status == 409
+        }
+        else if (c->resp.status == 409
             && (tmp_len == sizeof(FLB_OCI_ERROR_CODE_INCORRECTSTATE) - 1)
             && strncasecmp(error_response->code, FLB_OCI_ERROR_CODE_INCORRECTSTATE, tmp_len) == 0) {
             ret = FLB_TRUE;
-        } else if (c->resp.status == 409
+        }
+        else if (c->resp.status == 409
             && (tmp_len == sizeof(FLB_OCI_ERROR_CODE_NOT_AUTH_OR_RESOURCE_EXIST) - 1)
             && strncasecmp(error_response->code, FLB_OCI_ERROR_CODE_NOT_AUTH_OR_RESOURCE_EXIST, tmp_len) == 0) {
             ret = FLB_TRUE;
-        } else if (c->resp.status == 429
+        }
+        else if (c->resp.status == 429
             && (tmp_len == sizeof(FLB_OCI_ERROR_CODE_TOO_MANY_REQUESTS) - 1)
             && strncasecmp(error_response->code, FLB_OCI_ERROR_CODE_TOO_MANY_REQUESTS, tmp_len) == 0) {
             ret = FLB_TRUE;
-        } else if (c->resp.status == 500
+        }
+        else if (c->resp.status == 500
             && (tmp_len == sizeof(FLB_OCI_ERROR_CODE_INTERNAL_SERVER_ERROR) - 1)
             && strncasecmp(error_response->code, FLB_OCI_ERROR_CODE_INTERNAL_SERVER_ERROR, tmp_len) == 0) {
             ret = FLB_TRUE;
