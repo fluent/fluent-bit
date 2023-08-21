@@ -111,7 +111,7 @@ static int load_oci_credentials(struct flb_oci_logan *ctx)
     flb_plg_info(ctx->ins, "content = %s", content);
     line = strtok(content, "\n");
     while(line != NULL) {
-        // process line
+        /* process line */
         flb_plg_info(ctx->ins, "line = %s", line);
         if(!found_profile && line[0] == '[') {
             profile = mk_string_copy_substr(line, 1, strlen(line) - 1);
@@ -136,19 +136,15 @@ static int load_oci_credentials(struct flb_oci_logan *ctx)
             }
             if (strcmp(key, FLB_OCI_PARAM_USER) == 0) {
                 ctx->user = flb_sds_create(val);
-                flb_plg_info(ctx->ins, "val = %s", val);
             }
             else if (strcmp(key, FLB_OCI_PARAM_TENANCY) == 0) {
                 ctx->tenancy = flb_sds_create(val);
-                // flb_plg_info(ctx->ins, "val = %s", val);
             }
             else if (strcmp(key, FLB_OCI_PARAM_KEY_FILE) == 0) {
                 ctx->key_file = flb_sds_create(val);
-                // flb_plg_info(ctx->ins, "val = %s", val);
             }
             else if (strcmp(key, FLB_OCI_PARAM_KEY_FINGERPRINT) == 0) {
                 ctx->key_fingerprint = flb_sds_create(val);
-                // flb_plg_info(ctx->ins, "val = %s", val);
             }
             else if (strcmp(key, FLB_OCI_PARAM_REGION) == 0) {
                 ctx->region = flb_sds_create(val);
@@ -282,7 +278,7 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
             ctx->oci_la_log_group_id == NULL) {
             flb_errno();
             flb_plg_error(ctx->ins,
-                          "Mandatory oci logging analytics configs are missing");
+                          "log source name and log group id are required");
             flb_oci_logan_conf_destroy(ctx);
             return NULL;
         }
@@ -423,30 +419,6 @@ int flb_oci_logan_conf_destroy(struct flb_oci_logan *ctx) {
         return 0;
     }
 
-    if(ctx->oci_la_entity_id) {
-        flb_sds_destroy(ctx->oci_la_entity_id);
-    }
-    if(ctx->oci_la_log_set_id) {
-        flb_sds_destroy(ctx->oci_la_log_set_id);
-    }
-    if(ctx->namespace) {
-        flb_sds_destroy(ctx->namespace);
-    }
-    if(ctx->oci_la_log_path) {
-        flb_sds_destroy(ctx->oci_la_log_path);
-    }
-    if(ctx->oci_la_entity_type) {
-        flb_sds_destroy(ctx->oci_la_entity_type);
-    }
-    if(ctx->oci_la_log_group_id) {
-        flb_sds_destroy(ctx->oci_la_log_group_id);
-    }
-    if(ctx->oci_la_log_source_name) {
-        flb_sds_destroy(ctx->oci_la_log_source_name);
-    }
-    if(ctx->config_file_location) {
-        flb_sds_destroy(ctx->config_file_location);
-    }
     if (ctx->private_key) {
         flb_sds_destroy(ctx->private_key);
     }
@@ -470,6 +442,9 @@ int flb_oci_logan_conf_destroy(struct flb_oci_logan *ctx) {
     }
     if(ctx->region) {
         flb_sds_destroy(ctx->region);
+    }
+    if (ctx->u) {
+        flb_upstream_destroy(ctx->u);
     }
 
     flb_free(ctx);
