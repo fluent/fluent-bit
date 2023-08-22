@@ -43,6 +43,7 @@
 #define CIO_OPEN_RD         2         /* open and read/mmap content if exists */
 #define CIO_CHECKSUM        4         /* enable checksum verification (crc32) */
 #define CIO_FULL_SYNC       8         /* force sync to fs through MAP_SYNC */
+#define CIO_TRIM_FILES     16         /* trim files to their required size */
 
 /* Return status */
 #define CIO_CORRUPTED      -3         /* Indicate that a chunk is corrupted */
@@ -99,6 +100,9 @@ int cio_qsort(struct cio_ctx *ctx, int (*compar)(const void *, const void *));
 void cio_set_log_callback(struct cio_ctx *ctx, void (*log_cb));
 int cio_set_log_level(struct cio_ctx *ctx, int level);
 int cio_set_max_chunks_up(struct cio_ctx *ctx, int n);
+
+void cio_enable_file_trimming(struct cio_ctx *ctx);
+void cio_disable_file_trimming(struct cio_ctx *ctx);
 
 int cio_meta_write(struct cio_chunk *ch, char *buf, size_t size);
 int cio_meta_cmp(struct cio_chunk *ch, char *meta_buf, int meta_len);

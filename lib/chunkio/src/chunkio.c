@@ -227,3 +227,13 @@ int cio_set_max_chunks_up(struct cio_ctx *ctx, int n)
     ctx->max_chunks_up = n;
     return 0;
 }
+
+void cio_enable_file_trimming(struct cio_ctx *ctx)
+{
+    ctx->flags |= CIO_TRIM_FILES;
+}
+
+void cio_disable_file_trimming(struct cio_ctx *ctx)
+{
+    ctx->flags &= ~CIO_TRIM_FILES;
+}
