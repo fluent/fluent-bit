@@ -506,6 +506,11 @@ int flb_storage_create(struct flb_config *ctx)
         flags |= CIO_CHECKSUM;
     }
 
+    /* file trimming */
+    if (ctx->storage_trim_files == FLB_TRUE) {
+        flags |= CIO_TRIM_FILES;
+    }
+
     /* Create chunkio context */
     cio = cio_create(ctx->storage_path, log_cb, CIO_LOG_DEBUG, flags);
     if (!cio) {
