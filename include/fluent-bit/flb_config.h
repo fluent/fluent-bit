@@ -202,7 +202,8 @@ struct flb_config {
     char *storage_max_chunk_size_str; /* chunk size limit */
     char *storage_bl_mem_limit;       /* storage backlog memory limit */
     struct flb_storage_metrics *storage_metrics_ctx; /* storage metrics context */
-    size_t storage_max_chunk_size;   /* chunk size limit */
+    size_t storage_max_chunk_size;    /* chunk size limit */
+    int   storage_trim_files;         /* enable/disable file trimming */
 
     /* Embedded SQL Database support (SQLite3) */
 #ifdef FLB_HAVE_SQLDB
@@ -307,6 +308,7 @@ enum conf_type {
 #define FLB_CONF_STORAGE_BL_MEM_LIMIT   "storage.backlog.mem_limit"
 #define FLB_CONF_STORAGE_MAX_CHUNKS_UP  "storage.max_chunks_up"
 #define FLB_CONF_STORAGE_MAX_CHUNK_SIZE "storage.max_chunk_size"
+#define FLB_CONF_STORAGE_TRIM_FILES     "storage.trim_files"
 
 /* Coroutines */
 #define FLB_CONF_STR_CORO_STACK_SIZE "Coro_Stack_Size"
