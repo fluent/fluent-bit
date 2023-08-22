@@ -78,7 +78,8 @@ void cio_file_calculate_checksum(struct cio_file *cf, crc_t *out)
     size_t len;
     unsigned char *in_data;
 
-    len = content_len(cf);
+    len = cio_file_st_get_content_len(cf->map, CIO_FILE_HEADER_MIN);
+
     in_data = (unsigned char *) cf->map + CIO_FILE_CONTENT_OFFSET;
     val = cio_crc32_update(cf->crc_cur, in_data, len);
     *out = val;
@@ -147,21 +148,26 @@ static void write_init_header(struct cio_chunk *ch, struct cio_file *cf)
         cf->map[4] = 0;
         cf->map[5] = 0;
     }
+
+    cio_file_st_set_content_len(cf->map, 0);
 }
 
 /* Return the available size in the file map to write data */
 static size_t get_available_size(struct cio_file *cf, int *meta_len)
 {
     size_t av;
-    int len;
+    int metadata_len;
 
     /* Get metadata length */
-    len = cio_file_st_get_meta_len(cf->map);
+    metadata_len = cio_file_st_get_meta_len(cf->map);
 
-    av = cf->alloc_size - cf->data_size;
-    av -= (CIO_FILE_HEADER_MIN + len);
+    av  = cf->alloc_size;
+    av -= CIO_FILE_HEADER_MIN;
+    av -= metadata_len;
+    av -= cf->data_size;
 
-    *meta_len = len;
+    *meta_len = metadata_len;
+
     return av;
 }
 
@@ -372,7 +378,7 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
 
     /* check content data size */
     if (fs_size > 0) {
-        content_size = cio_file_st_get_content_size(cf->map, fs_size);
+        content_size = cio_file_st_get_content_len(cf->map, fs_size);
         if (content_size == -1) {
             cio_error_set(ch, CIO_ERR_BAD_FILE_SIZE);
             cio_log_error(ctx, "invalid content size %s", cf->path);
@@ -947,6 +953,8 @@ int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
     cf->data_size += count;
     cf->synced = CIO_FALSE;
 
+    cio_file_st_set_content_len(cf->map, cf->data_size);
+
     return 0;
 }
 
@@ -1073,29 +1081,34 @@ int cio_file_sync(struct cio_chunk *ch)
     /* Save current mmap size */
     old_size = cf->alloc_size;
 
-    /* If there are extra space, truncate the file size */
-    av_size = get_available_size(cf, &meta_len);
-    if (av_size > 0) {
-        size = cf->alloc_size - av_size;
-        ret = cio_file_fs_size_change(cf, size);
-        if (ret == -1) {
-            cio_errno();
-            cio_log_error(ch->ctx,
-                          "[cio file sync] error adjusting size at: "
-                          " %s/%s", ch->st->name, ch->name);
+    /* File trimming has been made opt-in because it causes
+     * performance degradation and excessive fragmentation
+     * in XFS.
+     */
+    if ((ch->ctx->flags & CIO_TRIM_FILES) != 0) {
+        /* If there are extra space, truncate the file size */
+        av_size = get_available_size(cf, &meta_len);
+        if (av_size > 0) {
+            size = cf->alloc_size - av_size;
+            ret = cio_file_fs_size_change(cf, size);
+            if (ret == -1) {
+                cio_errno();
+                cio_log_error(ch->ctx,
+                              "[cio file sync] error adjusting size at: "
+                              " %s/%s", ch->st->name, ch->name);
+            }
+            cf->alloc_size = size;
         }
-        cf->alloc_size = size;
-    }
-    else if (cf->alloc_size > fst.st_size) {
-        ret = cio_file_fs_size_change(cf, cf->alloc_size);
-        if (ret == -1) {
-            cio_errno();
-            cio_log_error(ch->ctx,
-                          "[cio file sync] error adjusting size at: "
-                          " %s/%s", ch->st->name, ch->name);
+        else if (cf->alloc_size > fst.st_size) {
+            ret = cio_file_fs_size_change(cf, cf->alloc_size);
+            if (ret == -1) {
+                cio_errno();
+                cio_log_error(ch->ctx,
+                              "[cio file sync] error adjusting size at: "
+                              " %s/%s", ch->st->name, ch->name);
+            }
         }
     }
-
 
     /* If the mmap size changed, adjust mapping to the proper size */
     if (old_size != cf->alloc_size) {

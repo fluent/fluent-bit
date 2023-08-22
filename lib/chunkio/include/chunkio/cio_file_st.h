@@ -36,7 +36,9 @@
  *    +--------------+----------------+
  *    |     0xC1     |     0x00       +--> Header 2 bytes
  *    +--------------+----------------+
- *    |   4 BYTES CRC32 + 16 BYTES    +--> CRC32(Content) + Padding
+ *    |   4 BYTES CHECKSUM            +--> CRC32(Content)
+ *    |   4 BYTES CONTENT LENGHT      +--> Content length
+ *    |   12 BYTES                    +--> Padding
  *    +-------------------------------+
  *    |            Content            |
  *    |  +-------------------------+  |
@@ -55,10 +57,14 @@
  *    +-------------------------------+
  */
 
-#define CIO_FILE_ID_00          0xc1    /* header: first byte */
-#define CIO_FILE_ID_01          0x00    /* header: second byte */
-#define CIO_FILE_HEADER_MIN       24    /* 24 bytes for the header */
-#define CIO_FILE_CONTENT_OFFSET   22
+#define CIO_FILE_ID_00                 0xc1 /* header: first byte */
+#define CIO_FILE_ID_01                 0x00 /* header: second byte */
+#define CIO_FILE_HEADER_MIN              24 /* 24 bytes for the header */
+#define CIO_FILE_CONTENT_OFFSET          22
+#define CIO_FILE_CONTENT_LENGTH_OFFSET    6 /* We store the content length
+                                             * right after the checksum in
+                                             * what used to be padding
+                                             */
 
 /* Return pointer to hash position */
 static inline char *cio_file_st_get_hash(char *map)
@@ -94,22 +100,34 @@ static inline char *cio_file_st_get_content(char *map)
     return map + CIO_FILE_HEADER_MIN + len;
 }
 
-static inline ssize_t cio_file_st_get_content_size(char *map, size_t size)
+/* Get content length */
+static inline ssize_t cio_file_st_get_content_len(char *map, size_t size)
 {
-    int meta_len;
-    size_t s;
+    uint8_t *content_length_buffer;
 
     if (size < CIO_FILE_HEADER_MIN) {
         return -1;
     }
 
-    meta_len = cio_file_st_get_meta_len(map);
-    s = (size - CIO_FILE_HEADER_MIN) - meta_len;
-    if (s < size) {
-        return s;
-    }
+    content_length_buffer = (uint8_t *) &map[CIO_FILE_CONTENT_LENGTH_OFFSET];
 
-    return -1;
+    return (ssize_t) (((uint32_t) content_length_buffer[0]) << 24) |
+                     (((uint32_t) content_length_buffer[1]) << 16) |
+                     (((uint32_t) content_length_buffer[2]) <<  8) |
+                     (((uint32_t) content_length_buffer[3]) <<  0);
+}
+
+/* Set content length */
+static inline void cio_file_st_set_content_len(char *map, uint32_t len)
+{
+    uint8_t *content_length_buffer;
+
+    content_length_buffer = (uint8_t *) &map[CIO_FILE_CONTENT_LENGTH_OFFSET];
+
+    content_length_buffer[0] = (uint8_t) ((len & 0xFF000000) >> 24);
+    content_length_buffer[1] = (uint8_t) ((len & 0x00FF0000) >> 16);
+    content_length_buffer[2] = (uint8_t) ((len & 0x0000FF00) >>  8);
+    content_length_buffer[3] = (uint8_t) ((len & 0x000000FF) >>  0);
 }
 
 #endif
