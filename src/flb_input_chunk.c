@@ -1105,17 +1105,6 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
         }
     }
 
-    if (ic != NULL) {
-        new_chunk_size = flb_input_chunk_get_real_size(ic);
-        new_chunk_size += chunk_size;
-
-        if (in->config->storage_max_chunk_size > 0 &&
-            in->config->storage_max_chunk_size < new_chunk_size) {
-            ic = NULL;
-        }
-    }
-
-
     /* No chunk was found, we need to create a new one */
     if (!ic) {
         ic = flb_input_chunk_create(in, (char *) tag, tag_len);
