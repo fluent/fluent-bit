@@ -60,18 +60,7 @@ char cio_file_init_bytes[] =   {
 
 #define ROUND_UP(N, S) ((((N) + (S) - 1) / (S)) * (S))
 
-/* Get the number of bytes in the Content section */
-static size_t content_len(struct cio_file *cf)
-{
-    int meta;
-    size_t len;
-
-    meta = cio_file_st_get_meta_len(cf->map);
-    len = 2 + meta + cf->data_size;
-    return len;
-}
-
-/* Calculate content checksum in a variable */
+    /* Calculate content checksum in a variable */
 void cio_file_calculate_checksum(struct cio_file *cf, crc_t *out)
 {
     crc_t val;
@@ -178,6 +167,9 @@ static size_t get_available_size(struct cio_file *cf, int *meta_len)
 static int cio_file_format_check(struct cio_chunk *ch,
                                  struct cio_file *cf, int flags)
 {
+    size_t metadata_length;
+    ssize_t content_length;
+    ssize_t logical_length;
     unsigned char *p;
     crc_t crc_check;
     crc_t crc;
@@ -215,6 +207,28 @@ static int cio_file_format_check(struct cio_chunk *ch,
             cio_log_debug(ch->ctx, "[cio file] invalid header at %s",
                           ch->name);
             cio_error_set(ch, CIO_ERR_BAD_LAYOUT);
+            return -1;
+        }
+
+        /* Expected / logical file size verification */
+        content_length = cio_file_st_get_content_len(cf->map, cf->fs_size);
+        if (content_length == -1) {
+            cio_log_debug(ch->ctx, "[cio file] truncated header (%zu / %zu) %s",
+                          cf->fs_size, CIO_FILE_HEADER_MIN, ch->name);
+            cio_error_set(ch, CIO_ERR_BAD_FILE_SIZE);
+            return -1;
+        }
+
+        metadata_length = cio_file_st_get_meta_len(cf->map);
+
+        logical_length = CIO_FILE_HEADER_MIN +
+                         metadata_length +
+                         content_length;
+
+        if (logical_length > cf->fs_size) {
+            cio_log_debug(ch->ctx, "[cio file] truncated file (%zd / %zd) %s",
+                          cf->fs_size, logical_length, ch->name);
+            cio_error_set(ch, CIO_ERR_BAD_FILE_SIZE);
             return -1;
         }
 
