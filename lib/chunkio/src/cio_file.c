@@ -16,7 +16,6 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-
 #define _GNU_SOURCE
 
 #include <stdio.h>
@@ -67,7 +66,9 @@ void cio_file_calculate_checksum(struct cio_file *cf, crc_t *out)
     size_t len;
     unsigned char *in_data;
 
-    len = cio_file_st_get_content_len(cf->map, CIO_FILE_HEADER_MIN);
+    len  = cio_file_st_get_content_len(cf->map, CIO_FILE_HEADER_MIN);
+    len += cio_file_st_get_meta_len(cf->map);
+    len += 2;
 
     in_data = (unsigned char *) cf->map + CIO_FILE_CONTENT_OFFSET;
     val = cio_crc32_update(cf->crc_cur, in_data, len);
@@ -100,6 +101,7 @@ static void finalize_checksum(struct cio_file *cf)
 
     crc = cio_crc32_finalize(cf->crc_cur);
     crc = htonl(crc);
+
     memcpy(cf->map + 2, &crc, sizeof(crc));
 }
 
@@ -183,6 +185,7 @@ static int cio_file_format_check(struct cio_chunk *ch,
             cio_log_warn(ch->ctx,
                          "[cio file] cannot initialize chunk (read-only)");
             cio_error_set(ch, CIO_ERR_PERMISSION);
+
             return -1;
         }
 
@@ -190,6 +193,7 @@ static int cio_file_format_check(struct cio_chunk *ch,
         if (cf->alloc_size < CIO_FILE_HEADER_MIN) {
             cio_log_warn(ch->ctx, "[cio file] cannot initialize chunk");
             cio_error_set(ch, CIO_ERR_BAD_LAYOUT);
+
             return -1;
         }
 
@@ -207,6 +211,7 @@ static int cio_file_format_check(struct cio_chunk *ch,
             cio_log_debug(ch->ctx, "[cio file] invalid header at %s",
                           ch->name);
             cio_error_set(ch, CIO_ERR_BAD_LAYOUT);
+
             return -1;
         }
 
@@ -216,6 +221,7 @@ static int cio_file_format_check(struct cio_chunk *ch,
             cio_log_debug(ch->ctx, "[cio file] truncated header (%zu / %zu) %s",
                           cf->fs_size, CIO_FILE_HEADER_MIN, ch->name);
             cio_error_set(ch, CIO_ERR_BAD_FILE_SIZE);
+
             return -1;
         }
 
@@ -229,6 +235,7 @@ static int cio_file_format_check(struct cio_chunk *ch,
             cio_log_debug(ch->ctx, "[cio file] truncated file (%zd / %zd) %s",
                           cf->fs_size, logical_length, ch->name);
             cio_error_set(ch, CIO_ERR_BAD_FILE_SIZE);
+
             return -1;
         }
 
@@ -246,12 +253,15 @@ static int cio_file_format_check(struct cio_chunk *ch,
             /* Compare */
             crc_check = cio_crc32_finalize(crc);
             crc_check = htonl(crc_check);
+
             if (memcmp(p, &crc_check, sizeof(crc_check)) != 0) {
                 cio_log_debug(ch->ctx, "[cio file] invalid crc32 at %s/%s",
                               ch->name, cf->path);
                 cio_error_set(ch, CIO_ERR_BAD_CHECKSUM);
+
                 return -1;
             }
+
             cf->crc_cur = crc;
         }
     }
@@ -957,6 +967,14 @@ int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
         cf->alloc_size = new_size;
     }
 
+    /* If crc_reset was toggled we know that data_size was
+     * modified by cio_chunk_write_at which means we need
+     * to update the header before we recalculate the checksum
+     */
+    if (cf->crc_reset) {
+        cio_file_st_set_content_len(cf->map, cf->data_size);
+    }
+
     if (ch->ctx->flags & CIO_CHECKSUM) {
         update_checksum(cf, (unsigned char *) buf, count);
     }
@@ -1178,6 +1196,7 @@ int cio_file_sync(struct cio_chunk *ch)
 
     cio_log_debug(ch->ctx, "[cio file] synced at: %s/%s",
                   ch->st->name, ch->name);
+
     return 0;
 }
 

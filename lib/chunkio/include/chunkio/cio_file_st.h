@@ -36,9 +36,10 @@
  *    +--------------+----------------+
  *    |     0xC1     |     0x00       +--> Header 2 bytes
  *    +--------------+----------------+
- *    |   4 BYTES CHECKSUM            +--> CRC32(Content)
- *    |   4 BYTES CONTENT LENGHT      +--> Content length
- *    |   12 BYTES                    +--> Padding
+ *    |           4 BYTES             +--> CRC32(Content)
+ *    |           4 BYTES             +--> CRC32(Padding)
+ *    |           4 BYTES             +--> Content length
+ *    |           8 BYTES             +--> Padding
  *    +-------------------------------+
  *    |            Content            |
  *    |  +-------------------------+  |
@@ -61,7 +62,7 @@
 #define CIO_FILE_ID_01                 0x00 /* header: second byte */
 #define CIO_FILE_HEADER_MIN              24 /* 24 bytes for the header */
 #define CIO_FILE_CONTENT_OFFSET          22
-#define CIO_FILE_CONTENT_LENGTH_OFFSET    6 /* We store the content length
+#define CIO_FILE_CONTENT_LENGTH_OFFSET   10 /* We store the content length
                                              * right after the checksum in
                                              * what used to be padding
                                              */
