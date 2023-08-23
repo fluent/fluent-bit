@@ -546,7 +546,7 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
 static void print_current_state(struct local_ctx *ctx, struct parser_state *state,
                                 yaml_event_t *event)
 {
-    flb_error("%*s%s->%s", state->level*2, "", state_str(state->state),
+    flb_debug("%*s%s->%s", state->level*2, "", state_str(state->state),
              event_type_str(event));
 }
 
@@ -557,21 +557,21 @@ static void print_current_properties(struct parser_state *state)
     struct cfl_variant *var;
     int idx;
 
-    flb_error("%*s[%s] PROPERTIES:", state->level*2, "", section_names[state->section]);
+    flb_debug("%*s[%s] PROPERTIES:", state->level*2, "", section_names[state->section]);
 
     cfl_list_foreach(head, &state->keyvals->list) {
         prop = cfl_list_entry(head, struct cfl_kvpair, _head);
         switch (prop->val->type) {
         case CFL_VARIANT_STRING:
-            flb_error("%*s%s: %s", (state->level+2)*2, "", prop->key, prop->val->data.as_string);
+            flb_debug("%*s%s: %s", (state->level+2)*2, "", prop->key, prop->val->data.as_string);
             break;
         case CFL_VARIANT_ARRAY:
-            flb_error("%*s%s: [", (state->level+2)*2, "", prop->key);
+            flb_debug("%*s%s: [", (state->level+2)*2, "", prop->key);
             for (idx = 0; idx < prop->val->data.as_array->entry_count; idx++) {
                 var = cfl_array_fetch_by_index(prop->val->data.as_array, idx);
-                flb_error("%*s%s", (state->level+3)*2, "", var->data.as_string);
+                flb_debug("%*s%s", (state->level+3)*2, "", var->data.as_string);
             }
-            flb_error("%*s]", (state->level+2)*2, "");
+            flb_debug("%*s]", (state->level+2)*2, "");
             break;
         }
     }
@@ -1982,7 +1982,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
         return -1;
     }
 
-    flb_error("============ %s ============", cfg_file);
+    flb_debug("============ %s ============", cfg_file);
     fh = fopen(include_file, "r");
 
     if (!fh) {
@@ -2031,7 +2031,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
 
     } while (state->state != STATE_STOP);
 
-    flb_error("==============================");
+    flb_debug("==============================");
 done:
 
     if (code == -1) {
