@@ -61,6 +61,11 @@ struct flb_in_calyptia_fleet_config {
     int interval_sec;
     int interval_nsec;
 
+    /* Grabbed from the cfg_path, used to check if configuration has
+     * has been updated.
+     */
+    long config_timestamp;
+
     flb_sds_t api_key;
     flb_sds_t fleet_id;
     flb_sds_t fleet_name;
@@ -375,6 +380,8 @@ static int execute_reload(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t cf
         return FLB_FALSE;
     }
 
+    flb_input_collector_pause(ctx->collect_fd, ctx->ins);
+
     reload = flb_calloc(1, sizeof(struct reload_ctx));
     reload->flb = flb;
     reload->cfg_path = cfgpath;
@@ -447,8 +454,7 @@ static flb_sds_t parse_api_key_json(struct flb_in_calyptia_fleet_config *ctx,
                     }
 
                     project_id = flb_sds_create_len(cur->val.via.str.ptr, 
-		                                    cur->val.via.str.size);
-
+                                                    cur->val.via.str.size);
                     msgpack_unpacked_destroy(&result);
                     flb_free(pack);
 
@@ -808,7 +814,9 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
         }
 
         link(cfgname, cfgnewname);
+    }
 
+    if (ctx->config_timestamp < time_last_modified) {
         // FORCE THE RELOAD!!!
         flb_plg_info(ctx->ins, "force the reloading of the configuration file=%d.", ctx->event_fd);
         flb_sds_destroy(cfgname);
@@ -907,7 +915,9 @@ static int create_fleet_directory(struct flb_in_calyptia_fleet_config *ctx)
 static int load_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
 {
     flb_ctx_t *flb_ctx = flb_context_get();
-
+    char *fname;
+    char *ext;
+    long timestamp;
 
     if (create_fleet_directory(ctx) != 0) {
         return -1;
@@ -922,6 +932,22 @@ static int load_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
 	else if (exists_new_fleet_config(ctx) == FLB_TRUE) {
             execute_reload(ctx, new_fleet_config_filename(ctx));
         }
+    }
+    else {
+        fname = basename(flb_ctx->config);
+
+        if (fname == NULL) {
+            return;
+        }
+
+        timestamp = strtol(fname, &ext, 10);
+
+        /* unable to parse the timstamp */
+        if (errno == ERANGE) {
+            return;
+        }
+
+        ctx->config_timestamp = timestamp;
     }
     return 0;
 }
