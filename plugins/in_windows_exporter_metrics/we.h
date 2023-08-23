@@ -199,6 +199,26 @@ struct we_wmi_paging_file_counters {
     int                    operational;
 };
 
+struct we_wmi_process_counters {
+    struct wmi_query_spec *info;
+    struct cmt_gauge      *start_time;
+    struct cmt_gauge      *handles;
+    struct cmt_gauge      *cpu_time_total;
+    struct cmt_gauge      *io_bytes_total;
+    struct cmt_gauge      *io_operations_total;
+    struct cmt_gauge      *page_faults_total;
+    struct cmt_gauge      *page_file_bytes;
+    struct cmt_gauge      *pool_bytes;
+    struct cmt_gauge      *priority_base;
+    struct cmt_gauge      *thread_count;
+    struct cmt_gauge      *private_bytes;
+    struct cmt_gauge      *virtual_bytes;
+    struct cmt_gauge      *working_set_private_bytes;
+    struct cmt_gauge      *working_set_peak_bytes;
+    struct cmt_gauge      *working_set_bytes;
+    int                    operational;
+};
+
 struct we_os_counters {
     struct cmt_gauge *info;
     struct cmt_gauge *users;
@@ -235,6 +255,8 @@ struct flb_we {
     char *raw_where_clause;
     char *raw_service_include;
     char *raw_service_exclude;
+    char *raw_allowing_process;
+    char *raw_denying_process;
     char *service_include_buffer;
     int   service_include_buffer_size;
     char *service_exclude_buffer;
@@ -243,6 +265,8 @@ struct flb_we {
     struct flb_regex *allowing_disk_regex;
     struct flb_regex *denying_disk_regex;
     struct flb_regex *allowing_nic_regex;
+    struct flb_regex *allowing_process_regex;
+    struct flb_regex *denying_process_regex;
 
     struct we_perflib_context perflib_context;
     /* WMI locator and service contexts */
@@ -267,6 +291,7 @@ struct flb_we {
     int wmi_service_scrape_interval;
     int wmi_memory_scrape_interval;
     int wmi_paging_file_scrape_interval;
+    int wmi_process_scrape_interval;
 
     int coll_cpu_fd;                                    /* collector fd (cpu)    */
     int coll_net_fd;                                    /* collector fd (net)  */
@@ -280,6 +305,7 @@ struct flb_we {
     int coll_wmi_service_fd;                            /* collector fd (wmi_service) */
     int coll_wmi_memory_fd;                             /* collector fd (wmi_memory)    */
     int coll_wmi_paging_file_fd;                        /* collector fd (wmi_paging_file) */
+    int coll_wmi_process_fd;                            /* collector fd (wmi_process) */
 
     /*
      * Metrics Contexts
@@ -298,6 +324,7 @@ struct flb_we {
     struct we_wmi_service_counters *wmi_service;
     struct we_wmi_memory_counters *wmi_memory;
     struct we_wmi_paging_file_counters *wmi_paging_file;
+    struct we_wmi_process_counters *wmi_process;
 };
 
 typedef int (*collector_cb)(struct flb_we *);
