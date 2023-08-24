@@ -262,13 +262,40 @@ static int is_cur_fleet_config(struct flb_in_calyptia_fleet_config *ctx, struct 
     return ret;
 }
 
+static int is_timestamped_fleet_config(struct flb_in_calyptia_fleet_config *ctx, struct flb_config *cfg)
+{
+    char *fname;
+    char *end;
+
+    if (cfg->conf_path_file == NULL) {
+        return FLB_FALSE;
+    }
+
+    fname = strrchr(cfg->conf_path_file, PATH_SEPARATOR[0]);
+
+    if (fname == NULL) {
+        return FLB_FALSE;
+    }
+
+    fname++;
+    (void)strtol(fname, &end, 10);
+
+    if (strcmp(end, ".ini") == 0) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 static int is_fleet_config(struct flb_in_calyptia_fleet_config *ctx, struct flb_config *cfg)
 {
     if (cfg->conf_path_file == NULL) {
         return FLB_FALSE;
     }
 
-    return is_new_fleet_config(ctx, cfg) || is_cur_fleet_config(ctx, cfg);
+    return is_new_fleet_config(ctx, cfg) ||
+           is_cur_fleet_config(ctx, cfg) ||
+           is_timestamped_fleet_config(ctx, cfg);
 }
 
 static int exists_new_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
@@ -824,16 +851,17 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
             flb_sds_destroy(cfgoldname);
         }
 
-        link(cfgname, cfgnewname);
+        symlink(cfgname, cfgnewname);
     }
 
     if (ctx->config_timestamp < time_last_modified) {
+	flb_plg_debug(ctx->ins, "new configuration is newer than current: %d < %d", 
+	              ctx->config_timestamp, time_last_modified);
         // FORCE THE RELOAD!!!
         flb_plg_info(ctx->ins, "force the reloading of the configuration file=%d.", ctx->event_fd);
-        flb_sds_destroy(cfgname);
         flb_sds_destroy(data);
 
-        if (execute_reload(ctx, cfgnewname) == FLB_FALSE) {
+        if (execute_reload(ctx, cfgname) == FLB_FALSE) {
             cfgoldname = old_fleet_config_filename(ctx);
             cfgcurname = cur_fleet_config_filename(ctx);
             rename(cfgoldname, cfgcurname);
@@ -929,6 +957,8 @@ static int load_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
     char *fname;
     char *ext;
     long timestamp;
+    char realname[4096];
+    ssize_t len;
 
     if (create_fleet_directory(ctx) != 0) {
         return -1;
@@ -938,29 +968,40 @@ static int load_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
     if (is_fleet_config(ctx, flb_ctx->config) == FLB_FALSE) {
         // check which one and load it
         if (exists_cur_fleet_config(ctx) == FLB_TRUE) {
-            execute_reload(ctx, cur_fleet_config_filename(ctx));
-        }
-	else if (exists_new_fleet_config(ctx) == FLB_TRUE) {
-            execute_reload(ctx, new_fleet_config_filename(ctx));
+            return execute_reload(ctx, cur_fleet_config_filename(ctx));
+        } else if (exists_new_fleet_config(ctx) == FLB_TRUE) {
+            return execute_reload(ctx, new_fleet_config_filename(ctx));
         }
     }
     else {
-        fname = basename(flb_ctx->config);
+        if (is_new_fleet_config(ctx, flb_ctx->config) || is_cur_fleet_config(ctx, flb_ctx->config)) {
+            len = readlink(flb_ctx->config->conf_path_file, realname, sizeof(realname));
+
+            if (len > sizeof(realname)) {
+                return FLB_FALSE;
+            }
+
+            fname = basename(realname);
+        }
+        else {
+            fname = basename(flb_ctx->config->conf_path_file);
+        }
 
         if (fname == NULL) {
-            return;
+            return FLB_FALSE;
         }
 
         timestamp = strtol(fname, &ext, 10);
 
         /* unable to parse the timstamp */
         if (errno == ERANGE) {
-            return;
+            return FLB_FALSE;
         }
 
         ctx->config_timestamp = timestamp;
     }
-    return 0;
+
+    return FLB_FALSE;
 }
 
 static int in_calyptia_fleet_init(struct flb_input_instance *in,
@@ -1047,7 +1088,12 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
 
     /* Set the context */
     flb_input_set_context(in, ctx);
-        
+
+    /* if we load a new configuration then we will be reloaded anyways */
+    if (load_fleet_config(ctx) == FLB_TRUE) {
+        return 0;
+    }
+
     /* Set our collector based on time */
     ret = flb_input_set_collector_time(in,
                                        in_calyptia_fleet_collect,
@@ -1056,14 +1102,13 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
                                        config);
 
     if (ret == -1) {
-        flb_plg_error(ctx->ins, "could not set collector for Health input plugin");
+        flb_plg_error(ctx->ins, "could not initialize collector for fleet input plugin");
         flb_free(ctx);
         return -1;
     }
 
     ctx->collect_fd = ret;
 
-    load_fleet_config(ctx);
     return 0;
 }
 
