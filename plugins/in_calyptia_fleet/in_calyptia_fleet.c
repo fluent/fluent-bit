@@ -42,7 +42,7 @@
 #define CALYPTIA_H_CTYPE         "Content-Type"
 #define CALYPTIA_H_CTYPE_JSON    "application/json"
 
-#define DEFAULT_INTERVAL_SEC  "3"
+#define DEFAULT_INTERVAL_SEC  "15"
 #define DEFAULT_INTERVAL_NSEC "0"
 
 #define CALYPTIA_HOST "cloud-api.calyptia.com"
@@ -364,9 +364,17 @@ static int execute_reload(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t cf
     pthread_attr_t ptha;
     flb_ctx_t *flb = flb_context_get();
 
+    if (ctx->collect_fd > 0) {
+        flb_input_collector_pause(ctx->collect_fd, ctx->ins);
+    }
 
     if (flb == NULL) {
         flb_plg_error(ctx->ins, "unable to get fluent-bit context.");
+
+        if (ctx->collect_fd > 0) {
+            flb_input_collector_resume(ctx->collect_fd, ctx->ins);
+        }
+
         return FLB_FALSE;
     }
 
@@ -377,10 +385,13 @@ static int execute_reload(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t cf
 
     if (test_config_is_valid(cfgpath) == FLB_FALSE) {
         flb_plg_error(ctx->ins, "unable to load configuration.");
+
+        if (ctx->collect_fd > 0) {
+            flb_input_collector_resume(ctx->collect_fd, ctx->ins);
+        }
+
         return FLB_FALSE;
     }
-
-    flb_input_collector_pause(ctx->collect_fd, ctx->ins);
 
     reload = flb_calloc(1, sizeof(struct reload_ctx));
     reload->flb = flb;
@@ -1028,6 +1039,10 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
         /* Illegal settings. Override them. */
         ctx->interval_sec = atoi(DEFAULT_INTERVAL_SEC);
         ctx->interval_nsec = atoi(DEFAULT_INTERVAL_NSEC);
+    }
+
+    if (ctx->interval_sec < atoi(DEFAULT_INTERVAL_SEC)) {
+        ctx->interval_sec = atoi(DEFAULT_INTERVAL_SEC);
     }
 
     /* Set the context */
