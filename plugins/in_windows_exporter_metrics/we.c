@@ -1115,12 +1115,12 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "we.process.allow_process_regex", "/.+/",
      0, FLB_TRUE, offsetof(struct flb_we, raw_allowing_process),
-     "Specify to be scribable regex for process metrics."
+     "Specify the regex covering the process metrics to collect."
     },
     {
      FLB_CONFIG_MAP_STR, "we.process.deny_process_regex", NULL,
      0, FLB_TRUE, offsetof(struct flb_we, raw_denying_process),
-     "Specify to be denied regex for process metrics."
+     "Specify the regex for process metrics to prevent collection of/ignore."
     },
     /* EOF */
     {0}
