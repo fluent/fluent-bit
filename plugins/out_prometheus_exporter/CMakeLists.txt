@@ -7,7 +7,8 @@ if(NOT FLB_HTTP_SERVER)
 endif()
 
 set(src
-  prom_http.c
+  prom_http_conn.c
+  prom_metrics.c
   prom.c
   )
 
