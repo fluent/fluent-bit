@@ -129,8 +129,7 @@ static int prom_http_send_metrics(struct prom_http_conn *conn)
     struct prom_metrics_buf *buf;
     flb_sds_t content_type;
     
-    // buf = prom_metrics_get_latest();
-    buf = NULL;
+    buf = prom_metrics_get_latest();
     if (!buf) {
         prom_http_io_net_write_response(conn, 404, NULL, 0, NULL);
         return -1;
