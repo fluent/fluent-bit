@@ -28,7 +28,7 @@
 static void prom_exporter_destroy(struct prom_exporter *ctx) 
 {
     if (!ctx) {
-        return 0;
+        return;
     }
 
     if (ctx->ht_metrics) {
@@ -152,7 +152,7 @@ static int cb_prom_init(struct flb_output_instance *ins,
                                             &ins->net_setup);
     if (ctx->downstream == NULL) {
         flb_plg_error(ctx->ins,
-                      "could not initialize downstream on %s:%s. Aborting",
+                      "could not initialize downstream on %s:%i. Aborting",
                       ctx->ins->host.name, ctx->ins->host.port);
 
         prom_exporter_destroy(ctx);
@@ -324,7 +324,6 @@ static void cb_prom_flush(struct flb_event_chunk *event_chunk,
 
 static int cb_prom_exit(void *data, struct flb_config *config)
 {
-    int ret;
     struct prom_exporter *ctx = data;
 
     if (!ctx) {
