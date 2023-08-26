@@ -53,19 +53,6 @@ static int prom_http_io_net_write_response(struct prom_http_conn *conn, int http
         goto exit;
     }
 
-    if (content_type) {
-        content_type_line = flb_sds_create_size(256);
-        if (!content_type_line) {
-            ret = -1;
-            goto exit;
-        }
-        content_type_line = flb_sds_create("Content-Type: text/plain\r\n");
-        flb_sds_printf(&content_type_line, "Content-Type: %s\r\n", content_type);
-    }
-    else {
-        content_type_line = flb_sds_create("Content-Type: text/plain\r\n");
-    }
-    
     server_line = flb_sds_create_size(256);
     if (!server_line) {
         ret = -1;
@@ -91,12 +78,30 @@ static int prom_http_io_net_write_response(struct prom_http_conn *conn, int http
         goto exit;
     }
 
+    if (content_type) {
+        content_type_line = flb_sds_create_size(256);
+        if (!content_type_line) {
+            ret = -1;
+            goto exit;
+        }
+
+        flb_sds_printf(&content_type_line, "Content-Type: %s\r\n", content_type);
+    }
+    else {
+        content_type_line = flb_sds_create("Content-Type: text/plain; charset=utf-8\r\n");
+    }
+    if (!content_type_line) {
+        ret = -1;
+        goto exit;
+    }
+    
     response = flb_sds_create_size(256);
     if (!response) {
         ret = -1;
         goto exit;
     }
-    flb_sds_printf(&response, "%s%s%s", status_line, server_line, content_line);
+    flb_sds_printf(&response, "%s%s%s%s", status_line, server_line,
+                    content_type_line, content_line);
     response_len = flb_sds_len(response);
 
     flb_io_net_write(conn->connection,
@@ -108,6 +113,7 @@ exit:
     flb_sds_destroy(status_line);
     flb_sds_destroy(server_line);
     flb_sds_destroy(content_line);
+    flb_sds_destroy(content_type_line);
     flb_sds_destroy(response);
 
     return ret;
