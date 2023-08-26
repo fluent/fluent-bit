@@ -23,6 +23,32 @@ pthread_key_t prom_metrics_key;
 
 static int cleanup_metrics();
 
+static void destruct_metrics(void *data)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct mk_list *metrics_list = (struct mk_list*)data;
+    struct prom_metrics_buf *entry;
+
+    if (!metrics_list) {
+        return;
+    }
+
+    mk_list_foreach_safe(head, tmp, metrics_list) {
+        entry = mk_list_entry(head, struct prom_metrics_buf, _head);
+        mk_list_del(&entry->_head);
+        flb_free(entry->buf_data);
+        flb_free(entry);
+    }
+
+    flb_free(metrics_list);
+}
+
+void prom_metrics_key_create()
+{
+    pthread_key_create(&prom_metrics_key, destruct_metrics);
+}
+
 struct prom_metrics_buf *prom_metrics_get_latest()
 {
     struct prom_metrics_buf *buf;
@@ -105,26 +131,4 @@ int prom_metrics_push_new_metrics(void *data, size_t size)
 
     mk_list_add(&buf->_head, metrics_list);
     return cleanup_metrics();
-}
-
-void prom_metrics_destroy_metrics()
-{
-    struct mk_list *tmp;
-    struct mk_list *head;
-    struct mk_list *metrics_list;
-    struct prom_metrics_buf *entry;
-
-    metrics_list = pthread_getspecific(prom_metrics_key);
-    if (!metrics_list) {
-        return;
-    }
-
-    mk_list_foreach_safe(head, tmp, metrics_list) {
-        entry = mk_list_entry(head, struct prom_metrics_buf, _head);
-        mk_list_del(&entry->_head);
-        flb_free(entry->buf_data);
-        flb_free(entry);
-    }
-
-    flb_free(metrics_list);
 }

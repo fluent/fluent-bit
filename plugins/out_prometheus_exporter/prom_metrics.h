@@ -33,8 +33,8 @@ struct prom_metrics_buf {
     struct mk_list _head;
 };
 
+void prom_metrics_key_create();
 int prom_metrics_push_new_metrics(void *data, size_t size);
 struct prom_metrics_buf *prom_metrics_get_latest();
-void prom_metrics_destroy_metrics();
 
 #endif

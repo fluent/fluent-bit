@@ -29,6 +29,7 @@
 
 #include <monkey/monkey.h>
 #include <monkey/mk_lib.h>
+#include <monkey/mk_config.h>
 
 /* Plugin context */
 struct prom_exporter {
@@ -52,7 +53,7 @@ struct prom_exporter {
     struct flb_downstream *downstream;
     struct mk_event *request_event;
     struct mk_list connections;
-    mk_ctx_t *mk_ctx;
+    struct mk_server *mk_srv;
 
     /* instance context */
     struct flb_output_instance *ins;

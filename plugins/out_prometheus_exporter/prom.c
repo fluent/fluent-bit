@@ -35,11 +35,10 @@ static void prom_exporter_destroy(struct prom_exporter *ctx)
         flb_hash_table_destroy(ctx->ht_metrics);
     }
 
-    prom_metrics_destroy_metrics();
     flb_kv_release(&ctx->kv_labels);
     flb_downstream_destroy(ctx->downstream);
     flb_free(ctx->request_event);
-    mk_destroy(ctx->mk_ctx);
+    flb_free(ctx->mk_srv);
     flb_free(ctx);
 
     return;
@@ -140,8 +139,8 @@ static int cb_prom_init(struct flb_output_instance *ins,
     }
 
     /* HTTP Server to use for request parsing */
-    ctx->mk_ctx = mk_create();
-    ctx->mk_ctx->server->keep_alive = MK_TRUE;
+    ctx->mk_srv = flb_calloc(1, sizeof(struct mk_server));
+    ctx->mk_srv->keep_alive = MK_TRUE;
 
     ctx->downstream = flb_downstream_create(FLB_TRANSPORT_TCP,
                                             ins->flags,
@@ -184,6 +183,8 @@ static int cb_prom_init(struct flb_output_instance *ins,
         flb_plg_error(ctx->ins, "could not add request handler event");
         return -1;
     }
+
+    prom_metrics_key_create();
 
     flb_plg_info(ctx->ins, "listening iface=%s tcp_port=%d",
                  ins->host.name, ins->host.port);

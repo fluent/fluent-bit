@@ -36,6 +36,7 @@ static int prom_http_io_net_write_response(struct prom_http_conn *conn, int http
     flb_sds_t status_line;
     flb_sds_t content_type_line;
     flb_sds_t content_line;
+    int ret = 0;
 
     // TODO: I think this is everything?
     if (http_status == 200) {
@@ -48,13 +49,15 @@ static int prom_http_io_net_write_response(struct prom_http_conn *conn, int http
         status_line = flb_sds_create("HTTP/1.1 500 Internal Server Error\r\n");
     }
     if (!status_line) {
-        return -1;
+        ret = -1;
+        goto exit;
     }
 
     if (content_type) {
         content_type_line = flb_sds_create_size(256);
         if (!content_type_line) {
-            return -1;
+            ret = -1;
+            goto exit;
         }
         content_type_line = flb_sds_create("Content-Type: text/plain\r\n");
         flb_sds_printf(&content_type_line, "Content-Type: %s\r\n", content_type);
@@ -65,14 +68,16 @@ static int prom_http_io_net_write_response(struct prom_http_conn *conn, int http
     
     server_line = flb_sds_create_size(256);
     if (!server_line) {
-        return -1;
+        ret = -1;
+        goto exit;
     }
     flb_sds_printf(&server_line, "Server: Fluent Bit v%s\r\n", FLB_VERSION_STR);
 
     if (content != NULL) {
         content_line = flb_sds_create_size(256);
         if (!content_line) {
-            return -1;
+            ret = -1;
+            goto exit;
         }
 
         flb_sds_printf(&content_line, "Content-Length: %i\r\n\r\n%s",
@@ -82,12 +87,14 @@ static int prom_http_io_net_write_response(struct prom_http_conn *conn, int http
         content_line = flb_sds_create("Content-Length: 0\r\n\r\n");
     }
     if(!content_line) {
-        return -1;
+        ret = -1;
+        goto exit;
     }
 
     response = flb_sds_create_size(256);
     if (!response) {
-        return -1;
+        ret = -1;
+        goto exit;
     }
     flb_sds_printf(&response, "%s%s%s", status_line, server_line, content_line);
     response_len = flb_sds_len(response);
@@ -96,8 +103,14 @@ static int prom_http_io_net_write_response(struct prom_http_conn *conn, int http
                      (void *) response,
                      response_len,
                      &sent);
-    //TODO: add if(sent < len) return -1 maybe?
-    return 0;
+
+exit:
+    flb_sds_destroy(status_line);
+    flb_sds_destroy(server_line);
+    flb_sds_destroy(content_line);
+    flb_sds_destroy(response);
+
+    return ret;
 }
 
 static int match_uri(char *request_uri, char *match_uri)
@@ -193,7 +206,7 @@ static int prom_http_req_handle(struct prom_exporter *ctx, struct prom_http_conn
     }
 
     /* Should we close the session after this request? */
-    mk_http_keepalive_check(session, request, ctx->mk_ctx->server);
+    mk_http_keepalive_check(session, request, ctx->mk_srv);
 
     if (request->method != MK_METHOD_GET) {
         content = flb_sds_create("error: only GET method is supported\n");
@@ -454,7 +467,7 @@ struct prom_http_conn *prom_http_conn_create(struct flb_connection *conn,
         return NULL;
     }
 
-    prom_http_conn_session_init(&prom_conn->session, ctx->mk_ctx->server, 
+    prom_http_conn_session_init(&prom_conn->session, ctx->mk_srv, 
                                 prom_conn->connection->fd);
     prom_http_conn_request_init(&prom_conn->session, &prom_conn->request);
 
