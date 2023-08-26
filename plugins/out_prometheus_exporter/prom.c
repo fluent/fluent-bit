@@ -158,8 +158,6 @@ static int cb_prom_init(struct flb_output_instance *ins,
         return -1;
     }
 
-    // TODO: Check for threaded output in flb_downstream?
-
     /* Hash table for metrics */
     ctx->ht_metrics = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 32, 0);
     if (!ctx->ht_metrics) {
@@ -372,7 +370,7 @@ struct flb_output_plugin out_prometheus_exporter_plugin = {
     .cb_init     = cb_prom_init,
     .cb_flush    = cb_prom_flush,
     .cb_exit     = cb_prom_exit,
-    .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
+    .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS | FLB_OUTPUT_SYNCHRONOUS,
     .event_type  = FLB_OUTPUT_METRICS,
     .config_map  = config_map,
 };
