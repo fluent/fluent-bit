@@ -35,7 +35,7 @@ static int prom_http_io_net_write_response(struct prom_http_conn *conn, int http
     flb_sds_t server_line;
     flb_sds_t status_line;
     flb_sds_t content_type_line;
-    flb_sds_t content_line;
+    flb_sds_t content_len_line;
     int ret = 0;
 
     // TODO: I think this is everything?
@@ -60,24 +60,6 @@ static int prom_http_io_net_write_response(struct prom_http_conn *conn, int http
     }
     flb_sds_printf(&server_line, "Server: Fluent Bit v%s\r\n", FLB_VERSION_STR);
 
-    if (content != NULL) {
-        content_line = flb_sds_create_size(256);
-        if (!content_line) {
-            ret = -1;
-            goto exit;
-        }
-
-        flb_sds_printf(&content_line, "Content-Length: %i\r\n\r\n%s",
-                       content_len, content);
-    }
-    else {
-        content_line = flb_sds_create("Content-Length: 0\r\n\r\n");
-    }
-    if(!content_line) {
-        ret = -1;
-        goto exit;
-    }
-
     if (content_type) {
         content_type_line = flb_sds_create_size(256);
         if (!content_type_line) {
@@ -94,14 +76,20 @@ static int prom_http_io_net_write_response(struct prom_http_conn *conn, int http
         ret = -1;
         goto exit;
     }
-    
+
+    content_len_line = flb_sds_create_size(256);
+    flb_sds_printf(&content_len_line, "Content-Length: %i\r\n", content_len);
+
     response = flb_sds_create_size(256);
     if (!response) {
         ret = -1;
         goto exit;
     }
-    flb_sds_printf(&response, "%s%s%s%s", status_line, server_line,
-                    content_type_line, content_line);
+    flb_sds_printf(&response, "%s%s%s%s\r\n", status_line, server_line,
+                    content_type_line, content_len_line);
+    if (content_len > 0) {
+        flb_sds_printf(&response, "%s", content);
+    }
     response_len = flb_sds_len(response);
 
     flb_io_net_write(conn->connection,
@@ -112,8 +100,8 @@ static int prom_http_io_net_write_response(struct prom_http_conn *conn, int http
 exit:
     flb_sds_destroy(status_line);
     flb_sds_destroy(server_line);
-    flb_sds_destroy(content_line);
     flb_sds_destroy(content_type_line);
+    flb_sds_destroy(content_len_line);
     flb_sds_destroy(response);
 
     return ret;
@@ -141,7 +129,8 @@ static int prom_http_send_metrics(struct prom_http_conn *conn)
     struct prom_metrics_buf *buf;
     flb_sds_t content_type;
     
-    buf = prom_metrics_get_latest();
+    // buf = prom_metrics_get_latest();
+    buf = NULL;
     if (!buf) {
         prom_http_io_net_write_response(conn, 404, NULL, 0, NULL);
         return -1;
