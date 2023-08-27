@@ -140,6 +140,7 @@ static int prom_http_send_metrics(struct prom_http_conn *conn)
     content_type = flb_sds_create_len(FLB_HS_CONTENT_TYPE_PROMETHEUS_STR, 
                                       FLB_HS_CONTENT_TYPE_PROMETHEUS_LEN);
     ret = prom_http_io_net_write_response(conn, 200, buf->buf_data, buf->buf_size, content_type);
+    flb_sds_destroy(content_type);
 
     buf->users--;
 
