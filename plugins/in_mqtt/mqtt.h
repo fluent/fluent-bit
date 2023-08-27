@@ -20,6 +20,7 @@
 #ifndef FLB_IN_MQTT_H
 #define FLB_IN_MQTT_H
 
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
 #define MQTT_MSGP_BUF_SIZE 8192
@@ -27,6 +28,8 @@
 struct flb_in_mqtt_config {
     char *listen;                      /* Listen interface            */
     char *tcp_port;                    /* TCP Port                    */
+
+    flb_sds_t payload_key;             /* payload key */
 
     int msgp_len;                      /* msgpack data length         */
     char msgp[MQTT_MSGP_BUF_SIZE];     /* msgpack static buffer       */
