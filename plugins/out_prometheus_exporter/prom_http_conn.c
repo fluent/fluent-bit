@@ -70,7 +70,7 @@ static int prom_http_io_net_write_response(struct prom_http_conn *conn, int http
         flb_sds_printf(&content_type_line, "Content-Type: %s\r\n", content_type);
     }
     else {
-        content_type_line = flb_sds_create("Content-Type: text/plain; version=0.0.4\r\n");
+        content_type_line = flb_sds_create("Content-Type: text/plain; charset=utf-8\r\n");
     }
     if (!content_type_line) {
         ret = -1;
