@@ -558,6 +558,7 @@ static struct flb_connection *create_conn(struct flb_upstream *u)
         flb_upstream_conn_recycle(conn, FLB_TRUE);
     }
     else {
+        coro = NULL;
         flb_upstream_conn_recycle(conn, FLB_FALSE);
     }
 

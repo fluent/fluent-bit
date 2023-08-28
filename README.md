@@ -136,6 +136,7 @@ Fluent Bit is fully supported on Windows environments, get started with [these i
 | name | title | description |
 | :--- | :--- | :--- |
 | [aws](https://docs.fluentbit.io/manual/pipeline/filters/aws-metadata) | AWS Metadata | Enrich logs with AWS Metadata. |
+| [encrypt](https://docs.fluentbit.io/manual/pipeline/filters/encrypt)                  | Encrypt | Encrypts JSON values based on matching keys. |
 | [expect](https://docs.fluentbit.io/manual/pipeline/filters/expect) | Expect | Validate records match certain criteria in structure. |
 | [grep](https://docs.fluentbit.io/manual/pipeline/filters/grep) | Grep | Match or exclude specific records by patterns. |
 | [kubernetes](https://docs.fluentbit.io/manual/pipeline/filters/kubernetes) | Kubernetes | Enrich logs with Kubernetes Metadata. |
