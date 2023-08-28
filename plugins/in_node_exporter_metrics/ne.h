@@ -66,6 +66,7 @@ struct flb_ne {
     int filefd_scrape_interval;
     int textfile_scrape_interval;
     int systemd_scrape_interval;
+    int processes_scrape_interval;
 
     int coll_cpu_fd;                                    /* collector fd (cpu)    */
     int coll_cpufreq_fd;                                /* collector fd (cpufreq)  */
@@ -81,6 +82,7 @@ struct flb_ne {
     int coll_filefd_fd;                                 /* collector fd (filefd)    */
     int coll_textfile_fd;                               /* collector fd (textfile)  */
     int coll_systemd_fd ;                               /* collector fd (systemd)  */
+    int coll_processes_fd ;                             /* collector fd (processes)  */
 
     /*
      * Metrics Contexts
@@ -186,6 +188,14 @@ struct flb_ne {
     struct flb_regex   *systemd_regex_exclude_list;
     double              libsystemd_version;
     char               *libsystemd_version_text;
+
+    /* processes */
+    struct cmt_gauge   *processes_thread_alloc;
+    struct cmt_gauge   *processes_threads_limit;
+    struct cmt_gauge   *processes_threads_state;
+    struct cmt_gauge   *processes_procs_state;
+    struct cmt_gauge   *processes_pid_used;
+    struct cmt_gauge   *processes_pid_max;
 };
 
 #endif
