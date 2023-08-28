@@ -1285,13 +1285,13 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             break;
         case YAML_SEQUENCE_START_EVENT: /* start a new group */
 
-            if (strcmp(state->key, "processors") == 0) {
-                yaml_error_event(ctx, state, event);
+            if (state->key == NULL) {
+                flb_error("no key");
                 return YAML_FAILURE;
             }
 
-            if (state->key == NULL) {
-                flb_error("no key");
+            if (strcmp(state->key, "processors") == 0) {
+                yaml_error_event(ctx, state, event);
                 return YAML_FAILURE;
             }
 
