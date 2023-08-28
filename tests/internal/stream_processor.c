@@ -531,9 +531,7 @@ static void test_window()
             for (t = 0; t < check->window_size_sec + check->window_hop_sec; t++) {
                 ret = snprintf(datafile, sizeof(datafile)-1, "%s%d.mp",
                         DATA_SAMPLES_HOPPING_WINDOW_PATH, t + 1);
-                TEST_CHECK(ret <= sizeof(datafile)-1);
-
-                if (ret > sizeof(datafile)-1) {
+                if (!TEST_CHECK(ret <= sizeof(datafile)-1)) {
                     exit(1);
                 }
                 ret = file_to_buf(datafile, &data_buf);
@@ -674,9 +672,7 @@ static void test_snapshot()
 
             ret = snprintf(datafile, sizeof(datafile)-1, "%s%d.mp",
                     DATA_SAMPLES_HOPPING_WINDOW_PATH, t + 1);
-            TEST_CHECK(ret <= sizeof(datafile)-1);
-
-            if (ret > sizeof(datafile)-1) {
+            if (!TEST_CHECK(ret <= sizeof(datafile)-1)) {
                 exit(1);
             }
 
