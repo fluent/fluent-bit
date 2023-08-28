@@ -391,6 +391,7 @@ static int in_ne_init(struct flb_input_instance *in,
     ctx->coll_netdev_fd = -1;
     ctx->coll_filefd_fd = -1;
     ctx->coll_textfile_fd = -1;
+    ctx->coll_systemd_fd = -1;
 
     ctx->callback = flb_callback_create(in->name);
     if (!ctx->callback) {
@@ -680,12 +681,12 @@ static int in_ne_init(struct flb_input_instance *in,
                     }
                     ne_textfile_init(ctx);
                 }
-                else if (strncmp(entry->str, "systemd", 8) == 0) {
+                else if (strncmp(entry->str, "systemd", 7) == 0) {
                     if (ctx->systemd_scrape_interval == 0) {
                         flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
                         metric_idx = 13;
                     }
-                    else if (ctx->textfile_scrape_interval > 0) {
+                    else if (ctx->systemd_scrape_interval > 0) {
                         /* Create the filefd collector */
                         ret = flb_input_set_collector_time(in,
                                                            ne_timer_systemd_metrics_cb,
@@ -782,7 +783,7 @@ static int in_ne_exit(void *data, struct flb_config *config)
                 else if (strncmp(entry->str, "textfile", 8) == 0) {
                     /* nop */
                 }
-                else if (strncmp(entry->str, "systemd", 8) == 0) {
+                else if (strncmp(entry->str, "systemd", 7) == 0) {
                     ne_systemd_exit(ctx);
                 }
                 else {
@@ -812,6 +813,9 @@ static int in_ne_exit(void *data, struct flb_config *config)
     }
     if (ctx->coll_netdev_fd != -1) {
         ne_netdev_exit(ctx);
+    }
+    if (ctx->coll_systemd_fd != -1) {
+        ne_systemd_exit(ctx);
     }
 
     flb_ne_config_destroy(ctx);
