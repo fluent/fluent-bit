@@ -565,7 +565,8 @@ static int in_we_init(struct flb_input_instance *in,
                     if (ctx->cs_scrape_interval == 0) {
                         flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
                         metric_idx = 5;
-                    } else {
+                    }
+                    else {
                         /* Create the logical_disk collector */
                         ret = flb_input_set_collector_time(in,
                                                            we_timer_cs_metrics_cb,
@@ -689,7 +690,8 @@ static int in_we_init(struct flb_input_instance *in,
                     if (ctx->wmi_memory_scrape_interval == 0) {
                         flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
                         metric_idx = 10;
-                    } else {
+                    }
+                    else {
                         /* Create the memory collector */
                         ret = flb_input_set_collector_time(in,
                                                            we_timer_wmi_memory_metrics_cb,
@@ -713,7 +715,8 @@ static int in_we_init(struct flb_input_instance *in,
                     if (ctx->wmi_paging_file_scrape_interval == 0) {
                         flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
                         metric_idx = 11;
-                    } else {
+                    }
+                    else {
                         /* Create the paging_file collector */
                         ret = flb_input_set_collector_time(in,
                                                            we_timer_wmi_paging_file_metrics_cb,
@@ -737,7 +740,8 @@ static int in_we_init(struct flb_input_instance *in,
                     if (ctx->wmi_process_scrape_interval == 0) {
                         flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
                         metric_idx = 12;
-                    } else {
+                    }
+                    else {
                         /* Create the process collector */
                         ret = flb_input_set_collector_time(in,
                                                            we_timer_wmi_process_metrics_cb,
