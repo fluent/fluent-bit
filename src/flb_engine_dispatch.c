@@ -257,10 +257,17 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
     struct flb_input_plugin *p;
     struct flb_input_chunk *ic;
     struct flb_task *task = NULL;
+    struct flb_output_instance *o_ins;
 
     p = in->p;
     if (!p) {
         return 0;
+    }
+
+    mk_list_foreach(head, &config->outputs) {
+        o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+
+        flb_output_schedule_delayed_flush_coroutines(o_ins, FLB_TRUE);
     }
 
     /* Look for chunks ready to go */

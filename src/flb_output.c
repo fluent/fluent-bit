@@ -359,6 +359,8 @@ int flb_output_task_flush(struct flb_task *task,
 
             return -1;
         }
+
+        flb_output_increment_scheduled_flush_count(out_ins, FLB_TRUE);
     }
 
     return 0;
@@ -438,6 +440,8 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
     if (ins->flags & FLB_OUTPUT_SYNCHRONOUS) {
         flb_task_queue_destroy(ins->singleplex_queue);
     }
+
+    pthread_mutex_destroy(&ins->flush_activation_lock);
 
     mk_list_del(&ins->_head);
 
@@ -714,6 +718,11 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     mk_list_init(&instance->flush_list);
     mk_list_init(&instance->flush_list_destroy);
 
+    pthread_mutex_init(&instance->flush_activation_lock, NULL);
+
+    instance->active_flush_count = 0;
+    instance->scheduled_flush_count = 0;
+
     mk_list_add(&instance->_head, &config->outputs);
 
     /* processor instance */
@@ -721,7 +730,6 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
 
     /* Tests */
     instance->test_formatter.callback = plugin->test_formatter.callback;
-
 
     return instance;
 }
@@ -923,6 +931,11 @@ int flb_output_set_property(struct flb_output_instance *ins,
         ins->tp_workers = atoi(tmp);
         flb_sds_destroy(tmp);
     }
+    else if (prop_key_check("concurrent_flush_limit", k, len) == 0 && tmp) {
+        /* Set the number of concurrent flush coroutines */
+        ins->concurrent_flush_limit = atoi(tmp);
+        flb_sds_destroy(tmp);
+    }
     else {
         /*
          * Create the property, we don't pass the value since we will
@@ -1071,6 +1084,8 @@ int flb_output_init_all(struct flb_config *config)
     struct flb_output_instance *ins;
     struct flb_output_plugin *p;
     uint64_t ts;
+    size_t worker_connection_limit;
+    size_t worker_count;
 
     /* Retrieve the plugin reference */
     mk_list_foreach_safe(head, tmp, &config->outputs) {
@@ -1101,6 +1116,7 @@ int flb_output_init_all(struct flb_config *config)
          * into the Engine when the event is triggered.
          */
         ins->event.type = FLB_ENGINE_EV_OUTPUT;
+        ins->event.priority = FLB_ENGINE_PRIORITY_TOP;
 
         /* Metrics */
 #ifdef FLB_HAVE_METRICS
@@ -1303,6 +1319,48 @@ int flb_output_init_all(struct flb_config *config)
             flb_error("[output] failed to initialize '%s' plugin",
                       p->name);
             flb_output_instance_destroy(ins);
+            return -1;
+        }
+
+        /* In order to be able to enforce net.max_worker_connections
+         * in a non destructive way we use its value combined with
+         * the worker count (1 when operating in single threaded mode)
+         * which gives us the specific value we dynamically set as
+         * concurrent_flush_limit.
+         *
+         * The main difference between setting net.max_worker_connections
+         * and concurrent_flush_limit is that when net.max_worker_connections
+         * is used, upstreams share the idle keepalive connection pool and
+         * because of that we cannot keep those connections registered in
+         * the event loop to detect connection closure.
+         *
+         * In the future we might want to have a thread dedicated to this where
+         * where we can have a lock that is not disruptive but this is not
+         * possible at the moment.
+         */
+
+        if (ins->concurrent_flush_limit == 0) {
+            if (ins->tp_workers > 0) {
+                worker_count = (size_t) ins->tp_workers;
+            }
+            else {
+                worker_count = 1;
+            }
+
+            if (ins->net_setup.max_worker_connections > 0) {
+                worker_connection_limit = \
+                    (size_t) ins->net_setup.max_worker_connections;
+
+                ins->concurrent_flush_limit = \
+                    worker_count * worker_connection_limit;
+            }
+        }
+        else if (ins->net_setup.max_worker_connections > 0) {
+            flb_error("[output] could not set limits for plugin '%s', "
+                      "net.max_worker_connections cannot be combined with "
+                      "concurrent_flush_limit",
+                      flb_output_name(ins));
+
             return -1;
         }
 

@@ -120,4 +120,7 @@ void flb_upstream_set_busy_connections_gauge(
         struct flb_upstream *stream,
         struct cmt_gauge *gauge_instance);
 
+int flb_upstream_acquire_lock(struct flb_upstream *stream, int wait_flag);
+int flb_upstream_release_lock(struct flb_upstream *stream);
+
 #endif

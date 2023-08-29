@@ -182,6 +182,12 @@ static void output_thread(void *data)
     struct flb_out_thread_instance *th_ins = data;
     struct flb_out_flush_params *params;
     struct flb_net_dns dns_ctx;
+    struct mk_event event_coroutine;
+    struct mk_list scheduled_flush_list;
+
+    mk_list_init(&scheduled_flush_list);
+
+    flb_engine_scheduled_flush_list_set(&scheduled_flush_list);
 
     /* Register thread instance */
     flb_output_thread_instance_set(th_ins);
@@ -229,6 +235,16 @@ static void output_thread(void *data)
     snprintf(tmp, sizeof(tmp) - 1, "flb-out-%s-w%i", ins->name, thread_id);
     mk_utils_worker_rename(tmp);
 
+    memset(&event_coroutine, 0, sizeof(struct mk_event));
+
+    ret = mk_event_channel_create(th_ins->evl,
+                                  &th_ins->ch_coroutine_events[0],
+                                  &th_ins->ch_coroutine_events[1],
+                                  &event_coroutine);
+
+    event_coroutine.type = FLB_ENGINE_EV_THREAD_WAKEUP;
+    event_coroutine.priority = FLB_ENGINE_PRIORITY_FLUSH;
+
     memset(&event_local, 0, sizeof(struct mk_event));
 
     /* Channel used by flush callbacks to notify it return status */
@@ -267,6 +283,20 @@ static void output_thread(void *data)
                  */
                 flb_sched_event_handler(sched->config, event);
             }
+            else if (event->type == FLB_ENGINE_EV_THREAD_WAKEUP) {
+                /* Read the task reference */
+                n = flb_pipe_r(event->fd, &out_flush, sizeof(struct out_flush *));
+                if (n <= 0) {
+                    flb_errno();
+                    continue;
+                }
+
+                if (!out_flush) {
+                    continue;
+                }
+
+                flb_coro_resume(out_flush->coro);
+            }
             else if (event->type == FLB_ENGINE_EV_THREAD_OUTPUT) {
                 /* Read the task reference */
                 n = flb_pipe_r(event->fd, &task, sizeof(struct flb_task *));
@@ -294,6 +324,9 @@ static void output_thread(void *data)
                 if (!out_flush) {
                     continue;
                 }
+
+                flb_output_increment_scheduled_flush_count(ins, FLB_TRUE);
+
                 flb_coro_resume(out_flush->coro);
             }
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
@@ -325,6 +358,8 @@ static void output_thread(void *data)
                 flb_plg_warn(ins, "unhandled event type => %i\n", event->type);
             }
         }
+
+        flb_output_schedule_delayed_flush_coroutines(ins, FLB_TRUE);
 
         flb_net_dns_lookup_context_cleanup(&dns_ctx);
 

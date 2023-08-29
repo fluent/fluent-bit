@@ -73,6 +73,10 @@ extern struct flb_aws_error_reporter *error_reporter;
 static pthread_once_t local_thread_engine_evl_init = PTHREAD_ONCE_INIT;
 FLB_TLS_DEFINE(struct mk_event_loop, flb_engine_evl);
 
+static pthread_once_t local_thread_engine_scheduled_flush_list_init = \
+                        PTHREAD_ONCE_INIT;
+FLB_TLS_DEFINE(struct mk_list, flb_engine_scheduled_flush_list);
+
 static void flb_engine_evl_init_private()
 {
     FLB_TLS_INIT(flb_engine_evl);
@@ -94,6 +98,27 @@ struct mk_event_loop *flb_engine_evl_get()
 void flb_engine_evl_set(struct mk_event_loop *evl)
 {
     FLB_TLS_SET(flb_engine_evl, evl);
+}
+
+static void flb_engine_scheduled_flush_list_init_private()
+{
+    FLB_TLS_INIT(flb_engine_scheduled_flush_list);
+}
+
+void flb_engine_scheduled_flush_list_init()
+{
+    pthread_once(&local_thread_engine_scheduled_flush_list_init,
+                 flb_engine_scheduled_flush_list_init_private);
+}
+
+struct mk_list *flb_engine_scheduled_flush_list_get()
+{
+    return FLB_TLS_GET(flb_engine_scheduled_flush_list);
+}
+
+void flb_engine_scheduled_flush_list_set(struct mk_list *list)
+{
+    FLB_TLS_SET(flb_engine_scheduled_flush_list, list);
 }
 
 int flb_engine_destroy_tasks(struct mk_list *tasks)
@@ -657,6 +682,11 @@ int flb_engine_start(struct flb_config *config)
     struct flb_bucket_queue *evl_bktq;
     struct flb_sched *sched;
     struct flb_net_dns dns_ctx;
+    struct mk_list scheduled_flush_list;
+
+    mk_list_init(&scheduled_flush_list);
+
+    flb_engine_scheduled_flush_list_set(&scheduled_flush_list);
 
     /* Initialize the networking layer */
     flb_net_lib_init();
