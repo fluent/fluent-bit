@@ -70,7 +70,9 @@ flb_sds_t flb_cf_key_translate(struct flb_cf *cf, char *key, int len)
     }
 
     /* copy content and check if we have underscores */
-    out = flb_sds_create_len(key, len);
+    out = flb_sds_create_size(len * 2);
+    flb_sds_cat_safe(&out, key, len);
+
     for (i = 0; i < len; i++) {
         if (key[i] == '_') {
             /* the config is classic mode, so it's safe to return the same copy of the content */
@@ -91,6 +93,7 @@ flb_sds_t flb_cf_key_translate(struct flb_cf *cf, char *key, int len)
         out[x++] = tolower(key[i]);
 
     }
+    out[x] = '\0';
     flb_sds_len_set(out, x);
     return out;
 }
