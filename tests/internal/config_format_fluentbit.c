@@ -323,6 +323,8 @@ static inline int check_snake_case(char *input, char *output)
 
     flb_sds_destroy(out);
 
+    flb_cf_destroy(cf);
+
     if (ret == 0) {
         return FLB_TRUE;
     }
