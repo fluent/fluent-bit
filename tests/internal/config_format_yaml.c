@@ -274,10 +274,9 @@ static void test_parser_conf()
 static inline int check_camel_to_snake(char *input, char *output)
 {
     int len;
-    int ret;
+    int ret = -1;
     flb_sds_t out;
     struct flb_cf *cf;
-
 
     cf = flb_cf_create();
     flb_cf_set_origin_format(cf, FLB_CF_YAML);
@@ -286,8 +285,9 @@ static inline int check_camel_to_snake(char *input, char *output)
     out = flb_cf_key_translate(cf, input, len);
 
     ret = strcmp(out, output);
-
     flb_sds_destroy(out);
+
+    flb_cf_destroy(cf);
 
     if (ret == 0) {
         return FLB_TRUE;
