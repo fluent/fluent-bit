@@ -705,6 +705,7 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
         flb_free(payload_buf);
     }
     else {
+        flb_free(payload_buf);
         flb_sds_destroy(buf_data);
     }
 
