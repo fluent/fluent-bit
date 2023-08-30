@@ -1180,13 +1180,7 @@ static int total_flush(struct flb_event_chunk *event_chunk,
     }
     return res;
 }
-/*
- * 1. For every chunk, group logs by logGroupId and logSet and store them in a hash table.
- *    The request url contains both so we'll use that as the key of the hash table.
- *      a. Process and construct payload from the incoming chunk
- *      b. There can be a set of payloads containing different configs. Group them based on the url.
- * 2. One by one, flush logs for a particular url.
- */
+
 static void cb_oci_logan_flush(struct flb_event_chunk *event_chunk,
                               struct flb_output_flush *out_flush,
                               struct flb_input_instance *ins, void *out_context,

@@ -98,9 +98,9 @@ static int load_oci_credentials(struct flb_oci_logan *ctx)
 {
     flb_sds_t content;
     int found_profile = 0, res = 0;
-    char *line, *profile;
+    char *line, *profile = NULL;
     int eq_pos = 0;
-    char* key;
+    char* key = NULL;
     char* val;
 
     content = flb_file_read(ctx->config_file_location);
@@ -108,11 +108,11 @@ static int load_oci_credentials(struct flb_oci_logan *ctx)
     {
         return -1;
     }
-    flb_plg_info(ctx->ins, "content = %s", content);
+    flb_plg_debug(ctx->ins, "content = %s", content);
     line = strtok(content, "\n");
     while(line != NULL) {
         /* process line */
-        flb_plg_info(ctx->ins, "line = %s", line);
+        flb_plg_debug(ctx->ins, "line = %s", line);
         if(!found_profile && line[0] == '[') {
             profile = mk_string_copy_substr(line, 1, strlen(line) - 1);
             if(!strcmp(profile, ctx->profile_name)) {
@@ -120,15 +120,16 @@ static int load_oci_credentials(struct flb_oci_logan *ctx)
                 found_profile = 1;
                 goto iterate;
             }
+            mk_mem_free(profile);
         }
         if(found_profile) {
             if(line[0] == '[') {
                 break;
             }
             eq_pos = mk_string_char_search(line, '=', strlen(line));
-            flb_plg_info(ctx->ins, "eq_pos %d", eq_pos);
+            flb_plg_debug(ctx->ins, "eq_pos %d", eq_pos);
             key = mk_string_copy_substr(line, 0, eq_pos);
-            flb_plg_info(ctx->ins, "key = %s", key);
+            flb_plg_debug(ctx->ins, "key = %s", key);
             val = line + eq_pos + 1;
             if (!key || !val) {
                 res = -1;
@@ -154,6 +155,14 @@ static int load_oci_credentials(struct flb_oci_logan *ctx)
             }
         }
         iterate:
+        if (profile) {
+            mk_mem_free(profile);
+            profile = NULL;
+        }
+        if (key) {
+            mk_mem_free(key);
+            key = NULL;
+        }
         line = strtok(NULL, "\n");
     }
     if (!found_profile) {
@@ -162,6 +171,12 @@ static int load_oci_credentials(struct flb_oci_logan *ctx)
     }
 
     flb_sds_destroy(content);
+    if (profile) {
+        mk_mem_free(profile);
+    }
+    if (key) {
+        mk_mem_free(key);
+    }
     return res;
 }
 
@@ -218,7 +233,6 @@ static int log_event_metadata_create(struct flb_oci_logan *ctx)
     }
 
     flb_config_map_foreach(head, mv, ctx->oci_la_metadata) {
-        flb_plg_info(ctx->ins, "lul0");
         kname = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
         val = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
 
@@ -374,6 +388,7 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
     }
 
     flb_output_net_default(host, default_port, ins);
+    flb_sds_destroy(host);
 
     if (ctx->proxy) {
         ret = flb_utils_url_split(tmp, &protocol, &p_host, &p_port, &p_uri);
@@ -414,6 +429,30 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
     return ctx;
 }
 
+static void metadata_fields_destroy(struct flb_oci_logan *ctx)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct metadata_obj *f;
+
+    mk_list_foreach_safe(head, tmp, &ctx->global_metadata_fields) {
+        f = mk_list_entry(head, struct metadata_obj, _head);
+        flb_sds_destroy(f->key);
+        flb_sds_destroy(f->val);
+        mk_list_del(&f->_head);
+        flb_free(f);
+    }
+
+    mk_list_foreach_safe(head, tmp, &ctx->log_event_metadata_fields) {
+        f = mk_list_entry(head, struct metadata_obj, _head);
+        flb_sds_destroy(f->key);
+        flb_sds_destroy(f->val);
+        mk_list_del(&f->_head);
+        flb_free(f);
+    }
+
+}
+
 int flb_oci_logan_conf_destroy(struct flb_oci_logan *ctx) {
     if(ctx == NULL) {
         return 0;
@@ -446,6 +485,8 @@ int flb_oci_logan_conf_destroy(struct flb_oci_logan *ctx) {
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);
     }
+
+    metadata_fields_destroy(ctx);
 
     flb_free(ctx);
     return 0;
