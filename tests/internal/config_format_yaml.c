@@ -29,7 +29,7 @@
  */
 
 /* data/config_format/fluent-bit.yaml */
-void test_basic()
+static void test_basic()
 {
     struct mk_list *head;
     struct flb_cf *cf;
@@ -141,7 +141,7 @@ void test_basic()
 }
 
 /* https://github.com/fluent/fluent-bit/issues/7559 */
-void test_customs_section()
+static void test_customs_section()
 {
     struct flb_cf *cf;
     struct flb_cf_section *s;
@@ -167,7 +167,7 @@ void test_customs_section()
     flb_cf_destroy(cf);
 }
 
-void test_slist_even()
+static void test_slist_even()
 {
     struct flb_cf *cf;
     struct flb_cf_section *s;
@@ -200,7 +200,7 @@ void test_slist_even()
     flb_cf_destroy(cf);
 }
 
-void test_slist_odd()
+static void test_slist_odd()
 {
     struct flb_cf *cf;
     struct flb_cf_section *s;
@@ -233,7 +233,8 @@ void test_slist_odd()
     flb_cf_destroy(cf);
 }
 
-void test_parser_conf()
+
+static void test_parser_conf()
 {
     struct flb_cf *cf;
     struct flb_config *config;
@@ -270,11 +271,54 @@ void test_parser_conf()
     flb_config_exit(config);
 }
 
+static inline int check_camel_to_snake(char *input, char *output)
+{
+    int len;
+    int ret;
+    flb_sds_t out;
+    struct flb_cf *cf;
+
+
+    cf = flb_cf_create();
+    flb_cf_set_origin_format(cf, FLB_CF_YAML);
+
+    len = strlen(input);
+    out = flb_cf_key_translate(cf, input, len);
+
+    ret = strcmp(out, output);
+
+    flb_sds_destroy(out);
+
+    if (ret == 0) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+
+static void test_camel_case_key()
+{
+    /* normal conversion */
+    TEST_CHECK(check_camel_to_snake("a", "a") == FLB_TRUE);
+    TEST_CHECK(check_camel_to_snake("aB", "a_b") == FLB_TRUE);
+    TEST_CHECK(check_camel_to_snake("aBc", "a_bc") == FLB_TRUE);
+    TEST_CHECK(check_camel_to_snake("aBcA", "a_bc_a") == FLB_TRUE);
+    TEST_CHECK(check_camel_to_snake("aBCD", "a_b_c_d") == FLB_TRUE);
+    TEST_CHECK(check_camel_to_snake("intervalSec", "interval_sec") == FLB_TRUE);
+
+    /* unsupported conversion, we force lowercase in Yaml */
+    TEST_CHECK(check_camel_to_snake("AA", "AA") == FLB_TRUE);
+    TEST_CHECK(check_camel_to_snake("Interval_Sec", "Interval_Sec") == FLB_TRUE);
+
+}
+
 TEST_LIST = {
     { "basic"    , test_basic},
     { "customs section", test_customs_section},
     { "slist odd", test_slist_odd},
     { "slist even", test_slist_even},
     { "parsers file conf", test_parser_conf},
+    { "camel_case_key", test_camel_case_key},
     { 0 }
 };
