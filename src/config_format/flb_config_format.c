@@ -104,7 +104,7 @@ struct flb_cf *flb_cf_create()
         flb_errno();
         return NULL;
     }
-    ctx->format = -1;
+    ctx->format = FLB_CF_CLASSIC;
 
     /* env vars */
     mk_list_init(&ctx->env);
