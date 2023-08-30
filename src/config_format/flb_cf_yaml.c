@@ -2074,10 +2074,11 @@ struct flb_cf *flb_cf_yaml_create(struct flb_cf *conf, char *file_path,
 
     if (!conf) {
         conf = flb_cf_create();
-
         if (!conf) {
             return NULL;
         }
+
+        flb_cf_set_origin_format(conf, FLB_CF_YAML);
     }
 
     /* initialize the parser state */
