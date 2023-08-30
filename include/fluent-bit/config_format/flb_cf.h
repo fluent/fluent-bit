@@ -50,6 +50,8 @@ enum cf_file_format {
 #endif
 };
 
+#define FLB_CF_CLASSIC FLB_CF_FLUENTBIT
+
 enum section_type {
     FLB_CF_SERVICE = 0,           /* [SERVICE]           */
     FLB_CF_PARSER,                /* [PARSER]            */
@@ -79,6 +81,9 @@ struct flb_cf_section {
 };
 
 struct flb_cf {
+    /* origin format */
+    int format;
+
     /* global service */
     struct flb_cf_section *service;
 
@@ -117,9 +122,11 @@ struct flb_cf {
 
 struct flb_cf *flb_cf_create();
 struct flb_cf *flb_cf_create_from_file(struct flb_cf *cf, char *file);
+flb_sds_t flb_cf_key_translate(struct flb_cf *cf, char *key, int len);
 
 void flb_cf_destroy(struct flb_cf *cf);
 
+int flb_cf_set_origin_format(struct flb_cf *cf, int format);
 void flb_cf_dump(struct flb_cf *cf);
 
 struct flb_kv *flb_cf_env_property_add(struct flb_cf *cf,
