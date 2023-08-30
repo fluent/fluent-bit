@@ -146,7 +146,11 @@ void flb_cf_destroy(struct flb_cf *cf)
 
 int flb_cf_set_origin_format(struct flb_cf *cf, int format)
 {
+#ifdef FLB_HAVE_LIBYAML
     if (format != FLB_CF_CLASSIC && format != FLB_CF_YAML) {
+#else
+    if (format != FLB_CF_CLASSIC) {
+#endif
         return -1;
     }
 
