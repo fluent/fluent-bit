@@ -776,6 +776,8 @@ struct flb_cf *flb_cf_fluentbit_create(struct flb_cf *cf,
         if (!cf) {
             return NULL;
         }
+
+        flb_cf_set_origin_format(cf, FLB_CF_CLASSIC);
     }
 
     ret = local_init(&ctx, file_path);
