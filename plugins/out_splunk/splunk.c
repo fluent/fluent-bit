@@ -590,6 +590,7 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
 
     /* Should we compress the payload ? */
     if (ctx->compress_gzip == FLB_TRUE) {
+        printf("will compress payload");
         ret = flb_gzip_compress((void *) buf_data, buf_size,
                                 &payload_buf, &payload_size);
         if (ret == -1) {
@@ -700,6 +701,7 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
      * we generated a different payload and must be freed.
      */
     if (compressed == FLB_TRUE) {
+        printf("compressed == TRUE");
         flb_free(payload_buf);
     }
     else {
