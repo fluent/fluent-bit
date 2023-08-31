@@ -25,6 +25,10 @@
 
 #define FLB_IN_UDP_CHUNK "32768"
 
+#define FLB_MAP_EXPAND_SUCCESS   0
+#define FLB_MAP_NOT_MODIFIED    -1
+#define FLB_MAP_EXPANSION_ERROR -2
+#define FLB_MAP_EXPANSION_INVALID_VALUE_TYPE -3
 
 struct udp_conn_stream {
     char *tag;
