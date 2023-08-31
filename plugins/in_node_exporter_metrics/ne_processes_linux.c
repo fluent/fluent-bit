@@ -120,6 +120,35 @@ static int update_processes_proc_state(struct flb_ne *ctx, struct proc_state *st
     return 0;
 }
 
+static int check_path_for_proc(struct flb_ne *ctx, const char *prefix, const char *path)
+{
+    int len;
+    flb_sds_t p;
+
+    /* Compose the proc path */
+    p = flb_sds_create(prefix);
+    if (!p) {
+        return -1;
+    }
+
+    if (path) {
+        flb_sds_cat_safe(&p, "/", 1);
+        len = strlen(path);
+        flb_sds_cat_safe(&p, path, len);
+    }
+
+    if (access(p, F_OK) == -1 &&
+        (errno == ENOENT || errno == ESRCH)) {
+        flb_plg_debug(ctx->ins, "error reading stat for path %s. errno = %d", p, errno);
+        flb_sds_destroy(p);
+
+        return -1;
+    }
+
+    flb_sds_destroy(p);
+    return 0;
+}
+
 static int processes_thread_update(struct flb_ne *ctx, flb_sds_t pid_str, flb_sds_t pstate_str,
                                    struct proc_state *tstate)
 {
@@ -158,6 +187,10 @@ static int processes_thread_update(struct flb_ne *ctx, flb_sds_t pid_str, flb_sd
          * for pid's. */
         if (strcmp(tid_str, pid_str) == 0) {
             update_processes_proc_state(ctx, tstate, pstate_str);
+            continue;
+        }
+
+        if (check_path_for_proc(ctx, thread->str, "stat") != 0) {
             continue;
         }
 
@@ -274,6 +307,10 @@ static int processes_update(struct flb_ne *ctx)
     mk_list_foreach(head, &procfs_list) {
         process = mk_list_entry(head, struct flb_slist_entry, _head);
         pid_str = process->str + strlen(ctx->path_procfs) + 1;
+
+        if (check_path_for_proc(ctx, process->str, "stat") != 0) {
+            continue;
+        }
 
         mk_list_init(&stat_list);
         ret = ne_utils_file_read_lines(process->str, "/stat", &stat_list);
