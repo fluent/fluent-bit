@@ -1031,6 +1031,7 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
         return -1;
     }
     ctx->ins = in;
+    ctx->collect_fd = -1;
 
 
     /* Load the config map */
