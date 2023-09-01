@@ -10,10 +10,6 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <dirent.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <math.h> /* for NAN */
 
 /* JSON tests data */
 #define JSON_MAP1 FLB_TESTS_DATA_PATH "/data/msgpack_append_message/map1.json"
