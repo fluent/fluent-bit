@@ -22,7 +22,7 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_compression.h>
-#include <miniz/miniz.h>
+#include <miniz.h>
 
 #define FLB_GZIP_HEADER_OFFSET 10
 #define FLB_GZIP_HEADER_SIZE   FLB_GZIP_HEADER_OFFSET
