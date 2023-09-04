@@ -64,6 +64,7 @@ struct flb_in_calyptia_fleet_config {
     flb_sds_t api_key;
     flb_sds_t fleet_id;
     flb_sds_t fleet_name;
+    flb_sds_t machine_id;
     flb_sds_t config_dir;
     flb_sds_t cloud_host;
     flb_sds_t cloud_port;
@@ -641,6 +642,7 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
     flb_sds_t cfgoldname;
     flb_sds_t cfgcurname;
     flb_sds_t header;
+    flb_sds_t hdr;
     FILE *cfgfp;
     const char *fbit_last_modified;
     int fbit_last_modified_len;
@@ -737,16 +739,16 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
         header = flb_sds_create_size(4096);
 
         if (ctx->fleet_name == NULL) {
-            flb_sds_printf(&header,
+            hdr = flb_sds_printf(&header,
                         "[CUSTOM]\n"
-                        "    Name          calyptia\n"
-                        "    api_key       %s\n"
-                        "    fleet_id      %s\n"
-                        "    add_label     fleet_id %s\n"
-                        "    fleet.config_dir    %s\n"
-                        "    calyptia_host %s\n"
-                        "    calyptia_port %d\n"
-                        "    calyptia_tls  %s\n",
+                        "    Name             calyptia\n"
+                        "    api_key          %s\n"
+                        "    fleet_id         %s\n"
+                        "    add_label        fleet_id %s\n"
+                        "    fleet.config_dir %s\n"
+                        "    calyptia_host    %s\n"
+                        "    calyptia_port    %d\n"
+                        "    calyptia_tls     %s\n",
                         ctx->api_key,
                         ctx->fleet_id,
                         ctx->fleet_id,
@@ -757,7 +759,7 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
             );
         }
         else {
-            flb_sds_printf(&header,
+            hdr = flb_sds_printf(&header,
                         "[CUSTOM]\n"
                         "    Name          calyptia\n"
                         "    api_key       %s\n"
@@ -777,6 +779,17 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
                         ctx->ins->host.port,
                         tls_setting_string(ctx->ins->use_tls)
             );
+        }
+        if (hdr == NULL) {
+            fclose(cfgfp);
+            goto http_error;
+        }
+        if (ctx->machine_id) {
+            hdr = flb_sds_printf(&header, "    machine_id %s\n", ctx->machine_id);
+            if (hdr == NULL) {
+                fclose(cfgfp);
+                goto http_error;
+            }
         }
         fwrite(header, strlen(header), 1, cfgfp);
         flb_sds_destroy(header);
@@ -1009,6 +1022,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "fleet_name", NULL,
      0, FLB_TRUE, offsetof(struct flb_in_calyptia_fleet_config, fleet_name),
      "Calyptia Fleet Name (used to lookup the fleet ID via the cloud API)."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "machine_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_in_calyptia_fleet_config, machine_id),
+     "Agent Machine ID."
     },
     {
       FLB_CONFIG_MAP_INT, "event_fd", "-1",
