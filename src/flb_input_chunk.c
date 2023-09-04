@@ -1766,9 +1766,18 @@ void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data)
         ins = mk_list_entry(head, struct flb_input_instance, _head);
         cr = NULL;
 
-        while ((ret = flb_ring_buffer_read(ins->rb,
-                                           (void *) &cr,
-                                           sizeof(cr))) == 0) {
+        while (1) {
+            if (flb_input_buf_paused(ins) == FLB_TRUE) {
+                break;
+            }
+
+            ret = flb_ring_buffer_read(ins->rb,
+                                       (void *) &cr,
+                                       sizeof(cr));
+            if (ret != 0) {
+                break;
+            }
+
             if (cr) {
                 if (cr->tag) {
                     tag_len = flb_sds_len(cr->tag);
