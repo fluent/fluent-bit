@@ -266,7 +266,7 @@ static struct flb_output_instance *setup_cloud_output(struct flb_config *config,
 
             label = flb_sds_create_size(strlen(key->str) + strlen(val->str) + 1);
 
-            if(!label) {
+            if (!label) {
                 flb_free(ctx);
                 return NULL;
             }
@@ -309,6 +309,20 @@ static struct flb_output_instance *setup_cloud_output(struct flb_config *config,
     }
     else {
         flb_output_set_property(cloud, "tls.verify", "false");
+    }
+
+    if (ctx->fleet_id) {
+        flb_output_set_property(cloud, "fleet_id", ctx->fleet_id);
+        label = flb_sds_create_size(strlen("fleet_id") + strlen(ctx->fleet_id) + 1);
+
+        if (!label) {
+            flb_free(ctx);
+            return NULL;
+        }
+
+        flb_sds_printf(&label, "fleet_id %s", ctx->fleet_id);
+        flb_output_set_property(cloud, "add_label", label);
+        flb_sds_destroy(label);
     }
 
 #ifdef FLB_HAVE_CHUNK_TRACE
