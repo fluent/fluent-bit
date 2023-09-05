@@ -73,6 +73,10 @@ struct flb_forward_config {
     int time_as_integer;      /* Use backward compatible timestamp ? */
     int fluentd_compat;       /* Use Fluentd compatible payload for
                                * metrics and ctraces */
+
+    /* add extra options to the Forward payload (advanced) */
+    struct mk_list *extra_options;
+
     int fwd_retain_metadata;  /* Do not drop metadata in forward mode */
 
     /* config */
