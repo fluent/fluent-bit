@@ -42,6 +42,7 @@
 #include "ne_textfile.h"
 #include "ne_systemd.h"
 #include "ne_processes.h"
+#include "ne_nvme.h"
 
 /*
  * Update the metrics, this function is invoked every time 'scrape_interval'
@@ -114,7 +115,7 @@ static int get_interval_property(struct flb_ne *ctx, flb_sds_t name)
     return interval;
 }
 
-static int activate_collector(struct flb_ne *ctx, struct flb_config *config, 
+static int activate_collector(struct flb_ne *ctx, struct flb_config *config,
                               struct flb_ne_collector *coll, flb_sds_t name)
 {
     int interval;
@@ -190,6 +191,7 @@ static int in_ne_init(struct flb_input_instance *in,
     mk_list_add(&textfile_collector._head, &ctx->collectors);
     mk_list_add(&systemd_collector._head, &ctx->collectors);
     mk_list_add(&processes_collector._head, &ctx->collectors);
+    mk_list_add(&nvme_collector._head, &ctx->collectors);
 
     mk_list_foreach(head, &ctx->collectors) {
         coll = mk_list_entry(head, struct flb_ne_collector, _head);
@@ -399,6 +401,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_TIME, "collector.processes.scrape_interval", "0",
      0, FLB_FALSE, 0,
      "scrape interval to collect processes metrics from the node."
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "collector.nvme.scrape_interval", "0",
+     0, FLB_FALSE, 0,
+     "scrape interval to collect nvme metrics from the node."
     },
 
     {
