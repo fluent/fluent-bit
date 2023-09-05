@@ -94,7 +94,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository, always latest for action
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # Set up the list of target to build so we can pass the JSON to the reusable job
       - uses: ./.github/actions/generate-package-build-matrix
@@ -156,7 +156,7 @@ jobs:
     steps:
       # Required to make a release later
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Download all artefacts
         continue-on-error: true

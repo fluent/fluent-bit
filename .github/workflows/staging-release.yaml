@@ -65,7 +65,7 @@ jobs:
         RELEASE_VERSION: ${{ github.event.inputs.version }}
 
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     # Check we can download the AppVeyor build which confirms it matches the version to release as well as being a successful build
     - name: Get Appveyor binaries
@@ -83,7 +83,7 @@ jobs:
       rpm-build-matrix: ${{ steps.get-matrix.outputs.rpm-build-matrix }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup runner
         run: |
@@ -119,7 +119,7 @@ jobs:
       fail-fast: false
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Setup runner
       run: |
@@ -192,7 +192,7 @@ jobs:
       fail-fast: false
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Setup runner
       run: |
@@ -348,7 +348,7 @@ jobs:
       windows-zip64-hash: ${{ steps.windows.outputs.WIN_64_ZIP_HASH }}
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Sync packages from buckets on S3
       run: |
@@ -768,7 +768,7 @@ jobs:
       - staging-release-yum-packages
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Test release packages
         run: |
@@ -790,7 +790,7 @@ jobs:
       - staging-release-images
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Test containers
         run: |
@@ -843,7 +843,7 @@ jobs:
     steps:
       - name: Release 2.0 - not latest
         if: startsWith(inputs.version, '2.0')
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           repository: fluent/fluent-bit-docs
           ref: 2.0
@@ -851,7 +851,7 @@ jobs:
 
       - name: Release 2.1 and latest
         if: startsWith(inputs.version, '2.1')
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           repository: fluent/fluent-bit-docs
           token: ${{ secrets.GH_PA_TOKEN }}
@@ -910,13 +910,13 @@ jobs:
     steps:
       - name: Release 2.0
         if: startsWith(inputs.version, '2.0')
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: 2.0
 
       - name: Release 2.1 and latest
         if: startsWith(inputs.version, '2.1')
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # Get the new version to use
       - name: 'Get next minor version'
