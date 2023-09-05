@@ -66,6 +66,7 @@ struct flb_ne {
     int filefd_scrape_interval;
     int textfile_scrape_interval;
     int systemd_scrape_interval;
+    int nvme_scrape_interval;
     int processes_scrape_interval;
 
     int coll_cpu_fd;                                    /* collector fd (cpu)    */
@@ -82,6 +83,7 @@ struct flb_ne {
     int coll_filefd_fd;                                 /* collector fd (filefd)    */
     int coll_textfile_fd;                               /* collector fd (textfile)  */
     int coll_systemd_fd ;                               /* collector fd (systemd)  */
+    int coll_nvme_fd;                                   /* collector fd (nvme)  */
     int coll_processes_fd ;                             /* collector fd (processes)  */
 
     /*
@@ -188,6 +190,9 @@ struct flb_ne {
     struct flb_regex   *systemd_regex_exclude_list;
     double              libsystemd_version;
     char               *libsystemd_version_text;
+
+    /* nvme */
+    struct cmt_gauge   *nvme_info;
 
     /* processes */
     struct cmt_gauge   *processes_thread_alloc;

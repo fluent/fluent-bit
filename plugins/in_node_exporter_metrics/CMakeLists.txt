@@ -12,6 +12,7 @@ set(src
   ne_filefd_linux.c
   ne_textfile.c
   ne_processes.c
+  ne_nvme.c
   ne_utils.c
   ne_config.c
   ne.c
