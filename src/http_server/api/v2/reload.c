@@ -112,8 +112,8 @@ static void handle_get_reload_status(mk_request_t *request, struct flb_config *c
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     msgpack_pack_map(&mp_pck, 1);
-    msgpack_pack_str(&mp_pck, 12);
-    msgpack_pack_str_body(&mp_pck, "hot_reloaded", 12);
+    msgpack_pack_str(&mp_pck, 16);
+    msgpack_pack_str_body(&mp_pck, "hot_reload_count", 16);
     msgpack_pack_int64(&mp_pck, config->hot_reloaded_count);
 
     /* Export to JSON */
