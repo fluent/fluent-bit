@@ -367,6 +367,7 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     struct flb_cf *new_cf;
     struct flb_cf *original_cf;
     int verbose;
+    int reloaded_count = 0;
 
     if (ctx == NULL) {
         flb_error("[reload] given flb context is NULL");
@@ -425,6 +426,8 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     /* Inherit verbose from the old ctx instance */
     verbose = ctx->config->verbose;
     new_config->verbose = verbose;
+    /* Increment and store the number of hot reloaded times */
+    reloaded_count = ctx->config->hot_reloaded_count + 1;
 
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     /* Inherit stream processor definitions from command line */
@@ -503,6 +506,12 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     flb_info("[reload] start everything");
 
     ret = flb_start(new_ctx);
+
+    /* Store the new value of hot reloading times into the new context */
+    if (ret == 0) {
+        new_config->hot_reloaded_count = reloaded_count;
+        flb_debug("[reload] hot reloaded %d time(s)", reloaded_count);
+    }
 
     return 0;
 }
