@@ -274,6 +274,7 @@ struct flb_config *flb_config_init()
 
     /* reload */
     config->ensure_thread_safety_on_hot_reloading = FLB_TRUE;
+    config->hot_reloaded_count = 0;
 
 #ifdef FLB_HAVE_SQLDB
     mk_list_init(&config->sqldb_list);

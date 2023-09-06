@@ -258,6 +258,7 @@ struct flb_config {
 
     int enable_hot_reload;
     int ensure_thread_safety_on_hot_reloading;
+    unsigned int hot_reloaded_count;
 
     /* Co-routines */
     unsigned int coro_stack_size;
