@@ -1724,8 +1724,8 @@ retry:
     /* append chunk raw context to the ring buffer */
     ret = flb_ring_buffer_write(ins->rb, (void *) &cr, sizeof(cr));
     if (ret == -1) {
-        printf("[%s] failed buffer write, retries=%i\n",
-               flb_input_name(ins), retries); fflush(stdout);
+        flb_plg_debug(ins, "failed buffer write, retries=%i\n",
+                      retries);
 
         /* sleep for 100000 microseconds (100 milliseconds) */
         usleep(100000);
