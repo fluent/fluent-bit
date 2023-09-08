@@ -25,6 +25,17 @@
 #include <fluent-bit/flb_lua.h>
 #include <stdint.h>
 
+int flb_lua_enable_flb_null(lua_State *l)
+{
+    /* set flb.null */
+    lua_pushlightuserdata(l, NULL);
+
+    flb_info("[%s] set %s", __FUNCTION__, FLB_LUA_VAR_FLB_NULL);
+    lua_setglobal(l, FLB_LUA_VAR_FLB_NULL);
+
+    return 0;
+}
+
 void flb_lua_pushtimetable(lua_State *l, struct flb_time *tm)
 {
     lua_createtable(l, 0, 2);
@@ -63,7 +74,7 @@ int flb_lua_pushmpack(lua_State *l, mpack_reader_t *reader)
     tag = mpack_read_tag(reader);
     switch (mpack_tag_type(&tag)) {
         case mpack_type_nil:
-            lua_pushnil(l);
+            lua_getglobal(l, FLB_LUA_VAR_FLB_NULL);
             break;
         case mpack_type_bool:
             lua_pushboolean(l, mpack_tag_bool_value(&tag));
@@ -128,7 +139,7 @@ void flb_lua_pushmsgpack(lua_State *l, msgpack_object *o)
 
     switch(o->type) {
         case MSGPACK_OBJECT_NIL:
-            lua_pushnil(l);
+            lua_getglobal(l, FLB_LUA_VAR_FLB_NULL);
             break;
 
         case MSGPACK_OBJECT_BOOLEAN:

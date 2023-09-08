@@ -29,6 +29,9 @@
 #include <monkey/mk_core/mk_list.h>
 #include <msgpack/pack.h>
 
+/* global variables in Lua */
+#define FLB_LUA_VAR_FLB_NULL "flb_null"
+
 #define FLB_LUA_L2C_TYPES_NUM_MAX   16
 
 enum flb_lua_l2c_type_enum {
@@ -74,5 +77,6 @@ void flb_lua_tompack(lua_State *l,
                      int index,
                      struct flb_lua_l2c_config *l2cc);
 void flb_lua_dump_stack(FILE *out, lua_State *l);
+int flb_lua_enable_flb_null(lua_State *l);
 
 #endif
