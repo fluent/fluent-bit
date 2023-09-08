@@ -61,6 +61,10 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
     }
     ctx->lua = lj;
 
+    if (ctx->enable_flb_null) {
+        flb_lua_enable_flb_null(lj->state);
+    }
+
     /* Lua script source code */
     if (ctx->code) {
         ret = flb_luajit_load_buffer(ctx->lua,
@@ -682,6 +686,13 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct lua_filter, time_as_table),
      "If enabled, Fluent-bit will pass the timestamp as a Lua table "
      "with keys \"sec\" for seconds since epoch and \"nsec\" for nanoseconds."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "enable_flb_null", "false",
+     0, FLB_TRUE, offsetof(struct lua_filter, enable_flb_null),
+     "If enabled, null will be converted to flb_null in Lua. "
+     "It is useful to prevent removing key/value "
+     "since nil is a special value to remove key value from map in Lua."
     },
 
     {0}
