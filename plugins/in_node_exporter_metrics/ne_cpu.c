@@ -20,4 +20,6 @@
 #ifdef __linux__
 #include "ne_cpu_linux.c"
 #include "ne_cpufreq_linux.c"
+#elif __APPLE__
+#include "ne_cpu_darwin.c"
 #endif
