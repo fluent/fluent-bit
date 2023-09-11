@@ -113,7 +113,7 @@ jobs:
           arch: ${{ matrix.config.arch }}
 
       - name: Get gzip command w/ chocolatey
-        uses: crazy-max/ghaction-chocolatey@v2
+        uses: crazy-max/ghaction-chocolatey@v3
         with:
           args: install gzip -y
 
