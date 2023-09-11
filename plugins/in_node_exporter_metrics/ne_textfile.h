@@ -22,7 +22,19 @@
 
 #include "ne.h"
 
+#ifdef __linux__
 int ne_textfile_init(struct flb_ne *ctx);
 int ne_textfile_update(struct flb_ne *ctx);
+#else
+static int ne_textfile_init(struct flb_ne *ctx)
+{
+    return 0;
+}
+
+static int ne_textfile_update(struct flb_ne *ctx)
+{
+    return 0;
+}
+#endif
 
 #endif
