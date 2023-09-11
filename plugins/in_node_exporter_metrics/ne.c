@@ -1015,7 +1015,7 @@ static struct flb_config_map config_map[] = {
 
     {
      FLB_CONFIG_MAP_CLIST, "metrics",
-     "cpu,cpufreq,meminfo,diskstats,filesystem,uname,stat,time,loadavg,vmstat,netdev,filefd,systemd",
+     NE_DEFAULT_ENABLED_METRICS,
      0, FLB_TRUE, offsetof(struct flb_ne, metrics),
      "Comma separated list of keys to enable metrics."
     },

@@ -22,7 +22,29 @@
 
 #include "ne.h"
 
+#ifdef __linux__
 int ne_cpu_init(struct flb_ne *ctx);
 int ne_cpu_update(struct flb_ne *ctx);
+#else
+static int ne_cpu_init(struct flb_ne *ctx)
+{
+    return 0;
+}
+
+static int ne_cpu_update(struct flb_ne *ctx)
+{
+    return 0;
+}
+
+static int ne_cpufreq_init(struct flb_ne *ctx)
+{
+    return 0;
+}
+
+static int ne_cpufreq_update(struct flb_ne *ctx)
+{
+    return 0;
+}
+#endif
 
 #endif
