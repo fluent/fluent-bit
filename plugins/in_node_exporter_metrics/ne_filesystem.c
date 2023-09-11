@@ -19,21 +19,4 @@
 
 #ifdef __linux__
 #include "ne_filesystem_linux.c"
-#else
-
-int ne_filesystem_init(struct flb_ne *ctx)
-{
-    return 0;
-}
-
-int ne_filesystem_update(struct flb_ne *ctx)
-{
-    return 0;
-}
-
-int ne_filesystem_exit(struct flb_ne *ctx)
-{
-    return 0;
-}
-
 #endif
