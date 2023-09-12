@@ -422,6 +422,7 @@ static int process_data(struct flb_http_client *c)
 
     if (!c->resp.headers_end) {
         tmp = strstr(c->resp.data, "\r\n\r\n");
+
         if (tmp) {
             c->resp.headers_end = tmp + 4;
             if (c->resp.chunked_encoding == FLB_TRUE) {
@@ -468,7 +469,7 @@ static int process_data(struct flb_http_client *c)
             return FLB_HTTP_OK;
         }
     }
-    else if (c->resp.headers_end && c->resp.content_length <= 0) {
+    if (c->resp.headers_end && c->resp.content_length <= 0) {
         return FLB_HTTP_OK;
     }
 
@@ -1259,7 +1260,7 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
                 break;
             }
             else if (ret == FLB_HTTP_MORE) {
-                continue;
+                break;
             }
         }
         else {

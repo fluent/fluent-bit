@@ -121,6 +121,7 @@ struct flb_s3 {
     int port;
     int insecure;
     size_t store_dir_limit_size;
+    char *goog_project_id;
 
     /* track the total amount of buffered data */
     size_t current_buffer_size;
