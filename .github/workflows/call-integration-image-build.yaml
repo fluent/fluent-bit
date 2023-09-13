@@ -62,7 +62,7 @@ jobs:
             raw,${{ inputs.image-tag }}
 
       - name: Build the AMD64 image
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v5
         with:
           file: ./dockerfiles/Dockerfile
           context: .
@@ -98,7 +98,7 @@ jobs:
             raw,${{ inputs.image-tag }}-debug
 
       - name: Build the AMD64 debug image
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v5
         with:
           file: ./dockerfiles/Dockerfile
           context: .
