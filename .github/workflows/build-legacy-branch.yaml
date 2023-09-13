@@ -80,7 +80,7 @@ jobs:
 
       - name: Build the legacy x86_64 debug image
         if: matrix.arch == 'amd64'
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v5
         with:
           file: ./Dockerfile.x86_64.debug
           context: .
@@ -102,7 +102,7 @@ jobs:
             raw,${{ matrix.suffix }}-${{ inputs.ref }}
 
       - name: Build the legacy ${{ matrix.arch }} image
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v5
         with:
           file: ./Dockerfile.${{ matrix.suffix }}
           context: .
