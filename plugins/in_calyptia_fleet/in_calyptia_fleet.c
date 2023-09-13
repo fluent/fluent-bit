@@ -348,8 +348,11 @@ static void *do_reload(void *data)
     reload->flb->config->conf_path_file = reload->cfg_path;
 
     sleep(5);
+#ifndef FLB_SYSTEM_WINDOWS
     kill(getpid(), SIGHUP);
-
+#else
+	GenerateConsoleCtrlEvent(1 /* CTRL_BREAK_EVENT_1 */, 0);
+#endif
     return NULL;
 }
 
