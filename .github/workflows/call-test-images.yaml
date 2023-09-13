@@ -45,7 +45,7 @@ jobs:
         uses: sigstore/cosign-installer@v2
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
@@ -87,7 +87,7 @@ jobs:
             expected: arm
     steps:
       - name: Log in to the Container registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
@@ -136,7 +136,7 @@ jobs:
           ref: ${{ inputs.ref }}
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
