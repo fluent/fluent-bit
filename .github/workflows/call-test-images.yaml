@@ -144,7 +144,7 @@ jobs:
 
       - name: Set up QEMU using standard action
         if: ${{ matrix.arch != 'linux/arm64' }}
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
 
       # Without this QEMU fails for ARM64
       - name: Set up binary emulation for QEMU
