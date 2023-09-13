@@ -693,6 +693,10 @@ static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ct
     return 0;
 }
 
+#ifdef FLB_SYSTEM_WINDOWS
+#define link(a, b) CreateHardLinkA(b, a, 0)
+#endif
+
 /* cb_collect callback */
 static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
                                      struct flb_config *config, 
@@ -715,6 +719,10 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
     char *data;
     size_t b_sent;
     int ret = -1;
+#ifdef FLB_SYSTEM_WINDOWS
+    DWORD err;
+    LPSTR lpMsg;
+#endif
 
     u_conn = flb_upstream_conn_get(ctx->u);
 
@@ -868,7 +876,16 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
             flb_sds_destroy(cfgoldname);
         }
 
-        symlink(cfgname, cfgnewname);
+        if (!link(cfgname, cfgnewname)) {
+#ifdef FLB_SYSTEM_WINDOWS
+            err = GetLastError();
+            FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_ALLOCATE_BUFFER,
+                          NULL, err, 0, &lpMsg, 0, NULL);
+            flb_plg_error(ctx->ins, "unable to create hard link: %s", lpMsg);
+#else
+            flb_errno();
+#endif
+        }
     }
 
     if (ctx->config_timestamp < time_last_modified) {
@@ -901,12 +918,18 @@ conn_error:
     FLB_INPUT_RETURN(ret);
 }
 
+#ifdef FLB_SYSTEM_WINDOWS
+#define _mkdir(a, b) mkdir(a)
+#else
+#define _mkdir(a, b) mkdir(a, b)
+#endif
+
 /* recursively create directories, based on:
  *   https://stackoverflow.com/a/2336245
  * who found it at:
  *   http://nion.modprobe.de/blog/archives/357-Recursive-directory-creation.html
  */
-static int _mkdir(const char *dir, int perms) {
+static int __mkdir(const char *dir, int perms) {
     char tmp[255];
     char *ptr = NULL;
     size_t len;
@@ -926,7 +949,7 @@ static int _mkdir(const char *dir, int perms) {
         if (*ptr == '/') {
             *ptr = 0;
             if (access(tmp, F_OK) != 0) {
-                ret = mkdir(tmp, perms);
+                ret = _mkdir(tmp, perms);
                 if (ret != 0) {
                     return ret;
                 }
@@ -934,7 +957,7 @@ static int _mkdir(const char *dir, int perms) {
             *ptr = '/';
         }
     }
-    return mkdir(tmp, perms);
+    return _mkdir(tmp, perms);
 }
 
 static int create_fleet_directory(struct flb_in_calyptia_fleet_config *ctx)
@@ -942,7 +965,7 @@ static int create_fleet_directory(struct flb_in_calyptia_fleet_config *ctx)
     flb_sds_t myfleetdir;
 
     if (access(ctx->config_dir, F_OK) != 0) {
-        if (_mkdir(ctx->config_dir, 0700) != 0) {
+        if (__mkdir(ctx->config_dir, 0700) != 0) {
             return -1;
         }
     }
@@ -959,7 +982,7 @@ static int create_fleet_directory(struct flb_in_calyptia_fleet_config *ctx)
     }
 
     if (access(myfleetdir, F_OK) != 0) {
-        if (_mkdir(myfleetdir, 0700) !=0) {
+        if (__mkdir(myfleetdir, 0700) !=0) {
             return -1;
         }
     }
