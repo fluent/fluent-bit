@@ -616,6 +616,40 @@ static void flb_signal_handler(int signal)
     }
 }
 
+#ifdef FLB_SYSTEM_WINDOWS
+#include <ConsoleApi.h>
+
+static flb_ctx_t *handler_ctx = NULL;
+static struct flb_cf *handler_opts = NULL;
+static int handler_signal = 0;
+
+void flb_console_handler_set_ctx(flb_ctx_t *ctx, struct flb_cf *cf_opts)
+{
+    handler_ctx = ctx;
+    handler_opts = cf_opts;
+}
+
+static bool flb_console_handler(DWORD evType)
+{
+    switch(evType) {
+	case 1 /* CTRL_BREAK_EVENT_1 */:
+		if (flb_bin_restarting == FLB_RELOAD_IDLE) {
+			flb_bin_restarting = FLB_RELOAD_IN_PROGRESS;
+            /* signal the main loop to execute reload. this is necessary since
+             * all signal handlers in win32 are executed on their own thread.
+             */
+            handler_signal = 1;
+            flb_bin_restarting = FLB_RELOAD_IDLE;
+        }
+        else {
+            flb_utils_error(FLB_ERR_RELOADING_IN_PROGRESS);
+        }
+        break;
+	}
+    return 1;
+}
+#endif
+
 static void flb_signal_init()
 {
     signal(SIGINT,  &flb_signal_handler_break_loop);
@@ -623,6 +657,9 @@ static void flb_signal_init()
     signal(SIGQUIT, &flb_signal_handler_break_loop);
     signal(SIGHUP,  &flb_signal_handler);
     signal(SIGCONT, &flb_signal_handler);
+#else
+	/* Use SetConsoleCtrlHandler on windows to simulate SIGHUP */
+	SetConsoleCtrlHandler(flb_console_handler, 1);
 #endif
     signal(SIGTERM, &flb_signal_handler_break_loop);
     signal(SIGSEGV, &flb_signal_handler);
@@ -995,6 +1032,10 @@ int flb_main(int argc, char **argv)
     cf = config->cf_main;
     service = cf_opts->service;
 
+#ifdef FLB_SYSTEM_WINDOWS
+    flb_console_handler_set_ctx(ctx, cf_opts);
+#endif
+
     /* Add reference for cf_opts */
     config->cf_opts = cf_opts;
 
@@ -1315,8 +1356,19 @@ int flb_main(int argc, char **argv)
     while (ctx->status == FLB_LIB_OK && exit_signal == 0) {
         sleep(1);
 
+#ifdef FLB_SYSTEM_WINDOWS
+        if (handler_signal == 1) {
+            handler_signal = 0;
+            flb_reload(ctx, cf_opts);
+        }
+#endif
+
         /* set the context again before checking the status again */
         ctx = flb_context_get();
+
+#ifdef FLB_SYSTEM_WINDOWS
+        flb_console_handler_set_ctx(ctx, cf_opts);
+#endif
     }
 
     if (exit_signal) {
