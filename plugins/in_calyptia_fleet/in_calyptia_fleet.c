@@ -474,6 +474,53 @@ static char *tls_setting_string(int use_tls)
     return "Off";
 }
 
+static msgpack_object *msgpack_lookup_map_key(msgpack_object *obj, const char *keyname)
+{
+    int idx;
+    msgpack_object_kv *cur;
+    msgpack_object_str *key;
+
+    if (obj == NULL || keyname == NULL) {
+        return NULL;
+    }
+
+    if (obj->type != MSGPACK_OBJECT_MAP) {
+        return NULL;
+    }
+
+    for (idx = 0; idx < obj->via.map.size; idx++) {
+        cur = &obj->via.map.ptr[idx];
+        if (cur->key.type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
+
+        key = &cur->key.via.str;
+
+        if (strncmp(key->ptr, keyname, key->size) == 0) {
+            return &cur->val;
+        }
+    }
+
+    return NULL;
+}
+
+static msgpack_object *msgpack_lookup_array_offset(msgpack_object *obj, size_t offset)
+{
+    if (obj == NULL) {
+        return NULL;
+    }
+
+    if (obj->type != MSGPACK_OBJECT_ARRAY) {
+        return NULL;
+    }
+
+    if (obj->via.array.size <= offset) {
+        return NULL;
+    }
+
+    return &obj->via.array.ptr[offset];
+}
+
 static flb_sds_t parse_api_key_json(struct flb_in_calyptia_fleet_config *ctx,
                                     char *payload, size_t size)
 {
@@ -483,10 +530,8 @@ static flb_sds_t parse_api_key_json(struct flb_in_calyptia_fleet_config *ctx,
     struct flb_pack_state pack_state;
     size_t off = 0;
     msgpack_unpacked result;
-    msgpack_object_kv *cur;
-    msgpack_object_str *key;
-    flb_sds_t project_id;
-    int idx = 0;
+    msgpack_object *projectID;
+    flb_sds_t project_id = NULL;
 
     /* Initialize packer */
     flb_pack_state_init(&pack_state);
@@ -497,49 +542,36 @@ static flb_sds_t parse_api_key_json(struct flb_in_calyptia_fleet_config *ctx,
     flb_pack_state_reset(&pack_state);
 
     /* Handle exceptions */
-    if (ret == FLB_ERR_JSON_PART) {
-        flb_plg_warn(ctx->ins, "JSON data is incomplete, skipping");
-        return NULL;
-    }
-    else if (ret == FLB_ERR_JSON_INVAL) {
+    if (ret == FLB_ERR_JSON_PART || ret == FLB_ERR_JSON_INVAL || ret == -1) {
         flb_plg_warn(ctx->ins, "invalid JSON message, skipping");
-        return NULL;
-    }
-    else if (ret == -1) {
         return NULL;
     }
 
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, pack, out_size, &off) == MSGPACK_UNPACK_SUCCESS) {
+        projectID  = msgpack_lookup_map_key(&result.data, "ProjectID");
 
-        if (result.data.type == MSGPACK_OBJECT_MAP) {
-            for (idx = 0; idx < result.data.via.map.size; idx++) {
-                cur = &result.data.via.map.ptr[idx];
-                key = &cur->key.via.str;
-
-                if (strncmp(key->ptr, "ProjectID", key->size) == 0) {
-
-                    if (cur->val.type != MSGPACK_OBJECT_STR) {
-                        flb_plg_error(ctx->ins, "unable to find fleet by name");
-                        msgpack_unpacked_destroy(&result);
-                        return NULL;
-                    }
-
-                    project_id = flb_sds_create_len(cur->val.via.str.ptr, 
-                                                    cur->val.via.str.size);
-                    msgpack_unpacked_destroy(&result);
-                    flb_free(pack);
-
-                    return project_id;
-                }
-            }
+        if (projectID == NULL) {
+            flb_plg_error(ctx->ins, "unable to find fleet by name");
+            msgpack_unpacked_destroy(&result);
+            return NULL;
         }
+
+        if (projectID->type != MSGPACK_OBJECT_STR) {
+            flb_plg_error(ctx->ins, "invalid fleet ID");
+            msgpack_unpacked_destroy(&result);
+            return NULL;
+        }
+
+        project_id = flb_sds_create_len(projectID->via.str.ptr,
+                                        projectID->via.str.size);
+        break;
     }
 
     msgpack_unpacked_destroy(&result);
     flb_free(pack);
 
-    return NULL;
+    return project_id;
 }
 
 static ssize_t parse_fleet_search_json(struct flb_in_calyptia_fleet_config *ctx,
@@ -551,10 +583,8 @@ static ssize_t parse_fleet_search_json(struct flb_in_calyptia_fleet_config *ctx,
     struct flb_pack_state pack_state;
     size_t off = 0;
     msgpack_unpacked result;
-    msgpack_object_array *results;
-    msgpack_object_kv *cur;
-    msgpack_object_str *key;
-    int idx = 0;
+    msgpack_object *map;
+    msgpack_object *fleet;
 
     /* Initialize packer */
     flb_pack_state_init(&pack_state);
@@ -565,48 +595,31 @@ static ssize_t parse_fleet_search_json(struct flb_in_calyptia_fleet_config *ctx,
     flb_pack_state_reset(&pack_state);
 
     /* Handle exceptions */
-    if (ret == FLB_ERR_JSON_PART) {
-        flb_plg_warn(ctx->ins, "JSON data is incomplete, skipping");
-        return -1;
-    }
-    else if (ret == FLB_ERR_JSON_INVAL) {
+    if (ret == FLB_ERR_JSON_PART || ret == FLB_ERR_JSON_INVAL || ret == -1) {
         flb_plg_warn(ctx->ins, "invalid JSON message, skipping");
-        return -1;
-    }
-    else if (ret == -1) {
         return -1;
     }
 
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, pack, out_size, &off) == MSGPACK_UNPACK_SUCCESS) {
-
-        if (result.data.type == MSGPACK_OBJECT_ARRAY) {
-            results = &result.data.via.array;
-
-            if (results->ptr[0].type == MSGPACK_OBJECT_MAP) {
-
-                for (idx = 0; idx < results->ptr[0].via.map.size; idx++) {
-                    cur = &results->ptr[0].via.map.ptr[idx];
-                    key = &cur->key.via.str;
-
-                    if (strncasecmp(key->ptr, "id", key->size) == 0) {
-
-                        if (cur->val.type != MSGPACK_OBJECT_STR) {
-                            flb_plg_error(ctx->ins, "unable to find fleet by name");
-                            msgpack_unpacked_destroy(&result);
-                            return -1;
-                        }
-
-                        ctx->fleet_id_found = 1;
-                        ctx->fleet_id = flb_sds_create_len(cur->val.via.str.ptr,
-                                                           cur->val.via.str.size);
-                        break;
-                    }
-                    break;
-                }
-                break;
-            }
+        map = msgpack_lookup_array_offset(&result.data, 0);
+        if (map == NULL) {
+            break;
         }
+
+        fleet = msgpack_lookup_map_key(map, "ID");
+        if (fleet == NULL) {
+            flb_plg_error(ctx->ins, "unable to find fleet by name");
+            break;
+        }
+
+        if (fleet->type != MSGPACK_OBJECT_STR) {
+            flb_plg_error(ctx->ins, "unable to find fleet by name");
+            break;
+        }
+
+        ctx->fleet_id = flb_sds_create_len(fleet->via.str.ptr, fleet->via.str.size);
+        break;
     }
 
     msgpack_unpacked_destroy(&result);
@@ -619,25 +632,19 @@ static ssize_t parse_fleet_search_json(struct flb_in_calyptia_fleet_config *ctx,
     return 0;
 }
 
-static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ctx,
-                                         struct flb_connection *u_conn,
-                                         struct flb_config *config)
+static flb_sds_t get_project_id_from_api_key(struct flb_in_calyptia_fleet_config *ctx)
 {
-    struct flb_http_client *client;
-    flb_sds_t url;
-    flb_sds_t project_id;
-    unsigned char token[512] = {0};
     unsigned char encoded[256];
-    size_t elen;
-    size_t tlen;
+    unsigned char token[512] = {0};
     char *api_token_sep;
-    size_t b_sent;
+    size_t tlen;
+    size_t elen;
     int ret;
 
     api_token_sep = strchr(ctx->api_key, '.');
 
     if (api_token_sep == NULL) {
-        return -1;
+        return NULL;
     }
 
     elen = api_token_sep-ctx->api_key;
@@ -645,7 +652,7 @@ static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ct
 
     if (elen > sizeof(encoded)) {
         flb_plg_error(ctx->ins, "API Token is too large");
-        return -1;
+        return NULL;
     }
 
     memset(encoded, '=', sizeof(encoded));
@@ -655,25 +662,26 @@ static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ct
                             encoded, elen); 
 
     if (ret != 0) {
-        return ret;
+        return NULL;
     }
 
-    project_id = parse_api_key_json(ctx, (char *)token, tlen);
+    return parse_api_key_json(ctx, (char *)token, tlen);
+}
 
-    if (project_id == NULL) {
-        return -1;
-    }
-
-    url = flb_sds_create_size(4096);
-    flb_sds_printf(&url, "/v1/search?project_id=%s&resource=fleet&term=%s", 
-                   project_id, ctx->fleet_name);
+static struct flb_http_client *fleet_http_do(struct flb_in_calyptia_fleet_config *ctx,
+                                             struct flb_connection *u_conn,
+                                             flb_sds_t url)
+{
+    struct flb_http_client *client;
+    size_t b_sent;
+    int ret = -1;
 
     client = flb_http_client(u_conn, FLB_HTTP_GET, url, NULL, 0,
                              ctx->ins->host.name, ctx->ins->host.port, NULL, 0);
 
     if (!client) {
         flb_plg_error(ctx->ins, "unable to create http client");
-        return -1;
+        goto http_client_error;
     }
 
     flb_http_buffer_size(client, 8192);
@@ -686,19 +694,49 @@ static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ct
 
     if (ret != 0) {
         flb_plg_error(ctx->ins, "http do error");
-        flb_http_client_destroy(client);
-        return -1;
+        goto http_do_error;
     }
 
     if (client->resp.status != 200) {
         flb_plg_error(ctx->ins, "search http status code error: %d", client->resp.status);
-        flb_http_client_destroy(client);
-        return -1;
+        goto http_do_error;
     }
 
     if (client->resp.payload_size <= 0) {
         flb_plg_error(ctx->ins, "empty response");
         flb_http_client_destroy(client);
+        goto http_do_error;
+    }
+
+    return client;
+
+http_do_error:
+    flb_http_client_destroy(client);
+http_client_error:
+    return NULL;
+}
+
+static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ctx,
+                                         struct flb_connection *u_conn,
+                                         struct flb_config *config)
+{
+    struct flb_http_client *client;
+    flb_sds_t url;
+    flb_sds_t project_id;
+
+    project_id = get_project_id_from_api_key(ctx);
+
+    if (project_id == NULL) {
+        return -1;
+    }
+
+    url = flb_sds_create_size(4096);
+    flb_sds_printf(&url, "/v1/search?project_id=%s&resource=fleet&term=%s", 
+                   project_id, ctx->fleet_name);
+
+    client = fleet_http_do(ctx, u_conn, url);
+
+    if (!client) {
         return -1;
     }
 
@@ -708,12 +746,12 @@ static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ct
         return -1;
     }
 
+    flb_http_client_destroy(client);
+
     if (ctx->fleet_id == NULL) {
-        flb_http_client_destroy(client);
         return -1;
     }
 
-    flb_http_client_destroy(client);
     return 0;
 }
 
@@ -877,36 +915,11 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
         flb_sds_printf(&ctx->fleet_url, "/v1/fleets/%s/config?format=ini", ctx->fleet_id);
     }
 
-    client = flb_http_client(u_conn, FLB_HTTP_GET, ctx->fleet_url,
-                             NULL, 0, 
-                             ctx->ins->host.name, ctx->ins->host.port, NULL, 0);
+    client = fleet_http_do(ctx, u_conn, ctx->fleet_url);
 
     if (!client) {
         flb_plg_error(ins, "unable to create http client");
         goto client_error;
-    }
-
-    flb_http_buffer_size(client, 8192);
-
-    flb_http_add_header(client,
-                        CALYPTIA_H_PROJECT, sizeof(CALYPTIA_H_PROJECT) - 1,
-                        ctx->api_key, flb_sds_len(ctx->api_key));
-
-    ret = flb_http_do(client, &b_sent);
-
-    if (ret != 0) {
-        flb_plg_error(ins, "http do error");
-        goto http_error;
-    }
-
-    if (client->resp.status != 200) {
-        flb_plg_error(ins, "http status code error: %d", client->resp.status);
-        goto http_error;
-    }
-
-    if (client->resp.payload_size <= 0) {
-        flb_plg_error(ins, "empty response");
-        goto http_error;
     }
 
     /* copy and NULL terminate the payload */
