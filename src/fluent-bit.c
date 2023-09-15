@@ -632,9 +632,9 @@ void flb_console_handler_set_ctx(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 static bool flb_console_handler(DWORD evType)
 {
     switch(evType) {
-	case 1 /* CTRL_BREAK_EVENT_1 */:
-		if (flb_bin_restarting == FLB_RELOAD_IDLE) {
-			flb_bin_restarting = FLB_RELOAD_IN_PROGRESS;
+    case 1 /* CTRL_BREAK_EVENT_1 */:
+        if (flb_bin_restarting == FLB_RELOAD_IDLE) {
+            flb_bin_restarting = FLB_RELOAD_IN_PROGRESS;
             /* signal the main loop to execute reload. this is necessary since
              * all signal handlers in win32 are executed on their own thread.
              */
@@ -645,7 +645,7 @@ static bool flb_console_handler(DWORD evType)
             flb_utils_error(FLB_ERR_RELOADING_IN_PROGRESS);
         }
         break;
-	}
+    }
     return 1;
 }
 #endif
@@ -658,8 +658,8 @@ static void flb_signal_init()
     signal(SIGHUP,  &flb_signal_handler);
     signal(SIGCONT, &flb_signal_handler);
 #else
-	/* Use SetConsoleCtrlHandler on windows to simulate SIGHUP */
-	SetConsoleCtrlHandler(flb_console_handler, 1);
+    /* Use SetConsoleCtrlHandler on windows to simulate SIGHUP */
+    SetConsoleCtrlHandler(flb_console_handler, 1);
 #endif
     signal(SIGTERM, &flb_signal_handler_break_loop);
     signal(SIGSEGV, &flb_signal_handler);
@@ -873,12 +873,15 @@ static int parse_trace_pipeline(flb_ctx_t *ctx, const char *pipeline, char **tra
     }
 
     mk_list_foreach(cur, parts) {
-	key = NULL;
-	value = NULL;
+        key = NULL;
+        value = NULL;
+
         part = mk_list_entry(cur, struct flb_split_entry, _head);
+
         if (parse_trace_pipeline_prop(ctx, part->value, &key, &value) == FLB_ERROR) {
             return FLB_ERROR;
         }
+
         if (strcmp(key, "input") == 0) {
             if (*trace_input != NULL) {
                 flb_free(*trace_input);
@@ -911,12 +914,14 @@ static int parse_trace_pipeline(flb_ctx_t *ctx, const char *pipeline, char **tra
                                    (char *)propname, strlen(propname),
                                    (char *)propval, strlen(propval));
         }
-	if (key != NULL) {
-		mk_mem_free(key);
-	}
-	if (value != NULL) {
-		flb_free(value);
-	}
+
+        if (key != NULL) {
+            mk_mem_free(key);
+        }
+
+        if (value != NULL) {
+            flb_free(value);
+        }
     }
 
     flb_utils_split_free(parts);
