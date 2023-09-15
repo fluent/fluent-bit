@@ -35,7 +35,7 @@
 #ifdef __linux__
 #define NE_DEFAULT_ENABLED_METRICS "cpu,cpufreq,meminfo,diskstats,filesystem,uname,stat,time,loadavg,vmstat,netdev,filefd,systemd"
 #elif __APPLE__
-#define NE_DEFAULT_ENABLED_METRICS "cpu,loadavg,uname"
+#define NE_DEFAULT_ENABLED_METRICS "cpu,loadavg,meminfo,uname"
 #endif
 
 /* filesystem: regex for ignoring mount points and filesystem types */
@@ -115,6 +115,22 @@ struct flb_ne {
 
     /* meminfo hash table */
     struct flb_hash_table *meminfo_ht;
+
+#ifdef FLB_SYSTEM_MACOS
+    /* meminfo_darwin */
+    struct cmt_gauge *darwin_free_bytes;
+    struct cmt_gauge *darwin_active_bytes;
+    struct cmt_gauge *darwin_compressed_bytes;
+    struct cmt_gauge *darwin_inactive_bytes;
+    struct cmt_gauge *darwin_wired_bytes;
+    struct cmt_gauge *darwin_internal_bytes;
+    struct cmt_gauge *darwin_purgeable_bytes;
+    struct cmt_counter *darwin_pageins_bytes;
+    struct cmt_counter *darwin_pageouts_bytes;
+    struct cmt_gauge *darwin_swap_used_bytes;
+    struct cmt_gauge *darwin_swap_total_bytes;
+    struct cmt_counter *darwin_total_bytes;
+#endif
 
     /* diskstats: abbreviation 'dt' */
     void *dt_metrics;
