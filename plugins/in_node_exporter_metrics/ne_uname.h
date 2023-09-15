@@ -22,7 +22,7 @@
 
 #include "ne.h"
 
-#ifdef __linux__
+#if defined(__linux__) || defined(__APPLE__)
 int ne_uname_init(struct flb_ne *ctx);
 int ne_uname_update(struct flb_ne *ctx);
 #else
