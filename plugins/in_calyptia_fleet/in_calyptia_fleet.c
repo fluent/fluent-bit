@@ -266,6 +266,7 @@ static int is_timestamped_fleet_config(struct flb_in_calyptia_fleet_config *ctx,
 {
     char *fname;
     char *end;
+    long val;
 
     if (cfg->conf_path_file == NULL) {
         return FLB_FALSE;
@@ -278,7 +279,15 @@ static int is_timestamped_fleet_config(struct flb_in_calyptia_fleet_config *ctx,
     }
 
     fname++;
-    (void)strtol(fname, &end, 10);
+
+    errno = 0;
+    val = strtol(fname, &end, 10);
+
+    if ((errno == ERANGE && (val == LONG_MAX || val == LONG_MIN)) ||
+         (errno != 0 && val == 0)) {
+        flb_errno();
+        return FLB_FALSE;
+    }
 
     if (strcmp(end, ".ini") == 0) {
         return FLB_TRUE;
@@ -991,7 +1000,14 @@ static int load_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
             return FLB_FALSE;
         }
 
+        errno = 0;
         timestamp = strtol(fname, &ext, 10);
+
+        if ((errno == ERANGE && (timestamp == LONG_MAX || timestamp == LONG_MIN)) ||
+             (errno != 0 && timestamp == 0)) {
+            flb_errno();
+            return FLB_FALSE;
+        }
 
         /* unable to parse the timstamp */
         if (errno == ERANGE) {
