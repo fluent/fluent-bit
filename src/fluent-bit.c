@@ -629,7 +629,7 @@ void flb_console_handler_set_ctx(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     handler_opts = cf_opts;
 }
 
-static bool flb_console_handler(DWORD evType)
+static BOOL WINAPI flb_console_handler(DWORD evType)
 {
     switch(evType) {
     case 1 /* CTRL_BREAK_EVENT_1 */:
