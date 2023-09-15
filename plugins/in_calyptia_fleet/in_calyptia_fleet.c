@@ -164,6 +164,11 @@ static int case_header_lookup(struct flb_http_client *cli,
         return -1;
     }
 
+    /* sanity check that the header_len does not exceed the headers. */
+    if (ptr + header_len + 2 > end) {
+        return -1;
+    }
+
     ptr += header_len + 2;
 
     *out_val = ptr;
