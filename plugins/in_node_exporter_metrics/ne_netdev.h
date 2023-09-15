@@ -22,7 +22,7 @@
 
 #include "ne.h"
 
-#ifdef __linux__
+#if defined(__linux__) || defined(__APPLE__)
 int ne_netdev_init(struct flb_ne *ctx);
 int ne_netdev_update(struct flb_ne *ctx);
 int ne_netdev_exit(struct flb_ne *ctx);
