@@ -35,7 +35,7 @@
 #ifdef __linux__
 #define NE_DEFAULT_ENABLED_METRICS "cpu,cpufreq,meminfo,diskstats,filesystem,uname,stat,time,loadavg,vmstat,netdev,filefd,systemd"
 #elif __APPLE__
-#define NE_DEFAULT_ENABLED_METRICS "cpu,loadavg,meminfo,uname"
+#define NE_DEFAULT_ENABLED_METRICS "cpu,loadavg,meminfo,uname,netdev"
 #endif
 
 /* filesystem: regex for ignoring mount points and filesystem types */
@@ -154,6 +154,21 @@ struct flb_ne {
 
     /* netdev */
     struct flb_hash_table *netdev_ht;
+
+#ifdef FLB_SYSTEM_MACOS
+    /* netdev_darwin */
+    struct cmt_gauge *darwin_receive_packets;
+    struct cmt_gauge *darwin_transmit_packets;
+    struct cmt_gauge *darwin_receive_bytes;
+    struct cmt_gauge *darwin_transmit_bytes;
+    struct cmt_gauge *darwin_receive_errors;
+    struct cmt_gauge *darwin_transmit_errors;
+    struct cmt_gauge *darwin_receive_dropped;
+    struct cmt_gauge *darwin_receive_multicast;
+    struct cmt_gauge *darwin_transmit_multicast;
+    struct cmt_gauge *darwin_collisions;
+    struct cmt_gauge *darwin_noproto;
+#endif
 
     /* time */
     struct cmt_gauge *time;
