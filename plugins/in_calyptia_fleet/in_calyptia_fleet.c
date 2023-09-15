@@ -108,12 +108,12 @@ static char *find_case_header(struct flb_http_client *cli, const char *header)
 
         ptr+=2;
 
-        // no space left for header
+        /* no space left for header */
         if (ptr + strlen(header)+2 >= cli->resp.payload) {
             return NULL;
         }
 
-        // matched header and the delimiter
+        /* matched header and the delimiter */
         if (strncasecmp(ptr, header, strlen(header)) == 0) {
 
             if (ptr[strlen(header)] == ':' && ptr[strlen(header)+1] == ' ') {
@@ -337,7 +337,7 @@ static void *do_reload(void *data)
 {
     struct reload_ctx *reload = (struct reload_ctx *)data;
 
-    // avoid reloading the current configuration... just use our new one!
+    /* avoid reloading the current configuration... just use our new one! */
     flb_context_set(reload->flb);
     reload->flb->config->enable_hot_reload = FLB_TRUE;
     reload->flb->config->conf_path_file = reload->cfg_path;
@@ -414,9 +414,10 @@ static int execute_reload(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t cf
         return FLB_FALSE;
     }
 
-    // fix execution in valgrind...
-    // otherwise flb_reload errors out with:
-    //    [error] [reload] given flb context is NULL
+    /* fix execution in valgrind...
+     * otherwise flb_reload errors out with:
+     *    [error] [reload] given flb context is NULL
+     */
     flb_plg_info(ctx->ins, "loading configuration from %s.", cfgpath);
 
     if (test_config_is_valid(cfgpath) == FLB_FALSE) {
@@ -777,7 +778,6 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
         goto http_error;
     }
 
-    // Wed, 21 Oct 2015 07:28:00 GMT
     flb_strptime(fbit_last_modified, "%a, %d %B %Y %H:%M:%S GMT", &tm_last_modified);
     time_last_modified = mktime(&tm_last_modified.tm);
 
@@ -864,9 +864,8 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
     }
 
     if (ctx->config_timestamp < time_last_modified) {
-	flb_plg_debug(ctx->ins, "new configuration is newer than current: %d < %d", 
-	              ctx->config_timestamp, time_last_modified);
-        // FORCE THE RELOAD!!!
+        flb_plg_debug(ctx->ins, "new configuration is newer than current: %ld < %ld",
+                      ctx->config_timestamp, time_last_modified);
         flb_plg_info(ctx->ins, "force the reloading of the configuration file=%d.", ctx->event_fd);
         flb_sds_destroy(data);
 
@@ -878,7 +877,7 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
             flb_sds_destroy(cfgoldname);
             goto reload_error;
         }
-	else {
+        else {
             FLB_INPUT_RETURN(0);
         }
     }
@@ -894,10 +893,11 @@ conn_error:
     FLB_INPUT_RETURN(ret);
 }
 
-// recursively create directories, based on:
-//   https://stackoverflow.com/a/2336245
-// who found it at:
-//   http://nion.modprobe.de/blog/archives/357-Recursive-directory-creation.html
+/* recursively create directories, based on:
+ *   https://stackoverflow.com/a/2336245
+ * who found it at:
+ *   http://nion.modprobe.de/blog/archives/357-Recursive-directory-creation.html
+ */
 static int _mkdir(const char *dir, int perms) {
     char tmp[255];
     char *ptr = NULL;
@@ -973,12 +973,13 @@ static int load_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
         return -1;
     }
 
-    // check if we are already using the fleet configuration file.
+    /* check if we are already using the fleet configuration file. */
     if (is_fleet_config(ctx, flb_ctx->config) == FLB_FALSE) {
-        // check which one and load it
+        /* check which one and load it */
         if (exists_cur_fleet_config(ctx) == FLB_TRUE) {
             return execute_reload(ctx, cur_fleet_config_filename(ctx));
-        } else if (exists_new_fleet_config(ctx) == FLB_TRUE) {
+        }
+        else if (exists_new_fleet_config(ctx) == FLB_TRUE) {
             return execute_reload(ctx, new_fleet_config_filename(ctx));
         }
     }
