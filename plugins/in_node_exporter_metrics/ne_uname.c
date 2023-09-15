@@ -19,4 +19,6 @@
 
 #ifdef __linux__
 #include "ne_uname_linux.c"
+#elif __APPLE__
+#include "ne_uname_darwin.c"
 #endif
