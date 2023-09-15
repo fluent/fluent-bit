@@ -22,7 +22,7 @@
 
 #include "ne.h"
 
-#ifdef __linux__
+#if defined(__linux__) || defined(__APPLE__)
 int ne_meminfo_init(struct flb_ne *ctx);
 int ne_meminfo_update(struct flb_ne *ctx);
 int ne_meminfo_exit(struct flb_ne *ctx);
