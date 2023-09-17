@@ -40,6 +40,7 @@ set(UNIT_TESTS_FILES
   log.c
   log_event_decoder.c
   processor.c
+  uri.c
   )
 
 # Config format
