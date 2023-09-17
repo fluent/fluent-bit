@@ -71,6 +71,11 @@ flb_sds_t flb_uri_encode(const char *uri, size_t len)
 /* Retrieve a given field based on it expected position in the URI */
 struct flb_uri_field *flb_uri_get(struct flb_uri *uri, int pos)
 {
+    if (pos < 0) {
+        flb_trace("[uri] negative pos");
+        return NULL;
+    }
+
     if (pos >= FLB_URI_MAX || pos > uri->count) {
         flb_trace("[uri] requested position > FLB_URI_MAX");
         return NULL;
