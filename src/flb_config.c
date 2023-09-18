@@ -393,8 +393,7 @@ void flb_config_exit(struct flb_config *config)
     }
 
     if (config->kernel) {
-        flb_free(config->kernel->s_version.data);
-        flb_free(config->kernel);
+        flb_kernel_destroy(config->kernel);
     }
 
     /* release resources */
