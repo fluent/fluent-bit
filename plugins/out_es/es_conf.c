@@ -224,6 +224,12 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         set_cloud_credentials(ctx, tmp);
     }
 
+   /* handle cloud_apikey */
+    tmp = flb_output_get_property("cloud_apikey", ins);
+    if (tmp) {
+        ctx->cloud_apikey = flb_strdup(tmp);
+    }
+
     /* use TLS ? */
     if (ins->use_tls == FLB_TRUE) {
         io_flags = FLB_IO_TLS;
@@ -531,6 +537,7 @@ int flb_es_conf_destroy(struct flb_elasticsearch *ctx)
 
     flb_free(ctx->cloud_passwd);
     flb_free(ctx->cloud_user);
+    flb_free(ctx->cloud_apikey);
     flb_free(ctx);
 
     return 0;
