@@ -22,7 +22,7 @@
 
 #include "ne.h"
 
-#ifdef __linux__
+#if defined(__linux__) || defined(__APPLE__)
 int ne_diskstats_init(struct flb_ne *ctx);
 int ne_diskstats_update(struct flb_ne *ctx);
 int ne_diskstats_exit(struct flb_ne *ctx);
