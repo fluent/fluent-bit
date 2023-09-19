@@ -35,7 +35,7 @@
 #ifdef __linux__
 #define NE_DEFAULT_ENABLED_METRICS "cpu,cpufreq,meminfo,diskstats,filesystem,uname,stat,time,loadavg,vmstat,netdev,filefd,systemd"
 #elif __APPLE__
-#define NE_DEFAULT_ENABLED_METRICS "cpu,loadavg,meminfo,uname,netdev"
+#define NE_DEFAULT_ENABLED_METRICS "cpu,loadavg,meminfo,diskstats,uname,netdev"
 #endif
 
 /* filesystem: regex for ignoring mount points and filesystem types */
