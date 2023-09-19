@@ -388,6 +388,7 @@ static int process_proc_thread_status(struct flb_pe *ctx, uint64_t ts,
     struct mk_list status_list;
     struct mk_list *shead;
     struct flb_slist_entry *entry;
+    int include_flag = FLB_FALSE;
 
     if (check_path_for_proc(ctx, thread->str, "status") != 0) {
         return -1;
@@ -409,6 +410,33 @@ static int process_proc_thread_status(struct flb_pe *ctx, uint64_t ts,
             }
             name = flb_sds_create_len(tmp+1, strlen(tmp+1));
             flb_sds_trim(name);
+
+            /* Check for regexes */
+            if (ctx->process_regex_include_list != NULL) {
+                include_flag = flb_regex_match(ctx->process_regex_include_list,
+                                                (unsigned char *) name,
+                                                flb_sds_len(name));
+            }
+            else {
+                include_flag = FLB_TRUE;
+            }
+
+            if (!include_flag) {
+                goto cleanup;
+            }
+
+            if (ctx->process_regex_exclude_list != NULL) {
+                include_flag = !flb_regex_match(ctx->process_regex_exclude_list,
+                                                (unsigned char *) name,
+                                                flb_sds_len(name));
+            }
+            else {
+                include_flag = FLB_TRUE;
+            }
+
+            if (!include_flag) {
+                goto cleanup;
+            }
         }
 
         if (strncmp("voluntary_ctxt_switches", entry->str, 23) == 0) {
@@ -441,6 +469,8 @@ static int process_proc_thread_status(struct flb_pe *ctx, uint64_t ts,
             flb_sds_destroy(status);
         }
     }
+
+cleanup:
     flb_sds_destroy(name);
     flb_slist_destroy(&status_list);
 
@@ -758,6 +788,7 @@ static int process_proc_status(struct flb_pe *ctx, uint64_t ts, flb_sds_t pid, s
     struct mk_list status_list;
     struct mk_list *shead;
     struct flb_slist_entry *entry;
+    int include_flag = FLB_FALSE;
 
     if (check_path_for_proc(ctx, process->str, "status") != 0) {
         return -1;
@@ -779,6 +810,33 @@ static int process_proc_status(struct flb_pe *ctx, uint64_t ts, flb_sds_t pid, s
             }
             name = flb_sds_create_len(tmp+1, strlen(tmp+1));
             flb_sds_trim(name);
+
+            /* Check for regexes */
+            if (ctx->process_regex_include_list != NULL) {
+                include_flag = flb_regex_match(ctx->process_regex_include_list,
+                                                (unsigned char *) name,
+                                                flb_sds_len(name));
+            }
+            else {
+                include_flag = FLB_TRUE;
+            }
+
+            if (!include_flag) {
+                goto cleanup;
+            }
+
+            if (ctx->process_regex_exclude_list != NULL) {
+                include_flag = !flb_regex_match(ctx->process_regex_exclude_list,
+                                                (unsigned char *) name,
+                                                flb_sds_len(name));
+            }
+            else {
+                include_flag = FLB_TRUE;
+            }
+
+            if (!include_flag) {
+                goto cleanup;
+            }
         }
 
         if (strncmp("voluntary_ctxt_switches", entry->str, 23) == 0) {
@@ -809,6 +867,8 @@ static int process_proc_status(struct flb_pe *ctx, uint64_t ts, flb_sds_t pid, s
             flb_sds_destroy(status);
         }
     }
+
+cleanup:
     flb_sds_destroy(name);
     flb_slist_destroy(&status_list);
 
@@ -878,6 +938,7 @@ static int process_update(struct flb_pe *ctx)
     const char *pattern = "/[0-9]*";
     struct proc_state pstate;
     uint64_t boot_time = 0;
+    int include_flag = FLB_FALSE;
 
     mk_list_init(&procfs_list);
 
@@ -918,6 +979,37 @@ static int process_update(struct flb_pe *ctx)
             entry = mk_list_entry(ehead, struct flb_slist_entry, _head);
 
             if (get_name(entry->str, &name, pid_str) != 0) {
+                continue;
+            }
+
+            /* Check for regexes */
+            if (ctx->process_regex_include_list != NULL) {
+                include_flag = flb_regex_match(ctx->process_regex_include_list,
+                                                (unsigned char *) name,
+                                                strlen(name));
+            }
+            else {
+                include_flag = FLB_TRUE;
+            }
+
+            if (!include_flag) {
+                flb_free(name);
+
+                continue;
+            }
+
+            if (ctx->process_regex_exclude_list != NULL) {
+                include_flag = !flb_regex_match(ctx->process_regex_exclude_list,
+                                                (unsigned char *) name,
+                                                strlen(name));
+            }
+            else {
+                include_flag = FLB_TRUE;
+            }
+
+            if (!include_flag) {
+                flb_free(name);
+
                 continue;
             }
 
