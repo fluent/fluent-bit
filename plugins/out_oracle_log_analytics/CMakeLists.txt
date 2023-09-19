@@ -3,4 +3,4 @@ set(src
    oci_logan_conf.c
    )
 
-FLB_PLUGIN(out_oci_logan "${src}" "")
+FLB_PLUGIN(out_oracle_log_analytics "${src}" "")

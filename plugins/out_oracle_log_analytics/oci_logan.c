@@ -1292,7 +1292,7 @@ static struct flb_config_map config_map[] = {
 };
 
 /* Plugin reference */
-struct flb_output_plugin out_oci_logan_plugin = {
+struct flb_output_plugin out_oracle_log_analytics_plugin = {
     .name           = "oracle_log_analytics",
     .description    = "Oracle log analytics",
     .cb_init        = cb_oci_logan_init,
