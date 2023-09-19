@@ -19,4 +19,6 @@
 
 #ifdef __linux__
 #include "ne_diskstats_linux.c"
+#elif __APPLE__
+#include "ne_diskstats_darwin.c"
 #endif
