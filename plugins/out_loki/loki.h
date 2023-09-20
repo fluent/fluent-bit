@@ -32,6 +32,8 @@
 #define FLB_LOKI_HOST            "127.0.0.1"
 #define FLB_LOKI_PORT            3100
 #define FLB_LOKI_HEADER_SCOPE    "X-Scope-OrgID"
+#define FLB_LOKI_HEADER_CE       "Content-Encoding"
+#define FLB_LOKI_CE_GZIP         "gzip"
 
 #define FLB_LOKI_KV_STR    0     /* sds string */
 #define FLB_LOKI_KV_RA     1     /* record accessor */
@@ -58,6 +60,7 @@ struct flb_loki {
     flb_sds_t line_format;
     flb_sds_t tenant_id;
     flb_sds_t tenant_id_key_config;
+    int compress_gzip;
 
     /* HTTP Auth */
     flb_sds_t http_user;
