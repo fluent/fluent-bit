@@ -162,6 +162,7 @@ static int netdev_update(struct flb_ne *ctx)
 
         if (!if_indextoname(i, ifname)) {
             flb_plg_debug(ctx->ins, "failed to if_index_toname for %d", i);
+            snprintf(ifname, IF_NAMESIZE, "(unknown %i)", i);
         }
 
         cmt_gauge_set(ctx->darwin_receive_packets, ts,
