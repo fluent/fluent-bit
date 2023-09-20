@@ -1488,6 +1488,16 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
     return json;
 }
 
+static void payload_release(void *payload, int compressed)
+{
+    if (compressed) {
+        flb_free(payload);
+    }
+    else {
+        flb_sds_destroy(payload);
+    }
+}
+
 static void cb_loki_flush(struct flb_event_chunk *event_chunk,
                           struct flb_output_flush *out_flush,
                           struct flb_input_instance *i_ins,
@@ -1562,12 +1572,7 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
     if (!u_conn) {
         flb_plg_error(ctx->ins, "no upstream connections available");
 
-        if (compressed) {
-            flb_free(out_buf);
-        }
-        else {
-            flb_sds_destroy(out_buf);
-        }
+        payload_release(out_buf, compressed);
 
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
@@ -1580,12 +1585,7 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
     if (!c) {
         flb_plg_error(ctx->ins, "cannot create HTTP client context");
 
-        if (compressed) {
-            flb_free(out_buf);
-        }
-        else {
-            flb_sds_destroy(out_buf);
-        }
+        payload_release(out_buf, compressed);
         flb_upstream_conn_release(u_conn);
 
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -1628,12 +1628,7 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
-    if (compressed) {
-        flb_free(out_buf);
-    }
-    else {
-        flb_sds_destroy(out_buf);
-    }
+    payload_release(out_buf, compressed);
 
     /* Validate HTTP client return status */
     if (ret == 0) {
