@@ -695,6 +695,29 @@ static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ct
 
 #ifdef FLB_SYSTEM_WINDOWS
 #define link(a, b) CreateHardLinkA(b, a, 0)
+
+ssize_t readlink(const char *path, char *realpath, size_t srealpath) {
+    HANDLE hFile;
+    DWORD ret;
+
+    hFile = CreateFile(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 
+                       FILE_ATTRIBUTE_NORMAL, NULL);
+
+    if (hFile == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+
+    ret = GetFinalPathNameByHandleA(hFile, realpath, srealpath, VOLUME_NAME_NT);
+
+    if (ret < srealpath) {
+        CloseHandle(hFile);
+        return -1;
+    }
+
+    CloseHandle(hFile);
+    return ret;
+}
+
 #endif
 
 /* cb_collect callback */
