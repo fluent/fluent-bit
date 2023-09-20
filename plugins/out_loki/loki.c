@@ -1535,7 +1535,6 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
                                    event_chunk->data, event_chunk->size,
                                    &dynamic_tenant_id->value);
 
-
     if (!payload) {
         flb_plg_error(ctx->ins, "cannot compose request payload");
 
@@ -1564,10 +1563,10 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
         flb_plg_error(ctx->ins, "no upstream connections available");
 
         if (compressed) {
-          flb_free(out_buf);
+            flb_free(out_buf);
         }
         else {
-          flb_sds_destroy(out_buf);
+            flb_sds_destroy(out_buf);
         }
 
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -1581,7 +1580,12 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
     if (!c) {
         flb_plg_error(ctx->ins, "cannot create HTTP client context");
 
-        flb_sds_destroy(out_buf);
+        if (compressed) {
+            flb_free(out_buf);
+        }
+        else {
+            flb_sds_destroy(out_buf);
+        }
         flb_upstream_conn_release(u_conn);
 
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -1606,9 +1610,7 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
                         FLB_LOKI_CT_JSON, sizeof(FLB_LOKI_CT_JSON) - 1);
 
     if (compressed == FLB_TRUE) {
-        flb_http_add_header(c,
-                            FLB_LOKI_HEADER_CE, sizeof(FLB_LOKI_HEADER_CE) - 1,
-                            FLB_LOKI_CE_GZIP, sizeof(FLB_LOKI_CE_GZIP) - 1);
+        flb_http_set_content_encoding_gzip(c);
     }
 
     /* Add X-Scope-OrgID header */
@@ -1627,10 +1629,10 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
     if (compressed) {
-      flb_free(out_buf);
+        flb_free(out_buf);
     }
     else {
-      flb_sds_destroy(out_buf);
+        flb_sds_destroy(out_buf);
     }
 
     /* Validate HTTP client return status */
