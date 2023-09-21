@@ -25,6 +25,9 @@
 option(SANITIZE_MEMORY "Enable MemorySanitizer for sanitized targets." Off)
 
 set(FLAG_CANDIDATES
+    # MSVC uses
+    "/fsanitize=memory"
+    # GNU/Clang
     "-g -fsanitize=memory"
 )
 

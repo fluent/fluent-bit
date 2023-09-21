@@ -65,24 +65,43 @@ static int check_root_path(struct cio_ctx *ctx, const char *root_path)
     return access(root_path, W_OK);
 }
 
+void cio_options_init(struct cio_options *options)
+{
+    memset(options, 0, sizeof(struct cio_options));
+
+    options->initialized = CIO_INITIALIZED;
+
+    options->root_path = NULL;
+    options->user = NULL;
+    options->group = NULL;
+    options->chmod = NULL;
+    options->log_cb = NULL;
+    options->log_level = CIO_LOG_INFO;
+    options->flags = CIO_OPEN_RW;
+    options->realloc_size_hint = CIO_DISABLE_REALLOC_HINT;
+}
+
 struct cio_ctx *cio_create(struct cio_options *options)
 {
     int ret;
     struct cio_ctx *ctx;
     struct cio_options default_options;
 
-    memset(&default_options, 0, sizeof(default_options));
-
-    default_options.root_path = NULL;
-    default_options.user = NULL;
-    default_options.group = NULL;
-    default_options.chmod = NULL;
-    default_options.log_cb = NULL;
-    default_options.log_level = CIO_LOG_INFO;
-    default_options.flags = 0;
-
     if (options == NULL) {
+        cio_options_init(&default_options);
         options = &default_options;
+    }
+    else {
+        if (options->initialized != CIO_INITIALIZED) {
+            /* the caller 'must' call cio_options_init() or pass NULL before creating a context */
+            fprintf(stderr, "[cio] 'options' has not been initialized properly\n");
+            return NULL;
+        }
+    }
+    
+    /* sanitize chunk open flags */
+    if (!(options->flags & CIO_OPEN_RW) && !(options->flags & CIO_OPEN_RD)) {
+        options->flags |= CIO_OPEN_RW;
     }
 
     if (options->log_level < CIO_LOG_ERROR ||
@@ -107,6 +126,7 @@ struct cio_ctx *cio_create(struct cio_options *options)
     ctx->page_size = cio_getpagesize();
     ctx->max_chunks_up = CIO_MAX_CHUNKS_UP;
     ctx->options.flags = options->flags;
+    ctx->realloc_size_hint = CIO_DISABLE_REALLOC_HINT;
 
     if (options->user != NULL) {
         ctx->options.user = strdup(options->user);
@@ -169,6 +189,18 @@ struct cio_ctx *cio_create(struct cio_options *options)
     }
     else {
         ctx->processed_group = NULL;
+    }
+
+    if (options->realloc_size_hint > 0) {
+        ret = cio_set_realloc_size_hint(ctx, options->realloc_size_hint);
+        if (ret == -1) {
+            cio_log_error(ctx,
+                          "[chunkio] cannot initialize with realloc size hint %d\n",
+                          options->realloc_size_hint);
+            cio_destroy(ctx);
+
+            return NULL;
+        }
     }
 
     return ctx;
@@ -304,4 +336,34 @@ int cio_set_max_chunks_up(struct cio_ctx *ctx, int n)
 
     ctx->max_chunks_up = n;
     return 0;
+}
+
+int cio_set_realloc_size_hint(struct cio_ctx *ctx, size_t realloc_size_hint)
+{
+    if (realloc_size_hint < CIO_REALLOC_HINT_MIN) {
+        cio_log_error(ctx,
+                      "[chunkio] cannot specify less than %zu bytes\n",
+                      CIO_REALLOC_HINT_MIN);
+        return -1;
+    }
+    else if (realloc_size_hint > CIO_REALLOC_HINT_MAX) {
+        cio_log_error(ctx,
+                      "[chunkio] cannot specify more than %zu bytes\n",
+                      CIO_REALLOC_HINT_MAX);
+        return -1;
+    }
+
+    ctx->realloc_size_hint = realloc_size_hint;
+
+    return 0;
+}
+
+void cio_enable_file_trimming(struct cio_ctx *ctx)
+{
+    ctx->options.flags |= CIO_TRIM_FILES;
+}
+
+void cio_disable_file_trimming(struct cio_ctx *ctx)
+{
+    ctx->options.flags &= ~CIO_TRIM_FILES;
 }
