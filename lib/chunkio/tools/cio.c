@@ -591,7 +591,7 @@ int main(int argc, char **argv)
         verbose = 0;
     }
 
-    memset(&cio_opts, 0, sizeof(cio_opts));
+    cio_options_init(&cio_opts);
 
     cio_opts.root_path = root_path;
     cio_opts.flags = flags;

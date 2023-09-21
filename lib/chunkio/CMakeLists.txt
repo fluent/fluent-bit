@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.0)
 project(chunk-io C)
 
 set(CIO_VERSION_MAJOR  1)
-set(CIO_VERSION_MINOR  4)
-set(CIO_VERSION_PATCH  0)
+set(CIO_VERSION_MINOR  5)
+set(CIO_VERSION_PATCH  1)
 set(CIO_VERSION_STR "${CIO_VERSION_MAJOR}.${CIO_VERSION_MINOR}.${CIO_VERSION_PATCH}")
 
 # CFLAGS
@@ -15,11 +15,7 @@ else()
 endif()
 
 # Set __FILENAME__
-if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__='\"$(subst ${CMAKE_SOURCE_DIR}/,,$(abspath $<))\"'")
-else()
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__=__FILE__")
-endif()
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__=__FILE__")
 
 include(cmake/macros.cmake)
 
@@ -91,6 +87,18 @@ if(CIO_HAVE_FALLOCATE)
   CIO_DEFINITION(CIO_HAVE_FALLOCATE)
 endif()
 
+# posix_fallocate(2) support
+check_c_source_compiles("
+  #include <fcntl.h>
+  int main() {
+     posix_fallocate(0,0,0);
+     return 0;
+  }" CIO_HAVE_POSIX_FALLOCATE)
+
+if(CIO_HAVE_POSIX_FALLOCATE)
+  CIO_DEFINITION(CIO_HAVE_POSIX_FALLOCATE)
+endif()
+
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/chunkio/cio_info.h.in"
   "${PROJECT_BINARY_DIR}/include/chunkio/cio_info.h"
@@ -105,6 +113,7 @@ include_directories(
   include
   deps/
   deps/monkey/include
+  ${PROJECT_BINARY_DIR}/include/
   )
 
 add_subdirectory(deps/crc32)
