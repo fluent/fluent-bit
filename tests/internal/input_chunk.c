@@ -424,6 +424,8 @@ void flb_test_input_chunk_fs_chunks_size_real()
     i_ins = flb_input_new(cfg, "dummy", NULL, FLB_TRUE);
     i_ins->storage_type = CIO_STORE_FS;
 
+    cio_options_init(&opts);
+
     opts.root_path = "/tmp/input-chunk-fs_chunks-size_real";
     opts.log_cb = log_cb;
     opts.log_level = CIO_LOG_DEBUG;
