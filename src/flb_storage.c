@@ -622,7 +622,14 @@ int flb_storage_create(struct flb_config *ctx)
         flags |= CIO_CHECKSUM;
     }
 
+    /* file trimming */
+    if (ctx->storage_trim_files == FLB_TRUE) {
+        flags |= CIO_TRIM_FILES;
+    }
+
     /* chunkio options */
+    cio_options_init(&opts);
+
     opts.root_path = ctx->storage_path;
     opts.flags = flags;
     opts.log_cb = log_cb;
