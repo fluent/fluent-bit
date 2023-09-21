@@ -11,7 +11,7 @@ CMake module to enable sanitizers for binary targets.
 To use [FindSanitizers.cmake](cmake/FindSanitizers.cmake), simply add this repository as git submodule into your own repository
 ```Shell
 mkdir externals
-git submodule add git://github.com/arsenm/sanitizers-cmake.git externals/sanitizers-cmake
+git submodule add git@github.com:arsenm/sanitizers-cmake.git externals/sanitizers-cmake
 ```
 and adding ```externals/sanitizers-cmake/cmake``` to your ```CMAKE_MODULE_PATH```
 ```CMake
