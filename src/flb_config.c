@@ -147,6 +147,9 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STORAGE_DELETE_IRRECOVERABLE_CHUNKS,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, storage_del_bad_chunks)},
+    {FLB_CONF_STORAGE_TRIM_FILES,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, storage_trim_files)},
 
     /* Coroutines */
     {FLB_CONF_STR_CORO_STACK_SIZE,
