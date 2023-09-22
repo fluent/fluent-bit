@@ -264,12 +264,13 @@ flb_sds_t refresh_cert(struct flb_upstream *u,
 flb_sds_t get_tenancy_id_from_certificate(X509 *cert)
 {
     flb_sds_t t_id = NULL;
+    int i;
     const unsigned char *str;
     char* x;
 
     X509_NAME *subj = X509_get_subject_name(cert);
 
-    for (int i = 0; i < X509_NAME_entry_count(subj); i++) {
+    for (i = 0; i < X509_NAME_entry_count(subj); i++) {
         X509_NAME_ENTRY *e = X509_NAME_get_entry(subj, i);
         ASN1_STRING *d = X509_NAME_ENTRY_get_data(e);
         str = ASN1_STRING_get0_data(d);
@@ -329,7 +330,8 @@ char* sanitize_certificate_string(flb_sds_t cert_pem)
 void colon_separated_fingerprint(unsigned char* readbuf, void *writebuf, size_t len)
 {
     char *l;
-    for(size_t i=0; i < len-1; i++) {
+    size_t i;
+    for(i=0; i < len-1; i++) {
         l = (char*) (3*i + ((intptr_t) writebuf));
         sprintf(l, "%02x:", readbuf[i]);
     }
@@ -648,7 +650,6 @@ const char* get_token_exp(flb_sds_t token_string,
     char *val;
     int key_len;
     int val_len;
-    flb_sds_t token = NULL;
 
     jsmn_init(&parser);
 

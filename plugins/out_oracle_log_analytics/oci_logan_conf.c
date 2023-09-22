@@ -178,8 +178,6 @@ static int build_federation_client_headers(struct flb_oci_logan *ctx,
     flb_sds_t signature = NULL;
     flb_sds_t auth_header_str = NULL;
 
-    flb_sds_t tmp_ref = NULL;
-
     size_t tmp_len = 0;
 
     unsigned char sha256_buf[32] = { 0 };
@@ -936,6 +934,8 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
         flb_oci_logan_conf_destroy(ctx);
         return NULL;
     }
+
+    build_region_table(ctx);
 
     if (strcasecmp(ctx->auth_type, INSTANCE_PRINCIPAL) == 0) {
         ctx->cert_u = flb_upstream_create(config, METADATA_HOST_BASE, 80, FLB_IO_TCP, NULL);
