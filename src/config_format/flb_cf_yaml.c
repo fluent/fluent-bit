@@ -2039,7 +2039,9 @@ done:
     }
 
     yaml_parser_delete(&parser);
-    state_pop(ctx);
+
+    /* free all remaining states */
+    while (state = state_pop(ctx));
 
     fclose(fh);
     ctx->level--;
