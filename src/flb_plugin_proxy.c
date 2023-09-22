@@ -264,6 +264,46 @@ static void flb_proxy_input_cb_destroy(struct flb_input_plugin *plugin)
     flb_plugin_proxy_destroy(proxy);
 }
 
+static int flb_proxy_input_cb_pre_run(struct flb_input_instance *ins,
+                                      struct flb_config *config, void *data)
+{
+    struct flb_plugin_proxy_context *pc;
+    struct flb_plugin_proxy *proxy;
+
+    pc = (struct flb_plugin_proxy_context *)(ins->context);
+    proxy = pc->proxy;
+
+    /* pre_run */
+    void (*cb_pre_run)(void);
+
+    cb_pre_run = flb_plugin_proxy_symbol(proxy, "FLBPluginPreRun");
+    if (cb_pre_run != NULL) {
+        cb_pre_run();
+    }
+
+    return 0;
+}
+
+static int flb_proxy_output_cb_pre_run(void *out_context, struct flb_config *config)
+{
+    struct flb_plugin_proxy_context *ctx = out_context;
+    struct flb_plugin_proxy *proxy = (ctx->proxy);
+
+    if (!out_context) {
+        return 0;
+    }
+
+    /* pre_run */
+    void (*cb_pre_run)(void);
+
+    cb_pre_run = flb_plugin_proxy_symbol(proxy, "FLBPluginPreRun");
+    if (cb_pre_run != NULL) {
+        cb_pre_run();
+    }
+
+    return 0;
+}
+
 static int flb_proxy_register_output(struct flb_plugin_proxy *proxy,
                                      struct flb_plugin_proxy_def *def,
                                      struct flb_config *config)
@@ -290,6 +330,7 @@ static int flb_proxy_register_output(struct flb_plugin_proxy *proxy,
      * we put our proxy-middle callbacks to do the translation properly.
      */
     out->cb_flush = proxy_cb_flush;
+    out->cb_pre_run = flb_proxy_output_cb_pre_run;
     out->cb_exit = flb_proxy_output_cb_exit;
     out->cb_destroy = flb_proxy_output_cb_destroy;
     return 0;
@@ -320,6 +361,7 @@ static int flb_proxy_register_input(struct flb_plugin_proxy *proxy,
      * the core plugins specs, have a different callback approach, so
      * we put our proxy-middle callbacks to do the translation properly.
      */
+    in->cb_pre_run = flb_proxy_input_cb_pre_run;
     in->cb_init = flb_proxy_input_cb_init;
     in->cb_collect = flb_proxy_input_cb_collect;
     in->cb_flush_buf = NULL;
