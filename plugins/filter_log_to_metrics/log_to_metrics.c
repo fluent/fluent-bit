@@ -932,9 +932,9 @@ static struct flb_config_map config_map[] = {
      "Enable kubernetes log metric fields"
     },
     {
-     FLB_CONFIG_MAP_STR, "label", NULL,
+     FLB_CONFIG_MAP_STR, "add_label", NULL,
      FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
-     "Specify message field that should be included in the metric"
+     "Add a label to the metric by supporting record accessor pattern"
     },
     {
      FLB_CONFIG_MAP_STR, "label_field", NULL,
