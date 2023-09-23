@@ -209,6 +209,7 @@ static int global_metadata_fields_create(struct flb_oci_logan *ctx)
         }
         f->val = flb_sds_create(val->str);
         if (!f->val) {
+            flb_sds_destroy(f->key);
             flb_free(f);
             return -1;
         }
@@ -249,6 +250,7 @@ static int log_event_metadata_create(struct flb_oci_logan *ctx)
         }
         f->val = flb_sds_create(val->str);
         if (!f->val) {
+            flb_sds_destroy(f->key);
             flb_free(f);
             return -1;
         }
