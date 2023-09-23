@@ -84,6 +84,11 @@ static int flb_proxy_input_cb_collect(struct flb_input_instance *ins,
         flb_trace("[GO] entering go_collect()");
         ret = proxy_go_input_collect(ctx->proxy, &data, &len);
 
+        if (len == 0) {
+            flb_trace("[GO] No logs are ingested");
+            return -1;
+        }
+
         if (ret == -1) {
             flb_errno();
             return -1;
