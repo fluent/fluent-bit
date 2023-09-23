@@ -290,7 +290,6 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
     if (ctx->oci_config_in_record == FLB_FALSE) {
         if (ctx->oci_la_log_source_name == NULL ||
             ctx->oci_la_log_group_id == NULL) {
-            flb_errno();
             flb_plg_error(ctx->ins,
                           "log source name and log group id are required");
             flb_oci_logan_conf_destroy(ctx);
@@ -318,7 +317,6 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
     }
 
     if (!ctx->config_file_location) {
-        flb_errno();
         flb_plg_error(ctx->ins, "config file location is required");
         flb_oci_logan_conf_destroy(ctx);
         return NULL;
@@ -336,7 +334,6 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
     }
     else {
         if (!ctx->region) {
-            flb_errno();
             flb_plg_error(ctx->ins, "Region is required");
             flb_oci_logan_conf_destroy(ctx);
             return NULL;
@@ -347,7 +344,6 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
 
     if (!ctx->uri) {
         if (!ctx->namespace) {
-            flb_errno();
             flb_plg_error(ctx->ins, "Namespace is required");
             flb_oci_logan_conf_destroy(ctx);
             return NULL;
