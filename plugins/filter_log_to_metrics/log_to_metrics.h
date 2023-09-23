@@ -63,6 +63,7 @@ struct log_to_metrics_ctx
     struct cmt_gauge *g;
     struct cmt_histogram *h;
     struct cmt_histogram_buckets *histogram_buckets;
+    char **label_accessors;
     char **label_keys;
     int *label_counter;
     bool kubernetes_mode;
