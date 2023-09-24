@@ -279,6 +279,8 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
         flb_errno();
         return NULL;
     }
+    mk_list_init(&ctx->global_metadata_fields);
+    mk_list_init(&ctx->log_event_metadata_fields);
 
     ctx->ins = ins;
 
@@ -298,8 +300,8 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
             return NULL;
         }
     }
+
     if (ctx->oci_la_global_metadata != NULL) {
-        mk_list_init(&ctx->global_metadata_fields);
         ret = global_metadata_fields_create(ctx);
         if (ret != 0) {
             flb_errno();
@@ -309,7 +311,6 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
     }
 
     if (ctx->oci_la_metadata != NULL) {
-        mk_list_init(&ctx->log_event_metadata_fields);
         ret = log_event_metadata_create(ctx);
         if (ret != 0) {
             flb_errno();
@@ -435,16 +436,24 @@ static void metadata_fields_destroy(struct flb_oci_logan *ctx)
 
     mk_list_foreach_safe(head, tmp, &ctx->global_metadata_fields) {
         f = mk_list_entry(head, struct metadata_obj, _head);
-        flb_sds_destroy(f->key);
-        flb_sds_destroy(f->val);
+        if (f->key) {
+            flb_sds_destroy(f->key);
+        }
+        if (f->val) {
+            flb_sds_destroy(f->val);
+        }
         mk_list_del(&f->_head);
         flb_free(f);
     }
 
     mk_list_foreach_safe(head, tmp, &ctx->log_event_metadata_fields) {
         f = mk_list_entry(head, struct metadata_obj, _head);
-        flb_sds_destroy(f->key);
-        flb_sds_destroy(f->val);
+        if (f->key) {
+            flb_sds_destroy(f->key);
+        }
+        if (f->val) {
+            flb_sds_destroy(f->val);
+        }
         mk_list_del(&f->_head);
         flb_free(f);
     }
