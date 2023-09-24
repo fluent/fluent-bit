@@ -121,6 +121,7 @@ static int load_oci_credentials(struct flb_oci_logan *ctx)
                 goto iterate;
             }
             mk_mem_free(profile);
+            profile = NULL;
         }
         if(found_profile) {
             if(line[0] == '[') {
