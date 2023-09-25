@@ -75,36 +75,46 @@
 
 #define FLB_LOG_EVENT_APPEND_UNTIL_TERMINATOR            -1
 
+/* Note: all of the size_t casts have been replaced with
+ *       size_t pointer casts because there is an issue
+ *       with msvc where it doesn't honor the type promotion
+ *       when a small constant integer is hard-coded.
+ *
+ *       This should not be a problem because according to
+ *       the standard a size_t should be as large as the
+ *       native register size just like pointers.
+ */
+
 #define FLB_LOG_EVENT_VALUE_LIST_TERMINATOR() \
             (int) FLB_LOG_EVENT_APPEND_TERMINATOR_VALUE_TYPE
 
 #define FLB_LOG_EVENT_STRING_LENGTH_VALUE(length) \
             (int) FLB_LOG_EVENT_STRING_LENGTH_VALUE_TYPE, \
-            (size_t) length
+            (size_t *) length
 
 #define FLB_LOG_EVENT_STRING_BODY_VALUE(buffer, length) \
             (int) FLB_LOG_EVENT_STRING_BODY_VALUE_TYPE, \
             (char *) buffer, \
-            (size_t) length
+            (size_t *) length
 
 #define FLB_LOG_EVENT_BINARY_LENGTH_VALUE(length) \
             (int) FLB_LOG_EVENT_BINARY_LENGTH_VALUE_TYPE, \
-            (size_t) length
+            (size_t *) length
 
 #define FLB_LOG_EVENT_BINARY_BODY_VALUE(buffer, length) \
             (int) FLB_LOG_EVENT_BINARY_BODY_VALUE_TYPE, \
             (char *) buffer, \
-            (size_t) length
+            (size_t *) length
 
 #define FLB_LOG_EVENT_EXT_LENGTH_VALUE(type_, length) \
             (int) FLB_LOG_EVENT_EXT_LENGTH_VALUE_TYPE, \
             (int) type_, \
-            (size_t) length
+            (size_t *) length
 
 #define FLB_LOG_EVENT_EXT_BODY_VALUE(buffer, length) \
             (int) FLB_LOG_EVENT_EXT_BODY_VALUE_TYPE, \
             (char *) buffer, \
-            (size_t) length
+            (size_t *) length
 
 #define FLB_LOG_EVENT_TIMESTAMP_VALUE(value) \
             (int) FLB_LOG_EVENT_TIMESTAMP_VALUE_TYPE, \
@@ -176,7 +186,7 @@
 #define FLB_LOG_EVENT_MSGPACK_RAW_VALUE(buffer, length) \
             (int) FLB_LOG_EVENT_MSGPACK_RAW_VALUE_TYPE, \
             (char *) buffer, \
-            (size_t) length
+            (size_t *) length
 
 #define FLB_LOG_EVENT_STRING_VALUE(buffer, length) \
             FLB_LOG_EVENT_STRING_LENGTH_VALUE(length), \
