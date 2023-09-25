@@ -268,7 +268,7 @@ static int set_labels(struct log_to_metrics_ctx *ctx,
             snprintf(label_keys[counter], MAX_LABEL_LENGTH - 1, "%s", kv->val);
             counter++;
         }
-        else if (strcasecmp(kv->key, "label") == 0) {
+        else if (strcasecmp(kv->key, "add_label") == 0) {
             split = flb_utils_split(kv->val, ' ', 1);
             if (mk_list_size(split) != 2) {
                 flb_plg_error(ctx->ins, "invalid label, expected name and key");
