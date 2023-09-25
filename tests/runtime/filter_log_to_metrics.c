@@ -669,7 +669,7 @@ void flb_test_log_to_metrics_label(void)
                          "metric_name", "test",
                          "metric_description", "Counts messages",
                          "kubernetes_mode", "off",
-                         "label", "pod_name $kubernetes['pod_name']",
+                         "add_label", "pod_name $kubernetes['pod_name']",
                          NULL);
 
     out_ffd = flb_output(ctx, (char *) "lib", (void *)&cb_data);
