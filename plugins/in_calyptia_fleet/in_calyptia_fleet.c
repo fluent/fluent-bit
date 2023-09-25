@@ -720,6 +720,91 @@ ssize_t readlink(const char *path, char *realpath, size_t srealpath) {
 
 #endif
 
+#ifdef FLB_SYSTEM_WINDOWS
+#define _mkdir(a, b) mkdir(a)
+#else
+#define _mkdir(a, b) mkdir(a, b)
+#endif
+
+/* recursively create directories, based on:
+ *   https://stackoverflow.com/a/2336245
+ * who found it at:
+ *   http://nion.modprobe.de/blog/archives/357-Recursive-directory-creation.html
+ */
+static int __mkdir(const char *dir, int perms) {
+    char tmp[255];
+    char *ptr = NULL;
+    size_t len;
+    int ret;
+
+    ret = snprintf(tmp, sizeof(tmp),"%s",dir);
+    if (ret > sizeof(tmp)) {
+        flb_error("directory too long for __mkdir: %s", dir);
+        return -1;
+    }
+
+    len = strlen(tmp);
+
+    if (tmp[len - 1] == PATH_SEPARATOR[0]) {
+        tmp[len - 1] = 0;
+    }
+
+#ifndef FLB_SYSTEM_WINDOWS
+    for (ptr = tmp + 1; *ptr; ptr++) {
+#else
+    for (ptr = tmp + 3; *ptr; ptr++) {
+#endif
+
+        if (*ptr == PATH_SEPARATOR[0]) {
+            *ptr = 0;
+            if (access(tmp, F_OK) != 0) {
+                ret = _mkdir(tmp, perms);
+                if (ret != 0) {
+                    return ret;
+                }
+            }
+            *ptr = PATH_SEPARATOR[0];
+        }
+    }
+
+    return _mkdir(tmp, perms);
+}
+
+static int create_fleet_directory(struct flb_in_calyptia_fleet_config *ctx)
+{
+    flb_sds_t myfleetdir;
+
+    flb_plg_debug(ctx->ins, "checking for configuration directory=%s", ctx->config_dir);
+    if (access(ctx->config_dir, F_OK) != 0) {
+        if (__mkdir(ctx->config_dir, 0700) != 0) {
+            flb_plg_error(ctx->ins, "unable to create fleet config directory");
+            return -1;
+        }
+    }
+
+    myfleetdir = flb_sds_create_size(256);
+
+    if (ctx->fleet_name != NULL) {
+        flb_sds_printf(&myfleetdir, "%s" PATH_SEPARATOR "%s" PATH_SEPARATOR "%s",
+                       ctx->config_dir, ctx->machine_id, ctx->fleet_name);
+    }
+    else {
+        flb_sds_printf(&myfleetdir, "%s" PATH_SEPARATOR "%s" PATH_SEPARATOR "%s",
+                       ctx->config_dir, ctx->machine_id, ctx->fleet_id);
+    }
+
+    flb_plg_debug(ctx->ins, "checking for fleet directory=%s", myfleetdir);
+    if (access(myfleetdir, F_OK) != 0) {
+        if (__mkdir(myfleetdir, 0700) !=0) {
+            flb_plg_error(ctx->ins, "unable to create fleet specific directory");
+            return -1;
+        }
+    }
+
+    flb_sds_destroy(myfleetdir);
+    return 0;
+}
+
 /* cb_collect callback */
 static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
                                      struct flb_config *config, 
@@ -823,6 +908,10 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
     cfgname = time_fleet_config_filename(ctx, time_last_modified);
 
     if (access(cfgname, F_OK) == -1 && errno == ENOENT) {
+        if (create_fleet_directory(ctx) != 0) {
+            flb_plg_error(ctx->ins, "unable to create fleet directories");
+            goto http_error;
+        }
         cfgfp = fopen(cfgname, "w+");
 
         if (cfgfp == NULL) {
@@ -941,79 +1030,6 @@ conn_error:
     FLB_INPUT_RETURN(ret);
 }
 
-#ifdef FLB_SYSTEM_WINDOWS
-#define _mkdir(a, b) mkdir(a)
-#else
-#define _mkdir(a, b) mkdir(a, b)
-#endif
-
-/* recursively create directories, based on:
- *   https://stackoverflow.com/a/2336245
- * who found it at:
- *   http://nion.modprobe.de/blog/archives/357-Recursive-directory-creation.html
- */
-static int __mkdir(const char *dir, int perms) {
-    char tmp[255];
-    char *ptr = NULL;
-    size_t len;
-    int ret;
-
-    ret = snprintf(tmp, sizeof(tmp),"%s",dir);
-    if (ret > sizeof(tmp)) {
-        return -1;
-    }
-
-    len = strlen(tmp);
-    if (tmp[len - 1] == '/') {
-        tmp[len - 1] = 0;
-    }
-
-    for (ptr = tmp + 1; *ptr; ptr++) {
-        if (*ptr == '/') {
-            *ptr = 0;
-            if (access(tmp, F_OK) != 0) {
-                ret = _mkdir(tmp, perms);
-                if (ret != 0) {
-                    return ret;
-                }
-            }
-            *ptr = '/';
-        }
-    }
-    return _mkdir(tmp, perms);
-}
-
-static int create_fleet_directory(struct flb_in_calyptia_fleet_config *ctx)
-{
-    flb_sds_t myfleetdir;
-
-    if (access(ctx->config_dir, F_OK) != 0) {
-        if (__mkdir(ctx->config_dir, 0700) != 0) {
-            return -1;
-        }
-    }
-
-    myfleetdir = flb_sds_create_size(256);
-
-    if (ctx->fleet_name != NULL) {
-        flb_sds_printf(&myfleetdir, "%s" PATH_SEPARATOR "%s" PATH_SEPARATOR "%s",
-                       ctx->config_dir, ctx->machine_id, ctx->fleet_name);
-    }
-    else {
-        flb_sds_printf(&myfleetdir, "%s" PATH_SEPARATOR "%s" PATH_SEPARATOR "%s",
-                       ctx->config_dir, ctx->machine_id, ctx->fleet_id);
-    }
-
-    if (access(myfleetdir, F_OK) != 0) {
-        if (__mkdir(myfleetdir, 0700) !=0) {
-            return -1;
-        }
-    }
-
-    flb_sds_destroy(myfleetdir);
-    return 0;
-}
-
 static int load_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
 {
     flb_ctx_t *flb_ctx = flb_context_get();
@@ -1024,6 +1040,7 @@ static int load_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
     ssize_t len;
 
     if (create_fleet_directory(ctx) != 0) {
+        flb_plg_error(ctx->ins, "unable to create fleet directories");
         return -1;
     }
 
