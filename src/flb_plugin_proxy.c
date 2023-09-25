@@ -173,6 +173,15 @@ init_error:
 static void flb_proxy_input_cb_pause(void *data, struct flb_config *config)
 {
     struct flb_plugin_input_proxy_context *ctx = data;
+    struct flb_plugin_proxy *proxy = (ctx->proxy);
+
+    /* pause */
+    void (*cb_pause)(void);
+
+    cb_pause = flb_plugin_proxy_symbol(proxy, "FLBPluginInputPause");
+    if (cb_pause != NULL) {
+        cb_pause();
+    }
 
     flb_input_collector_pause(ctx->coll_fd, ctx->proxy->instance);
 }
@@ -180,6 +189,15 @@ static void flb_proxy_input_cb_pause(void *data, struct flb_config *config)
 static void flb_proxy_input_cb_resume(void *data, struct flb_config *config)
 {
     struct flb_plugin_input_proxy_context *ctx = data;
+    struct flb_plugin_proxy *proxy = (ctx->proxy);
+
+    /* resume */
+    void (*cb_resume)(void);
+
+    cb_resume = flb_plugin_proxy_symbol(proxy, "FLBPluginInputResume");
+    if (cb_resume != NULL) {
+        cb_resume();
+    }
 
     flb_input_collector_resume(ctx->coll_fd, ctx->proxy->instance);
 }
