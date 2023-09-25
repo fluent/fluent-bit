@@ -370,6 +370,19 @@ static int exists_cur_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
     return ret;
 }
 
+static int exists_old_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
+{
+    flb_sds_t cfgoldname;
+    int ret = FLB_FALSE;
+
+
+    cfgoldname = old_fleet_config_filename(ctx);
+    ret = access(cfgoldname, F_OK) == 0 ? FLB_TRUE : FLB_FALSE;
+
+    flb_sds_destroy(cfgoldname);
+    return ret;
+}
+
 static void *do_reload(void *data)
 {
     struct reload_ctx *reload = (struct reload_ctx *)data;
@@ -399,7 +412,7 @@ static int test_config_is_valid(flb_sds_t cfgpath)
 
     if (conf == NULL) {
         goto config_init_error;
-    } 
+    }
 
     conf = flb_cf_create_from_file(conf, cfgpath);
 
@@ -868,31 +881,256 @@ static int create_fleet_directory(struct flb_in_calyptia_fleet_config *ctx)
 }
 
 /* cb_collect callback */
+static int get_calyptia_file(struct flb_in_calyptia_fleet_config *ctx,
+                             struct flb_connection *u_conn,
+                             const char *url,
+                             const char *hdr,
+                             const char *dst,
+                             time_t *time_last_modified)
+ {
+    struct flb_http_client *client;
+    char fname[4096] = { 0 };
+    size_t len;
+    FILE *fp;
+    int ret = -1;
+    const char *fbit_last_modified;
+    struct flb_tm tm_last_modified = { 0 };
+    int fbit_last_modified_len;
+    time_t last_modified;
+
+    if (ctx == NULL || u_conn == NULL || url == NULL || dst == NULL) {
+        return -1;
+    }
+
+    client = fleet_http_do(ctx, u_conn, ctx->fleet_url);
+
+    if (client == NULL) {
+        return -1;
+    }
+
+    ret = case_header_lookup(client, "Last-modified", strlen("Last-modified"),
+                                &fbit_last_modified, &fbit_last_modified_len);
+
+    if (ret < 0) {
+        goto client_error;
+    }
+
+    flb_strptime(fbit_last_modified, "%a, %d %B %Y %H:%M:%S GMT", &tm_last_modified);
+    last_modified = mktime(&tm_last_modified.tm);
+
+    /* skip the second PATH_SEPARATOR to allow creating files in the base 
+     * fleet_config directory. */
+    snprintf(fname, sizeof(fname)-1, "%s/%d%s", ctx->config_dir, (int)last_modified, dst);
+
+    errno = 0;
+    if (access(fname, F_OK) != -1 || errno == ENOENT) {
+        ret = 0;
+        goto client_error;
+    }
+
+    fp = fopen(fname, "w+");
+
+    if (fp == NULL) {
+        goto client_error;
+    }
+
+    if (hdr != NULL) {
+        len = fwrite(hdr, strlen(hdr), 1, fp);
+        if (len < strlen(hdr)) {
+            flb_plg_error(ctx->ins, "truncated write: %s", dst);
+            goto file_error;
+        }
+    }
+
+    len = fwrite(client->resp.payload, client->resp.payload_size, 1, fp);
+    if (len < client->resp.payload_size) {
+        flb_plg_error(ctx->ins, "truncated write: %s", dst);
+        goto file_error;
+    }
+
+    if (time_last_modified) {
+        *time_last_modified = last_modified;
+    }
+
+    ret = 1;
+
+file_error:
+    fclose(fp);
+client_error:
+    flb_http_client_destroy(client);
+    return ret;
+}
+
+static int calyptia_config_add(struct flb_in_calyptia_fleet_config *ctx,
+                               const char *cfgname)
+{
+    flb_sds_t cfgnewname;
+    flb_sds_t cfgoldname;
+
+    cfgnewname = new_fleet_config_filename(ctx);
+
+    if (exists_new_fleet_config(ctx) == FLB_TRUE) {
+        cfgoldname = old_fleet_config_filename(ctx);
+        rename(cfgnewname, cfgoldname);
+        unlink(cfgnewname);
+        flb_sds_destroy(cfgoldname);
+    }
+
+    link(cfgname, cfgnewname);
+    flb_sds_destroy(cfgnewname);
+
+    return 0;
+}
+
+static int calyptia_config_commit(struct flb_in_calyptia_fleet_config *ctx,
+                                  const char *cfgname)
+{
+    flb_sds_t cfgnewname;
+    flb_sds_t cfgcurname;
+    flb_sds_t cfgoldname;
+
+    cfgnewname = new_fleet_config_filename(ctx);
+    cfgcurname = cur_fleet_config_filename(ctx);
+    cfgoldname = old_fleet_config_filename(ctx);
+
+    if (exists_new_fleet_config(ctx) == FLB_TRUE) {
+        unlink(cfgnewname);
+    }
+
+    if (exists_old_fleet_config(ctx) == FLB_TRUE) {
+        unlink(cfgoldname);
+    }
+
+    if (exists_cur_fleet_config(ctx) == FLB_TRUE) {
+        unlink(cfgcurname);
+    }
+
+    link(cfgname, cfgcurname);
+
+    flb_sds_destroy(cfgnewname);
+    flb_sds_destroy(cfgcurname);
+    flb_sds_destroy(cfgoldname);
+
+    return 0;
+}
+
+static int calyptia_config_rollback(struct flb_in_calyptia_fleet_config *ctx,
+                                    const char *cfgname)
+{
+    flb_sds_t cfgnewname;
+    flb_sds_t cfgcurname;
+    flb_sds_t cfgoldname;
+
+    cfgnewname = new_fleet_config_filename(ctx);
+    cfgcurname = cur_fleet_config_filename(ctx);
+    cfgoldname = old_fleet_config_filename(ctx);
+
+    if (exists_new_fleet_config(ctx) == FLB_TRUE) {
+        unlink(cfgnewname);
+    }
+
+    if (exists_old_fleet_config(ctx) == FLB_TRUE) {
+        rename(cfgoldname, cfgcurname);
+    }
+
+    flb_sds_destroy(cfgnewname);
+    flb_sds_destroy(cfgcurname);
+    flb_sds_destroy(cfgoldname);
+
+    return 0;
+}
+
+static int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx,
+                                     struct flb_connection *u_conn)
+{
+    flb_sds_t cfgname;
+    flb_sds_t cfgnewname;
+    flb_sds_t header;
+    time_t time_last_modified;
+    int ret = -1;
+
+    if (ctx->fleet_url == NULL) {
+        ctx->fleet_url = flb_sds_create_size(4096);
+        flb_sds_printf(&ctx->fleet_url, "/v1/fleets/%s/config?format=ini", ctx->fleet_id);
+    }
+
+    header = flb_sds_create_size(4096);
+
+    if (ctx->fleet_name == NULL) {
+        flb_sds_printf(&header,
+                    "[CUSTOM]\n"
+                    "    Name          calyptia\n"
+                    "    api_key       %s\n"
+                    "    fleet_id      %s\n"
+                    "    add_label     fleet_id %s\n"
+                    "    fleet.config_dir    %s\n"
+                    "    calyptia_host %s\n"
+                    "    calyptia_port %d\n"
+                    "    calyptia_tls  %s\n",
+                    ctx->api_key,
+                    ctx->fleet_id,
+                    ctx->fleet_id,
+                    ctx->config_dir,
+                    ctx->ins->host.name,
+                    ctx->ins->host.port,
+                    tls_setting_string(ctx->ins->use_tls)
+        );
+    }
+    else {
+        flb_sds_printf(&header,
+                    "[CUSTOM]\n"
+                    "    Name          calyptia\n"
+                    "    api_key       %s\n"
+                    "    fleet_name    %s\n"
+                    "    fleet_id      %s\n"
+                    "    add_label     fleet_id %s\n"
+                    "    fleet.config_dir    %s\n"
+                    "    calyptia_host %s\n"
+                    "    calyptia_port %d\n"
+                    "    calyptia_tls  %s\n",
+                    ctx->api_key,
+                    ctx->fleet_name,
+                    ctx->fleet_id,
+                    ctx->fleet_id,
+                    ctx->config_dir,
+                    ctx->ins->host.name,
+                    ctx->ins->host.port,
+                    tls_setting_string(ctx->ins->use_tls)
+        );
+    }
+
+    /* create the base file. */
+    ret = get_calyptia_file(ctx, u_conn, ctx->fleet_url, header, 
+                            ".ini", &time_last_modified);
+
+    /* new file created! */
+    if (ret == 1) {
+        cfgname = time_fleet_config_filename(ctx, time_last_modified);
+        calyptia_config_add(ctx, cfgname);
+        flb_sds_destroy(cfgname);
+
+        cfgnewname = new_fleet_config_filename(ctx);
+        if (execute_reload(ctx, cfgnewname) == FLB_FALSE) {
+            calyptia_config_rollback(ctx, cfgname);
+            flb_sds_destroy(cfgnewname);
+            return -1;
+        } else {
+            calyptia_config_commit(ctx, cfgname);
+            flb_sds_destroy(cfgnewname);
+        }
+    }
+
+    return 0;
+}
+
+/* cb_collect callback */
 static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
                                      struct flb_config *config, 
                                      void *in_context)
 {
     struct flb_in_calyptia_fleet_config *ctx = in_context;
     struct flb_connection *u_conn;
-    struct flb_http_client *client;
-    flb_sds_t cfgname;
-    flb_sds_t cfgnewname;
-    flb_sds_t cfgoldname;
-    flb_sds_t cfgcurname;
-    flb_sds_t header = NULL;
-    flb_sds_t hdr;
-    FILE *cfgfp;
-    const char *fbit_last_modified;
-    int fbit_last_modified_len;
-    struct flb_tm tm_last_modified = { 0 };
-    time_t time_last_modified;
-    char *data = NULL;
-    size_t b_sent;
     int ret = -1;
-#ifdef FLB_SYSTEM_WINDOWS
-    DWORD err;
-    LPSTR lpMsg;
-#endif
 
     u_conn = flb_upstream_conn_get(ctx->u);
 
@@ -907,177 +1145,11 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
         if (get_calyptia_fleet_id_by_name(ctx, u_conn, config) == -1) {
             flb_plg_error(ctx->ins, "unable to find fleet: %s", ctx->fleet_name);
             goto conn_error;
-        }
+         }
     }
 
-    if (ctx->fleet_url == NULL) {
-        ctx->fleet_url = flb_sds_create_size(4096);
-        flb_sds_printf(&ctx->fleet_url, "/v1/fleets/%s/config?format=ini", ctx->fleet_id);
-    }
+    ret = get_calyptia_fleet_config(ctx, u_conn);
 
-    client = fleet_http_do(ctx, u_conn, ctx->fleet_url);
-
-    if (!client) {
-        flb_plg_error(ins, "unable to create http client");
-        goto client_error;
-    }
-
-    /* copy and NULL terminate the payload */
-    data = flb_sds_create_size(client->resp.payload_size + 1);
-
-    if (!data) {
-        goto http_error;
-    }
-    memcpy(data, client->resp.payload, client->resp.payload_size);
-    data[client->resp.payload_size] = '\0';
-
-    ret = case_header_lookup(client, "Last-modified", strlen("Last-modified"),
-                        &fbit_last_modified, &fbit_last_modified_len);
-
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "unable to get last-modified header");
-        goto payload_error;
-    }
-
-    flb_strptime(fbit_last_modified, "%a, %d %B %Y %H:%M:%S GMT", &tm_last_modified);
-    time_last_modified = mktime(&tm_last_modified.tm);
-
-    cfgname = time_fleet_config_filename(ctx, time_last_modified);
-
-    if (access(cfgname, F_OK) == -1 && errno == ENOENT) {
-        if (create_fleet_directory(ctx) != 0) {
-            flb_plg_error(ctx->ins, "unable to create fleet directories");
-            goto http_error;
-        }
-        cfgfp = fopen(cfgname, "w+");
-
-        if (cfgfp == NULL) {
-            flb_plg_error(ctx->ins, "unable to open configuration file: %s", cfgname);
-            flb_sds_destroy(cfgname);
-            goto payload_error;
-        }
-
-        header = flb_sds_create_size(4096);
-
-        if (ctx->fleet_name == NULL) {
-            hdr = flb_sds_printf(&header,
-                        "[CUSTOM]\n"
-                        "    Name             calyptia\n"
-                        "    api_key          %s\n"
-                        "    fleet_id         %s\n"
-                        "    add_label        fleet_id %s\n"
-                        "    fleet.config_dir %s\n"
-                        "    calyptia_host    %s\n"
-                        "    calyptia_port    %d\n"
-                        "    calyptia_tls     %s\n",
-                        ctx->api_key,
-                        ctx->fleet_id,
-                        ctx->fleet_id,
-                        ctx->config_dir,
-                        ctx->ins->host.name,
-                        ctx->ins->host.port,
-                        tls_setting_string(ctx->ins->use_tls)
-            );
-        }
-        else {
-            hdr = flb_sds_printf(&header,
-                        "[CUSTOM]\n"
-                        "    Name          calyptia\n"
-                        "    api_key       %s\n"
-                        "    fleet_name    %s\n"
-                        "    fleet_id      %s\n"
-                        "    add_label     fleet_id %s\n"
-                        "    fleet.config_dir    %s\n"
-                        "    calyptia_host %s\n"
-                        "    calyptia_port %d\n"
-                        "    calyptia_tls  %s\n",
-                        ctx->api_key,
-                        ctx->fleet_name,
-                        ctx->fleet_id,
-                        ctx->fleet_id,
-                        ctx->config_dir,
-                        ctx->ins->host.name,
-                        ctx->ins->host.port,
-                        tls_setting_string(ctx->ins->use_tls)
-            );
-        }
-        if (hdr == NULL) {
-            fclose(cfgfp);
-            flb_sds_destroy(cfgname);
-            goto header_error;
-        }
-        if (ctx->machine_id) {
-            hdr = flb_sds_printf(&header, "    machine_id %s\n", ctx->machine_id);
-            if (hdr == NULL) {
-                fclose(cfgfp);
-                flb_sds_destroy(cfgname);
-                goto header_error;
-            }
-        }
-        fwrite(header, strlen(header), 1, cfgfp);
-        flb_sds_destroy(header);
-        header = NULL;
-        fwrite(data, client->resp.payload_size, 1, cfgfp);
-        fclose(cfgfp);
-
-        cfgnewname = new_fleet_config_filename(ctx);
-
-        if (exists_new_fleet_config(ctx) == FLB_TRUE) {
-            cfgoldname = old_fleet_config_filename(ctx);
-            rename(cfgnewname, cfgoldname);
-            unlink(cfgnewname);
-            flb_sds_destroy(cfgoldname);
-        }
-
-        if (!link(cfgname, cfgnewname)) {
-#ifdef FLB_SYSTEM_WINDOWS
-            err = GetLastError();
-            FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_ALLOCATE_BUFFER,
-                          NULL, err, 0, &lpMsg, 0, NULL);
-            flb_plg_error(ctx->ins, "unable to create hard link: %s", lpMsg);
-#else
-            flb_errno();
-#endif
-        }
-
-        flb_sds_destroy(cfgnewname);
-    }
-
-    if (ctx->config_timestamp < time_last_modified) {
-        flb_plg_debug(ctx->ins, "new configuration is newer than current: %ld < %ld",
-                      ctx->config_timestamp, time_last_modified);
-
-        if (execute_reload(ctx, cfgname) == FLB_FALSE) {
-            cfgoldname = old_fleet_config_filename(ctx);
-            cfgcurname = cur_fleet_config_filename(ctx);
-            rename(cfgoldname, cfgcurname);
-            flb_sds_destroy(cfgcurname);
-            flb_sds_destroy(cfgoldname);
-            flb_sds_destroy(cfgname);
-            goto reload_error;
-        }
-    }
-    else {
-        flb_sds_destroy(cfgname);
-    }
-
-    ret = 0;
-
-reload_error:
-header_error:
-    if (header) {
-        flb_sds_destroy(header);
-    }
-payload_error:
-    if (data) {
-        flb_sds_destroy(data);
-    }
-
-http_error:
-    flb_plg_debug(ctx->ins, "freeing http client in fleet collect");
-    flb_http_client_destroy(client);
-client_error:
-    flb_upstream_conn_release(u_conn);
 conn_error:
     FLB_INPUT_RETURN(ret);
 }
