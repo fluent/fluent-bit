@@ -966,54 +966,31 @@ static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ct
 }
 
 #ifdef FLB_SYSTEM_WINDOWS
-#define _mkdir(a, b) mkdir(a)
-#else
-#define _mkdir(a, b) mkdir(a, b)
-#endif
+#define link(a, b) CreateHardLinkA(b, a, 0)
 
-/* recursively create directories, based on:
- *   https://stackoverflow.com/a/2336245
- * who found it at:
- *   http://nion.modprobe.de/blog/archives/357-Recursive-directory-creation.html
- */
-static int __mkdir(const char *dir, int perms) {
-    char tmp[255];
-    char *ptr = NULL;
-    size_t len;
-    int ret;
+ssize_t readlink(const char *path, char *realpath, size_t srealpath) {
+    HANDLE hFile;
+    DWORD ret;
 
-    ret = snprintf(tmp, sizeof(tmp),"%s",dir);
-    if (ret > sizeof(tmp)) {
-        flb_error("directory too long for __mkdir: %s", dir);
+    hFile = CreateFile(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 
+                       FILE_ATTRIBUTE_NORMAL, NULL);
+
+    if (hFile == INVALID_HANDLE_VALUE) {
         return -1;
     }
 
-    len = strlen(tmp);
+    ret = GetFinalPathNameByHandleA(hFile, realpath, srealpath, VOLUME_NAME_NT);
 
-    if (tmp[len - 1] == PATH_SEPARATOR[0]) {
-        tmp[len - 1] = 0;
+    if (ret < srealpath) {
+        CloseHandle(hFile);
+        return -1;
     }
 
-#ifndef FLB_SYSTEM_WINDOWS
-    for (ptr = tmp + 1; *ptr; ptr++) {
-#else
-    for (ptr = tmp + 3; *ptr; ptr++) {
-#endif
-
-        if (*ptr == PATH_SEPARATOR[0]) {
-            *ptr = 0;
-            if (access(tmp, F_OK) != 0) {
-                ret = _mkdir(tmp, perms);
-                if (ret != 0) {
-                    return ret;
-                }
-            }
-            *ptr = PATH_SEPARATOR[0];
-        }
-    }
-
-    return _mkdir(tmp, perms);
+    CloseHandle(hFile);
+    return ret;
 }
+
+#endif
 
 static int get_calyptia_file(struct flb_in_calyptia_fleet_config *ctx,
                              struct flb_connection *u_conn,
@@ -1100,6 +1077,56 @@ client_error:
 file_exists:
     flb_http_client_destroy(client);
     return ret;
+}
+
+#ifdef FLB_SYSTEM_WINDOWS
+#define _mkdir(a, b) mkdir(a)
+#else
+#define _mkdir(a, b) mkdir(a, b)
+#endif
+
+/* recursively create directories, based on:
+ *   https://stackoverflow.com/a/2336245
+ * who found it at:
+ *   http://nion.modprobe.de/blog/archives/357-Recursive-directory-creation.html
+ */
+static int __mkdir(const char *dir, int perms) {
+    char tmp[255];
+    char *ptr = NULL;
+    size_t len;
+    int ret;
+
+    ret = snprintf(tmp, sizeof(tmp),"%s",dir);
+    if (ret > sizeof(tmp)) {
+        flb_error("directory too long for __mkdir: %s", dir);
+        return -1;
+    }
+
+    len = strlen(tmp);
+
+    if (tmp[len - 1] == PATH_SEPARATOR[0]) {
+        tmp[len - 1] = 0;
+    }
+
+#ifndef FLB_SYSTEM_WINDOWS
+    for (ptr = tmp + 1; *ptr; ptr++) {
+#else
+    for (ptr = tmp + 3; *ptr; ptr++) {
+#endif
+
+        if (*ptr == PATH_SEPARATOR[0]) {
+            *ptr = 0;
+            if (access(tmp, F_OK) != 0) {
+                ret = _mkdir(tmp, perms);
+                if (ret != 0) {
+                    return ret;
+                }
+            }
+            *ptr = PATH_SEPARATOR[0];
+        }
+    }
+
+    return _mkdir(tmp, perms);
 }
 
 #ifndef _WIN32
