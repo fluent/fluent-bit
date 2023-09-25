@@ -18,6 +18,7 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_pack.h>
@@ -200,6 +201,8 @@ static void invalid_queries()
     struct flb_sp *sp;
     struct flb_sp_task *task;
 
+    flb_init_env();
+
     /* Total number of checks for invalid queries */
     checks = sizeof(invalid_query_checks) / sizeof(char *);
 
@@ -243,6 +246,8 @@ static void test_select_keys()
 #ifdef _WIN32
     WSADATA wsa_data;
 #endif
+
+    flb_init_env();
 
     config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
@@ -329,6 +334,8 @@ static void test_select_subkeys()
 #ifdef _WIN32
     WSADATA wsa_data;
 #endif
+
+    flb_init_env();
 
     config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
@@ -457,6 +464,8 @@ static void test_window()
 #ifdef _WIN32
     WSADATA wsa_data;
 #endif
+
+    flb_init_env();
 
     config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
@@ -639,6 +648,8 @@ static void test_snapshot()
     WSADATA wsa_data;
 #endif
 
+    flb_init_env();
+
     config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
         flb_errno();
@@ -799,6 +810,8 @@ static void test_conv_from_str_to_num()
     WSAStartup(0x0201, &wsa_data);
 #endif
     out_buf.buffer = NULL;
+
+    flb_init_env();
 
     config = flb_config_init();
     config->evl = mk_event_loop_create(256);
