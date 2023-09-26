@@ -512,6 +512,13 @@ static void test_window()
 
             /* We ingest the buffer every second */
             for (t = 0; t < check->window_size_sec; t++) {
+                if (out_buf.buffer != NULL) {
+                    flb_free(out_buf.buffer);
+
+                    out_buf.buffer = NULL;
+                    out_buf.size = 0;
+                }
+
                 ret = flb_sp_do_test(sp, task,
                                      "samples", strlen("samples"),
                                      &data_buf, &out_buf);
