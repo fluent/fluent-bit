@@ -287,25 +287,27 @@ static int flb_proxy_input_cb_pre_run(struct flb_input_instance *ins,
 {
     struct flb_plugin_proxy_context *pc;
     struct flb_plugin_proxy *proxy;
+    int ret;
 
     pc = (struct flb_plugin_proxy_context *)(ins->context);
     proxy = pc->proxy;
 
     /* pre_run */
-    void (*cb_pre_run)(void);
+    int (*cb_pre_run)(void);
 
     cb_pre_run = flb_plugin_proxy_symbol(proxy, "FLBPluginInputPreRun");
     if (cb_pre_run != NULL) {
-        cb_pre_run();
+        ret = cb_pre_run();
     }
 
-    return 0;
+    return ret;
 }
 
 static int flb_proxy_output_cb_pre_run(void *out_context, struct flb_config *config)
 {
     struct flb_plugin_proxy_context *ctx = out_context;
     struct flb_plugin_proxy *proxy = (ctx->proxy);
+    int ret;
 
     if (!out_context) {
         return 0;
@@ -316,10 +318,10 @@ static int flb_proxy_output_cb_pre_run(void *out_context, struct flb_config *con
 
     cb_pre_run = flb_plugin_proxy_symbol(proxy, "FLBPluginOutputPreRun");
     if (cb_pre_run != NULL) {
-        cb_pre_run();
+        ret = cb_pre_run();
     }
 
-    return 0;
+    return ret;
 }
 
 static int flb_proxy_register_output(struct flb_plugin_proxy *proxy,
