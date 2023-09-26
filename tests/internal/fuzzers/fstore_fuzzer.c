@@ -61,6 +61,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     cio_utils_recursive_delete(FSF_STORE_PATH);
     fs = flb_fstore_create(FSF_STORE_PATH, FLB_FSTORE_FS);
+    if (fs == NULL) {
+        return 0;
+    }
     st = flb_fstore_stream_create(fs, "abc");
     if (st != NULL) {
         fsf = flb_fstore_file_create(fs, st, "example.txt", size);
