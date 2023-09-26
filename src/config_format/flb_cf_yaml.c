@@ -429,7 +429,7 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
     for (idx = 0; idx < glb.gl_pathc; idx++) {
         ret = read_config(conf, ctx, state->file, glb.gl_pathv[idx]);
 
-    if (ret < 0) {
+        if (ret < 0) {
             break;
         }
     }
