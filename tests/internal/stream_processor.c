@@ -526,6 +526,13 @@ static void test_window()
                 usleep(800000);
             }
 
+            if (out_buf.buffer != NULL) {
+                flb_free(out_buf.buffer);
+
+                out_buf.buffer = NULL;
+                out_buf.size = 0;
+            }
+
             flb_sp_fd_event_test(task->window.fd, task, &out_buf);
 
             flb_info("[sp test] id=%i, SQL => '%s'", check->id, check->exec);
@@ -569,13 +576,26 @@ static void test_window()
 
                 /* Hopping event */
                 if ((t + 1) % check->window_hop_sec == 0) {
+                    if (out_buf.buffer != NULL) {
+                        flb_free(out_buf.buffer);
+
+                        out_buf.buffer = NULL;
+                        out_buf.size = 0;
+                    }
+
                     flb_sp_fd_event_test(task->window.fd_hop, task, &out_buf);
                 }
 
                 /* Window event */
                 if ((t + 1) % check->window_size_sec == 0 ||
                     (t + 1 > check->window_size_sec && (t + 1 - check->window_size_sec) % check->window_hop_sec == 0)) {
-                    flb_free(out_buf.buffer);
+                    if (out_buf.buffer != NULL) {
+                        flb_free(out_buf.buffer);
+
+                        out_buf.buffer = NULL;
+                        out_buf.size = 0;
+                    }
+
                     flb_sp_fd_event_test(task->window.fd, task, &out_buf);
                 }
                 flb_free(data_buf.buffer);
