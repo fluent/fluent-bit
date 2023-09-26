@@ -293,11 +293,11 @@ static int flb_proxy_input_cb_pre_run(struct flb_input_instance *ins,
     proxy = pc->proxy;
 
     /* pre_run */
-    int (*cb_pre_run)(void);
+    int (*cb_pre_run)(int);
 
     cb_pre_run = flb_plugin_proxy_symbol(proxy, "FLBPluginInputPreRun");
     if (cb_pre_run != NULL) {
-        ret = cb_pre_run();
+        ret = cb_pre_run(config->enable_hot_reload);
     }
 
     return ret;
@@ -314,11 +314,11 @@ static int flb_proxy_output_cb_pre_run(void *out_context, struct flb_config *con
     }
 
     /* pre_run */
-    void (*cb_pre_run)(void);
+    int (*cb_pre_run)(int);
 
     cb_pre_run = flb_plugin_proxy_symbol(proxy, "FLBPluginOutputPreRun");
     if (cb_pre_run != NULL) {
-        ret = cb_pre_run();
+        ret = cb_pre_run(config->enable_hot_reload);
     }
 
     return ret;
