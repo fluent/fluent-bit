@@ -481,6 +481,37 @@ static inline int handle_output_events(flb_pipefd_t fd,
     return result;
 }
 
+static int flb_running_count(struct flb_config *config)
+{
+    int tasks = 0, timers = 0, n = 0;
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_output_instance *o_ins;
+
+    mk_list_foreach_safe(head, tmp, &config->outputs) {
+        o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+        n = flb_output_timer_coros_size(o_ins);
+        timers = timers + n;
+    }
+
+    tasks = flb_task_running_count(config);
+    return tasks + timers;
+}
+
+static void flb_running_print(struct flb_config *config)
+{
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_output_instance *o_ins;
+
+    flb_task_running_print(config);
+
+    mk_list_foreach_safe(head, tmp, &config->outputs) {
+        o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+        flb_output_timer_coros_print(o_ins);
+    }
+}
+
 static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
 {
     int bytes;
@@ -651,6 +682,7 @@ int sb_segregate_chunks(struct flb_config *config)
 int flb_engine_start(struct flb_config *config)
 {
     int ret;
+    int count;
     uint64_t ts;
     char tmp[16];
     int rb_flush_flag;
@@ -968,19 +1000,19 @@ int flb_engine_start(struct flb_config *config)
                      * If grace period is set to -1, keep trying to shut down until all
                      * tasks and retries get flushed.
                      */
-                    ret = flb_task_running_count(config);
-                    if (ret > 0 && (config->grace_count < config->grace || config->grace == -1)) {
+                    count = flb_running_count(config);
+                    if (count > 0 && (config->grace_count < config->grace || config->grace == -1)) {
                         if (config->grace_count == 1) {
-                            flb_task_running_print(config);
+                            flb_running_print(config);
                         }
                         flb_engine_exit(config);
                     }
                     else {
-                        if (ret > 0) {
-                            flb_task_running_print(config);
+                        if (count > 0) {
+                            flb_running_print(config);
                         }
-                        flb_info("[engine] service has stopped (%i pending tasks)",
-                                 ret);
+                        flb_info("[engine] service has stopped (%d pending tasks)",
+                                 count);
                         ret = config->exit_status_code;
                         flb_engine_shutdown(config);
                         config = NULL;
