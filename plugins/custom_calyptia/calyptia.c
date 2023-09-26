@@ -37,6 +37,7 @@ struct calyptia {
     flb_sds_t cloud_host;
     flb_sds_t cloud_port;
     flb_sds_t machine_id;
+    int machine_id_auto_configured;
 
 /* used for reporting chunk trace records. */
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -426,6 +427,8 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
             flb_plg_error(ctx->ins, "unable to retrieve machine_id");
             return -1;
         }
+
+        ctx->machine_id_auto_configured = 1;
     }
 
     /* input collector */
@@ -515,6 +518,10 @@ static int cb_calyptia_exit(void *data, struct flb_config *config)
 
     if (!ctx) {
         return 0;
+    }
+
+    if (ctx->machine_id && ctx->machine_id_auto_configured) {
+        flb_sds_destroy(ctx->machine_id);
     }
 
     flb_free(ctx);
