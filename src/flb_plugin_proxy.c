@@ -294,7 +294,7 @@ static int flb_proxy_input_cb_pre_run(struct flb_input_instance *ins,
     /* pre_run */
     void (*cb_pre_run)(void);
 
-    cb_pre_run = flb_plugin_proxy_symbol(proxy, "FLBPluginPreRun");
+    cb_pre_run = flb_plugin_proxy_symbol(proxy, "FLBPluginInputPreRun");
     if (cb_pre_run != NULL) {
         cb_pre_run();
     }
@@ -314,7 +314,7 @@ static int flb_proxy_output_cb_pre_run(void *out_context, struct flb_config *con
     /* pre_run */
     void (*cb_pre_run)(void);
 
-    cb_pre_run = flb_plugin_proxy_symbol(proxy, "FLBPluginPreRun");
+    cb_pre_run = flb_plugin_proxy_symbol(proxy, "FLBPluginOutputPreRun");
     if (cb_pre_run != NULL) {
         cb_pre_run();
     }
