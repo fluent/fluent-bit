@@ -1515,6 +1515,10 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
     struct flb_connection *u_conn;
     struct flb_http_client *c;
     struct flb_loki_dynamic_tenant_id_entry *dynamic_tenant_id;
+    struct mk_list *head;
+    struct flb_config_map_val *mv;
+    struct flb_slist_entry *key = NULL;
+    struct flb_slist_entry *val = NULL;
 
     dynamic_tenant_id = FLB_TLS_GET(thread_local_tenant_id);
 
@@ -1602,6 +1606,16 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
     } else if (ctx->bearer_token) { /* Bearer token */
         flb_http_bearer_auth(c, ctx->bearer_token);
+    }
+
+    /* Arbitrary additional headers */
+    flb_config_map_foreach(head, mv, ctx->headers) {
+        key = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+        val = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
+
+        flb_http_add_header(c,
+                            key->str, flb_sds_len(key->str),
+                            val->str, flb_sds_len(val->str));
     }
 
     /* Add Content-Type header */
@@ -1810,6 +1824,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "bearer_token", NULL,
      0, FLB_TRUE, offsetof(struct flb_loki, bearer_token),
      "Set bearer token auth"
+    },
+
+    {
+     FLB_CONFIG_MAP_SLIST_1, "header", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_loki, headers),
+     "Add a HTTP header key/value pair. Multiple headers can be set"
     },
 
     {
