@@ -648,11 +648,12 @@ static enum status state_copy_into_config_group(struct parser_state *state, stru
         case CFL_VARIANT_ARRAY:
             carr = cfl_array_create(kvp->val->data.as_array->entry_count);
 
-            if (carr) {
+            if (carr == NULL) {
                 flb_error("unable to allocate array");
                 cfl_kvlist_destroy(copy);
                 return YAML_FAILURE;
             }
+
             for (idx = 0; idx < kvp->val->data.as_array->entry_count; idx++) {
                 var = cfl_array_fetch_by_index(kvp->val->data.as_array, idx);
 
