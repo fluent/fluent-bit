@@ -45,6 +45,20 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     struct flb_fstore_stream *st;
     struct flb_fstore_file *fsf;
 
+    /* Set flb_malloc_mod to be fuzzer-data dependent */
+    if (size < 4) {
+        return 0;
+    }
+    flb_malloc_p = 0;
+    flb_malloc_mod = *(int*)data;
+    data += 4;
+    size -= 4;
+
+    /* Avoid division by zero for modulo operations */
+    if (flb_malloc_mod == 0) {
+        flb_malloc_mod = 1;
+    }
+
     cio_utils_recursive_delete(FSF_STORE_PATH);
     fs = flb_fstore_create(FSF_STORE_PATH, FLB_FSTORE_FS);
     st = flb_fstore_stream_create(fs, "abc");
