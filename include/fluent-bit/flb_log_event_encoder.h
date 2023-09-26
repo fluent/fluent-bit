@@ -153,7 +153,7 @@
 
 #define FLB_LOG_EVENT_INT64_VALUE(value) \
             (int) FLB_LOG_EVENT_INT64_VALUE_TYPE, \
-            (int64_t) value
+            (int64_t *) value
 
 #define FLB_LOG_EVENT_UINT8_VALUE(value) \
             (int) FLB_LOG_EVENT_UINT8_VALUE_TYPE, \
@@ -169,7 +169,7 @@
 
 #define FLB_LOG_EVENT_UINT64_VALUE(value) \
             (int) FLB_LOG_EVENT_UINT64_VALUE_TYPE, \
-            (uint64_t) value
+            (uint64_t *) value
 
 #define FLB_LOG_EVENT_DOUBLE_VALUE(value) \
             (int) FLB_LOG_EVENT_DOUBLE_VALUE_TYPE, \
