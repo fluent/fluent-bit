@@ -117,7 +117,7 @@
 
 #define INSTANCE_PRINCIPAL                             "instance_principal"
 #define USER_PRINCIPAL                                 "user_principal"
-#define WORKLOAD_IDENTITY                              "workload_identity"
+#define WORKLOAD_IDENTITY                              "oke_workload_identity"
 
 #define FLB_OKE_DEFAULT_SA_CERT_PATH  "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 #define FLB_OKE_TOKEN_PATH  "/var/run/secrets/kubernetes.io/serviceaccount/token"

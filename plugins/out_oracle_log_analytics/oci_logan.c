@@ -1064,19 +1064,25 @@ static void cb_oci_logan_flush(struct flb_event_chunk *event_chunk,
 {
     struct flb_oci_logan *ctx = out_context;
     int ret = -1;
+    flb_sds_t host = NULL;
 
     if (strcasecmp(ctx->auth_type, INSTANCE_PRINCIPAL) == 0) {
         ret = refresh_security_token(ctx, config);
         if (ret != 0) {
             flb_errno();
-            // flb_oci_logan_conf_destroy(ctx);
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
         ctx->private_key = ctx->fed_client->private_key;
         ctx->region = ctx->fed_client->region;
         flb_sds_snprintf(&ctx->key_id, flb_sds_alloc(ctx->key_id),
                          "ST$%s", ctx->fed_client->security_token);
-        flb_plg_info(ctx->ins, "key_id = %s", ctx->key_id);
+        ret = set_upstream_ctx(ctx, ctx->ins, config);
+        if (ret != 0) {
+            flb_errno();
+            flb_plg_error(ctx->ins, "cannot create Upstream context");
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
+        flb_plg_debug(ctx->ins, "key_id = %s", ctx->key_id);
     }
     if (strcasecmp(ctx->auth_type, WORKLOAD_IDENTITY) == 0) {
         ret = refresh_oke_workload_security_token(ctx, config);

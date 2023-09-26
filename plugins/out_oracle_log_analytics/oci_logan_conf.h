@@ -34,5 +34,8 @@ int refresh_security_token(struct flb_oci_logan *ctx,
                            struct flb_config *config);
 int refresh_oke_workload_security_token(struct flb_oci_logan *ctx,
                                         struct flb_config *config);
+int set_upstream_ctx(struct flb_oci_logan *ctx,
+                     struct flb_output_instance *ins,
+                     struct flb_config *config);
 
 #endif

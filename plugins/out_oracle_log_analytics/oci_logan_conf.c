@@ -907,6 +907,88 @@ static int log_event_metadata_create(struct flb_oci_logan *ctx)
 
     return 0;
 }
+
+int set_upstream_ctx(struct flb_oci_logan *ctx,
+                     struct flb_output_instance *ins,
+                     struct flb_config *config)
+{
+    struct flb_upstream *upstream;
+    flb_sds_t host = NULL;
+    int io_flags = 0, default_port;
+    const char *tmp;
+    int ret = 0;
+    char *protocol = NULL;
+    char *p_host = NULL;
+    char *p_port = NULL;
+    char *p_uri = NULL;
+
+    if (ins->host.name) {
+        host = ins->host.name;
+    }
+    else {
+        if (!ctx->region ) {
+            flb_errno();
+            flb_plg_error(ctx->ins, "Region is required");
+            return -1;
+        }
+        host = flb_sds_create_size(512);
+        flb_sds_snprintf(&host, flb_sds_alloc(host), "loganalytics.%s.oci.oraclecloud.com", ctx->region);
+    }
+
+    io_flags = FLB_IO_TCP;
+    default_port = 80;
+
+#ifdef FLB_HAVE_TLS
+    if (ins->use_tls == FLB_TRUE) {
+        io_flags = FLB_IO_TLS;
+        default_port = 443;
+    }
+#endif
+
+    if (ins->host.ipv6 == FLB_TRUE) {
+        io_flags |= FLB_IO_IPV6;
+    }
+
+    flb_output_net_default(host, default_port, ins);
+    flb_sds_destroy(host);
+
+    if (ctx->proxy) {
+        ret = flb_utils_url_split(tmp, &protocol, &p_host, &p_port, &p_uri);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "could not parse proxy parameter: '%s'", tmp);
+            return -1;
+        }
+
+        ctx->proxy_host = p_host;
+        ctx->proxy_port = atoi(p_port);
+        flb_free(protocol);
+        flb_free(p_port);
+        flb_free(p_uri);
+        flb_free(p_host);
+    }
+
+    if (ctx->proxy) {
+        upstream = flb_upstream_create(config, ctx->proxy_host, ctx->proxy_port,
+                                       io_flags, ins->tls);
+    }
+    else {
+        /* Prepare an upstream handler */
+        upstream = flb_upstream_create(config, ins->host.name, ins->host.port,
+                                       io_flags, ins->tls);
+    }
+
+    if (!upstream) {
+        flb_plg_error(ctx->ins, "cannot create Upstream context");
+        return -1;
+    }
+    ctx->u = upstream;
+
+    /* Set instance flags into upstream */
+    flb_output_upstream_set(ctx->u, ins);
+
+    return 0;
+}
+
 struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
                                                 struct flb_config *config) {
     struct flb_oci_logan *ctx;
@@ -987,20 +1069,6 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
         }
     }
 
-    if (ins->host.name) {
-        host = ins->host.name;
-    }
-    else {
-        if (!ctx->region) {
-            flb_errno();
-            flb_plg_error(ctx->ins, "Region is required");
-            flb_oci_logan_conf_destroy(ctx);
-            return NULL;
-        }
-        host = flb_sds_create_size(512);
-        flb_sds_snprintf(&host, flb_sds_alloc(host), "loganalytics.%s.oci.oraclecloud.com", ctx->region);
-    }
-
     if (!ctx->uri) {
         if (!ctx->namespace) {
             flb_errno();
@@ -1028,60 +1096,15 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
                          "%s/%s/%s", ctx->tenancy, ctx->user, ctx->key_fingerprint);
     }
 
-
-    /* Check if SSL/TLS is enabled */
-    io_flags = FLB_IO_TCP;
-    default_port = 80;
-
-#ifdef FLB_HAVE_TLS
-    if (ins->use_tls == FLB_TRUE) {
-        io_flags = FLB_IO_TLS;
-        default_port = 443;
-    }
-#endif
-
-    if (ins->host.ipv6 == FLB_TRUE) {
-        io_flags |= FLB_IO_IPV6;
-    }
-
-    flb_output_net_default(host, default_port, ins);
-    flb_sds_destroy(host);
-
-    if (ctx->proxy) {
-        ret = flb_utils_url_split(tmp, &protocol, &p_host, &p_port, &p_uri);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "could not parse proxy parameter: '%s'", tmp);
+    if (strcasecmp(ctx->auth_type, USER_PRINCIPAL) == 0 ||
+    strcasecmp(ctx->auth_type, WORKLOAD_IDENTITY) == 0) {
+        ret = set_upstream_ctx(ctx, ins, config);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "cannot create Upstream context");
             flb_oci_logan_conf_destroy(ctx);
             return NULL;
         }
-
-        ctx->proxy_host = p_host;
-        ctx->proxy_port = atoi(p_port);
-        flb_free(protocol);
-        flb_free(p_port);
-        flb_free(p_uri);
-        flb_free(p_host);
     }
-
-    if (ctx->proxy) {
-        upstream = flb_upstream_create(config, ctx->proxy_host, ctx->proxy_port,
-                                       io_flags, ins->tls);
-    }
-    else {
-        /* Prepare an upstream handler */
-        upstream = flb_upstream_create(config, ins->host.name, ins->host.port,
-                                       io_flags, ins->tls);
-    }
-
-    if (!upstream) {
-        flb_plg_error(ctx->ins, "cannot create Upstream context");
-        flb_oci_logan_conf_destroy(ctx);
-        return NULL;
-    }
-    ctx->u = upstream;
-
-    /* Set instance flags into upstream */
-    flb_output_upstream_set(ctx->u, ins);
 
     return ctx;
 }
