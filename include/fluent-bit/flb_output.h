@@ -659,7 +659,7 @@ static FLB_INLINE void output_pre_timer_cb(void)
     o_ins = params->output_timer->o_ins;
 
     /* Run the callback provided by the output plugin */
-    timer_data->cb(params->config, params->timer_data->data);
+    params->timer_data->cb(params->config, params->timer_data->data);
 
     /* move coro to destroy queue */
     if (flb_output_is_threaded(o_ins) == FLB_TRUE) {
