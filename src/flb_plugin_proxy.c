@@ -424,7 +424,18 @@ int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,
 {
     int ret;
     int (*cb_register)(struct flb_plugin_proxy_def *);
+    int (*cb_pre_register)(int);
     struct flb_plugin_proxy_def *def = proxy->def;
+
+    /* Lookup the pre registration callback */
+    cb_pre_register = flb_plugin_proxy_symbol(proxy, "FLBPluginPreRegister");
+    if (cb_pre_register != NULL) {
+        /* Prepare the registration if available */
+        ret = cb_pre_register(config->hot_reloading);
+        if (ret == -1) {
+            return -1;
+        }
+    }
 
     /* Lookup the registration callback */
     cb_register = flb_plugin_proxy_symbol(proxy, "FLBPluginRegister");
