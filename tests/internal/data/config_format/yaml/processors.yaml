@@ -1,0 +1,14 @@
+---
+pipeline:
+  inputs:
+    - name: dummy
+      processors:
+        logs:
+          - name: record_modifier
+            record:
+              - filtered_by record_modifier
+              - powered_by calyptia
+  outputs:
+    - name: stdout
+      match: "*"
+      format: json_lines
