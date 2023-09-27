@@ -869,16 +869,18 @@ static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
     }
     
 #ifdef FLB_HAVE_CHUNK_TRACE
-    if (event_chunk->type == (FLB_EVENT_TYPE_LOGS | FLB_EVENT_TYPE_HAS_TRACE)) {
+    if (strcmp(event_chunk->tag, "trace") == 0) {
         json = flb_pack_msgpack_to_json_format(event_chunk->data,
                                                event_chunk->size,
                                                FLB_PACK_JSON_FORMAT_STREAM,
                                                FLB_PACK_JSON_DATE_DOUBLE,
                                                NULL);
+
         if (json == NULL) {
             flb_upstream_conn_release(u_conn);
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
+
         out_buf = (char *)json;
         out_size = flb_sds_len(json);
 
@@ -888,8 +890,10 @@ static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
             flb_sds_destroy(json);
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
+
         c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->trace_endpoint,
                             out_buf, out_size, NULL, 0, NULL, 0);
+
         if (!c) {
             flb_upstream_conn_release(u_conn);
             flb_sds_destroy(json);
@@ -899,6 +903,7 @@ static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
         
         /* perform request: 'ret' might be FLB_OK, FLB_ERROR or FLB_RETRY */
         ret = calyptia_http_do(ctx, c, CALYPTIA_ACTION_TRACE);
+
         if (ret == FLB_OK) {
             flb_plg_debug(ctx->ins, "trace delivered OK");
         }

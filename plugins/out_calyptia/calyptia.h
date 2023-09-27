@@ -39,7 +39,7 @@
 #define CALYPTIA_ENDPOINT_CREATE  "/v1/agents"
 #define CALYPTIA_ENDPOINT_PATCH   "/v1/agents/%s"
 #define CALYPTIA_ENDPOINT_METRICS "/v1/agents/%s/metrics"
-#define CALYPTIA_ENDPOINT_TRACE   "/v1/traces/%s"
+#define CALYPTIA_ENDPOINT_TRACE   "/v1/pipelines/%s/trace_session/records"
 
 /* Storage */
 #define CALYPTIA_SESSION_FILE     "session.CALYPTIA"

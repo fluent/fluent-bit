@@ -194,7 +194,7 @@ struct flb_chunk_trace_context *flb_chunk_trace_context_new(void *trace_input,
         goto error_input;
     }
 
-    output = flb_output_new(ctx->flb->config, output_name, data, 1);
+    output = flb_output_new(ctx->flb->config, output_name, data, 0);
     if (output == NULL) {
         flb_error("could not create trace output");
         goto error_input;
