@@ -428,6 +428,8 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     new_config->verbose = verbose;
     /* Increment and store the number of hot reloaded times */
     reloaded_count = ctx->config->hot_reloaded_count + 1;
+    /* Mark shutdown reason as hot_reloading */
+    ctx->config->shutdown_by_hot_reloading = FLB_TRUE;
 
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     /* Inherit stream processor definitions from command line */

@@ -208,9 +208,16 @@ static int flb_proxy_output_cb_exit(void *out_context, struct flb_config *config
 {
     struct flb_plugin_proxy_context *ctx = out_context;
     struct flb_plugin_proxy *proxy = (ctx->proxy);
+    /* pre_exit (Golang plugin only) */
+    void (*cb_pre_exit)(int);
 
     if (!out_context) {
         return 0;
+    }
+
+    cb_pre_exit = flb_plugin_proxy_symbol(proxy, "FLBPluginOutputPreExit");
+    if (cb_pre_exit != NULL) {
+        cb_pre_exit(config->shutdown_by_hot_reloading);
     }
 
     if (proxy->def->proxy == FLB_PROXY_GOLANG) {
@@ -247,9 +254,16 @@ static int flb_proxy_input_cb_exit(void *in_context, struct flb_config *config)
 {
     struct flb_plugin_input_proxy_context *ctx = in_context;
     struct flb_plugin_proxy *proxy = (ctx->proxy);
+    /* pre_exit (Golang plugin only) */
+    void (*cb_pre_exit)(int);
 
     if (!in_context) {
         return 0;
+    }
+
+    cb_pre_exit = flb_plugin_proxy_symbol(proxy, "FLBPluginInputPreExit");
+    if (cb_pre_exit != NULL) {
+        cb_pre_exit(config->shutdown_by_hot_reloading);
     }
 
     if (proxy->def->proxy == FLB_PROXY_GOLANG) {
