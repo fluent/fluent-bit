@@ -459,6 +459,7 @@ static void input_thread(void *data)
     flb_bucket_queue_destroy(evl_bktq);
     flb_sched_destroy(sched);
     input_thread_instance_destroy(thi);
+    flb_input_unprepare();
 }
 
 
