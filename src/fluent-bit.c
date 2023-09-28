@@ -550,7 +550,7 @@ static void flb_signal_exit(int signal)
     };
 }
 
-static void flb_signal_handler_status_line()
+static void flb_signal_handler_status_line(struct flb_cf *cf_opts)
 {
     int len;
     char ts[32];
@@ -558,7 +558,6 @@ static void flb_signal_handler_status_line()
     time_t now;
     struct tm *cur;
     flb_ctx_t *ctx = flb_context_get();
-    struct flb_cf *cf_opts = flb_cf_context_get();
 
     now = time(NULL);
     cur = localtime(&now);
@@ -577,7 +576,8 @@ static void flb_signal_handler_status_line()
 
 static void flb_signal_handler(int signal)
 {
-    flb_signal_handler_status_line();
+    struct flb_cf *cf_opts = flb_cf_context_get();
+    flb_signal_handler_status_line(cf_opts);
 
     switch (signal) {
         flb_print_signal(SIGINT);
@@ -637,9 +637,12 @@ void flb_console_handler_set_ctx(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 
 static BOOL WINAPI flb_console_handler(DWORD evType)
 {
+    struct flb_cf *cf_opts;
+
     switch(evType) {
     case 0 /* CTRL_C_EVENT_0 */:
-        flb_signal_handler_status_line();
+        cf_opts = flb_cf_context_get();
+        flb_signal_handler_status_line(cf_opts);
         write (STDERR_FILENO, "SIGINT)\n", sizeof("SIGINT)\n")-1);
         /* signal the main loop to execute reload even if CTRL_C event.
          * This is necessary because all signal handlers in win32
