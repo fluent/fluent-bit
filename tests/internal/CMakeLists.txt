@@ -39,6 +39,7 @@ set(UNIT_TESTS_FILES
   env.c
   log.c
   log_event_decoder.c
+  log_event_encoder.c
   processor.c
   uri.c
   )
