@@ -29,11 +29,15 @@
 #include <monkey/mk_core/mk_list.h>
 #include <msgpack/pack.h>
 
+/* global variables in Lua */
+#define FLB_LUA_VAR_FLB_NULL "flb_null"
+
 #define FLB_LUA_L2C_TYPES_NUM_MAX   16
 
 enum flb_lua_l2c_type_enum {
     FLB_LUA_L2C_TYPE_INT,
-    FLB_LUA_L2C_TYPE_ARRAY
+    FLB_LUA_L2C_TYPE_ARRAY,
+    FLB_LUA_L2C_TYPE_MAP
 };
 
 struct flb_lua_l2c_type {
@@ -46,6 +50,27 @@ struct flb_lua_l2c_config {
     int    l2c_types_num;      /* number of l2c_types */
     struct mk_list l2c_types;  /* data types (lua -> C) */
 };
+
+
+/*
+ * Metatable for Lua table.
+ * https://www.lua.org/manual/5.1/manual.html#2.8
+ */
+struct flb_lua_metadata {
+    int initialized;
+    int data_type; /* Map or Array */
+};
+
+static inline int flb_lua_metadata_init(struct flb_lua_metadata *meta)
+{
+    if (meta == NULL) {
+        return -1;
+    }
+    meta->initialized = FLB_TRUE;
+    meta->data_type = -1;
+
+    return 0;
+}
 
 /* convert from negative index to positive index */
 static inline int flb_lua_absindex(lua_State *l , int index)
@@ -74,5 +99,6 @@ void flb_lua_tompack(lua_State *l,
                      int index,
                      struct flb_lua_l2c_config *l2cc);
 void flb_lua_dump_stack(FILE *out, lua_State *l);
+int flb_lua_enable_flb_null(lua_State *l);
 
 #endif

@@ -26,6 +26,8 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_ra_key.h>
 #include <msgpack.h>
 
 #include "azure.h"
@@ -47,6 +49,7 @@ static int cb_azure_init(struct flb_output_instance *ins,
 }
 
 static int azure_format(const void *in_buf, size_t in_bytes,
+                        flb_sds_t tag, flb_sds_t *tag_val_out,
                         char **out_buf, size_t *out_size,
                         struct flb_azure *ctx)
 {
@@ -68,6 +71,7 @@ static int azure_format(const void *in_buf, size_t in_bytes,
     int len;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
+    flb_sds_t tmp = NULL;
     int ret;
 
     /* Count number of items */
@@ -96,6 +100,23 @@ static int azure_format(const void *in_buf, size_t in_bytes,
 
         map = *log_event.body;
         map_size = map.via.map.size;
+
+        if (ctx->log_type_key) {
+            tmp = flb_ra_translate(ctx->ra_prefix_key,
+                                tag, flb_sds_len(tag),
+                                map, NULL);
+            if (!tmp) {
+                flb_plg_error(ctx->ins, "Tagged record translation failed!");
+            }
+            else if (flb_sds_is_empty(tmp)) {
+                flb_plg_warn(ctx->ins, "Record accessor key not matched");
+                flb_sds_destroy(tmp);
+            }
+            else {
+                /* tag_val_out must be destroyed by the caller */
+                *tag_val_out = tmp;
+            }
+        }
 
         msgpack_pack_map(&mp_pck, map_size + 1);
 
@@ -160,6 +181,7 @@ static int azure_format(const void *in_buf, size_t in_bytes,
 }
 
 static int build_headers(struct flb_http_client *c,
+                         flb_sds_t log_type,
                          size_t content_length,
                          struct flb_azure *ctx)
 {
@@ -238,7 +260,7 @@ static int build_headers(struct flb_http_client *c,
     /* Append headers */
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
     flb_http_add_header(c, "Log-Type", 8,
-                        ctx->log_type, flb_sds_len(ctx->log_type));
+                        log_type, flb_sds_len(log_type));
     flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
     flb_http_add_header(c, "x-ms-date", 9, rfc1123date,
                         flb_sds_len(rfc1123date));
@@ -283,6 +305,7 @@ static void cb_azure_flush(struct flb_event_chunk *event_chunk,
     struct flb_connection *u_conn;
     struct flb_http_client *c;
     flb_sds_t payload;
+    flb_sds_t final_log_type = NULL;
     (void) i_ins;
     (void) config;
 
@@ -294,7 +317,12 @@ static void cb_azure_flush(struct flb_event_chunk *event_chunk,
 
     /* Convert binary logs into a JSON payload */
     ret = azure_format(event_chunk->data, event_chunk->size,
-                       &buf_data, &buf_size, ctx);
+                      event_chunk->tag, &final_log_type, &buf_data, &buf_size, ctx);
+    /* If cannot get matching record using log_type_prefix, use log_type directly */
+    if (!final_log_type) {
+        final_log_type = ctx->log_type;
+    }
+
     if (ret == -1) {
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -307,7 +335,7 @@ static void cb_azure_flush(struct flb_event_chunk *event_chunk,
     flb_http_buffer_size(c, FLB_HTTP_DATA_SIZE_MAX);
 
     /* Append headers and Azure signature */
-    ret = build_headers(c, flb_sds_len(payload), ctx);
+    ret = build_headers(c, final_log_type, flb_sds_len(payload), ctx);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error composing signature");
         flb_sds_destroy(payload);
@@ -339,6 +367,9 @@ static void cb_azure_flush(struct flb_event_chunk *event_chunk,
     }
 
     /* Cleanup */
+    if (final_log_type != ctx->log_type) {
+        flb_sds_destroy(final_log_type);
+    }
     flb_http_client_destroy(c);
     flb_sds_destroy(payload);
     flb_upstream_conn_release(u_conn);
@@ -378,6 +409,14 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "log_type", FLB_AZURE_LOG_TYPE,
      0, FLB_TRUE, offsetof(struct flb_azure, log_type),
     "The name of the event type."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "log_type_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure, log_type_key),
+     "If included, the value for this key will be looked upon in the record "
+     "and if present, will over-write the `log_type`. If the key/value "
+     "is not found in the record then the `log_type` option will be used. "
     },
 
     {
