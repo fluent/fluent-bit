@@ -37,6 +37,8 @@ struct tz_check tz_entries_ok[] = {
     {"-0600",  -21600},
     {"-06:00", -21600},
     {"Z",           0},
+    // System is mocked to timezone "HST" is -10 hours
+    {"System", -36000},
 };
 
 struct tz_check tz_entries_error[] = {
@@ -126,6 +128,35 @@ int flb_parser_regex_do(struct flb_parser *parser,
                         void **out_buf, size_t *out_size,
                         struct flb_time *out_time);
 
+static char* mock_timezone(char *tz)
+{
+    char *original_tz = getenv("TZ");
+    if (original_tz) {
+        original_tz = strdup(original_tz);
+        if (!original_tz) {
+            perror("Failed to allocate memory for original_tz");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    setenv("TZ", tz, 1);
+    tzset();
+
+    return original_tz;
+}
+
+static void undo_mock_timezone(char *original_tz)
+{
+    if (original_tz) {
+        setenv("TZ", original_tz, 1);
+    } else {
+        unsetenv("TZ");
+    }
+    tzset();
+    free(original_tz);
+}
+
+
 /* Parse timezone string and get the offset */
 void test_parser_tzone_offset()
 {
@@ -134,6 +165,9 @@ void test_parser_tzone_offset()
     int ret;
     int diff;
     struct tz_check *t;
+
+    /* Hawaii Standard Time chosen for not having daylight saving time */
+    char *original_timezone = mock_timezone("HST");
 
     /* Valid offsets */
     for (i = 0; i < sizeof(tz_entries_ok) / sizeof(struct tz_check); i++) {
@@ -154,6 +188,8 @@ void test_parser_tzone_offset()
         ret = flb_parser_tzone_offset(t->val, len, &diff);
         TEST_CHECK(ret != 0);
     }
+
+    undo_mock_timezone(original_timezone);
 }
 
 static void load_json_parsers(struct flb_config *config)

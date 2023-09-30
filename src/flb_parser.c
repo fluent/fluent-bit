@@ -43,6 +43,7 @@
 #include <sys/stat.h>
 #include <limits.h>
 #include <string.h>
+#include <time.h>
 
 static inline uint32_t digits10(uint64_t v) {
     if (v < 10) return 1;
@@ -993,6 +994,21 @@ int flb_parser_do(struct flb_parser *parser, const char *buf, size_t length,
     return -1;
 }
 
+int system_utc_offset(int *tmdiff)
+{
+#ifdef _WIN32
+    // Adjust the sign to match tm_gmtoff
+    *tmdiff = -_timezone;
+    return 0;
+#else
+    time_t currentTime = time(NULL);
+    struct tm localTime = {0};
+    localtime_r(&currentTime, &localTime);
+    *tmdiff = localTime.tm_gmtoff;
+    return 0;
+#endif
+}
+
 /* Given a timezone string, return it numeric offset */
 int flb_parser_tzone_offset(const char *str, int len, int *tmdiff)
 {
@@ -1007,6 +1023,11 @@ int flb_parser_tzone_offset(const char *str, int len, int *tmdiff)
         /* This is UTC, no changes required */
         *tmdiff = 0;
         return 0;
+    }
+
+    /* Check system timezones */
+    if (*p == 'S') {
+        return system_utc_offset(tmdiff);
     }
 
     /* Unexpected timezone string */
