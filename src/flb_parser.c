@@ -530,7 +530,8 @@ static int parser_conf_file(const char *cfg, struct flb_cf *cf,
                       name, cfg);
             goto fconf_early_error;
         }
-        
+
+
         /* skip_empty_values */
         skip_empty = FLB_TRUE;
         tmp_str = get_parser_key(config, cf, s, "skip_empty_values");
@@ -1040,7 +1041,7 @@ int flb_parser_tzone_offset(const char *str, int len, int *tmdiff)
         min = ((p[2] - '0') * 10) + (p[3] - '0');
     }
 
-    if (hour < 0 || hour > 59 || min < 0 || min > 59) {
+    if (hour < 0 || hour > 23 || min < 0 || min > 59) {
         return -1;
     }
 
