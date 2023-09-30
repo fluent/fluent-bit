@@ -33,15 +33,16 @@ struct tz_check tz_entries_ok[] = {
     {"+0000",       0},
     {"+00:00",      0},
     {"+00:59",   3540},
-    {"-0600",  -21000},
-    {"-06:00", -21000},
+    {"-0600",  -21600},
+    {"-06:00", -21600},
+    {"Z",           0},
 };
 
 struct tz_check tz_entries_error[] = {
     {"0000",   0},
     {"+00:90", 0},
     {"--600",  0},
-    {"-06:00", -21000},
+    {"foo",    0},
 };
 
 /* Time Lookup */
@@ -134,16 +135,18 @@ void test_parser_tzone_offset()
 
     /* Valid offsets */
     for (i = 0; i < sizeof(tz_entries_ok) / sizeof(struct tz_check); i++) {
-        t = &tz_entries_ok[0];
+        t = &tz_entries_ok[i];
+        TEST_CASE(t->val);
         len = strlen(t->val);
 
         ret = flb_parser_tzone_offset(t->val, len, &diff);
-        TEST_CHECK(ret == 0 && diff == t->diff);
+        TEST_CHECK(ret == 0);
+        TEST_CHECK_(diff == t->diff, "expected diff %d but got %d", t->diff, diff);
     }
 
     /* Invalid offsets */
     for (i = 0; i < sizeof(tz_entries_error) / sizeof(struct tz_check); i++) {
-        t = &tz_entries_error[0];
+        t = &tz_entries_error[i];
         len = strlen(t->val);
 
         ret = flb_parser_tzone_offset(t->val, len, &diff);
