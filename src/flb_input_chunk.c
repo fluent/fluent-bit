@@ -1031,7 +1031,6 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
     int new_chunk = FLB_FALSE;
     size_t out_size;
     struct flb_input_chunk *ic = NULL;
-    size_t expected_chunk_size;
 
     if (tag_len > FLB_INPUT_CHUNK_TAG_MAX) {
         flb_plg_warn(in,
@@ -1724,8 +1723,8 @@ retry:
     /* append chunk raw context to the ring buffer */
     ret = flb_ring_buffer_write(ins->rb, (void *) &cr, sizeof(cr));
     if (ret == -1) {
-        printf("[%s] failed buffer write, retries=%i\n",
-               flb_input_name(ins), retries); fflush(stdout);
+        flb_plg_debug(ins, "failed buffer write, retries=%i\n",
+                      retries);
 
         /* sleep for 100000 microseconds (100 milliseconds) */
         usleep(100000);
