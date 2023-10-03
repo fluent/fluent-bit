@@ -54,7 +54,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
 
@@ -85,18 +85,18 @@ jobs:
       debug-digest: ${{ steps.debug_build_push.outputs.digest }}
     steps:
       - name: Checkout code for modern style builds
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
@@ -104,7 +104,7 @@ jobs:
 
       - name: Extract metadata from Github
         id: meta
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
           images: ${{ inputs.registry }}/${{ inputs.image }}
           tags: |
@@ -114,7 +114,7 @@ jobs:
 
       - name: Build the production images
         id: build_push
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v5
         with:
           file: ./dockerfiles/Dockerfile
           context: .
@@ -131,7 +131,7 @@ jobs:
             RELEASE_VERSION=${{ inputs.version }}
 
       - id: debug-meta
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
           images: ${{ inputs.registry }}/${{ inputs.image }}
           tags: |
@@ -141,7 +141,7 @@ jobs:
 
       - name: Build the debug multi-arch images
         id: debug_build_push
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v5
         with:
           file: ./dockerfiles/Dockerfile
           context: .
@@ -168,7 +168,7 @@ jobs:
       packages: read
     steps:
       - name: Log in to the Container registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
@@ -199,7 +199,7 @@ jobs:
       packages: read
     steps:
       - name: Log in to the Container registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
@@ -297,12 +297,12 @@ jobs:
       packages: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
@@ -314,7 +314,7 @@ jobs:
           docker push ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }}
 
         # We cannot use this action as it requires privileged mode
-        # uses: docker/build-push-action@v4
+        # uses: docker/build-push-action@v5
         # with:
         #   file: ./dockerfiles/Dockerfile.windows
         #   context: .

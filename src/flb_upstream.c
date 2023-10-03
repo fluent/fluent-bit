@@ -442,10 +442,6 @@ struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
  */
 static void shutdown_connection(struct flb_connection *u_conn)
 {
-    struct flb_upstream *u;
-
-    u = u_conn->upstream;
-
     if (u_conn->fd > 0 &&
         !u_conn->shutdown_flag) {
         shutdown(u_conn->fd, SHUT_RDWR);
@@ -726,9 +722,6 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
 
             flb_stream_release_lock(&u->base);
 
-            /* Reset errno */
-            conn->net_error = -1;
-
             err = flb_socket_error(conn->fd);
 
             if (!FLB_EINPROGRESS(err) && err != 0) {
@@ -739,6 +732,9 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
                 conn = NULL;
                 continue;
             }
+
+            /* Reset errno */
+            conn->net_error = -1;
 
             /* Connect timeout */
             conn->ts_assigned = time(NULL);
@@ -803,7 +799,8 @@ int flb_upstream_conn_release(struct flb_connection *conn)
     /* If this is a valid KA connection just recycle */
     if (u->base.net.keepalive == FLB_TRUE &&
         conn->recycle == FLB_TRUE &&
-        conn->fd > -1) {
+        conn->fd > -1 &&
+        conn->net_error == -1) {
         /*
          * This connection is still useful, move it to the 'available' queue and
          * initialize variables.

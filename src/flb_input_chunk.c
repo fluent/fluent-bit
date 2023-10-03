@@ -1031,7 +1031,6 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
     int new_chunk = FLB_FALSE;
     size_t out_size;
     struct flb_input_chunk *ic = NULL;
-    size_t expected_chunk_size;
 
     if (tag_len > FLB_INPUT_CHUNK_TAG_MAX) {
         flb_plg_warn(in,
@@ -1185,7 +1184,7 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
         in->mem_buf_status == FLB_INPUT_PAUSED) {
         in->mem_buf_status = FLB_INPUT_RUNNING;
         if (in->p->cb_resume) {
-            in->p->cb_resume(in->context, in->config);
+            flb_input_resume(in);
             flb_info("[input] %s resume (mem buf overlimit)",
                       in->name);
         }
@@ -1196,7 +1195,7 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
         in->storage_buf_status == FLB_INPUT_PAUSED) {
         in->storage_buf_status = FLB_INPUT_RUNNING;
         if (in->p->cb_resume) {
-            in->p->cb_resume(in->context, in->config);
+            flb_input_resume(in);
             flb_info("[input] %s resume (storage buf overlimit %zu/%zu)",
                       in->name,
                       ((struct flb_storage_input *)in->storage)->cio->total_chunks_up,
@@ -1724,8 +1723,8 @@ retry:
     /* append chunk raw context to the ring buffer */
     ret = flb_ring_buffer_write(ins->rb, (void *) &cr, sizeof(cr));
     if (ret == -1) {
-        printf("[%s] failed buffer write, retries=%i\n",
-               flb_input_name(ins), retries); fflush(stdout);
+        flb_plg_debug(ins, "failed buffer write, retries=%i\n",
+                      retries);
 
         /* sleep for 100000 microseconds (100 milliseconds) */
         usleep(100000);
@@ -1766,9 +1765,18 @@ void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data)
         ins = mk_list_entry(head, struct flb_input_instance, _head);
         cr = NULL;
 
-        while ((ret = flb_ring_buffer_read(ins->rb,
-                                           (void *) &cr,
-                                           sizeof(cr))) == 0) {
+        while (1) {
+            if (flb_input_buf_paused(ins) == FLB_TRUE) {
+                break;
+            }
+
+            ret = flb_ring_buffer_read(ins->rb,
+                                       (void *) &cr,
+                                       sizeof(cr));
+            if (ret != 0) {
+                break;
+            }
+
             if (cr) {
                 if (cr->tag) {
                     tag_len = flb_sds_len(cr->tag);

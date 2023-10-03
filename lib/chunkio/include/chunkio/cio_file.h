@@ -35,6 +35,7 @@ struct cio_file {
     int allocate_strategy;    /* linux-only: fallocate strategy */
     size_t fs_size;           /* original size in the file system */
     size_t data_size;         /* number of bytes used */
+    size_t page_size;         /* curent page size */
     size_t alloc_size;        /* allocated size       */
     size_t realloc_size;      /* chunk size to increase alloc */
     char *path;               /* root path + stream   */

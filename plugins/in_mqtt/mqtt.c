@@ -139,7 +139,11 @@ static int in_mqtt_exit(void *data, struct flb_config *config)
 
 /* Configuration properties map */	
 static struct flb_config_map config_map[] = {	
-        	
+    {
+     FLB_CONFIG_MAP_STR, "payload_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_in_mqtt_config, payload_key),
+     "Key where the payload will be preserved"
+    },
     /* EOF */	
     {0}	
 };

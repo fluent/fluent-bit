@@ -26,8 +26,8 @@
 # link against the sanitizers.
 option(SANITIZE_LINK_STATIC "Try to link static against sanitizers." Off)
 
-
-
+# Highlight this module has been loaded.
+set(Sanitizers_FOUND TRUE)
 
 set(FIND_QUIETLY_FLAG "")
 if (DEFINED Sanitizers_FIND_QUIETLY)
@@ -39,9 +39,6 @@ find_package(TSan ${FIND_QUIETLY_FLAG})
 find_package(MSan ${FIND_QUIETLY_FLAG})
 find_package(UBSan ${FIND_QUIETLY_FLAG})
 
-
-
-
 function(sanitizer_add_blacklist_file FILE)
     if(NOT IS_ABSOLUTE ${FILE})
         set(FILE "${CMAKE_CURRENT_SOURCE_DIR}/${FILE}")
@@ -52,7 +49,7 @@ function(sanitizer_add_blacklist_file FILE)
         "SanitizerBlacklist" "SanBlist")
 endfunction()
 
-function(add_sanitizers ...)
+function(add_sanitizers)
     # If no sanitizer is enabled, return immediately.
     if (NOT (SANITIZE_ADDRESS OR SANITIZE_MEMORY OR SANITIZE_THREAD OR
         SANITIZE_UNDEFINED))
@@ -77,12 +74,12 @@ function(add_sanitizers ...)
                     "Target will be compiled without sanitizers.")
             return()
 
-        # If the target is compiled by no known compiler, ignore it.
         elseif (NUM_COMPILERS EQUAL 0)
-            message(WARNING "Can't use any sanitizers for target ${TARGET}, "
-                    "because it uses an unknown compiler. Target will be "
-                    "compiled without sanitizers.")
-            return()
+            # If the target is compiled by no known compiler, give a warning.
+            message(WARNING "Sanitizers for target ${TARGET} may not be"
+                    " usable, because it uses no or an unknown compiler. "
+                    "This is a false warning for targets using only "
+                    "object lib(s) as input.")
         endif ()
 
         # Add sanitizers for target.
@@ -90,5 +87,5 @@ function(add_sanitizers ...)
         add_sanitize_thread(${TARGET})
         add_sanitize_memory(${TARGET})
         add_sanitize_undefined(${TARGET})
-	endforeach ()
+    endforeach ()
 endfunction(add_sanitizers)

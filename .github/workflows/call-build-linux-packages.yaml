@@ -60,7 +60,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
           path: source
@@ -87,7 +87,7 @@ jobs:
       # Pick up latest master version
       - name: Checkout code for action
         if: inputs.environment == 'staging'
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           path: action-support
 
@@ -116,7 +116,7 @@ jobs:
     continue-on-error: ${{ inputs.ignore_failing_targets || false }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
 
@@ -125,10 +125,10 @@ jobs:
         uses: self-actuated/hub-mirror@master
   
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
       - name: Replace all special characters with dashes
         id: formatted_distro
@@ -193,7 +193,7 @@ jobs:
       # Pick up latest master version
       - name: Checkout code for action
         if: inputs.environment == 'staging'
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           path: action-support
 
@@ -224,11 +224,11 @@ jobs:
           sudo apt-get install -y createrepo-c aptly awscli
 
       - name: Checkout code for repo metadata construction - always latest
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Import GPG key for signing
         id: import_gpg
-        uses: crazy-max/ghaction-import-gpg@v5
+        uses: crazy-max/ghaction-import-gpg@v6
         with:
           gpg_private_key: ${{ secrets.gpg_private_key }}
           passphrase: ${{ secrets.gpg_private_key_passphrase }}

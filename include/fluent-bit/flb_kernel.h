@@ -35,5 +35,6 @@ struct flb_kernel {
 };
 
 struct flb_kernel *flb_kernel_info();
+void flb_kernel_destroy(struct flb_kernel *kernel);
 
 #endif

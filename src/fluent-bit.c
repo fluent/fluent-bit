@@ -550,7 +550,7 @@ static void flb_signal_exit(int signal)
     };
 }
 
-static void flb_signal_handler(int signal)
+static void flb_signal_handler_status_line(struct flb_cf *cf_opts)
 {
     int len;
     char ts[32];
@@ -558,7 +558,6 @@ static void flb_signal_handler(int signal)
     time_t now;
     struct tm *cur;
     flb_ctx_t *ctx = flb_context_get();
-    struct flb_cf *cf_opts = flb_cf_context_get();
 
     now = time(NULL);
     cur = localtime(&now);
@@ -573,6 +572,13 @@ static void flb_signal_handler(int signal)
     /* write signal number */
     write(STDERR_FILENO, ts, len);
     write(STDERR_FILENO, s, sizeof(s) - 1);
+}
+
+static void flb_signal_handler(int signal)
+{
+    struct flb_cf *cf_opts = flb_cf_context_get();
+    flb_signal_handler_status_line(cf_opts);
+
     switch (signal) {
         flb_print_signal(SIGINT);
 #ifndef FLB_SYSTEM_WINDOWS
@@ -616,6 +622,52 @@ static void flb_signal_handler(int signal)
     }
 }
 
+#ifdef FLB_SYSTEM_WINDOWS
+#include <ConsoleApi.h>
+
+static flb_ctx_t *handler_ctx = NULL;
+static struct flb_cf *handler_opts = NULL;
+static int handler_signal = 0;
+
+void flb_console_handler_set_ctx(flb_ctx_t *ctx, struct flb_cf *cf_opts)
+{
+    handler_ctx = ctx;
+    handler_opts = cf_opts;
+}
+
+static BOOL WINAPI flb_console_handler(DWORD evType)
+{
+    struct flb_cf *cf_opts;
+
+    switch(evType) {
+    case 0 /* CTRL_C_EVENT_0 */:
+        cf_opts = flb_cf_context_get();
+        flb_signal_handler_status_line(cf_opts);
+        write (STDERR_FILENO, "SIGINT)\n", sizeof("SIGINT)\n")-1);
+        /* signal the main loop to execute reload even if CTRL_C event.
+         * This is necessary because all signal handlers in win32
+         * are executed on their own thread.
+         */
+        handler_signal = 2;
+        break;
+    case 1 /* CTRL_BREAK_EVENT_1 */:
+        if (flb_bin_restarting == FLB_RELOAD_IDLE) {
+            flb_bin_restarting = FLB_RELOAD_IN_PROGRESS;
+            /* signal the main loop to execute reload. this is necessary since
+             * all signal handlers in win32 are executed on their own thread.
+             */
+            handler_signal = 1;
+            flb_bin_restarting = FLB_RELOAD_IDLE;
+        }
+        else {
+            flb_utils_error(FLB_ERR_RELOADING_IN_PROGRESS);
+        }
+        break;
+    }
+    return 1;
+}
+#endif
+
 static void flb_signal_init()
 {
     signal(SIGINT,  &flb_signal_handler_break_loop);
@@ -623,6 +675,9 @@ static void flb_signal_init()
     signal(SIGQUIT, &flb_signal_handler_break_loop);
     signal(SIGHUP,  &flb_signal_handler);
     signal(SIGCONT, &flb_signal_handler);
+#else
+    /* Use SetConsoleCtrlHandler on windows to simulate SIGHUP */
+    SetConsoleCtrlHandler(flb_console_handler, 1);
 #endif
     signal(SIGTERM, &flb_signal_handler_break_loop);
     signal(SIGSEGV, &flb_signal_handler);
@@ -836,12 +891,15 @@ static int parse_trace_pipeline(flb_ctx_t *ctx, const char *pipeline, char **tra
     }
 
     mk_list_foreach(cur, parts) {
-	key = NULL;
-	value = NULL;
+        key = NULL;
+        value = NULL;
+
         part = mk_list_entry(cur, struct flb_split_entry, _head);
+
         if (parse_trace_pipeline_prop(ctx, part->value, &key, &value) == FLB_ERROR) {
             return FLB_ERROR;
         }
+
         if (strcmp(key, "input") == 0) {
             if (*trace_input != NULL) {
                 flb_free(*trace_input);
@@ -874,12 +932,14 @@ static int parse_trace_pipeline(flb_ctx_t *ctx, const char *pipeline, char **tra
                                    (char *)propname, strlen(propname),
                                    (char *)propval, strlen(propval));
         }
-	if (key != NULL) {
-		mk_mem_free(key);
-	}
-	if (value != NULL) {
-		flb_free(value);
-	}
+
+        if (key != NULL) {
+            mk_mem_free(key);
+        }
+
+        if (value != NULL) {
+            flb_free(value);
+        }
     }
 
     flb_utils_split_free(parts);
@@ -994,6 +1054,10 @@ int flb_main(int argc, char **argv)
     config = ctx->config;
     cf = config->cf_main;
     service = cf_opts->service;
+
+#ifdef FLB_SYSTEM_WINDOWS
+    flb_console_handler_set_ctx(ctx, cf_opts);
+#endif
 
     /* Add reference for cf_opts */
     config->cf_opts = cf_opts;
@@ -1315,8 +1379,23 @@ int flb_main(int argc, char **argv)
     while (ctx->status == FLB_LIB_OK && exit_signal == 0) {
         sleep(1);
 
+#ifdef FLB_SYSTEM_WINDOWS
+        if (handler_signal == 1) {
+            handler_signal = 0;
+            flb_reload(ctx, cf_opts);
+        }
+        else if (handler_signal == 2){
+            handler_signal = 0;
+            break;
+        }
+#endif
+
         /* set the context again before checking the status again */
         ctx = flb_context_get();
+
+#ifdef FLB_SYSTEM_WINDOWS
+        flb_console_handler_set_ctx(ctx, cf_opts);
+#endif
     }
 
     if (exit_signal) {

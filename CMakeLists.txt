@@ -7,8 +7,8 @@ set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  2)
-set(FLB_VERSION_MINOR  1)
-set(FLB_VERSION_PATCH  9)
+set(FLB_VERSION_MINOR  2)
+set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -255,6 +255,7 @@ option(FLB_OUT_PROMETHEUS_REMOTE_WRITE "Enable Prometheus remote write plugin"  
 option(FLB_OUT_S3                      "Enable AWS S3 output plugin"                  Yes)
 option(FLB_OUT_VIVO_EXPORTER           "Enabel Vivo exporter output plugin"           Yes)
 option(FLB_OUT_WEBSOCKET               "Enable Websocket output plugin"               Yes)
+option(FLB_OUT_ORACLE_LOG_ANALYTICS    "Enable Oracle Cloud Infrastructure Logging analytics plugin"          Yes)
 option(FLB_OUT_CHRONICLE               "Enable Google Chronicle output plugin"        Yes)
 option(FLB_FILTER_ALTER_SIZE           "Enable alter_size filter"                     Yes)
 option(FLB_FILTER_AWS                  "Enable aws filter"                            Yes)
@@ -369,8 +370,6 @@ endif()
 
 if (FLB_TESTS_OSSFUZZ)
   FLB_DEFINITION(FLB_HAVE_TESTS_OSSFUZZ)
-  # Disable for fuzz testing
-  set(FLB_CONFIG_YAML Off)
 endif()
 
 if (FLB_WASM)

@@ -839,6 +839,13 @@ static int config_set_properties(struct flb_upstream_node *node,
         fc->send_options = flb_utils_bool(tmp);
     }
 
+    /* add_option -> extra_options: if the user has defined 'add_option'
+     * we need to enable the 'send_options' flag
+     */
+    if (fc->extra_options && mk_list_size(fc->extra_options) > 0) {
+        fc->send_options = FLB_TRUE;
+    }
+
     /* require ack response  (implies send_options) */
     tmp = config_get_property("require_ack_response", node, ctx);
     if (tmp) {
@@ -1785,7 +1792,14 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "fluentd_compat", "false",
      0, FLB_TRUE, offsetof(struct flb_forward_config, fluentd_compat),
-     "Send cmetrics and ctreaces with Fluentd compatible format"
+     "Send metrics and traces with Fluentd compatible format"
+    },
+
+    {
+     FLB_CONFIG_MAP_SLIST_2, "add_option", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_forward_config, extra_options),
+     "Set an extra Forward protocol option. This is an advance feature, use it only for "
+     "very specific use-cases."
     },
 
     /* EOF */

@@ -21,14 +21,14 @@ jobs:
         # We do not push and this allows simpler workflow running for forks too
       steps:
         - name: Checkout code
-          uses: actions/checkout@v3
+          uses: actions/checkout@v4
 
         - name: Set up Docker Buildx
-          uses: docker/setup-buildx-action@v2
+          uses: docker/setup-buildx-action@v3
 
         - name: Extract metadata from Github
           id: meta
-          uses: docker/metadata-action@v4
+          uses: docker/metadata-action@v5
           with:
             images: ${{ github.repository }}/pr-${{ github.event.pull_request.number }}
             tags: |
@@ -36,7 +36,7 @@ jobs:
 
         - name: Build the multi-arch images
           id: build
-          uses: docker/build-push-action@v4
+          uses: docker/build-push-action@v5
           with:
             file: ./dockerfiles/Dockerfile
             context: .
@@ -55,7 +55,7 @@ jobs:
           shell: bash
 
         - name: Build the debug multi-arch images
-          uses: docker/build-push-action@v4
+          uses: docker/build-push-action@v5
           with:
             file: ./dockerfiles/Dockerfile
             context: .
@@ -72,7 +72,7 @@ jobs:
         contents: read
       steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Build the classic test image
         # We only want to confirm it builds with classic mode, nothing else
@@ -96,11 +96,11 @@ jobs:
         contents: read
       steps:
         - name: Checkout repository
-          uses: actions/checkout@v3
+          uses: actions/checkout@v4
 
         - name: Extract metadata from Github
           id: meta
-          uses: docker/metadata-action@v4
+          uses: docker/metadata-action@v5
           with:
             images: ${{ github.repository }}/pr-${{ github.event.pull_request.number }}
             tags: |

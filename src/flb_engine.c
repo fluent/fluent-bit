@@ -597,6 +597,9 @@ int flb_engine_failed(struct flb_config *config)
         flb_error("[engine] fail to dispatch FAILED message");
     }
 
+    /* Waiting flushing log */
+    sleep(1);
+
     return ret;
 }
 

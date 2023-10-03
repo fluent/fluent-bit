@@ -147,6 +147,9 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STORAGE_DELETE_IRRECOVERABLE_CHUNKS,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, storage_del_bad_chunks)},
+    {FLB_CONF_STORAGE_TRIM_FILES,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, storage_trim_files)},
 
     /* Coroutines */
     {FLB_CONF_STR_CORO_STACK_SIZE,
@@ -165,6 +168,9 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STR_STREAMS_FILE,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, stream_processor_file)},
+    {FLB_CONF_STR_STREAMS_STR_CONV,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, stream_processor_str_conv)},
 #endif
 
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -274,6 +280,7 @@ struct flb_config *flb_config_init()
 
     /* reload */
     config->ensure_thread_safety_on_hot_reloading = FLB_TRUE;
+    config->hot_reloaded_count = 0;
 
 #ifdef FLB_HAVE_SQLDB
     mk_list_init(&config->sqldb_list);
@@ -285,6 +292,7 @@ struct flb_config *flb_config_init()
 
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     flb_slist_create(&config->stream_processor_tasks);
+    config->stream_processor_str_conv = FLB_TRUE;
 #endif
 
     flb_slist_create(&config->external_plugins);
@@ -393,8 +401,7 @@ void flb_config_exit(struct flb_config *config)
     }
 
     if (config->kernel) {
-        flb_free(config->kernel->s_version.data);
-        flb_free(config->kernel);
+        flb_kernel_destroy(config->kernel);
     }
 
     /* release resources */
@@ -780,6 +787,11 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
             if (strcasecmp(kv->key, "name") == 0) {
                 continue;
             }
+
+            /* set ret to -1 to ensure that we treat any unhandled plugin or
+             * value types as errors.
+             */
+            ret = -1;
 
             if (type == FLB_CF_CUSTOM) {
                 if (kv->val->type == CFL_VARIANT_STRING) {

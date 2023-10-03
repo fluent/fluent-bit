@@ -28,6 +28,43 @@
 
 #include <msgpack.h>
 
+/* Note:
+ *       64 bit Windows :
+ *              All of the size_t casts have been replaced with
+ *              size_t pointer casts because there is an issue
+ *              with msvc where it doesn't honor the type promotion
+ *              when a small constant integer is hard-coded.
+ *
+ *              This should not be a problem because according to
+ *              the standard a size_t should be as large as the
+ *              native register size just like pointers.
+ *
+ *       32 bit Windows :
+ *              64 bit integers are still defined as their specific
+ *              types because the compiler handles them properly.
+ *
+ *       Additionally, even though it would be preferrable to be
+ *       able to use the optimize pragma to selectively disable
+ *       the problematic optimizations it doesn't seem to work
+ *       as expected.
+ */
+
+#ifdef FLB_SYSTEM_WINDOWS
+#ifdef _WIN64
+typedef size_t * flb_log_event_encoder_size_t;
+typedef size_t * flb_log_event_encoder_int64_t;
+typedef size_t * flb_log_event_encoder_uint64_t;
+#else
+typedef size_t * flb_log_event_encoder_size_t;
+typedef int64_t  flb_log_event_encoder_int64_t;
+typedef uint64_t flb_log_event_encoder_uint64_t;
+#endif
+#else
+typedef size_t   flb_log_event_encoder_size_t;
+typedef int64_t  flb_log_event_encoder_int64_t;
+typedef uint64_t flb_log_event_encoder_uint64_t;
+#endif
+
 #define FLB_EVENT_ENCODER_SUCCESS                        0
 #define FLB_EVENT_ENCODER_ERROR_UNSPECIFIED             -1
 #define FLB_EVENT_ENCODER_ERROR_ALLOCATION_ERROR        -2
@@ -80,31 +117,31 @@
 
 #define FLB_LOG_EVENT_STRING_LENGTH_VALUE(length) \
             (int) FLB_LOG_EVENT_STRING_LENGTH_VALUE_TYPE, \
-            (size_t) length
+            (flb_log_event_encoder_size_t) length
 
 #define FLB_LOG_EVENT_STRING_BODY_VALUE(buffer, length) \
             (int) FLB_LOG_EVENT_STRING_BODY_VALUE_TYPE, \
             (char *) buffer, \
-            (size_t) length
+            (flb_log_event_encoder_size_t) length
 
 #define FLB_LOG_EVENT_BINARY_LENGTH_VALUE(length) \
             (int) FLB_LOG_EVENT_BINARY_LENGTH_VALUE_TYPE, \
-            (size_t) length
+            (flb_log_event_encoder_size_t) length
 
 #define FLB_LOG_EVENT_BINARY_BODY_VALUE(buffer, length) \
             (int) FLB_LOG_EVENT_BINARY_BODY_VALUE_TYPE, \
             (char *) buffer, \
-            (size_t) length
+            (flb_log_event_encoder_size_t) length
 
 #define FLB_LOG_EVENT_EXT_LENGTH_VALUE(type_, length) \
             (int) FLB_LOG_EVENT_EXT_LENGTH_VALUE_TYPE, \
             (int) type_, \
-            (size_t) length
+            (flb_log_event_encoder_size_t) length
 
 #define FLB_LOG_EVENT_EXT_BODY_VALUE(buffer, length) \
             (int) FLB_LOG_EVENT_EXT_BODY_VALUE_TYPE, \
             (char *) buffer, \
-            (size_t) length
+            (flb_log_event_encoder_size_t) length
 
 #define FLB_LOG_EVENT_TIMESTAMP_VALUE(value) \
             (int) FLB_LOG_EVENT_TIMESTAMP_VALUE_TYPE, \
@@ -143,7 +180,7 @@
 
 #define FLB_LOG_EVENT_INT64_VALUE(value) \
             (int) FLB_LOG_EVENT_INT64_VALUE_TYPE, \
-            (int64_t) value
+            (flb_log_event_encoder_int64_t) value
 
 #define FLB_LOG_EVENT_UINT8_VALUE(value) \
             (int) FLB_LOG_EVENT_UINT8_VALUE_TYPE, \
@@ -159,7 +196,7 @@
 
 #define FLB_LOG_EVENT_UINT64_VALUE(value) \
             (int) FLB_LOG_EVENT_UINT64_VALUE_TYPE, \
-            (uint64_t) value
+            (flb_log_event_encoder_uint64_t) value
 
 #define FLB_LOG_EVENT_DOUBLE_VALUE(value) \
             (int) FLB_LOG_EVENT_DOUBLE_VALUE_TYPE, \
@@ -176,7 +213,7 @@
 #define FLB_LOG_EVENT_MSGPACK_RAW_VALUE(buffer, length) \
             (int) FLB_LOG_EVENT_MSGPACK_RAW_VALUE_TYPE, \
             (char *) buffer, \
-            (size_t) length
+            (flb_log_event_encoder_size_t) length
 
 #define FLB_LOG_EVENT_STRING_VALUE(buffer, length) \
             FLB_LOG_EVENT_STRING_LENGTH_VALUE(length), \

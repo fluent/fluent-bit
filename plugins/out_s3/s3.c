@@ -294,6 +294,7 @@ static int read_seq_index(char *seq_index_file, uint64_t *seq_index)
 
     ret = fscanf(fp, "%"PRIu64, seq_index);
     if (ret != 1) {
+        fclose(fp);
         flb_errno();
         return -1;
     }
@@ -316,6 +317,7 @@ static int write_seq_index(char *seq_index_file, uint64_t seq_index)
 
     ret = fprintf(fp, "%"PRIu64, seq_index);
     if (ret < 0) {
+        fclose(fp);
         flb_errno();
         return -1;
     }

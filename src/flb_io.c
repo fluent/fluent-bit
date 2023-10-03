@@ -174,6 +174,23 @@ int flb_io_net_connect(struct flb_connection *connection,
     return 0;
 }
 
+static void net_io_propagate_critical_error(
+                struct flb_connection *connection)
+{
+    switch (errno) {
+    case EBADF:
+    case ECONNRESET:
+    case EDESTADDRREQ:
+    case ENOTCONN:
+    case EPIPE:
+    case EACCES:
+    case ENOTTY:
+    case ENETDOWN:
+    case ENETUNREACH:
+        connection->net_error = errno;
+    }
+}
+
 static int fd_io_write(int fd, struct sockaddr_storage *address,
                        const void *data, size_t len, size_t *out_len);
 static int net_io_write(struct flb_connection *connection,
@@ -204,7 +221,13 @@ static int net_io_write(struct flb_connection *connection,
         }
     }
 
-    return fd_io_write(connection->fd, address, data, len, out_len);
+    ret = fd_io_write(connection->fd, address, data, len, out_len);
+
+    if (ret == -1) {
+        net_io_propagate_critical_error(connection);
+    }
+
+    return ret;
 }
 
 static int fd_io_write(int fd, struct sockaddr_storage *address,
@@ -430,6 +453,7 @@ retry:
             *out_len = total;
 
             net_io_restore_event(connection, &event_backup);
+            net_io_propagate_critical_error(connection);
 
             return -1;
         }
@@ -519,6 +543,9 @@ static ssize_t net_io_read(struct flb_connection *connection,
                      connection->net->io_timeout,
                      flb_connection_get_remote_address(connection));
         }
+        else {
+            net_io_propagate_critical_error(connection);
+        }
 
         return -1;
     }
@@ -596,6 +623,9 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_coro *co,
             connection->coroutine = NULL;
 
             goto retry_read;
+        }
+        else {
+            net_io_propagate_critical_error(connection);
         }
 
         ret = -1;

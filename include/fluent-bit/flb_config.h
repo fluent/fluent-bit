@@ -225,6 +225,7 @@ struct flb_config {
     int   storage_del_bad_chunks;   /* delete irrecoverable chunks */
     char *storage_bl_mem_limit;     /* storage backlog memory limit */
     struct flb_storage_metrics *storage_metrics_ctx; /* storage metrics context */
+    int   storage_trim_files;       /* enable/disable file trimming */
 
     /* Embedded SQL Database support (SQLite3) */
 #ifdef FLB_HAVE_SQLDB
@@ -244,6 +245,7 @@ struct flb_config {
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     char *stream_processor_file;            /* SP configuration file */
     void *stream_processor_ctx;             /* SP context */
+    int  stream_processor_str_conv;         /* SP enable converting from string to number */
 
     /*
      * Temporal list to hold tasks defined before the SP context is created
@@ -258,6 +260,7 @@ struct flb_config {
 
     int enable_hot_reload;
     int ensure_thread_safety_on_hot_reloading;
+    unsigned int hot_reloaded_count;
 
     /* Co-routines */
     unsigned int coro_stack_size;
@@ -320,6 +323,7 @@ enum conf_type {
 #define FLB_CONF_STR_PARSERS_FILE "Parsers_File"
 #define FLB_CONF_STR_PLUGINS_FILE "Plugins_File"
 #define FLB_CONF_STR_STREAMS_FILE "Streams_File"
+#define FLB_CONF_STR_STREAMS_STR_CONV "sp.convert_from_str_to_num"
 #define FLB_CONF_STR_CONV_NAN     "json.convert_nan_to_null"
 
 /* FLB_HAVE_HTTP_SERVER */
@@ -354,6 +358,7 @@ enum conf_type {
 #define FLB_CONF_STORAGE_MAX_CHUNKS_UP "storage.max_chunks_up"
 #define FLB_CONF_STORAGE_DELETE_IRRECOVERABLE_CHUNKS \
                                        "storage.delete_irrecoverable_chunks"
+#define FLB_CONF_STORAGE_TRIM_FILES    "storage.trim_files"
 
 /* Coroutines */
 #define FLB_CONF_STR_CORO_STACK_SIZE "Coro_Stack_Size"

@@ -26,6 +26,9 @@ option(SANITIZE_UNDEFINED
     "Enable UndefinedBehaviorSanitizer for sanitized targets." Off)
 
 set(FLAG_CANDIDATES
+    # MSVC uses
+    "/fsanitize=undefined"
+    # GNU/Clang
     "-g -fsanitize=undefined"
 )
 

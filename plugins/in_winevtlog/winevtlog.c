@@ -31,15 +31,15 @@ static char* convert_wstr(wchar_t *wstr, UINT codePage);
 static wchar_t* convert_str(char *str);
 
 struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_existing_events,
-                                              EVT_HANDLE stored_bookmark)
+                                              EVT_HANDLE stored_bookmark, const char *query)
 {
     struct winevtlog_channel *ch;
     EVT_HANDLE bookmark = NULL;
     HANDLE signal_event = NULL;
     DWORD len;
     DWORD flags = 0L;
-    PWSTR wide_channel = L"Application";
-    PWSTR wide_query = L"*";
+    PWSTR wide_channel = NULL;
+    PWSTR wide_query = NULL;
     void *buf;
 
     ch = flb_calloc(1, sizeof(struct winevtlog_channel));
@@ -54,6 +54,7 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_exis
         flb_free(ch);
         return NULL;
     }
+    ch->query = NULL;
 
     signal_event = CreateEvent(NULL, FALSE, FALSE, NULL);
 
@@ -61,6 +62,13 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_exis
     len = MultiByteToWideChar(CP_UTF8, 0, channel, -1, NULL, 0);
     wide_channel = flb_malloc(sizeof(PWSTR) * len);
     MultiByteToWideChar(CP_UTF8, 0, channel, -1, wide_channel, len);
+    if (query != NULL) {
+    // query : To wide char
+        len = MultiByteToWideChar(CP_UTF8, 0, query, -1, NULL, 0);
+        wide_query = flb_malloc(sizeof(PWSTR) * len);
+        MultiByteToWideChar(CP_UTF8, 0, query, -1, wide_query, len);
+        ch->query = flb_strdup(query);
+    }
 
     if (stored_bookmark) {
         flags |= EvtSubscribeStartAfterBookmark;
@@ -70,11 +78,17 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_exis
         flags |= EvtSubscribeToFutureEvents;
     }
 
+    /* The wide_query parameter can handle NULL as `*` for retrieving all events.
+     * ref. https://learn.microsoft.com/en-us/windows/win32/api/winevt/nf-winevt-evtsubscribe
+     */
     ch->subscription = EvtSubscribe(NULL, signal_event, wide_channel, wide_query,
                                     stored_bookmark, NULL, NULL, flags);
     if (!ch->subscription) {
         flb_error("[in_winevtlog] cannot subscribe '%s' (%i)", channel, GetLastError());
         flb_free(ch->name);
+        if (ch->query != NULL) {
+            flb_free(ch->query);
+        }
         flb_free(ch);
         return NULL;
     }
@@ -98,12 +112,18 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_exis
             flb_error("[in_winevtlog] cannot subscribe '%s' (%i)", channel, GetLastError());
             flb_free(wide_channel);
             flb_free(ch->name);
+            if (ch->query != NULL) {
+                flb_free(ch->query);
+            }
             flb_free(ch);
             return NULL;
         }
     }
 
     flb_free(wide_channel);
+    if (wide_query != NULL) {
+        flb_free(wide_query);
+    }
 
     return ch;
 }
@@ -142,6 +162,9 @@ static void close_handles(struct winevtlog_channel *ch)
 void winevtlog_close(struct winevtlog_channel *ch)
 {
     flb_free(ch->name);
+    if (ch->query != NULL) {
+        flb_free(ch->query);
+    }
     close_handles(ch);
 
     flb_free(ch);
@@ -587,7 +610,7 @@ int winevtlog_read(struct winevtlog_channel *ch, struct winevtlog_config *ctx,
  *
  * "channels" are comma-separated names like "Setup,Security".
  */
-struct mk_list *winevtlog_open_all(const char *channels, int read_existing_events, int ignore_missing_channels)
+struct mk_list *winevtlog_open_all(const char *channels, struct winevtlog_config *ctx)
 {
     char *tmp;
     char *channel;
@@ -611,12 +634,12 @@ struct mk_list *winevtlog_open_all(const char *channels, int read_existing_event
 
     channel = strtok_s(tmp , ",", &state);
     while (channel) {
-        ch = winevtlog_subscribe(channel, read_existing_events, NULL);
+        ch = winevtlog_subscribe(channel, ctx->read_existing_events, NULL, ctx->event_query);
         if (ch) {
             mk_list_add(&ch->_head, list);
         }
         else {
-            if (ignore_missing_channels) {
+            if (ctx->ignore_missing_channels) {
                 flb_debug("[in_winevtlog] channel '%s' does not exist", channel);
             }
             else {
@@ -746,7 +769,7 @@ int winevtlog_sqlite_load(struct winevtlog_channel *ch, struct flb_sqldb *db)
             bookmark = EvtCreateBookmark(bookmark_xml);
             if (bookmark) {
                 /* re-create subscription handles */
-                re_ch = winevtlog_subscribe(ch->name, FLB_FALSE, bookmark);
+                re_ch = winevtlog_subscribe(ch->name, FLB_FALSE, bookmark, ch->query);
                 if (re_ch != NULL) {
                     close_handles(ch);
 

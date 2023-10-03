@@ -268,6 +268,10 @@ static inline int pack_event_key(struct flb_splunk *ctx, msgpack_packer *mp_pck,
     t = flb_time_to_double(tm);
     val = flb_ra_translate(ctx->ra_event_key, tag, tag_len, map, NULL);
     if (!val || flb_sds_len(val) == 0) {
+        if (val != NULL) {
+            flb_sds_destroy(val);
+        }
+
         return -1;
     }
 

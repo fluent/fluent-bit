@@ -38,7 +38,9 @@ set(UNIT_TESTS_FILES
   parser_logfmt.c
   env.c
   log.c
+  log_event_decoder.c
   processor.c
+  uri.c
   )
 
 # Config format
