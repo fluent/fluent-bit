@@ -1075,6 +1075,8 @@ void *flb_output_get_cmt_instance(struct flb_output_instance *ins);
 #endif
 void flb_output_net_default(const char *host, int port,
                             struct flb_output_instance *ins);
+int flb_output_enable_multi_threading(struct flb_output_instance *ins,
+                                      struct flb_config *config);
 const char *flb_output_name(struct flb_output_instance *ins);
 void flb_output_pre_run(struct flb_config *config);
 void flb_output_exit(struct flb_config *config);
