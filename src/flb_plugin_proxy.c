@@ -365,7 +365,7 @@ static int flb_proxy_register_output(struct flb_plugin_proxy *proxy,
     out->type  = FLB_OUTPUT_PLUGIN_PROXY;
     out->proxy = proxy;
     out->flags = def->flags;
-    out->name  = def->name;
+    out->name  = flb_strdup(def->name);
     out->description = def->description;
     mk_list_add(&out->_head, &config->out_plugins);
 
