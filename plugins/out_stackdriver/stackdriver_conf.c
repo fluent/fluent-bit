@@ -551,7 +551,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
                                                      "stackdriver",
                                                      "proc_records_total",
                                                      "Total number of processed records.",
-                                                     2, (char *[]) {"status", "name"});
+                                                     3, (char *[]) {"grpc_code" ,"status", "name"});
 
     ctx->cmt_retried_records_total = cmt_counter_create(ins->cmt,
                                                         "fluentbit",
