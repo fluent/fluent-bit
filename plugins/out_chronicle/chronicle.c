@@ -603,9 +603,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t by
         }
 
         /* If log_key was not found in the current record, mark log key as missing */
-        if (found == FLB_FALSE) {
-            log_key_missing++;
-        }
+        log_key_missing++;
     }
 
     if (log_key_missing > 0) {
