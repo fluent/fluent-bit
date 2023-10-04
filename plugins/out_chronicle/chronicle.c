@@ -518,7 +518,6 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t by
     int i;
     int map_size;
     int check = FLB_FALSE;
-    int found = FLB_FALSE;
     int log_key_missing = 0;
     int ret;
     struct flb_chronicle *ctx = out_context;
@@ -568,7 +567,6 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t by
 
         if (check == FLB_TRUE) {
             if (strncmp(ctx->log_key, key_str, key_str_size) == 0) {
-                found = FLB_TRUE;
 
                 /*
                  * Copy contents of value into buffer. Necessary to copy
