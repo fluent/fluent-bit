@@ -168,9 +168,9 @@ int flb_utils_set_daemon(struct flb_config *config)
     pid_t pid;
 
     if ((pid = fork()) < 0){
-		flb_error("Failed creating to switch to daemon mode (fork failed)");
+        flb_error("Failed creating to switch to daemon mode (fork failed)");
         exit(EXIT_FAILURE);
-	}
+    }
 
     if (pid > 0) { /* parent */
         exit(EXIT_SUCCESS);
@@ -185,7 +185,7 @@ int flb_utils_set_daemon(struct flb_config *config)
     if (chdir("/") < 0) { /* make sure we can unmount the inherited filesystem */
         flb_error("Unable to unmount the inherited filesystem");
         exit(EXIT_FAILURE);
-	}
+    }
 
     /* Our last STDOUT messages */
     flb_info("switching to background mode (PID=%ld)", (long) getpid());
@@ -1386,6 +1386,36 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
     if (ret == 0) {
         *out_id = id;
         *out_size = bytes;
+        return 0;
+    }
+#elif defined(FLB_SYSTEM_WINDOWS)
+    LSTATUS status;
+    HKEY hKey = 0;
+    DWORD dwType = REG_SZ;
+    char buf[255] = {0};
+    DWORD dwBufSize = sizeof(buf)-1;
+
+    status = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+                          TEXT("SOFTWARE\\Microsoft\\Cryptography"),
+                          0,
+                          KEY_QUERY_VALUE,
+                          &hKey);
+
+    if (status != ERROR_SUCCESS) {
+        return -1;
+    }
+
+    status = RegQueryValueEx(hKey, TEXT("MachineGuid"), 0, &dwType, (LPBYTE)buf, &dwBufSize );
+    RegCloseKey(hKey);
+
+    if (status == ERROR_SUCCESS) {
+        *out_id = flb_calloc(1, dwBufSize+1);
+
+        if (*out_id == NULL) {
+            return -1;
+        }
+
+        *out_size = dwBufSize;
         return 0;
     }
 #endif
