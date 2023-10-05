@@ -50,13 +50,27 @@ static void handle_reload_request(mk_request_t *request, struct flb_config *conf
     msgpack_pack_str_body(&mp_pck, "reload", 6);
 
 #ifdef FLB_SYSTEM_WINDOWS
-    ret = -1;
+    if (config->enable_hot_reload != FLB_TRUE) {
+        msgpack_pack_str(&mp_pck, 11);
+        msgpack_pack_str_body(&mp_pck, "not enabled", 11);
+        msgpack_pack_str(&mp_pck, 6);
+        msgpack_pack_str_body(&mp_pck, "status", 6);
+        msgpack_pack_int64(&mp_pck, -1);
+    }
+    else {
+        ret = GenerateConsoleCtrlEvent(1 /* CTRL_BREAK_EVENT_1 */, 0);
+        if (ret == 0) {
+            mk_http_status(request, 500);
+            mk_http_done(request);
+            return;
+        }
 
-    msgpack_pack_str(&mp_pck, 11);
-    msgpack_pack_str_body(&mp_pck, "unsupported", 11);
-    msgpack_pack_str(&mp_pck, 6);
-    msgpack_pack_str_body(&mp_pck, "status", 6);
-    msgpack_pack_int64(&mp_pck, ret);
+        msgpack_pack_str(&mp_pck, 4);
+        msgpack_pack_str_body(&mp_pck, "done", 4);
+        msgpack_pack_str(&mp_pck, 6);
+        msgpack_pack_str_body(&mp_pck, "status", 6);
+        msgpack_pack_int64(&mp_pck, ret);
+    }
 #else
     if (config->enable_hot_reload != FLB_TRUE) {
         msgpack_pack_str(&mp_pck, 11);
