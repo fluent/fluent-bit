@@ -1669,12 +1669,8 @@ static int check_purge_deleted_file(struct flb_tail_config *ctx,
                                     struct flb_tail_file *file, time_t ts)
 {
     int ret;
-<<<<<<< HEAD
     int64_t mtime;
     struct flb_file_stat st;
-=======
-    struct stat st;
->>>>>>> 3ab27eff5 (in_tail: removed ignore_older enforcement on files that are being ingested)
 
     ret = flb_file_fstat(file->fd, &st);
     if (ret == -1) {
@@ -1697,22 +1693,6 @@ static int check_purge_deleted_file(struct flb_tail_config *ctx,
         return FLB_TRUE;
     }
 
-<<<<<<< HEAD
-    if (ctx->ignore_older > 0) {
-        mtime = st.modification_time;
-
-        if (mtime > 0) {
-            if ((ts - ctx->ignore_older) > mtime) {
-                flb_plg_debug(ctx->ins, "purge: monitored file (ignore older): %s",
-                              file->name);
-                flb_tail_file_remove(file);
-                return FLB_TRUE;
-            }
-        }
-    }
-
-=======
->>>>>>> 3ab27eff5 (in_tail: removed ignore_older enforcement on files that are being ingested)
     return FLB_FALSE;
 }
 
