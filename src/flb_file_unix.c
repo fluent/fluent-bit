@@ -43,7 +43,7 @@ static char *expand_tilde(const char *path,
     struct passwd *uinfo = NULL;
 
     if (expansion_attempted != NULL) {
-        expansion_attempted = FLB_TRUE;
+        *expansion_attempted = FLB_TRUE;
     }
 
     if (path[0] == '~') {
@@ -112,7 +112,7 @@ static char *expand_tilde(const char *path,
                           int *expansion_attempted)
 {
     if (expansion_attempted != NULL) {
-        expansion_attempted = FLB_FALSE;
+        *expansion_attempted = FLB_FALSE;
     }
 
     return flb_strdup(path);
