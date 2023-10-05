@@ -920,7 +920,7 @@ if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 
   # Add support for options like page size, if empty we default it
   if(NOT DEFINED FLB_JEMALLOC_OPTIONS OR "${FLB_JEMALLOC_OPTIONS}" STREQUAL "")
-    set(FLB_JEMALLOC_OPTIONS "--with-lg-quantum=3")
+    set(FLB_JEMALLOC_OPTIONS "--with-lg-quantum=3 --disable-initial-exec-tls")
   endif()
   # Split into a list so CMake handles it correctly when passing to configure command
   separate_arguments(FLB_JEMALLOC_OPTIONS_LIST UNIX_COMMAND ${FLB_JEMALLOC_OPTIONS})
