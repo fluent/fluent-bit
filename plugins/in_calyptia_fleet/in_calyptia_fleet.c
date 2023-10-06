@@ -129,7 +129,7 @@ static char *find_case_header(struct flb_http_client *cli, const char *header)
         if (strncasecmp(ptr, header, strlen(header)) == 0) {
 
             if (ptr[strlen(header)] == ':' && ptr[strlen(header)+1] == ' ') {
-                return ptr;                
+                return ptr;
             }
         }
     }
@@ -417,7 +417,7 @@ static void *do_reload(void *data)
 #ifndef FLB_SYSTEM_WINDOWS
     kill(getpid(), SIGHUP);
 #else
-	GenerateConsoleCtrlEvent(1 /* CTRL_BREAK_EVENT_1 */, 0);
+    GenerateConsoleCtrlEvent(1 /* CTRL_BREAK_EVENT_1 */, 0);
 #endif
     return NULL;
 }
@@ -438,7 +438,7 @@ static int test_config_is_valid(flb_sds_t cfgpath)
 
     if (conf == NULL) {
         goto cf_create_from_file_error;
-    } 
+    }
 
     ret = FLB_TRUE;
 
@@ -692,7 +692,7 @@ static flb_sds_t get_project_id_from_api_key(struct flb_in_calyptia_fleet_config
     memcpy(encoded, ctx->api_key, api_token_sep-ctx->api_key);
 
     ret = flb_base64_decode(token, sizeof(token)-1, &tlen,
-                            encoded, elen); 
+                            encoded, elen);
 
     if (ret != 0) {
         return NULL;
@@ -764,7 +764,7 @@ static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ct
     }
 
     url = flb_sds_create_size(4096);
-    flb_sds_printf(&url, "/v1/search?project_id=%s&resource=fleet&term=%s", 
+    flb_sds_printf(&url, "/v1/search?project_id=%s&resource=fleet&term=%s",
                    project_id, ctx->fleet_name);
 
     client = fleet_http_do(ctx, u_conn, url);
@@ -872,7 +872,7 @@ static int get_calyptia_file(struct flb_in_calyptia_fleet_config *ctx,
                              const char *hdr,
                              const char *dst,
                              time_t *time_last_modified)
- {
+{
     struct flb_http_client *client;
     size_t len;
     FILE *fp;
@@ -1303,7 +1303,7 @@ static int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx,
     }
 
     /* create the base file. */
-    ret = get_calyptia_file(ctx, u_conn, ctx->fleet_url, header, 
+    ret = get_calyptia_file(ctx, u_conn, ctx->fleet_url, header,
                             ".ini", &time_last_modified);
 
     /* new file created! */
@@ -1325,7 +1325,7 @@ static int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx,
 
 /* cb_collect callback */
 static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
-                                     struct flb_config *config, 
+                                     struct flb_config *config,
                                      void *in_context)
 {
     struct flb_in_calyptia_fleet_config *ctx = in_context;
