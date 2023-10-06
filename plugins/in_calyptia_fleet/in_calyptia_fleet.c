@@ -936,14 +936,14 @@ static int get_calyptia_file(struct flb_in_calyptia_fleet_config *ctx,
 
     if (hdr != NULL) {
         len = fwrite(hdr, strlen(hdr), 1, fp);
-        if (len < strlen(hdr)) {
+        if (len < 1) {
             flb_plg_error(ctx->ins, "truncated write: %s", dst);
             goto file_error;
         }
     }
 
     len = fwrite(client->resp.payload, client->resp.payload_size, 1, fp);
-    if (len < client->resp.payload_size) {
+    if (len < 1) {
         flb_plg_error(ctx->ins, "truncated write: %s", dst);
         goto file_error;
     }
