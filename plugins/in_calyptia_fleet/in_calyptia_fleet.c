@@ -953,7 +953,7 @@ static int calyptia_config_add(struct flb_in_calyptia_fleet_config *ctx,
         flb_sds_destroy(cfgoldname);
     }
 
-    link(cfgname, cfgnewname);
+    symlink(cfgname, cfgnewname);
     flb_sds_destroy(cfgnewname);
 
     return 0;
@@ -965,10 +965,12 @@ static int calyptia_config_commit(struct flb_in_calyptia_fleet_config *ctx,
     flb_sds_t cfgnewname;
     flb_sds_t cfgcurname;
     flb_sds_t cfgoldname;
+    flb_sds_t cfgtimename;
 
     cfgnewname = new_fleet_config_filename(ctx);
     cfgcurname = cur_fleet_config_filename(ctx);
     cfgoldname = old_fleet_config_filename(ctx);
+    cfgtimename = time_fleet_config_filename(ctx, ctx->config_timestamp);
 
     if (exists_new_fleet_config(ctx) == FLB_TRUE) {
         unlink(cfgnewname);
@@ -982,11 +984,12 @@ static int calyptia_config_commit(struct flb_in_calyptia_fleet_config *ctx,
         unlink(cfgcurname);
     }
 
-    link(cfgname, cfgcurname);
+    symlink(cfgtimename, cfgcurname);
 
     flb_sds_destroy(cfgnewname);
     flb_sds_destroy(cfgcurname);
     flb_sds_destroy(cfgoldname);
+    flb_sds_destroy(cfgtimename);
 
     return 0;
 }
