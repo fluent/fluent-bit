@@ -37,6 +37,16 @@
 #include <fluent-bit/config_format/flb_cf_fluentbit.h>
 #include <fluent-bit/flb_base64.h>
 
+// Glob support
+#ifndef _MSC_VER
+#include <glob.h>
+#endif
+
+#ifdef _WIN32
+#include <Windows.h>
+#include <strsafe.h>
+#define PATH_MAX MAX_PATH
+#endif
 
 #define CALYPTIA_H_PROJECT       "X-Project-Token"
 #define CALYPTIA_H_CTYPE         "Content-Type"
@@ -938,6 +948,152 @@ file_exists:
     return ret;
 }
 
+#ifndef _WIN32
+static struct cfl_array *read_glob(const char *path)
+{
+    int ret = -1;
+    int ret_glb = -1;
+    glob_t glb;
+    size_t idx;
+    struct cfl_array *list;
+
+
+    ret_glb = glob(path, GLOB_NOSORT, NULL, &glb);
+
+    if (ret_glb != 0) {
+        switch(ret_glb){
+        case GLOB_NOSPACE:
+            flb_warn("[%s] glob: [%s] no space", __FUNCTION__, path);
+            break;
+        case GLOB_NOMATCH:
+            flb_warn("[%s] glob: [%s] no match", __FUNCTION__, path);
+            break;
+        case GLOB_ABORTED:
+            flb_warn("[%s] glob: [%s] aborted", __FUNCTION__, path);
+            break;
+        default:
+            flb_warn("[%s] glob: [%s] other error", __FUNCTION__, path);
+        }
+        return NULL;
+    }
+
+    list = cfl_array_create(glb.gl_pathc);
+    for (idx = 0; idx < glb.gl_pathc; idx++) {
+        ret = cfl_array_append_string(list, glb.gl_pathv[idx]);
+        if (ret < 0) {
+            cfl_array_destroy(list);
+            return NULL;
+        }
+    }
+
+    globfree(&glb);
+    return list;
+}
+#else
+static char *dirname(char *path)
+{
+    char *ptr;
+
+
+    ptr = strrchr(path, '\\');
+
+    if (ptr == NULL) {
+        return path;
+    }
+    *ptr++='\0';
+    return path;
+}
+
+static struct cfl_array *read_glob(const char *path)
+{
+    char *star, *p0, *p1;
+    char pattern[MAX_PATH];
+    char buf[MAX_PATH];
+    int ret;
+    struct stat st;
+    HANDLE hnd;
+    WIN32_FIND_DATA data;
+
+    if (strlen(path) > MAX_PATH - 1) {
+        return -1;
+    }
+
+    star = strchr(path, '*');
+
+    if (star == NULL) {
+        return -1;
+    }
+
+    /*
+     * C:\data\tmp\input_*.conf
+     *            0<-----|
+     */
+    p0 = star;
+    while (path <= p0 && *p0 != '\\') {
+        p0--;
+    }
+
+    /*
+     * C:\data\tmp\input_*.conf
+     *                   |---->1
+     */
+    p1 = star;
+    while (*p1 && *p1 != '\\') {
+        p1++;
+    }
+
+    memcpy(pattern, path, (p1 - path));
+    pattern[p1 - path] = '\0';
+
+    hnd = FindFirstFileA(pattern, &data);
+
+    if (hnd == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
+
+    do {
+        /* Ignore the current and parent dirs */
+        if (!strcmp(".", data.cFileName) || !strcmp("..", data.cFileName)) {
+            continue;
+        }
+
+        /* Avoid an infinite loop */
+        if (strchr(data.cFileName, '*')) {
+            continue;
+        }
+
+        /* Create a path (prefix + filename + suffix) */
+        memcpy(buf, path, p0 - path + 1);
+        buf[p0 - path + 1] = '\0';
+
+        if (FAILED(StringCchCatA(buf, MAX_PATH, data.cFileName))) {
+            continue;
+        }
+
+        if (FAILED(StringCchCatA(buf, MAX_PATH, p1))) {
+            continue;
+        }
+
+        if (strchr(p1, '*')) {
+            read_glob(conf, ctx, state, buf); /* recursive */
+            continue;
+        }
+
+        ret = stat(buf, &st);
+
+        if (ret == 0 && (st.st_mode & S_IFMT) == S_IFREG) {
+
+            if (read_config(conf, ctx, state, buf) < 0) {
+                return -1;
+            }
+        }
+    } while (FindNextFileA(hnd, &data) != 0);
+
+    FindClose(hnd);
+    return 0;
+}
+#endif
+
 static int calyptia_config_add(struct flb_in_calyptia_fleet_config *ctx,
                                const char *cfgname)
 {
@@ -959,8 +1115,73 @@ static int calyptia_config_add(struct flb_in_calyptia_fleet_config *ctx,
     return 0;
 }
 
-static int calyptia_config_commit(struct flb_in_calyptia_fleet_config *ctx,
-                                  const char *cfgname)
+static int cfl_array_qsort_ini(const void *arg_a, const void *arg_b)
+{
+    struct cfl_variant *var_a = (struct cfl_variant *)*(void **)arg_a;
+    struct cfl_variant *var_b = (struct cfl_variant *)*(void **)arg_b;
+
+    if (var_a == NULL && var_b == NULL) {
+        return 0;
+    }
+    else if (var_a == NULL) {
+        return -1;
+    }
+    else if (var_b == NULL) {
+        return 1;
+    }
+    else if (var_a->type != CFL_VARIANT_STRING &&
+             var_b->type != CFL_VARIANT_STRING) {
+        return 0;
+    }
+    else if (var_a->type != CFL_VARIANT_STRING) {
+        return -1;
+    }
+    else if (var_b->type != CFL_VARIANT_STRING) {
+        return 1;
+    }
+
+    return strcmp(var_a->data.as_string, var_b->data.as_string);
+}
+
+static int calyptia_config_delete_old(struct flb_in_calyptia_fleet_config *ctx)
+{
+    struct cfl_array *inis;
+    flb_sds_t glob_ini;
+    int idx;
+
+    glob_ini = flb_sds_create_size(128);
+    if (glob_ini == NULL) {
+        return -1;
+    }
+
+    if (generate_fleet_directory(ctx, &glob_ini) == NULL) {
+        flb_sds_destroy(glob_ini);
+        return -1;
+    }
+
+    if (flb_sds_cat_safe(&glob_ini, "/*.ini", strlen("/*.ini")) != 0) {
+        flb_sds_destroy(glob_ini);
+        return -1;
+    }
+
+    inis = read_glob(glob_ini);
+    if (inis == NULL) {
+        flb_sds_destroy(glob_ini);
+        return -1;
+    }
+
+    qsort(inis->entries, inis->entry_count,
+          sizeof(struct cfl_variant *),
+          cfl_array_qsort_ini);
+
+    for (idx = 0; idx < (((ssize_t)inis->entry_count) -1 -3);idx++) {
+        unlink(inis->entries[idx]->data.as_string);
+    }
+
+    return 0;
+}
+
+static int calyptia_config_commit(struct flb_in_calyptia_fleet_config *ctx)
 {
     flb_sds_t cfgnewname;
     flb_sds_t cfgcurname;
@@ -990,6 +1211,8 @@ static int calyptia_config_commit(struct flb_in_calyptia_fleet_config *ctx,
     flb_sds_destroy(cfgcurname);
     flb_sds_destroy(cfgoldname);
     flb_sds_destroy(cfgtimename);
+
+    calyptia_config_delete_old(ctx);
 
     return 0;
 }
@@ -1094,9 +1317,6 @@ static int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx,
             calyptia_config_rollback(ctx, cfgname);
             flb_sds_destroy(cfgnewname);
             return -1;
-        } else {
-            calyptia_config_commit(ctx, cfgname);
-            flb_sds_destroy(cfgnewname);
         }
     }
 
@@ -1314,6 +1534,10 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
     /* if we load a new configuration then we will be reloaded anyways */
     if (load_fleet_config(ctx) == FLB_TRUE) {
         return 0;
+    }
+
+    if (exists_new_fleet_config(ctx) == FLB_TRUE) {
+        calyptia_config_commit(ctx);
     }
 
     /* Set our collector based on time */
