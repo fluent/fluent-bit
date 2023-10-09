@@ -422,7 +422,7 @@ static int in_ne_init(struct flb_input_instance *in,
 
             if (ret == FLB_FALSE) {
                 if (strncmp(entry->str, "cpufreq", 7) == 0) {
-                    if (ctx->cpu_scrape_interval == 0) {
+                    if (ctx->cpufreq_scrape_interval == 0) {
                         flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
                         metric_idx = 0;
                     }
@@ -442,7 +442,7 @@ static int in_ne_init(struct flb_input_instance *in,
                     ne_cpufreq_init(ctx);
                 }
                 else if (strncmp(entry->str, "cpu", 3) == 0) {
-                    if (ctx->cpufreq_scrape_interval == 0) {
+                    if (ctx->cpu_scrape_interval == 0) {
                         flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
                         metric_idx = 1;
                     }
