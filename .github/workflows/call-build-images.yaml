@@ -120,7 +120,7 @@ jobs:
           context: .
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          platforms: linux/amd64, linux/arm64, linux/arm/v7
+          platforms: linux/amd64, linux/arm64, linux/arm/v7, linux/s390x
           target: production
           # Must be disabled to provide legacy format images from the registry
           provenance: false
@@ -147,7 +147,7 @@ jobs:
           context: .
           tags: ${{ steps.debug-meta.outputs.tags }}
           labels: ${{ steps.debug-meta.outputs.labels }}
-          platforms: linux/amd64, linux/arm64, linux/arm/v7
+          platforms: linux/amd64, linux/arm64, linux/arm/v7, linux/s390x
           # Must be disabled to provide legacy format images from the registry
           provenance: false
           target: debug
