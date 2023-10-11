@@ -648,6 +648,8 @@ static int execute_reload(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t cf
         flb_plg_error(ctx->ins, "unable to change to configuration directory");
     }
 
+    fleet_cur_chdir(ctx);
+
     pthread_attr_init(&ptha);
     pthread_attr_setdetachstate(&ptha, PTHREAD_CREATE_DETACHED);
     pthread_create(&pth, &ptha, do_reload, reload);
@@ -967,6 +969,7 @@ static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ct
 
 #ifdef FLB_SYSTEM_WINDOWS
 #define link(a, b) CreateHardLinkA(b, a, 0)
+#define symlink(a, b) CreateSymLinkA(b, a, 0)
 
 ssize_t readlink(const char *path, char *realpath, size_t srealpath) {
     HANDLE hFile;
