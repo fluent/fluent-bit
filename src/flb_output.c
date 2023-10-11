@@ -720,6 +720,8 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     mk_list_init(&instance->upstreams);
     mk_list_init(&instance->flush_list);
     mk_list_init(&instance->flush_list_destroy);
+    mk_list_init(&instance->timer_coro_list);
+    mk_list_init(&instance->timer_coro_list_destroy);
 
     mk_list_add(&instance->_head, &config->outputs);
 
