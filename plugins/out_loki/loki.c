@@ -1578,7 +1578,7 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
     }
 
     /* Create HTTP client context */
-    c = flb_http_client(u_conn, FLB_HTTP_POST, FLB_LOKI_URI,
+    c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
                         out_buf, out_size,
                         ctx->tcp_host, ctx->tcp_port,
                         NULL, 0);
@@ -1727,12 +1727,19 @@ static int cb_loki_exit(void *data, struct flb_config *config)
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
+     FLB_CONFIG_MAP_STR, "uri", FLB_LOKI_URI,
+     0, FLB_TRUE, offsetof(struct flb_loki, uri),
+     "Specify a custom HTTP URI. It must start with forward slash."
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "tenant_id", NULL,
      0, FLB_TRUE, offsetof(struct flb_loki, tenant_id),
      "Tenant ID used by default to push logs to Loki. If omitted or empty "
      "it assumes Loki is running in single-tenant mode and no X-Scope-OrgID "
      "header is sent."
     },
+
     {
      FLB_CONFIG_MAP_STR, "tenant_id_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_loki, tenant_id_key_config),

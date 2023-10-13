@@ -55,6 +55,8 @@ struct flb_loki {
     /* Public configuration properties */
     int auto_kubernetes_labels;
     int drop_single_key;
+
+    flb_sds_t uri;
     flb_sds_t line_format;
     flb_sds_t tenant_id;
     flb_sds_t tenant_id_key_config;
