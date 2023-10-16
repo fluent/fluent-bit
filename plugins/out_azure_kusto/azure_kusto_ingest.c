@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_random.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_version.h>
 
 #include <math.h>
 #include <msgpack.h>
@@ -163,6 +164,12 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
                 flb_http_add_header(c, "x-ms-blob-type", 14, "BlockBlob", 9);
                 flb_http_add_header(c, "x-ms-date", 9, tmp, len);
                 flb_http_add_header(c, "x-ms-version", 12, "2019-12-12", 10);
+
+                //added kusto specific headers for debugging requests
+                flb_http_add_header(c, "x-ms-user", 9, "Fluent-Bit", 10);
+                flb_http_add_header(c, "x-ms-client-request-id", 22, generate_uuid(), 36);
+                flb_http_add_header(c, "x-ms-client-version", 10, FLB_VERSION_STR, strlen(FLB_VERSION_STR));
+                flb_http_add_header(c, "x-ms-app", 8, "Kusto.Fluent-Bit", 16);
 
                 ret = flb_http_do(c, &resp_size);
                 flb_plg_debug(ctx->ins,
@@ -366,6 +373,12 @@ static int azure_kusto_enqueue_ingestion(struct flb_azure_kusto *ctx, flb_sds_t 
                                         20);
                     flb_http_add_header(c, "x-ms-date", 9, tmp, len);
                     flb_http_add_header(c, "x-ms-version", 12, "2019-12-12", 10);
+
+                    //added kusto specific headers for debugging requests
+                    flb_http_add_header(c, "x-ms-user", 9, "Fluent-Bit", 10);
+                    flb_http_add_header(c, "x-ms-client-request-id", 22, generate_uuid(), 36);
+                    flb_http_add_header(c, "x-ms-client-version", 10, FLB_VERSION_STR, strlen(FLB_VERSION_STR));
+                    flb_http_add_header(c, "x-ms-app", 8, "Kusto.Fluent-Bit", 16);
 
                     ret = flb_http_do(c, &resp_size);
                     flb_plg_debug(ctx->ins,
