@@ -41,6 +41,7 @@
 #include "ne_netdev.h"
 #include "ne_textfile.h"
 #include "ne_systemd.h"
+#include "ne_processes.h"
 
 static int ne_timer_cpu_metrics_cb(struct flb_input_instance *ins,
                                    struct flb_config *config, void *in_context)
@@ -182,6 +183,15 @@ static int ne_timer_systemd_metrics_cb(struct flb_input_instance *ins,
     return 0;
 }
 
+static int ne_timer_processes_metrics_cb(struct flb_input_instance *ins,
+                                       struct flb_config *config, void *in_context)
+{
+    struct flb_ne *ctx = in_context;
+
+    ne_processes_update(ctx);
+
+    return 0;
+}
 struct flb_ne_callback {
     char *name;
     void (*func)(char *, void *, void *);
@@ -329,6 +339,13 @@ static void ne_systemd_update_cb(char *name, void *p1, void *p2)
     ne_systemd_update(ctx);
 }
 
+static void ne_processes_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_ne *ctx = p1;
+
+    ne_processes_update(ctx);
+}
+
 static int ne_update_cb(struct flb_ne *ctx, char *name)
 {
     int ret;
@@ -356,6 +373,7 @@ struct flb_ne_callback ne_callbacks[] = {
     { "filefd", ne_filefd_update_cb },
     { "textfile", ne_textfile_update_cb },
     { "systemd", ne_systemd_update_cb },
+    { "processes", ne_processes_update_cb },
     { 0 }
 };
 
@@ -392,6 +410,7 @@ static int in_ne_init(struct flb_input_instance *in,
     ctx->coll_filefd_fd = -1;
     ctx->coll_textfile_fd = -1;
     ctx->coll_systemd_fd = -1;
+    ctx->coll_processes_fd = -1;
 
     ctx->callback = flb_callback_create(in->name);
     if (!ctx->callback) {
@@ -701,6 +720,26 @@ static int in_ne_init(struct flb_input_instance *in,
                     }
                     ne_systemd_init(ctx);
                 }
+                else if (strncmp(entry->str, "processes", 9) == 0) {
+                    if (ctx->processes_scrape_interval == 0) {
+                        flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                        metric_idx = 14;
+                    }
+                    else if (ctx->processes_scrape_interval > 0) {
+                        /* Create the filefd collector */
+                        ret = flb_input_set_collector_time(in,
+                                                           ne_timer_processes_metrics_cb,
+                                                           ctx->processes_scrape_interval, 0,
+                                                           config);
+                        if (ret == -1) {
+                            flb_plg_error(ctx->ins,
+                                          "could not set systemd collector for Node Exporter Metrics plugin");
+                            return -1;
+                        }
+                        ctx->coll_processes_fd = ret;
+                    }
+                    ne_processes_init(ctx);
+                }
                 else {
                     flb_plg_warn(ctx->ins, "Unknown metrics: %s", entry->str);
                     metric_idx = -1;
@@ -786,6 +825,9 @@ static int in_ne_exit(void *data, struct flb_config *config)
                 else if (strncmp(entry->str, "systemd", 7) == 0) {
                     ne_systemd_exit(ctx);
                 }
+                else if (strncmp(entry->str, "processes", 9) == 0) {
+                    ne_processes_exit(ctx);
+                }
                 else {
                     flb_plg_warn(ctx->ins, "Unknown metrics: %s", entry->str);
                 }
@@ -816,6 +858,9 @@ static int in_ne_exit(void *data, struct flb_config *config)
     }
     if (ctx->coll_systemd_fd != -1) {
         ne_systemd_exit(ctx);
+    }
+    if (ctx->coll_processes_fd != -1) {
+        ne_processes_exit(ctx);
     }
 
     flb_ne_config_destroy(ctx);
@@ -870,6 +915,9 @@ static void in_ne_pause(void *data, struct flb_config *config)
     if (ctx->coll_systemd_fd != -1) {
         flb_input_collector_pause(ctx->coll_systemd_fd, ctx->ins);
     }
+    if (ctx->coll_processes_fd != -1) {
+        flb_input_collector_pause(ctx->coll_processes_fd, ctx->ins);
+    }
 }
 
 static void in_ne_resume(void *data, struct flb_config *config)
@@ -918,6 +966,9 @@ static void in_ne_resume(void *data, struct flb_config *config)
     }
     if (ctx->coll_systemd_fd != -1) {
         flb_input_collector_resume(ctx->coll_systemd_fd, ctx->ins);
+    }
+    if (ctx->coll_processes_fd != -1) {
+        flb_input_collector_resume(ctx->coll_processes_fd, ctx->ins);
     }
 }
 
@@ -1011,6 +1062,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_TIME, "collector.systemd.scrape_interval", "0",
      0, FLB_TRUE, offsetof(struct flb_ne, systemd_scrape_interval),
      "scrape interval to collect systemd metrics from the node."
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "collector.processes.scrape_interval", "0",
+     0, FLB_TRUE, offsetof(struct flb_ne, processes_scrape_interval),
+     "scrape interval to collect processes metrics from the node."
     },
 
     {
