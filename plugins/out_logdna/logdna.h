@@ -25,6 +25,7 @@
 
 #define FLB_LOGDNA_HOST      "logs.logdna.com"
 #define FLB_LOGDNA_PORT      "443"
+#define FLB_LOGDNA_ENDPOINT  "/logs/ingest"
 #define FLB_LOGDNA_CT        "Content-Type"
 #define FLB_LOGDNA_CT_JSON   "application/json; charset=UTF-8"
 
@@ -32,6 +33,7 @@ struct flb_logdna {
     /* Incoming Configuration Properties */
     flb_sds_t logdna_host;
     int       logdna_port;
+    flb_sds_t logdna_endpoint;
     flb_sds_t api_key;
     flb_sds_t hostname;
     flb_sds_t mac_addr;
