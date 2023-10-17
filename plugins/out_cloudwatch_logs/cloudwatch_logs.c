@@ -56,7 +56,6 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     const char *tmp;
     char *session_name = NULL;
     struct flb_cloudwatch *ctx = NULL;
-    struct cw_flush *buf = NULL;
     int ret;
     flb_sds_t tmp_sds = NULL;
     (void) config;
@@ -348,40 +347,6 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     flb_output_upstream_set(upstream, ctx->ins);
     ctx->cw_client->host = ctx->endpoint;
 
-    /* alloc the payload/processing buffer */
-    buf = flb_calloc(1, sizeof(struct cw_flush));
-    if (!buf) {
-        flb_errno();
-        goto error;
-    }
-
-    buf->out_buf = flb_malloc(PUT_LOG_EVENTS_PAYLOAD_SIZE);
-    if (!buf->out_buf) {
-        flb_errno();
-        cw_flush_destroy(buf);
-        goto error;
-    }
-    buf->out_buf_size = PUT_LOG_EVENTS_PAYLOAD_SIZE;
-
-    buf->tmp_buf = flb_malloc(sizeof(char) * PUT_LOG_EVENTS_PAYLOAD_SIZE);
-    if (!buf->tmp_buf) {
-        flb_errno();
-        cw_flush_destroy(buf);
-        goto error;
-    }
-    buf->tmp_buf_size = PUT_LOG_EVENTS_PAYLOAD_SIZE;
-
-    buf->events = flb_malloc(sizeof(struct cw_event) * MAX_EVENTS_PER_PUT);
-    if (!buf->events) {
-        flb_errno();
-        cw_flush_destroy(buf);
-        goto error;
-    }
-    buf->events_capacity = MAX_EVENTS_PER_PUT;
-
-    ctx->buf = buf;
-
-
     /* Export context */
     flb_output_set_context(ins, ctx);
 
@@ -392,6 +357,43 @@ error:
     flb_plg_error(ctx->ins, "Initialization failed");
     flb_cloudwatch_ctx_destroy(ctx);
     return -1;
+}
+
+struct cw_flush *new_buffer()
+{
+    struct cw_flush *buf;
+
+    buf = flb_calloc(1, sizeof(struct cw_flush));
+    if (!buf) {
+        flb_errno();
+        return NULL;
+    }
+
+    buf->out_buf = flb_malloc(PUT_LOG_EVENTS_PAYLOAD_SIZE);
+    if (!buf->out_buf) {
+        flb_errno();
+        cw_flush_destroy(buf);
+        return NULL;
+    }
+    buf->out_buf_size = PUT_LOG_EVENTS_PAYLOAD_SIZE;
+
+    buf->tmp_buf = flb_malloc(sizeof(char) * PUT_LOG_EVENTS_PAYLOAD_SIZE);
+    if (!buf->tmp_buf) {
+        flb_errno();
+        cw_flush_destroy(buf);
+        return NULL;
+    }
+    buf->tmp_buf_size = PUT_LOG_EVENTS_PAYLOAD_SIZE;
+
+    buf->events = flb_malloc(sizeof(struct cw_event) * MAX_EVENTS_PER_PUT);
+    if (!buf->events) {
+        flb_errno();
+        cw_flush_destroy(buf);
+        return NULL;
+    }
+    buf->events_capacity = MAX_EVENTS_PER_PUT;
+
+    return buf;
 }
 
 static void cb_cloudwatch_flush(struct flb_event_chunk *event_chunk,
@@ -405,15 +407,21 @@ static void cb_cloudwatch_flush(struct flb_event_chunk *event_chunk,
     (void) i_ins;
     (void) config;
 
-    event_count = process_and_send(ctx, i_ins->p->name, ctx->buf, event_chunk->tag,
-                                   event_chunk->data, event_chunk->size);
-    if (event_count < 0) {
-        flb_plg_error(ctx->ins, "Failed to send events");
+    struct cw_flush *buf;
+
+    buf = new_buffer();
+    if (!buf) {
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    // TODO: this msg is innaccurate if events are skipped
-    flb_plg_debug(ctx->ins, "Sent %d events to CloudWatch", event_count);
+    event_count = process_and_send(ctx, i_ins->p->name, buf, event_chunk->tag, event_chunk->data, event_chunk->size);
+    if (event_count < 0) {
+        flb_plg_error(ctx->ins, "Failed to send events");
+        cw_flush_destroy(buf);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    cw_flush_destroy(buf);
 
     FLB_OUTPUT_RETURN(FLB_OK);
 }
@@ -427,10 +435,6 @@ void flb_cloudwatch_ctx_destroy(struct flb_cloudwatch *ctx)
     if (ctx != NULL) {
         if (ctx->base_aws_provider) {
             flb_aws_provider_destroy(ctx->base_aws_provider);
-        }
-
-        if (ctx->buf) {
-            cw_flush_destroy(ctx->buf);
         }
 
         if (ctx->aws_provider) {
@@ -495,9 +499,6 @@ void log_stream_destroy(struct log_stream *stream)
     if (stream) {
         if (stream->name) {
             flb_sds_destroy(stream->name);
-        }
-        if (stream->sequence_token) {
-            flb_sds_destroy(stream->sequence_token);
         }
         if (stream->group) {
             flb_sds_destroy(stream->group);
@@ -657,12 +658,7 @@ struct flb_output_plugin out_cloudwatch_logs_plugin = {
     .cb_init      = cb_cloudwatch_init,
     .cb_flush     = cb_cloudwatch_flush,
     .cb_exit      = cb_cloudwatch_exit,
-
-    /*
-     * Allow cloudwatch to use async network stack synchronously by opting into
-     * FLB_OUTPUT_SYNCHRONOUS synchronous task scheduler
-     */
-    .flags        = FLB_OUTPUT_SYNCHRONOUS,
+    .flags        = 0,
     .workers      = 1,
 
     /* Configuration */
