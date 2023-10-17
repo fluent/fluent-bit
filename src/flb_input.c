@@ -1684,7 +1684,7 @@ static void flb_input_any_overlimit_paused(struct flb_input_instance *ins)
     if (ins->cmt_any_overlimit != NULL) {
         /* cmetrics */
         cmt_gauge_set(ins->cmt_any_overlimit, cfl_time_now(), 1,
-                      1, (char *[]) {ins->name});
+                      1, (char *[]) {flb_input_name(ins)});
     }
 }
 
@@ -1693,7 +1693,7 @@ static void flb_input_any_overlimit_resumed(struct flb_input_instance *ins)
     if (ins->cmt_any_overlimit != NULL) {
         /* cmetrics */
         cmt_gauge_set(ins->cmt_any_overlimit, cfl_time_now(), 0,
-                      1, (char *[]) {ins->name});
+                      1, (char *[]) {flb_input_name(ins)});
     }
 }
 
