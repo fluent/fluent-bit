@@ -778,7 +778,8 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                         }
                         else if (event_type == FLB_EVENT_TYPE_METRICS) {
                             ret = cmt_decode_msgpack_create(&cmt, (char *) data, len, &off);
-                            if (ret == -1) {
+                            if (ret != CMT_DECODE_MSGPACK_SUCCESS) {
+                                flb_error("cmt_decode_msgpack_create failed. ret=%d", ret);
                                 msgpack_unpacked_destroy(&result);
                                 msgpack_unpacker_free(unp);
                                 flb_sds_destroy(out_tag);
