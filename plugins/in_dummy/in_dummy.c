@@ -201,6 +201,7 @@ static int configure(struct flb_dummy *ctx,
                      struct timespec *tm)
 {
     const char *msg;
+    double tmfrac;
     int root_type;
     int ret = -1;
 
@@ -214,12 +215,13 @@ static int configure(struct flb_dummy *ctx,
     }
 
     /* interval settings */
-    tm->tv_sec  = 1;
+    tm->tv_sec  = ctx->time_interval;
     tm->tv_nsec = 0;
 
     if (ctx->rate > 1) {
-        tm->tv_sec = 0;
-        tm->tv_nsec = 1000000000 / ctx->rate;
+        tmfrac = (double) ctx->time_interval / ctx->rate;
+        tm->tv_sec = tmfrac;
+        tm->tv_nsec = (tmfrac - (int) tmfrac) * 1000000000;
     }
 
     /* dummy timestamp */
@@ -398,7 +400,12 @@ static struct flb_config_map config_map[] = {
    {
     FLB_CONFIG_MAP_INT, "rate", "1",
     0, FLB_TRUE, offsetof(struct flb_dummy, rate),
-    "set a number of events per second."
+    "set a number of events per time interval."
+   },
+   {
+    FLB_CONFIG_MAP_INT, "time_interval", "1",
+    0, FLB_TRUE, offsetof(struct flb_dummy, time_interval),
+    "set time interval to generate logs at the set rate."
    },
    {
     FLB_CONFIG_MAP_INT, "copies", "1",

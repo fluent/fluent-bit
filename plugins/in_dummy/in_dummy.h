@@ -34,6 +34,7 @@ struct flb_dummy {
     int  copies;
     int  samples;
     int  samples_count;
+    int  time_interval;
 
     int dummy_timestamp_set;
     struct flb_time base_timestamp;
