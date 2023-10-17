@@ -139,8 +139,8 @@ struct flb_sp_cmd_key *flb_sp_key_create(struct flb_sp_cmd *cmd, int func,
     struct flb_sp_cmd_key *key;
     struct flb_slist_entry *entry;
 
-    /* aggregation function ? */
     if (func >= FLB_SP_AVG && func <= FLB_SP_FORECAST) {
+        /* Aggregation function */
         aggr_func = func;
     }
     else if (func >= FLB_SP_NOW && func <= FLB_SP_UNIX_TIMESTAMP) {
