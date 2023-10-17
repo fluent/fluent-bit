@@ -970,14 +970,14 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                            1, (char *[]) {"name"});
     cmt_counter_set(ins->cmt_records, ts, 0, 1, (char *[]) {name});
 
-    /* fluentbit_input_any_overlimit */
-    ins->cmt_any_overlimit =                \
+    /* fluentbit_input_ingestion_paused */
+    ins->cmt_ingestion_paused = \
             cmt_gauge_create(ins->cmt,
                              "fluentbit", "input",
-                             "any_overlimit",
+                             "ingestion_paused",
                              "Is the input paused or not?",
                              1, (char *[]) {"name"});
-    cmt_gauge_set(ins->cmt_any_overlimit, ts, 0, 1, (char *[]) {name});
+    cmt_gauge_set(ins->cmt_ingestion_paused, ts, 0, 1, (char *[]) {name});
 
     /* Storage Metrics */
     if (ctx->storage_metrics == FLB_TRUE) {
@@ -1679,20 +1679,20 @@ int flb_input_test_pause_resume(struct flb_input_instance *ins, int sleep_second
     return 0;
 }
 
-static void flb_input_any_overlimit_paused(struct flb_input_instance *ins)
+static void flb_input_ingestion_paused(struct flb_input_instance *ins)
 {
-    if (ins->cmt_any_overlimit != NULL) {
+    if (ins->cmt_ingestion_paused != NULL) {
         /* cmetrics */
-        cmt_gauge_set(ins->cmt_any_overlimit, cfl_time_now(), 1,
+        cmt_gauge_set(ins->cmt_ingestion_paused, cfl_time_now(), 1,
                       1, (char *[]) {flb_input_name(ins)});
     }
 }
 
-static void flb_input_any_overlimit_resumed(struct flb_input_instance *ins)
+static void flb_input_ingestion_resumed(struct flb_input_instance *ins)
 {
-    if (ins->cmt_any_overlimit != NULL) {
+    if (ins->cmt_ingestion_paused != NULL) {
         /* cmetrics */
-        cmt_gauge_set(ins->cmt_any_overlimit, cfl_time_now(), 0,
+        cmt_gauge_set(ins->cmt_ingestion_paused, cfl_time_now(), 0,
                       1, (char *[]) {flb_input_name(ins)});
     }
 }
@@ -1716,7 +1716,7 @@ int flb_input_pause(struct flb_input_instance *ins)
         }
     }
 
-    flb_input_any_overlimit_paused(ins);
+    flb_input_ingestion_paused(ins);
 
     return 0;
 }
@@ -1733,7 +1733,7 @@ int flb_input_resume(struct flb_input_instance *ins)
         }
     }
 
-    flb_input_any_overlimit_resumed(ins);
+    flb_input_ingestion_resumed(ins);
 
     return 0;
 }
