@@ -518,7 +518,6 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t by
     int i;
     int map_size;
     int check = FLB_FALSE;
-    int found = FLB_FALSE;
     int log_key_missing = 0;
     int ret;
     struct flb_chronicle *ctx = out_context;
@@ -550,10 +549,6 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t by
 
     map_size = map.via.map.size;
 
-    /* Reset variables for found log_key and correct type */
-    found = FLB_FALSE;
-    check = FLB_FALSE;
-
     /* Extract log_key from record and append to output buffer */
     for (i = 0; i < map_size; i++) {
         key = map.via.map.ptr[i].key;
@@ -572,7 +567,6 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t by
 
         if (check == FLB_TRUE) {
             if (strncmp(ctx->log_key, key_str, key_str_size) == 0) {
-                found = FLB_TRUE;
 
                 /*
                  * Copy contents of value into buffer. Necessary to copy
@@ -607,9 +601,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t by
         }
 
         /* If log_key was not found in the current record, mark log key as missing */
-        if (found == FLB_FALSE) {
-            log_key_missing++;
-        }
+        log_key_missing++;
     }
 
     if (log_key_missing > 0) {
