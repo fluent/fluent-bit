@@ -2385,6 +2385,24 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             new_log_name = log_name;
         }
 
+        /* encode new_log_name */
+        if (new_log_name != NULL) {
+            const char *HEX = "0123456789abcdef";
+            char *encoded_log_name[strlen(new_log_name) * 3 + 1];
+            int position = 0;
+            for (char *chr = new_log_name; *chr != '\0'; chr++) {
+                if (*chr == '.' || *chr == '_' || *chr == '-' || *chr == '/') {
+                    encoded_log_name[position++] = '%';
+                    encoded_log_name[position++] = HEX[*chr >> 4];
+                    encoded_log_name[position++] = HEX[*chr & 15];
+                } else {
+                    encoded_log_name[position++] = *chr;
+                }
+            }
+            encoded_log_name[position] = '\0';
+            new_log_name = encoded_log_name;
+        }
+
         /* logName */
         len = snprintf(path, sizeof(path) - 1,
                        "projects/%s/logs/%s", ctx->export_to_project_id, new_log_name);
