@@ -751,6 +751,14 @@ static struct flb_config_map config_map[] = {
      "provides higher performance. Note that WAL is not compatible with "
      "shared network file systems."
     },
+    {
+     FLB_CONFIG_MAP_BOOL, "db.compare_filename", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, compare_filename),
+     "This option determines whether to check both the inode and the filename "
+     "when retrieving file information from the db."
+     "'true' verifies both the inode and filename, while 'false' checks only "
+     "the inode (default)."
+    },
 #endif
 
     /* Multiline Options */
