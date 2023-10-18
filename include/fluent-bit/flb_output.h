@@ -370,6 +370,8 @@ struct flb_output_instance {
     struct cmt_gauge   *cmt_upstream_total_connections;
     /* m: output_upstream_busy_connections */
     struct cmt_gauge   *cmt_upstream_busy_connections;
+    /* m: output_chunk_available_capacity_percent */
+    struct cmt_gauge   *cmt_chunk_available_capacity_percent;
 
     /* OLD Metrics API */
 #ifdef FLB_HAVE_METRICS
