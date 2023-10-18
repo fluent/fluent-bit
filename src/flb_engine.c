@@ -312,6 +312,11 @@ static inline int handle_output_event(uint64_t ts,
                      flb_output_name(ins), out_id);
         }
 
+        cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
+                      (100 * (1.0 - (ins->fs_backlog_chunks_size + ins->fs_chunks_size)/
+                              ((double)ins->total_limit_size))),
+                      1, (char *[]) {name});
+
         flb_task_retry_clean(task, ins);
         flb_task_users_dec(task, FLB_TRUE);
     }
@@ -320,6 +325,11 @@ static inline int handle_output_event(uint64_t ts,
             /* cmetrics: output_dropped_records_total */
             cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
                             1, (char *[]) {name});
+
+            cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
+                          (100 * (1.0 - (ins->fs_backlog_chunks_size + ins->fs_chunks_size)/
+                                  ((double)ins->total_limit_size))),
+                          1, (char *[]) {name});
 
             /* OLD metrics API */
 #ifdef FLB_HAVE_METRICS
@@ -352,6 +362,11 @@ static inline int handle_output_event(uint64_t ts,
             cmt_counter_inc(ins->cmt_retries_failed, ts, 1, (char *[]) {name});
             cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
                             1, (char *[]) {name});
+
+            cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
+                          (100 * (1.0 - (ins->fs_backlog_chunks_size + ins->fs_chunks_size)/
+                                  ((double)ins->total_limit_size))),
+                          1, (char *[]) {name});
 
             /* OLD metrics API */
 #ifdef FLB_HAVE_METRICS
@@ -409,6 +424,11 @@ static inline int handle_output_event(uint64_t ts,
             cmt_counter_add(ins->cmt_retried_records, ts, task->records,
                             1, (char *[]) {name});
 
+            cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
+                          (100 * (1.0 - (ins->fs_backlog_chunks_size + ins->fs_chunks_size)/
+                                  ((double)ins->total_limit_size))),
+                          1, (char *[]) {name});
+
             /* OLD metrics API: update the metrics since a new retry is coming */
 #ifdef FLB_HAVE_METRICS
             flb_metrics_sum(FLB_METRIC_OUT_RETRY, 1, ins->metrics);
@@ -421,6 +441,11 @@ static inline int handle_output_event(uint64_t ts,
         cmt_counter_inc(ins->cmt_errors, ts, 1, (char *[]) {name});
         cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
                         1, (char *[]) {name});
+
+        cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
+                      (100 * (1.0 - (ins->fs_backlog_chunks_size + ins->fs_chunks_size)/
+                              ((double)ins->total_limit_size))),
+                      1, (char *[]) {name});
 
         /* OLD API */
 #ifdef FLB_HAVE_METRICS

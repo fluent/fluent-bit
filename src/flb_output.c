@@ -1200,6 +1200,18 @@ int flb_output_init_all(struct flb_config *config)
                       0,
                       1, (char *[]) {name});
 
+        /* output_chunk_available_capacity_percent */
+        ins->cmt_chunk_available_capacity_percent = cmt_gauge_create(ins->cmt,
+                                                        "fluentbit",
+                                                        "output",
+                                                        "chunk_available_capacity_percent",
+                                                        "Available chunk capacity (percent)",
+                                                        1, (char *[]) {"name"});
+        cmt_gauge_set(ins->cmt_chunk_available_capacity_percent,
+                      ts,
+                      100.0,
+                      1, (char *[]) {name});
+
         /* old API */
         ins->metrics = flb_metrics_create(name);
         if (ins->metrics) {
