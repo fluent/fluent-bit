@@ -95,9 +95,38 @@ int flb_tail_db_close(struct flb_sqldb *db)
     return 0;
 }
 
+static int flb_tail_db_file_delete_by_id(struct flb_tail_config *ctx,
+                                         uint64_t id)
+{
+    int ret;
+
+    /* Bind parameters */
+    ret = sqlite3_bind_int64(ctx->stmt_delete_file, 1, id);
+    if (ret != SQLITE_OK) {
+        flb_plg_error(ctx->ins, "db: error binding id=%"PRIu64", ret=%d", id, ret);
+        return -1;
+    }
+
+    ret = sqlite3_step(ctx->stmt_delete_file);
+
+    sqlite3_clear_bindings(ctx->stmt_delete_file);
+    sqlite3_reset(ctx->stmt_delete_file);
+
+    if (ret != SQLITE_DONE) {
+        flb_plg_error(ctx->ins, "db: error deleting stale entry from database:"
+                      " id=%"PRIu64, id);
+        return -1;
+    }
+
+    flb_plg_info(ctx->ins, "db: stale file deleted from database:"
+                 " id=%"PRIu64, id);
+    return 0;
+}
+
 /*
- * Check if an file inode exists in the database. Return FLB_TRUE or
- * FLB_FALSE
+ * Check if an file inode exists in the database.
+ * If the 'compare_filename' option is enabled,
+ * it checks along with the filename. Return FLB_TRUE or FLB_FALSE
  */
 static int db_file_exists(struct flb_tail_file *file,
                           struct flb_tail_config *ctx,
@@ -105,6 +134,7 @@ static int db_file_exists(struct flb_tail_file *file,
 {
     int ret;
     int exists = FLB_FALSE;
+    const unsigned char *name;
 
     /* Bind parameters */
     sqlite3_bind_int64(ctx->stmt_get_file, 1, file->inode);
@@ -116,11 +146,30 @@ static int db_file_exists(struct flb_tail_file *file,
         /* id: column 0 */
         *id = sqlite3_column_int64(ctx->stmt_get_file, 0);
 
+        /* name: column 1 */
+        name = sqlite3_column_text(ctx->stmt_get_file, 1);
+        if (ctx->compare_filename && name == NULL) {
+            flb_plg_error(ctx->ins, "db: error getting name: id=%"PRIu64, *id);
+            return -1;
+        }
+
         /* offset: column 2 */
         *offset = sqlite3_column_int64(ctx->stmt_get_file, 2);
 
         /* inode: column 3 */
         *inode = sqlite3_column_int64(ctx->stmt_get_file, 3);
+
+        /* Checking if the file's name and inode match exactly */
+        if (ctx->compare_filename) {
+            if (flb_tail_target_file_name_cmp((char *) name, file) != 0) {
+                exists = FLB_FALSE;
+                flb_plg_debug(ctx->ins, "db: exists stale file from database:"
+                             " id=%"PRIu64" inode=%"PRIu64" offset=%"PRIu64
+                             " name=%s file_inode=%"PRIu64" file_name=%s",
+                             *id, *inode, *offset, name, file->inode,
+                             file->name);
+            }
+        }
     }
     else if (ret == SQLITE_DONE) {
         /* all good */
@@ -221,6 +270,11 @@ int flb_tail_db_file_set(struct flb_tail_file *file,
     }
 
     if (ret == FLB_FALSE) {
+        /* Delete stale file of same inode */
+        if (ctx->compare_filename && id > 0) {
+            flb_tail_db_file_delete_by_id(ctx, id);
+        }
+
         /* Get the database ID for this file */
         file->db_id = db_file_insert(file, ctx);
     }
