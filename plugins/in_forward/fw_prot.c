@@ -752,11 +752,55 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                             return -1;
                         }
 
-                        /* Append uncompressed data */
-                        flb_input_log_append(conn->in,
-                                             out_tag, flb_sds_len(out_tag),
-                                             gz_data, gz_size);
-                        flb_free(gz_data);
+                        event_type = FLB_EVENT_TYPE_LOGS;
+                        if (contain_options) {
+                            ret = get_chunk_event_type(ins, root.via.array.ptr[2]);
+                            if (ret == -1) {
+                                msgpack_unpacked_destroy(&result);
+                                msgpack_unpacker_free(unp);
+                                flb_sds_destroy(out_tag);
+                                return -1;
+                            }
+                            event_type = ret;
+                        }
+
+                        if (event_type == FLB_EVENT_TYPE_LOGS) {
+                            /* Append uncompressed data */
+                            flb_input_log_append(conn->in,
+                                                 out_tag, flb_sds_len(out_tag),
+                                                 gz_data, gz_size);
+                            flb_free(gz_data);
+                        }
+                        else if (event_type == FLB_EVENT_TYPE_METRICS) {
+                            ret = cmt_decode_msgpack_create(&cmt, (char *) gz_data, gz_size, &off);
+                            if (ret != CMT_DECODE_MSGPACK_SUCCESS) {
+                                flb_error("cmt_decode_msgpack_create failed. ret=%d", ret);
+                                msgpack_unpacked_destroy(&result);
+                                msgpack_unpacker_free(unp);
+                                flb_sds_destroy(out_tag);
+                                return -1;
+                            }
+                            flb_input_metrics_append(conn->in,
+                                                     out_tag, flb_sds_len(out_tag),
+                                                     cmt);
+                            flb_free(gz_data);
+                        }
+                        else if (event_type == FLB_EVENT_TYPE_TRACES) {
+                            off = 0;
+                            ret = ctr_decode_msgpack_create(&ctr, (char *) gz_data, gz_size, &off);
+                            if (ret == -1) {
+                                msgpack_unpacked_destroy(&result);
+                                msgpack_unpacker_free(unp);
+                                flb_sds_destroy(out_tag);
+                                return -1;
+                            }
+
+                            flb_input_trace_append(ins,
+                                                   out_tag, flb_sds_len(out_tag),
+                                                   ctr);
+
+                            flb_free(gz_data);
+                        }
                     }
                     else {
                         event_type = FLB_EVENT_TYPE_LOGS;
