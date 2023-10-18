@@ -201,7 +201,8 @@ static int configure(struct flb_dummy *ctx,
                      struct timespec *tm)
 {
     const char *msg;
-    double tmfrac;
+    double tm_interval_fractional;
+    int tm_interval_seconds;
     int root_type;
     int ret = -1;
 
@@ -219,9 +220,10 @@ static int configure(struct flb_dummy *ctx,
     tm->tv_nsec = 0;
 
     if (ctx->rate > 1) {
-        tmfrac = (double) ctx->time_interval / ctx->rate;
-        tm->tv_sec = tmfrac;
-        tm->tv_nsec = (tmfrac - (int) tmfrac) * 1000000000;
+        tm_interval_fractional = (double) ctx->time_interval / ctx->rate;
+        tm_interval_seconds = (int) tm_interval_fractional;
+        tm->tv_sec = tm_interval_seconds;
+        tm->tv_nsec = (tm_interval_fractional - tm_interval_seconds) * 1000000000;
     }
 
     /* dummy timestamp */
