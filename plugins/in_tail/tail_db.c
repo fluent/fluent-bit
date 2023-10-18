@@ -168,6 +168,42 @@ static int db_file_insert(struct flb_tail_file *file, struct flb_tail_config *ct
     return flb_sqldb_last_id(ctx->db);
 }
 
+static int stmt_add_param_concat(struct flb_tail_config *ctx,
+                                 flb_sds_t *stmt_sql, uint64_t count)
+{
+    uint64_t idx;
+    flb_sds_t sds_tmp;
+
+    sds_tmp = flb_sds_cat(*stmt_sql, SQL_STMT_START_PARAM,
+                          SQL_STMT_START_PARAM_LEN);
+    if (sds_tmp == NULL) {
+        flb_plg_debug(ctx->ins, "error concatenating stmt_sql: param start");
+        return -1;
+    }
+    *stmt_sql = sds_tmp;
+
+    for (idx = 1; idx < count; idx++) {
+        sds_tmp = flb_sds_cat(*stmt_sql, SQL_STMT_ADD_PARAM,
+                              SQL_STMT_ADD_PARAM_LEN);
+        if (sds_tmp == NULL) {
+            flb_plg_debug(ctx->ins, "error concatenating stmt_sql: add param");
+            return -1;
+        }
+
+        *stmt_sql = sds_tmp;
+    }
+        
+    sds_tmp = flb_sds_cat(*stmt_sql, SQL_STMT_PARAM_END,
+                          SQL_STMT_PARAM_END_LEN);
+    if (sds_tmp == NULL) {
+        flb_plg_debug(ctx->ins, "error concatenating stmt_sql: param end");
+        return -1;
+    }
+    *stmt_sql = sds_tmp;
+
+    return 0;
+}
+
 int flb_tail_db_file_set(struct flb_tail_file *file,
                          struct flb_tail_config *ctx)
 {
@@ -273,5 +309,130 @@ int flb_tail_db_file_delete(struct flb_tail_file *file,
     }
 
     flb_plg_debug(ctx->ins, "db: file deleted from database: %s", file->name);
+    return 0;
+}
+
+/*
+ * Delete stale file from database
+ */
+int flb_tail_db_stale_file_delete(struct flb_input_instance *ins,
+                                  struct flb_config *config,
+                                  struct flb_tail_config *ctx)
+{
+    int ret = -1;
+    size_t sql_size;
+    uint64_t idx;
+    uint64_t file_count = ctx->files_static_count;
+    flb_sds_t stale_delete_sql;
+    flb_sds_t sds_tmp;
+    sqlite3_stmt *stmt_delete_inodes = NULL;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_tail_file *file;
+
+    if (!ctx->db) {
+        return 0;
+    }
+
+    /* Create a stmt sql buffer */
+    sql_size = SQL_DELETE_STALE_FILE_START_LEN;
+    sql_size += SQL_DELETE_STALE_FILE_WHERE_LEN;
+    sql_size += SQL_STMT_START_PARAM_LEN;
+    sql_size += SQL_STMT_PARAM_END_LEN;
+    sql_size += SQL_STMT_END_LEN;
+    if (file_count > 0) {
+        sql_size += (SQL_STMT_ADD_PARAM_LEN * file_count);
+    }
+
+    stale_delete_sql = flb_sds_create_size(sql_size + 1);
+    if (!stale_delete_sql) {
+        flb_plg_error(ctx->ins, "cannot allocate buffer for stale_delete_sql:"
+                      " size: %zu", sql_size);
+        return -1;
+    }
+
+    /* Create a stmt sql */
+    sds_tmp = flb_sds_cat(stale_delete_sql, SQL_DELETE_STALE_FILE_START,
+                          SQL_DELETE_STALE_FILE_START_LEN);
+    if (sds_tmp == NULL) {
+        flb_plg_error(ctx->ins,
+                      "error concatenating stale_delete_sql: start");
+        flb_sds_destroy(stale_delete_sql);
+        return -1;
+    }
+    stale_delete_sql = sds_tmp;
+
+    if (file_count > 0) {
+        sds_tmp = flb_sds_cat(stale_delete_sql, SQL_DELETE_STALE_FILE_WHERE,
+                              SQL_DELETE_STALE_FILE_WHERE_LEN);
+        if (sds_tmp == NULL) {
+            flb_plg_error(ctx->ins,
+                          "error concatenating stale_delete_sql: where");
+            flb_sds_destroy(stale_delete_sql);
+            return -1;
+        }
+        stale_delete_sql = sds_tmp;
+
+        ret = stmt_add_param_concat(ctx, &stale_delete_sql, file_count);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins,
+                          "error concatenating stale_delete_sql: param");
+            flb_sds_destroy(stale_delete_sql);
+            return -1;
+        }
+    }
+
+    sds_tmp = flb_sds_cat(stale_delete_sql, SQL_STMT_END, SQL_STMT_END_LEN);
+    if (sds_tmp == NULL) {
+        flb_plg_error(ctx->ins,
+                      "error concatenating stale_delete_sql: end");
+        flb_sds_destroy(stale_delete_sql);
+        return -1;
+    }
+    stale_delete_sql = sds_tmp;
+
+    /* Prepare stmt */
+    ret = sqlite3_prepare_v2(ctx->db->handler, stale_delete_sql, -1,
+                             &stmt_delete_inodes, 0);
+    if (ret != SQLITE_OK) {
+        flb_plg_error(ctx->ins, "error preparing database SQL statement:"
+                      " stmt_delete_inodes sql:%s, ret=%d", stale_delete_sql,
+                      ret);
+        flb_sds_destroy(stale_delete_sql);
+        return -1;
+    }
+
+    /* Bind parameters */
+    idx = 1;
+    mk_list_foreach_safe(head, tmp, &ctx->files_static) {
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+        ret = sqlite3_bind_int64(stmt_delete_inodes, idx, file->inode);
+        if (ret != SQLITE_OK) {
+            flb_plg_error(ctx->ins, "error binding to stmt_delete_inodes:"
+                          " inode=%lu, ret=%d", file->inode, ret);
+            sqlite3_finalize(stmt_delete_inodes);
+            flb_sds_destroy(stale_delete_sql);
+            return -1;
+        }
+        idx++;
+    }
+
+    /* Run the delete inodes */
+    ret = sqlite3_step(stmt_delete_inodes);
+    if (ret != SQLITE_DONE) {
+        sqlite3_finalize(stmt_delete_inodes);
+        flb_sds_destroy(stale_delete_sql);
+        flb_plg_error(ctx->ins, "cannot execute delete stale inodes: ret=%d",
+                      ret);
+        return -1;
+    }
+
+    ret = sqlite3_changes(ctx->db->handler);
+    flb_plg_info(ctx->ins, "db: delete unmonitored stale inodes from the"
+                 " database: count=%d", ret);
+
+    sqlite3_finalize(stmt_delete_inodes);
+    flb_sds_destroy(stale_delete_sql);
+
     return 0;
 }
