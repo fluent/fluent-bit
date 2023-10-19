@@ -207,6 +207,16 @@ static inline int handle_input_event(flb_pipefd_t fd, uint64_t ts,
     return 0;
 }
 
+static inline double calculate_chunk_capacity_percent(struct flb_output_instance *ins)
+{
+    if (ins->total_limit_size == -1) {
+        return 100.0;
+    }
+
+    return 100 * (1.0 - (ins->fs_backlog_chunks_size + ins->fs_chunks_size)/
+                  ((double)ins->total_limit_size));
+}
+
 static inline int handle_output_event(uint64_t ts,
                                       struct flb_config *config,
                                       uint64_t val)
@@ -313,8 +323,7 @@ static inline int handle_output_event(uint64_t ts,
         }
 
         cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
-                      (100 * (1.0 - (ins->fs_backlog_chunks_size + ins->fs_chunks_size)/
-                              ((double)ins->total_limit_size))),
+                      calculate_chunk_capacity_percent(ins),
                       1, (char *[]) {name});
 
         flb_task_retry_clean(task, ins);
@@ -327,8 +336,7 @@ static inline int handle_output_event(uint64_t ts,
                             1, (char *[]) {name});
 
             cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
-                          (100 * (1.0 - (ins->fs_backlog_chunks_size + ins->fs_chunks_size)/
-                                  ((double)ins->total_limit_size))),
+                          calculate_chunk_capacity_percent(ins),
                           1, (char *[]) {name});
 
             /* OLD metrics API */
@@ -364,8 +372,7 @@ static inline int handle_output_event(uint64_t ts,
                             1, (char *[]) {name});
 
             cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
-                          (100 * (1.0 - (ins->fs_backlog_chunks_size + ins->fs_chunks_size)/
-                                  ((double)ins->total_limit_size))),
+                          calculate_chunk_capacity_percent(ins),
                           1, (char *[]) {name});
 
             /* OLD metrics API */
@@ -425,8 +432,7 @@ static inline int handle_output_event(uint64_t ts,
                             1, (char *[]) {name});
 
             cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
-                          (100 * (1.0 - (ins->fs_backlog_chunks_size + ins->fs_chunks_size)/
-                                  ((double)ins->total_limit_size))),
+                          calculate_chunk_capacity_percent(ins),
                           1, (char *[]) {name});
 
             /* OLD metrics API: update the metrics since a new retry is coming */
@@ -443,8 +449,7 @@ static inline int handle_output_event(uint64_t ts,
                         1, (char *[]) {name});
 
         cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
-                      (100 * (1.0 - (ins->fs_backlog_chunks_size + ins->fs_chunks_size)/
-                              ((double)ins->total_limit_size))),
+                      calculate_chunk_capacity_percent(ins),
                       1, (char *[]) {name});
 
         /* OLD API */
