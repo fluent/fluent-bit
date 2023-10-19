@@ -557,7 +557,6 @@ static void flb_signal_handler_status_line(struct flb_cf *cf_opts)
     char s[] = "[engine] caught signal (";
     time_t now;
     struct tm *cur;
-    flb_ctx_t *ctx = flb_context_get();
 
     now = time(NULL);
     cur = localtime(&now);
@@ -609,9 +608,6 @@ static void flb_signal_handler(int signal)
 #ifndef FLB_HAVE_STATIC_CONF
         if (flb_bin_restarting == FLB_RELOAD_IDLE) {
             flb_bin_restarting = FLB_RELOAD_IN_PROGRESS;
-            /* reload by using same config files/path */
-            flb_reload(ctx, cf_opts);
-            flb_bin_restarting = FLB_RELOAD_IDLE;
         }
         else {
             flb_utils_error(FLB_ERR_RELOADING_IN_PROGRESS);
@@ -1396,12 +1392,18 @@ int flb_main(int argc, char **argv)
 #ifdef FLB_SYSTEM_WINDOWS
         flb_console_handler_set_ctx(ctx, cf_opts);
 #endif
+        if (flb_bin_restarting == FLB_RELOAD_IN_PROGRESS) {
+            /* reload by using same config files/path */
+            flb_reload(ctx, cf_opts);
+            ctx = flb_context_get();
+            flb_bin_restarting = FLB_RELOAD_IDLE;
+        }
     }
 
     if (exit_signal) {
         flb_signal_exit(exit_signal);
     }
-    ret = config->exit_status_code;
+    ret = ctx->config->exit_status_code;
 
     cf_opts = flb_cf_context_get();
 
