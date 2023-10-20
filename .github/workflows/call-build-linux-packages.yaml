@@ -106,7 +106,7 @@ jobs:
     name: ${{ matrix.distro }} package build and stage to S3
     environment: ${{ inputs.environment }}
     # Ensure for OSS Fluent Bit repo we enable usage of Actuated runners for ARM builds, for forks it should keep existing ubuntu-latest usage.
-    runs-on: ${{ (contains(matrix.distro, 'arm' ) && (github.repository == 'fluent/fluent-bit') && 'actuated-aarch64') || 'ubuntu-latest' }}
+    runs-on: ${{ (contains(matrix.distro, 'arm' ) && (github.repository == 'fluent/fluent-bit') && 'actuated-arm64-8cpu-16gb') || 'ubuntu-latest' }}
     permissions:
       contents: read
     strategy:
@@ -123,7 +123,7 @@ jobs:
       - name: Set up Actuated mirror
         if: contains(matrix.distro, 'arm' ) && (github.repository == 'fluent/fluent-bit')
         uses: self-actuated/hub-mirror@master
-  
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -137,7 +137,7 @@ jobs:
           echo "$INPUT --> $output"
           echo "replaced=$output" >> "$GITHUB_OUTPUT"
         shell: bash
-        env: 
+        env:
           INPUT: ${{ matrix.distro }}
 
       - name: fluent-bit - ${{ matrix.distro }} artifacts
