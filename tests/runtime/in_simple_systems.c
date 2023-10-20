@@ -340,8 +340,8 @@ void do_test_records_wait_time(char *system, int wait_time, void (*records_cb)(s
     /* Start test */
     TEST_CHECK(flb_start(ctx) == 0);
 
-    /* Set wait_time plus 4 sec passed. It must have flushed */
-    sleep(wait_time + 4);
+    /* Set wait_time plus 2 sec passed. It must have flushed */
+    sleep(wait_time + 2);
 
     records_cb(records);
 
@@ -533,17 +533,12 @@ void flb_test_dummy_records_message_copies_100(struct callback_records *records)
     TEST_CHECK(records->num_records >= 100);
 }
 
-void flb_test_dummy_records_message_time_interval_3_rate_1(struct callback_records *records)
+void flb_test_dummy_records_message_time_interval_2_rate_5(struct callback_records *records)
 {
-    TEST_CHECK(records->num_records >= 1);
+    TEST_CHECK(records->num_records >= 5);
 }
 
-void flb_test_dummy_records_message_time_interval_3_rate_10(struct callback_records *records)
-{
-    TEST_CHECK(records->num_records >= 10);
-}
-
-void flb_test_dummy_records_message_time_interval_6_rate_100(struct callback_records *records)
+void flb_test_dummy_records_message_time_interval_3_rate_100(struct callback_records *records)
 {
     TEST_CHECK(records->num_records >= 100);
 }
@@ -578,16 +573,12 @@ void flb_test_in_dummy_flush()
     do_test_records_single("dummy", flb_test_dummy_records_message_copies_100,
                     "copies", "100",
                     NULL);
-    do_test_records_wait_time("dummy", 3, flb_test_dummy_records_message_time_interval_3_rate_1,
-                    "time_interval", "3",
-                    "rate", "1",
+    do_test_records_wait_time("dummy", 2, flb_test_dummy_records_message_time_interval_2_rate_5,
+                    "time_interval", "2",
+                    "rate", "5",
                     NULL);
-    do_test_records_wait_time("dummy", 3, flb_test_dummy_records_message_time_interval_3_rate_10,
+    do_test_records_wait_time("dummy", 3, flb_test_dummy_records_message_time_interval_3_rate_100,
                     "time_interval", "3",
-                    "rate", "10",
-                    NULL);
-    do_test_records_wait_time("dummy", 6, flb_test_dummy_records_message_time_interval_6_rate_100,
-                    "time_interval", "6",
                     "rate", "100",
                     NULL);
 }
