@@ -37,6 +37,12 @@ else
     exit 1
 fi
 
+# Get the current year
+NEW_COPYRIGHT_YEAR=${NEW_COPYRIGHT_YEAR:-$(date +%Y)}
+
+# Update Copyright statement
+sed_wrapper -i -E "s/Copyright \(C\) 2015-([0-9]+)/Copyright (C) 2015-$NEW_COPYRIGHT_YEAR/g" "$SCRIPT_DIR"/include/fluent-bit/flb_version.h.in
+
 # Extract and verify each version
 major=$(echo "$NEW_VERSION" | cut -d. -f1)
 minor=$(echo "$NEW_VERSION" | cut -d. -f2)
@@ -73,8 +79,8 @@ if [[ -f "fluent-bit-$NEW_VERSION.bb" ]]; then
     echo "ERROR: existing fluent-bit-$NEW_VERSION.bb"
     exit 1
 else
-    sed_wrapper -i "s/PV = \"[0-9].[0-9].[0-9]\"/PV = \"$NEW_VERSION\"/g" "$SCRIPT_DIR"/fluent-bit-*.*.*.bb
-    mv "$SCRIPT_DIR"/fluent-bit-*.*.*.bb "fluent-bit-$NEW_VERSION.bb"
+    mv -vf "$SCRIPT_DIR"/fluent-bit-*.*.*.bb "fluent-bit-$NEW_VERSION.bb"
+    sed_wrapper -i -E "s/^PV =.*$/PV = \"$NEW_VERSION\"/g" "fluent-bit-$NEW_VERSION.bb"
 fi
 
 if [[ "${DISABLE_COMMIT:-no}" == "no" ]]; then
@@ -89,7 +95,7 @@ if [[ "${DISABLE_COMMIT:-no}" == "no" ]]; then
     # Handle renaming
     git add "*.bb"
     git commit -a -s -m "bitbake: bump to v$NEW_VERSION"
-else 
+else
     echo "Skipping commits"
 fi
 
