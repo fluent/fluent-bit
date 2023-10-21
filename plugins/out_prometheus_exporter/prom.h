@@ -33,6 +33,9 @@ struct prom_exporter {
     /* add timestamp to every metric */
     int add_timestamp;
 
+    /* expiry time for metrics in the hash table */
+    time_t ttl;
+
     /* config reader for 'add_label' */
     struct mk_list *add_labels;
 
