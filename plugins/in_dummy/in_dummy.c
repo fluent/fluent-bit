@@ -214,13 +214,19 @@ static int configure(struct flb_dummy *ctx,
     }
 
     /* interval settings */
-    tm->tv_sec  = 1;
-    tm->tv_nsec = 0;
+    if (ctx->interval_sec <= 0 && ctx->interval_nsec <= 0) {
+        /* Illegal settings. Override them. */
+        ctx->interval_sec = atoi(DEFAULT_INTERVAL_SEC);
+        ctx->interval_nsec = atoi(DEFAULT_INTERVAL_NSEC);
+    }
+
+    tm->tv_sec  = ctx->interval_sec;
+    tm->tv_nsec = ctx->interval_nsec;
 
     if (ctx->rate > 1) {
         tm->tv_sec = 0;
         tm->tv_nsec = 1000000000 / ctx->rate;
-    }
+    }     
 
     /* dummy timestamp */
     flb_time_zero(&ctx->dummy_timestamp);
@@ -419,6 +425,16 @@ static struct flb_config_map config_map[] = {
     FLB_CONFIG_MAP_BOOL, "fixed_timestamp", "off",
     0, FLB_TRUE, offsetof(struct flb_dummy, fixed_timestamp),
     "used a fixed timestamp, allows the message to pre-generated once."
+   },
+   {
+    FLB_CONFIG_MAP_INT, "interval_sec", DEFAULT_INTERVAL_SEC,
+    0, FLB_TRUE, offsetof(struct flb_dummy, interval_sec),
+    "Set the collector interval"
+   },
+   {
+    FLB_CONFIG_MAP_INT, "interval_nsec", DEFAULT_INTERVAL_NSEC,
+    0, FLB_TRUE, offsetof(struct flb_dummy, interval_nsec),
+    "Set the collector interval (sub seconds)"
    },
    {0}
 };
