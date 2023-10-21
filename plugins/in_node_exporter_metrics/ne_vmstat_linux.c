@@ -191,19 +191,21 @@ static int vmstat_update(struct flb_ne *ctx)
     return 0;
 }
 
-int ne_vmstat_init(struct flb_ne *ctx)
+static int ne_vmstat_init(struct flb_ne *ctx)
 {
     vmstat_configure(ctx);
     return 0;
 }
 
-int ne_vmstat_update(struct flb_ne *ctx)
+static int ne_vmstat_update(struct flb_input_instance *ins, struct flb_config *config, void *in_context)
 {
+    struct flb_ne *ctx = (struct flb_ne *)in_context;
+
     vmstat_update(ctx);
     return 0;
 }
 
-int ne_vmstat_exit(struct flb_ne *ctx)
+static int ne_vmstat_exit(struct flb_ne *ctx)
 {
     if (ctx->vml_regex_fields) {
         flb_regex_destroy(ctx->vml_regex_fields);
@@ -214,3 +216,10 @@ int ne_vmstat_exit(struct flb_ne *ctx)
     }
     return 0;
 }
+
+struct flb_ne_collector vmstat_collector = {
+    .name = "vmstat",
+    .cb_init = ne_vmstat_init,
+    .cb_update = ne_vmstat_update,
+    .cb_exit = ne_vmstat_exit
+};

@@ -22,7 +22,5 @@
 
 #include "ne.h"
 
-int ne_cpufreq_init(struct flb_ne *ctx);
-int ne_cpufreq_update(struct flb_ne *ctx);
-
+extern struct flb_ne_collector cpufreq_collector;
 #endif

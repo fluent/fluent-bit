@@ -362,7 +362,7 @@ static int cpu_stat_update(struct flb_ne *ctx, uint64_t ts)
     return 0;
 }
 
-int ne_cpu_init(struct flb_ne *ctx)
+static int ne_cpu_init(struct flb_ne *ctx)
 {
     int ret;
 
@@ -383,9 +383,10 @@ int ne_cpu_init(struct flb_ne *ctx)
     return 0;
 }
 
-int ne_cpu_update(struct flb_ne *ctx)
+static int ne_cpu_update(struct flb_input_instance *ins, struct flb_config *config, void *in_context)
 {
     uint64_t ts;
+    struct flb_ne *ctx = (struct flb_ne *)in_context;
 
     ts = cfl_time_now();
 
@@ -394,3 +395,10 @@ int ne_cpu_update(struct flb_ne *ctx)
 
     return 0;
 }
+
+struct flb_ne_collector cpu_collector = {
+    .name = "cpu",
+    .cb_init = ne_cpu_init,
+    .cb_update = ne_cpu_update,
+    .cb_exit = NULL
+};

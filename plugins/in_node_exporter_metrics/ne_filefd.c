@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2023 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,12 +17,17 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IN_NE_STAT_H
-#define FLB_IN_NE_STAT_H
+#ifdef __linux__
+#include "ne_filefd_linux.c"
+#else
 
 #include "ne.h"
 
-int ne_stat_init(struct flb_ne *ctx);
-int ne_stat_update(struct flb_ne *ctx);
+struct flb_ne_collector filefd_collector = {
+    .name = "filefd",
+    .cb_init = NULL,
+    .cb_update = NULL,
+    .cb_exit = NULL
+};
 
 #endif

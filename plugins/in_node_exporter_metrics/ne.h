@@ -56,41 +56,9 @@ struct flb_ne {
     int coll_fd;                                      /* collector fd     */
     struct cmt *cmt;                                  /* cmetrics context */
     struct flb_input_instance *ins;                   /* input instance   */
-    struct flb_callback *callback;                    /* metric callback */
     struct mk_list *metrics;                          /* enabled metrics */
 
-    /* Individual intervals for metrics */
-    int cpu_scrape_interval;
-    int cpufreq_scrape_interval;
-    int meminfo_scrape_interval;
-    int diskstats_scrape_interval;
-    int filesystem_scrape_interval;
-    int uname_scrape_interval;
-    int stat_scrape_interval;
-    int time_scrape_interval;
-    int loadavg_scrape_interval;
-    int vmstat_scrape_interval;
-    int netdev_scrape_interval;
-    int filefd_scrape_interval;
-    int textfile_scrape_interval;
-    int systemd_scrape_interval;
-    int processes_scrape_interval;
-
-    int coll_cpu_fd;                                    /* collector fd (cpu)    */
-    int coll_cpufreq_fd;                                /* collector fd (cpufreq)  */
-    int coll_meminfo_fd;                                /* collector fd (meminfo)  */
-    int coll_diskstats_fd;                              /* collector fd (diskstat) */
-    int coll_filesystem_fd;                             /* collector fd (filesystem) */
-    int coll_uname_fd;                                  /* collector fd (uname)    */
-    int coll_stat_fd;                                   /* collector fd (stat)    */
-    int coll_time_fd;                                   /* collector fd (time)    */
-    int coll_loadavg_fd;                                /* collector fd (loadavg)    */
-    int coll_vmstat_fd;                                 /* collector fd (vmstat)    */
-    int coll_netdev_fd;                                 /* collector fd (netdev)    */
-    int coll_filefd_fd;                                 /* collector fd (filefd)    */
-    int coll_textfile_fd;                               /* collector fd (textfile)  */
-    int coll_systemd_fd ;                               /* collector fd (systemd)  */
-    int coll_processes_fd ;                             /* collector fd (processes)  */
+    struct mk_list collectors;
 
     /*
      * Metrics Contexts
@@ -235,6 +203,20 @@ struct flb_ne {
     struct cmt_gauge   *processes_procs_state;
     struct cmt_gauge   *processes_pid_used;
     struct cmt_gauge   *processes_pid_max;
+};
+
+struct flb_ne_collector {
+    const char *name;
+    int coll_fd;
+    int interval;
+    int activated;
+
+    /* callbacks */
+    int (*cb_init) (struct flb_ne *ctx);
+    int (*cb_update) (struct flb_input_instance *ins, struct flb_config *conf, void *in_context);
+    int (*cb_exit) (struct flb_ne *ctx);
+
+    struct mk_list _head;
 };
 
 #endif

@@ -22,25 +22,6 @@
 
 #include "ne.h"
 
-#if defined(__linux__) || defined(__APPLE__)
-int ne_diskstats_init(struct flb_ne *ctx);
-int ne_diskstats_update(struct flb_ne *ctx);
-int ne_diskstats_exit(struct flb_ne *ctx);
-#else
-static int ne_diskstats_init(struct flb_ne *ctx)
-{
-    return 0;
-}
-
-static int ne_diskstats_update(struct flb_ne *ctx)
-{
-    return 0;
-}
-
-static int ne_diskstats_exit(struct flb_ne *ctx)
-{
-    return 0;
-}
-#endif
+extern struct flb_ne_collector diskstats_collector;
 
 #endif

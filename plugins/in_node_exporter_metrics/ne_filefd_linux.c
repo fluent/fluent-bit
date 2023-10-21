@@ -102,14 +102,23 @@ static int filefd_update(struct flb_ne *ctx)
     return 0;
 }
 
-int ne_filefd_init(struct flb_ne *ctx)
+static int ne_filefd_init(struct flb_ne *ctx)
 {
     filefd_configure(ctx);
     return 0;
 }
 
-int ne_filefd_update(struct flb_ne *ctx)
+static int ne_filefd_update(struct flb_input_instance *ins, struct flb_config *config, void *in_context)
 {
+    struct flb_ne *ctx = (struct flb_ne *)in_context;
+
     filefd_update(ctx);
     return 0;
 }
+
+struct flb_ne_collector filefd_collector = {
+    .name = "filefd",
+    .cb_init = ne_filefd_init,
+    .cb_update = ne_filefd_update,
+    .cb_exit = NULL
+};

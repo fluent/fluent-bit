@@ -275,7 +275,7 @@ static int filesystem_update(struct flb_ne *ctx,
     return NE_ERROR_MOUNT_POINT_LIST_FETCH_SUCCESS;
 }
 
-int ne_filesystem_init(struct flb_ne *ctx)
+static int ne_filesystem_init(struct flb_ne *ctx)
 {
     ctx->fs_regex_skip_mount = flb_regex_create(ctx->fs_regex_ingore_mount_point_text);
     ctx->fs_regex_skip_fs_types = flb_regex_create(ctx->fs_regex_ingore_filesystem_type_text);
@@ -377,9 +377,10 @@ int ne_filesystem_init(struct flb_ne *ctx)
     return 0;
 }
 
-int ne_filesystem_update(struct flb_ne *ctx)
+static int ne_filesystem_update(struct flb_input_instance *ins, struct flb_config *config, void *in_context)
 {
     int result;
+    struct flb_ne *ctx = (struct flb_ne *)in_context;
 
     result = filesystem_update(ctx, "/proc/1/mounts");
 
@@ -390,7 +391,7 @@ int ne_filesystem_update(struct flb_ne *ctx)
     return 0;
 }
 
-int ne_filesystem_exit(struct flb_ne *ctx)
+static int ne_filesystem_exit(struct flb_ne *ctx)
 {
     if (ctx->fs_regex_skip_mount != NULL) {
         flb_regex_destroy(ctx->fs_regex_skip_mount);
@@ -402,3 +403,10 @@ int ne_filesystem_exit(struct flb_ne *ctx)
 
     return 0;
 }
+
+struct flb_ne_collector filesystem_collector = {
+    .name = "filesystem",
+    .cb_init = ne_filesystem_init,
+    .cb_update = ne_filesystem_update,
+    .cb_exit = ne_filesystem_exit
+};

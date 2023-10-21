@@ -22,7 +22,6 @@
 
 #include "ne.h"
 
-int ne_time_init(struct flb_ne *ctx);
-int ne_time_update(struct flb_ne *ctx);
+extern struct flb_ne_collector time_collector;
 
 #endif
