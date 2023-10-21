@@ -22,4 +22,15 @@
 #include "ne_meminfo_linux.c"
 #elif __APPLE__
 #include "ne_meminfo_darwin.c"
+#else
+
+#include "ne.h"
+
+struct flb_ne_collector meminfo_collector = {
+    .name = "meminfo",
+    .cb_init = NULL,
+    .cb_update = NULL,
+    .cb_exit = NULL
+};
+
 #endif

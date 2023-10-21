@@ -17,17 +17,11 @@
  *  limitations under the License.
  */
 
-#ifdef __linux__
-#include "ne_filesystem_linux.c"
-#else
+#ifndef FLB_IN_NE_VMSTAT_H
+#define FLB_IN_NE_VMSTAT_H
 
 #include "ne.h"
 
-struct flb_ne_collector filesystem_collector = {
-    .name = "filesystem",
-    .cb_init = NULL,
-    .cb_update = NULL,
-    .cb_exit = NULL
-};
+extern struct flb_ne_collector vmstat_collector;
 
 #endif

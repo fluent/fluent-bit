@@ -398,19 +398,28 @@ static int processes_update(struct flb_ne *ctx)
     return 0;
 }
 
-int ne_processes_init(struct flb_ne *ctx)
+static int ne_processes_init(struct flb_ne *ctx)
 {
     processes_configure(ctx);
     return 0;
 }
 
-int ne_processes_update(struct flb_ne *ctx)
+static int ne_processes_update(struct flb_input_instance *ins, struct flb_config *config, void *in_context)
 {
+    struct flb_ne *ctx = (struct flb_ne *)in_context;
+
     processes_update(ctx);
     return 0;
 }
 
-int ne_processes_exit(struct flb_ne *ctx)
+static int ne_processes_exit(struct flb_ne *ctx)
 {
     return 0;
 }
+
+struct flb_ne_collector processes_collector = {
+    .name = "processes",
+    .cb_init = ne_processes_init,
+    .cb_update = ne_processes_update,
+    .cb_exit = ne_processes_exit
+};

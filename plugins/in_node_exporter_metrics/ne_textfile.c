@@ -19,4 +19,15 @@
 
 #ifdef __linux__
 #include "ne_textfile_linux.c"
+#else
+
+#include "ne.h"
+
+struct flb_ne_collector textfile_collector = {
+    .name = "textfile",
+    .cb_init = NULL,
+    .cb_update = NULL,
+    .cb_exit = NULL
+};
+
 #endif

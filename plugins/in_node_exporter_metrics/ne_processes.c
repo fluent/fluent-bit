@@ -19,4 +19,15 @@
 
 #ifdef __linux__
 #include "ne_processes_linux.c"
+#else
+
+#include "ne.h"
+
+struct flb_ne_collector processes_collector = {
+    .name = "processes",
+    .cb_init = NULL,
+    .cb_update = NULL,
+    .cb_exit = NULL
+};
+
 #endif

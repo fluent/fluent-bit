@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2023 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -18,13 +18,13 @@
  */
 
 #ifdef __linux__
-#include "ne_filesystem_linux.c"
+#include "ne_vmstat_linux.c"
 #else
 
 #include "ne.h"
 
-struct flb_ne_collector filesystem_collector = {
-    .name = "filesystem",
+struct flb_ne_collector vmstat_collector = {
+    .name = "vmstat",
     .cb_init = NULL,
     .cb_update = NULL,
     .cb_exit = NULL

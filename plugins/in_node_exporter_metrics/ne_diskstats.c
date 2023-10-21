@@ -21,4 +21,15 @@
 #include "ne_diskstats_linux.c"
 #elif __APPLE__
 #include "ne_diskstats_darwin.c"
+#else
+
+#include "ne.h"
+
+struct flb_ne_collector diskstats_collector = {
+    .name = "diskstats",
+    .cb_init = NULL,
+    .cb_update = NULL,
+    .cb_exit = NULL
+};
+
 #endif

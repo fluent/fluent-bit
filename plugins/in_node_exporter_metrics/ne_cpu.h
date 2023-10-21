@@ -22,9 +22,9 @@
 
 #include "ne.h"
 
+extern struct flb_ne_collector cpu_collector;
+
 #ifdef __linux__
-int ne_cpu_init(struct flb_ne *ctx);
-int ne_cpu_update(struct flb_ne *ctx);
 #elif __APPLE__
 int ne_cpu_init(struct flb_ne *ctx);
 int ne_cpu_update(struct flb_ne *ctx);
