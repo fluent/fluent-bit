@@ -43,7 +43,7 @@
 #include "ne_systemd.h"
 #include "ne_processes.h"
 #include "ne_nvme.h"
-#include "ne_thermalzone_linux.h"
+#include "ne_thermalzone.h"
 
 /*
  * Update the metrics, this function is invoked every time 'scrape_interval'
