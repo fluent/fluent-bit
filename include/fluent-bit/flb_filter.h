@@ -133,6 +133,7 @@ void flb_filter_instance_exit(struct flb_filter_instance *ins,
 void flb_filter_exit(struct flb_config *config);
 void flb_filter_do(struct flb_input_chunk *ic,
                    const void *data, size_t bytes,
+                   void **out_data, size_t *out_bytes,
                    const char *tag, int tag_len,
                    struct flb_config *config);
 const char *flb_filter_name(struct flb_filter_instance *ins);
