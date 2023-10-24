@@ -26,17 +26,39 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
+/* Distinguish cgroup v2 or v1 */
+#define SYSFS_FILE_PATH_SIZE            512
+
+#define SYSFS_PATH                      "/sys/fs/cgroup"
+#define CGROUP_V2_PATH                  "cgroup.controllers"
+#define CGROUP_V1                       1
+#define CGROUP_V2                       2
 
 #define CURRENT_DIR           "."
 #define PREV_DIR              ".."
 #define OS_DIR_TYPE           4
 #define DOCKER_LONG_ID_LEN    64
 #define DOCKER_SHORT_ID_LEN   12
+
+#define DOCKER_CGROUP_V2_LONG_ID_LEN 77 /* docker-CONTAINERID.scope: 7 + 64 + 6 */
+
+/* Files from sysfs containing metrics (cgroups v1) */
 #define DOCKER_CGROUP_V1_MEM_DIR "/sys/fs/cgroup/memory/docker"
 #define DOCKER_CGROUP_V1_CPU_DIR "/sys/fs/cgroup/cpu/docker"
 #define DOCKER_CGROUP_V1_MEM_LIMIT_FILE "memory.limit_in_bytes"
 #define DOCKER_CGROUP_V1_MEM_USAGE_FILE "memory.usage_in_bytes"
 #define DOCKER_CGROUP_V1_CPU_USAGE_FILE "cpuacct.usage"
+
+/* Files from sysfs containing metrics (cgroups v2) */
+#define DOCKER_CGROUP_V2_DOCKER_SERVICE_DIR "/sys/fs/cgroup/system.slice"
+#define DOCKER_CGROUP_V2_MEM_USAGE_FILE     "memory.current"
+#define DOCKER_CGROUP_V2_MEM_PEAK_FILE      "memory.peak"
+#define DOCKER_CGROUP_V2_MEM_STAT_FILE      "memory.stat"
+#define DOCKER_CGROUP_V2_MEM_MAX_FILE       "memory.max"
+#define DOCKER_CGROUP_V2_CPU_USAGE_FILE     "cpu.stat"
+#define DOCKER_CGROUP_V2_CPU_USAGE_KEY      "usage_usec"
+#define DOCKER_CGROUP_V2_CPU_USAGE_TEMPLATE DOCKER_CGROUP_V2_CPU_USAGE_KEY" %lu"
+
 #define DOCKER_LIB_ROOT       "/var/lib/docker/containers"
 #define DOCKER_CONFIG_JSON    "config.v2.json"
 #define DOCKER_NAME_ARG       "\"Name\""
@@ -75,6 +97,7 @@ struct cgroup_api {
     mem_snapshot*   (*get_mem_snapshot)   (struct flb_docker *, char *);
 };
 int in_docker_set_cgroup_api_v1(struct cgroup_api *api);
+int in_docker_set_cgroup_api_v2(struct cgroup_api *api);
 
 /* Docker Input configuration & context */
 struct flb_docker {
@@ -86,6 +109,12 @@ struct flb_docker {
     struct cgroup_api cgroup_api;
     struct flb_input_instance *ins;
     struct flb_log_event_encoder log_encoder;
+
+    /* cgroup version used by host */
+    int cgroup_version;
+
+    /* proc and sys paths, overwriting mostly for testing */
+    flb_sds_t sysfs_path;
 };
 
 int in_docker_collect(struct flb_input_instance *i_ins,
