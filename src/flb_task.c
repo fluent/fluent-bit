@@ -376,6 +376,14 @@ struct flb_task *flb_task_create(uint64_t ref_id,
         *err = FLB_TRUE;
         return NULL;
     }
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+    if (ic->trace) {
+        flb_debug("add trace to task");
+        evc->trace = ic->trace;
+    }
+#endif
+
     task->event_chunk = evc;
     task_ic = (struct flb_input_chunk *) ic;
     task_ic->task = task;

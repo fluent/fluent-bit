@@ -281,6 +281,7 @@ struct flb_chunk_trace *flb_chunk_trace_new(struct flb_input_chunk *chunk)
     struct flb_chunk_trace *trace = NULL;
     struct flb_input_instance *f_ins = (struct flb_input_instance *)chunk->in;
 
+    flb_error("new chunk trace");
     pthread_mutex_lock(&f_ins->chunk_trace_lock);
 
     if (flb_chunk_trace_to_be_destroyed(f_ins->chunk_trace_ctxt) == FLB_TRUE) {
@@ -315,6 +316,7 @@ struct flb_chunk_trace *flb_chunk_trace_new(struct flb_input_chunk *chunk)
 
 void flb_chunk_trace_destroy(struct flb_chunk_trace *trace)
 {
+    flb_error("destroy input chunk trace");
     pthread_mutex_lock(&trace->ic->in->chunk_trace_lock);
     flb_chunk_trace_sub(trace->ctxt);
 
@@ -406,7 +408,7 @@ void flb_chunk_trace_do_input(struct flb_input_chunk *ic)
     pthread_mutex_lock(&ic->in->chunk_trace_lock);
     if (ic->in->chunk_trace_ctxt == NULL) {
         pthread_mutex_unlock(&ic->in->chunk_trace_lock);
-    	return;
+        return;
     }
     pthread_mutex_unlock(&ic->in->chunk_trace_lock);
     
@@ -644,7 +646,7 @@ int flb_chunk_trace_filter(struct flb_chunk_trace *tracer, void *pfilter, struct
         msgpack_pack_map(&mp_pck, 6);
     }
     else {
-        msgpack_pack_map(&mp_pck, 7);	
+        msgpack_pack_map(&mp_pck, 7);
     }
 
     msgpack_pack_str_with_body(&mp_pck, "type", strlen("type"));
@@ -722,5 +724,63 @@ sbuffer_error:
     msgpack_sbuffer_destroy(&mp_sbuf);
 tracer_error:
     flb_sds_destroy(tag);
+    return rc;
+}
+
+int flb_chunk_trace_output(struct flb_chunk_trace *trace, struct flb_output_instance *output, int ret)
+{
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_unpacked result;
+    struct flb_time tm;
+    struct flb_time tm_end;
+    int rc = -1;
+    flb_sds_t tag = flb_sds_create("trace");
+
+
+    /* initiailize start time */
+    flb_time_get(&tm);
+    flb_time_get(&tm_end);
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_unpacked_init(&result);
+    
+    msgpack_pack_array(&mp_pck, 2);
+    flb_pack_time_now(&mp_pck);
+    if (output->alias != NULL) {
+        msgpack_pack_map(&mp_pck, 7);
+    } 
+    else {
+        msgpack_pack_map(&mp_pck, 6);
+    }
+
+    msgpack_pack_str_with_body(&mp_pck, "type", 4);
+    msgpack_pack_int(&mp_pck, FLB_CHUNK_TRACE_TYPE_OUTPUT);
+
+    msgpack_pack_str_with_body(&mp_pck, "trace_id", strlen("trace_id"));
+    msgpack_pack_str_with_body(&mp_pck, trace->trace_id, strlen(trace->trace_id));
+
+    msgpack_pack_str_with_body(&mp_pck, "plugin_instance", strlen("plugin_instance"));
+    msgpack_pack_str_with_body(&mp_pck, output->name, strlen(output->name));
+
+    if (output->alias != NULL) {
+        msgpack_pack_str_with_body(&mp_pck, "plugin_alias", strlen("plugin_alias"));
+        msgpack_pack_str_with_body(&mp_pck, output->alias, strlen(output->alias));
+    }
+
+    msgpack_pack_str_with_body(&mp_pck, "return", strlen("return"));
+    msgpack_pack_int(&mp_pck, ret);
+
+    msgpack_pack_str_with_body(&mp_pck, "start_time", strlen("start_time"));
+    flb_time_append_to_msgpack(&tm, &mp_pck, FLB_TIME_ETFMT_INT);
+    msgpack_pack_str_with_body(&mp_pck, "end_time", strlen("end_time"));
+    flb_time_append_to_msgpack(&tm_end, &mp_pck, FLB_TIME_ETFMT_INT);
+    flb_input_log_append(trace->ctxt->input,
+                         tag, flb_sds_len(tag),
+                         mp_sbuf.data, mp_sbuf.size);
+    flb_sds_destroy(tag);
+    msgpack_unpacked_destroy(&result);
+    msgpack_sbuffer_destroy(&mp_sbuf);
     return rc;
 }
