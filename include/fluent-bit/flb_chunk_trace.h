@@ -77,6 +77,12 @@ struct flb_chunk_trace_context {
     int chunks;
     flb_ctx_t *flb;
     struct cio_ctx *cio;
+    pthread_t thread;
+    pthread_cond_t wait;
+    pthread_mutex_t lock;
+    flb_sds_t output_name;
+    struct mk_list *props;
+    void *data;
 };
 
 struct flb_chunk_trace {

@@ -118,6 +118,7 @@ static void trace_chunk_context_destroy(struct flb_chunk_trace_context *ctxt)
     }
 
     flb_sds_destroy(ctxt->trace_prefix);
+    pthread_cond_signal(&ctxt->wait);
     flb_stop(ctxt->flb);
     flb_destroy(ctxt->flb);
     flb_free(ctxt);
@@ -134,6 +135,84 @@ void flb_chunk_trace_context_destroy(void *input)
     pthread_mutex_unlock(&in->chunk_trace_lock);
 }
 
+static void *pipeline_thread(void *arg)
+{
+    int ret;
+    struct flb_chunk_trace_context *ctx = (struct flb_chunk_trace_context *)arg;
+    struct flb_input_instance *input = NULL;
+    struct flb_output_instance *output = NULL;
+    struct mk_list *head = NULL;
+    struct flb_kv *prop = NULL;
+
+    pthread_mutex_lock(&ctx->lock);
+
+    ctx->flb = flb_create();
+    if (ctx->flb == NULL) {
+        flb_errno();
+        pthread_mutex_unlock(&ctx->lock);
+        return NULL;
+    }
+
+    flb_service_set(ctx->flb, "flush", "1", "grace", "1", NULL);
+
+    input = (void *)flb_input_new(ctx->flb->config, "emitter", NULL, FLB_FALSE);
+    if (input == NULL) {
+        flb_error("could not load trace emitter");
+        goto error_flb;
+    }
+    input->is_threaded = FLB_TRUE;
+
+    ret = flb_input_set_property(input, "alias", "trace-emitter");
+    if (ret != 0) {
+        flb_error("unable to set alias for trace emitter");
+        goto error_input;
+    }
+
+    ret = flb_input_set_property(input, "ring_buffer_size", "4096");
+    if (ret != 0) {
+        flb_error("unable to set ring buffer size for trace emitter");
+        goto error_input;
+    }
+
+    output = flb_output_new(ctx->flb->config, ctx->output_name, ctx->data, 1);
+    if (output == NULL) {
+        flb_error("could not create trace output");
+        goto error_input;
+    }
+    
+    if (ctx->props != NULL) {
+        mk_list_foreach(head, ctx->props) {
+            prop = mk_list_entry(head, struct flb_kv, _head);
+            flb_output_set_property(output, prop->key, prop->val);
+        }
+    }
+
+    ret = flb_router_connect_direct(input, output);
+    if (ret != 0) {
+        flb_error("unable to route traces");
+        goto error_output;
+    }
+
+    ctx->output = (void *)output;
+    ctx->input = (void *)input;
+
+    flb_start(ctx->flb);
+    pthread_cond_signal(&ctx->wait);
+    pthread_cond_wait(&ctx->wait, &ctx->lock);
+
+    return NULL;
+error_output:
+    flb_output_instance_destroy(output);
+error_input:
+    if (ctx->cio) {
+        cio_destroy(ctx->cio);
+    }
+    flb_input_instance_destroy(input);
+error_flb:
+    flb_destroy(ctx->flb);
+    return NULL;
+}
+
 struct flb_chunk_trace_context *flb_chunk_trace_context_new(void *trace_input,
                                                             const char *output_name,
                                                             const char *trace_prefix,
@@ -141,13 +220,8 @@ struct flb_chunk_trace_context *flb_chunk_trace_context_new(void *trace_input,
 {
     struct flb_input_instance *in = (struct flb_input_instance *)trace_input;
     struct flb_config *config = in->config;
-    struct flb_input_instance *input = NULL;
-    struct flb_output_instance *output = NULL;
     struct flb_output_instance *calyptia = NULL;
     struct flb_chunk_trace_context *ctx = NULL;
-    struct mk_list *head = NULL;
-    struct flb_kv *prop = NULL;
-    int ret;
 
     if (config->enable_chunk_trace == FLB_FALSE) {
         flb_warn("[chunk trace] enable chunk tracing via the configuration or "
@@ -168,83 +242,34 @@ struct flb_chunk_trace_context *flb_chunk_trace_context_new(void *trace_input,
         return NULL;
     }
 
-    ctx->flb = flb_create();
-    if (ctx->flb == NULL) {
-        flb_errno();
-        goto error_ctxt;
-    }
+    ctx->output_name = flb_sds_create(output_name);
+    ctx->data = data;
 
-    flb_service_set(ctx->flb, "flush", "1", "grace", "1", NULL);
-
-    input = (void *)flb_input_new(ctx->flb->config, "emitter", NULL, FLB_FALSE);
-    if (input == NULL) {
-        flb_error("could not load trace emitter");
-        goto error_flb;
-    }
-
-    ret = flb_input_set_property(input, "alias", "trace-emitter");
-    if (ret != 0) {
-        flb_error("unable to set alias for trace emitter");
-        goto error_input;
-    }
-
-    ret = flb_input_set_property(input, "ring_buffer_size", "4096");
-    if (ret != 0) {
-        flb_error("unable to set ring buffer size for trace emitter");
-        goto error_input;
-    }
-
-    output = flb_output_new(ctx->flb->config, output_name, data, 1);
-    if (output == NULL) {
-        flb_error("could not create trace output");
-        goto error_input;
-    }
-    
     /* special handling for the calyptia plugin so we can copy the API */
     /* key and other configuration properties. */
-    if (strcmp(output_name, "calyptia") == 0) {
+    if (strcmp(ctx->output_name, "calyptia") == 0) {
         calyptia = find_calyptia_output_instance(config);
         if (calyptia == NULL) {
             flb_error("unable to find calyptia output instance");
-            goto error_output;
+            goto error_ctxt;
         }
-        mk_list_foreach(head, &calyptia->properties) {
-            prop = mk_list_entry(head, struct flb_kv, _head);
-            flb_output_set_property(output, prop->key, prop->val);
-        }        
+        ctx->props = &calyptia->properties;
     }
     else if (props != NULL) {
-        mk_list_foreach(head, props) {
-            prop = mk_list_entry(head, struct flb_kv, _head);
-            flb_output_set_property(output, prop->key, prop->val);
-        }
+        ctx->props = props;
     }
 
-    ret = flb_router_connect_direct(input, output);
-    if (ret != 0) {
-        flb_error("unable to route traces");
-        goto error_output;
-    }
+    pthread_mutex_init(&ctx->lock, NULL);
+    pthread_cond_init(&ctx->wait, NULL);
+    pthread_create(&ctx->thread, NULL, pipeline_thread, ctx);
+    pthread_cond_wait(&ctx->wait, &ctx->lock);
 
-    ctx->output = (void *)output;
-    ctx->input = (void *)input;
     ctx->trace_prefix = flb_sds_create(trace_prefix);
-
-    flb_start_trace(ctx->flb);
 
     in->chunk_trace_ctxt = ctx;
     pthread_mutex_unlock(&in->chunk_trace_lock);
     return ctx;
 
-error_output:
-    flb_output_instance_destroy(output);
-error_input:
-    if (ctx->cio) {
-        cio_destroy(ctx->cio);
-    }
-    flb_input_instance_destroy(input);
-error_flb:
-    flb_destroy(ctx->flb);
 error_ctxt:
     flb_free(ctx);
     pthread_mutex_unlock(&in->chunk_trace_lock);
@@ -483,8 +508,11 @@ int flb_chunk_trace_input(struct flb_chunk_trace *trace)
     flb_time_append_to_msgpack(&tm, &mp_pck, FLB_TIME_ETFMT_INT);
     msgpack_pack_str_with_body(&mp_pck, "end_time", strlen("end_time"));
     flb_time_append_to_msgpack(&tm_end, &mp_pck, FLB_TIME_ETFMT_INT);
-    in_emitter_add_record(tag, flb_sds_len(tag), mp_sbuf.data, mp_sbuf.size,
-                          trace->ctxt->input);
+    flb_input_log_append(trace->ctxt->input,
+                         tag, flb_sds_len(tag),
+                         mp_sbuf.data, mp_sbuf.size);
+    // in_emitter_add_record(tag, flb_sds_len(tag), mp_sbuf.data, mp_sbuf.size,
+    //                      trace->ctxt->input);
 sbuffer_error:
     flb_sds_destroy(tag);
     msgpack_unpacked_destroy(&result);
@@ -577,8 +605,11 @@ int flb_chunk_trace_pre_output(struct flb_chunk_trace *trace)
     flb_time_append_to_msgpack(&tm, &mp_pck, FLB_TIME_ETFMT_INT);
     msgpack_pack_str_with_body(&mp_pck, "end_time", strlen("end_time"));
     flb_time_append_to_msgpack(&tm_end, &mp_pck, FLB_TIME_ETFMT_INT);
-    in_emitter_add_record(tag, flb_sds_len(tag), mp_sbuf.data, mp_sbuf.size,
-                          trace->ctxt->input);
+    flb_input_log_append(trace->ctxt->input,
+                         tag, flb_sds_len(tag),
+                         mp_sbuf.data, mp_sbuf.size);
+    // in_emitter_add_record(tag, flb_sds_len(tag), mp_sbuf.data, mp_sbuf.size,
+    //                      trace->ctxt->input);
 sbuffer_error:
     flb_sds_destroy(tag);
     msgpack_unpacked_destroy(&result);
@@ -677,8 +708,11 @@ int flb_chunk_trace_filter(struct flb_chunk_trace *tracer, void *pfilter, struct
         } while (rc == MSGPACK_UNPACK_SUCCESS && off < buf_size);
     }
 
-    in_emitter_add_record(tag, flb_sds_len(tag), mp_sbuf.data, mp_sbuf.size,
-                          tracer->ctxt->input);
+    flb_input_log_append(tracer->ctxt->input,
+                         tag, flb_sds_len(tag),
+                         mp_sbuf.data, mp_sbuf.size);
+    // in_emitter_add_record(tag, flb_sds_len(tag), mp_sbuf.data, mp_sbuf.size,
+    //                      tracer->ctxt->input);
     
     rc = 0;
 
