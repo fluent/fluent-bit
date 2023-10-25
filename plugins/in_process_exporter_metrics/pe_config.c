@@ -25,6 +25,8 @@ struct flb_pe *flb_pe_config_create(struct flb_input_instance *ins,
 {
     int ret;
     struct flb_pe *ctx;
+    struct mk_list *head;
+    struct flb_slist_entry *entry;
 
     ctx = flb_calloc(1, sizeof(struct flb_pe));
     if (!ctx) {
@@ -42,6 +44,52 @@ struct flb_pe *flb_pe_config_create(struct flb_input_instance *ins,
         return NULL;
     }
 
+    /* Check and initialize enabled metrics */
+    if (ctx->metrics) {
+        mk_list_foreach(head, ctx->metrics) {
+            entry = mk_list_entry(head, struct flb_slist_entry, _head);
+            if (strncasecmp(entry->str, "cpu", 3) == 0) {
+                ctx->enabled_flag |= METRIC_CPU;
+                flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+            }
+            else if (strncasecmp(entry->str, "io", 2) == 0) {
+                ctx->enabled_flag |= METRIC_IO;
+                flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+            }
+            else if (strncasecmp(entry->str, "memory", 6) == 0) {
+                ctx->enabled_flag |= METRIC_MEMORY;
+                flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+            }
+            else if (strncasecmp(entry->str, "state", 5) == 0) {
+                ctx->enabled_flag |= METRIC_STATE;
+                flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+            }
+            else if (strncasecmp(entry->str, "context_switches", 16) == 0) {
+                ctx->enabled_flag |= METRIC_CTXT;
+                flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+            }
+            else if (strncasecmp(entry->str, "fd", 2) == 0) {
+                ctx->enabled_flag |= METRIC_FD;
+                flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+            }
+            else if (strncasecmp(entry->str, "start_time", 9) == 0) {
+                ctx->enabled_flag |= METRIC_START_TIME;
+                flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+            }
+            else if (strncasecmp(entry->str, "thread_wchan", 12) == 0) {
+                ctx->enabled_flag |= METRIC_THREAD_WCHAN;
+                flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+            }
+            else if (strncasecmp(entry->str, "thread", 6) == 0) {
+                ctx->enabled_flag |= METRIC_THREAD;
+                flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+            }
+            else {
+                flb_plg_warn(ctx->ins, "Unknown metrics: %s", entry->str);
+            }
+        }
+    }
+
     /* mount points */
     flb_plg_info(ins, "path.procfs = %s", ctx->path_procfs);
 
@@ -51,7 +99,6 @@ struct flb_pe *flb_pe_config_create(struct flb_input_instance *ins,
         flb_free(ctx);
         return NULL;
     }
-
 
     return ctx;
 }

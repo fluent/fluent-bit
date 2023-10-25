@@ -1036,102 +1036,123 @@ static int process_update(struct flb_pe *ctx)
             entry = flb_slist_entry_get(&split_list, 1);
             ppid_str = entry->str;
 
-            /* node_processes_state
-             * Note: we don't use hash table for it. Because we need to update
-             * every state of the processes due to architecture reasons of cmetrics.
-             */
-            cmt_gauge_set(ctx->states, ts, pstate.running,                  4, (char *[]){ name, pid_str, ppid_str, "R" });
-            cmt_gauge_set(ctx->states, ts, pstate.interruptible_sleeping,   4, (char *[]){ name, pid_str, ppid_str, "S" });
-            cmt_gauge_set(ctx->states, ts, pstate.uninterruptible_sleeping, 4, (char *[]){ name, pid_str, ppid_str, "D" });
-            cmt_gauge_set(ctx->states, ts, pstate.zombie,                   4, (char *[]){ name, pid_str, ppid_str, "Z" });
-            cmt_gauge_set(ctx->states, ts, pstate.stopped,                  4, (char *[]){ name, pid_str, ppid_str, "T" });
-            cmt_gauge_set(ctx->states, ts, pstate.idle,                     4, (char *[]){ name, pid_str, ppid_str, "I" });
-
-            /* CPU Seconds (user) */
-            entry = flb_slist_entry_get(&split_list, 11);
-            tmp = entry->str;
-            /* Collect the number of cpu_seconds per process */
-            if (pe_utils_str_to_uint64(tmp, &val) != -1) {
-                cmt_counter_set(ctx->cpu_seconds, ts, val/USER_HZ, 4, (char *[]){ name, pid_str, ppid_str, "user" });
+            /* State */
+            if (ctx->enabled_flag & METRIC_STATE) {
+                /* node_processes_state
+                 * Note: we don't use hash table for it. Because we need to update
+                 * every state of the processes due to architecture reasons of cmetrics.
+                 */
+                cmt_gauge_set(ctx->states, ts, pstate.running,                  4, (char *[]){ name, pid_str, ppid_str, "R" });
+                cmt_gauge_set(ctx->states, ts, pstate.interruptible_sleeping,   4, (char *[]){ name, pid_str, ppid_str, "S" });
+                cmt_gauge_set(ctx->states, ts, pstate.uninterruptible_sleeping, 4, (char *[]){ name, pid_str, ppid_str, "D" });
+                cmt_gauge_set(ctx->states, ts, pstate.zombie,                   4, (char *[]){ name, pid_str, ppid_str, "Z" });
+                cmt_gauge_set(ctx->states, ts, pstate.stopped,                  4, (char *[]){ name, pid_str, ppid_str, "T" });
+                cmt_gauge_set(ctx->states, ts, pstate.idle,                     4, (char *[]){ name, pid_str, ppid_str, "I" });
             }
 
-            /* CPU Seconds (system) */
-            entry = flb_slist_entry_get(&split_list, 12);
-            tmp = entry->str;
-            /* Collect the number of cpu_seconds per process */
-            if (pe_utils_str_to_uint64(tmp, &val) != -1) {
-                cmt_counter_set(ctx->cpu_seconds, ts, val/USER_HZ, 4, (char *[]){ name, pid_str, ppid_str, "system" });
+            /* CPU */
+            if (ctx->enabled_flag & METRIC_CPU) {
+                /* CPU Seconds (user) */
+                entry = flb_slist_entry_get(&split_list, 11);
+                tmp = entry->str;
+                /* Collect the number of cpu_seconds per process */
+                if (pe_utils_str_to_uint64(tmp, &val) != -1) {
+                    cmt_counter_set(ctx->cpu_seconds, ts, val/USER_HZ, 4, (char *[]){ name, pid_str, ppid_str, "user" });
+                }
+
+                /* CPU Seconds (system) */
+                entry = flb_slist_entry_get(&split_list, 12);
+                tmp = entry->str;
+                /* Collect the number of cpu_seconds per process */
+                if (pe_utils_str_to_uint64(tmp, &val) != -1) {
+                    cmt_counter_set(ctx->cpu_seconds, ts, val/USER_HZ, 4, (char *[]){ name, pid_str, ppid_str, "system" });
+                }
             }
 
             /* StartTime */
-            entry = flb_slist_entry_get(&split_list, 19);
-            tmp = entry->str;
-            /* Collect the number of cpu_seconds per process */
-            if (pe_utils_str_to_uint64(tmp, &val) != -1) {
-                cmt_gauge_set(ctx->start_time, ts, (boot_time + val/USER_HZ), 3, (char *[]){ name, pid_str, ppid_str });
+            if (ctx->enabled_flag & METRIC_START_TIME) {
+                entry = flb_slist_entry_get(&split_list, 19);
+                tmp = entry->str;
+                /* Collect the number of cpu_seconds per process */
+                if (pe_utils_str_to_uint64(tmp, &val) != -1) {
+                    cmt_gauge_set(ctx->start_time, ts, (boot_time + val/USER_HZ), 3, (char *[]){ name, pid_str, ppid_str });
+                }
             }
 
             /* Threads */
-            entry = flb_slist_entry_get(&split_list, 17);
-            thread_str = entry->str;
-            /* Collect the number of threads per process */
-            if (pe_utils_str_to_uint64(thread_str, &val) != -1) {
-                cmt_gauge_set(ctx->num_threads, ts, val, 3, (char *[]){ name, pid_str, ppid_str });
+            if (ctx->enabled_flag & METRIC_THREAD) {
+                entry = flb_slist_entry_get(&split_list, 17);
+                thread_str = entry->str;
+                /* Collect the number of threads per process */
+                if (pe_utils_str_to_uint64(thread_str, &val) != -1) {
+                    cmt_gauge_set(ctx->num_threads, ts, val, 3, (char *[]){ name, pid_str, ppid_str });
+                }
             }
 
-            /* Memory Size */
-            entry = flb_slist_entry_get(&split_list, 20);
-            tmp = entry->str;
-            /* Collect the number of Virtual Memory per process */
-            if (pe_utils_str_to_uint64(tmp, &val) != -1) {
-                cmt_gauge_set(ctx->memory_bytes, ts, val, 4, (char *[]){ name, pid_str, ppid_str, "virtual_memory" });
-            }
+            /* Memory */
+            if (ctx->enabled_flag & METRIC_MEMORY) {
+                /* Memory Size */
+                entry = flb_slist_entry_get(&split_list, 20);
+                tmp = entry->str;
+                /* Collect the number of Virtual Memory per process */
+                if (pe_utils_str_to_uint64(tmp, &val) != -1) {
+                    cmt_gauge_set(ctx->memory_bytes, ts, val, 4, (char *[]){ name, pid_str, ppid_str, "virtual_memory" });
+                }
 
-            entry = flb_slist_entry_get(&split_list, 21);
-            tmp = entry->str;
-            /* Collect the number of RSS per process */
-            if (pe_utils_str_to_uint64(tmp, &val) != -1) {
-                cmt_gauge_set(ctx->memory_bytes, ts, val, 4, (char *[]){ name, pid_str, ppid_str, "rss" });
-            }
+                entry = flb_slist_entry_get(&split_list, 21);
+                tmp = entry->str;
+                /* Collect the number of RSS per process */
+                if (pe_utils_str_to_uint64(tmp, &val) != -1) {
+                    cmt_gauge_set(ctx->memory_bytes, ts, val, 4, (char *[]){ name, pid_str, ppid_str, "rss" });
+                }
 
-            /* Major Page Faults */
-            entry = flb_slist_entry_get(&split_list, 9);
-            tmp = entry->str;
-            /* Collect the number of major page faults per process */
-            if (pe_utils_str_to_uint64(tmp, &val) != -1) {
-                cmt_counter_set(ctx->major_page_faults, ts, val, 3, (char *[]){ name, pid_str, ppid_str });
-            }
+                /* Major Page Faults */
+                entry = flb_slist_entry_get(&split_list, 9);
+                tmp = entry->str;
+                /* Collect the number of major page faults per process */
+                if (pe_utils_str_to_uint64(tmp, &val) != -1) {
+                    cmt_counter_set(ctx->major_page_faults, ts, val, 3, (char *[]){ name, pid_str, ppid_str });
+                }
 
-            /* Minor Page Faults */
-            entry = flb_slist_entry_get(&split_list, 7);
-            tmp = entry->str;
-            /* Collect the number of minor page faults per process */
-            if (pe_utils_str_to_uint64(tmp, &val) != -1) {
-                cmt_counter_set(ctx->minor_page_faults, ts, val, 3, (char *[]){ name, pid_str, ppid_str });
+                /* Minor Page Faults */
+                entry = flb_slist_entry_get(&split_list, 7);
+                tmp = entry->str;
+                /* Collect the number of minor page faults per process */
+                if (pe_utils_str_to_uint64(tmp, &val) != -1) {
+                    cmt_counter_set(ctx->minor_page_faults, ts, val, 3, (char *[]){ name, pid_str, ppid_str });
+                }
             }
 
             /* Collect fds */
-            ret = process_proc_fds(ctx, ts, pid_str, ppid_str, name, process);
-            if (ret == -1) {
-                flb_plg_debug(ctx->ins, "collect fds is failed on the pid = %s", pid_str);
+            if (ctx->enabled_flag & METRIC_FD) {
+                ret = process_proc_fds(ctx, ts, pid_str, ppid_str, name, process);
+                if (ret == -1) {
+                    flb_plg_debug(ctx->ins, "collect fds is failed on the pid = %s", pid_str);
+                }
             }
 
             /* Collect thread_wchan */
-            ret = process_proc_wchan(ctx, ts, pid_str, name, process);
-            if (ret == -1) {
-                flb_plg_debug(ctx->ins, "collect wchan is failed on the pid = %s", pid_str);
+            if (ctx->enabled_flag & METRIC_THREAD_WCHAN) {
+                ret = process_proc_wchan(ctx, ts, pid_str, name, process);
+                if (ret == -1) {
+                    flb_plg_debug(ctx->ins, "collect thread_wchan is failed on the pid = %s", pid_str);
+                }
             }
 
             /* Collect IO status */
-            ret = process_proc_io(ctx, ts, pid_str, ppid_str, name, process);
-            if (ret == -1) {
-                flb_plg_debug(ctx->ins, "collect process io procfs is failed on the pid = %s", pid_str);
+            if (ctx->enabled_flag & METRIC_IO) {
+                ret = process_proc_io(ctx, ts, pid_str, ppid_str, name, process);
+                if (ret == -1) {
+                    flb_plg_debug(ctx->ins, "collect process io procfs is failed on the pid = %s", pid_str);
+                }
             }
 
             /* Collect the states of threads */
-            ret = process_thread_update(ctx, ts, pid_str, name);
-            if (ret == -1) {
-                flb_plg_debug(ctx->ins, "collect thread procfs is failed on the pid = %s", pid_str);
+            if (ctx->enabled_flag & METRIC_THREAD) {
+                ret = process_thread_update(ctx, ts, pid_str, name);
+                if (ret == -1) {
+                    flb_plg_debug(ctx->ins, "collect thread procfs is failed on the pid = %s", pid_str);
+                }
             }
 
         cleanup:
@@ -1141,7 +1162,10 @@ static int process_update(struct flb_pe *ctx)
         }
         flb_slist_destroy(&stat_list);
 
-        process_proc_status(ctx, ts, pid_str, process);
+        /* Context Switches */
+        if (ctx->enabled_flag & METRIC_CTXT) {
+            process_proc_status(ctx, ts, pid_str, process);
+        }
     }
 
     flb_slist_destroy(&procfs_list);

@@ -147,6 +147,14 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_pe, process_regex_exclude_list_text),
      "exclude list regular expression"
     },
+
+    {
+     FLB_CONFIG_MAP_CLIST, "metrics",
+     PE_DEFAULT_ENABLED_METRICS,
+     0, FLB_TRUE, offsetof(struct flb_pe, metrics),
+     "Comma separated list of keys to enable metrics."
+    },
+
     /* EOF */
     {0}
 };

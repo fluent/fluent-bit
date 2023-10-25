@@ -30,14 +30,28 @@
 #include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_metrics.h>
 
+#define PE_DEFAULT_ENABLED_METRICS "cpu,io,memory,state,context_switches,fd,start_time,thread_wchan,thread"
+
+#define METRIC_CPU          (1 << 0)
+#define METRIC_IO           (1 << 1)
+#define METRIC_MEMORY       (1 << 2)
+#define METRIC_STATE        (1 << 3)
+#define METRIC_CTXT         (1 << 4)
+#define METRIC_FD           (1 << 5)
+#define METRIC_START_TIME   (1 << 6)
+#define METRIC_THREAD_WCHAN (1 << 7)
+#define METRIC_THREAD       (1 << 8)
+
 struct flb_pe {
     /* configuration */
     flb_sds_t path_procfs;
     int scrape_interval;
 
-    int coll_fd;                                      /* collector fd     */
-    struct cmt *cmt;                                  /* cmetrics context */
-    struct flb_input_instance *ins;                   /* input instance   */
+    int coll_fd;                    /* collector fd     */
+    struct cmt *cmt;                /* cmetrics context */
+    struct flb_input_instance *ins; /* input instance   */
+    struct mk_list *metrics;        /* enabled metrics */
+    int enabled_flag;               /* indicate enabled metrics */
 
     /*
      * Metrics Contexts
