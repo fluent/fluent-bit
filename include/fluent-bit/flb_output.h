@@ -64,6 +64,11 @@
 #include <fluent-bit/flb_regex.h>
 #endif
 
+#ifdef FLB_HAVE_CHUNK_TRACE
+/* include prototype directly to avoid cyclical include ... */
+int flb_chunk_trace_output(struct flb_chunk_trace *trace, struct flb_output_instance *output, int ret);
+#endif
+
 /* Output plugin masks */
 #define FLB_OUTPUT_NET            32  /* output address may set host and port */
 #define FLB_OUTPUT_PLUGIN_CORE     0
@@ -940,7 +945,16 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
 
     flb_task_release_lock(task);
 
+    flb_error("chunk process event chunk: %p", out_flush->processed_event_chunk);
     if (out_flush->processed_event_chunk) {
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+        flb_error("chunk tracing for output");
+        if (out_flush->processed_event_chunk->trace) {
+             flb_chunk_trace_output(out_flush->processed_event_chunk->trace, o_ins, ret);
+        }
+#endif
+
         if (task->event_chunk->data != out_flush->processed_event_chunk->data) {
             flb_free(out_flush->processed_event_chunk->data);
         }
