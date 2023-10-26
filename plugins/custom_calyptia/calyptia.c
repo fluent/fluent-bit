@@ -313,7 +313,6 @@ static struct flb_output_instance *setup_cloud_output(struct flb_config *config,
     }
 
     if (ctx->fleet_id) {
-        flb_output_set_property(cloud, "fleet_id", ctx->fleet_id);
         label = flb_sds_create_size(strlen("fleet_id") + strlen(ctx->fleet_id) + 1);
 
         if (!label) {
@@ -469,11 +468,10 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
         }
 
         if (ctx->fleet_name) {
-            // TODO: set this once the fleet_id has been retrieved...
-            // flb_output_set_property(ctx->o, "fleet_id", ctx->fleet_id);
             flb_input_set_property(ctx->fleet, "fleet_name", ctx->fleet_name);            
         }
-        else {
+
+        if (ctx->fleet_id) {
             flb_output_set_property(ctx->o, "fleet_id", ctx->fleet_id);
             flb_input_set_property(ctx->fleet, "fleet_id", ctx->fleet_id);
         }
