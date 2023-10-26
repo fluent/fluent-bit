@@ -265,6 +265,27 @@ static int is_cur_fleet_config(struct flb_in_calyptia_fleet_config *ctx, struct 
     return ret;
 }
 
+static int is_old_fleet_config(struct flb_in_calyptia_fleet_config *ctx, struct flb_config *cfg)
+{
+    flb_sds_t cfgcurname;
+    int ret = FLB_FALSE;
+
+
+    if (cfg->conf_path_file == NULL) {
+        return FLB_FALSE;
+    }
+
+    cfgcurname = old_fleet_config_filename(ctx);
+
+    if (strcmp(cfgcurname, cfg->conf_path_file) == 0) {
+        ret = FLB_TRUE;
+    }
+
+    flb_sds_destroy(cfgcurname);
+
+    return ret;
+}
+
 static int is_timestamped_fleet_config(struct flb_in_calyptia_fleet_config *ctx, struct flb_config *cfg)
 {
     char *fname;
@@ -307,6 +328,7 @@ static int is_fleet_config(struct flb_in_calyptia_fleet_config *ctx, struct flb_
 
     return is_new_fleet_config(ctx, cfg) ||
            is_cur_fleet_config(ctx, cfg) ||
+           is_old_fleet_config(ctx, cfg) ||
            is_timestamped_fleet_config(ctx, cfg);
 }
 
