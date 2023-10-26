@@ -912,7 +912,6 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
     if (ctx->config_timestamp < time_last_modified) {
         flb_plg_debug(ctx->ins, "new configuration is newer than current: %ld < %ld",
                       ctx->config_timestamp, time_last_modified);
-        flb_plg_info(ctx->ins, "force the reloading of the configuration file=%d.", ctx->event_fd);
         flb_sds_destroy(data);
 
         if (execute_reload(ctx, cfgname) == FLB_FALSE) {
