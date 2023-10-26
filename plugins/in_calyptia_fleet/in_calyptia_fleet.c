@@ -504,12 +504,12 @@ config_init_error:
 }
 
 static int parse_config_name_timestamp(struct flb_in_calyptia_fleet_config *ctx,
-                                      const char *cfgpath, 
+                                      const char *cfgpath,
                                       long *config_timestamp)
 {
     char *ext = NULL;
     long timestamp;
-    char realname[4096];
+    char realname[4096] = {0};
     char *fname;
     ssize_t len;
 
@@ -1237,28 +1237,53 @@ static struct cfl_array *read_glob(const char *path)
 static int calyptia_config_add(struct flb_in_calyptia_fleet_config *ctx,
                                const char *cfgname)
 {
-    flb_sds_t cfgnewname;
-    flb_sds_t cfgoldname;
+    int rc = FLB_FALSE;
+
+    flb_sds_t cfgnewname = NULL;
+    flb_sds_t cfgoldname = NULL;
+    flb_sds_t cfgcurname = NULL;
 
     cfgnewname = new_fleet_config_filename(ctx);
-    if (cfgnewname == NULL) {
-        return -1;
+    cfgcurname = cur_fleet_config_filename(ctx);
+    cfgoldname = old_fleet_config_filename(ctx);
+
+    if (cfgnewname == NULL || cfgcurname == NULL || cfgoldname == NULL) {
+        goto error;
     }
 
     if (exists_new_fleet_config(ctx) == FLB_TRUE) {
-        cfgoldname = old_fleet_config_filename(ctx);
-        rename(cfgnewname, cfgoldname);
-        unlink(cfgnewname);
-        flb_sds_destroy(cfgoldname);
+
+        if (rename(cfgnewname, cfgoldname)) {
+            goto error;
+        }
+    }
+    else if (exists_cur_fleet_config(ctx) == FLB_TRUE) {
+
+        if (rename(cfgcurname, cfgoldname)) {
+            goto error;
+        }
     }
 
     if (symlink(cfgname, cfgnewname)) {
-        flb_sds_destroy(cfgnewname);
-        return -1;
+        goto error;
     }
-    flb_sds_destroy(cfgnewname);
 
-    return 0;
+    rc = FLB_TRUE;
+
+error:
+    if (cfgnewname) {
+        flb_sds_destroy(cfgnewname);
+    }
+
+    if (cfgcurname) {
+        flb_sds_destroy(cfgcurname);
+    }
+
+    if (cfgoldname) {
+        flb_sds_destroy(cfgoldname);
+    }
+
+    return rc;
 }
 
 static int cfl_array_qsort_ini(const void *arg_a, const void *arg_b)
@@ -1325,8 +1350,16 @@ static int calyptia_config_delete_old_dir(const char *cfgpath)
         unlink(files->entries[idx]->data.as_string);
     }
 
+    /* attempt to delete the main directory */
+    ext = strrchr(cfg_glob, '/');
+    if (ext) {
+        *ext = '\0';
+        rmdir(cfg_glob);
+    }
+
     flb_sds_destroy(cfg_glob);
     cfl_array_destroy(files);
+
     return FLB_TRUE;
 }
 
@@ -1367,23 +1400,25 @@ static int calyptia_config_delete_old(struct flb_in_calyptia_fleet_config *ctx)
 
     cfl_array_destroy(inis);
     flb_sds_destroy(glob_ini);
+
     return 0;
 }
 
 static int calyptia_config_commit(struct flb_in_calyptia_fleet_config *ctx)
 {
-    flb_sds_t cfgnewname;
-    flb_sds_t cfgcurname;
-    flb_sds_t cfgoldname;
-    flb_sds_t cfgtimename;
+    int rc = FLB_FALSE;
+    flb_sds_t cfgnewname = NULL;
+    flb_sds_t cfgcurname = NULL;
+    flb_sds_t cfgoldname = NULL;
 
     cfgnewname = new_fleet_config_filename(ctx);
     cfgcurname = cur_fleet_config_filename(ctx);
     cfgoldname = old_fleet_config_filename(ctx);
-    cfgtimename = time_fleet_config_filename(ctx, ctx->config_timestamp);
 
-    if (exists_new_fleet_config(ctx) == FLB_TRUE) {
-        unlink(cfgnewname);
+    if (cfgnewname == NULL ||
+        cfgcurname == NULL ||
+        cfgoldname == NULL) {
+        goto error;
     }
 
     if (exists_old_fleet_config(ctx) == FLB_TRUE) {
@@ -1391,24 +1426,40 @@ static int calyptia_config_commit(struct flb_in_calyptia_fleet_config *ctx)
     }
 
     if (exists_cur_fleet_config(ctx) == FLB_TRUE) {
-        unlink(cfgcurname);
+        if (rename(cfgcurname, cfgoldname)) {
+            goto error;
+        }
     }
 
-    symlink(cfgtimename, cfgcurname);
-
-    flb_sds_destroy(cfgnewname);
-    flb_sds_destroy(cfgcurname);
-    flb_sds_destroy(cfgoldname);
-    flb_sds_destroy(cfgtimename);
+    if (exists_new_fleet_config(ctx) == FLB_TRUE) {
+        if (rename(cfgnewname, cfgcurname)) {
+            goto error;
+        }
+    }
 
     calyptia_config_delete_old(ctx);
+    rc = FLB_TRUE;
 
-    return 0;
+error:
+    if (cfgnewname) {
+        flb_sds_destroy(cfgnewname);
+    }
+
+    if (cfgcurname) {
+        flb_sds_destroy(cfgcurname);
+    }
+
+    if (cfgoldname) {
+        flb_sds_destroy(cfgoldname);
+    }
+
+    return rc;
 }
 
 static int calyptia_config_rollback(struct flb_in_calyptia_fleet_config *ctx,
                                     const char *cfgname)
 {
+    int rc = FLB_TRUE;
     flb_sds_t cfgnewname;
     flb_sds_t cfgcurname;
     flb_sds_t cfgoldname;
@@ -1416,6 +1467,10 @@ static int calyptia_config_rollback(struct flb_in_calyptia_fleet_config *ctx,
     cfgnewname = new_fleet_config_filename(ctx);
     cfgcurname = cur_fleet_config_filename(ctx);
     cfgoldname = old_fleet_config_filename(ctx);
+
+    if (cfgnewname == NULL || cfgcurname == NULL || cfgoldname == NULL) {
+        goto error;
+    }
 
     if (exists_new_fleet_config(ctx) == FLB_TRUE) {
         unlink(cfgnewname);
@@ -1425,11 +1480,22 @@ static int calyptia_config_rollback(struct flb_in_calyptia_fleet_config *ctx,
         rename(cfgoldname, cfgcurname);
     }
 
-    flb_sds_destroy(cfgnewname);
-    flb_sds_destroy(cfgcurname);
-    flb_sds_destroy(cfgoldname);
+    rc = FLB_TRUE;
 
-    return 0;
+error:
+    if (cfgnewname) {
+        flb_sds_destroy(cfgnewname);
+    }
+
+    if (cfgcurname) {
+        flb_sds_destroy(cfgcurname);
+    }
+
+    if (cfgoldname) {
+        flb_sds_destroy(cfgoldname);
+    }
+
+    return rc;
 }
 
 static int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx,
@@ -1505,7 +1571,12 @@ static int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx,
         get_calyptia_files(ctx, u_conn, ctx->fleet_files_url, time_last_modified);
 
         cfgname = time_fleet_config_filename(ctx, time_last_modified);
-        calyptia_config_add(ctx, cfgname);
+
+        if (calyptia_config_add(ctx, cfgname) == FLB_FALSE) {
+            flb_sds_destroy(cfgname);
+            return -1;
+        }
+
         flb_sds_destroy(cfgname);
 
         cfgnewname = new_fleet_config_filename(ctx);
