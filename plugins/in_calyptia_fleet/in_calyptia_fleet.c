@@ -1376,7 +1376,15 @@ static int calyptia_config_delete_old_dir(const char *cfgpath)
         rmdir(cfg_glob);
     }
 
+    /* attempt to delete the main directory */
+    ext = strrchr(cfg_glob, '/');
+    if (ext) {
+        *ext = '\0';
+        rmdir(cfg_glob);
+    }
+
     flb_sds_destroy(cfg_glob);
+    cfl_array_destroy(files);
 
     return FLB_TRUE;
 }
