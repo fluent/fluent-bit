@@ -276,6 +276,10 @@ static int is_old_fleet_config(struct flb_in_calyptia_fleet_config *ctx, struct 
     }
 
     cfgcurname = old_fleet_config_filename(ctx);
+    if (cfgcurname == NULL) {
+        flb_plg_error(ctx->ins, "unable to allocate configuration name");
+        return FLB_FALSE;
+    }
 
     if (strcmp(cfgcurname, cfg->conf_path_file) == 0) {
         ret = FLB_TRUE;
