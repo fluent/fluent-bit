@@ -67,22 +67,27 @@ struct flb_chunk_trace_limit {
     int count;
 };
 
-struct flb_chunk_trace_context {
+struct flb_chunk_pipeline_context {
+    flb_ctx_t *flb;
+    flb_sds_t output_name;
+    pthread_t thread;
+    pthread_mutex_t lock;
+    pthread_cond_t cond;
+    struct mk_list *props;
+    void *data;
     void *input;
     void *output;
+};
+
+struct flb_chunk_trace_context {
+    void *input;
     int trace_count;
     struct flb_chunk_trace_limit limit;
     flb_sds_t trace_prefix;
     int to_destroy;
     int chunks;
-    flb_ctx_t *flb;
-    struct cio_ctx *cio;
-    pthread_t thread;
-    pthread_cond_t wait;
-    pthread_mutex_t lock;
-    flb_sds_t output_name;
-    struct mk_list *props;
-    void *data;
+
+    struct flb_chunk_pipeline_context pipeline;
 };
 
 struct flb_chunk_trace {
