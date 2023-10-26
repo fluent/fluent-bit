@@ -609,7 +609,7 @@ static int execute_reload(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t cf
 
     reload = flb_calloc(1, sizeof(struct reload_ctx));
     reload->flb = flb;
-    reload->cfg_path = cfgpath;
+    reload->cfg_path = flb_sds_create(cfgpath);
 
     if (ctx->collect_fd > 0) {
         flb_input_collector_pause(ctx->collect_fd, ctx->ins);
@@ -966,34 +966,6 @@ static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ct
 
     return 0;
 }
-
-#ifdef FLB_SYSTEM_WINDOWS
-#define link(a, b) CreateHardLinkA(b, a, 0)
-#define symlink(a, b) CreateSymLinkA(b, a, 0)
-
-ssize_t readlink(const char *path, char *realpath, size_t srealpath) {
-    HANDLE hFile;
-    DWORD ret;
-
-    hFile = CreateFile(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 
-                       FILE_ATTRIBUTE_NORMAL, NULL);
-
-    if (hFile == INVALID_HANDLE_VALUE) {
-        return -1;
-    }
-
-    ret = GetFinalPathNameByHandleA(hFile, realpath, srealpath, VOLUME_NAME_NT);
-
-    if (ret < srealpath) {
-        CloseHandle(hFile);
-        return -1;
-    }
-
-    CloseHandle(hFile);
-    return ret;
-}
-
-#endif
 
 static int get_calyptia_file(struct flb_in_calyptia_fleet_config *ctx,
                              struct flb_connection *u_conn,
@@ -1727,7 +1699,6 @@ static int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx,
         }
 
 #ifndef FLB_SYSTEM_WINDOWS
-        flb_sds_destroy(cfgname);
         cfgnewname = new_fleet_config_filename(ctx);
         if (execute_reload(ctx, cfgnewname) == FLB_FALSE) {
             calyptia_config_rollback(ctx, cfgname);
