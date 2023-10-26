@@ -82,8 +82,6 @@ struct flb_in_calyptia_fleet_config {
     /* Networking */
     struct flb_upstream *u;
 
-    int event_fd;
-
     int collect_fd;
 };
 
@@ -1233,11 +1231,6 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "machine_id", NULL,
      0, FLB_TRUE, offsetof(struct flb_in_calyptia_fleet_config, machine_id),
      "Agent Machine ID."
-    },
-    {
-      FLB_CONFIG_MAP_INT, "event_fd", "-1",
-      0, FLB_TRUE, offsetof(struct flb_in_calyptia_fleet_config, event_fd),
-      "Used internally to set the event fd."
     },
     {
       FLB_CONFIG_MAP_INT, "interval_sec", DEFAULT_INTERVAL_SEC,
