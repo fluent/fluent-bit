@@ -271,6 +271,10 @@ static int is_old_fleet_config(struct flb_in_calyptia_fleet_config *ctx, struct 
     int ret = FLB_FALSE;
 
 
+    if (cfg == NULL) {
+        return FLB_FALSE;
+    }
+
     if (cfg->conf_path_file == NULL) {
         return FLB_FALSE;
     }
