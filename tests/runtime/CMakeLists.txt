@@ -56,6 +56,7 @@ if(FLB_OUT_LIB)
   FLB_RT_TEST(FLB_IN_TCP          "in_tcp.c")
   FLB_RT_TEST(FLB_IN_FORWARD       "in_forward.c")
   FLB_RT_TEST(FLB_IN_FLUENTBIT_METRICS "in_fluentbit_metrics.c")
+  FLB_RT_TEST(FLB_IN_DOCKER        "in_docker.c")
 endif()
 
 # Filter Plugins

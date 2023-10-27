@@ -29,7 +29,8 @@
 /* Distinguish cgroup v2 or v1 */
 #define SYSFS_FILE_PATH_SIZE            512
 
-#define SYSFS_PATH                      "/sys/fs/cgroup"
+#define DEFAULT_SYSFS_PATH              "/sys/fs/cgroup"
+#define DEFAULT_CONTAINERS_PATH         "/var/lib/docker/containers"
 #define CGROUP_V2_PATH                  "cgroup.controllers"
 #define CGROUP_V1                       1
 #define CGROUP_V2                       2
@@ -43,23 +44,20 @@
 #define DOCKER_CGROUP_V2_LONG_ID_LEN 77 /* docker-CONTAINERID.scope: 7 + 64 + 6 */
 
 /* Files from sysfs containing metrics (cgroups v1) */
-#define DOCKER_CGROUP_V1_MEM_DIR "/sys/fs/cgroup/memory/docker"
-#define DOCKER_CGROUP_V1_CPU_DIR "/sys/fs/cgroup/cpu/docker"
+#define DOCKER_CGROUP_V1_MEM_DIR "memory/docker"
+#define DOCKER_CGROUP_V1_CPU_DIR "cpu/docker"
 #define DOCKER_CGROUP_V1_MEM_LIMIT_FILE "memory.limit_in_bytes"
 #define DOCKER_CGROUP_V1_MEM_USAGE_FILE "memory.usage_in_bytes"
 #define DOCKER_CGROUP_V1_CPU_USAGE_FILE "cpuacct.usage"
 
 /* Files from sysfs containing metrics (cgroups v2) */
-#define DOCKER_CGROUP_V2_DOCKER_SERVICE_DIR "/sys/fs/cgroup/system.slice"
+#define DOCKER_CGROUP_V2_DOCKER_SERVICE_DIR "system.slice"
 #define DOCKER_CGROUP_V2_MEM_USAGE_FILE     "memory.current"
-#define DOCKER_CGROUP_V2_MEM_PEAK_FILE      "memory.peak"
-#define DOCKER_CGROUP_V2_MEM_STAT_FILE      "memory.stat"
 #define DOCKER_CGROUP_V2_MEM_MAX_FILE       "memory.max"
 #define DOCKER_CGROUP_V2_CPU_USAGE_FILE     "cpu.stat"
 #define DOCKER_CGROUP_V2_CPU_USAGE_KEY      "usage_usec"
 #define DOCKER_CGROUP_V2_CPU_USAGE_TEMPLATE DOCKER_CGROUP_V2_CPU_USAGE_KEY" %lu"
 
-#define DOCKER_LIB_ROOT       "/var/lib/docker/containers"
 #define DOCKER_CONFIG_JSON    "config.v2.json"
 #define DOCKER_NAME_ARG       "\"Name\""
 #define DEFAULT_INTERVAL_SEC  "1"
@@ -113,8 +111,9 @@ struct flb_docker {
     /* cgroup version used by host */
     int cgroup_version;
 
-    /* proc and sys paths, overwriting mostly for testing */
+    /* sys path, overwriting mostly for testing */
     flb_sds_t sysfs_path;
+    flb_sds_t containers_path;
 };
 
 int in_docker_collect(struct flb_input_instance *i_ins,
