@@ -25,7 +25,7 @@
 #include "docker.h"
 
 /* This method returns list of currently running docker ids. */
-static struct mk_list *get_active_dockers()
+static struct mk_list *get_active_dockers(struct flb_docker *ctx)
 {
     DIR *dp;
     struct dirent *ep;
@@ -33,6 +33,9 @@ static struct mk_list *get_active_dockers()
     docker_info *docker;
     char *p = NULL;
     char *container_id = NULL;
+    char path[SYSFS_FILE_PATH_SIZE];
+
+    path[0] = '\0';
 
     list = flb_malloc(sizeof(struct mk_list));
     if (!list) {
@@ -41,7 +44,9 @@ static struct mk_list *get_active_dockers()
     }
     mk_list_init(list);
 
-    dp = opendir(DOCKER_CGROUP_V2_DOCKER_SERVICE_DIR);
+    snprintf(path, sizeof(path), "%s/%s", ctx->sysfs_path, DOCKER_CGROUP_V2_DOCKER_SERVICE_DIR);
+
+    dp = opendir(path);
     if (dp != NULL) {
         ep = readdir(dp);
 
@@ -114,20 +119,24 @@ static char *read_line(FILE *fin)
 }
 
 /* This routine returns path to docker's cgroup CPU usage file. */
-static char *get_cpu_used_file(char *id)
+static char *get_cpu_used_file(struct flb_docker *ctx, char *id)
 {
     char *path;
+    int len = 0;
 
     if (!id) {
         return NULL;
     }
 
-    path = (char *) flb_calloc(115, sizeof(char));
+    len = flb_sds_len(ctx->sysfs_path);
+    path = (char *) flb_calloc(101 + len, sizeof(char));
     if (!path) {
         flb_errno();
         return NULL;
     }
 
+    strcat(path, ctx->sysfs_path);
+    strcat(path, "/");
     strcat(path, DOCKER_CGROUP_V2_DOCKER_SERVICE_DIR);
     strcat(path, "/");
     strcat(path, "docker-");
@@ -140,19 +149,23 @@ static char *get_cpu_used_file(char *id)
 }
 
 /* This routine returns path to docker's cgroup memory limit file. */
-static char *get_mem_limit_file(char *id)
+static char *get_mem_limit_file(struct flb_docker *ctx, char *id)
 {
     char *path;
+    int len = 0;
 
     if (!id) {
         return NULL;
     }
 
-    path = (char *) flb_calloc(121, sizeof(char));
+    len = flb_sds_len(ctx->sysfs_path);
+    path = (char *) flb_calloc(108 + len, sizeof(char));
     if (!path) {
         flb_errno();
         return NULL;
     }
+    strcat(path, ctx->sysfs_path);
+    strcat(path, "/");
     strcat(path, DOCKER_CGROUP_V2_DOCKER_SERVICE_DIR);
     strcat(path, "/");
     strcat(path, "docker-");
@@ -165,19 +178,23 @@ static char *get_mem_limit_file(char *id)
 }
 
 /* This routine returns path to docker's cgroup memory used file. */
-static char *get_mem_used_file(char *id)
+static char *get_mem_used_file(struct flb_docker *ctx, char *id)
 {
     char *path;
+    int len = 0;
 
     if (!id) {
         return NULL;
     }
 
-    path = (char *) flb_calloc(121, sizeof(char));
+    len = flb_sds_len(ctx->sysfs_path);
+    path = (char *) flb_calloc(108 + len, sizeof(char));
     if (!path) {
         flb_errno();
         return NULL;
     }
+    strcat(path, ctx->sysfs_path);
+    strcat(path, "/");
     strcat(path, DOCKER_CGROUP_V2_DOCKER_SERVICE_DIR);
     strcat(path, "/");
     strcat(path, "docker-");
@@ -189,20 +206,22 @@ static char *get_mem_used_file(char *id)
     return path;
 }
 
-static char *get_config_file(char *id)
+static char *get_config_file(struct flb_docker *ctx, char *id)
 {
     char *path;
+    int len = 0;
 
     if (!id) {
         return NULL;
     }
 
-    path = (char *) flb_calloc(107, sizeof(char));
+    len = flb_sds_len(ctx->containers_path);
+    path = (char *) flb_calloc(91 + len, sizeof(char));
     if (!path) {
         flb_errno();
         return NULL;
     }
-    strcat(path, DOCKER_LIB_ROOT);
+    strcat(path, ctx->containers_path);
     strcat(path, "/");
     strcat(path, id);
     strcat(path, "/");
@@ -248,7 +267,7 @@ static char *get_container_name(struct flb_docker *ctx, char *id)
     FILE *f = NULL;
     char *line;
 
-    config_file = get_config_file(id);
+    config_file = get_config_file(ctx, id);
     if (!config_file) {
         return NULL;
     }
@@ -287,7 +306,7 @@ static cpu_snapshot *get_docker_cpu_snapshot(struct flb_docker *ctx, char *id)
     FILE *f;
     char *line = NULL;
 
-    usage_file = get_cpu_used_file(id);
+    usage_file = get_cpu_used_file(ctx, id);
     if (!usage_file) {
         return NULL;
     }
@@ -363,7 +382,7 @@ static uint64_t get_docker_mem_used(struct flb_docker *ctx, char *id)
     char *usage_file = NULL;
     uint64_t mem_used = 0;
 
-    usage_file = get_mem_used_file(id);
+    usage_file = get_mem_used_file(ctx, id);
     if (!usage_file) {
         return 0;
     }
@@ -378,7 +397,7 @@ static uint64_t get_docker_mem_used(struct flb_docker *ctx, char *id)
 static uint64_t get_docker_mem_limit(struct flb_docker *ctx, char *id)
 {
     int c;
-    char *limit_file = get_mem_limit_file(id);
+    char *limit_file = get_mem_limit_file(ctx, id);
     uint64_t mem_limit;
     char *line = NULL;
     FILE *f;

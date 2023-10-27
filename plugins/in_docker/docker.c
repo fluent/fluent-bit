@@ -482,7 +482,7 @@ static int cb_docker_collect(struct flb_input_instance *ins,
     (void) config;
 
     /* Get current active dockers. */
-    active = ctx->cgroup_api.get_active_docker_ids();
+    active = ctx->cgroup_api.get_active_docker_ids(ctx);
 
     filtered = apply_filters(ctx, active);
     if (!filtered) {
@@ -564,9 +564,14 @@ static struct flb_config_map config_map[] = {
       "A space-separated list of containers to exclude"
     },
     {
-      FLB_CONFIG_MAP_STR, "path.sysfs", SYSFS_PATH,
+      FLB_CONFIG_MAP_STR, "path.sysfs", DEFAULT_SYSFS_PATH,
       0, FLB_TRUE, offsetof(struct flb_docker, sysfs_path),
       "sysfs mount point"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "path.containers", DEFAULT_CONTAINERS_PATH,
+      0, FLB_TRUE, offsetof(struct flb_docker, containers_path),
+      "containers directory"
     },
     /* EOF */
     {0}
