@@ -533,14 +533,19 @@ void flb_test_dummy_records_message_copies_100(struct callback_records *records)
     TEST_CHECK(records->num_records >= 100);
 }
 
-void flb_test_dummy_records_message_time_interval_2_rate_5(struct callback_records *records)
+void flb_test_dummy_records_message_rate(struct callback_records *records)
 {
-    TEST_CHECK(records->num_records >= 5);
+    TEST_CHECK(records->num_records >= 20);
 }
 
-void flb_test_dummy_records_message_time_interval_3_rate_100(struct callback_records *records)
+void flb_test_dummy_records_message_interval_sec(struct callback_records *records)
 {
-    TEST_CHECK(records->num_records >= 100);
+    TEST_CHECK(records->num_records >= 1);
+}
+
+void flb_test_dummy_records_message_interval_nsec(struct callback_records *records)
+{
+    TEST_CHECK(records->num_records >= 1);
 }
 
 void flb_test_in_dummy_flush()
@@ -573,13 +578,16 @@ void flb_test_in_dummy_flush()
     do_test_records_single("dummy", flb_test_dummy_records_message_copies_100,
                     "copies", "100",
                     NULL);
-    do_test_records_wait_time("dummy", 2, flb_test_dummy_records_message_time_interval_2_rate_5,
-                    "time_interval", "2",
-                    "rate", "5",
+    do_test_records_wait_time("dummy", 1, flb_test_dummy_records_message_rate,
+                    "rate", "20",
                     NULL);
-    do_test_records_wait_time("dummy", 3, flb_test_dummy_records_message_time_interval_3_rate_100,
-                    "time_interval", "3",
-                    "rate", "100",
+    do_test_records_wait_time("dummy", 2, flb_test_dummy_records_message_interval_sec,
+                    "interval_sec", "2",
+                    "interval_nsec", "0",
+                    NULL);
+    do_test_records_wait_time("dummy", 1, flb_test_dummy_records_message_interval_nsec,
+                    "interval_sec", "0",
+                    "interval_nsec", "700000000",
                     NULL);
 }
 

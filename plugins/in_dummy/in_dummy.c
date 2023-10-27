@@ -201,8 +201,6 @@ static int configure(struct flb_dummy *ctx,
                      struct timespec *tm)
 {
     const char *msg;
-    double tm_interval_fractional;
-    int tm_interval_seconds;
     int root_type;
     int ret = -1;
 
@@ -216,14 +214,26 @@ static int configure(struct flb_dummy *ctx,
     }
 
     /* interval settings */
-    tm->tv_sec  = ctx->time_interval;
+    if (ctx->interval_sec < 0 || ctx->interval_nsec < 0) {
+        /* Illegal settings. Override them. */
+        ctx->interval_sec = atoi(DEFAULT_INTERVAL_SEC);
+        ctx->interval_nsec = atoi(DEFAULT_INTERVAL_NSEC);
+    }
+
+    /* default settings */
+    tm->tv_sec  = 1;
     tm->tv_nsec = 0;
 
-    if (ctx->rate > 1) {
-        tm_interval_fractional = (double) ctx->time_interval / ctx->rate;
-        tm_interval_seconds = (int) tm_interval_fractional;
-        tm->tv_sec = tm_interval_seconds;
-        tm->tv_nsec = (tm_interval_fractional - tm_interval_seconds) * 1000000000;
+    if (ctx->interval_sec > 0 || ctx->interval_nsec > 0) {
+        /* Set using interval settings. */
+        tm->tv_sec  = ctx->interval_sec;
+        tm->tv_nsec = ctx->interval_nsec;
+    } else {
+        if (ctx->rate > 1) {
+            /* Set using rate settings. */
+            tm->tv_sec = 0;
+            tm->tv_nsec = 1000000000 / ctx->rate;
+        }
     }
 
     /* dummy timestamp */
@@ -400,14 +410,19 @@ static struct flb_config_map config_map[] = {
     "set the sample metadata to be generated. It should be a JSON object."
    },
    {
-    FLB_CONFIG_MAP_INT, "rate", "1",
+    FLB_CONFIG_MAP_INT, "rate", DEFAULT_RATE,
     0, FLB_TRUE, offsetof(struct flb_dummy, rate),
-    "set a number of events per time interval."
+    "set a number of events per second."
    },
    {
-    FLB_CONFIG_MAP_INT, "time_interval", "1",
-    0, FLB_TRUE, offsetof(struct flb_dummy, time_interval),
-    "set time interval to generate logs at the set rate."
+    FLB_CONFIG_MAP_INT, "interval_sec", DEFAULT_INTERVAL_SEC,
+    0, FLB_TRUE, offsetof(struct flb_dummy, interval_sec),
+    "set seconds of interval to generate events. overrides rate setting."
+   },
+   {
+    FLB_CONFIG_MAP_INT, "interval_nsec", DEFAULT_INTERVAL_NSEC,
+    0, FLB_TRUE, offsetof(struct flb_dummy, interval_nsec),
+    "set nanoseconds of interval to generate events. overrides rate setting."
    },
    {
     FLB_CONFIG_MAP_INT, "copies", "1",
