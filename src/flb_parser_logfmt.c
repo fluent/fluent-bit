@@ -166,7 +166,7 @@ static int logfmt_parser(struct flb_parser *parser,
                                   parser->name, parser->time_fmt_full);
                         return -1;
                     }
-                    *time_lookup = flb_parser_tm2time(&tm);
+                    *time_lookup = flb_parser_tm2time(&tm, parser->time_system_timezone);
                 }
                 time_found = FLB_TRUE;
             }
