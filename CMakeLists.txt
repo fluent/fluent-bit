@@ -265,6 +265,7 @@ option(FLB_FILTER_EXPECT               "Enable expect filter"                   
 option(FLB_FILTER_GREP                 "Enable grep filter"                           Yes)
 option(FLB_FILTER_MODIFY               "Enable modify filter"                         Yes)
 option(FLB_FILTER_STDOUT               "Enable stdout filter"                         Yes)
+option(FLB_FILTER_SYSINFO              "Enable sysinfo filter"                        Yes)
 option(FLB_FILTER_PARSER               "Enable parser filter"                         Yes)
 option(FLB_FILTER_KUBERNETES           "Enable kubernetes filter"                     Yes)
 option(FLB_FILTER_REWRITE_TAG          "Enable tag rewrite filter"                    Yes)
