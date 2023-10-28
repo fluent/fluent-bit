@@ -173,7 +173,7 @@ static void pack_result_mpack(lua_State *l,
         return;
     }
 
-    len = flb_lua_arraylength(l);
+    len = flb_lua_arraylength(l, -1);
     if (len > 0) {
         /* record split */
         for (i = 1; i <= len; i++) {
