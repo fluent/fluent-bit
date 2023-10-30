@@ -635,8 +635,8 @@ static inline int flb_input_config_map_set(struct flb_input_instance *ins,
     return ret;
 }
 
-void flb_input_prepare();
-void flb_input_unprepare();
+void flb_input_init();
+void flb_input_exit();
 
 int flb_input_register_all(struct flb_config *config);
 struct flb_input_instance *flb_input_new(struct flb_config *config,
