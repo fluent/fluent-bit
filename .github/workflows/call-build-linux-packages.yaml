@@ -221,9 +221,12 @@ jobs:
       - call-build-linux-packages
     steps:
       - name: Install dependencies
+        timeout-minutes: 10
         run: |
           sudo apt-get update
           sudo apt-get install -y createrepo-c aptly awscli
+        env:
+          DEBIAN_FRONTEND: noninteractive
 
       - name: Checkout code for repo metadata construction - always latest
         uses: actions/checkout@v4
