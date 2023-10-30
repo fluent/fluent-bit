@@ -159,6 +159,7 @@ jobs:
 
       - name: Retrieve target info for repo creation
         id: get-target-info
+        timeout-minutes: 5
         # Remove any .arm648 suffix
         # For ubuntu map to codename using the disto-info list (CSV)
         run: |
@@ -178,6 +179,7 @@ jobs:
           echo "target=$TARGET" >> $GITHUB_OUTPUT
         env:
           DISTRO: ${{ matrix.distro }}
+          DEBIAN_FRONTEND: noninteractive
         shell: bash
 
       - name: Verify output target
