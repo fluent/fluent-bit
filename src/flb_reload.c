@@ -512,12 +512,19 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 
     ret = flb_start(new_ctx);
 
-    /* Store the new value of hot reloading times into the new context */
-    if (ret == 0) {
-        new_config->hot_reloaded_count = reloaded_count;
-        flb_debug("[reload] hot reloaded %d time(s)", reloaded_count);
-        new_config->hot_reloading = FLB_FALSE;
+    if (ret != 0) {
+        flb_stop(new_ctx);
+        flb_destroy(new_ctx);
+
+        flb_error("[reload] loaded configuration contains error(s). Reloading is aborted");
+
+        return -1;
     }
+
+    /* Store the new value of hot reloading times into the new context */
+    new_config->hot_reloaded_count = reloaded_count;
+    flb_debug("[reload] hot reloaded %d time(s)", reloaded_count);
+    new_config->hot_reloading = FLB_FALSE;
 
     return 0;
 }
