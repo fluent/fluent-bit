@@ -27,6 +27,7 @@
 
 #define FLB_RELOAD_IDLE 0
 #define FLB_RELOAD_IN_PROGRESS 1
+#define FLB_RELOAD_ABORTED     2
 
 int flb_reload_property_check_all(struct flb_config *config);
 int flb_reload_reconstruct_cf(struct flb_cf *src_cf, struct flb_cf *dest_cf);
