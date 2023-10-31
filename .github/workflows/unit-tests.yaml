@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - master
+      - 2.1
       - 2.0
       - 1.9
       - 1.8
@@ -18,6 +19,7 @@ on:
       - 'examples/**'
     branches:
       - master
+      - 2.1
       - 2.0
       - 1.9
       - 1.8
