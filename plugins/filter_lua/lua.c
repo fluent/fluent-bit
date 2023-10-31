@@ -77,6 +77,7 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
     }
 
     if (ret == -1) {
+        flb_luajit_destroy(ctx->lua);
         lua_config_destroy(ctx);
         return -1;
     }
