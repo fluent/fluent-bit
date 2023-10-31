@@ -459,7 +459,7 @@ jobs:
         shell: bash
 
       - name: Promote container images from staging to GHCR.io
-        if: ${{ startsWith(github.event.inputs.version, '2.0') || ! startsWith(matrix.tag, 'latest') }}
+        if: ${{ startsWith(github.event.inputs.version, '2.0') || startsWith(github.event.inputs.version, '2.1') || ! startsWith(matrix.tag, 'latest') }}
         run: |
           docker run --rm  \
             quay.io/skopeo/stable:latest \
@@ -479,9 +479,6 @@ jobs:
   # Part of resolution for: https://github.com/fluent/fluent-bit/issues/7748
   # More recent build-push-actions may mean legacy format is not preserved so we provide arch-specific tags just in case
   staging-release-images-arch-specific-legacy-tags:
-    # TODO: remove next release once we are happy this all works, for now though do not block a release
-    continue-on-error: true
-    #
     name: Release ${{ matrix.arch }} legacy format Linux container images
     runs-on: ubuntu-latest
     needs:
@@ -545,8 +542,8 @@ jobs:
           TAG: ${{ steps.get-tag.outputs.tag }}
 
   staging-release-images-latest-tags:
-    # Only update latest tags for 2.1 releases
-    if: startsWith(github.event.inputs.version, '2.1')
+    # Only update latest tags for 2.2 releases
+    if: startsWith(github.event.inputs.version, '2.2')
     name: Release latest Linux container images
     runs-on: ubuntu-latest
     needs:
@@ -821,9 +818,20 @@ jobs:
           tag_name: v${{ inputs.version }}
           target_commitish: '2.0'
 
-      - name: Release 2.1 and latest
+      - name: Release 2.1 - not latest
         uses: softprops/action-gh-release@v1
         if: startsWith(inputs.version, '2.1')
+        with:
+          body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          draft: false
+          generate_release_notes: true
+          name: "Fluent Bit ${{ inputs.version }}"
+          tag_name: v${{ inputs.version }}
+          target_commitish: '2.1'
+
+      - name: Release 2.2 and latest
+        uses: softprops/action-gh-release@v1
+        if: startsWith(inputs.version, '2.2')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
           draft: false
@@ -849,8 +857,16 @@ jobs:
           ref: 2.0
           token: ${{ secrets.GH_PA_TOKEN }}
 
-      - name: Release 2.1 and latest
+      - name: Release 2.1 - not latest
         if: startsWith(inputs.version, '2.1')
+        uses: actions/checkout@v4
+        with:
+          repository: fluent/fluent-bit-docs
+          ref: 2.1
+          token: ${{ secrets.GH_PA_TOKEN }}
+
+      - name: Release 2.2 and latest
+        if: startsWith(inputs.version, '2.2')
         uses: actions/checkout@v4
         with:
           repository: fluent/fluent-bit-docs
@@ -914,8 +930,14 @@ jobs:
         with:
           ref: 2.0
 
-      - name: Release 2.1 and latest
+      - name: Release 2.1
         if: startsWith(inputs.version, '2.1')
+        uses: actions/checkout@v4
+        with:
+          ref: 2.1
+
+      - name: Release 2.2 and latest
+        if: startsWith(inputs.version, '2.2')
         uses: actions/checkout@v4
 
       # Get the new version to use
