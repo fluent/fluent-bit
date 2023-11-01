@@ -247,6 +247,41 @@ static void delete_wasm_config(struct flb_filter_wasm *ctx)
     flb_free(ctx);
 }
 
+/* Check existence of wasm program binary */
+static int cb_wasm_pre_run(struct flb_filter_instance *f_ins,
+                           struct flb_config *config, void *data)
+{
+    struct flb_filter_wasm *ctx = NULL;
+    int ret = -1;
+
+    /* Allocate space for the configuration */
+    ctx = flb_calloc(1, sizeof(struct flb_filter_wasm));
+    if (!ctx) {
+        return -1;
+    }
+
+    /* Initialize exec config */
+    ret = filter_wasm_config_read(ctx, f_ins, config);
+    if (ret < 0) {
+        goto pre_run_error;
+    }
+
+    /* Check accessibility for the wasm path */
+    ret = access(ctx->wasm_path, R_OK);
+    if (ret != 0) {
+        goto pre_run_error;
+    }
+
+    delete_wasm_config(ctx);
+
+    return 0;
+
+pre_run_error:
+    delete_wasm_config(ctx);
+
+    return -1;
+}
+
 /* Initialize plugin */
 static int cb_wasm_init(struct flb_filter_instance *f_ins,
                         struct flb_config *config, void *data)
@@ -311,6 +346,7 @@ static struct flb_config_map config_map[] = {
 struct flb_filter_plugin filter_wasm_plugin = {
     .name         = "wasm",
     .description  = "WASM program filter",
+    .cb_pre_run   = cb_wasm_pre_run,
     .cb_init      = cb_wasm_init,
     .cb_filter    = cb_wasm_filter,
     .cb_exit      = cb_wasm_exit,
