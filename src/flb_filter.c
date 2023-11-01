@@ -588,6 +588,15 @@ int flb_filter_init(struct flb_config *config, struct flb_filter_instance *ins)
         return 0;
     }
 
+    /* Run pre_run callback for the filter */
+    if (p->cb_pre_run) {
+        ret = p->cb_pre_run(ins, config, ins->data);
+        if (ret != 0) {
+            flb_error("Failed pre_run callback on filter %s", ins->name);
+            return -1;
+        }
+    }
+
     /* Initialize the input */
     if (p->cb_init) {
         ret = p->cb_init(ins, config, ins->data);

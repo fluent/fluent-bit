@@ -64,6 +64,7 @@ struct flb_filter_plugin {
     struct flb_config_map *config_map;
 
     /* Callbacks */
+    int (*cb_pre_run) (struct flb_filter_instance *, struct flb_config *, void *);
     int (*cb_init) (struct flb_filter_instance *, struct flb_config *, void *);
     int (*cb_filter) (const void *, size_t,
                       const char *, int,
