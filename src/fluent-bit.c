@@ -1400,8 +1400,13 @@ int flb_main(int argc, char **argv)
                 flb_bin_restarting = FLB_RELOAD_IDLE;
             }
             else {
-                flb_bin_restarting = FLB_RELOAD_ABORTED;
+                flb_bin_restarting = ret;
             }
+        }
+
+        if (flb_bin_restarting == FLB_RELOAD_HALTED) {
+            sleep(1);
+            flb_bin_restarting = FLB_RELOAD_IDLE;
         }
     }
 
