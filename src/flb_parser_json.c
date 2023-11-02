@@ -36,7 +36,12 @@ int flb_parser_json_do(struct flb_parser *parser,
     int slen;
     int root_type;
     int records;
+    int time_error = FLB_FALSE;
+    int time_precision;
+    int time_type;
     double tmfrac = 0;
+    double tmp_time = 0;
+    char *end;
     char *mp_buf = NULL;
     char *time_key;
     char *tmp_out_buf = NULL;
@@ -121,10 +126,24 @@ int flb_parser_json_do(struct flb_parser *parser,
     }
 
     /* Do time resolution ? */
-    if (!parser->time_fmt) {
+    if (!parser->time_fmt && !parser->time_type) {
         msgpack_unpacked_destroy(&result);
 
         return (int) consumed;
+    }
+
+    if (parser->time_type) {
+        time_type = parser->time_type;
+    }
+    else {
+        time_type = FLB_PARSER_TYPE_STRING;
+    }
+
+    if (parser->time_precision) {
+        time_precision = parser->time_precision;
+    }
+    else {
+        time_precision = FLB_TIME_PRECISION_SECONDS;
     }
 
     if (parser->time_key) {
@@ -184,30 +203,114 @@ int flb_parser_json_do(struct flb_parser *parser,
         return (int) consumed;
     }
 
-    /* Ensure we have an accurate type */
-    if (v->type != MSGPACK_OBJECT_STR) {
+    /* Lookup time based on expected type */
+    switch(time_type) {
+    case FLB_PARSER_TYPE_INT:
+        {
+            switch(v->type) {
+            case MSGPACK_OBJECT_POSITIVE_INTEGER:
+                time_lookup = v->via.u64;
+                break;
+            case MSGPACK_OBJECT_FLOAT:
+                time_lookup = v->via.f64;
+                break;
+            case MSGPACK_OBJECT_STR:
+                time_lookup = strtol(v->via.str.ptr, &end, 10);
+                break;
+            default:
+                time_error = FLB_TRUE;
+            }
+
+            switch (time_precision) {
+            case FLB_TIME_PRECISION_NANOSECONDS:
+                tmfrac = (time_lookup % 1000000000) / 1000000000.0;
+                time_lookup = time_lookup / 1000000000;
+                break;
+            case FLB_TIME_PRECISION_MICROSECONDS:
+                tmfrac = (time_lookup % 1000000) / 1000000.0;
+                time_lookup = time_lookup / 1000000;
+                break;
+            case FLB_TIME_PRECISION_MILLISECONDS:
+                tmfrac = (time_lookup % 1000) / 1000.0;
+                time_lookup = time_lookup / 1000;
+                break;
+            case FLB_TIME_PRECISION_SECONDS:
+                break;
+            default:
+                time_error = FLB_TRUE;
+            }
+        }
+        break;
+    case FLB_PARSER_TYPE_FLOAT:
+        {
+            switch (v->type) {
+            case MSGPACK_OBJECT_POSITIVE_INTEGER:
+                tmp_time = v->via.u64;
+                break;
+            case MSGPACK_OBJECT_FLOAT:
+                tmp_time = v->via.f64;
+                break;
+            case MSGPACK_OBJECT_STR:
+                tmp_time = strtod(v->via.str.ptr, &end);
+                break;
+            default:
+                time_error = FLB_TRUE;
+            }
+
+            switch (time_precision) {
+            case FLB_TIME_PRECISION_NANOSECONDS:
+                time_lookup = tmp_time / 1000000000;
+                tmfrac = (tmp_time / 1000000000.0) - time_lookup;
+                break;
+            case FLB_TIME_PRECISION_MICROSECONDS:
+                time_lookup = tmp_time / 1000000;
+                tmfrac = (tmp_time / 1000000.0) - time_lookup;
+                break;
+            case FLB_TIME_PRECISION_MILLISECONDS:
+                time_lookup = tmp_time / 1000;
+                tmfrac = (tmp_time / 1000.0) - time_lookup;
+                break;
+            case FLB_TIME_PRECISION_SECONDS:
+                time_lookup = tmp_time;
+                tmfrac = tmp_time - time_lookup;
+                break;
+            default:
+                time_error = FLB_TRUE;
+            }
+        }
+        break;
+    case FLB_PARSER_TYPE_STRING:
+        {
+            if (v->type == MSGPACK_OBJECT_STR) {
+                ret = flb_parser_time_lookup(v->via.str.ptr, v->via.str.size,
+                                            0, parser, &tm, &tmfrac);
+                if (ret == -1) {
+                    len = v->via.str.size;
+                    if (len > sizeof(tmp) - 1) {
+                        len = sizeof(tmp) - 1;
+                    }
+                    memcpy(tmp, v->via.str.ptr, len);
+                    tmp[len] = '\0';
+                    flb_warn("[parser:%s] invalid time format %s for '%s'",
+                            parser->name, parser->time_fmt_full, tmp);
+                    time_lookup = 0;
+                    skip = map_size;
+                }
+                else {
+                    time_lookup = flb_parser_tm2time(&tm);
+                }
+            } else {
+                time_error = FLB_TRUE;
+            }
+        }
+        break;
+    default:
+        time_error = FLB_TRUE;
+    }
+    if (time_error == FLB_TRUE) {
         msgpack_unpacked_destroy(&result);
 
         return (int) consumed;
-    }
-
-    /* Lookup time */
-    ret = flb_parser_time_lookup(v->via.str.ptr, v->via.str.size,
-                                 0, parser, &tm, &tmfrac);
-    if (ret == -1) {
-        len = v->via.str.size;
-        if (len > sizeof(tmp) - 1) {
-            len = sizeof(tmp) - 1;
-        }
-        memcpy(tmp, v->via.str.ptr, len);
-        tmp[len] = '\0';
-        flb_warn("[parser:%s] invalid time format %s for '%s'",
-                 parser->name, parser->time_fmt_full, tmp);
-        time_lookup = 0;
-        skip = map_size;
-    }
-    else {
-        time_lookup = flb_parser_tm2time(&tm);
     }
 
     /* Compose a new map without the time_key field */

@@ -26,20 +26,22 @@ static struct flb_parser *docker_parser_create(struct flb_config *config)
 {
     struct flb_parser *p;
 
-    p = flb_parser_create("_ml_json_docker",      /* parser name */
-                          "json",                 /* backend type */
-                          NULL,                   /* regex */
-                          FLB_TRUE,               /* skip_empty */
-                          "%Y-%m-%dT%H:%M:%S.%L", /* time format */
-                          "time",                 /* time key */
-                          NULL,                   /* time offset */
-                          FLB_TRUE,               /* time keep */
-                          FLB_FALSE,              /* time strict */
-                          FLB_FALSE,              /* no bare keys */
-                          NULL,                   /* parser types */
-                          0,                      /* types len */
-                          NULL,                   /* decoders */
-                          config);                /* Fluent Bit context */
+    p = flb_parser_create("_ml_json_docker",          /* parser name */
+                          "json",                     /* backend type */
+                          NULL,                       /* regex */
+                          FLB_TRUE,                   /* skip_empty */
+                          "%Y-%m-%dT%H:%M:%S.%L",     /* time format */
+                          "time",                     /* time key */
+                          NULL,                       /* time offset */
+                          0,                          /* time type */
+                          0,                          /* time precision */
+                          FLB_TRUE,                   /* time keep */
+                          FLB_FALSE,                  /* time strict */
+                          FLB_FALSE,                  /* no bare keys */
+                          NULL,                       /* parser types */
+                          0,                          /* types len */
+                          NULL,                       /* decoders */
+                          config);                    /* Fluent Bit context */
     return p;
 }
 

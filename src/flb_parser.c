@@ -150,6 +150,8 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
                                      int skip_empty,
                                      const char *time_fmt, const char *time_key,
                                      const char *time_offset,
+                                     int time_type,
+                                     int time_precision,
                                      int time_keep,
                                      int time_strict,
                                      int logfmt_no_bare_keys,
@@ -329,6 +331,8 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
         p->time_key = flb_strdup(time_key);
     }
 
+    p->time_type = time_type;
+    p->time_precision = time_precision;
     p->time_keep = time_keep;
     p->time_strict = time_strict;
     p->logfmt_no_bare_keys = logfmt_no_bare_keys;
@@ -386,6 +390,48 @@ void flb_parser_exit(struct flb_config *config)
 
     /* release 'multiline parsers' */
     flb_ml_exit(config);
+}
+
+static int proc_time_type_str(const char *val)
+{
+    if (strcasecmp(val, "int") == 0 ||
+        strcasecmp(val, "unixtime") == 0) {
+        return FLB_PARSER_TYPE_INT;
+    }
+    else if (strcasecmp(val, "float") == 0) {
+        return FLB_PARSER_TYPE_FLOAT;
+    } else if (strcasecmp(val, "string") == 0) {
+        return FLB_PARSER_TYPE_STRING;
+    }
+
+    return FLB_FALSE;
+}
+
+static int proc_time_precision_str(const char *val)
+{
+    if (strcasecmp(val, "s") == 0 ||
+        strcasecmp(val, "sec") == 0 ||
+        strcasecmp(val, "second") == 0 ||
+        strcasecmp(val, "seconds") == 0) {
+        return FLB_TIME_PRECISION_SECONDS;
+    }
+    else if (strcasecmp(val, "ms") == 0 ||
+             strcasecmp(val, "millisecond") == 0 ||
+             strcasecmp(val, "milliseconds") == 0) {
+        return FLB_TIME_PRECISION_MILLISECONDS;
+    }
+    else if (strcasecmp(val, "us") == 0 ||
+             strcasecmp(val, "microsecond") == 0 ||
+             strcasecmp(val, "microseconds") == 0) {
+        return FLB_TIME_PRECISION_MICROSECONDS;
+    }
+    else if (strcasecmp(val, "ns") == 0 ||
+             strcasecmp(val, "nanosecond") == 0 ||
+             strcasecmp(val, "nanoseconds") == 0) {
+        return FLB_TIME_PRECISION_NANOSECONDS;
+    }
+
+    return FLB_FALSE;
 }
 
 static int proc_types_str(const char *types_str, struct flb_parser_types **types)
@@ -485,6 +531,8 @@ static int parser_conf_file(const char *cfg, struct flb_cf *cf,
     flb_sds_t types_str;
     flb_sds_t tmp_str;
     int skip_empty;
+    int time_type;
+    int time_precision;
     int time_keep;
     int time_strict;
     int logfmt_no_bare_keys;
@@ -545,6 +593,22 @@ static int parser_conf_file(const char *cfg, struct flb_cf *cf,
         /* time_key */
         time_key = get_parser_key(config, cf, s, "time_key");
 
+        /* time_type */
+        time_type = FLB_PARSER_TYPE_STRING;
+        tmp_str = get_parser_key(config, cf, s, "time_type");
+        if (tmp_str) {
+            time_type = proc_time_type_str(tmp_str);
+            flb_sds_destroy(tmp_str);
+        }
+
+        /* time_precision */
+        time_precision = FLB_TIME_PRECISION_SECONDS;
+        tmp_str = get_parser_key(config, cf, s, "time_precision");
+        if (tmp_str) {
+            time_precision = proc_time_precision_str(tmp_str);
+            flb_sds_destroy(tmp_str);
+        }
+
         /* time_keep */
         time_keep = FLB_FALSE;
         tmp_str = get_parser_key(config, cf, s, "time_keep");
@@ -586,7 +650,7 @@ static int parser_conf_file(const char *cfg, struct flb_cf *cf,
 
         /* Create the parser context */
         if (!flb_parser_create(name, format, regex, skip_empty,
-                               time_fmt, time_key, time_offset, time_keep, time_strict,
+                               time_fmt, time_key, time_offset, time_type, time_precision, time_keep, time_strict,
                                logfmt_no_bare_keys, types, types_len, decoders, config)) {
             goto fconf_error;
         }

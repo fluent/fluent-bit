@@ -31,20 +31,22 @@ static struct flb_parser *cri_parser_create(struct flb_config *config)
 {
     struct flb_parser *p;
 
-    p = flb_parser_create("_ml_cri",               /* parser name */
-                          "regex",                 /* backend type */
-                          FLB_ML_CRI_REGEX,        /* regex */
-                          FLB_FALSE,               /* skip_empty */
-                          FLB_ML_CRI_TIME,         /* time format */
-                          "time",                  /* time key */
-                          NULL,                    /* time offset */
-                          FLB_TRUE,                /* time keep */
-                          FLB_FALSE,               /* time strict */
-                          FLB_FALSE,               /* no bare keys */
-                          NULL,                    /* parser types */
-                          0,                       /* types len */
-                          NULL,                    /* decoders */
-                          config);                 /* Fluent Bit context */
+    p = flb_parser_create("_ml_cri",                  /* parser name */
+                          "regex",                    /* backend type */
+                          FLB_ML_CRI_REGEX,           /* regex */
+                          FLB_FALSE,                  /* skip_empty */
+                          FLB_ML_CRI_TIME,            /* time format */
+                          "time",                     /* time key */
+                          NULL,                       /* time offset */
+                          0,                          /* time type */
+                          0,                          /* time precision */
+                          FLB_TRUE,                   /* time keep */
+                          FLB_FALSE,                  /* time strict */
+                          FLB_FALSE,                  /* no bare keys */
+                          NULL,                       /* parser types */
+                          0,                          /* types len */
+                          NULL,                       /* decoders */
+                          config);                    /* Fluent Bit context */
     return p;
 }
 
