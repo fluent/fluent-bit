@@ -938,9 +938,6 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
             flb_sds_destroy(cfgoldname);
             goto reload_error;
         }
-        else {
-            FLB_INPUT_RETURN(0);
-        }
     }
 
     ret = 0;
