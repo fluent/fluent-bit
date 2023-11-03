@@ -375,6 +375,7 @@ static void *do_reload(void *data)
     reload->flb->config->enable_hot_reload = FLB_TRUE;
     reload->flb->config->conf_path_file = reload->cfg_path;
 
+    flb_free(reload);
     sleep(5);
 #ifndef FLB_SYSTEM_WINDOWS
     kill(getpid(), SIGHUP);
@@ -386,21 +387,14 @@ static void *do_reload(void *data)
 
 static int test_config_is_valid(flb_sds_t cfgpath)
 {
-    struct flb_config *config;
     struct flb_cf *conf;
     int ret = FLB_FALSE;
 
 
-    config = flb_config_init();
-
-    if (config == NULL) {
-        goto config_init_error;
-    }
-
     conf = flb_cf_create();
 
     if (conf == NULL) {
-        goto cf_create_error;
+        goto config_init_error;
     } 
 
     conf = flb_cf_create_from_file(conf, cfgpath);
@@ -409,22 +403,10 @@ static int test_config_is_valid(flb_sds_t cfgpath)
         goto cf_create_from_file_error;
     } 
 
-    if (flb_config_load_config_format(config, conf)) {
-        goto cf_load_config_format_error;
-    }
-
-    if (flb_reload_property_check_all(config)) {
-       goto cf_property_check_error;
-    }
-
     ret = FLB_TRUE;
 
-cf_property_check_error:
-cf_load_config_format_error:
 cf_create_from_file_error:
     flb_cf_destroy(conf);
-cf_create_error:
-    flb_config_exit(config);
 config_init_error:
     return ret;
 }
@@ -447,6 +429,7 @@ static int execute_reload(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t cf
             flb_input_collector_resume(ctx->collect_fd, ctx->ins);
         }
 
+        flb_sds_destroy(cfgpath);
         return FLB_FALSE;
     }
 
@@ -463,6 +446,7 @@ static int execute_reload(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t cf
             flb_input_collector_resume(ctx->collect_fd, ctx->ins);
         }
 
+        flb_sds_destroy(cfgpath);
         return FLB_FALSE;
     }
 
