@@ -760,14 +760,14 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
     flb_sds_t cfgnewname;
     flb_sds_t cfgoldname;
     flb_sds_t cfgcurname;
-    flb_sds_t header;
+    flb_sds_t header = NULL;
     flb_sds_t hdr;
     FILE *cfgfp;
     const char *fbit_last_modified;
     int fbit_last_modified_len;
     struct flb_tm tm_last_modified = { 0 };
     time_t time_last_modified;
-    char *data;
+    char *data = NULL;
     size_t b_sent;
     int ret = -1;
 #ifdef FLB_SYSTEM_WINDOWS
@@ -842,7 +842,7 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
 
     if (ret == -1) {
         flb_plg_error(ctx->ins, "unable to get last-modified header");
-        goto http_error;
+        goto payload_error;
     }
 
     flb_strptime(fbit_last_modified, "%a, %d %B %Y %H:%M:%S GMT", &tm_last_modified);
@@ -855,7 +855,7 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
 
         if (cfgfp == NULL) {
             flb_plg_error(ctx->ins, "unable to open configuration file: %s", cfgname);
-            goto http_error;
+            goto payload_error;
         }
 
         header = flb_sds_create_size(4096);
@@ -904,17 +904,18 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
         }
         if (hdr == NULL) {
             fclose(cfgfp);
-            goto http_error;
+            goto header_error;
         }
         if (ctx->machine_id) {
             hdr = flb_sds_printf(&header, "    machine_id %s\n", ctx->machine_id);
             if (hdr == NULL) {
                 fclose(cfgfp);
-                goto http_error;
+                goto header_error;
             }
         }
         fwrite(header, strlen(header), 1, cfgfp);
         flb_sds_destroy(header);
+        header = NULL;
         fwrite(data, client->resp.payload_size, 1, cfgfp);
         fclose(cfgfp);
 
@@ -943,6 +944,7 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
         flb_plg_debug(ctx->ins, "new configuration is newer than current: %ld < %ld",
                       ctx->config_timestamp, time_last_modified);
         flb_sds_destroy(data);
+        data = NULL;
 
         if (execute_reload(ctx, cfgname) == FLB_FALSE) {
             cfgoldname = old_fleet_config_filename(ctx);
@@ -960,6 +962,15 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
     ret = 0;
 
 reload_error:
+header_error:
+    if (header) {
+        flb_sds_destroy(header);
+    }
+payload_error:
+    if (data) {
+        flb_sds_destroy(data);
+    }
+
 http_error:
     flb_http_client_destroy(client);
 client_error:
