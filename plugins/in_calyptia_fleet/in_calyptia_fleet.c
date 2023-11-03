@@ -851,6 +851,7 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
 
         if (cfgfp == NULL) {
             flb_plg_error(ctx->ins, "unable to open configuration file: %s", cfgname);
+            flb_sds_destroy(cfgname);
             goto payload_error;
         }
 
@@ -900,12 +901,14 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
         }
         if (hdr == NULL) {
             fclose(cfgfp);
+            flb_sds_destroy(cfgname);
             goto header_error;
         }
         if (ctx->machine_id) {
             hdr = flb_sds_printf(&header, "    machine_id %s\n", ctx->machine_id);
             if (hdr == NULL) {
                 fclose(cfgfp);
+                flb_sds_destroy(cfgname);
                 goto header_error;
             }
         }
@@ -934,13 +937,13 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
             flb_errno();
 #endif
         }
+
+        flb_sds_destroy(cfgnewname);
     }
 
     if (ctx->config_timestamp < time_last_modified) {
         flb_plg_debug(ctx->ins, "new configuration is newer than current: %ld < %ld",
                       ctx->config_timestamp, time_last_modified);
-        flb_sds_destroy(data);
-        data = NULL;
 
         if (execute_reload(ctx, cfgname) == FLB_FALSE) {
             cfgoldname = old_fleet_config_filename(ctx);
@@ -948,8 +951,12 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
             rename(cfgoldname, cfgcurname);
             flb_sds_destroy(cfgcurname);
             flb_sds_destroy(cfgoldname);
+            flb_sds_destroy(cfgname);
             goto reload_error;
         }
+    }
+    else {
+        flb_sds_destroy(cfgname);
     }
 
     ret = 0;
@@ -965,6 +972,7 @@ payload_error:
     }
 
 http_error:
+    flb_plg_debug(ctx->ins, "freeing http client in fleet collect");
     flb_http_client_destroy(client);
 client_error:
     flb_upstream_conn_release(u_conn);
