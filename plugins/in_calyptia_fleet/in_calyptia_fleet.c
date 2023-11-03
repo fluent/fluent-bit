@@ -686,27 +686,34 @@ static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ct
 
     if (ret != 0) {
         flb_plg_error(ctx->ins, "http do error");
+        flb_http_client_destroy(client);
         return -1;
     }
 
     if (client->resp.status != 200) {
         flb_plg_error(ctx->ins, "search http status code error: %d", client->resp.status);
+        flb_http_client_destroy(client);
         return -1;
     }
 
     if (client->resp.payload_size <= 0) {
         flb_plg_error(ctx->ins, "empty response");
+        flb_http_client_destroy(client);
         return -1;
     }
 
     if (parse_fleet_search_json(ctx, client->resp.payload, client->resp.payload_size) == -1) {
         flb_plg_error(ctx->ins, "unable to find fleet: %s", ctx->fleet_name);
+        flb_http_client_destroy(client);
         return -1;
     }
 
     if (ctx->fleet_id == NULL) {
+        flb_http_client_destroy(client);
         return -1;
     }
+
+    flb_http_client_destroy(client);
     return 0;
 }
 
