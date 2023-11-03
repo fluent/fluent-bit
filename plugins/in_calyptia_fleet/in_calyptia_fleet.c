@@ -67,7 +67,11 @@ struct flb_in_calyptia_fleet_config {
     long config_timestamp;
 
     flb_sds_t api_key;
+
     flb_sds_t fleet_id;
+    /* flag used to mark fleet_id for release when found automatically. */
+    int fleet_id_found;
+
     flb_sds_t fleet_name;
     flb_sds_t machine_id;
     flb_sds_t config_dir;
@@ -593,6 +597,7 @@ static ssize_t parse_fleet_search_json(struct flb_in_calyptia_fleet_config *ctx,
                             return -1;
                         }
 
+                        ctx->fleet_id_found = 1;
                         ctx->fleet_id = flb_sds_create_len(cur->val.via.str.ptr,
                                                            cur->val.via.str.size);
                         break;
@@ -1222,6 +1227,14 @@ static int in_calyptia_fleet_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_in_calyptia_fleet_config *ctx = (struct flb_in_calyptia_fleet_config *)data;
+
+    if (ctx->fleet_url) {
+        flb_sds_destroy(ctx->fleet_url);
+    }
+
+    if (ctx->fleet_id && ctx->fleet_id_found) {
+        flb_sds_destroy(ctx->fleet_id);
+    }
 
     flb_input_collector_delete(ctx->collect_fd, ctx->ins);
     flb_upstream_destroy(ctx->u);
