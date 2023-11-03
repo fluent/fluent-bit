@@ -1158,6 +1158,7 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
 
         if (tmpdir == NULL) {
             flb_plg_error(in, "unable to find temporary directory (%%TEMP%%).");
+            flb_free(ctx);
             return -1;
         }
 
@@ -1165,6 +1166,7 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
 
         if (ctx->config_dir == NULL) {
             flb_plg_error(in, "unable to allocate config-dir.");
+            flb_free(ctx);
             return -1;
         }
         flb_sds_printf(&ctx->config_dir, "%s" PATH_SEPARATOR "%s", tmpdir, "calyptia-fleet");
@@ -1213,6 +1215,7 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
 
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not initialize collector for fleet input plugin");
+        flb_upstream_destroy(ctx->u);
         flb_free(ctx);
         return -1;
     }
