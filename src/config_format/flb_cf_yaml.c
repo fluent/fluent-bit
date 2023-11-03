@@ -878,7 +878,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             break;
         case YAML_SCALAR_EVENT:
             value = (char *) event->data.scalar.value;
-            flb_error("[config yaml] including: %s", value);
+            flb_debug("[config yaml] including: %s", value);
 
             if (strchr(value, '*') != NULL) {
                 ret = read_glob(conf, ctx, state, value);
