@@ -1578,8 +1578,8 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
     /* Compose the query string using the URI */
     len = strlen(uri);
 
-    if (len == 1) {
-        tag = NULL; /* use default tag */
+    if (ctx->tag_from_uri != FLB_TRUE) {
+        tag = flb_sds_create(ctx->ins->tag);
     }
     else {
         tag = flb_sds_create_size(len);
