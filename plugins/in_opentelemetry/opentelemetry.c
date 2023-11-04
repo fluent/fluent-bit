@@ -170,6 +170,11 @@ static struct flb_config_map config_map[] = {
      ""
     },
     {
+     FLB_CONFIG_MAP_BOOL, "tag_from_uri", "true",
+     0, FLB_TRUE, offsetof(struct flb_opentelemetry, tag_from_uri),
+     "If true, tag will be created from uri. e.g. v1_metrics from /v1/metrics ."
+    },
+    {
      FLB_CONFIG_MAP_INT, "successful_response_code", "201",
      0, FLB_TRUE, offsetof(struct flb_opentelemetry, successful_response_code),
      "Set successful response code. 200, 201 and 204 are supported."
