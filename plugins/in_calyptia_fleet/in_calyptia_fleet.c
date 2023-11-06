@@ -633,7 +633,7 @@ static int execute_reload(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t cf
 
     reload = flb_calloc(1, sizeof(struct reload_ctx));
     reload->flb = flb;
-    reload->cfg_path = flb_sds_create(cfgpath);
+    reload->cfg_path = cfgpath;
 
     if (ctx->collect_fd > 0) {
         flb_input_collector_pause(ctx->collect_fd, ctx->ins);
