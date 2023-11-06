@@ -144,6 +144,7 @@ int flb_input_log_check(struct flb_input_instance *ins, int l)
 void flb_input_init()
 {
     FLB_TLS_INIT(in_collect_params);
+    FLB_TLS_SET(in_collect_params, NULL);
 }
 
 void flb_input_exit()
