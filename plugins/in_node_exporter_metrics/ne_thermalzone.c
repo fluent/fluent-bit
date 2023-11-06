@@ -24,7 +24,7 @@
 #include "ne.h"
 
 struct flb_ne_collector thermalzone_collector = {
-    .name = "thermalzone",
+    .name = "thermal_zone",
     .cb_init = NULL,
     .cb_update = NULL,
     .cb_exit = NULL

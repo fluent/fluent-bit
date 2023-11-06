@@ -38,7 +38,7 @@
  * ----------------------------------------------------------
  */
 
-int ne_thermalzone_init(struct flb_ne *ctx)
+static int ne_thermalzone_init(struct flb_ne *ctx)
 {
     ctx->thermalzone_temp = cmt_gauge_create(ctx->cmt, "node", "thermal_zone", "temp",
                                              "Zone temperature in Celsius",
@@ -69,7 +69,7 @@ int ne_thermalzone_init(struct flb_ne *ctx)
     return 0;
 }
 
-int ne_thermalzone_update_thermal_zones(struct flb_ne *ctx)
+static int ne_thermalzone_update_thermal_zones(struct flb_ne *ctx)
 {
     uint64_t tstamp;
     int ret;
@@ -154,7 +154,7 @@ int ne_thermalzone_update_thermal_zones(struct flb_ne *ctx)
     return 0;
 }
 
-int ne_thermalzone_update_cooling_devices(struct flb_ne *ctx)
+static int ne_thermalzone_update_cooling_devices(struct flb_ne *ctx)
 {
     uint64_t tstamp;
     int ret;
@@ -246,3 +246,22 @@ int ne_thermalzone_update_cooling_devices(struct flb_ne *ctx)
 
     return 0;
 }
+
+static int ne_thermalzone_update(struct flb_input_instance *ins, struct flb_config *config, void *in_context)
+{
+    int ret;
+    struct flb_ne *ctx = (struct flb_ne *)in_context;
+
+    ret = ne_thermalzone_update_thermal_zones(ctx);
+    if (ret != 0) {
+        return ret;
+    }
+    return ne_thermalzone_update_cooling_devices(ctx);
+}
+
+struct flb_ne_collector thermalzone_collector = {
+    .name = "thermal_zone",
+    .cb_init = ne_thermalzone_init,
+    .cb_update = ne_thermalzone_update,
+    .cb_exit = NULL
+};
