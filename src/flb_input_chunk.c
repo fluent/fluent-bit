@@ -1537,10 +1537,8 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
                       tag, tag_len,
                       in->config);
 
-        if (filtered_data_buffer != NULL) {
-            final_data_buffer = filtered_data_buffer;
-            final_data_size = filtered_data_size;
-        }
+        final_data_buffer = filtered_data_buffer;
+        final_data_size = filtered_data_size;
     }
 
     if (final_data_size > 0){
