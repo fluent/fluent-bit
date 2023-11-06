@@ -26,6 +26,9 @@
 
 #define DEFAULT_DUMMY_MESSAGE  "{\"message\":\"dummy\"}"
 #define DEFAULT_DUMMY_METADATA "{}"
+#define DEFAULT_RATE  "1"
+#define DEFAULT_INTERVAL_SEC "0"
+#define DEFAULT_INTERVAL_NSEC "0"
 
 struct flb_dummy {
     int  coll_fd;
@@ -34,6 +37,8 @@ struct flb_dummy {
     int  copies;
     int  samples;
     int  samples_count;
+    int  interval_sec;
+    int  interval_nsec;
 
     int dummy_timestamp_set;
     struct flb_time base_timestamp;
