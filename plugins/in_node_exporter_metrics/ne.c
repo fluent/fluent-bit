@@ -289,9 +289,6 @@ static void in_ne_pause(void *data, struct flb_config *config)
         }
         flb_input_collector_pause(coll->coll_fd, ctx->ins);
     }
-    if (ctx->coll_thermalzone_fd != -1) {
-        flb_input_collector_pause(ctx->coll_systemd_fd, ctx->ins);
-    }
 }
 
 static void in_ne_resume(void *data, struct flb_config *config)
@@ -307,9 +304,6 @@ static void in_ne_resume(void *data, struct flb_config *config)
             continue;
         }
         flb_input_collector_resume(coll->coll_fd, ctx->ins);
-    }
-    if (ctx->coll_thermalzone_fd != -1) {
-        flb_input_collector_resume(ctx->coll_systemd_fd, ctx->ins);
     }
 }
 
