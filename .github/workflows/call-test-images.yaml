@@ -76,7 +76,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [ linux/amd64, linux/arm64, linux/arm/v7 ]
+        arch: [ linux/amd64, linux/arm64, linux/arm/v7, linux/s390x ]
         include:
           # Rather than extract the specific central arch we just provide it
           - arch: linux/amd64
@@ -85,6 +85,8 @@ jobs:
             expected: arm64
           - arch: linux/arm/v7
             expected: arm
+          - arch: linux/s390x
+            expected: s390x
     steps:
       - name: Log in to the Container registry
         uses: docker/login-action@v3
@@ -128,7 +130,7 @@ jobs:
     strategy:
       fail-fast: false # verify all
       matrix:
-        arch: [ linux/amd64, linux/arm64, linux/arm/v7 ]
+        arch: [ linux/amd64, linux/arm64, linux/arm/v7, linux/s390x ]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
