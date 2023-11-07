@@ -49,8 +49,149 @@ struct temp_info
     double temp;                          /* from /sys/class/thermal/thermal_zoneX/temp */
 };
 
+/*
+ * Retrieve temperature(s) from the system (via /sys/class/hwmon)
+ * https://www.kernel.org/doc/Documentation/hwmon/sysfs-interface
+ *
+ * e.g.
+ *  name: hwmon2_temp1_input (via /sys/class/hwmon/hwmon2/temp1_input)
+ *  type: gpu_thermal (via /sys/class/hwmon/hwmon2/name)
+ */
+static inline int proc_temperature_hwmon(struct flb_in_thermal_config *ctx,
+                                         struct temp_info *info, int n)
+{
+    int temp_info_i = -1;
+    int i;
+    int temp_i;
+    DIR *sysfs_hwmon_d;
+    struct dirent *hwmon_e;
+    flb_sds_t filename = NULL;
+
+    FILE *f;
+    int temp;
+    int ret;
+    flb_sds_t name = NULL;
+    flb_sds_t type = NULL;
+
+    sysfs_hwmon_d = opendir("/sys/class/hwmon");
+    if (sysfs_hwmon_d == NULL) {
+        return -1;
+    }
+    name = flb_sds_create_size(IN_THERMAL_FILENAME_LEN);
+    if (name == NULL) {
+        flb_errno();
+        goto proc_temperature_hwmon_end;
+    }
+    type = flb_sds_create_size(IN_THERMAL_TYPE_LEN);
+    if (name == NULL) {
+        flb_errno();
+        goto proc_temperature_hwmon_end;
+    }
+    filename = flb_sds_create_size(IN_THERMAL_FILENAME_LEN);
+    if (filename == NULL) {
+        flb_errno();
+        goto proc_temperature_hwmon_end;
+    }
+
+    temp_info_i = 0;
+    while (temp_info_i<n && (hwmon_e = readdir(sysfs_hwmon_d))) {
+        if (hwmon_e->d_type == DT_REG) {
+            continue;
+        }
+
+#ifdef FLB_HAVE_REGEX
+        if (ctx->name_regex && !flb_regex_match(ctx->name_regex,
+                                                (unsigned char *) hwmon_e->d_name,
+                                                strlen(hwmon_e->d_name))) {
+            continue;
+        }
+#endif
+
+        if (!strncmp(hwmon_e->d_name, "hwmon", 5)) {
+            /* e.g. hwmon_e->d_name is hwmon0 */
+            ret = flb_sds_snprintf(&filename, IN_THERMAL_FILENAME_LEN, "/sys/class/hwmon/%s/name",
+                                   hwmon_e->d_name);
+            if (ret < 0) {
+                flb_plg_error(ctx->ins, "flb_sds_snprintf error");
+                continue;
+            }
+
+            f = fopen(filename, "r");
+            if (f == NULL) {
+                flb_errno();
+                flb_plg_error(ctx->ins, "cannot open %s", filename);
+                continue;
+            }
+
+            if (fgets(type, IN_THERMAL_TYPE_LEN, f) &&
+                strlen(type) > 1 /* fgets doesn't update length of sds */) {
+                /* Remove trailing \n */
+                for (i = 0; type[i]; i++) {
+                    if (type[i] == '\n') {
+                        type[i] = 0;
+                        break;
+                    }
+                }
+            }
+            fclose(f);
+
+#ifdef FLB_HAVE_REGEX
+            if (ctx->type_regex &&
+                !flb_regex_match(ctx->type_regex,
+                                 (unsigned char *) type,
+                                 flb_sds_len(type))) {
+                continue;
+            }
+#endif
+            for (temp_i=0; temp_i<10; temp_i++) {
+                ret = flb_sds_snprintf(&filename, IN_THERMAL_FILENAME_LEN,
+                                       "/sys/class/hwmon/%s/temp%d_input", hwmon_e->d_name, temp_i);
+                if (ret < 0) {
+                    continue;
+                }
+
+                /* e.g. name will be hwmon0_temp2_input (via /sys/class/hwmon/hwmon0/temp2_input */
+                ret = flb_sds_snprintf(&name, IN_THERMAL_FILENAME_LEN, "%s_temp%d_input",
+                                        hwmon_e->d_name, temp_i);
+                if (ret < 0) {
+                    continue;
+                }
+
+                f = fopen(filename, "r");
+                if (f == NULL) {
+                    continue;
+                }
+                if (fscanf(f, "%d", &temp) != 1) {
+                    fclose(f);
+                    continue;
+                }
+                strncpy(info[temp_info_i].name, name, IN_THERMAL_FILENAME_LEN);
+                strncpy(info[temp_info_i].type, type, IN_THERMAL_TYPE_LEN);
+                info[temp_info_i].temp = temp/1000.0;
+
+                ++temp_info_i;
+                fclose(f);
+            }
+        }
+    }
+
+ proc_temperature_hwmon_end:
+    if (name != NULL) {
+        flb_sds_destroy(name);
+    }
+    if (type != NULL) {
+        flb_sds_destroy(type);
+    }
+    if (filename != NULL) {
+        flb_sds_destroy(filename);
+    }
+
+    closedir(sysfs_hwmon_d);
+    return temp_info_i;
+}
+
 /* Retrieve temperature(s) from the system (via /sys/class/thermal) */
-static inline int proc_temperature(struct flb_in_thermal_config *ctx,
+static inline int proc_temperature_thermal_zone(struct flb_in_thermal_config *ctx,
                                    struct temp_info *info, int n)
 {
     int i, j;
@@ -196,9 +337,12 @@ static int in_thermal_init(struct flb_input_instance *in,
     }
 #endif
 
-    ctx->prev_device_num = proc_temperature(ctx, info,  IN_THERMAL_N_MAX);
+    ctx->prev_device_num = proc_temperature_thermal_zone(ctx, info,  IN_THERMAL_N_MAX);
     if (!ctx->prev_device_num) {
-        flb_plg_warn(ctx->ins, "thermal device file not found");
+        ctx->prev_device_num = proc_temperature_hwmon(ctx, info, IN_THERMAL_N_MAX); 
+       if (!ctx->prev_device_num) {
+            flb_plg_warn(ctx->ins, "thermal device file not found");
+        }
     }
 
     /* Set the context */
@@ -237,7 +381,10 @@ int in_thermal_collect(struct flb_input_instance *i_ins,
     (void) config;
 
     /* Get the current temperature(s) */
-    n = proc_temperature(ctx, info, IN_THERMAL_N_MAX);
+    n = proc_temperature_thermal_zone(ctx, info, IN_THERMAL_N_MAX);
+    if (n == 0) {
+        n = proc_temperature_hwmon(ctx, info, IN_THERMAL_N_MAX);
+    }
     if (n != ctx->prev_device_num) {
         flb_plg_info(ctx->ins, "the number of thermal devices changed %d -> %d",
                      ctx->prev_device_num, n);
