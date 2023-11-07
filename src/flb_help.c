@@ -278,6 +278,53 @@ int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_s
         flb_config_map_destroy(config_map);
     }
 
+    if (ins->p->flags & FLB_INPUT_NET_SERVER) {
+        flb_mp_map_header_append(&mh);
+        pack_str(&mp_pck, "networking");
+
+        config_map = flb_downstream_get_config_map(ins->config);
+        msgpack_pack_array(&mp_pck, mk_list_size(config_map));
+        mk_list_foreach(head, config_map) {
+            m = mk_list_entry(head, struct flb_config_map, _head);
+            pack_config_map_entry(&mp_pck, m);
+        }
+        flb_config_map_destroy(config_map);
+    }
+    else if (ins->p->flags & FLB_INPUT_NET) {
+        flb_mp_map_header_append(&mh);
+        pack_str(&mp_pck, "networking");
+
+        config_map = flb_upstream_get_config_map(ins->config);
+        msgpack_pack_array(&mp_pck, mk_list_size(config_map));
+        mk_list_foreach(head, config_map) {
+            m = mk_list_entry(head, struct flb_config_map, _head);
+            pack_config_map_entry(&mp_pck, m);
+        }
+        flb_config_map_destroy(config_map);
+    }
+
+    if (ins->p->flags & (FLB_IO_TLS | FLB_IO_OPT_TLS)) {
+        flb_mp_map_header_append(&mh);
+        pack_str(&mp_pck, "network_tls");
+
+        config_map = flb_tls_get_config_map(ins->config);
+        msgpack_pack_array(&mp_pck, mk_list_size(config_map));
+
+        /* Adjust 'tls' default value based on plugin type" */
+        m = mk_list_entry_first(config_map, struct flb_config_map, _head);
+        if (ins->p->flags & FLB_IO_TLS) {
+            m->value.val.boolean = FLB_TRUE;
+        }
+        else if (ins->p->flags & FLB_IO_OPT_TLS) {
+            m->value.val.boolean = FLB_FALSE;
+        }
+        mk_list_foreach(head, config_map) {
+            m = mk_list_entry(head, struct flb_config_map, _head);
+            pack_config_map_entry(&mp_pck, m);
+        }
+        flb_config_map_destroy(config_map);
+    }
+
     flb_mp_map_header_end(&mh);
 
     *out_buf = mp_sbuf.data;
