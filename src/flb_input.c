@@ -35,6 +35,7 @@
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_downstream.h>
+#include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_hash_table.h>
@@ -888,11 +889,20 @@ int flb_input_net_property_check(struct flb_input_instance *ins,
 {
     int ret = 0;
 
-    /* Get Downstream net_setup configmap */
-    ins->net_config_map = flb_downstream_get_config_map(config);
-    if (!ins->net_config_map) {
-        flb_input_instance_destroy(ins);
-        return -1;
+    /* Get Downstream or Upstream net_setup configmap */
+    if (ins->p->flags & FLB_INPUT_NET_SERVER) {
+        ins->net_config_map = flb_downstream_get_config_map(config);
+        if (!ins->net_config_map) {
+            flb_input_instance_destroy(ins);
+            return -1;
+        }
+    }
+    else if (ins->p->flags & FLB_INPUT_NET) {
+        ins->net_config_map = flb_upstream_get_config_map(config);
+        if (!ins->net_config_map) {
+            flb_input_instance_destroy(ins);
+            return -1;
+        }
     }
 
     /*
