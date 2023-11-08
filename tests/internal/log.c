@@ -11,28 +11,30 @@
 #define TEST_RECORD_02      "other type of message"
 #define TEST_RECORD_02_SIZE sizeof(TEST_RECORD_02) - 1
 
-static int check_interval(int timeout, int *interval)
+static int check_clock(int timeout, time_t start)
 {
-    if (!TEST_CHECK( (*interval >= timeout - 1) && *interval <= timeout) ) {
-        TEST_MSG("interval error. got=%d expect=%d-%d", *interval, timeout -1 ,timeout);
+    time_t now = time(NULL);
+
+    if (!(TEST_CHECK((start + timeout) >= now))) {
+        TEST_MSG("clock error, unsuppresed log: now=%ld, timeout=%ld, diff=%ld", 
+	         now, start+timeout, now-(start+timeout));
         return -1;
     }
 
     return 0;
 }
 
-static int update_and_check_interval(int timeout, int ret, int *interval)
+static int update_and_check_clock(int timeout, int ret, time_t *clock)
 {
     int ret_val;
 
     if (ret == FLB_TRUE) {
-        *interval += 1;
         return 0;
     }
 
     /* false means timeout. check interval. */
-    ret_val = check_interval(timeout, interval);
-    *interval = 0; /* reset interval */
+    ret_val = check_clock(timeout, *clock);
+    *clock = time(NULL); /* reset clock */
 
     return ret_val;
 }
@@ -44,8 +46,9 @@ static void cache_basic_timeout()
     int ret_1;
     int ret_2;
     int timeout = 5;
-    int interval1 = 0;
-    int interval2 = 0;
+    time_t clock1;
+    time_t clock2;
+    time_t start;
     struct flb_log_cache *cache;
     struct flb_log_cache_entry *entry;
 
@@ -83,30 +86,31 @@ static void cache_basic_timeout()
     TEST_CHECK(ret_1 == FLB_FALSE);
     TEST_CHECK(ret_2 == FLB_FALSE);
     sleep(1);
-    interval1++;
-    interval2++;
 
-    for (i = 1; i < 10; i++) {
+    clock1 = time(NULL);
+    clock2 = time(NULL);
+
+    for (i = 1, start = time(NULL); i < 10 && start+(timeout*20) >  time(NULL); i++) {
         ret_1 = flb_log_cache_check_suppress(cache, TEST_RECORD_01, TEST_RECORD_01_SIZE);
-        ret = update_and_check_interval(timeout, ret_1, &interval1);
+        ret = update_and_check_clock(timeout, ret_1, &clock1);
         if (!TEST_CHECK(ret == 0)) {
-            TEST_MSG("update_and_check_interval for TEST_RECORD_01 failed. i=%d", i);
+            TEST_MSG("update_and_check_clock for TEST_RECORD_01 failed. i=%d", i);
         }
 
         ret_2 = flb_log_cache_check_suppress(cache, TEST_RECORD_02, TEST_RECORD_02_SIZE);
-        ret = update_and_check_interval(timeout, ret_2, &interval2);
+        ret = update_and_check_clock(timeout, ret_2, &clock2);
         if (!TEST_CHECK(ret == 0)) {
-            TEST_MSG("update_and_check_interval for TEST_RECORD_02 failed. i=%d", i);
+            TEST_MSG("update_and_check_clock for TEST_RECORD_02 failed. i=%d", i);
         }
 
         sleep(1);
     }
     ret_1 = flb_log_cache_check_suppress(cache, TEST_RECORD_01, TEST_RECORD_01_SIZE);
-    ret = update_and_check_interval(timeout, ret_1, &interval1);
+    ret = update_and_check_clock(timeout, ret_1, &clock1);
     TEST_CHECK(ret == 0);
 
     ret_2 = flb_log_cache_check_suppress(cache, TEST_RECORD_02, TEST_RECORD_02_SIZE);
-    ret = update_and_check_interval(timeout, ret_2, &interval2);
+    ret = update_and_check_clock(timeout, ret_2, &clock2);
     TEST_CHECK(ret == 0);
 
     flb_log_cache_destroy(cache);
