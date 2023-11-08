@@ -95,6 +95,9 @@ struct flb_loki {
 
     /* Plugin instance */
     struct flb_output_instance *ins;
+
+    /* Arbitrary HTTP headers */
+    struct mk_list *headers;
 };
 
 #endif
