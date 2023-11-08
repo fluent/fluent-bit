@@ -105,6 +105,10 @@ Fluent Bit is fully supported on Windows environments, get started with [these i
 
 [Fluent Bit](http://fluentbit.io) is based in a pluggable architecture where different plugins plays a major role in the data pipeline:
 
+#### Running on s390x
+
+Fluent Bit is supported on Linux on IBM Z(s390x), but the WASM and LUA filter plugins are not.
+
 #### Input Plugins
 
 | name | title | description |
