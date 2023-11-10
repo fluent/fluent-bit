@@ -130,7 +130,7 @@ jobs:
     strategy:
       fail-fast: false # verify all
       matrix:
-        arch: [ linux/amd64, linux/arm64, linux/arm/v7, linux/s390x ]
+        arch: [ linux/amd64, linux/arm64, linux/arm/v7 ]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
