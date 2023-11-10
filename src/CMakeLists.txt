@@ -554,6 +554,22 @@ if(FLB_BINARY)
       DESTINATION ${FLB_INSTALL_CONFDIR}
       COMPONENT binary
       RENAME "${FLB_OUT_NAME}.conf")
+
+    # link in CoreFoundation and IOKit for machine_id code on macOS
+    find_library(CORE_FOUNDATION CoreFoundation)
+    if (NOT CORE_FOUNDATION)
+      message(FATAL_ERROR "CoreFoundation framework missing on macOS")
+    endif()
+
+    find_library(IOKITLIB IOKit)
+    if (NOT IOKITLIB)
+      message(FATAL_ERROR "IOKitLib framework missing on macOS")
+    endif()
+
+    target_link_libraries(fluent-bit-static "-framework CoreFoundation")
+    target_link_libraries(fluent-bit-static "-framework IOKit")
+    set_target_properties(fluent-bit-static PROPERTIES LINK_FLAGS "-Wl,-F/Library/Frameworks")
+
   else()
     install(FILES
       "${PROJECT_SOURCE_DIR}/conf/fluent-bit.conf"
