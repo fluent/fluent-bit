@@ -2538,7 +2538,7 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     uint64_t ts = cfl_time_now();
 #endif
 
-        /* Reformat msgpack to stackdriver JSON payload */
+    /* Reformat msgpack to stackdriver JSON payload */
     payload_buf = stackdriver_format(ctx,
                                      event_chunk->total_events,
                                      event_chunk->tag, flb_sds_len(event_chunk->tag),
@@ -2551,7 +2551,6 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
         /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
 #endif
-        flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -2566,6 +2565,7 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
 #ifdef FLB_HAVE_METRICS
+        flb_upstream_conn_release(u_conn);
         cmt_counter_inc(ctx->cmt_failed_requests,
                         ts, 1, (char *[]) {name});
 
