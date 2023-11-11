@@ -139,10 +139,12 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
                             FLB_SYSTEMD_UNKNOWN, sizeof(FLB_SYSTEMD_UNKNOWN) - 1,
                             &tag, &tag_len);
             }
+            flb_debug("[in_systemd] dynamic tag: %s length: %i", tag, length);          
         }
         else {
             tag = ctx->i_ins->tag;
             tag_len = ctx->i_ins->tag_len;
+            flb_debug("[in_systemd] entry tag: %s length: %i", tag, tag_len);
         }
 
         if (last_tag_len == 0) {
@@ -161,7 +163,8 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
         sec = usec / 1000000;
         nsec = (usec % 1000000) * 1000;
         flb_time_set(&tm, sec, nsec);
-
+        flb_debug("[in_systemd] entry time set: %i secs and %i nsec", sec, nsec);
+      
         /*
          * The new incoming record can have a different tag than previous one,
          * so a new msgpack buffer is required. We ingest the data and prepare
