@@ -330,6 +330,44 @@ void test_json_parser_time_lookup()
     flb_config_exit(config);
 }
 
+/* https://github.com/fluent/fluent-bit/issues/8154 */
+void test_json_parser_time_lookup_for_int()
+{
+    int ret;
+    int len;
+    char *buf = "{\"key001\": 12345, \"key002\": 0.99, \"time\": 123456}";
+    void *out_buf;
+    size_t out_size;
+    struct flb_time out_time;
+    struct flb_parser *p;
+    struct flb_config *config;
+
+    config = flb_config_init();
+
+    /* Load parsers */
+    load_json_parsers(config);
+
+    p = flb_parser_get("json_for_int", config);
+    TEST_CHECK(p != NULL);
+    if (p == NULL) {
+        return;
+    }
+
+    /* Invoke the JSON parser backend */
+    len = strlen(buf);
+    ret = flb_parser_json_do(p, buf, len, &out_buf, &out_size, &out_time);
+    TEST_CHECK(ret != -1);
+    TEST_CHECK(out_buf != NULL);
+
+    if (!TEST_CHECK(out_time.tm.tv_sec == 123456)) {
+        TEST_MSG("tv_sec mismatch. got=%ld expect=123456", out_time.tm.tv_sec);
+    }
+
+    flb_free(out_buf);
+    flb_parser_exit(config);
+    flb_config_exit(config);
+}
+
 /* Do time lookup using the Regex parser backend*/
 void test_regex_parser_time_lookup()
 {
@@ -524,5 +562,6 @@ TEST_LIST = {
     { "json_time_lookup", test_json_parser_time_lookup},
     { "regex_time_lookup", test_regex_parser_time_lookup},
     { "mysql_unquoted" , test_mysql_unquoted },
+    { "json_time_lookup_for_int", test_json_parser_time_lookup_for_int},
     { 0 }
 };
