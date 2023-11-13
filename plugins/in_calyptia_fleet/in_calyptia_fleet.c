@@ -1687,9 +1687,8 @@ static int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx,
             return -1;
         }
 
-        flb_sds_destroy(cfgname);
-
 #ifndef FLB_SYSTEM_WINDOWS
+        flb_sds_destroy(cfgname);
         cfgnewname = new_fleet_config_filename(ctx);
         if (execute_reload(ctx, cfgnewname) == FLB_FALSE) {
             calyptia_config_rollback(ctx, cfgname);
