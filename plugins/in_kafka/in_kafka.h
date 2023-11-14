@@ -43,6 +43,7 @@ struct flb_in_kafka_config {
     int poll_ms;
     int format;
     char *format_str;
+    int coll_fd;
 };
 
 #endif
