@@ -281,6 +281,8 @@ static int in_kafka_init(struct flb_input_instance *ins,
         goto init_error;
     }
 
+    ctx->coll_fd = ret;
+
     ctx->log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
 
     if (ctx->log_encoder == NULL) {
@@ -304,6 +306,20 @@ init_error:
     flb_free(ctx);
 
     return -1;
+}
+
+static void in_kafka_pause(void *data, struct flb_config *config)
+{
+    struct flb_in_kafka_config *ctx = data;
+
+    flb_input_collector_pause(ctx->coll_fd, ctx->ins);
+}
+
+static void in_kafka_resume(void *data, struct flb_config *config)
+{
+    struct flb_in_kafka_config *ctx = data;
+
+    flb_input_collector_resume(ctx->coll_fd, ctx->ins);
 }
 
 /* Cleanup serial input */
@@ -377,6 +393,8 @@ struct flb_input_plugin in_kafka_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = in_kafka_collect,
     .cb_flush_buf = NULL,
+    .cb_pause     = in_kafka_pause,
+    .cb_resume    = in_kafka_resume,
     .cb_exit      = in_kafka_exit,
     .config_map   = config_map
 };
