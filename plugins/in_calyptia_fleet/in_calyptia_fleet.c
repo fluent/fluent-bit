@@ -2115,7 +2115,7 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
         return 0;
     }
 
-    if (exists_new_fleet_config(ctx) == FLB_TRUE || is_fleet_config(ctx, config)) {
+    if (is_fleet_config(ctx, config)) {
         calyptia_config_commit(ctx);
     }
 
