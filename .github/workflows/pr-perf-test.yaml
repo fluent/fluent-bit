@@ -59,7 +59,7 @@ jobs:
         shell: bash
         working-directory: output
 
-      - uses: actions/github-script@v6
+      - uses: actions/github-script@v7
         if: github.event_name == 'pull_request'
         env:
           REPORT: "Plots\n${{ steps.report.outputs.report }}"
