@@ -92,7 +92,6 @@ struct flb_in_calyptia_fleet_config {
     flb_sds_t fleet_files_url;
 
     struct flb_input_instance *ins;       /* plugin instance */
-    struct flb_config *config;            /* Fluent Bit context */
 
     /* Networking */
     struct flb_upstream *u;
@@ -2116,7 +2115,7 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
         return 0;
     }
 
-    if (exists_new_fleet_config(ctx) == FLB_TRUE || is_fleet_config(ctx, ctx->config)) {
+    if (exists_new_fleet_config(ctx) == FLB_TRUE || is_fleet_config(ctx, config)) {
         calyptia_config_commit(ctx);
     }
 
