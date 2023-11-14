@@ -1331,24 +1331,22 @@ static int calyptia_config_delete_old_dir(const char *cfgpath)
     }
 
     files = read_glob(cfg_glob);
-    if (files == NULL) {
-        flb_sds_destroy(cfg_glob);
-        return FLB_FALSE;
-    }
 
-    for (idx = 0; idx < ((ssize_t)files->entry_count); idx++) {
-        unlink(files->entries[idx]->data.as_string);
+    if (files != NULL) {
+        for (idx = 0; idx < ((ssize_t)files->entry_count); idx++) {
+                unlink(files->entries[idx]->data.as_string);
+        }
+        cfl_array_destroy(files); 
     }
 
     /* attempt to delete the main directory */
-    ext = strrchr(cfg_glob, '/');
+    ext = strrchr(cfg_glob, PATH_SEPARATOR[0]);
     if (ext) {
         *ext = '\0';
         rmdir(cfg_glob);
     }
 
     flb_sds_destroy(cfg_glob);
-    cfl_array_destroy(files);
 
     return FLB_TRUE;
 }
