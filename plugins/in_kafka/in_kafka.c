@@ -183,9 +183,9 @@ static int in_kafka_collect(struct flb_input_instance *ins,
         /* TO-DO: commit the record based on `ret` */
         rd_kafka_commit(ctx->kafka.rk, NULL, 0);
 
-        /* Break from the loop when reaching the buf_limit if available */
-        if (ctx->ins->mem_buf_limit > 0 &&
-            ctx->log_encoder->output_length > ctx->ins->mem_buf_limit + 512) {
+        /* Break from the loop when reaching the limit of polling if available */
+        if (ctx->polling_threshold != FLB_IN_KAFKA_UNLIMITED &&
+            ctx->log_encoder->output_length > ctx->polling_threshold + 512) {
             break;
         }
     }
@@ -241,8 +241,15 @@ static int in_kafka_init(struct flb_input_instance *ins,
         goto init_error;
     }
 
-    if (ctx->ins->mem_buf_limit > 0) {
-        snprintf(conf_val, sizeof(conf_val), "%zu", ctx->ins->mem_buf_limit - 512);
+    if (ctx->ins->mem_buf_limit > 0 || ctx->buffer_chunk_size > 0) {
+        if (ctx->ins->mem_buf_limit) {
+            ctx->polling_threshold = ctx->ins->mem_buf_limit;
+        }
+        else if (ctx->buffer_chunk_size > 0) {
+            ctx->polling_threshold = ctx->buffer_chunk_size;
+        }
+
+        snprintf(conf_val, sizeof(conf_val), "%zu", ctx->polling_threshold - 512);
         res = rd_kafka_conf_set(kafka_conf, "fetch.max.bytes", conf_val,
                                 errstr, sizeof(errstr));
         if (res != RD_KAFKA_CONF_OK) {
@@ -251,7 +258,7 @@ static int in_kafka_init(struct flb_input_instance *ins,
             goto init_error;
         }
 
-        snprintf(conf_val, sizeof(conf_val), "%zu", ctx->ins->mem_buf_limit);
+        snprintf(conf_val, sizeof(conf_val), "%zu", ctx->polling_threshold);
         res = rd_kafka_conf_set(kafka_conf, "receive.message.max.bytes", conf_val,
                                 errstr, sizeof(errstr));
         if (res != RD_KAFKA_CONF_OK) {
@@ -259,6 +266,9 @@ static int in_kafka_init(struct flb_input_instance *ins,
                           rd_kafka_err2str(err));
             goto init_error;
         }
+    }
+    else {
+        ctx->polling_threshold = FLB_IN_KAFKA_UNLIMITED;
     }
 
     ctx->kafka.rk = rd_kafka_new(RD_KAFKA_CONSUMER, kafka_conf, errstr,
@@ -415,6 +425,11 @@ static struct flb_config_map config_map[] = {
     /* FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_in_kafka_config, rdkafka_opts), */
     0,  FLB_FALSE, 0,
     "Set the librdkafka options"
+   },
+   {
+    FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_in_kafka_config, buffer_chunk_size),
+    "Set the chunk size"
    },
    /* EOF */
    {0}
