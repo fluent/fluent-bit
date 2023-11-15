@@ -251,7 +251,7 @@
         "vscode-test": "^1.5.2"
     },
     "dependencies": {
-        "@vscode/webview-ui-toolkit": "^0.8.4",
+        "@vscode/webview-ui-toolkit": "^0.9.3",
         "request": "^2.88.2",
         "yauzl": "^2.10.0"
     }
