@@ -203,8 +203,10 @@ static int in_kafka_init(struct flb_input_instance *ins,
     rd_kafka_conf_t *kafka_conf = NULL;
     rd_kafka_topic_partition_list_t *kafka_topics = NULL;
     rd_kafka_resp_err_t err;
+    rd_kafka_conf_res_t res;
     char errstr[512];
     (void) data;
+    char conf_val[16];
 
     /* Allocate space for the configuration context */
     ctx = flb_malloc(sizeof(struct flb_in_kafka_config));
@@ -224,6 +226,26 @@ static int in_kafka_init(struct flb_input_instance *ins,
     if (!kafka_conf) {
         flb_plg_error(ins, "Could not initialize kafka config object");
         goto init_error;
+    }
+
+    if (ctx->ins->mem_buf_limit > 0) {
+        snprintf(conf_val, sizeof(conf_val), "%zu", ctx->ins->mem_buf_limit - 512);
+        res = rd_kafka_conf_set(kafka_conf, "fetch.max.bytes", conf_val,
+                                errstr, sizeof(errstr));
+        if (res != RD_KAFKA_CONF_OK) {
+            flb_plg_error(ins, "Failed to set up fetch.max.bytes: %s",
+                          rd_kafka_err2str(err));
+            goto init_error;
+        }
+
+        snprintf(conf_val, sizeof(conf_val), "%zu", ctx->ins->mem_buf_limit);
+        res = rd_kafka_conf_set(kafka_conf, "receive.message.max.bytes", conf_val,
+                                errstr, sizeof(errstr));
+        if (res != RD_KAFKA_CONF_OK) {
+            flb_plg_error(ins, "Failed to set up receive.message.max.bytes: %s",
+                          rd_kafka_err2str(err));
+            goto init_error;
+        }
     }
 
     ctx->kafka.rk = rd_kafka_new(RD_KAFKA_CONSUMER, kafka_conf, errstr,
