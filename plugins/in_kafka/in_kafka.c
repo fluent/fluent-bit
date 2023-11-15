@@ -205,6 +205,7 @@ static int in_kafka_init(struct flb_input_instance *ins,
     rd_kafka_resp_err_t err;
     char errstr[512];
     (void) data;
+    char conf_val[16];
 
     /* Allocate space for the configuration context */
     ctx = flb_malloc(sizeof(struct flb_in_kafka_config));
@@ -256,6 +257,26 @@ static int in_kafka_init(struct flb_input_instance *ins,
     else {
         flb_plg_error(ins, "config: invalid format \"%s\"", ctx->format_str);
         goto init_error;
+    }
+
+    if (ctx->ins->mem_buf_limit > 0) {
+        snprintf(conf_val, sizeof(conf_val), "%s", ctx->ins->mem_buf_limit - 512);
+        err = rd_kafka_conf_set(conf, "fetch.max.bytes", conf_val,
+                                errstr, sizeof(errstr));
+        if (err != RD_KAFKA_CONF_OK) {
+            flb_plg_error(ins, "Failed to set up fetch.max.bytes: %s",
+                          rd_kafka_err2str(err));
+            goto init_error;
+        }
+
+        snprintf(conf_val, sizeof(conf_val), "%s", ctx->ins->mem_buf_limit);
+        err = rd_kafka_conf_set(conf, "receive.message.max.bytes", conf_val,
+                                errstr, sizeof(errstr));
+        if (err != RD_KAFKA_CONF_OK) {
+            flb_plg_error(ins, "Failed to set up receive.message.max.bytes: %s",
+                          rd_kafka_err2str(err));
+            goto init_error;
+        }
     }
 
     if ((err = rd_kafka_subscribe(ctx->kafka.rk, kafka_topics))) {
