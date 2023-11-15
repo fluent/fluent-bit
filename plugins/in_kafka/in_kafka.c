@@ -167,6 +167,13 @@ static int in_kafka_collect(struct flb_input_instance *ins,
             break;
         }
 
+        if (rkm->err) {
+            flb_plg_warn(ins, "consumer error: %s\n",
+                         rd_kafka_message_errstr(rkm));
+            rd_kafka_message_destroy(rkm);
+            continue;
+        }
+
         flb_plg_debug(ins, "kafka message received");
 
         ret = process_message(ctx, rkm);
@@ -175,6 +182,12 @@ static int in_kafka_collect(struct flb_input_instance *ins,
 
         /* TO-DO: commit the record based on `ret` */
         rd_kafka_commit(ctx->kafka.rk, NULL, 0);
+
+        /* Break from the loop when reaching the buf_limit if available */
+        if (ctx->ins->mem_buf_limit > 0 &&
+            ctx->log_encoder->output_length > ctx->ins->mem_buf_limit + 512) {
+            break;
+        }
     }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
