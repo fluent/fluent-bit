@@ -241,20 +241,20 @@ static int in_kafka_init(struct flb_input_instance *ins,
         goto init_error;
     }
 
-    if (ctx->ins->mem_buf_limit > 0 || ctx->buffer_chunk_size > 0) {
+    if (ctx->ins->mem_buf_limit > 0 || ctx->buffer_max_size > 0) {
         if (ctx->ins->mem_buf_limit) {
             ctx->polling_threshold = ctx->ins->mem_buf_limit;
         }
-        else if (ctx->buffer_chunk_size > 0) {
-            ctx->polling_threshold = ctx->buffer_chunk_size;
+        else if (ctx->buffer_max_size > 0) {
+            ctx->polling_threshold = ctx->buffer_max_size;
         }
 
         snprintf(conf_val, sizeof(conf_val), "%zu", ctx->polling_threshold - 512);
         res = rd_kafka_conf_set(kafka_conf, "fetch.max.bytes", conf_val,
                                 errstr, sizeof(errstr));
         if (res != RD_KAFKA_CONF_OK) {
-            flb_plg_error(ins, "Failed to set up fetch.max.bytes: %s",
-                          rd_kafka_err2str(err));
+            flb_plg_error(ins, "Failed to set up fetch.max.bytes: %s, val = %s",
+                          rd_kafka_err2str(err), conf_val);
             goto init_error;
         }
 
@@ -262,8 +262,8 @@ static int in_kafka_init(struct flb_input_instance *ins,
         res = rd_kafka_conf_set(kafka_conf, "receive.message.max.bytes", conf_val,
                                 errstr, sizeof(errstr));
         if (res != RD_KAFKA_CONF_OK) {
-            flb_plg_error(ins, "Failed to set up receive.message.max.bytes: %s",
-                          rd_kafka_err2str(err));
+            flb_plg_error(ins, "Failed to set up receive.message.max.bytes: %s, val = %s",
+                          rd_kafka_err2str(err), conf_val);
             goto init_error;
         }
     }
@@ -427,9 +427,9 @@ static struct flb_config_map config_map[] = {
     "Set the librdkafka options"
    },
    {
-    FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", (char *)NULL,
-    0, FLB_TRUE, offsetof(struct flb_in_kafka_config, buffer_chunk_size),
-    "Set the chunk size"
+    FLB_CONFIG_MAP_SIZE, "buffer_max_size", FLB_IN_KAFKA_BUFFER_MAX_SIZE,
+    0, FLB_TRUE, offsetof(struct flb_in_kafka_config, buffer_max_size),
+    "Set the maximum size of chunk"
    },
    /* EOF */
    {0}
