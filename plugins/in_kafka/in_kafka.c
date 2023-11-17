@@ -191,9 +191,11 @@ static int in_kafka_collect(struct flb_input_instance *ins,
     }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        flb_input_log_append(ins, NULL, 0,
-                             ctx->log_encoder->output_buffer,
-                             ctx->log_encoder->output_length);
+        if (ctx->log_encoder->output_length > 0) {
+            flb_input_log_append(ins, NULL, 0,
+                                 ctx->log_encoder->output_buffer,
+                                 ctx->log_encoder->output_length);
+        }
         ret = 0;
     }
     else {
