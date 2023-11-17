@@ -241,13 +241,8 @@ static int in_kafka_init(struct flb_input_instance *ins,
         goto init_error;
     }
 
-    if (ctx->ins->mem_buf_limit > 0 || ctx->buffer_max_size > 0) {
-        if (ctx->ins->mem_buf_limit) {
-            ctx->polling_threshold = ctx->ins->mem_buf_limit;
-        }
-        else if (ctx->buffer_max_size > 0) {
-            ctx->polling_threshold = ctx->buffer_max_size;
-        }
+    if (ctx->buffer_max_size > 0) {
+        ctx->polling_threshold = ctx->buffer_max_size;
 
         snprintf(conf_val, sizeof(conf_val), "%zu", ctx->polling_threshold - 512);
         res = rd_kafka_conf_set(kafka_conf, "fetch.max.bytes", conf_val,
