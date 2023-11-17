@@ -475,20 +475,12 @@ int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
     int overlimit = 0;
     struct mk_list *head;
     struct flb_output_instance *o_ins;
-    struct flb_input_instance *i_ins = ic->in;
-
 
     mk_list_foreach(head, &ic->in->config->outputs) {
         o_ins = mk_list_entry(head, struct flb_output_instance, _head);
 
         if ((o_ins->total_limit_size == -1) ||
             (flb_routes_mask_get_bit(ic->routes_mask, o_ins->id) == 0)) {
-            continue;
-        }
-
-        if (i_ins->storage_type == CIO_STORE_MEM) {
-            flb_plg_debug(i_ins, "plugin is in memory storage mode, storage.total_limit_size "
-                                "from output %s has no effect", o_ins->name);
             continue;
         }
 
@@ -516,12 +508,14 @@ int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
 int flb_input_chunk_place_new_chunk(struct flb_input_chunk *ic, size_t chunk_size)
 {
 	int overlimit;
+    struct flb_input_instance *i_ins = ic->in;
 
-    overlimit = flb_input_chunk_has_overlimit_routes(ic, chunk_size);
-    if (overlimit != 0) {
-        flb_input_chunk_find_space_new_data(ic, chunk_size, overlimit);
+    if (i_ins->storage_type == CIO_STORE_FS) {
+        overlimit = flb_input_chunk_has_overlimit_routes(ic, chunk_size);
+        if (overlimit != 0) {
+            flb_input_chunk_find_space_new_data(ic, chunk_size, overlimit);
+        }
     }
-
     return !flb_routes_mask_is_empty(ic->routes_mask);
 }
 
