@@ -1289,7 +1289,14 @@ int flb_input_chunk_set_up_down(struct flb_input_chunk *ic)
 
 int flb_input_chunk_is_up(struct flb_input_chunk *ic)
 {
-    return cio_chunk_is_up(ic->chunk);
+    int ret = FLB_FALSE;
+
+    ret = cio_chunk_is_up(ic->chunk);
+    if (ret == CIO_TRUE) {
+        ret = FLB_TRUE;
+    }
+
+    return ret;
 }
 
 int flb_input_chunk_down(struct flb_input_chunk *ic)
@@ -1501,7 +1508,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
 
     /* Update 'input' metrics */
 #ifdef FLB_HAVE_METRICS
-    if (ret == CIO_OK) {
+    if (ret == FLB_TRUE) {
         ic->added_records =  n_records;
         ic->total_records += n_records;
     }
