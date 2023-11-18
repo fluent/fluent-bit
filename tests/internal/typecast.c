@@ -347,6 +347,55 @@ void float_to_str()
     msgpack_unpacked_destroy(&result);
 }
 
+void map_to_json_str()
+{
+    msgpack_sbuffer sbuf;
+    msgpack_packer  pck;
+    msgpack_unpacked result;
+    size_t off = 0;
+
+    struct flb_typecast_rule *rule = NULL;
+    struct flb_typecast_value *val = NULL;
+
+    /* create input object */
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
+
+    /* map {"k":"v"}*/
+    msgpack_pack_map(&pck, 1);
+    msgpack_pack_str(&pck, 1);
+    msgpack_pack_str_body(&pck, "k", 1);
+    msgpack_pack_str(&pck, 1);
+    msgpack_pack_str_body(&pck, "v", 1);
+
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, sbuf.data, sbuf.size, &off);
+
+    /* create rule */
+    rule = flb_typecast_rule_create("map", 3, "json_string", 11);
+    if (!TEST_CHECK(rule != NULL)) {
+        TEST_MSG("failed to create rule");
+        exit(EXIT_FAILURE);
+    }
+
+    val = flb_typecast_value_create(result.data, rule);
+    if(!TEST_CHECK(val != NULL)){
+        TEST_MSG("failed to create value");
+        exit(EXIT_FAILURE);
+    }
+
+    TEST_CHECK(val->type == FLB_TYPECAST_TYPE_JSON_STR);
+    if(!TEST_CHECK(strstr(val->val.str, "\"k\":\"v\"") != NULL)) {
+        TEST_MSG("got %s. expect \"k\":\"v\"", val->val.str);
+    }
+
+    flb_typecast_rule_destroy(rule);
+    flb_typecast_value_destroy(val);
+
+    msgpack_sbuffer_destroy(&sbuf);
+    msgpack_unpacked_destroy(&result);
+}
+
 TEST_LIST = {
     {"str_to_int",     str_to_int},
     {"int_to_str",     int_to_str},
@@ -355,5 +404,6 @@ TEST_LIST = {
     {"bool_to_str",    bool_to_str},
     {"str_to_bool",    str_to_bool},
     {"str_to_hex",     str_to_hex},
+    {"map_to_json_str",map_to_json_str},
     {NULL, NULL}
 };
