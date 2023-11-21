@@ -2776,7 +2776,6 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
 #ifdef FLB_HAVE_METRICS
-        flb_upstream_conn_release(u_conn);
         cmt_counter_inc(ctx->cmt_failed_requests,
                         ts, 1, (char *[]) {name});
 
@@ -2784,8 +2783,8 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
 
         update_http_metrics(ctx, event_chunk, ts, STACKDRIVER_NET_ERROR);
-        update_retry_metric(ctx, event_chunk, ts, STACKDRIVER_NET_ERROR, FLB_RETRY);
 #endif
+        flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
