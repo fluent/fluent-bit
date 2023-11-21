@@ -8,7 +8,7 @@ set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  2)
 set(FLB_VERSION_MINOR  2)
-set(FLB_VERSION_PATCH  0)
+set(FLB_VERSION_PATCH  1)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -209,6 +209,7 @@ option(FLB_IN_OPENTELEMETRY            "Enable OpenTelemetry input plugin"      
 option(FLB_IN_ELASTICSEARCH            "Enable Elasticsearch (Bulk API) input plugin" Yes)
 option(FLB_IN_CALYPTIA_FLEET           "Enable Calyptia Fleet input plugin"           Yes)
 option(FLB_IN_SPLUNK                   "Enable Splunk HTTP HEC input plugin"          Yes)
+option(FLB_IN_PROCESS_EXPORTER_METRICS "Enable process exporter metrics input plugin" Yes)
 option(FLB_OUT_AZURE                   "Enable Azure output plugin"                   Yes)
 option(FLB_OUT_AZURE_BLOB              "Enable Azure output plugin"                   Yes)
 option(FLB_OUT_AZURE_LOGS_INGESTION    "Enable Azure Logs Ingestion output plugin"    Yes)
