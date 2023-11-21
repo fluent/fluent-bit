@@ -165,6 +165,5 @@ int refresh_oke_workload_security_token(struct federation_client *fed_client,
                                         flb_sds_t oke_sa_ca_file,
                                         flb_sds_t oke_sa_token_file,
                                         flb_sds_t *key_id);
-
 #endif //FLUENT_BIT_INCLUDE_FLUENT_BIT_ORACLE_FLB_ORACLE_CLIENT_H_
 
