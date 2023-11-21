@@ -176,30 +176,6 @@
 #include <fluent-bit/flb_hash_table.h>
 #include <monkey/mk_core/mk_list.h>
 
-#include "oci_client.h"
-
-struct federation_client {
-  struct flb_upstream *u;
-  flb_sds_t region;
-  flb_sds_t tenancy_id;
-  struct cert_retriever *leaf_cert_ret;
-  struct cert_retriever *intermediate_cert_ret;
-  // session key supplier
-  flb_sds_t private_key;
-  flb_sds_t public_key;
-  flb_sds_t key_id;
-  flb_sds_t security_token;
-  time_t expire;
-  pthread_mutex_t lock;
-};
-
-struct cert_retriever {
-  struct flb_upstream *u;
-  flb_sds_t cert_pem;
-  X509 *cert;
-  flb_sds_t private_key_pem;
-};
-
 struct metadata_obj {
     flb_sds_t key;
     flb_sds_t val;

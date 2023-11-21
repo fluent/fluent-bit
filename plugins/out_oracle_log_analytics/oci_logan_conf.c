@@ -297,7 +297,8 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
     }
 
     if (strcasecmp(ctx->auth_type, USER_PRINCIPAL) == 0) {
-        if (create_pk_context(ctx->key_file, NULL, ctx) < 0) {
+        if (create_pk_context(ctx->key_file, NULL,
+                              ctx->ins, &ctx->private_key) < 0) {
             flb_plg_error(ctx->ins, "failed to create pk context");
             flb_oci_logan_conf_destroy(ctx);
             return NULL;
