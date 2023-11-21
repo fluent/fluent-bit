@@ -394,12 +394,13 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
             flb_stackdriver_conf_destroy(ctx);
             return NULL;
         }
-        
+
         /* Service Account Email */
         if (ctx->client_email == NULL) {
             tmp = getenv("SERVICE_ACCOUNT_EMAIL");
             if (tmp) {
                 ctx->creds->client_email = flb_sds_create(tmp);
+                ctx->client_email = ctx->creds->client_email;
             }
         }
 
@@ -408,11 +409,9 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
             tmp = getenv("SERVICE_ACCOUNT_SECRET");
             if (tmp) {
                 ctx->creds->private_key = flb_sds_create(tmp);
+                ctx->private_key = ctx->creds->private_key;
             }
         }
-
-        ctx->private_key = ctx->creds->private_key;
-        ctx->client_email = ctx->creds->client_email;
     }
 
     /*

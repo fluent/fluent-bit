@@ -46,6 +46,11 @@ extern struct flb_aws_error_reporter *error_reporter;
 #include <openssl/rand.h>
 #endif
 
+#ifdef FLB_SYSTEM_MACOS
+#include <CoreFoundation/CoreFoundation.h>
+#include <IOKit/IOKitLib.h>
+#endif
+
 /*
  * The following block descriptor describes the private use unicode character range
  * used for denoting invalid utf-8 fragments. Invalid fragment 0xCE would become
@@ -168,9 +173,9 @@ int flb_utils_set_daemon(struct flb_config *config)
     pid_t pid;
 
     if ((pid = fork()) < 0){
-		flb_error("Failed creating to switch to daemon mode (fork failed)");
+        flb_error("Failed creating to switch to daemon mode (fork failed)");
         exit(EXIT_FAILURE);
-	}
+    }
 
     if (pid > 0) { /* parent */
         exit(EXIT_SUCCESS);
@@ -185,7 +190,7 @@ int flb_utils_set_daemon(struct flb_config *config)
     if (chdir("/") < 0) { /* make sure we can unmount the inherited filesystem */
         flb_error("Unable to unmount the inherited filesystem");
         exit(EXIT_FAILURE);
-	}
+    }
 
     /* Our last STDOUT messages */
     flb_info("switching to background mode (PID=%ld)", (long) getpid());
@@ -1386,6 +1391,76 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
     if (ret == 0) {
         *out_id = id;
         *out_size = bytes;
+        return 0;
+    }
+#elif defined(FLB_SYSTEM_WINDOWS)
+    LSTATUS status;
+    HKEY hKey = 0;
+    DWORD dwType = REG_SZ;
+    char buf[255] = {0};
+    DWORD dwBufSize = sizeof(buf)-1;
+
+    status = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+                          TEXT("SOFTWARE\\Microsoft\\Cryptography"),
+                          0,
+                          KEY_QUERY_VALUE,
+                          &hKey);
+
+    if (status != ERROR_SUCCESS) {
+        return -1;
+    }
+
+    status = RegQueryValueEx(hKey, TEXT("MachineGuid"), 0, &dwType, (LPBYTE)buf, &dwBufSize );
+    RegCloseKey(hKey);
+
+    if (status == ERROR_SUCCESS) {
+        *out_id = flb_calloc(1, dwBufSize+1);
+
+        if (*out_id == NULL) {
+            return -1;
+        }
+
+        *out_size = dwBufSize;
+        return 0;
+    }
+#elif defined (FLB_SYSTEM_MACOS)
+    bool bret;
+    CFStringRef serialNumber;
+    io_service_t platformExpert = IOServiceGetMatchingService(kIOMainPortDefault,
+        IOServiceMatching("IOPlatformExpertDevice"));
+
+    if (platformExpert) {
+        CFTypeRef serialNumberAsCFString =
+            IORegistryEntryCreateCFProperty(platformExpert,
+                                        CFSTR(kIOPlatformSerialNumberKey),
+                                        kCFAllocatorDefault, 0);
+        if (serialNumberAsCFString) {
+            serialNumber = (CFStringRef)serialNumberAsCFString;
+        }
+        else {
+            IOObjectRelease(platformExpert);
+            return -1;
+        }
+        IOObjectRelease(platformExpert);
+
+        *out_size = CFStringGetLength(serialNumber);
+        *out_id = flb_malloc(CFStringGetLength(serialNumber)+1);
+
+        if (*out_id == NULL) {
+            return -1;
+        }
+
+        bret = CFStringGetCString(serialNumber, *out_id,
+                                  CFStringGetLength(serialNumber)+1,
+                                  kCFStringEncodingUTF8);
+        CFRelease(serialNumber);
+
+        if (bret == false) {
+            flb_free(*out_size);
+            *out_size = 0;
+            return -1;
+        }
+
         return 0;
     }
 #endif

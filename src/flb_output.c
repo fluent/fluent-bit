@@ -1220,27 +1220,6 @@ int flb_output_init_all(struct flb_config *config)
         }
 #endif
 
-#ifdef FLB_HAVE_PROXY_GO
-        /* Proxy plugins have their own initialization */
-        if (p->type == FLB_OUTPUT_PLUGIN_PROXY) {
-            ret = flb_plugin_proxy_output_init(p->proxy, ins, config);
-            if (ret == -1) {
-                flb_output_instance_destroy(ins);
-                return -1;
-            }
-
-            /* Multi-threading enabled if configured */
-            ret = flb_output_enable_multi_threading(ins, config);
-            if (ret == -1) {
-                flb_error("[output] could not start thread pool for '%s' plugin",
-                          p->name);
-                return -1;
-            }
-
-            continue;
-        }
-#endif
-
 #ifdef FLB_HAVE_TLS
         if (ins->use_tls == FLB_TRUE) {
             ins->tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
@@ -1382,6 +1361,10 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
         flags |= FLB_IO_IPV6;
     }
         /* keepalive */
+    if (ins->net_setup.keepalive == FLB_TRUE) {
+        flags |= FLB_IO_TCP_KA;
+    }
+
     if (ins->net_setup.keepalive == FLB_TRUE) {
         flags |= FLB_IO_TCP_KA;
     }

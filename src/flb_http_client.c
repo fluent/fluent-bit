@@ -1030,7 +1030,7 @@ static void http_headers_destroy(struct flb_http_client *c)
 int flb_http_set_keepalive(struct flb_http_client *c)
 {
     /* check if 'keepalive' mode is enabled in the Upstream connection */
-    if (flb_stream_is_keepalive(c->u_conn->stream)) {
+    if (flb_stream_is_keepalive(c->u_conn->stream) == FLB_FALSE) {
         return -1;
     }
 
@@ -1185,6 +1185,9 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
     size_t bytes_header = 0;
     size_t bytes_body = 0;
     char *tmp;
+
+    /* Try to add keep alive header */
+    flb_http_set_keepalive(c);
 
     /* Append pending headers */
     ret = http_headers_compose(c);

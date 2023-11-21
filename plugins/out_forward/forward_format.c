@@ -149,6 +149,17 @@ static int append_options(struct flb_forward *ctx,
         msgpack_pack_str(mp_pck, 4);
         msgpack_pack_str_body(mp_pck, "gzip", 4);
     }
+    else if (fc->compress == COMPRESS_GZIP &&
+             /* for metrics or traces, we're also able to send as
+              * gzipped payloads */
+             (event_type == FLB_EVENT_TYPE_METRICS ||
+              event_type == FLB_EVENT_TYPE_TRACES)) {
+        flb_mp_map_header_append(&mh);
+        msgpack_pack_str(mp_pck, 10);
+        msgpack_pack_str_body(mp_pck, "compressed", 10);
+        msgpack_pack_str(mp_pck, 4);
+        msgpack_pack_str_body(mp_pck, "gzip", 4);
+    }
 
     /* event type (FLB_EVENT_TYPE_LOGS, FLB_EVENT_TYPE_METRICS, FLB_EVENT_TYPE_TRACES) */
     flb_mp_map_header_append(&mh);

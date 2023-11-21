@@ -278,6 +278,17 @@ static struct mk_list *apply_filters(struct flb_docker *ctx,
     return filtered;
 }
 
+/*
+ * Calculate which cgroup version is used on host by checing existence of
+ * cgroup.controllers file (if it exists, it is V2).
+ */
+static int get_cgroup_version(struct flb_docker *ctx)
+{
+    char path[SYSFS_FILE_PATH_SIZE];
+    snprintf(path, sizeof(path), "%s/%s", ctx->sysfs_path, CGROUP_V2_PATH);
+    return (access(path, F_OK) == 0) ? CGROUP_V2 : CGROUP_V1;
+}
+
 /* Init Docker input */
 static int cb_docker_init(struct flb_input_instance *in,
                           struct flb_config *config, void *data)
@@ -292,24 +303,35 @@ static int cb_docker_init(struct flb_input_instance *in,
         return -1;
     }
     ctx->ins = in;
-    in_docker_set_cgroup_api_v1(&ctx->cgroup_api); /* TODO: support cgroup v2*/
 
     init_filter_lists(in, ctx);
 
     /* Set the context */
     flb_input_set_context(in, ctx);
-    
+
     /* Load the config map */
     ret = flb_input_config_map_set(in, (void *)ctx);
     if (ret == -1) {
         flb_free(ctx);
         flb_plg_error(in, "unable to load configuration.");
         return -1;
-    }    
-    
+    }
+
     if (ctx->interval_sec <= 0 && ctx->interval_nsec <= 0) {
         ctx->interval_sec = atoi(DEFAULT_INTERVAL_SEC);
         ctx->interval_nsec = atoi(DEFAULT_INTERVAL_NSEC);
+    }
+
+    /* Detect cgroups version v2 or v1 */
+    if (get_cgroup_version(ctx) == CGROUP_V2) {
+        flb_plg_info(ctx->ins, "Detected cgroups v2");
+        in_docker_set_cgroup_api_v2(&ctx->cgroup_api);
+        ctx->cgroup_version = CGROUP_V2;
+    }
+    else {
+        flb_plg_info(ctx->ins, "Detected cgroups v1");
+        in_docker_set_cgroup_api_v1(&ctx->cgroup_api);
+        ctx->cgroup_version = CGROUP_V1;
     }
 
     /* Set our collector based on time, CPU usage every 1 second */
@@ -460,7 +482,7 @@ static int cb_docker_collect(struct flb_input_instance *ins,
     (void) config;
 
     /* Get current active dockers. */
-    active = ctx->cgroup_api.get_active_docker_ids();
+    active = ctx->cgroup_api.get_active_docker_ids(ctx);
 
     filtered = apply_filters(ctx, active);
     if (!filtered) {
@@ -540,6 +562,16 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_STR, "exclude", NULL,
       0, FLB_FALSE, 0,
       "A space-separated list of containers to exclude"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "path.sysfs", DEFAULT_SYSFS_PATH,
+      0, FLB_TRUE, offsetof(struct flb_docker, sysfs_path),
+      "sysfs mount point"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "path.containers", DEFAULT_CONTAINERS_PATH,
+      0, FLB_TRUE, offsetof(struct flb_docker, containers_path),
+      "containers directory"
     },
     /* EOF */
     {0}

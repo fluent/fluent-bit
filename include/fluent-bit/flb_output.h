@@ -64,6 +64,11 @@
 #include <fluent-bit/flb_regex.h>
 #endif
 
+#ifdef FLB_HAVE_CHUNK_TRACE
+/* include prototype directly to avoid cyclical include ... */
+int flb_chunk_trace_output(struct flb_chunk_trace *trace, struct flb_output_instance *output, int ret);
+#endif
+
 /* Output plugin masks */
 #define FLB_OUTPUT_NET            32  /* output address may set host and port */
 #define FLB_OUTPUT_PLUGIN_CORE     0
@@ -940,7 +945,16 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
 
     flb_task_release_lock(task);
 
+#ifdef FLB_HAVE_CHUNK_TRACE
+    if (task->event_chunk) {
+        if (task->event_chunk->trace) {
+             flb_chunk_trace_output(task->event_chunk->trace, o_ins, ret);
+        }
+    }
+#endif
+
     if (out_flush->processed_event_chunk) {
+
         if (task->event_chunk->data != out_flush->processed_event_chunk->data) {
             flb_free(out_flush->processed_event_chunk->data);
         }
@@ -1075,6 +1089,8 @@ void *flb_output_get_cmt_instance(struct flb_output_instance *ins);
 #endif
 void flb_output_net_default(const char *host, int port,
                             struct flb_output_instance *ins);
+int flb_output_enable_multi_threading(struct flb_output_instance *ins,
+                                      struct flb_config *config);
 const char *flb_output_name(struct flb_output_instance *ins);
 void flb_output_pre_run(struct flb_config *config);
 void flb_output_exit(struct flb_config *config);

@@ -292,8 +292,6 @@ static void process_flb_log_append(struct flb_splunk *ctx, msgpack_object *recor
                                  flb_sds_len(tag_from_record),
                                  ctx->log_encoder.output_buffer,
                                  ctx->log_encoder.output_length);
-
-            flb_sds_destroy(tag_from_record);
         }
         else if (tag) {
             flb_input_log_append(ctx->ins, tag, flb_sds_len(tag),
@@ -309,6 +307,10 @@ static void process_flb_log_append(struct flb_splunk *ctx, msgpack_object *recor
     }
     else {
         flb_plg_error(ctx->ins, "Error encoding record : %d", ret);
+    }
+
+    if (tag_from_record) {
+        flb_sds_destroy(tag_from_record);
     }
 }
 

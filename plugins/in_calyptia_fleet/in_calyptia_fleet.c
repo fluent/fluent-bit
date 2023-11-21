@@ -67,7 +67,11 @@ struct flb_in_calyptia_fleet_config {
     long config_timestamp;
 
     flb_sds_t api_key;
+
     flb_sds_t fleet_id;
+    /* flag used to mark fleet_id for release when found automatically. */
+    int fleet_id_found;
+
     flb_sds_t fleet_name;
     flb_sds_t machine_id;
     flb_sds_t config_dir;
@@ -81,8 +85,6 @@ struct flb_in_calyptia_fleet_config {
 
     /* Networking */
     struct flb_upstream *u;
-
-    int event_fd;
 
     int collect_fd;
 };
@@ -267,6 +269,35 @@ static int is_cur_fleet_config(struct flb_in_calyptia_fleet_config *ctx, struct 
     return ret;
 }
 
+static int is_old_fleet_config(struct flb_in_calyptia_fleet_config *ctx, struct flb_config *cfg)
+{
+    flb_sds_t cfgcurname;
+    int ret = FLB_FALSE;
+
+
+    if (cfg == NULL) {
+        return FLB_FALSE;
+    }
+
+    if (cfg->conf_path_file == NULL) {
+        return FLB_FALSE;
+    }
+
+    cfgcurname = old_fleet_config_filename(ctx);
+    if (cfgcurname == NULL) {
+        flb_plg_error(ctx->ins, "unable to allocate configuration name");
+        return FLB_FALSE;
+    }
+
+    if (strcmp(cfgcurname, cfg->conf_path_file) == 0) {
+        ret = FLB_TRUE;
+    }
+
+    flb_sds_destroy(cfgcurname);
+
+    return ret;
+}
+
 static int is_timestamped_fleet_config(struct flb_in_calyptia_fleet_config *ctx, struct flb_config *cfg)
 {
     char *fname;
@@ -309,6 +340,7 @@ static int is_fleet_config(struct flb_in_calyptia_fleet_config *ctx, struct flb_
 
     return is_new_fleet_config(ctx, cfg) ||
            is_cur_fleet_config(ctx, cfg) ||
+           is_old_fleet_config(ctx, cfg) ||
            is_timestamped_fleet_config(ctx, cfg);
 }
 
@@ -347,6 +379,7 @@ static void *do_reload(void *data)
     reload->flb->config->enable_hot_reload = FLB_TRUE;
     reload->flb->config->conf_path_file = reload->cfg_path;
 
+    flb_free(reload);
     sleep(5);
 #ifndef FLB_SYSTEM_WINDOWS
     kill(getpid(), SIGHUP);
@@ -358,21 +391,14 @@ static void *do_reload(void *data)
 
 static int test_config_is_valid(flb_sds_t cfgpath)
 {
-    struct flb_config *config;
     struct flb_cf *conf;
     int ret = FLB_FALSE;
 
 
-    config = flb_config_init();
-
-    if (config == NULL) {
-        goto config_init_error;
-    }
-
     conf = flb_cf_create();
 
     if (conf == NULL) {
-        goto cf_create_error;
+        goto config_init_error;
     } 
 
     conf = flb_cf_create_from_file(conf, cfgpath);
@@ -381,22 +407,10 @@ static int test_config_is_valid(flb_sds_t cfgpath)
         goto cf_create_from_file_error;
     } 
 
-    if (flb_config_load_config_format(config, conf)) {
-        goto cf_load_config_format_error;
-    }
-
-    if (flb_reload_property_check_all(config)) {
-       goto cf_property_check_error;
-    }
-
     ret = FLB_TRUE;
 
-cf_property_check_error:
-cf_load_config_format_error:
 cf_create_from_file_error:
     flb_cf_destroy(conf);
-cf_create_error:
-    flb_config_exit(config);
 config_init_error:
     return ret;
 }
@@ -419,6 +433,7 @@ static int execute_reload(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t cf
             flb_input_collector_resume(ctx->collect_fd, ctx->ins);
         }
 
+        flb_sds_destroy(cfgpath);
         return FLB_FALSE;
     }
 
@@ -435,6 +450,7 @@ static int execute_reload(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t cf
             flb_input_collector_resume(ctx->collect_fd, ctx->ins);
         }
 
+        flb_sds_destroy(cfgpath);
         return FLB_FALSE;
     }
 
@@ -581,6 +597,7 @@ static ssize_t parse_fleet_search_json(struct flb_in_calyptia_fleet_config *ctx,
                             return -1;
                         }
 
+                        ctx->fleet_id_found = 1;
                         ctx->fleet_id = flb_sds_create_len(cur->val.via.str.ptr,
                                                            cur->val.via.str.size);
                         break;
@@ -669,27 +686,34 @@ static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ct
 
     if (ret != 0) {
         flb_plg_error(ctx->ins, "http do error");
+        flb_http_client_destroy(client);
         return -1;
     }
 
     if (client->resp.status != 200) {
         flb_plg_error(ctx->ins, "search http status code error: %d", client->resp.status);
+        flb_http_client_destroy(client);
         return -1;
     }
 
     if (client->resp.payload_size <= 0) {
         flb_plg_error(ctx->ins, "empty response");
+        flb_http_client_destroy(client);
         return -1;
     }
 
     if (parse_fleet_search_json(ctx, client->resp.payload, client->resp.payload_size) == -1) {
         flb_plg_error(ctx->ins, "unable to find fleet: %s", ctx->fleet_name);
+        flb_http_client_destroy(client);
         return -1;
     }
 
     if (ctx->fleet_id == NULL) {
+        flb_http_client_destroy(client);
         return -1;
     }
+
+    flb_http_client_destroy(client);
     return 0;
 }
 
@@ -720,6 +744,91 @@ ssize_t readlink(const char *path, char *realpath, size_t srealpath) {
 
 #endif
 
+#ifdef FLB_SYSTEM_WINDOWS
+#define _mkdir(a, b) mkdir(a)
+#else
+#define _mkdir(a, b) mkdir(a, b)
+#endif
+
+/* recursively create directories, based on:
+ *   https://stackoverflow.com/a/2336245
+ * who found it at:
+ *   http://nion.modprobe.de/blog/archives/357-Recursive-directory-creation.html
+ */
+static int __mkdir(const char *dir, int perms) {
+    char tmp[255];
+    char *ptr = NULL;
+    size_t len;
+    int ret;
+
+    ret = snprintf(tmp, sizeof(tmp),"%s",dir);
+    if (ret > sizeof(tmp)) {
+        flb_error("directory too long for __mkdir: %s", dir);
+        return -1;
+    }
+
+    len = strlen(tmp);
+
+    if (tmp[len - 1] == PATH_SEPARATOR[0]) {
+        tmp[len - 1] = 0;
+    }
+
+#ifndef FLB_SYSTEM_WINDOWS
+    for (ptr = tmp + 1; *ptr; ptr++) {
+#else
+    for (ptr = tmp + 3; *ptr; ptr++) {
+#endif
+
+        if (*ptr == PATH_SEPARATOR[0]) {
+            *ptr = 0;
+            if (access(tmp, F_OK) != 0) {
+                ret = _mkdir(tmp, perms);
+                if (ret != 0) {
+                    return ret;
+                }
+            }
+            *ptr = PATH_SEPARATOR[0];
+        }
+    }
+
+    return _mkdir(tmp, perms);
+}
+
+static int create_fleet_directory(struct flb_in_calyptia_fleet_config *ctx)
+{
+    flb_sds_t myfleetdir;
+
+    flb_plg_debug(ctx->ins, "checking for configuration directory=%s", ctx->config_dir);
+    if (access(ctx->config_dir, F_OK) != 0) {
+        if (__mkdir(ctx->config_dir, 0700) != 0) {
+            flb_plg_error(ctx->ins, "unable to create fleet config directory");
+            return -1;
+        }
+    }
+
+    myfleetdir = flb_sds_create_size(256);
+
+    if (ctx->fleet_name != NULL) {
+        flb_sds_printf(&myfleetdir, "%s" PATH_SEPARATOR "%s" PATH_SEPARATOR "%s",
+                       ctx->config_dir, ctx->machine_id, ctx->fleet_name);
+    }
+    else {
+        flb_sds_printf(&myfleetdir, "%s" PATH_SEPARATOR "%s" PATH_SEPARATOR "%s",
+                       ctx->config_dir, ctx->machine_id, ctx->fleet_id);
+    }
+
+    flb_plg_debug(ctx->ins, "checking for fleet directory=%s", myfleetdir);
+    if (access(myfleetdir, F_OK) != 0) {
+        if (__mkdir(myfleetdir, 0700) !=0) {
+            flb_plg_error(ctx->ins, "unable to create fleet specific directory");
+            return -1;
+        }
+    }
+
+    flb_sds_destroy(myfleetdir);
+    return 0;
+}
+
 /* cb_collect callback */
 static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
                                      struct flb_config *config, 
@@ -732,14 +841,14 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
     flb_sds_t cfgnewname;
     flb_sds_t cfgoldname;
     flb_sds_t cfgcurname;
-    flb_sds_t header;
+    flb_sds_t header = NULL;
     flb_sds_t hdr;
     FILE *cfgfp;
     const char *fbit_last_modified;
     int fbit_last_modified_len;
     struct flb_tm tm_last_modified = { 0 };
     time_t time_last_modified;
-    char *data;
+    char *data = NULL;
     size_t b_sent;
     int ret = -1;
 #ifdef FLB_SYSTEM_WINDOWS
@@ -814,7 +923,7 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
 
     if (ret == -1) {
         flb_plg_error(ctx->ins, "unable to get last-modified header");
-        goto http_error;
+        goto payload_error;
     }
 
     flb_strptime(fbit_last_modified, "%a, %d %B %Y %H:%M:%S GMT", &tm_last_modified);
@@ -823,11 +932,16 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
     cfgname = time_fleet_config_filename(ctx, time_last_modified);
 
     if (access(cfgname, F_OK) == -1 && errno == ENOENT) {
+        if (create_fleet_directory(ctx) != 0) {
+            flb_plg_error(ctx->ins, "unable to create fleet directories");
+            goto http_error;
+        }
         cfgfp = fopen(cfgname, "w+");
 
         if (cfgfp == NULL) {
             flb_plg_error(ctx->ins, "unable to open configuration file: %s", cfgname);
-            goto http_error;
+            flb_sds_destroy(cfgname);
+            goto payload_error;
         }
 
         header = flb_sds_create_size(4096);
@@ -876,17 +990,20 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
         }
         if (hdr == NULL) {
             fclose(cfgfp);
-            goto http_error;
+            flb_sds_destroy(cfgname);
+            goto header_error;
         }
         if (ctx->machine_id) {
             hdr = flb_sds_printf(&header, "    machine_id %s\n", ctx->machine_id);
             if (hdr == NULL) {
                 fclose(cfgfp);
-                goto http_error;
+                flb_sds_destroy(cfgname);
+                goto header_error;
             }
         }
         fwrite(header, strlen(header), 1, cfgfp);
         flb_sds_destroy(header);
+        header = NULL;
         fwrite(data, client->resp.payload_size, 1, cfgfp);
         fclose(cfgfp);
 
@@ -909,13 +1026,13 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
             flb_errno();
 #endif
         }
+
+        flb_sds_destroy(cfgnewname);
     }
 
     if (ctx->config_timestamp < time_last_modified) {
         flb_plg_debug(ctx->ins, "new configuration is newer than current: %ld < %ld",
                       ctx->config_timestamp, time_last_modified);
-        flb_plg_info(ctx->ins, "force the reloading of the configuration file=%d.", ctx->event_fd);
-        flb_sds_destroy(data);
 
         if (execute_reload(ctx, cfgname) == FLB_FALSE) {
             cfgoldname = old_fleet_config_filename(ctx);
@@ -923,95 +1040,33 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
             rename(cfgoldname, cfgcurname);
             flb_sds_destroy(cfgcurname);
             flb_sds_destroy(cfgoldname);
+            flb_sds_destroy(cfgname);
             goto reload_error;
         }
-        else {
-            FLB_INPUT_RETURN(0);
-        }
+    }
+    else {
+        flb_sds_destroy(cfgname);
     }
 
     ret = 0;
 
 reload_error:
+header_error:
+    if (header) {
+        flb_sds_destroy(header);
+    }
+payload_error:
+    if (data) {
+        flb_sds_destroy(data);
+    }
+
 http_error:
+    flb_plg_debug(ctx->ins, "freeing http client in fleet collect");
     flb_http_client_destroy(client);
 client_error:
     flb_upstream_conn_release(u_conn);
 conn_error:
     FLB_INPUT_RETURN(ret);
-}
-
-#ifdef FLB_SYSTEM_WINDOWS
-#define _mkdir(a, b) mkdir(a)
-#else
-#define _mkdir(a, b) mkdir(a, b)
-#endif
-
-/* recursively create directories, based on:
- *   https://stackoverflow.com/a/2336245
- * who found it at:
- *   http://nion.modprobe.de/blog/archives/357-Recursive-directory-creation.html
- */
-static int __mkdir(const char *dir, int perms) {
-    char tmp[255];
-    char *ptr = NULL;
-    size_t len;
-    int ret;
-
-    ret = snprintf(tmp, sizeof(tmp),"%s",dir);
-    if (ret > sizeof(tmp)) {
-        return -1;
-    }
-
-    len = strlen(tmp);
-    if (tmp[len - 1] == '/') {
-        tmp[len - 1] = 0;
-    }
-
-    for (ptr = tmp + 1; *ptr; ptr++) {
-        if (*ptr == '/') {
-            *ptr = 0;
-            if (access(tmp, F_OK) != 0) {
-                ret = _mkdir(tmp, perms);
-                if (ret != 0) {
-                    return ret;
-                }
-            }
-            *ptr = '/';
-        }
-    }
-    return _mkdir(tmp, perms);
-}
-
-static int create_fleet_directory(struct flb_in_calyptia_fleet_config *ctx)
-{
-    flb_sds_t myfleetdir;
-
-    if (access(ctx->config_dir, F_OK) != 0) {
-        if (__mkdir(ctx->config_dir, 0700) != 0) {
-            return -1;
-        }
-    }
-
-    myfleetdir = flb_sds_create_size(256);
-
-    if (ctx->fleet_name != NULL) {
-        flb_sds_printf(&myfleetdir, "%s" PATH_SEPARATOR "%s" PATH_SEPARATOR "%s",
-                       ctx->config_dir, ctx->machine_id, ctx->fleet_name);
-    }
-    else {
-        flb_sds_printf(&myfleetdir, "%s" PATH_SEPARATOR "%s" PATH_SEPARATOR "%s",
-                       ctx->config_dir, ctx->machine_id, ctx->fleet_id);
-    }
-
-    if (access(myfleetdir, F_OK) != 0) {
-        if (__mkdir(myfleetdir, 0700) !=0) {
-            return -1;
-        }
-    }
-
-    flb_sds_destroy(myfleetdir);
-    return 0;
 }
 
 static int load_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
@@ -1024,6 +1079,7 @@ static int load_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
     ssize_t len;
 
     if (create_fleet_directory(ctx) != 0) {
+        flb_plg_error(ctx->ins, "unable to create fleet directories");
         return -1;
     }
 
@@ -1120,6 +1176,7 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
 
         if (tmpdir == NULL) {
             flb_plg_error(in, "unable to find temporary directory (%%TEMP%%).");
+            flb_free(ctx);
             return -1;
         }
 
@@ -1127,6 +1184,7 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
 
         if (ctx->config_dir == NULL) {
             flb_plg_error(in, "unable to allocate config-dir.");
+            flb_free(ctx);
             return -1;
         }
         flb_sds_printf(&ctx->config_dir, "%s" PATH_SEPARATOR "%s", tmpdir, "calyptia-fleet");
@@ -1175,6 +1233,7 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
 
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not initialize collector for fleet input plugin");
+        flb_upstream_destroy(ctx->u);
         flb_free(ctx);
         return -1;
     }
@@ -1200,6 +1259,14 @@ static int in_calyptia_fleet_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_in_calyptia_fleet_config *ctx = (struct flb_in_calyptia_fleet_config *)data;
+
+    if (ctx->fleet_url) {
+        flb_sds_destroy(ctx->fleet_url);
+    }
+
+    if (ctx->fleet_id && ctx->fleet_id_found) {
+        flb_sds_destroy(ctx->fleet_id);
+    }
 
     flb_input_collector_delete(ctx->collect_fd, ctx->ins);
     flb_upstream_destroy(ctx->u);
@@ -1233,11 +1300,6 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "machine_id", NULL,
      0, FLB_TRUE, offsetof(struct flb_in_calyptia_fleet_config, machine_id),
      "Agent Machine ID."
-    },
-    {
-      FLB_CONFIG_MAP_INT, "event_fd", "-1",
-      0, FLB_TRUE, offsetof(struct flb_in_calyptia_fleet_config, event_fd),
-      "Used internally to set the event fd."
     },
     {
       FLB_CONFIG_MAP_INT, "interval_sec", DEFAULT_INTERVAL_SEC,

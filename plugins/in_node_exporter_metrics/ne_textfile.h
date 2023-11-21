@@ -22,7 +22,6 @@
 
 #include "ne.h"
 
-int ne_textfile_init(struct flb_ne *ctx);
-int ne_textfile_update(struct flb_ne *ctx);
+extern struct flb_ne_collector textfile_collector;
 
 #endif

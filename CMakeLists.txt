@@ -265,6 +265,7 @@ option(FLB_FILTER_EXPECT               "Enable expect filter"                   
 option(FLB_FILTER_GREP                 "Enable grep filter"                           Yes)
 option(FLB_FILTER_MODIFY               "Enable modify filter"                         Yes)
 option(FLB_FILTER_STDOUT               "Enable stdout filter"                         Yes)
+option(FLB_FILTER_SYSINFO              "Enable sysinfo filter"                        Yes)
 option(FLB_FILTER_PARSER               "Enable parser filter"                         Yes)
 option(FLB_FILTER_KUBERNETES           "Enable kubernetes filter"                     Yes)
 option(FLB_FILTER_REWRITE_TAG          "Enable tag rewrite filter"                    Yes)
@@ -393,6 +394,11 @@ if (FLB_SYSTEM_MACOS)
   # build tweaks
   include(cmake/macos-setup.cmake)
 endif()
+
+# Build for SystemZ - s390x arch
+if (FLB_SYSTEM_LINUX)
+  include(cmake/s390x.cmake)
+endif ()
 
 # Extract Git commit information for debug output.
 # Note that this is only set when cmake is run, the intent here is to use in CI for verification of releases so is acceptable.

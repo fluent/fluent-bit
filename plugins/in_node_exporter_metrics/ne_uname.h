@@ -22,7 +22,6 @@
 
 #include "ne.h"
 
-int ne_uname_init(struct flb_ne *ctx);
-int ne_uname_update(struct flb_ne *ctx);
+extern struct flb_ne_collector uname_collector;
 
 #endif

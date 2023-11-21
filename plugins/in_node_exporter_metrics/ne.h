@@ -30,6 +30,14 @@
 #include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_metrics.h>
 
+/* Default enabled metrics */
+
+#ifdef __linux__
+#define NE_DEFAULT_ENABLED_METRICS "cpu,cpufreq,meminfo,diskstats,filesystem,uname,stat,time,loadavg,vmstat,netdev,filefd,systemd,nvme"
+#elif __APPLE__
+#define NE_DEFAULT_ENABLED_METRICS "cpu,loadavg,meminfo,diskstats,uname,netdev"
+#endif
+
 /* filesystem: regex for ignoring mount points and filesystem types */
 
 #define IGNORED_MOUNT_POINTS "^/(dev|proc|run/credentials/.+|sys|var/lib/docker/.+|var/lib/containers/storage/.+)($|/)"
@@ -48,39 +56,9 @@ struct flb_ne {
     int coll_fd;                                      /* collector fd     */
     struct cmt *cmt;                                  /* cmetrics context */
     struct flb_input_instance *ins;                   /* input instance   */
-    struct flb_callback *callback;                    /* metric callback */
     struct mk_list *metrics;                          /* enabled metrics */
 
-    /* Individual intervals for metrics */
-    int cpu_scrape_interval;
-    int cpufreq_scrape_interval;
-    int meminfo_scrape_interval;
-    int diskstats_scrape_interval;
-    int filesystem_scrape_interval;
-    int uname_scrape_interval;
-    int stat_scrape_interval;
-    int time_scrape_interval;
-    int loadavg_scrape_interval;
-    int vmstat_scrape_interval;
-    int netdev_scrape_interval;
-    int filefd_scrape_interval;
-    int textfile_scrape_interval;
-    int systemd_scrape_interval;
-
-    int coll_cpu_fd;                                    /* collector fd (cpu)    */
-    int coll_cpufreq_fd;                                /* collector fd (cpufreq)  */
-    int coll_meminfo_fd;                                /* collector fd (meminfo)  */
-    int coll_diskstats_fd;                              /* collector fd (diskstat) */
-    int coll_filesystem_fd;                             /* collector fd (filesystem) */
-    int coll_uname_fd;                                  /* collector fd (uname)    */
-    int coll_stat_fd;                                   /* collector fd (stat)    */
-    int coll_time_fd;                                   /* collector fd (time)    */
-    int coll_loadavg_fd;                                /* collector fd (loadavg)    */
-    int coll_vmstat_fd;                                 /* collector fd (vmstat)    */
-    int coll_netdev_fd;                                 /* collector fd (netdev)    */
-    int coll_filefd_fd;                                 /* collector fd (filefd)    */
-    int coll_textfile_fd;                               /* collector fd (textfile)  */
-    int coll_systemd_fd ;                               /* collector fd (systemd)  */
+    struct mk_list collectors;
 
     /*
      * Metrics Contexts
@@ -108,6 +86,22 @@ struct flb_ne {
     /* meminfo hash table */
     struct flb_hash_table *meminfo_ht;
 
+#ifdef FLB_SYSTEM_MACOS
+    /* meminfo_darwin */
+    struct cmt_gauge *darwin_free_bytes;
+    struct cmt_gauge *darwin_active_bytes;
+    struct cmt_gauge *darwin_compressed_bytes;
+    struct cmt_gauge *darwin_inactive_bytes;
+    struct cmt_gauge *darwin_wired_bytes;
+    struct cmt_gauge *darwin_internal_bytes;
+    struct cmt_gauge *darwin_purgeable_bytes;
+    struct cmt_counter *darwin_pageins_bytes;
+    struct cmt_counter *darwin_pageouts_bytes;
+    struct cmt_gauge *darwin_swap_used_bytes;
+    struct cmt_gauge *darwin_swap_total_bytes;
+    struct cmt_counter *darwin_total_bytes;
+#endif
+
     /* diskstats: abbreviation 'dt' */
     void *dt_metrics;
     struct flb_regex *dt_regex_skip_devices;
@@ -130,6 +124,21 @@ struct flb_ne {
 
     /* netdev */
     struct flb_hash_table *netdev_ht;
+
+#ifdef FLB_SYSTEM_MACOS
+    /* netdev_darwin */
+    struct cmt_gauge *darwin_receive_packets;
+    struct cmt_gauge *darwin_transmit_packets;
+    struct cmt_gauge *darwin_receive_bytes;
+    struct cmt_gauge *darwin_transmit_bytes;
+    struct cmt_gauge *darwin_receive_errors;
+    struct cmt_gauge *darwin_transmit_errors;
+    struct cmt_gauge *darwin_receive_dropped;
+    struct cmt_gauge *darwin_receive_multicast;
+    struct cmt_gauge *darwin_transmit_multicast;
+    struct cmt_gauge *darwin_collisions;
+    struct cmt_gauge *darwin_noproto;
+#endif
 
     /* time */
     struct cmt_gauge *time;
@@ -186,6 +195,31 @@ struct flb_ne {
     struct flb_regex   *systemd_regex_exclude_list;
     double              libsystemd_version;
     char               *libsystemd_version_text;
+
+    /* processes */
+    struct cmt_gauge   *processes_thread_alloc;
+    struct cmt_gauge   *processes_threads_limit;
+    struct cmt_gauge   *processes_threads_state;
+    struct cmt_gauge   *processes_procs_state;
+    struct cmt_gauge   *processes_pid_used;
+    struct cmt_gauge   *processes_pid_max;
+
+    /* nvme */
+    struct cmt_gauge   *nvme_info;
+};
+
+struct flb_ne_collector {
+    const char *name;
+    int coll_fd;
+    int interval;
+    int activated;
+
+    /* callbacks */
+    int (*cb_init) (struct flb_ne *ctx);
+    int (*cb_update) (struct flb_input_instance *ins, struct flb_config *conf, void *in_context);
+    int (*cb_exit) (struct flb_ne *ctx);
+
+    struct mk_list _head;
 };
 
 #endif

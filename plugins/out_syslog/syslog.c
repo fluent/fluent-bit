@@ -144,9 +144,20 @@ static char rfc5424_sp_name[256] = {
 static flb_sds_t syslog_rfc5424(flb_sds_t *s, struct flb_time *tms,
                                 struct syslog_msg *msg)
 {
+    int len;
     struct tm tm;
     flb_sds_t tmp;
     uint8_t prival;
+
+    if (msg->message && msg->message[0] == '<') {
+        len = flb_sds_len(msg->message);
+        tmp = flb_sds_cat(*s, msg->message, len);
+        if (!tmp) {
+            return NULL;
+        }
+        *s = tmp;
+        return *s;
+    }
 
     prival = (msg->facility << 3) + msg->severity;
 
@@ -164,7 +175,7 @@ static flb_sds_t syslog_rfc5424(flb_sds_t *s, struct flb_time *tms,
     *s = tmp;
 
     if (msg->hostname) {
-        int len = flb_sds_len(msg->hostname);
+        len = flb_sds_len(msg->hostname);
         tmp = flb_sds_cat(*s, msg->hostname, len > 255 ? 255 : len);
         if (!tmp) {
             return NULL;
@@ -186,7 +197,7 @@ static flb_sds_t syslog_rfc5424(flb_sds_t *s, struct flb_time *tms,
     *s = tmp;
 
     if (msg->appname) {
-        int len = flb_sds_len(msg->appname);
+        len = flb_sds_len(msg->appname);
         tmp = flb_sds_cat(*s, msg->appname, len > 48 ? 48 : len);
         if (!tmp) {
             return NULL;
@@ -208,7 +219,7 @@ static flb_sds_t syslog_rfc5424(flb_sds_t *s, struct flb_time *tms,
     *s = tmp;
 
     if (msg->procid) {
-        int len = flb_sds_len(msg->procid);
+        len = flb_sds_len(msg->procid);
         tmp = flb_sds_cat(*s, msg->procid, len > 128 ? 128 : len);
         if (!tmp) {
             return NULL;
@@ -230,7 +241,7 @@ static flb_sds_t syslog_rfc5424(flb_sds_t *s, struct flb_time *tms,
     *s = tmp;
 
     if (msg->msgid) {
-        int len = flb_sds_len(msg->msgid);
+        len = flb_sds_len(msg->msgid);
         tmp = flb_sds_cat(*s, msg->msgid, len > 32 ? 32 : len);
         if (!tmp) {
             return NULL;
@@ -267,7 +278,7 @@ static flb_sds_t syslog_rfc5424(flb_sds_t *s, struct flb_time *tms,
     }
 
     if (msg->message) {
-        int len = flb_sds_len(msg->message);
+        len = flb_sds_len(msg->message);
         tmp = flb_sds_cat(*s, " \xef\xbb\xbf", 4);
         if (!tmp) {
             return NULL;
@@ -286,9 +297,20 @@ static flb_sds_t syslog_rfc5424(flb_sds_t *s, struct flb_time *tms,
 static flb_sds_t syslog_rfc3164 (flb_sds_t *s, struct flb_time *tms,
                                  struct syslog_msg *msg)
 {
+    int len;
     struct tm tm;
     flb_sds_t tmp;
     uint8_t prival;
+
+    if (msg->message && msg->message[0] == '<') {
+        len = flb_sds_len(msg->message);
+        tmp = flb_sds_cat(*s, msg->message, len);
+        if (!tmp) {
+            return NULL;
+        }
+        *s = tmp;
+        return *s;
+    }
 
     prival =  (msg->facility << 3) + msg->severity;
 
@@ -797,6 +819,7 @@ static void cb_syslog_flush(struct flb_event_chunk *event_chunk,
 
     if (ctx->parsed_mode != FLB_SYSLOG_UDP) {
         u_conn = flb_upstream_conn_get(ctx->u);
+
         if (!u_conn) {
             flb_plg_error(ctx->ins, "no upstream connections available");
             FLB_OUTPUT_RETURN(FLB_RETRY);

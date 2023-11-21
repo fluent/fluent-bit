@@ -36,6 +36,46 @@
 #include "lua_config.h"
 #include "mpack/mpack.h"
 
+static int cb_lua_pre_run(struct flb_filter_instance *f_ins,
+                          struct flb_config *config, void *data)
+{
+    int ret;
+    (void) data;
+    struct lua_filter *ctx;
+    struct flb_luajit *lj;
+
+    /* Create context */
+    ctx = lua_config_create(f_ins, config);
+    if (!ctx) {
+        flb_error("[filter_lua] filter cannot be loaded");
+        return -1;
+    }
+
+    /* Create LuaJIT state/vm */
+    lj = flb_luajit_create(config);
+    if (!lj) {
+        lua_config_destroy(ctx);
+        return -1;
+    }
+    ctx->lua = lj;
+
+    /* Lua script source code */
+    if (ctx->code) {
+        ret = flb_luajit_load_buffer(ctx->lua,
+                                     ctx->code, flb_sds_len(ctx->code),
+                                     "fluentbit.lua");
+    }
+    else {
+        /* Load Script / file path*/
+        ret = flb_luajit_load_script(ctx->lua, ctx->script);
+    }
+
+    flb_luajit_destroy(ctx->lua);
+    lua_config_destroy(ctx);
+
+    return ret;
+}
+
 static int cb_lua_init(struct flb_filter_instance *f_ins,
                        struct flb_config *config,
                        void *data)
@@ -77,6 +117,7 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
     }
 
     if (ret == -1) {
+        flb_luajit_destroy(ctx->lua);
         lua_config_destroy(ctx);
         return -1;
     }
@@ -132,7 +173,7 @@ static void pack_result_mpack(lua_State *l,
         return;
     }
 
-    len = flb_lua_arraylength(l);
+    len = flb_lua_arraylength(l, -1);
     if (len > 0) {
         /* record split */
         for (i = 1; i <= len; i++) {
@@ -701,6 +742,7 @@ static struct flb_config_map config_map[] = {
 struct flb_filter_plugin filter_lua_plugin = {
     .name         = "lua",
     .description  = "Lua Scripting Filter",
+    .cb_pre_run   = cb_lua_pre_run,
     .cb_init      = cb_lua_init,
 #ifdef FLB_FILTER_LUA_USE_MPACK
     .cb_filter    = cb_lua_filter_mpack,

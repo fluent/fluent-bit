@@ -20,4 +20,32 @@
 #ifdef __linux__
 #include "ne_cpu_linux.c"
 #include "ne_cpufreq_linux.c"
+#elif __APPLE__
+#include "ne_cpu_darwin.c"
+
+struct flb_ne_collector cpufreq_collector = {
+    .name = "cpufreq",
+    .cb_init = NULL,
+    .cb_update = NULL,
+    .cb_exit = NULL
+};
+
+#else
+
+#include "ne.h"
+
+struct flb_ne_collector cpu_collector = {
+    .name = "cpu",
+    .cb_init = NULL,
+    .cb_update = NULL,
+    .cb_exit = NULL
+};
+
+struct flb_ne_collector cpufreq_collector = {
+    .name = "cpufreq",
+    .cb_init = NULL,
+    .cb_update = NULL,
+    .cb_exit = NULL
+};
+
 #endif

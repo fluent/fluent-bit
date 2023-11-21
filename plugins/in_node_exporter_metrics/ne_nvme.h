@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2023 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,12 +17,11 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IN_NE_FILEFD_H
-#define FLB_IN_NE_FILEFD_H
+#ifndef FLB_IN_NE_NVME_H
+#define FLB_IN_NE_NVME_H
 
 #include "ne.h"
 
-int ne_filefd_init(struct flb_ne *ctx);
-int ne_filefd_update(struct flb_ne *ctx);
+extern struct flb_ne_collector nvme_collector;
 
 #endif

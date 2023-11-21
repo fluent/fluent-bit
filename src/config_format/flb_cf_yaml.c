@@ -429,7 +429,7 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
     for (idx = 0; idx < glb.gl_pathc; idx++) {
         ret = read_config(conf, ctx, state->file, glb.gl_pathv[idx]);
 
-    if (ret < 0) {
+        if (ret < 0) {
             break;
         }
     }
@@ -648,11 +648,12 @@ static enum status state_copy_into_config_group(struct parser_state *state, stru
         case CFL_VARIANT_ARRAY:
             carr = cfl_array_create(kvp->val->data.as_array->entry_count);
 
-            if (carr) {
+            if (carr == NULL) {
                 flb_error("unable to allocate array");
                 cfl_kvlist_destroy(copy);
                 return YAML_FAILURE;
             }
+
             for (idx = 0; idx < kvp->val->data.as_array->entry_count; idx++) {
                 var = cfl_array_fetch_by_index(kvp->val->data.as_array, idx);
 
@@ -877,7 +878,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             break;
         case YAML_SCALAR_EVENT:
             value = (char *) event->data.scalar.value;
-            flb_error("[config yaml] including: %s", value);
+            flb_debug("[config yaml] including: %s", value);
 
             if (strchr(value, '*') != NULL) {
                 ret = read_glob(conf, ctx, state, value);
