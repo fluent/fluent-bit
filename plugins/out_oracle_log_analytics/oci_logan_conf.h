@@ -30,10 +30,6 @@
 struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
                                           struct flb_config *config);
 int flb_oci_logan_conf_destroy(struct flb_oci_logan *ctx);
-int refresh_security_token(struct flb_oci_logan *ctx,
-                           struct flb_config *config);
-int refresh_oke_workload_security_token(struct flb_oci_logan *ctx,
-                                        struct flb_config *config);
 int set_upstream_ctx(struct flb_oci_logan *ctx,
                      struct flb_output_instance *ins,
                      struct flb_config *config);
