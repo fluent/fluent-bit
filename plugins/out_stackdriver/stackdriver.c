@@ -2759,8 +2759,6 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
 
         /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
-
-        update_retry_metric(ctx, event_chunk, ts, STACKDRIVER_NET_ERROR);
 #endif
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
