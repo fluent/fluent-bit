@@ -2769,7 +2769,6 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
         printf("%s", payload_buf);
         flb_sds_destroy(payload_buf);
         FLB_OUTPUT_RETURN(FLB_OK);
-        return;
     }
 
     /* Get upstream connection */
@@ -2784,7 +2783,7 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
 
         update_retry_metric(ctx, event_chunk, ts, STACKDRIVER_NET_ERROR);
 #endif
-        flb_upstream_conn_release(u_conn);
+        flb_sds_destroy(payload_buf);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
