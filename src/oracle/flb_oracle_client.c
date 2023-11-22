@@ -304,7 +304,8 @@ int load_oci_credentials(struct flb_output_instance *ins,
  * signature="signature"
  */
 flb_sds_t create_authorization_header_content(flb_sds_t key_id,
-                                              flb_sds_t signature)
+                                              flb_sds_t signature,
+                                              char* sign_header)
 {
     flb_sds_t content;
 
@@ -320,8 +321,8 @@ flb_sds_t create_authorization_header_content(flb_sds_t key_id,
     flb_sds_cat_safe(&content, FLB_OCI_SIGN_ALGORITHM,
                      sizeof(FLB_OCI_SIGN_ALGORITHM) - 1);
     flb_sds_cat_safe(&content, ",", 1);
-    flb_sds_cat_safe(&content, FLB_OCI_SIGN_HEADERS,
-                     sizeof(FLB_OCI_SIGN_HEADERS) - 1);
+    flb_sds_cat_safe(&content, sign_header,
+                     sizeof(sign_header) - 1);
     flb_sds_cat_safe(&content, ",", 1);
     flb_sds_cat_safe(&content, FLB_OCI_SIGN_SIGNATURE,
                      sizeof(FLB_OCI_SIGN_SIGNATURE) - 1);
@@ -543,7 +544,8 @@ int build_federation_client_headers(struct flb_http_client *c, flb_sds_t private
         goto error_label;
     }
 
-    auth_header_str = create_fed_authorization_header_content(signature, key_id);
+    auth_header_str = create_authorization_header_content(signature, key_id,
+                                                          FLB_OCI_FED_SIGN_HEADERS);
     if (!auth_header_str) {
         flb_plg_error(ins, "cannot compose authorization header");
         goto error_label;
@@ -722,7 +724,7 @@ int build_headers(struct flb_http_client *c, flb_sds_t private_key,
         goto error_label;
     }
 
-    auth_header_str = create_authorization_header_content(key_id, signature);
+    auth_header_str = create_authorization_header_content(key_id, signature, FLB_OCI_SIGN_HEADERS);
     if (!auth_header_str) {
         flb_plg_error(ins, "cannot compose authorization header");
         goto error_label;

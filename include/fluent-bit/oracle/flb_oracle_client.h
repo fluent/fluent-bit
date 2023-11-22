@@ -62,6 +62,13 @@
     FLB_OCI_HEADER_CONTENT_LENGTH "\""
 
 #define FLB_OCI_SIGN_SIGNATURE   "signature"
+#define FLB_OCI_FED_SIGN_HEADERS "headers=\"" \
+    FLB_OCI_HEADER_REQUEST_TARGET " " \
+    FLB_OCI_HEADER_DATE " " \
+    FLB_OCI_HEADER_X_CONTENT_SHA256 " " \
+    FLB_OCI_HEADER_CONTENT_TYPE " " \
+    FLB_OCI_HEADER_CONTENT_LENGTH "\""
+
 #define METADATA_HOST_BASE "169.254.169.254"
 #define GET_REGION_URL  "/opc/v2/instance/region"
 #define GET_REGION_INFO_URL "/opc/v2/instance/regionInfo/"
@@ -107,7 +114,8 @@ int load_oci_credentials(struct flb_output_instance *ins,
                          flb_sds_t *key_file, flb_sds_t *key_fingerprint,
                          flb_sds_t *region);
 flb_sds_t create_authorization_header_content(flb_sds_t key_id,
-                                              flb_sds_t signature);
+                                              flb_sds_t signature,
+                                              char* sign_header);
 flb_sds_t create_base64_sha256_signature(flb_sds_t private_key,
                                          flb_sds_t signing_string,
                                          struct flb_output_instance *ins);
