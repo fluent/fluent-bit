@@ -1226,6 +1226,10 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     /* Set context */
     flb_output_set_context(ins, ctx);
 
+    if (ctx->test_log_entry_format) {
+        return 0;
+    }
+
     /* Network mode IPv6 */
     if (ins->host.ipv6 == FLB_TRUE) {
         io_flags |= FLB_IO_IPV6;
@@ -1789,7 +1793,7 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
      *  "entries": []
      */
     msgpack_pack_map(&mp_pck, 3);
-    
+
     /* Set partialSuccess to true */
     msgpack_pack_str(&mp_pck, 14);
     msgpack_pack_str_body(&mp_pck, "partialSuccess", 14);
@@ -2743,21 +2747,6 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     uint64_t ts = cfl_time_now();
 #endif
 
-    /* Get upstream connection */
-    u_conn = flb_upstream_conn_get(ctx->u);
-    if (!u_conn) {
-#ifdef FLB_HAVE_METRICS
-        cmt_counter_inc(ctx->cmt_failed_requests,
-                        ts, 1, (char *[]) {name});
-
-        /* OLD api */
-        flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
-
-        update_retry_metric(ctx, event_chunk, ts, STACKDRIVER_NET_ERROR);
-#endif
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
-
     /* Reformat msgpack to stackdriver JSON payload */
     payload_buf = stackdriver_format(ctx,
                                      event_chunk->total_events,
@@ -2771,7 +2760,28 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
         /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
 #endif
-        flb_upstream_conn_release(u_conn);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    if (ctx->test_log_entry_format) {
+        printf("%s", payload_buf);
+        flb_sds_destroy(payload_buf);
+        FLB_OUTPUT_RETURN(FLB_OK);
+    }
+
+    /* Get upstream connection */
+    u_conn = flb_upstream_conn_get(ctx->u);
+    if (!u_conn) {
+#ifdef FLB_HAVE_METRICS
+        cmt_counter_inc(ctx->cmt_failed_requests,
+                        ts, 1, (char *[]) {name});
+
+        /* OLD api */
+        flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
+
+        update_retry_metric(ctx, event_chunk, ts, STACKDRIVER_NET_ERROR);
+#endif
+        flb_sds_destroy(payload_buf);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -3078,6 +3088,11 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_CLIST, "resource_labels", NULL,
       0, FLB_TRUE, offsetof(struct flb_stackdriver, resource_labels),
       "Set the resource labels"
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "test_log_entry_format", "false",
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, test_log_entry_format),
+      "Test log entry format"
     },
     /* EOF */
     {0}

@@ -179,6 +179,7 @@ struct flb_stackdriver {
     flb_sds_t http_request_key;
     int http_request_key_size;
     bool autoformat_stackdriver_trace;
+    bool test_log_entry_format;
 
     flb_sds_t stackdriver_agent;
 
