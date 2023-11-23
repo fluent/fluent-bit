@@ -1632,6 +1632,7 @@ static int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx,
                     "    api_key       %s\n"
                     "    fleet_id      %s\n"
                     "    add_label     fleet_id %s\n"
+                    "    machine_id    %s\n"
                     "    fleet.config_dir    %s\n"
                     "    calyptia_host %s\n"
                     "    calyptia_port %d\n"
@@ -1639,6 +1640,7 @@ static int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx,
                     ctx->api_key,
                     ctx->fleet_id,
                     ctx->fleet_id,
+                    ctx->machine_id,
                     ctx->config_dir,
                     ctx->ins->host.name,
                     ctx->ins->host.port,
@@ -1653,6 +1655,7 @@ static int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx,
                     "    fleet_name    %s\n"
                     "    fleet_id      %s\n"
                     "    add_label     fleet_id %s\n"
+                    "    machine_id    %s\n"
                     "    fleet.config_dir    %s\n"
                     "    calyptia_host %s\n"
                     "    calyptia_port %d\n"
@@ -1661,6 +1664,7 @@ static int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx,
                     ctx->fleet_name,
                     ctx->fleet_id,
                     ctx->fleet_id,
+                    ctx->machine_id,
                     ctx->config_dir,
                     ctx->ins->host.name,
                     ctx->ins->host.port,
