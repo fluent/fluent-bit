@@ -76,6 +76,8 @@ typedef struct raw_msgpack_api_context_t {
     int out_ffd;
 
     int doorbell_cli;
+
+    in_plugin_data_t in_data;  // extending the lifetime of the plugin data object to the relevant API context
 } raw_msgpack_api_context_t;
 
 
@@ -216,7 +218,7 @@ void* init(const char* output_plugin_name, const char * host, const char * port,
 #endif
 
     plugin_params_t* params = (plugin_params_t *) plugin_params;
-    raw_msgpack_api_context_t* raw_ctx = malloc(sizeof(raw_msgpack_api_context_t));
+    raw_msgpack_api_context_t* raw_ctx = (raw_msgpack_api_context_t*) calloc(1, sizeof(raw_msgpack_api_context_t));
 
     prepare_socket_names(raw_ctx, output_plugin_name, host, port, socket_prefix);
 
@@ -234,7 +236,7 @@ void* init(const char* output_plugin_name, const char * host, const char * port,
 #ifdef VERBOSE
     printf("[Raw Msgpack API] created client sock %d\n", raw_ctx->doorbell_cli);
 #endif
-    in_plugin_data_t *in_data = (in_plugin_data_t *) calloc(1, sizeof(in_plugin_data_t));
+    in_plugin_data_t* in_data = &(raw_ctx->in_data);
 
     in_data->server_addr = raw_ctx->server_addr;
     // raw_ctx->i_ins = flb_input_new(raw_ctx->ctx->config, "raw_msgpack", (void *) in_data, FLB_TRUE);
@@ -248,7 +250,7 @@ void* init(const char* output_plugin_name, const char * host, const char * port,
         raw_ctx->out_ffd = flb_output(raw_ctx->ctx, output_plugin_name, NULL);
     }
     if (raw_ctx->out_ffd == -1) {
-        // if cannot find 'output_plugin_name' plugin, use default 'forward'
+        // if cannot find 'output_plugin_name' plugin, use the default 'forward'
         raw_ctx->out_ffd = flb_output(raw_ctx->ctx, "forward", NULL);
     }
 
@@ -258,7 +260,7 @@ void* init(const char* output_plugin_name, const char * host, const char * port,
     if (params != NULL) {
         int i;
         if (params->num_params > 0) {
-            printf("\n[Raw Msgpack API] Setting '%s' ouptut plugin parameters:\n", output_plugin_name);
+            printf("\n[Raw Msgpack API] Setting '%s' output plugin parameters:\n", output_plugin_name);
         }
         for (i = 0; i < params->num_params; i++) {
             printf("\t\t\t\t'%s' to '%s'\n", params->params[i].name, params->params[i].val);
@@ -276,7 +278,6 @@ void* init(const char* output_plugin_name, const char * host, const char * port,
 #ifdef VERBOSE
     printf("[Raw Msgpack API] init finished\n\n");
 #endif
-    free(in_data);
     return (void*) raw_ctx;
 }
 
