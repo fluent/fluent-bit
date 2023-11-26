@@ -77,6 +77,9 @@ struct flb_net_setup {
     /* prioritize ipv4 results when trying to establish a connection*/
     int   dns_prefer_ipv4;
 
+    /* prioritize ipv6 results when trying to establish a connection*/
+    int   dns_prefer_ipv6;
+
     /* maximum number of allowed active TCP connections */
     int max_worker_connections;
 };
