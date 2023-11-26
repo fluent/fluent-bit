@@ -104,6 +104,7 @@ void flb_net_setup_init(struct flb_net_setup *net)
     net->dns_mode = NULL;
     net->dns_resolver = NULL;
     net->dns_prefer_ipv4 = FLB_FALSE;
+    net->dns_prefer_ipv6 = FLB_FALSE;
     net->keepalive = FLB_TRUE;
     net->keepalive_idle_timeout = 30;
     net->keepalive_max_recycle = 0;
@@ -1268,7 +1269,23 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         sorted_res = flb_net_sort_addrinfo_list(res, AF_INET);
 
         if (sorted_res == NULL) {
-            flb_debug("[net] error sorting getaddrinfo results");
+            flb_debug("[net] error sorting ipv4 getaddrinfo results");
+
+            if (use_async_dns) {
+                flb_net_free_translated_addrinfo(res);
+            }
+            else {
+                freeaddrinfo(res);
+            }
+
+            return -1;
+        }
+    }
+    else if (u_conn->net->dns_prefer_ipv6) {
+        sorted_res = flb_net_sort_addrinfo_list(res, AF_INET6);
+
+        if (sorted_res == NULL) {
+            flb_debug("[net] error sorting ipv6 getaddrinfo results");
 
             if (use_async_dns) {
                 flb_net_free_translated_addrinfo(res);
