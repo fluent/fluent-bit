@@ -1499,31 +1499,6 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     flb_chunk_trace_do_input(ic);
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
-    /* Update 'input' metrics */
-#ifdef FLB_HAVE_METRICS
-    if (ret == CIO_OK) {
-        ic->added_records =  n_records;
-        ic->total_records += n_records;
-    }
-
-    if (ic->total_records > 0) {
-        /* timestamp */
-        ts = cfl_time_now();
-
-        /* fluentbit_input_records_total */
-        cmt_counter_add(in->cmt_records, ts, ic->added_records,
-                        1, (char *[]) {(char *) flb_input_name(in)});
-
-        /* fluentbit_input_bytes_total */
-        cmt_counter_add(in->cmt_bytes, ts, buf_size,
-                        1, (char *[]) {(char *) flb_input_name(in)});
-
-        /* OLD api */
-        flb_metrics_sum(FLB_METRIC_N_RECORDS, ic->added_records, in->metrics);
-        flb_metrics_sum(FLB_METRIC_N_BYTES, buf_size, in->metrics);
-    }
-#endif
-
     filtered_data_buffer = NULL;
     final_data_buffer = (char *) buf;
     final_data_size = buf_size;
@@ -1554,6 +1529,31 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         filtered_data_buffer != buf) {
         flb_free(filtered_data_buffer);
     }
+
+    if (ret == CIO_OK) {
+        ic->added_records =  n_records;
+        ic->total_records += n_records;
+    }
+
+    /* Update 'input' metrics */
+#ifdef FLB_HAVE_METRICS
+    if (ic->total_records > 0) {
+        /* timestamp */
+        ts = cfl_time_now();
+
+        /* fluentbit_input_records_total */
+        cmt_counter_add(in->cmt_records, ts, ic->added_records,
+                        1, (char *[]) {(char *) flb_input_name(in)});
+
+        /* fluentbit_input_bytes_total */
+        cmt_counter_add(in->cmt_bytes, ts, buf_size,
+                        1, (char *[]) {(char *) flb_input_name(in)});
+
+        /* OLD api */
+        flb_metrics_sum(FLB_METRIC_N_RECORDS, ic->added_records, in->metrics);
+        flb_metrics_sum(FLB_METRIC_N_BYTES, buf_size, in->metrics);
+    }
+#endif
 
     if (ret == -1) {
         flb_error("[input chunk] error writing data from %s instance",
