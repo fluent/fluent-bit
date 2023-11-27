@@ -48,6 +48,7 @@ struct flb_dummy {
     int  start_time_nsec;
 
     bool fixed_timestamp;
+    bool flush_on_startup;
 
     char *ref_metadata_msgpack;
     size_t ref_metadata_msgpack_size;
