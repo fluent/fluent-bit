@@ -1497,8 +1497,8 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
 
     /*
      * Set the total_records based on the records that n_records
-     * says we should be writing. This may be modified by flb_filter_do,
-     * where a filter may add/remove records.
+     * says we should be writing. These values may be overwritten
+     * flb_filter_do, where a filter may add/remove records.
      */
     total_records_start = ic->total_records;
     ic->added_records =  n_records;
