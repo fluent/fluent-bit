@@ -362,9 +362,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
         return NULL;
     }
 
-#ifdef FLB_HAVE_METRICS
     total_events = ((struct flb_input_chunk *) ic)->total_records;
-#endif
 
     /* event chunk */
     evc = flb_event_chunk_create(ic->event_type,
