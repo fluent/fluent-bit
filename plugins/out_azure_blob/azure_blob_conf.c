@@ -85,8 +85,39 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         return NULL;
     }
 
+    /* Set Auth type */
+    tmp = (char *) flb_output_get_property("auth_type", ins);
+    if (!tmp) {
+        ctx->atype = AZURE_BLOB_AUTH_KEY;
+    }
+    else {
+        if (strcasecmp(tmp, "key") == 0) {
+            ctx->atype = AZURE_BLOB_AUTH_KEY;
+        }
+        else if (strcasecmp(tmp, "sas") == 0) {
+            ctx->atype = AZURE_BLOB_AUTH_SAS;
+        }
+        else {
+            flb_plg_error(ctx->ins, "invalid auth_type value '%s'", tmp);
+            return NULL;
+        }
+    }
+    if (ctx->atype == AZURE_BLOB_AUTH_KEY && !ctx->shared_key) {
+        flb_plg_error(ctx->ins, "'shared_key' has not been set");
+        return NULL;
+    }
+    if (ctx->atype == AZURE_BLOB_AUTH_SAS) {
+        if (!ctx->sas_token) {
+            flb_plg_error(ctx->ins, "'sas_token' has not been set");
+            return NULL;
+        }
+        if (ctx->sas_token[0] == '?') {
+            ctx->sas_token++;
+        }
+    }
+
     /* If the shared key is set decode it */
-    if (ctx->shared_key) {
+    if (ctx->atype == AZURE_BLOB_AUTH_KEY && ctx->shared_key) {
         ret = set_shared_key(ctx);
         if (ret == -1) {
             return NULL;
@@ -196,12 +227,14 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
     }
 
     /* Prepare shared key buffer */
-    ctx->shared_key_prefix = flb_sds_create_size(256);
-    if (!ctx->shared_key_prefix) {
-        flb_plg_error(ctx->ins, "cannot create shared key prefix");
-        return NULL;
+    if (ctx->atype == AZURE_BLOB_AUTH_KEY) {
+        ctx->shared_key_prefix = flb_sds_create_size(256);
+        if (!ctx->shared_key_prefix) {
+            flb_plg_error(ctx->ins, "cannot create shared key prefix");
+            return NULL;
+        }
+        flb_sds_printf(&ctx->shared_key_prefix, "SharedKey %s:", ctx->account_name);
     }
-    flb_sds_printf(&ctx->shared_key_prefix, "SharedKey %s:", ctx->account_name);
 
     /* Sanitize path: remove any ending slash */
     if (ctx->path) {
@@ -211,11 +244,12 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
     }
 
     flb_plg_info(ctx->ins,
-                 "account_name=%s, container_name=%s, blob_type=%s, emulator_mode=%s, endpoint=%s",
+                 "account_name=%s, container_name=%s, blob_type=%s, emulator_mode=%s, endpoint=%s, auth_type=%s",
                  ctx->account_name, ctx->container_name,
-                 ctx->btype == AZURE_BLOB_APPENDBLOB ? "appendblob": "blockblob",
-                 ctx->emulator_mode ? "yes": "no",
-                 ctx->real_endpoint ? ctx->real_endpoint: "no");
+                 ctx->btype == AZURE_BLOB_APPENDBLOB ? "appendblob" : "blockblob",
+                 ctx->emulator_mode ? "yes" : "no",
+                 ctx->real_endpoint ? ctx->real_endpoint : "no",
+                 ctx->atype == AZURE_BLOB_AUTH_KEY ? "key" : "sas");
     return ctx;
 }
 

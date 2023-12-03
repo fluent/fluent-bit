@@ -339,20 +339,22 @@ int azb_http_client_setup(struct flb_azure_blob *ctx, struct flb_http_client *c,
     /* Azure header: x-ms-version */
     flb_http_add_header(c, "x-ms-version", 12, "2019-12-12", 10);
 
-    can_req = azb_http_canonical_request(ctx, c, content_length, content_type,
-                                         content_encoding);
+    if (ctx->atype == AZURE_BLOB_AUTH_KEY) {
+        can_req = azb_http_canonical_request(ctx, c, content_length, content_type,
+                                             content_encoding);
 
-    auth = flb_sds_create_size(64 + flb_sds_len(can_req));
+        auth = flb_sds_create_size(64 + flb_sds_len(can_req));
 
-    flb_sds_cat(auth, ctx->shared_key_prefix, flb_sds_len(ctx->shared_key_prefix));
-    flb_sds_cat(auth, can_req, flb_sds_len(can_req));
+        flb_sds_cat(auth, ctx->shared_key_prefix, flb_sds_len(ctx->shared_key_prefix));
+        flb_sds_cat(auth, can_req, flb_sds_len(can_req));
 
-    /* Azure header: authorization */
-    flb_http_add_header(c, "Authorization", 13, auth, flb_sds_len(auth));
+        /* Azure header: authorization */
+        flb_http_add_header(c, "Authorization", 13, auth, flb_sds_len(auth));
 
-    /* Release buffers */
-    flb_sds_destroy(can_req);
-    flb_sds_destroy(auth);
+        /* Release buffers */
+        flb_sds_destroy(can_req);
+        flb_sds_destroy(auth);
+    }
 
     /* Set callback context to the HTTP client context */
     flb_http_set_callback_context(c, ctx->ins->callback);
