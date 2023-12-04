@@ -20,8 +20,32 @@
 #ifndef FLB_LIB_H
 #define FLB_LIB_H
 
-#include <fluent-bit/flb_macros.h>
-#include <fluent-bit/flb_config.h>
+/* Avoid dependencies for library users who just want the public API */
+#ifdef FLUENT_BIT_MINIMAL_H
+    #include <stddef.h>
+
+    struct mk_event_loop;
+    struct mk_event;
+    struct flb_config;
+    struct flb_cf;
+
+    /* Copied from mk_macros.h */
+    #ifdef __GNUC__
+        #if __GNUC__ >= 4
+            #define FLB_EXPORT __attribute__ ((visibility ("default")))
+        #else
+            #define FLB_EXPORT
+        #endif
+    #elif defined(_WIN32)
+        #define FLB_EXPORT __declspec(dllexport)
+    /* mk_macros doesn't have an 'else'... seems like an oversight */
+    #else
+        #define FLB_EXPORT extern
+    #endif
+#else
+    #include <fluent-bit/flb_macros.h>
+    #include <fluent-bit/flb_config.h>
+#endif
 
 /* Lib engine status */
 #define FLB_LIB_ERROR     -1
