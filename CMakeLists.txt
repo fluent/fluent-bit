@@ -1102,6 +1102,28 @@ if(HAVE_GETENTROPY_SYS_RANDOM)
   FLB_DEFINITION(FLB_HAVE_GETENTROPY_SYS_RANDOM)
 endif()
 
+#
+# strerror_r(3) definition type.
+#
+# Do not depend on the _POSIX_C_SOURCE and _GNU_SOURCE macros; the latter
+# depends on glibc.
+#
+check_symbol_exists(strerror_r "string.h" HAVE_STRERROR_R)
+if(HAVE_STRERROR_R)
+  FLB_DEFINITION(FLB_HAVE_STRERROR_R)
+  check_c_source_compiles("
+    #include <errno.h>
+    #include <string.h>
+    int main() {
+      char buf[256], *p;
+      p = strerror_r(EINVAL, buf, sizeof(buf));
+      return 0;
+    }" HAVE_STRERROR_R_CHAR_P)
+  if(HAVE_STRERROR_R_CHAR_P)
+    FLB_DEFINITION(FLB_HAVE_STRERROR_R_CHAR_P)
+  endif()
+endif()
+
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_info.h.in"
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_info.h"
