@@ -137,6 +137,13 @@ static int nvme_update(struct flb_ne *ctx)
         .firmware_revision = ""
     };
 
+    if (access(nvme_class_path, F_OK) == -1 &&
+        errno == ENOENT) {
+        flb_plg_debug(ctx->ins, "NVMe storage is not mounted");
+
+        return 0;
+    }
+
     mk_list_init(&nvme_class_list);
 
     ts = cfl_time_now();
