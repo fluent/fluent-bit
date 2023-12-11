@@ -859,7 +859,7 @@ int in_elasticsearch_bulk_prot_handle(struct flb_in_elasticsearch *ctx,
             flb_sds_destroy(tag);
             mk_mem_free(uri);
 
-            send_response(conn, 400, "error: invaild HTTP endpoint\n");
+            send_response(conn, 400, "error: invalid HTTP endpoint\n");
 
             return -1;
         }
