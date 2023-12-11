@@ -1012,33 +1012,34 @@ static int get_calyptia_file(struct flb_in_calyptia_fleet_config *ctx,
         fname = flb_sds_create_len(dst, strlen(dst));
     }
 
-    if (access(fname, F_OK) == 0) {
-        ret = 0;
-        goto file_exists;
+    if (fname == NULL) {
+        goto file_name_error;
     }
 
-    if (fname == NULL) {
-        goto client_error;
+    if (access(fname, F_OK) == 0) {
+        ret = 0;
+        goto file_error;
     }
+
 
     fp = fopen(fname, "w+");
 
     if (fp == NULL) {
-        goto client_error;
+        goto file_error;
     }
 
     if (hdr != NULL) {
         len = fwrite(hdr, strlen(hdr), 1, fp);
         if (len < 1) {
             flb_plg_error(ctx->ins, "truncated write: %s", dst);
-            goto file_error;
+            goto file_write_error;
         }
     }
 
     len = fwrite(client->resp.payload, client->resp.payload_size, 1, fp);
     if (len < 1) {
         flb_plg_error(ctx->ins, "truncated write: %s", dst);
-        goto file_error;
+        goto file_write_error;
     }
 
     if (time_last_modified) {
@@ -1047,11 +1048,12 @@ static int get_calyptia_file(struct flb_in_calyptia_fleet_config *ctx,
 
     ret = 1;
 
-file_error:
+file_write_error:
     fclose(fp);
-client_error:
+file_name_error:
+file_error:
     flb_sds_destroy(fname);
-file_exists:
+client_error:
     flb_http_client_destroy(client);
     return ret;
 }
