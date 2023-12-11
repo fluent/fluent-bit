@@ -341,11 +341,6 @@ jobs:
       - staging-release-version-check
     permissions:
       contents: read
-    outputs:
-      windows-exe32-hash: ${{ steps.windows.outputs.WIN_32_EXE_HASH }}
-      windows-zip32-hash: ${{ steps.windows.outputs.WIN_32_ZIP_HASH }}
-      windows-exe64-hash: ${{ steps.windows.outputs.WIN_64_EXE_HASH }}
-      windows-zip64-hash: ${{ steps.windows.outputs.WIN_64_ZIP_HASH }}
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -391,25 +386,6 @@ jobs:
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         AWS_REGION: "us-east-1"
       shell: bash
-
-    - name: Provide output for documentation PR
-      id: windows
-      # do not fail the build for this
-      continue-on-error: true
-      run: |
-          ls -l $BASE_DIR/
-          export WIN_32_EXE_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win32.exe.sha256"|awk '{print $1}')
-          export WIN_32_ZIP_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win32.zip.sha256"|awk '{print $1}')
-          export WIN_64_EXE_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win64.exe.sha256"|awk '{print $1}')
-          export WIN_64_ZIP_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win64.zip.sha256"|awk '{print $1}')
-          set | grep WIN_
-          echo WIN_32_EXE_HASH="$WIN_32_EXE_HASH" >> $GITHUB_OUTPUT
-          echo WIN_32_ZIP_HASH="$WIN_32_ZIP_HASH" >> $GITHUB_OUTPUT
-          echo WIN_64_EXE_HASH="$WIN_64_EXE_HASH" >> $GITHUB_OUTPUT
-          echo WIN_64_ZIP_HASH="$WIN_64_ZIP_HASH" >> $GITHUB_OUTPUT
-      shell: bash
-      env:
-        BASE_DIR: release/${{ needs.staging-release-version-check.outputs.major-version }}
 
   # Simple skopeo copy jobs to transfer image from staging to release registry with optional GPG key signing.
   # Unfortunately skopeo currently does not support Cosign: https://github.com/containers/skopeo/issues/1533
@@ -839,11 +815,61 @@ jobs:
           name: "Fluent Bit ${{ inputs.version }}"
           tag_name: v${{ inputs.version }}
 
+  staging-release-windows-checksums:
+    name: Get Windows checksums for new release
+    runs-on: ubuntu-22.04
+    environment: release
+    needs:
+      - staging-release-update-non-linux-s3
+    permissions:
+      contents: none
+    outputs:
+      windows-exe32-hash: ${{ steps.hashes.outputs.WIN_32_EXE_HASH }}
+      windows-zip32-hash: ${{ steps.hashes.outputs.WIN_32_ZIP_HASH }}
+      windows-exe64-hash: ${{ steps.hashes.outputs.WIN_64_EXE_HASH }}
+      windows-zip64-hash: ${{ steps.hashes.outputs.WIN_64_ZIP_HASH }}
+      windows-arm-exe64-hash: ${{ steps.hashes.outputs.WIN_64_ARM_EXE_HASH }}
+      windows-arm-zip64-hash: ${{ steps.hashes.outputs.WIN_64_ARM_ZIP_HASH }}
+    steps:
+      - name: Sync release Windows directory to get checksums
+        run:
+          aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/windows" ./ --exclude "*" --include "*.sha256"
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: "us-east-1"
+
+      - name: Provide output for documentation PR
+        id: hashes
+        # do not fail the build for this
+        continue-on-error: true
+        run: |
+          ls -l
+          export WIN_32_EXE_HASH=$(cat "./fluent-bit-${{ inputs.version }}-win32.exe.sha256"|awk '{print $1}')
+          export WIN_32_ZIP_HASH=$(cat "./fluent-bit-${{ inputs.version }}-win32.zip.sha256"|awk '{print $1}')
+          export WIN_64_EXE_HASH=$(cat "./fluent-bit-${{ inputs.version }}-win64.exe.sha256"|awk '{print $1}')
+          export WIN_64_ZIP_HASH=$(cat "./fluent-bit-${{ inputs.version }}-win64.zip.sha256"|awk '{print $1}')
+          if [[ -f "./fluent-bit-${{ inputs.version }}-winarm64.exe.sha256" ]]; then
+            export WIN_64_ARM_EXE_HASH=$(cat "./fluent-bit-${{ inputs.version }}-winarm64.exe.sha256"|awk '{print $1}')
+          fi
+          if [[ -f "./fluent-bit-${{ inputs.version }}-winarm64.zip.sha256" ]]; then
+            export WIN_64_ARM_ZIP_HASH=$(cat "./fluent-bit-${{ inputs.version }}-winarm64.zip.sha256"|awk '{print $1}')
+          fi
+          set | grep WIN_
+          echo WIN_32_EXE_HASH="$WIN_32_EXE_HASH" >> $GITHUB_OUTPUT
+          echo WIN_32_ZIP_HASH="$WIN_32_ZIP_HASH" >> $GITHUB_OUTPUT
+          echo WIN_64_EXE_HASH="$WIN_64_EXE_HASH" >> $GITHUB_OUTPUT
+          echo WIN_64_ZIP_HASH="$WIN_64_ZIP_HASH" >> $GITHUB_OUTPUT
+          echo WIN_64_ARM_EXE_HASH="$WIN_64_ARM_EXE_HASH" >> $GITHUB_OUTPUT
+          echo WIN_64_ARM_ZIP_HASH="$WIN_64_ARM_ZIP_HASH" >> $GITHUB_OUTPUT
+        shell: bash
+
   staging-release-create-docs-pr:
     name: Create docs updates for new release
     needs:
       - staging-release-images
-      - staging-release-source-s3
+      - staging-release-windows-checksums
     permissions:
       contents: none
     environment: release
@@ -886,10 +912,12 @@ jobs:
         shell: bash
         env:
           NEW_VERSION: ${{ inputs.version }}
-          WIN_32_EXE_HASH: ${{ needs.staging-release-source-s3.outputs.windows-exe32-hash }}
-          WIN_32_ZIP_HASH: ${{ needs.staging-release-source-s3.outputs.windows-zip32-hash }}
-          WIN_64_EXE_HASH: ${{ needs.staging-release-source-s3.outputs.windows-exe64-hash }}
-          WIN_64_ZIP_HASH: ${{ needs.staging-release-source-s3.outputs.windows-zip64-hash }}
+          WIN_32_EXE_HASH: ${{ needs.staging-release-windows-checksums.outputs.windows-exe32-hash }}
+          WIN_32_ZIP_HASH: ${{ needs.staging-release-windows-checksums.outputs.windows-zip32-hash }}
+          WIN_64_EXE_HASH: ${{ needs.staging-release-windows-checksums.outputs.windows-exe64-hash }}
+          WIN_64_ZIP_HASH: ${{ needs.staging-release-windows-checksums.outputs.windows-zip64-hash }}
+          WIN_64_ARM_EXE_HASH: ${{ needs.staging-release-windows-checksums.outputs.windows-arm-exe64-hash }}
+          WIN_64_ARM_ZIP_HASH: ${{ needs.staging-release-windows-checksums.outputs.windows-arm-zip64-hash }}
 
       - name: Raise docs PR
         id: cpr
