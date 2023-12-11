@@ -135,11 +135,12 @@ int proxy_go_output_flush(struct flb_plugin_proxy_context *ctx,
     memcpy(buf, tag, tag_len);
     buf[tag_len] = '\0';
 
-    if (plugin->cb_flush_ctx) {
-        ret = plugin->cb_flush_ctx(ctx->remote_context, data, size, buf);
-    }
-    else {
-        ret = plugin->cb_flush(data, size, buf);
+    if (ctx->remote_context != NULL) {
+        if (plugin->cb_flush_ctx) {
+            ret = plugin->cb_flush_ctx(ctx->remote_context, data, size, buf);
+        } else {
+            ret = plugin->cb_flush(data, size, buf);
+        }
     }
     flb_free(buf);
     return ret;
