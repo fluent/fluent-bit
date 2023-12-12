@@ -81,6 +81,7 @@ struct flb_in_calyptia_fleet_config {
     flb_sds_t api_key;
 
     flb_sds_t fleet_id;
+
     /* flag used to mark fleet_id for release when found automatically. */
     int fleet_id_found;
 
@@ -615,6 +616,7 @@ static int execute_reload(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t cf
     flb_ctx_t *flb = flb_context_get();
 
     if (parse_config_name_timestamp(ctx, cfgpath, &ctx->config_timestamp) != FLB_TRUE) {
+        flb_sds_destroy(cfgpath);
         return FLB_FALSE;
     }
 
@@ -821,6 +823,7 @@ static ssize_t parse_fleet_search_json(struct flb_in_calyptia_fleet_config *ctx,
         }
 
         ctx->fleet_id = flb_sds_create_len(fleet->via.str.ptr, fleet->via.str.size);
+        ctx->fleet_id_found = FLB_TRUE;
         break;
     }
 
@@ -945,22 +948,31 @@ static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ct
     }
 
     url = flb_sds_create_size(4096);
+    if (url == NULL) {
+        flb_sds_destroy(project_id);
+        return -1;
+    }
+
     flb_sds_printf(&url, "/v1/search?project_id=%s&resource=fleet&term=%s",
                    project_id, ctx->fleet_name);
 
     client = fleet_http_do(ctx, u_conn, url);
+    flb_sds_destroy(url);
 
     if (!client) {
+        flb_sds_destroy(project_id);
         return -1;
     }
 
     if (parse_fleet_search_json(ctx, client->resp.payload, client->resp.payload_size) == -1) {
         flb_plg_error(ctx->ins, "unable to find fleet: %s", ctx->fleet_name);
         flb_http_client_destroy(client);
+        flb_sds_destroy(project_id);
         return -1;
     }
 
     flb_http_client_destroy(client);
+    flb_sds_destroy(project_id);
 
     if (ctx->fleet_id == NULL) {
         return -1;
@@ -1340,7 +1352,7 @@ static int calyptia_config_delete_old_dir(const char *cfgpath)
         for (idx = 0; idx < ((ssize_t)files->entry_count); idx++) {
                 unlink(files->entries[idx]->data.as_string);
         }
-        cfl_array_destroy(files); 
+        cfl_array_destroy(files);
     }
 
     /* attempt to delete the main directory */
@@ -1739,11 +1751,21 @@ static int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx,
 
     if (ctx->fleet_url == NULL) {
         ctx->fleet_url = flb_sds_create_size(4096);
+
+        if (ctx->fleet_url == NULL) {
+            return -1;
+        }
+
         flb_sds_printf(&ctx->fleet_url, "/v1/fleets/%s/config?format=ini", ctx->fleet_id);
     }
 
     if (ctx->fleet_files_url == NULL) {
         ctx->fleet_files_url = flb_sds_create_size(4096);
+
+        if (ctx->fleet_files_url == NULL) {
+            return -1;
+        }
+
         flb_sds_printf(&ctx->fleet_files_url, "/v1/fleets/%s/files", ctx->fleet_id);
     }
 
@@ -1752,10 +1774,13 @@ static int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx,
     hdrname = fleet_config_filename(ctx, "header");
     header = flb_sds_create_size(32);
     flb_sds_printf(&header, "@include %s\n\n", hdrname);
+    flb_sds_destroy(hdrname);
 
     /* create the base file. */
     ret = get_calyptia_file(ctx, u_conn, ctx->fleet_url, header,
                             NULL, &time_last_modified);
+
+    flb_sds_destroy(header);
 
     /* new file created! */
     if (ret == 1) {
@@ -1779,6 +1804,7 @@ static int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx,
 #else
         if (execute_reload(ctx, cfgname) == FLB_FALSE) {
             calyptia_config_rollback(ctx, cfgname);
+            flb_sds_destroy(cfgname);
             return -1;
         }
 #endif
@@ -2040,22 +2066,27 @@ static int create_fleet_files(struct flb_in_calyptia_fleet_config *ctx,
             map = msgpack_lookup_array_offset(&result.data, idx);
 
             if (map == NULL) {
+                flb_sds_destroy(fleetdir);
                 return -1;
             }
 
             name = msgpack_lookup_map_key(map, "name");
             if (name == NULL) {
+                flb_sds_destroy(fleetdir);
                 return -1;
             }
             if (name->type != MSGPACK_OBJECT_STR) {
+                flb_sds_destroy(fleetdir);
                 return -1;
             }
 
             contents = msgpack_lookup_map_key(map, "contents");
             if (contents == NULL) {
+                flb_sds_destroy(fleetdir);
                 return -1;
             }
             if (contents->type != MSGPACK_OBJECT_STR) {
+                flb_sds_destroy(fleetdir);
                 return -1;
             }
 
@@ -2068,6 +2099,7 @@ static int create_fleet_files(struct flb_in_calyptia_fleet_config *ctx,
     }
 
     msgpack_unpacked_destroy(&result);
+    flb_sds_destroy(fleetdir);
     flb_free(pack);
 
     return 0;
@@ -2132,6 +2164,7 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
     }
     ctx->ins = in;
     ctx->collect_fd = -1;
+    ctx->fleet_id_found = FLB_FALSE;
 
 
     /* Load the config map */
@@ -2244,6 +2277,10 @@ static int in_calyptia_fleet_exit(void *data, struct flb_config *config)
 
     if (ctx->fleet_url) {
         flb_sds_destroy(ctx->fleet_url);
+    }
+
+    if (ctx->fleet_files_url) {
+        flb_sds_destroy(ctx->fleet_files_url);
     }
 
     if (ctx->fleet_id && ctx->fleet_id_found) {
