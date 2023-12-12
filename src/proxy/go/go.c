@@ -110,7 +110,6 @@ int proxy_go_output_init(struct flb_plugin_proxy *proxy)
     if (ret <= 0) {
         flb_error("[go proxy]: plugin '%s' failed to initialize",
                   plugin->name);
-        flb_free(plugin);
         return -1;
     }
 

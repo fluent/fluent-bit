@@ -525,6 +525,12 @@ int flb_proxy_output_cb_init(struct flb_output_instance *o_ins,
                   pc->proxy->def->proxy);
     }
 
+    if (ret == -1) {
+        flb_error("[output] could not initialize '%s' plugin",
+                  o_ins->p->name);
+        return -1;
+    }
+
     /* Multi-threading enabled if configured */
     ret = flb_output_enable_multi_threading(o_ins, config);
     if (ret == -1) {
