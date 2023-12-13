@@ -308,12 +308,12 @@ static int get_meta_file_info(struct flb_kube *ctx, const char *namespace,
 
     if (ctx->meta_preload_cache_dir && namespace) {
 
-        if (podname) {
+        if (podname && strlen(podname) > 0) {
             ret = snprintf(uri, sizeof(uri) - 1, "%s/%s_%s.meta",
                     ctx->meta_preload_cache_dir, namespace, podname);
         } 
         else {
-            ret = snprintf(uri, sizeof(uri) - 1, "%s/%s.meta",
+            ret = snprintf(uri, sizeof(uri) - 1, "%s/%s.namespace_meta",
                     ctx->meta_preload_cache_dir, namespace);
         }
         if (ret > 0) {
@@ -382,7 +382,12 @@ static int get_meta_info_from_request(struct flb_kube *ctx,
     }
 
     if (!u_conn) {
-        flb_plg_error(ctx->ins, "kubelet upstream connection error");
+        if(use_kubelet_connection == FLB_TRUE) {
+            flb_plg_error(ctx->ins, "kubelet upstream connection error");
+        }
+        else {
+            flb_plg_error(ctx->ins, "kube api upstream connection error");
+        }
         return -1;
     }
 
@@ -1594,7 +1599,7 @@ static int get_and_merge_namespace_meta(struct flb_kube *ctx, struct flb_kube_me
     char *api_buf;
     size_t api_size;
 
-    ret = get_namespace_api_server_info(ctx, ctx->namespace,
+    ret = get_namespace_api_server_info(ctx, meta->namespace,
                                         &api_buf, &api_size);
     if (ret == -1) {
         return -1;
@@ -2042,7 +2047,7 @@ int flb_kube_meta_get(struct flb_kube *ctx,
 {
     int ret_namespace_meta = -1;
     int ret_pod_meta;
-    
+
     if(ctx->namespace_labels == FLB_TRUE || ctx->namespace_annotations == FLB_TRUE) {
         ret_namespace_meta = flb_kube_namespace_meta_get(ctx, tag, tag_len, data, 
                         data_size, namespace_out_buf, namespace_out_size, namespace_meta);
