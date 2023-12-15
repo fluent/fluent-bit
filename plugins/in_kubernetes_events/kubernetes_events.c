@@ -889,6 +889,11 @@ static struct flb_config_map config_map[] = {
       0, FLB_TRUE, offsetof(struct k8s_events, namespace),
       "kubernetes namespace to get events from, gets event from all namespaces by default."
     },
+    {
+       FLB_CONFIG_MAP_STR, "timestamp_key", K8S_EVENTS_RA_TIMESTAMP,
+       0, FLB_TRUE, offsetof(struct k8s_events, timestamp_key),
+       "Record accessor for the timestamp from the event. Default is $metadata['creationTimestamp']."
+    },
 
 #ifdef FLB_HAVE_SQLDB
     {
