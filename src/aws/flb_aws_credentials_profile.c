@@ -103,15 +103,21 @@ struct flb_aws_credentials *get_credentials_fn_profile(struct flb_aws_provider
         time(NULL) >= implementation->next_refresh)) {
         AWS_CREDS_DEBUG("Retrieving credentials for AWS Profile %s",
                         implementation->profile);
-        ret = refresh_credentials(implementation, FLB_FALSE);
-        if (ret < 0) {
-            AWS_CREDS_ERROR("Failed to retrieve credentials for AWS Profile %s",
-                            implementation->profile);
+        if (try_lock_provider(provider) == FLB_TRUE) {
+            ret = refresh_credentials(implementation, FLB_FALSE);
+            unlock_provider(provider);
+            if (ret < 0) {
+                AWS_CREDS_ERROR("Failed to retrieve credentials for AWS Profile %s",
+                                implementation->profile);
+                return NULL;
+            }
+        } else {
+            AWS_CREDS_WARN("Another thread is refreshing credentials, will retry");
             return NULL;
         }
     }
 
-    creds = flb_malloc(sizeof(struct flb_aws_credentials));
+    creds = flb_calloc(1, sizeof(struct flb_aws_credentials));
     if (!creds) {
         flb_errno();
         goto error;
@@ -152,15 +158,27 @@ error:
 int refresh_fn_profile(struct flb_aws_provider *provider)
 {
     struct flb_aws_provider_profile *implementation = provider->implementation;
+    int ret = -1;
     AWS_CREDS_DEBUG("Refresh called on the profile provider");
-    return refresh_credentials(implementation, FLB_FALSE);
+    if (try_lock_provider(provider) == FLB_TRUE) {
+        ret = refresh_credentials(implementation, FLB_FALSE);
+        unlock_provider(provider);
+        return ret;
+    }
+    return ret;
 }
 
 int init_fn_profile(struct flb_aws_provider *provider)
 {
     struct flb_aws_provider_profile *implementation = provider->implementation;
+    int ret = -1;
     AWS_CREDS_DEBUG("Init called on the profile provider");
-    return refresh_credentials(implementation, FLB_TRUE);
+    if (try_lock_provider(provider) == FLB_TRUE) {
+        ret = refresh_credentials(implementation, FLB_TRUE);
+        unlock_provider(provider);
+        return ret;
+    }
+    return ret;
 }
 
 /*
@@ -233,6 +251,8 @@ struct flb_aws_provider *flb_profile_provider_create(char* profile)
         flb_errno();
         goto error;
     }
+
+    pthread_mutex_init(&provider->lock, NULL);
 
     implementation = flb_calloc(1,
                                 sizeof(

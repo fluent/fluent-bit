@@ -523,7 +523,7 @@ struct flb_sched *flb_sched_create(struct flb_config *config,
     struct flb_sched *sched;
     struct flb_sched_timer *timer;
 
-    sched = flb_malloc(sizeof(struct flb_sched));
+    sched = flb_calloc(1, sizeof(struct flb_sched));
     if (!sched) {
         flb_errno();
         return NULL;

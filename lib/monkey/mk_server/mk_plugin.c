@@ -40,7 +40,6 @@ enum {
 
 static struct plugin_stagemap *plg_stagemap;
 struct plugin_network_io *plg_netiomap;
-struct plugin_api *api;
 
 struct mk_plugin *mk_plugin_lookup(char *shortname, struct mk_server *server)
 {
@@ -92,7 +91,8 @@ void *mk_plugin_load_symbol(void *handler, const char *symbol)
 }
 
 /* Initialize a plugin, trigger the init_plugin callback */
-static int mk_plugin_init(struct plugin_api *api, struct mk_plugin *plugin,
+static int mk_plugin_init(struct plugin_api *api,
+                          struct mk_plugin *plugin,
                           struct mk_server *server)
 {
     int ret;
@@ -117,8 +117,14 @@ static int mk_plugin_init(struct plugin_api *api, struct mk_plugin *plugin,
                     path, plugin->shortname);
 
     /* Init plugin */
+    plugin->api = api;
     plugin->server_ctx = server;
-    ret = plugin->init_plugin(&api, conf_dir);
+
+    if (plugin->network != NULL) {
+        plugin->network->plugin = plugin;
+    }
+
+    ret = plugin->init_plugin(plugin, conf_dir);
     mk_mem_free(conf_dir);
 
     return ret;
@@ -269,6 +275,8 @@ void mk_plugin_unregister(struct mk_plugin *p)
 
 void mk_plugin_api_init(struct mk_server *server)
 {
+    struct plugin_api *api;
+
     /* Create an instance of the API */
     api = mk_mem_alloc_z(sizeof(struct plugin_api));
 
@@ -392,6 +400,8 @@ void mk_plugin_api_init(struct mk_server *server)
 
     /* handler */
     api->handler_param_get = mk_handler_param_get;
+
+    server->api = api;
 }
 
 void mk_plugin_load_static(struct mk_server *server)
@@ -427,7 +437,7 @@ void mk_plugin_load_all(struct mk_server *server)
         if (!p) {
             continue;
         }
-        ret = mk_plugin_init(api, p, server);
+        ret = mk_plugin_init(server->api, p, server);
         if (ret == -1) {
             /* Free plugin, do not register, error initializing */
             mk_warn("Plugin initialization failed: %s", p->shortname);
@@ -489,7 +499,7 @@ void mk_plugin_load_all(struct mk_server *server)
                 continue;
             }
 
-            ret = mk_plugin_init(api, p, server);
+            ret = mk_plugin_init(server->api, p, server);
             if (ret < 0) {
                 /* Free plugin, do not register */
                 MK_TRACE("Unregister plugin '%s'", p->shortname);
@@ -533,7 +543,7 @@ void mk_plugin_exit_all(struct mk_server *server)
     /* Plugins */
     mk_list_foreach(head, &server->plugins) {
         plugin = mk_list_entry(head, struct mk_plugin, _head);
-        plugin->exit_plugin();
+        plugin->exit_plugin(plugin);
     }
 
     /* Plugin interface it self */
@@ -550,8 +560,16 @@ void mk_plugin_exit_all(struct mk_server *server)
             dlclose(plugin ->handler);
 #endif
         }
+        else if (plugin->load_type == MK_PLUGIN_STATIC) {
+            if (plugin->network != NULL) {
+                mk_mem_free(plugin->network);
+            }
+
+            mk_mem_free(plugin);
+        }
     }
-    mk_mem_free(api);
+
+    mk_mem_free(server->api);
     mk_mem_free(plg_stagemap);
 }
 
@@ -691,14 +709,14 @@ void mk_plugin_event_bad_return(const char *hook, int ret)
     mk_err("[%s] Not allowed return value %i", hook, ret);
 }
 
-int mk_plugin_time_now_unix()
+int mk_plugin_time_now_unix(struct mk_server *server)
 {
-    return log_current_utime;
+    return server->clock_context->log_current_utime;
 }
 
-mk_ptr_t *mk_plugin_time_now_human()
+mk_ptr_t *mk_plugin_time_now_human(struct mk_server *server)
 {
-    return &log_current_time;
+    return &server->clock_context->log_current_time;
 }
 
 int mk_plugin_sched_remove_client(int socket, struct mk_server *server)

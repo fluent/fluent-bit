@@ -23,9 +23,17 @@
 #include <fluent-bit/flb_info.h>
 #include <stdio.h>
 
+struct flb_decompression_context;
+
 int flb_gzip_compress(void *in_data, size_t in_len,
                       void **out_data, size_t *out_len);
 int flb_gzip_uncompress(void *in_data, size_t in_len,
                         void **out_data, size_t *out_size);
+
+void *flb_gzip_decompression_context_create();
+void flb_gzip_decompression_context_destroy(void *context);
+
+int flb_gzip_decompressor_dispatch(struct flb_decompression_context *context,
+                                   void *out_data, size_t *out_size);
 
 #endif

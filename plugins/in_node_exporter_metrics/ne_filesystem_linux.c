@@ -36,9 +36,6 @@
 #define NE_ERROR_MOUNT_POINT_LIST_FETCH_FILE_ACCESS_ERROR -2
 #define NE_ERROR_MOUNT_POINT_LIST_FETCH_CORRUPTED_DATA    -3
 
-#define IGNORED_MOUNT_POINTS "^/(dev|proc|run/credentials/.+|sys|var/lib/docker/.+|var/lib/containers/storage/.+)($|/)"
-#define IGNORED_FS_TYPES     "^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$"
-
 static void unescape_character(cfl_sds_t input_buffer, char character)
 {
     size_t needle_length;
@@ -278,10 +275,10 @@ static int filesystem_update(struct flb_ne *ctx,
     return NE_ERROR_MOUNT_POINT_LIST_FETCH_SUCCESS;
 }
 
-int ne_filesystem_init(struct flb_ne *ctx)
+static int ne_filesystem_init(struct flb_ne *ctx)
 {
-    ctx->fs_regex_skip_mount = flb_regex_create(IGNORED_MOUNT_POINTS);
-    ctx->fs_regex_skip_fs_types = flb_regex_create(IGNORED_FS_TYPES);
+    ctx->fs_regex_skip_mount = flb_regex_create(ctx->fs_regex_ingore_mount_point_text);
+    ctx->fs_regex_skip_fs_types = flb_regex_create(ctx->fs_regex_ingore_filesystem_type_text);
 
     ctx->fs_avail_bytes = cmt_gauge_create(ctx->cmt,
                                            "node",
@@ -380,9 +377,10 @@ int ne_filesystem_init(struct flb_ne *ctx)
     return 0;
 }
 
-int ne_filesystem_update(struct flb_ne *ctx)
+static int ne_filesystem_update(struct flb_input_instance *ins, struct flb_config *config, void *in_context)
 {
     int result;
+    struct flb_ne *ctx = (struct flb_ne *)in_context;
 
     result = filesystem_update(ctx, "/proc/1/mounts");
 
@@ -393,7 +391,7 @@ int ne_filesystem_update(struct flb_ne *ctx)
     return 0;
 }
 
-int ne_filesystem_exit(struct flb_ne *ctx)
+static int ne_filesystem_exit(struct flb_ne *ctx)
 {
     if (ctx->fs_regex_skip_mount != NULL) {
         flb_regex_destroy(ctx->fs_regex_skip_mount);
@@ -405,3 +403,10 @@ int ne_filesystem_exit(struct flb_ne *ctx)
 
     return 0;
 }
+
+struct flb_ne_collector filesystem_collector = {
+    .name = "filesystem",
+    .cb_init = ne_filesystem_init,
+    .cb_update = ne_filesystem_update,
+    .cb_exit = ne_filesystem_exit
+};

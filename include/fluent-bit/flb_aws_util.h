@@ -163,8 +163,9 @@ flb_sds_t flb_json_get_val(char *response, size_t response_len, char *key);
 /*
  * Parses an XML document and returns the value of the given tag
  * Param `tag` should include angle brackets; ex "<code>"
+ * And param `end` should include end brackets: "</code>"
  */
-flb_sds_t flb_xml_get_val(char *response, size_t response_len, char *tag);
+flb_sds_t flb_aws_xml_get_val(char *response, size_t response_len, char *tag, char *tag_end);
 
 /*
  * Checks if a response contains an AWS Auth error

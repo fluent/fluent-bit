@@ -64,6 +64,7 @@ struct flb_filter_plugin {
     struct flb_config_map *config_map;
 
     /* Callbacks */
+    int (*cb_pre_run) (struct flb_filter_instance *, struct flb_config *, void *);
     int (*cb_init) (struct flb_filter_instance *, struct flb_config *, void *);
     int (*cb_filter) (const void *, size_t,
                       const char *, int,
@@ -87,6 +88,7 @@ struct flb_filter_instance {
 #ifdef FLB_HAVE_REGEX
     struct flb_regex *match_regex; /* match rule (regex) based on Tags */
 #endif
+    void *parent_processor;        /* Parent processor         */
     void *context;                 /* Instance local context   */
     void *data;
     struct flb_filter_plugin *p;   /* original plugin          */
@@ -132,6 +134,7 @@ void flb_filter_instance_exit(struct flb_filter_instance *ins,
 void flb_filter_exit(struct flb_config *config);
 void flb_filter_do(struct flb_input_chunk *ic,
                    const void *data, size_t bytes,
+                   void **out_data, size_t *out_bytes,
                    const char *tag, int tag_len,
                    struct flb_config *config);
 const char *flb_filter_name(struct flb_filter_instance *ins);

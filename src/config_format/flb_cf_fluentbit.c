@@ -40,7 +40,6 @@
 #define PATH_MAX MAX_PATH
 #endif
 
-#define FLB_CF_BUF_SIZE     4096
 #define FLB_CF_FILE_NUM_LIMIT 1000
 
 /* indent checker return codes */
@@ -418,6 +417,8 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     char *val = NULL;
     int val_len;
     char *buf;
+    char *fgets_ptr;
+    size_t bufsize = FLB_DEFAULT_CF_BUF_SIZE;
     char tmp[PATH_MAX];
     flb_sds_t section = NULL;
     flb_sds_t indent = NULL;
@@ -427,6 +428,9 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     struct flb_cf_section *current_section = NULL;
     struct flb_cf_group *current_group = NULL;
     struct cfl_variant *var;
+    unsigned long line_hard_limit;
+
+    line_hard_limit = 32 * 1024 * 1024; /* 32MiB */
 
     FILE *f = NULL;
 
@@ -479,14 +483,14 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
 
 #ifndef FLB_HAVE_STATIC_CONF
     /* Open configuration file */
-    if ((f = fopen(cfg_file, "r")) == NULL) {
+    if ((f = fopen(cfg_file, "rb")) == NULL) {
         flb_warn("[config] I cannot open %s file", cfg_file);
         return -1;
     }
 #endif
 
     /* Allocate temporal buffer to read file content */
-    buf = flb_malloc(FLB_CF_BUF_SIZE);
+    buf = flb_malloc(bufsize);
     if (!buf) {
         flb_errno();
         goto error;
@@ -501,7 +505,9 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     while (static_fgets(buf, FLB_CF_BUF_SIZE, in_data, &off)) {
 #else
     /* normal mode, read lines into a buffer */
-    while (fgets(buf, FLB_CF_BUF_SIZE, f)) {
+    /* note that we use "fgets_ptr" so we can continue reading after realloc */
+    fgets_ptr = buf;
+    while (fgets(fgets_ptr, bufsize - (fgets_ptr - buf), f)) {
 #endif
         len = strlen(buf);
         if (len > 0 && buf[len - 1] == '\n') {
@@ -509,18 +515,31 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
             if (len && buf[len - 1] == '\r') {
                 buf[--len] = 0;
             }
+            /* after a successful line read, restore "fgets_ptr" to point to the
+             * beginning of buffer */
+            fgets_ptr = buf;
+        } else if (feof(f)) {
+            /* handle EOF without a newline(CRLF or LF) */
+            fgets_ptr = buf;
         }
 #ifndef FLB_HAVE_STATIC_CONF
         else {
-            /*
-             * If we don't find a break line, validate if we got an EOF or not. No EOF
-             * means that the incoming string is not finished so we must raise an
-             * exception.
-             */
-            if (!feof(f)) {
-                config_error(cfg_file, line, "length of content has exceeded limit");
+            /* resize the line buffer */
+            bufsize *= 2;
+            if (bufsize > line_hard_limit) {
+                flb_error("reading line is exceeded to the limit size of %lu. Current size is: %zu",
+                          line_hard_limit, bufsize);
                 goto error;
             }
+            buf = flb_realloc(buf, bufsize);
+            if (!buf) {
+                flb_error("failed to resize line buffer to %zu", bufsize);
+                flb_errno();
+                goto error;
+            }
+            /* read more, starting at the buf + len position */
+            fgets_ptr = buf + len;
+            continue;
         }
 #endif
 
@@ -757,6 +776,8 @@ struct flb_cf *flb_cf_fluentbit_create(struct flb_cf *cf,
         if (!cf) {
             return NULL;
         }
+
+        flb_cf_set_origin_format(cf, FLB_CF_CLASSIC);
     }
 
     ret = local_init(&ctx, file_path);

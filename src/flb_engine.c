@@ -17,6 +17,7 @@
  *  limitations under the License.
  */
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -206,28 +207,21 @@ static inline int handle_input_event(flb_pipefd_t fd, uint64_t ts,
     return 0;
 }
 
-static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
-                                      struct flb_config *config)
+static inline int handle_output_event(uint64_t ts,
+                                      struct flb_config *config,
+                                      uint64_t val)
 {
     int ret;
-    int bytes;
     int task_id;
     int out_id;
     int retries;
     int retry_seconds;
     uint32_t type;
     uint32_t key;
-    uint64_t val;
     char *name;
     struct flb_task *task;
     struct flb_task_retry *retry;
     struct flb_output_instance *ins;
-
-    bytes = flb_pipe_r(fd, &val, sizeof(val));
-    if (bytes == -1) {
-        flb_errno();
-        return -1;
-    }
 
     /* Get type and key */
     type = FLB_BITS_U64_HIGH(val);
@@ -441,6 +435,52 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
     return 0;
 }
 
+static inline int handle_output_events(flb_pipefd_t fd,
+                                       struct flb_config *config)
+{
+    uint64_t values[FLB_ENGINE_OUTPUT_EVENT_BATCH_SIZE];
+    int      result;
+    int      bytes;
+    size_t   limit;
+    size_t   index;
+    uint64_t ts;
+
+    memset(&values, 0, sizeof(values));
+
+    bytes = flb_pipe_r(fd, &values, sizeof(values));
+
+    if (bytes == -1) {
+        flb_errno();
+        return -1;
+    }
+
+    limit = floor(bytes / sizeof(uint64_t));
+
+    ts = cfl_time_now();
+
+    for (index = 0 ;
+         index < limit &&
+         index < (sizeof(values) / sizeof(values[0])) ;
+         index++) {
+        if (values[index] == 0) {
+            break;
+        }
+
+        result = handle_output_event(ts, config, values[index]);
+    }
+
+    /* This is wrong, in one hand, if handle_output_event_ fails we should
+     * stop, on the other, we have already consumed the signals from the pipe
+     * so we have to do whatever we can with them.
+     *
+     * And a side effect is that since we have N results but we are not aborting
+     * as soon as we get an error there could be N results to this function which
+     * not only are we not ready to handle but is not even checked at the moment.
+    */
+
+    return result;
+}
+
 static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
 {
     int bytes;
@@ -556,6 +596,9 @@ int flb_engine_failed(struct flb_config *config)
     if (ret == -1) {
         flb_error("[engine] fail to dispatch FAILED message");
     }
+
+    /* Waiting flushing log */
+    sleep(1);
 
     return ret;
 }
@@ -982,13 +1025,11 @@ int flb_engine_start(struct flb_config *config)
                 }
             }
             else if (event->type == FLB_ENGINE_EV_OUTPUT) {
-                ts = cfl_time_now();
-
                 /*
                  * Event originated by an output plugin. likely a Task return
                  * status.
                  */
-                handle_output_event(event->fd, ts, config);
+                handle_output_events(event->fd, config);
             }
             else if (event->type == FLB_ENGINE_EV_INPUT) {
                 ts = cfl_time_now();
@@ -1042,10 +1083,10 @@ int flb_engine_shutdown(struct flb_config *config)
     flb_router_exit(config);
 
     /* cleanup plugins */
-    flb_input_exit_all(config);
     flb_filter_exit(config);
     flb_output_exit(config);
     flb_custom_exit(config);
+    flb_input_exit_all(config);
 
     /* Destroy the storage context */
     flb_storage_destroy(config);

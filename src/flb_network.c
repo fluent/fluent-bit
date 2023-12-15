@@ -1806,7 +1806,7 @@ static int net_address_unix_socket_peer_pid_raw(flb_sockfd_t fd,
     struct ucred peer_credentials;
 #endif
     size_t       required_buffer_size;
-    int          result;
+    int          result = 0;
 
     if (address->ss_family != AF_UNIX) {
         return -1;

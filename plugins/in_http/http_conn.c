@@ -134,7 +134,7 @@ static int http_conn_event(void *data)
                  * handled, the additional memset intends to wipe any left over data
                  * from the headers parsed in the previous request.
                  */
-                memset(&conn->session.parser, 0, sizeof(mk_http_parser));
+                memset(&conn->session.parser, 0, sizeof(struct mk_http_parser));
                 mk_http_parser_init(&conn->session.parser);
                 http_conn_request_init(&conn->session, &conn->request);
             }
@@ -146,7 +146,7 @@ static int http_conn_event(void *data)
              * handled, the additional memset intends to wipe any left over data
              * from the headers parsed in the previous request.
              */
-            memset(&conn->session.parser, 0, sizeof(mk_http_parser));
+            memset(&conn->session.parser, 0, sizeof(struct mk_http_parser));
             mk_http_parser_init(&conn->session.parser);
             http_conn_request_init(&conn->session, &conn->request);
         }

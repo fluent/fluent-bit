@@ -342,22 +342,31 @@ static int netdev_update(struct flb_ne *ctx)
 }
 
 
-int ne_netdev_init(struct flb_ne *ctx)
+static int ne_netdev_init(struct flb_ne *ctx)
 {
     netdev_configure(ctx);
     return 0;
 }
 
-int ne_netdev_update(struct flb_ne *ctx)
+static int ne_netdev_update(struct flb_input_instance *ins, struct flb_config *config, void *in_context)
 {
+    struct flb_ne *ctx = (struct flb_ne *)in_context;
+
     netdev_update(ctx);
     return 0;
 }
 
-int ne_netdev_exit(struct flb_ne *ctx)
+static int ne_netdev_exit(struct flb_ne *ctx)
 {
     if (ctx->netdev_ht) {
         flb_hash_table_destroy(ctx->netdev_ht);
     }
     return 0;
 }
+
+struct flb_ne_collector netdev_collector = {
+    .name = "netdev",
+    .cb_init = ne_netdev_init,
+    .cb_update = ne_netdev_update,
+    .cb_exit = ne_netdev_exit
+};

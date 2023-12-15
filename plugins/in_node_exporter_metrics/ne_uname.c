@@ -19,4 +19,17 @@
 
 #ifdef __linux__
 #include "ne_uname_linux.c"
+#elif __APPLE__
+#include "ne_uname_darwin.c"
+#else
+
+#include "ne.h"
+
+struct flb_ne_collector uname_collector = {
+    .name = "uname",
+    .cb_init = NULL,
+    .cb_update = NULL,
+    .cb_exit = NULL
+};
+
 #endif

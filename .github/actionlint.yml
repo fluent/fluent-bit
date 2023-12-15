@@ -1,0 +1,3 @@
+self-hosted-runner:
+  labels:
+    - actuated-arm64-8cpu-16gb

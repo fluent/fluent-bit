@@ -60,7 +60,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
           path: source
@@ -78,7 +78,7 @@ jobs:
           SOURCE_FILENAME_PREFIX: source-${{ inputs.version }}
 
       - name: Upload the source artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: source-${{ inputs.version }}
           path: source-packages/*
@@ -87,7 +87,7 @@ jobs:
       # Pick up latest master version
       - name: Checkout code for action
         if: inputs.environment == 'staging'
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           path: action-support
 
@@ -105,7 +105,8 @@ jobs:
   call-build-linux-packages:
     name: ${{ matrix.distro }} package build and stage to S3
     environment: ${{ inputs.environment }}
-    runs-on: ubuntu-latest
+    # Ensure for OSS Fluent Bit repo we enable usage of Actuated runners for ARM builds, for forks it should keep existing ubuntu-latest usage.
+    runs-on: ${{ (contains(matrix.distro, 'arm' ) && (github.repository == 'fluent/fluent-bit') && 'actuated-arm64-8cpu-16gb') || 'ubuntu-latest' }}
     permissions:
       contents: read
     strategy:
@@ -115,15 +116,19 @@ jobs:
     continue-on-error: ${{ inputs.ignore_failing_targets || false }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
 
+      - name: Set up Actuated mirror
+        if: contains(matrix.distro, 'arm' ) && (github.repository == 'fluent/fluent-bit')
+        uses: self-actuated/hub-mirror@master
+
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
       - name: Replace all special characters with dashes
         id: formatted_distro
@@ -132,7 +137,7 @@ jobs:
           echo "$INPUT --> $output"
           echo "replaced=$output" >> "$GITHUB_OUTPUT"
         shell: bash
-        env: 
+        env:
           INPUT: ${{ matrix.distro }}
 
       - name: fluent-bit - ${{ matrix.distro }} artifacts
@@ -146,7 +151,7 @@ jobs:
         working-directory: packaging
 
       - name: Upload the ${{ steps.formatted_distro.outputs.replaced }} artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: packages-${{ inputs.version }}-${{ steps.formatted_distro.outputs.replaced }}
           path: packaging/packages/
@@ -154,11 +159,12 @@ jobs:
 
       - name: Retrieve target info for repo creation
         id: get-target-info
+        timeout-minutes: 5
         # Remove any .arm648 suffix
         # For ubuntu map to codename using the disto-info list (CSV)
         run: |
           sudo apt-get update
-          sudo apt-get install -y distro-info
+          sudo apt-get install -y distro-info awscli
           TARGET=${DISTRO%*.arm64v8}
           if [[ "$TARGET" == "ubuntu/"* ]]; then
               UBUNTU_CODENAME=$(cut -d ',' -f 1,3 < "/usr/share/distro-info/ubuntu.csv"|grep "${TARGET##*/}"|cut -d ',' -f 2)
@@ -173,6 +179,7 @@ jobs:
           echo "target=$TARGET" >> $GITHUB_OUTPUT
         env:
           DISTRO: ${{ matrix.distro }}
+          DEBIAN_FRONTEND: noninteractive
         shell: bash
 
       - name: Verify output target
@@ -188,7 +195,7 @@ jobs:
       # Pick up latest master version
       - name: Checkout code for action
         if: inputs.environment == 'staging'
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           path: action-support
 
@@ -214,16 +221,19 @@ jobs:
       - call-build-linux-packages
     steps:
       - name: Install dependencies
+        timeout-minutes: 10
         run: |
           sudo apt-get update
-          sudo apt-get install -y createrepo-c aptly
+          sudo apt-get install -y createrepo-c aptly awscli
+        env:
+          DEBIAN_FRONTEND: noninteractive
 
       - name: Checkout code for repo metadata construction - always latest
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Import GPG key for signing
         id: import_gpg
-        uses: crazy-max/ghaction-import-gpg@v5
+        uses: crazy-max/ghaction-import-gpg@v6
         with:
           gpg_private_key: ${{ secrets.gpg_private_key }}
           passphrase: ${{ secrets.gpg_private_key_passphrase }}

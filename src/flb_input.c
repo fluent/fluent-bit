@@ -477,7 +477,7 @@ int flb_input_set_property(struct flb_input_instance *ins,
 
     /* Check if the key is a known/shared property */
     if (prop_key_check("tag", k, len) == 0 && tmp) {
-        ins->tag     = tmp;
+        flb_utils_set_plugin_string_property("tag", &ins->tag, tmp);
         ins->tag_len = flb_sds_len(tmp);
         ins->tag_default = FLB_FALSE;
     }
@@ -502,7 +502,7 @@ int flb_input_set_property(struct flb_input_instance *ins,
         flb_sds_destroy(tmp);
     }
     else if (prop_key_check("alias", k, len) == 0 && tmp) {
-        ins->alias = tmp;
+        flb_utils_set_plugin_string_property("alias", &ins->alias, tmp);
     }
     else if (prop_key_check("mem_buf_limit", k, len) == 0 && tmp) {
         limit = flb_utils_size_to_bytes(tmp);
@@ -513,10 +513,10 @@ int flb_input_set_property(struct flb_input_instance *ins,
         ins->mem_buf_limit = (size_t) limit;
     }
     else if (prop_key_check("listen", k, len) == 0) {
-        ins->host.listen = tmp;
+        flb_utils_set_plugin_string_property("listen", &ins->host.listen, tmp);
     }
     else if (prop_key_check("host", k, len) == 0) {
-        ins->host.name   = tmp;
+        flb_utils_set_plugin_string_property("host", &ins->host.name, tmp);
     }
     else if (prop_key_check("port", k, len) == 0) {
         if (tmp) {
@@ -541,27 +541,16 @@ int flb_input_set_property(struct flb_input_instance *ins,
 
 #ifdef FLB_HAVE_TLS
     else if (prop_key_check("tls", k, len) == 0 && tmp) {
-        if (strcasecmp(tmp, "true") == 0 || strcasecmp(tmp, "on") == 0) {
-            if ((ins->flags & FLB_IO_TLS) == 0) {
-                flb_error("[config] %s don't support TLS", ins->name);
-                flb_sds_destroy(tmp);
-                return -1;
-            }
-
-            ins->use_tls = FLB_TRUE;
-        }
-        else {
-            ins->use_tls = FLB_FALSE;
+        ins->use_tls = flb_utils_bool(tmp);
+        if (ins->use_tls == FLB_TRUE && ((ins->flags & FLB_IO_TLS) == 0)) {
+            flb_error("[config] %s does not support TLS", ins->name);
+            flb_sds_destroy(tmp);
+            return -1;
         }
         flb_sds_destroy(tmp);
     }
     else if (prop_key_check("tls.verify", k, len) == 0 && tmp) {
-        if (strcasecmp(tmp, "true") == 0 || strcasecmp(tmp, "on") == 0) {
-            ins->tls_verify = FLB_TRUE;
-        }
-        else {
-            ins->tls_verify = FLB_FALSE;
-        }
+        ins->tls_verify = flb_utils_bool(tmp);
         flb_sds_destroy(tmp);
     }
     else if (prop_key_check("tls.debug", k, len) == 0 && tmp) {
@@ -569,22 +558,22 @@ int flb_input_set_property(struct flb_input_instance *ins,
         flb_sds_destroy(tmp);
     }
     else if (prop_key_check("tls.vhost", k, len) == 0) {
-        ins->tls_vhost = tmp;
+        flb_utils_set_plugin_string_property("tls.vhost", &ins->tls_vhost, tmp);
     }
     else if (prop_key_check("tls.ca_path", k, len) == 0) {
-        ins->tls_ca_path = tmp;
+        flb_utils_set_plugin_string_property("tls.ca_path", &ins->tls_ca_path, tmp);
     }
     else if (prop_key_check("tls.ca_file", k, len) == 0) {
-        ins->tls_ca_file = tmp;
+        flb_utils_set_plugin_string_property("tls.ca_file", &ins->tls_ca_file, tmp);
     }
     else if (prop_key_check("tls.crt_file", k, len) == 0) {
-        ins->tls_crt_file = tmp;
+        flb_utils_set_plugin_string_property("tls.crt_file", &ins->tls_crt_file, tmp);
     }
     else if (prop_key_check("tls.key_file", k, len) == 0) {
-        ins->tls_key_file = tmp;
+        flb_utils_set_plugin_string_property("tls.key_file", &ins->tls_key_file, tmp);
     }
     else if (prop_key_check("tls.key_passwd", k, len) == 0) {
-        ins->tls_key_passwd = tmp;
+        flb_utils_set_plugin_string_property("tls.key_passwd", &ins->tls_key_passwd, tmp);
     }
 #endif
     else if (prop_key_check("storage.type", k, len) == 0 && tmp) {
@@ -981,6 +970,15 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                            1, (char *[]) {"name"});
     cmt_counter_set(ins->cmt_records, ts, 0, 1, (char *[]) {name});
 
+    /* fluentbit_input_ingestion_paused */
+    ins->cmt_ingestion_paused = \
+            cmt_gauge_create(ins->cmt,
+                             "fluentbit", "input",
+                             "ingestion_paused",
+                             "Is the input paused or not?",
+                             1, (char *[]) {"name"});
+    cmt_gauge_set(ins->cmt_ingestion_paused, ts, 0, 1, (char *[]) {name});
+
     /* Storage Metrics */
     if (ctx->storage_metrics == FLB_TRUE) {
         /* fluentbit_input_storage_overlimit */
@@ -1204,6 +1202,12 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                 return -1;
             }
         }
+    }
+
+    /* initialize processors */
+    ret = flb_processor_init(ins->processor);
+    if (ret == -1) {
+        return -1;
     }
 
     return 0;
@@ -1533,7 +1537,6 @@ static int collector_start(struct flb_input_collector *coll,
 int flb_input_collector_start(int coll_id, struct flb_input_instance *in)
 {
     int ret;
-    int c = 0;
     struct mk_list *head;
     struct flb_input_collector *coll;
 
@@ -1547,7 +1550,6 @@ int flb_input_collector_start(int coll_id, struct flb_input_instance *in)
             }
             return ret;
         }
-        c++;
     }
 
     return -1;
@@ -1677,6 +1679,24 @@ int flb_input_test_pause_resume(struct flb_input_instance *ins, int sleep_second
     return 0;
 }
 
+static void flb_input_ingestion_paused(struct flb_input_instance *ins)
+{
+    if (ins->cmt_ingestion_paused != NULL) {
+        /* cmetrics */
+        cmt_gauge_set(ins->cmt_ingestion_paused, cfl_time_now(), 1,
+                      1, (char *[]) {flb_input_name(ins)});
+    }
+}
+
+static void flb_input_ingestion_resumed(struct flb_input_instance *ins)
+{
+    if (ins->cmt_ingestion_paused != NULL) {
+        /* cmetrics */
+        cmt_gauge_set(ins->cmt_ingestion_paused, cfl_time_now(), 0,
+                      1, (char *[]) {flb_input_name(ins)});
+    }
+}
+
 int flb_input_pause(struct flb_input_instance *ins)
 {
     /* if the instance is already paused, just return */
@@ -1696,14 +1716,24 @@ int flb_input_pause(struct flb_input_instance *ins)
         }
     }
 
+    flb_input_ingestion_paused(ins);
+
     return 0;
 }
 
 int flb_input_resume(struct flb_input_instance *ins)
 {
     if (ins->p->cb_resume) {
-        ins->p->cb_resume(ins->context, ins->config);
+        if (flb_input_is_threaded(ins)) {
+            /* signal the thread event loop about the 'resume' operation */
+            flb_input_thread_instance_resume(ins);
+        }
+        else {
+            ins->p->cb_resume(ins->context, ins->config);
+        }
     }
+
+    flb_input_ingestion_resumed(ins);
 
     return 0;
 }

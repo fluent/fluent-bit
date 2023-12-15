@@ -237,7 +237,6 @@ static void cb_gelf_flush(struct flb_event_chunk *event_chunk,
     int ret;
     flb_sds_t s;
     flb_sds_t tmp;
-    msgpack_unpacked result;
     size_t off = 0;
     size_t prev_off = 0;
     size_t size = 0;
@@ -271,8 +270,6 @@ static void cb_gelf_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    msgpack_unpacked_init(&result);
-
     while ((ret = flb_log_event_decoder_next(
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
@@ -285,7 +282,7 @@ static void cb_gelf_flush(struct flb_event_chunk *event_chunk,
         size = (size * 1.4);
         s = flb_sds_create_size(size);
         if (s == NULL) {
-            msgpack_unpacked_destroy(&result);
+            flb_log_event_decoder_destroy(&log_decoder);
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
 
@@ -333,7 +330,7 @@ static void cb_gelf_flush(struct flb_event_chunk *event_chunk,
         flb_sds_destroy(s);
     }
 
-    msgpack_unpacked_destroy(&result);
+    flb_log_event_decoder_destroy(&log_decoder);
 
     if (ctx->mode != FLB_GELF_UDP) {
         flb_upstream_conn_release(u_conn);

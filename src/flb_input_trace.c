@@ -26,10 +26,10 @@
 #include <ctraces/ctraces.h>
 #include <ctraces/ctr_decode_msgpack.h>
 
-/* Take a CTrace context and enqueue it as a Trace chunk */
-int flb_input_trace_append(struct flb_input_instance *ins,
-                           const char *tag, size_t tag_len,
-                           struct ctrace *ctr)
+static int input_trace_append(struct flb_input_instance *ins,
+                              size_t processor_starting_stage,
+                              const char *tag, size_t tag_len,
+                              struct ctrace *ctr)
 {
     int ret;
     char *out_buf;
@@ -49,7 +49,12 @@ int flb_input_trace_append(struct flb_input_instance *ins,
             }
         }
 
-        ret = flb_processor_run(ins->processor, FLB_PROCESSOR_TRACES, tag, tag_len, (char *) ctr, 0, NULL, NULL);
+        ret = flb_processor_run(ins->processor,
+                                processor_starting_stage,
+                                FLB_PROCESSOR_TRACES,
+                                tag, tag_len,
+                                (char *) ctr,
+                                0, NULL, NULL);
 
         if (ret == -1) {
             return -1;
@@ -70,4 +75,28 @@ int flb_input_trace_append(struct flb_input_instance *ins,
     ctr_encode_msgpack_destroy(out_buf);
 
     return ret;
+}
+
+/* Take a CTrace context and enqueue it as a Trace chunk */
+int flb_input_trace_append(struct flb_input_instance *ins,
+                           const char *tag, size_t tag_len,
+                           struct ctrace *ctr)
+{
+    return input_trace_append(ins,
+                              0,
+                              tag, tag_len,
+                              ctr);
+}
+
+/* Take a CTrace context and enqueue it as a Trace chunk */
+int flb_input_trace_append_skip_processor_stages(
+        struct flb_input_instance *ins,
+        size_t processor_starting_stage,
+        const char *tag, size_t tag_len,
+        struct ctrace *ctr)
+{
+    return input_trace_append(ins,
+                              processor_starting_stage,
+                              tag, tag_len,
+                              ctr);
 }

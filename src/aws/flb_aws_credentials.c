@@ -537,6 +537,8 @@ static struct flb_aws_provider *standard_chain_create(struct flb_config
         return NULL;
     }
 
+    pthread_mutex_init(&provider->lock, NULL);
+
     implementation = flb_calloc(1, sizeof(struct flb_aws_provider_chain));
 
     if (!implementation) {
@@ -768,6 +770,8 @@ void flb_aws_provider_destroy(struct flb_aws_provider *provider)
             provider->provider_vtable->destroy(provider);
         }
 
+        pthread_mutex_destroy(&provider->lock);
+
         /* free managed dependencies */
         if (provider->base_aws_provider) {
             flb_aws_provider_destroy(provider->base_aws_provider);
@@ -834,27 +838,25 @@ time_t flb_aws_cred_expiration(const char *timestamp)
 }
 
 /*
- * Fluent Bit is single-threaded but asynchonous. Only one co-routine will
- * be running at a time, and they only pause/resume for IO.
- *
- * Thus, while synchronization is needed (to prevent multiple co-routines
- * from duplicating effort and performing the same work), it can be obtained
- * using a simple integer flag on the provider.
+ * Fluent Bit is now multi-threaded and asynchonous with coros. 
+ * The trylock prevents deadlock, and protects the provider
+ * when a cred refresh happens. The refresh frees and 
+ * sets the shared cred cache, a double free could occur
+ * if two threads do it at the same exact time.
  */
 
 /* Like a traditional try lock- it does not block if the lock is not obtained */
 int try_lock_provider(struct flb_aws_provider *provider)
 {
-    if (provider->locked == FLB_TRUE) {
+    int ret = 0;
+    ret = pthread_mutex_trylock(&provider->lock);
+    if (ret != 0) {
         return FLB_FALSE;
     }
-    provider->locked = FLB_TRUE;
     return FLB_TRUE;
 }
 
 void unlock_provider(struct flb_aws_provider *provider)
 {
-    if (provider->locked == FLB_TRUE) {
-        provider->locked = FLB_FALSE;
-    }
+    pthread_mutex_unlock(&provider->lock);
 }

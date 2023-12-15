@@ -42,6 +42,17 @@
 #define FLB_PROCESSOR_UNIT_NATIVE    0
 #define FLB_PROCESSOR_UNIT_FILTER    1
 
+
+/* The current values mean the processor stack will
+ * wait for 2 seconds at most in 50 millisecond increments
+ * for each processor unit.
+ *
+ * This is the worst case scenario and in reality there will
+ * be no wait in 99.9% of the cases.
+ */
+#define FLB_PROCESSOR_LOCK_RETRY_LIMIT 40
+#define FLB_PROCESSOR_LOCK_RETRY_DELAY 50000
+
 /* These forward definitions are necessary in order to avoid
  * inclussion conflicts.
  */
@@ -56,6 +67,7 @@ struct flb_processor_unit {
     int event_type;
     int unit_type;
     flb_sds_t name;
+    size_t stage;
 
     /*
      * Opaque data type for custom reference (for pipeline filters this
@@ -63,6 +75,16 @@ struct flb_processor_unit {
      */
     void *ctx;
 
+    /* This lock is meant to cover the case where two output plugin
+     * worker threads flb_output_flush_create calls overlap which
+     * could cause flb_processor_run to be invoked by both of them
+     * at the same time with the same context.
+     *
+     * This could cause certain non thread aware filters such as
+     * filter_lua to modify internal structures leading to corruption
+     * and crashes.
+    */
+    pthread_mutex_t lock;
     /*
      * pipeline filters needs to be linked somewhere since the destroy
      * function will do the mk_list_del(). To avoid corruptions we link
@@ -89,6 +111,7 @@ struct flb_processor {
     struct mk_list metrics;
     struct mk_list traces;
 
+    size_t stage_count;
     /*
      * opaque data type to reference anything specific from the caller, for input
      * plugins this will contain the input instance context.
@@ -173,6 +196,7 @@ int flb_processor_init(struct flb_processor *proc);
 void flb_processor_destroy(struct flb_processor *proc);
 
 int flb_processor_run(struct flb_processor *proc,
+                      size_t starting_stage,
                       int type,
                       const char *tag, size_t tag_len,
                       void *data, size_t data_size,
@@ -183,7 +207,7 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
                                                      int event_type,
                                                      char *unit_name);
 void flb_processor_unit_destroy(struct flb_processor_unit *pu);
-int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k, const char *v);
+int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k, struct cfl_variant *v);
 
 int flb_processors_load_from_config_format_group(struct flb_processor *proc, struct flb_cf_group *g);
 

@@ -147,3 +147,15 @@ struct flb_kernel *flb_kernel_info()
 }
 
 #endif
+
+void flb_kernel_destroy(struct flb_kernel *kernel)
+{
+    if (kernel == NULL) {
+        return;
+    }
+
+    if (kernel->s_version.data) {
+        flb_free(kernel->s_version.data);
+    }
+    flb_free(kernel);
+}

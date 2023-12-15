@@ -465,7 +465,7 @@ static int cb_nightfall_filter(const void *data, size_t bytes,
     int ret;
     char is_modified = FLB_FALSE;
 
-    struct flb_time tmp;
+    struct flb_time tmp = {0};
 
     char *to_redact;
     size_t to_redact_size;

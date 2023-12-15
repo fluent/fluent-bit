@@ -45,6 +45,10 @@ struct flb_event_chunk *flb_event_chunk_create(int type,
         return NULL;
     }
 
+#ifdef FLB_HAVE_CHUNK_TRACE
+    evc->trace = NULL;
+#endif
+
     evc->type = type;
     evc->data = buf_data;
     evc->size = buf_size;

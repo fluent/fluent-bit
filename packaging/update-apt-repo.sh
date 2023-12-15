@@ -1,6 +1,8 @@
 #!/bin/bash
 set -eux
 
+# Used to update a Debian Apt repo, e.g. during a staging build or release process
+
 # Where the base of all the repos is
 BASE_PATH=${BASE_PATH:?}
 if [[ ! -d "$BASE_PATH" ]]; then

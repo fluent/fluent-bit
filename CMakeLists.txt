@@ -7,8 +7,8 @@ set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  2)
-set(FLB_VERSION_MINOR  1)
-set(FLB_VERSION_PATCH  3)
+set(FLB_VERSION_MINOR  2)
+set(FLB_VERSION_PATCH  1)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -78,10 +78,14 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "FreeBSD")
   set(CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS} -lutil")
 endif()
 
-# *BSD is not supported platform for wasm-micro-runtime. Now, we should be disabled for these platforms.
-if(${CMAKE_SYSTEM_NAME} MATCHES "BSD")
+# *BSD is not supported platform for wasm-micro-runtime except for FreeBSD.
+# Now, we should be disabled for these platforms.
+if(NOT FLB_SYSTEM_FREEBSD AND ${CMAKE_SYSTEM_NAME} MATCHES "BSD")
   message(STATUS "This platform is not supported for WASM feature so disabled.")
   set(FLB_WASM OFF)
+elseif(FLB_SYSTEM_FREEBSD)
+  message(STATUS "Some of FreeBSD environment do not work with hardware boundary check so disabled.")
+  set(WAMR_DISABLE_STACK_HW_BOUND_CHECK 1)
 endif()
 
 include(GNUInstallDirs)
@@ -89,6 +93,7 @@ include(ExternalProject)
 include(cmake/FindJournald.cmake)
 include(cmake/FindMonkey.cmake)
 include(cmake/macros.cmake)
+include(cmake/platform_feature_checks.cmake)
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/sanitizers-cmake/cmake" ${CMAKE_MODULE_PATH})
 find_package(Sanitizers)
 
@@ -169,7 +174,8 @@ option(FLB_IN_FORWARD                  "Enable Forward input plugin"            
 option(FLB_IN_HEALTH                   "Enable Health input plugin"                   Yes)
 option(FLB_IN_HTTP                     "Enable HTTP input plugin"                     Yes)
 option(FLB_IN_MEM                      "Enable Memory input plugin"                   Yes)
-option(FLB_IN_KAFKA                    "Enable Kafka input plugin"                     No)
+option(FLB_IN_KUBERNETES_EVENTS        "Enable Kubernetes Events plugin"              Yes)
+option(FLB_IN_KAFKA                    "Enable Kafka input plugin"                    Yes)
 option(FLB_IN_KMSG                     "Enable Kernel log input plugin"               Yes)
 option(FLB_IN_LIB                      "Enable library mode input plugin"             Yes)
 option(FLB_IN_RANDOM                   "Enable random input plugin"                   Yes)
@@ -202,8 +208,11 @@ option(FLB_IN_PODMAN_METRICS           "Enable Podman Metrics input plugin"     
 option(FLB_IN_OPENTELEMETRY            "Enable OpenTelemetry input plugin"            Yes)
 option(FLB_IN_ELASTICSEARCH            "Enable Elasticsearch (Bulk API) input plugin" Yes)
 option(FLB_IN_CALYPTIA_FLEET           "Enable Calyptia Fleet input plugin"           Yes)
+option(FLB_IN_SPLUNK                   "Enable Splunk HTTP HEC input plugin"          Yes)
+option(FLB_IN_PROCESS_EXPORTER_METRICS "Enable process exporter metrics input plugin" Yes)
 option(FLB_OUT_AZURE                   "Enable Azure output plugin"                   Yes)
 option(FLB_OUT_AZURE_BLOB              "Enable Azure output plugin"                   Yes)
+option(FLB_OUT_AZURE_LOGS_INGESTION    "Enable Azure Logs Ingestion output plugin"    Yes)
 option(FLB_OUT_AZURE_KUSTO             "Enable Azure Kusto output plugin"             Yes)
 option(FLB_OUT_BIGQUERY                "Enable BigQuery output plugin"                Yes)
 option(FLB_OUT_CALYPTIA                "Enable Calyptia monitoring plugin"            Yes)
@@ -236,7 +245,7 @@ option(FLB_OUT_NULL                    "Enable dev null output plugin"          
 option(FLB_OUT_FLOWCOUNTER             "Enable flowcount output plugin"               Yes)
 option(FLB_OUT_LOGDNA                  "Enable LogDNA output plugin"                  Yes)
 option(FLB_OUT_LOKI                    "Enable Loki output plugin"                    Yes)
-option(FLB_OUT_KAFKA                   "Enable Kafka output plugin"                    No)
+option(FLB_OUT_KAFKA                   "Enable Kafka output plugin"                   Yes)
 option(FLB_OUT_KAFKA_REST              "Enable Kafka Rest output plugin"              Yes)
 option(FLB_OUT_CLOUDWATCH_LOGS         "Enable AWS CloudWatch output plugin"          Yes)
 option(FLB_OUT_KINESIS_FIREHOSE        "Enable AWS Firehose output plugin"            Yes)
@@ -247,6 +256,8 @@ option(FLB_OUT_PROMETHEUS_REMOTE_WRITE "Enable Prometheus remote write plugin"  
 option(FLB_OUT_S3                      "Enable AWS S3 output plugin"                  Yes)
 option(FLB_OUT_VIVO_EXPORTER           "Enabel Vivo exporter output plugin"           Yes)
 option(FLB_OUT_WEBSOCKET               "Enable Websocket output plugin"               Yes)
+option(FLB_OUT_ORACLE_LOG_ANALYTICS    "Enable Oracle Cloud Infrastructure Logging analytics plugin"          Yes)
+option(FLB_OUT_CHRONICLE               "Enable Google Chronicle output plugin"        Yes)
 option(FLB_FILTER_ALTER_SIZE           "Enable alter_size filter"                     Yes)
 option(FLB_FILTER_AWS                  "Enable aws filter"                            Yes)
 option(FLB_FILTER_ECS                  "Enable AWS ECS filter"                        Yes)
@@ -255,6 +266,7 @@ option(FLB_FILTER_EXPECT               "Enable expect filter"                   
 option(FLB_FILTER_GREP                 "Enable grep filter"                           Yes)
 option(FLB_FILTER_MODIFY               "Enable modify filter"                         Yes)
 option(FLB_FILTER_STDOUT               "Enable stdout filter"                         Yes)
+option(FLB_FILTER_SYSINFO              "Enable sysinfo filter"                        Yes)
 option(FLB_FILTER_PARSER               "Enable parser filter"                         Yes)
 option(FLB_FILTER_KUBERNETES           "Enable kubernetes filter"                     Yes)
 option(FLB_FILTER_REWRITE_TAG          "Enable tag rewrite filter"                    Yes)
@@ -360,8 +372,6 @@ endif()
 
 if (FLB_TESTS_OSSFUZZ)
   FLB_DEFINITION(FLB_HAVE_TESTS_OSSFUZZ)
-  # Disable for fuzz testing
-  set(FLB_CONFIG_YAML Off)
 endif()
 
 if (FLB_WASM)
@@ -385,6 +395,11 @@ if (FLB_SYSTEM_MACOS)
   # build tweaks
   include(cmake/macos-setup.cmake)
 endif()
+
+# Build for SystemZ - s390x arch
+if (FLB_SYSTEM_LINUX)
+  include(cmake/s390x.cmake)
+endif ()
 
 # Extract Git commit information for debug output.
 # Note that this is only set when cmake is run, the intent here is to use in CI for verification of releases so is acceptable.

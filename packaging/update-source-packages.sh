@@ -1,6 +1,9 @@
 #!/bin/bash
 set -eux
 
+# We provide the source code as a standalone checksummed package along with the JSON schema and AppVeyor binaries.
+# This is hosted at releases.fluentbit.io
+
 WINDOWS_SOURCE_DIR=${WINDOWS_SOURCE_DIR:-ignore}
 VERSION=${VERSION:-$1}
 MAJOR_VERSION=${MAJOR_VERSION:-}

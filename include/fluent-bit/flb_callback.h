@@ -37,7 +37,7 @@ struct flb_callback {
     struct flb_config *config;  /* Fluent Bit context */
 };
 
-struct flb_callback *flb_callback_create();
+struct flb_callback *flb_callback_create(char *name);
 void flb_callback_destroy(struct flb_callback *ctx);
 int flb_callback_set(struct flb_callback *ctx, char *name,
                      void (*cb)(char *, void *, void *));

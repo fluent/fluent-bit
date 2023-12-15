@@ -61,10 +61,20 @@ struct flb_coro {
     void *data;
 };
 
+#ifdef FLB_SYSTEM_MACOS
+#ifdef __aarch64__
+#define STACK_FACTOR 1.5 /* Use 36KiB for coro stacks */
+#else
+#define STACK_FACTOR 2   /* Use 24KiB for coro stacks */
+#endif
+#else
+#define STACK_FACTOR 1
+#endif
+
 #ifdef FLB_CORO_STACK_SIZE
 #define FLB_CORO_STACK_SIZE_BYTE      FLB_CORO_STACK_SIZE
 #else
-#define FLB_CORO_STACK_SIZE_BYTE      ((3 * PTHREAD_STACK_MIN) / 2)
+#define FLB_CORO_STACK_SIZE_BYTE      ((3 * STACK_FACTOR * PTHREAD_STACK_MIN) / 2)
 #endif
 
 #define FLB_CORO_DATA(coro)      (((char *) coro) + sizeof(struct flb_coro))

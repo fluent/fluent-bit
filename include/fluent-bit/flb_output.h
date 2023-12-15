@@ -50,6 +50,7 @@
 #include <fluent-bit/flb_processor.h>
 
 #include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_decode_msgpack.h>
 #include <cmetrics/cmt_encode_msgpack.h>
@@ -61,6 +62,11 @@
 
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
+#endif
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+/* include prototype directly to avoid cyclical include ... */
+int flb_chunk_trace_output(struct flb_chunk_trace *trace, struct flb_output_instance *output, int ret);
 #endif
 
 /* Output plugin masks */
@@ -360,6 +366,11 @@ struct flb_output_instance {
     struct cmt_counter *cmt_dropped_records; /* m: output_dropped_records */
     struct cmt_counter *cmt_retried_records; /* m: output_retried_records */
 
+    /* m: output_upstream_total_connections */
+    struct cmt_gauge   *cmt_upstream_total_connections;
+    /* m: output_upstream_busy_connections */
+    struct cmt_gauge   *cmt_upstream_busy_connections;
+
     /* OLD Metrics API */
 #ifdef FLB_HAVE_METRICS
     struct flb_metrics *metrics;         /* metrics                      */
@@ -492,6 +503,12 @@ struct flb_out_flush_params {
 
 extern FLB_TLS_DEFINE(struct flb_out_flush_params, out_flush_params);
 
+#define FLB_OUTPUT_RETURN(x)                                            \
+    flb_output_return_do(x);                                            \
+    return
+
+static inline void flb_output_return_do(int x);
+
 static FLB_INLINE void output_params_set(struct flb_output_flush *out_flush,
                                          struct flb_coro *coro,
                                          struct flb_task *task,
@@ -531,6 +548,7 @@ static FLB_INLINE void output_params_set(struct flb_output_flush *out_flush,
 
 static FLB_INLINE void output_pre_cb_flush(void)
 {
+    int route_status;
     struct flb_coro *coro;
     struct flb_output_plugin *out_p;
     struct flb_out_flush_params *params;
@@ -551,10 +569,28 @@ static FLB_INLINE void output_pre_cb_flush(void)
      */
     coro = params->coro;
     persisted_params = *params;
+
     co_switch(coro->caller);
 
     /* Continue, we will resume later */
     out_p = persisted_params.out_plugin;
+
+    flb_task_acquire_lock(persisted_params.out_flush->task);
+
+    route_status = flb_task_get_route_status(
+                    persisted_params.out_flush->task,
+                    persisted_params.out_flush->o_ins);
+
+    if (route_status == FLB_TASK_ROUTE_DROPPED) {
+        flb_task_release_lock(persisted_params.out_flush->task);
+
+        FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
+
+    flb_task_activate_route(persisted_params.out_flush->task,
+                            persisted_params.out_flush->o_ins);
+
+    flb_task_release_lock(persisted_params.out_flush->task);
 
     out_p->cb_flush(persisted_params.event_chunk,
                     persisted_params.out_flush,
@@ -621,7 +657,9 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
     if (flb_processor_is_active(o_ins->processor)) {
         if (evc->type == FLB_EVENT_TYPE_LOGS) {
             /* run the processor */
-            ret = flb_processor_run(o_ins->processor, FLB_PROCESSOR_LOGS,
+            ret = flb_processor_run(o_ins->processor,
+                                    0,
+                                    FLB_PROCESSOR_LOGS,
                                     evc->tag, flb_sds_len(evc->tag),
                                     evc->data, evc->size,
                                     &p_buf, &p_size);
@@ -669,6 +707,7 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
                             evc->size,
                             &chunk_offset)) == CMT_DECODE_MSGPACK_SUCCESS) {
                 ret = flb_processor_run(o_ins->processor,
+                                        0,
                                         FLB_PROCESSOR_METRICS,
                                         evc->tag,
                                         flb_sds_len(evc->tag),
@@ -765,6 +804,7 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
                             evc->size,
                             &chunk_offset)) == CTR_DECODE_MSGPACK_SUCCESS) {
                 ret = flb_processor_run(o_ins->processor,
+                                        0,
                                         FLB_PROCESSOR_TRACES,
                                         evc->tag,
                                         flb_sds_len(evc->tag),
@@ -899,7 +939,22 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     o_ins = out_flush->o_ins;
     task = out_flush->task;
 
+    flb_task_acquire_lock(task);
+
+    flb_task_deactivate_route(task, o_ins);
+
+    flb_task_release_lock(task);
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+    if (task->event_chunk) {
+        if (task->event_chunk->trace) {
+             flb_chunk_trace_output(task->event_chunk->trace, o_ins, ret);
+        }
+    }
+#endif
+
     if (out_flush->processed_event_chunk) {
+
         if (task->event_chunk->data != out_flush->processed_event_chunk->data) {
             flb_free(out_flush->processed_event_chunk->data);
         }
@@ -1034,6 +1089,8 @@ void *flb_output_get_cmt_instance(struct flb_output_instance *ins);
 #endif
 void flb_output_net_default(const char *host, int port,
                             struct flb_output_instance *ins);
+int flb_output_enable_multi_threading(struct flb_output_instance *ins,
+                                      struct flb_config *config);
 const char *flb_output_name(struct flb_output_instance *ins);
 void flb_output_pre_run(struct flb_config *config);
 void flb_output_exit(struct flb_config *config);

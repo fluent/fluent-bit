@@ -1594,6 +1594,35 @@ static void flb_test_issue_7075()
     filter_test_destroy(ctx);
 }
 
+static void flb_test_issue_7368()
+{
+    int ret;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "remove_wildcard", "*s3",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"r1\":\"someval\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret != 0);
+
+    filter_test_destroy(ctx);
+}
+
 TEST_LIST = {
     /* Operations / Commands */
     {"op_set_append"            , flb_test_op_set_append },
@@ -1639,6 +1668,7 @@ TEST_LIST = {
     {"cond_key_value_does_not_matches and key does not exist", flb_test_issue_4319_2 },
     {"Key_value_matches and value is bool type", flb_test_issue_7075},
     {"operation_with_whitespace", flb_test_issue_1225 },
+    {"invalid_wildcard", flb_test_issue_7368 },
 
     {NULL, NULL}
 };

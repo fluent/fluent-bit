@@ -95,6 +95,14 @@ struct flb_connection {
      */
     int busy_flag;
 
+    /* This flag is used to determine if the connection was shut down to ensure we
+     * don't do it twice when a timeout is detected.
+     *
+     * This is required in order to overcome a limitation in the async read / write
+     * functions that will be addressed as soon as possible.
+     */
+    int shutdown_flag;
+
     /*
      * Recycle: if the connection is keepalive, this flag is always on, but if
      * the caller wants to drop the connection once is released, it can set

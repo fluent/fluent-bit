@@ -326,6 +326,9 @@ struct flb_input_instance {
     /* is the input instance overlimit ?: 1 or 0 */
     struct cmt_gauge   *cmt_storage_overlimit;
 
+    /* is the input instance paused or not ?: 1 or 0 */
+    struct cmt_gauge   *cmt_ingestion_paused;
+
     /* memory bytes used by chunks */
     struct cmt_gauge   *cmt_storage_memory_bytes;
 

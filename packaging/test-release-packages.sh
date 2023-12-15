@@ -1,6 +1,7 @@
 #!/bin/bash
 set -eux
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
 # Verify package install for a release version
 
 if [[ -f "$SCRIPT_DIR/.env" ]]; then

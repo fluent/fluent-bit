@@ -100,6 +100,13 @@ static int collect_metrics(struct prom_scrape *ctx)
 
     flb_http_buffer_size(c, ctx->buffer_max_size);
 
+    /* Auth headers */
+    if (ctx->http_user && ctx->http_passwd) { /* Basic */
+        flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
+    } else if (ctx->bearer_token) { /* Bearer token */
+        flb_http_bearer_auth(c, ctx->bearer_token);
+    }
+
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {
         flb_plg_error(ctx->ins, "http do error");
@@ -216,6 +223,24 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "metrics_path", DEFAULT_URI,
      0, FLB_TRUE, offsetof(struct prom_scrape, metrics_path),
      "Set the metrics URI endpoint, it must start with a forward slash."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "http_user", NULL,
+     0, FLB_TRUE, offsetof(struct prom_scrape, http_user),
+     "Set HTTP auth user"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "http_passwd", "",
+     0, FLB_TRUE, offsetof(struct prom_scrape, http_passwd),
+     "Set HTTP auth password"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "bearer_token", NULL,
+     0, FLB_TRUE, offsetof(struct prom_scrape, bearer_token),
+     "Set bearer token auth"
     },
 
     /* EOF */

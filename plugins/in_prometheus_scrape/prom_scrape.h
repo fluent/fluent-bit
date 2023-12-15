@@ -33,6 +33,13 @@ struct prom_scrape
     struct flb_upstream *upstream;
     struct flb_input_instance *ins;  /* input plugin instance */
     size_t buffer_max_size;          /* Maximum buffer size */
+
+    /* HTTP Auth */
+    flb_sds_t http_user;
+    flb_sds_t http_passwd;
+
+    /* Bearer Token Auth */
+    flb_sds_t bearer_token;
 };
 
 #endif

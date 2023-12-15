@@ -266,8 +266,8 @@ static int sp_cmd_aggregated_keys(struct flb_sp_cmd *cmd)
     }
 
     /*
-     * if some aggregated function is required, not aggregated keys are
-     * not allowed so we return an error (-1).
+     * If aggregated functions are included in the query, non-aggregated keys are
+     * not allowed (except for the ones inside GROUP BY statement).
      */
     if (aggr > 0 && not_aggr == 0) {
         return aggr;
@@ -349,7 +349,8 @@ static int string_to_number(const char *str, int len, int64_t *i, double *d)
  *
  * This function aims to take care of strings representing a value too.
  */
-static int object_to_number(msgpack_object obj, int64_t *i, double *d)
+static int object_to_number(msgpack_object obj, int64_t *i, double *d,
+                            int convert_str_to_num)
 {
     int ret;
     int64_t i_out;
@@ -366,7 +367,7 @@ static int object_to_number(msgpack_object obj, int64_t *i, double *d)
         *d = obj.via.f64;
         return FLB_STR_FLOAT;
     }
-    else if (obj.type == MSGPACK_OBJECT_STR) {
+    else if (obj.type == MSGPACK_OBJECT_STR && convert_str_to_num == FLB_TRUE) {
         /* A numeric representation of a string should not exceed 19 chars */
         if (obj.via.str.size > 19) {
             return -1;
@@ -489,7 +490,7 @@ struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, const char *name,
     /* Check and validate aggregated keys */
     ret = sp_cmd_aggregated_keys(task->cmd);
     if (ret == -1) {
-        flb_error("[sp] aggregated query cannot mix not aggregated keys: %s",
+        flb_error("[sp] aggregated query cannot include the aggregated keys: %s",
                   query);
         flb_sp_task_destroy(task);
         return NULL;
@@ -505,10 +506,10 @@ struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, const char *name,
             event = &task->window.event;
             MK_EVENT_ZERO(event);
 
-            /* Run every 'size' seconds */
+            /* Run every 'window size' seconds */
             fd = mk_event_timeout_create(sp->config->evl,
                                          cmd->window.size, (long) 0,
-                                         &task->window.event);
+                                         event);
             if (fd == -1) {
                 flb_error("[sp] registration for task %s failed", task->name);
                 flb_free(task);
@@ -524,7 +525,7 @@ struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, const char *name,
                 /* Run every 'size' seconds */
                 fd = mk_event_timeout_create(sp->config->evl,
                                              cmd->window.advance_by, (long) 0,
-                                             &task->window.event_hop);
+                                             event);
                 if (fd == -1) {
                     flb_error("[sp] registration for task %s failed", task->name);
                     flb_free(task);
@@ -623,8 +624,7 @@ void flb_sp_aggregate_node_destroy(struct flb_sp_cmd *cmd,
     flb_free(aggr_node);
 }
 
-void flb_sp_window_destroy(struct flb_sp_cmd *cmd,
-                           struct flb_sp_task_window *window)
+void flb_sp_window_destroy(struct flb_sp_task *task)
 {
     struct flb_sp_window_data *data;
     struct aggregate_node *aggr_node;
@@ -634,39 +634,45 @@ void flb_sp_window_destroy(struct flb_sp_cmd *cmd,
     struct mk_list *head_hs;
     struct mk_list *tmp_hs;
 
-    mk_list_foreach_safe(head, tmp, &window->data) {
+    mk_list_foreach_safe(head, tmp, &task->window.data) {
         data = mk_list_entry(head, struct flb_sp_window_data, _head);
         flb_free(data->buf_data);
         mk_list_del(&data->_head);
         flb_free(data);
     }
 
-    mk_list_foreach_safe(head, tmp, &window->aggregate_list) {
+    mk_list_foreach_safe(head, tmp, &task->window.aggregate_list) {
         aggr_node = mk_list_entry(head, struct aggregate_node, _head);
         mk_list_del(&aggr_node->_head);
-        flb_sp_aggregate_node_destroy(cmd, aggr_node);
+        flb_sp_aggregate_node_destroy(task->cmd, aggr_node);
     }
 
-    mk_list_foreach_safe(head, tmp, &window->hopping_slot) {
+    mk_list_foreach_safe(head, tmp, &task->window.hopping_slot) {
         hs = mk_list_entry(head, struct flb_sp_hopping_slot, _head);
         mk_list_foreach_safe(head_hs, tmp_hs, &hs->aggregate_list) {
             aggr_node = mk_list_entry(head_hs, struct aggregate_node, _head);
             mk_list_del(&aggr_node->_head);
-            flb_sp_aggregate_node_destroy(cmd, aggr_node);
+            flb_sp_aggregate_node_destroy(task->cmd, aggr_node);
         }
         rb_tree_destroy(&hs->aggregate_tree);
         flb_free(hs);
     }
 
-    rb_tree_destroy(&window->aggregate_tree);
+    if (task->window.fd > 0) {
+        mk_event_timeout_destroy(task->sp->config->evl, &task->window.event);
+        mk_event_closesocket(task->window.fd);
+    }
+
+    rb_tree_destroy(&task->window.aggregate_tree);
 }
 
 void flb_sp_task_destroy(struct flb_sp_task *task)
 {
     flb_sds_destroy(task->name);
     flb_sds_destroy(task->query);
-    flb_sp_window_destroy(task->cmd, &task->window);
+    flb_sp_window_destroy(task);
     flb_sp_snapshot_destroy(task->snapshot);
+
     mk_list_del(&task->_head);
 
     if (task->stream) {
@@ -1113,6 +1119,7 @@ void package_results(const char *tag, int tag_len,
                      char **out_buf, size_t *out_size,
                      struct flb_sp_task *task)
 {
+    char *c_name;
     int i;
     int len;
     int map_entries;
@@ -1164,14 +1171,13 @@ void package_results(const char *tag, int tag_len,
                                       flb_sds_len(ckey->alias));
             }
             else {
-                len = 0;
-                char *c_name;
                 if (!ckey->name) {
                     c_name = "*";
                 }
                 else {
                     c_name = ckey->name;
                 }
+                len = strlen(c_name);
 
                 msgpack_pack_str(&mp_pck, len);
                 msgpack_pack_str_body(&mp_pck, c_name, len);
@@ -1230,7 +1236,8 @@ next:
 }
 
 static struct aggregate_node * sp_process_aggregate_data(struct flb_sp_task *task,
-                                                         msgpack_object map)
+                                                         msgpack_object map,
+                                                         int convert_str_to_num)
 {
     int i;
     int ret;
@@ -1289,7 +1296,7 @@ static struct aggregate_node * sp_process_aggregate_data(struct flb_sp_task *tas
                 values_found++;
 
                 /* Convert string to number if that is possible */
-                ret = object_to_number(sval->o, &ival, &dval);
+                ret = object_to_number(sval->o, &ival, &dval, convert_str_to_num);
                 if (ret == -1) {
                     if (sval->o.type == MSGPACK_OBJECT_STR) {
                         gb_nums[key_id].type = FLB_SP_STRING;
@@ -1386,14 +1393,14 @@ static struct aggregate_node * sp_process_aggregate_data(struct flb_sp_task *tas
 int sp_process_data_aggr(const char *buf_data, size_t buf_size,
                          const char *tag, int tag_len,
                          struct flb_sp_task *task,
-                         struct flb_sp *sp)
+                         struct flb_sp *sp,
+                         int convert_str_to_num)
 {
     int i;
     int ok;
     int ret;
     int map_size;
     int key_id;
-    int values_found;
     size_t off;
     int64_t ival;
     double dval;
@@ -1445,7 +1452,7 @@ int sp_process_data_aggr(const char *buf_data, size_t buf_size,
             }
         }
 
-        aggr_node = sp_process_aggregate_data(task, map);
+        aggr_node = sp_process_aggregate_data(task, map, convert_str_to_num);
         if (!aggr_node)
         {
             continue;
@@ -1455,7 +1462,6 @@ int sp_process_data_aggr(const char *buf_data, size_t buf_size,
 
         nums = aggr_node->nums;
 
-        values_found = 0;
         /* Iterate each map key and see if it matches any command key */
         for (i = 0; i < map_size; i++) {
             key = map.via.map.ptr[i].key;
@@ -1492,8 +1498,6 @@ int sp_process_data_aggr(const char *buf_data, size_t buf_size,
                     continue;
                 }
 
-                values_found++;
-
                 /*
                  * Convert value to a numeric representation only if key has an
                  * assigned aggregation function
@@ -1501,7 +1505,7 @@ int sp_process_data_aggr(const char *buf_data, size_t buf_size,
                 ival = 0;
                 dval = 0.0;
                 if (ckey->aggr_func != FLB_SP_NOP) {
-                    ret = object_to_number(sval->o, &ival, &dval);
+                    ret = object_to_number(sval->o, &ival, &dval, convert_str_to_num);
                     if (ret == -1) {
                         /* Value cannot be represented as a number */
                         key_id++;
@@ -1991,7 +1995,7 @@ int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
         if (task->aggregate_keys == FLB_TRUE) {
             ret = sp_process_data_aggr(buf_data, buf_size,
                                        tag, tag_len,
-                                       task, sp);
+                                       task, sp, in->config->stream_processor_str_conv);
 
             if (ret == -1) {
                 flb_error("[sp] error processing records for '%s'",

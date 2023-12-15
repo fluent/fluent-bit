@@ -51,13 +51,13 @@ pthread_key_t MK_EXPORT _mkp_data;
 
 #ifdef TRACE
 
-#define MK_TRACE(...)                         \
-    mk_api->trace("pl",                       \
-                  MK_TRACE_PLUGIN,            \
-                  __FUNCTION__,               \
-                  __FILENAME__,               \
-                  __LINE__,                   \
-                  __VA_ARGS__)
+#define MK_TRACE(api, ...)                  \
+    api->trace("pl",                        \
+                MK_TRACE_PLUGIN,            \
+                __FUNCTION__,               \
+                __FILENAME__,               \
+                __LINE__,                   \
+                __VA_ARGS__)
 #define PLUGIN_TRACE  MK_TRACE
 #else
 #define MK_TRACE(...) do {} while(0)
@@ -68,22 +68,35 @@ pthread_key_t MK_EXPORT _mkp_data;
  * Redefine messages macros
  */
 
-#undef  mk_info
-#define mk_info(...) mk_api->_error(MK_INFO, __VA_ARGS__)
+#undef  mk_info_ex
+#define mk_info_ex(api, ...) api->_error(MK_INFO, __VA_ARGS__)
 
-#undef  mk_err
-#define mk_err(...) mk_api->_error(MK_ERR, __VA_ARGS__)
+#undef  mk_err_ex
+#define mk_err_ex(api, ...) api->_error(MK_ERR, __VA_ARGS__)
 
-#undef  mk_warn
-#define mk_warn(...) mk_api->_error(MK_WARN, __VA_ARGS__)
+#undef  mk_warn_ex
+#define mk_warn_ex(api, ...) api->_error(MK_WARN, __VA_ARGS__)
 
-#undef  mk_bug
-#define mk_bug(condition) do {                  \
+#undef  mk_bug_ex
+#define mk_bug_ex(api, condition) do {                  \
         if (mk_unlikely((condition)!=0)) {         \
-            mk_api->_error(MK_BUG, "[%s] Bug found in %s() at %s:%d",    \
-                           _plugin_info.shortname, __FUNCTION__, __FILE__, __LINE__); \
+            api->_error(MK_BUG, "[%s] Bug found in %s() at %s:%d",    \
+                        _plugin_info.shortname, __FUNCTION__, __FILE__, __LINE__); \
             abort();                                                    \
         }                                                               \
     } while(0)
 
+#undef  mk_info
+#define mk_info(...) mk_info_ex(mk_api, __VA_ARGS__)
+
+#undef  mk_err
+#define mk_err(...) mk_error_ex(mk_api, __VA_ARGS__)
+
+#undef  mk_warn
+#define mk_warn(...) mk_error_ex(mk_api, __VA_ARGS__)
+
+#undef  mk_bug
+#define mk_bug(condition) mk_bug_ex(mk_api, condition)
+
 #endif
+

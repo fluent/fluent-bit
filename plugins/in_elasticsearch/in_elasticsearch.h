@@ -37,6 +37,7 @@ struct flb_in_elasticsearch {
     const char *tag_key;
     const char *meta_key;
     flb_sds_t hostname;
+    flb_sds_t es_version;
     char cluster_name[16];
     char node_name[12];
 

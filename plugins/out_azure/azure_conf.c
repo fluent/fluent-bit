@@ -20,6 +20,8 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_pack.h>
 
 #include "azure.h"
 #include "azure_conf.h"
@@ -33,6 +35,7 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
     const char *tmp;
     struct flb_upstream *upstream;
     struct flb_azure *ctx;
+    struct flb_record_accessor *ra_prefix_key = NULL;
 
     /* Allocate config context */
     ctx = flb_calloc(1, sizeof(struct flb_azure));
@@ -83,6 +86,20 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
     flb_sds_len_set(ctx->dec_shared_key, olen);
+
+    /* config: 'log_type_key' */
+    if (ctx->log_type_key) {
+        ra_prefix_key = flb_ra_create(ctx->log_type_key, FLB_TRUE);
+
+        if (!ra_prefix_key) {
+            flb_plg_error(ctx->ins, "invalid log_type_key pattern '%s'", ctx->log_type_key);
+            flb_azure_conf_destroy(ctx);
+            return NULL;
+        }
+        else {
+            ctx->ra_prefix_key = ra_prefix_key;
+        }
+    }
 
     /* Validate hostname given by command line or 'Host' property */
     if (!ins->host.name && !ctx->customer_id) {
@@ -189,6 +206,9 @@ int flb_azure_conf_destroy(struct flb_azure *ctx)
     }
     if (ctx->uri) {
         flb_sds_destroy(ctx->uri);
+    }
+    if (ctx->ra_prefix_key) {
+        flb_ra_destroy(ctx->ra_prefix_key);
     }
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);

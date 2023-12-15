@@ -503,7 +503,7 @@ static int post_all_requests(struct flb_out_http *ctx,
         return -1;
     }
 
-    while ((ret = flb_log_event_decoder_next(
+    while ((flb_log_event_decoder_next(
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         headers = NULL;

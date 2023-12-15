@@ -62,6 +62,7 @@ void flb_test_log_to_metrics_gauge(void);
 void flb_test_log_to_metrics_histogram(void);
 void flb_test_log_to_metrics_reg(void);
 void flb_test_log_to_metrics_empty_label_keys_regex(void);
+void flb_test_log_to_metrics_label(void);
 
 
 /* Test data */
@@ -122,6 +123,7 @@ TEST_LIST = {
     {"histogram",              flb_test_log_to_metrics_histogram              },
     {"counter_regex",          flb_test_log_to_metrics_reg                    },
     {"regex_empty_label_keys", flb_test_log_to_metrics_empty_label_keys_regex },
+    {"label",                  flb_test_log_to_metrics_label                  },
     {NULL, NULL}
 };
 
@@ -138,7 +140,7 @@ int callback_test(void* data, size_t size, void* cb_data)
         flb_debug("[test_filter_log_to_metrics] received message: %s", (char*)data);
         pthread_mutex_lock(&result_mutex);
             strncat(output, data, size);
-            data_size = size; 
+            data_size = size;
         pthread_mutex_unlock(&result_mutex);
     }
     flb_free(data);
@@ -199,7 +201,7 @@ void flb_test_log_to_metrics_counter_k8s(void)
                            "\"def456\",\"red\",\"right\"]";
 
     ctx = flb_create();
-    flb_service_set(ctx, "Flush", "0.200000000", "Grace", "1", "Log_Level", 
+    flb_service_set(ctx, "Flush", "0.200000000", "Grace", "1", "Log_Level",
                     "error", NULL);
 
     cb_data.cb = callback_test;
@@ -260,7 +262,7 @@ void flb_test_log_to_metrics_counter(void)
     const char *expected = "\"value\":5.0,\"labels\":[\"red\",\"right\"]";
 
     ctx = flb_create();
-    flb_service_set(ctx, "Flush", "0.200000000", "Grace", "1", "Log_Level", 
+    flb_service_set(ctx, "Flush", "0.200000000", "Grace", "1", "Log_Level",
                     "error", NULL);
 
     cb_data.cb = callback_test;
@@ -326,7 +328,7 @@ void flb_test_log_to_metrics_counter_k8s_two_tuples(void)
 
 
     ctx = flb_create();
-    flb_service_set(ctx, "Flush", "0.200000000", "Grace", "1", "Log_Level", 
+    flb_service_set(ctx, "Flush", "0.200000000", "Grace", "1", "Log_Level",
                     "error", NULL);
 
     cb_data.cb = callback_test;
@@ -394,7 +396,7 @@ void flb_test_log_to_metrics_gauge(void)
     const char *expected = "\"value\":20.0,\"labels\":[\"red\",\"right\"]";
 
     ctx = flb_create();
-    flb_service_set(ctx, "Flush", "0.200000000", "Grace", "1", "Log_Level", 
+    flb_service_set(ctx, "Flush", "0.200000000", "Grace", "1", "Log_Level",
                     "error", NULL);
 
     cb_data.cb = callback_test;
@@ -522,7 +524,7 @@ void flb_test_log_to_metrics_reg(void)
 
 
     ctx = flb_create();
-    flb_service_set(ctx, "Flush", "0.200000000", "Grace", "1", "Log_Level", 
+    flb_service_set(ctx, "Flush", "0.200000000", "Grace", "1", "Log_Level",
                     "error", NULL);
 
     cb_data.cb = callback_test;
@@ -587,7 +589,7 @@ void flb_test_log_to_metrics_empty_label_keys_regex(void)
 
 
     ctx = flb_create();
-    flb_service_set(ctx, "Flush", "0.200000000", "Grace", "1", "Log_Level", 
+    flb_service_set(ctx, "Flush", "0.200000000", "Grace", "1", "Log_Level",
                     "error", NULL);
 
     cb_data.cb = callback_test;
@@ -630,4 +632,67 @@ void flb_test_log_to_metrics_empty_label_keys_regex(void)
     }
 
     filter_test_destroy(ctx);
+}
+
+void flb_test_log_to_metrics_label(void)
+{
+    int ret;
+    int i;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int filter_ffd;
+    int out_ffd;
+    char *result = NULL;
+    struct flb_lib_out_cb cb_data;
+    char *input = JSON_MSG1;
+    char finalString[32768] = "";
+    const char *expected_label_name = ",\"labels\":[\"pod_name\"],";
+    const char *expected_label_value = "\"value\":2.0,\"labels\":[\"testpod\"]";
+
+    ctx = flb_create();
+    flb_service_set(ctx, "Flush", "0.200000000", "Grace", "1", "Log_Level",
+                    "error", NULL);
+
+    cb_data.cb = callback_test;
+    cb_data.data = NULL;
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    filter_ffd = flb_filter(ctx, (char *) "log_to_metrics", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd,
+                         "Match", "*",
+                         "Tag", "test_metric",
+                         "metric_mode", "counter",
+                         "metric_name", "test",
+                         "metric_description", "Counts messages",
+                         "kubernetes_mode", "off",
+                         "add_label", "pod_name $kubernetes['pod_name']",
+                         NULL);
+
+    out_ffd = flb_output(ctx, (char *) "lib", (void *)&cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "*",
+                   "format", "json",
+                   NULL);
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    for (i = 0; i < 2; i++){
+        flb_lib_push(ctx, in_ffd, input, strlen(input));
+    }
+    wait_with_timeout(500, finalString);
+    result = strstr(finalString, expected_label_name);
+    if (!TEST_CHECK(result != NULL)) {
+        TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected_label_name, finalString);
+    }
+    result = strstr(finalString, expected_label_value);
+    if (!TEST_CHECK(result != NULL)) {
+        TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected_label_value, finalString);
+    }
+    filter_test_destroy(ctx);
+
 }

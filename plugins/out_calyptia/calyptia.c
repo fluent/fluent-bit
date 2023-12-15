@@ -22,7 +22,6 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_utils.h>
-#include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_version.h>
 #include <fluent-bit/flb_metrics.h>
@@ -92,69 +91,6 @@ static void append_labels(struct flb_calyptia *ctx, struct cmt *cmt)
         kv = mk_list_entry(head, struct flb_kv, _head);
         cmt_label_add(cmt, kv->key, kv->val);
     }
-}
-
-static flb_sds_t sha256_to_hex(unsigned char *sha256)
-{
-    int i;
-    flb_sds_t hex;
-    flb_sds_t tmp;
-
-    hex = flb_sds_create_size(64);
-    if (!hex) {
-        return NULL;
-    }
-
-    for (i = 0; i < 32; i++) {
-        tmp = flb_sds_printf(&hex, "%02x", sha256[i]);
-        if (!tmp) {
-            flb_sds_destroy(hex);
-            return NULL;
-        }
-        hex = tmp;
-    }
-
-    flb_sds_len_set(hex, 64);
-    return hex;
-}
-
-static int get_machine_id(struct flb_calyptia *ctx, char **out_buf, size_t *out_size)
-{
-    int ret;
-    char *buf;
-    flb_sds_t s_buf;
-    size_t s;
-    unsigned char sha256_buf[64] = {0};
-
-    /* retrieve raw machine id */
-    ret = flb_utils_get_machine_id(&buf, &s);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "could not obtain machine id");
-        return -1;
-    }
-
-    ret = flb_hash_simple(FLB_HASH_SHA256,
-                          (unsigned char *) buf,
-                          s,
-                          sha256_buf,
-                          sizeof(sha256_buf));
-
-    flb_free(buf);
-
-    if (ret != FLB_CRYPTO_SUCCESS) {
-        return -1;
-    }
-
-    /* convert to hex */
-    s_buf = sha256_to_hex(sha256_buf);
-    if (!s_buf) {
-        return -1;
-    }
-
-    *out_buf = s_buf;
-    *out_size = flb_sds_len(s_buf);
-
-    return 0;
 }
 
 static void pack_str(msgpack_packer *mp_pck, char *str)
@@ -720,8 +656,6 @@ static struct flb_calyptia *config_init(struct flb_output_instance *ins,
 {
     int ret;
     int flags;
-    size_t size;
-    char *machine_id;
     struct flb_calyptia *ctx;
 
     /* Calyptia plugin context */
@@ -768,14 +702,10 @@ static struct flb_calyptia *config_init(struct flb_output_instance *ins,
         }
     }
 
-    /* If no machine_id has been provided via a configuration option get it from the local machine-id. */
+    /* the machine-id is provided by custom calyptia, which invokes this plugin. */
     if (!ctx->machine_id) {
-        /* machine id */
-        ret = get_machine_id(ctx, &machine_id, &size);
-        if (ret == -1) {
-            return NULL;
-        }
-        ctx->machine_id = (flb_sds_t) machine_id;
+        flb_plg_error(ctx->ins, "machine_id has not been set");
+        return NULL;
     }
 
     flb_plg_debug(ctx->ins, "machine_id=%s", ctx->machine_id);
@@ -1003,10 +933,6 @@ static int cb_calyptia_exit(void *data, struct flb_config *config)
 
     if (ctx->agent_token) {
         flb_sds_destroy(ctx->agent_token);
-    }
-
-    if (ctx->machine_id) {
-        flb_sds_destroy(ctx->machine_id);
     }
 
     if (ctx->env) {

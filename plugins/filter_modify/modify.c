@@ -41,22 +41,67 @@
 
 static void condition_free(struct modify_condition *condition)
 {
-    flb_sds_destroy(condition->a);
-    flb_free(condition->b);
-    flb_free(condition->raw_k);
-    flb_free(condition->raw_v);
+    if (condition == NULL) {
+        return;
+    }
 
-    if (condition->a_is_regex) {
+    if (condition->a) {
+        flb_sds_destroy(condition->a);
+    }
+    if (condition->b) {
+        flb_free(condition->b);
+    }
+    if (condition->raw_k) {
+        flb_free(condition->raw_k);
+    }
+    if (condition->raw_v) {
+        flb_free(condition->raw_v);
+    }
+
+    if (condition->a_regex) {
         flb_regex_destroy(condition->a_regex);
     }
-    if (condition->b_is_regex) {
+    if (condition->b_regex) {
         flb_regex_destroy(condition->b_regex);
     }
     if (condition->ra_a) {
         flb_ra_destroy(condition->ra_a);
         condition->ra_a = NULL;
     }
+    if (!mk_list_entry_is_orphan(&condition->_head)) {
+        mk_list_del(&condition->_head);
+    }
     flb_free(condition);
+}
+
+static void rule_free(struct modify_rule *rule)
+{
+    if (rule == NULL) {
+        return;
+    }
+
+    if (rule->key) {
+        flb_free(rule->key);
+    }
+    if (rule->val) {
+        flb_free(rule->val);
+    }
+    if (rule->raw_k) {
+        flb_free(rule->raw_k);
+    }
+    if (rule->raw_v) {
+        flb_free(rule->raw_v);
+    }
+    if (rule->key_regex) {
+        flb_regex_destroy(rule->key_regex);
+    }
+    if (rule->val_regex) {
+        flb_regex_destroy(rule->val_regex);
+    }
+    if (!mk_list_entry_is_orphan(&rule->_head)) {
+        mk_list_del(&rule->_head);
+    }
+    flb_free(rule);
 }
 
 static void teardown(struct filter_modify_ctx *ctx)
@@ -69,20 +114,12 @@ static void teardown(struct filter_modify_ctx *ctx)
 
     mk_list_foreach_safe(head, tmp, &ctx->conditions) {
         condition = mk_list_entry(head, struct modify_condition, _head);
-        mk_list_del(&condition->_head);
         condition_free(condition);
     }
 
     mk_list_foreach_safe(head, tmp, &ctx->rules) {
         rule = mk_list_entry(head, struct modify_rule, _head);
-        flb_free(rule->key);
-        flb_free(rule->val);
-        flb_free(rule->raw_k);
-        flb_free(rule->raw_v);
-        flb_regex_destroy(rule->key_regex);
-        flb_regex_destroy(rule->val_regex);
-        mk_list_del(&rule->_head);
-        flb_free(rule);
+        rule_free(rule);
     }
 }
 
@@ -271,6 +308,7 @@ static int setup(struct filter_modify_ctx *ctx,
                     flb_plg_error(ctx->ins, "Unable to create regex for "
                                   "condition %s %s",
                                   condition->raw_k, condition->raw_v);
+                    teardown(ctx);
                     condition_free(condition);
                     flb_utils_split_free(split);
                     return -1;
@@ -290,6 +328,7 @@ static int setup(struct filter_modify_ctx *ctx,
                     flb_plg_error(ctx->ins, "Unable to create regex "
                                   "for condition %s %s",
                                   condition->raw_k, condition->raw_v);
+                    teardown(ctx);
                     condition_free(condition);
                     flb_utils_split_free(split);
                     return -1;
@@ -314,7 +353,7 @@ static int setup(struct filter_modify_ctx *ctx,
             // Build a rule
             //
 
-            rule = flb_malloc(sizeof(struct modify_rule));
+            rule = flb_calloc(1, sizeof(struct modify_rule));
             if (!rule) {
                 flb_plg_error(ctx->ins, "Unable to allocate memory for rule");
                 teardown(ctx);
@@ -329,7 +368,7 @@ static int setup(struct filter_modify_ctx *ctx,
                 flb_errno();
                 flb_plg_error(ctx->ins, "Unable to allocate memory for rule->raw_k");
                 teardown(ctx);
-                flb_free(rule);
+                rule_free(rule);
                 flb_utils_split_free(split);
                 return -1;
             }
@@ -338,8 +377,7 @@ static int setup(struct filter_modify_ctx *ctx,
                 flb_errno();
                 flb_plg_error(ctx->ins, "Unable to allocate memory for rule->raw_v");
                 teardown(ctx);
-                flb_free(rule->raw_k);
-                flb_free(rule);
+                rule_free(rule);
                 flb_utils_split_free(split);
                 return -1;
             }
@@ -351,9 +389,7 @@ static int setup(struct filter_modify_ctx *ctx,
                 flb_errno();
                 flb_plg_error(ctx->ins, "Unable to allocate memory for rule->key");
                 teardown(ctx);
-                flb_free(rule->raw_v);
-                flb_free(rule->raw_k);
-                flb_free(rule);
+                rule_free(rule);
                 flb_utils_split_free(split);
                 return -1;
             }
@@ -365,10 +401,7 @@ static int setup(struct filter_modify_ctx *ctx,
                 flb_errno();
                 flb_plg_error(ctx->ins, "Unable to allocate memory for rule->val");
                 teardown(ctx);
-                flb_free(rule->key);
-                flb_free(rule->raw_v);
-                flb_free(rule->raw_k);
-                flb_free(rule);
+                rule_free(rule);
                 flb_utils_split_free(split);
                 return -1;
             }
@@ -397,7 +430,7 @@ static int setup(struct filter_modify_ctx *ctx,
                     flb_plg_error(ctx->ins, "Invalid operation %s : %s in "
                                   "configuration", kv->key, kv->val);
                     teardown(ctx);
-                    flb_free(rule);
+                    rule_free(rule);
                     return -1;
                 }
             }
@@ -430,7 +463,7 @@ static int setup(struct filter_modify_ctx *ctx,
                     flb_plg_error(ctx->ins, "Invalid operation %s : %s in "
                                   "configuration", kv->key, kv->val);
                     teardown(ctx);
-                    flb_free(rule);
+                    rule_free(rule);
                     return -1;
                 }
             }
@@ -439,22 +472,38 @@ static int setup(struct filter_modify_ctx *ctx,
                 flb_plg_error(ctx->ins, "Unable to create regex for rule %s %s",
                               rule->raw_k, rule->raw_v);
                 teardown(ctx);
-                flb_free(rule);
+                rule_free(rule);
                 return -1;
             }
             else {
                 rule->key_regex =
                     flb_regex_create(rule->key);
+                if (rule->key_regex == NULL) {
+                    flb_plg_error(ctx->ins, "Unable to create regex(key) from %s",
+                                  rule->key);
+                    teardown(ctx);
+                    rule_free(rule);
+                    return -1;
+                }
             }
 
             if (rule->val_is_regex && rule->val_len == 0) {
                 flb_plg_error(ctx->ins, "Unable to create regex for rule %s %s",
                               rule->raw_k, rule->raw_v);
+                teardown(ctx);
+                rule_free(rule);
                 return -1;
             }
             else {
                 rule->val_regex =
                     flb_regex_create(rule->val);
+                if (rule->val_regex == NULL) {
+                    flb_plg_error(ctx->ins, "Unable to create regex(val) from %s",
+                                  rule->val);
+                    teardown(ctx);
+                    rule_free(rule);
+                    return -1;
+                }
             }
 
             mk_list_add(&rule->_head, &ctx->rules);
@@ -631,12 +680,6 @@ static inline bool kv_key_matches_str(msgpack_object_kv * kv,
                                       char *str, int len)
 {
     return helper_msgpack_object_matches_str(&kv->key, str, len);
-}
-
-static inline bool kv_val_matches_str(msgpack_object_kv * kv,
-                                      char *str, int len)
-{
-    return helper_msgpack_object_matches_str(&kv->val, str, len);
 }
 
 static inline bool kv_key_matches_str_rule_key(msgpack_object_kv * kv,

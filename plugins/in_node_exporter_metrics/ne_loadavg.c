@@ -19,4 +19,17 @@
 
 #ifdef __linux__
 #include "ne_loadavg_linux.c"
+#elif __APPLE__
+#include "ne_loadavg_darwin.c"
+#else
+
+#include "ne.h"
+
+struct flb_ne_collector loadavg_collector = {
+    .name = "loadavg",
+    .cb_init = NULL,
+    .cb_update = NULL,
+    .cb_exit = NULL
+};
+
 #endif

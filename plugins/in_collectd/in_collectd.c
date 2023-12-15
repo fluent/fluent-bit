@@ -221,5 +221,6 @@ struct flb_input_plugin in_collectd_plugin = {
     .cb_pause     = NULL,
     .cb_resume    = NULL,
     .config_map   = config_map,
+    .flags        = FLB_INPUT_NET_SERVER,
     .cb_exit      = in_collectd_exit
 };

@@ -320,6 +320,25 @@ static int attach_build_info(struct flb_config *ctx, struct cmt *cmt, uint64_t t
     return 0;
 }
 
+static int attach_hot_reload_info(struct flb_config *ctx, struct cmt *cmt, uint64_t ts,
+                                  char *hostname)
+{
+    double val;
+    struct cmt_gauge *g;
+
+    g = cmt_gauge_create(cmt, "fluentbit", "", "hot_reloaded_times",
+                         "Collect the count of hot reloaded times.",
+                         1, (char *[]) {"hostname"});
+    if (!g) {
+        return -1;
+    }
+
+    val = (double) ctx->hot_reloaded_count;
+
+    cmt_gauge_set(g, ts, val, 1, (char *[]) {hostname});
+    return 0;
+}
+
 /* Append internal Fluent Bit metrics to context */
 int flb_metrics_fluentbit_add(struct flb_config *ctx, struct cmt *cmt)
 {
@@ -340,6 +359,7 @@ int flb_metrics_fluentbit_add(struct flb_config *ctx, struct cmt *cmt)
     attach_uptime(ctx, cmt, ts, hostname);
     attach_process_start_time_seconds(ctx, cmt, ts, hostname);
     attach_build_info(ctx, cmt, ts, hostname);
+    attach_hot_reload_info(ctx, cmt, ts, hostname);
 
     return 0;
 }

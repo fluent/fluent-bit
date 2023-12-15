@@ -95,7 +95,13 @@ struct flb_config_map upstream_net[] = {
      FLB_CONFIG_MAP_INT, "net.keepalive_max_recycle", "2000",
      0, FLB_TRUE, offsetof(struct flb_net_setup, keepalive_max_recycle),
      "Set maximum number of times a keepalive connection can be used "
-     "before it is retired."
+     "before it is retried."
+    },
+
+    {
+     FLB_CONFIG_MAP_INT, "net.max_worker_connections", "0",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, max_worker_connections),
+     "Set the maximum number of active TCP connections that can be used per worker thread."
     },
 
     /* EOF */
@@ -104,6 +110,18 @@ struct flb_config_map upstream_net[] = {
 
 int flb_upstream_needs_proxy(const char *host, const char *proxy,
                              const char *no_proxy);
+
+static void flb_upstream_increment_busy_connections_count(
+                struct flb_upstream *stream);
+
+static void flb_upstream_decrement_busy_connections_count(
+                struct flb_upstream *stream);
+
+static void flb_upstream_increment_total_connections_count(
+                struct flb_upstream *stream);
+
+static void flb_upstream_decrement_total_connections_count(
+                struct flb_upstream *stream);
 
 /* Enable thread-safe mode for upstream connection */
 void flb_upstream_thread_safe(struct flb_upstream *u)
@@ -419,6 +437,19 @@ struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
     return u;
 }
 
+/* This function shuts the connection down in order to cause
+ * any client code trying to read or write from it to fail.
+ */
+static void shutdown_connection(struct flb_connection *u_conn)
+{
+    if (u_conn->fd > 0 &&
+        !u_conn->shutdown_flag) {
+        shutdown(u_conn->fd, SHUT_RDWR);
+
+        u_conn->shutdown_flag = FLB_TRUE;
+    }
+}
+
 /*
  * This function moves the 'upstream connection' into the queue to be
  * destroyed. Note that the caller is responsible to validate and check
@@ -444,18 +475,25 @@ static int prepare_destroy_conn(struct flb_connection *u_conn)
 #ifdef FLB_HAVE_TLS
         if (u_conn->tls_session != NULL) {
             flb_tls_session_destroy(u_conn->tls_session);
+
+            u_conn->tls_session = NULL;
         }
 #endif
-        shutdown(u_conn->fd, SHUT_RDWR);
+        shutdown_connection(u_conn);
+
         flb_socket_close(u_conn->fd);
+
         u_conn->fd = -1;
         u_conn->event.fd = -1;
     }
+
     /* remove connection from the queue */
     mk_list_del(&u_conn->_head);
 
     /* Add node to destroy queue */
     mk_list_add(&u_conn->_head, &uq->destroy_queue);
+
+    flb_upstream_decrement_total_connections_count(u);
 
     /*
      * note: the connection context is destroyed by the engine once all events
@@ -524,6 +562,8 @@ static struct flb_connection *create_conn(struct flb_upstream *u)
     /* Link new connection to the busy queue */
     uq = flb_upstream_queue_get(u);
     mk_list_add(&conn->_head, &uq->busy_queue);
+
+    flb_upstream_increment_total_connections_count(u);
 
     flb_stream_release_lock(&u->base);
 
@@ -606,6 +646,7 @@ int flb_upstream_conn_recycle(struct flb_connection *conn, int val)
 struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
 {
     int err;
+    int total_connections = 0;
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_connection *conn;
@@ -617,12 +658,50 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
               "net.connect_timeout        = %i seconds\n"
               "net.source_address         = %s\n"
               "net.keepalive              = %s\n"
-              "net.keepalive_idle_timeout = %i seconds",
+              "net.keepalive_idle_timeout = %i seconds\n"
+              "net.max_worker_connections = %i",
               u->tcp_host, u->tcp_port,
               u->base.net.connect_timeout,
               u->base.net.source_address ? u->base.net.source_address: "any",
               u->base.net.keepalive ? "enabled": "disabled",
-              u->base.net.keepalive_idle_timeout);
+              u->base.net.keepalive_idle_timeout,
+              u->base.net.max_worker_connections);
+
+
+    /* If the upstream is limited by max connections, check current state */
+    if (u->base.net.max_worker_connections > 0) {
+        /*
+         * Connections are linked to one of these lists:
+         *
+         *  - av_queue  : connections ready to be used (available)
+         *  - busy_queue: connections that are busy (someone is using them)
+         *  - drop_queue: connections in the cleanup phase (to be drop)
+         *
+         * Fluent Bit don't create connections ahead of time, just on demand. When
+         * a connection is created is placed into the busy_queue, when is not longer
+         * needed one of these things happen:
+         *
+         *   - if keepalive is enabled (default), the connection is moved to the 'av_queue'.
+         *   - if keepalive is disabled, the connection is moved to 'drop_queue' then is
+         *     closed and destroyed.
+         *
+         * Based on the logic described above, to limit the number of total connections
+         * in the worker, we only need to count the number of connections linked into
+         * the 'busy_queue' list because if there are connections available 'av_queue' it
+         * won't create a one.
+         */
+
+        /* Count the number of relevant connections */
+        flb_stream_acquire_lock(&u->base, FLB_TRUE);
+        total_connections = mk_list_size(&uq->busy_queue);
+        flb_stream_release_lock(&u->base);
+
+        if (total_connections >= u->base.net.max_worker_connections) {
+            flb_debug("[upstream] max worker connections=%i reached to: %s:%i, cannot connect",
+                      u->base.net.max_worker_connections, u->tcp_host, u->tcp_port);
+            return NULL;
+        }
+    }
 
     conn = NULL;
 
@@ -643,9 +722,6 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
 
             flb_stream_release_lock(&u->base);
 
-            /* Reset errno */
-            conn->net_error = -1;
-
             err = flb_socket_error(conn->fd);
 
             if (!FLB_EINPROGRESS(err) && err != 0) {
@@ -656,6 +732,9 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
                 conn = NULL;
                 continue;
             }
+
+            /* Reset errno */
+            conn->net_error = -1;
 
             /* Connect timeout */
             conn->ts_assigned = time(NULL);
@@ -675,8 +754,9 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
         }
     }
 
-    /* There are keepalive connections available or
-     * keepalive is disable so we need to create a new one
+    /*
+     * There are no keepalive connections available or keepalive is disabled
+     * so we need to create a new one.
      */
     if (conn == NULL) {
         conn = create_conn(u);
@@ -684,6 +764,7 @@ struct flb_connection *flb_upstream_conn_get(struct flb_upstream *u)
 
     if (conn != NULL) {
         flb_connection_reset_io_timeout(conn);
+        flb_upstream_increment_busy_connections_count(u);
     }
 
     return conn;
@@ -711,12 +792,15 @@ int flb_upstream_conn_release(struct flb_connection *conn)
     struct flb_upstream *u = conn->upstream;
     struct flb_upstream_queue *uq;
 
+    flb_upstream_decrement_busy_connections_count(u);
+
     uq = flb_upstream_queue_get(u);
 
     /* If this is a valid KA connection just recycle */
     if (u->base.net.keepalive == FLB_TRUE &&
         conn->recycle == FLB_TRUE &&
-        conn->fd > -1) {
+        conn->fd > -1 &&
+        conn->net_error == -1) {
         /*
          * This connection is still useful, move it to the 'available' queue and
          * initialize variables.
@@ -778,7 +862,6 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
 {
     time_t now;
     int drop;
-    int inject;
     const char *reason;
     struct mk_list *head;
     struct mk_list *u_head;
@@ -839,18 +922,55 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
                     }
                 }
 
-                inject = FLB_FALSE;
-                if (u_conn->event.status != MK_EVENT_NONE) {
-                    inject = FLB_TRUE;
-                }
                 u_conn->net_error = ETIMEDOUT;
-                prepare_destroy_conn(u_conn);
-                if (inject == FLB_TRUE) {
+
+                /* We need to shut the connection down
+                 * in order to cause some functions that are not
+                 * aware of the connection error signaling
+                 * mechanism to fail and abort.
+                 *
+                 * These functions do not check the net_error field
+                 * in the connection instance upon being awakened
+                 * so we need to ensure that any read/write
+                 * operations on the socket generate an error.
+                 *
+                 * net_io_write_async
+                 * net_io_read_async
+                 * flb_tls_net_write_async
+                 * flb_tls_net_read_async
+                 *
+                 * This operation could be selectively performed for
+                 * connections that have already been established
+                 * with no side effects because the connection
+                 * establishment code honors `net_error` but
+                 * taking in account that the previous version of
+                 * the code did it unconditionally with no noticeable
+                 * side effects leaving it that way is the safest
+                 * choice at the moment.
+                 */
+
+                if (MK_EVENT_IS_REGISTERED((&u_conn->event))) {
+                    shutdown_connection(u_conn);
+
                     mk_event_inject(u_conn->evl,
                                     &u_conn->event,
                                     u_conn->event.mask,
                                     FLB_TRUE);
                 }
+                else {
+                    /* I can't think of a valid reason for this code path
+                     * to be taken but considering that it was previously
+                     * possible for it to happen (maybe wesley can shed
+                     * some light on it if he remembers) I'll leave this
+                     * for the moment.
+                     * In any case, it's proven not to interfere with the
+                     * coroutine awakening issue this change addresses.
+                     */
+
+                    prepare_destroy_conn(u_conn);
+                }
+
+                flb_upstream_decrement_busy_connections_count(u);
             }
         }
 
@@ -947,4 +1067,136 @@ int flb_upstream_conn_pending_destroy_list(struct mk_list *list)
 int flb_upstream_is_async(struct flb_upstream *u)
 {
     return flb_stream_is_async(&u->base);
+}
+
+void flb_upstream_set_total_connections_label(
+        struct flb_upstream *stream,
+        const char *label_value)
+{
+    stream->cmt_total_connections_label = label_value;
+}
+
+void flb_upstream_set_total_connections_gauge(
+        struct flb_upstream *stream,
+        struct cmt_gauge *gauge_instance)
+{
+    stream->cmt_total_connections = gauge_instance;
+}
+
+static void flb_upstream_increment_total_connections_count(
+                struct flb_upstream *stream)
+{
+    if (stream->parent_upstream != NULL) {
+        stream = (struct flb_upstream *) stream->parent_upstream;
+
+        flb_upstream_increment_total_connections_count(stream);
+    }
+    if (stream->cmt_total_connections != NULL) {
+        if (stream->cmt_total_connections_label != NULL) {
+            cmt_gauge_inc(
+                stream->cmt_total_connections,
+                cfl_time_now(),
+                1,
+                (char *[]) {
+                    (char *) stream->cmt_total_connections_label
+                });
+        }
+        else {
+            cmt_gauge_inc(stream->cmt_total_connections,
+                          cfl_time_now(),
+                          0, NULL);
+        }
+    }
+}
+
+static void flb_upstream_decrement_total_connections_count(
+                struct flb_upstream *stream)
+{
+    if (stream->parent_upstream != NULL) {
+        stream = (struct flb_upstream *) stream->parent_upstream;
+
+        flb_upstream_decrement_total_connections_count(stream);
+    }
+    else if (stream->cmt_total_connections != NULL) {
+        if (stream->cmt_total_connections_label != NULL) {
+            cmt_gauge_dec(
+                stream->cmt_total_connections,
+                cfl_time_now(),
+                1,
+                (char *[]) {
+                    (char *) stream->cmt_total_connections_label
+                });
+        }
+        else {
+            cmt_gauge_dec(stream->cmt_total_connections,
+                          cfl_time_now(),
+                          0, NULL);
+        }
+    }
+}
+
+void flb_upstream_set_busy_connections_label(
+        struct flb_upstream *stream,
+        const char *label_value)
+{
+    stream->cmt_busy_connections_label = label_value;
+}
+
+void flb_upstream_set_busy_connections_gauge(
+        struct flb_upstream *stream,
+        struct cmt_gauge *gauge_instance)
+{
+    stream->cmt_busy_connections = gauge_instance;
+}
+
+static void flb_upstream_increment_busy_connections_count(
+                struct flb_upstream *stream)
+{
+    if (stream->parent_upstream != NULL) {
+        stream = (struct flb_upstream *) stream->parent_upstream;
+
+        flb_upstream_increment_busy_connections_count(stream);
+    }
+    else if (stream->cmt_busy_connections != NULL) {
+        if (stream->cmt_busy_connections_label != NULL) {
+            cmt_gauge_inc(
+                stream->cmt_busy_connections,
+                cfl_time_now(),
+                1,
+                (char *[]) {
+                    (char *) stream->cmt_busy_connections_label
+                });
+        }
+        else {
+            cmt_gauge_inc(stream->cmt_busy_connections,
+                          cfl_time_now(),
+                          0, NULL);
+        }
+    }
+}
+
+static void flb_upstream_decrement_busy_connections_count(
+                struct flb_upstream *stream)
+{
+    if (stream->parent_upstream != NULL) {
+        stream = (struct flb_upstream *) stream->parent_upstream;
+
+        flb_upstream_decrement_busy_connections_count(stream);
+    }
+    else if (stream->cmt_busy_connections != NULL) {
+        if (stream->cmt_busy_connections_label != NULL) {
+            cmt_gauge_dec(
+                stream->cmt_busy_connections,
+                cfl_time_now(),
+                1,
+                (char *[]) {
+                    (char *) stream->cmt_busy_connections_label
+                });
+        }
+        else {
+            cmt_gauge_dec(stream->cmt_busy_connections,
+                          cfl_time_now(),
+                          0, NULL);
+        }
+    }
 }

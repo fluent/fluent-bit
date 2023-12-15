@@ -111,6 +111,7 @@ int we_wmi_system_init(struct flb_we *ctx)
     ctx->wmi_system->info->wmi_property = "";
     ctx->wmi_system->info->label_property_count = 0;
     ctx->wmi_system->info->label_property_keys = NULL;
+    ctx->wmi_system->info->where_clause = NULL;
 
     ctx->wmi_system->operational = FLB_TRUE;
 

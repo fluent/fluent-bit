@@ -43,6 +43,7 @@ struct flb_in_udp_config {
     char *port;                        /* Port                        */
     flb_sds_t raw_separator;           /* Unescaped string delimiterr */
     flb_sds_t separator;               /* String delimiter            */
+    flb_sds_t source_address_key;      /* Source IP address           */
     int collector_id;                  /* Listener collector id       */
     struct flb_downstream *downstream; /* Client manager              */
     struct udp_conn *dummy_conn;       /* Datagram dummy connection   */

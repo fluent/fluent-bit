@@ -26,6 +26,8 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_thread_storage.h>
 
+#define FLB_ENGINE_OUTPUT_EVENT_BATCH_SIZE 1
+
 int flb_engine_start(struct flb_config *config);
 int flb_engine_failed(struct flb_config *config);
 int flb_engine_flush(struct flb_config *config,

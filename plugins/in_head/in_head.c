@@ -109,7 +109,6 @@ static int single_value_per_record(struct flb_input_instance *i_ins,
                                    struct flb_in_head_config *ctx)
 {
     int ret = -1;
-    int num_map = 1;
 
     ctx->buf[0] = '\0'; /* clear buf */
     ctx->buf_len =   0;
@@ -123,10 +122,6 @@ static int single_value_per_record(struct flb_input_instance *i_ins,
 
     flb_plg_trace(ctx->ins, "%s read_len=%zd buf_size=%zu", __FUNCTION__,
                   ctx->buf_len, ctx->buf_size);
-
-    if (ctx->add_path == FLB_TRUE) {
-        num_map++;
-    }
 
     ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
 
@@ -183,7 +178,6 @@ static int split_lines_per_record(struct flb_input_instance *i_ins,
     int ret;
     size_t str_len;
     size_t key_len;
-    int num_map = ctx->lines;
     char *ret_buf;
     char key_str[KEY_LEN_MAX] = {0};
 
@@ -191,10 +185,6 @@ static int split_lines_per_record(struct flb_input_instance *i_ins,
     if (fp == NULL) {
         flb_errno();
         return -1;
-    }
-
-    if (ctx->add_path == FLB_TRUE) {
-        num_map++;
     }
 
     ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);

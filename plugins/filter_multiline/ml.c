@@ -97,6 +97,8 @@ static int emitter_create(struct ml_ctx *ctx)
     if (ret == -1) {
         flb_plg_error(ctx->ins, "cannot initialize storage for stream '%s'",
                       ctx->emitter_name);
+        flb_input_instance_exit(ins, ctx->config);
+        flb_input_instance_destroy(ins);
         return -1;
     }
     ctx->ins_emitter = ins;
@@ -551,7 +553,6 @@ static int ml_filter_partial(const void *data, size_t bytes,
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
     int partial_records = 0;
-    int total_records = 0;
     int return_records = 0;
     int partial = FLB_FALSE;
     int is_last_partial = FLB_FALSE;
@@ -619,8 +620,6 @@ static int ml_filter_partial(const void *data, size_t bytes,
     while ((ret = flb_log_event_decoder_next(
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
-        total_records++;
-
         partial = ml_is_partial(log_event.body);
         if (partial == FLB_TRUE) {
             partial_records++;

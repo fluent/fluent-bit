@@ -30,6 +30,9 @@
 #include <fluent-bit/flb_upstream_queue.h>
 #include <fluent-bit/flb_stream.h>
 
+#include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_gauge.h>
+
 /*
  * Upstream creation FLAGS set by Fluent Bit sub-components
  * ========================================================
@@ -62,6 +65,11 @@ struct flb_upstream {
      */
     int                        ha_mode;
     void                      *ha_ctx;
+
+    struct cmt_gauge          *cmt_total_connections;
+    struct cmt_gauge          *cmt_busy_connections;
+    const char                *cmt_total_connections_label;
+    const char                *cmt_busy_connections_label;
 
     /*
      * If the connections will be in separate threads, this flag is
@@ -97,5 +105,19 @@ int flb_upstream_is_async(struct flb_upstream *u);
 void flb_upstream_thread_safe(struct flb_upstream *u);
 struct mk_list *flb_upstream_get_config_map(struct flb_config *config);
 int flb_upstream_needs_proxy(const char *host, const char *proxy, const char *no_proxy);
+
+void flb_upstream_set_total_connections_label(
+        struct flb_upstream *stream,
+        const char *label_value);
+void flb_upstream_set_total_connections_gauge(
+        struct flb_upstream *stream,
+        struct cmt_gauge *gauge_instance);
+
+void flb_upstream_set_busy_connections_label(
+        struct flb_upstream *stream,
+        const char *label_value);
+void flb_upstream_set_busy_connections_gauge(
+        struct flb_upstream *stream,
+        struct cmt_gauge *gauge_instance);
 
 #endif

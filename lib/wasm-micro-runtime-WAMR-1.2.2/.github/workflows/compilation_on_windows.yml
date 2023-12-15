@@ -1,0 +1,77 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+name: compilation on windows-latest
+
+on:
+  # will be triggered on PR events
+  pull_request:
+    types:
+      - opened
+      - synchronize
+    paths:
+      - ".github/workflows/compilation_on_windows.yml"
+      - "build-scripts/**"
+      - "core/**"
+      - "!core/deps/**"
+      - "product-mini/**"
+      - "samples/**"
+      - "!samples/workload/**"
+      - "tests/wamr-test-suites/**"
+      - "wamr-compiler/**"
+      - "wamr-sdk/**"
+  # will be triggered on push events
+  push:
+    branches:
+      - main
+      - "dev/**"
+    paths:
+      - ".github/workflows/compilation_on_windows.yml"
+      - "build-scripts/**"
+      - "core/**"
+      - "!core/deps/**"
+      - "product-mini/**"
+      - "samples/**"
+      - "!samples/workload/**"
+      - "tests/wamr-test-suites/**"
+      - "wamr-compiler/**"
+      - "wamr-sdk/**"
+  # allow to be triggered manually
+  workflow_dispatch:
+
+# Cancel any in-flight jobs for the same PR/branch so there's only one active
+# at a time
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        build_options: [
+          "-DWAMR_BUILD_AOT=1 -DWAMR_BUILD_INTERP=0",
+          "-DWAMR_BUILD_AOT=0",
+          "-DWAMR_BUILD_TAIL_CALL=1",
+          "-DWAMR_BUILD_CUSTOM_NAME_SECTION=1",
+          "-DWAMR_DISABLE_HW_BOUND_CHECK=1",
+          "-DWAMR_BUILD_REF_TYPES=1",
+          "-DWAMR_BUILD_SIMD=1",
+          "-DWAMR_BUILD_DEBUG_INTERP=1",
+          "-DWAMR_BUILD_LIB_PTHREAD=1",
+          "-DWAMR_BUILD_LIB_WASI_THREADS=1"
+        ]
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: clone uvwasi library
+        run: |
+          cd core/deps
+          git clone https://github.com/nodejs/uvwasi.git
+      - name: Build iwasm
+        run: |
+          cd product-mini/platforms/windows
+          mkdir build && cd build
+          cmake .. ${{ matrix.build_options }}
+          cmake --build . --config Release --parallel 4

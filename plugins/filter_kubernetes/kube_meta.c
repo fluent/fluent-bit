@@ -373,6 +373,7 @@ static int get_meta_info_from_request(struct flb_kube *ctx,
     ret = refresh_token_if_needed(ctx);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "failed to refresh token");
+        flb_upstream_conn_release(u_conn);
         return -1;
     }
     

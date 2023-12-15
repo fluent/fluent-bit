@@ -200,7 +200,7 @@ int mk_server_setup(struct mk_server *server)
     mk_clock_sequential_init(server);
 
     /* Load plugins */
-    mk_plugin_api_init();
+    mk_plugin_api_init(server);
     mk_plugin_load_all(server);
 
     /* Workers: logger and clock */
@@ -234,7 +234,7 @@ void mk_exit_all(struct mk_server *server)
 
     /* Continue exiting */
     mk_plugin_exit_all(server);
-    mk_clock_exit();
+    mk_clock_exit(server);
 
     mk_sched_exit(server);
     mk_config_free_all(server);

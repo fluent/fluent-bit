@@ -93,6 +93,7 @@ int flb_input_thread_instance_init(struct flb_config *config,
 int flb_input_thread_instance_pre_run(struct flb_config *config, struct flb_input_instance *ins);
 
 int flb_input_thread_instance_pause(struct flb_input_instance *ins);
+int flb_input_thread_instance_resume(struct flb_input_instance *ins);
 int flb_input_thread_instance_exit(struct flb_input_instance *ins);
 
 int flb_input_thread_collectors_signal_start(struct flb_input_instance *ins);

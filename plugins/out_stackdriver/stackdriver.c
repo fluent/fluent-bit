@@ -32,6 +32,7 @@
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_gzip.h>
 
 #include <msgpack.h>
 
@@ -434,31 +435,50 @@ void replace_prefix_dot(flb_sds_t s, int tag_prefix_len)
         }
     }
 }
+static int extract_msgpack_obj_from_msgpack_map(msgpack_object_map *root,
+                                                char *name, int size,
+                                                msgpack_object_type object_type,
+                                                msgpack_object *val)
+{
+    int i;
+    msgpack_object key;
+
+    if (root == NULL) {
+      return -1;
+    }
+    for (i = 0; i < root->size; i++) {
+        key = root->ptr[i].key;
+        if (key.type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
+        if (key.via.str.size == size
+            && strncmp(key.via.str.ptr, name, size) == 0) {
+            *val = root->ptr[i].val;
+            if (val->type != object_type) {
+                return -1;
+            }
+            return 0;
+        }
+    }
+    return -1;
+}
+
 
 static flb_sds_t get_str_value_from_msgpack_map(msgpack_object_map map,
                                                 const char *key, int key_size)
 {
     int i;
+    int ret;
     msgpack_object k;
     msgpack_object v;
     flb_sds_t ptr = NULL;
 
-    for (i = 0; i < map.size; i++) {
-        k = map.ptr[i].key;
-        v = map.ptr[i].val;
-
-        if (k.type != MSGPACK_OBJECT_STR) {
-            continue;
-        }
-
-        if (k.via.str.size == key_size &&
-            strncmp(key, (char *) k.via.str.ptr, k.via.str.size) == 0) {
-            /* make sure to free it after use */
-            ptr =  flb_sds_create_len(v.via.str.ptr, v.via.str.size);
-            break;
-        }
+//  convert msgpack_object_map to msgpack_object
+    ret = extract_msgpack_obj_from_msgpack_map(&map, (char*) key, key_size,
+                                               MSGPACK_OBJECT_STR, &v);
+    if (ret == 0) {
+        ptr = flb_sds_create_len(v.via.str.ptr, v.via.str.size);
     }
-
     return ptr;
 }
 
@@ -1206,6 +1226,10 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     /* Set context */
     flb_output_set_context(ins, ctx);
 
+    if (ctx->test_log_entry_format) {
+        return 0;
+    }
+
     /* Network mode IPv6 */
     if (ins->host.ipv6 == FLB_TRUE) {
         io_flags |= FLB_IO_IPV6;
@@ -1405,6 +1429,23 @@ static int get_severity_level(severity_t * s, const msgpack_object * o,
     return -1;
 }
 
+static int get_trace_sampled(int * trace_sampled_value, const msgpack_object * src_obj,
+                             const flb_sds_t key)
+{
+    msgpack_object tmp;
+    int ret = get_msgpack_obj(&tmp, src_obj, key, flb_sds_len(key), MSGPACK_OBJECT_BOOLEAN);
+    
+    if (ret == 0 && tmp.via.boolean == true) {
+        *trace_sampled_value = FLB_TRUE;
+        return 0;
+    } else if (ret == 0 && tmp.via.boolean == false) {
+        *trace_sampled_value = FLB_FALSE;
+        return 0;        
+    }
+
+    return -1;
+}
+
 static insert_id_status validate_insert_id(msgpack_object * insert_id_value,
                                            const msgpack_object * obj)
 {
@@ -1475,6 +1516,8 @@ static int pack_json_payload(int insert_id_extracted,
         ctx->labels_key,
         ctx->severity_key,
         ctx->trace_key,
+        ctx->span_id_key,
+        ctx->trace_sampled_key,
         ctx->log_name_key,
         stream
         /* more special fields are required to be added, but, if this grows with more
@@ -1651,6 +1694,14 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     char stackdriver_trace[PATH_MAX];
     const char *new_trace;
 
+    /* Parameters for span id */
+    int span_id_extracted = FLB_FALSE;
+    flb_sds_t span_id;
+
+    /* Parameters for trace sampled */
+    int trace_sampled_extracted = FLB_FALSE;
+    int trace_sampled = FLB_FALSE;
+
     /* Parameters for log name */
     int log_name_extracted = FLB_FALSE;
     flb_sds_t log_name = NULL;
@@ -1741,7 +1792,12 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
      * {"resource": {"type": "...", "labels": {...},
      *  "entries": []
      */
-    msgpack_pack_map(&mp_pck, 2);
+    msgpack_pack_map(&mp_pck, 3);
+
+    /* Set partialSuccess to true */
+    msgpack_pack_str(&mp_pck, 14);
+    msgpack_pack_str_body(&mp_pck, "partialSuccess", 14);
+    msgpack_pack_true(&mp_pck);
 
     msgpack_pack_str(&mp_pck, 8);
     msgpack_pack_str_body(&mp_pck, "resource", 8);
@@ -2113,6 +2169,8 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
          *  "logName": "...",
          *  "jsonPayload": {...},
          *  "timestamp": "...",
+         *  "spanId": "...",
+         *  "traceSampled": <true or false>,
          *  "trace": "..."
          * }
          */
@@ -2131,6 +2189,22 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
         if (ctx->trace_key
             && get_string(&trace, obj, ctx->trace_key) == 0) {
             trace_extracted = FLB_TRUE;
+            entry_size += 1;
+        }
+
+        /* Extract span id */
+        span_id_extracted = FLB_FALSE;
+        if (ctx->span_id_key
+            && get_string(&span_id, obj, ctx->span_id_key) == 0) {
+            span_id_extracted = FLB_TRUE;
+            entry_size += 1;
+        }
+
+        /* Extract trace sampled */
+        trace_sampled_extracted = FLB_FALSE;
+        if (ctx->trace_sampled_key
+            && get_trace_sampled(&trace_sampled, obj, ctx->trace_sampled_key) == 0) {
+            trace_sampled_extracted = FLB_TRUE;
             entry_size += 1;
         }
 
@@ -2247,6 +2321,26 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             msgpack_pack_str(&mp_pck, len);
             msgpack_pack_str_body(&mp_pck, new_trace, len);
             flb_sds_destroy(trace);
+        }
+
+        /* Add spanId field into the log entry */
+        if (span_id_extracted == FLB_TRUE) {
+            msgpack_pack_str_with_body(&mp_pck, "spanId", 6);
+            len = flb_sds_len(span_id);
+            msgpack_pack_str_with_body(&mp_pck, span_id, len);
+            flb_sds_destroy(span_id);
+        }
+
+        /* Add traceSampled field into the log entry */
+        if (trace_sampled_extracted == FLB_TRUE) {
+            msgpack_pack_str_with_body(&mp_pck, "traceSampled", 12);
+
+            if (trace_sampled == FLB_TRUE) {
+                msgpack_pack_true(&mp_pck);
+            } else {
+                msgpack_pack_false(&mp_pck);
+            }
+
         }
 
         /* Add insertId field into the log entry */
@@ -2401,40 +2495,50 @@ static int stackdriver_format_test(struct flb_config *config,
     return 0;
 
 }
-
 #ifdef FLB_HAVE_METRICS
-static void update_http_metrics(struct flb_stackdriver *ctx,
-                                struct flb_event_chunk *event_chunk,
+static void add_record_metrics(struct flb_stackdriver* ctx,
+                               uint64_t ts,
+                               int val,
+                               int response_code,
+                               int grpc_code)
+{
+  char grpc_code_label[32];
+  char response_code_label[32];
+  char* name = (char*) flb_output_name(ctx->ins);
+  /* convert status to string format */
+  snprintf(response_code_label, sizeof(response_code_label) - 1, "%i",
+           response_code);
+  /* convert grpc_code to string format */
+  snprintf(grpc_code_label, sizeof(grpc_code_label) - 1, "%i", grpc_code);
+
+  /* processed records total */
+  cmt_counter_add(ctx->cmt_proc_records_total, ts, val, 3,
+                  (char* []) {grpc_code_label, response_code_label, name});
+}
+
+static void update_http_metrics(struct flb_stackdriver* ctx,
+                                struct flb_event_chunk* event_chunk,
                                 uint64_t ts,
                                 int http_status)
 {
-    char tmp[32];
+    char response_code_label[32];
 
     /* convert status to string format */
-    snprintf(tmp, sizeof(tmp) - 1, "%i", http_status);
-    char *name = (char *) flb_output_name(ctx->ins);
+    snprintf(response_code_label, sizeof(response_code_label) - 1, "%i",
+             http_status);
+    char* name = (char*) flb_output_name(ctx->ins);
 
-    /* processed records total */
-    cmt_counter_add(ctx->cmt_proc_records_total, ts, event_chunk->total_events,
-                    2, (char *[]) {tmp, name});
-
-    /* HTTP status */
-    if (http_status != STACKDRIVER_NET_ERROR) {
-        cmt_counter_inc(ctx->cmt_requests_total, ts, 2, (char *[]) {tmp, name});
-    }
+    cmt_counter_inc(ctx->cmt_requests_total, ts, 2,
+                    (char* []) {response_code_label, name});
 }
 
 static void update_retry_metric(struct flb_stackdriver *ctx,
                                  struct flb_event_chunk *event_chunk,
                                  uint64_t ts,
-                                 int http_status, int ret_code)
+                                 int http_status)
 {
     char tmp[32]; 
     char *name = (char *) flb_output_name(ctx->ins);
-
-    if (ret_code != FLB_RETRY) {
-        return;
-    }
 
     /* convert status to string format */
     snprintf(tmp, sizeof(tmp) - 1, "%i", http_status);
@@ -2444,6 +2548,178 @@ static void update_retry_metric(struct flb_stackdriver *ctx,
 }
 #endif
 
+static int parse_partial_success_response(struct flb_http_client* c,
+                                          struct flb_stackdriver* ctx,
+                                          uint64_t ts,
+                                          int total_events,
+                                          int* grpc_status_codes)
+{
+    int ret;
+    int root_type;
+    int i;
+    int log_entry_ret;
+    int code_ret;
+    char* buffer;
+    char at_type_str[PARTIAL_SUCCESS_GRPC_TYPE_SIZE];
+    size_t size;
+    size_t off = 0;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object error_map;
+    msgpack_object details_arr;
+    msgpack_object details_map;
+    msgpack_object logEntryErrors_map;
+    msgpack_object logEntryError_key;
+    msgpack_object logEntryError_map;
+    msgpack_object logEntryCode;
+    msgpack_object at_type;
+
+    if (c->resp.status != 400 && c->resp.status != 403) {
+        return -1;
+    }
+
+    ret = flb_pack_json(c->resp.payload, c->resp.payload_size,
+                        &buffer, &size, &root_type, NULL);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "failed to parse json into msgpack: %s",
+                      c->resp.payload);
+        return -1;
+    }
+
+    msgpack_unpacked_init(&result);
+    ret = msgpack_unpack_next(&result, buffer, size, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        flb_plg_error(ctx->ins, "Cannot unpack %s response: %s",
+                      c->resp.payload);
+        flb_free(buffer);
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
+    root = result.data;
+    if (root.type != MSGPACK_OBJECT_MAP) {
+        flb_plg_error(ctx->ins, "%s response parsing failed, msgpack_type=%i",
+                      root.type);
+        flb_free(buffer);
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+/*  Sample error response
+{
+  "error": {
+    "code": 400,
+    "message": "Log entry with size 293.1K exceeds maximum size of 256.0K",
+    "status": "INVALID_ARGUMENT",
+    "details": [
+      {
+        "@type": "type.googleapis.com/google.logging.v2.WriteLogEntriesPartialErrors",
+        "logEntryErrors": {
+          "2": {
+            "code": 3,
+            "message": "Log entry with size 293.1K exceeds maximum size of 256.0K"
+          },
+          "4": {
+            "code": 3,
+            "message": "Log entry with size 293.1K exceeds maximum size of 256.0K"
+          }
+        }
+      }
+    ]
+  }
+}
+*/
+    ret = extract_msgpack_obj_from_msgpack_map(&root.via.map, "error", 5,
+                                               MSGPACK_OBJECT_MAP, &error_map);
+    if (ret == -1) {
+        flb_plg_debug(ctx->ins,
+                      "%s response does not have key: \"error\"");
+        flb_free(buffer);
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
+    ret = extract_msgpack_obj_from_msgpack_map(&error_map.via.map, "details", 7,
+                                               MSGPACK_OBJECT_ARRAY,
+                                               &details_arr);
+    if (ret == -1) {
+        flb_plg_debug(ctx->ins,
+                      "%s response does not have key: \"details\"");
+        flb_free(buffer);
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+    for (i = 0; i < details_arr.via.array.size; i++) {
+        details_map = details_arr.via.array.ptr[i];
+        if (details_map.type != MSGPACK_OBJECT_MAP) {
+            continue;
+        }
+
+
+        ret = extract_msgpack_obj_from_msgpack_map(&details_map.via.map,
+                                                   "@type", 5,
+                                                   MSGPACK_OBJECT_STR,
+                                                   &at_type);
+        strncpy(at_type_str, at_type.via.str.ptr,
+                PARTIAL_SUCCESS_GRPC_TYPE_SIZE);
+        if (ret != 0 ||
+            at_type.via.str.size != PARTIAL_SUCCESS_GRPC_TYPE_SIZE ||
+            strncmp(at_type_str, PARTIAL_SUCCESS_GRPC_TYPE,
+                           PARTIAL_SUCCESS_GRPC_TYPE_SIZE) != 0) {
+            continue;
+        }
+
+        ret = extract_msgpack_obj_from_msgpack_map(&details_map.via.map,
+                                                   "logEntryErrors", 14,
+                                                   MSGPACK_OBJECT_MAP,
+                                                   &logEntryErrors_map);
+        if (ret != 0) {
+            continue;
+        }
+
+        for (i = 0; i < logEntryErrors_map.via.map.size; i++) {
+            logEntryError_key = logEntryErrors_map.via.map.ptr[i].key;
+            if (logEntryError_key.type != MSGPACK_OBJECT_STR) {
+                continue;
+            }
+            log_entry_ret = extract_msgpack_obj_from_msgpack_map(
+                &logEntryErrors_map.via.map,
+                logEntryError_key.via.str.ptr,
+                logEntryError_key.via.str.size,
+                MSGPACK_OBJECT_MAP,
+                &logEntryError_map);
+
+            if (log_entry_ret != 0) {
+                continue;
+            }
+
+            code_ret = extract_msgpack_obj_from_msgpack_map(
+                &logEntryError_map.via.map,
+                "code",
+                4,
+                MSGPACK_OBJECT_POSITIVE_INTEGER,
+                &logEntryCode);
+
+            if (code_ret == 0) {
+                if (logEntryCode.via.i64 < 0
+                    || logEntryCode.via.i64 >= GRPC_STATUS_CODES_SIZE) {
+                    // TODO: fallback on a different data structure
+                    flb_plg_error(ctx->ins,
+                                  "internal error unexpected status code: %i",
+                                  (int) logEntryCode.via.i64);
+                    return -1;
+                }
+                grpc_status_codes[(int) logEntryCode.via.i64]++;
+#ifdef FLB_HAVE_METRICS
+                add_record_metrics(ctx, ts, 1, c->resp.status,
+                                   (int) logEntryCode.via.i64);
+#endif
+            }
+        }
+    }
+    flb_free(buffer);
+    msgpack_unpacked_destroy(&result);
+    return 0;
+}
 static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
                                  struct flb_output_flush *out_flush,
                                  struct flb_input_instance *i_ins,
@@ -2453,34 +2729,23 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     (void) i_ins;
     (void) config;
     int ret;
+    int code;
+    int ret_partial_success;
     int ret_code = FLB_RETRY;
+    int grpc_status_counts[GRPC_STATUS_CODES_SIZE] = {0};
     size_t b_sent;
     flb_sds_t token;
     flb_sds_t payload_buf;
-    size_t payload_size;
+    void *compressed_payload_buffer = NULL;
+    size_t compressed_payload_size;
     struct flb_stackdriver *ctx = out_context;
     struct flb_connection *u_conn;
     struct flb_http_client *c;
+    int compressed = FLB_FALSE;
 #ifdef FLB_HAVE_METRICS
     char *name = (char *) flb_output_name(ctx->ins);
     uint64_t ts = cfl_time_now();
 #endif
-
-    /* Get upstream connection */
-    u_conn = flb_upstream_conn_get(ctx->u);
-    if (!u_conn) {
-#ifdef FLB_HAVE_METRICS
-        cmt_counter_inc(ctx->cmt_failed_requests,
-                        ts, 1, (char *[]) {name});
-
-        /* OLD api */
-        flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
-
-        update_http_metrics(ctx, event_chunk, ts, STACKDRIVER_NET_ERROR);
-        update_retry_metric(ctx, event_chunk, ts, STACKDRIVER_NET_ERROR, FLB_RETRY);
-#endif
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
 
     /* Reformat msgpack to stackdriver JSON payload */
     payload_buf = stackdriver_format(ctx,
@@ -2495,10 +2760,30 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
         /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
 #endif
-        flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
-    payload_size = flb_sds_len(payload_buf);
+
+    if (ctx->test_log_entry_format) {
+        printf("%s\n", payload_buf);
+        flb_sds_destroy(payload_buf);
+        FLB_OUTPUT_RETURN(FLB_OK);
+    }
+
+    /* Get upstream connection */
+    u_conn = flb_upstream_conn_get(ctx->u);
+    if (!u_conn) {
+#ifdef FLB_HAVE_METRICS
+        cmt_counter_inc(ctx->cmt_failed_requests,
+                        ts, 1, (char *[]) {name});
+
+        /* OLD api */
+        flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
+
+        update_retry_metric(ctx, event_chunk, ts, STACKDRIVER_NET_ERROR);
+#endif
+        flb_sds_destroy(payload_buf);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
 
     /* Get or renew Token */
     token = get_google_token(ctx);
@@ -2516,9 +2801,22 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
+    compressed_payload_buffer = payload_buf;
+    compressed_payload_size = flb_sds_len(payload_buf);
+    if (ctx->compress_gzip == FLB_TRUE) {
+        ret = flb_gzip_compress((void *) payload_buf, flb_sds_len(payload_buf),
+                                &compressed_payload_buffer, &compressed_payload_size);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "cannot gzip payload, disabling compression");
+        } else {
+            compressed = FLB_TRUE;
+            flb_sds_destroy(payload_buf);
+        }
+    }
+
     /* Compose HTTP Client request */
     c = flb_http_client(u_conn, FLB_HTTP_POST, FLB_STD_WRITE_URI,
-                        payload_buf, payload_size, NULL, 0, NULL, 0);
+                        compressed_payload_buffer, compressed_payload_size, NULL, 0, NULL, 0);
 
     flb_http_buffer_size(c, 4192);
 
@@ -2533,6 +2831,10 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
 
     flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
     flb_http_add_header(c, "Authorization", 13, token, flb_sds_len(token));
+    /* Content Encoding: gzip */
+    if (compressed == FLB_TRUE) {
+        flb_http_set_content_encoding_gzip(c);
+    }
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
@@ -2541,9 +2843,6 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     if (ret != 0) {
         flb_plg_warn(ctx->ins, "http_do=%i", ret);
         ret_code = FLB_RETRY;
-#ifdef FLB_HAVE_METRICS
-        update_http_metrics(ctx, event_chunk, ts, STACKDRIVER_NET_ERROR);
-#endif
     }
     else {
         /* The request was issued successfully, validate the 'error' field */
@@ -2551,53 +2850,87 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
         if (c->resp.status == 200) {
             ret_code = FLB_OK;
         }
-        else if (c->resp.status >= 400 && c->resp.status < 500) {
-            ret_code = FLB_ERROR;
-            flb_plg_warn(ctx->ins, "error\n%s",
-                c->resp.payload);
-        }
         else {
-            if (c->resp.payload_size > 0) {
-                /* we got an error */
-                flb_plg_warn(ctx->ins, "error\n%s",
-                             c->resp.payload);
+#ifdef FLB_HAVE_METRICS
+          /* check partial success */
+          ret_partial_success =
+                parse_partial_success_response(c,
+                                               ctx,
+                                               ts,
+                                               (int) event_chunk->total_events,
+                                               grpc_status_counts);
+
+            int failed_records = 0;
+            if (ret_partial_success == 0) {
+              for (code = 0; code < GRPC_STATUS_CODES_SIZE; code++) {
+                if (grpc_status_counts[code] != 0) {
+                  failed_records += grpc_status_counts[code];
+                }
+              }
+              cmt_counter_add(ctx->ins->cmt_dropped_records, ts,
+                              failed_records, 1, (char* []) {name});
+              int successful_records =
+                  (int) event_chunk->total_events - failed_records;
+              if (successful_records != 0) {
+                add_record_metrics(ctx, ts, successful_records, 200, 0);
+              }
             }
             else {
-                flb_plg_debug(ctx->ins, "response\n%s",
-                              c->resp.payload);
+              add_record_metrics(ctx, ts, (int) event_chunk->total_events,
+                                 c->resp.status, -1);
+              cmt_counter_add(ctx->ins->cmt_dropped_records, ts,
+                              (int) event_chunk->total_events, 1,
+                              (char* []) {name});
+            }
+#endif
+          if (c->resp.status >= 400 && c->resp.status < 500) {
+            ret_code = FLB_ERROR;
+            flb_plg_warn(ctx->ins, "error: %s", c->resp.payload);
+          }
+          else {
+            if (c->resp.payload_size > 0) {
+              /* we got an error */
+              flb_plg_warn(ctx->ins, "error: %s", c->resp.payload);
+            }
+            else {
+              flb_plg_debug(ctx->ins, "response: %s", c->resp.payload);
             }
             ret_code = FLB_RETRY;
+          }
         }
     }
 
     /* Update specific stackdriver metrics */
 #ifdef FLB_HAVE_METRICS
     if (ret_code == FLB_OK) {
-        cmt_counter_inc(ctx->cmt_successful_requests,
-                        ts, 1, (char *[]) {name});
+        cmt_counter_inc(ctx->cmt_successful_requests, ts, 1, (char *[]) {name});
+        add_record_metrics(ctx, ts, (int) event_chunk->total_events, 200, 0);
 
         /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_SUCCESSFUL_REQUESTS, 1, ctx->ins->metrics);
     }
-    else {
-        cmt_counter_inc(ctx->cmt_failed_requests,
-                        ts, 1, (char *[]) {name});
+    else if (ret_code == FLB_ERROR) {
+        cmt_counter_inc(ctx->cmt_failed_requests, ts, 1, (char* []) {name});
 
         /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
     }
 
-    /* Update metrics counter by using labels/http status code */
-    if (ret == 0) {
-        update_http_metrics(ctx, event_chunk, ts, c->resp.status);
+    if (ret_code == FLB_RETRY) {
+        update_retry_metric(ctx, event_chunk, ts, c->resp.status);
     }
 
-    /* Update retry count if necessary */
-    update_retry_metric(ctx, event_chunk, ts, c->resp.status, ret_code);
+    /* Update metrics counter by using labels/http status code */
+    update_http_metrics(ctx, event_chunk, ts, c->resp.status);
 #endif
 
     /* Cleanup */
-    flb_sds_destroy(payload_buf);
+    if (compressed == FLB_TRUE) {
+        flb_free(compressed_payload_buffer);
+    }
+    else {
+        flb_sds_destroy(payload_buf);
+    }
     flb_sds_destroy(token);
     flb_http_client_destroy(c);
     flb_upstream_conn_release(u_conn);
@@ -2658,12 +2991,22 @@ static struct flb_config_map config_map[] = {
     {
       FLB_CONFIG_MAP_BOOL, "autoformat_stackdriver_trace", "false",
       0, FLB_TRUE, offsetof(struct flb_stackdriver, autoformat_stackdriver_trace),
-      "Autoformat the stacrdriver trace"
+      "Autoformat the stackdriver trace"
     },
     {
       FLB_CONFIG_MAP_STR, "trace_key", DEFAULT_TRACE_KEY,
       0, FLB_TRUE, offsetof(struct flb_stackdriver, trace_key),
       "Set the trace key"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "span_id_key", DEFAULT_SPAN_ID_KEY,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, span_id_key),
+      "Set the span id key"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "trace_sampled_key", DEFAULT_TRACE_SAMPLED_KEY,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, trace_sampled_key),
+      "Set the trace sampled key"
     },
     {
       FLB_CONFIG_MAP_STR, "log_name_key", DEFAULT_LOG_NAME_KEY,
@@ -2711,6 +3054,11 @@ static struct flb_config_map config_map[] = {
       "Set the resource task id"
     },
     {
+      FLB_CONFIG_MAP_STR, "compress", NULL,
+      0, FLB_FALSE, 0,
+      "Set log payload compression method. Option available is 'gzip'"
+    },
+    {
       FLB_CONFIG_MAP_CLIST, "labels", NULL,
       0, FLB_TRUE, offsetof(struct flb_stackdriver, labels),
       "Set the labels"
@@ -2741,6 +3089,11 @@ static struct flb_config_map config_map[] = {
       0, FLB_TRUE, offsetof(struct flb_stackdriver, resource_labels),
       "Set the resource labels"
     },
+    {
+      FLB_CONFIG_MAP_BOOL, "test_log_entry_format", "false",
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, test_log_entry_format),
+      "Test log entry format"
+    },
     /* EOF */
     {0}
 };
@@ -2751,7 +3104,7 @@ struct flb_output_plugin out_stackdriver_plugin = {
     .cb_init      = cb_stackdriver_init,
     .cb_flush     = cb_stackdriver_flush,
     .cb_exit      = cb_stackdriver_exit,
-    .workers      = 2,
+    .workers      = 1,
     .config_map   = config_map,
 
     /* Test */

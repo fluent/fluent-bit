@@ -75,15 +75,24 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
 
-        if (file->watch_fd == -1) {
-            /* Gather current file size */
+        if (file->watch_fd == -1 ||
+            (file->offset >= file->size)) {
             ret = fstat(file->fd, &st);
+
             if (ret == -1) {
                 flb_errno();
                 flb_tail_file_remove(file);
                 continue;
             }
+
             file->size = st.st_size;
+            file->pending_bytes = (file->size - file->offset);
+        }
+        else {
+            memset(&st, 0, sizeof(struct stat));
+        }
+
+        if (file->pending_bytes <= 0) {
             file->pending_bytes = (file->size - file->offset);
         }
 
@@ -117,8 +126,8 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
              * Adjust counter to verify if we need a further read(2) later.
              * For more details refer to tail_fs_inotify.c:96.
              */
-            if (file->offset < st.st_size) {
-                file->pending_bytes = (st.st_size - file->offset);
+            if (file->offset < file->size) {
+                file->pending_bytes = (file->size - file->offset);
                 active++;
             }
             else {
@@ -617,10 +626,8 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_TIME, "ignore_older", "0",
      0, FLB_TRUE, offsetof(struct flb_tail_config, ignore_older),
-     "ignore records older than 'ignore_older'. Supports m,h,d (minutes, "
-     "hours, days) syntax. Default behavior is to read all records. Option "
-     "only available when a Parser is specified and it can parse the time "
-     "of a record."
+     "ignore files older than 'ignore_older'. Supports m,h,d (minutes, "
+     "hours, days) syntax. Default behavior is to read all the files."
     },
     {
      FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", FLB_TAIL_CHUNK,

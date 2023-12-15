@@ -203,8 +203,8 @@ int mk_header_prepare(struct mk_http_session *cs, struct mk_http_request *sr,
      * - Date
      */
     mk_iov_add(iov,
-               headers_preset.data,
-               headers_preset.len,
+               server->clock_context->headers_preset.data,
+               server->clock_context->headers_preset.len,
                MK_FALSE);
 
     /* Last-Modified */

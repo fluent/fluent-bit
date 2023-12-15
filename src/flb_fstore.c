@@ -461,6 +461,8 @@ struct flb_fstore *flb_fstore_create(char *path, int store_type)
     flags = CIO_OPEN;
 
     /* Create Chunk I/O context */
+    cio_options_init(&opts);
+
     opts.root_path = path;
     opts.log_cb = log_cb;
     opts.flags = flags;

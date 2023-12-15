@@ -35,6 +35,7 @@ struct lua_filter {
     flb_sds_t buffer;                 /* json dec buffer */
     int    protected_mode;            /* exec lua function in protected mode */
     int    time_as_table;             /* timestamp as a Lua table */
+    int    enable_flb_null;           /* Use flb_null in Lua */
     struct flb_lua_l2c_config l2cc;   /* lua -> C config */
     struct flb_luajit *lua;           /* state context   */
     struct flb_filter_instance *ins;  /* filter instance */

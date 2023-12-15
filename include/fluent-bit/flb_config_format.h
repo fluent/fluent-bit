@@ -29,4 +29,6 @@
 #include "config_format/flb_cf_yaml.h"
 #endif
 
+#define FLB_DEFAULT_CF_BUF_SIZE 4096
+
 #endif

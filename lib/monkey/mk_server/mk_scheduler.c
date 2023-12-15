@@ -188,7 +188,7 @@ struct mk_sched_conn *mk_sched_add_connection(int remote_fd,
 
     /* Close connection, otherwise continue */
     if (ret == MK_PLUGIN_RET_CLOSE_CONX) {
-        listener->network->network->close(remote_fd);
+        listener->network->network->close(listener->network, remote_fd);
         MK_LT_SCHED(remote_fd, "PLUGIN_CLOSE");
         return NULL;
     }
@@ -214,7 +214,7 @@ struct mk_sched_conn *mk_sched_add_connection(int remote_fd,
     event->type         = MK_EVENT_CONNECTION;
     event->mask         = MK_EVENT_EMPTY;
     event->status       = MK_EVENT_NONE;
-    conn->arrive_time   = log_current_utime;
+    conn->arrive_time   = server->clock_context->log_current_utime;
     conn->protocol      = handler;
     conn->net           = listener->network->network;
     conn->is_timeout_on = MK_FALSE;
@@ -357,7 +357,7 @@ void *mk_sched_launch_worker_loop(void *data)
      * Create the notification instance and link it to the worker
      * thread-scope list.
      */
-    notif = mk_mem_alloc(sizeof(struct mk_sched_notif));
+    notif = mk_mem_alloc_z(sizeof(struct mk_sched_notif));
     MK_TLS_SET(mk_tls_sched_worker_notif, notif);
 
     /* Register the scheduler channel to signal active workers */
@@ -543,7 +543,7 @@ int mk_sched_remove_client(struct mk_sched_conn *conn,
     mk_sched_conn_timeout_del(conn);
 
     /* Close at network layer level */
-    conn->net->close(event->fd);
+    conn->net->close(conn->net->plugin, event->fd);
 
     /* Release and return */
     mk_channel_clean(&conn->channel);
@@ -594,7 +594,7 @@ int mk_sched_check_timeouts(struct mk_sched_worker *sched,
         client_timeout = conn->arrive_time + server->timeout;
 
         /* Check timeout */
-        if (client_timeout <= log_current_utime) {
+        if (client_timeout <= server->clock_context->log_current_utime) {
             MK_TRACE("Scheduler, closing fd %i due TIMEOUT",
                      conn->event.fd);
             MK_LT_SCHED(conn->event.fd, "TIMEOUT_CONN_PENDING");

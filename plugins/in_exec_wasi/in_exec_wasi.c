@@ -59,9 +59,16 @@ static int in_exec_wasi_collect(struct flb_input_instance *ins,
     size_t out_size = 0;
     struct flb_time out_time;
 
+    /* Validate the temporary file was created */
+    if (stdoutp == NULL) {
+        flb_plg_error(ctx->ins, "failed to created temporary file");
+        return -1;
+    }
+
     if (ctx->oneshot == FLB_TRUE) {
         ret = flb_pipe_r(ctx->ch_manager[0], &val, sizeof(val));
         if (ret == -1) {
+            fclose(stdoutp);
             flb_errno();
             return -1;
         }

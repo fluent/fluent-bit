@@ -171,6 +171,13 @@ static int mqtt_data_append(char *topic, size_t topic_len,
                 FLB_LOG_EVENT_STRING_VALUE(topic, topic_len));
     }
 
+    if (ctx->payload_key) {
+        flb_log_event_encoder_append_body_string_length(ctx->log_encoder, flb_sds_len(ctx->payload_key));
+        flb_log_event_encoder_append_body_string_body(ctx->log_encoder, ctx->payload_key,
+                                                      flb_sds_len(ctx->payload_key));
+        flb_log_event_encoder_body_begin_map(ctx->log_encoder);
+    }
+
     /* Re-pack original KVs */
     for (i = 0;
          i < root.via.map.size &&
@@ -180,6 +187,10 @@ static int mqtt_data_append(char *topic, size_t topic_len,
                 ctx->log_encoder,
                 FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&root.via.map.ptr[i].key),
                 FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&root.via.map.ptr[i].val));
+    }
+
+    if (ctx->payload_key) {
+        flb_log_event_encoder_body_commit_map(ctx->log_encoder);
     }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
@@ -338,7 +349,6 @@ static int mqtt_handle_ping(struct mqtt_conn *conn)
 int mqtt_prot_parser(struct mqtt_conn *conn)
 {
     int ret;
-    int bytes = 0;
     int length = 0;
     int pos = conn->buf_pos;
     int mult;
@@ -370,7 +380,7 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
             /* Get the remaining length */
             mult   = 1;
             length = 0;
-            bytes  = 0;
+
             do {
                 if (conn->buf_pos + 1 > conn->buf_len) {
                     conn->buf_pos = pos;
@@ -379,7 +389,6 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
                     return MQTT_MORE;
                 }
 
-                bytes++;
                 length += (BUFC() & 127) * mult;
                 mult *= 128;
                 if (mult > 128*128*128) {

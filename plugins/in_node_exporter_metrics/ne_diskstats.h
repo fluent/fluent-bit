@@ -22,8 +22,6 @@
 
 #include "ne.h"
 
-int ne_diskstats_init(struct flb_ne *ctx);
-int ne_diskstats_update(struct flb_ne *ctx);
-int ne_diskstats_exit(struct flb_ne *ctx);
+extern struct flb_ne_collector diskstats_collector;
 
 #endif

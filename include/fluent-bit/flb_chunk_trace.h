@@ -67,16 +67,27 @@ struct flb_chunk_trace_limit {
     int count;
 };
 
-struct flb_chunk_trace_context {
+struct flb_chunk_pipeline_context {
+    flb_ctx_t *flb;
+    flb_sds_t output_name;
+    pthread_t thread;
+    pthread_mutex_t lock;
+    pthread_cond_t cond;
+    struct mk_list *props;
+    void *data;
     void *input;
     void *output;
+};
+
+struct flb_chunk_trace_context {
+    void *input;
     int trace_count;
     struct flb_chunk_trace_limit limit;
     flb_sds_t trace_prefix;
     int to_destroy;
     int chunks;
-    flb_ctx_t *flb;
-    struct cio_ctx *cio;
+
+    struct flb_chunk_pipeline_context pipeline;
 };
 
 struct flb_chunk_trace {
@@ -94,6 +105,7 @@ int flb_chunk_trace_input(struct flb_chunk_trace *trace);
 void flb_chunk_trace_do_input(struct flb_input_chunk *trace);
 int flb_chunk_trace_pre_output(struct flb_chunk_trace *trace);
 int flb_chunk_trace_filter(struct flb_chunk_trace *trace, void *pfilter, struct flb_time *, struct flb_time *, char *buf, size_t buf_size);
+int flb_chunk_trace_output(struct flb_chunk_trace *trace, struct flb_output_instance *output, int ret);
 void flb_chunk_trace_free(struct flb_chunk_trace *trace);
 int flb_chunk_trace_context_set_limit(void *input, int, int);
 int flb_chunk_trace_context_hit_limit(void *input);

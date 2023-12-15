@@ -31,7 +31,7 @@
 #include <msgpack.h>
 
 
-struct flb_input_instance *find_input(struct flb_hs *hs, const char *name)
+static struct flb_input_instance *find_input(struct flb_hs *hs, const char *name)
 {
     struct mk_list *head;
     struct flb_input_instance *in;

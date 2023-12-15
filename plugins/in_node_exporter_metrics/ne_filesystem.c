@@ -21,19 +21,13 @@
 #include "ne_filesystem_linux.c"
 #else
 
-int ne_filesystem_init(struct flb_ne *ctx)
-{
-    return 0;
-}
+#include "ne.h"
 
-int ne_filesystem_update(struct flb_ne *ctx)
-{
-    return 0;
-}
-
-int ne_filesystem_exit(struct flb_ne *ctx)
-{
-    return 0;
-}
+struct flb_ne_collector filesystem_collector = {
+    .name = "filesystem",
+    .cb_init = NULL,
+    .cb_update = NULL,
+    .cb_exit = NULL
+};
 
 #endif

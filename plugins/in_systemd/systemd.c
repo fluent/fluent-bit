@@ -94,7 +94,7 @@ static int in_systemd_collect(struct flb_input_instance *ins,
 #endif
     char *tag = NULL;
     char new_tag[PATH_MAX];
-    char last_tag[PATH_MAX];
+    char last_tag[PATH_MAX] = {0};
     size_t tag_len;
     size_t last_tag_len = 0;
     const void *data;

@@ -59,7 +59,6 @@ static int pack_map_meta(struct flb_splunk *ctx,
                          msgpack_object map,
                          char *tag, int tag_len)
 {
-    int c = 0;
     int index_key_set = FLB_FALSE;
     int sourcetype_key_set = FLB_FALSE;
     flb_sds_t str;
@@ -81,7 +80,6 @@ static int pack_map_meta(struct flb_splunk *ctx,
                                       sizeof(FLB_SPLUNK_DEFAULT_EVENT_HOST) - 1);
                 msgpack_pack_str(mp_pck, flb_sds_len(str));
                 msgpack_pack_str_body(mp_pck, str, flb_sds_len(str));
-                c++;
             }
             flb_sds_destroy(str);
         }
@@ -100,7 +98,6 @@ static int pack_map_meta(struct flb_splunk *ctx,
                                       sizeof(FLB_SPLUNK_DEFAULT_EVENT_SOURCE) - 1);
                 msgpack_pack_str(mp_pck, flb_sds_len(str));
                 msgpack_pack_str_body(mp_pck, str, flb_sds_len(str));
-                c++;
             }
             flb_sds_destroy(str);
         }
@@ -121,7 +118,6 @@ static int pack_map_meta(struct flb_splunk *ctx,
                 msgpack_pack_str(mp_pck, flb_sds_len(str));
                 msgpack_pack_str_body(mp_pck, str, flb_sds_len(str));
                 sourcetype_key_set = FLB_TRUE;
-                c++;
             }
             flb_sds_destroy(str);
         }
@@ -137,7 +133,6 @@ static int pack_map_meta(struct flb_splunk *ctx,
         msgpack_pack_str(mp_pck, flb_sds_len(ctx->event_sourcetype));
         msgpack_pack_str_body(mp_pck,
                               ctx->event_sourcetype, flb_sds_len(ctx->event_sourcetype));
-        c++;
     }
 
     /* event index (key lookup) */
@@ -155,7 +150,6 @@ static int pack_map_meta(struct flb_splunk *ctx,
                 msgpack_pack_str(mp_pck, flb_sds_len(str));
                 msgpack_pack_str_body(mp_pck, str, flb_sds_len(str));
                 index_key_set = FLB_TRUE;
-                c++;
             }
             flb_sds_destroy(str);
         }
@@ -171,7 +165,6 @@ static int pack_map_meta(struct flb_splunk *ctx,
         msgpack_pack_str(mp_pck, flb_sds_len(ctx->event_index));
         msgpack_pack_str_body(mp_pck,
                               ctx->event_index, flb_sds_len(ctx->event_index));
-        c++;
     }
 
     /* event 'fields' */
@@ -203,7 +196,6 @@ static int pack_map_meta(struct flb_splunk *ctx,
             flb_ra_key_value_destroy(rval);
         }
         flb_mp_map_header_end(&mh_fields);
-        c++;
     }
 
     return 0;
@@ -276,6 +268,10 @@ static inline int pack_event_key(struct flb_splunk *ctx, msgpack_packer *mp_pck,
     t = flb_time_to_double(tm);
     val = flb_ra_translate(ctx->ra_event_key, tag, tag_len, map, NULL);
     if (!val || flb_sds_len(val) == 0) {
+        if (val != NULL) {
+            flb_sds_destroy(val);
+        }
+
         return -1;
     }
 

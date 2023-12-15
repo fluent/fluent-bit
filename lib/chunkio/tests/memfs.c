@@ -93,11 +93,10 @@ static void test_memfs_write()
 
     flags = CIO_CHECKSUM;
 
-    memset(&cio_opts, 0, sizeof(cio_opts));
+    cio_options_init(&cio_opts);
+    cio_opts.flags = flags;
 
-    cio_opts.root_path = NULL;
     cio_opts.log_cb = log_cb;
-    cio_opts.log_level = CIO_LOG_INFO;
     cio_opts.flags = flags;
 
     /* Create main context */

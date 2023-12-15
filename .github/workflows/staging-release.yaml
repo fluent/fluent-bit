@@ -31,12 +31,12 @@ jobs:
 
   staging-release-version-check:
     name: Check staging release matches
-    environment: release
+    environment: release # required to get bucket name
     runs-on: ubuntu-latest
     outputs:
       major-version: ${{ steps.get_major_version.outputs.value }}
     permissions:
-      contents: none
+      contents: read
     steps:
     - name: Get the version on staging
       run: |
@@ -64,6 +64,17 @@ jobs:
       env:
         RELEASE_VERSION: ${{ github.event.inputs.version }}
 
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # Check we can download the AppVeyor build which confirms it matches the version to release as well as being a successful build
+    - name: Get Appveyor binaries
+      run: |
+        ./packaging/appveyor-download.sh
+      shell: bash
+      env:
+        TAG: v${{ github.event.inputs.version }}
+
   staging-release-generate-package-matrix:
     name: Get package matrix
     runs-on: ubuntu-latest
@@ -72,20 +83,20 @@ jobs:
       rpm-build-matrix: ${{ steps.get-matrix.outputs.rpm-build-matrix }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup runner
         run: |
           sudo apt-get update
           sudo apt-get install -y jq
         shell: bash
-        
+
       # Cope with 1.9 as well as 2.0
       - uses: ./.github/actions/generate-package-build-matrix
         id: get-matrix
         with:
           ref: v${{ inputs.version }}
-      
+
       # Now annotate with whether it is Yum or Apt based
 
   # 1. Take packages from the staging bucket
@@ -98,7 +109,7 @@ jobs:
     name: S3 - update YUM packages bucket
     runs-on: ubuntu-22.04 # no createrepo on Ubuntu 20.04
     environment: release
-    needs: 
+    needs:
       - staging-release-version-check
       - staging-release-generate-package-matrix
     permissions:
@@ -108,7 +119,7 @@ jobs:
       fail-fast: false
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Setup runner
       run: |
@@ -118,7 +129,7 @@ jobs:
 
     - name: Import GPG key for signing
       id: import_gpg
-      uses: crazy-max/ghaction-import-gpg@v5
+      uses: crazy-max/ghaction-import-gpg@v6
       with:
         gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
         passphrase: ${{ secrets.GPG_PRIVATE_KEY_PASSPHRASE }}
@@ -171,7 +182,7 @@ jobs:
     name: S3 - update APT packages bucket
     runs-on: ubuntu-latest
     environment: release
-    needs: 
+    needs:
       - staging-release-version-check
       - staging-release-generate-package-matrix
     permissions:
@@ -181,7 +192,7 @@ jobs:
       fail-fast: false
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Setup runner
       run: |
@@ -204,10 +215,10 @@ jobs:
       shell: bash
       env:
         DISTRO: ${{ matrix.distro }}
-        
+
     - name: Import GPG key for signing
       id: import_gpg
-      uses: crazy-max/ghaction-import-gpg@v5
+      uses: crazy-max/ghaction-import-gpg@v6
       with:
         gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
         passphrase: ${{ secrets.GPG_PRIVATE_KEY_PASSPHRASE }}
@@ -249,7 +260,7 @@ jobs:
     name: Update Windows and macOS packages
     runs-on: ubuntu-22.04
     environment: release
-    needs: 
+    needs:
       - staging-release-version-check
     permissions:
       contents: none
@@ -286,7 +297,7 @@ jobs:
     name: Update top-level bucket info
     runs-on: ubuntu-22.04
     environment: release
-    needs: 
+    needs:
       - staging-release-apt-packages
       - staging-release-yum-packages
     permissions:
@@ -294,7 +305,7 @@ jobs:
     steps:
     - name: Import GPG key for signing
       id: import_gpg
-      uses: crazy-max/ghaction-import-gpg@v5
+      uses: crazy-max/ghaction-import-gpg@v6
       with:
         gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
         passphrase: ${{ secrets.GPG_PRIVATE_KEY_PASSPHRASE }}
@@ -326,22 +337,17 @@ jobs:
     name: S3 - update source bucket
     runs-on: ubuntu-latest
     environment: release
-    needs: 
+    needs:
       - staging-release-version-check
     permissions:
       contents: read
-    outputs:
-      windows-exe32-hash: steps.windows.outputs.WIN_32_EXE_HASH
-      windows-zip32-hash: steps.windows.outputs.WIN_32_ZIP_HASH
-      windows-exe64-hash: steps.windows.outputs.WIN_64_EXE_HASH
-      windows-zip64-hash: steps.windows.outputs.WIN_64_ZIP_HASH
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Sync packages from buckets on S3
       run: |
-        mkdir -p release staging 
+        mkdir -p release staging
         aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE_SOURCES }}" release/ --no-progress
         aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}/source/" staging/ --no-progress
       env:
@@ -371,7 +377,7 @@ jobs:
         VERSION: ${{ github.event.inputs.version }}
         MAJOR_VERSION: ${{ needs.staging-release-version-check.outputs.major-version }}
       shell: bash
-      
+
     - name: Sync to bucket on S3
       run: |
         aws s3 sync release/ "s3://${{ secrets.AWS_S3_BUCKET_RELEASE_SOURCES }}" --delete --follow-symlinks --no-progress
@@ -380,25 +386,6 @@ jobs:
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         AWS_REGION: "us-east-1"
       shell: bash
-
-    - name: Provide output for documentation PR
-      id: windows
-      # do not fail the build for this
-      continue-on-error: true
-      run: |
-          ls -l $BASE_DIR/
-          export WIN_32_EXE_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win32.exe.sha256"|awk '{print $1}')
-          export WIN_32_ZIP_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win32.zip.sha256"|awk '{print $1}')
-          export WIN_64_EXE_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win64.exe.sha256"|awk '{print $1}')
-          export WIN_64_ZIP_HASH=$(cat "$BASE_DIR/fluent-bit-${{ inputs.version }}-win64.zip.sha256"|awk '{print $1}')
-          set | grep WIN_
-          echo WIN_32_EXE_HASH="$WIN_32_EXE_HASH" >> $GITHUB_OUTPUT
-          echo WIN_32_ZIP_HASH="$WIN_32_ZIP_HASH" >> $GITHUB_OUTPUT
-          echo WIN_64_EXE_HASH="$WIN_64_EXE_HASH" >> $GITHUB_OUTPUT
-          echo WIN_64_ZIP_HASH="$WIN_64_ZIP_HASH" >> $GITHUB_OUTPUT
-      shell: bash
-      env:
-        BASE_DIR: release/${{ needs.staging-release-version-check.outputs.major-version }}
 
   # Simple skopeo copy jobs to transfer image from staging to release registry with optional GPG key signing.
   # Unfortunately skopeo currently does not support Cosign: https://github.com/containers/skopeo/issues/1533
@@ -448,7 +435,7 @@ jobs:
         shell: bash
 
       - name: Promote container images from staging to GHCR.io
-        if: ${{ startsWith(github.event.inputs.version, '2.0') || ! startsWith(matrix.tag, 'latest') }}
+        if: ${{ startsWith(github.event.inputs.version, '2.0') || startsWith(github.event.inputs.version, '2.1') || ! startsWith(matrix.tag, 'latest') }}
         run: |
           docker run --rm  \
             quay.io/skopeo/stable:latest \
@@ -465,9 +452,74 @@ jobs:
           TAG: ${{ matrix.tag }}
         shell: bash
 
+  # Part of resolution for: https://github.com/fluent/fluent-bit/issues/7748
+  # More recent build-push-actions may mean legacy format is not preserved so we provide arch-specific tags just in case
+  staging-release-images-arch-specific-legacy-tags:
+    name: Release ${{ matrix.arch }} legacy format Linux container images
+    runs-on: ubuntu-latest
+    needs:
+      - staging-release-images
+    environment: release
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - amd64
+          - arm64
+          - arm/v7
+    permissions:
+      packages: write
+    env:
+      RELEASE_IMAGE_NAME: ${{ github.event.inputs.docker-image || secrets.DOCKERHUB_ORGANIZATION }}
+      RELEASE_TAG: ${{ github.event.inputs.version }}
+    steps:
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Convert arch to tag
+        id: get-tag
+        run: |
+          TAG="${RELEASE_TAG}-${{ matrix.arch }}"
+          echo "Input value: $TAG"
+          TAG=${TAG/\//-}
+          echo "Using tag: $TAG"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Pull release image
+        run: docker pull --platform='linux/${{ matrix.arch }}' "$RELEASE_IMAGE_NAME:$RELEASE_TAG"
+        shell: bash
+
+      - name: Tag and push legacy format image to DockerHub
+        run: |
+          docker tag "$RELEASE_IMAGE_NAME:$RELEASE_TAG" docker.io/"$RELEASE_IMAGE_NAME:$TAG"
+          docker push docker.io/"$RELEASE_IMAGE_NAME:$TAG"
+        shell: bash
+        env:
+          TAG: ${{ steps.get-tag.outputs.tag }}
+
+      - name: Tag and push legacy format image to Github Container Registry
+        run: |
+          docker tag "$RELEASE_IMAGE_NAME:$RELEASE_TAG" ghcr.io/"$RELEASE_IMAGE_NAME:$TAG"
+          docker push ghcr.io/"$RELEASE_IMAGE_NAME:$TAG"
+        shell: bash
+        env:
+          TAG: ${{ steps.get-tag.outputs.tag }}
+
   staging-release-images-latest-tags:
-    # Only update latest tags for 2.1 releases
-    if: startsWith(github.event.inputs.version, '2.1') 
+    # Only update latest tags for 2.2 releases
+    if: startsWith(github.event.inputs.version, '2.2')
     name: Release latest Linux container images
     runs-on: ubuntu-latest
     needs:
@@ -544,7 +596,7 @@ jobs:
         ]
     steps:
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -568,7 +620,7 @@ jobs:
         shell: bash
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -588,7 +640,7 @@ jobs:
     permissions: write-all
     runs-on: ubuntu-latest
     environment: release
-    needs: 
+    needs:
       - staging-release-images
     env:
       DH_RELEASE_IMAGE_NAME: docker.io/${{ github.event.inputs.docker-image || secrets.DOCKERHUB_ORGANIZATION }}
@@ -598,13 +650,13 @@ jobs:
         uses: sigstore/cosign-installer@v2
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -623,7 +675,7 @@ jobs:
             "$GHCR_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}" \
             "$GHCR_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}-debug" \
             "$DH_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}" \
-            "$DH_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}-debug" 
+            "$DH_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}-debug"
           rm -f /tmp/my_cosign.key
         shell: bash
         env:
@@ -659,7 +711,7 @@ jobs:
     steps:
       - name: Install cosign
         uses: sigstore/cosign-installer@v2
-      
+
       - name: Get public key and add to S3 bucket
         # Only run if we have a key defined
         if: ${{ env.COSIGN_PRIVATE_KEY }}
@@ -689,7 +741,7 @@ jobs:
       - staging-release-yum-packages
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Test release packages
         run: |
@@ -711,7 +763,7 @@ jobs:
       - staging-release-images
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Test containers
         run: |
@@ -742,7 +794,7 @@ jobs:
           tag_name: v${{ inputs.version }}
           target_commitish: '2.0'
 
-      - name: Release 2.1 and latest
+      - name: Release 2.1 - not latest
         uses: softprops/action-gh-release@v1
         if: startsWith(inputs.version, '2.1')
         with:
@@ -751,12 +803,73 @@ jobs:
           generate_release_notes: true
           name: "Fluent Bit ${{ inputs.version }}"
           tag_name: v${{ inputs.version }}
+          target_commitish: '2.1'
+
+      - name: Release 2.2 and latest
+        uses: softprops/action-gh-release@v1
+        if: startsWith(inputs.version, '2.2')
+        with:
+          body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          draft: false
+          generate_release_notes: true
+          name: "Fluent Bit ${{ inputs.version }}"
+          tag_name: v${{ inputs.version }}
+
+  staging-release-windows-checksums:
+    name: Get Windows checksums for new release
+    runs-on: ubuntu-22.04
+    environment: release
+    needs:
+      - staging-release-update-non-linux-s3
+    permissions:
+      contents: none
+    outputs:
+      windows-exe32-hash: ${{ steps.hashes.outputs.WIN_32_EXE_HASH }}
+      windows-zip32-hash: ${{ steps.hashes.outputs.WIN_32_ZIP_HASH }}
+      windows-exe64-hash: ${{ steps.hashes.outputs.WIN_64_EXE_HASH }}
+      windows-zip64-hash: ${{ steps.hashes.outputs.WIN_64_ZIP_HASH }}
+      windows-arm-exe64-hash: ${{ steps.hashes.outputs.WIN_64_ARM_EXE_HASH }}
+      windows-arm-zip64-hash: ${{ steps.hashes.outputs.WIN_64_ARM_ZIP_HASH }}
+    steps:
+      - name: Sync release Windows directory to get checksums
+        run:
+          aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/windows" ./ --exclude "*" --include "*.sha256"
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: "us-east-1"
+
+      - name: Provide output for documentation PR
+        id: hashes
+        # do not fail the build for this
+        continue-on-error: true
+        run: |
+          ls -l
+          export WIN_32_EXE_HASH=$(cat "./fluent-bit-${{ inputs.version }}-win32.exe.sha256"|awk '{print $1}')
+          export WIN_32_ZIP_HASH=$(cat "./fluent-bit-${{ inputs.version }}-win32.zip.sha256"|awk '{print $1}')
+          export WIN_64_EXE_HASH=$(cat "./fluent-bit-${{ inputs.version }}-win64.exe.sha256"|awk '{print $1}')
+          export WIN_64_ZIP_HASH=$(cat "./fluent-bit-${{ inputs.version }}-win64.zip.sha256"|awk '{print $1}')
+          if [[ -f "./fluent-bit-${{ inputs.version }}-winarm64.exe.sha256" ]]; then
+            export WIN_64_ARM_EXE_HASH=$(cat "./fluent-bit-${{ inputs.version }}-winarm64.exe.sha256"|awk '{print $1}')
+          fi
+          if [[ -f "./fluent-bit-${{ inputs.version }}-winarm64.zip.sha256" ]]; then
+            export WIN_64_ARM_ZIP_HASH=$(cat "./fluent-bit-${{ inputs.version }}-winarm64.zip.sha256"|awk '{print $1}')
+          fi
+          set | grep WIN_
+          echo WIN_32_EXE_HASH="$WIN_32_EXE_HASH" >> $GITHUB_OUTPUT
+          echo WIN_32_ZIP_HASH="$WIN_32_ZIP_HASH" >> $GITHUB_OUTPUT
+          echo WIN_64_EXE_HASH="$WIN_64_EXE_HASH" >> $GITHUB_OUTPUT
+          echo WIN_64_ZIP_HASH="$WIN_64_ZIP_HASH" >> $GITHUB_OUTPUT
+          echo WIN_64_ARM_EXE_HASH="$WIN_64_ARM_EXE_HASH" >> $GITHUB_OUTPUT
+          echo WIN_64_ARM_ZIP_HASH="$WIN_64_ARM_ZIP_HASH" >> $GITHUB_OUTPUT
+        shell: bash
 
   staging-release-create-docs-pr:
     name: Create docs updates for new release
-    needs: 
+    needs:
       - staging-release-images
-      - staging-release-source-s3
+      - staging-release-windows-checksums
     permissions:
       contents: none
     environment: release
@@ -764,15 +877,23 @@ jobs:
     steps:
       - name: Release 2.0 - not latest
         if: startsWith(inputs.version, '2.0')
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           repository: fluent/fluent-bit-docs
           ref: 2.0
           token: ${{ secrets.GH_PA_TOKEN }}
 
-      - name: Release 2.1 and latest
+      - name: Release 2.1 - not latest
         if: startsWith(inputs.version, '2.1')
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          repository: fluent/fluent-bit-docs
+          ref: 2.1
+          token: ${{ secrets.GH_PA_TOKEN }}
+
+      - name: Release 2.2 and latest
+        if: startsWith(inputs.version, '2.2')
+        uses: actions/checkout@v4
         with:
           repository: fluent/fluent-bit-docs
           token: ${{ secrets.GH_PA_TOKEN }}
@@ -791,10 +912,12 @@ jobs:
         shell: bash
         env:
           NEW_VERSION: ${{ inputs.version }}
-          WIN_32_EXE_HASH: ${{ needs.staging-release-source-s3.outputs.windows-exe32-hash }}
-          WIN_32_ZIP_HASH: ${{ needs.staging-release-source-s3.outputs.windows-zip32-hash }}
-          WIN_64_EXE_HASH: ${{ needs.staging-release-source-s3.outputs.windows-exe64-hash }}
-          WIN_64_ZIP_HASH: ${{ needs.staging-release-source-s3.outputs.windows-zip64-hash }}
+          WIN_32_EXE_HASH: ${{ needs.staging-release-windows-checksums.outputs.windows-exe32-hash }}
+          WIN_32_ZIP_HASH: ${{ needs.staging-release-windows-checksums.outputs.windows-zip32-hash }}
+          WIN_64_EXE_HASH: ${{ needs.staging-release-windows-checksums.outputs.windows-exe64-hash }}
+          WIN_64_ZIP_HASH: ${{ needs.staging-release-windows-checksums.outputs.windows-zip64-hash }}
+          WIN_64_ARM_EXE_HASH: ${{ needs.staging-release-windows-checksums.outputs.windows-arm-exe64-hash }}
+          WIN_64_ARM_ZIP_HASH: ${{ needs.staging-release-windows-checksums.outputs.windows-arm-zip64-hash }}
 
       - name: Raise docs PR
         id: cpr
@@ -821,7 +944,7 @@ jobs:
 
   staging-release-create-version-update-pr:
     name: Create version update PR for new release
-    needs: 
+    needs:
       - staging-release-create-release
     permissions:
       contents: write
@@ -831,13 +954,19 @@ jobs:
     steps:
       - name: Release 2.0
         if: startsWith(inputs.version, '2.0')
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: 2.0
 
-      - name: Release 2.1 and latest
+      - name: Release 2.1
         if: startsWith(inputs.version, '2.1')
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          ref: 2.1
+
+      - name: Release 2.2 and latest
+        if: startsWith(inputs.version, '2.2')
+        uses: actions/checkout@v4
 
       # Get the new version to use
       - name: 'Get next minor version'
@@ -847,7 +976,7 @@ jobs:
           version: ${{ inputs.version }}
           strict: true
 
-      - run: ./update-version.sh
+      - run: ./update_version.sh
         shell: bash
         env:
           NEW_VERSION: ${{ steps.semvers.outputs.patch }}
@@ -858,13 +987,13 @@ jobs:
         id: cpr
         uses: peter-evans/create-pull-request@v5
         with:
-          commit-message: 'release: update to ${{ inputs.version }}'
+          commit-message: 'release: update to ${{ steps.semvers.outputs.patch }}'
           signoff: true
           delete-branch: true
-          title: 'release: update to ${{ inputs.version }}'
+          title: 'release: update to ${{ steps.semvers.outputs.patch }}'
           labels: ci,automerge
           body: |
-            Update release ${{ inputs.version }} version.
+            Update next release to ${{ steps.semvers.outputs.patch }} version.
             - Created by ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
             - Auto-generated by create-pull-request: https://github.com/peter-evans/create-pull-request
           draft: false

@@ -239,6 +239,11 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_syslog, raw_message_key),
      "Key where the raw message will be preserved"
     },
+    {
+     FLB_CONFIG_MAP_STR, "source_address_key", (char *) NULL,
+     0, FLB_TRUE, offsetof(struct flb_syslog, source_address_key),
+     "Key where the source address will be injected"
+    },
 
 
     /* EOF */

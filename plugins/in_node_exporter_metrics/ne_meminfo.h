@@ -22,8 +22,6 @@
 
 #include "ne.h"
 
-int ne_meminfo_init(struct flb_ne *ctx);
-int ne_meminfo_update(struct flb_ne *ctx);
-int ne_meminfo_exit(struct flb_ne *ctx);
+extern struct flb_ne_collector meminfo_collector;
 
 #endif

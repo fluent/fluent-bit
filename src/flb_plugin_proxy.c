@@ -50,6 +50,14 @@ static void proxy_cb_flush(struct flb_event_chunk *event_chunk,
     (void) i_ins;
     (void) config;
 
+    /* To prevent flush callback executions, we need to check the
+     * status of hot-reloading. The actual problem is: we don't have
+     * pause procedure/mechanism for output plugin. For now, we just halt the
+     * flush callback here during hot-reloading is in progress. */
+    if (config->shutdown_by_hot_reloading == FLB_TRUE) {
+        flb_trace("[GO] hot-reloading is in progress. Retry flushing");
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
 
 #ifdef FLB_HAVE_PROXY_GO
     if (ctx->proxy->def->proxy == FLB_PROXY_GOLANG) {
@@ -83,6 +91,11 @@ static int flb_proxy_input_cb_collect(struct flb_input_instance *ins,
     if (ctx->proxy->def->proxy == FLB_PROXY_GOLANG) {
         flb_trace("[GO] entering go_collect()");
         ret = proxy_go_input_collect(ctx->proxy, &data, &len);
+
+        if (len == 0) {
+            flb_trace("[GO] No logs are ingested");
+            return -1;
+        }
 
         if (ret == -1) {
             flb_errno();
@@ -168,6 +181,15 @@ init_error:
 static void flb_proxy_input_cb_pause(void *data, struct flb_config *config)
 {
     struct flb_plugin_input_proxy_context *ctx = data;
+    struct flb_plugin_proxy *proxy = (ctx->proxy);
+
+    /* pause */
+    void (*cb_pause)(void);
+
+    cb_pause = flb_plugin_proxy_symbol(proxy, "FLBPluginInputPause");
+    if (cb_pause != NULL) {
+        cb_pause();
+    }
 
     flb_input_collector_pause(ctx->coll_fd, ctx->proxy->instance);
 }
@@ -175,6 +197,15 @@ static void flb_proxy_input_cb_pause(void *data, struct flb_config *config)
 static void flb_proxy_input_cb_resume(void *data, struct flb_config *config)
 {
     struct flb_plugin_input_proxy_context *ctx = data;
+    struct flb_plugin_proxy *proxy = (ctx->proxy);
+
+    /* resume */
+    void (*cb_resume)(void);
+
+    cb_resume = flb_plugin_proxy_symbol(proxy, "FLBPluginInputResume");
+    if (cb_resume != NULL) {
+        cb_resume();
+    }
 
     flb_input_collector_resume(ctx->coll_fd, ctx->proxy->instance);
 }
@@ -185,9 +216,16 @@ static int flb_proxy_output_cb_exit(void *out_context, struct flb_config *config
 {
     struct flb_plugin_proxy_context *ctx = out_context;
     struct flb_plugin_proxy *proxy = (ctx->proxy);
+    /* pre_exit (Golang plugin only) */
+    void (*cb_pre_exit)(int);
 
     if (!out_context) {
         return 0;
+    }
+
+    cb_pre_exit = flb_plugin_proxy_symbol(proxy, "FLBPluginOutputPreExit");
+    if (cb_pre_exit != NULL) {
+        cb_pre_exit(config->shutdown_by_hot_reloading);
     }
 
     if (proxy->def->proxy == FLB_PROXY_GOLANG) {
@@ -224,9 +262,16 @@ static int flb_proxy_input_cb_exit(void *in_context, struct flb_config *config)
 {
     struct flb_plugin_input_proxy_context *ctx = in_context;
     struct flb_plugin_proxy *proxy = (ctx->proxy);
+    /* pre_exit (Golang plugin only) */
+    void (*cb_pre_exit)(int);
 
     if (!in_context) {
         return 0;
+    }
+
+    cb_pre_exit = flb_plugin_proxy_symbol(proxy, "FLBPluginInputPreExit");
+    if (cb_pre_exit != NULL) {
+        cb_pre_exit(config->shutdown_by_hot_reloading);
     }
 
     if (proxy->def->proxy == FLB_PROXY_GOLANG) {
@@ -259,6 +304,51 @@ static void flb_proxy_input_cb_destroy(struct flb_input_plugin *plugin)
     flb_plugin_proxy_destroy(proxy);
 }
 
+static int flb_proxy_input_cb_pre_run(struct flb_input_instance *ins,
+                                      struct flb_config *config, void *data)
+{
+    struct flb_plugin_proxy_context *pc;
+    struct flb_plugin_proxy *proxy;
+    int ret;
+
+    pc = (struct flb_plugin_proxy_context *)(ins->context);
+    proxy = pc->proxy;
+
+    /* pre_run */
+    int (*cb_pre_run)(int);
+
+    cb_pre_run = flb_plugin_proxy_symbol(proxy, "FLBPluginInputPreRun");
+    if (cb_pre_run != NULL) {
+        ret = cb_pre_run(config->enable_hot_reload);
+    }
+
+    return ret;
+}
+
+static int flb_proxy_output_cb_pre_run(void *out_context, struct flb_config *config)
+{
+    struct flb_plugin_proxy_context *ctx = out_context;
+    struct flb_plugin_proxy *proxy = (ctx->proxy);
+    int ret;
+
+    if (!out_context) {
+        return 0;
+    }
+
+    /* pre_run */
+    int (*cb_pre_run)(int);
+
+    cb_pre_run = flb_plugin_proxy_symbol(proxy, "FLBPluginOutputPreRun");
+    if (cb_pre_run != NULL) {
+        ret = cb_pre_run(config->enable_hot_reload);
+    }
+
+    return ret;
+}
+
+int flb_proxy_output_cb_init(struct flb_output_instance *o_ins,
+                             struct flb_config *config, void *data);
+
 static int flb_proxy_register_output(struct flb_plugin_proxy *proxy,
                                      struct flb_plugin_proxy_def *def,
                                      struct flb_config *config)
@@ -275,7 +365,7 @@ static int flb_proxy_register_output(struct flb_plugin_proxy *proxy,
     out->type  = FLB_OUTPUT_PLUGIN_PROXY;
     out->proxy = proxy;
     out->flags = def->flags;
-    out->name  = def->name;
+    out->name  = flb_strdup(def->name);
     out->description = def->description;
     mk_list_add(&out->_head, &config->out_plugins);
 
@@ -284,7 +374,9 @@ static int flb_proxy_register_output(struct flb_plugin_proxy *proxy,
      * the core plugins specs, have a different callback approach, so
      * we put our proxy-middle callbacks to do the translation properly.
      */
+    out->cb_init = flb_proxy_output_cb_init;
     out->cb_flush = proxy_cb_flush;
+    out->cb_pre_run = flb_proxy_output_cb_pre_run;
     out->cb_exit = flb_proxy_output_cb_exit;
     out->cb_destroy = flb_proxy_output_cb_destroy;
     return 0;
@@ -315,6 +407,7 @@ static int flb_proxy_register_input(struct flb_plugin_proxy *proxy,
      * the core plugins specs, have a different callback approach, so
      * we put our proxy-middle callbacks to do the translation properly.
      */
+    in->cb_pre_run = flb_proxy_input_cb_pre_run;
     in->cb_init = flb_proxy_input_cb_init;
     in->cb_collect = flb_proxy_input_cb_collect;
     in->cb_flush_buf = NULL;
@@ -343,7 +436,18 @@ int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,
 {
     int ret;
     int (*cb_register)(struct flb_plugin_proxy_def *);
+    int (*cb_pre_register)(int);
     struct flb_plugin_proxy_def *def = proxy->def;
+
+    /* Lookup the pre registration callback */
+    cb_pre_register = flb_plugin_proxy_symbol(proxy, "FLBPluginPreRegister");
+    if (cb_pre_register != NULL) {
+        /* Prepare the registration if available */
+        ret = cb_pre_register(config->hot_reloading);
+        if (ret == -1) {
+            return -1;
+        }
+    }
 
     /* Lookup the registration callback */
     cb_register = flb_plugin_proxy_symbol(proxy, "FLBPluginRegister");
@@ -398,24 +502,35 @@ int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,
     return 0;
 }
 
-int flb_plugin_proxy_output_init(struct flb_plugin_proxy *proxy,
-                                 struct flb_output_instance *o_ins,
-                                 struct flb_config *config)
+int flb_proxy_output_cb_init(struct flb_output_instance *o_ins,
+                             struct flb_config *config, void *data)
 {
     int ret = -1;
+    struct flb_plugin_proxy_context *pc;
+
+    /* Before to initialize for proxy, set the proxy instance reference */
+    pc = (struct flb_plugin_proxy_context *)(o_ins->context);
 
     /* Before to initialize, set the instance reference */
-    proxy->instance = o_ins;
+    pc->proxy->instance = o_ins;
 
     /* Based on 'proxy', use the proper handler */
-    if (proxy->def->proxy == FLB_PROXY_GOLANG) {
+    if (pc->proxy->def->proxy == FLB_PROXY_GOLANG) {
 #ifdef FLB_HAVE_PROXY_GO
-        ret = proxy_go_output_init(proxy);
+        ret = proxy_go_output_init(pc->proxy);
 #endif
     }
     else {
         flb_error("[proxy] unrecognized proxy handler %i",
-                  proxy->def->proxy);
+                  pc->proxy->def->proxy);
+    }
+
+    /* Multi-threading enabled if configured */
+    ret = flb_output_enable_multi_threading(o_ins, config);
+    if (ret == -1) {
+        flb_error("[output] could not start thread pool for '%s' plugin",
+                  o_ins->p->name);
+        return -1;
     }
 
     return ret;

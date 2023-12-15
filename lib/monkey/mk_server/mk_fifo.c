@@ -34,7 +34,7 @@ static struct mk_fifo_worker *mk_fifo_worker_create(struct mk_fifo *ctx,
     /* Get an ID */
     id = mk_list_size(&ctx->workers);
 
-    fw = mk_mem_alloc(sizeof(struct mk_fifo_worker));
+    fw = mk_mem_alloc_z(sizeof(struct mk_fifo_worker));
     if (!fw) {
         perror("malloc");
         return NULL;

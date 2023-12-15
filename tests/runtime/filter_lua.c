@@ -677,6 +677,76 @@ void flb_test_drop_all_records(void)
     flb_destroy(ctx);
 }
 
+void flb_test_enable_flb_null(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    char *output = NULL;
+    char *input = "[0, {\"hello\":null}]";
+    char *result;
+    struct flb_lib_out_cb cb_data;
+
+    char *script_body = ""
+      "function lua_main(tag, timestamp, record)\n"
+      "    return 1, timestamp, record\n"
+      "end\n";
+
+    clear_output();
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", FLUSH_INTERVAL, "grace", "1", NULL);
+
+    /* Prepare output callback context*/
+    cb_data.cb = callback_test;
+    cb_data.data = NULL;
+
+    ret = create_script(script_body, strlen(script_body));
+    TEST_CHECK(ret == 0);
+    /* Filter */
+    filter_ffd = flb_filter(ctx, (char *) "lua", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd,
+                         "Match", "*",
+                         "call", "lua_main",
+                         "script", TMP_LUA_PATH,
+                         "enable_flb_null", "true",
+                         NULL);
+
+    /* Input */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+    TEST_CHECK(in_ffd >= 0);
+
+    /* Lib output */
+    out_ffd = flb_output(ctx, (char *) "lib", (void *)&cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "format", "json",
+                   NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret==0);
+
+    flb_lib_push(ctx, in_ffd, input, strlen(input));
+    wait_with_timeout(2000, &output);
+    result = strstr(output, "\"hello\":null");
+    if(!TEST_CHECK(result != NULL)) {
+        TEST_MSG("output:%s\n", output);
+    }
+
+    /* clean up */
+    flb_lib_free(output);
+    delete_script();
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 /* https://github.com/fluent/fluent-bit/issues/5496 */
 void flb_test_split_record(void)
 {
@@ -753,6 +823,151 @@ void flb_test_split_record(void)
     flb_sds_destroy(outbuf);
 }
 
+void flb_test_empty_array(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    flb_sds_t outbuf = flb_sds_create("");
+    char *input = "[0, {\"key\":[]}]";
+    struct flb_lib_out_cb cb_data;
+
+    const char *expected =
+        "[5.000000,{\"key\":[]}]";
+
+    char *script_body = ""
+      "function lua_main(tag, timestamp, record)\n"
+      "    return 1, 5, record\n"
+      "end\n";
+
+    clear_output_num();
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", FLUSH_INTERVAL, "grace", "1", NULL);
+
+    /* Prepare output callback context*/
+    cb_data.cb = callback_cat;
+    cb_data.data = &outbuf;
+
+    ret = create_script(script_body, strlen(script_body));
+    TEST_CHECK(ret == 0);
+    /* Filter */
+    filter_ffd = flb_filter(ctx, (char *) "lua", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd,
+                         "Match", "*",
+                         "call", "lua_main",
+                         "script", TMP_LUA_PATH,
+                         NULL);
+
+    /* Input */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+    TEST_CHECK(in_ffd >= 0);
+
+    /* Lib output */
+    out_ffd = flb_output(ctx, (char *) "lib", (void *)&cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "format", "json",
+                   NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret==0);
+
+    flb_lib_push(ctx, in_ffd, input, strlen(input));
+    wait_with_timeout(2000, &output);
+    if (!TEST_CHECK(!strcmp(outbuf, expected))) {
+        TEST_MSG("expected:\n%s\ngot:\n%s\n", expected, outbuf);
+    }
+
+    /* clean up */
+    flb_lib_free(output);
+    delete_script();
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    flb_sds_destroy(outbuf);
+}
+
+void flb_test_invalid_metatable(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int unused = 0;
+    int filter_ffd;
+    char *output = NULL;
+    char *input = "[0, {\"key\":\"val\"}]";
+    struct flb_lib_out_cb cb_data;
+
+    char *script_body = ""
+      "function lua_main(tag, timestamp, record)\n"
+      "    meta = getmetatable(record)\n"
+      "    meta[10] = \"hoge\"\n"
+      "    return 1, timestamp, record\n"
+      "end\n";
+
+    clear_output_num();
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", FLUSH_INTERVAL, "grace", "1", NULL);
+
+    /* Prepare output callback context*/
+    cb_data.cb = cb_count_msgpack_events;
+    cb_data.data = &unused;
+
+    ret = create_script(script_body, strlen(script_body));
+    TEST_CHECK(ret == 0);
+    /* Filter */
+    filter_ffd = flb_filter(ctx, (char *) "lua", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd,
+                         "Match", "*",
+                         "call", "lua_main",
+                         "script", TMP_LUA_PATH,
+                         NULL);
+
+    /* Input */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+    TEST_CHECK(in_ffd >= 0);
+
+    /* Lib output */
+    out_ffd = flb_output(ctx, (char *) "lib", (void *)&cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret==0);
+
+    ret = flb_lib_push(ctx, in_ffd, input, strlen(input));
+    if (!TEST_CHECK(ret != -1)) {
+        TEST_MSG("flb_lib_push error");
+    }
+    flb_time_msleep(1500); /* waiting flush */
+
+    ret = get_output_num();
+    if (!TEST_CHECK(ret > 0)) {
+        TEST_MSG("error. no output");
+    }
+
+    /* clean up */
+    flb_lib_free(output);
+    delete_script();
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 TEST_LIST = {
     {"hello_world",  flb_test_helloworld},
     {"append_tag",   flb_test_append_tag},
@@ -761,6 +976,9 @@ TEST_LIST = {
     {"type_array_key", flb_test_type_array_key},
     {"array_contains_null", flb_test_array_contains_null},
     {"drop_all_records", flb_test_drop_all_records},
+    {"enable_flb_null", flb_test_enable_flb_null},
     {"split_record", flb_test_split_record},
+    {"empty_array", flb_test_empty_array},
+    {"invalid_metatable", flb_test_invalid_metatable},
     {NULL, NULL}
 };

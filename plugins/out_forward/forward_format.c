@@ -93,7 +93,11 @@ static int append_options(struct flb_forward *ctx,
     char *chunk = NULL;
     uint8_t checksum[64];
     int     result;
+    struct mk_list *head;
+    struct flb_config_map_val *mv;
     struct flb_mp_map_header mh;
+    struct flb_slist_entry *eopt_key;
+    struct flb_slist_entry *eopt_val;
 
     /* options is map, use the dynamic map type */
     flb_mp_map_header_init(&mh, mp_pck);
@@ -145,12 +149,37 @@ static int append_options(struct flb_forward *ctx,
         msgpack_pack_str(mp_pck, 4);
         msgpack_pack_str_body(mp_pck, "gzip", 4);
     }
+    else if (fc->compress == COMPRESS_GZIP &&
+             /* for metrics or traces, we're also able to send as
+              * gzipped payloads */
+             (event_type == FLB_EVENT_TYPE_METRICS ||
+              event_type == FLB_EVENT_TYPE_TRACES)) {
+        flb_mp_map_header_append(&mh);
+        msgpack_pack_str(mp_pck, 10);
+        msgpack_pack_str_body(mp_pck, "compressed", 10);
+        msgpack_pack_str(mp_pck, 4);
+        msgpack_pack_str_body(mp_pck, "gzip", 4);
+    }
 
     /* event type (FLB_EVENT_TYPE_LOGS, FLB_EVENT_TYPE_METRICS, FLB_EVENT_TYPE_TRACES) */
     flb_mp_map_header_append(&mh);
     msgpack_pack_str(mp_pck, 13);
     msgpack_pack_str_body(mp_pck, "fluent_signal", 13);
     msgpack_pack_int64(mp_pck, event_type);
+
+    /* process 'extra_option(s)' */
+    if (fc->extra_options) {
+        flb_config_map_foreach(head, mv, fc->extra_options) {
+            eopt_key = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+            eopt_val = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
+
+            flb_mp_map_header_append(&mh);
+            msgpack_pack_str(mp_pck, flb_sds_len(eopt_key->str));
+            msgpack_pack_str_body(mp_pck, eopt_key->str, flb_sds_len(eopt_key->str));
+            msgpack_pack_str(mp_pck, flb_sds_len(eopt_val->str));
+            msgpack_pack_str_body(mp_pck, eopt_val->str, flb_sds_len(eopt_val->str));
+        }
+    }
 
     if (metadata != NULL &&
         metadata->type == MSGPACK_OBJECT_MAP &&

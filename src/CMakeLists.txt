@@ -61,6 +61,7 @@ set(src
   flb_plugin.c
   flb_gzip.c
   flb_snappy.c
+  flb_compression.c
   flb_http_client.c
   flb_callback.c
   flb_strptime.c

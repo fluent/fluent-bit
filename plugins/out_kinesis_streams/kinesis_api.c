@@ -309,8 +309,6 @@ static int process_event(struct flb_kinesis *ctx, struct flush *buf,
             time_key_ptr += strlen(ctx->time_key);
             memcpy(time_key_ptr, "\":\"", 3);
             time_key_ptr += 3;
-            tmp_size = buf->tmp_buf_size - buf->tmp_buf_offset;
-            tmp_size -= (time_key_ptr - tmp_buf_ptr);
 
             /* merge out_buf to time_key_ptr */
             memcpy(time_key_ptr, out_buf, len);
@@ -771,7 +769,7 @@ static int process_api_response(struct flb_kinesis *ctx,
                             (strncmp(response_val.via.str.ptr,
                                     ERR_CODE_EXCEEDED_THROUGHPUT, 38) == 0)) {
                                         throughput_exceeded = FLB_TRUE;
-                                        flb_plg_error(ctx->ins, "Thoughput limits may have been exceeded, %s",
+                                        flb_plg_error(ctx->ins, "Throughput limits may have been exceeded, %s",
                                                       ctx->stream_name);
                         }
                         flb_plg_debug(ctx->ins, "Record %i failed with err_code=%.*s",

@@ -143,7 +143,6 @@ static void metrics_append_input(msgpack_packer *mp_pck,
     int up;
     int down;
     int busy;
-    int busy_size_err;
     char *name;
     ssize_t busy_size;
     struct mk_list *head;
@@ -274,7 +273,6 @@ static void metrics_append_input(msgpack_packer *mp_pck,
          */
         busy = 0;
         busy_size = 0;
-        busy_size_err = 0;
 
         /* up/down */
         up = 0;
@@ -288,9 +286,6 @@ static void metrics_append_input(msgpack_packer *mp_pck,
                 size = cio_chunk_get_content_size(ic->chunk);
                 if (size >= 0) {
                     busy_size += size;
-                }
-                else {
-                    busy_size_err++;
                 }
             }
 
@@ -627,7 +622,14 @@ int flb_storage_create(struct flb_config *ctx)
         flags |= CIO_CHECKSUM;
     }
 
+    /* file trimming */
+    if (ctx->storage_trim_files == FLB_TRUE) {
+        flags |= CIO_TRIM_FILES;
+    }
+
     /* chunkio options */
+    cio_options_init(&opts);
+
     opts.root_path = ctx->storage_path;
     opts.flags = flags;
     opts.log_cb = log_cb;

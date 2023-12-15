@@ -653,8 +653,7 @@ double flb_time_now()
     return flb_time_to_double(&t);
 }
 
-/* Start the engine */
-int flb_start(flb_ctx_t *ctx)
+int static do_start(flb_ctx_t *ctx)
 {
     int fd;
     int bytes;
@@ -669,7 +668,6 @@ int flb_start(flb_ctx_t *ctx)
     flb_debug("[lib] context set: %p", ctx);
 
     /* set context as the last active one */
-    flb_context_set(ctx);
 
     /* spawn worker thread */
     config = ctx->config;
@@ -713,6 +711,26 @@ int flb_start(flb_ctx_t *ctx)
     }
 
     return 0;
+}
+
+/* Start the engine */
+int flb_start(flb_ctx_t *ctx)
+{
+    int ret;
+
+    ret = do_start(ctx);
+    if (ret == 0) {
+        /* set context as the last active one */
+        flb_context_set(ctx);
+    }
+
+    return ret;
+}
+
+/* Start the engine without setting the global context */
+int flb_start_trace(flb_ctx_t *ctx)
+{
+    return do_start(ctx);
 }
 
 int flb_loop(flb_ctx_t *ctx)

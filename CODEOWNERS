@@ -13,17 +13,17 @@
 
 # Build System & Portability
 # --------------------------
-/CMakeLists.txt          @fujimotos @niedbalski @patrick-stephens
-/cmake/                  @fujimotos @niedbalski @patrick-stephens
+/CMakeLists.txt          @fujimotos @niedbalski @patrick-stephens @celalettin1286
+/cmake/                  @fujimotos @niedbalski @patrick-stephens @celalettin1286
 
-# CI 
+# CI
 # -------------------------
-/.github/                @niedbalski @patrick-stephens
-/appveyor.yml            @niedbalski @patrick-stephens
-/dockerfiles/            @niedbalski @patrick-stephens
-/packaging/              @niedbalski @patrick-stephens
-/codebase-structure.svg  @niedbalski @patrick-stephens
-/install.sh              @niedbalski @patrick-stephens
+/.github/                @niedbalski @patrick-stephens @celalettin1286
+/appveyor.yml            @niedbalski @patrick-stephens @celalettin1286
+/dockerfiles/            @niedbalski @patrick-stephens @celalettin1286
+/packaging/              @niedbalski @patrick-stephens @celalettin1286
+/codebase-structure.svg  @niedbalski @patrick-stephens @celalettin1286
+/install.sh              @niedbalski @patrick-stephens @celalettin1286
 
 # Core: Signv4
 # ------------
@@ -63,7 +63,9 @@
 /plugins/out_datadog     @nokute78 @edsiper
 /plugins/out_es          @pettitwesley @edsiper
 /plugins/out_pgsql       @sxd
-# AWS Plugins 
+/plugins/out_stackdriver @braydonk @igorpeshansky @qingling128
+
+# AWS Plugins
 /plugins/out_s3               @pettitwesley
 /plugins/out_cloudwatch_logs  @pettitwesley
 /plugins/out_kinesis_firehose @pettitwesley
@@ -81,5 +83,14 @@
 /tests/runtime/out_opensearch.c @pettitwesley @edsiper
 /tests/runtime/out_s3.c         @pettitwesley
 
+# Google test code
+# --------------
+/tests/runtime/out_stackdriver.c @braydonk @igorpeshansky @qingling128
+/tests/runtime/data/stackdriver  @braydonk @igorpeshansky @qingling128
+
 # Devcontainer
 /.devcontainer                  @patrick-stephens @niedbalski @edsiper
+
+# Calytia Fleet
+/plugins/custom_calyptia/       @pwhelan
+/plugins/in_calyptia_fleet/     @pwhelan

@@ -305,19 +305,20 @@ static struct flb_logdna *logdna_config_create(struct flb_output_instance *ins,
         tmp = NULL;
         hostname = (char *) flb_env_get(config->env, "HOSTNAME");
         if (hostname) {
-            len = strlen(hostname);
             ctx->_hostname = flb_sds_create(hostname);
         }
         else {
             ctx->_hostname = flb_sds_create("unknown");
         }
-        if (!ctx->_hostname) {
-            flb_free(ctx);
-            return NULL;
-        }
     }
     else {
         ctx->_hostname = flb_sds_create(ctx->hostname);
+    }
+
+    /* Bail if unsuccessful hostname creation */
+    if (!ctx->_hostname) {
+        flb_free(ctx);
+        return NULL;
     }
 
     /* Create Upstream connection context */

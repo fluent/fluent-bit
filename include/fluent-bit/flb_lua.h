@@ -29,11 +29,15 @@
 #include <monkey/mk_core/mk_list.h>
 #include <msgpack/pack.h>
 
+/* global variables in Lua */
+#define FLB_LUA_VAR_FLB_NULL "flb_null"
+
 #define FLB_LUA_L2C_TYPES_NUM_MAX   16
 
 enum flb_lua_l2c_type_enum {
     FLB_LUA_L2C_TYPE_INT,
-    FLB_LUA_L2C_TYPE_ARRAY
+    FLB_LUA_L2C_TYPE_ARRAY,
+    FLB_LUA_L2C_TYPE_MAP
 };
 
 struct flb_lua_l2c_type {
@@ -47,7 +51,41 @@ struct flb_lua_l2c_config {
     struct mk_list l2c_types;  /* data types (lua -> C) */
 };
 
-int flb_lua_arraylength(lua_State *l);
+
+/*
+ * Metatable for Lua table.
+ * https://www.lua.org/manual/5.1/manual.html#2.8
+ */
+struct flb_lua_metadata {
+    int initialized;
+    int data_type; /* Map or Array */
+};
+
+static inline int flb_lua_metadata_init(struct flb_lua_metadata *meta)
+{
+    if (meta == NULL) {
+        return -1;
+    }
+    meta->initialized = FLB_TRUE;
+    meta->data_type = -1;
+
+    return 0;
+}
+
+/* convert from negative index to positive index */
+static inline int flb_lua_absindex(lua_State *l , int index)
+{
+#if defined(LUA_VERSION_NUM) && LUA_VERSION_NUM < 520
+    if (index < 0) {
+        index = lua_gettop(l) + index + 1;
+    }
+#else
+    index = lua_absindex(l, index);
+#endif
+    return index;
+}
+
+int flb_lua_arraylength(lua_State *l, int index);
 void flb_lua_pushtimetable(lua_State *l, struct flb_time *tm);
 int flb_lua_is_valid_func(lua_State *l, flb_sds_t func);
 int flb_lua_pushmpack(lua_State *l, mpack_reader_t *reader);
@@ -60,5 +98,7 @@ void flb_lua_tompack(lua_State *l,
                      mpack_writer_t *writer,
                      int index,
                      struct flb_lua_l2c_config *l2cc);
+void flb_lua_dump_stack(FILE *out, lua_State *l);
+int flb_lua_enable_flb_null(lua_State *l);
 
 #endif

@@ -19,7 +19,6 @@
  */
 
 #include <fluent-bit/flb_input_plugin.h>
-#include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_time.h>
@@ -51,14 +50,15 @@ static int try_json(struct flb_log_event_encoder *log_encoder,
         }
         return ret;
     }
-    flb_log_event_encoder_append_body_binary_body(log_encoder, buf, bufsize);
+    flb_log_event_encoder_append_body_raw_msgpack(log_encoder, buf, bufsize);
     flb_free(buf);
     return 0;
 }
 
-static int process_message(struct flb_log_event_encoder *log_encoder,
+static int process_message(struct flb_in_kafka_config *ctx,
                            rd_kafka_message_t *rkm)
 {
+    struct flb_log_event_encoder *log_encoder = ctx->log_encoder;
     int ret;
 
     ret = flb_log_event_encoder_begin_record(log_encoder);
@@ -128,7 +128,8 @@ static int process_message(struct flb_log_event_encoder *log_encoder,
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         if (rkm->payload) {
-            if (try_json(log_encoder, rkm)) {
+            if (ctx->format != FLB_IN_KAFKA_FORMAT_JSON ||
+                    try_json(log_encoder, rkm)) {
                 ret = flb_log_event_encoder_append_body_string(log_encoder,
                                                                rkm->payload,
                                                                rkm->len);
@@ -168,7 +169,7 @@ static int in_kafka_collect(struct flb_input_instance *ins,
 
         flb_plg_debug(ins, "kafka message received");
 
-        ret = process_message(ctx->log_encoder, rkm);
+        ret = process_message(ctx, rkm);
 
         rd_kafka_message_destroy(rkm);
 
@@ -243,6 +244,17 @@ static int in_kafka_init(struct flb_input_instance *ins,
     kafka_topics = flb_kafka_parse_topics(conf);
     if (!kafka_topics) {
         flb_plg_error(ins, "Failed to parse topic list");
+        goto init_error;
+    }
+
+    if (strcasecmp(ctx->format_str, "none") == 0) {
+        ctx->format = FLB_IN_KAFKA_FORMAT_NONE;
+    }
+    else if (strcasecmp(ctx->format_str, "json") == 0) {
+        ctx->format = FLB_IN_KAFKA_FORMAT_JSON;
+    }
+    else {
+        flb_plg_error(ins, "config: invalid format \"%s\"", ctx->format_str);
         goto init_error;
     }
 
@@ -326,6 +338,11 @@ static struct flb_config_map config_map[] = {
     FLB_CONFIG_MAP_STR, "topics", (char *)NULL,
     0, FLB_FALSE, 0,
     "Set the kafka topics, delimited by commas."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "format", FLB_IN_KAFKA_DEFAULT_FORMAT,
+    0, FLB_TRUE, offsetof(struct flb_in_kafka_config, format_str),
+    "Set the data format which will be used for parsing records."
    },
    {
     FLB_CONFIG_MAP_STR, "brokers", (char *)NULL,

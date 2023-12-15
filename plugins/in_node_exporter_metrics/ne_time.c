@@ -46,14 +46,23 @@ static int time_update(struct flb_ne *ctx)
     return 0;
 }
 
-int ne_time_init(struct flb_ne *ctx)
+static int ne_time_init(struct flb_ne *ctx)
 {
     time_configure(ctx);
     return 0;
 }
 
-int ne_time_update(struct flb_ne *ctx)
+static int ne_time_update(struct flb_input_instance *ins, struct flb_config *config, void *in_context)
 {
+    struct flb_ne *ctx = (struct flb_ne *)in_context;
+
     time_update(ctx);
     return 0;
 }
+
+struct flb_ne_collector time_collector = {
+    .name = "time",
+    .cb_init = ne_time_init,
+    .cb_update = ne_time_update,
+    .cb_exit = NULL
+};

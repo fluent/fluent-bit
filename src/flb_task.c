@@ -256,6 +256,8 @@ static struct flb_task *task_alloc(struct flb_config *config)
     mk_list_init(&task->routes);
     mk_list_init(&task->retries);
 
+    pthread_mutex_init(&task->lock, NULL);
+
     return task;
 }
 
@@ -360,9 +362,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
         return NULL;
     }
 
-#ifdef FLB_HAVE_METRICS
     total_events = ((struct flb_input_chunk *) ic)->total_records;
-#endif
 
     /* event chunk */
     evc = flb_event_chunk_create(ic->event_type,
@@ -374,6 +374,14 @@ struct flb_task *flb_task_create(uint64_t ref_id,
         *err = FLB_TRUE;
         return NULL;
     }
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+    if (ic->trace) {
+        flb_debug("add trace to task");
+        evc->trace = ic->trace;
+    }
+#endif
+
     task->event_chunk = evc;
     task_ic = (struct flb_input_chunk *) ic;
     task_ic->task = task;
@@ -420,12 +428,13 @@ struct flb_task *flb_task_create(uint64_t ref_id,
         }
 
         if (flb_routes_mask_get_bit(task_ic->routes_mask, o_ins->id) != 0) {
-            route = flb_malloc(sizeof(struct flb_task_route));
+            route = flb_calloc(1, sizeof(struct flb_task_route));
             if (!route) {
                 flb_errno();
                 continue;
             }
 
+            route->status = FLB_TASK_ROUTE_INACTIVE;
             route->out = o_ins;
             mk_list_add(&route->_head, &task->routes);
             count++;
