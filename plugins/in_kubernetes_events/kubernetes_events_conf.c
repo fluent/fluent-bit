@@ -135,6 +135,7 @@ struct k8s_events *k8s_events_conf_create(struct flb_input_instance *ins)
     int ret;
     const char *p;
     const char *url;
+    const char *timestampKey;
     const char *tmp;
     struct k8s_events *ctx = NULL;
     pthread_mutexattr_t attr;
@@ -165,10 +166,14 @@ struct k8s_events *k8s_events_conf_create(struct flb_input_instance *ins)
     }
 
     /* Record accessor pattern */
-    ctx->ra_timestamp = flb_ra_create(K8S_EVENTS_RA_TIMESTAMP, FLB_TRUE);
+    timestampKey = flb_input_get_property("timestamp_key", ins);
+    if (!timestampKey ) {
+        timestampKey = K8S_EVENTS_RA_TIMESTAMP;
+    }
+    ctx->ra_timestamp = flb_ra_create(timestampKey, FLB_TRUE);
     if (!ctx->ra_timestamp) {
         flb_plg_error(ctx->ins,
-                      "could not create record accessor for metadata items");
+                      "could not create record accessor for record timestamp");
         k8s_events_conf_destroy(ctx);
         return NULL;
     }
