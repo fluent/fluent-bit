@@ -532,6 +532,18 @@ int flb_storage_input_create(struct cio_ctx *cio,
             return -1;
         }
     }
+    else if (stream->type != cio_storage_type) {
+        flb_info("[storage] storage type mismatch. input type=%s",
+                 flb_storage_get_type(in->storage_type));
+        cio_stream_destroy(stream);
+        stream = cio_stream_create(cio, in->name, cio_storage_type);
+        if (!stream) {
+            flb_error("[storage] cannot create stream for instance %s",
+                      in->name);
+            return -1;
+        }
+        flb_info("[storage] re-create stream");
+    }
 
     /* allocate storage context for the input instance */
     si = flb_malloc(sizeof(struct flb_storage_input));
