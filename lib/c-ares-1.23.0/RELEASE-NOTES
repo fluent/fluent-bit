@@ -1,0 +1,59 @@
+c-ares version 1.23.0
+
+This is a feature and bugfix release.
+
+Features:
+ o Introduce optional (but on by default) thread-safety for the c-ares
+   library.  This has no API nor ABI implications. [2]
+ o resolv.conf in modern systems uses attempts and timeouts options instead
+   of the old retrans and retry options. [6]
+ o Query caching support based on TTL of responses. Can be enabled via
+   ares_init_options() with ARES_OPT_QUERY_CACHE. [12]
+
+Bug Fixes:
+ o ares_init_options() for ARES_OPT_UDP_PORT and ARES_OPT_TCP_PORT accept the
+   port in host byte order, but it was reading it as network byte order.
+   Regression introduced in 1.20.0. [1]
+ o ares_init_options() for ARES_FLAG_NOSEARCH was not being honored for
+   ares_getaddrinfo() or ares_gethostbyname().  Regression introduced in
+   1.16.0. [3]
+ o Autotools MacOS and iOS version check was failing [4]
+ o Environment variables passed to c-ares are meant to be an override for
+   system configuration. Regression introduced in 1.22.0. [5]
+ o Spelling fixes as detected by codespell. [7]
+ o The timeout returned by ares_timeout() was truncated to milliseconds but
+   validated to microseconds which could cause a user to attempt to process
+   timeouts prior to the timeout actually expiring. [8]
+ o CMake was not honoring CXXFLAGS passed in via the environment which could
+   cause compile and link errors with distribution hardening flags during
+   packaging. [9]
+ o Fix Windows UWP and Cygwin compilation. [10]
+ o ares_set_servers_*() for legacy reasons needs to accept an empty server list
+   and zero out all servers. This results in an inoperable channel and thus is
+   only used in simulation testing, but we don't want to break users.
+   Regression introduced in 1.21.0. [11]
+
+Thanks go to these friendly people for their efforts and contributions:
+  Brad House (@bradh352)
+  Christian Clauss (@cclauss)
+  Daniel Stenberg (@bagder)
+  Deal (@halx99)
+  Ignat (@Kontakter)
+  @petrvh
+(6 contributors)
+
+References to bug reports and discussions on issues:
+ [1] = https://github.com/c-ares/c-ares/commit/fb52c3f
+ [2] = https://github.com/c-ares/c-ares/pull/636
+ [3] = https://github.com/c-ares/c-ares/pull/638
+ [4] = https://github.com/c-ares/c-ares/commit/f4d8c9a
+ [5] = https://github.com/c-ares/c-ares/commit/b674abd
+ [6] = https://github.com/c-ares/c-ares/pull/632
+ [7] = https://github.com/c-ares/c-ares/pull/634
+ [8] = https://github.com/c-ares/c-ares/pull/633
+ [9] = https://github.com/c-ares/c-ares/commit/33ee6c0
+ [10] = https://github.com/c-ares/c-ares/pull/627
+ [11] = https://github.com/c-ares/c-ares/commit/320cefe
+ [12] = https://github.com/c-ares/c-ares/pull/625
+
+
