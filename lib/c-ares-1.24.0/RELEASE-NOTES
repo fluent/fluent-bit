@@ -1,0 +1,51 @@
+c-ares version 1.24.0
+
+This is a feature and bugfix release.
+
+Features:
+ o Add support for IPv6 link-local DNS servers.  Nameserver formats can now
+   accept the %iface suffix, and a new ares_get_servers_csv() function was
+   added to return servers that can contain the link-local interface name. [3]
+
+Changes:
+ o Unbundle GoogleTest for test cases.  Package maintainers will now need to
+   require GoogleTest (GMock) as a build dependency if building tests. New
+   GoogleTest versions require C++14 or later. [6]
+ o Replace nameserver parsing code to use new memory-safe functions. [1]
+ o Replace the sortlist parser with new memory-safe functions. [5]
+ o Various warning fixes and dead code removal.
+
+Bug Fixes:
+ o Old Linux versions require POSIX_C_SOURCE or _GNU_SOURCE to compile with
+   thread safety support. [2]
+ o A non-responsive DNS server that caused timeouts wouldn't increment the
+   failure count, this would lead to other servers not being tried.
+   Regression introduced in 1.22.0. [4]
+ o Some projects that depend on c-ares expect invalid parameter option values
+   passed into ares_init_options() to simply be ignored.  This behavior has
+   been restored. [7]
+ o On linux getrandom() can fail if the kernel doesn't support the syscall,
+   fall back to another random source. [8]
+ o ares_cancel() when performing ares_gethostbyname() or ares_getaddrinfo()
+   with AF_UNSPEC, if called after one address class was returned but before
+   the other address class, it would return ARES_SUCCESS rather than
+   ARES_ECANCELLED. [9]
+
+
+Thanks go to these friendly people for their efforts and contributions:
+  Brad House (@bradh352)
+  Daniel Stenberg (@bagder)
+(2 contributors)
+
+References to bug reports and discussions on issues:
+ [1] = https://github.com/c-ares/c-ares/pull/643
+ [2] = https://github.com/c-ares/c-ares/issues/644
+ [3] = https://github.com/c-ares/c-ares/pull/646
+ [4] = https://github.com/c-ares/c-ares/pull/650
+ [5] = https://github.com/c-ares/c-ares/pull/653
+ [6] = https://github.com/c-ares/c-ares/pull/655
+ [7] = https://github.com/c-ares/c-ares/commit/c982bf4
+ [8] = https://github.com/c-ares/c-ares/pull/661
+ [9] = https://github.com/c-ares/c-ares/pull/663
+
+
