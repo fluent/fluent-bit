@@ -28,6 +28,9 @@
 #include "ares.h"
 #include "ares_private.h"
 #include <stdlib.h>
+#ifdef HAVE_SYS_RANDOM_H
+#  include <sys/random.h>
+#endif
 
 
 typedef enum {

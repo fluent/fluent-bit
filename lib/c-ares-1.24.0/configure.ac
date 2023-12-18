@@ -574,6 +574,7 @@ AC_CHECK_HEADERS(
        sys/ioctl.h \
        sys/param.h \
        sys/uio.h \
+       sys/random.h \
        assert.h \
        iphlpapi.h \
        netioapi.h \
