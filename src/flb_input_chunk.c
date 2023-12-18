@@ -508,11 +508,14 @@ int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
 int flb_input_chunk_place_new_chunk(struct flb_input_chunk *ic, size_t chunk_size)
 {
 	int overlimit;
-    overlimit = flb_input_chunk_has_overlimit_routes(ic, chunk_size);
-    if (overlimit != 0) {
-        flb_input_chunk_find_space_new_data(ic, chunk_size, overlimit);
-    }
+    struct flb_input_instance *i_ins = ic->in;
 
+    if (i_ins->storage_type == CIO_STORE_FS) {
+        overlimit = flb_input_chunk_has_overlimit_routes(ic, chunk_size);
+        if (overlimit != 0) {
+            flb_input_chunk_find_space_new_data(ic, chunk_size, overlimit);
+        }
+    }
     return !flb_routes_mask_is_empty(ic->routes_mask);
 }
 
