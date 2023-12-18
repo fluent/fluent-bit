@@ -48,8 +48,6 @@ RUN echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/
     pkg-config \
     libsystemd-dev/bullseye-backports \
     zlib1g-dev \
-    libpq-dev \
-    postgresql-server-dev-all \
     flex \
     bison \
     libyaml-dev \
@@ -72,7 +70,7 @@ RUN cmake -DFLB_RELEASE=On \
     -DFLB_IN_EXEC=Off \
     -DFLB_IN_SYSTEMD=On \
     -DFLB_OUT_KAFKA=On \
-    -DFLB_OUT_PGSQL=On \
+    -DFLB_OUT_PGSQL=Off \
     -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     -DFLB_LOG_NO_CONTROL_CHARS=On \
     -DFLB_CHUNK_TRACE="$FLB_CHUNK_TRACE" \
@@ -111,7 +109,6 @@ RUN echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/
     libssl1.1 \
     libsasl2-2 \
     pkg-config \
-    libpq5 \
     libsystemd0/bullseye-backports \
     zlib1g \
     ca-certificates \
@@ -210,7 +207,6 @@ RUN echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/
     libssl1.1 \
     libsasl2-2 \
     pkg-config \
-    libpq5 \
     libsystemd0/bullseye-backports \
     zlib1g \
     ca-certificates \
