@@ -320,6 +320,9 @@
 /* Define to 1 if you have the <sys/param.h> header file. */
 #cmakedefine HAVE_SYS_PARAM_H
 
+/* Define to 1 if you have the <sys/random.h> header file. */
+#cmakedefine HAVE_SYS_RANDOM_H
+
 /* Define to 1 if you have the <sys/select.h> header file. */
 #cmakedefine HAVE_SYS_SELECT_H
 
