@@ -410,13 +410,15 @@ static int binary_payload_to_msgpack(struct flb_log_event_encoder *encoder,
     input_logs = opentelemetry__proto__collector__logs__v1__export_logs_service_request__unpack(NULL, in_size, in_buf);
     if (input_logs == NULL) {
         flb_error("[otel] Failed to unpack input logs");
-        return -1;
+        ret = -1;
+        goto binary_payload_to_msgpack_end;
     }
 
     resource_logs = input_logs->resource_logs;
     if (resource_logs == NULL) {
         flb_error("[otel] No resource logs found");
-        return -1;
+        ret = -1;
+        goto binary_payload_to_msgpack_end;
     }
 
     for (resource_logs_index = 0; resource_logs_index < input_logs->n_resource_logs; resource_logs_index++) {
@@ -425,7 +427,8 @@ static int binary_payload_to_msgpack(struct flb_log_event_encoder *encoder,
 
         if (resource_log->n_scope_logs > 0 && scope_logs == NULL) {
             flb_error("[otel] No scope logs found");
-            return -1;
+            ret = -1;
+            goto binary_payload_to_msgpack_end;
         }
 
         for (scope_log_index = 0; scope_log_index < resource_log->n_scope_logs; scope_log_index++) {
@@ -434,7 +437,8 @@ static int binary_payload_to_msgpack(struct flb_log_event_encoder *encoder,
 
             if (log_records == NULL) {
                 flb_error("[otel] No log records found");
-                return -1;
+                ret = -1;
+                goto binary_payload_to_msgpack_end;
             }
 
             for (log_record_index=0; log_record_index < scope_log->n_log_records; log_record_index++) {
@@ -499,16 +503,22 @@ static int binary_payload_to_msgpack(struct flb_log_event_encoder *encoder,
                 }
                 else {
                     flb_error("[otel] marshalling error");
-
-                    msgpack_sbuffer_destroy(&buffer);
-
-                    return -1;
+                    goto binary_payload_to_msgpack_end;
                 }
             }
         }
     }
 
+ binary_payload_to_msgpack_end:
     msgpack_sbuffer_destroy(&buffer);
+    if (input_logs) {
+        opentelemetry__proto__collector__logs__v1__export_logs_service_request__free_unpacked(
+                                            input_logs, NULL);
+    }
+
+    if (ret != 0) {
+        return -1;
+    }
 
     return 0;
 }
