@@ -1,0 +1,147 @@
+#!/bin/bash
+#
+# libssl and libcrypto (OpenSSL or derivate) support, with installer.
+# Requires OpenSSL version v1.0.1 or later.
+#
+# Usage:
+#   mkl_require libssl
+#
+
+# And then call the following function from the correct place/order in checks:
+#   mkl_check libssl
+#
+#
+# This module is a bit hacky since OpenSSL provides both libcrypto and libssl,
+# the latter depending on the former, but from a user perspective it is
+# SSL that is the feature, not crypto.
+
+mkl_toggle_option "Feature" ENABLE_SSL "--enable-ssl" "Enable SSL support" "try"
+
+
+function manual_checks {
+    case "$ENABLE_SSL" in
+        n) return 0 ;;
+        y) local action=fail ;;
+        try) local action=disable ;;
+        *) mkl_err "mklove internal error: invalid value for ENABLE_SSL: $ENABLE_SSL"; exit 1 ;;
+    esac
+
+    if [[ $MKL_SOURCE_DEPS_ONLY != y && $MKL_DISTRO == "osx" ]]; then
+        # Add brew's OpenSSL pkg-config path on OSX
+        # to avoid picking up the outdated system-provided openssl/libcrypto.
+        mkl_env_append PKG_CONFIG_PATH "/usr/local/opt/openssl/lib/pkgconfig" ":"
+	# and similar path for M1 brew location
+        mkl_env_append PKG_CONFIG_PATH "/opt/homebrew/opt/openssl/lib/pkgconfig" ":"
+    fi
+
+    # OpenSSL provides both libcrypto and libssl
+    if [[ $WITH_STATIC_LINKING != y ]]; then
+        # Debian's OpenSSL static libraries are broken.
+        mkl_meta_set "libcrypto" "deb" "libssl-dev"
+    fi
+    mkl_meta_set "libcrypto" "rpm" "openssl-devel"
+    mkl_meta_set "libcrypto" "brew" "openssl"
+    mkl_meta_set "libcrypto" "apk" "openssl-dev"
+    mkl_meta_set "libcrypto" "static" "libcrypto.a"
+
+    if ! mkl_lib_check "libcrypto" "" $action CC "-lcrypto" "
+#include <openssl/ssl.h>
+#include <openssl/evp.h>
+#if OPENSSL_VERSION_NUMBER < 0x1000100fL
+#error \"Requires OpenSSL version >= v1.0.1\"
+#endif"; then
+        return
+    fi
+
+
+    #
+    # libssl
+    #
+    mkl_meta_set "libssl" "static" "libssl.a"
+
+    if [[ $(mkl_meta_get "libcrypto" "installed_with") == "source" ]]; then
+        # Try to resolve the libssl.a static library path based on the
+        # libcrypto (openssl) install path.
+        mkl_resolve_static_libs "libssl" "$(mkl_dep_destdir libcrypto)"
+    fi
+
+    mkl_lib_check "libssl" "WITH_SSL" $action CC "-lssl -lcrypto" \
+                  "#include <openssl/ssl.h>
+#if OPENSSL_VERSION_NUMBER < 0x1000100fL
+#error \"Requires OpenSSL version >= v1.0.1\"
+#endif"
+
+    # Silence OpenSSL 3.0.0 deprecation warnings since they'll make
+    # -Werror fail.
+    if ! mkl_compile_check --sub "libcrypto" "" "" CC "-lcrypto" "
+#include <openssl/ssl.h>
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#error \"OpenSSL version >= v3.0.0 needs OPENSSL_SUPPRESS_DEPRECATED\"
+#endif"; then
+            mkl_define_set "libcrypto" OPENSSL_SUPPRESS_DEPRECATED
+    fi
+}
+
+
+    # Install libcrypto/libssl from source tarball on linux.
+    #
+    # Param 1: name (libcrypto)
+    # Param 2: install-dir-prefix (e.g., DESTDIR)
+    # Param 2: version (optional)
+function libcrypto_install_source {
+    local name=$1
+    local destdir=$2
+    local ver=3.0.11
+    local checksum="b3425d3bb4a2218d0697eb41f7fc0cdede016ed19ca49d168b78e8d947887f55"
+    local url=https://www.openssl.org/source/openssl-${ver}.tar.gz
+
+    local conf_args="--prefix=/usr --openssldir=/usr/lib/ssl no-shared no-zlib"
+
+    if [[ $ver == 1.0.* ]]; then
+        conf_args="${conf_args} no-krb5"
+    fi
+
+    if [[ $ver != 3.* ]]; then
+        # OpenSSL 3 deprecates ENGINE support, but we still need it, so only
+        # add no-deprecated to non-3.x builds.
+        conf_args="${conf_args} no-deprecated"
+    fi
+
+    # 1.1.1q tests fail to build on OSX/M1, so disable them.
+    if [[ $MKL_DISTRO == osx && $ver == 1.1.1q ]]; then
+        conf_args="${conf_args} no-tests"
+    fi
+
+    echo "### Installing $name $ver from source ($url) to $destdir"
+    if [[ ! -f config ]]; then
+        echo "### Downloading"
+        mkl_download_archive "$url" "256" "$checksum" || return 1
+    fi
+
+    if [[ $MKL_DISTRO == "osx" ]]; then
+        # Workaround build issue in 1.1.1l on OSX with older toolchains.
+        if [[ $ver == 1.1.1l ]]; then
+            if ! mkl_patch libssl 0000 ; then
+                return 1
+            fi
+        fi
+
+        # Silence a load of warnings on OSX
+        conf_args="${conf_args} -Wno-nullability-completeness"
+    fi
+
+    echo "### Configuring with args $conf_args"
+    ./config $conf_args || return $?
+
+    echo "### Building"
+    make
+
+    echo "### Installing to $destdir"
+    if [[ $ver == 1.0.* ]]; then
+        make INSTALL_PREFIX="$destdir" install_sw
+    else
+        make DESTDIR="$destdir" install
+    fi
+
+    return $?
+}
