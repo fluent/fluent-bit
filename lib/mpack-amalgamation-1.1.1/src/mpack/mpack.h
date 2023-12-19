@@ -24,7 +24,7 @@
  */
 
 /*
- * This is the MPack 1.1 amalgamation package.
+ * This is the MPack 1.1.1 amalgamation package.
  *
  * http://github.com/ludocode/mpack
  */
@@ -1893,7 +1893,7 @@ MPACK_EXTERN_C_BEGIN
 
 #define MPACK_VERSION_MAJOR 1  /**< The major version number of MPack. */
 #define MPACK_VERSION_MINOR 1  /**< The minor version number of MPack. */
-#define MPACK_VERSION_PATCH 0  /**< The patch version number of MPack. */
+#define MPACK_VERSION_PATCH 1  /**< The patch version number of MPack. */
 
 /** A number containing the version number of MPack for comparison purposes. */
 #define MPACK_VERSION ((MPACK_VERSION_MAJOR * 10000) + \
@@ -3780,7 +3780,7 @@ MPACK_INLINE void mpack_finish_map(mpack_writer_t* writer) {
 /**
  * Starts building an array.
  *
- * Elements must follow, and mpack_complete_map() must be called when done. The
+ * Elements must follow, and mpack_complete_array() must be called when done. The
  * number of elements is determined automatically.
  *
  * If you know ahead of time the number of elements in the array, it is more
@@ -7719,7 +7719,7 @@ size_t mpack_node_bin_size(mpack_node_t node);
  *
  * This returns zero if the tree is in an error state.
  *
- * If this node is not a str, bin or map, @ref mpack_error_type is raised and zero
+ * If this node is not a str, bin or ext, @ref mpack_error_type is raised and zero
  * is returned.
  */
 uint32_t mpack_node_data_len(mpack_node_t node);
@@ -7759,7 +7759,7 @@ const char* mpack_node_str(mpack_node_t node);
  *
  * The pointer is valid as long as the data backing the tree is valid.
  *
- * If this node is not of a str, bin or map, @ref mpack_error_type is raised, and
+ * If this node is not of a str, bin or ext, @ref mpack_error_type is raised, and
  * @c NULL is returned.
  *
  * @see mpack_node_copy_cstr()

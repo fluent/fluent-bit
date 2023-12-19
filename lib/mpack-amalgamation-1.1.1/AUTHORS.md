@@ -12,3 +12,5 @@
 | Dirkson                         | https://github.com/dirkson                 |
 | Ethan Li                        | https://github.com/ethanjli                |
 | Danny Povolotski                | https://github.com/israelidanny            |
+| Weston Schmidt                  | https://github.com/schmidtw                |
+| Nikita Danilov                  | https://github.com/nikitadanilov           |
