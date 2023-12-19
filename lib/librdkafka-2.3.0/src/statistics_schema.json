@@ -1,0 +1,444 @@
+{ "$schema": "http://json-schema.org/schema#",
+  "id": "https://github.com/confluentinc/librdkafka/src/statistics_schema.json",
+  "title": "librdkafka statistics schema - INCOMPLETE - WORK IN PROGRESS",
+  "definitions": {
+      "window": {
+          "type": "object",
+          "title": "Rolling window statistics",
+          "description": "The values are in microseconds unless otherwise stated.",
+          "properties": {
+              "type": "object",
+              "properties": {
+                  "min": {
+                      "type": "integer"
+                  },
+                  "max": {
+                      "type": "integer"
+                  },
+                  "avg": {
+                      "type": "integer"
+                  },
+                  "sum": {
+                      "type": "integer"
+                  },
+                  "stddev": {
+                      "type": "integer"
+                  },
+                  "p50": {
+                      "type": "integer"
+                  },
+                  "p75": {
+                      "type": "integer"
+                  },
+                  "p90": {
+                      "type": "integer"
+                  },
+                  "p95": {
+                      "type": "integer"
+                  },
+                  "p99": {
+                      "type": "integer"
+                  },
+                  "p99_99": {
+                      "type": "integer"
+                  },
+                  "outofrange": {
+                      "type": "integer"
+                  },
+                  "hdrsize": {
+                      "type": "integer"
+                  },
+                  "cnt": {
+                      "type": "integer"
+                  }
+              }
+          }
+      }
+  },
+  "type": "object",
+  "properties": {
+      "name": {
+          "type": "string"
+      },
+      "client_id": {
+          "type": "string"
+      },
+      "type": {
+          "type": "string"
+      },
+      "ts": {
+          "type": "integer"
+      },
+      "time": {
+          "type": "integer"
+      },
+      "replyq": {
+          "type": "integer"
+      },
+      "msg_cnt": {
+          "type": "integer"
+      },
+      "msg_size": {
+          "type": "integer"
+      },
+      "msg_max": {
+          "type": "integer"
+      },
+      "msg_size_max": {
+          "type": "integer"
+      },
+      "simple_cnt": {
+          "type": "integer"
+      },
+      "metadata_cache_cnt": {
+          "type": "integer"
+      },
+      "brokers": {
+          "type": "object",
+          "additionalProperties": {
+              "type": "object",
+              "title": "Broker object keyed by the broker \"name:port/id\"",
+              "properties": {
+                  "name": {
+                      "type": "string"
+                  },
+                  "nodeid": {
+                      "type": "integer"
+                  },
+                  "state": {
+                      "type": "string"
+                  },
+                  "stateage": {
+                      "type": "integer"
+                  },
+                  "outbuf_cnt": {
+                      "type": "integer"
+                  },
+                  "outbuf_msg_cnt": {
+                      "type": "integer"
+                  },
+                  "waitresp_cnt": {
+                      "type": "integer"
+                  },
+                  "waitresp_msg_cnt": {
+                      "type": "integer"
+                  },
+                  "tx": {
+                      "type": "integer"
+                  },
+                  "txbytes": {
+                      "type": "integer"
+                  },
+                  "txerrs": {
+                      "type": "integer"
+                  },
+                  "txretries": {
+                      "type": "integer"
+                  },
+                  "txidle": {
+                      "type": "integer"
+                  },
+                  "req_timeouts": {
+                      "type": "integer"
+                  },
+                  "rx": {
+                      "type": "integer"
+                  },
+                  "rxbytes": {
+                      "type": "integer"
+                  },
+                  "rxerrs": {
+                      "type": "integer"
+                  },
+                  "rxcorriderrs": {
+                      "type": "integer"
+                  },
+                  "rxpartial": {
+                      "type": "integer"
+                  },
+                  "rxidle": {
+                      "type": "integer"
+                  },
+                  "zbuf_grow": {
+                      "type": "integer"
+                  },
+                  "buf_grow": {
+                      "type": "integer"
+                  },
+                  "wakeups": {
+                      "type": "integer"
+                  },
+                  "int_latency": {
+                      "$ref": "#/definitions/window"
+                  },
+                  "outbuf_latency": {
+                      "$ref": "#/definitions/window"
+                  },
+                  "rtt": {
+                      "$ref": "#/definitions/window"
+                  },
+                  "throttle": {
+                      "$ref": "#/definitions/window"
+                  },
+                  "toppars": {
+                      "type": "object",
+                      "additionalProperties": {
+                          "type": "object",
+                          "properties": {
+                              "topic": {
+                                  "type": "string"
+                              },
+                              "partition": {
+                                  "type": "integer"
+                              }
+                          },
+                          "required": [
+                              "topic",
+                              "partition"
+                          ]
+                      }
+                  }
+              },
+              "required": [
+                  "name",
+                  "nodeid",
+                  "state",
+                  "stateage",
+                  "outbuf_cnt",
+                  "outbuf_msg_cnt",
+                  "waitresp_cnt",
+                  "waitresp_msg_cnt",
+                  "tx",
+                  "txbytes",
+                  "txerrs",
+                  "txretries",
+                  "req_timeouts",
+                  "rx",
+                  "rxbytes",
+                  "rxerrs",
+                  "rxcorriderrs",
+                  "rxpartial",
+                  "zbuf_grow",
+                  "buf_grow",
+                  "wakeups",
+                  "int_latency",
+                  "rtt",
+                  "throttle",
+                  "toppars"
+              ]
+          }
+      },
+      "topics": {
+          "type": "object",
+          "properties": {
+              "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                      "topic": {
+                          "type": "string"
+                      },
+                      "metadata_age": {
+                          "type": "integer"
+                      },
+                      "batchsize": {
+                          "$ref": "#/definitions/window"
+                      },
+                      "batchcnt": {
+                          "$ref": "#/definitions/window"
+                      },
+                      "partitions": {
+                          "type": "object",
+                          "properties": {
+                              "^-?[0-9]+$": {
+                                  "type": "object",
+                                  "properties": {
+                                      "partition": {
+                                          "type": "integer"
+                                      },
+                                      "leader": {
+                                          "type": "integer"
+                                      },
+                                      "desired": {
+                                          "type": "boolean"
+                                      },
+                                      "unknown": {
+                                          "type": "boolean"
+                                      },
+                                      "msgq_cnt": {
+                                          "type": "integer"
+                                      },
+                                      "msgq_bytes": {
+                                          "type": "integer"
+                                      },
+                                      "xmit_msgq_cnt": {
+                                          "type": "integer"
+                                      },
+                                      "xmit_msgq_bytes": {
+                                          "type": "integer"
+                                      },
+                                      "fetchq_cnt": {
+                                          "type": "integer"
+                                      },
+                                      "fetchq_size": {
+                                          "type": "integer"
+                                      },
+                                      "fetch_state": {
+                                          "type": "string"
+                                      },
+                                      "query_offset": {
+                                          "type": "integer"
+                                      },
+                                      "next_offset": {
+                                          "type": "integer"
+                                      },
+                                      "app_offset": {
+                                          "type": "integer"
+                                      },
+                                      "stored_offset": {
+                                          "type": "integer"
+                                      },
+                                      "stored_leader_epoch": {
+                                          "type": "integer"
+                                      },
+                                      "commited_offset": {
+                                          "type": "integer"
+                                      },
+                                      "committed_offset": {
+                                          "type": "integer"
+                                      },
+                                      "committed_leader_epoch": {
+                                          "type": "integer"
+                                      },
+
+                                      "eof_offset": {
+                                          "type": "integer"
+                                      },
+                                      "lo_offset": {
+                                          "type": "integer"
+                                      },
+                                      "hi_offset": {
+                                          "type": "integer"
+                                      },
+                                      "consumer_lag": {
+                                          "type": "integer"
+                                      },
+                                      "consumer_lag_stored": {
+                                          "type": "integer"
+                                      },
+                                      "leader_epoch": {
+                                          "type": "integer"
+                                      },
+                                      "txmsgs": {
+                                          "type": "integer"
+                                      },
+                                      "txbytes": {
+                                          "type": "integer"
+                                      },
+                                      "rxmsgs": {
+                                          "type": "integer"
+                                      },
+                                      "rxbytes": {
+                                          "type": "integer"
+                                      },
+                                      "msgs": {
+                                          "type": "integer"
+                                      },
+                                      "rx_ver_drops": {
+                                          "type": "integer"
+                                      },
+                                      "msgs_inflight": {
+                                          "type": "integer"
+                                      }
+                                  },
+                                  "required": [
+                                      "partition",
+                                      "leader",
+                                      "desired",
+                                      "unknown",
+                                      "msgq_cnt",
+                                      "msgq_bytes",
+                                      "xmit_msgq_cnt",
+                                      "xmit_msgq_bytes",
+                                      "fetchq_cnt",
+                                      "fetchq_size",
+                                      "fetch_state",
+                                      "query_offset",
+                                      "next_offset",
+                                      "app_offset",
+                                      "stored_offset",
+                                      "commited_offset",
+                                      "committed_offset",
+                                      "eof_offset",
+                                      "lo_offset",
+                                      "hi_offset",
+                                      "consumer_lag",
+                                      "txmsgs",
+                                      "txbytes",
+                                      "rxmsgs",
+                                      "rxbytes",
+                                      "msgs",
+                                      "rx_ver_drops"
+                                  ]
+                              }
+                          }
+                      }
+                  },
+                  "required": [
+                      "topic",
+                      "metadata_age",
+                      "batchsize",
+                      "partitions"
+                  ]
+              }
+          }
+      },
+      "tx": {
+          "type": "integer"
+      },
+      "tx_bytes": {
+          "type": "integer"
+      },
+      "rx": {
+          "type": "integer"
+      },
+      "rx_bytes": {
+          "type": "integer"
+      },
+      "txmsgs": {
+          "type": "integer"
+      },
+      "txmsg_bytes": {
+          "type": "integer"
+      },
+      "rxmsgs": {
+          "type": "integer"
+      },
+      "rxmsg_bytes": {
+          "type": "integer"
+      }
+  },
+  "required": [
+      "name",
+      "client_id",
+      "type",
+      "ts",
+      "time",
+      "replyq",
+      "msg_cnt",
+      "msg_size",
+      "msg_max",
+      "msg_size_max",
+      "simple_cnt",
+      "metadata_cache_cnt",
+      "brokers",
+      "topics",
+      "tx",
+      "tx_bytes",
+      "rx",
+      "rx_bytes",
+      "txmsgs",
+      "txmsg_bytes",
+      "rxmsgs",
+      "rxmsg_bytes"
+  ]
+}
