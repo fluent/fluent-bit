@@ -195,10 +195,10 @@ jobs:
           ref: master
 
       - name: Download all artefacts
-        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           pattern: windows-packages-*
+          merge-multiple: true
           path: artifacts/
 
       - name: Set up Windows checksums
