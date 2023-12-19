@@ -72,7 +72,7 @@ sed_wrapper -i "s/ARG RELEASE_VERSION=[0-9].[0-9].[0-9]/ARG RELEASE_VERSION=$NEW
 
 
 # Snap
-sed_wrapper -i "s/version: '[0-9].[0-9].[0-9]'/version: '$NEW_VERSION'/g" "$SCRIPT_DIR"/snap/snapcraft.yaml
+sed_wrapper -i -E "s/version: '[0-9]+\.[0-9]+\.[0-9]+'/version: '$NEW_VERSION'/g" "$SCRIPT_DIR"/snap/snapcraft.yaml
 
 # Bitbake / Yocto
 if [[ -f "fluent-bit-$NEW_VERSION.bb" ]]; then
