@@ -1,3 +1,22 @@
+MPack v1.1.1
+------------
+
+Bug Fixes:
+
+- Fixed a crash that could occur when a builder element was aligned exactly at the end of a page. (See #94)
+
+- Fixed a crash when encountering an I/O error during builder resolution without an error handler callback. (See #98)
+
+- Fixed an error destroying a writer while a builder is open. (See #88)
+
+- Fixed an issue with incorrect NULL checks for 0-length buffers. (See #97)
+
+- Fixed a string formatting issue on platforms where `int` is not 32 bits. (See #103)
+
+- Fixed some documentation errors. (See #93, #102)
+
+- Cleaned up some references to old unit test buildsystem. (See #95)
+
 MPack v1.1
 ----------
 
