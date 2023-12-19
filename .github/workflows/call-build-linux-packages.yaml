@@ -78,7 +78,7 @@ jobs:
           SOURCE_FILENAME_PREFIX: source-${{ inputs.version }}
 
       - name: Upload the source artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: source-${{ inputs.version }}
           path: source-packages/*
@@ -132,7 +132,7 @@ jobs:
 
       - name: Replace all special characters with dashes
         id: formatted_distro
-        run:
+        run: |
           output=${INPUT//[\/]/-}
           echo "$INPUT --> $output"
           echo "replaced=$output" >> "$GITHUB_OUTPUT"
@@ -151,7 +151,7 @@ jobs:
         working-directory: packaging
 
       - name: Upload the ${{ steps.formatted_distro.outputs.replaced }} artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: packages-${{ inputs.version }}-${{ steps.formatted_distro.outputs.replaced }}
           path: packaging/packages/
