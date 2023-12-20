@@ -74,9 +74,6 @@ struct k8s_events {
 
     struct flb_log_event_encoder *encoder;
 
-    /* timestamp key - deprecated, to be removed in v3.0 */
-    flb_sds_t timestamp_key;
-
     /* record accessor */
     struct flb_record_accessor *ra_resource_version;
 
