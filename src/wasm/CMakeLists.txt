@@ -41,6 +41,35 @@ if (NOT DEFINED WAMR_BUILD_TARGET)
   endif ()
 endif ()
 
+string(TOUPPER ${WAMR_BUILD_TARGET} WAMR_BUILD_TARGET)
+
+# Add definitions for the build target
+if (WAMR_BUILD_TARGET STREQUAL "X86_64")
+  add_definitions(-DBUILD_TARGET_X86_64)
+elseif (WAMR_BUILD_TARGET STREQUAL "AMD_64")
+  add_definitions(-DBUILD_TARGET_AMD_64)
+elseif (WAMR_BUILD_TARGET STREQUAL "X86_32")
+  add_definitions(-DBUILD_TARGET_X86_32)
+elseif (WAMR_BUILD_TARGET MATCHES "AARCH64.*")
+  add_definitions(-DBUILD_TARGET_AARCH64)
+  add_definitions(-DBUILD_TARGET="${WAMR_BUILD_TARGET}")
+elseif (WAMR_BUILD_TARGET MATCHES "ARM.*")
+  add_definitions(-DBUILD_TARGET_ARM)
+  add_definitions(-DBUILD_TARGET="${WAMR_BUILD_TARGET}")
+elseif (WAMR_BUILD_TARGET STREQUAL "RISCV64" OR WAMR_BUILD_TARGET STREQUAL "RISCV64_LP64D")
+  add_definitions(-DBUILD_TARGET_RISCV64_LP64D)
+elseif (WAMR_BUILD_TARGET STREQUAL "RISCV64_LP64")
+  add_definitions(-DBUILD_TARGET_RISCV64_LP64)
+elseif (WAMR_BUILD_TARGET STREQUAL "RISCV32" OR WAMR_BUILD_TARGET STREQUAL "RISCV32_ILP32D")
+  add_definitions(-DBUILD_TARGET_RISCV32_ILP32D)
+elseif (WAMR_BUILD_TARGET STREQUAL "RISCV32_ILP32")
+  add_definitions(-DBUILD_TARGET_RISCV32_ILP32)
+else ()
+  message (FATAL_ERROR "-- Build target isn't set")
+endif ()
+
+message ("-- Build as target ${WAMR_BUILD_TARGET}")
+
 if (NOT CMAKE_BUILD_TYPE)
   set (CMAKE_BUILD_TYPE Release)
 endif ()
@@ -91,6 +120,9 @@ add_library(vmlib-static STATIC ${WAMR_RUNTIME_LIB_SOURCE})
 
 # Application related
 include (${SHARED_DIR}/utils/uncommon/shared_uncommon.cmake)
+
+# platform common sources
+include (${WAMR_ROOT_DIR}/core/shared/platform/common/libc-util/platform_common_libc_util.cmake)
 
 set(src
   flb_wasm.c
