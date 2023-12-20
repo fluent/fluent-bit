@@ -270,7 +270,8 @@ static int process_chunked_data(struct flb_http_client *c)
     long val;
     char *p;
     char tmp[32];
-    struct flb_http_response *r = &c->resp;
+    struct flb_http_response *r = &c->resp;    
+    int found_full_chunk = FLB_FALSE;
 
  chunk_start:
     p = strstr(r->chunk_processed_end, "\r\n");
@@ -327,6 +328,7 @@ static int process_chunked_data(struct flb_http_client *c)
      * 3. remove chunk ending \r\n
      */
 
+    found_full_chunk = FLB_TRUE;
     /* 1. Validate ending chunk */
     if (val - 2 == 0) {
         /*
@@ -365,10 +367,11 @@ static int process_chunked_data(struct flb_http_client *c)
     /* Always append a NULL byte */
     r->data[r->data_len] = '\0';
 
+    /* Always update payload size after full chunk */
+    r->payload_size = r->data_len - (r->headers_end - r->data);
+
     /* Is this the last chunk ? */
     if ((val - 2 == 0)) {
-        /* Update payload size */
-        r->payload_size = r->data_len - (r->headers_end - r->data);
         return FLB_HTTP_OK;
     }
 
@@ -378,7 +381,10 @@ static int process_chunked_data(struct flb_http_client *c)
         goto chunk_start;
     }
 
-    return FLB_HTTP_MORE;
+    if (found_full_chunk == FLB_TRUE) {
+        return FLB_HTTP_CHUNK_AVAILABLE;
+    }
+    return FLB_HTTP_MORE;    
 }
 
 static int process_data(struct flb_http_client *c)
@@ -460,8 +466,8 @@ static int process_data(struct flb_http_client *c)
             if (ret == FLB_HTTP_ERROR) {
                 return FLB_HTTP_ERROR;
             }
-            else if (ret == FLB_HTTP_OK) {
-                return FLB_HTTP_OK;
+            else if (ret == FLB_HTTP_OK || ret == FLB_HTTP_CHUNK_AVAILABLE) {
+                return ret;
             }
         }
         else {
@@ -1173,15 +1179,16 @@ int flb_http_bearer_auth(struct flb_http_client *c, const char *token)
     return result;
 }
 
-
-int flb_http_do(struct flb_http_client *c, size_t *bytes)
+/* flb_http_do_request only sends the http request the data.
+*  This is useful for processing the chunked responses on your own.
+*  If you do not want to process the response on your own or expect 
+*  all response data before you process data, use flb_http_do instead.
+*/
+int flb_http_do_request(struct flb_http_client *c, size_t *bytes) 
 {
     int ret;
-    int r_bytes;
     int crlf = 2;
     int new_size;
-    ssize_t available;
-    size_t out_size;
     size_t bytes_header = 0;
     size_t bytes_body = 0;
     char *tmp;
@@ -1192,7 +1199,7 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
     /* Append pending headers */
     ret = http_headers_compose(c);
     if (ret == -1) {
-        return -1;
+        return FLB_HTTP_ERROR;
     }
 
     /* check enough space for the ending CRLF */
@@ -1201,7 +1208,7 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
         tmp = flb_realloc(c->header_buf, new_size);
         if (!tmp) {
             flb_errno();
-            return -1;
+            return FLB_HTTP_ERROR;
         }
         c->header_buf  = tmp;
         c->header_size = new_size;
@@ -1230,7 +1237,7 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
         if (errno != 0) {
             flb_errno();
         }
-        return -1;
+        return FLB_HTTP_ERROR;
     }
 
     if (c->body_len > 0) {
@@ -1239,16 +1246,56 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
                                &bytes_body);
         if (ret == -1) {
             flb_errno();
-            return -1;
+            return FLB_HTTP_ERROR;
         }
     }
 
     /* number of sent bytes */
     *bytes = (bytes_header + bytes_body);
 
-    /* Read the server response, we need at least 19 bytes */
+    /* prep c->resp for incoming data */
     c->resp.data_len = 0;
-    while (1) {
+
+    /* at this point we've sent our request so we expect more data in response*/
+    return FLB_HTTP_MORE;
+}
+
+int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed) 
+{
+    /* returns 
+     *  FLB_HTTP_MORE - if we are waiting for more data to be received
+     *  FLB_HTTP_CHUNK_AVAILABLE - if this is a chunked transfer and one or more chunks
+     *                 have been received and it is not the end of the stream
+     *  FLB_HTTP_OK - if we have collected all response data and no errors were thrown 
+     *                (in chunked transfers this means we've received the end chunk 
+     *                and any remaining data to process from the end of stream, will be
+     *                contained in the response payload)
+     *  FLB_HTTP_ERROR - for any error
+     */
+    int ret = FLB_HTTP_MORE;
+    int r_bytes;    
+    ssize_t available;
+    size_t out_size;
+
+    // if the caller has consumed some of the payload (via bytes_consumed) 
+    // we consume those bytes off the payload
+    if( bytes_consumed > 0 ) {
+        if(bytes_consumed > c->resp.payload_size) {
+            flb_error("[http_client] attempting to consume more bytes than "
+                      "available. Attempted bytes_consumed=%zu payload_size=%zu ",
+                        bytes_consumed,
+                        c->resp.payload_size);
+            return FLB_HTTP_ERROR;
+        }
+
+        c->resp.payload_size -= bytes_consumed;
+        c->resp.data_len -= bytes_consumed;
+        memmove(c->resp.payload, c->resp.payload+bytes_consumed, c->resp.payload_size);
+        c->resp.chunk_processed_end = c->resp.payload+c->resp.payload_size;
+        c->resp.data[c->resp.data_len] = '\0';
+    }
+
+    while (ret == FLB_HTTP_MORE) {
         available = flb_http_buffer_available(c) - 1;
         if (available <= 1) {
             /*
@@ -1267,7 +1314,7 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
                          c->resp.data_size + FLB_HTTP_DATA_CHUNK,
                          c->resp.data_size_max);
                 flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
-                return 0;
+                return FLB_HTTP_ERROR;
             }
             available = flb_http_buffer_available(c) - 1;
         }
@@ -1277,7 +1324,7 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
                                   available);
         if (r_bytes <= 0) {
             if (c->flags & FLB_HTTP_10) {
-                break;
+                return FLB_HTTP_OK;
             }
         }
 
@@ -1293,21 +1340,37 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
                          c->u_conn->upstream->tcp_host,
                          c->u_conn->upstream->tcp_port,
                          c->u_conn->fd);
-                return -1;
-            }
-            else if (ret == FLB_HTTP_OK) {
-                break;
-            }
-            else if (ret == FLB_HTTP_MORE) {
-                continue;
+                return FLB_HTTP_ERROR;
             }
         }
         else {
             flb_error("[http_client] broken connection to %s:%i ?",
                       c->u_conn->upstream->tcp_host,
                       c->u_conn->upstream->tcp_port);
-            return -1;
+            return FLB_HTTP_ERROR;
         }
+    }
+
+    return ret;
+}
+
+int flb_http_do(struct flb_http_client *c, size_t *bytes)
+{
+    int ret;
+
+    ret = flb_http_do_request(c, bytes);
+    if (ret != 0) {
+        return ret;
+    }
+
+    /* Read the server response, we need at least 19 bytes */
+    while (ret == FLB_HTTP_MORE || ret == FLB_HTTP_CHUNK_AVAILABLE) {
+        /* flb_http_do does not consume any bytes during processing
+         * so we always pass 0 consumed_bytes because we fetch until
+         * the end chunk before returning to the caller
+         */
+
+        ret = flb_http_get_response_data(c, 0);
     }
 
     /* Check 'Connection' response header */
