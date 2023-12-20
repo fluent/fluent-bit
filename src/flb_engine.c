@@ -209,7 +209,9 @@ static inline int handle_input_event(flb_pipefd_t fd, uint64_t ts,
 
 static inline double calculate_chunk_capacity_percent(struct flb_output_instance *ins)
 {
-    if (ins->total_limit_size == -1) {
+    /* Currently, total_limit_size 0(K|M)B will be translated as no
+     * limit. So, we need to handle this situation to be unlimited. */
+    if (ins->total_limit_size <= 0) {
         return 100.0;
     }
 
