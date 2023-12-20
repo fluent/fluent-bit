@@ -43,6 +43,7 @@
 #include "ne_systemd.h"
 #include "ne_processes.h"
 #include "ne_nvme.h"
+#include "ne_thermalzone.h"
 
 /*
  * Update the metrics, this function is invoked every time 'scrape_interval'
@@ -192,6 +193,7 @@ static int in_ne_init(struct flb_input_instance *in,
     mk_list_add(&systemd_collector._head, &ctx->collectors);
     mk_list_add(&processes_collector._head, &ctx->collectors);
     mk_list_add(&nvme_collector._head, &ctx->collectors);
+    mk_list_add(&thermalzone_collector._head, &ctx->collectors);
 
     mk_list_foreach(head, &ctx->collectors) {
         coll = mk_list_entry(head, struct flb_ne_collector, _head);
@@ -401,6 +403,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_TIME, "collector.processes.scrape_interval", "0",
      0, FLB_FALSE, 0,
      "scrape interval to collect processes metrics from the node."
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "collector.thermalzone.scrape_interval", "0",
+     0, FLB_FALSE, 0,
+     "scrape interval to collect thermal zone metrics from the node."
     },
 
     {
