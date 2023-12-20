@@ -53,6 +53,9 @@ int cfl_variant_print(FILE *fp, struct cfl_variant *val)
     case CFL_VARIANT_INT:
         ret = fprintf(fp, "%" PRId64, val->data.as_int64);
         break;
+    case CFL_VARIANT_UINT:
+        ret = fprintf(fp, "%" PRIu64, val->data.as_uint64);
+        break;
     case CFL_VARIANT_DOUBLE:
         ret = fprintf(fp, "%lf", val->data.as_double);
         break;
@@ -141,6 +144,19 @@ struct cfl_variant *cfl_variant_create_from_int64(int64_t value)
     if (instance != NULL) {
         instance->data.as_int64 = value;
         instance->type = CFL_VARIANT_INT;
+    }
+
+    return instance;
+}
+
+struct cfl_variant *cfl_variant_create_from_uint64(uint64_t value)
+{
+    struct cfl_variant *instance;
+
+    instance = cfl_variant_create();
+    if (instance != NULL) {
+        instance->data.as_uint64 = value;
+        instance->type = CFL_VARIANT_UINT;
     }
 
     return instance;
