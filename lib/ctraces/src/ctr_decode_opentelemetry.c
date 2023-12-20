@@ -571,7 +571,9 @@ int ctr_decode_opentelemetry_create(struct ctrace **out_ctr,
                 ctr_span_kind_set(span, otel_span->kind);
                 ctr_span_start_ts(ctr, span, otel_span->start_time_unix_nano);
                 ctr_span_end_ts(ctr, span, otel_span->end_time_unix_nano);
-                ctr_span_set_status(span, otel_span->status->code, otel_span->status->message);
+                if (otel_span->status) {
+                    ctr_span_set_status(span, otel_span->status->code, otel_span->status->message);
+                }
                 ctr_span_set_attributes(span, otel_span->n_attributes, otel_span->attributes);
                 ctr_span_set_events(span, otel_span->n_events, otel_span->events);
                 ctr_span_set_dropped_attributes_count(span, otel_span->dropped_attributes_count);
