@@ -212,6 +212,29 @@ int cfl_kvlist_insert_int64(struct cfl_kvlist *list,
     return 0;
 }
 
+int cfl_kvlist_insert_uint64(struct cfl_kvlist *list,
+                            char *key, uint64_t value)
+{
+    struct cfl_variant *value_instance;
+    int                 result;
+
+    value_instance = cfl_variant_create_from_uint64(value);
+
+    if (value_instance == NULL) {
+        return -1;
+    }
+
+    result = cfl_kvlist_insert(list, key, value_instance);
+
+    if (result) {
+        cfl_variant_destroy(value_instance);
+
+        return -2;
+    }
+
+    return 0;
+}
+
 int cfl_kvlist_insert_double(struct cfl_kvlist *list,
                              char *key, double value)
 {
