@@ -892,7 +892,7 @@ static struct flb_config_map config_map[] = {
     {
        FLB_CONFIG_MAP_STR, "timestamp_key", K8S_EVENTS_RA_TIMESTAMP,
        0, FLB_TRUE, offsetof(struct k8s_events, timestamp_key),
-       "Record accessor for the timestamp from the event. Default is $metadata['creationTimestamp']."
+       "Record accessor for the timestamp from the event. Default is $lastTimestamp."
     },
 
 #ifdef FLB_HAVE_SQLDB
