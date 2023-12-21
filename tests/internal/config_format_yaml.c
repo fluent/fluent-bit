@@ -11,10 +11,22 @@
 
 #include "flb_tests_internal.h"
 
+#ifdef _WIN32
+#define FLB_TESTS_CONF_PATH FLB_TESTS_DATA_PATH "\\data\\config_format\\yaml"
+#else
 #define FLB_TESTS_CONF_PATH FLB_TESTS_DATA_PATH "/data/config_format/yaml"
+#endif
+
 #define FLB_000 FLB_TESTS_CONF_PATH "/fluent-bit.yaml"
 #define FLB_001 FLB_TESTS_CONF_PATH "/issue_7559.yaml"
 #define FLB_002 FLB_TESTS_CONF_PATH "/processors.yaml"
+#define FLB_000_WIN FLB_TESTS_CONF_PATH "\\fluent-bit-windows.yaml"
+
+#ifdef _WIN32
+#define FLB_BASIC FLB_000_WIN
+#else
+#define FLB_BASIC FLB_000
+#endif
 
 /*
  * Configurations to test:
@@ -39,7 +51,7 @@ static void test_basic()
     struct cfl_variant *v;
     int idx = 0;
 
-    cf = flb_cf_yaml_create(NULL, FLB_000, NULL, 0);
+    cf = flb_cf_yaml_create(NULL, FLB_BASIC, NULL, 0);
     TEST_CHECK(cf != NULL);
     if (!cf) {
         exit(EXIT_FAILURE);
