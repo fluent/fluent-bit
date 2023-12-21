@@ -917,7 +917,6 @@ static struct flb_http_client *fleet_http_do(struct flb_in_calyptia_fleet_config
 
     if (client->resp.payload_size <= 0) {
         flb_plg_error(ctx->ins, "empty response");
-        flb_http_client_destroy(client);
         goto http_do_error;
     }
 
