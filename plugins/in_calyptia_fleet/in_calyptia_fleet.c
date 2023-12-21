@@ -1938,11 +1938,6 @@ static int load_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
     flb_ctx_t *flb_ctx = flb_context_get();
     flb_sds_t cfgnewname = NULL;
 
-    if (create_fleet_directory(ctx) != 0) {
-        flb_plg_error(ctx->ins, "unable to create fleet directories");
-        return -1;
-    }
-
     /* check if we are already using the fleet configuration file. */
     if (is_fleet_config(ctx, flb_ctx->config) == FLB_FALSE) {
         flb_plg_debug(ctx->ins, "loading configuration file");
@@ -2226,6 +2221,12 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
 
     /* Set the context */
     flb_input_set_context(in, ctx);
+
+    /* create fleet directory before creating the fleet header. */
+    if (create_fleet_directory(ctx) != 0) {
+        flb_plg_error(ctx->ins, "unable to create fleet directories");
+        return -1;
+    }
 
     /* refresh calyptia settings before attempting to load the fleet
      * configuration file.
