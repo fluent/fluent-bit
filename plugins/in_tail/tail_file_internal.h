@@ -21,6 +21,7 @@
 #define FLB_TAIL_INTERNAL_H
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_file.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
@@ -37,7 +38,7 @@ struct flb_tail_file {
     /* Inotify */
     int watch_fd;
     /* file lookup info */
-    int fd;
+    flb_file_handle fd;
     int64_t size;
     int64_t offset;
     int64_t last_line;

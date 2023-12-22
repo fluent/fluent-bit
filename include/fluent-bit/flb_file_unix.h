@@ -2,7 +2,8 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
+ *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,28 +18,26 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_TAIL_WIN32_INTERFACE_H
-#define FLB_TAIL_WIN32_INTERFACE_H
+#ifndef FLB_FILE_UNIX_H
+#define FLB_FILE_UNIX_H
 
-struct win32_stat {
-   uint64_t st_ino;
-   uint16_t st_mode;
-   int64_t  st_mtime;
-   int16_t  st_nlink;
-   int64_t  st_size;
-};
+#define FLB_FILE_IFMT  S_IFMT
+#define FLB_FILE_IFIFO S_IFIFO
+#define FLB_FILE_IFCHR S_IFCHR
+#define FLB_FILE_IFDIR S_IFDIR
+#define FLB_FILE_IFBLK S_IFBLK
+#define FLB_FILE_IFREG S_IFREG
+#define FLB_FILE_IFLNK S_IFLNK
 
-int win32_stat(const char *path, struct win32_stat *wst);
-int win32_lstat(const char *path, struct win32_stat *wst);
-int win32_fstat(int fd, struct win32_stat *wst);
+#define FLB_FILE_ISDIR(m)  S_ISDIR(m)
+#define FLB_FILE_ISCHR(m)  S_ISCHR(m)
+#define FLB_FILE_ISFIFO(m) S_ISFIFO(m)
+#define FLB_FILE_ISREG(m)  S_ISREG(m)
+#define FLB_FILE_ISLNK(m)  S_ISLNK(m)
 
-int win32_open(const char *path, int flags);
+#define FLB_FILE_INVALID_HANDLE  (-1)
+#define FLB_FILE_MAX_PATH_LENGTH PATH_MAX
 
-#define WIN32_S_IFDIR 0x1000
-#define WIN32_S_IFCHR 0x2000
-#define WIN32_S_IFIFO 0x4000
-#define WIN32_S_IFREG 0x8000
-#define WIN32_S_IFLNK 0xc000
-#define WIN32_S_IFMT  0xf000
+typedef int flb_file_handle;
 
 #endif

@@ -44,10 +44,6 @@
 #include "tail_multiline.h"
 #include "tail_scan.h"
 
-#ifdef FLB_SYSTEM_WINDOWS
-#include "win32.h"
-#endif
-
 #include <cfl/cfl.h>
 
 static inline void consume_bytes(char *buf, int bytes, int length)
@@ -55,36 +51,26 @@ static inline void consume_bytes(char *buf, int bytes, int length)
     memmove(buf, buf + bytes, length - bytes);
 }
 
-static uint64_t stat_get_st_dev(struct stat *st)
-{
-#ifdef FLB_SYSTEM_WINDOWS
-    /* do you want to contribute with a way to extract volume serial number ? */
-    return 0;
-#else
-    return st->st_dev;
-#endif
-}
-
-static int stat_to_hash_bits(struct flb_tail_config *ctx, struct stat *st,
+static int stat_to_hash_bits(struct flb_tail_config *ctx, struct flb_file_stat *st,
                              uint64_t *out_hash)
 {
     int len;
-    uint64_t st_dev;
     char tmp[64];
 
-    st_dev = stat_get_st_dev(st);
-
-    len = snprintf(tmp, sizeof(tmp) - 1, "%" PRIu64 ":%" PRIu64,
-                   st_dev, (uint64_t)st->st_ino);
+    len = snprintf(tmp,
+                   sizeof(tmp) - 1,
+                   "%" PRIu64 ":%" PRIu64,
+                   (uint64_t) st->device,
+                   (uint64_t) st->inode);
 
     *out_hash = cfl_hash_64bits(tmp, len);
+
     return 0;
 }
 
-static int stat_to_hash_key(struct flb_tail_config *ctx, struct stat *st,
+static int stat_to_hash_key(struct flb_tail_config *ctx, struct flb_file_stat *st,
                             flb_sds_t *key)
 {
-    uint64_t st_dev;
     flb_sds_t tmp;
     flb_sds_t buf;
 
@@ -93,15 +79,17 @@ static int stat_to_hash_key(struct flb_tail_config *ctx, struct stat *st,
         return -1;
     }
 
-    st_dev = stat_get_st_dev(st);
-    tmp = flb_sds_printf(&buf, "%" PRIu64 ":%" PRIu64,
-                         st_dev, (uint64_t)st->st_ino);
+    tmp = flb_sds_printf(&buf,
+                         "%" PRIu64 ":%" PRIu64,
+                         (uint64_t) st->device,
+                         (uint64_t) st->inode);
     if (!tmp) {
         flb_sds_destroy(buf);
         return -1;
     }
 
     *key = buf;
+
     return 0;
 }
 
@@ -793,7 +781,7 @@ static int tag_compose(char *tag, char *fname, char *out_buf, size_t *out_size,
     return 0;
 }
 
-static inline int flb_tail_file_exists(struct stat *st,
+static inline int flb_tail_file_exists(struct flb_file_stat *st,
                                        struct flb_tail_config *ctx)
 {
     int ret;
@@ -835,14 +823,14 @@ static int set_file_position(struct flb_tail_config *ctx,
         ret = flb_tail_db_file_set(file, ctx);
         if (ret == 0) {
             if (file->offset > 0) {
-                ret = lseek(file->fd, file->offset, SEEK_SET);
+                ret = flb_file_lseek(file->fd, file->offset, SEEK_SET);
                 if (ret == -1) {
                     flb_errno();
                     return -1;
                 }
             }
             else if (ctx->read_from_head == FLB_FALSE) {
-                ret = lseek(file->fd, 0, SEEK_END);
+                ret = flb_file_lseek(file->fd, 0, SEEK_END);
                 if (ret == -1) {
                     flb_errno();
                     return -1;
@@ -861,7 +849,7 @@ static int set_file_position(struct flb_tail_config *ctx,
     }
 
     /* tail... */
-    ret = lseek(file->fd, 0, SEEK_END);
+    ret = flb_file_lseek(file->fd, 0, SEEK_END);
     if (ret == -1) {
         flb_errno();
         return -1;
@@ -910,10 +898,12 @@ static int ml_flush_callback(struct flb_ml_parser *parser,
     return 0;
 }
 
-int flb_tail_file_append(char *path, struct stat *st, int mode,
+int flb_tail_file_append(char *path,
+                         struct flb_file_stat *st,
+                         int mode,
                          struct flb_tail_config *ctx)
 {
-    int fd;
+    flb_file_handle fd;
     int ret;
     uint64_t stream_id;
     uint64_t ts;
@@ -924,10 +914,10 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     char *name;
     size_t tag_len;
     struct flb_tail_file *file;
-    struct stat lst;
+    struct flb_file_stat lst;
     flb_sds_t inode_str;
 
-    if (!S_ISREG(st->st_mode)) {
+    if (!FLB_FILE_ISREG(st->mode)) {
         return -1;
     }
 
@@ -935,8 +925,8 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         return -1;
     }
 
-    fd = open(path, O_RDONLY);
-    if (fd == -1) {
+    fd = flb_file_open(path, O_RDONLY);
+    if (fd == FLB_FILE_INVALID_HANDLE) {
         flb_errno();
         flb_plg_error(ctx->ins, "cannot open %s", path);
         return -1;
@@ -953,11 +943,11 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->fd        = fd;
 
     /* On non-windows environments check if the original path is a link */
-    ret = lstat(path, &lst);
+    ret = flb_file_lstat(path, &lst);
     if (ret == 0) {
-        if (S_ISLNK(lst.st_mode)) {
+        if (FLB_FILE_ISLNK(lst.mode)) {
             file->is_link = FLB_TRUE;
-            file->link_inode = lst.st_ino;
+            file->link_inode = lst.inode;
         }
     }
 
@@ -977,9 +967,9 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     }
     file->hash_key = hash_key;
 
-    file->inode     = st->st_ino;
+    file->inode     = st->inode;
     file->offset    = 0;
-    file->size      = st->st_size;
+    file->size      = st->size;
     file->buf_len   = 0;
     file->parsed    = 0;
     file->config    = ctx;
@@ -1191,7 +1181,8 @@ error:
         }
         flb_free(file);
     }
-    close(fd);
+
+    flb_file_close(fd);
 
     return -1;
 }
@@ -1242,8 +1233,8 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     flb_tail_fs_remove(ctx, file);
 
     /* avoid deleting file with -1 fd */
-    if (file->fd != -1) {
-        close(file->fd);
+    if (file->fd != FLB_FILE_INVALID_HANDLE) {
+        flb_file_close(file->fd);
     }
     if (file->tag_buf) {
         flb_free(file->tag_buf);
@@ -1297,17 +1288,17 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
 {
     int ret;
     int64_t offset;
-    struct stat st;
+    struct flb_file_stat st;
 
-    ret = fstat(file->fd, &st);
+    ret = flb_file_fstat(file->fd, &st);
     if (ret == -1) {
         flb_errno();
         return FLB_TAIL_ERROR;
     }
 
     /* Check if the file was truncated */
-    if (file->offset > st.st_size) {
-        offset = lseek(file->fd, 0, SEEK_SET);
+    if (file->offset > st.size) {
+        offset = flb_file_lseek(file->fd, 0, SEEK_SET);
         if (offset == -1) {
             flb_errno();
             return FLB_TAIL_ERROR;
@@ -1326,8 +1317,8 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
 #endif
     }
     else {
-        file->size = st.st_size;
-        file->pending_bytes = (st.st_size - file->offset);
+        file->size = st.size;
+        file->pending_bytes = (st.size - file->offset);
     }
 
     return FLB_TAIL_OK;
@@ -1399,7 +1390,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         capacity = (file->buf_size - file->buf_len) - 1;
     }
 
-    bytes = read(file->fd, file->buf_data + file->buf_len, capacity);
+    bytes = flb_file_read(file->fd, file->buf_data + file->buf_len, capacity);
     if (bytes > 0) {
         /* we read some data, let the content processor take care of it */
         file->buf_len += bytes;
@@ -1463,7 +1454,7 @@ int flb_tail_file_is_rotated(struct flb_tail_config *ctx,
 {
     int ret;
     char *name;
-    struct stat st;
+    struct flb_file_stat st;
 
     /*
      * Do not double-check already rotated files since the caller of this
@@ -1475,7 +1466,7 @@ int flb_tail_file_is_rotated(struct flb_tail_config *ctx,
 
     /* Check if the 'original monitored file' is a link and rotated */
     if (file->is_link == FLB_TRUE) {
-        ret = lstat(file->name, &st);
+        ret = flb_file_lstat(file->name, &st);
         if (ret == -1) {
             /* Broken link or missing file */
             if (errno == ENOENT) {
@@ -1493,14 +1484,14 @@ int flb_tail_file_is_rotated(struct flb_tail_config *ctx,
         }
         else {
             /* The file name is there, check if the same that we have */
-            if (st.st_ino != file->link_inode) {
+            if (st.inode != file->link_inode) {
                 return FLB_TRUE;
             }
         }
     }
 
     /* Retrieve the real file name, operating system lookup */
-    name = flb_tail_file_name(file);
+    name = flb_file_get_path(file->fd);
     if (!name) {
         flb_plg_error(ctx->ins,
                       "inode=%"PRIu64" cannot detect if file was rotated: %s",
@@ -1510,7 +1501,7 @@ int flb_tail_file_is_rotated(struct flb_tail_config *ctx,
 
 
     /* Get stats from the file name */
-    ret = stat(name, &st);
+    ret = flb_file_stat(name, &st);
     if (ret == -1) {
         flb_errno();
         flb_free(name);
@@ -1518,7 +1509,7 @@ int flb_tail_file_is_rotated(struct flb_tail_config *ctx,
     }
 
     /* Compare inodes and names */
-    if (file->inode == st.st_ino &&
+    if (file->inode == st.inode &&
         flb_tail_target_file_name_cmp(name, file) == 0) {
         flb_free(name);
         return FLB_FALSE;
@@ -1528,6 +1519,7 @@ int flb_tail_file_is_rotated(struct flb_tail_config *ctx,
                   file->inode, file->name, name);
 
     flb_free(name);
+
     return FLB_TRUE;
 }
 
@@ -1535,18 +1527,18 @@ int flb_tail_file_is_rotated(struct flb_tail_config *ctx,
 int flb_tail_file_to_event(struct flb_tail_file *file)
 {
     int ret;
-    struct stat st;
+    struct flb_file_stat st;
     struct flb_tail_config *ctx = file->config;
 
     /* Check if the file promoted have pending bytes */
-    ret = fstat(file->fd, &st);
+    ret = flb_file_fstat(file->fd, &st);
     if (ret != 0) {
         flb_errno();
         return -1;
     }
 
-    if (file->offset < st.st_size) {
-        file->pending_bytes = (st.st_size - file->offset);
+    if (file->offset < st.size) {
+        file->pending_bytes = (st.size - file->offset);
         tail_signal_pending(file->config);
     }
     else {
@@ -1579,103 +1571,6 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
     return 0;
 }
 
-/*
- * Given an open file descriptor, return the filename. This function is a
- * bit slow and it aims to be used only when a file is rotated.
- */
-char *flb_tail_file_name(struct flb_tail_file *file)
-{
-    int ret;
-    char *buf;
-#ifdef __linux__
-    ssize_t s;
-    char tmp[128];
-#elif defined(__APPLE__)
-    char path[PATH_MAX];
-#elif defined(FLB_SYSTEM_WINDOWS)
-    HANDLE h;
-#elif defined(FLB_SYSTEM_FREEBSD)
-    struct kinfo_file *file_entries;
-    int file_count;
-    int file_index;
-#endif
-
-    buf = flb_malloc(PATH_MAX);
-    if (!buf) {
-        flb_errno();
-        return NULL;
-    }
-
-#ifdef __linux__
-    ret = snprintf(tmp, sizeof(tmp) - 1, "/proc/%i/fd/%i", getpid(), file->fd);
-    if (ret == -1) {
-        flb_errno();
-        flb_free(buf);
-        return NULL;
-    }
-
-    s = readlink(tmp, buf, PATH_MAX);
-    if (s == -1) {
-        flb_free(buf);
-        flb_errno();
-        return NULL;
-    }
-    buf[s] = '\0';
-
-#elif __APPLE__
-    int len;
-
-    ret = fcntl(file->fd, F_GETPATH, path);
-    if (ret == -1) {
-        flb_errno();
-        flb_free(buf);
-        return NULL;
-    }
-
-    len = strlen(path);
-    memcpy(buf, path, len);
-    buf[len] = '\0';
-
-#elif defined(FLB_SYSTEM_WINDOWS)
-    int len;
-
-    h = (HANDLE) _get_osfhandle(file->fd);
-    if (h == INVALID_HANDLE_VALUE) {
-        flb_errno();
-        flb_free(buf);
-        return NULL;
-    }
-
-    /* This function returns the length of the string excluding "\0"
-     * and the resulting path has a "\\?\" prefix.
-     */
-    len = GetFinalPathNameByHandleA(h, buf, PATH_MAX, FILE_NAME_NORMALIZED);
-    if (len == 0 || len >= PATH_MAX) {
-        flb_free(buf);
-        return NULL;
-    }
-
-    if (strstr(buf, "\\\\?\\")) {
-        memmove(buf, buf + 4, len + 1);
-    }
-#elif defined(FLB_SYSTEM_FREEBSD)
-    if ((file_entries = kinfo_getfile(getpid(), &file_count)) == NULL) {
-        flb_free(buf);
-        return NULL;
-    }
-
-    for (file_index=0; file_index < file_count; file_index++) {
-        if (file_entries[file_index].kf_fd == file->fd) {
-            strncpy(buf, file_entries[file_index].kf_path, PATH_MAX - 1);
-            buf[PATH_MAX - 1] = 0;
-            break;
-        }
-    }
-    free(file_entries);
-#endif
-    return buf;
-}
-
 int flb_tail_file_name_dup(char *path, struct flb_tail_file *file)
 {
     file->name = flb_strdup(path);
@@ -1689,7 +1584,7 @@ int flb_tail_file_name_dup(char *path, struct flb_tail_file *file)
         flb_free(file->real_name);
     }
 
-    file->real_name = flb_tail_file_name(file);
+    file->real_name = flb_file_get_path(file->fd);
     if (!file->real_name) {
         flb_errno();
         flb_free(file->name);
@@ -1708,11 +1603,11 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
     char *name;
     char *i_name;
     char *tmp;
-    struct stat st;
+    struct flb_file_stat st;
     struct flb_tail_config *ctx = file->config;
 
     /* Get the new file name */
-    name = flb_tail_file_name(file);
+    name = flb_file_get_path(file->fd);
     if (!name) {
         return -1;
     }
@@ -1751,8 +1646,8 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
 #endif
 
         /* Check if a new file has been created */
-        ret = stat(tmp, &st);
-        if (ret == 0 && st.st_ino != file->inode) {
+        ret = flb_file_stat(tmp, &st);
+        if (ret == 0 && st.inode != file->inode) {
             if (flb_tail_file_exists(&st, ctx) == FLB_FALSE) {
                 ret = flb_tail_file_append(tmp, &st, FLB_TAIL_STATIC, ctx);
                 if (ret == -1) {
@@ -1774,16 +1669,17 @@ static int check_purge_deleted_file(struct flb_tail_config *ctx,
                                     struct flb_tail_file *file, time_t ts)
 {
     int ret;
-    struct stat st;
+    int64_t mtime;
+    struct flb_file_stat st;
 
-    ret = fstat(file->fd, &st);
+    ret = flb_file_fstat(file->fd, &st);
     if (ret == -1) {
         flb_plg_debug(ctx->ins, "error stat(2) %s, removing", file->name);
         flb_tail_file_remove(file);
         return FLB_TRUE;
     }
 
-    if (st.st_nlink == 0) {
+    if (st.hard_link_count == 0) {
         flb_plg_debug(ctx->ins, "purge: monitored file has been deleted: %s",
                       file->name);
 #ifdef FLB_HAVE_SQLDB
@@ -1811,21 +1707,26 @@ int flb_tail_file_purge(struct flb_input_instance *ins,
     struct flb_tail_file *file;
     struct flb_tail_config *ctx = context;
     time_t now;
-    struct stat st;
+    struct flb_file_stat st;
 
     /* Rotated files */
     now = time(NULL);
     mk_list_foreach_safe(head, tmp, &ctx->files_rotated) {
         file = mk_list_entry(head, struct flb_tail_file, _rotate_head);
         if ((file->rotated + ctx->rotate_wait) <= now) {
-            ret = fstat(file->fd, &st);
+            ret = flb_file_fstat(file->fd, &st);
             if (ret == 0) {
                 flb_plg_debug(ctx->ins,
                               "inode=%"PRIu64" purge rotated file %s " \
                               "(offset=%"PRId64" / size = %"PRIu64")",
-                              file->inode, file->name, file->offset, (uint64_t)st.st_size);
+                              file->inode,
+                              file->name,
+                              file->offset,
+                              (uint64_t) st.size);
+
                 if (file->pending_bytes > 0 && flb_input_buf_paused(ins)) {
-                    flb_plg_warn(ctx->ins, "purged rotated file while data "
+                    flb_plg_warn(ctx->ins,
+                                 "purged rotated file while data "
                                  "ingestion is paused, consider increasing "
                                  "rotate_wait");
                 }

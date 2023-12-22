@@ -27,49 +27,33 @@
 
 #include <stdio.h>
 
-flb_sds_t flb_file_read_contents(const char *path)
+char *flb_file_get_path(flb_file_handle handle)
 {
-    long flen;
-    FILE *f = NULL;
-    flb_sds_t result = NULL;
+    int ret;
+    char *buf;
+    char path[PATH_MAX];
+    int len;
 
-    f = fopen(path, "rb");
-    if (!f) {
+    buf = flb_calloc(sizeof(char), PATH_MAX);
+
+    if (buf == NULL) {
+        flb_errno();
         return NULL;
     }
 
-    if (fseek(f, 0, SEEK_END) == -1) {
-        goto err;
+    ret = fcntl(handle, F_GETPATH, path);
+
+    if (ret == -1) {
+        flb_errno();
+        flb_free(buf);
+        return NULL;
     }
 
-    flen = ftell(f);
-    if (flen < 0) {
-        goto err;
-    }
+    len = strlen(path);
 
-    if (fseek(f, 0, SEEK_SET) == -1) {
-        goto err;
-    }
+    memcpy(buf, path, len);
 
-    result = flb_sds_create_size(flen);
-    if (!result) {
-        goto err;
-    }
+    buf[len] = '\0';
 
-    if (flen > 0 && fread(result, flen, 1, f) != 1) {
-        goto err;
-    }
-
-    result[flen] = 0;
-    flb_sds_len_set(result, flen);
-    fclose(f);
-    return result;
-
-err:
-    flb_errno();
-    fclose(f);
-    if (result) {
-        flb_sds_destroy(result);
-    }
-    return NULL;
+    return buf;
 }

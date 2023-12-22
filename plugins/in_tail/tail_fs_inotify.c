@@ -132,7 +132,7 @@ static int tail_fs_add(struct flb_tail_file *file, int check_rotated)
      * 6. conflict: inotify_add_watch() receives the path 'a.log',
      */
 
-    name = flb_tail_file_name(file);
+    name = flb_file_get_path(file->fd);
     if (!name) {
         flb_plg_error(ctx->ins, "inode=%"PRIu64" cannot get real filename for inotify",
                       file->inode);

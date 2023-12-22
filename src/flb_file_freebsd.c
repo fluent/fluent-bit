@@ -25,51 +25,39 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_str.h>
 
+#include <sys/types.h>
+#include <sys/user.h>
+#include <libutil.h>
 #include <stdio.h>
 
-flb_sds_t flb_file_read_contents(const char *path)
+char *flb_file_get_path(flb_file_handle handle)
 {
-    long flen;
-    FILE *f = NULL;
-    flb_sds_t result = NULL;
+    char *buf;
+    struct kinfo_file *file_entries;
+    int file_count;
+    int file_index;
 
-    f = fopen(path, "rb");
-    if (!f) {
+    buf = flb_calloc(sizeof(char), PATH_MAX);
+
+    if (buf == NULL) {
+        flb_errno();
         return NULL;
     }
 
-    if (fseek(f, 0, SEEK_END) == -1) {
-        goto err;
+    if ((file_entries = kinfo_getfile(getpid(), &file_count)) == NULL) {
+        flb_free(buf);
+        return NULL;
     }
 
-    flen = ftell(f);
-    if (flen < 0) {
-        goto err;
+    for (file_index=0; file_index < file_count; file_index++) {
+        if (file_entries[file_index].kf_fd == handle) {
+            strncpy(buf, file_entries[file_index].kf_path, PATH_MAX - 1);
+            buf[PATH_MAX - 1] = 0;
+            break;
+        }
     }
 
-    if (fseek(f, 0, SEEK_SET) == -1) {
-        goto err;
-    }
+    free(file_entries);
 
-    result = flb_sds_create_size(flen);
-    if (!result) {
-        goto err;
-    }
-
-    if (flen > 0 && fread(result, flen, 1, f) != 1) {
-        goto err;
-    }
-
-    result[flen] = 0;
-    flb_sds_len_set(result, flen);
-    fclose(f);
-    return result;
-
-err:
-    flb_errno();
-    fclose(f);
-    if (result) {
-        flb_sds_destroy(result);
-    }
-    return NULL;
+    return buf;
 }

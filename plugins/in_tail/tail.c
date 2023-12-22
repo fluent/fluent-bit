@@ -31,6 +31,7 @@
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_file.h>
 
 #include "tail.h"
 #include "tail_fs.h"
@@ -67,7 +68,7 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
     struct mk_list *head;
     struct flb_tail_config *ctx = in_context;
     struct flb_tail_file *file;
-    struct stat st;
+    struct flb_file_stat st;
     uint64_t pre;
     uint64_t total_processed = 0;
 
@@ -77,7 +78,8 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
 
         if (file->watch_fd == -1 ||
             (file->offset >= file->size)) {
-            ret = fstat(file->fd, &st);
+            /* Gather current file size */
+            ret = flb_file_fstat(file->fd, &st);
 
             if (ret == -1) {
                 flb_errno();
@@ -85,11 +87,11 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
                 continue;
             }
 
-            file->size = st.st_size;
+            file->size = st.size;
             file->pending_bytes = (file->size - file->offset);
         }
         else {
-            memset(&st, 0, sizeof(struct stat));
+            memset(&st, 0, sizeof(struct flb_file_stat));
         }
 
         if (file->pending_bytes <= 0) {
@@ -325,10 +327,10 @@ static int in_tail_watcher_callback(struct flb_input_instance *ins,
 int in_tail_collect_event(void *file, struct flb_config *config)
 {
     int ret;
-    struct stat st;
+    struct flb_file_stat st;
     struct flb_tail_file *f = file;
 
-    ret = fstat(f->fd, &st);
+    ret = flb_file_fstat(f->fd, &st);
     if (ret == -1) {
         flb_tail_file_remove(f);
         return 0;

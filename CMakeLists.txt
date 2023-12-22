@@ -32,6 +32,12 @@ if(CMAKE_SYSTEM_NAME MATCHES "Linux")
   add_definitions(-DFLB_SYSTEM_LINUX)
 endif()
 
+# Define macro to identify Android system
+if(CMAKE_SYSTEM_NAME MATCHES "Android")
+  set(FLB_SYSTEM_ANDROID On)
+  add_definitions(-DFLB_SYSTEM_ANDROID)
+endif()
+
 # Update CFLAGS
 if (MSVC)
   add_definitions(-D_CRT_SECURE_NO_WARNINGS)
@@ -632,6 +638,23 @@ endif()
 # Metrics
 if(FLB_METRICS)
   FLB_DEFINITION(FLB_HAVE_METRICS)
+endif()
+
+# Solaris detection
+check_c_source_compiles("
+   int main() {
+#if !defined(__SVR4) || \
+  !defined (__sun)
+      THIS SHOULD
+      CAUSE THIS CODE
+      NOT TO COMPILE
+#endif
+      return 0;
+   }" FLB_SYSTEM_SOLARIS)
+
+if (FLB_SYSTEM_SOLARIS)
+  set(FLB_SYSTEM_SOLARIS On)
+  add_definitions(-DFLB_SYSTEM_SOLARIS)
 endif()
 
 # WASM
