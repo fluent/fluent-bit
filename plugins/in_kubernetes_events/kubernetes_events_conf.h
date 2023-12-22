@@ -38,7 +38,6 @@
 #define K8S_EVENTS_KUBE_TOKEN          "/var/run/secrets/kubernetes.io/serviceaccount/token"
 #define K8S_EVENTS_KUBE_CA             "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 
-#define K8S_EVENTS_RA_TIMESTAMP        "$lastTimestamp"
 #define K8S_EVENTS_RA_RESOURCE_VERSION "$metadata['resourceVersion']"
 
 struct k8s_events *k8s_events_conf_create(struct flb_input_instance *ins);
