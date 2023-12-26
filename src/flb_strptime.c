@@ -30,7 +30,7 @@
 
 /*
  * This file provides a portable implementation of strptime(2), based
- * on the work of OpenSBD project. Since various platforms implement
+ * on the work of OpenBSD project. Since various platforms implement
  * strptime differently, this one should work as a fallback.
  */
 
