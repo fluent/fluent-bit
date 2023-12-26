@@ -4,6 +4,7 @@ set -e
 
 if [[ $1 == "remove" ]]; then
     systemctl stop fluent-bit.service || true
+    systemctl disable fluent-bit.service || true
 else
     echo "Unknown Argument! $1" || false
 fi
