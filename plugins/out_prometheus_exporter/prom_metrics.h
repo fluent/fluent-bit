@@ -17,8 +17,8 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_PROMETHEUS_EXPORTER_HTTP_H
-#define FLB_PROMETHEUS_EXPORTER_HTTP_H
+#ifndef FLB_PROMETHEUS_EXPORTER_METRICS_H
+#define FLB_PROMETHEUS_EXPORTER_METRICS_H
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <monkey/mk_lib.h>
@@ -26,31 +26,15 @@
 #include "prom.h"
 
 /* HTTP response payload received through a Message Queue */
-struct prom_http_buf {
+struct prom_metrics_buf {
     int users;
     char *buf_data;
     size_t buf_size;
     struct mk_list _head;
 };
 
-/* Prom HTTP Server context */
-struct prom_http {
-    mk_ctx_t *ctx;                /* Monkey HTTP Context */
-    int vid;                      /* Virtual host ID */
-    int qid_metrics;              /* Queue ID for Metrics buffer */
-    struct flb_config *config;    /* Fluent Bit context */
-};
-
-struct prom_http *prom_http_server_create(struct prom_exporter *ctx,
-                                          const char *listen,
-                                          int tcp_port,
-                                          struct flb_config *config);
-void prom_http_server_destroy(struct prom_http *ph);
-
-int prom_http_server_start(struct prom_http *ph);
-int prom_http_server_stop(struct prom_http *ph);
-
-int prom_http_server_mq_push_metrics(struct prom_http *ph,
-                                     void *data, size_t size);
+void prom_metrics_key_create();
+int prom_metrics_push_new_metrics(void *data, size_t size);
+struct prom_metrics_buf *prom_metrics_get_latest();
 
 #endif
