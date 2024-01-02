@@ -2046,16 +2046,18 @@ int flb_kube_meta_get(struct flb_kube *ctx,
                       )
 {
     int ret_namespace_meta = -1;
-    int ret_pod_meta;
+    int ret_pod_meta = -1;
 
     if(ctx->namespace_labels == FLB_TRUE || ctx->namespace_annotations == FLB_TRUE) {
         ret_namespace_meta = flb_kube_namespace_meta_get(ctx, tag, tag_len, data, 
                         data_size, namespace_out_buf, namespace_out_size, namespace_meta);
     }
 
-    ret_pod_meta = flb_kube_pod_meta_get(ctx, tag, tag_len, data, data_size,
-                                    out_buf, out_size, meta, props);
-    
+    if(ctx->labels == FLB_TRUE || ctx->annotations == FLB_TRUE) {
+        ret_pod_meta = flb_kube_pod_meta_get(ctx, tag, tag_len, data, data_size,
+                                             out_buf, out_size, meta, props);
+    }
+
     // If we get metadata from either namespace or pod info, return success
     if( ret_pod_meta == 0 || ret_namespace_meta == 0) {
         return 0;
