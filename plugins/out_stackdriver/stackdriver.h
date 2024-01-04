@@ -72,6 +72,7 @@
  */
 #define STACKDRIVER_NET_ERROR  502
 
+#define K8S_CLUSTER   "k8s_cluster"
 #define K8S_CONTAINER "k8s_container"
 #define K8S_NODE      "k8s_node"
 #define K8S_POD       "k8s_pod"
