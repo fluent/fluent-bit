@@ -1608,6 +1608,62 @@ void flb_test_malformed_longer_sd_id_rfc5424()
     test_ctx_destroy(ctx);
 }
 
+void flb_test_sd_key_multivalued_param_rfc5424()
+{
+    struct test_ctx *ctx;
+    int ret;
+    int num;
+
+    char *buf = "[1, {\"msg\":\"hello world\", \"sd_key\": {\"logtype\": \"access\",\"clustername\": \"mycluster\",\"namespace\": \"mynamespace\", \"tag\": [ \"tag1\", \"tag2\", \"tag3\" ]}}]";
+    size_t size = strlen(buf);
+
+    char *expected_strs[] = {"hello world", "1970-01-01T00:00:01.000000Z",
+                             "<14>1 1970-01-01T00:00:01.000000Z - - - - [sd_key logtype=\"access\" clustername=\"mycluster\" namespace=\"mynamespace\" tag=\"tag1\" tag=\"tag2\" tag=\"tag3\"] ﻿hello world"};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+    clear_output_num();
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "syslog_format", "rfc5424",
+                         "syslog_message_key", "msg",
+                         "syslog_sd_key", "sd_key",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set_test(ctx->flb, ctx->o_ffd,
+                         "formatter", cb_check_str_list,
+                          &expected, NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf, size);
+    TEST_CHECK(ret >= 0);
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+
+    test_ctx_destroy(ctx);
+}
+
 TEST_LIST = {
     /* rfc3164 */
     /* procid_key, msgid_key, sd_key are not supported */
@@ -1639,6 +1695,7 @@ TEST_LIST = {
     {"format_msgid_preset_rfc5424", flb_test_msgid_preset_rfc5424},
     {"allow_longer_sd_id_rfc5424", flb_test_allow_longer_sd_id_rfc5424},
     {"malformed_longer_sd_id_rfc5424", flb_test_malformed_longer_sd_id_rfc5424},
+    {"format_sd_key_multivalued_rfc5424", flb_test_sd_key_multivalued_param_rfc5424},
     {NULL, NULL}
 };
 
