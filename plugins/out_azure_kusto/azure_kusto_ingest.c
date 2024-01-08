@@ -149,6 +149,11 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
 
     u_conn = flb_upstream_conn_get(u_node->u);
 
+    if (!u_conn) {
+        flb_plg_error(ctx->ins, "[out_azure_kusto] cannot create upstream connection while connecting to blob endpoint");
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
     if (u_conn) {
         uri = azure_kusto_create_blob_uri(ctx, u_node, blob_id);
 

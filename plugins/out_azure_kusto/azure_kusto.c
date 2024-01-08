@@ -126,8 +126,16 @@ flb_sds_t execute_ingest_csl_command(struct flb_azure_kusto *ctx, const char *cs
     struct flb_http_client *c;
     flb_sds_t resp = NULL;
 
+    ctx->u->base.net.connect_timeout = ctx->ingestion_endpoint_connect_timeout;
+    ctx->u->base.net.keepalive_max_recycle = ctx->keep_alive_max_connection_recycle;
+
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
+
+    if (!u_conn) {
+        flb_plg_error(ctx->ins, "[out_azure_kusto] cannot create upstream connection while connecting to kusto endpoint");
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
 
     if (u_conn) {
         token = get_azure_kusto_token(ctx);
@@ -217,6 +225,13 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
     if (!ctx) {
         flb_plg_error(ins, "configuration failed");
         return -1;
+    }
+
+    const char *tmp = flb_output_get_property("ingestion_endpoint_connect_timeout", ins);
+    if (tmp != NULL) {
+        ctx->ingestion_endpoint_connect_timeout = strtol(tmp, NULL, 0);
+    } else {
+        ctx->ingestion_endpoint_connect_timeout = FLB_AZURE_KUSTO_INGEST_ENDPOINT_CONNECTION_TIMEOUT;
     }
 
     flb_output_set_context(ins, ctx);
@@ -462,6 +477,12 @@ static struct flb_config_map config_map[] = {
      offsetof(struct flb_azure_kusto, time_key),
      "The key name of the time. If 'include_time_key' is false, "
      "This property is ignored"},
+    {FLB_CONFIG_MAP_TIME, "ingestion_endpoint_connect_timeout", FLB_AZURE_KUSTO_INGEST_ENDPOINT_CONNECTION_TIMEOUT, 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, ingestion_endpoint_connect_timeout),
+             "Set the ingestion endpoint connection timeout in seconds"},
+    {FLB_CONFIG_MAP_INT, "keep_alive_max_connection_recycle", FLB_AZURE_KUSTO_KEEP_ALIVE_MAX_RECYCLE, 0, FLB_TRUE,
+            offsetof(struct flb_azure_kusto, keep_alive_max_connection_recycle),
+    "Set the ingestion endpoint connection timeout in seconds"},
     /* EOF */
     {0}};
 
