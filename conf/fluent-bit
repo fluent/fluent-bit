@@ -13,7 +13,6 @@
 PATH=/opt/fluent-bit/bin/:/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 DAEMON=/opt/fluent-bit/bin/fluent-bit
 NAME=fluent-bit
-DESC=fluent-bit
 
 start_fluent_bit() {
 	# Start the daemon/service
