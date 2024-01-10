@@ -1513,6 +1513,7 @@ static int pack_json_payload(int insert_id_extracted,
     {
         monitored_resource_key,
         local_resource_id_key,
+        ctx->project_id_key,
         ctx->labels_key,
         ctx->severity_key,
         ctx->trace_key,
@@ -1683,6 +1684,10 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     msgpack_packer mp_pck;
     flb_sds_t out_buf;
     struct flb_mp_map_header mh;
+
+    /* Parameters for project_id_key */
+    int project_id_extracted = FLB_FALSE;
+    flb_sds_t project_id_key;
 
     /* Parameters for severity */
     int severity_extracted = FLB_FALSE;
@@ -2208,6 +2213,13 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             entry_size += 1;
         }
 
+        /* Extract project id */
+        project_id_extracted = FLB_FALSE;
+        if (ctx->project_id_key
+            && get_string(&project_id_key, obj, ctx->project_id_key) == 0) {
+            project_id_extracted = FLB_TRUE;
+        }
+
         /* Extract log name */
         log_name_extracted = FLB_FALSE;
         if (ctx->log_name_key
@@ -2413,10 +2425,16 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             new_log_name = log_name;
         }
 
-        /* logName */
-        len = snprintf(path, sizeof(path) - 1,
+        if (project_id_extracted == FLB_TRUE) {
+            len = snprintf(path, sizeof(path) - 1,
+                       "projects/%s/logs/%s", project_id_key, new_log_name);
+            flb_sds_destroy(project_id_key);
+        } else {
+            len = snprintf(path, sizeof(path) - 1,
                        "projects/%s/logs/%s", ctx->export_to_project_id, new_log_name);
+        }
 
+        /* logName */
         if (log_name_extracted == FLB_TRUE) {
             flb_sds_destroy(log_name);
         }
@@ -2977,6 +2995,11 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_STR, "export_to_project_id", (char *)NULL,
       0, FLB_TRUE, offsetof(struct flb_stackdriver, export_to_project_id),
       "Export to project id"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "project_id_key", DEFAULT_PROJECT_ID_KEY,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, project_id_key),
+      "Set the gcp project id key"
     },
     {
       FLB_CONFIG_MAP_STR, "resource", FLB_SDS_RESOURCE_TYPE,

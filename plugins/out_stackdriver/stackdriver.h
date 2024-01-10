@@ -49,6 +49,7 @@
 #define MONITORED_RESOURCE_KEY "logging.googleapis.com/monitored_resource"
 #define LOCAL_RESOURCE_ID_KEY "logging.googleapis.com/local_resource_id"
 #define DEFAULT_LABELS_KEY "logging.googleapis.com/labels"
+#define DEFAULT_PROJECT_ID_KEY "logging.googleapis.com/projectId"
 #define DEFAULT_SEVERITY_KEY "logging.googleapis.com/severity"
 #define DEFAULT_TRACE_KEY "logging.googleapis.com/trace"
 #define DEFAULT_SPAN_ID_KEY "logging.googleapis.com/spanId"
@@ -170,6 +171,7 @@ struct flb_stackdriver {
 
     /* other */
     flb_sds_t export_to_project_id;
+    flb_sds_t project_id_key;
     flb_sds_t resource;
     flb_sds_t severity_key;
     flb_sds_t trace_key;

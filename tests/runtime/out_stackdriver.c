@@ -841,6 +841,24 @@ static void cb_check_log_name_no_override(void *ctx, int ffd,
     flb_sds_destroy(res_data);
 }
 
+static void cb_check_project_key_override(void *ctx, int ffd,
+                                          int res_ret, void *res_data, size_t res_size,
+                                          void *data)
+{
+    int ret;
+
+    /* logName in the entries is created using the value under log_name_key */
+    ret = mp_kv_cmp(
+        res_data, res_size, "$entries[0]['logName']", "projects/fluent-bit-test-project-2/logs/test");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* log_name_key has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['test_project_key']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
 static void cb_check_k8s_node_resource(void *ctx, int ffd,
                                        int res_ret, void *res_data, size_t res_size,
                                        void *data)
@@ -2650,6 +2668,87 @@ void flb_test_set_metadata_server()
 
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) JSON, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_project_id_override()
+{
+    int ret;
+    int size = sizeof(LOG_NAME_PROJECT_ID_OVERRIDE) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",                   
+                   "project_id_key", "test_project_key",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_project_key_override,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) LOG_NAME_PROJECT_ID_OVERRIDE, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_project_id_no_override()
+{
+    int ret;
+    int size = sizeof(LOG_NAME_PROJECT_ID_NO_OVERRIDE) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",                   
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_project_key_override,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) LOG_NAME_PROJECT_ID_NO_OVERRIDE, size);
 
     sleep(2);
     flb_stop(ctx);
@@ -6149,6 +6248,10 @@ TEST_LIST = {
 
     /* test metadata server */
     {"set_metadata_server", flb_test_set_metadata_server},
+
+    /* test project key */
+    {"project_key_override", flb_test_project_id_override},
+    {"project_key_no_override", flb_test_project_id_no_override},
 
     /* test log name */
     {"log_name_override", flb_test_log_name_override},
