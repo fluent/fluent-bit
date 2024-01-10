@@ -1,5 +1,16 @@
 # escape=`
 
+# This Dockerfile will only build on Docker for Windows.
+#
+# If you change dependencies etc here, please also check and update
+# the other Windows build resources:
+#
+# - DEVELOPER_GUIDE.md "Windows" section
+# - appveyor.yml
+# - .github/workflows/call-build-windows.yaml
+# - dockerfiles/Dockerfile.windows
+#
+
 ARG WINDOWS_VERSION=ltsc2019
 
 # Builder Image - Windows Server Core
@@ -40,6 +51,7 @@ RUN Start-Process /local/vc_redist.x64.exe -ArgumentList '/install', '/quiet', '
 
 # Install Chocolatey and OpenSSL: https://github.com/StefanScherer/dockerfiles-windows/blob/main/openssl/Dockerfile
 ENV chocolateyUseWindowsCompression false
+ENV chocolateyVersion '1.4.0'
 RUN iex ((new-object net.webclient).DownloadString('https://chocolatey.org/install.ps1')); `
     choco feature disable --name showDownloadProgress ; `
     choco install -y openssl;

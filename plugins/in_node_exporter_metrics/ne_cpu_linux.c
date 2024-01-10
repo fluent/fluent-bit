@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -148,20 +148,19 @@ static int cpu_thermal_update(struct flb_ne *ctx, uint64_t ts)
                                         "thermal_throttle", "core_throttle_count",
                                         &core_throttle_count);
         if (ret != 0) {
-            flb_plg_error(ctx->ins,
+            flb_plg_debug(ctx->ins,
                           "CPU is missing core_throttle_count: %s",
                           entry->str);
-            continue;
         }
+        else {
+            snprintf(tmp1, sizeof(tmp1) -1, "%" PRIu64, core_id);
+            snprintf(tmp2, sizeof(tmp2) -1, "%" PRIu64, physical_package_id);
 
-        snprintf(tmp1, sizeof(tmp1) -1, "%" PRIu64, core_id);
-        snprintf(tmp2, sizeof(tmp2) -1, "%" PRIu64, physical_package_id);
-
-        /* Set new value */
-        cmt_counter_set(ctx->cpu_core_throttles, ts,
-                        (double) core_throttle_count,
-                        2, (char *[]) {tmp1, tmp2});
-
+            /* Set new value */
+            cmt_counter_set(ctx->cpu_core_throttles, ts,
+                            (double) core_throttle_count,
+                            2, (char *[]) {tmp1, tmp2});
+        }
 
         /* Only update this entry once */
         if (package_throttles_set[physical_package_id] != 0) {
@@ -175,16 +174,16 @@ static int cpu_thermal_update(struct flb_ne *ctx, uint64_t ts)
                                         "thermal_throttle", "package_throttle_count",
                                         &package_throttle_count);
         if (ret != 0) {
-            flb_plg_error(ctx->ins,
+            flb_plg_debug(ctx->ins,
                           "CPU is missing package_throttle_count: %s",
                           entry->str);
-            continue;
         }
-
-        /* Set new value */
-        cmt_counter_set(ctx->cpu_package_throttles, ts,
-                        (double) package_throttle_count,
-                        1, (char *[]) {tmp2});
+        else {
+            /* Set new value */
+            cmt_counter_set(ctx->cpu_package_throttles, ts,
+                            (double) package_throttle_count,
+                            1, (char *[]) {tmp2});
+        }
     }
     flb_slist_destroy(&list);
 
@@ -363,7 +362,7 @@ static int cpu_stat_update(struct flb_ne *ctx, uint64_t ts)
     return 0;
 }
 
-int ne_cpu_init(struct flb_ne *ctx)
+static int ne_cpu_init(struct flb_ne *ctx)
 {
     int ret;
 
@@ -384,9 +383,10 @@ int ne_cpu_init(struct flb_ne *ctx)
     return 0;
 }
 
-int ne_cpu_update(struct flb_ne *ctx)
+static int ne_cpu_update(struct flb_input_instance *ins, struct flb_config *config, void *in_context)
 {
     uint64_t ts;
+    struct flb_ne *ctx = (struct flb_ne *)in_context;
 
     ts = cfl_time_now();
 
@@ -395,3 +395,10 @@ int ne_cpu_update(struct flb_ne *ctx)
 
     return 0;
 }
+
+struct flb_ne_collector cpu_collector = {
+    .name = "cpu",
+    .cb_init = ne_cpu_init,
+    .cb_update = ne_cpu_update,
+    .cb_exit = NULL
+};

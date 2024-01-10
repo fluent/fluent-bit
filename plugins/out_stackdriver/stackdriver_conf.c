@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -279,6 +279,13 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         return NULL;
     }
 
+    /* Compress (gzip) */
+    tmp = flb_output_get_property("compress", ins);
+    ctx->compress_gzip = FLB_FALSE;
+    if (tmp && strcasecmp(tmp, "gzip") == 0) {
+        ctx->compress_gzip = FLB_TRUE;
+    }
+
     /* labels */
     flb_kv_init(&ctx->config_labels);
     ret = parse_configuration_labels((void *)ctx);
@@ -387,12 +394,13 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
             flb_stackdriver_conf_destroy(ctx);
             return NULL;
         }
-        
+
         /* Service Account Email */
         if (ctx->client_email == NULL) {
             tmp = getenv("SERVICE_ACCOUNT_EMAIL");
             if (tmp) {
                 ctx->creds->client_email = flb_sds_create(tmp);
+                ctx->client_email = ctx->creds->client_email;
             }
         }
 
@@ -401,11 +409,9 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
             tmp = getenv("SERVICE_ACCOUNT_SECRET");
             if (tmp) {
                 ctx->creds->private_key = flb_sds_create(tmp);
+                ctx->private_key = ctx->creds->private_key;
             }
         }
-
-        ctx->private_key = ctx->creds->private_key;
-        ctx->client_email = ctx->creds->client_email;
     }
 
     /*
@@ -544,7 +550,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
                                                      "stackdriver",
                                                      "proc_records_total",
                                                      "Total number of processed records.",
-                                                     2, (char *[]) {"status", "name"});
+                                                     3, (char *[]) {"grpc_code" ,"status", "name"});
 
     ctx->cmt_retried_records_total = cmt_counter_create(ins->cmt,
                                                         "fluentbit",

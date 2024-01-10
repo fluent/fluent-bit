@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@
 /*
  * Go Plugin phases
  * ================
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  1. FLBPluginRegister(context)
  *  2. Inside FLBPluginRegister, it needs to register it self using Fluent Bit API
@@ -110,7 +110,6 @@ int proxy_go_output_init(struct flb_plugin_proxy *proxy)
     if (ret <= 0) {
         flb_error("[go proxy]: plugin '%s' failed to initialize",
                   plugin->name);
-        flb_free(plugin);
         return -1;
     }
 
@@ -254,6 +253,13 @@ int proxy_go_input_cleanup(struct flb_plugin_proxy *ctx,
 
     if (plugin->cb_cleanup) {
         ret = plugin->cb_cleanup(allocated_data);
+    }
+    else {
+        /* If cleanup callback is not registered, we need to cleanup
+         * allocated memory on fluent-bit side. */
+        if (allocated_data != NULL) {
+            free(allocated_data);
+        }
     }
 
     return ret;

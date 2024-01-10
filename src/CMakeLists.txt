@@ -61,6 +61,7 @@ set(src
   flb_plugin.c
   flb_gzip.c
   flb_snappy.c
+  flb_compression.c
   flb_http_client.c
   flb_callback.c
   flb_strptime.c
@@ -71,6 +72,12 @@ set(src
   flb_event.c
   flb_base64.c
   flb_ring_buffer.c
+  flb_log_event_decoder.c
+  flb_log_event_encoder.c
+  flb_log_event_encoder_primitives.c
+  flb_log_event_encoder_dynamic_field.c
+  flb_processor.c
+  flb_reload.c
   )
 
 # Config format
@@ -509,7 +516,13 @@ if(FLB_BINARY)
   endif()
 
   # Detect init system, install upstart, systemd or init.d script
-  if(DEFINED SYSTEMD_UNITDIR)
+
+  # Handle issues with detection on some systems during build
+  if(NOT SYSTEMD_UNITDIR AND IS_DIRECTORY /lib/systemd/system)
+    set(SYSTEMD_UNITDIR  /lib/systemd/system)
+  endif()
+  
+  if(SYSTEMD_UNITDIR)
     set(FLB_SYSTEMD_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.service")
     configure_file(
       "${PROJECT_SOURCE_DIR}/init/systemd.in"

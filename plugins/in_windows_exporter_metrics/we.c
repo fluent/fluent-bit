@@ -35,6 +35,16 @@
 #include "we_logical_disk.h"
 #include "we_cs.h"
 
+/* wmi collectors */
+#include "we_wmi_cpu_info.h"
+#include "we_wmi_logon.h"
+#include "we_wmi_system.h"
+#include "we_wmi_thermalzone.h"
+#include "we_wmi_service.h"
+#include "we_wmi_memory.h"
+#include "we_wmi_paging_file.h"
+#include "we_wmi_process.h"
+
 static int we_timer_cpu_metrics_cb(struct flb_input_instance *ins,
                                    struct flb_config *config, void *in_context)
 {
@@ -121,6 +131,46 @@ static int we_timer_wmi_system_metrics_cb(struct flb_input_instance *ins,
     struct flb_ne *ctx = in_context;
 
     we_wmi_system_update(ctx);
+
+    return 0;
+}
+
+static int we_timer_wmi_service_metrics_cb(struct flb_input_instance *ins,
+                                           struct flb_config *config, void *in_context)
+{
+    struct flb_ne *ctx = in_context;
+
+    we_wmi_service_update(ctx);
+
+    return 0;
+}
+
+static int we_timer_wmi_memory_metrics_cb(struct flb_input_instance *ins,
+                                      struct flb_config *config, void *in_context)
+{
+    struct flb_ne *ctx = in_context;
+
+    we_wmi_memory_update(ctx);
+
+    return 0;
+}
+
+static int we_timer_wmi_paging_file_metrics_cb(struct flb_input_instance *ins,
+                                               struct flb_config *config, void *in_context)
+{
+    struct flb_ne *ctx = in_context;
+
+    we_wmi_paging_file_update(ctx);
+
+    return 0;
+}
+
+static int we_timer_wmi_process_metrics_cb(struct flb_input_instance *ins,
+                                           struct flb_config *config, void *in_context)
+{
+    struct flb_ne *ctx = in_context;
+
+    we_wmi_process_update(ctx);
 
     return 0;
 }
@@ -240,6 +290,34 @@ static void we_wmi_system_update_cb(char *name, void *p1, void *p2)
     we_wmi_system_update(ctx);
 }
 
+static void we_wmi_service_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_we *ctx = p1;
+
+    we_wmi_service_update(ctx);
+}
+
+static void we_wmi_memory_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_we *ctx = p1;
+
+    we_wmi_memory_update(ctx);
+}
+
+static void we_wmi_paging_file_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_we *ctx = p1;
+
+    we_wmi_paging_file_update(ctx);
+}
+
+static void we_wmi_process_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_we *ctx = p1;
+
+    we_wmi_process_update(ctx);
+}
+
 static int we_update_cb(struct flb_we *ctx, char *name)
 {
     int ret;
@@ -262,6 +340,10 @@ struct flb_we_callback ne_callbacks[] = {
     { "thermalzone", we_wmi_thermalzone_update_cb },
     { "logon", we_wmi_logon_update_cb },
     { "system", we_wmi_system_update_cb },
+    { "service", we_wmi_service_update_cb },
+    { "memory", we_wmi_memory_update_cb },
+    { "paging_file", we_wmi_paging_file_update_cb },
+    { "process", we_wmi_process_update_cb },
     { 0 }
 };
 
@@ -295,6 +377,10 @@ static int in_we_init(struct flb_input_instance *in,
     ctx->coll_wmi_cpu_info_fd = -1;
     ctx->coll_wmi_logon_fd = -1;
     ctx->coll_wmi_system_fd = -1;
+    ctx->coll_wmi_service_fd = -1;
+    ctx->coll_wmi_memory_fd = -1;
+    ctx->coll_wmi_paging_file_fd = -1;
+    ctx->coll_wmi_process_fd = -1;
 
     ctx->callback = flb_callback_create(in->name);
     if (!ctx->callback) {
@@ -479,7 +565,8 @@ static int in_we_init(struct flb_input_instance *in,
                     if (ctx->cs_scrape_interval == 0) {
                         flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
                         metric_idx = 5;
-                    } else {
+                    }
+                    else {
                         /* Create the logical_disk collector */
                         ret = flb_input_set_collector_time(in,
                                                            we_timer_cs_metrics_cb,
@@ -574,6 +661,106 @@ static int in_we_init(struct flb_input_instance *in,
                         return -1;
                     }
                 }
+                else if (strncmp(entry->str, "service", 7) == 0) {
+                    if (ctx->wmi_service_scrape_interval == 0) {
+                        flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                        metric_idx = 9;
+                    }
+                    else {
+                        /* Create the service collector */
+                        ret = flb_input_set_collector_time(in,
+                                                           we_timer_wmi_service_metrics_cb,
+                                                           ctx->wmi_service_scrape_interval, 0,
+                                                           config);
+                        if (ret == -1) {
+                            flb_plg_error(ctx->ins,
+                                          "could not set service collector for Windows Exporter Metrics plugin");
+                            return -1;
+                        }
+                        ctx->coll_wmi_service_fd = ret;
+                    }
+
+                    /* Initialize service metric collectors */
+                    ret = we_wmi_service_init(ctx);
+                    if (ret) {
+                        return -1;
+                    }
+                }
+                else if (strncmp(entry->str, "memory", 6) == 0) {
+                    if (ctx->wmi_memory_scrape_interval == 0) {
+                        flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                        metric_idx = 10;
+                    }
+                    else {
+                        /* Create the memory collector */
+                        ret = flb_input_set_collector_time(in,
+                                                           we_timer_wmi_memory_metrics_cb,
+                                                           ctx->wmi_memory_scrape_interval, 0,
+                                                           config);
+                        if (ret == -1) {
+                            flb_plg_error(ctx->ins,
+                                          "could not set memory collector for Windows Exporter Metrics plugin");
+                            return -1;
+                        }
+                        ctx->coll_wmi_memory_fd = ret;
+                    }
+
+                    /* Initialize memory metric collectors */
+                    ret = we_wmi_memory_init(ctx);
+                    if (ret) {
+                        return -1;
+                    }
+                }
+                else if (strncmp(entry->str, "paging_file", 11) == 0) {
+                    if (ctx->wmi_paging_file_scrape_interval == 0) {
+                        flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                        metric_idx = 11;
+                    }
+                    else {
+                        /* Create the paging_file collector */
+                        ret = flb_input_set_collector_time(in,
+                                                           we_timer_wmi_paging_file_metrics_cb,
+                                                           ctx->wmi_paging_file_scrape_interval, 0,
+                                                           config);
+                        if (ret == -1) {
+                            flb_plg_error(ctx->ins,
+                                          "could not set paging_file collector for Windows Exporter Metrics plugin");
+                            return -1;
+                        }
+                        ctx->coll_wmi_paging_file_fd = ret;
+                    }
+
+                    /* Initialize paging_file metric collectors */
+                    ret = we_wmi_paging_file_init(ctx);
+                    if (ret) {
+                        return -1;
+                    }
+                }
+                else if (strncmp(entry->str, "process", 7) == 0) {
+                    if (ctx->wmi_process_scrape_interval == 0) {
+                        flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                        metric_idx = 12;
+                    }
+                    else {
+                        /* Create the process collector */
+                        ret = flb_input_set_collector_time(in,
+                                                           we_timer_wmi_process_metrics_cb,
+                                                           ctx->wmi_process_scrape_interval, 0,
+                                                           config);
+                        if (ret == -1) {
+                            flb_plg_error(ctx->ins,
+                                          "could not set process collector for Windows Exporter Metrics plugin");
+                            return -1;
+                        }
+                        ctx->coll_wmi_process_fd = ret;
+                    }
+
+                    /* Initialize paging_file metric collectors */
+                    ret = we_wmi_process_init(ctx);
+                    if (ret) {
+                        return -1;
+                    }
+                }
                 else {
                     flb_plg_warn(ctx->ins, "Unknown metrics: %s", entry->str);
                     metric_idx = -1;
@@ -644,6 +831,18 @@ static int in_we_exit(void *data, struct flb_config *config)
                 else if (strncmp(entry->str, "system", 6) == 0) {
                     we_wmi_system_exit(ctx);
                 }
+                else if (strncmp(entry->str, "service", 7) == 0) {
+                    we_wmi_service_exit(ctx);
+                }
+                else if (strncmp(entry->str, "memory", 6) == 0) {
+                    we_wmi_memory_exit(ctx);
+                }
+                else if (strncmp(entry->str, "paging_file", 11) == 0) {
+                    we_wmi_paging_file_exit(ctx);
+                }
+                else if (strncmp(entry->str, "process", 7) == 0) {
+                    we_wmi_process_exit(ctx);
+                }
                 else {
                     flb_plg_warn(ctx->ins, "Unknown metrics: %s", entry->str);
                 }
@@ -680,6 +879,18 @@ static int in_we_exit(void *data, struct flb_config *config)
     }
     if (ctx->coll_wmi_system_fd != -1) {
         we_wmi_system_exit(ctx);
+    }
+    if (ctx->coll_wmi_service_fd != -1) {
+        we_wmi_service_exit(ctx);
+    }
+    if (ctx->coll_wmi_memory_fd != -1) {
+        we_wmi_memory_exit(ctx);
+    }
+    if (ctx->coll_wmi_paging_file_fd != -1) {
+        we_wmi_paging_file_exit(ctx);
+    }
+    if (ctx->coll_wmi_process_fd != -1) {
+        we_wmi_process_exit(ctx);
     }
 
     flb_we_config_destroy(ctx);
@@ -721,6 +932,18 @@ static void in_we_pause(void *data, struct flb_config *config)
     if (ctx->coll_wmi_system_fd != -1) {
         flb_input_collector_pause(ctx->coll_wmi_system_fd, ctx->ins);
     }
+    if (ctx->coll_wmi_service_fd != -1) {
+        flb_input_collector_pause(ctx->coll_wmi_service_fd, ctx->ins);
+    }
+    if (ctx->coll_wmi_memory_fd != -1) {
+        flb_input_collector_pause(ctx->coll_wmi_memory_fd, ctx->ins);
+    }
+    if (ctx->coll_wmi_paging_file_fd != -1) {
+        flb_input_collector_pause(ctx->coll_wmi_paging_file_fd, ctx->ins);
+    }
+    if (ctx->coll_wmi_process_fd != -1) {
+        flb_input_collector_pause(ctx->coll_wmi_process_fd, ctx->ins);
+    }
 }
 
 static void in_we_resume(void *data, struct flb_config *config)
@@ -739,6 +962,9 @@ static void in_we_resume(void *data, struct flb_config *config)
     if (ctx->coll_logical_disk_fd != -1) {
         flb_input_collector_resume(ctx->coll_logical_disk_fd, ctx->ins);
     }
+    if (ctx->coll_wmi_process_fd != -1) {
+        flb_input_collector_resume(ctx->coll_wmi_process_fd, ctx->ins);
+    }
     if (ctx->coll_cs_fd != -1) {
         flb_input_collector_resume(ctx->coll_cs_fd, ctx->ins);
     }
@@ -756,6 +982,15 @@ static void in_we_resume(void *data, struct flb_config *config)
     }
     if (ctx->coll_wmi_system_fd != -1) {
         flb_input_collector_resume(ctx->coll_wmi_system_fd, ctx->ins);
+    }
+    if (ctx->coll_wmi_service_fd != -1) {
+        flb_input_collector_resume(ctx->coll_wmi_service_fd, ctx->ins);
+    }
+    if (ctx->coll_wmi_memory_fd != -1) {
+        flb_input_collector_resume(ctx->coll_wmi_memory_fd, ctx->ins);
+    }
+    if (ctx->coll_wmi_paging_file_fd != -1) {
+        flb_input_collector_resume(ctx->coll_wmi_paging_file_fd, ctx->ins);
     }
 }
 
@@ -823,8 +1058,31 @@ static struct flb_config_map config_map[] = {
      "scrape interval to collect system metrics from the node."
     },
     {
+     FLB_CONFIG_MAP_TIME, "collector.service.scrape_interval", "0",
+     0, FLB_TRUE, offsetof(struct flb_we, wmi_service_scrape_interval),
+     "scrape interval to collect service metrics from the node."
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "collector.memory.scrape_interval", "0",
+     0, FLB_TRUE, offsetof(struct flb_we, wmi_memory_scrape_interval),
+     "scrape interval to collect memory metrics from the node."
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "collector.paging_file.scrape_interval", "0",
+     0, FLB_TRUE, offsetof(struct flb_we, wmi_paging_file_scrape_interval),
+     "scrape interval to collect paging_file metrics from the node."
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "collector.process.scrape_interval", "0",
+     0, FLB_TRUE, offsetof(struct flb_we, wmi_process_scrape_interval),
+     "scrape interval to collect process metrics from the node."
+    },
+
+    {
      FLB_CONFIG_MAP_CLIST, "metrics",
-     "cpu,cpu_info,os,net,logical_disk,cs,thermalzone,logon,system",
+     "cpu,cpu_info,os,net,logical_disk,cs,thermalzone,logon,system,service",
      0, FLB_TRUE, offsetof(struct flb_we, metrics),
      "Comma separated list of keys to enable metrics."
     },
@@ -842,6 +1100,31 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "we.net.allow_nic_regex", "/.+/",
      0, FLB_TRUE, offsetof(struct flb_we, raw_allowing_nic),
      "Specify to be scribable regex for net metrics by name of NIC."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "we.service.where", NULL,
+     0, FLB_TRUE, offsetof(struct flb_we, raw_where_clause),
+     "Specify the where clause for retrieving service metrics."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "we.service.include", NULL,
+     0, FLB_TRUE, offsetof(struct flb_we, raw_service_include),
+     "Specify the key value condition pairs for includeing condition to construct where clause of service metrics."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "we.service.exclude", NULL,
+     0, FLB_TRUE, offsetof(struct flb_we, raw_service_exclude),
+     "Specify the key value condition pairs for excludeing condition to construct where clause of service metrics."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "we.process.allow_process_regex", "/.+/",
+     0, FLB_TRUE, offsetof(struct flb_we, raw_allowing_process),
+     "Specify the regex covering the process metrics to collect."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "we.process.deny_process_regex", NULL,
+     0, FLB_TRUE, offsetof(struct flb_we, raw_denying_process),
+     "Specify the regex for process metrics to prevent collection of/ignore."
     },
     /* EOF */
     {0}

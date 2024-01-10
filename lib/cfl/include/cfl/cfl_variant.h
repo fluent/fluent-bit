@@ -31,6 +31,7 @@
 #define CFL_VARIANT_KVLIST    6
 #define CFL_VARIANT_BYTES     7
 #define CFL_VARIANT_REFERENCE 8
+#define CFL_VARIANT_UINT      9
 
 struct cfl_array;
 struct cfl_kvlist;
@@ -43,6 +44,7 @@ struct cfl_variant {
         cfl_sds_t as_bytes;
         unsigned int as_bool;
         int64_t as_int64;
+        uint64_t as_uint64;
         double as_double;
         void *as_reference;
         struct cfl_array *as_array;
@@ -54,6 +56,7 @@ struct cfl_variant *cfl_variant_create_from_string(char *value);
 struct cfl_variant *cfl_variant_create_from_bytes(char *value, size_t length);
 struct cfl_variant *cfl_variant_create_from_bool(int value);
 struct cfl_variant *cfl_variant_create_from_int64(int64_t value);
+struct cfl_variant *cfl_variant_create_from_uint64(uint64_t value);
 struct cfl_variant *cfl_variant_create_from_double(double value);
 struct cfl_variant *cfl_variant_create_from_array(struct cfl_array *value);
 struct cfl_variant *cfl_variant_create_from_kvlist(struct cfl_kvlist *value);

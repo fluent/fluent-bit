@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -27,6 +27,8 @@
 #include <fluent-bit/flb_thread_storage.h>
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
 #include <fluent-bit/flb_mp.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_gzip.h>
 
 #include <ctype.h>
 #include <sys/stat.h>
@@ -644,7 +646,7 @@ static int read_label_map_path_file(struct flb_output_instance *ins, flb_sds_t p
         return -1;
     }
 
-    ret = flb_pack_json(buf, file_size, &msgp_buf, &ret_size, &root_type);
+    ret = flb_pack_json(buf, file_size, &msgp_buf, &ret_size, &root_type, NULL);
     if (ret < 0) {
         flb_plg_error(ins, "flb_pack_json failed");
         fclose(fp);
@@ -904,6 +906,7 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
     int io_flags = 0;
     struct flb_loki *ctx;
     struct flb_upstream *upstream;
+    char *compress;
 
     /* Create context */
     ctx = flb_calloc(1, sizeof(struct flb_loki));
@@ -947,6 +950,15 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
         if (!ctx->ra_tenant_id_key) {
             flb_plg_error(ctx->ins,
                           "could not create record accessor for Tenant ID");
+        }
+    }
+
+    /* Compress (gzip) */
+    compress = (char *) flb_output_get_property("compress", ins);
+    ctx->compress_gzip = FLB_FALSE;
+    if (compress) {
+        if (strcasecmp(compress, "gzip") == 0) {
+            ctx->compress_gzip = FLB_TRUE;
         }
     }
 
@@ -1349,14 +1361,17 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
                                       const void *data, size_t bytes,
                                       flb_sds_t *dynamic_tenant_id)
 {
-    int mp_ok = MSGPACK_UNPACK_SUCCESS;
-    size_t off = 0;
+    // int mp_ok = MSGPACK_UNPACK_SUCCESS;
+    // size_t off = 0;
     flb_sds_t json;
-    struct flb_time tms;
-    msgpack_unpacked result;
+    // struct flb_time tms;
+    // msgpack_unpacked result;
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
-    msgpack_object *obj;
+    // msgpack_object *obj;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    int ret;
 
     /*
      * Fluent Bit uses Loki API v1 to push records in JSON format, this
@@ -1377,8 +1392,16 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
      * }
      */
 
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return NULL;
+    }
+
     /* Initialize msgpack buffers */
-    msgpack_unpacked_init(&result);
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
@@ -1395,34 +1418,32 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
          * keys, so it's safe to put one main stream and attach all the
          * values.
          */
-         msgpack_pack_array(&mp_pck, 1);
+        msgpack_pack_array(&mp_pck, 1);
 
-         /* map content: streams['stream'] & streams['values'] */
-         msgpack_pack_map(&mp_pck, 2);
+        /* map content: streams['stream'] & streams['values'] */
+        msgpack_pack_map(&mp_pck, 2);
 
-         /* streams['stream'] */
-         msgpack_pack_str(&mp_pck, 6);
-         msgpack_pack_str_body(&mp_pck, "stream", 6);
+        /* streams['stream'] */
+        msgpack_pack_str(&mp_pck, 6);
+        msgpack_pack_str_body(&mp_pck, "stream", 6);
 
-         /* Pack stream labels */
-         pack_labels(ctx, &mp_pck, tag, tag_len, NULL);
+        /* Pack stream labels */
+        pack_labels(ctx, &mp_pck, tag, tag_len, NULL);
 
         /* streams['values'] */
-         msgpack_pack_str(&mp_pck, 6);
-         msgpack_pack_str_body(&mp_pck, "values", 6);
-         msgpack_pack_array(&mp_pck, total_records);
+        msgpack_pack_str(&mp_pck, 6);
+        msgpack_pack_str_body(&mp_pck, "values", 6);
+        msgpack_pack_array(&mp_pck, total_records);
 
-         /* Iterate each record and pack it */
-         while (msgpack_unpack_next(&result, data, bytes, &off) == mp_ok) {
-             /* Retrive timestamp of the record */
-             flb_time_pop_from_msgpack(&tms, &result, &obj);
+        while ((ret = flb_log_event_decoder_next(
+                        &log_decoder,
+                        &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+            msgpack_pack_array(&mp_pck, 2);
 
-             msgpack_pack_array(&mp_pck, 2);
-
-             /* Append the timestamp */
-             pack_timestamp(&mp_pck, &tms);
-             pack_record(ctx, &mp_pck, obj, dynamic_tenant_id);
-         }
+            /* Append the timestamp */
+            pack_timestamp(&mp_pck, &log_event.timestamp);
+            pack_record(ctx, &mp_pck, log_event.body, dynamic_tenant_id);
+        }
     }
     else {
         /*
@@ -1432,40 +1453,49 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
          */
         msgpack_pack_array(&mp_pck, total_records);
 
-         /* Iterate each record and pack it */
-         while (msgpack_unpack_next(&result, data, bytes, &off) == mp_ok) {
-             /* Retrive timestamp of the record */
-             flb_time_pop_from_msgpack(&tms, &result, &obj);
+        while ((ret = flb_log_event_decoder_next(
+                        &log_decoder,
+                        &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+            /* map content: streams['stream'] & streams['values'] */
+            msgpack_pack_map(&mp_pck, 2);
 
-             /* map content: streams['stream'] & streams['values'] */
-             msgpack_pack_map(&mp_pck, 2);
+            /* streams['stream'] */
+            msgpack_pack_str(&mp_pck, 6);
+            msgpack_pack_str_body(&mp_pck, "stream", 6);
 
-             /* streams['stream'] */
-             msgpack_pack_str(&mp_pck, 6);
-             msgpack_pack_str_body(&mp_pck, "stream", 6);
+            /* Pack stream labels */
+            pack_labels(ctx, &mp_pck, tag, tag_len, log_event.body);
 
-             /* Pack stream labels */
-             pack_labels(ctx, &mp_pck, tag, tag_len, obj);
+            /* streams['values'] */
+            msgpack_pack_str(&mp_pck, 6);
+            msgpack_pack_str_body(&mp_pck, "values", 6);
+            msgpack_pack_array(&mp_pck, 1);
 
-             /* streams['values'] */
-             msgpack_pack_str(&mp_pck, 6);
-             msgpack_pack_str_body(&mp_pck, "values", 6);
-             msgpack_pack_array(&mp_pck, 1);
+            msgpack_pack_array(&mp_pck, 2);
 
-             msgpack_pack_array(&mp_pck, 2);
-
-             /* Append the timestamp */
-             pack_timestamp(&mp_pck, &tms);
-             pack_record(ctx, &mp_pck, obj, dynamic_tenant_id);
-         }
+            /* Append the timestamp */
+            pack_timestamp(&mp_pck, &log_event.timestamp);
+            pack_record(ctx, &mp_pck, log_event.body, dynamic_tenant_id);
+        }
     }
+
+    flb_log_event_decoder_destroy(&log_decoder);
 
     json = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
 
     msgpack_sbuffer_destroy(&mp_sbuf);
-    msgpack_unpacked_destroy(&result);
 
     return json;
+}
+
+static void payload_release(void *payload, int compressed)
+{
+    if (compressed) {
+        flb_free(payload);
+    }
+    else {
+        flb_sds_destroy(payload);
+    }
 }
 
 static void cb_loki_flush(struct flb_event_chunk *event_chunk,
@@ -1478,10 +1508,17 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
     int out_ret = FLB_OK;
     size_t b_sent;
     flb_sds_t payload = NULL;
+    flb_sds_t out_buf = NULL;
+    size_t out_size;
+    int compressed = FLB_FALSE;
     struct flb_loki *ctx = out_context;
     struct flb_connection *u_conn;
     struct flb_http_client *c;
     struct flb_loki_dynamic_tenant_id_entry *dynamic_tenant_id;
+    struct mk_list *head;
+    struct flb_config_map_val *mv;
+    struct flb_slist_entry *key = NULL;
+    struct flb_slist_entry *val = NULL;
 
     dynamic_tenant_id = FLB_TLS_GET(thread_local_tenant_id);
 
@@ -1511,10 +1548,27 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
                                    flb_sds_len(event_chunk->tag),
                                    event_chunk->data, event_chunk->size,
                                    &dynamic_tenant_id->value);
+
     if (!payload) {
         flb_plg_error(ctx->ins, "cannot compose request payload");
 
         FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    /* Map buffer */
+    out_buf = payload;
+    out_size = flb_sds_len(payload);
+
+    if (ctx->compress_gzip == FLB_TRUE) {
+        ret = flb_gzip_compress((void *) payload, flb_sds_len(payload), (void **) &out_buf, &out_size);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins,
+                          "cannot gzip payload, disabling compression");
+        } else {
+            compressed = FLB_TRUE;
+            /* payload is not longer needed */
+            flb_sds_destroy(payload);
+        }
     }
 
     /* Lookup an available connection context */
@@ -1522,20 +1576,20 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
     if (!u_conn) {
         flb_plg_error(ctx->ins, "no upstream connections available");
 
-        flb_sds_destroy(payload);
+        payload_release(out_buf, compressed);
 
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     /* Create HTTP client context */
-    c = flb_http_client(u_conn, FLB_HTTP_POST, FLB_LOKI_URI,
-                        payload, flb_sds_len(payload),
+    c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
+                        out_buf, out_size,
                         ctx->tcp_host, ctx->tcp_port,
                         NULL, 0);
     if (!c) {
         flb_plg_error(ctx->ins, "cannot create HTTP client context");
 
-        flb_sds_destroy(payload);
+        payload_release(out_buf, compressed);
         flb_upstream_conn_release(u_conn);
 
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -1554,10 +1608,24 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
         flb_http_bearer_auth(c, ctx->bearer_token);
     }
 
+    /* Arbitrary additional headers */
+    flb_config_map_foreach(head, mv, ctx->headers) {
+        key = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+        val = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
+
+        flb_http_add_header(c,
+                            key->str, flb_sds_len(key->str),
+                            val->str, flb_sds_len(val->str));
+    }
+
     /* Add Content-Type header */
     flb_http_add_header(c,
                         FLB_LOKI_CT, sizeof(FLB_LOKI_CT) - 1,
                         FLB_LOKI_CT_JSON, sizeof(FLB_LOKI_CT_JSON) - 1);
+
+    if (compressed == FLB_TRUE) {
+        flb_http_set_content_encoding_gzip(c);
+    }
 
     /* Add X-Scope-OrgID header */
     if (dynamic_tenant_id->value != NULL) {
@@ -1574,7 +1642,7 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
-    flb_sds_destroy(payload);
+    payload_release(out_buf, compressed);
 
     /* Validate HTTP client return status */
     if (ret == 0) {
@@ -1673,12 +1741,19 @@ static int cb_loki_exit(void *data, struct flb_config *config)
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
+     FLB_CONFIG_MAP_STR, "uri", FLB_LOKI_URI,
+     0, FLB_TRUE, offsetof(struct flb_loki, uri),
+     "Specify a custom HTTP URI. It must start with forward slash."
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "tenant_id", NULL,
      0, FLB_TRUE, offsetof(struct flb_loki, tenant_id),
      "Tenant ID used by default to push logs to Loki. If omitted or empty "
      "it assumes Loki is running in single-tenant mode and no X-Scope-OrgID "
      "header is sent."
     },
+
     {
      FLB_CONFIG_MAP_STR, "tenant_id_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_loki, tenant_id_key_config),
@@ -1749,6 +1824,18 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "bearer_token", NULL,
      0, FLB_TRUE, offsetof(struct flb_loki, bearer_token),
      "Set bearer token auth"
+    },
+
+    {
+     FLB_CONFIG_MAP_SLIST_1, "header", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_loki, headers),
+     "Add a HTTP header key/value pair. Multiple headers can be set"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "compress", NULL,
+     0, FLB_FALSE, 0,
+     "Set payload compression in network transfer. Option available is 'gzip'"
     },
 
     /* EOF */

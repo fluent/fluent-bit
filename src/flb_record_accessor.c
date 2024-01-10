@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -218,7 +218,7 @@ static int ra_parse_buffer(struct flb_record_accessor *ra, flb_sds_t buf)
     }
 
     /* Append remaining string */
-    if (i - 1 > end && pre < i) {
+    if ((i - 1 > end && pre < i) || i == 1 /*allow single character*/) {
         end = flb_sds_len(buf);
         rp_str = ra_parse_string(ra, buf, pre, end);
         if (rp_str) {

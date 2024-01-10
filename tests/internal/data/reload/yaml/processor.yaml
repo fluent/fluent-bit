@@ -1,0 +1,41 @@
+service:
+    log_level: info
+    http_server: on
+    http_listen: 0.0.0.0
+    http_port: 2021
+
+
+pipeline:
+    inputs:
+      - name: random
+        tag: test-tag
+        interval_sec: 1
+
+        processors:
+          logs:
+            - name: modify
+              add: hostname monox
+
+            - name: lua
+              call: append_tag
+              code: |
+                  function append_tag(tag, timestamp, record)
+                     new_record = record
+                     new_record["tag"] = tag
+                     return 1, timestamp, new_record
+                  end
+
+    outputs:
+      - name: stdout
+        match: '*'
+
+        processors:
+          logs:
+            - name: lua
+              call: add_field
+              code: |
+                  function add_field(tag, timestamp, record)
+                     new_record = record
+                     new_record["output"] = "new data"
+                     return 1, timestamp, new_record
+                  end

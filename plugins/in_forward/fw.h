@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,6 +22,8 @@
 
 #include <msgpack.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 struct flb_in_fw_config {
     size_t buffer_max_size;         /* Max Buffer size             */
@@ -42,6 +44,9 @@ struct flb_in_fw_config {
     struct flb_downstream *downstream; /* Client manager          */
     struct mk_list connections;     /* List of active connections */
     struct flb_input_instance *ins; /* Input plugin instace       */
+
+    struct flb_log_event_decoder *log_decoder;
+    struct flb_log_event_encoder *log_encoder;
 };
 
 #endif

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
@@ -41,6 +42,7 @@ struct flb_in_thermal_config {
     flb_sds_t type_rgx; /* optional filter by type */
 #endif
     struct flb_input_instance *ins;
+    struct flb_log_event_encoder *log_encoder;
 };
 
 int in_thermal_pre_run(void *in_context, struct flb_config *config);

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -172,6 +172,67 @@ static int send_ack(struct flb_input_instance *in, struct fw_conn *conn,
 
 }
 
+static size_t get_options_metadata(msgpack_object *arr, int expected, size_t *idx)
+{
+    size_t i;
+    msgpack_object *options;
+    msgpack_object k;
+    msgpack_object v;
+
+    if (arr->type != MSGPACK_OBJECT_ARRAY) {
+        return -1;
+    }
+
+    /* Make sure the 'expected' entry position is valid for the array size */
+    if (expected >= arr->via.array.size) {
+        return 0;
+    }
+
+    options = &arr->via.array.ptr[expected];
+    if (options->type == MSGPACK_OBJECT_NIL) {
+        /*
+         * Old Docker 18.x sends a NULL options parameter, just be friendly and
+         * let it pass.
+         */
+        return 0;
+    }
+
+    if (options->type != MSGPACK_OBJECT_MAP) {
+        return -1;
+    }
+
+    if (options->via.map.size <= 0) {
+        return 0;
+    }
+
+    for (i = 0; i < options->via.map.size; i++) {
+        k = options->via.map.ptr[i].key;
+        v = options->via.map.ptr[i].val;
+
+        if (k.type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
+
+        if (k.via.str.size != 8) {
+            continue;
+        }
+
+        if (strncmp(k.via.str.ptr, "metadata", 8) != 0) {
+            continue;
+        }
+
+        if (v.type != MSGPACK_OBJECT_MAP) {
+            return -1;
+        }
+
+        *idx = i;
+
+        return 0;
+    }
+
+    return 0;
+}
+
 static size_t get_options_chunk(msgpack_object *arr, int expected, size_t *idx)
 {
     size_t i;
@@ -232,43 +293,128 @@ static size_t get_options_chunk(msgpack_object *arr, int expected, size_t *idx)
     return 0;
 }
 
-static int fw_process_array(struct flb_input_instance *in,
-                            struct fw_conn *conn,
-                            const char *tag, int tag_len,
-                            msgpack_object *root, msgpack_object *arr, int chunk_id)
+static int fw_process_forward_mode_entry(
+                struct fw_conn *conn,
+                const char *tag, int tag_len,
+                msgpack_object *entry,
+                int chunk_id)
 {
-    int i;
-    msgpack_object entry;
-    msgpack_object options;
-    msgpack_object chunk;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
+    int                  result;
+    struct flb_log_event event;
 
-    /*
-     * This process is not quite optimal from a performance perspective,
-     * we need to fix it later, likely using the offset of the original
-     * msgpack buffer.
-     *
-     * For now we iterate the array and append each entry into a chunk
-     */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    result = flb_event_decoder_decode_object(conn->ctx->log_decoder,
+                                             &event, entry);
 
-    for (i = 0; i < arr->via.array.size; i++) {
-        entry = arr->via.array.ptr[i];
-        msgpack_pack_object(&mp_pck, entry);
+    if (result == FLB_EVENT_DECODER_SUCCESS) {
+        result = flb_log_event_encoder_begin_record(conn->ctx->log_encoder);
     }
 
-    flb_input_log_append(in, tag, tag_len, mp_sbuf.data, mp_sbuf.size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_set_timestamp(conn->ctx->log_encoder,
+                                                     &event.timestamp);
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_set_metadata_from_msgpack_object(
+                    conn->ctx->log_encoder,
+                    event.metadata);
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_set_body_from_msgpack_object(
+                    conn->ctx->log_encoder,
+                    event.body);
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_commit_record(conn->ctx->log_encoder);
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        flb_input_log_append(conn->ctx->ins, tag, tag_len,
+                             conn->ctx->log_encoder->output_buffer,
+                             conn->ctx->log_encoder->output_length);
+    }
+
+    flb_log_event_encoder_reset(conn->ctx->log_encoder);
+
+    if (result != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_warn(conn->ctx->ins, "Event decoder failure : %d", result);
+
+        return -1;
+    }
+
+    return 0;
+}
+
+static int fw_process_message_mode_entry(
+                struct flb_input_instance *in,
+                struct fw_conn *conn,
+                const char *tag, int tag_len,
+                msgpack_object *root,
+                msgpack_object *ts,
+                msgpack_object *body,
+                int chunk_id, int metadata_id)
+{
+    struct flb_time  timestamp;
+    msgpack_object  *metadata;
+    msgpack_object   options;
+    int              result;
+    msgpack_object   chunk;
+
+    metadata = NULL;
+
+    if (chunk_id != -1 || metadata_id != -1) {
+        options = root->via.array.ptr[3];
+
+        if (metadata_id != -1) {
+            metadata = &options.via.map.ptr[metadata_id].val;
+        }
+    }
+
+    result = flb_log_event_decoder_decode_timestamp(ts, &timestamp);
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_begin_record(conn->ctx->log_encoder);
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_set_timestamp(conn->ctx->log_encoder,
+                                                     &timestamp);
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        if (metadata != NULL) {
+            result = flb_log_event_encoder_set_metadata_from_msgpack_object(
+                        conn->ctx->log_encoder,
+                        metadata);
+        }
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_set_body_from_msgpack_object(
+                    conn->ctx->log_encoder,
+                    body);
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_commit_record(conn->ctx->log_encoder);
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        flb_input_log_append(in, tag, tag_len,
+                             conn->ctx->log_encoder->output_buffer,
+                             conn->ctx->log_encoder->output_length);
+    }
+
+    flb_log_event_encoder_reset(conn->ctx->log_encoder);
 
     if (chunk_id != -1) {
-        options = root->via.array.ptr[2];
         chunk = options.via.map.ptr[chunk_id].val;
         send_ack(in, conn, chunk);
     }
 
-    return i;
+    return 0;
 }
 
 static size_t receiver_recv(struct fw_conn *conn, char *buf, size_t try_size) {
@@ -305,15 +451,57 @@ static size_t receiver_to_unpacker(struct fw_conn *conn, size_t request_size,
     return recv_len;
 }
 
+static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
+                      int event_type,
+                      flb_sds_t out_tag, const void *data, size_t len)
+{
+    int ret;
+    size_t off = 0;
+    struct cmt *cmt;
+    struct ctrace *ctr;
+
+    if (event_type == FLB_EVENT_TYPE_LOGS) {
+        flb_input_log_append(conn->in,
+                             out_tag, flb_sds_len(out_tag),
+                             data, len);
+
+        return 0;
+    }
+    else if (event_type == FLB_EVENT_TYPE_METRICS) {
+        ret = cmt_decode_msgpack_create(&cmt, (char *) data, len, &off);
+        if (ret != CMT_DECODE_MSGPACK_SUCCESS) {
+            flb_error("cmt_decode_msgpack_create failed. ret=%d", ret);
+            return -1;
+        }
+        flb_input_metrics_append(conn->in,
+                                 out_tag, flb_sds_len(out_tag),
+                                 cmt);
+    }
+    else if (event_type == FLB_EVENT_TYPE_TRACES) {
+        off = 0;
+        ret = ctr_decode_msgpack_create(&ctr, (char *) data, len, &off);
+        if (ret == -1) {
+            return -1;
+        }
+
+        flb_input_trace_append(ins,
+                               out_tag, flb_sds_len(out_tag),
+                               ctr);
+    }
+
+    return 0;
+}
+
+
 int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
 {
     int ret;
     int stag_len;
-    int c = 0;
     int event_type;
     int contain_options = FLB_FALSE;
-    size_t off = 0;
+    size_t index = 0;
     size_t chunk_id = -1;
+    size_t metadata_id = -1;
     const char *stag;
     flb_sds_t out_tag = NULL;
     size_t bytes;
@@ -328,11 +516,7 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
     msgpack_unpacked result;
     msgpack_unpacker *unp;
     size_t all_used = 0;
-    struct msgpack_sbuffer mp_sbuf;
-    struct msgpack_packer mp_pck;
     struct flb_in_fw_config *ctx = conn->ctx;
-    struct cmt *cmt;
-    struct ctrace *ctr;
 
     /*
      * [tag, time, record]
@@ -362,6 +546,7 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                 conn->buf_len -= all_used;
             }
             flb_sds_destroy(out_tag);
+
             return 0;
         }
 
@@ -421,6 +606,7 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                 msgpack_unpacked_destroy(&result);
                 msgpack_unpacker_free(unp);
                 flb_sds_destroy(out_tag);
+
                 return -1;
             }
 
@@ -430,6 +616,7 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                 msgpack_unpacked_destroy(&result);
                 msgpack_unpacker_free(unp);
                 flb_sds_destroy(out_tag);
+
                 return -1;
             }
 
@@ -447,16 +634,30 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                 flb_sds_destroy(out_tag);
                 return -1;
             }
+
+            /* reference the tag associated with the record */
             stag     = tag.via.str.ptr;
             stag_len = tag.via.str.size;
 
-            /* Copy the tag to the new buffer, prefix it if required */
-            flb_sds_len_set(out_tag, 0); /* clear out_tag before using */
+            /* clear out_tag before using */
+            flb_sds_len_set(out_tag, 0);
+
+            /* Prefix the incoming record tag with a custom prefix */
             if (ctx->tag_prefix) {
+                /* prefix */
                 flb_sds_cat_safe(&out_tag,
                                  ctx->tag_prefix, flb_sds_len(ctx->tag_prefix));
+                /* record tag */
+                flb_sds_cat_safe(&out_tag, stag, stag_len);
             }
-            flb_sds_cat_safe(&out_tag, stag, stag_len);
+            else if (ins->tag && !ins->tag_default) {
+                /* if the input plugin instance Tag has been manually set, use it */
+                flb_sds_cat_safe(&out_tag, ins->tag, flb_sds_len(ins->tag));
+            }
+            else {
+                /* use the tag from the record */
+                flb_sds_cat_safe(&out_tag, stag, stag_len);
+            }
 
             entry = root.via.array.ptr[1];
 
@@ -473,17 +674,36 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                     msgpack_unpacked_destroy(&result);
                     msgpack_unpacker_free(unp);
                     flb_sds_destroy(out_tag);
+
                     return -1;
                 }
 
                 /* Process array */
-                fw_process_array(conn->in, conn,
-                                 out_tag, flb_sds_len(out_tag),
-                                 &root, &entry, chunk_id);
+                ret = 0;
+
+                for(index = 0 ;
+                    index < entry.via.array.size &&
+                    ret == 0 ;
+                    index++) {
+                    ret = fw_process_forward_mode_entry(
+                            conn,
+                            out_tag, flb_sds_len(out_tag),
+                            &entry.via.array.ptr[index],
+                            chunk_id);
+                }
+
+                if (chunk_id != -1) {
+                    msgpack_object options;
+                    msgpack_object chunk;
+
+                    options = root.via.array.ptr[2];
+                    chunk = options.via.map.ptr[chunk_id].val;
+
+                    send_ack(conn->in, conn, chunk);
+                }
             }
             else if (entry.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
                      entry.type == MSGPACK_OBJECT_EXT) {
-
                 /*
                  * Forward format 2 (message mode) : [tag, time, map, ...]
                  */
@@ -507,26 +727,22 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                     return -1;
                 }
 
-                /* Compose the new array */
-                msgpack_sbuffer_init(&mp_sbuf);
-                msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
-                msgpack_pack_array(&mp_pck, 2);
-                msgpack_pack_object(&mp_pck, entry);
-                msgpack_pack_object(&mp_pck, map);
-
-                /* Register data object */
-                flb_input_log_append(conn->in,
-                                     out_tag, flb_sds_len(out_tag),
-                                     mp_sbuf.data, mp_sbuf.size);
-                msgpack_sbuffer_destroy(&mp_sbuf);
-                c++;
-
-                /* Handle ACK response */
-                if (chunk_id != -1) {
-                    chunk = root.via.array.ptr[3].via.map.ptr[chunk_id].val;
-                    send_ack(ctx->ins, conn, chunk);
+                metadata_id = -1;
+                ret = get_options_metadata(&root, 3, &metadata_id);
+                if (ret == -1) {
+                    flb_plg_debug(ctx->ins, "invalid options field");
+                    msgpack_unpacked_destroy(&result);
+                    msgpack_unpacker_free(unp);
+                    flb_sds_destroy(out_tag);
+                    return -1;
                 }
+
+                /* Process map */
+                fw_process_message_mode_entry(
+                    conn->in, conn,
+                    out_tag, flb_sds_len(out_tag),
+                    &root, &entry, &map, chunk_id,
+                    metadata_id);
             }
             else if (entry.type == MSGPACK_OBJECT_STR ||
                      entry.type == MSGPACK_OBJECT_BIN) {
@@ -575,10 +791,29 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                             return -1;
                         }
 
-                        /* Append uncompressed data */
-                        flb_input_log_append(conn->in,
-                                             out_tag, flb_sds_len(out_tag),
-                                             gz_data, gz_size);
+                        event_type = FLB_EVENT_TYPE_LOGS;
+                        if (contain_options) {
+                            ret = get_chunk_event_type(ins, root.via.array.ptr[2]);
+                            if (ret == -1) {
+                                msgpack_unpacked_destroy(&result);
+                                msgpack_unpacker_free(unp);
+                                flb_sds_destroy(out_tag);
+                                flb_free(gz_data);
+                                return -1;
+                            }
+                            event_type = ret;
+                        }
+
+                        ret = append_log(ins, conn,
+                                         event_type,
+                                         out_tag, gz_data, gz_size);
+                        if (ret == -1) {
+                            msgpack_unpacked_destroy(&result);
+                            msgpack_unpacker_free(unp);
+                            flb_sds_destroy(out_tag);
+                            flb_free(gz_data);
+                            return -1;
+                        }
                         flb_free(gz_data);
                     }
                     else {
@@ -594,36 +829,14 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                             event_type = ret;
                         }
 
-                        if (event_type == FLB_EVENT_TYPE_LOGS) {
-                            flb_input_log_append(conn->in,
-                                                 out_tag, flb_sds_len(out_tag),
-                                                 data, len);
-                        }
-                        else if (event_type == FLB_EVENT_TYPE_METRICS) {
-                            ret = cmt_decode_msgpack_create(&cmt, (char *) data, len, &off);
-                            if (ret == -1) {
-                                msgpack_unpacked_destroy(&result);
-                                msgpack_unpacker_free(unp);
-                                flb_sds_destroy(out_tag);
-                                return -1;
-                            }
-                            flb_input_metrics_append(conn->in,
-                                                     out_tag, flb_sds_len(out_tag),
-                                                     cmt);
-                        }
-                        else if (event_type == FLB_EVENT_TYPE_TRACES) {
-                            off = 0;
-                            ret = ctr_decode_msgpack_create(&ctr, (char *) data, len, &off);
-                            if (ret == -1) {
-                                msgpack_unpacked_destroy(&result);
-                                msgpack_unpacker_free(unp);
-                                flb_sds_destroy(out_tag);
-                                return -1;
-                            }
-
-                            flb_input_trace_append(ins,
-                                                   out_tag, flb_sds_len(out_tag),
-                                                   ctr);
+                        ret = append_log(ins, conn,
+                                         event_type,
+                                         out_tag, data, len);
+                        if (ret == -1) {
+                            msgpack_unpacked_destroy(&result);
+                            msgpack_unpacker_free(unp);
+                            flb_sds_destroy(out_tag);
+                            return -1;
                         }
                     }
 

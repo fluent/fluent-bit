@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -39,5 +39,10 @@ int flb_forward_format(struct flb_config *config,
                        const char *tag, int tag_len,
                        const void *data, size_t bytes,
                        void **out_buf, size_t *out_size);
+
+int flb_forward_format_transcode(
+        struct flb_forward *ctx, int format,
+        char *input_buffer, size_t input_length,
+        char **output_buffer, size_t *output_length);
 
 #endif

@@ -54,6 +54,9 @@ int cfl_kvlist_insert_bool(struct cfl_kvlist *list,
 int cfl_kvlist_insert_int64(struct cfl_kvlist *list,
                             char *key, int64_t value);
 
+int cfl_kvlist_insert_uint64(struct cfl_kvlist *list,
+                            char *key, uint64_t value);
+
 int cfl_kvlist_insert_double(struct cfl_kvlist *list,
                              char *key, double value);
 

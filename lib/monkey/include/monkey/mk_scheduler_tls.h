@@ -17,15 +17,23 @@
  *  limitations under the License.
  */
 
-#ifdef MK_HAVE_C_TLS
-
 #ifndef MK_SCHEDULER_TLS_H
 #define MK_SCHEDULER_TLS_H
+
+#ifdef MK_HAVE_C_TLS  /* Use Compiler Thread Local Storage (TLS) */
 
 __thread struct rb_root *mk_tls_sched_cs;
 __thread struct mk_list *mk_tls_sched_cs_incomplete;
 __thread struct mk_sched_notif *mk_tls_sched_worker_notif;
 __thread struct mk_sched_worker *mk_tls_sched_worker_node;
 
+#else
+
+pthread_key_t mk_tls_sched_cs;
+pthread_key_t mk_tls_sched_cs_incomplete;
+pthread_key_t mk_tls_sched_worker_notif;
+pthread_key_t mk_tls_sched_worker_node;
+
 #endif
+
 #endif

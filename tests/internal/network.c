@@ -47,8 +47,8 @@ static void test_client_server(int is_ipv6)
     flb_sockfd_t fd_client;
     flb_sockfd_t fd_server;
     flb_sockfd_t fd_remote = -1;
-    struct mk_event e_client;
-    struct mk_event e_server;
+    struct mk_event e_client = {0};
+    struct mk_event e_server = {0};
     struct mk_event *e_item;
     struct mk_event_loop *evl;
 

@@ -45,7 +45,7 @@ static void cb_check_message_mode(void *ctx, int ffd,
 
     TEST_CHECK(ret == MSGPACK_UNPACK_SUCCESS);
     TEST_CHECK(root.type == MSGPACK_OBJECT_ARRAY);
-    TEST_CHECK(root.via.array.size == 3);
+    TEST_CHECK(root.via.array.size == 4);
 
     /* Tag */
     tag = root.via.array.ptr[0];
@@ -89,7 +89,7 @@ static void cb_check_message_compat_mode(void *ctx, int ffd,
 
     TEST_CHECK(ret == MSGPACK_UNPACK_SUCCESS);
     TEST_CHECK(root.type == MSGPACK_OBJECT_ARRAY);
-    TEST_CHECK(root.via.array.size == 3);
+    TEST_CHECK(root.via.array.size == 4);
 
     /* Tag */
     tag = root.via.array.ptr[0];

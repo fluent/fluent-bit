@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -268,16 +268,32 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
     }
 #endif
 
+    ctx->log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ctx->log_encoder == NULL) {
+        flb_plg_error(ctx->ins, "could not initialize event encoder");
+        flb_systemd_config_destroy(ctx);
+
+        return NULL;
+    }
+
+
     sd_journal_get_data_threshold(ctx->j, &size);
     flb_plg_debug(ctx->ins,
                   "sd_journal library may truncate values "
-                  "to sd_journal_get_data_threshold() bytes: %i", size);
+                  "to sd_journal_get_data_threshold() bytes: %zu", size);
 
     return ctx;
 }
 
 int flb_systemd_config_destroy(struct flb_systemd_config *ctx)
 {
+    if (ctx->log_encoder != NULL) {
+        flb_log_event_encoder_destroy(ctx->log_encoder);
+
+        ctx->log_encoder = NULL;
+    }
+
     /* Close context */
     if (ctx->j) {
         sd_journal_close(ctx->j);

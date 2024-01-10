@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -35,10 +35,12 @@
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_downstream.h>
+#include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_ring_buffer.h>
+#include <fluent-bit/flb_processor.h>
 
 /* input plugin macro helpers */
 #include <fluent-bit/flb_input_plugin.h>
@@ -48,6 +50,7 @@
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
 struct flb_libco_in_params libco_in_param;
+pthread_key_t libco_in_param_key;
 
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
 
@@ -242,11 +245,13 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->p        = plugin;
         instance->tag      = NULL;
         instance->tag_len  = 0;
+        instance->tag_default = FLB_FALSE;
         instance->routable = FLB_TRUE;
         instance->data     = data;
         instance->storage  = NULL;
         instance->storage_type = -1;
         instance->log_level = -1;
+        instance->log_suppress_interval = -1;
         instance->runs_in_coroutine = FLB_FALSE;
 
         /* net */
@@ -336,6 +341,9 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->mem_chunks_size = 0;
         instance->storage_buf_status = FLB_INPUT_RUNNING;
         mk_list_add(&instance->_head, &config->inputs);
+
+        /* processor instance */
+        instance->processor = flb_processor_create(config, instance->name, instance, FLB_PLUGIN_INPUT);
     }
 
     return instance;
@@ -469,8 +477,9 @@ int flb_input_set_property(struct flb_input_instance *ins,
 
     /* Check if the key is a known/shared property */
     if (prop_key_check("tag", k, len) == 0 && tmp) {
-        ins->tag     = tmp;
+        flb_utils_set_plugin_string_property("tag", &ins->tag, tmp);
         ins->tag_len = flb_sds_len(tmp);
+        ins->tag_default = FLB_FALSE;
     }
     else if (prop_key_check("log_level", k, len) == 0 && tmp) {
         ret = flb_log_get_level_str(tmp);
@@ -480,12 +489,20 @@ int flb_input_set_property(struct flb_input_instance *ins,
         }
         ins->log_level = ret;
     }
+    else if (prop_key_check("log_suppress_interval", k, len) == 0 && tmp) {
+        ret = flb_utils_time_to_seconds(tmp);
+        flb_sds_destroy(tmp);
+        if (ret == -1) {
+            return -1;
+        }
+        ins->log_suppress_interval = ret;
+    }
     else if (prop_key_check("routable", k, len) == 0 && tmp) {
         ins->routable = flb_utils_bool(tmp);
         flb_sds_destroy(tmp);
     }
     else if (prop_key_check("alias", k, len) == 0 && tmp) {
-        ins->alias = tmp;
+        flb_utils_set_plugin_string_property("alias", &ins->alias, tmp);
     }
     else if (prop_key_check("mem_buf_limit", k, len) == 0 && tmp) {
         limit = flb_utils_size_to_bytes(tmp);
@@ -496,10 +513,10 @@ int flb_input_set_property(struct flb_input_instance *ins,
         ins->mem_buf_limit = (size_t) limit;
     }
     else if (prop_key_check("listen", k, len) == 0) {
-        ins->host.listen = tmp;
+        flb_utils_set_plugin_string_property("listen", &ins->host.listen, tmp);
     }
     else if (prop_key_check("host", k, len) == 0) {
-        ins->host.name   = tmp;
+        flb_utils_set_plugin_string_property("host", &ins->host.name, tmp);
     }
     else if (prop_key_check("port", k, len) == 0) {
         if (tmp) {
@@ -524,27 +541,16 @@ int flb_input_set_property(struct flb_input_instance *ins,
 
 #ifdef FLB_HAVE_TLS
     else if (prop_key_check("tls", k, len) == 0 && tmp) {
-        if (strcasecmp(tmp, "true") == 0 || strcasecmp(tmp, "on") == 0) {
-            if ((ins->flags & FLB_IO_TLS) == 0) {
-                flb_error("[config] %s don't support TLS", ins->name);
-                flb_sds_destroy(tmp);
-                return -1;
-            }
-
-            ins->use_tls = FLB_TRUE;
-        }
-        else {
-            ins->use_tls = FLB_FALSE;
+        ins->use_tls = flb_utils_bool(tmp);
+        if (ins->use_tls == FLB_TRUE && ((ins->flags & FLB_IO_TLS) == 0)) {
+            flb_error("[config] %s does not support TLS", ins->name);
+            flb_sds_destroy(tmp);
+            return -1;
         }
         flb_sds_destroy(tmp);
     }
     else if (prop_key_check("tls.verify", k, len) == 0 && tmp) {
-        if (strcasecmp(tmp, "true") == 0 || strcasecmp(tmp, "on") == 0) {
-            ins->tls_verify = FLB_TRUE;
-        }
-        else {
-            ins->tls_verify = FLB_FALSE;
-        }
+        ins->tls_verify = flb_utils_bool(tmp);
         flb_sds_destroy(tmp);
     }
     else if (prop_key_check("tls.debug", k, len) == 0 && tmp) {
@@ -552,22 +558,22 @@ int flb_input_set_property(struct flb_input_instance *ins,
         flb_sds_destroy(tmp);
     }
     else if (prop_key_check("tls.vhost", k, len) == 0) {
-        ins->tls_vhost = tmp;
+        flb_utils_set_plugin_string_property("tls.vhost", &ins->tls_vhost, tmp);
     }
     else if (prop_key_check("tls.ca_path", k, len) == 0) {
-        ins->tls_ca_path = tmp;
+        flb_utils_set_plugin_string_property("tls.ca_path", &ins->tls_ca_path, tmp);
     }
     else if (prop_key_check("tls.ca_file", k, len) == 0) {
-        ins->tls_ca_file = tmp;
+        flb_utils_set_plugin_string_property("tls.ca_file", &ins->tls_ca_file, tmp);
     }
     else if (prop_key_check("tls.crt_file", k, len) == 0) {
-        ins->tls_crt_file = tmp;
+        flb_utils_set_plugin_string_property("tls.crt_file", &ins->tls_crt_file, tmp);
     }
     else if (prop_key_check("tls.key_file", k, len) == 0) {
-        ins->tls_key_file = tmp;
+        flb_utils_set_plugin_string_property("tls.key_file", &ins->tls_key_file, tmp);
     }
     else if (prop_key_check("tls.key_passwd", k, len) == 0) {
-        ins->tls_key_passwd = tmp;
+        flb_utils_set_plugin_string_property("tls.key_passwd", &ins->tls_key_passwd, tmp);
     }
 #endif
     else if (prop_key_check("storage.type", k, len) == 0 && tmp) {
@@ -781,8 +787,15 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
 
     mk_list_del(&ins->_head);
 
+    /* ring buffer */
     if (ins->rb) {
+        flb_input_chunk_ring_buffer_cleanup(ins);
         flb_ring_buffer_destroy(ins->rb);
+    }
+
+    /* processor */
+    if (ins->processor) {
+        flb_processor_destroy(ins->processor);
     }
     flb_free(ins);
 }
@@ -835,12 +848,79 @@ static int input_instance_channel_events_init(struct flb_input_instance *ins)
     return 0;
 }
 
+int flb_input_net_property_check(struct flb_input_instance *ins,
+                                 struct flb_config *config)
+{
+    int ret = 0;
+
+    /* Get Downstream net_setup configmap */
+    ins->net_config_map = flb_downstream_get_config_map(config);
+    if (!ins->net_config_map) {
+        flb_input_instance_destroy(ins);
+        return -1;
+    }
+
+    /*
+     * Validate 'net.*' properties: if the plugin use the Downstream interface,
+     * it might receive some networking settings.
+     */
+    if (mk_list_size(&ins->net_properties) > 0) {
+        ret = flb_config_map_properties_check(ins->p->name,
+                                              &ins->net_properties,
+                                              ins->net_config_map);
+        if (ret == -1) {
+            if (config->program_name) {
+                flb_helper("try the command: %s -i %s -h\n",
+                           config->program_name, ins->p->name);
+            }
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+int flb_input_plugin_property_check(struct flb_input_instance *ins,
+                                    struct flb_config *config)
+{
+    int ret = 0;
+    struct mk_list *config_map;
+    struct flb_input_plugin *p = ins->p;
+
+    if (p->config_map) {
+        /*
+         * Create a dynamic version of the configmap that will be used by the specific
+         * instance in question.
+         */
+        config_map = flb_config_map_create(config, p->config_map);
+        if (!config_map) {
+            flb_error("[input] error loading config map for '%s' plugin",
+                      p->name);
+            flb_input_instance_destroy(ins);
+            return -1;
+        }
+        ins->config_map = config_map;
+
+        /* Validate incoming properties against config map */
+        ret = flb_config_map_properties_check(ins->p->name,
+                                              &ins->properties, ins->config_map);
+        if (ret == -1) {
+            if (config->program_name) {
+                flb_helper("try the command: %s -i %s -h\n",
+                           config->program_name, ins->p->name);
+            }
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 int flb_input_instance_init(struct flb_input_instance *ins,
                             struct flb_config *config)
 {
     int ret;
     struct flb_config *ctx = ins->config;
-    struct mk_list *config_map;
     struct flb_input_plugin *p = ins->p;
     int tls_session_mode;
 
@@ -889,6 +969,15 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                            "Number of input records.",
                            1, (char *[]) {"name"});
     cmt_counter_set(ins->cmt_records, ts, 0, 1, (char *[]) {name});
+
+    /* fluentbit_input_ingestion_paused */
+    ins->cmt_ingestion_paused = \
+            cmt_gauge_create(ins->cmt,
+                             "fluentbit", "input",
+                             "ingestion_paused",
+                             "Is the input paused or not?",
+                             1, (char *[]) {"name"});
+    cmt_gauge_set(ins->cmt_ingestion_paused, ts, 0, 1, (char *[]) {name});
 
     /* Storage Metrics */
     if (ctx->storage_metrics == FLB_TRUE) {
@@ -988,31 +1077,8 @@ int flb_input_instance_init(struct flb_input_instance *ins,
      * Before to call the initialization callback, make sure that the received
      * configuration parameters are valid if the plugin is registering a config map.
      */
-    if (p->config_map) {
-        /*
-         * Create a dynamic version of the configmap that will be used by the specific
-         * instance in question.
-         */
-        config_map = flb_config_map_create(config, p->config_map);
-        if (!config_map) {
-            flb_error("[input] error loading config map for '%s' plugin",
-                      p->name);
-            flb_input_instance_destroy(ins);
-            return -1;
-        }
-        ins->config_map = config_map;
-
-        /* Validate incoming properties against config map */
-        ret = flb_config_map_properties_check(ins->p->name,
-                                              &ins->properties, ins->config_map);
-        if (ret == -1) {
-            if (config->program_name) {
-                flb_helper("try the command: %s -i %s -h\n",
-                           config->program_name, ins->p->name);
-            }
-            flb_input_instance_destroy(ins);
-            return -1;
-        }
+    if (flb_input_plugin_property_check(ins, config) == -1) {
+        return -1;
     }
 
 #ifdef FLB_HAVE_TLS
@@ -1023,16 +1089,12 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                           "(certificate file missing)",
                           ins->name);
 
-                flb_input_instance_destroy(ins);
-
                 return -1;
             }
             else if (ins->tls_key_file == NULL) {
                 flb_error("[input %s] error initializing TLS context "
                           "(private key file missing)",
                           ins->name);
-
-                flb_input_instance_destroy(ins);
 
                 return -1;
             }
@@ -1057,8 +1119,6 @@ int flb_input_instance_init(struct flb_input_instance *ins,
             flb_error("[input %s] error initializing TLS context",
                       ins->name);
 
-            flb_input_instance_destroy(ins);
-
             return -1;
         }
     }
@@ -1069,8 +1129,6 @@ int flb_input_instance_init(struct flb_input_instance *ins,
     ins->tls_config_map = flb_tls_get_config_map(config);
 
     if (ins->tls_config_map == NULL) {
-        flb_input_instance_destroy(ins);
-
         return -1;
     }
 
@@ -1087,29 +1145,8 @@ int flb_input_instance_init(struct flb_input_instance *ins,
     /* Init network defaults */
     flb_net_setup_init(&ins->net_setup);
 
-    /* Get Downstream net_setup configmap */
-    ins->net_config_map = flb_downstream_get_config_map(config);
-    if (!ins->net_config_map) {
-        flb_input_instance_destroy(ins);
+    if (flb_input_net_property_check(ins, config) == -1) {
         return -1;
-    }
-
-    /*
-     * Validate 'net.*' properties: if the plugin use the Downstream interface,
-     * it might receive some networking settings.
-     */
-    if (mk_list_size(&ins->net_properties) > 0) {
-        ret = flb_config_map_properties_check(ins->p->name,
-                                              &ins->net_properties,
-                                              ins->net_config_map);
-        if (ret == -1) {
-            if (config->program_name) {
-                flb_helper("try the command: %s -i %s -h\n",
-                           config->program_name, ins->p->name);
-            }
-            flb_input_instance_destroy(ins);
-            return -1;
-        }
     }
 
     /* Initialize the input */
@@ -1120,6 +1157,7 @@ int flb_input_instance_init(struct flb_input_instance *ins,
         /* Sanity check: all non-dynamic tag input plugins must have a tag */
         if (!ins->tag) {
             flb_input_set_property(ins, "tag", ins->name);
+            ins->tag_default = FLB_TRUE;
         }
 
         if (flb_input_is_threaded(ins)) {
@@ -1131,7 +1169,6 @@ int flb_input_instance_init(struct flb_input_instance *ins,
             if (ret != 0) {
                 flb_error("failed initialize input %s",
                           ins->name);
-                flb_input_instance_destroy(ins);
                 return -1;
             }
 
@@ -1140,7 +1177,6 @@ int flb_input_instance_init(struct flb_input_instance *ins,
             if (ret != 0) {
                 flb_error("failed initialize channel events on input %s",
                           ins->name);
-                flb_input_instance_destroy(ins);
                 return -1;
             }
 
@@ -1149,7 +1185,6 @@ int flb_input_instance_init(struct flb_input_instance *ins,
             if (ret) {
                 flb_error("failed while registering ring buffer events on input %s",
                           ins->name);
-                flb_input_instance_destroy(ins);
                 return -1;
             }
         }
@@ -1164,10 +1199,15 @@ int flb_input_instance_init(struct flb_input_instance *ins,
             if (ret != 0) {
                 flb_error("failed initialize input %s",
                           ins->name);
-                flb_input_instance_destroy(ins);
                 return -1;
             }
         }
+    }
+
+    /* initialize processors */
+    ret = flb_processor_init(ins->processor);
+    if (ret == -1) {
+        return -1;
     }
 
     return 0;
@@ -1216,7 +1256,7 @@ int flb_input_init_all(struct flb_config *config)
         /* Initialize instance */
         ret = flb_input_instance_init(ins, config);
         if (ret == -1) {
-            /* do nothing, it's ok if it fails */
+            flb_input_instance_destroy(ins);
             return -1;
         }
     }
@@ -1297,7 +1337,7 @@ int flb_input_check(struct flb_config *config)
 /*
  * API for Input plugins
  * =====================
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  * The Input interface provides a certain number of functions that can be
  * used by Input plugins to configure it own behavior and request specific
  *
@@ -1497,7 +1537,6 @@ static int collector_start(struct flb_input_collector *coll,
 int flb_input_collector_start(int coll_id, struct flb_input_instance *in)
 {
     int ret;
-    int c = 0;
     struct mk_list *head;
     struct flb_input_collector *coll;
 
@@ -1511,7 +1550,6 @@ int flb_input_collector_start(int coll_id, struct flb_input_instance *in)
             }
             return ret;
         }
-        c++;
     }
 
     return -1;
@@ -1641,6 +1679,24 @@ int flb_input_test_pause_resume(struct flb_input_instance *ins, int sleep_second
     return 0;
 }
 
+static void flb_input_ingestion_paused(struct flb_input_instance *ins)
+{
+    if (ins->cmt_ingestion_paused != NULL) {
+        /* cmetrics */
+        cmt_gauge_set(ins->cmt_ingestion_paused, cfl_time_now(), 1,
+                      1, (char *[]) {flb_input_name(ins)});
+    }
+}
+
+static void flb_input_ingestion_resumed(struct flb_input_instance *ins)
+{
+    if (ins->cmt_ingestion_paused != NULL) {
+        /* cmetrics */
+        cmt_gauge_set(ins->cmt_ingestion_paused, cfl_time_now(), 0,
+                      1, (char *[]) {flb_input_name(ins)});
+    }
+}
+
 int flb_input_pause(struct flb_input_instance *ins)
 {
     /* if the instance is already paused, just return */
@@ -1660,14 +1716,24 @@ int flb_input_pause(struct flb_input_instance *ins)
         }
     }
 
+    flb_input_ingestion_paused(ins);
+
     return 0;
 }
 
 int flb_input_resume(struct flb_input_instance *ins)
 {
     if (ins->p->cb_resume) {
-        ins->p->cb_resume(ins->context, ins->config);
+        if (flb_input_is_threaded(ins)) {
+            /* signal the thread event loop about the 'resume' operation */
+            flb_input_thread_instance_resume(ins);
+        }
+        else {
+            ins->p->cb_resume(ins->context, ins->config);
+        }
     }
+
+    flb_input_ingestion_resumed(ins);
 
     return 0;
 }

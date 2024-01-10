@@ -7,6 +7,7 @@ set(src
   cfl_kvlist.c
   cfl_array.c
   cfl_variant.c
+  cfl_checksum.c
   )
 
 # Static Library

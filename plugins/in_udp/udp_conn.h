@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -25,6 +25,10 @@
 
 #define FLB_IN_UDP_CHUNK "32768"
 
+#define FLB_MAP_EXPAND_SUCCESS   0
+#define FLB_MAP_NOT_MODIFIED    -1
+#define FLB_MAP_EXPANSION_ERROR -2
+#define FLB_MAP_EXPANSION_INVALID_VALUE_TYPE -3
 
 struct udp_conn_stream {
     char *tag;

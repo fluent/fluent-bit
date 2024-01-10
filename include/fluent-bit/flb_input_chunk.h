@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -107,6 +107,8 @@ int flb_input_chunk_get_event_type(struct flb_input_chunk *ic);
 
 int flb_input_chunk_get_tag(struct flb_input_chunk *ic,
                             const char **tag_buf, int *tag_len);
+
+void flb_input_chunk_ring_buffer_cleanup(struct flb_input_instance *ins);
 void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data);
 ssize_t flb_input_chunk_get_size(struct flb_input_chunk *ic);
 size_t flb_input_chunk_set_limits(struct flb_input_instance *in);

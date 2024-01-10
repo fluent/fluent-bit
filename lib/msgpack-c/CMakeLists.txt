@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8)
-project(msgpack-c)
+project(msgpack-c C)
 
 set(src
     src/objectc.c

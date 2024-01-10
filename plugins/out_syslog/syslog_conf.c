@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -123,6 +123,10 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
             flb_syslog_config_destroy(ctx);
             return NULL;
         }
+    }
+
+    if (ctx->parsed_format == FLB_SYSLOG_RFC5424 && ctx->allow_longer_sd_id == FLB_TRUE) {
+        flb_plg_warn(ctx->ins, "Allow longer SD-ID. It may violate RFC5424.");
     }
 
     /* validate preset values */

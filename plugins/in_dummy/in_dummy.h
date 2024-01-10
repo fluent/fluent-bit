@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,30 +22,42 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
-#define DEFAULT_DUMMY_MESSAGE "{\"message\":\"dummy\"}"
+#define DEFAULT_DUMMY_MESSAGE  "{\"message\":\"dummy\"}"
+#define DEFAULT_DUMMY_METADATA "{}"
+#define DEFAULT_RATE  "1"
+#define DEFAULT_INTERVAL_SEC "0"
+#define DEFAULT_INTERVAL_NSEC "0"
 
 struct flb_dummy {
-    int coll_fd;
-    int  samples;
+    int  coll_fd;
+
     int  rate;
-    int  samples_count;
     int  copies;
-    char *dummy_message;
-    int  dummy_message_len;
+    int  samples;
+    int  samples_count;
+    int  interval_sec;
+    int  interval_nsec;
+
+    int dummy_timestamp_set;
+    struct flb_time base_timestamp;
+    struct flb_time dummy_timestamp;
+
     int  start_time_sec;
     int  start_time_nsec;
 
     bool fixed_timestamp;
 
-    char *ref_msgpack;
-    size_t ref_msgpack_size;
+    char *ref_metadata_msgpack;
+    size_t ref_metadata_msgpack_size;
 
-    struct flb_time *dummy_timestamp;
-    struct flb_time *base_timestamp;
+    char *ref_body_msgpack;
+    size_t ref_body_msgpack_size;
+
+    struct flb_log_event_encoder *encoder;
+
     struct flb_input_instance *ins;
-
-    msgpack_sbuffer mp_sbuf;
 };
 
 #endif

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -91,7 +91,7 @@ static int sb_append_chunk_to_segregated_backlogs(struct cio_chunk  *target_chun
 int sb_segregate_chunks(struct flb_config *config);
 
 int sb_release_output_queue_space(struct flb_output_instance *output_plugin,
-                                  size_t                      required_space);
+                                  ssize_t                    *required_space);
 
 ssize_t sb_get_releasable_output_queue_space(struct flb_output_instance *output_plugin,
                                              size_t                      required_space);
@@ -256,7 +256,6 @@ static int sb_append_chunk_to_segregated_backlog(struct cio_chunk    *target_chu
     struct sb_out_chunk *chunk;
 
     chunk = sb_allocate_chunk(target_chunk, stream, target_chunk_size);
-
     if (chunk == NULL) {
         flb_errno();
         return -1;
@@ -378,7 +377,16 @@ int sb_segregate_chunks(struct flb_config *config)
             if (ret) {
                 /*
                  * if the chunk could not be segregated, just remove it from the
-                 * queue and continue.
+                 * queue, delete it and continue.
+                 */
+
+                /* If the tag cannot be read it cannot be routed, let's remove it */
+                if (ret == -2) {
+                    cio_chunk_close(chunk, CIO_TRUE);
+                    continue;
+                }
+
+                /* 
                  *
                  * if content size is zero, it's safe to 'delete it'.
                  */
@@ -441,9 +449,10 @@ ssize_t sb_get_releasable_output_queue_space(struct flb_output_instance *output_
 }
 
 int sb_release_output_queue_space(struct flb_output_instance *output_plugin,
-                                  size_t                      required_space)
+                                  ssize_t                    *required_space)
 {
     struct mk_list      *chunk_iterator_tmp;
+    struct cio_chunk    *underlying_chunk;
     struct mk_list      *chunk_iterator;
     size_t               released_space;
     struct flb_sb       *context;
@@ -469,18 +478,17 @@ int sb_release_output_queue_space(struct flb_output_instance *output_plugin,
         chunk = mk_list_entry(chunk_iterator, struct sb_out_chunk, _head);
 
         released_space += chunk->size;
+        underlying_chunk = chunk->chunk;
 
-        cio_chunk_close(chunk->chunk, FLB_TRUE);
-        sb_remove_chunk_from_segregated_backlogs(chunk->chunk, context);
+        sb_remove_chunk_from_segregated_backlogs(underlying_chunk, context);
+        cio_chunk_close(underlying_chunk, FLB_TRUE);
 
-        if (released_space >= required_space) {
+        if (released_space >= *required_space) {
             break;
         }
     }
 
-    if (released_space < required_space) {
-        return -3;
-    }
+    *required_space -= released_space;
 
     return 0;
 }
@@ -618,6 +626,7 @@ static int cb_queue_chunks(struct flb_input_instance *in,
                  * queue but we need to leave it in the remainder queues.
                  */
                 sb_remove_chunk_from_segregated_backlogs(chunk_instance->chunk, ctx);
+                cio_chunk_down(ch);
 
                 /* check our limits */
                 total += size;

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,4 +26,11 @@
 int flb_input_trace_append(struct flb_input_instance *ins,
                            const char *tag, size_t tag_len,
                            struct ctrace *ctr);
+
+int flb_input_trace_append_skip_processor_stages(
+        struct flb_input_instance *ins,
+        size_t processor_starting_stage,
+        const char *tag, size_t tag_len,
+        struct ctrace *ctr);
+
 #endif

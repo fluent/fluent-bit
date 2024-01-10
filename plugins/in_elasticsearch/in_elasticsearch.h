@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2023 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #include <monkey/monkey.h>
 
@@ -36,6 +37,7 @@ struct flb_in_elasticsearch {
     const char *tag_key;
     const char *meta_key;
     flb_sds_t hostname;
+    flb_sds_t es_version;
     char cluster_name[16];
     char node_name[12];
 
@@ -46,6 +48,8 @@ struct flb_in_elasticsearch {
 
     struct flb_downstream *downstream; /* Client manager */
     struct mk_list connections;        /* linked list of connections */
+
+    struct flb_log_event_encoder log_encoder;
 
     struct mk_server *server;
     struct flb_input_instance *ins;

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_sqldb.h>
 #include <fluent-bit/flb_metrics.h>
+#include <fluent-bit/flb_log_event.h>
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
 #endif
@@ -144,6 +145,9 @@ struct flb_tail_config {
 
     /* Plugin input instance */
     struct flb_input_instance *ins;
+
+    struct flb_log_event_encoder log_event_encoder;
+    struct flb_log_event_decoder log_event_decoder;
 
     /* Metrics */
     struct cmt_counter *cmt_files_opened;

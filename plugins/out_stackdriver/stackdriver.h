@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -51,6 +51,8 @@
 #define DEFAULT_LABELS_KEY "logging.googleapis.com/labels"
 #define DEFAULT_SEVERITY_KEY "logging.googleapis.com/severity"
 #define DEFAULT_TRACE_KEY "logging.googleapis.com/trace"
+#define DEFAULT_SPAN_ID_KEY "logging.googleapis.com/spanId"
+#define DEFAULT_TRACE_SAMPLED_KEY "logging.googleapis.com/traceSampled"
 #define DEFAULT_LOG_NAME_KEY "logging.googleapis.com/logName"
 #define DEFAULT_INSERT_ID_KEY "logging.googleapis.com/insertId"
 #define SOURCELOCATION_FIELD_IN_JSON "logging.googleapis.com/sourceLocation"
@@ -83,6 +85,11 @@
 #define FLB_STACKDRIVER_SUCCESSFUL_REQUESTS  1000   /* successful requests */
 #define FLB_STACKDRIVER_FAILED_REQUESTS      1001   /* failed requests */
 #endif
+
+// https://grpc.github.io/grpc/core/md_doc_statuscodes.html
+#define GRPC_STATUS_CODES_SIZE 17
+#define PARTIAL_SUCCESS_GRPC_TYPE "type.googleapis.com/google.logging.v2.WriteLogEntriesPartialErrors"
+#define PARTIAL_SUCCESS_GRPC_TYPE_SIZE 66
 
 struct flb_stackdriver_oauth_credentials {
     /* parsed credentials file */
@@ -158,15 +165,21 @@ struct flb_stackdriver {
     flb_sds_t job;
     flb_sds_t task_id;
 
+    /* Internal variable to reduce string comparisons */
+    int compress_gzip;
+
     /* other */
     flb_sds_t export_to_project_id;
     flb_sds_t resource;
     flb_sds_t severity_key;
     flb_sds_t trace_key;
+    flb_sds_t span_id_key;
+    flb_sds_t trace_sampled_key;
     flb_sds_t log_name_key;
     flb_sds_t http_request_key;
     int http_request_key_size;
     bool autoformat_stackdriver_trace;
+    bool test_log_entry_format;
 
     flb_sds_t stackdriver_agent;
 

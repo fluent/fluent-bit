@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -70,10 +70,6 @@ struct flb_plugin_input_proxy_context {
 
 void *flb_plugin_proxy_symbol(struct flb_plugin_proxy *proxy,
                               const char *symbol);
-
-int flb_plugin_proxy_output_init(struct flb_plugin_proxy *proxy,
-                                 struct flb_output_instance *o_ins,
-                                 struct flb_config *config);
 
 int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,
                               struct flb_config *config);

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -58,7 +58,7 @@ static int decode_json(struct flb_parser_dec *dec,
         return -1;
     }
 
-    ret = flb_pack_json_recs(p, len, &buf, &size, &root_type, &records);
+    ret = flb_pack_json_recs(p, len, &buf, &size, &root_type, &records, NULL);
     if (ret != 0) {
         return -1;
     }

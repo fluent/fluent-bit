@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -29,20 +29,23 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_error.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 #include "in_lib.h"
-
-#include <msgpack.h>
 
 static int in_lib_collect(struct flb_input_instance *ins,
                           struct flb_config *config, void *in_context)
 {
     int ret;
+    int dec_ret;
+    int enc_ret;
     int bytes;
     int out_size;
     int capacity;
     int size;
     char *ptr;
     char *pack;
+    struct flb_log_event record;
+    struct flb_log_event_decoder decoder;
     struct flb_in_lib_config *ctx = in_context;
 
     capacity = (ctx->buf_size - ctx->buf_len);
@@ -88,9 +91,93 @@ static int in_lib_collect(struct flb_input_instance *ins,
     }
     ctx->buf_len = 0;
 
-    /* Pack data */
-    flb_input_log_append(ctx->ins, NULL, 0, pack, out_size);
+    dec_ret = flb_log_event_decoder_init(&decoder, pack, out_size);
+    if (dec_ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %s",
+                      flb_log_event_decoder_get_error_description(dec_ret));
+        flb_free(pack);
+        flb_pack_state_reset(&ctx->state);
+        flb_pack_state_init(&ctx->state);
+        return -1;
+    }
+
+    while ((dec_ret = flb_log_event_decoder_next(
+                      &decoder,
+                      &record)) == FLB_EVENT_DECODER_SUCCESS) {
+        enc_ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
+        if (enc_ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_plg_error(ctx->ins,
+                          "flb_log_event_encoder_begin_record error : %s",
+                          flb_log_event_encoder_get_error_description(enc_ret));
+            flb_log_event_encoder_rollback_record(&ctx->log_encoder);
+            continue;
+        }
+
+        enc_ret = flb_log_event_encoder_set_timestamp(
+                  &ctx->log_encoder,
+                  &record.timestamp);
+        if (enc_ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_plg_error(ctx->ins,
+                          "flb_log_event_encoder_set_timestamp error : %s",
+                          flb_log_event_encoder_get_error_description(enc_ret));
+            flb_log_event_encoder_rollback_record(&ctx->log_encoder);
+            continue;
+        }
+
+        enc_ret = flb_log_event_encoder_set_metadata_from_msgpack_object(
+                  &ctx->log_encoder,
+                  record.metadata);
+        if (enc_ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_plg_error(ctx->ins,
+                          "flb_log_event_encoder_set_metadata_from_msgpack_object error : %s",
+                          flb_log_event_encoder_get_error_description(enc_ret));
+            flb_log_event_encoder_rollback_record(&ctx->log_encoder);
+            continue;
+        }
+
+        enc_ret = flb_log_event_encoder_set_body_from_msgpack_object(
+                  &ctx->log_encoder,
+                  record.body);
+        if (enc_ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_plg_error(ctx->ins,
+                          "flb_log_event_encoder_set_body_from_msgpack_object error : %s",
+                          flb_log_event_encoder_get_error_description(enc_ret));
+            flb_log_event_encoder_rollback_record(&ctx->log_encoder);
+            continue;
+        }
+
+        enc_ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+        if (enc_ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_plg_error(ctx->ins,
+                          "flb_log_event_encoder_commit_record error : %s",
+                          flb_log_event_encoder_get_error_description(enc_ret));
+            flb_log_event_encoder_rollback_record(&ctx->log_encoder);
+            continue;
+        }
+    }
+
+    dec_ret = flb_log_event_decoder_get_last_result(&decoder);
+    if (dec_ret == FLB_EVENT_DECODER_SUCCESS) {
+        flb_input_log_append(ctx->ins, NULL, 0,
+                             ctx->log_encoder.output_buffer,
+                             ctx->log_encoder.output_length);
+
+        ret = 0;
+    }
+    else {
+        flb_plg_error(ctx->ins,
+                      "flb_log_event_decoder_get_last_result error : %s",
+                      flb_log_event_decoder_get_error_description(dec_ret));
+        ret = -1;
+    }
+
+    flb_log_event_encoder_reset(&ctx->log_encoder);
+    flb_log_event_decoder_destroy(&decoder);
+
+    /* Reset the state */
     flb_free(pack);
+
     flb_pack_state_reset(&ctx->state);
     flb_pack_state_init(&ctx->state);
 
@@ -143,15 +230,31 @@ static int in_lib_init(struct flb_input_instance *in,
         return -1;
     }
 
+    ret = flb_log_event_encoder_init(&ctx->log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins, "error initializing event encoder : %d", ret);
+
+        flb_free(ctx->buf_data);
+        flb_free(ctx);
+
+        return -1;
+    }
+
     flb_pack_state_init(&ctx->state);
+
     return 0;
 }
 
 static int in_lib_exit(void *data, struct flb_config *config)
 {
-    (void) config;
     struct flb_in_lib_config *ctx = data;
     struct flb_pack_state *s;
+
+    (void) config;
+
+    flb_log_event_encoder_destroy(&ctx->log_encoder);
 
     if (ctx->buf_data) {
         flb_free(ctx->buf_data);

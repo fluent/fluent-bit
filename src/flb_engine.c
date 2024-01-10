@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
  *  limitations under the License.
  */
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -69,12 +70,17 @@ extern struct flb_aws_error_reporter *error_reporter;
 
 #include <ctraces/ctr_version.h>
 
+static pthread_once_t local_thread_engine_evl_init = PTHREAD_ONCE_INIT;
 FLB_TLS_DEFINE(struct mk_event_loop, flb_engine_evl);
 
+static void flb_engine_evl_init_private()
+{
+    FLB_TLS_INIT(flb_engine_evl);
+}
 
 void flb_engine_evl_init()
 {
-    FLB_TLS_INIT(flb_engine_evl);
+    pthread_once(&local_thread_engine_evl_init, flb_engine_evl_init_private);
 }
 
 struct mk_event_loop *flb_engine_evl_get()
@@ -201,28 +207,33 @@ static inline int handle_input_event(flb_pipefd_t fd, uint64_t ts,
     return 0;
 }
 
-static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
-                                      struct flb_config *config)
+static inline double calculate_chunk_capacity_percent(struct flb_output_instance *ins)
+{
+    /* Currently, total_limit_size 0(K|M)B will be translated as no
+     * limit. So, we need to handle this situation to be unlimited. */
+    if (ins->total_limit_size <= 0) {
+        return 100.0;
+    }
+
+    return 100 * (1.0 - (ins->fs_backlog_chunks_size + ins->fs_chunks_size)/
+                  ((double)ins->total_limit_size));
+}
+
+static inline int handle_output_event(uint64_t ts,
+                                      struct flb_config *config,
+                                      uint64_t val)
 {
     int ret;
-    int bytes;
     int task_id;
     int out_id;
     int retries;
     int retry_seconds;
     uint32_t type;
     uint32_t key;
-    uint64_t val;
     char *name;
     struct flb_task *task;
     struct flb_task_retry *retry;
     struct flb_output_instance *ins;
-
-    bytes = flb_pipe_r(fd, &val, sizeof(val));
-    if (bytes == -1) {
-        flb_errno();
-        return -1;
-    }
 
     /* Get type and key */
     type = FLB_BITS_U64_HIGH(val);
@@ -313,6 +324,10 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
                      flb_output_name(ins), out_id);
         }
 
+        cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
+                      calculate_chunk_capacity_percent(ins),
+                      1, (char *[]) {name});
+
         flb_task_retry_clean(task, ins);
         flb_task_users_dec(task, FLB_TRUE);
     }
@@ -321,6 +336,10 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
             /* cmetrics: output_dropped_records_total */
             cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
                             1, (char *[]) {name});
+
+            cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
+                          calculate_chunk_capacity_percent(ins),
+                          1, (char *[]) {name});
 
             /* OLD metrics API */
 #ifdef FLB_HAVE_METRICS
@@ -353,6 +372,10 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
             cmt_counter_inc(ins->cmt_retries_failed, ts, 1, (char *[]) {name});
             cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
                             1, (char *[]) {name});
+
+            cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
+                          calculate_chunk_capacity_percent(ins),
+                          1, (char *[]) {name});
 
             /* OLD metrics API */
 #ifdef FLB_HAVE_METRICS
@@ -410,6 +433,10 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
             cmt_counter_add(ins->cmt_retried_records, ts, task->records,
                             1, (char *[]) {name});
 
+            cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
+                          calculate_chunk_capacity_percent(ins),
+                          1, (char *[]) {name});
+
             /* OLD metrics API: update the metrics since a new retry is coming */
 #ifdef FLB_HAVE_METRICS
             flb_metrics_sum(FLB_METRIC_OUT_RETRY, 1, ins->metrics);
@@ -423,6 +450,10 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
         cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
                         1, (char *[]) {name});
 
+        cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
+                      calculate_chunk_capacity_percent(ins),
+                      1, (char *[]) {name});
+
         /* OLD API */
 #ifdef FLB_HAVE_METRICS
         flb_metrics_sum(FLB_METRIC_OUT_ERROR, 1, ins->metrics);
@@ -434,6 +465,52 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
     }
 
     return 0;
+}
+
+static inline int handle_output_events(flb_pipefd_t fd,
+                                       struct flb_config *config)
+{
+    uint64_t values[FLB_ENGINE_OUTPUT_EVENT_BATCH_SIZE];
+    int      result;
+    int      bytes;
+    size_t   limit;
+    size_t   index;
+    uint64_t ts;
+
+    memset(&values, 0, sizeof(values));
+
+    bytes = flb_pipe_r(fd, &values, sizeof(values));
+
+    if (bytes == -1) {
+        flb_errno();
+        return -1;
+    }
+
+    limit = floor(bytes / sizeof(uint64_t));
+
+    ts = cfl_time_now();
+
+    for (index = 0 ;
+         index < limit &&
+         index < (sizeof(values) / sizeof(values[0])) ;
+         index++) {
+        if (values[index] == 0) {
+            break;
+        }
+
+        result = handle_output_event(ts, config, values[index]);
+    }
+
+    /* This is wrong, in one hand, if handle_output_event_ fails we should
+     * stop, on the other, we have already consumed the signals from the pipe
+     * so we have to do whatever we can with them.
+     *
+     * And a side effect is that since we have N results but we are not aborting
+     * as soon as we get an error there could be N results to this function which
+     * not only are we not ready to handle but is not even checked at the moment.
+    */
+
+    return result;
 }
 
 static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
@@ -551,6 +628,9 @@ int flb_engine_failed(struct flb_config *config)
     if (ret == -1) {
         flb_error("[engine] fail to dispatch FAILED message");
     }
+
+    /* Waiting flushing log */
+    sleep(1);
 
     return ret;
 }
@@ -977,13 +1057,11 @@ int flb_engine_start(struct flb_config *config)
                 }
             }
             else if (event->type == FLB_ENGINE_EV_OUTPUT) {
-                ts = cfl_time_now();
-
                 /*
                  * Event originated by an output plugin. likely a Task return
                  * status.
                  */
-                handle_output_event(event->fd, ts, config);
+                handle_output_events(event->fd, config);
             }
             else if (event->type == FLB_ENGINE_EV_INPUT) {
                 ts = cfl_time_now();
@@ -1037,10 +1115,10 @@ int flb_engine_shutdown(struct flb_config *config)
     flb_router_exit(config);
 
     /* cleanup plugins */
-    flb_input_exit_all(config);
     flb_filter_exit(config);
     flb_output_exit(config);
     flb_custom_exit(config);
+    flb_input_exit_all(config);
 
     /* Destroy the storage context */
     flb_storage_destroy(config);

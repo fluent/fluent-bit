@@ -10,8 +10,8 @@ use std::io::Write;
 
 #[no_mangle]
 pub extern "C" fn rust_filter(tag: *const c_char, tag_len: u32, time_sec: u32, time_nsec: u32, record: *const c_char, record_len: u32) -> *const u8 {
-  let slice_tag: &[u8] = unsafe { slice::from_raw_parts(tag as *mut u8, tag_len as usize) };
-  let slice_record: &[u8] = unsafe { slice::from_raw_parts(record as *mut u8, record_len as usize) };
+  let slice_tag: &[u8] = unsafe { slice::from_raw_parts(tag as *const u8, tag_len as usize) };
+  let slice_record: &[u8] = unsafe { slice::from_raw_parts(record as *const u8, record_len as usize) };
   let mut vt: Vec<u8> = Vec::new();
   vt.write(slice_tag).expect("Unable to write");
   let vtag = str::from_utf8(&vt).unwrap();

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -183,14 +183,22 @@ static int cpufreq_update(struct flb_ne *ctx)
     return 0;
 }
 
-int ne_cpufreq_init(struct flb_ne *ctx)
+static int ne_cpufreq_init(struct flb_ne *ctx)
 {
     cpufreq_init(ctx);
     return 0;
 }
 
-int ne_cpufreq_update(struct flb_ne *ctx)
+static int ne_cpufreq_update(struct flb_input_instance *ins, struct flb_config *config, void *in_context)
 {
+    struct flb_ne *ctx = (struct flb_ne *)in_context;
     cpufreq_update(ctx);
     return 0;
 }
+
+struct flb_ne_collector cpufreq_collector = {
+    .name = "cpufreq",
+    .cb_init = ne_cpufreq_init,
+    .cb_update = ne_cpufreq_update,
+    .cb_exit = NULL
+};

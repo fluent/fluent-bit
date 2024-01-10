@@ -25,6 +25,9 @@
 option(SANITIZE_THREAD "Enable ThreadSanitizer for sanitized targets." Off)
 
 set(FLAG_CANDIDATES
+    # MSVC uses
+    "/fsanitize=thread"
+    # GNU/Clang
     "-g -fsanitize=thread"
 )
 

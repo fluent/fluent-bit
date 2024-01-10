@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -171,7 +171,7 @@ int sp_process_data(const char *tag, int tag_len,
 int sp_process_data_aggr(const char *buf_data, size_t buf_size,
                          const char *tag, int tag_len,
                          struct flb_sp_task *task,
-                         struct flb_sp *sp);
+                         struct flb_sp *sp, int convert_str_to_num);
 void package_results(const char *tag, int tag_len,
                      char **out_buf, size_t *out_size,
                      struct flb_sp_task *task);

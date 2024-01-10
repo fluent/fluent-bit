@@ -1,7 +1,7 @@
 #!/bin/bash
 set -eu
 
-# Simple script to handle skopeo copying of images from staging to release registryies.
+# Simple script to handle skopeo copying of images from staging to release registries.
 # Simplifies usage in actions and handles any GPG set up.
 #
 # Optional variables:

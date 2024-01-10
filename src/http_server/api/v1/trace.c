@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@
 #include <msgpack.h>
 
 
-struct flb_input_instance *find_input(struct flb_hs *hs, const char *name)
+static struct flb_input_instance *find_input(struct flb_hs *hs, const char *name)
 {
     struct mk_list *head;
     struct flb_input_instance *in;
@@ -224,7 +224,6 @@ static int http_enable_trace(mk_request_t *request, void *data, const char *inpu
     struct flb_hs *hs = data;
     flb_sds_t prefix = NULL;
     flb_sds_t output_name = NULL;
-    int toggled_on = -1;
     msgpack_object *key;
     msgpack_object *val;
     struct mk_list *props = NULL;
@@ -247,7 +246,8 @@ static int http_enable_trace(mk_request_t *request, void *data, const char *inpu
     }
 
     msgpack_unpacked_init(&result);
-    rc = flb_pack_json(request->data.data, request->data.len, &buf, &buf_size, &root_type);
+    rc = flb_pack_json(request->data.data, request->data.len, &buf, &buf_size,
+                       &root_type, NULL);
     if (rc == -1) {
         ret = 503;
         flb_error("unable to parse json parameters");
@@ -477,7 +477,8 @@ static void cb_traces(mk_request_t *request, void *data)
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     msgpack_unpacked_init(&result);
-    ret = flb_pack_json(request->data.data, request->data.len, &buf, &buf_size, &root_type);
+    ret = flb_pack_json(request->data.data, request->data.len, &buf, &buf_size,
+                        &root_type, NULL);
     if (ret == -1) {
         goto unpack_error;
     }

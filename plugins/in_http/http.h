@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #include <monkey/monkey.h>
 
@@ -38,9 +39,14 @@ struct flb_http {
 
     int collector_id;
 
+    /* Success HTTP headers */
+    struct mk_list *success_headers;
+    flb_sds_t success_headers_str;
+
     size_t buffer_max_size;            /* Maximum buffer size */
     size_t buffer_chunk_size;          /* Chunk allocation size */
 
+    struct flb_log_event_encoder log_encoder;
     struct flb_downstream *downstream; /* Client manager */
     struct mk_list connections;        /* linked list of connections */
 

@@ -33,7 +33,7 @@
 static struct mk_rconf *conf;
 
 /* Read database configuration parameters */
-static int mk_security_conf(char *confdir)
+static int mk_security_conf(struct mk_plugin *plugin, char *confdir)
 {
     int n;
     int ret = 0;
@@ -50,13 +50,13 @@ static int mk_security_conf(char *confdir)
     struct mk_list *head;
 
     /* Read configuration */
-    mk_api->str_build(&conf_path, &len, "%s/mandril.conf", confdir);
-    conf = mk_api->config_open(conf_path);
+    plugin->api->str_build(&conf_path, &len, "%s/mandril.conf", confdir);
+    conf = plugin->api->config_open(conf_path);
     if (!conf) {
         return -1;
     }
 
-    section = mk_api->config_section_get(conf, "RULES");
+    section = plugin->api->config_section_get(conf, "RULES");
     if (!section) {
         return -1;
     }
@@ -66,36 +66,39 @@ static int mk_security_conf(char *confdir)
 
         /* Passing to internal struct */
         if (strcasecmp(entry->key, "IP") == 0) {
-            new_ip = mk_api->mem_alloc(sizeof(struct mk_secure_ip_t));
-            n = mk_api->str_search(entry->val, "/", 1);
+            new_ip = plugin->api->mem_alloc(sizeof(struct mk_secure_ip_t));
+            n = plugin->api->str_search(entry->val, "/", 1);
 
             /* subnet */
             if (n > 0) {
                 /* split network addr and netmask */
-                _net  = mk_api->str_copy_substr(entry->val, 0, n);
-                _mask = mk_api->str_copy_substr(entry->val,
-                                                n + 1,
-                                                strlen(entry->val));
+                _net  = plugin->api->str_copy_substr(entry->val, 0, n);
+                _mask = plugin->api->str_copy_substr(entry->val,
+                                                     n + 1,
+                                                     strlen(entry->val));
 
                 /* validations... */
                 if (!_net ||  !_mask) {
-                    mk_warn("Mandril: cannot parse entry '%s' in RULES section",
-                            entry->val);
+                    mk_warn_ex(plugin->api,
+                               "Mandril: cannot parse entry '%s' in RULES section",
+                               entry->val);
                     goto ip_next;
                 }
 
                 /* convert ip string to network address */
                 if (inet_aton(_net, &new_ip->ip) == 0) {
-                    mk_warn("Mandril: invalid ip address '%s' in RULES section",
-                            entry->val);
+                    mk_warn_ex(plugin->api,
+                               "Mandril: invalid ip address '%s' in RULES section",
+                               entry->val);
                     goto ip_next;
                 }
 
                 /* parse mask */
                 new_ip->netmask = strtol(_mask, (char **) NULL, 10);
                 if (new_ip->netmask <= 0 || new_ip->netmask >= 32) {
-                    mk_warn("Mandril: invalid mask value '%s' in RULES section",
-                            entry->val);
+                    mk_warn_ex(plugin->api,
+                               "Mandril: invalid mask value '%s' in RULES section",
+                               entry->val);
                     goto ip_next;
                 }
 
@@ -114,18 +117,19 @@ static int mk_security_conf(char *confdir)
              */
             ip_next:
                 if (_net) {
-                    mk_api->mem_free(_net);
+                    plugin->api->mem_free(_net);
                 }
                 if (_mask) {
-                    mk_api->mem_free(_mask);
+                    plugin->api->mem_free(_mask);
                 }
             }
             else { /* normal IP address */
 
                 /* convert ip string to network address */
                 if (inet_aton(entry->val, &new_ip->ip) == 0) {
-                    mk_warn("Mandril: invalid ip address '%s' in RULES section",
-                            entry->val);
+                    mk_warn_ex(plugin->api,
+                               "Mandril: invalid ip address '%s' in RULES section",
+                               entry->val);
                 }
                 else {
                     new_ip->is_subnet = MK_FALSE;
@@ -135,21 +139,22 @@ static int mk_security_conf(char *confdir)
         }
         else if (strcasecmp(entry->key, "URL") == 0) {
             /* simple allcotion and data association */
-            new_url = mk_api->mem_alloc(sizeof(struct mk_secure_url_t));
+            new_url = plugin->api->mem_alloc(sizeof(struct mk_secure_url_t));
             new_url->criteria = entry->val;
 
             /* link node with main list */
             mk_list_add(&new_url->_head, &mk_secure_url);
         }
         else if (strcasecmp(entry->key, "deny_hotlink") == 0) {
-            new_deny_hotlink = mk_api->mem_alloc(sizeof(*new_deny_hotlink));
+            new_deny_hotlink = plugin->api->mem_alloc(sizeof(*new_deny_hotlink));
             new_deny_hotlink->criteria = entry->val;
 
             mk_list_add(&new_deny_hotlink->_head, &mk_secure_deny_hotlink);
         }
     }
 
-    mk_api->mem_free(conf_path);
+    plugin->api->mem_free(conf_path);
+
     return ret;
 }
 
@@ -196,7 +201,7 @@ static int mk_security_check_ip(int socket)
 }
 
 /* Check if the incoming URL is restricted for some rule */
-static int mk_security_check_url(mk_ptr_t url)
+static int mk_security_check_url(struct mk_plugin *plugin, mk_ptr_t url)
 {
     int n;
     struct mk_list *head;
@@ -204,7 +209,7 @@ static int mk_security_check_url(mk_ptr_t url)
 
     mk_list_foreach(head, &mk_secure_url) {
         entry = mk_list_entry(head, struct mk_secure_url_t, _head);
-        n = mk_api->str_search_n(url.data, entry->criteria, MK_STR_INSENSITIVE, url.len);
+        n = plugin->api->str_search_n(url.data, entry->criteria, MK_STR_INSENSITIVE, url.len);
         if (n >= 0) {
             return -1;
         }
@@ -247,7 +252,8 @@ error:
     return host;
 }
 
-static int mk_security_check_hotlink(mk_ptr_t url, mk_ptr_t host,
+static int mk_security_check_hotlink(struct mk_plugin *plugin,
+                                     mk_ptr_t url, mk_ptr_t host,
                                      struct mk_http_header *referer)
 {
     mk_ptr_t ref_host = parse_referer_host(referer);
@@ -261,13 +267,13 @@ static int mk_security_check_hotlink(mk_ptr_t url, mk_ptr_t host,
         return 0;
     }
     else if (host.data == NULL) {
-        mk_err("No host data.");
+        mk_err_ex(plugin->api, "No host data.");
         return -1;
     }
 
     mk_list_foreach(head, &mk_secure_url) {
         entry = mk_list_entry(head, struct mk_secure_deny_hotlink_t, _head);
-        i = mk_api->str_search_n(url.data, entry->criteria, MK_STR_INSENSITIVE, url.len);
+        i = plugin->api->str_search_n(url.data, entry->criteria, MK_STR_INSENSITIVE, url.len);
         if (i >= 0) {
             break;
         }
@@ -310,17 +316,16 @@ static int mk_security_check_hotlink(mk_ptr_t url, mk_ptr_t host,
     return domains_matched >= 2 ? 0 : -1;
 }
 
-int mk_mandril_plugin_init(struct plugin_api **api, char *confdir)
+int mk_mandril_plugin_init(struct mk_plugin *plugin, char *confdir)
 {
-    mk_api = *api;
-
     /* Init security lists */
     mk_list_init(&mk_secure_ip);
     mk_list_init(&mk_secure_url);
     mk_list_init(&mk_secure_deny_hotlink);
 
     /* Read configuration */
-    mk_security_conf(confdir);
+    mk_security_conf(plugin, confdir);
+
     return 0;
 }
 
@@ -355,18 +360,18 @@ int mk_mandril_stage30(struct mk_plugin *p,
 
     PLUGIN_TRACE("[FD %i] Mandril validating URL", cs->socket);
 
-    if (mk_security_check_url(sr->uri_processed) < 0) {
+    if (mk_security_check_url(p, sr->uri_processed) < 0) {
         PLUGIN_TRACE("[FD %i] Close connection, blocked URL", cs->socket);
-        mk_api->header_set_http_status(sr, MK_CLIENT_FORBIDDEN);
+        p->api->header_set_http_status(sr, MK_CLIENT_FORBIDDEN);
         return MK_PLUGIN_RET_CLOSE_CONX;
     }
 
     PLUGIN_TRACE("[FD %d] Mandril validating hotlinking", cs->socket);
 
-    header = mk_api->header_get(MK_HEADER_REFERER, sr, NULL, 0);
-    if (mk_security_check_hotlink(sr->uri_processed, sr->host, header) < 0) {
+    header = p->api->header_get(MK_HEADER_REFERER, sr, NULL, 0);
+    if (mk_security_check_hotlink(p, sr->uri_processed, sr->host, header) < 0) {
         PLUGIN_TRACE("[FD %i] Close connection, deny hotlinking.", cs->socket);
-        mk_api->header_set_http_status(sr, MK_CLIENT_FORBIDDEN);
+        p->api->header_set_http_status(sr, MK_CLIENT_FORBIDDEN);
         return MK_PLUGIN_RET_CLOSE_CONX;
     }
 

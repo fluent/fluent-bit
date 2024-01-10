@@ -192,10 +192,10 @@ struct split_message_packer *ml_create_packer(const char *tag, char *input_name,
     int i;
     char *key_str = NULL;
     size_t key_str_size = 0;
-    msgpack_object  key;
+    msgpack_object key;
     int check_key = FLB_FALSE;
     size_t len;
-    int map_size = 0;
+    int ret;
 
     packer = flb_calloc(1, sizeof(struct split_message_packer));
     if (!packer) {
@@ -234,8 +234,16 @@ struct split_message_packer *ml_create_packer(const char *tag, char *input_name,
         return NULL;
     }
 
-    msgpack_sbuffer_init(&packer->mp_sbuf);
-    msgpack_packer_init(&packer->mp_pck, &packer->mp_sbuf, msgpack_sbuffer_write);
+    ret = flb_log_event_encoder_init(&packer->log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_error("[partial message concat] Log event encoder initialization error : %d", ret);
+
+        ml_split_message_packer_destroy(packer);
+
+        return NULL;
+    }
 
     /* get the key that is split */
     split_kv = ml_get_key(map, multiline_key_content);
@@ -245,14 +253,34 @@ struct split_message_packer *ml_create_packer(const char *tag, char *input_name,
         return NULL;
     }
 
+    ret = flb_log_event_encoder_begin_record(&packer->log_encoder);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_error("[partial message concat] Log event encoder error : %d", ret);
+
+        ml_split_message_packer_destroy(packer);
+
+        return NULL;
+    }
+
     /* write all of the keys except the split one and the partial metadata */
-    msgpack_pack_array(&packer->mp_pck, 2);
-    flb_time_append_to_msgpack(tm, &packer->mp_pck, 0);
+    ret = flb_log_event_encoder_set_timestamp(
+            &packer->log_encoder, tm);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_error("[partial message concat] Log event encoder error : %d", ret);
+
+        ml_split_message_packer_destroy(packer);
+
+        return NULL;
+    }
 
     kv = map->via.map.ptr;
 
-    /* determine size of new map */
-    for(i=0; i < map->via.map.size; i++) {
+    for(i=0;
+        i < map->via.map.size &&
+        ret == FLB_EVENT_ENCODER_SUCCESS;
+        i++) {
         if ((kv+i) == split_kv) {
             continue;
         }
@@ -281,45 +309,26 @@ struct split_message_packer *ml_create_packer(const char *tag, char *input_name,
             }
         }
 
-        map_size++;
-    }
-    map_size++; /* +1 for split key added later */
-    msgpack_pack_map(&packer->mp_pck, map_size);
-
-    for(i=0; i < map->via.map.size; i++) {
-        if ((kv+i) == split_kv) {
-            continue;
-        }
-
-        key = (kv+i)->key;
-        if (key.type == MSGPACK_OBJECT_BIN) {
-            key_str  = (char *) key.via.bin.ptr;
-            key_str_size = key.via.bin.size;
-            check_key = FLB_TRUE;
-        }
-        if (key.type == MSGPACK_OBJECT_STR) {
-            key_str  = (char *) key.via.str.ptr;
-            key_str_size = key.via.str.size;
-            check_key = FLB_TRUE;
-        }
-
-        len = FLB_MULTILINE_PARTIAL_PREFIX_LEN;
-        if (key_str_size < len) {
-            len = key_str_size;
-        }
-
-        if (check_key == FLB_TRUE) {
-            if (strncmp(FLB_MULTILINE_PARTIAL_PREFIX, key_str, len) == 0) {
-                /* don't pack the partial keys */
-                continue;
-            }
-        }
-        msgpack_pack_object(&packer->mp_pck, (kv+i)->key);
-        msgpack_pack_object(&packer->mp_pck, (kv+i)->val);
+        ret = flb_log_event_encoder_append_body_values(
+                &packer->log_encoder,
+                FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].key),
+                FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].val));
     }
 
-    /* write split kv last, so we can append to it later as needed */
-    msgpack_pack_object(&packer->mp_pck, split_kv->key);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        /* write split kv last, so we can append to it later as needed */
+        ret = flb_log_event_encoder_append_body_msgpack_object(
+                &packer->log_encoder,
+                &split_kv->key);
+    }
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_error("[partial message concat] Log event encoder error : %d", ret);
+
+        ml_split_message_packer_destroy(packer);
+
+        return NULL;
+    }
 
     return packer;
 }
@@ -356,8 +365,6 @@ int ml_split_message_packer_write(struct split_message_packer *packer,
         return -1;
     }
 
-
-
     flb_sds_cat_safe(&packer->buf, val_str, val_str_size);
     packer->last_write_time = ml_current_timestamp();
 
@@ -366,27 +373,78 @@ int ml_split_message_packer_write(struct split_message_packer *packer,
 
 void ml_split_message_packer_complete(struct split_message_packer *packer)
 {
-    int len;
-    len = flb_sds_len(packer->buf);
-    msgpack_pack_str(&packer->mp_pck, len);
-    msgpack_pack_str_body(&packer->mp_pck, packer->buf, len);
+    flb_log_event_encoder_append_body_string(&packer->log_encoder,
+                                             packer->buf,
+                                             flb_sds_len(packer->buf));
+
+    flb_log_event_encoder_commit_record(&packer->log_encoder);
 }
 
-void ml_append_complete_record(char *data, size_t bytes, msgpack_packer *tmp_pck)
+void ml_append_complete_record(struct split_message_packer *packer,
+                               struct flb_log_event_encoder *log_encoder)
 {
-    int ok = MSGPACK_UNPACK_SUCCESS;
-    size_t off = 0;
-    msgpack_unpacked result;
-    msgpack_object *obj;
-    struct flb_time tm;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    int ret;
 
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == ok) {
-        flb_time_pop_from_msgpack(&tm, &result, &obj);
-        msgpack_pack_array(tmp_pck, 2);
-        flb_time_append_to_msgpack(&tm, tmp_pck, 0);
-        msgpack_pack_object(tmp_pck, *obj);
+    ret = flb_log_event_decoder_init(
+            &log_decoder,
+            packer->log_encoder.output_buffer,
+            packer->log_encoder.output_length);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_error("[partial message concat] Log event decoder error : %d",
+                  ret);
+
+        return;
     }
+
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        ret = flb_log_event_encoder_begin_record(log_encoder);
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_set_timestamp(
+                    log_encoder,
+                    &log_event.timestamp);
+        }
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_set_metadata_from_msgpack_object(
+                    log_encoder,
+                    log_event.metadata);
+        }
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_set_body_from_msgpack_object(
+                    log_encoder,
+                    log_event.body);
+        }
+
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_commit_record(log_encoder);
+        }
+        else {
+            flb_log_event_encoder_rollback_record(log_encoder);
+
+            break;
+        }
+    }
+
+    if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA &&
+        log_decoder.offset == packer->log_encoder.output_length) {
+        ret = FLB_EVENT_ENCODER_SUCCESS;
+    }
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_error("[partial message concat] Log event encoder error : %d",
+                  ret);
+
+        return;
+    }
+
+    flb_log_event_decoder_destroy(&log_decoder);
 }
 
 void ml_split_message_packer_destroy(struct split_message_packer *packer)
@@ -407,9 +465,8 @@ void ml_split_message_packer_destroy(struct split_message_packer *packer)
     if (packer->partial_id) {
         flb_sds_destroy(packer->partial_id);
     }
-    if (packer->mp_sbuf.data) {
-        msgpack_sbuffer_destroy(&packer->mp_sbuf);
-    }
+
+    flb_log_event_encoder_destroy(&packer->log_encoder);
 
     flb_free(packer);
 }

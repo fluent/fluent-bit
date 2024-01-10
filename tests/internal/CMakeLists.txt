@@ -38,6 +38,10 @@ set(UNIT_TESTS_FILES
   parser_logfmt.c
   env.c
   log.c
+  log_event_decoder.c
+  log_event_encoder.c
+  processor.c
+  uri.c
   )
 
 # Config format
@@ -59,6 +63,7 @@ if (NOT WIN32)
     ${UNIT_TESTS_FILES}
     gelf.c
     fstore.c
+    reload.c
     )
 endif()
 

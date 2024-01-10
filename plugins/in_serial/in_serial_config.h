@@ -2,7 +2,7 @@
 
 /*  Serial input plugin for Fluent Bit
  *  ==================================
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *  Copyright (C) 2015-2016 Takeshi HASEGAWA
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,6 +28,7 @@
 #include <msgpack.h>
 
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 struct flb_in_serial_config {
     int fd;           /* Socket to destination/backend */
@@ -61,6 +62,7 @@ struct flb_in_serial_config {
 
     /* Input instance reference */
     struct flb_input_instance *i_ins;
+    struct flb_log_event_encoder *log_encoder;
 
     /*
      * If (format == FLB_SERIAL_FORMAT_JSON), we use this pack_state

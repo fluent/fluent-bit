@@ -70,6 +70,10 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     if (list != NULL) {
         flb_utils_split_free(list);
     }
+    struct mk_list *list2 = flb_utils_split_quoted(null_terminated, 'A', 3);
+    if (list2 != NULL) {
+        flb_utils_split_free(list2);
+    }
 
     if (flb_utils_url_split(null_terminated, &prot, &host, &port, &uri) == 0) {
         flb_free(prot);

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@
 #include <msgpack.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 
 #define DEFAULT_BUF_SIZE            8192
 #define MIN_BUF_SIZE                2048
@@ -47,6 +48,7 @@ struct flb_in_de_config
     int retry_coll_id;
 
     struct flb_parser *parser;
+    struct flb_log_event_encoder log_encoder;
     struct flb_input_instance *ins; /* Input plugin instace */
 
 };

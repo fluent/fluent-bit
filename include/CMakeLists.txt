@@ -10,6 +10,12 @@ install(FILES ${headers}
     COMPONENT headers
     PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
 
+file(GLOB headers "fluent-bit/config_format/*.h")
+install(FILES ${headers}
+    DESTINATION ${FLB_INSTALL_INCLUDEDIR}/fluent-bit/config_format/
+    COMPONENT headers
+    PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
+
 file(GLOB headers "fluent-bit/tls/*.h")
 install(FILES ${headers}
     DESTINATION ${FLB_INSTALL_INCLUDEDIR}/fluent-bit/tls/

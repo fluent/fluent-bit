@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -460,7 +460,7 @@ int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out
 static int build_plugin_help(struct flb_config *config, int type, char *name,
                              char **out_buf, size_t *out_size)
 {
-    void *help_buf;
+    void *help_buf = NULL;
     size_t help_size = 0;
     struct flb_custom_instance *c = NULL;
     struct flb_input_instance *i = NULL;

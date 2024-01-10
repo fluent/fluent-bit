@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -109,9 +109,6 @@ static int single_value_per_record(struct flb_input_instance *i_ins,
                                    struct flb_in_head_config *ctx)
 {
     int ret = -1;
-    int num_map = 1;
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
 
     ctx->buf[0] = '\0'; /* clear buf */
     ctx->buf_len =   0;
@@ -126,41 +123,50 @@ static int single_value_per_record(struct flb_input_instance *i_ins,
     flb_plg_trace(ctx->ins, "%s read_len=%zd buf_size=%zu", __FUNCTION__,
                   ctx->buf_len, ctx->buf_size);
 
-    if (ctx->add_path == FLB_TRUE) {
-        num_map++;
+    ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_current_timestamp(
+                &ctx->log_encoder);
     }
 
-    /* Initialize local msgpack buffer */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_append_body_values(
+                &ctx->log_encoder,
+                FLB_LOG_EVENT_CSTRING_VALUE(ctx->key),
+                FLB_LOG_EVENT_STRING_VALUE(ctx->buf, ctx->buf_len));
 
-    /* Pack data */
-    msgpack_pack_array(&mp_pck, 2);
-    flb_pack_time_now(&mp_pck);
-    msgpack_pack_map(&mp_pck, num_map);
-
-    msgpack_pack_str(&mp_pck, ctx->key_len);
-    msgpack_pack_str_body(&mp_pck, ctx->key,
-                          ctx->key_len);
-    msgpack_pack_str(&mp_pck, ctx->buf_len);
-    msgpack_pack_str_body(&mp_pck,
-                          ctx->buf, ctx->buf_len);
-
-    if (ctx->add_path == FLB_TRUE) {
-        msgpack_pack_str(&mp_pck, 4);
-        msgpack_pack_str_body(&mp_pck, "path", 4);
-        msgpack_pack_str(&mp_pck, ctx->path_len);
-        msgpack_pack_str_body(&mp_pck,
-                              ctx->filepath, ctx->path_len);
     }
 
-    ret = 0;
+    if (ctx->add_path) {
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &ctx->log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE("path"),
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->filepath, ctx->path_len));
+        }
+    }
 
-    flb_input_log_append(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        flb_input_log_append(i_ins, NULL, 0,
+                             ctx->log_encoder.output_buffer,
+                             ctx->log_encoder.output_length);
+
+        ret = 0;
+    }
+    else {
+        flb_plg_error(i_ins, "Error encoding record : %d", ret);
+
+        ret = -1;
+    }
+
+    flb_log_event_encoder_reset(&ctx->log_encoder);
 
     return ret;
-
 }
 
 #define KEY_LEN_MAX 32
@@ -169,13 +175,11 @@ static int split_lines_per_record(struct flb_input_instance *i_ins,
 {
     FILE *fp = NULL;
     int i;
+    int ret;
     size_t str_len;
     size_t key_len;
-    int num_map = ctx->lines;
     char *ret_buf;
     char key_str[KEY_LEN_MAX] = {0};
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
 
     fp = fopen(ctx->filepath, "r");
     if (fp == NULL) {
@@ -183,25 +187,20 @@ static int split_lines_per_record(struct flb_input_instance *i_ins,
         return -1;
     }
 
-    if (ctx->add_path == FLB_TRUE) {
-        num_map++;
+    ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_current_timestamp(
+                &ctx->log_encoder);
     }
 
-    /* Initialize local msgpack buffer */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
-    /* Pack data */
-    msgpack_pack_array(&mp_pck, 2);
-    flb_pack_time_now(&mp_pck);
-    msgpack_pack_map(&mp_pck, num_map);
-
-    if (ctx->add_path == FLB_TRUE) {
-        msgpack_pack_str(&mp_pck, 4);
-        msgpack_pack_str_body(&mp_pck, "path", 4);
-        msgpack_pack_str(&mp_pck, ctx->path_len);
-        msgpack_pack_str_body(&mp_pck,
-                              ctx->filepath, ctx->path_len);
+    if (ctx->add_path) {
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &ctx->log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE("path"),
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->filepath, ctx->path_len));
+        }
     }
 
     for (i = 0; i < ctx->lines; i++) {
@@ -220,17 +219,36 @@ static int split_lines_per_record(struct flb_input_instance *i_ins,
             key_len = KEY_LEN_MAX;
         }
 
-        msgpack_pack_str(&mp_pck, key_len);
-        msgpack_pack_str_body(&mp_pck, key_str, key_len);
-        msgpack_pack_str(&mp_pck, str_len);
-        msgpack_pack_str_body(&mp_pck,
-                              ctx->buf, str_len);
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &ctx->log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE(key_str),
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->buf, ctx->buf_len));
+        }
     }
 
-    flb_input_log_append(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        flb_input_log_append(i_ins, NULL, 0,
+                             ctx->log_encoder.output_buffer,
+                             ctx->log_encoder.output_length);
+
+        ret = 0;
+    }
+    else {
+        flb_plg_error(i_ins, "Error encoding record : %d", ret);
+
+        ret = -1;
+    }
+
+    flb_log_event_encoder_reset(&ctx->log_encoder);
+
     fclose(fp);
-    return 0;
+
+    return ret;
 }
 
 
@@ -281,6 +299,15 @@ static int in_head_config_read(struct flb_in_head_config *ctx,
         ctx->path_len = strlen(ctx->filepath);
     }
 
+    ret = flb_log_event_encoder_init(&ctx->log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins, "error initializing event encoder : %d", ret);
+
+        return -1;
+    }
+
     flb_plg_debug(ctx->ins, "buf_size=%zu path=%s",
                   ctx->buf_size, ctx->filepath);
     flb_plg_debug(ctx->ins, "interval_sec=%d interval_nsec=%d",
@@ -295,10 +322,13 @@ static void delete_head_config(struct flb_in_head_config *ctx)
         return;
     }
 
+    flb_log_event_encoder_destroy(&ctx->log_encoder);
+
     /* release buffer */
     if (ctx->buf) {
         flb_free(ctx->buf);
     }
+
     flb_free(ctx);
 }
 

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -181,14 +181,10 @@ struct flb_downstream *flb_downstream_create(int transport, int flags,
  */
 static int prepare_destroy_conn(struct flb_connection *connection)
 {
-    struct flb_stream *stream;
-
-    stream = connection->stream;
-
     flb_trace("[downstream] destroy connection #%i to %s",
               connection->fd, flb_connection_get_remote_address(connection));
 
-    if (stream->flags & FLB_IO_ASYNC) {
+    if (MK_EVENT_IS_REGISTERED((&connection->event))) {
         mk_event_del(connection->evl, &connection->event);
     }
 
@@ -399,6 +395,7 @@ int flb_downstream_conn_timeouts(struct mk_list *list)
     struct mk_list        *s_head;
     struct mk_list        *head;
     int                    drop;
+    int                  inject;
     struct mk_list        *tmp;
     time_t                 now;
 
@@ -456,16 +453,18 @@ int flb_downstream_conn_timeouts(struct mk_list *list)
                     }
                 }
 
+                inject = FLB_FALSE;
                 if (connection->event.status != MK_EVENT_NONE) {
+                    inject = FLB_TRUE;
+                }
+                connection->net_error = ETIMEDOUT;
+                prepare_destroy_conn(connection);
+                if (inject == FLB_TRUE) {
                     mk_event_inject(connection->evl,
                                     &connection->event,
                                     connection->event.mask,
                                     FLB_TRUE);
                 }
-
-                connection->net_error = ETIMEDOUT;
-
-                prepare_destroy_conn(connection);
             }
         }
 

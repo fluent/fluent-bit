@@ -28,10 +28,17 @@ char *get_output(void)
     return val;
 }
 
+void clear_output()
+{
+    pthread_mutex_lock(&result_mutex);
+    output = NULL;
+    pthread_mutex_unlock(&result_mutex);
+}
+
 int callback_test(void* data, size_t size, void* cb_data)
 {
     if (size > 0) {
-        flb_debug("[test_filter_parser] received message: %s", data);
+        flb_debug("[test_filter_parser] received message: %s", (char*)data);
         set_output(data); /* success */
     }
     return 0;
@@ -83,6 +90,8 @@ void flb_test_filter_parser_extract_fields()
     struct flb_lib_out_cb cb;
     cb.cb   = callback_test;
     cb.data = NULL;
+
+    clear_output();
 
     ctx = flb_create();
 
@@ -169,6 +178,8 @@ void flb_test_filter_parser_reserve_data_off()
     cb.cb   = callback_test;
     cb.data = NULL;
 
+    clear_output();
+
     ctx = flb_create();
 
     /* Configure service */
@@ -243,6 +254,8 @@ void flb_test_filter_parser_handle_time_key()
     struct flb_lib_out_cb cb;
     cb.cb   = callback_test;
     cb.data = NULL;
+
+    clear_output();
 
     ctx = flb_create();
 
@@ -319,6 +332,8 @@ void flb_test_filter_parser_handle_time_key_with_fractional_timestamp()
     int out_ffd;
     int filter_ffd;
     struct flb_parser *parser;
+
+    clear_output();
 
     ctx = flb_create();
 
@@ -399,6 +414,8 @@ void flb_test_filter_parser_handle_time_key_with_time_zone()
     struct flb_lib_out_cb cb;
     cb.cb   = callback_test;
     cb.data = NULL;
+
+    clear_output();
 
     ctx = flb_create();
 
@@ -489,6 +506,8 @@ void flb_test_filter_parser_ignore_malformed_time()
     cb.cb   = callback_test;
     cb.data = NULL;
 
+    clear_output();
+
     ctx = flb_create();
 
     /* Configure service */
@@ -565,6 +584,8 @@ void flb_test_filter_parser_preserve_original_field()
     struct flb_lib_out_cb cb;
     cb.cb   = callback_test;
     cb.data = NULL;
+
+    clear_output();
 
     ctx = flb_create();
 
@@ -648,6 +669,8 @@ void flb_test_filter_parser_first_matched_when_mutilple_parser()
     struct flb_lib_out_cb cb;
     cb.cb   = callback_test;
     cb.data = NULL;
+
+    clear_output();
 
     ctx = flb_create();
 
@@ -733,6 +756,8 @@ void flb_test_filter_parser_skip_empty_values_false()
     struct flb_lib_out_cb cb;
     cb.cb   = callback_test;
     cb.data = NULL;
+
+    clear_output();
 
     ctx = flb_create();
 

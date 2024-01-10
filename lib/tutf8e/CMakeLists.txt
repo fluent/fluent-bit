@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8)
-project(tutf8e)
+project(tutf8e C)
 
 # Not supported: -std=c90 (lacks support for inline)
 # Supported:     -std=gnu90, -std=c99 or -std=gnu99

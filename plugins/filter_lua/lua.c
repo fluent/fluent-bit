@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -27,6 +27,8 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 #include <msgpack.h>
 
 #include "fluent-bit/flb_mem.h"
@@ -34,11 +36,9 @@
 #include "lua_config.h"
 #include "mpack/mpack.h"
 
-static int cb_lua_init(struct flb_filter_instance *f_ins,
-                       struct flb_config *config,
-                       void *data)
+static int cb_lua_pre_run(struct flb_filter_instance *f_ins,
+                          struct flb_config *config, void *data)
 {
-    int err;
     int ret;
     (void) data;
     struct lua_filter *ctx;
@@ -70,7 +70,54 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
         ret = flb_luajit_load_script(ctx->lua, ctx->script);
     }
 
+    flb_luajit_destroy(ctx->lua);
+    lua_config_destroy(ctx);
+
+    return ret;
+}
+
+static int cb_lua_init(struct flb_filter_instance *f_ins,
+                       struct flb_config *config,
+                       void *data)
+{
+    int err;
+    int ret;
+    (void) data;
+    struct lua_filter *ctx;
+    struct flb_luajit *lj;
+
+    /* Create context */
+    ctx = lua_config_create(f_ins, config);
+    if (!ctx) {
+        flb_error("[filter_lua] filter cannot be loaded");
+        return -1;
+    }
+
+    /* Create LuaJIT state/vm */
+    lj = flb_luajit_create(config);
+    if (!lj) {
+        lua_config_destroy(ctx);
+        return -1;
+    }
+    ctx->lua = lj;
+
+    if (ctx->enable_flb_null) {
+        flb_lua_enable_flb_null(lj->state);
+    }
+
+    /* Lua script source code */
+    if (ctx->code) {
+        ret = flb_luajit_load_buffer(ctx->lua,
+                                     ctx->code, flb_sds_len(ctx->code),
+                                     "fluentbit.lua");
+    }
+    else {
+        /* Load Script / file path*/
+        ret = flb_luajit_load_script(ctx->lua, ctx->script);
+    }
+
     if (ret == -1) {
+        flb_luajit_destroy(ctx->lua);
         lua_config_destroy(ctx);
         return -1;
     }
@@ -106,6 +153,8 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
 
 #ifdef FLB_FILTER_LUA_USE_MPACK
 
+#pragma message "This code does not support the new log event encoding format"
+
 static void mpack_buffer_flush(mpack_writer_t* writer, const char* buffer, size_t count)
 {
     struct lua_filter *ctx = writer->context;
@@ -124,14 +173,18 @@ static void pack_result_mpack(lua_State *l,
         return;
     }
 
-    len = flb_lua_arraylength(l);
+    len = flb_lua_arraylength(l, -1);
     if (len > 0) {
         /* record split */
         for (i = 1; i <= len; i++) {
             /* write array tag */
             mpack_write_tag(writer, mpack_tag_array(2));
+            /* write header tag */
+            mpack_write_tag(writer, mpack_tag_array(2));
             /* write timestamp */
             flb_time_append_to_mpack(writer, t, 0);
+            /* write metadata */
+            mpack_write_tag(writer, mpack_tag_map(0));
             /* get the subrecord */
             lua_rawgeti(l, -1, i);
             /* convert */
@@ -142,8 +195,12 @@ static void pack_result_mpack(lua_State *l,
     else {
         /* write array tag */
         mpack_write_tag(writer, mpack_tag_array(2));
+        /* write header tag */
+        mpack_write_tag(writer, mpack_tag_array(2));
         /* write timestamp */
         flb_time_append_to_mpack(writer, t, 0);
+        /* write metadata */
+        mpack_write_tag(writer, mpack_tag_map(0));
         /* convert */
         flb_lua_tompack(l, writer, 0, l2cc);
     }
@@ -179,6 +236,12 @@ static int cb_lua_filter_mpack(const void *data, size_t bytes,
         /* Save record start */
         const char *record_start = reader.data;
         size_t record_size = 0;
+
+        /* This is a hack, in order to have this thing work
+         * we rely on flb_time_pop_from_mpack skipping the
+         * metadata map.
+         */
+
         /* Get timestamp */
         if (flb_time_pop_from_mpack(&t, &reader)) {
             /* failed to parse */
@@ -320,77 +383,99 @@ static int cb_lua_filter_mpack(const void *data, size_t bytes,
 
 #else
 
-static int pack_result (struct flb_time *ts, msgpack_packer *pck, msgpack_sbuffer *sbuf,
+static int pack_record(struct lua_filter *ctx,
+                       struct flb_log_event_encoder *log_encoder,
+                       struct flb_time *ts,
+                       msgpack_object *metadata,
+                       msgpack_object *body)
+{
+    int ret;
+
+    ret = flb_log_event_encoder_begin_record(log_encoder);
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_timestamp(log_encoder, ts);
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS && metadata != NULL) {
+        ret = flb_log_event_encoder_set_metadata_from_msgpack_object(
+                log_encoder, metadata);
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_body_from_msgpack_object(
+                log_encoder, body);
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_commit_record(log_encoder);
+    }
+
+    return ret;
+}
+
+static int pack_result (struct lua_filter *ctx, struct flb_time *ts,
+                        msgpack_object *metadata,
+                        struct flb_log_event_encoder *log_encoder,
                         char *data, size_t bytes)
 {
     int ret;
-    int size;
-    int i;
+    size_t index = 0;
     size_t off = 0;
-    msgpack_object root;
+    msgpack_object *entry;
     msgpack_unpacked result;
 
     msgpack_unpacked_init(&result);
+
     ret = msgpack_unpack_next(&result, data, bytes, &off);
+
     if (ret != MSGPACK_UNPACK_SUCCESS) {
         msgpack_unpacked_destroy(&result);
+
         return FLB_FALSE;
     }
 
-    root = result.data;
-    /* check for array */
-    if (root.type == MSGPACK_OBJECT_ARRAY) {
-        size = root.via.array.size;
-        if (size > 0) {
-            msgpack_object *map = root.via.array.ptr;
-            for (i = 0; i < size; i++) {
-                if ((map+i)->type != MSGPACK_OBJECT_MAP) {
-                    msgpack_unpacked_destroy(&result);
-                    return FLB_FALSE;
-                }
-                if ((map+i)->via.map.size <= 0) {
-                    msgpack_unpacked_destroy(&result);
-                    return FLB_FALSE;
-                }
-                /* main array */
-                msgpack_pack_array(pck, 2);
+    if (result.data.type == MSGPACK_OBJECT_MAP) {
+        ret = pack_record(ctx, log_encoder,
+                          ts, metadata, &result.data);
 
-                /* timestamp: convert from double to Fluent Bit format */
-                flb_time_append_to_msgpack(ts, pck, 0);
+        msgpack_unpacked_destroy(&result);
 
-                /* Pack lua table */
-                msgpack_pack_object(pck, *(map+i));
-            }
-            msgpack_unpacked_destroy(&result);
-            return FLB_TRUE;
-        }
-        else {
-            msgpack_unpacked_destroy(&result);
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
             return FLB_FALSE;
         }
-    }
 
-    /* check for map */
-    if (root.type != MSGPACK_OBJECT_MAP) {
+        return FLB_TRUE;
+    }
+    else if (result.data.type == MSGPACK_OBJECT_ARRAY) {
+        for (index = 0 ; index < result.data.via.array.size ; index++) {
+            entry = &result.data.via.array.ptr[index];
+
+            if (entry->type == MSGPACK_OBJECT_MAP) {
+                ret = pack_record(ctx, log_encoder,
+                                  ts, metadata, entry);
+
+                if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                    msgpack_unpacked_destroy(&result);
+
+                    return FLB_FALSE;
+                }
+            }
+            else {
+                msgpack_unpacked_destroy(&result);
+
+                return FLB_FALSE;
+            }
+        }
+
         msgpack_unpacked_destroy(&result);
-        return FLB_FALSE;
+
+        return FLB_TRUE;
     }
-
-    if (root.via.map.size <= 0) {
-        msgpack_unpacked_destroy(&result);
-        return FLB_FALSE;
-    }
-
-    /* main array */
-    msgpack_pack_array(pck, 2);
-
-    flb_time_append_to_msgpack(ts, pck, 0);
-
-    /* Pack lua table */
-    msgpack_sbuffer_write(sbuf, data, bytes);
 
     msgpack_unpacked_destroy(&result);
-    return FLB_TRUE;
+
+    return FLB_FALSE;
 }
 
 static int cb_lua_filter(const void *data, size_t bytes,
@@ -402,40 +487,53 @@ static int cb_lua_filter(const void *data, size_t bytes,
                          struct flb_config *config)
 {
     int ret;
-    size_t off = 0;
-    (void) f_ins;
-    (void) i_ins;
-    (void) config;
     double ts = 0;
-    msgpack_object *p;
-    msgpack_object root;
-    msgpack_unpacked result;
-    msgpack_sbuffer tmp_sbuf;
-    msgpack_packer tmp_pck;
     struct flb_time t_orig;
     struct flb_time t;
     struct lua_filter *ctx = filter_context;
     /* Lua return values */
     int l_code;
     double l_timestamp;
+    msgpack_packer data_pck;
+    msgpack_sbuffer data_sbuf;
+    struct flb_log_event_encoder log_encoder;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
 
-    /* Create temporary msgpack buffer */
-    msgpack_sbuffer_init(&tmp_sbuf);
-    msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
+    (void) f_ins;
+    (void) i_ins;
+    (void) config;
 
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        msgpack_packer data_pck;
-        msgpack_sbuffer data_sbuf;
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    ret = flb_log_event_encoder_init(&log_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder initialization error : %d", ret);
+
+        flb_log_event_decoder_destroy(&log_decoder);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         msgpack_sbuffer_init(&data_sbuf);
         msgpack_packer_init(&data_pck, &data_sbuf, msgpack_sbuffer_write);
 
-        root = result.data;
-
         /* Get timestamp */
-        flb_time_pop_from_msgpack(&t, &result, &p);
-        t_orig = t;
+        flb_time_copy(&t, &log_event.timestamp);
+        flb_time_copy(&t_orig, &log_event.timestamp);
 
         /* Prepare function call, pass 3 arguments, expect 3 return values */
         lua_getglobal(ctx->lua->state, ctx->call);
@@ -450,16 +548,18 @@ static int cb_lua_filter(const void *data, size_t bytes,
             lua_pushnumber(ctx->lua->state, ts);
         }
 
-        flb_lua_pushmsgpack(ctx->lua->state, p);
+        flb_lua_pushmsgpack(ctx->lua->state, log_event.body);
         if (ctx->protected_mode) {
             ret = lua_pcall(ctx->lua->state, 3, 3, 0);
             if (ret != 0) {
                 flb_plg_error(ctx->ins, "error code %d: %s",
                               ret, lua_tostring(ctx->lua->state, -1));
                 lua_pop(ctx->lua->state, 1);
-                msgpack_sbuffer_destroy(&tmp_sbuf);
+
                 msgpack_sbuffer_destroy(&data_sbuf);
-                msgpack_unpacked_destroy(&result);
+                flb_log_event_decoder_destroy(&log_decoder);
+                flb_log_event_encoder_destroy(&log_encoder);
+
                 return FLB_FILTER_NOTOUCH;
             }
         }
@@ -504,9 +604,6 @@ static int cb_lua_filter(const void *data, size_t bytes,
             msgpack_sbuffer_destroy(&data_sbuf);
             continue;
         }
-        else if (l_code == 0) { /* Keep record, repack */
-            msgpack_pack_object(&tmp_pck, root);
-        }
         else if (l_code == 1 || l_code == 2) { /* Modified, pack new data */
             if (l_code == 1) {
                 if (ctx->time_as_table == FLB_FALSE) {
@@ -517,34 +614,67 @@ static int cb_lua_filter(const void *data, size_t bytes,
                 /* Keep the timestamp */
                 t = t_orig;
             }
-            ret = pack_result(&t, &tmp_pck, &tmp_sbuf,
+
+            ret = pack_result(ctx, &t, log_event.metadata, &log_encoder,
                               data_sbuf.data, data_sbuf.size);
+
             if (ret == FLB_FALSE) {
                 flb_plg_error(ctx->ins, "invalid table returned at %s(), %s",
                               ctx->call, ctx->script);
-                msgpack_sbuffer_destroy(&tmp_sbuf);
                 msgpack_sbuffer_destroy(&data_sbuf);
-                msgpack_unpacked_destroy(&result);
+
+                flb_log_event_decoder_destroy(&log_decoder);
+                flb_log_event_encoder_destroy(&log_encoder);
+
                 return FLB_FILTER_NOTOUCH;
             }
         }
         else { /* Unexpected return code, keep original content */
-            flb_plg_error(ctx->ins, "unexpected Lua script return code %i, "
-                          "original record will be kept." , l_code);
-            msgpack_pack_object(&tmp_pck, root);
+            /* Code 0 means Keep record, so we don't emit the warning */
+            if (l_code != 0) {
+                flb_plg_error(ctx->ins,
+                              "unexpected Lua script return code %i, "
+                              "original record will be kept." , l_code);
+            }
+
+            ret = flb_log_event_encoder_emit_raw_record(
+                    &log_encoder,
+                    log_decoder.record_base,
+                    log_decoder.record_length);
+
+            if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                flb_plg_error(ctx->ins,
+                              "Log event encoder error : %d", ret);
+            }
         }
+
         msgpack_sbuffer_destroy(&data_sbuf);
     }
-    msgpack_unpacked_destroy(&result);
 
-    /* link new buffers */
-    *out_buf   = tmp_sbuf.data;
-    *out_bytes = tmp_sbuf.size;
+    if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA) {
+        ret = FLB_EVENT_ENCODER_SUCCESS;
+    }
 
-    return FLB_FILTER_MODIFIED;
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        *out_buf   = log_encoder.output_buffer;
+        *out_bytes = log_encoder.output_length;
+
+        ret = FLB_FILTER_MODIFIED;
+
+        flb_log_event_encoder_claim_internal_buffer_ownership(&log_encoder);
+    }
+    else {
+        flb_plg_error(ctx->ins,
+                      "Log event encoder error : %d", ret);
+
+        ret = FLB_FILTER_NOTOUCH;
+    }
+
+    flb_log_event_decoder_destroy(&log_decoder);
+    flb_log_event_encoder_destroy(&log_encoder);
+
+    return ret;
 }
-
-
 #endif
 
 static int cb_lua_exit(void *data, struct flb_config *config)
@@ -598,6 +728,13 @@ static struct flb_config_map config_map[] = {
      "If enabled, Fluent-bit will pass the timestamp as a Lua table "
      "with keys \"sec\" for seconds since epoch and \"nsec\" for nanoseconds."
     },
+    {
+     FLB_CONFIG_MAP_BOOL, "enable_flb_null", "false",
+     0, FLB_TRUE, offsetof(struct lua_filter, enable_flb_null),
+     "If enabled, null will be converted to flb_null in Lua. "
+     "It is useful to prevent removing key/value "
+     "since nil is a special value to remove key value from map in Lua."
+    },
 
     {0}
 };
@@ -605,6 +742,7 @@ static struct flb_config_map config_map[] = {
 struct flb_filter_plugin filter_lua_plugin = {
     .name         = "lua",
     .description  = "Lua Scripting Filter",
+    .cb_pre_run   = cb_lua_pre_run,
     .cb_init      = cb_lua_init,
 #ifdef FLB_FILTER_LUA_USE_MPACK
     .cb_filter    = cb_lua_filter_mpack,

@@ -27,6 +27,7 @@ changes to Fluent Bit.
     - [Output](#output)
     - [Config Maps](#config-maps)
   - [Testing](#testing)
+    - [Building and Testing on Windows](#building-and-testing-on-windows)
     - [Valgrind](#valgrind)
   - [Need more help?](#need-more-help)
 
@@ -593,6 +594,8 @@ Note that Fluent Bit uses Cmake 3 and on some systems you may need to invoke it 
 
 To set up and build your environment, please refer to the packaging containers for a dependency list: <https://github.com/fluent/fluent-bit/tree/master/packaging/distros>.
 
+See [Building and Testing on Windows](#building-and-testing-on-windows) for Windows instructions.
+
 A simple container-based script [`run_code_analysis.sh`](./run_code_analysis.sh) is provided to run unit tests using <https://github.com/marketplace/actions/cmake-swiss-army-knife>.
 
 ```shell
@@ -646,9 +649,98 @@ Test sds_printf...                              [   OK   ]
 SUCCESS: All unit tests have passed.
 ```
 
+### Building and testing on Windows
+
+Fluent Bit is built with MSVC and CMake on Windows.
+
+Windows builds of Fluent Bit override the set of enabled plugins. See
+[`cmake/windows-setup.cmake`](./cmake/windows-setup.cmake) for the override
+list and other Windows-specific build rules.
+
+#### Using a Github Action
+
+For developers without convenient access to a Windows build machine the easiest
+way to build a branch of Fluent Bit on Windows is to fork the `fluent-bit`
+repository and enable workflow runs. The
+[`.github/workflows/pr-windows-build.yaml`](.github/workflows/pr-windows-build.yaml)
+workflow can then be invoked in your branch via the Actions tab on your forked
+repository to build your patch.
+
+This workflow will not run automatically on pull requests opened against the
+`fluent/fluent-bit` repository so it's best you run it yourself in your fork. 
+
+The resulting binaries are uploaded as a Github workflow artifact which can be
+found on the workflow run page.
+
+At time of writing this workflow *does not run any of the Fluent Bit test suite*
+- so it only checks that the target branch can be compiled. To run tests, a local
+build will be required.
+
+#### Using Docker for Windows
+
+For Windows users with Hyper-V capable machines the simplest way to build a
+branch of Fluent Bit is to use
+[Docker Desktop for Windows](https://docs.docker.com/desktop/install/windows-install/)
+to build
+[`./dockerfiles/Dockerfile.windows`](./dockerfiles/Dockerfile.windows).
+
+This method does not require manual installation of any build dependencies.
+
+The Dockerfile build does *not* run any Fluent Bit test suites. To run tests you
+will need to use a different method.
+
+Most OS virtualisation tools and virtual machine hosting services do not enable
+nested virtualisation, so it is generally not possible to use this method on
+virtualized windows machines.
+
+#### Locally on a Windows machine
+
+Local compilation on a Windows machine takes the longest to set up, but is the
+most convenient for iterating development work.
+
+At time of writing this is the only way to run the Fluent Bit tests on Windows.
+
+In lieu of full Windows dev environment setup instructions, see these CI automation
+resources for how to set up a Windows build of fluent-bit:
+
+* [`dockerfiles/Dockerfile.windows`](./dockerfiles/Dockerfile.windows) - only build-able using Docker for Windows
+* [`appveyor.yml`](./appveyor.yml)
+* [`.github/workflows/call-build-windows.yaml`](.github/workflows/call-build-windows.yaml) - github automation that runs the build on a Windows worker.
+
+The dependencies must be present:
+
+* Microsoft Visual Studio C/C++ toolchain. The CI automation uses MSVC 2019 at time of writing. MSVC Community Edition works fine.
+* [CMake](https://cmake.org/) 3.x on the `PATH`
+* A build of [OpenSSL](https://www.openssl.org/) as static libraries, pointed to by the `-DOPENSSL_ROOT_DIR` CMake variable. The CI automation uses [Chocolatey](https://chocolatey.org/) to `choco install -y openssl`.
+* `flex.exe` and `bison.exe` must be present on the `PATH`. The CI automation uses https://github.com/lexxmark/winflexbison.
+
+Assuming that `cmake` is on the `PATH`, Visual Studio is installed,
+WinFlexBison is present at `%SYSTEMDRIVE%\WinFlexBison` and OpenSSL is present
+at `%PROGRAMFILES%\OpenSSL-Win64`, the following Powershell commands should
+produce a basic Fluent Bit build:
+
+```powershell
+$env:PATH += "$env:SystemDrive\WinFlexBison"
+mkdir build
+cd build
+cmake -DOPENSSL_ROOT_DIR="$env:ProgramFiles\OpenSSL-Win64" -S .. -B .
+cmake --build .
+```
+
+The build output will be `bin\Debug\fluent-bit.exe`.
+
+If in doubt, check the CI and build automation files referenced above for specifics.
+
 ### Valgrind
 
 [Valgrind](https://valgrind.org/) is a tool that will help you detect and diagnose memory issues in your code. It will check for memory leaks and invalid memory accesses.
+
+When you use Valgrind, you should compile Fluent Bit with the following options:
+
+```
+$ cmake -DFLB_DEV=On -DFLB_VALGRIND=On ../
+$ make
+```
 
 To use it while developing, invoke it before Fluent Bit:
 

@@ -56,7 +56,7 @@ macro(MK_BUILD_PLUGIN name)
       # requires a different handling: link the object and register the plugin
       # struct reference on mk_static_plugins.h
       set(static_plugins "${static_plugins}monkey-${name}-static;")
-      set(STATIC_PLUGINS_INIT "${STATIC_PLUGINS_INIT}\n    p = &mk_plugin_${name};\n    mk_list_add(&p->_head, plugins);\n")
+      set(STATIC_PLUGINS_INIT "${STATIC_PLUGINS_INIT}\n    mk_static_plugin_attach(plugins, &mk_plugin_${name});\n")
       set(STATIC_PLUGINS_DECL "${STATIC_PLUGINS_DECL}extern struct mk_plugin mk_plugin_${name};\n")
 
       # append message to stdout

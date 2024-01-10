@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.0)
 
 # Setup project
-project(LwLibPROJECT)
+project(LwLibPROJECT C)
 
 # -------------------------------------------------
 # This CMakeLists.txt is used only if it is a top-level file.

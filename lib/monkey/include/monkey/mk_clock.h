@@ -36,9 +36,24 @@ extern mk_ptr_t headers_preset;
 #define HEADER_TIME_BUFFER_SIZE 64
 #define LOG_TIME_BUFFER_SIZE 30
 
+struct mk_server;
+
+struct mk_clock_context {
+    pthread_t mk_clock_tid;
+
+    time_t log_current_utime;
+    time_t monkey_init_time;
+
+    mk_ptr_t log_current_time;
+    mk_ptr_t headers_preset;
+
+    char *log_time_buffers[2];
+    char *header_time_buffers[2];
+};
+
 void *mk_clock_worker_init(void *args);
 void mk_clock_set_time(void);
 void mk_clock_sequential_init(struct mk_server *server);
-void mk_clock_exit();
+void mk_clock_exit(struct mk_server *server);
 
 #endif

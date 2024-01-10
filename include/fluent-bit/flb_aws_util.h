@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -163,8 +163,9 @@ flb_sds_t flb_json_get_val(char *response, size_t response_len, char *key);
 /*
  * Parses an XML document and returns the value of the given tag
  * Param `tag` should include angle brackets; ex "<code>"
+ * And param `end` should include end brackets: "</code>"
  */
-flb_sds_t flb_xml_get_val(char *response, size_t response_len, char *tag);
+flb_sds_t flb_aws_xml_get_val(char *response, size_t response_len, char *tag, char *tag_end);
 
 /*
  * Checks if a response contains an AWS Auth error

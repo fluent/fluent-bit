@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -97,6 +97,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
                                      int types_len,
                                      struct mk_list *decoders,
                                      struct flb_config *config);
+int flb_parser_conf_file_stat(const char *file, struct flb_config *config);
 int flb_parser_conf_file(const char *file, struct flb_config *config);
 void flb_parser_destroy(struct flb_parser *parser);
 struct flb_parser *flb_parser_get(const char *name, struct flb_config *config);

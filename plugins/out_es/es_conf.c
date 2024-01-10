@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -44,6 +44,7 @@ static flb_sds_t extract_cloud_host(struct flb_elasticsearch *ctx,
     char *colon;
     char *region;
     char *host;
+    char *port = NULL;
     char buf[256] = {0};
     char cloud_host_buf[256] = {0};
     const char dollar[2] = "$";
@@ -71,9 +72,27 @@ static flb_sds_t extract_cloud_host(struct flb_elasticsearch *ctx,
     if (host == NULL) {
         return NULL;
     }
+
+    /*
+     * Some cloud id format is "<deployment_region>$<elasticsearch_hostname>:<port>$<kibana_hostname>" .
+     *   e.g. https://github.com/elastic/beats/blob/v8.4.1/libbeat/cloudid/cloudid_test.go#L60
+     *
+     * It means the variable "host" can contains ':' and port number.
+     */
+    colon = strchr(host, ':');
+    if (colon != NULL) {
+        /* host contains host number */
+        *colon = '\0'; /* remove port number from host */
+        port = colon+1;
+    }
+
     strcpy(cloud_host_buf, host);
     strcat(cloud_host_buf, ".");
     strcat(cloud_host_buf, region);
+    if (port != NULL) {
+        strcat(cloud_host_buf, ":");
+        strcat(cloud_host_buf, port);
+    }
     return flb_sds_create(cloud_host_buf);
 }
 
@@ -388,7 +407,8 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                                                                    ctx->aws_region,
                                                                    ctx->aws_sts_endpoint,
                                                                    NULL,
-                                                                   flb_aws_client_generator());
+                                                                   flb_aws_client_generator(),
+                                                                   ctx->aws_profile);
             if (!ctx->aws_provider) {
                 flb_error("[out_es] Failed to create AWS Credential Provider");
                 flb_es_conf_destroy(ctx);

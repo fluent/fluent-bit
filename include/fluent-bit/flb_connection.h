@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -94,6 +94,14 @@ struct flb_connection {
      * other things.
      */
     int busy_flag;
+
+    /* This flag is used to determine if the connection was shut down to ensure we
+     * don't do it twice when a timeout is detected.
+     *
+     * This is required in order to overcome a limitation in the async read / write
+     * functions that will be addressed as soon as possible.
+     */
+    int shutdown_flag;
 
     /*
      * Recycle: if the connection is keepalive, this flag is always on, but if

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@
 #define FLB_PLUGIN_INPUT     1
 #define FLB_PLUGIN_FILTER    2
 #define FLB_PLUGIN_OUTPUT    3
+#define FLB_PLUGIN_PROCESSOR 4
 
 /* Informational contexts for discovered dynamic plugins */
 struct flb_plugin {
@@ -38,6 +39,7 @@ struct flb_plugin {
 
 struct flb_plugins {
     struct mk_list input;
+    struct mk_list processor;
     struct mk_list filter;
     struct mk_list output;
 };

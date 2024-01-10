@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_crypto.h>
 #include <fluent-bit/flb_signv4.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_kv.h>
 
 #include <msgpack.h>
@@ -144,6 +145,8 @@ static int bigquery_jwt_encode(struct flb_bigquery *ctx,
 
     /* In mbedTLS cert length must include the null byte */
     len = strlen(secret) + 1;
+
+    sig_len = sizeof(sig);
 
     ret = flb_crypto_sign_simple(FLB_CRYPTO_PRIVATE_KEY,
                                  FLB_CRYPTO_PADDING_PKCS1,
@@ -705,7 +708,8 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
                                                                NULL,
                                                                NULL,
                                                                NULL,
-                                                               flb_aws_client_generator());
+                                                               flb_aws_client_generator(),
+                                                               NULL);
 
         if (!ctx->aws_provider) {
             flb_plg_error(ctx->ins, "Failed to create AWS Credential Provider");
@@ -846,21 +850,23 @@ static int bigquery_format(const void *data, size_t bytes,
                            struct flb_bigquery *ctx)
 {
     int array_size = 0;
-    size_t off = 0;
-    struct flb_time tms;
     flb_sds_t out_buf;
-    msgpack_object *obj;
-    msgpack_unpacked result;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    int ret;
 
-    /* Count number of records */
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        array_size++;
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        return -1;
     }
-    msgpack_unpacked_destroy(&result);
-    msgpack_unpacked_init(&result);
+
+    array_size = flb_mp_count(data, bytes);
 
     /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -910,11 +916,9 @@ static int bigquery_format(const void *data, size_t bytes,
     /* Append entries */
     msgpack_pack_array(&mp_pck, array_size);
 
-    off = 0;
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        /* Get timestamp */
-        flb_time_pop_from_msgpack(&tms, &result, &obj);
-
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         /*
          * Pack entry
          *
@@ -929,12 +933,13 @@ static int bigquery_format(const void *data, size_t bytes,
         /* json */
         msgpack_pack_str(&mp_pck, 4);
         msgpack_pack_str_body(&mp_pck, "json", 4);
-        msgpack_pack_object(&mp_pck, *obj);
+        msgpack_pack_object(&mp_pck, *log_event.body);
     }
 
     /* Convert from msgpack to JSON */
     out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
-    msgpack_unpacked_destroy(&result);
+
+    flb_log_event_decoder_destroy(&log_decoder);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     if (!out_buf) {

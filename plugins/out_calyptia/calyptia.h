@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -65,6 +65,7 @@ struct flb_calyptia {
     flb_sds_t agent_id;
     flb_sds_t agent_token;
     flb_sds_t machine_id;                 /* machine-id  */
+    flb_sds_t fleet_id;                   /* fleet-id  */
     flb_sds_t metrics_endpoint;           /* metrics endpoint */
     struct flb_fstore *fs;                /* fstore ctx */
     struct flb_fstore_stream *fs_stream;  /* fstore stream */

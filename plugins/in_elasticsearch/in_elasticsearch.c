@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2023 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -121,6 +121,7 @@ static int in_elasticsearch_bulk_init(struct flb_input_instance *ins,
 
     if (flb_random_bytes(rand, 16)) {
         flb_plg_error(ctx->ins, "cannot generate cluster name");
+        in_elasticsearch_config_destroy(ctx);
         return -1;
     }
 
@@ -128,6 +129,7 @@ static int in_elasticsearch_bulk_init(struct flb_input_instance *ins,
 
     if (flb_random_bytes(rand, 12)) {
         flb_plg_error(ctx->ins, "cannot generate node name");
+        in_elasticsearch_config_destroy(ctx);
         return -1;
     }
 
@@ -215,6 +217,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "hostname", "localhost",
      0, FLB_TRUE, offsetof(struct flb_in_elasticsearch, hostname),
      "Specify hostname or FQDN. This parameter is effective for sniffering node information."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "version", "8.0.0",
+     0, FLB_TRUE, offsetof(struct flb_in_elasticsearch, es_version),
+     "Specify returning Elasticsearch server version."
     },
 
     /* EOF */

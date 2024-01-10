@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -30,10 +30,28 @@ struct flb_in_mqtt_config *mqtt_config_init(struct flb_input_instance *ins)
 {
     char tmp[16];
     struct flb_in_mqtt_config *config;
+    int ret;
 
     config = flb_calloc(1, sizeof(struct flb_in_mqtt_config));
     if (!config) {
         flb_errno();
+        return NULL;
+    }
+
+    ret = flb_input_config_map_set(ins, (void*) config);
+    if (ret == -1) {
+        flb_plg_error(ins, "could not initialize config map");
+        flb_free(config);
+        return NULL;
+    }
+
+    config->log_encoder = flb_log_event_encoder_create(
+                            FLB_LOG_EVENT_FORMAT_DEFAULT);
+
+    if (config->log_encoder == NULL) {
+        flb_plg_error(ins, "could not initialize event encoder");
+        mqtt_config_free(config);
+
         return NULL;
     }
 
@@ -53,6 +71,10 @@ void mqtt_config_free(struct flb_in_mqtt_config *config)
 {
     if (config->downstream != NULL) {
         flb_downstream_destroy(config->downstream);
+    }
+
+    if (config->log_encoder != NULL) {
+        flb_log_event_encoder_destroy(config->log_encoder);
     }
 
     flb_free(config->tcp_port);

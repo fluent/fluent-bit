@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@
 #include <unistd.h>
 
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 #include <msgpack.h>
 
 #define DEFAULT_INTERVAL_SEC  "1"
@@ -63,6 +64,7 @@ struct flb_in_netif_config {
 
     int map_num;
     struct flb_input_instance *ins;
+    struct flb_log_event_encoder *log_encoder;
 };
 
 #endif /*FLB_IN_NETIF_H*/

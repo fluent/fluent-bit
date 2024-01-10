@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -331,7 +331,8 @@ static int get_meta_file_info(struct flb_kube *ctx, const char *namespace,
 
         if (payload_size) {
             packed = flb_pack_json(payload, payload_size,
-                                   buffer, size, root_type);
+                                   buffer, size, root_type,
+                                   NULL);
         }
 
         if (payload) {
@@ -372,6 +373,7 @@ static int get_meta_info_from_request(struct flb_kube *ctx,
     ret = refresh_token_if_needed(ctx);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "failed to refresh token");
+        flb_upstream_conn_release(u_conn);
         return -1;
     }
     
@@ -403,7 +405,7 @@ static int get_meta_info_from_request(struct flb_kube *ctx,
     }
 
     packed = flb_pack_json(c->resp.payload, c->resp.payload_size,
-                                   buffer, size, root_type);
+                                   buffer, size, root_type, NULL);
 
     /* release resources */
     flb_http_client_destroy(c);

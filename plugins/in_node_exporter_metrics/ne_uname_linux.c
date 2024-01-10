@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -71,14 +71,23 @@ static int uname_update(struct flb_ne *ctx)
     return ret;
 }
 
-int ne_uname_init(struct flb_ne *ctx)
+static int ne_uname_init(struct flb_ne *ctx)
 {
     uname_configure(ctx);
     return 0;
 }
 
-int ne_uname_update(struct flb_ne *ctx)
+static int ne_uname_update(struct flb_input_instance *ins, struct flb_config *config, void *in_context)
 {
+    struct flb_ne *ctx = (struct flb_ne *)in_context;
+
     uname_update(ctx);
     return 0;
 }
+
+struct flb_ne_collector uname_collector = {
+    .name = "uname",
+    .cb_init = ne_uname_init,
+    .cb_update = ne_uname_update,
+    .cb_exit = NULL
+};

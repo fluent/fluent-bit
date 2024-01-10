@@ -17,13 +17,18 @@
  *  limitations under the License.
  */
 
-#ifdef MK_HAVE_C_TLS
-
 #ifndef MK_SERVER_TLS_H
 #define MK_SERVER_TLS_H
 
+#ifdef MK_HAVE_C_TLS  /* Use Compiler Thread Local Storage (TLS) */
+
 __thread struct mk_list *mk_tls_server_listen;
 __thread struct mk_server_timeout *mk_tls_server_timeout;
+
+#else
+
+pthread_key_t mk_tls_server_listen;
+pthread_key_t mk_tls_server_timeout;
 
 #endif
 #endif

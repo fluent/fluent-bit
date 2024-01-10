@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 
 #include "syslog_conf.h"
 
@@ -143,9 +144,20 @@ static char rfc5424_sp_name[256] = {
 static flb_sds_t syslog_rfc5424(flb_sds_t *s, struct flb_time *tms,
                                 struct syslog_msg *msg)
 {
+    int len;
     struct tm tm;
     flb_sds_t tmp;
     uint8_t prival;
+
+    if (msg->message && msg->message[0] == '<') {
+        len = flb_sds_len(msg->message);
+        tmp = flb_sds_cat(*s, msg->message, len);
+        if (!tmp) {
+            return NULL;
+        }
+        *s = tmp;
+        return *s;
+    }
 
     prival = (msg->facility << 3) + msg->severity;
 
@@ -163,7 +175,7 @@ static flb_sds_t syslog_rfc5424(flb_sds_t *s, struct flb_time *tms,
     *s = tmp;
 
     if (msg->hostname) {
-        int len = flb_sds_len(msg->hostname);
+        len = flb_sds_len(msg->hostname);
         tmp = flb_sds_cat(*s, msg->hostname, len > 255 ? 255 : len);
         if (!tmp) {
             return NULL;
@@ -185,7 +197,7 @@ static flb_sds_t syslog_rfc5424(flb_sds_t *s, struct flb_time *tms,
     *s = tmp;
 
     if (msg->appname) {
-        int len = flb_sds_len(msg->appname);
+        len = flb_sds_len(msg->appname);
         tmp = flb_sds_cat(*s, msg->appname, len > 48 ? 48 : len);
         if (!tmp) {
             return NULL;
@@ -207,7 +219,7 @@ static flb_sds_t syslog_rfc5424(flb_sds_t *s, struct flb_time *tms,
     *s = tmp;
 
     if (msg->procid) {
-        int len = flb_sds_len(msg->procid);
+        len = flb_sds_len(msg->procid);
         tmp = flb_sds_cat(*s, msg->procid, len > 128 ? 128 : len);
         if (!tmp) {
             return NULL;
@@ -229,7 +241,7 @@ static flb_sds_t syslog_rfc5424(flb_sds_t *s, struct flb_time *tms,
     *s = tmp;
 
     if (msg->msgid) {
-        int len = flb_sds_len(msg->msgid);
+        len = flb_sds_len(msg->msgid);
         tmp = flb_sds_cat(*s, msg->msgid, len > 32 ? 32 : len);
         if (!tmp) {
             return NULL;
@@ -266,7 +278,7 @@ static flb_sds_t syslog_rfc5424(flb_sds_t *s, struct flb_time *tms,
     }
 
     if (msg->message) {
-        int len = flb_sds_len(msg->message);
+        len = flb_sds_len(msg->message);
         tmp = flb_sds_cat(*s, " \xef\xbb\xbf", 4);
         if (!tmp) {
             return NULL;
@@ -285,9 +297,20 @@ static flb_sds_t syslog_rfc5424(flb_sds_t *s, struct flb_time *tms,
 static flb_sds_t syslog_rfc3164 (flb_sds_t *s, struct flb_time *tms,
                                  struct syslog_msg *msg)
 {
+    int len;
     struct tm tm;
     flb_sds_t tmp;
     uint8_t prival;
+
+    if (msg->message && msg->message[0] == '<') {
+        len = flb_sds_len(msg->message);
+        tmp = flb_sds_cat(*s, msg->message, len);
+        if (!tmp) {
+            return NULL;
+        }
+        *s = tmp;
+        return *s;
+    }
 
     prival =  (msg->facility << 3) + msg->severity;
 
@@ -357,7 +380,8 @@ static flb_sds_t syslog_rfc3164 (flb_sds_t *s, struct flb_time *tms,
     return *s;
 }
 
-static flb_sds_t msgpack_to_sd(flb_sds_t *s, const char *sd, int sd_len,
+static flb_sds_t msgpack_to_sd(struct flb_syslog *ctx,
+                               flb_sds_t *s, const char *sd, int sd_len,
                                msgpack_object *o)
 {
     flb_sds_t tmp;
@@ -379,7 +403,17 @@ static flb_sds_t msgpack_to_sd(flb_sds_t *s, const char *sd, int sd_len,
     *s = tmp;
 
     start_len = flb_sds_len(*s);
-    tmp = flb_sds_cat(*s, sd, sd_len > 32 ? 32 : sd_len);
+    if (ctx->allow_longer_sd_id != FLB_TRUE && sd_len > 32) {
+        /*
+         * RFC5424 defines
+         *   SD-NAME         = 1*32PRINTUSASCII
+         *                     ; except '=', SP, ']', %d34 (")
+         *
+         * https://www.rfc-editor.org/rfc/rfc5424#section-6
+         */
+        sd_len = 32;
+    }
+    tmp = flb_sds_cat(*s, sd, sd_len);
     if (!tmp) {
         return NULL;
     }
@@ -459,7 +493,18 @@ static flb_sds_t msgpack_to_sd(flb_sds_t *s, const char *sd, int sd_len,
             *s = tmp;
 
             start_len = flb_sds_len(*s);
-            tmp = flb_sds_cat(*s, key, key_len > 32 ? 32 : key_len);
+            if (ctx->allow_longer_sd_id != FLB_TRUE && key_len > 32 ) {
+                /*
+                 * RFC5424 defines
+                 *   PARAM-NAME      = SD-NAME
+                 *   SD-NAME         = 1*32PRINTUSASCII
+                 *                     ; except '=', SP, ']', %d34 (")
+                 *
+                 * https://www.rfc-editor.org/rfc/rfc5424#section-6
+                 */
+                key_len = 32;
+            }
+            tmp = flb_sds_cat(*s, key, key_len);
             if (!tmp) {
                 return NULL;
             }
@@ -544,7 +589,7 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
                     flb_config_map_foreach(head, mv, ctx->sd_keys) {
                         if ((key_len == flb_sds_len(mv->val.str)) &&
                             strncmp(key, mv->val.str, flb_sds_len(mv->val.str)) == 0) {
-                            msgpack_to_sd(&(msg->sd), key, key_len, v);
+                            msgpack_to_sd(ctx, &(msg->sd), key, key_len, v);
                             break;
                         }
                     }
@@ -765,57 +810,56 @@ static void cb_syslog_flush(struct flb_event_chunk *event_chunk,
     struct flb_syslog *ctx = out_context;
     flb_sds_t s;
     flb_sds_t tmp;
-    msgpack_unpacked result;
-    size_t off = 0;
     size_t bytes_sent;
-    msgpack_object root;
     msgpack_object map;
-    msgpack_object *obj;
-    struct flb_time tm;
     struct flb_connection *u_conn = NULL;
     int ret;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
 
     if (ctx->parsed_mode != FLB_SYSLOG_UDP) {
         u_conn = flb_upstream_conn_get(ctx->u);
+
         if (!u_conn) {
             flb_plg_error(ctx->ins, "no upstream connections available");
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
     }
 
-    msgpack_unpacked_init(&result);
-
     s = flb_sds_create_size(ctx->maxsize);
     if (s == NULL) {
-        msgpack_unpacked_destroy(&result);
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
-    while (msgpack_unpack_next(&result,
-                               event_chunk->data,
-                               event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS) {
-        if (result.data.type != MSGPACK_OBJECT_ARRAY) {
-            continue;
-        }
+    ret = flb_log_event_decoder_init(&log_decoder,
+                                     (char *) event_chunk->data,
+                                     event_chunk->size);
 
-        root = result.data;
-        if (root.via.array.size != 2) {
-            continue;
-        }
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
 
-        flb_time_pop_from_msgpack(&tm, &result, &obj);
-        map = root.via.array.ptr[1];
+        flb_sds_destroy(s);
+
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        map = *log_event.body;
 
         flb_sds_len_set(s, 0);
 
-        tmp = syslog_format(ctx, &map, &s, &tm);
+        tmp = syslog_format(ctx, &map, &s, &log_event.timestamp);
         if (tmp != NULL) {
             s = tmp;
             if (ctx->parsed_mode == FLB_SYSLOG_UDP) {
                 ret = send(ctx->fd, s, flb_sds_len(s), MSG_DONTWAIT | MSG_NOSIGNAL);
                 if (ret == -1) {
-                    msgpack_unpacked_destroy(&result);
+                    flb_log_event_decoder_destroy(&log_decoder);
                     flb_sds_destroy(s);
+
                     FLB_OUTPUT_RETURN(FLB_RETRY);
                 }
             }
@@ -824,9 +868,10 @@ static void cb_syslog_flush(struct flb_event_chunk *event_chunk,
                                        s, flb_sds_len(s), &bytes_sent);
                 if (ret == -1) {
                     flb_errno();
+                    flb_log_event_decoder_destroy(&log_decoder);
                     flb_upstream_conn_release(u_conn);
-                    msgpack_unpacked_destroy(&result);
                     flb_sds_destroy(s);
+
                     FLB_OUTPUT_RETURN(FLB_RETRY);
                 }
             }
@@ -837,8 +882,7 @@ static void cb_syslog_flush(struct flb_event_chunk *event_chunk,
     }
 
     flb_sds_destroy(s);
-
-    msgpack_unpacked_destroy(&result);
+    flb_log_event_decoder_destroy(&log_decoder);
 
     if (ctx->parsed_mode != FLB_SYSLOG_UDP) {
         flb_upstream_conn_release(u_conn);
@@ -948,12 +992,10 @@ static int cb_syslog_format_test(struct flb_config *config,
     struct flb_syslog *ctx = plugin_context;
     flb_sds_t tmp;
     flb_sds_t s;
-    size_t off = 0;
-    msgpack_unpacked result;
-    msgpack_object root;
     msgpack_object map;
-    msgpack_object *obj;
-    struct flb_time tm;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    int ret;
 
     s = flb_sds_create_size(ctx->maxsize);
     if (s == NULL) {
@@ -961,32 +1003,33 @@ static int cb_syslog_format_test(struct flb_config *config,
         return -1;
     }
 
-    msgpack_unpacked_init(&result);
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
-    if ( msgpack_unpack_next(&result, data, bytes, &off) != MSGPACK_UNPACK_SUCCESS) {
-        msgpack_unpacked_destroy(&result);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
+        flb_sds_destroy(s);
+
+        return -1;
+    }
+
+    flb_log_event_decoder_next(&log_decoder, &log_event);
+    ret = flb_log_event_decoder_get_last_result(&log_decoder);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
         flb_error("msgpack_unpack_next failed");
-        return -1;
-    }
-    if (result.data.type != MSGPACK_OBJECT_ARRAY) {
-        msgpack_object_print(stdout, result.data);
-        msgpack_unpacked_destroy(&result);
-        flb_error("data is not array");
+
+        flb_log_event_decoder_destroy(&log_decoder);
+
         return -1;
     }
 
-    root = result.data;
-    if (root.via.array.size != 2) {
-        msgpack_unpacked_destroy(&result);
-        flb_error("array size is not 2. size=%d", root.via.array.size);
-        return -1;
-    }
-    flb_time_pop_from_msgpack(&tm, &result, &obj);
-    map = root.via.array.ptr[1];
+    map = *log_event.body;
     flb_sds_len_set(s, 0);
-    tmp = syslog_format(ctx, &map, &s, &tm);
+    tmp = syslog_format(ctx, &map, &s, &log_event.timestamp);
 
-    msgpack_unpacked_destroy(&result);
+    flb_log_event_decoder_destroy(&log_decoder);
+
     if (tmp == NULL) {
         flb_error("syslog_fromat returns NULL");
         return -1;
@@ -1117,6 +1160,13 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_syslog, message_key),
      "Specify the key name that contains the message to deliver. Note that if "
      "this property is mandatory, otherwise the message will be empty."
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "allow_longer_sd_id", "false",
+     0, FLB_TRUE, offsetof(struct flb_syslog, allow_longer_sd_id),
+     "If true, Fluent-bit allows SD-ID that is longer than 32 characters. "
+     "Such long SD-ID violates RFC 5424."
     },
 
     /* EOF */

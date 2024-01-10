@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -66,7 +66,7 @@
 #define FLB_ENGINE_PRIORITY_CB_SCHED    FLB_ENGINE_PRIORITY_TOP
 #define FLB_ENGINE_PRIORITY_CB_TIMER    FLB_ENGINE_PRIORITY_TOP
 #define FLB_ENGINE_PRIORITY_SHUTDOWN    FLB_ENGINE_PRIORITY_TOP
-#define FLB_ENGINE_PRIORITY_FLUSH       FLB_ENGINE_PRIORITY_TOP
+#define FLB_ENGINE_PRIORITY_FLUSH       (FLB_ENGINE_PRIORITY_NETWORK + 1)
 
 #define FLB_ENGINE_PRIORITY_DNS         FLB_ENGINE_PRIORITY_NETWORK
 #define FLB_ENGINE_PRIORITY_CONNECT     FLB_ENGINE_PRIORITY_NETWORK

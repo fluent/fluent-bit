@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -228,6 +228,8 @@ static void output_thread(void *data)
 
     snprintf(tmp, sizeof(tmp) - 1, "flb-out-%s-w%i", ins->name, thread_id);
     mk_utils_worker_rename(tmp);
+
+    memset(&event_local, 0, sizeof(struct mk_event));
 
     /* Channel used by flush callbacks to notify it return status */
     ret = mk_event_channel_create(th_ins->evl,

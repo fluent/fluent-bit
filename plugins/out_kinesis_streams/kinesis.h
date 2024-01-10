@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -92,6 +92,7 @@ struct flb_kinesis {
     int retry_requests;
     char *sts_endpoint;
     int custom_endpoint;
+    char *profile;
 
     /* in this plugin the 'random' partition key is a uuid + fluent tag + timestamp */
     char *uuid;

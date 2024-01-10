@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -28,13 +28,61 @@
 #include "http.h"
 #include "http_conn.h"
 
-#define HTTP_CONTENT_JSON  0
+#define HTTP_CONTENT_JSON       0
+#define HTTP_CONTENT_URLENCODED 1
+
+static inline char hex2nibble(char c)
+{
+    if ((c >= 0x30) && (c <= '9')) {
+        return c - 0x30;
+    }
+    // 0x30-0x39 are digits, 0x41-0x46 A-F,
+    // so there is a gap at 0x40
+    if ((c >= 'A') && (c <= 'F')) {
+        return (c - 'A') + 10;
+    }
+    if ((c >= 'a') && (c <= 'f')) {
+        return (c - 'a') + 10;
+    }
+    return 0;
+}
+
+static int sds_uri_decode(flb_sds_t s)
+{
+    char buf[1024];
+    char *optr;
+    char *iptr;
+
+
+    for (optr = buf, iptr = s; iptr < s + flb_sds_len(s) && optr-buf < sizeof(buf); iptr++) {
+        if (*iptr == '%') {
+            if (iptr+2 > (s + flb_sds_len(s))) {
+                return -1;
+            }
+            *optr++ = hex2nibble(*(iptr+1)) << 4 | hex2nibble(*(iptr+2));
+            iptr+=2;
+        } else if (*iptr == '+') {
+            *optr++ = ' ';
+        } else {
+            *optr++ = *iptr;
+        }
+    }
+
+    memcpy(s, buf, optr-buf);
+    s[optr-buf] = '\0';
+    flb_sds_len_set(s, (optr-buf));
+
+    return 0;
+}
 
 static int send_response(struct http_conn *conn, int http_status, char *message)
 {
-    size_t    sent;
-    int       len;
-    flb_sds_t out;
+    struct flb_http *context;
+    size_t           sent;
+    int              len;
+    flb_sds_t        out;
+
+    context = (struct flb_http *) conn->ctx;
 
     out = flb_sds_create_size(256);
     if (!out) {
@@ -52,22 +100,28 @@ static int send_response(struct http_conn *conn, int http_status, char *message)
         flb_sds_printf(&out,
                        "HTTP/1.1 201 Created \r\n"
                        "Server: Fluent Bit v%s\r\n"
+                       "%s"
                        "Content-Length: 0\r\n\r\n",
-                       FLB_VERSION_STR);
+                       FLB_VERSION_STR,
+                       context->success_headers_str);
     }
     else if (http_status == 200) {
         flb_sds_printf(&out,
                        "HTTP/1.1 200 OK\r\n"
                        "Server: Fluent Bit v%s\r\n"
+                       "%s"
                        "Content-Length: 0\r\n\r\n",
-                       FLB_VERSION_STR);
+                       FLB_VERSION_STR,
+                       context->success_headers_str);
     }
     else if (http_status == 204) {
         flb_sds_printf(&out,
                        "HTTP/1.1 204 No Content\r\n"
                        "Server: Fluent Bit v%s\r\n"
-                       "Content-Length: 0\r\n\r\n",
-                       FLB_VERSION_STR);
+                       "%s"
+                       "\r\n\r\n",
+                       FLB_VERSION_STR,
+                       context->success_headers_str);
     }
     else if (http_status == 400) {
         flb_sds_printf(&out,
@@ -157,9 +211,8 @@ static flb_sds_t tag_key(struct flb_http *ctx, msgpack_object *map)
 
 int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
 {
+    int ret;
     size_t off = 0;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
     msgpack_unpacked result;
     struct flb_time tm;
     int i = 0;
@@ -172,70 +225,121 @@ int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, buf, size, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type == MSGPACK_OBJECT_MAP) {
-            msgpack_sbuffer_init(&mp_sbuf);
-            msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
             tag_from_record = NULL;
             if (ctx->tag_key) {
                 obj = &result.data;
                 tag_from_record = tag_key(ctx, obj);
             }
 
-            /* Pack record with timestamp */
-            msgpack_pack_array(&mp_pck, 2);
-            flb_time_append_to_msgpack(&tm, &mp_pck, 0);
-            msgpack_pack_object(&mp_pck, result.data);
+            ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
 
-            /* Ingest record into the engine */
-            if (tag_from_record) {
-                flb_input_log_append(ctx->ins, tag_from_record, flb_sds_len(tag_from_record),
-                                        mp_sbuf.data, mp_sbuf.size);
-                flb_sds_destroy(tag_from_record);
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_set_timestamp(
+                        &ctx->log_encoder,
+                        &tm);
             }
-            else if (tag) {
-                flb_input_log_append(ctx->ins, tag, flb_sds_len(tag),
-                                        mp_sbuf.data, mp_sbuf.size);
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_set_body_from_msgpack_object(
+                        &ctx->log_encoder,
+                        &result.data);
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+            }
+
+            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                if (tag_from_record) {
+                    flb_input_log_append(ctx->ins,
+                                         tag_from_record,
+                                         flb_sds_len(tag_from_record),
+                                         ctx->log_encoder.output_buffer,
+                                         ctx->log_encoder.output_length);
+
+                    flb_sds_destroy(tag_from_record);
+                }
+                else if (tag) {
+                    flb_input_log_append(ctx->ins, tag, flb_sds_len(tag),
+                                         ctx->log_encoder.output_buffer,
+                                         ctx->log_encoder.output_length);
+                }
+                else {
+                    /* use default plugin Tag (it internal name, e.g: http.0 */
+                    flb_input_log_append(ctx->ins, NULL, 0,
+                                         ctx->log_encoder.output_buffer,
+                                         ctx->log_encoder.output_length);
+                }
             }
             else {
-                /* use default plugin Tag (it internal name, e.g: http.0 */
-                flb_input_log_append(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+                flb_plg_error(ctx->ins, "Error encoding record : %d", ret);
             }
-            msgpack_sbuffer_destroy(&mp_sbuf);
+
+            flb_log_event_encoder_reset(&ctx->log_encoder);
         } 
         else if (result.data.type == MSGPACK_OBJECT_ARRAY) {
             obj = &result.data;
             for (i = 0; i < obj->via.array.size; i++)
             {
                 record = obj->via.array.ptr[i];
-                msgpack_sbuffer_init(&mp_sbuf);
-                msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
                 tag_from_record = NULL;
                 if (ctx->tag_key) {
                     tag_from_record = tag_key(ctx, &record);
                 }
 
-                /* Pack record with timestamp */
-                msgpack_pack_array(&mp_pck, 2);
-                flb_time_append_to_msgpack(&tm, &mp_pck, 0);
-                msgpack_pack_object(&mp_pck, record); 
+                ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
 
-                /* Ingest record into the engine */
-                if (tag_from_record) {
-                    flb_input_log_append(ctx->ins, tag_from_record, flb_sds_len(tag_from_record),
-                                            mp_sbuf.data, mp_sbuf.size);
-                    flb_sds_destroy(tag_from_record);
+                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                    ret = flb_log_event_encoder_set_timestamp(
+                            &ctx->log_encoder,
+                            &tm);
                 }
-                else if (tag) {
-                    flb_input_log_append(ctx->ins, tag, flb_sds_len(tag),
-                                               mp_sbuf.data, mp_sbuf.size);
+
+                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                    ret = flb_log_event_encoder_set_body_from_msgpack_object(
+                            &ctx->log_encoder,
+                            &record);
+                }
+
+                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                    ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+                }
+
+                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                    if (tag_from_record) {
+                        flb_input_log_append(ctx->ins,
+                                             tag_from_record,
+                                             flb_sds_len(tag_from_record),
+                                             ctx->log_encoder.output_buffer,
+                                             ctx->log_encoder.output_length);
+
+                        flb_sds_destroy(tag_from_record);
+                    }
+                    else if (tag) {
+                        flb_input_log_append(ctx->ins, tag, flb_sds_len(tag),
+                                             ctx->log_encoder.output_buffer,
+                                             ctx->log_encoder.output_length);
+                    }
+                    else {
+                        /* use default plugin Tag (it internal name, e.g: http.0 */
+                        flb_input_log_append(ctx->ins, NULL, 0,
+                                             ctx->log_encoder.output_buffer,
+                                             ctx->log_encoder.output_length);
+                    }
                 }
                 else {
-                    /* use default plugin Tag (it internal name, e.g: http.0 */
-                    flb_input_log_append(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+                    flb_plg_error(ctx->ins, "Error encoding record : %d", ret);
                 }
 
-                msgpack_sbuffer_destroy(&mp_sbuf);
+                /* TODO : Optimize this
+                 *
+                 * This is wasteful, considering that we are emitting a series
+                 * of records we should start and commit each one and then
+                 * emit them all at once after the loop.
+                 */
+
+                flb_log_event_encoder_reset(&ctx->log_encoder);
             }
 
             break;
@@ -243,7 +347,9 @@ int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
         else {
             flb_plg_error(ctx->ins, "skip record from invalid type: %i",
                          result.data.type);
+
             msgpack_unpacked_destroy(&result);
+
             return -1;
         }
     }
@@ -289,6 +395,97 @@ static ssize_t parse_payload_json(struct flb_http *ctx, flb_sds_t tag,
     return 0;
 }
 
+static ssize_t parse_payload_urlencoded(struct flb_http *ctx, flb_sds_t tag,
+                                  char *payload, size_t size)
+{
+    struct mk_list *kvs;
+    struct mk_list *head = NULL;
+    struct flb_split_entry *cur = NULL;
+    char **keys = NULL;
+    char **vals = NULL;
+    char *sep;
+    char *start;
+    int idx = 0;
+    int ret = -1;
+    msgpack_packer pck;
+    msgpack_sbuffer sbuf;
+
+
+    /* initialize buffers */
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
+
+    kvs = flb_utils_split(payload, '&', -1 );
+    if (kvs == NULL) {
+        goto split_error;
+    }
+
+    keys = flb_calloc(mk_list_size(kvs), sizeof(char *));
+    if (keys == NULL) {
+        goto keys_calloc_error;
+    }
+
+    vals = flb_calloc(mk_list_size(kvs), sizeof(char *));
+    if (vals == NULL) {
+        goto vals_calloc_error;
+    }
+
+    mk_list_foreach(head, kvs) {
+        cur = mk_list_entry(head, struct flb_split_entry, _head);
+        if (cur->value[0] == '\n') {
+            start = &cur->value[1];
+        } else {
+            start = cur->value;
+        }
+        sep = strchr(start, '=');
+        if (sep == NULL) {
+            vals[idx] = NULL;
+            continue;
+        }
+        *sep++ = '\0';
+
+        keys[idx] = flb_sds_create_len(start, strlen(start));
+        vals[idx] = flb_sds_create_len(sep, strlen(sep));
+
+        flb_sds_trim(keys[idx]);
+        flb_sds_trim(vals[idx]);
+        idx++;
+    }
+
+    msgpack_pack_map(&pck, mk_list_size(kvs));
+    for (idx = 0; idx < mk_list_size(kvs); idx++) {
+        msgpack_pack_str(&pck, flb_sds_len(keys[idx]));
+        msgpack_pack_str_body(&pck, keys[idx], flb_sds_len(keys[idx]));
+
+        if (sds_uri_decode(vals[idx]) != 0) {
+            goto decode_error;
+        } else {
+            msgpack_pack_str(&pck, flb_sds_len(vals[idx]));
+            msgpack_pack_str_body(&pck, vals[idx], strlen(vals[idx]));            
+        }
+    }
+
+    ret = process_pack(ctx, tag, sbuf.data, sbuf.size);
+
+decode_error:
+    for (idx = 0; idx < mk_list_size(kvs); idx++) {
+        if (keys[idx]) {
+            flb_sds_destroy(keys[idx]);
+        }
+        if (vals[idx]) {
+            flb_sds_destroy(vals[idx]);
+        }
+    }
+    flb_free(vals);
+vals_calloc_error:
+    flb_free(keys);
+keys_calloc_error:
+    flb_utils_split_free(kvs);
+split_error:
+    msgpack_sbuffer_destroy(&sbuf);
+    return ret;
+}
+
 static int process_payload(struct flb_http *ctx, struct http_conn *conn,
                            flb_sds_t tag,
                            struct mk_http_session *session,
@@ -308,6 +505,11 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
         type = HTTP_CONTENT_JSON;
     }
 
+    if (header->val.len == 33 &&
+        strncasecmp(header->val.data, "application/x-www-form-urlencoded", 33) == 0) {
+        type = HTTP_CONTENT_URLENCODED;
+    }
+
     if (type == -1) {
         send_response(conn, 400, "error: invalid 'Content-Type'\n");
         return -1;
@@ -320,6 +522,8 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
 
     if (type == HTTP_CONTENT_JSON) {
         parse_payload_json(ctx, tag, request->data.data, request->data.len);
+    } else if (type == HTTP_CONTENT_URLENCODED) {
+        parse_payload_urlencoded(ctx, tag, request->data.data, request->data.len);
     }
 
     return 0;

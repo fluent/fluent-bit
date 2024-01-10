@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -20,17 +20,23 @@
 #ifndef FLB_IN_MQTT_H
 #define FLB_IN_MQTT_H
 
+#include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_log_event_encoder.h>
+
 #define MQTT_MSGP_BUF_SIZE 8192
 
 struct flb_in_mqtt_config {
     char *listen;                      /* Listen interface            */
     char *tcp_port;                    /* TCP Port                    */
 
+    flb_sds_t payload_key;             /* payload key */
+
     int msgp_len;                      /* msgpack data length         */
     char msgp[MQTT_MSGP_BUF_SIZE];     /* msgpack static buffer       */
     struct flb_input_instance *ins;    /* plugin input instance       */
     struct flb_downstream *downstream; /* Client manager              */
     struct mk_list conns;              /* Active connections          */
+    struct flb_log_event_encoder *log_encoder;
 };
 
 int in_mqtt_collect(struct flb_input_instance *i_ins,

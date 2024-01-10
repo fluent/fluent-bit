@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -38,15 +38,17 @@
 #include <fluent-bit/flb_input_log.h>
 #include <fluent-bit/flb_input_metric.h>
 #include <fluent-bit/flb_input_trace.h>
+#include <fluent-bit/flb_config_format.h>
+#include <fluent-bit/flb_processor.h>
 
 #ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics.h>
 #endif
+#include <fluent-bit/flb_pthread.h>
 
 #include <cmetrics/cmetrics.h>
 #include <monkey/mk_core.h>
 #include <msgpack.h>
-
 #include <inttypes.h>
 
 #define FLB_COLLECT_TIME        1
@@ -152,10 +154,7 @@ struct flb_input_plugin {
 struct flb_input_instance {
     struct mk_event event;           /* events handler */
 
-
-    /* DEPRECATED: no logic should be build on top of this flag
-     * int event_type;                   FLB_INPUT_LOGS, FLB_INPUT_METRICS
-     */
+    struct flb_processor *processor;
 
     /*
      * The instance flags are derived from the fixed plugin flags. This
@@ -174,6 +173,7 @@ struct flb_input_instance {
     pthread_mutex_t chunk_trace_lock;
 #endif /* FLB_HAVE_CHUNK_TRACE */
     int log_level;                       /* log level for this plugin    */
+    int log_suppress_interval;           /* log suppression interval     */
     flb_pipefd_t channel[2];             /* pipe(2) channel              */
     int runs_in_coroutine;               /* instance runs in coroutine ? */
     char name[32];                       /* numbered name (cpu -> cpu.0) */
@@ -185,6 +185,7 @@ struct flb_input_instance {
     /* Plugin properties */
     char *tag;                           /* Input tag for routing        */
     int tag_len;
+    int tag_default;                     /* is it using the default tag? */
 
     /* By default all input instances are 'routable' */
     int routable;
@@ -325,6 +326,9 @@ struct flb_input_instance {
     /* is the input instance overlimit ?: 1 or 0 */
     struct cmt_gauge   *cmt_storage_overlimit;
 
+    /* is the input instance paused or not ?: 1 or 0 */
+    struct cmt_gauge   *cmt_ingestion_paused;
+
     /* memory bytes used by chunks */
     struct cmt_gauge   *cmt_storage_memory_bytes;
 
@@ -461,6 +465,7 @@ struct flb_libco_in_params {
     struct flb_coro *coro;
 };
 
+extern pthread_key_t libco_in_param_key;
 extern struct flb_libco_in_params libco_in_param;
 void flb_input_coro_prepare_destroy(struct flb_input_coro *input_coro);
 
@@ -469,18 +474,44 @@ static FLB_INLINE void input_params_set(struct flb_coro *coro,
                              struct flb_config *config,
                              void *context)
 {
+    struct flb_libco_in_params *params;
+
+    params = pthread_getspecific(libco_in_param_key);
+    if (params == NULL) {
+        params = flb_calloc(1, sizeof(struct flb_libco_in_params));
+        if (params == NULL) {
+            flb_errno();
+            return;
+        }
+        pthread_setspecific(libco_in_param_key, params);
+    }
+
     /* Set callback parameters */
-    libco_in_param.coll    = coll;
-    libco_in_param.config  = config;
-    libco_in_param.coro    = coro;
+    params->coll    = coll;
+    params->config  = config;
+    params->coro    = coro;
     co_switch(coro->callee);
 }
 
 static FLB_INLINE void input_pre_cb_collect(void)
 {
-    struct flb_input_collector *coll = libco_in_param.coll;
-    struct flb_config *config = libco_in_param.config;
-    struct flb_coro *coro     = libco_in_param.coro;
+    struct flb_input_collector *coll;
+    struct flb_config *config;
+    struct flb_coro *coro;
+    struct flb_libco_in_params *params;
+
+    params = pthread_getspecific(libco_in_param_key);
+    if (params == NULL) {
+        params = flb_calloc(1, sizeof(struct flb_libco_in_params));
+        if (params == NULL) {
+            flb_errno();
+            return;
+        }
+        pthread_setspecific(libco_in_param_key, params);
+    }
+    coll = params->coll;
+    config = params->config;
+    coro = params->coro;
 
     co_switch(coro->caller);
     coll->cb_collect(coll->instance, config, coll->instance->context);
@@ -489,6 +520,13 @@ static FLB_INLINE void input_pre_cb_collect(void)
 static FLB_INLINE void flb_input_coro_resume(struct flb_input_coro *input_coro)
 {
     flb_coro_resume(input_coro->coro);
+}
+
+static void libco_in_param_key_destroy(void *data)
+{
+    struct flb_libco_inparams *params = (struct flb_libco_inparams*)data;
+
+    flb_free(params);
 }
 
 static FLB_INLINE
@@ -503,6 +541,8 @@ struct flb_input_coro *flb_input_coro_collect(struct flb_input_collector *coll,
     if (!input_coro) {
         return NULL;
     }
+
+    pthread_key_create(&libco_in_param_key, libco_in_param_key_destroy);
 
     coro = input_coro->coro;
     if (!coro) {
@@ -667,6 +707,11 @@ void flb_input_instance_exit(struct flb_input_instance *ins,
                              struct flb_config *config);
 void flb_input_instance_destroy(struct flb_input_instance *ins);
 
+int flb_input_net_property_check(struct flb_input_instance *ins,
+                                 struct flb_config *config);
+int flb_input_plugin_property_check(struct flb_input_instance *ins,
+                                    struct flb_config *config);
+
 int flb_input_init_all(struct flb_config *config);
 void flb_input_pre_run_all(struct flb_config *config);
 void flb_input_exit_all(struct flb_config *config);
@@ -690,5 +735,8 @@ struct mk_event_loop *flb_input_event_loop_get(struct flb_input_instance *ins);
 int flb_input_upstream_set(struct flb_upstream *u, struct flb_input_instance *ins);
 int flb_input_downstream_set(struct flb_downstream *stream,
                              struct flb_input_instance *ins);
+
+/* processors */
+int flb_input_instance_processors_load(struct flb_input_instance *ins, struct flb_cf_group *processors);
 
 #endif

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -46,6 +46,7 @@ struct flb_syslog {
     flb_sds_t procid_key;
     flb_sds_t msgid_key;
     struct mk_list *sd_keys;
+    int allow_longer_sd_id;
     flb_sds_t message_key;
 
     /* Preset */

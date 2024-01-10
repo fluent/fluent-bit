@@ -9,15 +9,18 @@ on:
     branches:
       - master
 
-jobs:
+# Cancel any running on push
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
 
+jobs:
   # This job provides this metadata for the other jobs to use.
   pr-package-test-build-get-meta:
     # This is a long test to run so only on-demand for certain PRs
     if: contains(github.event.pull_request.labels.*.name, 'ok-package-test')
     name: Get metadata to add to build
     runs-on: ubuntu-latest
-    environment: unstable
     outputs:
       date: ${{ steps.date.outputs.date }}
     permissions:
@@ -38,12 +41,11 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       build-matrix: ${{ steps.set-matrix.outputs.build-matrix }}
-    environment: pr
     permissions:
       contents: read
     steps:
       - name: Checkout repository, always latest for action
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # Set up the list of target to build so we can pass the JSON to the reusable job
       - uses: ./.github/actions/generate-package-build-matrix
@@ -61,7 +63,6 @@ jobs:
       version: pr-${{ github.event.number }}
       ref: ${{ github.ref }}
       build_matrix: ${{ needs.pr-package-test-build-generate-matrix.outputs.build-matrix }}
-      environment: pr
       unstable: ${{ needs.pr-package-test-build-get-meta.outputs.date }}
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
@@ -74,7 +75,6 @@ jobs:
     with:
       version: pr-${{ github.event.number }}
       ref: ${{ github.ref }}
-      environment: pr
       unstable: ${{ needs.pr-package-test-build-get-meta.outputs.date }}
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
@@ -87,7 +87,6 @@ jobs:
     with:
       version: pr-${{ github.event.number }}
       ref: ${{ github.ref }}
-      environment: pr-package-test
       unstable: ${{ needs.pr-package-test-build-get-meta.outputs.date }}
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
