@@ -33,6 +33,7 @@
 #include <cmetrics/cmt_encode_text.h>
 #include <cmetrics/cmt_encode_influx.h>
 #include <cmetrics/cmt_encode_splunk_hec.h>
+#include <cmetrics/cmt_encode_cloudwatch_emf.h>
 
 #include "cmt_tests.h"
 
@@ -579,6 +580,46 @@ curl -v 'http://localhost:9090/v1/metrics' -H 'Content-Type: application/x-proto
     cmt_destroy(cmt);
 }
 
+void test_cloudwatch_emf()
+{
+    int ret;
+    struct cmt *cmt;
+    FILE *sample_file;
+    char *mp_buf = NULL;
+    size_t mp_size = 0;
+    int wrap_array = CMT_TRUE;
+
+    cmt_initialize();
+
+    cmt = generate_encoder_test_data();
+
+    cmt_label_add(cmt, "format", "EMF");
+    cmt_label_add(cmt, "dev", "CMetrics Authors");
+
+    ret = cmt_encode_cloudwatch_emf_create(cmt, &mp_buf, &mp_size, wrap_array);
+    TEST_CHECK(0 == ret);
+
+    if (ret != 0) {
+        cmt_destroy(cmt);
+
+        return;
+    }
+
+    printf("\n\nDumping cloudwatch EMF payload to cloudwatch_emf_payload.bin, in order to test it \
+we need to encode it as JSON and to send AWS Cloudwatch with out_cloudwatch plugin on \
+fluent-bit\n\n");
+
+    sample_file = fopen("cloudwatch_emf_payload.bin", "wb+");
+
+    fwrite(mp_buf, 1, mp_size, sample_file);
+
+    fclose(sample_file);
+
+    cmt_encode_cloudwatch_emf_destroy(mp_buf);
+
+    cmt_destroy(cmt);
+}
+
 void test_prometheus()
 {
     uint64_t ts;
@@ -1045,6 +1086,7 @@ TEST_LIST = {
     {"cmt_msgpack_labels",             test_cmt_to_msgpack_labels},
     {"cmt_msgpack",                    test_cmt_to_msgpack},
     {"opentelemetry",                  test_opentelemetry},
+    {"cloudwatch_emf",                 test_cloudwatch_emf},
     {"prometheus",                     test_prometheus},
     {"text",                           test_text},
     {"influx",                         test_influx},
