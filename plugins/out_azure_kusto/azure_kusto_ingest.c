@@ -165,7 +165,7 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
                 flb_http_add_header(c, "x-ms-date", 9, tmp, len);
                 flb_http_add_header(c, "x-ms-version", 12, "2019-12-12", 10);
 
-                //added kusto specific headers for debugging requests
+                /* added kusto specific headers for debugging requests */
                 flb_http_add_header(c, "x-ms-user", 9, "Fluent-Bit", 10);
                 flb_http_add_header(c, "x-ms-client-request-id", 22, generate_uuid(), 36);
                 flb_http_add_header(c, "x-ms-client-version", 10, FLB_VERSION_STR, strlen(FLB_VERSION_STR));
@@ -374,7 +374,7 @@ static int azure_kusto_enqueue_ingestion(struct flb_azure_kusto *ctx, flb_sds_t 
                     flb_http_add_header(c, "x-ms-date", 9, tmp, len);
                     flb_http_add_header(c, "x-ms-version", 12, "2019-12-12", 10);
 
-                    //added kusto specific headers for debugging requests
+                    /* added kusto specific headers for debugging requests */
                     flb_http_add_header(c, "x-ms-user", 9, "Fluent-Bit", 10);
                     flb_http_add_header(c, "x-ms-client-request-id", 22, generate_uuid(), 36);
                     flb_http_add_header(c, "x-ms-client-version", 10, FLB_VERSION_STR, strlen(FLB_VERSION_STR));
