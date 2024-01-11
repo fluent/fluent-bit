@@ -1835,12 +1835,14 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
 
         if (get_calyptia_fleet_id_by_name(ctx, u_conn, config) == -1) {
             flb_plg_error(ctx->ins, "unable to find fleet: %s", ctx->fleet_name);
-            goto conn_error;
+            goto calyptia_error;
          }
     }
 
     ret = get_calyptia_fleet_config(ctx, u_conn);
 
+calyptia_error:
+    flb_upstream_conn_release(u_conn);
 conn_error:
     FLB_INPUT_RETURN(ret);
 }
