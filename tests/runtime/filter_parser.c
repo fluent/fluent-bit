@@ -108,7 +108,7 @@ void flb_test_filter_parser_extract_fields()
     /* Parser */
     parser = flb_parser_create("dummy_test", "regex", "^(?<INT>[^ ]+) (?<FLOAT>[^ ]+) (?<BOOL>[^ ]+) (?<STRING>.+)$",
                                FLB_TRUE,
-                               NULL, NULL, NULL, MK_FALSE, MK_TRUE, FLB_FALSE, NULL, 0,
+                               NULL, NULL, NULL, MK_FALSE, MK_TRUE, FLB_FALSE, FLB_FALSE, NULL, 0,
                                NULL, ctx->config);
     TEST_CHECK(parser != NULL);
 
@@ -195,7 +195,7 @@ void flb_test_filter_parser_reserve_data_off()
     /* Parser */
     parser = flb_parser_create("dummy_test", "regex", "^(?<INT>[^ ]+) (?<FLOAT>[^ ]+) (?<BOOL>[^ ]+) (?<STRING>.+)$",
                                FLB_TRUE,
-                               NULL, NULL, NULL, MK_FALSE, MK_TRUE, FLB_FALSE, NULL, 0,
+                               NULL, NULL, NULL, MK_FALSE, MK_TRUE, FLB_FALSE, FLB_FALSE, NULL, 0,
                                NULL, ctx->config);
     TEST_CHECK(parser != NULL);
 
@@ -273,7 +273,7 @@ void flb_test_filter_parser_handle_time_key()
     parser = flb_parser_create("timestamp", "regex", "^(?<time>.*)$", FLB_TRUE,
                                "%Y-%m-%dT%H:%M:%S.%L",
                                "time",
-                               NULL, MK_FALSE, MK_TRUE, FLB_FALSE,
+                               NULL, MK_FALSE, MK_TRUE, FLB_FALSE, FLB_FALSE,
                                NULL, 0, NULL, ctx->config);
     TEST_CHECK(parser != NULL);
 
@@ -351,7 +351,7 @@ void flb_test_filter_parser_handle_time_key_with_fractional_timestamp()
     parser = flb_parser_create("timestamp", "regex", "^(?<time>.*)$", FLB_TRUE,
                                "%s.%L",
                                "time",
-                               NULL, MK_FALSE, MK_TRUE, FLB_FALSE,
+                               NULL, MK_FALSE, MK_TRUE, FLB_FALSE, FLB_FALSE,
                                NULL, 0, NULL, ctx->config);
     TEST_CHECK(parser != NULL);
 
@@ -439,6 +439,7 @@ void flb_test_filter_parser_handle_time_key_with_time_zone()
                                NULL, // time_offset
                                MK_FALSE, // time_keep
                                MK_TRUE, // time_strict
+                               FLB_FALSE, // time_system_timezone
                                MK_FALSE, // logfmt_no_bare_keys
                                NULL, // types
                                0, // types_len
@@ -491,6 +492,133 @@ void flb_test_filter_parser_handle_time_key_with_time_zone()
     flb_destroy(ctx);
 }
 
+void test_parser_timestamp_timezone(char *tz,
+                                     char *time_fmt, 
+                                     char *timestamp, 
+                                     char *expected_epoch,
+                                     int use_system_timezone) 
+{
+    int ret;
+    int bytes;
+    char *output, *original_tz;
+    char p[256];
+    char expected[12];
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    struct flb_parser *parser;
+
+    struct flb_lib_out_cb cb;
+    cb.cb   = callback_test;
+    cb.data = NULL;
+
+    clear_output();
+
+    ctx = flb_create();
+
+    /* Configure service */
+    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace", "1", "Log_Level", "debug", NULL);
+
+    /* Input */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd,
+                  "Tag", "test",
+                  NULL);
+
+    /* Parser */
+    parser = flb_parser_create("timestamp", // name
+                               "regex", // format
+                               "^(?<time>.*)$", // regex
+                               FLB_TRUE, // skip_empty
+                               time_fmt, // time_fmt
+                               "time", // time_key
+                               NULL, // time_offset
+                               MK_FALSE, // time_keep
+                               MK_TRUE, // time_strict
+                               use_system_timezone, // time_system_timezone
+                               MK_FALSE, // logfmt_no_bare_keys
+                               NULL, // types
+                               0, // types_len
+                               NULL, // decoders
+                               ctx->config); // config
+    TEST_CHECK(parser != NULL);
+
+    /* Filter */
+    filter_ffd = flb_filter(ctx, (char *) "parser", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd,
+                         "Match", "test",
+                         "Key_Name", "@timestamp",
+                         "Parser", "timestamp",
+                         "Reserve_Data", "On",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Output */
+    out_ffd = flb_output(ctx, (char *) "lib", &cb);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "Match", "*",
+                   "format", "json",
+                   NULL);
+
+    /* Temporarily set the system timezone for this test */
+    if (tz) {
+        original_tz = getenv("TZ");
+        ret = setenv("TZ", tz, 1);
+        TEST_ASSERT(ret == 0);
+    }
+
+    /* Start the engine */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_destroy(ctx);
+        return;
+    }
+
+    /* Ingest data. */
+    snprintf(p, 256, "[1448403340, {\"@timestamp\":\"%s\", \"message\":\"This is an example\"}]", timestamp);
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+
+    wait_with_timeout(2000, &output); /* waiting flush and ensuring data flush */
+    TEST_CHECK_(output != NULL, "Expected output to not be NULL");
+    if (output != NULL) {
+        snprintf(expected, 12, "[%s", expected_epoch);
+        TEST_CHECK_(strstr(output, expected) != NULL, "Expected output to contain '%s', got '%s'", expected, output);
+    }
+
+    /* Reset original timezone */
+    if (original_tz) {
+        ret = setenv("TZ", original_tz, 1);
+        TEST_CHECK(ret == 0);
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_filter_parser_use_system_timezone()
+{
+    test_parser_timestamp_timezone("EST5EDT", /* char *tz */
+                                   "%Y-%m-%d:%H:%M:%S", /* char *time_fmt */ 
+                                   "2023-10-17:05:00:00", /* char *timestamp */
+                                   "1697536800", /* char *expected_epoch */
+                                   FLB_TRUE); /* int use_system_timezone */
+}
+
+void flb_test_filter_parser_use_system_timezone_zone_in_timestamp()
+{
+    test_parser_timestamp_timezone("EST5EDT", /* char *tz */
+                                   "%Y-%m-%d:%H:%M:%S%z", /* char *time_fmt */ 
+                                   "2023-10-17:05:00:00-0700", /* char *timestamp */
+                                   "1697536800", /* char *expected_epoch */
+                                   FLB_TRUE); /* int use_system_timezone */
+}
+
 void flb_test_filter_parser_ignore_malformed_time()
 {
     int ret;
@@ -524,7 +652,7 @@ void flb_test_filter_parser_ignore_malformed_time()
     parser = flb_parser_create("timestamp", "regex",
                                "^(?<time>.*)$", FLB_TRUE,
                                "%Y-%m-%dT%H:%M:%S.%L", "time",
-                               NULL, FLB_FALSE, MK_TRUE, FLB_FALSE,
+                               NULL, FLB_FALSE, MK_TRUE, FLB_FALSE, FLB_FALSE,
                                NULL, 0, NULL, ctx->config);
     TEST_CHECK(parser != NULL);
 
@@ -602,7 +730,7 @@ void flb_test_filter_parser_preserve_original_field()
     /* Parser */
     parser = flb_parser_create("dummy_test", "regex", "^(?<INT>[^ ]+) (?<FLOAT>[^ ]+) (?<BOOL>[^ ]+) (?<STRING>.+)$",
                                FLB_TRUE,
-                               NULL, NULL, NULL, MK_FALSE, MK_TRUE, FLB_FALSE, NULL, 0,
+                               NULL, NULL, NULL, MK_FALSE, MK_TRUE, FLB_FALSE, FLB_FALSE, NULL, 0,
                                NULL, ctx->config);
     TEST_CHECK(parser != NULL);
 
@@ -687,13 +815,13 @@ void flb_test_filter_parser_first_matched_when_mutilple_parser()
     /* Parser */
     parser = flb_parser_create("one", "regex", "^(?<one>.+?)$",
                                FLB_TRUE,
-                               NULL, NULL, NULL, MK_FALSE, MK_TRUE, FLB_FALSE,
+                               NULL, NULL, NULL, MK_FALSE, MK_TRUE, FLB_FALSE, FLB_FALSE,
                                NULL, 0, NULL, ctx->config);
     TEST_CHECK(parser != NULL);
 
     parser = flb_parser_create("two", "regex", "^(?<two>.+?)$",
                                FLB_TRUE,
-                               NULL, NULL, NULL, MK_FALSE, MK_TRUE, FLB_FALSE,
+                               NULL, NULL, NULL, MK_FALSE, MK_TRUE, FLB_FALSE, FLB_FALSE,
                                NULL, 0, NULL, ctx->config);
     TEST_CHECK(parser != NULL);
 
@@ -774,7 +902,7 @@ void flb_test_filter_parser_skip_empty_values_false()
     /* Parser */
     parser = flb_parser_create("one", "regex", "^(?<one>.+?)$",
                                FLB_FALSE,
-                               NULL, NULL, NULL, MK_FALSE, MK_TRUE, FLB_FALSE,
+                               NULL, NULL, NULL, MK_FALSE, MK_TRUE, FLB_FALSE, FLB_FALSE,
                                NULL, 0, NULL, ctx->config);
     TEST_CHECK(parser != NULL);
 
@@ -818,12 +946,13 @@ void flb_test_filter_parser_skip_empty_values_false()
     flb_destroy(ctx);
 }
 
-
 TEST_LIST = {
     {"filter_parser_extract_fields", flb_test_filter_parser_extract_fields },
     {"filter_parser_reserve_data_off", flb_test_filter_parser_reserve_data_off },
     {"filter_parser_handle_time_key", flb_test_filter_parser_handle_time_key },
     {"filter_parser_handle_time_key_with_time_zone", flb_test_filter_parser_handle_time_key_with_time_zone },
+    {"filter_parser_use_system_timezone", flb_test_filter_parser_use_system_timezone },
+    {"filter_parser_use_system_timezone_zone_in_timestamp",flb_test_filter_parser_use_system_timezone_zone_in_timestamp },
     {"filter_parser_ignore_malformed_time", flb_test_filter_parser_ignore_malformed_time },
     {"filter_parser_preserve_original_field", flb_test_filter_parser_preserve_original_field },
     {"filter_parser_first_matched_when_multiple_parser", flb_test_filter_parser_first_matched_when_mutilple_parser },

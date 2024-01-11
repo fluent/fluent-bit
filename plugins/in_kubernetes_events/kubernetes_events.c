@@ -175,7 +175,7 @@ static int timestamp_lookup(struct k8s_events *ctx, char *ts, struct flb_time *t
         return -1;
     }
 
-    time->tm.tv_sec = flb_parser_tm2time(&tm);
+    time->tm.tv_sec = flb_parser_tm2time(&tm, FLB_FALSE);
     time->tm.tv_nsec = 0;
 
     return 0;
