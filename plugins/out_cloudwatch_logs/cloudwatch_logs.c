@@ -414,7 +414,8 @@ static void cb_cloudwatch_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    event_count = process_and_send(ctx, i_ins->p->name, buf, event_chunk->tag, event_chunk->data, event_chunk->size);
+    event_count = process_and_send(ctx, i_ins->p->name, buf, event_chunk->tag, event_chunk->data, event_chunk->size,
+                                   event_chunk->type);
     if (event_count < 0) {
         flb_plg_error(ctx->ins, "Failed to send events");
         cw_flush_destroy(buf);
@@ -660,6 +661,7 @@ struct flb_output_plugin out_cloudwatch_logs_plugin = {
     .cb_exit      = cb_cloudwatch_exit,
     .flags        = 0,
     .workers      = 1,
+    .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS,
 
     /* Configuration */
     .config_map     = config_map,
