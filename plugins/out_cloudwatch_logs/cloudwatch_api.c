@@ -37,6 +37,7 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_intermediate_metric.h>
+#include <fluent-bit/flb_metrics.h>
 
 #include <monkey/mk_core.h>
 #include <msgpack.h>
@@ -783,13 +784,9 @@ int pack_emf_payload(struct flb_cloudwatch *ctx,
     return 0;
 }
 
-/*
- * Main routine- processes msgpack and sends in batches which ignore the empty ones
- * return value is the number of events processed and send.
- */
-int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin, 
-                     struct cw_flush *buf, flb_sds_t tag,
-                     const char *data, size_t bytes)
+static int process_log_events(struct flb_cloudwatch *ctx, const char *input_plugin,
+                              struct cw_flush *buf, flb_sds_t tag,
+                              const char *data, size_t bytes)
 {
     int i = 0;
     size_t map_size;
@@ -834,7 +831,7 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
     if (strncmp(input_plugin, "cpu", 3) == 0) {
         intermediate_metric_type = GAUGE;
         intermediate_metric_unit = PERCENT;
-    } 
+    }
     else if (strncmp(input_plugin, "mem", 3) == 0) {
         intermediate_metric_type = GAUGE;
         intermediate_metric_unit = BYTES;
@@ -901,7 +898,7 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
             continue;
         }
 
-        if (strncmp(input_plugin, "cpu", 3) == 0 
+        if (strncmp(input_plugin, "cpu", 3) == 0
             || strncmp(input_plugin, "mem", 3) == 0) {
             /* Added for EMF support: Construct a list */
             struct mk_list flb_intermediate_metrics;
@@ -909,8 +906,8 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
 
             kv = map.via.map.ptr;
 
-            /* 
-             * Iterate through the record map, extract intermediate metric data, 
+            /*
+             * Iterate through the record map, extract intermediate metric data,
              * and add to the list.
              */
             for (i = 0; i < map_size; i++) {
@@ -926,25 +923,25 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
                 metric->timestamp = log_event.timestamp;
 
                 mk_list_add(&metric->_head, &flb_intermediate_metrics);
-                
-            }  
+
+            }
 
             /* The msgpack object is only valid during the lifetime of the
              * sbuffer & the unpacked result.
-            */
+             */
             msgpack_sbuffer_init(&mp_sbuf);
             msgpack_unpacked_init(&mp_emf_result);
 
             ret = pack_emf_payload(ctx,
-                                    &flb_intermediate_metrics,
-                                    input_plugin,
-                                    log_event.timestamp,
-                                    &mp_sbuf,
-                                    &mp_emf_result,
-                                    &emf_payload);
-            
+                                   &flb_intermediate_metrics,
+                                   input_plugin,
+                                   log_event.timestamp,
+                                   &mp_sbuf,
+                                   &mp_emf_result,
+                                   &emf_payload);
+
             /* free the intermediate metric list */
-            
+
             mk_list_foreach_safe(head, tmp, &flb_intermediate_metrics) {
                 an_item = mk_list_entry(head, struct flb_intermediate_metric, _head);
                 mk_list_del(&an_item->_head);
@@ -978,6 +975,100 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
     }
     flb_log_event_decoder_destroy(&log_decoder);
 
+    return i;
+
+error:
+    flb_log_event_decoder_destroy(&log_decoder);
+
+    return -1;
+}
+
+
+static int process_metric_events(struct flb_cloudwatch *ctx, const char *input_plugin,
+                                 struct cw_flush *buf, flb_sds_t tag,
+                                 const char *data, size_t bytes)
+{
+    int i = 0;
+    int ret;
+    msgpack_object  map;
+    msgpack_unpacked mp_emf_result;
+
+    struct log_stream *stream;
+
+    size_t off = 0;
+    struct cmt *cmt;
+    char *mp_buf = NULL;
+    size_t mp_size = 0;
+    size_t mp_off = 0;
+    struct flb_time tm;
+
+    while ((ret = cmt_decode_msgpack_create(&cmt,
+                                            data,
+                                            bytes, &off)) == CMT_DECODE_MSGPACK_SUCCESS) {
+        ret = cmt_encode_cloudwatch_emf_create(cmt, &mp_buf, &mp_size, CMT_FALSE);
+        if (ret < 0) {
+            goto cmt_error;
+        }
+
+        msgpack_unpacked_init(&mp_emf_result);
+        while (msgpack_unpack_next(&mp_emf_result, mp_buf, mp_size, &mp_off) == MSGPACK_UNPACK_SUCCESS) {
+            map = mp_emf_result.data;
+            if (map.type != MSGPACK_OBJECT_MAP) {
+                continue;
+            }
+
+            stream = get_log_stream(ctx, tag, map);
+            if (!stream) {
+                flb_plg_debug(ctx->ins, "Couldn't determine log group & stream for record with tag %s", tag);
+                goto cmt_error;
+            }
+
+            flb_time_get(&tm);
+            ret = add_event(ctx, buf, stream, &map,
+                            &tm);
+
+            if (ret < 0 ) {
+                goto cmt_error;
+            }
+
+            if (ret == 0) {
+                i++;
+            }
+        }
+        cmt_encode_cloudwatch_emf_destroy(mp_buf);
+        msgpack_unpacked_destroy(&mp_emf_result);
+        cmt_destroy(cmt);
+    }
+
+    return i;
+
+cmt_error:
+    cmt_destroy(cmt);
+
+    return -1;
+}
+
+/*
+ * Main routine- processes msgpack and sends in batches which ignore the empty ones
+ * return value is the number of events processed and send.
+ */
+int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
+                     struct cw_flush *buf, flb_sds_t tag,
+                     const char *data, size_t bytes, int event_type)
+{
+    int ret;
+    int i = 0;
+
+    if (event_type == FLB_EVENT_TYPE_LOGS) {
+        i = process_log_events(ctx, input_plugin,
+                               buf, tag,
+                               data, bytes);
+    }
+    else if (event_type == FLB_EVENT_TYPE_METRICS) {
+        i = process_metric_events(ctx, input_plugin,
+                                  buf, tag,
+                                  data, bytes);
+    }
     /* send any remaining events */
     ret = send_log_events(ctx, buf);
     reset_flush_buf(ctx, buf);
@@ -987,11 +1078,6 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
 
     /* return number of events */
     return i;
-
-error:
-    flb_log_event_decoder_destroy(&log_decoder);
-
-    return -1;
 }
 
 struct log_stream *get_or_create_log_stream(struct flb_cloudwatch *ctx,
