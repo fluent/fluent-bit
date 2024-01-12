@@ -45,6 +45,7 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_scheduler.h>
+#include <fluent-bit/flb_pal.h>
 
 #include <monkey/mk_core.h>
 #include <ares.h>
@@ -401,7 +402,6 @@ static int net_connect_async(int fd,
     int socket_errno;
     uint32_t mask;
     char so_error_buf[256];
-    char *str;
     struct flb_upstream *u;
 
     u = u_conn->upstream;
@@ -523,9 +523,9 @@ static int net_connect_async(int fd,
             }
 
             /* Connection is broken, not much to do here */
-            str = strerror_r(error, so_error_buf, sizeof(so_error_buf));
+            flb_strerror_r(error, so_error_buf, sizeof(so_error_buf));
             flb_error("[net] TCP connection failed: %s:%i (%s)",
-                      u->tcp_host, u->tcp_port, str);
+                      u->tcp_host, u->tcp_port, so_error_buf);
             return -1;
         }
     }

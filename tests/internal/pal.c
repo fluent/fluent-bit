@@ -51,10 +51,9 @@ static void test_pal_strerror_r_smallbuf()
 
 static void test_pal_strerror_r_error_unknown()
 {
-    int ret;
     char buf[BUFSIZE];
 
-    ret = flb_strerror_r(INT_MAX, buf, sizeof(buf));
+    flb_strerror_r(INT_MAX, buf, sizeof(buf));
 
     /*
      * The return value upon an unknown errno is not covered by
