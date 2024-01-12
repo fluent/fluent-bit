@@ -42,6 +42,7 @@ set(UNIT_TESTS_FILES
   log_event_encoder.c
   processor.c
   uri.c
+  pal.c
   )
 
 # Config format
