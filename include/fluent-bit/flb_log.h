@@ -225,6 +225,7 @@ static inline int flb_log_suppress_check(int log_suppress_interval, const char *
 #endif
 
 int flb_log_worker_init(struct flb_worker *worker);
+int flb_log_work_destroy(struct flb_worker *worker);
 int flb_errno_print(int errnum, const char *file, int line);
 
 #ifdef __FLB_FILENAME__

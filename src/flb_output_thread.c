@@ -344,6 +344,10 @@ static void output_thread(void *data)
         }
     }
 
+    mk_event_channel_destroy(th_ins->evl,
+                             th_ins->ch_thread_events[0],
+                             th_ins->ch_thread_events[1],
+                             &event_local);
     /*
      * Final cleanup, destroy all resources associated with:
      *
@@ -358,11 +362,17 @@ static void output_thread(void *data)
     flb_upstream_conn_active_destroy_list(&th_ins->upstreams);
     flb_upstream_conn_pending_destroy_list(&th_ins->upstreams);
 
-    flb_sched_destroy(sched);
+    flb_sched_destroy(th_ins->evl, sched);
     params = FLB_TLS_GET(out_flush_params);
     if (params) {
         flb_free(params);
     }
+
+    mk_event_channel_destroy(th_ins->evl,
+                             th_ins->ch_parent_events[0],
+                             th_ins->ch_parent_events[1],
+                             th_ins);
+
     mk_event_loop_destroy(th_ins->evl);
     flb_bucket_queue_destroy(th_ins->evl_bktq);
 

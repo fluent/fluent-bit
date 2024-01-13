@@ -726,9 +726,9 @@ int flb_engine_start(struct flb_config *config)
      * to the local event loop 'evl'.
      */
     ret = mk_event_channel_create(config->evl,
-                                    &config->ch_self_events[0],
-                                    &config->ch_self_events[1],
-                                    &config->event_thread_init);
+                                  &config->ch_self_events[0],
+                                  &config->ch_self_events[1],
+                                  &config->event_thread_init);
     if (ret == -1) {
         flb_error("[engine] could not create engine thread channel");
         return -1;
@@ -1135,6 +1135,10 @@ int flb_engine_shutdown(struct flb_config *config)
         flb_hs_destroy(config->http_ctx);
     }
 #endif
+    mk_event_channel_destroy(config->evl,
+                             config->ch_self_events[0],
+                             config->ch_self_events[1],
+                             &config->event_thread_init);
 
     return 0;
 }

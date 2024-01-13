@@ -1445,7 +1445,7 @@ static void test_issue_5504()
     TEST_CHECK(ml->last_flush > last_flush);
 
     /* Cleanup */
-    flb_sched_destroy(config->sched);
+    flb_sched_destroy(config->evl, config->sched);
     config->sched = sched;
     mk_event_loop_destroy(config->evl);
     config->evl = evl;
