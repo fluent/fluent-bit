@@ -156,6 +156,10 @@ static int activate_collector(struct flb_ne *ctx, struct flb_config *config,
     }
     coll->activated = FLB_TRUE;
 
+    if (coll->cb_update) {
+        coll->cb_update(ctx->ins, config, ctx);
+    }
+
     return 0;
 }
 
@@ -206,18 +210,6 @@ static int in_ne_init(struct flb_input_instance *in,
     /* Associate context with the instance */
     flb_input_set_context(in, ctx);
 
-    /* Create the collector */
-    ret = flb_input_set_collector_time(in,
-                                       cb_ne_collect,
-                                       ctx->scrape_interval, 0,
-                                       config);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins,
-                      "could not set collector for Node Exporter Metrics plugin");
-        return -1;
-    }
-    ctx->coll_fd = ret;
-
     /* Check and initialize enabled metrics */
     if (ctx->metrics) {
         mk_list_foreach(head, ctx->metrics) {
@@ -246,6 +238,18 @@ static int in_ne_init(struct flb_input_instance *in,
 
         return -1;
     }
+
+    /* Create the collector */
+    ret = flb_input_set_collector_time(in,
+                                       cb_ne_collect,
+                                       ctx->scrape_interval, 0,
+                                       config);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins,
+                      "could not set collector for Node Exporter Metrics plugin");
+        return -1;
+    }
+    ctx->coll_fd = ret;
 
     return 0;
 }
