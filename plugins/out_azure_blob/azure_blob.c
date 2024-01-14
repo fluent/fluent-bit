@@ -200,6 +200,12 @@ static int send_blob(struct flb_config *config,
         return FLB_OK;
     }
     else if (c->resp.status == 404) {
+        /* delete "&sig=..." in the c->uri for security */
+        char *p = strstr(c->uri, "&sig=");
+        if (p) {
+            *p = '\0';
+        }
+
         flb_plg_info(ctx->ins, "blob not found: %s", c->uri);
         flb_http_client_destroy(c);
         return CREATE_BLOB;
@@ -269,6 +275,11 @@ static int create_blob(struct flb_azure_blob *ctx, char *name)
     }
 
     if (c->resp.status == 201) {
+        /* delete "&sig=..." in the c->uri for security */
+        char *p = strstr(c->uri, "&sig=");
+        if (p) {
+            *p = '\0';
+        }
         flb_plg_info(ctx->ins, "blob created successfully: %s", c->uri);
     }
     else {
@@ -570,6 +581,18 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "date_key", "@timestamp",
      0, FLB_TRUE, offsetof(struct flb_azure_blob, date_key),
      "Name of the key that will have the record timestamp"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "auth_type", "key",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, auth_type),
+     "Set the auth type: key or sas"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "sas_token", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, sas_token),
+     "Azure Blob SAS token"
     },
 
     /* EOF */
