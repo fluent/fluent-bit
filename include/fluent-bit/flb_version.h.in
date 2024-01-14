@@ -41,8 +41,6 @@
 #define FLB_VERSION_STR     "@FLB_VERSION_STR@"
 #define FLB_GIT_HASH        "@FLB_GIT_HASH@"
 
-
-
 static inline void flb_version()
 {
 #ifdef FLB_NIGHTLY_BUILD
