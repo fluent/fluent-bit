@@ -206,6 +206,15 @@ function(prepare_unit_tests TEST_PREFIX SOURCEFILES)
               COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we}
               WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
       set_tests_properties(${source_file_we} PROPERTIES LABELS "internal")
+
+      if("llvm" STREQUAL FLB_COVERAGE_TYPE)
+        list(APPEND env_vars "LLVM_PROFILE_FILE=${CMAKE_CURRENT_BINARY_DIR}/${source_file_we}.profraw")
+      endif()
+
+      if(env_vars)
+        set_tests_properties(${source_file_we} PROPERTIES ENVIRONMENT "${env_vars}")
+        unset(env_vars)
+      endif()
     endif()
   endforeach()
 endfunction(prepare_unit_tests)
