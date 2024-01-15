@@ -1135,10 +1135,12 @@ int flb_engine_shutdown(struct flb_config *config)
         flb_hs_destroy(config->http_ctx);
     }
 #endif
-    mk_event_channel_destroy(config->evl,
-                             config->ch_self_events[0],
-                             config->ch_self_events[1],
-                             &config->event_thread_init);
+    if (config->evl) {
+        mk_event_channel_destroy(config->evl,
+                                config->ch_self_events[0],
+                                config->ch_self_events[1],
+                                &config->event_thread_init);
+    }
 
     return 0;
 }
