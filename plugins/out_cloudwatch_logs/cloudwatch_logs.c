@@ -478,6 +478,10 @@ void flb_cloudwatch_ctx_destroy(struct flb_cloudwatch *ctx)
             flb_sds_destroy(ctx->stream_name);
         }
 
+        if (ctx->metric_namespace) {
+            flb_sds_destroy(ctx->metric_namespace);
+        }
+
         mk_list_foreach_safe(head, tmp, &ctx->streams) {
             stream = mk_list_entry(head, struct log_stream, _head);
             mk_list_del(&stream->_head);
