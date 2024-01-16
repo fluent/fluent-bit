@@ -161,7 +161,7 @@ Fluent Bit is supported on Linux on IBM Z(s390x), but the WASM and LUA filter pl
 | [bigquery](https://docs.fluentbit.io/manual/pipeline/outputs/bigquery) | BigQuery | Ingest records into Google BigQuery |
 | [counter](https://docs.fluentbit.io/manual/pipeline/outputs/counter) | Count Records | Simple records counter. |
 | [datadog](https://docs.fluentbit.io/manual/pipeline/outputs/datadog) | Datadog | Ingest logs into Datadog. |
-| [es](https://docs.fluentbit.io/manual/pipeline/outputs/elasticsearch) | Elasticsearch | flush records to a Elasticsearch server. |
+| [es](https://docs.fluentbit.io/manual/pipeline/outputs/elasticsearch) | Elasticsearch | flush records to an Elasticsearch server. |
 | [file](https://docs.fluentbit.io/manual/pipeline/outputs/file) | File | Flush records to a file. |
 | [flowcounter](https://docs.fluentbit.io/manual/pipeline/outputs/flowcounter) | FlowCounter | Count records. |
 | [forward](https://docs.fluentbit.io/manual/pipeline/outputs/forward) | Forward | Fluentd forward protocol. |
