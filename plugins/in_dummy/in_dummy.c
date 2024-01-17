@@ -351,6 +351,10 @@ static int in_dummy_init(struct flb_input_instance *in,
 
     flb_input_set_context(in, ctx);
 
+    if (ctx->flush_on_startup) {
+        in_dummy_collect(in, config, ctx);
+    }
+
     ret = flb_input_set_collector_time(in,
                                        in_dummy_collect,
                                        tm.tv_sec,
@@ -443,6 +447,11 @@ static struct flb_config_map config_map[] = {
     FLB_CONFIG_MAP_BOOL, "fixed_timestamp", "off",
     0, FLB_TRUE, offsetof(struct flb_dummy, fixed_timestamp),
     "used a fixed timestamp, allows the message to pre-generated once."
+   },
+   {
+    FLB_CONFIG_MAP_BOOL, "flush_on_startup", "false",
+    0, FLB_TRUE, offsetof(struct flb_dummy, flush_on_startup),
+    "generate the first event on startup"
    },
    {0}
 };

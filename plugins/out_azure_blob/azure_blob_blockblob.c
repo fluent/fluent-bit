@@ -65,6 +65,10 @@ flb_sds_t azb_block_blob_uri(struct flb_azure_blob *ctx, char *tag,
                        tag, ms, ext, encoded_blockid);
     }
 
+    if (ctx->atype == AZURE_BLOB_AUTH_SAS && ctx->sas_token) {
+        flb_sds_printf(&uri, "&%s", ctx->sas_token);
+    }
+
     flb_sds_destroy(encoded_blockid);
     return uri;
 }
@@ -93,6 +97,10 @@ flb_sds_t azb_block_blob_uri_commit(struct flb_azure_blob *ctx,
     }
     else {
         flb_sds_printf(&uri, "/%s.%" PRIu64 "%s?comp=blocklist", tag, ms, ext);
+    }
+
+    if (ctx->atype == AZURE_BLOB_AUTH_SAS && ctx->sas_token) {
+        flb_sds_printf(&uri, "&%s", ctx->sas_token);
     }
 
     return uri;
@@ -214,6 +222,12 @@ int azb_block_blob_commit(struct flb_azure_blob *ctx, char *blockid, char *tag,
         return FLB_OK;
     }
     else if (c->resp.status == 404) {
+        /* delete "&sig=..." in the c->uri for security */
+        char *p = strstr(c->uri, "&sig=");
+        if (p) {
+            *p = '\0';
+        }
+
         flb_plg_info(ctx->ins, "blob not found: %s", c->uri);
         flb_http_client_destroy(c);
         flb_upstream_conn_release(u_conn);

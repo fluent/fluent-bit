@@ -569,6 +569,11 @@ void flb_test_dummy_records_message_interval_nsec(struct callback_records *recor
     TEST_CHECK(records->num_records >= 1);
 }
 
+void flb_test_dummy_records_message_flush_on_startup(struct callback_records *records)
+{
+    TEST_CHECK(records->num_records >= 2);
+}
+
 void flb_test_in_dummy_flush()
 {
     do_test("dummy", NULL);
@@ -609,6 +614,11 @@ void flb_test_in_dummy_flush()
     do_test_records_wait_time("dummy", 1, flb_test_dummy_records_message_interval_nsec,
                     "interval_sec", "0",
                     "interval_nsec", "700000000",
+                    NULL);
+    do_test_records_wait_time("dummy", 5, flb_test_dummy_records_message_flush_on_startup,
+                    "interval_sec", "5",
+                    "interval_nsec", "0",
+                    "flush_on_startup", "true",
                     NULL);
 }
 

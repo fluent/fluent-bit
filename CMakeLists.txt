@@ -6,9 +6,9 @@ cmake_policy(SET CMP0069 NEW)
 set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 
 # Fluent Bit Version
-set(FLB_VERSION_MAJOR  2)
-set(FLB_VERSION_MINOR  2)
-set(FLB_VERSION_PATCH  2)
+set(FLB_VERSION_MAJOR  3)
+set(FLB_VERSION_MINOR  0)
+set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -167,7 +167,6 @@ option(FLB_IN_DOCKER                   "Enable Docker input plugin"             
 option(FLB_IN_DOCKER_EVENTS            "Enable Docker events input plugin"            Yes)
 option(FLB_IN_EXEC                     "Enable Exec input plugin"                     Yes)
 option(FLB_IN_EXEC_WASI                "Enable Exec WASI input plugin"                Yes)
-option(FLB_IN_EVENT_TEST               "Enable Events test plugin"                    Yes)
 option(FLB_IN_EVENT_TYPE               "Enable event type plugin"                     Yes)
 option(FLB_IN_FLUENTBIT_METRICS        "Enable Fluent Bit metrics  plugin"            Yes)
 option(FLB_IN_FORWARD                  "Enable Forward input plugin"                  Yes)
@@ -439,10 +438,10 @@ endif()
 # Enable Debug symbols if specified
 if(MSVC)
   set(CMAKE_BUILD_TYPE None)  # Avoid flag conflicts (See CMakeList.txt:L18)
-elseif(FLB_DEBUG)
-  set(CMAKE_BUILD_TYPE "Debug")
 elseif(FLB_RELEASE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
+elseif(FLB_DEBUG)
+  set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
 if(FLB_IPO STREQUAL "On" OR (FLB_IPO STREQUAL "ReleaseOnly" AND FLB_RELEASE))
