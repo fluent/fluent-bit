@@ -305,9 +305,7 @@ int flb_log_cache_check_suppress(struct flb_log_cache *cache, char *msg_buf, siz
 
 int flb_log_work_destroy(struct flb_worker *worker)
 {
-    close(worker->log[0]);
-    close(worker->log[1]);
-
+    flb_pipe_destroy(worker->log);
     return 0;
 }
 
