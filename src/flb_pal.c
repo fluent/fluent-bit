@@ -63,12 +63,7 @@ int flb_strerror_r(int errnum, char *buf, size_t buflen)
     return strerror_r(errnum, buf, buflen);
 #endif
 #elif defined(FLB_HAVE_STRERROR_S)
-    int ret;
-
-    ret = (int) strerror_s(buf, (rsize_t)buflen, (errno_t)errnum);
-    if (0 != ret) {
-        ret = ERANGE;
-    }
+    return (int) strerror_s(buf, (rsize_t)buflen, (errno_t)errnum);
 #endif
 }
 #endif
