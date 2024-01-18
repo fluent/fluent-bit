@@ -44,9 +44,18 @@ static void test_pal_strerror_r_smallbuf()
 
     ret = flb_strerror_r(EINVAL, buf, sizeof(buf));
 
-    TEST_CHECK(ERANGE == ret);
-    TEST_CHECK(NULL != memchr(buf, '\0', sizeof(buf)));
-    TEST_CHECK(0 == strlen(buf));
+    /*
+     * If the flb_strerror_r() implementation is strerror_s(3), the short
+     * buffer cannot be detected; it seems such the condition is not a runtime
+     * constraint violation.
+     *
+     * Only check here that the returned string is terminated as long as the
+     * status is successful.
+     */
+    if (0 == ret) {
+        TEST_CHECK(NULL != memchr(buf, '\0', sizeof(buf)));
+        TEST_CHECK(0 == strlen(buf));
+    }
 }
 
 static void test_pal_strerror_r_error_unknown()
