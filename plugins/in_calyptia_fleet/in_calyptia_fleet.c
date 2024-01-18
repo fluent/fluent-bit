@@ -103,7 +103,6 @@ struct flb_in_calyptia_fleet_config {
 };
 
 static int get_calyptia_files(struct flb_in_calyptia_fleet_config *ctx,
-                              struct flb_connection *u_conn,
                               const char *url,
                               time_t timestamp);
 
@@ -878,14 +877,20 @@ static flb_sds_t get_project_id_from_api_key(struct flb_in_calyptia_fleet_config
 }
 
 static struct flb_http_client *fleet_http_do(struct flb_in_calyptia_fleet_config *ctx,
-                                             struct flb_connection *u_conn,
                                              flb_sds_t url)
 {
-    struct flb_http_client *client;
-    size_t b_sent;
     int ret = -1;
+    size_t b_sent;
+    struct flb_connection *u_conn;
+    struct flb_http_client *client;
 
-    if (ctx == NULL || u_conn == NULL || url == NULL) {
+    if (ctx == NULL || url == NULL) {
+        return NULL;
+    }
+
+    u_conn = flb_upstream_conn_get(ctx->u);
+    if (u_conn == NULL) {
+        flb_plg_error(ctx->ins, "unable to get upstream connection");
         return NULL;
     }
 
@@ -904,7 +909,6 @@ static struct flb_http_client *fleet_http_do(struct flb_in_calyptia_fleet_config
                         ctx->api_key, flb_sds_len(ctx->api_key));
 
     ret = flb_http_do(client, &b_sent);
-
     if (ret != 0) {
         flb_plg_error(ctx->ins, "http do error");
         goto http_do_error;
@@ -920,28 +924,28 @@ static struct flb_http_client *fleet_http_do(struct flb_in_calyptia_fleet_config
         goto http_do_error;
     }
 
+    flb_upstream_conn_release(u_conn);
     return client;
 
 http_do_error:
     flb_http_client_destroy(client);
 http_client_error:
+    flb_upstream_conn_release(u_conn);
     return NULL;
 }
 
 static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ctx,
-                                         struct flb_connection *u_conn,
                                          struct flb_config *config)
 {
     struct flb_http_client *client;
     flb_sds_t url;
     flb_sds_t project_id;
 
-    if (ctx == NULL || u_conn == NULL || config == NULL) {
+    if (ctx == NULL || config == NULL) {
         return -1;
     }
 
     project_id = get_project_id_from_api_key(ctx);
-
     if (project_id == NULL) {
         return -1;
     }
@@ -955,7 +959,7 @@ static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ct
     flb_sds_printf(&url, "/v1/search?project_id=%s&resource=fleet&term=%s",
                    project_id, ctx->fleet_name);
 
-    client = fleet_http_do(ctx, u_conn, url);
+    client = fleet_http_do(ctx, url);
     flb_sds_destroy(url);
 
     if (!client) {
@@ -981,7 +985,6 @@ static int get_calyptia_fleet_id_by_name(struct flb_in_calyptia_fleet_config *ct
 }
 
 static int get_calyptia_file(struct flb_in_calyptia_fleet_config *ctx,
-                             struct flb_connection *u_conn,
                              flb_sds_t url,
                              const char *hdr,
                              const char *dst,
@@ -997,18 +1000,17 @@ static int get_calyptia_file(struct flb_in_calyptia_fleet_config *ctx,
     time_t last_modified;
     flb_sds_t fname;
 
-    if (ctx == NULL || u_conn == NULL || url == NULL) {
+    if (ctx == NULL || url == NULL) {
         return -1;
     }
 
-    client = fleet_http_do(ctx, u_conn, url);
-
+    client = fleet_http_do(ctx, url);
     if (client == NULL) {
         return -1;
     }
 
     ret = case_header_lookup(client, "Last-modified", strlen("Last-modified"),
-                                &fbit_last_modified, &fbit_last_modified_len);
+                             &fbit_last_modified, &fbit_last_modified_len);
 
     if (ret < 0) {
         goto client_error;
@@ -1019,7 +1021,8 @@ static int get_calyptia_file(struct flb_in_calyptia_fleet_config *ctx,
         last_modified = mktime(&tm_last_modified.tm);
 
         fname = time_fleet_config_filename(ctx, last_modified);
-    } else {
+    }
+    else {
         fname = flb_sds_create_len(dst, strlen(dst));
     }
 
@@ -1739,8 +1742,7 @@ hdrname_error:
     return rc;
 }
 
-static int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx,
-                                     struct flb_connection *u_conn)
+static int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
 {
     flb_sds_t cfgname;
     flb_sds_t cfgnewname;
@@ -1777,14 +1779,12 @@ static int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx,
     flb_sds_destroy(hdrname);
 
     /* create the base file. */
-    ret = get_calyptia_file(ctx, u_conn, ctx->fleet_url, header,
-                            NULL, &time_last_modified);
-
+    ret = get_calyptia_file(ctx, ctx->fleet_url, header, NULL, &time_last_modified);
     flb_sds_destroy(header);
 
     /* new file created! */
     if (ret == 1) {
-        get_calyptia_files(ctx, u_conn, ctx->fleet_files_url, time_last_modified);
+        get_calyptia_files(ctx, ctx->fleet_files_url, time_last_modified);
 
         cfgname = time_fleet_config_filename(ctx, time_last_modified);
 
@@ -1818,31 +1818,19 @@ static int in_calyptia_fleet_collect(struct flb_input_instance *ins,
                                      struct flb_config *config,
                                      void *in_context)
 {
-    struct flb_in_calyptia_fleet_config *ctx = in_context;
-    struct flb_connection *u_conn;
     int ret = -1;
-
-    u_conn = flb_upstream_conn_get(ctx->u);
-
-    if (!u_conn) {
-        flb_plg_error(ctx->ins, "could not get an upstream connection to %s:%u",
-                      ctx->ins->host.name, ctx->ins->host.port);
-        goto conn_error;
-    }
+    struct flb_in_calyptia_fleet_config *ctx = in_context;
 
     if (ctx->fleet_id == NULL) {
-
-        if (get_calyptia_fleet_id_by_name(ctx, u_conn, config) == -1) {
+        if (get_calyptia_fleet_id_by_name(ctx, config) == -1) {
             flb_plg_error(ctx->ins, "unable to find fleet: %s", ctx->fleet_name);
-            goto calyptia_error;
+            goto fleet_id_error;
          }
     }
 
-    ret = get_calyptia_fleet_config(ctx, u_conn);
+    ret = get_calyptia_fleet_config(ctx);
 
-calyptia_error:
-    flb_upstream_conn_release(u_conn);
-conn_error:
+fleet_id_error:
     FLB_INPUT_RETURN(ret);
 }
 
@@ -2103,19 +2091,17 @@ static int create_fleet_files(struct flb_in_calyptia_fleet_config *ctx,
 }
 
 static int get_calyptia_files(struct flb_in_calyptia_fleet_config *ctx,
-                              struct flb_connection *u_conn,
                               const char *url,
                               time_t timestamp)
 {
     struct flb_http_client *client;
     int ret = -1;
 
-    if (ctx == NULL || u_conn == NULL || url == NULL) {
+    if (ctx == NULL || url == NULL) {
         return -1;
     }
 
-    client = fleet_http_do(ctx, u_conn, ctx->fleet_files_url);
-
+    client = fleet_http_do(ctx, ctx->fleet_files_url);
     if (client == NULL) {
         return -1;
     }
