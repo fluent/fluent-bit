@@ -367,6 +367,12 @@ static void output_thread(void *data)
     if (params) {
         flb_free(params);
     }
+
+    mk_event_channel_destroy(th_ins->evl,
+                             th_ins->ch_parent_events[0],
+                             th_ins->ch_parent_events[1],
+                             th_ins);
+
     mk_event_loop_destroy(th_ins->evl);
     flb_bucket_queue_destroy(th_ins->evl_bktq);
 
