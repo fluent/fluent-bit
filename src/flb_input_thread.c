@@ -457,7 +457,7 @@ static void input_thread(void *data)
 
     /* Create the bucket queue (FLB_ENGINE_PRIORITY_COUNT priorities) */
     flb_bucket_queue_destroy(evl_bktq);
-    flb_sched_destroy(sched);
+    flb_sched_destroy(thi->evl, sched);
     input_thread_instance_destroy(thi);
 }
 
