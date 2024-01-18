@@ -358,7 +358,7 @@ static void output_thread(void *data)
     flb_upstream_conn_active_destroy_list(&th_ins->upstreams);
     flb_upstream_conn_pending_destroy_list(&th_ins->upstreams);
 
-    flb_sched_destroy(sched);
+    flb_sched_destroy(th_ins->evl, sched);
     params = FLB_TLS_GET(out_flush_params);
     if (params) {
         flb_free(params);
