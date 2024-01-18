@@ -36,10 +36,11 @@
  * Under glibc, copy the returned string to buf if the returned pointer is not
  * equal to buf.
  */
-#ifdef FLB_HAVE_STRERROR_R
+#if defined(FLB_HAVE_STRERROR_R) || defined(FLB_HAVE_STRERROR_S)
 int flb_strerror_r(int errnum, char *buf, size_t buflen)
 {
-#ifdef FLB_HAVE_STRERROR_R_CHAR_P
+#if defined(FLB_HAVE_STRERROR_R)
+#if defined(FLB_HAVE_STRERROR_R_CHAR_P)
     int ret;
     char *p;
 
@@ -60,6 +61,9 @@ int flb_strerror_r(int errnum, char *buf, size_t buflen)
     return ret;
 #else
 	return strerror_r(errnum, buf, buflen);
+#endif
+#elif defined(FLB_HAVE_STRERROR_S)
+	return (int) strerror_s(buf, (rsize_t)buflen, (errno_t)errnum);
 #endif
 }
 #endif

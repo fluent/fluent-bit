@@ -22,7 +22,7 @@
 
 #include <fluent-bit/flb_macros.h>
 
-#ifdef FLB_HAVE_STRERROR_R
+#if defined(FLB_HAVE_STRERROR_R) || defined(FLB_HAVE_STRERROR_S)
 FLB_EXPORT int flb_strerror_r(int errnum, char *buf, size_t buflen);
 #endif
 
