@@ -1353,7 +1353,6 @@ static int calyptia_config_delete_old_dir(const char *cfgpath)
         for (idx = 0; idx < ((ssize_t)files->entry_count); idx++) {
                 unlink(files->entries[idx]->data.as_string);
         }
-        cfl_array_destroy(files);
     }
 
     /* attempt to delete the main directory */
