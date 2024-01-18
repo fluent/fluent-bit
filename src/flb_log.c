@@ -327,16 +327,14 @@ int flb_log_worker_init(struct flb_worker *worker)
     ret = mk_event_add(log->evl, worker->log[0],
                        FLB_LOG_EVENT, MK_EVENT_READ, &worker->event);
     if (ret == -1) {
-        close(worker->log[0]);
-        close(worker->log[1]);
+        flb_pipe_destroy(worker->log);
         return -1;
     }
 
     /* Log cache to reduce noise */
     cache = flb_log_cache_create(10, FLB_LOG_CACHE_ENTRIES);
     if (!cache) {
-        close(worker->log[0]);
-        close(worker->log[1]);
+        flb_pipe_destroy(worker->log);
         return -1;
     }
     worker->log_cache = cache;
