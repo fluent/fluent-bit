@@ -692,6 +692,7 @@ int flb_log_destroy(struct flb_log *log, struct flb_config *config)
     flb_pipe_destroy(log->ch_mng);
     if (log->worker->log_cache) {
         flb_log_cache_destroy(log->worker->log_cache);
+        log->worker->log_cache = NULL;
     }
     flb_log_worker_destroy(log->worker);
     flb_free(log->worker);
