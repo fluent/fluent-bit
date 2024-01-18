@@ -344,6 +344,10 @@ static void output_thread(void *data)
         }
     }
 
+    mk_event_channel_destroy(th_ins->evl,
+                             th_ins->ch_thread_events[0],
+                             th_ins->ch_thread_events[1],
+                             &event_local);
     /*
      * Final cleanup, destroy all resources associated with:
      *
