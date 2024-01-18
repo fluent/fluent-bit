@@ -39,7 +39,7 @@
 #include <fluent-bit/config_format/flb_cf_fluentbit.h>
 #include <fluent-bit/flb_base64.h>
 
-// Glob support
+/* Glob support */
 #ifndef _MSC_VER
 #include <glob.h>
 #endif
@@ -102,6 +102,17 @@ struct flb_in_calyptia_fleet_config {
     int collect_fd;
 };
 
+struct reload_ctx {
+    flb_ctx_t *flb;
+    flb_sds_t cfg_path;
+};
+
+static flb_sds_t fleet_config_filename(struct flb_in_calyptia_fleet_config *ctx, char *fname);
+
+#define new_fleet_config_filename(a) fleet_config_filename((a), "new")
+#define cur_fleet_config_filename(a) fleet_config_filename((a), "cur")
+#define old_fleet_config_filename(a) fleet_config_filename((a), "old")
+
 static int get_calyptia_files(struct flb_in_calyptia_fleet_config *ctx,
                               const char *url,
                               time_t timestamp);
@@ -138,18 +149,15 @@ static char *find_case_header(struct flb_http_client *cli, const char *header)
 
 
     headstart = strstr(cli->resp.data, "\r\n");
-
     if (headstart == NULL) {
         return NULL;
     }
 
     /* Lookup the beginning of the header */
     for (ptr = headstart; ptr != NULL && ptr+2 < cli->resp.payload; ptr = strstr(ptr, "\r\n")) {
-
         if (ptr + 4 < cli->resp.payload && strcmp(ptr, "\r\n\r\n") == 0) {
             return NULL;
         }
-
         ptr+=2;
 
         /* no space left for header */
@@ -159,7 +167,6 @@ static char *find_case_header(struct flb_http_client *cli, const char *header)
 
         /* matched header and the delimiter */
         if (strncasecmp(ptr, header, strlen(header)) == 0) {
-
             if (ptr[strlen(header)] == ':' && ptr[strlen(header)+1] == ' ') {
                 return ptr;
             }
@@ -184,9 +191,7 @@ static int case_header_lookup(struct flb_http_client *cli,
 
     ptr = find_case_header(cli, header);
     end = strstr(cli->resp.data, "\r\n\r\n");
-
     if (!ptr) {
-
         if (end) {
             /* The headers are complete but the header is not there */
             return -1;
@@ -203,7 +208,6 @@ static int case_header_lookup(struct flb_http_client *cli,
 
     /* Lookup CRLF (end of line \r\n) */
     crlf = strstr(ptr, "\r\n");
-
     if (!crlf) {
         return -1;
     }
@@ -221,10 +225,6 @@ static int case_header_lookup(struct flb_http_client *cli,
     return 0;
 }
 
-struct reload_ctx {
-    flb_ctx_t *flb;
-    flb_sds_t cfg_path;
-};
 
 static flb_sds_t generate_base_fleet_directory(struct flb_in_calyptia_fleet_config *ctx, flb_sds_t *fleet_dir)
 {
@@ -268,11 +268,6 @@ static flb_sds_t fleet_config_filename(struct flb_in_calyptia_fleet_config *ctx,
 
     return cfgname;
 }
-
-#define new_fleet_config_filename(a) fleet_config_filename((a), "new")
-#define cur_fleet_config_filename(a) fleet_config_filename((a), "cur")
-#define old_fleet_config_filename(a) fleet_config_filename((a), "old")
-
 static flb_sds_t time_fleet_config_filename(struct flb_in_calyptia_fleet_config *ctx, time_t t)
 {
     char s_last_modified[32];
@@ -387,9 +382,7 @@ static int is_timestamped_fleet_config_path(struct flb_in_calyptia_fleet_config 
 
     errno = 0;
     val = strtol(fname, &end, 10);
-
-    if ((errno == ERANGE && (val == LONG_MAX || val == LONG_MIN)) ||
-         (errno != 0 && val == 0)) {
+    if ((errno == ERANGE && (val == LONG_MAX || val == LONG_MIN)) || (errno != 0 && val == 0)) {
         flb_errno();
         return FLB_FALSE;
     }
@@ -432,9 +425,8 @@ static int is_fleet_config(struct flb_in_calyptia_fleet_config *ctx, struct flb_
 
 static int exists_new_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
 {
-    flb_sds_t cfgnewname;
     int ret = FLB_FALSE;
-
+    flb_sds_t cfgnewname;
 
     cfgnewname = new_fleet_config_filename(ctx);
     if (cfgnewname == NULL) {
@@ -443,8 +435,8 @@ static int exists_new_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
     }
 
     ret = access(cfgnewname, F_OK) == 0 ? FLB_TRUE : FLB_FALSE;
-
     flb_sds_destroy(cfgnewname);
+
     return ret;
 }
 
@@ -468,9 +460,8 @@ static int exists_cur_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
 
 static int exists_old_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
 {
-    flb_sds_t cfgoldname;
     int ret = FLB_FALSE;
-
+    flb_sds_t cfgoldname;
 
     cfgoldname = old_fleet_config_filename(ctx);
     if (cfgoldname == NULL) {
@@ -479,8 +470,8 @@ static int exists_old_fleet_config(struct flb_in_calyptia_fleet_config *ctx)
     }
 
     ret = access(cfgoldname, F_OK) == 0 ? FLB_TRUE : FLB_FALSE;
-
     flb_sds_destroy(cfgoldname);
+
     return ret;
 }
 
@@ -518,7 +509,6 @@ static int test_config_is_valid(struct flb_in_calyptia_fleet_config *ctx,
     }
 
     conf = flb_cf_create();
-
     if (conf == NULL) {
         flb_plg_debug(ctx->ins, "unable to create conf during validation test: %s",
                       cfgpath);
@@ -526,7 +516,6 @@ static int test_config_is_valid(struct flb_in_calyptia_fleet_config *ctx,
     }
 
     conf = flb_cf_create_from_file(conf, cfgpath);
-
     if (conf == NULL) {
         flb_plg_debug(ctx->ins,
                       "unable to create conf from file during validation test: %s",
@@ -573,7 +562,6 @@ static int parse_config_name_timestamp(struct flb_in_calyptia_fleet_config *ctx,
     }
 
     fname = basename(realname);
-
     flb_plg_debug(ctx->ins, "parsing configuration timestamp from path: %s", fname);
 
     errno = 0;
@@ -725,7 +713,7 @@ static flb_sds_t parse_api_key_json(struct flb_in_calyptia_fleet_config *ctx,
     struct flb_pack_state pack_state;
     size_t off = 0;
     msgpack_unpacked result;
-    msgpack_object *projectID;
+    msgpack_object *tmp;
     flb_sds_t project_id = NULL;
 
     if (ctx == NULL || payload == NULL) {
@@ -748,22 +736,20 @@ static flb_sds_t parse_api_key_json(struct flb_in_calyptia_fleet_config *ctx,
 
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, pack, out_size, &off) == MSGPACK_UNPACK_SUCCESS) {
-        projectID  = msgpack_lookup_map_key(&result.data, "ProjectID");
-
-        if (projectID == NULL) {
+        tmp  = msgpack_lookup_map_key(&result.data, "ProjectID");
+        if (tmp == NULL) {
             flb_plg_error(ctx->ins, "unable to find fleet by name");
             msgpack_unpacked_destroy(&result);
             return NULL;
         }
 
-        if (projectID->type != MSGPACK_OBJECT_STR) {
-            flb_plg_error(ctx->ins, "invalid fleet ID");
+        if (tmp->type != MSGPACK_OBJECT_STR) {
+            flb_plg_error(ctx->ins, "invalid fleet ID data type");
             msgpack_unpacked_destroy(&result);
             return NULL;
         }
 
-        project_id = flb_sds_create_len(projectID->via.str.ptr,
-                                        projectID->via.str.size);
+        project_id = flb_sds_create_len(tmp->via.str.ptr, tmp->via.str.size);
         break;
     }
 
@@ -850,7 +836,6 @@ static flb_sds_t get_project_id_from_api_key(struct flb_in_calyptia_fleet_config
     }
 
     api_token_sep = strchr(ctx->api_key, '.');
-
     if (api_token_sep == NULL) {
         return NULL;
     }
@@ -1168,7 +1153,6 @@ static char *dirname(char *path)
 {
     char *ptr;
 
-
     ptr = strrchr(path, '\\');
 
     if (ptr == NULL) {
@@ -1194,7 +1178,6 @@ static struct cfl_array *read_glob_win(const char *path, struct cfl_array *list)
     }
 
     star = strchr(path, '*');
-
     if (star == NULL) {
         flb_error("path has no wild card: %s", path);
         return NULL;
@@ -2140,7 +2123,6 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
 
     /* Allocate space for the configuration */
     ctx = flb_calloc(1, sizeof(struct flb_in_calyptia_fleet_config));
-
     if (!ctx) {
         flb_errno();
         return -1;
@@ -2151,8 +2133,7 @@ static int in_calyptia_fleet_init(struct flb_input_instance *in,
 
 
     /* Load the config map */
-    ret = flb_input_config_map_set(in, (void *)ctx);
-
+    ret = flb_input_config_map_set(in, (void *) ctx);
     if (ret == -1) {
         flb_free(ctx);
         flb_plg_error(in, "unable to load configuration");
