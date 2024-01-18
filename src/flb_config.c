@@ -477,7 +477,7 @@ void flb_config_exit(struct flb_config *config)
 
     /* Release scheduler */
     if (config->sched) {
-        flb_sched_destroy(config->evl, config->sched);
+        flb_sched_destroy(config->sched);
     }
 
 #ifdef FLB_HAVE_HTTP_SERVER
