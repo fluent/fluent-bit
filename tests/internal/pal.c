@@ -12,7 +12,7 @@
 #define BUFSIZE (256)
 #define BUFSIZE_SMALL (1)
 
-#ifdef FLB_HAVE_STRERROR_R
+#if defined(FLB_HAVE_STRERROR_R) || defined(FLB_HAVE_STRERROR_S)
 static void test_pal_strerror_r_noerror()
 {
     int ret;
@@ -66,7 +66,7 @@ static void test_pal_strerror_r_error_unknown()
 #endif
 
 TEST_LIST = {
-#ifdef FLB_HAVE_STRERROR_R
+#if defined(FLB_HAVE_STRERROR_R) || defined(FLB_HAVE_STRERROR_S)
     { "pal_strerror_r_noerror" , test_pal_strerror_r_noerror},
     { "pal_strerror_r_error_einval" , test_pal_strerror_r_error_einval},
     { "pal_strerror_r_smallbuf" , test_pal_strerror_r_smallbuf},
