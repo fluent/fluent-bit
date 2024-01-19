@@ -172,6 +172,7 @@ option(FLB_IN_FLUENTBIT_METRICS        "Enable Fluent Bit metrics  plugin"      
 option(FLB_IN_FORWARD                  "Enable Forward input plugin"                  Yes)
 option(FLB_IN_HEALTH                   "Enable Health input plugin"                   Yes)
 option(FLB_IN_HTTP                     "Enable HTTP input plugin"                     Yes)
+option(FLB_IN_HTTP2                    "Enable HTTP2 input plugin"                    Yes)
 option(FLB_IN_MEM                      "Enable Memory input plugin"                   Yes)
 option(FLB_IN_KUBERNETES_EVENTS        "Enable Kubernetes Events plugin"              Yes)
 option(FLB_IN_KAFKA                    "Enable Kafka input plugin"                    Yes)
@@ -561,6 +562,12 @@ add_subdirectory(${FLB_PATH_LIB_CMETRICS} EXCLUDE_FROM_ALL)
 
 # CTraces
 add_subdirectory(${FLB_PATH_LIB_CTRACES} EXCLUDE_FROM_ALL)
+
+# Nghttp2 options
+option(ENABLE_LIB_ONLY       ON)
+option(ENABLE_STATIC_LIB     ON)
+
+add_subdirectory(${FLB_PATH_LIB_NGHTTP2} EXCLUDE_FROM_ALL)
 
 # C-Ares (DNS library)
 FLB_OPTION(CARES_STATIC      ON)
