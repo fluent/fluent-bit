@@ -1111,16 +1111,22 @@ endif()
 check_symbol_exists(strerror_r "string.h" HAVE_STRERROR_R)
 if(HAVE_STRERROR_R)
   FLB_DEFINITION(FLB_HAVE_STRERROR_R)
-  check_c_source_compiles("
-    #include <errno.h>
-    #include <string.h>
-    int main() {
-      char buf[256], *p;
-      p = strerror_r(EINVAL, buf, sizeof(buf));
-      return 0;
-    }" HAVE_STRERROR_R_CHAR_P)
-  if(HAVE_STRERROR_R_CHAR_P)
-    FLB_DEFINITION(FLB_HAVE_STRERROR_R_CHAR_P)
+  #
+  # The test below falsely passes on MacOS, which supports the POSIX.1-2001
+  # edition.
+  #
+  if(NOT FLB_SYSTEM_MACOS)
+    check_c_source_compiles("
+      #include <errno.h>
+      #include <string.h>
+      int main() {
+        char buf[256], *p;
+        p = strerror_r(EINVAL, buf, sizeof(buf));
+        return 0;
+      }" HAVE_STRERROR_R_CHAR_P)
+    if(HAVE_STRERROR_R_CHAR_P)
+      FLB_DEFINITION(FLB_HAVE_STRERROR_R_CHAR_P)
+    endif()
   endif()
 endif()
 check_symbol_exists(strerror_s "string.h" HAVE_STRERROR_S)
