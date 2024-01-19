@@ -496,6 +496,9 @@ static void *do_reload(void *data)
     /* avoid reloading the current configuration... just use our new one! */
     flb_context_set(reload->flb);
     reload->flb->config->enable_hot_reload = FLB_TRUE;
+    if (reload->flb->config->conf_path_file) {
+        flb_sds_destroy(reload->flb->config->conf_path_file);
+    }
     reload->flb->config->conf_path_file = reload->cfg_path;
 
     flb_free(reload);
