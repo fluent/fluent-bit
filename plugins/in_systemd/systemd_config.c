@@ -220,6 +220,7 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         * up to 4096/25*2 ~= 350 old log messages. See also fluent-bit PR #1565.
         */
         ret = sd_journal_next_skip(ctx->j, 350);
+        sd_journal_previous(ctx->j);
         flb_plg_debug(ctx->ins,
                       "jump to the end of journal and skip %d last entries", ret);
     }
