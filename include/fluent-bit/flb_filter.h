@@ -71,7 +71,8 @@ struct flb_filter_plugin {
                       void **, size_t *,
                       struct flb_filter_instance *,
                       struct flb_input_instance *,
-                      void *, struct flb_config *);
+                      void *, struct flb_config *,
+                      int);
     int (*cb_exit) (void *, struct flb_config *);
 
     struct mk_list _head;  /* Link to parent list (config->filters) */
@@ -136,7 +137,8 @@ void flb_filter_do(struct flb_input_chunk *ic,
                    const void *data, size_t bytes,
                    void **out_data, size_t *out_bytes,
                    const char *tag, int tag_len,
-                   struct flb_config *config);
+                   struct flb_config *config,
+                   int event_type);
 const char *flb_filter_name(struct flb_filter_instance *ins);
 
 int flb_filter_match_property_existence(struct flb_filter_instance *ins);

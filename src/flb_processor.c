@@ -437,15 +437,19 @@ int flb_processor_run(struct flb_processor *proc,
     struct flb_processor_unit *pu;
     struct flb_filter_instance *f_ins;
     struct flb_processor_instance *p_ins;
+    int event_type;
 
     if (type == FLB_PROCESSOR_LOGS) {
         list = &proc->logs;
+        event_type = FLB_INPUT_LOGS;
     }
     else if (type == FLB_PROCESSOR_METRICS) {
         list = &proc->metrics;
+        event_type = FLB_INPUT_METRICS;
     }
     else if (type == FLB_PROCESSOR_TRACES) {
         list = &proc->traces;
+        event_type = FLB_INPUT_TRACES;
     }
 
     /* set current data buffer */
@@ -487,7 +491,8 @@ int flb_processor_run(struct flb_processor *proc,
                                       f_ins,                /* filter instance */
                                       proc->data,           /* (input/output) instance context */
                                       f_ins->context,       /* filter context */
-                                      proc->config);
+                                      proc->config,
+                                      event_type);
 
             /*
              * The cb_filter() function return status tells us if something changed

@@ -1516,13 +1516,16 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     final_data_size = buf_size;
 
     /* Apply filters */
-    if (event_type == FLB_INPUT_LOGS) {
+    if (event_type == FLB_INPUT_LOGS ||
+        event_type == FLB_INPUT_METRICS ||
+        event_type == FLB_INPUT_TRACES) {
         flb_filter_do(ic,
                       buf, buf_size,
                       &filtered_data_buffer,
                       &filtered_data_size,
                       tag, tag_len,
-                      in->config);
+                      in->config,
+                      event_type);
 
         final_data_buffer = filtered_data_buffer;
         final_data_size = filtered_data_size;

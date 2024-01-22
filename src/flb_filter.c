@@ -79,7 +79,8 @@ void flb_filter_do(struct flb_input_chunk *ic,
                    const void *data, size_t bytes,
                    void **out_data, size_t *out_bytes,
                    const char *tag, int tag_len,
-                   struct flb_config *config)
+                   struct flb_config *config,
+                   int event_type)
 {
     int ret;
 #ifdef FLB_HAVE_METRICS
@@ -163,7 +164,8 @@ void flb_filter_do(struct flb_input_chunk *ic,
                                       f_ins,          /* filter instance  */
                                       i_ins,          /* input instance   */
                                       f_ins->context, /* filter priv data */
-                                      config);
+                                      config,
+                                      event_type);
 
 #ifdef FLB_HAVE_CHUNK_TRACE
             if (ic->trace) {
