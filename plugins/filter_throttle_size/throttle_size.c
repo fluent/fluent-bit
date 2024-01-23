@@ -661,7 +661,8 @@ static int cb_throttle_size_filter(const void *data, size_t bytes,
                                    void **out_buf, size_t * out_size,
                                    struct flb_filter_instance *ins,
                                    struct flb_input_instance *i_ins,
-                                   void *context, struct flb_config *config)
+                                   void *context, struct flb_config *config,
+                                   int event_type)
 {
     int ret;
     int old_size = 0;
