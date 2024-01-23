@@ -663,7 +663,8 @@ static int cb_log_to_metrics_filter(const void *data, size_t bytes,
                             void **out_buf, size_t *out_size,
                             struct flb_filter_instance *f_ins,
                             struct flb_input_instance *i_ins, void *context,
-                            struct flb_config *config)
+                            struct flb_config *config,
+                            int event_type)
 {
     int ret;
     msgpack_unpacked result;
