@@ -1484,7 +1484,8 @@ static int cb_modify_filter(const void *data, size_t bytes,
                             void **out_buf, size_t * out_size,
                             struct flb_filter_instance *f_ins,
                             struct flb_input_instance *i_ins,
-                            void *context, struct flb_config *config)
+                            void *context, struct flb_config *config,
+                            int event_type)
 {
     struct flb_log_event_encoder log_encoder;
     struct flb_log_event_decoder log_decoder;
