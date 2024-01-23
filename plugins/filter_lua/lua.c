@@ -214,7 +214,8 @@ static int cb_lua_filter_mpack(const void *data, size_t bytes,
                                struct flb_filter_instance *f_ins,
                                struct flb_input_instance *i_ins,
                                void *filter_context,
-                               struct flb_config *config)
+                               struct flb_config *config,
+                               int event_type)
 {
     (void) i_ins;
     int ret;
@@ -484,7 +485,8 @@ static int cb_lua_filter(const void *data, size_t bytes,
                          struct flb_filter_instance *f_ins,
                          struct flb_input_instance *i_ins,
                          void *filter_context,
-                         struct flb_config *config)
+                         struct flb_config *config,
+                         int event_type)
 {
     int ret;
     double ts = 0;
