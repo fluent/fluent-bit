@@ -172,7 +172,8 @@ static int cb_parser_filter(const void *data, size_t bytes,
                             struct flb_filter_instance *f_ins,
                             struct flb_input_instance *i_ins,
                             void *context,
-                            struct flb_config *config)
+                            struct flb_config *config,
+                            int event_type)
 {
     int continue_parsing;
     struct filter_parser_ctx *ctx = context;
