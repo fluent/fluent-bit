@@ -435,7 +435,7 @@ jobs:
         shell: bash
 
       - name: Promote container images from staging to GHCR.io
-        if: ${{ startsWith(github.event.inputs.version, '2.0') || startsWith(github.event.inputs.version, '2.1') || ! startsWith(matrix.tag, 'latest') }}
+        if: ${{ startsWith(github.event.inputs.version, '2.') || startsWith(github.event.inputs.version, '3.') || ! startsWith(matrix.tag, 'latest') }}
         run: |
           docker run --rm  \
             quay.io/skopeo/stable:latest \
