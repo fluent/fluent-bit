@@ -283,14 +283,13 @@ static inline int grep_filter_data_and_or(msgpack_object map, struct grep_ctx *c
     return found ? GREP_RET_EXCLUDE : GREP_RET_KEEP;
 }
 
-static int cb_grep_filter(const void *data, size_t bytes,
+static int process_log(const void *data, size_t bytes,
                           const char *tag, int tag_len,
                           void **out_buf, size_t *out_size,
                           struct flb_filter_instance *f_ins,
                           struct flb_input_instance *i_ins,
                           void *context,
-                          struct flb_config *config,
-                          int event_type)
+                          struct flb_config *config)
 {
     int ret;
     int old_size = 0;
@@ -388,6 +387,28 @@ static int cb_grep_filter(const void *data, size_t bytes,
 
     flb_log_event_decoder_destroy(&log_decoder);
     flb_log_event_encoder_destroy(&log_encoder);
+
+    return ret;
+}
+
+static int cb_grep_filter(const void *data, size_t bytes,
+                          const char *tag, int tag_len,
+                          void **out_buf, size_t *out_size,
+                          struct flb_filter_instance *f_ins,
+                          struct flb_input_instance *i_ins,
+                          void *context,
+                          struct flb_config *config,
+                          int event_type)
+{
+    int ret;
+
+    if (event_type == FLB_INPUT_LOGS) {
+        ret = process_log(data, bytes,
+                          tag, tag_len,
+                          out_buf, out_size,
+                          f_ins, i_ins,
+                          context, config);
+    }
 
     return ret;
 }
