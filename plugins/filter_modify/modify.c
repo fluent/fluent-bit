@@ -1301,10 +1301,10 @@ static inline int apply_rule_MOVE_TO_START(struct filter_modify_ctx *ctx,
     }
 }
 
-static inline int apply_modifying_rule(struct filter_modify_ctx *ctx,
-                                       msgpack_packer *packer,
-                                       msgpack_object *map,
-                                       struct modify_rule *rule)
+static inline int apply_modifying_rule_to_log(struct filter_modify_ctx *ctx,
+                                              msgpack_packer *packer,
+                                              msgpack_object *map,
+                                              struct modify_rule *rule)
 {
     switch (rule->ruletype) {
     case RENAME:
@@ -1338,7 +1338,7 @@ static inline int apply_modifying_rule(struct filter_modify_ctx *ctx,
 
 
 
-static inline int apply_modifying_rules(
+static inline int apply_modifying_rules_to_log(
                     struct flb_log_event_encoder *log_encoder,
                     struct flb_log_event *log_event,
                     struct filter_modify_ctx *ctx)
@@ -1379,7 +1379,7 @@ static inline int apply_modifying_rules(
 
         msgpack_sbuffer_clear(&sbuffer);
 
-        if (apply_modifying_rule(ctx, &in_packer, &map, rule) !=
+        if (apply_modifying_rule_to_log(ctx, &in_packer, &map, rule) !=
             FLB_FILTER_NOTOUCH) {
 
             has_modifications = true;
@@ -1479,13 +1479,12 @@ static int cb_modify_init(struct flb_filter_instance *f_ins,
     return 0;
 }
 
-static int cb_modify_filter(const void *data, size_t bytes,
-                            const char *tag, int tag_len,
-                            void **out_buf, size_t * out_size,
-                            struct flb_filter_instance *f_ins,
-                            struct flb_input_instance *i_ins,
-                            void *context, struct flb_config *config,
-                            int event_type)
+static int process_log(const void *data, size_t bytes,
+                       const char *tag, int tag_len,
+                       void **out_buf, size_t * out_size,
+                       struct flb_filter_instance *f_ins,
+                       struct flb_input_instance *i_ins,
+                       void *context, struct flb_config *config)
 {
     struct flb_log_event_encoder log_encoder;
     struct flb_log_event_decoder log_decoder;
@@ -1524,7 +1523,7 @@ static int cb_modify_filter(const void *data, size_t bytes,
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         modifications =
-            apply_modifying_rules(&log_encoder, &log_event, ctx);
+            apply_modifying_rules_to_log(&log_encoder, &log_event, ctx);
 
         if (modifications == 0) {
             /* not matched, so copy original event. */
@@ -1564,6 +1563,31 @@ static int cb_modify_filter(const void *data, size_t bytes,
 
     flb_log_event_decoder_destroy(&log_decoder);
     flb_log_event_encoder_destroy(&log_encoder);
+
+    return ret;
+}
+
+static int cb_modify_filter(const void *data, size_t bytes,
+                            const char *tag, int tag_len,
+                            void **out_buf, size_t * out_size,
+                            struct flb_filter_instance *f_ins,
+                            struct flb_input_instance *i_ins,
+                            void *context, struct flb_config *config,
+                            int event_type)
+{
+    int ret;
+
+    (void) f_ins;
+    (void) i_ins;
+    (void) config;
+
+    if (event_type == FLB_INPUT_LOGS) {
+        ret = process_log(data, bytes,
+                          tag, tag_len,
+                          out_buf, out_size,
+                          f_ins, i_ins,
+                          context, config);
+    }
 
     return ret;
 }
