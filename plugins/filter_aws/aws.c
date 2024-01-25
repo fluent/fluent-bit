@@ -718,14 +718,13 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
     return 0;
 }
 
-static int cb_aws_filter(const void *data, size_t bytes,
-                         const char *tag, int tag_len,
-                         void **out_buf, size_t *out_size,
-                         struct flb_filter_instance *f_ins,
-                         struct flb_input_instance *i_ins,
-                         void *context,
-                         struct flb_config *config,
-                         int event_type)
+static int process_log(const void *data, size_t bytes,
+                       const char *tag, int tag_len,
+                       void **out_buf, size_t *out_size,
+                       struct flb_filter_instance *f_ins,
+                       struct flb_input_instance *i_ins,
+                       void *context,
+                       struct flb_config *config)
 {
     struct flb_filter_aws *ctx = context;
     int i = 0;
@@ -739,15 +738,6 @@ static int cb_aws_filter(const void *data, size_t bytes,
     (void) f_ins;
     (void) i_ins;
     (void) config;
-
-    /* First check that the metadata has been retrieved */
-    if (!ctx->metadata_retrieved) {
-        ret = get_ec2_metadata(ctx);
-        if (ret < 0) {
-            return FLB_FILTER_NOTOUCH;
-        }
-        expose_aws_meta(ctx);
-    }
 
     ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
@@ -916,6 +906,167 @@ static int cb_aws_filter(const void *data, size_t bytes,
     return ret;
 }
 
+#ifdef FLB_HAVE_METRICS
+static int process_metrics(const void *data, size_t bytes,
+                           const char *tag, int tag_len,
+                           void **out_buf, size_t *out_size,
+                           struct flb_filter_instance *f_ins,
+                           struct flb_input_instance *i_ins,
+                           void *context,
+                           struct flb_config *config)
+{
+    struct flb_filter_aws *ctx = context;
+    int i = 0;
+    int ret;
+
+    (void) f_ins;
+    (void) i_ins;
+    (void) config;
+
+    size_t off = 0;
+    struct cmt *cmt = NULL;
+    char *mt_buf;
+    size_t mt_size;
+
+    /* get cmetrics context */
+    ret = cmt_decode_msgpack_create(&cmt, (char *) data, bytes, &off);
+    if (ret != 0) {
+        flb_plg_error(f_ins, "could not process metrics payload");
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    /* append new labels */
+    if (ctx->availability_zone_include && ret == 0) {
+        ret = cmt_label_add(cmt,
+                            FLB_FILTER_AWS_AVAILABILITY_ZONE_KEY,
+                            ctx->availability_zone);
+    }
+
+    if (ctx->instance_id_include && ret == 0) {
+        ret = cmt_label_add(cmt,
+                            FLB_FILTER_AWS_INSTANCE_ID_KEY,
+                            ctx->instance_id);
+    }
+
+    if (ctx->instance_type_include && ret == 0) {
+        ret = cmt_label_add(cmt,
+                            FLB_FILTER_AWS_INSTANCE_TYPE_KEY,
+                            ctx->instance_type);
+    }
+
+    if (ctx->private_ip_include && ret == 0) {
+        ret = cmt_label_add(cmt,
+                            FLB_FILTER_AWS_PRIVATE_IP_KEY,
+                            ctx->private_ip);
+    }
+
+    if (ctx->vpc_id_include && ret == 0) {
+        ret = cmt_label_add(cmt,
+                            FLB_FILTER_AWS_VPC_ID_KEY,
+                            ctx->vpc_id);
+    }
+
+    if (ctx->ami_id_include && ret == 0) {
+        ret = cmt_label_add(cmt,
+                            FLB_FILTER_AWS_AMI_ID_KEY,
+                            ctx->ami_id);
+    }
+
+    if (ctx->account_id_include && ret == 0) {
+        ret = cmt_label_add(cmt,
+                            FLB_FILTER_AWS_ACCOUNT_ID_KEY,
+                            ctx->account_id);
+    }
+
+    if (ctx->hostname_include && ret == 0) {
+        ret = cmt_label_add(cmt,
+                            FLB_FILTER_AWS_HOSTNAME_KEY,
+                            ctx->hostname);
+    }
+
+    if (ctx->tags_enabled && ctx->tags_fetched) {
+        for (i = 0;
+             i < ctx->tags_count &&
+                     ret == 0;
+             i++) {
+            if (ctx->tag_is_enabled[i] == FLB_TRUE) {
+                ret = cmt_label_add(cmt,
+                                    ctx->tag_keys[i],
+                                    ctx->tag_values[i]);
+            }
+        }
+    }
+
+    /* Convert metrics to msgpack */
+    ret = cmt_encode_msgpack_create(cmt, &mt_buf, &mt_size);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "could not encode metrics");
+
+        /* destroy cmt context */
+        cmt_destroy(cmt);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    if (ret == 0) {
+        *out_buf  = mt_buf;
+        *out_size = mt_size;
+
+        ret = FLB_FILTER_MODIFIED;
+    }
+
+    /* destroy cmt context */
+    cmt_destroy(cmt);
+
+    return ret;
+}
+#endif
+
+static int cb_aws_filter(const void *data, size_t bytes,
+                         const char *tag, int tag_len,
+                         void **out_buf, size_t *out_size,
+                         struct flb_filter_instance *f_ins,
+                         struct flb_input_instance *i_ins,
+                         void *context,
+                         struct flb_config *config,
+                         int event_type)
+{
+    struct flb_filter_aws *ctx = context;
+    int ret;
+
+    (void) f_ins;
+    (void) i_ins;
+    (void) config;
+
+    /* First check that the metadata has been retrieved */
+    if (!ctx->metadata_retrieved) {
+        ret = get_ec2_metadata(ctx);
+        if (ret < 0) {
+            return FLB_FILTER_NOTOUCH;
+        }
+        expose_aws_meta(ctx);
+    }
+
+    if (event_type == FLB_INPUT_LOGS) {
+        ret = process_log(data, bytes,
+                          tag, tag_len,
+                          out_buf, out_size,
+                          f_ins, i_ins,
+                          context, config);
+    }
+#ifdef FLB_HAVE_METRICS
+    else if (event_type == FLB_INPUT_METRICS) {
+        ret = process_metrics(data, bytes,
+                              tag, tag_len,
+                              out_buf, out_size,
+                              f_ins, i_ins,
+                              context, config);
+    }
+#endif
+
+    return ret;
+}
+
 static void flb_filter_aws_destroy(struct flb_filter_aws *ctx)
 {
     if (ctx->options == NULL) {
@@ -1059,5 +1210,6 @@ struct flb_filter_plugin filter_aws_plugin = {
     .cb_filter    = cb_aws_filter,
     .cb_exit      = cb_aws_exit,
     .config_map   = config_map,
+    .event_type   = FLB_FILTER_LOGS | FLB_FILTER_METRICS,
     .flags        = 0
 };
