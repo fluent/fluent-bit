@@ -1434,26 +1434,24 @@ static void mark_tag_failed(struct flb_filter_ecs *ctx,
     }
 }
 
-static int cb_ecs_filter(const void *data, size_t bytes,
-                         const char *tag, int tag_len,
-                         void **out_buf, size_t *out_size,
-                         struct flb_filter_instance *f_ins,
-                         struct flb_input_instance *i_ins,
-                         void *context,
-                         struct flb_config *config,
-                         int event_type)
+static int process_log(const void *data, size_t bytes,
+                       const char *tag, int tag_len,
+                       void **out_buf, size_t *out_size,
+                       struct flb_filter_instance *f_ins,
+                       struct flb_input_instance *i_ins,
+                       void *context,
+                       struct flb_config *config,
+                       struct flb_ecs_metadata_buffer *metadata_buffer)
 {
     struct flb_filter_ecs *ctx = context;
     int i = 0;
     int ret;
-    int check = FLB_FALSE;
     msgpack_object  *obj;
     msgpack_object_kv *kv;
     struct mk_list *tmp;
     struct mk_list *head;
-    struct flb_ecs_metadata_key *metadata_key;
-    struct flb_ecs_metadata_buffer *metadata_buffer;
     flb_sds_t val;
+    struct flb_ecs_metadata_key *metadata_key;
     struct flb_log_event_encoder log_encoder;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
@@ -1461,40 +1459,6 @@ static int cb_ecs_filter(const void *data, size_t bytes,
     (void) f_ins;
     (void) i_ins;
     (void) config;
-
-    /* First check that the static cluster metadata has been retrieved */
-    if (ctx->has_cluster_metadata == FLB_FALSE) {
-        ret = get_ecs_cluster_metadata(ctx);
-        if (ret < 0) {
-            flb_plg_warn(ctx->ins, "Could not retrieve cluster metadata "
-                         "from ECS Agent");
-            return FLB_FILTER_NOTOUCH;
-        }
-    }
-
-    /* check if the current tag is marked as failed */
-    check = is_tag_marked_failed(ctx, tag, tag_len);
-    if (check == FLB_TRUE) {
-        flb_plg_debug(ctx->ins, "Failed to get ECS Metadata for tag %s %d times. "
-                      "Will not attempt to retry the metadata request. Will attach cluster metadata only.",
-                      tag, ctx->agent_endpoint_retries);
-    }
-
-    if (check == FLB_FALSE && ctx->cluster_metadata_only == FLB_FALSE) {
-        ret = get_metadata_by_id(ctx, tag, tag_len, &metadata_buffer);
-        if (ret == -1) {
-            flb_plg_info(ctx->ins, "Failed to get ECS Task metadata for %s, "
-                        "falling back to process cluster metadata only. If "
-                        "this is intentional, set `Cluster_Metadata_Only On`",
-                        tag);
-            mark_tag_failed(ctx, tag, tag_len);
-            metadata_buffer = &ctx->cluster_meta_buf;
-        }
-    } else {
-        metadata_buffer = &ctx->cluster_meta_buf;
-    }
-
-    metadata_buffer->last_used_time = time(NULL);
 
     ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
@@ -1608,6 +1572,171 @@ static int cb_ecs_filter(const void *data, size_t bytes,
 
     flb_log_event_decoder_destroy(&log_decoder);
     flb_log_event_encoder_destroy(&log_encoder);
+
+    return ret;
+}
+
+#ifdef FLB_HAVE_METRICS
+static int process_metrics(const void *data, size_t bytes,
+                           const char *tag, int tag_len,
+                           void **out_buf, size_t *out_size,
+                           struct flb_filter_instance *f_ins,
+                           struct flb_input_instance *i_ins,
+                           void *context,
+                           struct flb_config *config,
+                           struct flb_ecs_metadata_buffer *metadata_buffer)
+{
+    struct flb_filter_ecs *ctx = context;
+    int ret;
+    flb_sds_t val;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_ecs_metadata_key *metadata_key;
+
+    (void) f_ins;
+    (void) i_ins;
+    (void) config;
+
+    size_t off = 0;
+    struct cmt *cmt = NULL;
+    char *mt_buf;
+    size_t mt_size;
+
+    /* get cmetrics context */
+    ret = cmt_decode_msgpack_create(&cmt, (char *) data, bytes, &off);
+    if (ret != 0) {
+        flb_plg_error(f_ins, "could not process metrics payload");
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    /* append new labels */
+    mk_list_foreach_safe(head, tmp, &ctx->metadata_keys) {
+        metadata_key = mk_list_entry(head, struct flb_ecs_metadata_key, _head);
+        val = flb_ra_translate(metadata_key->ra, NULL, 0,
+                               metadata_buffer->obj, NULL);
+        if (!val) {
+            flb_plg_info(ctx->ins, "Translation failed for %s : %s",
+                         metadata_key->key, metadata_key->template);
+
+            /* destroy cmt context */
+            cmt_destroy(cmt);
+
+            return FLB_FILTER_NOTOUCH;
+        }
+
+        ret = cmt_label_add(cmt,
+                            metadata_key->key,
+                            val);
+
+        if (ret != 0) {
+            flb_plg_info(ctx->ins,
+                         "Metadata appendage failed for %.*s",
+                         (int) flb_sds_len(metadata_key->key),
+                         metadata_key->key);
+
+            /* destroy cmt context */
+            cmt_destroy(cmt);
+
+            return FLB_FILTER_NOTOUCH;
+        }
+
+        flb_sds_destroy(val);
+    }
+
+    if (ctx->cluster_metadata_only == FLB_FALSE) {
+        clean_old_metadata_buffers(ctx);
+    }
+
+    /* Convert metrics to msgpack */
+    ret = cmt_encode_msgpack_create(cmt, &mt_buf, &mt_size);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "could not encode metrics");
+        /* destroy cmt context */
+        cmt_destroy(cmt);
+
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    if (ret == 0) {
+        *out_buf  = mt_buf;
+        *out_size = mt_size;
+
+        ret = FLB_FILTER_MODIFIED;
+    }
+
+    /* destroy cmt context */
+    cmt_destroy(cmt);
+
+    return ret;
+}
+#endif
+
+static int cb_ecs_filter(const void *data, size_t bytes,
+                         const char *tag, int tag_len,
+                         void **out_buf, size_t *out_size,
+                         struct flb_filter_instance *f_ins,
+                         struct flb_input_instance *i_ins,
+                         void *context,
+                         struct flb_config *config,
+                         int event_type)
+{
+    struct flb_filter_ecs *ctx = context;
+    int ret;
+    int check = FLB_FALSE;
+    struct flb_ecs_metadata_buffer *metadata_buffer;
+
+    /* First check that the static cluster metadata has been retrieved */
+    if (ctx->has_cluster_metadata == FLB_FALSE) {
+        ret = get_ecs_cluster_metadata(ctx);
+        if (ret < 0) {
+            flb_plg_warn(ctx->ins, "Could not retrieve cluster metadata "
+                         "from ECS Agent");
+            return FLB_FILTER_NOTOUCH;
+        }
+    }
+
+    /* check if the current tag is marked as failed */
+    check = is_tag_marked_failed(ctx, tag, tag_len);
+    if (check == FLB_TRUE) {
+        flb_plg_debug(ctx->ins, "Failed to get ECS Metadata for tag %s %d times. "
+                      "Will not attempt to retry the metadata request. Will attach cluster metadata only.",
+                      tag, ctx->agent_endpoint_retries);
+    }
+
+    if (check == FLB_FALSE && ctx->cluster_metadata_only == FLB_FALSE) {
+        ret = get_metadata_by_id(ctx, tag, tag_len, &metadata_buffer);
+        if (ret == -1) {
+            flb_plg_info(ctx->ins, "Failed to get ECS Task metadata for %s, "
+                        "falling back to process cluster metadata only. If "
+                        "this is intentional, set `Cluster_Metadata_Only On`",
+                        tag);
+            mark_tag_failed(ctx, tag, tag_len);
+            metadata_buffer = &ctx->cluster_meta_buf;
+        }
+    } else {
+        metadata_buffer = &ctx->cluster_meta_buf;
+    }
+
+    metadata_buffer->last_used_time = time(NULL);
+
+    if (event_type == FLB_INPUT_LOGS) {
+        ret = process_log(data, bytes,
+                          tag, tag_len,
+                          out_buf, out_size,
+                          f_ins, i_ins,
+                          context, config,
+                          metadata_buffer);
+    }
+#ifdef FLB_HAVE_METRICS
+    else if (event_type == FLB_INPUT_METRICS) {
+        ret = process_metrics(data, bytes,
+                              tag, tag_len,
+                              out_buf, out_size,
+                              f_ins, i_ins,
+                              context, config,
+                              metadata_buffer);
+    }
+#endif
 
     return ret;
 }
@@ -1757,5 +1886,6 @@ struct flb_filter_plugin filter_ecs_plugin = {
     .cb_filter    = cb_ecs_filter,
     .cb_exit      = cb_ecs_exit,
     .config_map   = config_map,
+    .event_type   = FLB_FILTER_LOGS | FLB_FILTER_METRICS,
     .flags        = 0
 };
