@@ -98,10 +98,6 @@ flb_sds_t get_azure_kusto_token(struct flb_azure_kusto *ctx)
                          ctx->o->access_token);
     }
 
-   // if (output){
-	//    flb_sds_destroy(output);
-   // }
-
     if (pthread_mutex_unlock(&ctx->token_mutex)) {
         flb_plg_error(ctx->ins, "error unlocking mutex");
         if (output) {
@@ -132,8 +128,6 @@ flb_sds_t execute_ingest_csl_command(struct flb_azure_kusto *ctx, const char *cs
 
     flb_plg_debug(ctx->ins, "before getting upstream connection");
 
-    //flb_upstream_init();
-
     flb_plg_debug(ctx->ins, "Logging attributes of flb_azure_kusto_resources:");
     flb_plg_debug(ctx->ins, "blob_ha: %p", ctx->resources->blob_ha);
     flb_plg_debug(ctx->ins, "queue_ha: %p", ctx->resources->queue_ha);
@@ -145,21 +139,19 @@ flb_sds_t execute_ingest_csl_command(struct flb_azure_kusto *ctx, const char *cs
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
-    flb_plg_debug(ctx->ins, "inside execute ingest csl commnad :: after flb_upstream_conn_get");
 
     if (!u_conn) {
-	FLB_OUTPUT_RETURN(FLB_RETRY);
+	    FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     if (u_conn) {
         token = get_azure_kusto_token(ctx);
-	flb_plg_debug(ctx->ins, "after get azure kusto token");
+	    flb_plg_debug(ctx->ins, "after get azure kusto token");
 
         if (token) {
             /* Compose request body */
             body = flb_sds_create_size(sizeof(FLB_AZURE_KUSTO_MGMT_BODY_TEMPLATE) - 1 +
                                        strlen(csl));
-	    flb_plg_debug(ctx->ins, "after flb sds create size");
 
             if (body) {
                 flb_sds_snprintf(&body, flb_sds_alloc(body),
@@ -267,8 +259,6 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
         flb_plg_error(ctx->ins, "upstream creation failed");
         return -1;
     }
-
-   // ctx->u->base.net.keepalive = FLB_FALSE;
 
     /* Create oauth2 context */
     ctx->o =
