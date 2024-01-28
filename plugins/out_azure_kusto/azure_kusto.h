@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -49,10 +49,9 @@
 #define AZURE_KUSTO_RESOURCE_UPSTREAM_URI "uri"
 #define AZURE_KUSTO_RESOURCE_UPSTREAM_SAS "sas"
 
-#define FLB_AZURE_KUSTO_RESOURCES_LOAD_INTERVAL_SEC 3600
+#define FLB_AZURE_KUSTO_RESOURCES_LOAD_INTERVAL_SEC "3600"
 
 #define FLB_AZURE_KUSTO_INGEST_ENDPOINT_CONNECTION_TIMEOUT "60"
-#define FLB_AZURE_KUSTO_KEEP_ALIVE_MAX_RECYCLE "20"
 
 
 struct flb_azure_kusto_resources {
@@ -75,7 +74,11 @@ struct flb_azure_kusto {
     flb_sds_t ingestion_mapping_reference;
 
     int ingestion_endpoint_connect_timeout;
-    int keep_alive_max_connection_recycle;
+
+    /* compress payload */
+    int compression_enabled;
+
+    int ingestion_resources_refresh_interval;
 
     /* records configuration */
     flb_sds_t log_key;

@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_random.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_version.h>
 
 #include <math.h>
 #include <msgpack.h>
@@ -143,19 +144,6 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
     gmtime_r(&now, &tm);
     len = strftime(tmp, sizeof(tmp) - 1, "%a, %d %b %Y %H:%M:%S GMT", &tm);
 
-
-    flb_plg_debug(ctx->ins,"inside blob before locking mutex");
-
-
-
-   // if (pthread_mutex_lock(&ctx->blob_mutex)) {
-   //     flb_plg_error(ctx->ins, "error locking mutex");
-   //     return -1;
-   // }
-
-
-    flb_plg_debug(ctx->ins,"inside blob after locking mutex");
-
     u_node = flb_upstream_ha_node_get(ctx->resources->blob_ha);
     if (!u_node) {
         flb_plg_error(ctx->ins, "error getting blob upstream");
@@ -163,39 +151,24 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
     }
 
 
-   // if (pthread_mutex_unlock(&ctx->blob_mutex)) {
-   //     flb_plg_error(ctx->ins, "error unlocking mutex");
-   //     return -1;
-   // }
-
-
     flb_plg_debug(ctx->ins,"inside blob after upstream ha node get");
     u_node->u->base.net.connect_timeout = ctx->ingestion_endpoint_connect_timeout;
-    u_node->u->base.net.keepalive_max_recycle = ctx->keep_alive_max_connection_recycle;
 
     u_conn = flb_upstream_conn_get(u_node->u);
 
-
-    //if (pthread_mutex_unlock(&ctx->blob_mutex)) {
-    //    flb_plg_error(ctx->ins, "error unlocking mutex");
-    //    return -1;
-    //}
-
-    if (!u_conn) {
-	            flb_plg_error(ctx->ins,"cannot create upstream connection for blob commit");
-		    return FLB_RETRY;
-    }
-
-    
-    flb_plg_debug(ctx->ins,"inside blob after retrieving connection");
-
     if (u_conn) {
-	    
-    flb_plg_debug(ctx->ins,"inside blob before create blob uri");
+        if (pthread_mutex_lock(&ctx->blob_mutex)) {
+            flb_plg_error(ctx->ins, "error locking blob mutex");
+            return NULL;
+        }
+
+        flb_plg_debug(ctx->ins,"inside blob before create blob uri");
         uri = azure_kusto_create_blob_uri(ctx, u_node, blob_id);
 
-
-    flb_plg_debug(ctx->ins,"inside blob after create blob uri");
+        if (pthread_mutex_unlock(&ctx->blob_mutex)) {
+            flb_plg_error(ctx->ins, "error unlocking blob mutex");
+            return NULL;
+        }
 
         if (uri) {
             flb_plg_debug(ctx->ins, "uploading payload to blob uri: %s", uri);
@@ -208,6 +181,10 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
                 flb_http_add_header(c, "x-ms-blob-type", 14, "BlockBlob", 9);
                 flb_http_add_header(c, "x-ms-date", 9, tmp, len);
                 flb_http_add_header(c, "x-ms-version", 12, "2019-12-12", 10);
+                flb_http_add_header(c, "x-ms-client-version", 19, FLB_VERSION_STR, strlen(FLB_VERSION_STR));
+                flb_http_add_header(c, "x-ms-app", 8, "Kusto.Fluent-Bit", 16);
+                flb_http_add_header(c, "x-ms-user", 9, "Kusto.Fluent-Bit", 16);
+
 
                 ret = flb_http_do(c, &resp_size);
                 flb_plg_debug(ctx->ins,
@@ -233,7 +210,6 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
                 }
 
                 flb_http_client_destroy(c);
-		flb_upstream_conn_release(u_conn);
             }
             else {
                 flb_plg_error(ctx->ins,
@@ -255,12 +231,6 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
         flb_plg_error(ctx->ins, "error getting blob container upstream connection");
     }
 
-
-    //if (pthread_mutex_unlock(&ctx->blob_mutex)) {
-    //    flb_plg_error(ctx->ins, "error unlocking mutex");
-    //    return -1;
-    //}
-
     return uri;
 }
 
@@ -276,20 +246,19 @@ static flb_sds_t create_ingestion_message(struct flb_azure_kusto *ctx, flb_sds_t
 
     
     if (pthread_mutex_lock(&ctx->blob_mutex)) {
-        flb_plg_error(ctx->ins, "error unlocking mutex");
-        return -1;
+        flb_plg_error(ctx->ins, "error locking blob mutex");
+        return NULL;
     }
 
     uuid = generate_uuid();
     if (uuid) {
         message = flb_sds_create(NULL);
 
-	flb_plg_debug(ctx->ins,"uuid :: %s",uuid);
-	flb_plg_debug(ctx->ins,"blob uri :: %s",blob_uri);
-	flb_plg_debug(ctx->ins,"payload size :: %lu",payload_size);
-	flb_plg_debug(ctx->ins,"database_name :: %s",ctx->database_name);
-	flb_plg_debug(ctx->ins,"table name :: %s",ctx->table_name);
-	flb_plg_debug(ctx->ins,"identity token :: %s", ctx->resources->identity_token);
+        flb_plg_debug(ctx->ins,"uuid :: %s",uuid);
+	    flb_plg_debug(ctx->ins,"blob uri :: %s",blob_uri);
+	    flb_plg_debug(ctx->ins,"payload size :: %lu",payload_size);
+	    flb_plg_debug(ctx->ins,"database_name :: %s",ctx->database_name);
+	    flb_plg_debug(ctx->ins,"table name :: %s",ctx->table_name);
 
         if (message) {
             message_len =
@@ -348,8 +317,8 @@ static flb_sds_t create_ingestion_message(struct flb_azure_kusto *ctx, flb_sds_t
 
 
     if (pthread_mutex_unlock(&ctx->blob_mutex)) {
-        flb_plg_error(ctx->ins, "error unlocking mutex");
-        return -1;
+        flb_plg_error(ctx->ins, "error unlocking blob mutex");
+        return NULL;
     }
 
     return message;
@@ -418,16 +387,22 @@ static int azure_kusto_enqueue_ingestion(struct flb_azure_kusto *ctx, flb_sds_t 
         flb_plg_error(ctx->ins, "error getting queue upstream");
         return -1;
     }
-
     
     u_node->u->base.net.connect_timeout = ctx->ingestion_endpoint_connect_timeout;
-    u_node->u->base.net.keepalive_max_recycle = ctx->keep_alive_max_connection_recycle;
-
 
     u_conn = flb_upstream_conn_get(u_node->u);
 
     if (u_conn) {
+        if (pthread_mutex_lock(&ctx->blob_mutex)) {
+            flb_plg_error(ctx->ins, "error unlocking mutex");
+            return -1;
+        }
         uri = azure_kusto_create_queue_uri(ctx, u_node);
+
+        if (pthread_mutex_unlock(&ctx->blob_mutex)) {
+            flb_plg_error(ctx->ins, "error unlocking mutex");
+            return -1;
+        }
 
         if (uri) {
             payload = create_ingestion_message(ctx, blob_uri, payload_size);
@@ -442,6 +417,9 @@ static int azure_kusto_enqueue_ingestion(struct flb_azure_kusto *ctx, flb_sds_t 
                                         20);
                     flb_http_add_header(c, "x-ms-date", 9, tmp, len);
                     flb_http_add_header(c, "x-ms-version", 12, "2019-12-12", 10);
+                    flb_http_add_header(c, "x-ms-client-version", 19, FLB_VERSION_STR, strlen(FLB_VERSION_STR));
+                    flb_http_add_header(c, "x-ms-app", 8, "Kusto.Fluent-Bit", 16);
+                    flb_http_add_header(c, "x-ms-user", 9, "Kusto.Fluent-Bit", 16);
 
                     ret = flb_http_do(c, &resp_size);
                     flb_plg_debug(ctx->ins,
@@ -545,7 +523,7 @@ int azure_kusto_queued_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
 
     if (pthread_mutex_lock(&ctx->blob_mutex)) {
         flb_plg_error(ctx->ins, "error unlocking mutex");
-    	return NULL;
+    	return -1;
     }
 
     /* flb__<db>__<table>__<b64tag>__<timestamp> */
@@ -554,7 +532,7 @@ int azure_kusto_queued_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
     
     if (pthread_mutex_unlock(&ctx->blob_mutex)) {
         flb_plg_error(ctx->ins, "error unlocking mutex");
-    	return NULL;
+    	return -1;
     }
 
     if (blob_id) {
