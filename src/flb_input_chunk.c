@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -18,10 +18,10 @@
  */
 
 #define FS_CHUNK_SIZE_DEBUG(op)  {flb_trace("[%d] %s -> fs_chunks_size = %zu", \
-	__LINE__, op->name, op->fs_chunks_size);}
+    __LINE__, op->name, op->fs_chunks_size);}
 #define FS_CHUNK_SIZE_DEBUG_MOD(op, chunk, mod)  {flb_trace( \
-	"[%d] %s -> fs_chunks_size = %zu mod=%zd chunk=%s", __LINE__, \
-	op->name, op->fs_chunks_size, mod, flb_input_chunk_get_name(chunk));}
+    "[%d] %s -> fs_chunks_size = %zu mod=%zd chunk=%s", __LINE__, \
+    op->name, op->fs_chunks_size, mod, flb_input_chunk_get_name(chunk));}
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config.h>
@@ -96,6 +96,46 @@ static int flb_input_chunk_drop_task_route(
 
 static ssize_t flb_input_chunk_get_real_size(struct flb_input_chunk *ic);
 
+
+static ssize_t get_input_chunk_record_count(struct flb_input_chunk *input_chunk)
+{
+    ssize_t record_count;
+    char   *chunk_buffer;
+    size_t  chunk_size;
+    int     set_down;
+    int     ret;
+
+    ret = cio_chunk_is_up(input_chunk->chunk);
+    set_down = FLB_FALSE;
+
+    if (ret == CIO_FALSE) {
+        ret = cio_chunk_up_force(input_chunk->chunk);
+
+        if (ret == -1) {
+            return -1;
+        }
+
+        set_down = FLB_TRUE;
+    }
+
+    ret = cio_chunk_get_content(input_chunk->chunk, 
+                                &chunk_buffer, 
+                                &chunk_size);
+
+    if (ret == CIO_OK) {
+        record_count = flb_mp_count(chunk_buffer, chunk_size);
+    }
+    else {
+        record_count = -1;
+    }
+
+    if (set_down) {
+        cio_chunk_down(input_chunk->chunk);
+    }
+
+    return record_count;
+}
+
 static int flb_input_chunk_release_space(
                     struct flb_input_chunk     *new_input_chunk,
                     struct flb_input_instance  *input_plugin,
@@ -153,6 +193,31 @@ static int flb_input_chunk_release_space(
         else if (release_scope == FLB_INPUT_CHUNK_RELEASE_SCOPE_GLOBAL) {
             chunk_destroy_flag = FLB_TRUE;
         }
+
+{
+    /* Update 'input' metrics */
+#ifdef FLB_HAVE_METRICS
+    ssize_t records;
+    uint64_t ts;
+
+    records = get_input_chunk_record_count(old_input_chunk);
+
+    if (records == -1) {
+        flb_debug("[task] error getting chunk record count : %s",
+                  old_input_chunk->in->name);
+    }
+    else {
+        /* timestamp */
+        ts = cfl_time_now();
+
+        cmt_counter_add(output_plugin->cmt_dropped_records, ts, (size_t) records,
+                        1, (char *[]) {(char *) flb_output_name(output_plugin)});
+
+    }
+#endif
+
+}
+
 
         if (chunk_destroy_flag) {
             if (old_input_chunk->task != NULL) {
@@ -507,7 +572,7 @@ int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
  */
 int flb_input_chunk_place_new_chunk(struct flb_input_chunk *ic, size_t chunk_size)
 {
-	int overlimit;
+    int overlimit;
     struct flb_input_instance *i_ins = ic->in;
 
     if (i_ins->storage_type == CIO_STORE_FS) {
@@ -516,6 +581,7 @@ int flb_input_chunk_place_new_chunk(struct flb_input_chunk *ic, size_t chunk_siz
             flb_input_chunk_find_space_new_data(ic, chunk_size, overlimit);
         }
     }
+
     return !flb_routes_mask_is_empty(ic->routes_mask);
 }
 
@@ -1510,6 +1576,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
 #ifdef FLB_HAVE_CHUNK_TRACE
     flb_chunk_trace_do_input(ic);
 #endif /* FLB_HAVE_CHUNK_TRACE */
+
 
     filtered_data_buffer = NULL;
     final_data_buffer = (char *) buf;
