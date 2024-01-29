@@ -21,6 +21,7 @@
 #define FLB_FILTER_H
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input.h>
 
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>

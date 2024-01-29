@@ -75,6 +75,25 @@ static inline int prop_key_check(const char *key, const char *kv, int k_len)
     return -1;
 }
 
+static inline int flb_filter_match_type(int in_event_type,
+                                        struct flb_filter_instance *f_ins)
+{
+    if (in_event_type == FLB_INPUT_LOGS &&
+        !(f_ins->event_type & FLB_FILTER_LOGS)) {
+        return FLB_FALSE;
+    }
+    else if (in_event_type == FLB_INPUT_METRICS &&
+             !(f_ins->event_type & FLB_FILTER_METRICS)) {
+        return FLB_FALSE;
+    }
+    else if (in_event_type == FLB_INPUT_TRACES &&
+             !(f_ins->event_type & FLB_FILTER_TRACES)) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
 void flb_filter_do(struct flb_input_chunk *ic,
                    const void *data, size_t bytes,
                    void **out_data, size_t *out_bytes,
@@ -135,6 +154,10 @@ void flb_filter_do(struct flb_input_chunk *ic,
         f_ins = mk_list_entry(head, struct flb_filter_instance, _head);
 
         if (is_active(&f_ins->properties) == FLB_FALSE) {
+            continue;
+        }
+
+        if (!flb_filter_match_type(event_type, f_ins)) {
             continue;
         }
 
