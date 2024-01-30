@@ -92,7 +92,8 @@ static int flb_input_chunk_is_task_safe_delete(struct flb_task *task);
 
 static int flb_input_chunk_drop_task_route(
                 struct flb_task *task,
-                struct flb_output_instance *o_ins);
+                struct flb_output_instance *o_ins,
+                ssize_t *dropped_record_count);
 
 static ssize_t flb_input_chunk_get_real_size(struct flb_input_chunk *ic);
 
@@ -144,6 +145,7 @@ static int flb_input_chunk_release_space(
                     int                         release_scope)
 {
     struct mk_list         *input_chunk_iterator_tmp;
+    ssize_t                 dropped_record_count;
     struct mk_list         *input_chunk_iterator;
     int                     chunk_destroy_flag;
     struct flb_input_chunk *old_input_chunk;
@@ -156,7 +158,7 @@ static int flb_input_chunk_release_space(
     mk_list_foreach_safe(input_chunk_iterator, input_chunk_iterator_tmp,
                          &input_plugin->chunks) {
         old_input_chunk = mk_list_entry(input_chunk_iterator,
-                                             struct flb_input_chunk, _head);
+                                        struct flb_input_chunk, _head);
 
         if (!flb_routes_mask_get_bit(old_input_chunk->routes_mask,
                                      output_plugin->id)) {
@@ -170,7 +172,8 @@ static int flb_input_chunk_release_space(
         }
 
         if (flb_input_chunk_drop_task_route(old_input_chunk->task,
-                                            output_plugin) == FLB_FALSE) {
+                                            output_plugin,
+                                            &dropped_record_count) == FLB_FALSE) {
             continue;
         }
 
@@ -194,30 +197,26 @@ static int flb_input_chunk_release_space(
             chunk_destroy_flag = FLB_TRUE;
         }
 
-{
-    /* Update 'input' metrics */
 #ifdef FLB_HAVE_METRICS
-    ssize_t records;
-    uint64_t ts;
+        if (dropped_record_count == 0) {
+            dropped_record_count = get_input_chunk_record_count(old_input_chunk);
 
-    records = get_input_chunk_record_count(old_input_chunk);
+            if (dropped_record_count == -1) {
+                flb_debug("[task] error getting chunk record count : %s",
+                          old_input_chunk->in->name);
+            }
+            else {
+                cmt_counter_add(output_plugin->cmt_dropped_records, 
+                                cfl_time_now(), 
+                                dropped_record_count,
+                                1, (char *[]) {(char *) flb_output_name(output_plugin)});
 
-    if (records == -1) {
-        flb_debug("[task] error getting chunk record count : %s",
-                  old_input_chunk->in->name);
-    }
-    else {
-        /* timestamp */
-        ts = cfl_time_now();
-
-        cmt_counter_add(output_plugin->cmt_dropped_records, ts, (size_t) records,
-                        1, (char *[]) {(char *) flb_output_name(output_plugin)});
-
-    }
+                flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, 
+                                dropped_record_count, 
+                                output_plugin->metrics);
+            }
+        }
 #endif
-
-}
-
 
         if (chunk_destroy_flag) {
             if (old_input_chunk->task != NULL) {
@@ -336,10 +335,13 @@ int flb_input_chunk_write_at(void *data, off_t offset,
 
 static int flb_input_chunk_drop_task_route(
             struct flb_task *task,
-            struct flb_output_instance *output_plugin)
+            struct flb_output_instance *output_plugin,
+            ssize_t *dropped_record_count)
 {
     int route_status;
     int result;
+
+    *dropped_record_count = 0;
 
     if (task == NULL) {
         return FLB_TRUE;
@@ -359,6 +361,8 @@ static int flb_input_chunk_drop_task_route(
                 flb_task_set_route_status(task,
                                           output_plugin,
                                           FLB_TASK_ROUTE_DROPPED);
+
+                *dropped_record_count = (ssize_t) task->records;
 
                 result = FLB_TRUE;
             }
