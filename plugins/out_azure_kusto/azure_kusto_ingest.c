@@ -156,11 +156,6 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
 
     u_conn = flb_upstream_conn_get(u_node->u);
 
-    if (!u_conn) {
-        flb_plg_error(ctx->ins,"cannot create upstream connection for blob commit");
-        return FLB_RETRY;
-    }
-
     if (u_conn) {
         if (pthread_mutex_lock(&ctx->blob_mutex)) {
             flb_plg_error(ctx->ins, "error unlocking mutex");

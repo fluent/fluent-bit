@@ -140,10 +140,6 @@ flb_sds_t execute_ingest_csl_command(struct flb_azure_kusto *ctx, const char *cs
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
 
-    if (!u_conn) {
-	    FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
-
     if (u_conn) {
         token = get_azure_kusto_token(ctx);
 	    flb_plg_debug(ctx->ins, "after get azure kusto token");
