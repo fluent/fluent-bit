@@ -478,7 +478,7 @@ static int process_data(struct flb_http_client *c)
 #if defined FLB_HAVE_TESTS_OSSFUZZ
 int fuzz_process_data(struct flb_http_client *c);
 int fuzz_process_data(struct flb_http_client *c) {
-	return process_data(c);
+    return process_data(c);
 }
 
 int fuzz_check_connection(struct flb_http_client *c);

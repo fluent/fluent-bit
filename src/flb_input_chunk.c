@@ -18,10 +18,10 @@
  */
 
 #define FS_CHUNK_SIZE_DEBUG(op)  {flb_trace("[%d] %s -> fs_chunks_size = %zu", \
-	__LINE__, op->name, op->fs_chunks_size);}
+    __LINE__, op->name, op->fs_chunks_size);}
 #define FS_CHUNK_SIZE_DEBUG_MOD(op, chunk, mod)  {flb_trace( \
-	"[%d] %s -> fs_chunks_size = %zu mod=%zd chunk=%s", __LINE__, \
-	op->name, op->fs_chunks_size, mod, flb_input_chunk_get_name(chunk));}
+    "[%d] %s -> fs_chunks_size = %zu mod=%zd chunk=%s", __LINE__, \
+    op->name, op->fs_chunks_size, mod, flb_input_chunk_get_name(chunk));}
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config.h>
@@ -507,7 +507,7 @@ int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
  */
 int flb_input_chunk_place_new_chunk(struct flb_input_chunk *ic, size_t chunk_size)
 {
-	int overlimit;
+    int overlimit;
     struct flb_input_instance *i_ins = ic->in;
 
     if (i_ins->storage_type == CIO_STORE_FS) {

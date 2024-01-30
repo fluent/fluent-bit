@@ -524,8 +524,8 @@ struct flb_cf_group *flb_cf_group_create(struct flb_cf *cf, struct flb_cf_sectio
     /* initialize lists */
     g->properties = cfl_kvlist_create();
     if (g->properties == NULL) {
-	flb_free(g);
-	return NULL;
+        flb_free(g);
+        return NULL;
     }
 
     /* determinate type by name */
