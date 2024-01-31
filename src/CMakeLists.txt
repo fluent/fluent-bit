@@ -210,13 +210,17 @@ endif()
 
 if(FLB_REGEX)
   set(FLB_DEPS
-    ${FLB_DEPSS}
+    ${FLB_DEPS}
     onigmo-static)
   set(src
     ${src}
     "flb_regex.c"
     )
 endif()
+
+set(FLB_DEPS
+  ${FLB_DEPS}
+  nghttp2)
 
 if(FLB_LUAJIT)
   set(extra_libs

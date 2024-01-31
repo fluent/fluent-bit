@@ -25,6 +25,8 @@
 #include "http_conn.h"
 #include "http_prot.h"
 
+// #pragma GCC diagnostic error "-Wall"
+
 #define HTTP_SERVER_BUFFER_INITIAL_SIZE 1024
 
 #define hex_dump(buffer, length, columns) __hex_dump__((char *) buffer, (size_t) length, (size_t) columns)
@@ -42,6 +44,12 @@ static void __hex_dump__(unsigned char *buffer, size_t length, size_t columns)
     printf("\n\n");
 }
 
+static ssize_t http2_send_callback(nghttp2_session *inner_session, 
+                                   const uint8_t *data,
+                                   size_t length, 
+                                   int flags, 
+                                   void *user_data);
+
 
 static int http2_header_callback(nghttp2_session *inner_session,
                                  const nghttp2_frame *frame, 
@@ -52,33 +60,19 @@ static int http2_header_callback(nghttp2_session *inner_session,
                                  uint8_t flags, 
                                  void *user_data);
 
-static int caseless_compare_non_null_terminated_strings(char *first_buffer, 
-                                                        size_t first_length,
-                                                        char *second_buffer, 
-                                                        size_t second_length);
+static int http2_strncasecmp(const uint8_t *first_buffer, 
+                             size_t first_length,
+                             const char *second_buffer, 
+                             size_t second_length);
 
-static size_t parse_non_null_terminated_size_t(char *value, size_t length);
+static inline size_t http2_lower_value(size_t left_value, size_t right_value) 
+{
+    if (left_value < right_value) {
+        return left_value;
+    }
 
-static int copy_non_null_terminated_string_to_mk_ptr(mk_ptr_t *destination, 
-                                                     char *source_buffer, 
-                                                     size_t source_length);
-
-static void destroy_mk_ptr(mk_ptr_t *instance, int release_instance);
-
-static struct mk_http_header *get_legacy_header(struct mk_http_parser *parser,
-                                                int header_id);
-
-static void destroy_legacy_header(struct mk_http_parser *parser,
-                                  int header_id);
-
-static void destroy_legacy_headers(struct mk_http_parser *parser);
-
-static int insert_legacy_header(struct mk_http_parser *parser,
-                                int header_id,
-                                char *name_buffer, 
-                                size_t name_length,
-                                char *value_buffer, 
-                                size_t value_length);
+    return right_value;
+}
 
 int http2_stream_init(struct http2_stream *stream,
                       struct http2_session *session, 
@@ -89,16 +83,132 @@ struct http2_stream *http2_stream_create(struct http2_session *session,
 
 void http2_stream_destroy(struct http2_stream *stream);
 
+
+
+static void http_response_destroy(struct http_response *response);
+
+static int http_response_init(struct http_response *response);
+
+static void http_request_destroy(struct http_request *request);
+
+static int http_request_init(struct http_request *request);
+
+static char *convert_string_to_lowercase(char *input_buffer, size_t length)
+{
+    char  *output_buffer;
+    size_t index;
+
+    output_buffer = flb_calloc(1, length + 1);
+
+    if (output_buffer != NULL) {
+        for (index = 0 ; index < length ; index++) {
+            output_buffer[index] = tolower(input_buffer[index]);
+        }
+
+    }
+
+    return output_buffer;
+}
+
+static char *http_request_get_header(struct http_request *request,
+                                     char *name) 
+{
+    char   *lowercase_name;
+    size_t value_length;
+    int    result;
+    void  *value;
+
+    lowercase_name = convert_string_to_lowercase(name, strlen(name));
+
+    if (lowercase_name == NULL) {
+        return NULL;
+    }
+
+    result = flb_hash_table_get(request->headers,
+                                lowercase_name, 
+                                strlen(lowercase_name),
+                                &value, &value_length);
+
+    flb_free(lowercase_name);
+
+    if (result == -1) {
+        return NULL;
+    }
+
+    return (char *) value;
+}
+
+static void http_request_destroy(struct http_request *request) 
+{
+    if (request->path != NULL) {
+         cfl_sds_destroy(request->path);
+    }
+
+    if (request->host != NULL) {
+         cfl_sds_destroy(request->host);
+    }
+
+    if (request->query_string != NULL) {
+         cfl_sds_destroy(request->query_string);
+    }
+
+    if (request->body != NULL) {
+         cfl_sds_destroy(request->body);
+    }
+
+    if (request->headers != NULL) {
+         flb_hash_table_destroy(request->headers);
+    }
+
+    if (!cfl_list_entry_is_orphan(&request->_head)) {
+        cfl_list_del(&request->_head);
+    }
+
+    memset(request, 0, sizeof(struct http_request));
+}
+
+static int http_request_init(struct http_request *request) {
+    http_request_destroy(request);
+
+    cfl_list_entry_init(&request->_head);
+
+    request->headers = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 16, -1);
+
+    if (request->headers == NULL) {
+        return -1;
+    }
+
+    return 0;
+}
+
 int http2_stream_init(struct http2_stream *stream,
                       struct http2_session *session, 
                       int32_t stream_id)
 {
+    int result;
+
     stream->id = stream_id;
     stream->status = HTTP2_STREAM_STATUS_RECEIVING_HEADERS;
 
-    mk_http_parser_init(&stream->parser);
+    result = http_request_init(&stream->request);
 
-    mk_list_add(&stream->_head, &session->streams);
+    if (result != 0) {
+        return -1;
+    }
+
+    result = http_response_init(&stream->response);
+
+    if (result != 0) {
+        return -2;
+    }
+
+    cfl_list_add(&stream->_head, &session->streams);
+
+    stream->request.stream  = (void *) stream;
+    stream->request.session = session->parent;
+
+    stream->response.stream  = (void *) stream;
+    stream->response.session = session->parent;
 
     return 0;
 }
@@ -106,13 +216,9 @@ int http2_stream_init(struct http2_stream *stream,
 void http2_stream_destroy(struct http2_stream *stream)
 {
     if (stream != NULL) {
-        if (!mk_list_entry_is_orphan(&stream->_head)) {
-            mk_list_del(&stream->_head);
+        if (!cfl_list_entry_is_orphan(&stream->_head)) {
+            cfl_list_del(&stream->_head);
         }
-
-        destroy_legacy_headers(&stream->parser);
-
-        destroy_mk_ptr(&stream->request.data, FLB_FALSE);
 
         flb_free(stream);
     }
@@ -145,72 +251,24 @@ static ssize_t http2_send_callback(nghttp2_session *inner_session,
                                    const uint8_t *data,
                                    size_t length, 
                                    int flags, 
-                                   void *user_data);
-
-static ssize_t http2_recv_callback(nghttp2_session *inner_session, 
-                                   const uint8_t *data,
-                                   size_t length, 
-                                   int flags, 
-                                   void *user_data);
-
-static ssize_t http2_send_callback(nghttp2_session *inner_session, 
-                                   const uint8_t *data,
-                                   size_t length, 
-                                   int flags, 
                                    void *user_data)
 {
+    cfl_sds_t             resized_buffer;
     struct http2_session *session;
-    int                   result;
-    size_t                sent;
 
     session = (struct http2_session *) user_data;
 
-    result = flb_io_net_write(session->parent->connection,
-                              (void *) data,
-                              length,
-                              &sent);
+    resized_buffer = cfl_sds_cat(session->parent->outgoing_data, 
+                                 (const char *) data, 
+                                 length);
 
-    /* NGHTTP2_ERR_CALLBACK_FAILURE */
-
-    return result;
-}
-
-static ssize_t http2_recv_callback(nghttp2_session *inner_session, 
-                                   const uint8_t *data,
-                                   size_t length, 
-                                   int flags, 
-                                   void *user_data)
-{
-    ssize_t               received;
-    struct http2_session *session;
-    int                   result;
-
-
-    printf("RECVING UP TO %zu BYTES\n", length);
-
-    session = (struct http2_session *) user_data;
-
-    received = flb_io_net_read(session->parent->connection,
-                               (void *) data,
-                               length);
-    
-    printf("1 - RECEIVED = %zd\n", received);
-
-    if (received == 0) {
-        received = NGHTTP2_ERR_EOF;
-    }
-    else if (received < 0) {
-        if (session->parent->connection->net_error == -1) {
-            received = NGHTTP2_ERR_WOULDBLOCK;
-        }
-        else {
-            received = NGHTTP2_ERR_CALLBACK_FAILURE;  
-        }
+    if (resized_buffer == NULL) {
+        return NGHTTP2_ERR_CALLBACK_FAILURE;
     }
 
-    printf("2 - RECEIVED = %zd\n", received);
+    session->parent->outgoing_data = resized_buffer;
 
-    return received;
+    return length;
 }
 
 static int http2_frame_recv_callback(nghttp2_session *inner_session,
@@ -219,10 +277,6 @@ static int http2_frame_recv_callback(nghttp2_session *inner_session,
 {
     struct http2_stream *stream;
 
-    // if ((frame->hd.flags & NGHTTP2_FLAG_END_STREAM) != 0) {
-    //     return 0;
-    // }
-
     stream = nghttp2_session_get_stream_user_data(inner_session, 
                                                   frame->hd.stream_id);
 
@@ -230,14 +284,23 @@ static int http2_frame_recv_callback(nghttp2_session *inner_session,
         return 0;
     }
 
-    printf("STREAM %d RECEIVED FRAME TYPE %d\n", frame->hd.stream_id, frame->hd.type);
-
     switch (frame->hd.type) {
         case NGHTTP2_CONTINUATION:
         case NGHTTP2_HEADERS:
-
             if ((frame->hd.flags & NGHTTP2_FLAG_END_HEADERS) != 0) {
-                stream->status = HTTP2_STREAM_STATUS_RECEIVING_DATA;
+                if (stream->request.content_length > 0) {
+                    stream->status = HTTP2_STREAM_STATUS_RECEIVING_DATA;
+                }
+                else {
+                    stream->status = HTTP2_STREAM_STATUS_READY;
+
+                    if (!cfl_list_entry_is_orphan(&stream->request._head)) {
+                        cfl_list_del(&stream->request._head);
+                    }
+
+                    cfl_list_add(&stream->request._head, 
+                                 &stream->request.session->request_queue);
+                }
             }
             else {
                 stream->status = HTTP2_STREAM_STATUS_RECEIVING_HEADERS;                
@@ -274,7 +337,6 @@ static int http2_begin_headers_callback(nghttp2_session *inner_session,
                                         void *user_data) {
     struct http2_session *session;
     struct http2_stream  *stream;
-    int                   result;
 
     session = (struct http2_session *) user_data;
 
@@ -297,15 +359,15 @@ static int http2_begin_headers_callback(nghttp2_session *inner_session,
 }
 
 
- static int *http2_data_chunk_recv_callback(nghttp2_session *inner_session, 
-                                            uint8_t flags, 
-                                            int32_t stream_id, 
-                                            const uint8_t *data, 
-                                            size_t len, 
-                                            void *user_data)
- {
+ static int http2_data_chunk_recv_callback(nghttp2_session *inner_session, 
+                                           uint8_t flags, 
+                                           int32_t stream_id, 
+                                           const uint8_t *data, 
+                                           size_t len, 
+                                           void *user_data)
+{
+    cfl_sds_t            resized_buffer;
     struct http2_stream *stream;
-    void                *resized_data;
 
     stream = nghttp2_session_get_stream_user_data(inner_session, stream_id);
 
@@ -313,64 +375,67 @@ static int http2_begin_headers_callback(nghttp2_session *inner_session,
         return 0;
     }
 
-//     if (stream->status != HTTP2_STREAM_STATUS_RECEIVING_DATA) {
-// printf("NOT YET RECEIVING DATA, DISCARDING %zu BYTES\n", len);
-//         return 0;
-//     }
+    if (stream->status != HTTP2_STREAM_STATUS_RECEIVING_DATA) {
+        stream->status = HTTP2_STREAM_STATUS_ERROR;
 
-printf("RECEIVING DATA CHUNK OF %zu BYTES\n", len);
+        return -1;
+    }
 
-    if (stream->request.data.data == NULL) {
-        stream->request.data.data = flb_malloc(len);
+    if (stream->request.body == NULL) {
+        stream->request.body = cfl_sds_create_size(len);
 
-        if (stream->request.data.data == NULL) {
+        if (stream->request.body == NULL) {
+            stream->status = HTTP2_STREAM_STATUS_ERROR;
+
             return -1;
         }
 
-        memcpy(stream->request.data.data, data, len);
+        memcpy(stream->request.body, data, len);
 
-        stream->request.data.len = len;
+        cfl_sds_set_len(stream->request.body, len);
     }
     else {
-        resized_data = flb_realloc(stream->request.data.data, 
-                                   stream->request.data.len + len);
+        resized_buffer = cfl_sds_cat(stream->request.body, 
+                                     (const char *) data, 
+                                     len);
 
-        if (resized_data == NULL) {
+        if (resized_buffer == NULL) {
+            stream->status = HTTP2_STREAM_STATUS_ERROR;
+
             return -1;
         }
 
-        stream->request.data.data = resized_data;
-
-        memcpy(&stream->request.data.data[stream->request.data.len], 
-               data,
-               len);
-
-        stream->request.data.len += len;
-
+        stream->request.body = resized_buffer;
     }
 
-printf("TOTAL RECEIVED : %zu\n", stream->request.data.len);
+    if (stream->status == HTTP2_STREAM_STATUS_RECEIVING_DATA) {
+        if (stream->request.content_length == cfl_sds_len(stream->request.body)) {
+            stream->status = HTTP2_STREAM_STATUS_READY;
 
-    // if (stream->content_length == stream->request.data.len) {
-    //     stream->status = HTTP2_STREAM_STATUS_READY;
-    // }
-    // else if (stream->content_length < stream->request.data.len) {
-    //     stream->status = HTTP2_STREAM_STATUS_ERROR;
-    // }
+            if (!cfl_list_entry_is_orphan(&stream->request._head)) {
+                cfl_list_del(&stream->request._head);
+            }
+
+            cfl_list_add(&stream->request._head, 
+                         &stream->request.session->request_queue);
+        }
+    }
 
     return 0;
- }
+}
 
 
 static int http2_header_callback(nghttp2_session *inner_session,
                                  const nghttp2_frame *frame, 
                                  const uint8_t *name,
-                                 size_t namelen, 
+                                 size_t name_length, 
                                  const uint8_t *value,
-                                 size_t valuelen, 
+                                 size_t value_length, 
                                  uint8_t flags, 
                                  void *user_data) 
 {
+    char                 temporary_buffer[16];
+    char                *lowercase_name;
     struct http2_stream *stream;
     int                  result;
 
@@ -381,179 +446,81 @@ static int http2_header_callback(nghttp2_session *inner_session,
         return 0;
     }
 
-    printf("header_callback\n");
-    printf("HEADER : %.*s\n", namelen, name);
-    printf("VALUE  : %.*s\n", valuelen, value);
-    printf("\n");
+    if (http2_strncasecmp(name, name_length, ":method", 0) == 0) {
+        strncpy(temporary_buffer, 
+                (const char *) value, 
+                http2_lower_value(sizeof(temporary_buffer), value_length + 1));
 
-    if (caseless_compare_non_null_terminated_strings(name, 
-                                                     namelen, 
-                                                     ":method", 
-                                                     strlen(":method")) == 0) {
-        if (caseless_compare_non_null_terminated_strings(value, 
-                                                         valuelen, 
-                                                         "GET", 
-                                                         strlen("GET")) == 0) {
+        temporary_buffer[sizeof(temporary_buffer) - 1] = '\0';
+
+        if (strcasecmp(temporary_buffer, "GET") == 0) {
             stream->request.method = MK_METHOD_GET;
         }
-        else if (caseless_compare_non_null_terminated_strings(value, 
-                                                              valuelen, 
-                                                              "POST", 
-                                                              strlen("POST")) == 0) {
+        else if (strcasecmp(temporary_buffer, "POST") == 0) {
             stream->request.method = MK_METHOD_POST;
         }
-        else if (caseless_compare_non_null_terminated_strings(value, 
-                                                              valuelen, 
-                                                              "HEAD", 
-                                                              strlen("HEAD")) == 0) {
+        else if (strcasecmp(temporary_buffer, "HEAD") == 0) {
             stream->request.method = MK_METHOD_HEAD;
         }
-        else if (caseless_compare_non_null_terminated_strings(value, 
-                                                              valuelen, 
-                                                              "PUT", 
-                                                              strlen("PUT")) == 0) {
+        else if (strcasecmp(temporary_buffer, "PUT") == 0) {
             stream->request.method = MK_METHOD_PUT;
         }
-        else if (caseless_compare_non_null_terminated_strings(value, 
-                                                              valuelen, 
-                                                              "DELETE", 
-                                                              strlen("DELETE")) == 0) {
+        else if (strcasecmp(temporary_buffer, "DELETE") == 0) {
             stream->request.method = MK_METHOD_DELETE;
         }
-        else if (caseless_compare_non_null_terminated_strings(value, 
-                                                              valuelen, 
-                                                              "OPTIONS", 
-                                                              strlen("OPTIONS")) == 0) {
+        else if (strcasecmp(temporary_buffer, "OPTIONS") == 0) {
             stream->request.method = MK_METHOD_OPTIONS;
-        }
-        else if (caseless_compare_non_null_terminated_strings(value, 
-                                                              valuelen, 
-                                                              "SIZEOF", 
-                                                              strlen("SIZEOF")) == 0) {
-            stream->request.method = MK_METHOD_SIZEOF;
         }
         else {    
             stream->request.method = MK_METHOD_UNKNOWN;
         }
     }
-    else if (caseless_compare_non_null_terminated_strings(name, 
-                                                          namelen, 
-                                                          ":path", 
-                                                          strlen(":path")) == 0) {
-        if (copy_non_null_terminated_string_to_mk_ptr(&stream->request.uri, 
-                                                      value, 
-                                                      valuelen) != 0) {
+    else if (http2_strncasecmp(name, name_length, ":path", 0) == 0) {
+        stream->request.path = cfl_sds_create_len((const char *) value, value_length);
+
+        if (stream->request.path == NULL) {
             return -1;
         }
     }
-    else if (caseless_compare_non_null_terminated_strings(name, 
-                                                          namelen, 
-                                                          ":authority", 
-                                                          strlen(":authority")) == 0) {
-        if (copy_non_null_terminated_string_to_mk_ptr(&stream->request.host, 
-                                                      value, 
-                                                      valuelen) != 0) {
+    else if (http2_strncasecmp(name, name_length, ":authority", 0) == 0) {
+
+        stream->request.host = cfl_sds_create_len((const char *) value, value_length);
+    
+        if (stream->request.host == NULL) {
             return -1;
         }
 
-        result = insert_legacy_header(&stream->parser, 
-                                      MK_HEADER_HOST, 
-                                      "host", 
-                                      strlen("host"), 
-                                      value, 
-                                      valuelen);
+        result = flb_hash_table_add(stream->request.headers, 
+                                    "host", 4, 
+                                    (void *) value, value_length);
 
-        if (result != 0) {
+        if (result < 0) {
             return -1;
         }
     }
-    else if (caseless_compare_non_null_terminated_strings(name, 
-                                                          namelen, 
-                                                          ":scheme", 
-                                                          strlen(":scheme")) == 0) {
-        if (caseless_compare_non_null_terminated_strings(value, 
-                                                         valuelen, 
-                                                         "http", 
-                                                         strlen("http")) == 0) {
-            if (copy_non_null_terminated_string_to_mk_ptr(&stream->request.protocol_p, 
-                                                          "HTTP/2", 
-                                                          strlen("HTTP/2")) != 0) {
-                return -1;
-            }
-        }
-        else {
-            if (copy_non_null_terminated_string_to_mk_ptr(&stream->request.protocol_p, 
-                                                          value, 
-                                                          valuelen) != 0) {
-                return -1;
-            }
-        }
+    else if (http2_strncasecmp(name, name_length, "content-length", 0) == 0) {
+        strncpy(temporary_buffer, 
+                (const char *) value, 
+                http2_lower_value(sizeof(temporary_buffer), value_length + 1));
+
+        temporary_buffer[sizeof(temporary_buffer) - 1] = '\0';
+
+        stream->request.content_length = strtoull(temporary_buffer, NULL, 10);
     }
-    else if (caseless_compare_non_null_terminated_strings(name, 
-                                                          namelen, 
-                                                          "user-agent", 
-                                                          strlen("user-agent")) == 0) {
-        result = insert_legacy_header(&stream->parser, 
-                                      MK_HEADER_USER_AGENT, 
-                                      "user-agent", 
-                                      strlen("user-agent"), 
-                                      value, 
-                                      valuelen);
 
-        if (result != 0) {
-            return -1;
-        }
+    lowercase_name = convert_string_to_lowercase(name, name_length);
+
+    if (lowercase_name == NULL) {
+        return -1;
     }
-    else if (caseless_compare_non_null_terminated_strings(name, 
-                                                          namelen, 
-                                                          "accept", 
-                                                          strlen("accept")) == 0) {
-        result = insert_legacy_header(&stream->parser, 
-                                      MK_HEADER_ACCEPT, 
-                                      "accept", 
-                                      strlen("accept"), 
-                                      value, 
-                                      valuelen);
 
-        if (result != 0) {
-            return -1;
-        }
-    }
-    else if (caseless_compare_non_null_terminated_strings(name, 
-                                                          namelen, 
-                                                          "content-length", 
-                                                          strlen("content-length")) == 0) {
-        result = insert_legacy_header(&stream->parser, 
-                                      MK_HEADER_CONTENT_LENGTH, 
-                                      "content-length", 
-                                      strlen("content-length"), 
-                                      value, 
-                                      valuelen);
+    result = flb_hash_table_add(stream->request.headers, 
+                                (const char *) lowercase_name, 
+                                strlen(lowercase_name), 
+                                (void *) value, 
+                                value_length);
 
-        if (result != 0) {
-            return -1;
-        }
-
-        stream->content_length = parse_non_null_terminated_size_t(value, valuelen);
-
-        printf("EXPECTED CONTENT LENGTH : %zu\n", stream->content_length);
-
-    }
-    else if (caseless_compare_non_null_terminated_strings(name, 
-                                                          namelen, 
-                                                          "content-type", 
-                                                          strlen("content-type")) == 0) {
-        result = insert_legacy_header(&stream->parser, 
-                                      MK_HEADER_CONTENT_TYPE, 
-                                      "content-type", 
-                                      strlen("content-type"), 
-                                      value, 
-                                      valuelen);
-
-        if (result != 0) {
-            return -1;
-        }
-    }
+    flb_free(lowercase_name);
 
     return 0;
 }
@@ -579,17 +546,20 @@ static void dummy_mk_http_session_init(struct mk_http_session *session)
 }
 
 
-static int http1_session_init(struct http1_session *session)
+static int http1_session_init(struct http1_session *session, struct http_session *parent)
 {
     dummy_mk_http_session_init(&session->inner_session);
 
     mk_http_parser_init(&session->stream.parser);
 
+    session->parent = parent;
+
     return 0;
 }
 
-static int http2_session_init(struct http2_session *session)
+static int http2_session_init(struct http2_session *session, struct http_session *parent)
 {
+    nghttp2_settings_entry     session_settings[1];
     nghttp2_session_callbacks *callbacks;
     int                        result;
 
@@ -600,8 +570,6 @@ static int http2_session_init(struct http2_session *session)
     }
 
     nghttp2_session_callbacks_set_send_callback(callbacks, http2_send_callback);
-
-    nghttp2_session_callbacks_set_recv_callback(callbacks, http2_recv_callback);
 
     nghttp2_session_callbacks_set_on_frame_recv_callback(callbacks, http2_frame_recv_callback);
 
@@ -621,7 +589,27 @@ static int http2_session_init(struct http2_session *session)
         return -2;
     }
 
-    mk_list_init(&session->streams);
+    cfl_list_init(&session->streams);
+
+    session->parent = parent;
+
+    session_settings[0].settings_id = NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS;
+    session_settings[0].value = 1;
+
+    result = nghttp2_submit_settings(session->inner_session, 
+                                     NGHTTP2_FLAG_NONE, 
+                                     session_settings,
+                                     1);
+
+    if (result != 0) {
+        return -3;
+    }
+
+    result = nghttp2_session_send(session->inner_session);
+
+    if (result != 0) {
+        return -4;
+    }
 
     return 0;
 }
@@ -631,30 +619,40 @@ static int http_session_init(struct http_session *session, int version) {
 
     memset(session, 0, sizeof(struct http_session));
 
-    session->incoming_data_buffer = flb_calloc(1, HTTP_SERVER_BUFFER_INITIAL_SIZE);
+    cfl_list_init(&session->request_queue);
 
-    if (session->incoming_data_buffer == NULL) {
+    session->incoming_data = cfl_sds_create_size(HTTP_SERVER_INITIAL_BUFFER_SIZE);
+
+    if (session->incoming_data == NULL) {
         return -1;
     }
 
-    session->incoming_data_buffer_size = HTTP_SERVER_BUFFER_INITIAL_SIZE;
-    session->incoming_data_buffer_used = 0;
+    session->outgoing_data = cfl_sds_create_size(HTTP_SERVER_INITIAL_BUFFER_SIZE);
 
-    result = http1_session_init(&session->http1);
-
-    if (result != 0) {
+    if (session->outgoing_data == NULL) {
         return -2;
     }
 
-    result = http2_session_init(&session->http2);
-
-    if (result != 0) {
-        return -3;
-    }
-
     session->version = version;
-    session->http1.parent = session;
-    session->http2.parent = session;
+
+    if (session->version == HTTP_PROTOCOL_HTTP2) {
+        result = http2_session_init(&session->http2, session);
+
+        if (result != 0) {
+            return -3;
+        }
+
+        // session->http2.parent = session;
+    }
+    else {
+        result = http1_session_init(&session->http1, session);
+
+        if (result != 0) {
+            return -4;
+        }
+
+        // session->http1.parent = session;
+    }
 
     return 0;
 }
@@ -665,15 +663,15 @@ static void http1_session_destroy(struct http1_session *session)
 
 static void http2_session_destroy(struct http2_session *session)
 {
-    struct mk_list      *iterator_backup;
-    struct mk_list      *iterator;
+    struct cfl_list     *iterator_backup;
+    struct cfl_list     *iterator;
     struct http2_stream *stream;
 
     if (session != NULL) {
-        mk_list_foreach_safe(iterator, 
-                             iterator_backup, 
-                             &session->streams) {
-            stream = mk_list_entry(iterator, struct http2_stream, _head);
+        cfl_list_foreach_safe(iterator, 
+                              iterator_backup, 
+                              &session->streams) {
+            stream = cfl_list_entry(iterator, struct http2_stream, _head);
 
             http2_stream_destroy(stream);
         }
@@ -685,12 +683,13 @@ static void http2_session_destroy(struct http2_session *session)
 static void http_session_destroy(struct http_session *session)
 {
     if (session != NULL) {
-        if (session->incoming_data_buffer != NULL) {
-            flb_free(session->incoming_data_buffer);
+        if (session->incoming_data != NULL) {
+            cfl_sds_destroy(session->incoming_data);
         }
 
-        session->incoming_data_buffer_size = 0;
-        session->incoming_data_buffer_used = 0;
+        if (session->outgoing_data != NULL) {
+            cfl_sds_destroy(session->outgoing_data);
+        }
 
         if (session->releasable) {
             flb_free(session);
@@ -720,45 +719,381 @@ static struct http_session *http_session_create(int version)
     return session;
 }
 
-static void http2_conn_request_init(struct mk_http_session *session,
-                                   struct mk_http_request *request);
-
-static ssize_t data_source_read_callback(nghttp2_session *session, int32_t stream_id, uint8_t *buf, size_t length, uint32_t *data_flags, nghttp2_data_source *source, void *user_data)
+static ssize_t http2_data_source_read_callback(nghttp2_session *session, 
+                                               int32_t stream_id, 
+                                               uint8_t *buf, 
+                                               size_t length, 
+                                               uint32_t *data_flags, 
+                                               nghttp2_data_source *source, 
+                                               void *user_data)
 {
-  strcpy(buf, "PEDO");
+    size_t               content_length;
+    size_t               body_offset;
+    struct http2_stream *stream;
+    ssize_t              result;
 
-  *data_flags |= NGHTTP2_DATA_FLAG_EOF;
-   
-  return 4;
+    stream = nghttp2_session_get_stream_user_data(session, 
+                                                  stream_id);
+
+    if (stream == NULL) {
+        return NGHTTP2_ERR_CALLBACK_FAILURE;
+    }
+
+    body_offset    = stream->response.body_read_offset;
+    content_length = cfl_sds_len(stream->response.body) - body_offset;
+
+    if (content_length > length) {
+        memcpy(buf, 
+               &stream->response.body[body_offset], length);
+        
+        result = length;
+
+        stream->response.body_read_offset += length;
+    }
+    else if (content_length > 0) {
+        memcpy(buf, stream->response.body, content_length);
+
+        result = content_length;
+
+        stream->response.body_read_offset += length;
+
+        *data_flags |= NGHTTP2_DATA_FLAG_EOF;
+    }
+    else {
+        result = NGHTTP2_ERR_PAUSE;
+    }
+
+    return result;
 }
 
-static int send_response(nghttp2_session *session, struct http2_stream *stream) {
-    int rv;
-    nghttp2_data_provider data_prd;
-    nghttp2_nv hdrs[] = {
-                            ":status", 
-                            "404",
-                            strlen(":status"), 
-                            strlen("404"),
-                            NGHTTP2_NV_FLAG_NONE
-                        };
+static void http_response_destroy(struct http_response *response) {
+    if (response->message != NULL) {
+         cfl_sds_destroy(response->message);
+    }
 
-    data_prd.source.fd = 0;
-    data_prd.read_callback = data_source_read_callback;
+    if (response->body != NULL) {
+         cfl_sds_destroy(response->body);
+    }
+
+    if (response->headers != NULL) {
+         flb_hash_table_destroy(response->headers);
+    }
+
+    memset(response, 0, sizeof(struct http_response));
+}
+
+static int http_response_init(struct http_response *response) {
+    http_response_destroy(response);
+
+    response->headers = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 16, -1);
+
+    if (response->headers == NULL) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static struct http_response *http2_response_begin(
+        struct http2_session *session, 
+        struct http2_stream *stream) {
+
+    int result;
+
+    result = http_response_init(&stream->response);
+
+    if (result != 0) {
+        return NULL;
+    }
+
+    stream->response.stream = (void *) stream;
+    stream->response.session = session->parent;
+
+    return &stream->response;
+}
+
+static int http2_response_set_header(struct http_response *response, 
+                                     char *name, size_t name_length,
+                                     char *value, size_t value_length)
+{
+    int result;
+
+    result = flb_hash_table_add(response->headers, 
+                                (const char *) name, (int) name_length,
+                                (void *) value, (ssize_t) value_length);
+
+    if (result < 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static int http2_response_set_status(struct http_response *response, 
+                                     int status)
+{
+    return 0;
+}
+
+static int http2_response_set_body(struct http_response *response, 
+                                   unsigned char *body, size_t body_length)
+{
+    return 0;
+}
+
+static int http2_response_commit(struct http_response *response)
+{
+    char                         status_as_text[16];
+    struct mk_list              *header_iterator;
+    nghttp2_data_provider        data_provider;
+    size_t                       header_count;
+    size_t                       header_index;
+    struct flb_hash_table_entry *header_entry;
+    nghttp2_nv                  *headers;
+    struct http2_session        *session;
+    struct http2_stream         *stream;
+    int                          result;
+
+    session = &response->session->http2;
+
+    if (session == NULL) {
+        return -1;
+    }
+
+    stream  = (struct http2_stream *) response->stream;
+
+    if (stream == NULL) {
+        return -2;
+    }
+
+    header_count = response->headers->total_count + 1;
+
+    headers = flb_calloc(header_count, sizeof(nghttp2_nv));
+
+    if (headers == NULL) {
+        return -3;
+    }
+
+    snprintf(status_as_text, 
+             sizeof(status_as_text) - 1, 
+             "%d", 
+             response->status);
+
+    headers[0].name = (uint8_t *) ":status";
+    headers[0].namelen = strlen(":status");
+    headers[0].value = (uint8_t *) status_as_text;
+    headers[0].valuelen = strlen(status_as_text);
+
+    header_index = 1;
+
+    mk_list_foreach(header_iterator, &response->headers->entries) {
+        header_entry = mk_list_entry(header_iterator, 
+                                     struct flb_hash_table_entry, 
+                                     _head_parent);
+
+        if (header_entry == NULL) {
+            return -4;
+        }
+
+        headers[header_index].name = (uint8_t *) header_entry->key;
+        headers[header_index].namelen = header_entry->key_len;
+        headers[header_index].value = (uint8_t *) header_entry->val;
+        headers[header_index].valuelen = header_entry->val_size;
+
+        header_index++;
+    }
+
+    data_provider.source.fd = 0;
+    data_provider.read_callback = http2_data_source_read_callback;
 
     stream->status = HTTP2_STREAM_STATUS_PROCESSING;
 
-    rv = nghttp2_submit_response(session, stream->id, hdrs, 1, &data_prd);
+    result = nghttp2_submit_response(session->inner_session, 
+                                     stream->id, 
+                                     headers, 
+                                     header_count, 
+                                     &data_provider);
 
-    if (rv != 0) {
-        printf("Fatal error: %s", nghttp2_strerror(rv));
-        return -1;
+    flb_free(headers);
+
+    if (result != 0) {
+        stream->status = HTTP2_STREAM_STATUS_ERROR;
+
+        return -5;
+    }
+
+    result = nghttp2_session_send(session->inner_session);
+
+    if (result != 0) {
+        stream->status = HTTP2_STREAM_STATUS_ERROR;
+
+        return -6;
     }
 
     stream->status = HTTP2_STREAM_STATUS_RECEIVING_HEADERS;
 
+    http_response_destroy(&stream->response);
+
     return 0;
 }
+
+static struct http_response *http1_response_begin(
+        struct http1_session *session, 
+        struct http1_stream *stream) {
+
+    int result;
+
+    result = http_response_init(&stream->response);
+
+    if (result != 0) {
+        return NULL;
+    }
+
+    stream->response.stream = (void *) stream;
+    stream->response.session = session->parent;
+
+    return &stream->response;
+}
+
+static int http1_response_set_header(struct http_response *response, 
+                                     char *name, size_t name_length,
+                                     char *value, size_t value_length)
+{
+    int result;
+
+    result = flb_hash_table_add(response->headers, 
+                                (const char *) name, (int) name_length,
+                                (void *) value, (ssize_t) value_length);
+
+    if (result < 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static int http1_response_set_status(struct http_response *response, 
+                                     int status)
+{
+    return 0;
+}
+
+static int http1_response_set_body(struct http_response *response, 
+                                   unsigned char *body, size_t body_length)
+{
+    return 0;
+}
+
+static int http1_response_commit(struct http_response *response)
+{
+/*
+    struct http1_session *session;
+    struct http1_stream  *stream;
+*/
+
+    return 0;
+}
+
+static struct http_response *http_response_begin(
+        struct http_session *session, 
+        void *stream) {
+
+    if (session->version == HTTP_PROTOCOL_HTTP2) {
+        return http2_response_begin(&session->http2, stream);
+    }
+    else {
+        return http1_response_begin(&session->http1, stream);
+    }
+}
+
+static int http_response_set_header(struct http_response *response, 
+                                    char *name, size_t name_length,
+                                    char *value, size_t value_length)
+{
+
+    if (response->session->version == HTTP_PROTOCOL_HTTP2) {
+        return http2_response_set_header(response, 
+                                         name, name_length, 
+                                         value, value_length);
+    }
+    else {
+        return http1_response_set_header(response, 
+                                         name, name_length, 
+                                         value, value_length);
+    }
+}
+
+static int http_response_set_status(struct http_response *response, 
+                                    int status)
+{
+    response->status = status;
+
+    if (response->session->version == HTTP_PROTOCOL_HTTP2) {
+        return http2_response_set_status(response, status);
+    }
+
+    return http1_response_set_status(response, status);
+}
+
+static int http_response_set_body(struct http_response *response, 
+                                  unsigned char *body, size_t body_length)
+{
+    response->body = cfl_sds_create_len((const char *) body, body_length);
+    
+    if (response->session->version == HTTP_PROTOCOL_HTTP2) {
+        return http2_response_set_body(response, body, body_length);
+    }
+
+    return http1_response_set_body(response, body, body_length);
+}
+
+static int http_response_commit(struct http_response *response) {
+
+    if (response->session->version == HTTP_PROTOCOL_HTTP2) {
+        return http2_response_commit(response);
+    }
+
+    return http1_response_commit(response);
+}
+
+int http2_session_ingest(struct http2_session *session, 
+                         unsigned char *buffer, 
+                         size_t length)
+{
+    ssize_t result;
+
+    result = nghttp2_session_mem_recv(session->inner_session, buffer, length);
+
+    if (result < 0) {
+        return HTTP_SERVER_PROVIDER_ERROR;
+    }
+
+    return HTTP_SERVER_SUCCESS;   
+}
+
+int http1_session_ingest(struct http1_session *session, 
+                         unsigned char *buffer, 
+                         size_t length)
+{
+
+    return HTTP_SERVER_SUCCESS;   
+}
+
+int http_session_ingest(struct http_session *session, 
+                        unsigned char *buffer, 
+                        size_t length)
+{
+    if (session->version == HTTP_PROTOCOL_HTTP2) {
+        return http2_session_ingest(&session->http2, 
+                                    buffer, 
+                                    length);
+    }
+
+    return http1_session_ingest(&session->http1, 
+                                buffer, 
+                                length);
+}
+
 
 static int http2_conn_event(void *data)
 {
@@ -777,16 +1112,14 @@ static int http2_conn_event(void *data)
     event = &connection->event;
 
     if (event->mask & MK_EVENT_READ) {
-
-#ifdef PEDORRO
-        ssize_t readlen;
         ssize_t bytes;
         ssize_t available;
-        static char buf_data[1024];
+        unsigned char buf_data[1024];
         int rv;
 
         available = sizeof(buf_data);
 
+/* IO */
         bytes = flb_io_net_read(connection,
                                 (void *) &buf_data,
                                 available);
@@ -797,127 +1130,97 @@ static int http2_conn_event(void *data)
             return -1;
         }
 
-        readlen = nghttp2_session_mem_recv(conn->session_.http2.inner_session, buf_data, bytes);
+/* PROTOCOL PROCESSING */
+        // readlen = nghttp2_session_mem_recv(conn->session_.http2.inner_session, buf_data, bytes);
+        rv = http_session_ingest(&conn->session_, buf_data, bytes);
 
-        if (readlen < 0) {
-            printf("Fatal error: %s", nghttp2_strerror((int)readlen));
+        if (rv < 0) {
             return -1;
         }
-
-        printf("RECEIVED : %zu\n", (size_t) readlen);
-#else
-        conn->session_.data_signal = FLB_TRUE;
-
-        rv = nghttp2_session_recv(conn->session_.http2.inner_session);
-
-        if (rv == NGHTTP2_ERR_EOF) {
-            flb_plg_trace(ctx->ins, "fd=%i closed connection", event->fd);
-            http2_conn_del(conn);
-            return -1;
-        }
-
-        if (rv != 0) {
-            printf("Fatal error: %s", nghttp2_strerror(rv));
-
-            return -1;
-        }
-#endif
     }
 
     {
-        struct mk_list *head;
+        struct cfl_list     *backup_iterator;
+        struct cfl_list     *iterator;
+        struct http_request *request;
         struct http2_stream *stream;
 
-        mk_list_foreach(head, &conn->session_.http2.streams) {
-            stream = mk_list_entry(head, struct http2_stream, _head);
+/* REQUEST SERVICING */
+        cfl_list_foreach_safe(iterator, 
+                              backup_iterator, 
+                              &conn->session_.request_queue) {
+            request = cfl_list_entry(iterator, struct http_request, _head);
+            stream = (struct http2_stream *) request->stream;
 
-            if (stream->content_length == stream->request.data.len) {
-                stream->status = HTTP2_STREAM_STATUS_READY;
-            }
-            else if (stream->content_length < stream->request.data.len) {
-                stream->status = HTTP2_STREAM_STATUS_ERROR;
-            }
 
-            printf("STREAM %d STATUS %d\n", stream->id, stream->status);
+            if (request->method == MK_METHOD_POST) {
+                {
+                    int zz;
 
-            if (stream->status == HTTP2_STREAM_STATUS_READY) {
-                printf("REQUEST COMPLETO\n");
+                    printf("BODY LENGTH : %zu\n\n", cfl_sds_len(stream->request.body));
 
-                if (stream->request.method == MK_METHOD_POST) {
-                    printf("POST : %zu\n\n", stream->request.data.len);
-                    {
-                        int zz;
-
-                        for (zz = 0 ; zz < stream->request.data.len ; zz++) {
-                            printf("%c", stream->request.data.data[zz]);
-                        }
-
-                        printf("\n\n");
+                    for (zz = 0 ; zz < cfl_sds_len(request->body) ; zz++) {
+                        printf("%c", request->body[zz]);
                     }
+
+                    printf("\n\n");
                 }
-
-
-                send_response(conn->session_.http2.inner_session, stream);
             }
+
+            {
+                char *sample;
+
+                sample = http_request_get_header(request, "user-agent");
+
+                printf("HEADER FOUND? %p\n", sample);
+
+                if (sample != NULL) {
+                    printf("HEADER VALUE = %s\n", sample);
+                }
+            }
+
+            {
+                struct http_response *response;
+
+                response = http_response_begin(&conn->session_, stream);
+                
+                http_response_set_header(response, "test", 4, "value", 5);
+                http_response_set_header(response, "content-length", 14, "5", 1);
+                http_response_set_status(response, 200);
+                http_response_set_body(response, "TEST!", 5);
+                http_response_commit(response);
+            }
+
+            http_request_destroy(&stream->request);
         }
     }
 
-    rv = nghttp2_session_send(conn->session_.http2.inner_session);
-    if (rv != 0) {
-        printf("Fatal error: %s", nghttp2_strerror(rv));
-        return -1;
-    }
+/* IO */ 
+    {
+        size_t sent;
+        int    result;
+        size_t data_len;
 
+        data_len = cfl_sds_len(conn->session_.outgoing_data);
+
+        result = flb_io_net_write(connection,
+                                 (void *) conn->session_.outgoing_data,
+                                 data_len,
+                                 &sent);
+
+        if (sent > 0) {
+            memmove(conn->session_.outgoing_data, 
+                    &conn->session_.outgoing_data[sent], 
+                    data_len - sent);
+
+            cfl_sds_set_len(conn->session_.outgoing_data, 
+                            data_len - sent);
+
+        }
+    }
 
     return 0;
 }
-
-/*
-static ssize_t recv_callback(nghttp2_session *session, const uint8_t *data,
-                             size_t length, int flags, void *user_data)
-{
-    struct flb_connection *connection;
-    struct http_conn *conn;
-    ssize_t bytes;
-
-    conn = user_data;
-
-    connection = conn->connection;
-
-    bytes = flb_io_net_read(connection,
-                            (void *) data,
-                            length);
-
-    return bytes;
-}
-
-static ssize_t send_callback(nghttp2_session *session, const uint8_t *data,
-                             size_t length, int flags, void *user_data)
-{
-    struct flb_connection *connection;
-    struct http_conn *conn;
-    struct mk_event *event;
-    struct flb_http *ctx;
-    size_t sent;
-    int result;
-
-    conn = user_data;
-
-    connection = conn->connection;
-
-    ctx = conn->ctx;
-
-    event = &connection->event;
-
-    result = flb_io_net_write(connection,
-                             (void *) data,
-                             length,
-                             &sent);
-
-    return result;
-}
-*/
-
 
 struct http_conn *http2_conn_add(struct flb_connection *connection,
                                 struct flb_http *ctx)
@@ -931,7 +1234,7 @@ struct http_conn *http2_conn_add(struct flb_connection *connection,
         return NULL;
     }
 
-    mk_list_init(&conn->session_.http2.streams);
+    cfl_list_init(&conn->session_.http2.streams);
 
     conn->connection = connection;
 
@@ -972,35 +1275,29 @@ struct http_conn *http2_conn_add(struct flb_connection *connection,
     /* Link connection node to parent context list */
     mk_list_add(&conn->_head, &ctx->connections);
 
-{
-    nghttp2_settings_entry iv[1] =  {
-                                        {NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, 1}
-                                    };
-    int rv;
+    if (cfl_sds_len(conn->session_.outgoing_data) > 0) {
+        size_t sent;
+        int    result;
+        size_t data_len;
 
-    rv = nghttp2_submit_settings(conn->session_.http2.inner_session, 
-                                 NGHTTP2_FLAG_NONE, 
-                                 iv,
-                                 1);
+        data_len = cfl_sds_len(conn->session_.outgoing_data);
 
-printf("SEND SETTINGS RESULT : %d\n", rv);
-    if (rv != 0) {
-        printf("Fatal error: %s", nghttp2_strerror(rv));
+        result = flb_io_net_write(connection,
+                                 (void *) conn->session_.outgoing_data,
+                                 data_len,
+                                 &sent);
 
-        exit(0);
-        return NULL;
+        if (sent > 0) {
+            memmove(conn->session_.outgoing_data, 
+                    &conn->session_.outgoing_data[sent], 
+                    data_len - sent);
+
+            cfl_sds_set_len(conn->session_.outgoing_data, 
+                            data_len - sent);
+
+        }
     }
 
-  rv = nghttp2_session_send(conn->session_.http2.inner_session);
-
-    if (rv != 0) {
-        printf("Fatal error: %s", nghttp2_strerror(rv));
-
-        exit(0);
-        return NULL;
-    }
-
-}
 
 
     return conn;
@@ -1050,161 +1347,55 @@ void http2_conn_release_all(struct flb_http *ctx)
 
 
 
-static int caseless_compare_non_null_terminated_strings(char *first_buffer, 
-                                                        size_t first_length,
-                                                        char *second_buffer, 
-                                                        size_t second_length)
+static int http2_strncasecmp(const uint8_t *first_buffer, 
+                             size_t first_length,
+                             const char *second_buffer, 
+                             size_t second_length)
 {
+    const char *first_buffer_;
+    const char *second_buffer_;
+
+    first_buffer_  = (const char *) first_buffer;
+    second_buffer_ = (const char *) second_buffer;
+
+    if (first_length == 0) {
+        first_length = strlen(first_buffer_);
+    }
+    
+    if (second_length == 0) {
+        second_length = strlen(second_buffer_);
+    }
+    
     if (first_length < second_length) {
         return -1;
     }
-    if (first_length > second_length) {
+    else if (first_length > second_length) {
         return 1;
     }
 
-    return strncasecmp(first_buffer, second_buffer, first_length);
+    return strncasecmp(first_buffer_, second_buffer_, first_length);
 }
 
-static size_t parse_non_null_terminated_size_t(char *value, size_t length)
-{
-    char temporary_buffer[21];
 
-    strncpy(temporary_buffer, value, length);
+// static struct mk_http_header *get_legacy_header(struct mk_http_parser *parser,
+//                                                 int header_id)
+// {
+//     struct mk_http_header *header;
 
-    return strtoull(temporary_buffer, NULL, 10);
-}
+//     header = NULL;
 
-static int copy_non_null_terminated_string_to_mk_ptr(mk_ptr_t *destination, 
-                                                     char *source_buffer, 
-                                                     size_t source_length)
-{
-    destination->data = flb_calloc(1, source_length);
+//     if (parser != NULL) {
+//         if (header_id >= MK_HEADER_ACCEPT && 
+//             header_id <= MK_HEADER_SIZEOF) {
 
-    if (destination->data == NULL) {
-        return -1;
-    }
+//             header = &parser->headers[header_id];
+//         }
+//         else {
+//             if (parser->headers_extra_count > MK_HEADER_EXTRA_SIZE) {
+//                 header = &parser->headers_extra[header_id - MK_HEADER_SIZEOF];
+//             }
+//         }
+//     }
 
-    destination->len = source_length;
-
-    memcpy(destination->data, source_buffer, source_length);
-
-    return 0;
-}
-
-static void destroy_mk_ptr(mk_ptr_t *instance, int release_instance)
-{
-    if (instance != NULL) {
-        if (instance->data != NULL) {
-            flb_free(instance->data);
-
-            instance->data = NULL;
-        }
-
-        instance->len = 0;
-
-        if (release_instance) {
-            flb_free(instance);            
-        }
-    }
-}
-
-static struct mk_http_header *get_legacy_header(struct mk_http_parser *parser,
-                                                int header_id)
-{
-    struct mk_http_header *header;
-
-    header = NULL;
-
-    if (parser != NULL) {
-        if (header_id >= MK_HEADER_ACCEPT && 
-            header_id <= MK_HEADER_SIZEOF) {
-
-            header = &parser->headers[header_id];
-        }
-        else {
-            if (parser->headers_extra_count > MK_HEADER_EXTRA_SIZE) {
-                header = &parser->headers_extra[header_id - MK_HEADER_SIZEOF];
-            }
-        }
-    }
-
-    return header;
-}
-
-static void destroy_legacy_header(struct mk_http_parser *parser,
-                                  int header_id) 
-{
-    struct mk_http_header *header;
-
-    if (parser != NULL) {
-        header = get_legacy_header(parser, header_id);
-
-        if (header != NULL) {
-            destroy_mk_ptr(&header->key, FLB_FALSE);
-            destroy_mk_ptr(&header->val, FLB_FALSE);
-
-            if (header_id > MK_HEADER_SIZEOF) {
-                parser->headers_extra_count--;
-            }
-        }
-    }
-}
-
-static int insert_legacy_header(struct mk_http_parser *parser,
-                                int header_id,
-                                char *name_buffer, 
-                                size_t name_length,
-                                char *value_buffer, 
-                                size_t value_length)
-{
-    struct mk_http_header *header;
-    int                    result;
-
-    header = get_legacy_header(parser, header_id);
-
-    if (header == NULL) {
-        return -1;
-    }
-
-    result = copy_non_null_terminated_string_to_mk_ptr(&header->key, 
-                                                       name_buffer, 
-                                                       name_length);
-
-    if (result != 0) {
-        return -2;
-    }
-
-    result = copy_non_null_terminated_string_to_mk_ptr(&header->val,
-                                                       value_buffer,
-                                                       value_length);
-
-    if (result != 0) {
-        destroy_mk_ptr(&header->key, FLB_FALSE);
-
-        return -3;
-    }
-
-    if (header_id > MK_HEADER_SIZEOF) {
-        parser->headers_extra_count++;
-    }
-
-    return 0;
-}
-
-static void destroy_legacy_headers(struct mk_http_parser *parser)
-{
-    size_t header_index;
-
-    while (parser->headers_extra_count > 0) {
-        header_index = MK_HEADER_SIZEOF + parser->headers_extra_count;
-
-        destroy_legacy_header(parser, header_index);
-    }
-
-    for (header_index = MK_HEADER_ACCEPT ; 
-         header_index < MK_HEADER_SIZEOF ; 
-         header_index++) {
-        destroy_legacy_header(parser, header_index);
-    }
-} 
-
+//     return header;
+// }

@@ -22,12 +22,19 @@
 
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_connection.h>
+#include <fluent-bit/flb_hash_table.h>
 
 #include <monkey/mk_http.h>
 #include <monkey/mk_http_parser.h>
 #include <monkey/mk_utils.h>
 
+#include <cfl/cfl_list.h>
+#include <cfl/cfl_sds.h>
+
 #include <nghttp2/nghttp2.h>
+
+#define HTTP_SERVER_INITIAL_BUFFER_SIZE (10 * 1024)
+#define HTTP_SERVER_MAXIMUM_BUFFER_SIZE (10 * (1000 * 1024))
 
 #define HTTP_PROTOCOL_AUTODETECT 0
 #define HTTP_PROTOCOL_HTTP1      1
@@ -40,20 +47,52 @@
 #define HTTP2_STREAM_STATUS_CLOSED             4
 #define HTTP2_STREAM_STATUS_ERROR              5
 
+#define HTTP_SERVER_SUCCESS                    0
+#define HTTP_SERVER_PROVIDER_ERROR            -1
+
 struct http_session;
+
+struct http_request {
+    int                    method;
+    cfl_sds_t              path;
+    cfl_sds_t              host;
+    cfl_sds_t              query_string;
+    struct flb_hash_table *headers;
+    size_t                 content_length;
+    cfl_sds_t              body;
+
+    void                  *stream;
+    struct http_session   *session;
+
+    struct cfl_list        _head;
+};
+
+struct http_response {
+    int                    status;
+    cfl_sds_t              message;
+    struct flb_hash_table *headers;
+    size_t                 content_length;
+    cfl_sds_t              body;
+    size_t                 body_read_offset;
+
+    void                  *stream;
+    struct http_session   *session;
+};
 
 struct http2_stream {
     int32_t                id;
-    struct mk_http_request request;
-    struct mk_http_parser  parser;
     int                    status;
-    size_t                 content_length;
+
+    struct http_request    request;
+    struct http_response   response;
 
     int                    releasable;
-    struct mk_list         _head;
+    struct cfl_list        _head;
 };
 
 struct http1_stream {
+    struct http_response   response;
+    
     struct mk_http_request request;
     struct mk_http_parser  parser;
     int                    status;
@@ -61,7 +100,7 @@ struct http1_stream {
 
 struct http2_session {
     nghttp2_session       *inner_session;
-    struct mk_list         streams;
+    struct cfl_list        streams;
     struct http_session   *parent;
 };
 
@@ -73,18 +112,17 @@ struct http1_session {
 };
 
 struct http_session {
-    struct http1_session http1;
-    struct http2_session http2;
+    struct http1_session  http1;
+    struct http2_session  http2;
 
-    int   version;
-    int   data_signal;
-    char *incoming_data_buffer;
-    int   incoming_data_buffer_size;
-    int   incoming_data_buffer_used;
+    int                   version;
+    struct cfl_list       request_queue;
+
+    cfl_sds_t             incoming_data;
+    cfl_sds_t             outgoing_data;
 
     struct flb_connection *connection;
-
-    int   releasable;
+    int                    releasable;
 };
 
 struct http_conn {

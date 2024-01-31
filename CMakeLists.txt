@@ -564,10 +564,10 @@ add_subdirectory(${FLB_PATH_LIB_CMETRICS} EXCLUDE_FROM_ALL)
 add_subdirectory(${FLB_PATH_LIB_CTRACES} EXCLUDE_FROM_ALL)
 
 # Nghttp2 options
-option(ENABLE_LIB_ONLY       ON)
-option(ENABLE_STATIC_LIB     ON)
+set(ENABLE_LIB_ONLY       ON)
+set(ENABLE_STATIC_LIB     ON)
 
-add_subdirectory(${FLB_PATH_LIB_NGHTTP2} EXCLUDE_FROM_ALL)
+add_subdirectory(${FLB_PATH_LIB_NGHTTP2})
 
 # C-Ares (DNS library)
 FLB_OPTION(CARES_STATIC      ON)
