@@ -571,7 +571,7 @@ static void in_tail_resume(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_CLIST, "path", NULL,
-     0, FLB_TRUE, offsetof(struct flb_tail_config, path_list),
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_tail_config, path_list),
      "pattern specifying log files or multiple ones through "
      "the use of common wildcards."
     },

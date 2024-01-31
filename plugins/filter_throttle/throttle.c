@@ -86,8 +86,10 @@ void *time_ticker(void *args)
         if (ctx->print_status) {
             flb_plg_info(ctx->ins,
                          "%ld: limit is %0.2f per %s with window size of %i, "
-                         "current rate is: %i per interval",
-                         timestamp, ctx->max_rate, ctx->slide_interval,
+                         "current rate is: %i%s per interval",
+                         timestamp, ctx->max_rate,
+                         (ctx->percentage_rate ? "%" : ""),
+                         ctx->slide_interval,
                          ctx->window_size,
                          ctx->hash->total / ctx->hash->size);
         }
@@ -100,8 +102,25 @@ void *time_ticker(void *args)
 /* Given a msgpack record, do some filter action based on the defined rules */
 static inline int throttle_data(struct flb_filter_throttle_ctx *ctx)
 {
-    if ((ctx->hash->total / (double) ctx->hash->size) >= ctx->max_rate) {
-        return THROTTLE_RET_DROP;
+    if (ctx->percentage_rate == FLB_FALSE) {
+        flb_plg_debug(ctx->ins, "rate: %d / %d > %d",
+                      (double)ctx->hash->total,
+                      (double)ctx->hash->size,
+                      ctx->max_rate);
+        if ((ctx->hash->total / (double) ctx->hash->size) >= ctx->max_rate) {
+            return THROTTLE_RET_DROP;
+        }
+    }
+    else if (ctx->percentage_rate) {
+        ctx->current++;
+        flb_plg_debug(ctx->ins, "percentage rate: %f / %f == %f > %f", 
+                      (double)ctx->current,
+                      (double)ctx->total,
+                      (double)ctx->current / (double)ctx->total,
+                      ctx->max_rate);
+        if ((((double)ctx->current) / ((double)ctx->total)) > ctx->max_rate) {
+            return THROTTLE_RET_DROP;
+        }
     }
 
     window_add(ctx->hash, ctx->hash->current_timestamp, 1);
@@ -118,7 +137,7 @@ static int configure(struct flb_filter_throttle_ctx *ctx, struct flb_filter_inst
         flb_plg_error(f_ins, "unable to load configuration");
         return -1;
     }
-    if (ctx->max_rate <= 1.0) {
+    if (ctx->max_rate <= 1.0 && ctx->percentage_rate == 0) {
         ctx->max_rate = strtod(THROTTLE_DEFAULT_RATE, NULL);
     }
     if (ctx->window_size <= 1) {
@@ -200,6 +219,7 @@ static int cb_throttle_filter(const void *data, size_t bytes,
     struct flb_log_event_encoder log_encoder;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
+    struct flb_filter_throttle_ctx *tctx = (struct flb_filter_throttle_ctx *)context;
 
     (void) f_ins;
     (void) i_ins;
@@ -226,11 +246,24 @@ static int cb_throttle_filter(const void *data, size_t bytes,
         return FLB_FILTER_NOTOUCH;
     }
 
-    /* Iterate each item array and apply rules */
+    /* we need to count before hand to apply sampling */
     while ((ret = flb_log_event_decoder_next(
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         old_size++;
+    }
+
+    tctx->total = old_size;
+    tctx->current = 0;
+
+    flb_log_event_decoder_reset(&log_decoder, (char *)data, bytes);
+
+    flb_debug("total = %d\n", tctx->total);
+
+    /* Iterate each item array and apply rules */
+    while ((ret = flb_log_event_decoder_next(
+                    &log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         pthread_mutex_lock(&throttle_mut);
         ret = throttle_data(context);
         pthread_mutex_unlock(&throttle_mut);
@@ -246,7 +279,9 @@ static int cb_throttle_filter(const void *data, size_t bytes,
             }
         }
         else if (ret == THROTTLE_RET_DROP) {
-            /* Do nothing */
+            if (tctx->percentage_rate) {
+                break;
+            }
         }
     }
 
@@ -306,6 +341,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_DOUBLE, "rate", THROTTLE_DEFAULT_RATE,
      0, FLB_TRUE, offsetof(struct flb_filter_throttle_ctx, max_rate),
      "Set throttle rate"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "rate_percent", "FALSE",
+     0, FLB_TRUE, offsetof(struct flb_filter_throttle_ctx, percentage_rate),
+     "Set whether or not rate is expressed as a percentage"
     },
     {
      FLB_CONFIG_MAP_INT, "window", THROTTLE_DEFAULT_WINDOW,

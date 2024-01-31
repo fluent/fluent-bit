@@ -40,7 +40,12 @@ struct ticker {
 };
 
 struct flb_filter_throttle_ctx {
+    int total;
+    int current;
+
     double    max_rate;
+    int percentage_rate;
+
     unsigned int    window_size;
     const char  *slide_interval;
     int print_status;
