@@ -921,7 +921,7 @@ jobs:
 
       - name: Raise docs PR
         id: cpr
-        uses: peter-evans/create-pull-request@v5
+        uses: peter-evans/create-pull-request@v6
         with:
           commit-message: 'release: update to v${{ inputs.version }}'
           signoff: true
@@ -985,7 +985,7 @@ jobs:
 
       - name: Raise FB PR to update version
         id: cpr
-        uses: peter-evans/create-pull-request@v5
+        uses: peter-evans/create-pull-request@v6
         with:
           commit-message: 'release: update to ${{ steps.semvers.outputs.patch }}'
           signoff: true
