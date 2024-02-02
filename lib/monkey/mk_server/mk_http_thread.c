@@ -251,6 +251,14 @@ int mk_http_thread_purge(struct mk_http_thread *mth, int close)
 int mk_http_thread_destroy(struct mk_http_thread *mth)
 {
     struct mk_thread *th;
+    struct mk_http_libco_params *libco_params;
+
+    libco_params = MK_TLS_GET(mk_http_thread_libco_params);
+
+    if (libco_params != NULL) {
+        mk_mem_free(libco_params);    
+        MK_TLS_SET(mk_http_thread_libco_params, NULL);
+    }
 
     /* Unlink from scheduler thread list */
     mk_list_del(&mth->_head);

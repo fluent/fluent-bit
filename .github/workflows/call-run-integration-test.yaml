@@ -51,18 +51,18 @@ jobs:
           ref: ${{ inputs.ref }}
           repository: fluent/fluent-bit-ci
 
-      - uses: hashicorp/setup-terraform@v2
+      - uses: hashicorp/setup-terraform@v3
         with:
           cli_config_credentials_hostname: 'app.terraform.io'
           cli_config_credentials_token: ${{ secrets.terraform_api_token }}
 
       - id: 'auth'
-        uses: 'google-github-actions/auth@v1'
+        uses: 'google-github-actions/auth@v2'
         with:
           credentials_json: ${{ secrets.gcp-service-account-key }}
 
       - name: 'Set up Cloud SDK'
-        uses: 'google-github-actions/setup-gcloud@v1'
+        uses: 'google-github-actions/setup-gcloud@v2'
 
       - name: Replace terraform variables.
         run: |
@@ -101,7 +101,7 @@ jobs:
         working-directory: terraform
         continue-on-error: true
 
-      - uses: actions/github-script@v6
+      - uses: actions/github-script@v7
         if: github.event_name == 'pull_request'
         env:
           PLAN: "terraform\n${{ steps.plan.outputs.stdout }}"
@@ -240,12 +240,12 @@ jobs:
           repository: fluent/fluent-bit-ci
 
       - if: matrix.cloud == 'gke'
-        uses: 'google-github-actions/auth@v1'
+        uses: 'google-github-actions/auth@v2'
         with:
           credentials_json: ${{ secrets.gcp-service-account-key }}
 
       - if: matrix.cloud == 'gke'
-        uses: 'google-github-actions/setup-gcloud@v1'
+        uses: 'google-github-actions/setup-gcloud@v2'
         with:
           install_components: 'gke-gcloud-auth-plugin'
 
@@ -264,7 +264,7 @@ jobs:
 
       - name: Get the GKE Kubeconfig
         if: matrix.cloud == 'gke'
-        uses: 'google-github-actions/get-gke-credentials@v1'
+        uses: 'google-github-actions/get-gke-credentials@v2'
         with:
           cluster_name: ${{ needs.call-run-terraform-setup.outputs.gke-cluster-name }}
           location: ${{ needs.call-run-terraform-setup.outputs.gke-cluster-zone }}

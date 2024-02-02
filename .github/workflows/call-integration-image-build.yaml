@@ -74,21 +74,6 @@ jobs:
           push: true
           load: false
 
-      - name: Upload the image just in case as an artefact
-        run: |
-          docker pull $IMAGE
-          docker save --output /tmp/pr-image.tar $IMAGE
-        env:
-          IMAGE: ${{ steps.meta.outputs.tags }}
-        shell: bash
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: pr-${{ github.event.pull_request.number }}-image
-          path: /tmp/pr-image.tar
-          if-no-files-found: error
-
       - name: Extract metadata from Github
         id: meta-debug
         uses: docker/metadata-action@v5

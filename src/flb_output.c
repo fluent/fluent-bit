@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -1200,6 +1200,18 @@ int flb_output_init_all(struct flb_config *config)
                       0,
                       1, (char *[]) {name});
 
+        /* output_chunk_available_capacity_percent */
+        ins->cmt_chunk_available_capacity_percent = cmt_gauge_create(ins->cmt,
+                                                        "fluentbit",
+                                                        "output",
+                                                        "chunk_available_capacity_percent",
+                                                        "Available chunk capacity (percent)",
+                                                        1, (char *[]) {"name"});
+        cmt_gauge_set(ins->cmt_chunk_available_capacity_percent,
+                      ts,
+                      100.0,
+                      1, (char *[]) {name});
+
         /* old API */
         ins->metrics = flb_metrics_create(name);
         if (ins->metrics) {
@@ -1217,27 +1229,6 @@ int flb_output_init_all(struct flb_config *config)
                         "dropped_records", ins->metrics);
             flb_metrics_add(FLB_METRIC_OUT_RETRIED_RECORDS,
                         "retried_records", ins->metrics);
-        }
-#endif
-
-#ifdef FLB_HAVE_PROXY_GO
-        /* Proxy plugins have their own initialization */
-        if (p->type == FLB_OUTPUT_PLUGIN_PROXY) {
-            ret = flb_plugin_proxy_output_init(p->proxy, ins, config);
-            if (ret == -1) {
-                flb_output_instance_destroy(ins);
-                return -1;
-            }
-
-            /* Multi-threading enabled if configured */
-            ret = flb_output_enable_multi_threading(ins, config);
-            if (ret == -1) {
-                flb_error("[output] could not start thread pool for '%s' plugin",
-                          p->name);
-                return -1;
-            }
-
-            continue;
         }
 #endif
 
@@ -1382,6 +1373,10 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
         flags |= FLB_IO_IPV6;
     }
         /* keepalive */
+    if (ins->net_setup.keepalive == FLB_TRUE) {
+        flags |= FLB_IO_TCP_KA;
+    }
+
     if (ins->net_setup.keepalive == FLB_TRUE) {
         flags |= FLB_IO_TCP_KA;
     }

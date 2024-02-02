@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -91,18 +91,33 @@ int ne_utils_file_read_uint64(const char *mount,
     }
 
     len = strlen(path);
-    flb_sds_cat_safe(&p, path, len);
+    if (flb_sds_cat_safe(&p, path, len) < 0) {
+        flb_sds_destroy(p);
+        return -1;
+    }
 
     if (join_a) {
-        flb_sds_cat_safe(&p, "/", 1);
+        if (flb_sds_cat_safe(&p, "/", 1) < 0) {
+            flb_sds_destroy(p);
+            return -1;
+        }
         len = strlen(join_a);
-        flb_sds_cat_safe(&p, join_a, len);
+        if (flb_sds_cat_safe(&p, join_a, len) < 0) {
+            flb_sds_destroy(p);
+            return -1;
+        }
     }
 
     if (join_b) {
-        flb_sds_cat_safe(&p, "/", 1);
+        if (flb_sds_cat_safe(&p, "/", 1) < 0) {
+            flb_sds_destroy(p);
+            return -1;
+        }
         len = strlen(join_b);
-        flb_sds_cat_safe(&p, join_b, len);
+        if (flb_sds_cat_safe(&p, join_b, len) < 0) {
+            flb_sds_destroy(p);
+            return -1;
+        }
     }
 
     fd = open(p, O_RDONLY);
@@ -175,6 +190,90 @@ int ne_utils_file_read_lines(const char *mount, const char *path, struct mk_list
     }
 
     fclose(f);
+    return 0;
+}
+
+/*
+ * Read a file and store the first line as a string.
+ */
+int ne_utils_file_read_sds(const char *mount, 
+                           const char *path, 
+                           const char *join_a, 
+                           const char *join_b,
+                           flb_sds_t *str)
+{
+    int fd;
+    int len;
+    int i;
+    flb_sds_t p;
+    ssize_t bytes;
+    char tmp[32];
+
+    /* Check the path starts with the mount point to prevent duplication. */
+    if (strncasecmp(path, mount, strlen(mount)) == 0 &&
+        path[strlen(mount)] == '/') {
+        mount = "";
+    }
+
+    /* Compose the final path */
+    p = flb_sds_create(mount);
+    if (!p) {
+        return -1;
+    }
+
+    len = strlen(path);
+    flb_sds_cat_safe(&p, path, len);
+
+    if (join_a) {
+        if (flb_sds_cat_safe(&p, "/", 1) < 0) {
+            flb_sds_destroy(p);
+            return -1;
+        }
+        len = strlen(join_a);
+        if (flb_sds_cat_safe(&p, join_a, len) < 0) {
+            flb_sds_destroy(p);
+            return -1;
+        }
+    }
+
+    if (join_b) {
+        if (flb_sds_cat_safe(&p, "/", 1) < 0) {
+            flb_sds_destroy(p);
+            return -1;
+        }
+        len = strlen(join_b);
+        if (flb_sds_cat_safe(&p, join_b, len) < 0) {
+            flb_sds_destroy(p);
+            return -1;
+        }
+    }
+
+    fd = open(p, O_RDONLY);
+    if (fd == -1) {
+        flb_sds_destroy(p);
+        return -1;
+    }
+    flb_sds_destroy(p);
+
+    bytes = read(fd, &tmp, sizeof(tmp));
+    if (bytes == -1) {
+        flb_errno();
+        close(fd);
+        return -1;
+    }
+    close(fd);
+
+    for (i = bytes-1; i > 0; i--) {
+        if (tmp[i] != '\n' && tmp[i] != '\r') {
+            break;
+        }
+    }
+
+    *str = flb_sds_create_len(tmp, i+1);
+    if (*str == NULL) {
+        return -1;
+    }
+
     return 0;
 }
 

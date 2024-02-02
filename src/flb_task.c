@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -362,9 +362,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
         return NULL;
     }
 
-#ifdef FLB_HAVE_METRICS
     total_events = ((struct flb_input_chunk *) ic)->total_records;
-#endif
 
     /* event chunk */
     evc = flb_event_chunk_create(ic->event_type,
@@ -376,6 +374,14 @@ struct flb_task *flb_task_create(uint64_t ref_id,
         *err = FLB_TRUE;
         return NULL;
     }
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+    if (ic->trace) {
+        flb_debug("add trace to task");
+        evc->trace = ic->trace;
+    }
+#endif
+
     task->event_chunk = evc;
     task_ic = (struct flb_input_chunk *) ic;
     task_ic->task = task;

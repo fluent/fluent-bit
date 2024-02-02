@@ -144,6 +144,45 @@ static void test_variant_print_int64()
     }
 }
 
+static void test_variant_print_uint64()
+{
+    int ret;
+    int i;
+    uint64_t inputs[] = {1, 0, 18446744073709551615ULL};
+    char *expects[] = {"1", "0", "18446744073709551615" /*UINT64_MAX*/};
+
+    FILE *fp = NULL;
+    struct cfl_variant *val = NULL;
+
+    for (i=0; i<sizeof(inputs)/sizeof(uint64_t); i++) {
+        fp = tmpfile();
+        if (!TEST_CHECK(fp != NULL)) {
+            TEST_MSG("%d: fp is NULL", i);
+            continue;
+        }
+        val = cfl_variant_create_from_uint64(inputs[i]);
+        if (!TEST_CHECK(val != NULL)) {
+            TEST_MSG("%d: cfl_variant_create_from_uint64 failed", i);
+            fclose(fp);
+            continue;
+        }
+
+        ret = cfl_variant_print(fp, val);
+        if (!TEST_CHECK(ret > 0)) {
+            TEST_MSG("%d:cfl_variant_print failed", i);
+            cfl_variant_destroy(val);
+            fclose(fp);
+            continue;
+        }
+        ret = compare(fp, expects[i], 0);
+        if (!TEST_CHECK(ret == 0)) {
+            TEST_MSG("%d:compare failed", i);
+        }
+        cfl_variant_destroy(val);
+        fclose(fp);
+    }
+}
+
 static void test_variant_print_array()
 {
     int ret;
@@ -459,6 +498,7 @@ static void test_variant_print_unknown()
 TEST_LIST = {
     {"variant_print_bool", test_variant_print_bool},
     {"variant_print_int64", test_variant_print_int64},
+    {"variant_print_uint64", test_variant_print_uint64},
     {"variant_print_double", test_variant_print_double},
     {"variant_print_string", test_variant_print_string},
     {"variant_print_bytes", test_variant_print_bytes},

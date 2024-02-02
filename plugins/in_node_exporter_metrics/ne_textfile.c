@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2023 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -19,4 +19,15 @@
 
 #ifdef __linux__
 #include "ne_textfile_linux.c"
+#else
+
+#include "ne.h"
+
+struct flb_ne_collector textfile_collector = {
+    .name = "textfile",
+    .cb_init = NULL,
+    .cb_update = NULL,
+    .cb_exit = NULL
+};
+
 #endif

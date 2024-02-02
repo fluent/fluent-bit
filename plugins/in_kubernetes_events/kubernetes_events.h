@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2023 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -74,8 +74,10 @@ struct k8s_events {
 
     struct flb_log_event_encoder *encoder;
 
+    /* timestamp key - deprecated, to be removed in v3.0 */
+    flb_sds_t timestamp_key;
+
     /* record accessor */
-    struct flb_record_accessor *ra_timestamp;
     struct flb_record_accessor *ra_resource_version;
 
     /* others */

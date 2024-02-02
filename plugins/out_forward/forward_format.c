@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -143,6 +143,17 @@ static int append_options(struct flb_forward *ctx,
         fc->time_as_integer == FLB_FALSE && /* not compat mode */
         fc->compress == COMPRESS_GZIP) {
 
+        flb_mp_map_header_append(&mh);
+        msgpack_pack_str(mp_pck, 10);
+        msgpack_pack_str_body(mp_pck, "compressed", 10);
+        msgpack_pack_str(mp_pck, 4);
+        msgpack_pack_str_body(mp_pck, "gzip", 4);
+    }
+    else if (fc->compress == COMPRESS_GZIP &&
+             /* for metrics or traces, we're also able to send as
+              * gzipped payloads */
+             (event_type == FLB_EVENT_TYPE_METRICS ||
+              event_type == FLB_EVENT_TYPE_TRACES)) {
         flb_mp_map_header_append(&mh);
         msgpack_pack_str(mp_pck, 10);
         msgpack_pack_str_body(mp_pck, "compressed", 10);

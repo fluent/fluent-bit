@@ -13,7 +13,8 @@ on:
   # Run nightly build at this time, bit of trial and error but this seems good.
   schedule:
     - cron: "0 6 * * *" # master build
-    - cron: "0 12 * * *" # 2.0 build
+    - cron: "0 12 * * *" # 2.2 build
+    - cron: "0 18 * * *" # 2.1 build
 
 # We do not want a new unstable build to run whilst we are releasing the current unstable build.
 concurrency: unstable-build-release
@@ -51,10 +52,16 @@ jobs:
           echo "cron_branch=master" >> $GITHUB_ENV
         shell: bash
 
-      - name: 2.0 run
+      - name: 2.2 run
         if: github.event_name == 'schedule' && github.event.schedule=='0 12 * * *'
         run: |
-          echo "cron_branch=2.0" >> $GITHUB_ENV
+          echo "cron_branch=2.2" >> $GITHUB_ENV
+        shell: bash
+
+      - name: 2.1 run
+        if: github.event_name == 'schedule' && github.event.schedule=='0 18 * * *'
+        run: |
+          echo "cron_branch=2.1" >> $GITHUB_ENV
         shell: bash
 
       - name: Output the branch to use
@@ -160,7 +167,7 @@ jobs:
 
       - name: Download all artefacts
         continue-on-error: true
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: artifacts/
 

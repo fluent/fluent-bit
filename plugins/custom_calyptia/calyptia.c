@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -37,6 +37,7 @@ struct calyptia {
     flb_sds_t cloud_host;
     flb_sds_t cloud_port;
     flb_sds_t machine_id;
+    int machine_id_auto_configured;
 
 /* used for reporting chunk trace records. */
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -312,7 +313,6 @@ static struct flb_output_instance *setup_cloud_output(struct flb_config *config,
     }
 
     if (ctx->fleet_id) {
-        flb_output_set_property(cloud, "fleet_id", ctx->fleet_id);
         label = flb_sds_create_size(strlen("fleet_id") + strlen(ctx->fleet_id) + 1);
 
         if (!label) {
@@ -426,6 +426,8 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
             flb_plg_error(ctx->ins, "unable to retrieve machine_id");
             return -1;
         }
+
+        ctx->machine_id_auto_configured = 1;
     }
 
     /* input collector */
@@ -466,11 +468,10 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
         }
 
         if (ctx->fleet_name) {
-            // TODO: set this once the fleet_id has been retrieved...
-            // flb_output_set_property(ctx->o, "fleet_id", ctx->fleet_id);
             flb_input_set_property(ctx->fleet, "fleet_name", ctx->fleet_name);            
         }
-        else {
+
+        if (ctx->fleet_id) {
             flb_output_set_property(ctx->o, "fleet_id", ctx->fleet_id);
             flb_input_set_property(ctx->fleet, "fleet_id", ctx->fleet_id);
         }
@@ -515,6 +516,10 @@ static int cb_calyptia_exit(void *data, struct flb_config *config)
 
     if (!ctx) {
         return 0;
+    }
+
+    if (ctx->machine_id && ctx->machine_id_auto_configured) {
+        flb_sds_destroy(ctx->machine_id);
     }
 
     flb_free(ctx);

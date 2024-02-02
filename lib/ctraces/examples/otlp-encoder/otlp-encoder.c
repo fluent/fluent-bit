@@ -107,7 +107,7 @@ int main()
     ctr_span_event_set_attribute_string(event, "syscall 3", "write()");
 
     /* add a key/value pair list */
-    kv = cfl_kvlist_create(1);
+    kv = cfl_kvlist_create();
     cfl_kvlist_insert_string(kv, "language", "c");
 
     ctr_span_set_attribute_kvlist(span_root, "my-list", kv);

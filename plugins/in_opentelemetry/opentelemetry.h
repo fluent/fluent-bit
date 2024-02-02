@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -35,6 +35,7 @@ struct flb_opentelemetry {
     flb_sds_t tcp_port;
     const char *tag_key;
     bool raw_traces;
+    int  tag_from_uri;
 
     size_t buffer_max_size;            /* Maximum buffer size */
     size_t buffer_chunk_size;          /* Chunk allocation size */

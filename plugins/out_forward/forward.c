@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -1574,9 +1574,7 @@ static void cb_forward_flush(struct flb_event_chunk *event_chunk,
         if (!u_conn) {
             flb_plg_error(ctx->ins, "no upstream connections available");
             msgpack_sbuffer_destroy(&mp_sbuf);
-            if (fc->time_as_integer == FLB_TRUE) {
-                flb_free(out_buf);
-            }
+            flb_free(out_buf);
             flb_free(flush_ctx);
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
@@ -1590,9 +1588,7 @@ static void cb_forward_flush(struct flb_event_chunk *event_chunk,
             flb_plg_error(ctx->ins, "no unix socket connection available");
 
             msgpack_sbuffer_destroy(&mp_sbuf);
-            if (fc->time_as_integer == FLB_TRUE) {
-                flb_free(out_buf);
-            }
+            flb_free(out_buf);
             flb_free(flush_ctx);
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
@@ -1622,9 +1618,7 @@ static void cb_forward_flush(struct flb_event_chunk *event_chunk,
             }
 
             msgpack_sbuffer_destroy(&mp_sbuf);
-            if (fc->time_as_integer == FLB_TRUE) {
-                flb_free(out_buf);
-            }
+            flb_free(out_buf);
             flb_free(flush_ctx);
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }

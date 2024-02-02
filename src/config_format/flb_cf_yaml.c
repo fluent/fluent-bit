@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -429,7 +429,7 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
     for (idx = 0; idx < glb.gl_pathc; idx++) {
         ret = read_config(conf, ctx, state->file, glb.gl_pathv[idx]);
 
-    if (ret < 0) {
+        if (ret < 0) {
             break;
         }
     }
@@ -648,11 +648,12 @@ static enum status state_copy_into_config_group(struct parser_state *state, stru
         case CFL_VARIANT_ARRAY:
             carr = cfl_array_create(kvp->val->data.as_array->entry_count);
 
-            if (carr) {
+            if (carr == NULL) {
                 flb_error("unable to allocate array");
                 cfl_kvlist_destroy(copy);
                 return YAML_FAILURE;
             }
+
             for (idx = 0; idx < kvp->val->data.as_array->entry_count; idx++) {
                 var = cfl_array_fetch_by_index(kvp->val->data.as_array, idx);
 
@@ -877,7 +878,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             break;
         case YAML_SCALAR_EVENT:
             value = (char *) event->data.scalar.value;
-            flb_error("[config yaml] including: %s", value);
+            flb_debug("[config yaml] including: %s", value);
 
             if (strchr(value, '*') != NULL) {
                 ret = read_glob(conf, ctx, state, value);
@@ -1933,10 +1934,16 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
             return -1;
         }
 
-        if (flb_sds_printf(&include_dir, "%s/%s", parent->path, cfg_file) == NULL) {
+#ifdef _WIN32
+#define PATH_CONCAT_TEMPLATE "%s\\%s"
+#else
+#define PATH_CONCAT_TEMPLATE "%s/%s"
+#endif
+        if (flb_sds_printf(&include_dir, PATH_CONCAT_TEMPLATE, parent->path, cfg_file) == NULL) {
             flb_error("unable to create full filename");
             return -1;
         }
+#undef PATH_CONCAT_TEMPLATE
 
     }
     else {

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@
 
 #include "ne.h"
 
-int ne_uname_init(struct flb_ne *ctx);
-int ne_uname_update(struct flb_ne *ctx);
+extern struct flb_ne_collector uname_collector;
 
 #endif

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -214,12 +214,26 @@ static int configure(struct flb_dummy *ctx,
     }
 
     /* interval settings */
+    if (ctx->interval_sec < 0 || ctx->interval_nsec < 0) {
+        /* Illegal settings. Override them. */
+        ctx->interval_sec = atoi(DEFAULT_INTERVAL_SEC);
+        ctx->interval_nsec = atoi(DEFAULT_INTERVAL_NSEC);
+    }
+
+    /* default settings */
     tm->tv_sec  = 1;
     tm->tv_nsec = 0;
 
-    if (ctx->rate > 1) {
-        tm->tv_sec = 0;
-        tm->tv_nsec = 1000000000 / ctx->rate;
+    if (ctx->interval_sec > 0 || ctx->interval_nsec > 0) {
+        /* Set using interval settings. */
+        tm->tv_sec  = ctx->interval_sec;
+        tm->tv_nsec = ctx->interval_nsec;
+    } else {
+        if (ctx->rate > 1) {
+            /* Set using rate settings. */
+            tm->tv_sec = 0;
+            tm->tv_nsec = 1000000000 / ctx->rate;
+        }
     }
 
     /* dummy timestamp */
@@ -337,6 +351,10 @@ static int in_dummy_init(struct flb_input_instance *in,
 
     flb_input_set_context(in, ctx);
 
+    if (ctx->flush_on_startup) {
+        in_dummy_collect(in, config, ctx);
+    }
+
     ret = flb_input_set_collector_time(in,
                                        in_dummy_collect,
                                        tm.tv_sec,
@@ -396,9 +414,19 @@ static struct flb_config_map config_map[] = {
     "set the sample metadata to be generated. It should be a JSON object."
    },
    {
-    FLB_CONFIG_MAP_INT, "rate", "1",
+    FLB_CONFIG_MAP_INT, "rate", DEFAULT_RATE,
     0, FLB_TRUE, offsetof(struct flb_dummy, rate),
     "set a number of events per second."
+   },
+   {
+    FLB_CONFIG_MAP_INT, "interval_sec", DEFAULT_INTERVAL_SEC,
+    0, FLB_TRUE, offsetof(struct flb_dummy, interval_sec),
+    "set seconds of interval to generate events. overrides rate setting."
+   },
+   {
+    FLB_CONFIG_MAP_INT, "interval_nsec", DEFAULT_INTERVAL_NSEC,
+    0, FLB_TRUE, offsetof(struct flb_dummy, interval_nsec),
+    "set nanoseconds of interval to generate events. overrides rate setting."
    },
    {
     FLB_CONFIG_MAP_INT, "copies", "1",
@@ -419,6 +447,11 @@ static struct flb_config_map config_map[] = {
     FLB_CONFIG_MAP_BOOL, "fixed_timestamp", "off",
     0, FLB_TRUE, offsetof(struct flb_dummy, fixed_timestamp),
     "used a fixed timestamp, allows the message to pre-generated once."
+   },
+   {
+    FLB_CONFIG_MAP_BOOL, "flush_on_startup", "false",
+    0, FLB_TRUE, offsetof(struct flb_dummy, flush_on_startup),
+    "generate the first event on startup"
    },
    {0}
 };

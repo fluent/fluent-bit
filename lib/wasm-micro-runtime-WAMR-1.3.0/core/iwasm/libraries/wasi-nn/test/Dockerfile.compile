@@ -1,0 +1,26 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+FROM ubuntu:20.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# hadolint ignore=DL3008
+RUN apt-get update && apt-get install -y \
+  cmake build-essential git wget python3.10 python3-pip --no-install-recommends \
+  && apt-get clean -y \
+  && rm -rf /var/lib/apt/lists/*
+
+ARG WASI_SDK_VER=19
+RUN wget -c --progress=dot:giga https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VER}/wasi-sdk-${WASI_SDK_VER}.0-linux.tar.gz -P /opt \
+  && tar xf /opt/wasi-sdk-${WASI_SDK_VER}.0-linux.tar.gz -C /opt \
+  && ln -fs /opt/wasi-sdk-${WASI_SDK_VER}.0 /opt/wasi-sdk \
+  && rm /opt/wasi-sdk-${WASI_SDK_VER}.0-linux.tar.gz
+
+WORKDIR /wasi-nn/test
+
+COPY core/iwasm/libraries/wasi-nn/test/requirements.txt .
+
+RUN pip3 install --no-cache-dir -r requirements.txt && rm requirements.txt
+
+ENTRYPOINT [ "bash", "./build.sh" ]

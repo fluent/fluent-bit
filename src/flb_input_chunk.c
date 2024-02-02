@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -92,9 +92,49 @@ static int flb_input_chunk_is_task_safe_delete(struct flb_task *task);
 
 static int flb_input_chunk_drop_task_route(
                 struct flb_task *task,
-                struct flb_output_instance *o_ins);
+                struct flb_output_instance *o_ins,
+                ssize_t *dropped_record_count);
 
 static ssize_t flb_input_chunk_get_real_size(struct flb_input_chunk *ic);
+
+static ssize_t get_input_chunk_record_count(struct flb_input_chunk *input_chunk)
+{
+    ssize_t record_count;
+    char   *chunk_buffer;
+    size_t  chunk_size;
+    int     set_down;
+    int     ret;
+
+    ret = cio_chunk_is_up(input_chunk->chunk);
+    set_down = FLB_FALSE;
+
+    if (ret == CIO_FALSE) {
+        ret = cio_chunk_up_force(input_chunk->chunk);
+
+        if (ret == -1) {
+            return -1;
+        }
+
+        set_down = FLB_TRUE;
+    }
+
+    ret = cio_chunk_get_content(input_chunk->chunk, 
+                                &chunk_buffer, 
+                                &chunk_size);
+
+    if (ret == CIO_OK) {
+        record_count = flb_mp_count(chunk_buffer, chunk_size);
+    }
+    else {
+        record_count = -1;
+    }
+
+    if (set_down) {
+        cio_chunk_down(input_chunk->chunk);
+    }
+
+    return record_count;
+}
 
 static int flb_input_chunk_release_space(
                     struct flb_input_chunk     *new_input_chunk,
@@ -105,6 +145,7 @@ static int flb_input_chunk_release_space(
 {
     struct mk_list         *input_chunk_iterator_tmp;
     struct mk_list         *input_chunk_iterator;
+    ssize_t                 dropped_record_count;
     int                     chunk_destroy_flag;
     struct flb_input_chunk *old_input_chunk;
     ssize_t                 released_space;
@@ -130,7 +171,8 @@ static int flb_input_chunk_release_space(
         }
 
         if (flb_input_chunk_drop_task_route(old_input_chunk->task,
-                                            output_plugin) == FLB_FALSE) {
+                                            output_plugin,
+                                            &dropped_record_count) == FLB_FALSE) {
             continue;
         }
 
@@ -153,6 +195,27 @@ static int flb_input_chunk_release_space(
         else if (release_scope == FLB_INPUT_CHUNK_RELEASE_SCOPE_GLOBAL) {
             chunk_destroy_flag = FLB_TRUE;
         }
+
+#ifdef FLB_HAVE_METRICS
+        if (dropped_record_count == 0) {
+            dropped_record_count = get_input_chunk_record_count(old_input_chunk);
+
+            if (dropped_record_count == -1) {
+                flb_debug("[task] error getting chunk record count : %s",
+                          old_input_chunk->in->name);
+            }
+            else {
+                cmt_counter_add(output_plugin->cmt_dropped_records, 
+                                cfl_time_now(), 
+                                dropped_record_count,
+                                1, (char *[]) {(char *) flb_output_name(output_plugin)});
+
+                flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, 
+                                dropped_record_count, 
+                                output_plugin->metrics);
+            }
+        }
+#endif
 
         if (chunk_destroy_flag) {
             if (old_input_chunk->task != NULL) {
@@ -271,10 +334,13 @@ int flb_input_chunk_write_at(void *data, off_t offset,
 
 static int flb_input_chunk_drop_task_route(
             struct flb_task *task,
-            struct flb_output_instance *output_plugin)
+            struct flb_output_instance *output_plugin,
+            ssize_t *dropped_record_count)
 {
     int route_status;
     int result;
+
+    *dropped_record_count = 0;
 
     if (task == NULL) {
         return FLB_TRUE;
@@ -294,6 +360,8 @@ static int flb_input_chunk_drop_task_route(
                 flb_task_set_route_status(task,
                                           output_plugin,
                                           FLB_TASK_ROUTE_DROPPED);
+
+                *dropped_record_count = (ssize_t) task->records;
 
                 result = FLB_TRUE;
             }
@@ -508,11 +576,14 @@ int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
 int flb_input_chunk_place_new_chunk(struct flb_input_chunk *ic, size_t chunk_size)
 {
 	int overlimit;
-    overlimit = flb_input_chunk_has_overlimit_routes(ic, chunk_size);
-    if (overlimit != 0) {
-        flb_input_chunk_find_space_new_data(ic, chunk_size, overlimit);
-    }
+    struct flb_input_instance *i_ins = ic->in;
 
+    if (i_ins->storage_type == CIO_STORE_FS) {
+        overlimit = flb_input_chunk_has_overlimit_routes(ic, chunk_size);
+        if (overlimit != 0) {
+            flb_input_chunk_find_space_new_data(ic, chunk_size, overlimit);
+        }
+    }
     return !flb_routes_mask_is_empty(ic->routes_mask);
 }
 
@@ -1376,7 +1447,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
                                   const char *tag, size_t tag_len,
                                   const void *buf, size_t buf_size)
 {
-    int ret;
+    int ret, total_records_start;
     int set_down = FLB_FALSE;
     int min;
     int new_chunk = FLB_FALSE;
@@ -1390,6 +1461,10 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     size_t pre_real_size;
     struct flb_input_chunk *ic;
     struct flb_storage_input *si;
+    void  *filtered_data_buffer;
+    size_t filtered_data_size;
+    void  *final_data_buffer;
+    size_t final_data_size;
 
     /* memory ring-buffer checker */
     if (in->storage_type == FLB_STORAGE_MEMRB) {
@@ -1491,26 +1566,61 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         pre_real_size = flb_input_chunk_get_real_size(ic);
     }
 
-    /* Write the new data */
-    ret = flb_input_chunk_write(ic, buf, buf_size);
-    if (ret == -1) {
-        flb_error("[input chunk] error writing data from %s instance",
-                  in->name);
-        cio_chunk_tx_rollback(ic->chunk);
-        return -1;
-    }
+    /*
+     * Set the total_records based on the records that n_records
+     * says we should be writing. These values may be overwritten
+     * flb_filter_do, where a filter may add/remove records.
+     */
+    total_records_start = ic->total_records;
+    ic->added_records =  n_records;
+    ic->total_records += n_records;
 
 #ifdef FLB_HAVE_CHUNK_TRACE
     flb_chunk_trace_do_input(ic);
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
-    /* Update 'input' metrics */
-#ifdef FLB_HAVE_METRICS
-    if (ret == CIO_OK) {
-        ic->added_records =  n_records;
-        ic->total_records += n_records;
+    filtered_data_buffer = NULL;
+    final_data_buffer = (char *) buf;
+    final_data_size = buf_size;
+
+    /* Apply filters */
+    if (event_type == FLB_INPUT_LOGS) {
+        flb_filter_do(ic,
+                      buf, buf_size,
+                      &filtered_data_buffer,
+                      &filtered_data_size,
+                      tag, tag_len,
+                      in->config);
+
+        final_data_buffer = filtered_data_buffer;
+        final_data_size = filtered_data_size;
     }
 
+    if (final_data_size > 0){
+        ret = flb_input_chunk_write(ic,
+                                    final_data_buffer,
+                                    final_data_size);
+    }
+    else {
+        ret = 0;
+    }
+
+    if (filtered_data_buffer != NULL &&
+        filtered_data_buffer != buf) {
+        flb_free(filtered_data_buffer);
+    }
+
+    /*
+     * If the write failed, then we did not add any records. Reset
+     * the record counters to reflect this.
+     */
+    if (ret != CIO_OK) {
+        ic->added_records = 0;
+        ic->total_records = total_records_start;
+    }
+
+    /* Update 'input' metrics */
+#ifdef FLB_HAVE_METRICS
     if (ic->total_records > 0) {
         /* timestamp */
         ts = cfl_time_now();
@@ -1529,11 +1639,12 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     }
 #endif
 
-    /* Apply filters */
-    if (event_type == FLB_INPUT_LOGS) {
-        flb_filter_do(ic,
-                      buf, buf_size,
-                      tag, tag_len, in->config);
+    if (ret == -1) {
+        flb_error("[input chunk] error writing data from %s instance",
+                  in->name);
+        cio_chunk_tx_rollback(ic->chunk);
+
+        return -1;
     }
 
     /* get the chunks content size */
