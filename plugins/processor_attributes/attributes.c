@@ -826,11 +826,11 @@ static void attribute_match_cb(const char *name,
     if (temporary_value != NULL) {
         span = (struct ctrace_span *) context;
 
-        if (span_contains_attribute(span, name) == FLB_TRUE) {
-            span_remove_attribute(span, name);
+        if (span_contains_attribute(span, (char*)name) == FLB_TRUE) {
+            span_remove_attribute(span, (char*)name);
         }
 
-        ctr_span_set_attribute_string(span, name, temporary_value);
+        ctr_span_set_attribute_string(span, (char*)name, temporary_value);
 
         cfl_sds_destroy(temporary_value);
     }
