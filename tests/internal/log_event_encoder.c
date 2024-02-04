@@ -216,7 +216,6 @@ static int compare_msgpack_format_fluentbit_v2(void *msgpack_data, size_t msgpac
             msgpack_unpacked_destroy(&result);
             return -1;
         }
-
     }
     msgpack_unpacked_destroy(&result);
 
@@ -650,6 +649,75 @@ static void emit_raw_record()
     flb_log_event_encoder_destroy(&encoder);
 }
 
+static void issue_8137_calc_len()
+{
+    struct flb_log_event_encoder encoder;
+    int ret;
+    char *prefix = "_map_data.";
+    char *val = "key";
+    msgpack_unpacked result;
+    size_t off = 0;
+
+    ret = flb_log_event_encoder_init(&encoder, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+    if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
+        TEST_MSG("flb_log_event_encoder_init failed");
+        return;
+    }
+
+    ret = flb_log_event_encoder_begin_record(&encoder);
+    if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
+        TEST_MSG("flb_log_event_encoder_begin_record failed. ret=%s",
+                 flb_log_event_encoder_get_error_description(ret));
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    ret = flb_log_event_encoder_set_current_timestamp(&encoder);
+    if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
+        TEST_MSG("flb_log_event_encoder_set_current_timestamp failed. ret=%s",
+                 flb_log_event_encoder_get_error_description(ret));
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    ret = flb_log_event_encoder_append_body_values(
+                &encoder,
+                FLB_LOG_EVENT_STRING_LENGTH_VALUE(10+3),
+                FLB_LOG_EVENT_STRING_BODY_VALUE(prefix, 10),
+                FLB_LOG_EVENT_STRING_BODY_VALUE(val, 3)
+                                                   );
+
+
+    if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
+        TEST_MSG("flb_log_event_encoder_append_body_values failed. ret=%s",
+                 flb_log_event_encoder_get_error_description(ret));
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    ret = flb_log_event_encoder_commit_record(&encoder);
+    if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
+        TEST_MSG("flb_log_event_encoder_commit_record failed. ret=%s",
+                 flb_log_event_encoder_get_error_description(ret));
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, encoder.output_buffer, encoder.output_length, &off);
+
+    if (!TEST_CHECK(result.data.type != MSGPACK_OBJECT_STR)) {
+        TEST_MSG("data is not string");
+    }
+    else if (!TEST_CHECK(result.data.via.str.size != 13)) {
+        TEST_MSG("size mismatch. got=%u expect=%d", result.data.via.str.size,13);
+    }
+
+
+    msgpack_unpacked_destroy(&result);
+    flb_log_event_encoder_destroy(&encoder);
+}
+
 TEST_LIST = {
     { "basic_format_fluent_bit_v2", basic_format_fluent_bit_v2},
     { "basic_format_fluent_bit_v1", basic_format_fluent_bit_v1},
@@ -659,5 +727,6 @@ TEST_LIST = {
     { "init_destroy", init_destroy},
     { "init_unsupported_format", init_unsupported_format},
     { "emit_raw_record", emit_raw_record},
+    { "issue_8137_calc_len", issue_8137_calc_len},
     { NULL, NULL }
 };
