@@ -173,7 +173,6 @@ void flb_lua_pushmsgpack(lua_State *l, msgpack_object *o)
     struct flb_lua_metadata meta;
 
     lua_checkstack(l, 3);
-
     switch(o->type) {
         case MSGPACK_OBJECT_NIL:
             lua_getglobal(l, FLB_LUA_VAR_FLB_NULL);
@@ -838,4 +837,24 @@ void flb_lua_dump_stack(FILE *out, lua_State *l)
         print_lua_value(out, l, i, 2);
     }
     fprintf(out, "======\n");
+}
+
+void flb_lua_bulk_process(lua_State *l, struct flb_time *t, msgpack_object *o, int table_index) {
+    int i;
+    struct flb_lua_metadata meta;
+
+    lua_checkstack(l, 3);
+
+    lua_createtable(l, 0, 2);
+
+    lua_pushstring(l, "timestamp");
+    flb_lua_pushtimetable(l, t);
+    lua_rawset(l, -3);
+
+    lua_pushstring(l, "record");
+    flb_lua_pushmsgpack(l, o);
+    lua_rawset(l, -3);
+
+    /* Now, append this table to the global Lua table at the given index */
+    lua_rawseti(l, table_index, lua_objlen(l, table_index) + 1);
 }
