@@ -31,6 +31,7 @@
 #include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_untyped.h>
 #include <cmetrics/cmt_cat.h>
+#include <cmetrics/cmt_filter.h>
 #include <cmetrics/cmt_decode_msgpack.h>
 #include <cmetrics/cmt_encode_influx.h>
 #include <cmetrics/cmt_encode_text.h>
