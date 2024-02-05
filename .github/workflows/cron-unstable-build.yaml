@@ -37,7 +37,7 @@ jobs:
         run: echo "date=$(date '+%Y-%m-%d-%H_%M_%S')" >> $GITHUB_OUTPUT
 
       - name: Debug event output
-        uses: hmarr/debug-action@v2
+        uses: hmarr/debug-action@v3
 
       # Now we need to determine which branch to build
       - name: Manual run - get branch
