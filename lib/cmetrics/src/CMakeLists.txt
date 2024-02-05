@@ -22,6 +22,7 @@ set(src
   cmt_time.c
   cmt_label.c
   cmt_cat.c
+  cmt_filter.c
   cmetrics.c
   cmt_encode_opentelemetry.c
   cmt_decode_opentelemetry.c
