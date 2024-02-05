@@ -178,7 +178,7 @@ static int copy_map(struct cmt_opts *opts, struct cmt_map *dst, struct cmt_map *
 
 }
 
-static int copy_counter(struct cmt *cmt, struct cmt_counter *counter)
+int cmt_cat_copy_counter(struct cmt *cmt, struct cmt_counter *counter)
 {
     int ret;
     char **labels = NULL;
@@ -213,7 +213,7 @@ static int copy_counter(struct cmt *cmt, struct cmt_counter *counter)
     return 0;
 }
 
-static int copy_gauge(struct cmt *cmt, struct cmt_gauge *gauge)
+int cmt_cat_copy_gauge(struct cmt *cmt, struct cmt_gauge *gauge)
 {
     int ret;
     char **labels = NULL;
@@ -247,7 +247,7 @@ static int copy_gauge(struct cmt *cmt, struct cmt_gauge *gauge)
     return 0;
 }
 
-static int copy_untyped(struct cmt *cmt, struct cmt_untyped *untyped)
+int cmt_cat_copy_untyped(struct cmt *cmt, struct cmt_untyped *untyped)
 {
     int ret;
     char **labels = NULL;
@@ -281,7 +281,7 @@ static int copy_untyped(struct cmt *cmt, struct cmt_untyped *untyped)
     return 0;
 }
 
-static int copy_histogram(struct cmt *cmt, struct cmt_histogram *histogram)
+int cmt_cat_copy_histogram(struct cmt *cmt, struct cmt_histogram *histogram)
 {
     int i;
     double val;
@@ -331,7 +331,7 @@ static int copy_histogram(struct cmt *cmt, struct cmt_histogram *histogram)
     return 0;
 }
 
-static int copy_summary(struct cmt *cmt, struct cmt_summary *summary)
+int cmt_cat_copy_summary(struct cmt *cmt, struct cmt_summary *summary)
 {
     int i;
     int ret;
@@ -395,7 +395,7 @@ static int append_context(struct cmt *dst, struct cmt *src)
      /* Counters */
     cfl_list_foreach(head, &src->counters) {
         counter = cfl_list_entry(head, struct cmt_counter, _head);
-        ret = copy_counter(dst, counter);
+        ret = cmt_cat_copy_counter(dst, counter);
         if (ret == -1) {
             return -1;
         }
@@ -404,7 +404,7 @@ static int append_context(struct cmt *dst, struct cmt *src)
     /* Gauges */
     cfl_list_foreach(head, &src->gauges) {
         gauge = cfl_list_entry(head, struct cmt_gauge, _head);
-        ret = copy_gauge(dst, gauge);
+        ret = cmt_cat_copy_gauge(dst, gauge);
         if (ret == -1) {
             return -1;
         }
@@ -413,7 +413,7 @@ static int append_context(struct cmt *dst, struct cmt *src)
     /* Untyped */
     cfl_list_foreach(head, &src->untypeds) {
         untyped = cfl_list_entry(head, struct cmt_untyped, _head);
-        ret = copy_untyped(dst, untyped);
+        ret = cmt_cat_copy_untyped(dst, untyped);
         if (ret == -1) {
             return -1;
         }
@@ -422,7 +422,7 @@ static int append_context(struct cmt *dst, struct cmt *src)
     /* Histogram */
     cfl_list_foreach(head, &src->histograms) {
         histogram = cfl_list_entry(head, struct cmt_histogram, _head);
-        ret = copy_histogram(dst, histogram);
+        ret = cmt_cat_copy_histogram(dst, histogram);
         if (ret == -1) {
             return -1;
         }
@@ -431,7 +431,7 @@ static int append_context(struct cmt *dst, struct cmt *src)
     /* Summary */
     cfl_list_foreach(head, &src->summaries) {
         summary = cfl_list_entry(head, struct cmt_summary, _head);
-        ret = copy_summary(dst, summary);
+        ret = cmt_cat_copy_summary(dst, summary);
         if (ret == -1) {
             return -1;
         }
