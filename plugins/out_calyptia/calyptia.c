@@ -244,7 +244,7 @@ static flb_sds_t get_agent_metadata(struct flb_calyptia *ctx)
     msgpack_pack_str_body(&mp_pck, "os", 2);
 #ifdef FLB_SYSTEM_WINDOWS
     len = strlen("windows");
-    msgpack_pack_str(&mp_pck);
+    msgpack_pack_str(&mp_pck, len);
     msgpack_pack_str_body(&mp_pck, "windows", len);
 #elif FLB_SYSTEM_MACOS
     len = strlen("macos");
