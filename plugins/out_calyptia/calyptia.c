@@ -239,6 +239,52 @@ static flb_sds_t get_agent_metadata(struct flb_calyptia *ctx)
     msgpack_pack_str(&mp_pck, 9);
     msgpack_pack_str_body(&mp_pck, "community", 9);
 
+    flb_mp_map_header_append(&mh);
+    msgpack_pack_str(&mp_pck, 2);
+    msgpack_pack_str_body(&mp_pck, "os", 2);
+#ifdef FLB_SYSTEM_WINDOWS
+    len = strlen("windows");
+    msgpack_pack_str(&mp_pck);
+    msgpack_pack_str_body(&mp_pck, "windows", len);
+#elif FLB_SYSTEM_MACOS
+    len = strlen("macos");
+    msgpack_pack_str(&mp_pck, len);
+    msgpack_pack_str_body(&mp_pck, "macos", len);
+#elif __linux__
+    len = strlen("linux");
+    msgpack_pack_str(&mp_pck, len);
+    msgpack_pack_str_body(&mp_pck, "linux", len);
+#else
+    len = strlen("unknown");
+    msgpack_pack_str(&mp_pck, len);
+    msgpack_pack_str_body(&mp_pck, "unknown", len);
+#endif
+
+    flb_mp_map_header_append(&mh);
+    msgpack_pack_str(&mp_pck, 4);
+    msgpack_pack_str_body(&mp_pck, "arch", 4);
+#if defined(__arm__) || defined(_M_ARM)
+    len = strlen("arm");
+    msgpack_pack_str(&mp_pck, len);
+    msgpack_pack_str_body(&mp_pck, "arm", len);
+#elif defined(__aarch64__)
+    len = strlen("arm64");
+    msgpack_pack_str(&mp_pck, len);
+    msgpack_pack_str_body(&mp_pck, "arm64", len);
+#elif defined(__amd64__) || defined(_M_AMD64)
+    len = strlen("x86_64");
+    msgpack_pack_str(&mp_pck, len);
+    msgpack_pack_str_body(&mp_pck, "x86_64", len);
+#elif defined(__i686__) || defined(_M_I86)
+    len = strlen("x86");
+    msgpack_pack_str(&mp_pck, len);
+    msgpack_pack_str_body(&mp_pck, "x86", len);
+#else
+    len = strlen("unknown");
+    msgpack_pack_str(&mp_pck, len);
+    msgpack_pack_str_body(&mp_pck, "unknown", len);
+#endif
+
     /* machineID */
     flb_mp_map_header_append(&mh);
     msgpack_pack_str(&mp_pck, 9);
