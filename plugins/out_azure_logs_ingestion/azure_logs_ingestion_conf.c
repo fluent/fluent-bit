@@ -91,6 +91,13 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
         return NULL;
     }
 
+    /* config: 'stream_name' */
+    if (!ctx->stream_name) {
+        flb_plg_error(ins, "property 'stream_name' is not defined");
+        flb_az_li_ctx_destroy(ctx);
+        return NULL;
+    }
+
     /* Allocate and set auth url */
     ctx->auth_url = flb_sds_create_size(sizeof(FLB_AZ_LI_AUTH_URL_TMPLT) - 1 +
                                         flb_sds_len(ctx->tenant_id));
@@ -106,7 +113,7 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
     ctx->dce_u_url = flb_sds_create_size(sizeof(FLB_AZ_LI_DCE_URL_TMPLT) - 1 +
                                         flb_sds_len(ctx->dce_url) +
                                         flb_sds_len(ctx->dcr_id) +
-                                        flb_sds_len(ctx->table_name));
+                                        flb_sds_len(ctx->stream_name));
     if (!ctx->dce_u_url) {
         flb_errno();
         flb_az_li_ctx_destroy(ctx);
@@ -114,7 +121,7 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
     }
     flb_sds_snprintf(&ctx->dce_u_url, flb_sds_alloc(ctx->dce_u_url),
                     FLB_AZ_LI_DCE_URL_TMPLT, ctx->dce_url, 
-                    ctx->dcr_id, ctx->table_name);
+                    ctx->dcr_id, ctx->stream_name);
 
     /* Initialize the auth mutex */
     pthread_mutex_init(&ctx->token_mutex, NULL);
@@ -138,8 +145,8 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
     }
     flb_output_upstream_set(ctx->u_dce, ins);
 
-    flb_plg_info(ins, "dce_url='%s', dcr='%s', table='%s', stream='Custom-%s'",
-                ctx->dce_url, ctx->dcr_id, ctx->table_name, ctx->table_name);
+    flb_plg_info(ins, "dce_url='%s', dcr='%s', table='%s', stream='%s'",
+                ctx->dce_url, ctx->dcr_id, ctx->table_name, ctx->stream_name);
 
     return ctx;
 }
