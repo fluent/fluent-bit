@@ -1040,11 +1040,11 @@ static struct flb_config_map config_map[] = {
      "which have been created more than 60s will be evicted"
     },
     {
-     FLB_CONFIG_MAP_TIME, "kube_meta_namespace_cache_ttl", "900",
+     FLB_CONFIG_MAP_TIME, "kube_meta_namespace_cache_ttl", "15m",
      0, FLB_TRUE, offsetof(struct flb_kube, kube_meta_namespace_cache_ttl),
      "configurable TTL for K8s cached namespace metadata. " 
-     "By default, it is set to 900 and cached entries will be evicted after "
-     " 900s (15m). Setting this to 0 will disable the cache TTL and "
+     "By default, it is set to 15m and cached entries will be evicted after 15m."
+     "Setting this to 0 will disable the cache TTL and "
      "will evict entries once the cache reaches capacity."
     },
     /* EOF */
