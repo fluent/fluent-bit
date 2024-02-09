@@ -409,6 +409,11 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_az_li, table_name),
      "The name of the custom log table, including '_CL' suffix"
     },
+    {
+     FLB_CONFIG_MAP_STR, "stream_name", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_az_li, stream_name),
+     "The stream name from the DCR"
+    },
     /* optional params */
     {
      FLB_CONFIG_MAP_STR, "time_key", FLB_AZ_LI_TIME_KEY,
