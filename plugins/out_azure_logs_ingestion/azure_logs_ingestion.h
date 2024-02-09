@@ -26,7 +26,7 @@
 /* auth url needs tenant_id */
 #define FLB_AZ_LI_AUTH_URL_TMPLT    "https://login.microsoftonline.com/"\
                                     "%s/oauth2/v2.0/token"
-/* DCE Full URL needs: dce_url, dcr_id, Log Analytics custom table name */
+/* DCE Full URL needs: dce_url, dcr_id, stream_name */
 #define FLB_AZ_LI_DCE_URL_TMPLT     "%s/dataCollectionRules/%s/streams/"\
                                     "%s?"FLB_AZ_LI_API_VERSION
 /* TLS Modes for upstream connection = FLB_IO_TLS or FLB_IO_OPT_TLS*/
@@ -47,6 +47,7 @@ struct flb_az_li {
     flb_sds_t dce_url;
     flb_sds_t dcr_id;
     flb_sds_t table_name;
+    flb_sds_t stream_name;
 
     /* time_generated: on/off */
     int time_generated;
