@@ -40,15 +40,16 @@
 #define HTTP_PROTOCOL_HTTP1      1
 #define HTTP_PROTOCOL_HTTP2      2
 
-#define HTTP2_STREAM_STATUS_RECEIVING_HEADERS  0
-#define HTTP2_STREAM_STATUS_RECEIVING_DATA     1
-#define HTTP2_STREAM_STATUS_READY              2
-#define HTTP2_STREAM_STATUS_PROCESSING         3
-#define HTTP2_STREAM_STATUS_CLOSED             4
-#define HTTP2_STREAM_STATUS_ERROR              5
+#define HTTP_STREAM_STATUS_RECEIVING_HEADERS   0
+#define HTTP_STREAM_STATUS_RECEIVING_DATA      1
+#define HTTP_STREAM_STATUS_READY               2
+#define HTTP_STREAM_STATUS_PROCESSING          3
+#define HTTP_STREAM_STATUS_CLOSED              4
+#define HTTP_STREAM_STATUS_ERROR               5
 
 #define HTTP_SERVER_SUCCESS                    0
 #define HTTP_SERVER_PROVIDER_ERROR            -1
+#define HTTP_SERVER_ALLOCATION_ERROR          -2
 
 struct http_session;
 
@@ -79,7 +80,7 @@ struct http_response {
     struct http_session   *session;
 };
 
-struct http2_stream {
+struct http_stream {
     int32_t                id;
     int                    status;
 
@@ -90,14 +91,6 @@ struct http2_stream {
     struct cfl_list        _head;
 };
 
-struct http1_stream {
-    struct http_response   response;
-    
-    struct mk_http_request request;
-    struct mk_http_parser  parser;
-    int                    status;
-};
-
 struct http2_session {
     nghttp2_session       *inner_session;
     struct cfl_list        streams;
@@ -106,8 +99,10 @@ struct http2_session {
 
 struct http1_session {
     struct mk_http_session inner_session;
+    struct mk_http_request inner_request;
+    struct mk_http_parser  inner_parser;
     struct mk_server       inner_server;
-    struct http1_stream    stream;
+    struct http_stream     stream;
     struct http_session   *parent;
 };
 

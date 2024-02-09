@@ -44,6 +44,8 @@ static void __hex_dump__(unsigned char *buffer, size_t length, size_t columns)
     printf("\n\n");
 }
 
+int http2_conn_flush_session(struct http_session *session);
+
 static ssize_t http2_send_callback(nghttp2_session *inner_session, 
                                    const uint8_t *data,
                                    size_t length, 
@@ -74,16 +76,14 @@ static inline size_t http2_lower_value(size_t left_value, size_t right_value)
     return right_value;
 }
 
-int http2_stream_init(struct http2_stream *stream,
-                      struct http2_session *session, 
-                      int32_t stream_id);
+int http_stream_init(struct http_stream *stream,
+                     struct http_session *session, 
+                     int32_t stream_id);
 
-struct http2_stream *http2_stream_create(struct http2_session *session, 
-                                         int32_t stream_id);
+struct http_stream *http_stream_create(struct http_session *session, 
+                                       int32_t stream_id);
 
-void http2_stream_destroy(struct http2_stream *stream);
-
-
+void http_stream_destroy(struct http_stream *stream);
 
 static void http_response_destroy(struct http_response *response);
 
@@ -138,6 +138,34 @@ static char *http_request_get_header(struct http_request *request,
     return (char *) value;
 }
 
+static int http_request_set_header(struct http_request *request,
+                                   char *name, size_t name_length,
+                                   char *value, size_t value_length) 
+{
+    char  *lowercase_name;
+    int    result;
+
+    lowercase_name = convert_string_to_lowercase(name, name_length);
+
+    if (lowercase_name == NULL) {
+        return -1;
+    }
+
+    result = flb_hash_table_add(request->headers, 
+                                (const char *) lowercase_name, 
+                                name_length,
+                                (void *) value, 
+                                value_length);
+
+    flb_free(lowercase_name);
+
+    if (result == -1) {
+        return -1;
+    }
+
+    return 0;
+}
+
 static void http_request_destroy(struct http_request *request) 
 {
     if (request->path != NULL) {
@@ -181,14 +209,14 @@ static int http_request_init(struct http_request *request) {
     return 0;
 }
 
-int http2_stream_init(struct http2_stream *stream,
-                      struct http2_session *session, 
-                      int32_t stream_id)
+int http_stream_init(struct http_stream *stream,
+                     struct http_session *session, 
+                     int32_t stream_id)
 {
     int result;
 
     stream->id = stream_id;
-    stream->status = HTTP2_STREAM_STATUS_RECEIVING_HEADERS;
+    stream->status = HTTP_STREAM_STATUS_RECEIVING_HEADERS;
 
     result = http_request_init(&stream->request);
 
@@ -202,18 +230,16 @@ int http2_stream_init(struct http2_stream *stream,
         return -2;
     }
 
-    cfl_list_add(&stream->_head, &session->streams);
-
     stream->request.stream  = (void *) stream;
-    stream->request.session = session->parent;
+    stream->request.session = session;
 
     stream->response.stream  = (void *) stream;
-    stream->response.session = session->parent;
+    stream->response.session = session;
 
     return 0;
 }
 
-void http2_stream_destroy(struct http2_stream *stream)
+void http_stream_destroy(struct http_stream *stream)
 {
     if (stream != NULL) {
         if (!cfl_list_entry_is_orphan(&stream->_head)) {
@@ -224,13 +250,13 @@ void http2_stream_destroy(struct http2_stream *stream)
     }
 }
 
-struct http2_stream *http2_stream_create(struct http2_session *session, 
-                                         int32_t stream_id) 
+struct http_stream *http_stream_create(struct http_session *session, 
+                                       int32_t stream_id) 
 {
-    struct http2_stream *stream;
-    int                  result;
+    struct http_stream *stream;
+    int                 result;
 
-    stream = flb_calloc(1, sizeof(struct http2_stream));
+    stream = flb_calloc(1, sizeof(struct http_stream));
 
     if (stream == NULL) {
         return NULL;
@@ -238,10 +264,10 @@ struct http2_stream *http2_stream_create(struct http2_session *session,
 
     stream->releasable = FLB_TRUE;
 
-    result = http2_stream_init(stream, session, stream_id);
+    result = http_stream_init(stream, session, stream_id);
 
     if (result != 0) {
-        http2_stream_destroy(stream);
+        http_stream_destroy(stream);
     }
 
     return stream;
@@ -275,7 +301,7 @@ static int http2_frame_recv_callback(nghttp2_session *inner_session,
                                      const nghttp2_frame *frame, 
                                      void *user_data)
 {
-    struct http2_stream *stream;
+    struct http_stream *stream;
 
     stream = nghttp2_session_get_stream_user_data(inner_session, 
                                                   frame->hd.stream_id);
@@ -289,10 +315,10 @@ static int http2_frame_recv_callback(nghttp2_session *inner_session,
         case NGHTTP2_HEADERS:
             if ((frame->hd.flags & NGHTTP2_FLAG_END_HEADERS) != 0) {
                 if (stream->request.content_length > 0) {
-                    stream->status = HTTP2_STREAM_STATUS_RECEIVING_DATA;
+                    stream->status = HTTP_STREAM_STATUS_RECEIVING_DATA;
                 }
                 else {
-                    stream->status = HTTP2_STREAM_STATUS_READY;
+                    stream->status = HTTP_STREAM_STATUS_READY;
 
                     if (!cfl_list_entry_is_orphan(&stream->request._head)) {
                         cfl_list_del(&stream->request._head);
@@ -303,7 +329,7 @@ static int http2_frame_recv_callback(nghttp2_session *inner_session,
                 }
             }
             else {
-                stream->status = HTTP2_STREAM_STATUS_RECEIVING_HEADERS;                
+                stream->status = HTTP_STREAM_STATUS_RECEIVING_HEADERS;                
             }
 
             break;
@@ -319,7 +345,7 @@ static int http2_stream_close_callback(nghttp2_session *session,
                                        uint32_t error_code, 
                                        void *user_data)
 {
-    struct http2_stream *stream;
+    struct http_stream *stream;
 
     stream = nghttp2_session_get_stream_user_data(session, stream_id);
 
@@ -327,7 +353,7 @@ static int http2_stream_close_callback(nghttp2_session *session,
         return 0;
     }
 
-    stream->status = HTTP2_STREAM_STATUS_CLOSED;
+    stream->status = HTTP_STREAM_STATUS_CLOSED;
 
     return 0;
 }
@@ -336,7 +362,7 @@ static int http2_begin_headers_callback(nghttp2_session *inner_session,
                                         const nghttp2_frame *frame,
                                         void *user_data) {
     struct http2_session *session;
-    struct http2_stream  *stream;
+    struct http_stream   *stream;
 
     session = (struct http2_session *) user_data;
 
@@ -345,11 +371,13 @@ static int http2_begin_headers_callback(nghttp2_session *inner_session,
         return 0;
     }
 
-    stream = http2_stream_create(session, frame->hd.stream_id);
+    stream = http_stream_create(session->parent, frame->hd.stream_id);
 
     if (stream == NULL) {
         return -1;
     }
+
+    cfl_list_add(&stream->_head, &session->streams);
 
     nghttp2_session_set_stream_user_data(inner_session,
                                          frame->hd.stream_id, 
@@ -367,7 +395,7 @@ static int http2_begin_headers_callback(nghttp2_session *inner_session,
                                            void *user_data)
 {
     cfl_sds_t            resized_buffer;
-    struct http2_stream *stream;
+    struct http_stream  *stream;
 
     stream = nghttp2_session_get_stream_user_data(inner_session, stream_id);
 
@@ -375,8 +403,8 @@ static int http2_begin_headers_callback(nghttp2_session *inner_session,
         return 0;
     }
 
-    if (stream->status != HTTP2_STREAM_STATUS_RECEIVING_DATA) {
-        stream->status = HTTP2_STREAM_STATUS_ERROR;
+    if (stream->status != HTTP_STREAM_STATUS_RECEIVING_DATA) {
+        stream->status = HTTP_STREAM_STATUS_ERROR;
 
         return -1;
     }
@@ -385,7 +413,7 @@ static int http2_begin_headers_callback(nghttp2_session *inner_session,
         stream->request.body = cfl_sds_create_size(len);
 
         if (stream->request.body == NULL) {
-            stream->status = HTTP2_STREAM_STATUS_ERROR;
+            stream->status = HTTP_STREAM_STATUS_ERROR;
 
             return -1;
         }
@@ -400,7 +428,7 @@ static int http2_begin_headers_callback(nghttp2_session *inner_session,
                                      len);
 
         if (resized_buffer == NULL) {
-            stream->status = HTTP2_STREAM_STATUS_ERROR;
+            stream->status = HTTP_STREAM_STATUS_ERROR;
 
             return -1;
         }
@@ -408,9 +436,9 @@ static int http2_begin_headers_callback(nghttp2_session *inner_session,
         stream->request.body = resized_buffer;
     }
 
-    if (stream->status == HTTP2_STREAM_STATUS_RECEIVING_DATA) {
+    if (stream->status == HTTP_STREAM_STATUS_RECEIVING_DATA) {
         if (stream->request.content_length == cfl_sds_len(stream->request.body)) {
-            stream->status = HTTP2_STREAM_STATUS_READY;
+            stream->status = HTTP_STREAM_STATUS_READY;
 
             if (!cfl_list_entry_is_orphan(&stream->request._head)) {
                 cfl_list_del(&stream->request._head);
@@ -436,7 +464,7 @@ static int http2_header_callback(nghttp2_session *inner_session,
 {
     char                 temporary_buffer[16];
     char                *lowercase_name;
-    struct http2_stream *stream;
+    struct http_stream  *stream;
     int                  result;
 
     stream = nghttp2_session_get_stream_user_data(inner_session, 
@@ -525,18 +553,22 @@ static int http2_header_callback(nghttp2_session *inner_session,
     return 0;
 }
 
-static void dummy_mk_http_session_init(struct mk_http_session *session)
+static void dummy_mk_http_session_init(struct mk_http_session *session, 
+                                       struct mk_server *server)
 {
     session->_sched_init = MK_TRUE;
     session->pipelined   = MK_FALSE;
     session->counter_connections = 0;
     session->close_now = MK_FALSE;
     session->status = MK_REQUEST_STATUS_INCOMPLETE;
-    session->server = NULL;
+    session->server = server;
     session->socket = -1;
 
     /* creation time in unix time */
     session->init_time = time(NULL);
+
+    session->channel = mk_channel_new(MK_CHANNEL_SOCKET, -1);
+    session->channel->io = session->server->network;
 
     /* Init session request list */
     mk_list_init(&session->request_list);
@@ -545,12 +577,39 @@ static void dummy_mk_http_session_init(struct mk_http_session *session)
     mk_http_parser_init(&session->parser);
 }
 
+static void dummy_mk_http_request_init(struct mk_http_session *session,
+                                       struct mk_http_request *request)
+{
+    memset(request, 0, sizeof(struct mk_http_request));
+
+    mk_http_request_init(session, request, session->server);
+
+    request->in_headers.type        = MK_STREAM_IOV;
+    request->in_headers.dynamic     = MK_FALSE;
+    request->in_headers.cb_consumed = NULL;
+    request->in_headers.cb_finished = NULL;
+    request->in_headers.stream      = &request->stream;
+
+    mk_list_add(&request->in_headers._head, &request->stream.inputs);
+
+    request->session = session;
+}
 
 static int http1_session_init(struct http1_session *session, struct http_session *parent)
 {
-    dummy_mk_http_session_init(&session->inner_session);
+    int result;
 
-    mk_http_parser_init(&session->stream.parser);
+    dummy_mk_http_session_init(&session->inner_session, &session->inner_server);
+
+    dummy_mk_http_request_init(&session->inner_session, &session->inner_request);
+
+    mk_http_parser_init(&session->inner_parser);
+
+    result = http_stream_init(&session->stream, parent, 0);
+
+    if (result != 0) {
+        return -1;
+    }
 
     session->parent = parent;
 
@@ -641,17 +700,13 @@ static int http_session_init(struct http_session *session, int version) {
         if (result != 0) {
             return -3;
         }
-
-        // session->http2.parent = session;
     }
-    else {
+    else if (session->version == HTTP_PROTOCOL_HTTP1) {
         result = http1_session_init(&session->http1, session);
 
         if (result != 0) {
             return -4;
         }
-
-        // session->http1.parent = session;
     }
 
     return 0;
@@ -659,21 +714,26 @@ static int http_session_init(struct http_session *session, int version) {
 
 static void http1_session_destroy(struct http1_session *session)
 {
+    if (session->inner_session.channel != NULL) {
+        mk_channel_release(session->inner_session.channel);
+
+        session->inner_session.channel = NULL;
+    }
 }
 
 static void http2_session_destroy(struct http2_session *session)
 {
     struct cfl_list     *iterator_backup;
     struct cfl_list     *iterator;
-    struct http2_stream *stream;
+    struct http_stream  *stream;
 
     if (session != NULL) {
         cfl_list_foreach_safe(iterator, 
                               iterator_backup, 
                               &session->streams) {
-            stream = cfl_list_entry(iterator, struct http2_stream, _head);
+            stream = cfl_list_entry(iterator, struct http_stream, _head);
 
-            http2_stream_destroy(stream);
+            http_stream_destroy(stream);
         }
 
         nghttp2_session_del(session->inner_session);
@@ -729,7 +789,7 @@ static ssize_t http2_data_source_read_callback(nghttp2_session *session,
 {
     size_t               content_length;
     size_t               body_offset;
-    struct http2_stream *stream;
+    struct http_stream  *stream;
     ssize_t              result;
 
     stream = nghttp2_session_get_stream_user_data(session, 
@@ -796,7 +856,7 @@ static int http_response_init(struct http_response *response) {
 
 static struct http_response *http2_response_begin(
         struct http2_session *session, 
-        struct http2_stream *stream) {
+        struct http_stream *stream) {
 
     int result;
 
@@ -851,7 +911,7 @@ static int http2_response_commit(struct http_response *response)
     struct flb_hash_table_entry *header_entry;
     nghttp2_nv                  *headers;
     struct http2_session        *session;
-    struct http2_stream         *stream;
+    struct http_stream          *stream;
     int                          result;
 
     session = &response->session->http2;
@@ -860,7 +920,7 @@ static int http2_response_commit(struct http_response *response)
         return -1;
     }
 
-    stream  = (struct http2_stream *) response->stream;
+    stream  = (struct http_stream *) response->stream;
 
     if (stream == NULL) {
         return -2;
@@ -906,7 +966,7 @@ static int http2_response_commit(struct http_response *response)
     data_provider.source.fd = 0;
     data_provider.read_callback = http2_data_source_read_callback;
 
-    stream->status = HTTP2_STREAM_STATUS_PROCESSING;
+    stream->status = HTTP_STREAM_STATUS_PROCESSING;
 
     result = nghttp2_submit_response(session->inner_session, 
                                      stream->id, 
@@ -917,7 +977,7 @@ static int http2_response_commit(struct http_response *response)
     flb_free(headers);
 
     if (result != 0) {
-        stream->status = HTTP2_STREAM_STATUS_ERROR;
+        stream->status = HTTP_STREAM_STATUS_ERROR;
 
         return -5;
     }
@@ -925,12 +985,12 @@ static int http2_response_commit(struct http_response *response)
     result = nghttp2_session_send(session->inner_session);
 
     if (result != 0) {
-        stream->status = HTTP2_STREAM_STATUS_ERROR;
+        stream->status = HTTP_STREAM_STATUS_ERROR;
 
         return -6;
     }
 
-    stream->status = HTTP2_STREAM_STATUS_RECEIVING_HEADERS;
+    stream->status = HTTP_STREAM_STATUS_RECEIVING_HEADERS;
 
     http_response_destroy(&stream->response);
 
@@ -939,7 +999,7 @@ static int http2_response_commit(struct http_response *response)
 
 static struct http_response *http1_response_begin(
         struct http1_session *session, 
-        struct http1_stream *stream) {
+        struct http_stream *stream) {
 
     int result;
 
@@ -986,10 +1046,100 @@ static int http1_response_set_body(struct http_response *response,
 
 static int http1_response_commit(struct http_response *response)
 {
-/*
-    struct http1_session *session;
-    struct http1_stream  *stream;
-*/
+    struct mk_list              *header_iterator;
+    cfl_sds_t                    response_buffer;
+    struct flb_hash_table_entry *header_entry;
+    cfl_sds_t                    sds_result;
+    struct http1_session        *session;
+    struct http1_stream         *stream;
+
+    session = &response->session->http1;
+
+    if (session == NULL) {
+        return -1;
+    }
+
+    stream  = (struct http_stream *) response->stream;
+
+    if (stream == NULL) {
+        return -2;
+    }
+
+    response_buffer = cfl_sds_create_size(128);
+
+    if (response_buffer == NULL) {
+        return -3;
+    }
+
+    if (response->message != NULL) {
+        sds_result = cfl_sds_printf(&response_buffer, "HTTP/1.1 %d %s\r\n", response->status, response->message);
+    }
+    else {
+        sds_result = cfl_sds_printf(&response_buffer, "HTTP/1.1 %d\r\n", response->status);
+    }
+
+    if (sds_result == NULL) {
+        cfl_sds_destroy(response_buffer);
+
+        return -4;
+    }
+
+    mk_list_foreach(header_iterator, &response->headers->entries) {
+        header_entry = mk_list_entry(header_iterator, 
+                                     struct flb_hash_table_entry, 
+                                     _head_parent);
+
+        if (header_entry == NULL) {
+            cfl_sds_destroy(response_buffer);
+
+            return -5;
+        }
+
+        sds_result = cfl_sds_printf(&response_buffer, 
+                                    "%.*s: %.*s\r\n", 
+                                    (int) header_entry->key_len, 
+                                    (const char *) header_entry->key, 
+                                    (int) header_entry->val_size, 
+                                    (const char *) header_entry->val);
+
+        if (sds_result == NULL) {
+            cfl_sds_destroy(response_buffer);
+
+            return -6;
+        }
+    }
+
+    sds_result = cfl_sds_cat(response_buffer, "\r\n", 2);
+
+    if (sds_result == NULL) {
+        cfl_sds_destroy(response_buffer);
+
+        return -7;
+    }
+
+    if (response->body != NULL) {
+        sds_result = cfl_sds_cat(response_buffer, 
+                                 response->body,
+                                 cfl_sds_len(response->body));
+
+        if (sds_result == NULL) {
+            cfl_sds_destroy(response_buffer);
+
+            return -8;
+        }
+     
+        response_buffer = sds_result;
+    }
+
+    sds_result = cfl_sds_cat(session->parent->outgoing_data, 
+                             response_buffer, 
+                             cfl_sds_len(response_buffer));
+
+    if (sds_result == NULL) {
+        return -9;
+    }
+
+    session->parent->outgoing_data = sds_result;
 
     return 0;
 }
@@ -1035,6 +1185,24 @@ static int http_response_set_status(struct http_response *response,
     return http1_response_set_status(response, status);
 }
 
+static int http_response_set_message(struct http_response *response, 
+                                     char *message)
+{
+    if (response->message != NULL) {
+        cfl_sds_destroy(response->message);
+
+        response->message = NULL;
+    }
+
+    response->message = cfl_sds_create((const char *) message);
+    
+    if (response->message == NULL) {
+        return -1;
+    }
+
+    return 0;
+}
+
 static int http_response_set_body(struct http_response *response, 
                                   unsigned char *body, size_t body_length)
 {
@@ -1071,10 +1239,186 @@ int http2_session_ingest(struct http2_session *session,
     return HTTP_SERVER_SUCCESS;   
 }
 
+static int http1_evict_request(struct http1_session *session)
+{
+    uintptr_t session_buffer_upper_bound;
+    uintptr_t session_buffer_lower_bound;
+    size_t    session_buffer_length;
+    cfl_sds_t session_buffer;
+    size_t    content_length;
+    size_t    request_length;
+    uintptr_t request_end;
+
+    request_end = 0;
+    content_length = 0;
+    session_buffer = session->parent->incoming_data;
+
+    if (session_buffer == NULL) {
+        return -1;
+    }
+
+    session_buffer_length = cfl_sds_len(session_buffer);
+
+    if (session->inner_request.data.data != NULL) {
+        content_length = session->inner_request.data.len;
+
+        request_end  = (uintptr_t) session->inner_request.data.data;
+        request_end += content_length;
+    }
+    else {
+        request_end = (uintptr_t) strstr(session_buffer, 
+                                         "\r\n\r\n");
+
+        if(request_end != 0) {
+            request_end += 4;
+        }
+    }
+
+    if (request_end != 0) {
+        session_buffer_lower_bound = (uintptr_t) session_buffer;
+        session_buffer_upper_bound = (uintptr_t) &session_buffer[session_buffer_length];
+
+        if (request_end < session_buffer_lower_bound ||
+            request_end > session_buffer_upper_bound) {
+            return -1;
+        }
+
+        request_length = (size_t) (request_end - session_buffer_lower_bound);
+
+        if (request_length == session_buffer_length) {
+            session_buffer_length = 0;
+        }
+        else {
+            session_buffer_length -= request_length;
+
+            memmove(session_buffer, 
+                    &session_buffer[request_length],
+                    session_buffer_length);
+
+            session_buffer[session_buffer_length] = '\0';
+        }
+
+        cfl_sds_set_len(session_buffer, session_buffer_length);
+    }
+
+    return 0;
+}
+
+static int http1_session_process_request(struct http1_session *session)
+{
+    struct mk_list         *iterator;
+    struct mk_http_header  *header;
+    int                     result;
+
+    if (session->inner_request.uri_processed.data != NULL) {
+        session->stream.request.path = \
+            cfl_sds_create_len(session->inner_request.uri_processed.data, 
+                               session->inner_request.uri_processed.len);
+    }
+    else {
+        session->stream.request.path = \
+            cfl_sds_create_len(session->inner_request.uri.data, 
+                               session->inner_request.uri.len);
+    }
+
+    if (session->stream.request.path == NULL) {    
+        return -1;
+    }
+
+    session->stream.request.method = session->inner_request.method;
+
+    session->stream.request.content_length = session->inner_request.content_length;
+
+    mk_list_foreach(iterator, 
+                    &session->inner_parser.header_list) {
+        header = mk_list_entry(iterator, struct mk_http_header, _head);
+
+        if (header->key.data != NULL && header->key.len > 0 &&
+            header->val.data != NULL && header->val.len > 0) {
+
+            if (http2_strncasecmp(header->key.data, 
+                                  header->key.len, 
+                                  "host", 0) == 0) {
+                session->stream.request.host = \
+                    cfl_sds_create_len((const char *) header->val.data, 
+                                       header->val.len);
+            
+                if (session->stream.request.host == NULL) {
+                    return -1;
+                }
+            }
+
+            result = http_request_set_header(&session->stream.request, 
+                                             header->key.data, 
+                                             header->key.len, 
+                                             (void *) header->val.data, 
+                                             header->val.len);
+
+            if (result != 0) {
+                return -1;
+            }
+        }
+    }
+
+    if (session->stream.request.host == NULL) {
+        session->stream.request.host = cfl_sds_create("");
+
+        if (session->stream.request.host == NULL) {
+            return -1;
+        }
+    }
+
+    if (session->inner_request.data.data != NULL) {    
+        printf("CREATING BODY OF : %zu\n", session->inner_request.data.len);
+
+        session->stream.request.body = \
+            cfl_sds_create_len(session->inner_request.data.data, 
+                               session->inner_request.data.len);
+
+        printf("CREATED BODY OF : %zu\n", cfl_sds_len(session->stream.request.body));
+
+        if (session->stream.request.body == NULL) {
+            session->stream.status = HTTP_STREAM_STATUS_ERROR;
+
+            return -1;
+        }
+    }
+
+    session->stream.status = HTTP_STREAM_STATUS_READY;
+
+    if (!cfl_list_entry_is_orphan(&session->stream.request._head)) {
+        cfl_list_del(&session->stream.request._head);
+    }
+
+    cfl_list_add(&session->stream.request._head, 
+                 &session->parent->request_queue);
+
+    return 0;
+}
+
 int http1_session_ingest(struct http1_session *session, 
                          unsigned char *buffer, 
                          size_t length)
 {
+    int result;
+
+    result = mk_http_parser(&session->inner_request, 
+                            &session->inner_parser, 
+                            session->parent->incoming_data, 
+                            cfl_sds_len(session->parent->incoming_data), 
+                            &session->inner_server);
+
+    if (result == MK_HTTP_PARSER_OK) {
+        result = http1_session_process_request(session);
+
+        if (result != 0) {
+            session->stream.status = HTTP_STREAM_STATUS_ERROR;
+
+            return HTTP_SERVER_PROVIDER_ERROR;
+        }
+
+        http1_evict_request(session);
+    }
 
     return HTTP_SERVER_SUCCESS;   
 }
@@ -1083,17 +1427,92 @@ int http_session_ingest(struct http_session *session,
                         unsigned char *buffer, 
                         size_t length)
 {
-    if (session->version == HTTP_PROTOCOL_HTTP2) {
+    cfl_sds_t resized_buffer;
+    int       result;
+
+    if (session->version == HTTP_PROTOCOL_AUTODETECT || 
+        session->version == HTTP_PROTOCOL_HTTP1) {
+        resized_buffer = cfl_sds_cat(session->incoming_data, 
+                                     (const char *) buffer, 
+                                     length);
+
+        if (resized_buffer == NULL) {
+            return HTTP_SERVER_ALLOCATION_ERROR;
+        }
+
+        session->incoming_data = resized_buffer;
+    }
+
+    if (session->version == HTTP_PROTOCOL_AUTODETECT) {
+        if (cfl_sds_len(session->incoming_data) >= 24) {
+            if (strncmp(session->incoming_data, 
+                        "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n", 
+                        24) == 0) {
+                session->version = HTTP_PROTOCOL_HTTP2;
+            }
+            else {
+                session->version = HTTP_PROTOCOL_HTTP1;
+            }
+        }
+        else if (cfl_sds_len(session->incoming_data) >= 4) {
+            if (strncmp(session->incoming_data, "PRI ", 4) != 0) {
+                session->version = HTTP_PROTOCOL_HTTP1;
+            }
+        }
+
+        if (session->version == HTTP_PROTOCOL_HTTP1) {
+            result = http1_session_init(&session->http1, session);
+
+            if (result != 0) {
+                return -1;
+            }
+        }
+        else if (session->version == HTTP_PROTOCOL_HTTP2) {
+            result = http2_session_init(&session->http2, session);
+
+            if (result != 0) {
+                return -1;
+            }
+        }
+    }
+
+    if (session->version == HTTP_PROTOCOL_HTTP1) {
+        return http1_session_ingest(&session->http1, 
+                                    buffer, 
+                                    length);
+    }
+    else if (session->version == HTTP_PROTOCOL_HTTP2) {
         return http2_session_ingest(&session->http2, 
                                     buffer, 
                                     length);
     }
 
-    return http1_session_ingest(&session->http1, 
-                                buffer, 
-                                length);
+    return -1;
 }
 
+static int http2_conn_ingest(struct http_conn *connection)
+{
+    unsigned char input_buffer[1024];
+    ssize_t result;
+
+    result = flb_io_net_read(connection->connection,
+                             (void *) &input_buffer,
+                             sizeof(input_buffer));
+
+    if (result <= 0) {
+        return -1;
+    }
+
+    result = (ssize_t) http_session_ingest(&connection->session_, 
+                                           input_buffer, 
+                                           result);
+
+    if (result < 0) {
+        return -1;
+    }
+
+    return 0;
+}
 
 static int http2_conn_event(void *data)
 {
@@ -1101,7 +1520,7 @@ static int http2_conn_event(void *data)
     struct http_conn *conn;
     struct mk_event *event;
     struct flb_http *ctx;
-    int rv;
+    int result;
 
     connection = (struct flb_connection *) data;
 
@@ -1112,29 +1531,13 @@ static int http2_conn_event(void *data)
     event = &connection->event;
 
     if (event->mask & MK_EVENT_READ) {
-        ssize_t bytes;
-        ssize_t available;
-        unsigned char buf_data[1024];
-        int rv;
+        result = http2_conn_ingest(conn);
 
-        available = sizeof(buf_data);
-
-/* IO */
-        bytes = flb_io_net_read(connection,
-                                (void *) &buf_data,
-                                available);
-
-        if (bytes <= 0) {
+        if (result == -1) {
             flb_plg_trace(ctx->ins, "fd=%i closed connection", event->fd);
+
             http2_conn_del(conn);
-            return -1;
-        }
 
-/* PROTOCOL PROCESSING */
-        // readlen = nghttp2_session_mem_recv(conn->session_.http2.inner_session, buf_data, bytes);
-        rv = http_session_ingest(&conn->session_, buf_data, bytes);
-
-        if (rv < 0) {
             return -1;
         }
     }
@@ -1143,15 +1546,14 @@ static int http2_conn_event(void *data)
         struct cfl_list     *backup_iterator;
         struct cfl_list     *iterator;
         struct http_request *request;
-        struct http2_stream *stream;
+        struct http_stream  *stream;
 
 /* REQUEST SERVICING */
         cfl_list_foreach_safe(iterator, 
                               backup_iterator, 
                               &conn->session_.request_queue) {
             request = cfl_list_entry(iterator, struct http_request, _head);
-            stream = (struct http2_stream *) request->stream;
-
+            stream = (struct http_stream *) request->stream;
 
             if (request->method == MK_METHOD_POST) {
                 {
@@ -1172,8 +1574,6 @@ static int http2_conn_event(void *data)
 
                 sample = http_request_get_header(request, "user-agent");
 
-                printf("HEADER FOUND? %p\n", sample);
-
                 if (sample != NULL) {
                     printf("HEADER VALUE = %s\n", sample);
                 }
@@ -1187,6 +1587,7 @@ static int http2_conn_event(void *data)
                 http_response_set_header(response, "test", 4, "value", 5);
                 http_response_set_header(response, "content-length", 14, "5", 1);
                 http_response_set_status(response, 200);
+                http_response_set_message(response, "TEST MESSAGE!");
                 http_response_set_body(response, "TEST!", 5);
                 http_response_commit(response);
             }
@@ -1196,26 +1597,53 @@ static int http2_conn_event(void *data)
     }
 
 /* IO */ 
-    {
-        size_t sent;
-        int    result;
-        size_t data_len;
+    result = http2_conn_flush_session(&conn->session_);
 
-        data_len = cfl_sds_len(conn->session_.outgoing_data);
+    if (result == -1) {
+        http2_conn_del(conn);
 
-        result = flb_io_net_write(connection,
-                                 (void *) conn->session_.outgoing_data,
-                                 data_len,
-                                 &sent);
+        return -1;
+    }
 
-        if (sent > 0) {
-            memmove(conn->session_.outgoing_data, 
-                    &conn->session_.outgoing_data[sent], 
-                    data_len - sent);
+    return 0;
+}
 
-            cfl_sds_set_len(conn->session_.outgoing_data, 
-                            data_len - sent);
+int http2_conn_flush_session(struct http_session *session) 
+{
+    size_t data_length;
+    size_t data_sent;
+    int    result;
 
+    if (session == NULL) {
+        return -1;
+    }
+
+    if (session->outgoing_data == NULL) {
+        return 0;
+    }
+
+    data_length = cfl_sds_len(session->outgoing_data);
+
+    if (data_length > 0) {
+        result = flb_io_net_write(session->connection,
+                                  (void *) session->outgoing_data,
+                                  data_length,
+                                  &data_sent);
+
+        if (result == -1) {
+            return -1;
+        }
+
+        if (data_sent < data_length) {
+            memmove(session->outgoing_data, 
+                    &session->outgoing_data[data_sent], 
+                    data_length - data_sent);
+
+            cfl_sds_set_len(session->outgoing_data, 
+                            data_length - data_sent);
+        }
+        else {
+            cfl_sds_set_len(session->outgoing_data, 0);
         }
     }
 
@@ -1229,8 +1657,10 @@ struct http_conn *http2_conn_add(struct flb_connection *connection,
     int               ret;
 
     conn = flb_calloc(1, sizeof(struct http_conn));
-    if (!conn) {
+
+    if (conn == NULL) {
         flb_errno();
+
         return NULL;
     }
 
@@ -1257,15 +1687,15 @@ struct http_conn *http2_conn_add(struct flb_connection *connection,
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not register new connection");
 
-        flb_free(conn);
+        http2_conn_del(conn);
 
         return NULL;
     }
 
-    ret = http_session_init(&conn->session_, 2);
+    ret = http_session_init(&conn->session_, 0);
 
     if (ret != 0) {
-        http_session_destroy(&conn->session_);
+        http2_conn_del(conn);
 
         return NULL;
     }
@@ -1275,30 +1705,13 @@ struct http_conn *http2_conn_add(struct flb_connection *connection,
     /* Link connection node to parent context list */
     mk_list_add(&conn->_head, &ctx->connections);
 
-    if (cfl_sds_len(conn->session_.outgoing_data) > 0) {
-        size_t sent;
-        int    result;
-        size_t data_len;
+    ret = http2_conn_flush_session(&conn->session_);
 
-        data_len = cfl_sds_len(conn->session_.outgoing_data);
+    if (ret == -1) {
+        http2_conn_del(conn);
 
-        result = flb_io_net_write(connection,
-                                 (void *) conn->session_.outgoing_data,
-                                 data_len,
-                                 &sent);
-
-        if (sent > 0) {
-            memmove(conn->session_.outgoing_data, 
-                    &conn->session_.outgoing_data[sent], 
-                    data_len - sent);
-
-            cfl_sds_set_len(conn->session_.outgoing_data, 
-                            data_len - sent);
-
-        }
+        return NULL;
     }
-
-
 
     return conn;
 }
@@ -1308,9 +1721,12 @@ int http2_conn_del(struct http_conn *conn)
     /* The downstream unregisters the file descriptor from the event-loop
      * so there's nothing to be done by the plugin
      */
+
     flb_downstream_conn_release(conn->connection);
 
-    mk_list_del(&conn->_head);
+    if (!cfl_list_entry_is_orphan(&conn->_head)) {
+        mk_list_del(&conn->_head);
+    }
 
     http_session_destroy(&conn->session_);
 
