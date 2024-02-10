@@ -479,11 +479,17 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
          * property to revert this behavior if some user is affected by
          * this change.
          */
-
-        if (len == 0 && ctx->skip_empty_lines) {
-            data++;
-            processed_bytes++;
-            continue;
+        if (ctx->skip_empty_lines) {
+            if (len == 0) { /* LF */
+                data++;
+                processed_bytes++;
+                continue;
+            }
+            else if (len == 1 && data[0] == '\r')  { /* CR LF */
+                data += 2;
+                processed_bytes += 2;
+                continue;
+            }
         }
 
         /* Process '\r\n' */
