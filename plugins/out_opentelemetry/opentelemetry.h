@@ -59,6 +59,18 @@ struct opentelemetry_context {
     char *host;
     int port;
 
+    /* metadata keys */
+    flb_sds_t logs_observed_timestamp_metadata_key;
+    flb_sds_t logs_timestamp_metadata_key;
+    flb_sds_t logs_severity_text_metadata_key;
+    flb_sds_t logs_severity_number_metadata_key;
+    flb_sds_t logs_trace_flags_metadata_key;
+    flb_sds_t logs_span_id_metadata_key;
+    flb_sds_t logs_trace_id_metadata_key;
+    flb_sds_t logs_attributes_metadata_key;
+    flb_sds_t logs_instrumentation_scope_metadata_key;
+    flb_sds_t logs_resource_metadata_key;
+
     /* Number of logs to flush at a time */
     int batch_size;
 

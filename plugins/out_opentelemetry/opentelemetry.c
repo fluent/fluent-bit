@@ -355,6 +355,15 @@ static void clear_array(Opentelemetry__Proto__Logs__V1__LogRecord **logs,
 
             logs[index]->attributes = NULL;
         }
+        if (logs[index]->severity_text != NULL) {
+            flb_free(logs[index]->severity_text);
+        }
+        if (logs[index]->span_id.data != NULL) {
+            flb_free(logs[index]->span_id.data);
+        }
+        if (logs[index]->trace_id.data != NULL) {
+            flb_free(logs[index]->trace_id.data);
+        }
     }
 }
 
@@ -934,6 +943,147 @@ static int flush_to_otel(struct opentelemetry_context *ctx,
     return ret;
 }
 
+static msgpack_object *get_msgpack_object_from_map(msgpack_object *obj, flb_sds_t key)
+{
+    msgpack_object *ret = NULL;
+    msgpack_object key_obj;
+    int i;
+
+    if (obj == NULL || obj->type != MSGPACK_OBJECT_MAP|| flb_sds_len(key) == 0) {
+        return NULL;
+    }
+    for (i=0; i< obj->via.map.size; i++) {
+        key_obj = obj->via.map.ptr[i].key;
+        if (key_obj.type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
+        if (flb_sds_len(key) != key_obj.via.str.size) {
+            continue;
+        }
+        if (memcmp(key_obj.via.str.ptr, key, flb_sds_len(key)) == 0) {
+            ret = &obj->via.map.ptr[i].val;
+            break;
+        }
+    }
+    return ret;
+}
+
+/* https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-severitynumber */
+static int is_valid_severity_text(const char *str, size_t str_len)
+{
+    if (str_len == 5) {
+        if (strncmp("TRACE", str, 5) == 0 ||
+            strncmp("DEBUG", str, 5) == 0 ||
+            strncmp("ERROR", str, 5) == 0 ||
+            strncmp("FATAL", str, 5) == 0) {
+            return FLB_TRUE;
+        }
+    }
+    else if (str_len == 4) {
+        if (strncmp("INFO", str, 4) == 0||
+            strncmp("WARN", str, 4) == 0) {
+            return FLB_TRUE;
+        }
+    }
+    return FLB_FALSE;
+}
+/* https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-severitynumber */
+static int is_valid_severity_number(uint64_t val)
+{
+    if (val >= 1 && val <= 24) {
+        return FLB_TRUE;
+    }
+    return FLB_FALSE;
+}
+
+static int append_v1_logs_metadata(struct opentelemetry_context *ctx,
+                                   struct flb_log_event *event,
+                                   Opentelemetry__Proto__Logs__V1__LogRecord  *log_record)
+{
+    msgpack_object *obj = NULL;
+
+    if (ctx == NULL || event == NULL || log_record == NULL) {
+        return -1;
+    }
+    /* ObservedTimestamp */
+    obj = get_msgpack_object_from_map(event->metadata,
+                                      ctx->logs_observed_timestamp_metadata_key);
+    if (obj != NULL && obj->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+        log_record->observed_time_unix_nano = obj->via.u64;
+    }
+
+    /* Timestamp */
+    obj = get_msgpack_object_from_map(event->metadata,
+                                      ctx->logs_timestamp_metadata_key);
+    if (obj != NULL && obj->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+        log_record->time_unix_nano = obj->via.u64;
+    }
+    else {
+        log_record->time_unix_nano = flb_time_to_nanosec(&event->timestamp);
+    }
+
+    /* SeverityText */
+    obj = get_msgpack_object_from_map(event->metadata,
+                                      ctx->logs_severity_text_metadata_key);
+    if (obj != NULL && obj->type == MSGPACK_OBJECT_STR &&
+        is_valid_severity_text(obj->via.str.ptr, obj->via.str.size) == FLB_TRUE) {
+        log_record->severity_text = flb_calloc(1, obj->via.str.size+1);
+        if (log_record->severity_text) {
+            strncpy(log_record->severity_text, obj->via.str.ptr, obj->via.str.size);
+        }
+    }
+    else {
+        /* To prevent invalid free */
+        log_record->severity_text = NULL;
+    }
+
+    /* SeverityNumber */
+    obj = get_msgpack_object_from_map(event->metadata,
+                                      ctx->logs_severity_number_metadata_key);
+    if (obj != NULL && obj->type == MSGPACK_OBJECT_POSITIVE_INTEGER &&
+        is_valid_severity_number(obj->via.u64) == FLB_TRUE) {
+        log_record->severity_number = obj->via.u64;
+    }
+
+    /* TraceFlags */
+    obj = get_msgpack_object_from_map(event->metadata,
+                                      ctx->logs_trace_flags_metadata_key);
+    if (obj != NULL && obj->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+        log_record->flags = (uint32_t)obj->via.u64;
+    }
+
+    /* SpanId */
+    obj = get_msgpack_object_from_map(event->metadata,
+                                      ctx->logs_span_id_metadata_key);
+    if (obj != NULL && obj->type == MSGPACK_OBJECT_BIN) {
+        log_record->span_id.data = flb_calloc(1, obj->via.bin.size);
+        if (log_record->span_id.data) {
+            memcpy(log_record->span_id.data, obj->via.bin.ptr, obj->via.bin.size);
+            log_record->span_id.len = obj->via.bin.size;
+        }
+    }
+
+    /* TraceId */
+    obj = get_msgpack_object_from_map(event->metadata,
+                                      ctx->logs_trace_id_metadata_key);
+    if (obj != NULL && obj->type == MSGPACK_OBJECT_BIN) {
+        log_record->trace_id.data = flb_calloc(1, obj->via.bin.size);
+        if (log_record->trace_id.data) {
+            memcpy(log_record->trace_id.data, obj->via.bin.ptr, obj->via.bin.size);
+            log_record->trace_id.len = obj->via.bin.size;
+        }
+    }
+
+    /* Attributes */
+    obj = get_msgpack_object_from_map(event->metadata,
+                                      ctx->logs_attributes_metadata_key);
+    if (obj != NULL && obj->type == MSGPACK_OBJECT_MAP) {
+        log_record->attributes = msgpack_map_to_otlp_kvarray(obj, &log_record->n_attributes);
+    }
+
+    return 0;
+}
+
 static int process_logs(struct flb_event_chunk *event_chunk,
                         struct flb_output_flush *out_flush,
                         struct flb_input_instance *ins, void *out_context,
@@ -986,6 +1136,7 @@ static int process_logs(struct flb_event_chunk *event_chunk,
     while (flb_log_event_decoder_next(decoder, &event) == FLB_EVENT_DECODER_SUCCESS) {
         ra_match = NULL;
         opentelemetry__proto__logs__v1__log_record__init(&log_records[log_record_count]);
+        append_v1_logs_metadata(ctx, &event, &log_records[log_record_count]);
 
         /*
          * Set the record body by using the logic defined in the configuration by
@@ -1012,7 +1163,6 @@ static int process_logs(struct flb_event_chunk *event_chunk,
 
         ret = FLB_OK;
 
-        /* set timestamp */
         log_records[log_record_count].time_unix_nano = flb_time_to_nanosec(&event.timestamp);
         log_record_count++;
 
@@ -1314,7 +1464,6 @@ static struct flb_config_map config_map[] = {
      0, FLB_FALSE, 0,
      "Set payload compression mechanism. Option available is 'gzip'"
     },
-
     /*
      * Logs Properties
      * ---------------
@@ -1348,6 +1497,57 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct opentelemetry_context, log_response_payload),
      "Specify if the response paylod should be logged or not"
     },
+    {
+     FLB_CONFIG_MAP_STR, "logs_observed_timestamp_metadata_key", "ObservedTimestamp",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_observed_timestamp_metadata_key),
+     "Specify an ObservedTimestamp key"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "logs_timestamp_metadata_key", "Timestamp",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_timestamp_metadata_key),
+     "Specify an Timestamp key"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "logs_severity_text_metadata_key", "SeverityText",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_severity_text_metadata_key),
+     "Specify an SeverityText key"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "logs_severity_number_metadata_key", "SeverityNumber",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_severity_number_metadata_key),
+     "Specify an SeverityNumber key"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "logs_trace_flags_metadata_key", "TraceFlags",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_trace_flags_metadata_key),
+     "Specify an TraceFlags key"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "logs_span_id_metadata_key", "SpanId",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_span_id_metadata_key),
+     "Specify an SpanId key"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "logs_trace_id_metadata_key", "TraceId",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_trace_id_metadata_key),
+     "Specify an TraceId key"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "logs_attributes_metadata_key", "Attributes",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_attributes_metadata_key),
+     "Specify an Attributes key"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "logs_instrumentation_scope_metadata_key", "InstrumentationScope",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_instrumentation_scope_metadata_key),
+     "Specify an InstrumentationScope key"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "logs_resource_metadata_key", "Resource",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_resource_metadata_key),
+     "Specify an Resource key"
+    },
+
     /* EOF */
     {0}
 };
