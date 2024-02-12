@@ -135,7 +135,6 @@ flb_sds_t execute_ingest_csl_command(struct flb_azure_kusto *ctx, const char *cs
     flb_plg_debug(ctx->ins, "load_time: %lu", ctx->resources->load_time);
 
     ctx->u->base.net.connect_timeout = ctx->ingestion_endpoint_connect_timeout ;
-    ctx->u->base.net.keepalive_max_recycle = ctx->keep_alive_max_connection_recycle;
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
@@ -164,6 +163,9 @@ flb_sds_t execute_ingest_csl_command(struct flb_azure_kusto *ctx, const char *cs
                     flb_http_add_header(c, "Accept", 6, "application/json", 16);
                     flb_http_add_header(c, "Authorization", 13, token,
                                         flb_sds_len(token));
+                    flb_http_add_header(c, "x-ms-client-version", 19, "Kusto.Fluent-Bit:1.0.0", 22);
+                    flb_http_add_header(c, "x-ms-app", 8, "Kusto.Fluent-Bit", 16);
+                    flb_http_add_header(c, "x-ms-user", 9, "Kusto.Fluent-Bit", 16);
                     flb_http_buffer_size(c, FLB_HTTP_DATA_SIZE_MAX * 10);
 
                     /* Send HTTP request */
@@ -489,9 +491,6 @@ static struct flb_config_map config_map[] = {
     {FLB_CONFIG_MAP_TIME, "ingestion_endpoint_connect_timeout", FLB_AZURE_KUSTO_INGEST_ENDPOINT_CONNECTION_TIMEOUT, 0, FLB_TRUE,
 	         offsetof(struct flb_azure_kusto, ingestion_endpoint_connect_timeout),
 		              "Set the ingestion endpoint connection timeout in seconds"},
-    {FLB_CONFIG_MAP_INT, "keep_alive_max_connection_recycle", FLB_AZURE_KUSTO_KEEP_ALIVE_MAX_RECYCLE, 0, FLB_TRUE,
-	                offsetof(struct flb_azure_kusto, keep_alive_max_connection_recycle),
-			"Set the max connection recycle value of keep alive connections"},
     /* EOF */
     {0}};
 

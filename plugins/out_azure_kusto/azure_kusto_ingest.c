@@ -152,7 +152,6 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
 
     flb_plg_debug(ctx->ins,"inside blob after upstream ha node get");
     u_node->u->base.net.connect_timeout = ctx->ingestion_endpoint_connect_timeout;
-    u_node->u->base.net.keepalive_max_recycle = ctx->keep_alive_max_connection_recycle;
 
     u_conn = flb_upstream_conn_get(u_node->u);
 
@@ -181,6 +180,10 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
                 flb_http_add_header(c, "x-ms-blob-type", 14, "BlockBlob", 9);
                 flb_http_add_header(c, "x-ms-date", 9, tmp, len);
                 flb_http_add_header(c, "x-ms-version", 12, "2019-12-12", 10);
+                flb_http_add_header(c, "x-ms-client-version", 19, "Kusto.Fluent-Bit:1.0.0", 22);
+                flb_http_add_header(c, "x-ms-app", 8, "Kusto.Fluent-Bit", 16);
+                flb_http_add_header(c, "x-ms-user", 9, "Kusto.Fluent-Bit", 16);
+
 
                 ret = flb_http_do(c, &resp_size);
                 flb_plg_debug(ctx->ins,
@@ -386,7 +389,6 @@ static int azure_kusto_enqueue_ingestion(struct flb_azure_kusto *ctx, flb_sds_t 
     }
     
     u_node->u->base.net.connect_timeout = ctx->ingestion_endpoint_connect_timeout;
-    u_node->u->base.net.keepalive_max_recycle = ctx->keep_alive_max_connection_recycle;
 
     u_conn = flb_upstream_conn_get(u_node->u);
 
@@ -415,6 +417,9 @@ static int azure_kusto_enqueue_ingestion(struct flb_azure_kusto *ctx, flb_sds_t 
                                         20);
                     flb_http_add_header(c, "x-ms-date", 9, tmp, len);
                     flb_http_add_header(c, "x-ms-version", 12, "2019-12-12", 10);
+                    flb_http_add_header(c, "x-ms-client-version", 19, "Kusto.Fluent-Bit:1.0.0", 22);
+                    flb_http_add_header(c, "x-ms-app", 8, "Kusto.Fluent-Bit", 16);
+                    flb_http_add_header(c, "x-ms-user", 9, "Kusto.Fluent-Bit", 16);
 
                     ret = flb_http_do(c, &resp_size);
                     flb_plg_debug(ctx->ins,

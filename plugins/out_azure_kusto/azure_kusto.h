@@ -49,10 +49,9 @@
 #define AZURE_KUSTO_RESOURCE_UPSTREAM_URI "uri"
 #define AZURE_KUSTO_RESOURCE_UPSTREAM_SAS "sas"
 
-#define FLB_AZURE_KUSTO_RESOURCES_LOAD_INTERVAL_SEC 3600
+#define FLB_AZURE_KUSTO_RESOURCES_LOAD_INTERVAL_SEC 7200
 
 #define FLB_AZURE_KUSTO_INGEST_ENDPOINT_CONNECTION_TIMEOUT "60"
-#define FLB_AZURE_KUSTO_KEEP_ALIVE_MAX_RECYCLE "20"
 
 
 struct flb_azure_kusto_resources {
@@ -75,7 +74,6 @@ struct flb_azure_kusto {
     flb_sds_t ingestion_mapping_reference;
 
     int ingestion_endpoint_connect_timeout;
-    int keep_alive_max_connection_recycle;
 
     /* records configuration */
     flb_sds_t log_key;

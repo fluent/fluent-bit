@@ -160,8 +160,8 @@ static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_confi
 {
     jsmn_parser parser;
     jsmntok_t *t;
-    jsmntok_t *tokens;
-    int tok_size = 100;
+    jsmntok_t *tokens = NULL;
+    //int tok_size = 100;
     int ret = -1;
     int i;
     int blob_count = 0;
@@ -199,10 +199,14 @@ static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_confi
     }
 
     jsmn_init(&parser);
-    tokens = flb_calloc(1, sizeof(jsmntok_t) * tok_size);
+
+    //tokens = flb_calloc(1, sizeof(jsmntok_t) * tok_size);
+
+    // Dynamically allocate memory for tokens based on response length
+    tokens = flb_calloc(1, sizeof(jsmntok_t) * (flb_sds_len(response)));
 
     if (tokens) {
-        ret = jsmn_parse(&parser, response, flb_sds_len(response), tokens, tok_size);
+        ret = jsmn_parse(&parser, response, flb_sds_len(response), tokens, flb_sds_len(response));
 
         if (ret > 0) {
             /* skip all tokens until we reach "Rows" */
