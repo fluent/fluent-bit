@@ -231,6 +231,7 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
      */
     pthread_mutex_init(&ctx->token_mutex, NULL);
     pthread_mutex_init(&ctx->resources_mutex, NULL);
+    pthread_mutex_init(&ctx->blob_mutex, NULL);
 
     /*
      * Create upstream context for Kusto Ingestion endpoint
@@ -416,6 +417,10 @@ static int cb_azure_kusto_exit(void *data, struct flb_config *config)
         flb_upstream_destroy(ctx->u);
         ctx->u = NULL;
     }
+
+    pthread_mutex_destroy(&ctx->resources_mutex);
+    pthread_mutex_destroy(&ctx->token_mutex);
+    pthread_mutex_destroy(&ctx->blob_mutex);
 
     flb_azure_kusto_conf_destroy(ctx);
 

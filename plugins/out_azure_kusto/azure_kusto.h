@@ -94,6 +94,9 @@ struct flb_azure_kusto {
     /* mutex for loading reosurces */
     pthread_mutex_t resources_mutex;
 
+    /* mutex for kusto blob operations */
+    pthread_mutex_t blob_mutex;
+
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
 
