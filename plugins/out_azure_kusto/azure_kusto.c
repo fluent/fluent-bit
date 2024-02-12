@@ -474,7 +474,7 @@ static struct flb_config_map config_map[] = {
      "This property is ignored"},
     {FLB_CONFIG_MAP_TIME, "kusto_endpoint_connect_timeout", FLB_AZURE_KUSTO_ENDPOINT_CONNECTION_TIMEOUT, 0, FLB_TRUE,
      offsetof(struct flb_azure_kusto, kusto_endpoint_connect_timeout),
-             "Set the ingestion endpoint connection timeout in seconds"},
+             "Set the connection timeout of various kusto endpoints (kusto ingest endpoint, kusto ingestion blob endpoint, kusto ingestion blob endpoint) in seconds"},
     /* EOF */
     {0}};
 
