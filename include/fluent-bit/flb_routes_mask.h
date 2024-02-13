@@ -26,6 +26,7 @@
 #define FLB_ROUTES_MASK_H
 
 #include <limits.h>
+#include <fluent-bit/flb_config.h>
 
 /*
  * The routing mask is an array integers used to store a bitfield. Each
@@ -55,7 +56,7 @@
 /* forward declaration */
 struct flb_input_instance;
 
-
+void flb_routes_mask_init(struct flb_config *config);
 int flb_routes_mask_set_by_tag(uint64_t *routes_mask, const char *tag, int tag_len, struct flb_input_instance *in);
 int flb_routes_mask_get_bit(uint64_t *routes_mask, int value);
 void flb_routes_mask_set_bit(uint64_t *routes_mask, int value);
