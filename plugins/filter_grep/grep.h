@@ -42,6 +42,7 @@ enum _logical_op{
 
 struct grep_ctx {
     struct mk_list rules;
+    struct mk_list metrics_rules;
     int logical_op;
     struct flb_filter_instance *ins;
 };
@@ -52,6 +53,13 @@ struct grep_rule {
     char *regex_pattern;
     struct flb_regex *regex;
     struct flb_record_accessor *ra;
+    struct mk_list _head;
+};
+
+struct grep_metrics_rule {
+    int type;
+    char *regex_pattern;
+    struct flb_regex *regex;
     struct mk_list _head;
 };
 

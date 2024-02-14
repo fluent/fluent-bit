@@ -32,6 +32,7 @@
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_metrics.h>
 #include <msgpack.h>
 
 #include "grep.h"
@@ -41,6 +42,7 @@ static void delete_rules(struct grep_ctx *ctx)
     struct mk_list *tmp;
     struct mk_list *head;
     struct grep_rule *rule;
+    struct grep_metrics_rule *metrics_rule;
 
     mk_list_foreach_safe(head, tmp, &ctx->rules) {
         rule = mk_list_entry(head, struct grep_rule, _head);
@@ -50,6 +52,14 @@ static void delete_rules(struct grep_ctx *ctx)
         flb_regex_destroy(rule->regex);
         mk_list_del(&rule->_head);
         flb_free(rule);
+    }
+
+    mk_list_foreach_safe(head, tmp, &ctx->metrics_rules) {
+        metrics_rule = mk_list_entry(head, struct grep_metrics_rule, _head);
+        flb_free(metrics_rule->regex_pattern);
+        flb_regex_destroy(metrics_rule->regex);
+        mk_list_del(&metrics_rule->_head);
+        flb_free(metrics_rule);
     }
 }
 
@@ -62,8 +72,9 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
     struct flb_split_entry *sentry;
     struct flb_kv *kv;
     struct grep_rule *rule;
+    struct grep_metrics_rule *metrics_rule;
 
-    /* Iterate all filter properties */
+    /* Iterate all filter properties for regex and exclude */
     mk_list_foreach(head, &f_ins->properties) {
         kv = mk_list_entry(head, struct flb_kv, _head);
 
@@ -75,10 +86,10 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
         }
 
         /* Get the type */
-        if (strcasecmp(kv->key, "regex") == 0) {
+        if (strncasecmp(kv->key, "regex", 5) == 0) {
             rule->type = GREP_REGEX;
         }
-        else if (strcasecmp(kv->key, "exclude") == 0) {
+        else if (strncasecmp(kv->key, "exclude", 7) == 0) {
             rule->type = GREP_EXCLUDE;
         }
         else {
@@ -160,6 +171,64 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
         mk_list_add(&rule->_head, &ctx->rules);
     }
 
+    /* Iterate all filter properties for metrics.regex and metrics.exclude */
+    mk_list_foreach(head, &f_ins->properties) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+
+        /* Create a new rule */
+        metrics_rule = flb_malloc(sizeof(struct grep_metrics_rule));
+        if (!metrics_rule) {
+            flb_errno();
+            return -1;
+        }
+
+        /* Get the type */
+        if (strncasecmp(kv->key, "metrics.regex", 13) == 0) {
+            metrics_rule->type = GREP_REGEX;
+        }
+        else if (strncasecmp(kv->key, "metrics.exclude", 15) == 0) {
+            metrics_rule->type = GREP_EXCLUDE;
+        }
+        else {
+            /* Other property. Skip */
+            flb_free(metrics_rule);
+            continue;
+        }
+
+        if (ctx->logical_op != GREP_LOGICAL_OP_LEGACY && first_rule != GREP_NO_RULE) {
+            /* 'AND'/'OR' case */
+            if (first_rule != metrics_rule->type) {
+                flb_plg_error(ctx->ins, "Both 'regex' and 'exclude' are set.");
+                delete_rules(ctx);
+                flb_free(metrics_rule);
+                return -1;
+            }
+        }
+        first_rule = metrics_rule->type;
+
+        /* Get name (regular expression) */
+        metrics_rule->regex_pattern = flb_strndup(kv->val, strlen(kv->val));
+        if (metrics_rule->regex_pattern == NULL) {
+            flb_errno();
+            delete_rules(ctx);
+            flb_free(metrics_rule);
+            return -1;
+        }
+
+        /* Convert string to regex pattern for metrics */
+        metrics_rule->regex = flb_regex_create(metrics_rule->regex_pattern);
+        if (!metrics_rule->regex) {
+            flb_plg_error(ctx->ins, "could not compile regex pattern '%s'",
+                          metrics_rule->regex_pattern);
+            delete_rules(ctx);
+            flb_free(metrics_rule);
+            return -1;
+        }
+
+        /* Link to parent list */
+        mk_list_add(&metrics_rule->_head, &ctx->metrics_rules);
+    }
+
     return 0;
 }
 
@@ -215,6 +284,7 @@ static int cb_grep_init(struct flb_filter_instance *f_ins,
         return -1;
     }
     mk_list_init(&ctx->rules);
+    mk_list_init(&ctx->metrics_rules);
     ctx->ins = f_ins;
 
     ctx->logical_op = GREP_LOGICAL_OP_LEGACY;
@@ -391,6 +461,317 @@ static int process_log(const void *data, size_t bytes,
     return ret;
 }
 
+#ifdef FLB_HAVE_METRICS
+static int cmt_regex_match(void *ctx, const char *str, size_t slen)
+{
+    int ret;
+    struct flb_regex *r = (struct flb_regex *)ctx;
+    unsigned char *s = (unsigned char*)str;
+    ret = flb_regex_match(r, s, slen);
+
+    if (ret == 1) {
+        ret = CMT_TRUE;
+    }
+    else {
+        ret = CMT_FALSE;
+    }
+
+    return ret;
+}
+
+static int cmt_regex_exclude(void *ctx, const char *str, size_t slen)
+{
+    int ret;
+    struct flb_regex *r = (struct flb_regex *)ctx;
+    unsigned char *s = (unsigned char*)str;
+    ret = flb_regex_match(r, s, slen);
+
+    if (ret == 1) {
+        ret = CMT_FALSE;
+    }
+    else {
+        ret = CMT_TRUE;
+    }
+
+    return ret;
+}
+
+/* Given a msgpack metrics, do some filter action based on the defined rules */
+static inline int grep_filter_metrics(struct cmt *cmt, struct cmt *out_cmt, struct grep_ctx *ctx)
+{
+    ssize_t ret;
+    int found = FLB_FALSE;
+    struct mk_list *head;
+    struct grep_metrics_rule *metrics_rule;
+    struct cmt *tmp = NULL;
+    struct cmt *swap = NULL;
+    struct cmt *filtered = NULL;
+    size_t rule_size;
+    int count = 1;
+    rule_size = mk_list_size(&ctx->metrics_rules);
+
+    /* For each rule, validate against cmt context */
+    mk_list_foreach(head, &ctx->metrics_rules) {
+        metrics_rule = mk_list_entry(head, struct grep_metrics_rule, _head);
+        if (tmp == NULL) {
+            tmp = cmt_create();
+            if (tmp == NULL) {
+                flb_plg_error(ctx->ins, "could not create tmp context");
+                return FLB_FILTER_NOTOUCH;
+            }
+            cmt_cat(tmp, cmt);
+        }
+        filtered = cmt_create();
+        if (filtered == NULL) {
+            flb_plg_error(ctx->ins, "could not create filtered context");
+            return FLB_FILTER_NOTOUCH;
+        }
+
+        if (metrics_rule->type == GREP_REGEX) {
+            ret = cmt_filter(filtered, tmp, NULL, NULL, metrics_rule->regex, cmt_regex_match, 0);
+        }
+        else if (metrics_rule->type == GREP_EXCLUDE){
+            ret = cmt_filter(filtered, tmp, NULL, NULL, metrics_rule->regex, cmt_regex_exclude, 0);
+        }
+
+        if (ret == 0) {
+            found = FLB_TRUE;
+        }
+        else if (ret != 0) {
+            flb_plg_debug(ctx->ins, "not matched for rule = \"%s\"", metrics_rule->regex_pattern);
+        }
+
+        if (count >= rule_size) {
+            if (swap != NULL) {
+                cmt_destroy(swap);
+            }
+            cmt_cat(out_cmt, filtered);
+            cmt_destroy(filtered);
+
+            goto grep_filter_metrics;
+        }
+
+        if (filtered != NULL && tmp != NULL) {
+            if (swap != NULL) {
+                cmt_destroy(swap);
+            }
+            swap = cmt_create();
+            if (swap == NULL) {
+                flb_plg_error(ctx->ins, "could not create swap context");
+                return FLB_FILTER_NOTOUCH;
+            }
+            cmt_cat(swap, filtered);
+            cmt_destroy(tmp);
+            cmt_destroy(filtered);
+            tmp = NULL;
+            tmp = swap;
+        }
+        count++;
+    }
+
+ grep_filter_metrics:
+
+    if (metrics_rule->type == GREP_REGEX) {
+        return found ? GREP_RET_KEEP : GREP_RET_EXCLUDE;
+    }
+
+    /* rule is exclude */
+    return found ? GREP_RET_EXCLUDE : GREP_RET_KEEP;
+}
+
+static inline int grep_filter_metrics_and_or(struct cmt *cmt, struct cmt *out_cmt, struct grep_ctx *ctx)
+{
+    ssize_t ret;
+    int found = FLB_FALSE;
+    struct mk_list *head;
+    struct grep_metrics_rule *metrics_rule;
+    struct cmt *tmp = NULL;
+    struct cmt *swap = NULL;
+    struct cmt *filtered = NULL;
+    size_t rule_size;
+    int count = 1;
+
+    rule_size = mk_list_size(&ctx->metrics_rules);
+
+    if (ctx->logical_op == GREP_LOGICAL_OP_OR) {
+        /* For each rule, validate against cmt context */
+        mk_list_foreach(head, &ctx->metrics_rules) {
+            found = FLB_FALSE;
+            metrics_rule = mk_list_entry(head, struct grep_metrics_rule, _head);
+
+            tmp = cmt_create();
+            if (tmp == NULL) {
+                flb_plg_error(ctx->ins, "could not create tmp context");
+                return FLB_FILTER_NOTOUCH;
+            }
+            cmt_cat(tmp, cmt);
+            filtered = cmt_create();
+            if (filtered == NULL) {
+                flb_plg_error(ctx->ins, "could not create filtered context");
+                return FLB_FILTER_NOTOUCH;
+            }
+
+            if (metrics_rule->type == GREP_REGEX) {
+                ret = cmt_filter(filtered, tmp, NULL, NULL, metrics_rule->regex, cmt_regex_match, 0);
+            }
+            else if (metrics_rule->type == GREP_EXCLUDE){
+                ret = cmt_filter(filtered, tmp, NULL, NULL, metrics_rule->regex, cmt_regex_exclude, 0);
+            }
+            if (ret == 0) {
+                found = FLB_TRUE;
+            }
+
+            if (found == FLB_TRUE) {
+                cmt_cat(out_cmt, filtered);
+            }
+            cmt_destroy(tmp);
+            cmt_destroy(filtered);
+        }
+    }
+    else if (ctx->logical_op == GREP_LOGICAL_OP_AND) {
+        /* For each rule, validate against cmt context */
+        mk_list_foreach(head, &ctx->metrics_rules) {
+            found = FLB_FALSE;
+            metrics_rule = mk_list_entry(head, struct grep_metrics_rule, _head);
+            if (tmp == NULL) {
+                tmp = cmt_create();
+                if (tmp == NULL) {
+                    flb_plg_error(ctx->ins, "could not create tmp context");
+                    return FLB_FILTER_NOTOUCH;
+                }
+                cmt_cat(tmp, cmt);
+            }
+            filtered = cmt_create();
+            if (filtered == NULL) {
+                flb_plg_error(ctx->ins, "could not create filtered context");
+                return FLB_FILTER_NOTOUCH;
+            }
+
+            if (metrics_rule->type == GREP_REGEX) {
+                ret = cmt_filter(filtered, tmp, NULL, NULL, metrics_rule->regex, cmt_regex_match, 0);
+            }
+            else if (metrics_rule->type == GREP_EXCLUDE){
+                ret = cmt_filter(filtered, tmp, NULL, NULL, metrics_rule->regex, cmt_regex_exclude, 0);
+            }
+
+            if (ret == 0) {
+                found = FLB_TRUE;
+            }
+            else if (ret != 0) {
+                flb_plg_debug(ctx->ins, "not matched for rule = \"%s\"", metrics_rule->regex_pattern);
+            }
+
+            if (count >= rule_size) {
+                if (swap != NULL) {
+                    cmt_destroy(swap);
+                }
+                cmt_cat(out_cmt, filtered);
+                cmt_destroy(filtered);
+
+                goto grep_filter_metrics_and_or_end;
+            }
+
+            if (filtered != NULL && tmp != NULL) {
+                if (swap != NULL) {
+                    cmt_destroy(swap);
+                }
+                swap = cmt_create();
+                if (swap == NULL) {
+                    flb_plg_error(ctx->ins, "could not create swap context");
+                    return FLB_FILTER_NOTOUCH;
+                }
+                cmt_cat(swap, filtered);
+                cmt_destroy(tmp);
+                cmt_destroy(filtered);
+                tmp = NULL;
+                tmp = swap;
+            }
+            count++;
+        }
+    }
+
+grep_filter_metrics_and_or_end:
+
+    if (metrics_rule->type == GREP_REGEX) {
+        return found ? GREP_RET_KEEP : GREP_RET_EXCLUDE;
+    }
+
+    /* rule is exclude */
+    return found ? GREP_RET_EXCLUDE : GREP_RET_KEEP;
+}
+
+static int process_metrics(const void *data, size_t bytes,
+                           const char *tag, int tag_len,
+                           void **out_buf, size_t *out_size,
+                           struct flb_filter_instance *f_ins,
+                           struct flb_input_instance *i_ins,
+                           void *context,
+                           struct flb_config *config)
+{
+    int ret;
+    struct grep_ctx *ctx;
+
+    (void) f_ins;
+    (void) i_ins;
+    (void) config;
+
+    size_t off = 0;
+    struct cmt *cmt = NULL;
+    struct cmt *out_cmt = NULL;
+    char *mt_buf;
+    size_t mt_size;
+
+    ctx = (struct grep_ctx *) context;
+
+    out_cmt = cmt_create();
+    if (out_cmt == NULL) {
+        flb_plg_error(f_ins, "could not create out_cmt context");
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    /* get cmetrics context */
+    ret = cmt_decode_msgpack_create(&cmt, (char *) data, bytes, &off);
+    if (ret != 0) {
+        flb_plg_error(f_ins, "could not process metrics payload");
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    if (ctx->logical_op == GREP_LOGICAL_OP_LEGACY) {
+        ret = grep_filter_metrics(cmt, out_cmt, ctx);
+    }
+    else {
+        ret = grep_filter_metrics_and_or(cmt, out_cmt, ctx);
+    }
+
+    if (ret == GREP_RET_KEEP || ret == GREP_RET_EXCLUDE) {
+        /* Convert metrics to msgpack */
+        ret = cmt_encode_msgpack_create(out_cmt, &mt_buf, &mt_size);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "could not encode metrics");
+
+            /* destroy cmt contexts */
+            cmt_destroy(cmt);
+            cmt_destroy(out_cmt);
+
+            return FLB_FILTER_NOTOUCH;
+        }
+    }
+
+    if (ret == 0) {
+        *out_buf  = mt_buf;
+        *out_size = mt_size;
+
+        ret = FLB_FILTER_MODIFIED;
+    }
+
+    /* destroy cmt contexts */
+    cmt_destroy(cmt);
+    cmt_destroy(out_cmt);
+
+    return ret;
+}
+#endif
+
 static int cb_grep_filter(const void *data, size_t bytes,
                           const char *tag, int tag_len,
                           void **out_buf, size_t *out_size,
@@ -409,6 +790,15 @@ static int cb_grep_filter(const void *data, size_t bytes,
                           f_ins, i_ins,
                           context, config);
     }
+#ifdef FLB_HAVE_METRICS
+    else if (event_type == FLB_INPUT_METRICS) {
+        ret = process_metrics(data, bytes,
+                              tag, tag_len,
+                              out_buf, out_size,
+                              f_ins, i_ins,
+                              context, config);
+    }
+#endif
 
     return ret;
 }
@@ -438,6 +828,16 @@ static struct flb_config_map config_map[] = {
      "Exclude records in which the content of KEY matches the regular expression."
     },
     {
+     FLB_CONFIG_MAP_STR, "metrics.regex", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Keep metrics in which the metric of name matches the regular expression."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "metrics.exclude", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Exclude metrics in which the metric of name matches the regular expression."
+    },
+    {
      FLB_CONFIG_MAP_STR, "logical_op", "legacy",
      0, FLB_FALSE, 0,
      "Specify whether to use logical conjuciton or disjunction. legacy, AND and OR are allowed."
@@ -452,5 +852,6 @@ struct flb_filter_plugin filter_grep_plugin = {
     .cb_filter    = cb_grep_filter,
     .cb_exit      = cb_grep_exit,
     .config_map   = config_map,
+    .event_type   = FLB_FILTER_LOGS | FLB_FILTER_METRICS,
     .flags        = 0
 };
