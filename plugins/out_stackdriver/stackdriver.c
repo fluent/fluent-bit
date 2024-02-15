@@ -2077,7 +2077,7 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                 */
 
                 ret = process_local_resource_id(ctx, tag, tag_len, K8S_POD);
-                if (ret != 0) {
+                if (ret == -1) {
                     flb_plg_error(ctx->ins, "fail to process local_resource_id from "
                                 "log entry for k8s_pod");
                     msgpack_sbuffer_destroy(&mp_sbuf);
