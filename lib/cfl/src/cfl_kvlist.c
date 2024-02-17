@@ -411,3 +411,60 @@ int cfl_kvlist_print(FILE *fp, struct cfl_kvlist *list)
 
     return ret;
 }
+
+int cfl_kvlist_contains(struct cfl_kvlist *kvlist, char *name)
+{
+    struct cfl_list   *iterator;
+    struct cfl_kvpair *pair;
+
+    cfl_list_foreach(iterator, &kvlist->list) {
+        pair = cfl_list_entry(iterator,
+                              struct cfl_kvpair, _head);
+
+        if (strcasecmp(pair->key, name) == 0) {
+            return CFL_TRUE;
+        }
+    }
+
+    return CFL_FALSE;
+}
+
+
+int cfl_kvlist_remove(struct cfl_kvlist *kvlist, char *name)
+{
+    struct cfl_list   *iterator_backup;
+    struct cfl_list   *iterator;
+    struct cfl_kvpair *pair;
+
+    cfl_list_foreach_safe(iterator, iterator_backup, &kvlist->list) {
+        pair = cfl_list_entry(iterator,
+                              struct cfl_kvpair, _head);
+
+        if (strcasecmp(pair->key, name) == 0) {
+            cfl_kvpair_destroy(pair);
+        }
+    }
+
+    return CFL_TRUE;
+}
+
+
+void cfl_kvpair_destroy(struct cfl_kvpair *pair)
+{
+    if (pair != NULL) {
+        if (!cfl_list_entry_is_orphan(&pair->_head)) {
+            cfl_list_del(&pair->_head);
+        }
+
+        if (pair->key != NULL) {
+            cfl_sds_destroy(pair->key);
+        }
+
+        if (pair->val != NULL) {
+            cfl_variant_destroy(pair->val);
+        }
+
+        free(pair);
+    }
+}
+

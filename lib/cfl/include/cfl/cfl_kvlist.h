@@ -76,4 +76,8 @@ int cfl_kvlist_count(struct cfl_kvlist *list);
 struct cfl_variant *cfl_kvlist_fetch(struct cfl_kvlist *list, char *key);
 int cfl_kvlist_print(FILE *fp, struct cfl_kvlist *list);
 
+int cfl_kvlist_contains(struct cfl_kvlist *kvlist, char *name);
+int cfl_kvlist_remove(struct cfl_kvlist *kvlist, char *name);
+void cfl_kvpair_destroy(struct cfl_kvpair *pair);
+
 #endif
