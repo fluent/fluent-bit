@@ -380,6 +380,47 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         }
     }
 
+    ctx->ra_observed_timestamp_metadata = flb_ra_create((char*)ctx->logs_observed_timestamp_metadata_key,
+                                                        FLB_FALSE);
+    if (ctx->ra_observed_timestamp_metadata == NULL) {
+        flb_plg_error(ins, "failed to create ra for observed timestamp");
+    }
+    ctx->ra_timestamp_metadata = flb_ra_create((char*)ctx->logs_timestamp_metadata_key,
+                                               FLB_FALSE);
+    if (ctx->ra_timestamp_metadata == NULL) {
+        flb_plg_error(ins, "failed to create ra for timestamp");
+    }
+    ctx->ra_severity_text_metadata = flb_ra_create((char*)ctx->logs_severity_text_metadata_key,
+                                                   FLB_FALSE);
+    if (ctx->ra_severity_text_metadata == NULL) {
+        flb_plg_error(ins, "failed to create ra for severity text");
+    }
+    ctx->ra_severity_number_metadata = flb_ra_create((char*)ctx->logs_severity_number_metadata_key,
+                                                   FLB_FALSE);
+    if (ctx->ra_severity_number_metadata == NULL) {
+        flb_plg_error(ins, "failed to create ra for severity number");
+    }
+    ctx->ra_trace_flags_metadata = flb_ra_create((char*)ctx->logs_trace_flags_metadata_key,
+                                                 FLB_FALSE);
+    if (ctx->ra_trace_flags_metadata == NULL) {
+        flb_plg_error(ins, "failed to create ra for trace flags");
+    }
+    ctx->ra_span_id_metadata = flb_ra_create((char*)ctx->logs_span_id_metadata_key,
+                                             FLB_FALSE);
+    if (ctx->ra_span_id_metadata == NULL) {
+        flb_plg_error(ins, "failed to create ra for span id");
+    }
+    ctx->ra_trace_id_metadata = flb_ra_create((char*)ctx->logs_trace_id_metadata_key,
+                                              FLB_FALSE);
+    if (ctx->ra_trace_id_metadata == NULL) {
+        flb_plg_error(ins, "failed to create ra for trace id");
+    }
+    ctx->ra_attributes_metadata = flb_ra_create((char*)ctx->logs_attributes_metadata_key,
+                                                FLB_FALSE);
+    if (ctx->ra_attributes_metadata == NULL) {
+        flb_plg_error(ins, "failed to create ra for attributes");
+    }
+
     return ctx;
 }
 
@@ -400,6 +441,30 @@ void flb_opentelemetry_context_destroy(struct opentelemetry_context *ctx)
 
     if (ctx->mp_accessor) {
         flb_mp_accessor_destroy(ctx->mp_accessor);
+    }
+    if (ctx->ra_observed_timestamp_metadata) {
+        flb_ra_destroy(ctx->ra_observed_timestamp_metadata);
+    }
+    if (ctx->ra_timestamp_metadata) {
+        flb_ra_destroy(ctx->ra_timestamp_metadata);
+    }
+    if (ctx->ra_severity_text_metadata) {
+        flb_ra_destroy(ctx->ra_severity_text_metadata);
+    }
+    if (ctx->ra_severity_number_metadata) {
+        flb_ra_destroy(ctx->ra_severity_number_metadata);
+    }
+    if (ctx->ra_trace_flags_metadata) {
+        flb_ra_destroy(ctx->ra_trace_flags_metadata);
+    }
+    if (ctx->ra_span_id_metadata) {
+        flb_ra_destroy(ctx->ra_span_id_metadata);
+    }
+    if (ctx->ra_trace_id_metadata) {
+        flb_ra_destroy(ctx->ra_trace_id_metadata);
+    }
+    if (ctx->ra_attributes_metadata) {
+        flb_ra_destroy(ctx->ra_attributes_metadata);
     }
 
     flb_free(ctx->proxy_host);
