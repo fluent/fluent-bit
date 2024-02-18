@@ -77,6 +77,9 @@ struct opentelemetry_context {
     /* head of linked list body keys populated once log_body_key_list_str is parsed */
     struct mk_list log_body_key_list;
 
+    /* boolean that defines if remaining keys of logs_body_key are set as attributes */
+    int logs_body_key_attributes;
+
     /* internal labels ready to append */
     struct mk_list kv_labels;
 

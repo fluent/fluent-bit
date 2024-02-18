@@ -819,7 +819,7 @@ static int log_record_set_attributes(struct opentelemetry_context *ctx,
      * buffer. If there are matches, meaning that a new output buffer was created, ret will
      * be FLB_TRUE, if no matches exists it returns FLB_FALSE.
      */
-    if (ctx->mp_accessor && ra_match) {
+    if (ctx->logs_body_key_attributes == FLB_TRUE && ctx->mp_accessor && ra_match) {
         /*
          * if ra_match is not NULL, it means that the log body was populated with a key from the record
          * and the variable holds a reference to the record accessor that matched the key.
@@ -860,7 +860,7 @@ static int log_record_set_attributes(struct opentelemetry_context *ctx,
         return -1;
     }
 
-    /* pack metadata */
+    /* pack log metadata */
     for (i = 0; i < metadata->via.map.size; i++) {
         kv = &metadata->via.map.ptr[i];
         buf[i] = msgpack_kv_to_otlp_any_value(kv);
@@ -868,7 +868,7 @@ static int log_record_set_attributes(struct opentelemetry_context *ctx,
     }
 
     /* remaining fields that were not added to log body */
-    if (unpacked) {
+    if (ctx->logs_body_key_attributes == FLB_TRUE && unpacked) {
         /* iterate the map and reference each elemento as an OTLP value */
         for (i = 0; i < result.data.via.map.size; i++) {
             kv = &result.data.via.map.ptr[i];
@@ -1329,6 +1329,13 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "logs_body_key", NULL,
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct opentelemetry_context, log_body_key_list_str),
      "Specify an optional HTTP URI for the target OTel endpoint."
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "logs_body_key_attributes", "false",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_body_key_attributes),
+     "If logs_body_key is set and it matched a pattern, this option will include the "
+     "remaining fields in the record as attributes."
     },
 
     {
