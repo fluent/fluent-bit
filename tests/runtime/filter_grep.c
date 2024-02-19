@@ -36,6 +36,44 @@ static int cb_count_msgpack(void *record, size_t size, void *data)
     return 0;
 }
 
+static int cb_count_metrics_msgpack(void *record, size_t size, void *data)
+{
+    int i;
+    int ret;
+    size_t off = 0;
+    cfl_sds_t text = NULL;
+    struct cmt *cmt = NULL;
+    char *p;
+
+    if (!TEST_CHECK(data != NULL)) {
+        flb_error("data is NULL");
+    }
+
+    /* get cmetrics context */
+    ret = cmt_decode_msgpack_create(&cmt, (char *) record, size, &off);
+    if (ret != 0) {
+        flb_error("could not process metrics payload");
+        return -1;
+    }
+
+    /* convert to text representation */
+    text = cmt_encode_text_create(cmt);
+    for (i = 0; i < strlen(text); i++) {
+        p = (char *)(text + i);
+        if (*p == '\n') {
+            num_output++;
+        }
+    }
+
+    /* destroy cmt context */
+    cmt_destroy(cmt);
+
+    cmt_encode_text_destroy(text);
+
+    return 0;
+}
+
+
 static void clear_output_num()
 {
     pthread_mutex_lock(&result_mutex);
@@ -820,6 +858,232 @@ void flb_test_OR_exclude(void)
     flb_destroy(ctx);
 }
 
+#ifdef FLB_HAVE_METRICS
+void flb_test_filter_grep_regex_with_metrics(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+
+    ctx = flb_create();
+    flb_service_set(ctx,
+                    "Flush", "0.200000000",
+                    "Grace", "1",
+                    NULL);
+
+    /* Input */
+    in_ffd = flb_input(ctx, (char *) "fluentbit_metrics", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    ret = flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_input_set(ctx, in_ffd, "scrape_on_start", "true", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_input_set(ctx, in_ffd, "scrape_interval", "1", NULL);
+    TEST_CHECK(ret == 0);
+
+    out_ffd = flb_output(ctx, (char *) "stdout", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+
+    filter_ffd = flb_filter(ctx, (char *) "grep", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd, "match", "*", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "Metrics.Regex", "input", NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_time_msleep(1500); /* waiting flush */
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_filter_grep_exclude_with_metrics(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+
+    ctx = flb_create();
+    flb_service_set(ctx,
+                    "Flush", "0.200000000",
+                    "Grace", "1",
+                    NULL);
+
+    /* Input */
+    in_ffd = flb_input(ctx, (char *) "fluentbit_metrics", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    ret = flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_input_set(ctx, in_ffd, "scrape_on_start", "true", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_input_set(ctx, in_ffd, "scrape_interval", "1", NULL);
+    TEST_CHECK(ret == 0);
+
+    out_ffd = flb_output(ctx, (char *) "stdout", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+
+    filter_ffd = flb_filter(ctx, (char *) "grep", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd, "match", "*", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "Metrics.Exclude", "input", NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_time_msleep(1500); /* waiting flush */
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+/* filter_grep supports multiple 'Regex's.
+ * If user sets multiple 'Regex's, fluent-bit uses as AND conditions.
+ */
+void flb_test_filter_grep_multi_regex_with_metrics(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    int got;
+    int n_metrics = 2;
+    int not_used = 0;
+    struct flb_lib_out_cb cb_data;
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_count_metrics_msgpack;
+    cb_data.data = &not_used;
+
+    ctx = flb_create();
+    flb_service_set(ctx,
+                    "Flush", "0.200000000",
+                    "Grace", "1",
+                    NULL);
+
+    /* Input */
+    in_ffd = flb_input(ctx, (char *) "fluentbit_metrics", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    ret = flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_input_set(ctx, in_ffd, "scrape_on_start", "true", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_input_set(ctx, in_ffd, "scrape_interval", "1", NULL);
+    TEST_CHECK(ret == 0);
+
+    out_ffd = flb_output(ctx, (char *) "lib", &cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+
+    filter_ffd = flb_filter(ctx, (char *) "grep", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd, "match", "*", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd,
+                         "Metrics.Regex", "input",
+                         "Metrics.Regex", "busy",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    clear_output_num();
+
+    ret = flb_start(ctx);
+    if(!TEST_CHECK(ret == 0)) {
+        TEST_MSG("flb_start failed");
+        exit(EXIT_FAILURE);
+    }
+
+    flb_time_msleep(1500); /* waiting flush */
+
+    got = get_output_num();
+    if (!TEST_CHECK(got >= n_metrics)) {
+        TEST_MSG("expect: %d >= %d, got: %d < %d", got, n_metrics, got, n_metrics);
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+/* filter_grep supports multiple 'Exclude's.
+ * If user sets multiple 'Exclude's, fluent-bit uses as OR conditions.
+ */
+void flb_test_filter_grep_multi_exclude_with_metrics(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    int got;
+    int n_metrics = 22;
+    int not_used = 0;
+    struct flb_lib_out_cb cb_data;
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_count_metrics_msgpack;
+    cb_data.data = &not_used;
+
+    ctx = flb_create();
+    flb_service_set(ctx,
+                    "Flush", "0.200000000",
+                    "Grace", "1",
+                    NULL);
+
+    /* Input */
+    in_ffd = flb_input(ctx, (char *) "fluentbit_metrics", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    ret = flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_input_set(ctx, in_ffd, "scrape_on_start", "true", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_input_set(ctx, in_ffd, "scrape_interval", "1", NULL);
+    TEST_CHECK(ret == 0);
+
+    out_ffd = flb_output(ctx, (char *) "lib", &cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+
+    filter_ffd = flb_filter(ctx, (char *) "grep", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd, "match", "*", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd,
+                         "Metrics.Exclude", "input",
+                         "Metrics.Exclude", "busy",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    clear_output_num();
+
+    ret = flb_start(ctx);
+    if(!TEST_CHECK(ret == 0)) {
+        TEST_MSG("flb_start failed");
+        exit(EXIT_FAILURE);
+    }
+
+    flb_time_msleep(1500); /* waiting flush */
+
+    got = get_output_num();
+    if (!TEST_CHECK(got >= n_metrics)) {
+        TEST_MSG("expect: %d >= %d, got: %d < %d", got, n_metrics, got, n_metrics);
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+#endif
+
 /* Test list */
 TEST_LIST = {
     {"regex",   flb_test_filter_grep_regex   },
@@ -836,5 +1100,11 @@ TEST_LIST = {
     {"error_AND_regex_exclude", flb_test_error_AND_regex_exclude},
     {"error_OR_regex_exclude", flb_test_error_OR_regex_exclude},
     {"issue_5209", flb_test_issue_5209 },
+#ifdef FLB_HAVE_METRICS
+    {"regex_with_metrics", flb_test_filter_grep_regex_with_metrics },
+    {"exclude_with_metrics", flb_test_filter_grep_exclude_with_metrics},
+    {"multi_regex_with_metrics", flb_test_filter_grep_multi_regex_with_metrics},
+    {"multi_exclude_with_metrics", flb_test_filter_grep_multi_exclude_with_metrics},
+#endif
     {NULL, NULL}
 };
