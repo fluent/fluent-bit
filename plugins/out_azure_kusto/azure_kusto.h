@@ -70,6 +70,9 @@ struct flb_azure_kusto {
     flb_sds_t table_name;
     flb_sds_t ingestion_mapping_reference;
 
+    /* compress payload */
+    int compression_enabled;
+
     /* records configuration */
     flb_sds_t log_key;
     int include_tag_key;
