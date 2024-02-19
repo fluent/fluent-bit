@@ -75,6 +75,9 @@ struct flb_azure_kusto {
 
     int ingestion_endpoint_connect_timeout;
 
+    /* compress payload */
+    int compression_enabled;
+
     /* records configuration */
     flb_sds_t log_key;
     int include_tag_key;
