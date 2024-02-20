@@ -185,7 +185,8 @@ static int cb_type_converter_filter(const void *data, size_t bytes,
                                     struct flb_filter_instance *f_ins,
                                     struct flb_input_instance *i_ins,
                                     void *filter_context,
-                                    struct flb_config *config)
+                                    struct flb_config *config,
+                                    int event_type)
 {
     struct type_converter_ctx *ctx = filter_context;
     struct flb_time tm;
