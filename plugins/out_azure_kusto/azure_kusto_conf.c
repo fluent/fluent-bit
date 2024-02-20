@@ -416,6 +416,22 @@ static flb_sds_t parse_ingestion_identity_token(struct flb_azure_kusto *ctx,
     return identity_token;
 }
 
+/**
+ * This method returns random integers from range -600 to +600 which needs to be added
+ * to the kusto ingestion resources refresh interval to even out the spikes
+ * in kusto DM for .get ingestion resources upon expiry
+ * */
+int azure_kusto_generate_random_integer() {
+    // Seed the random number generator
+    int pid = getpid();
+    unsigned long address = (unsigned long)&address;
+    unsigned int seed = pid ^ (address & 0xFFFFFFFF) * time(0);
+    srand(seed);
+    // Generate a random integer in the range [-600, 600]
+    int random_integer = rand() % 1201 - 600;
+    return random_integer;
+}
+
 int azure_kusto_load_ingestion_resources(struct flb_azure_kusto *ctx,
                                          struct flb_config *config)
 {
@@ -431,17 +447,20 @@ int azure_kusto_load_ingestion_resources(struct flb_azure_kusto *ctx,
         return -1;
     }
 
+    int generated_random_integer = azure_kusto_generate_random_integer();
+    flb_plg_debug(ctx->ins, "generated random integer is %d", generated_random_integer);
+
     now = time(NULL);
 
     /* check if we have all resources and they are not stale */
     if (ctx->resources->blob_ha && ctx->resources->queue_ha &&
         ctx->resources->identity_token &&
-        now - ctx->resources->load_time < FLB_AZURE_KUSTO_RESOURCES_LOAD_INTERVAL_SEC) {
+        now - ctx->resources->load_time < FLB_AZURE_KUSTO_RESOURCES_LOAD_INTERVAL_SEC + generated_random_integer) {
         flb_plg_debug(ctx->ins, "resources are already loaded and are not stale");
         ret = 0;
     }
     else {
-        flb_plg_info(ctx->ins, "loading kusto ingestion resourcs");
+        flb_plg_info(ctx->ins, "loading kusto ingestion resourcs and refresh interval is %d", ,FLB_AZURE_KUSTO_RESOURCES_LOAD_INTERVAL_SEC + generated_random_integer);
         response = execute_ingest_csl_command(ctx, ".get ingestion resources");
 
         if (response) {
