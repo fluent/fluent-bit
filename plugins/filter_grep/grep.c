@@ -198,7 +198,7 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
         if (ctx->logical_op != GREP_LOGICAL_OP_LEGACY && first_rule != GREP_NO_RULE) {
             /* 'AND'/'OR' case */
             if (first_rule != metrics_rule->type) {
-                flb_plg_error(ctx->ins, "Both 'regex' and 'exclude' are set.");
+                flb_plg_error(ctx->ins, "Both 'metrics.regex' and 'metrics.exclude' are set.");
                 delete_rules(ctx);
                 flb_free(metrics_rule);
                 return -1;
