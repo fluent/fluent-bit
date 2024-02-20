@@ -916,6 +916,9 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
     else if (type == HTTP_CONTENT_URLENCODED) {
         ret = parse_payload_urlencoded(ctx, tag, request->data.data, request->data.len);
     }
+    else if (type == HTTP_CONTENT_MSGPACK) {
+        ret = parse_payload_msgpack(ctx, tag, request->data.data, request->data.len);
+    }
 
     if (uncompressed_data != NULL) {
         flb_free(uncompressed_data);
@@ -930,13 +933,6 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
     if (ret != 0) {
         send_response(conn, 400, "error: invalid payload\n");
         return -1;
-    }
-    else if (type == HTTP_CONTENT_MSGPACK) {
-        ret = parse_payload_msgpack(ctx, tag, request->data.data, request->data.len);
-        if (ret != 0) {
-            send_response(conn, 400, "error: invalid msgpack payload\n");
-            return -1;
-        }
     }
 
     return 0;
