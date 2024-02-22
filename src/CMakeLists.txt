@@ -202,12 +202,6 @@ set(extra_libs
   ${extra_libs}
   "rbtree")
 
-if(FLB_JEMALLOC)
-  set(extra_libs
-    ${extra_libs}
-    "libjemalloc")
-endif()
-
 if(FLB_REGEX)
   set(FLB_DEPS
     ${FLB_DEPSS}
@@ -466,10 +460,6 @@ if(MSVC)
 else()
   set_target_properties(fluent-bit-static PROPERTIES OUTPUT_NAME fluent-bit)
 endif(MSVC)
-
-if(FLB_JEMALLOC)
-  target_link_libraries(fluent-bit-static libjemalloc)
-endif()
 
 # Binary / Executable
 if(FLB_BINARY)
