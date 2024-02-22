@@ -32,6 +32,7 @@ static int input_metrics_append(struct flb_input_instance *ins,
     char *mt_buf;
     size_t mt_size;
     int processor_is_active;
+    struct cmt *out_context = NULL;
 
     processor_is_active = flb_processor_is_active(ins->processor);
     if (processor_is_active) {
@@ -51,20 +52,35 @@ static int input_metrics_append(struct flb_input_instance *ins,
                                 FLB_PROCESSOR_METRICS,
                                 tag,
                                 tag_len,
-                                (char *) cmt,
-                                0, NULL, NULL);
+                                (char *) cmt, 0,
+                                (void **)&out_context, NULL);
 
         if (ret == -1) {
             return -1;
         }
     }
 
-    /* Convert metrics to msgpack */
-    ret = cmt_encode_msgpack_create(cmt, &mt_buf, &mt_size);
-    if (ret != 0) {
-        flb_plg_error(ins, "could not encode metrics");
-        return -1;
 
+    if (out_context != NULL) {
+        /* Convert metrics to msgpack */
+        ret = cmt_encode_msgpack_create(out_context, &mt_buf, &mt_size);
+        if (ret != 0) {
+            flb_plg_error(ins, "could not encode metrics");
+            cmt_destroy(out_context);
+
+            return -1;
+        }
+
+        cmt_destroy(out_context);
+    }
+    else {
+        /* Convert metrics to msgpack */
+        ret = cmt_encode_msgpack_create(cmt, &mt_buf, &mt_size);
+        if (ret != 0) {
+            flb_plg_error(ins, "could not encode metrics");
+            return -1;
+
+        }
     }
 
     /* Append packed metrics */
