@@ -284,6 +284,7 @@ option(FLB_FILTER_NIGHTFALL            "Enable Nightfall filter"                
 option(FLB_FILTER_WASM                 "Enable WASM filter"                           Yes)
 option(FLB_PROCESSOR_LABELS            "Enable metrics label manipulation processor"  Yes)
 option(FLB_PROCESSOR_ATTRIBUTES        "Enable atributes manipulation processor"      Yes)
+option(FLB_PROCESSOR_METRICS_GREP      "Enable metrics grep processor"                Yes)
 
 if(DEFINED FLB_NIGHTLY_BUILD AND NOT "${FLB_NIGHTLY_BUILD}" STREQUAL "")
   FLB_DEFINITION_VAL(FLB_NIGHTLY_BUILD ${FLB_NIGHTLY_BUILD})
