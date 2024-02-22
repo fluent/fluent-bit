@@ -405,12 +405,14 @@ static inline int grep_filter_metrics_and_or(struct cmt *cmt, struct cmt *out_cm
 
 static int process_metrics(struct flb_processor_instance *processor_instance,
                            struct cmt *metrics_context,
+                           struct cmt **out_context,
                            const char *tag,
                            int tag_len)
 {
     int ret;
     struct metrics_grep_ctx *ctx;
-    struct cmt *out_cmt = NULL;
+    flb_sds_t text;
+    struct cmt *out_cmt;
 
     ctx = (struct metrics_grep_ctx *) processor_instance->context;
 
@@ -428,50 +430,36 @@ static int process_metrics(struct flb_processor_instance *processor_instance,
     }
 
     if (ret == METRICS_GREP_FAILURE) {
-        /* destroy cmt contexts */
+        /* destroy out_context contexts */
         cmt_destroy(out_cmt);
 
         return METRICS_GREP_FAILURE;
     }
 
     if (ret == METRICS_GREP_RET_KEEP || ret == METRICS_GREP_RET_EXCLUDE) {
-        /* destroy and recreate metrics context */
-        cmt_destroy(metrics_context);
-        metrics_context = NULL;
-
-        metrics_context = cmt_create();
-        if (metrics_context == NULL) {
-            flb_plg_error(ctx->ins, "could not create metrics_context");
-            /* destroy cmt contexts */
-            cmt_destroy(out_cmt);
-
-            return METRICS_GREP_FAILURE;
-        }
-
-        ret = cmt_cat(metrics_context, out_cmt);
-    }
-
-    if (ret == 0) {
         ret = METRICS_GREP_SUCCESS;
+        *out_context = out_cmt;
     }
-
-    /* destroy cmt contexts */
-    cmt_destroy(out_cmt);
+    else {
+        ret = METRICS_GREP_FAILURE;
+    }
 
     return ret;
 }
 #endif
 
 static int cb_process_metrics_grep(struct flb_processor_instance *processor_instance,
-                                    struct cmt *metrics_context,
-                                    const char *tag,
-                                    int tag_len)
+                                   struct cmt *metrics_context,
+                                   struct cmt *out_context,
+                                   const char *tag,
+                                   int tag_len)
 {
     int result = METRICS_GREP_SUCCESS;
 
 #ifdef FLB_HAVE_METRICS
     result = process_metrics(processor_instance,
                              metrics_context,
+                             out_context,
                              tag, tag_len);
 #endif
 
