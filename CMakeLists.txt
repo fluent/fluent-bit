@@ -283,7 +283,7 @@ option(FLB_FILTER_GEOIP2               "Enable geoip2 filter"                   
 option(FLB_FILTER_NIGHTFALL            "Enable Nightfall filter"                      Yes)
 option(FLB_FILTER_WASM                 "Enable WASM filter"                           Yes)
 option(FLB_PROCESSOR_LABELS            "Enable metrics label manipulation processor"  Yes)
-option(FLB_PROCESSOR_ATTRIBUTES        "Enable atributes manipulation processor"      Yes)
+option(FLB_PROCESSOR_METRICS_SELECTOR  "Enable metrics selector processor"            Yes)
 option(FLB_PROCESSOR_CONTENT_MODIFIER  "Enable content modifier processor"            Yes)
 
 if(DEFINED FLB_NIGHTLY_BUILD AND NOT "${FLB_NIGHTLY_BUILD}" STREQUAL "")

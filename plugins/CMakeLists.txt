@@ -282,6 +282,7 @@ REGISTER_IN_PLUGIN("in_random")
 # PROCESSORS
 # ==========
 REGISTER_PROCESSOR_PLUGIN("processor_labels")
+REGISTER_PROCESSOR_PLUGIN("processor_metrics_selector")
 REGISTER_PROCESSOR_PLUGIN("processor_content_modifier")
 
 # OUTPUTS

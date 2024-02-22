@@ -329,6 +329,24 @@ int flb_input_set(flb_ctx_t *ctx, int ffd, ...)
     return 0;
 }
 
+int flb_input_set_processor(flb_ctx_t *ctx, int ffd, struct flb_processor *proc)
+{
+    struct flb_input_instance *i_ins;
+
+    i_ins = in_instance_get(ctx, ffd);
+    if (!i_ins) {
+        return -1;
+    }
+
+    if (i_ins->processor) {
+        flb_processor_destroy(i_ins->processor);
+    }
+
+    i_ins->processor = proc;
+
+    return 0;
+}
+
 static inline int flb_config_map_property_check(char *plugin_name, struct mk_list *config_map, char *key, char *val)
 {
     struct flb_kv *kv;
@@ -462,6 +480,24 @@ int flb_output_set(flb_ctx_t *ctx, int ffd, ...)
     }
 
     va_end(va);
+    return 0;
+}
+
+int flb_output_set_processor(flb_ctx_t *ctx, int ffd, struct flb_processor *proc)
+{
+    struct flb_output_instance *o_ins;
+
+    o_ins = out_instance_get(ctx, ffd);
+    if (!o_ins) {
+        return -1;
+    }
+
+    if (o_ins->processor) {
+        flb_processor_destroy(o_ins->processor);
+    }
+
+    o_ins->processor = proc;
+
     return 0;
 }
 
