@@ -144,7 +144,8 @@ struct flb_processor_plugin {
                             int);
 
     int (*cb_process_metrics) (struct flb_processor_instance *,
-                               struct cmt *,
+                               struct cmt *, /* in */
+                               struct cmt **, /* out */
                                const char *,
                                int);
 
