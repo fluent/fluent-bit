@@ -20,20 +20,19 @@
 #ifndef FLB_IN_HTTP_H
 #define FLB_IN_HTTP_H
 
-#include <nghttp2/nghttp2.h>
-
 #include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
-#include <monkey/monkey.h>
+#include "flb_http_server.h"
+
 
 #define HTTP_BUFFER_MAX_SIZE    "4M"
 #define HTTP_BUFFER_CHUNK_SIZE  "512K"
 
-struct flb_http {
+struct flb_http2 {
     int successful_response_code;
     flb_sds_t listen;
     flb_sds_t tcp_port;
@@ -49,10 +48,9 @@ struct flb_http {
     size_t buffer_chunk_size;          /* Chunk allocation size */
 
     struct flb_log_event_encoder log_encoder;
-    struct flb_downstream *downstream; /* Client manager */
-    struct mk_list connections;        /* linked list of connections */
 
-    struct mk_server *server;
+    struct flb_http_server http_server;
+
     struct flb_input_instance *ins;
 };
 

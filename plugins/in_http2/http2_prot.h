@@ -20,12 +20,18 @@
 #ifndef FLB_IN_HTTP_PROT
 #define FLB_IN_HTTP_PROT
 
-int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
-                     struct mk_http_session *session,
-                     struct mk_http_request *request);
+#include "flb_http_server.h"
 
-int http_prot_handle_error(struct flb_http *ctx, struct http_conn *conn,
-                           struct mk_http_session *session,
-                           struct mk_http_request *request);
+//int http_prot_handle(struct flb_http2 *ctx, struct http_conn *conn,
+//                     struct mk_http_session *session,
+//                     struct mk_http_request *request);
+
+//int http_prot_handle_error(struct flb_http2 *ctx, struct http_conn *conn,
+//                           struct mk_http_session *session,
+//                           struct mk_http_request *request);
+
+
+int http2_handle_request(struct flb_http_request_ng *request,
+                         struct flb_http_response_ng *response);
 
 #endif

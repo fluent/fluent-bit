@@ -658,6 +658,8 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
 struct flb_input_instance *flb_input_get_instance(struct flb_config *config,
                                                   int ins_id);
 
+struct mk_event_loop *flb_input_get_event_loop(struct flb_input_instance *ins);
+
 int flb_input_set_property(struct flb_input_instance *ins,
                            const char *k, const char *v);
 const char *flb_input_get_property(const char *key,

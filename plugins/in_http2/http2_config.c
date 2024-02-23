@@ -17,14 +17,14 @@
  *  limitations under the License.
  */
 
+//#include <fluent-bit/flb_input_thread.h>
 #include <fluent-bit/flb_input_plugin.h>
+#include <fluent-bit/flb_input.h>
 
-#include "http.h"
-#include "http_config.h"
-#include "http_conn.h"
-#include "http_config.h"
+#include "http2.h"
+#include "http2_config.h"
 
-struct flb_http *http_config_create(struct flb_input_instance *ins)
+struct flb_http2 *http2_config_create(struct flb_input_instance *ins)
 {
     struct mk_list            *header_iterator;
     struct flb_slist_entry    *header_value;
@@ -32,15 +32,14 @@ struct flb_http *http_config_create(struct flb_input_instance *ins)
     struct flb_config_map_val *header_pair;
     char                       port[8];
     int                        ret;
-    struct flb_http           *ctx;
+    struct flb_http2           *ctx;
 
-    ctx = flb_calloc(1, sizeof(struct flb_http));
+    ctx = flb_calloc(1, sizeof(struct flb_http2));
     if (!ctx) {
         flb_errno();
         return NULL;
     }
     ctx->ins = ins;
-    mk_list_init(&ctx->connections);
 
     /* Load the config map */
     ret = flb_input_config_map_set(ins, (void *) ctx);
@@ -56,10 +55,6 @@ struct flb_http *http_config_create(struct flb_input_instance *ins)
     snprintf(port, sizeof(port) - 1, "%d", ins->host.port);
     ctx->tcp_port = flb_strdup(port);
 
-    /* HTTP Server specifics */
-    ctx->server = flb_calloc(1, sizeof(struct mk_server));
-    ctx->server->keep_alive = MK_TRUE;
-
     /* monkey detects server->workers == 0 as the server not being initialized at the
      * moment so we want to make sure that it stays that way!
      */
@@ -70,7 +65,7 @@ struct flb_http *http_config_create(struct flb_input_instance *ins)
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
         flb_plg_error(ctx->ins, "error initializing event encoder : %d", ret);
 
-        http_config_destroy(ctx);
+        http2_config_destroy(ctx);
 
         return NULL;
     }
@@ -78,7 +73,7 @@ struct flb_http *http_config_create(struct flb_input_instance *ins)
     ctx->success_headers_str = flb_sds_create_size(1);
 
     if (ctx->success_headers_str == NULL) {
-        http_config_destroy(ctx);
+        http2_config_destroy(ctx);
 
         return NULL;
     }
@@ -115,43 +110,48 @@ struct flb_http *http_config_create(struct flb_input_instance *ins)
         }
 
         if (ret != 0) {
-            http_config_destroy(ctx);
+            http2_config_destroy(ctx);
 
             return NULL;
         }
     }
 
+    ret = flb_http_server_init(&ctx->http_server, 
+                                HTTP_PROTOCOL_AUTODETECT,
+                                0,
+                                NULL,
+                                ctx->listen,
+                                ins->host.port,
+                                ins->tls,
+                                ins->flags,
+                                &ins->net_setup,
+                                flb_input_get_event_loop(ins),
+                                ins->config,
+                                (void *) ctx);
+
+    if (ret != 0) {
+        http2_config_destroy(ctx);
+
+        return NULL;
+    }
+
     return ctx;
 }
 
-int http_config_destroy(struct flb_http *ctx)
+int http2_config_destroy(struct flb_http2 *ctx)
 {
-    /* release all connections */
-    http2_conn_release_all(ctx);
+    flb_http_server_destroy(&ctx->http_server);
 
     flb_log_event_encoder_destroy(&ctx->log_encoder);
-
-    if (ctx->collector_id != -1) {
-        flb_input_collector_delete(ctx->collector_id, ctx->ins);
-
-        ctx->collector_id = -1;
-    }
-
-    if (ctx->downstream != NULL) {
-        flb_downstream_destroy(ctx->downstream);
-    }
-
-    if (ctx->server) {
-        flb_free(ctx->server);
-    }
 
     if (ctx->success_headers_str != NULL) {
         flb_sds_destroy(ctx->success_headers_str);
     }
 
+    flb_sds_destroy(ctx->listen);
+    flb_sds_destroy(ctx->tcp_port);
 
-    flb_free(ctx->listen);
-    flb_free(ctx->tcp_port);
     flb_free(ctx);
+
     return 0;
 }

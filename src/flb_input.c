@@ -67,6 +67,14 @@ pthread_key_t libco_in_param_key;
 #define FLB_INPUT_RING_BUFFER_SIZE   (sizeof(void *) * 1024)
 #define FLB_INPUT_RING_BUFFER_WINDOW (5)
 
+struct mk_event_loop *flb_input_get_event_loop(struct flb_input_instance *ins)
+{
+    if (flb_input_is_threaded(ins)) {
+        return ins->thi->evl;
+    }
+
+    return ins->config->evl;
+}
 
 static int check_protocol(const char *prot, const char *output)
 {

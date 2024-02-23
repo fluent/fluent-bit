@@ -25,8 +25,7 @@
 #include <monkey/monkey.h>
 #include <monkey/mk_core.h>
 
-#include "http.h"
-#include "http_conn.h"
+#include "http2.h"
 
 #define HTTP_CONTENT_JSON       0
 #define HTTP_CONTENT_URLENCODED 1
@@ -75,76 +74,66 @@ static int sds_uri_decode(flb_sds_t s)
     return 0;
 }
 
-static int send_response(struct http_conn *conn, int http_status, char *message)
+static int send_response(struct flb_http_response_ng *response, int http_status, char *message)
 {
-    struct flb_http *context;
-    size_t           sent;
-    int              len;
-    flb_sds_t        out;
+    struct mk_list            *header_iterator;
+    struct flb_slist_entry    *header_value;
+    struct flb_slist_entry    *header_name;
+    struct flb_config_map_val *header_pair;
+    struct flb_http2          *context;
 
-    context = (struct flb_http *) conn->ctx;
+    context = (struct flb_http2 *) response->stream->user_data;
 
-    out = flb_sds_create_size(256);
-    if (!out) {
-        return -1;
-    }
-
-    if (message) {
-        len = strlen(message);
-    }
-    else {
-        len = 0;
-    }
+    flb_http_response_set_status(response, http_status);
 
     if (http_status == 201) {
-        flb_sds_printf(&out,
-                       "HTTP/1.1 201 Created \r\n"
-                       "Server: Fluent Bit v%s\r\n"
-                       "%s"
-                       "Content-Length: 0\r\n\r\n",
-                       FLB_VERSION_STR,
-                       context->success_headers_str);
+        flb_http_response_set_message(response, "Created");
     }
     else if (http_status == 200) {
-        flb_sds_printf(&out,
-                       "HTTP/1.1 200 OK\r\n"
-                       "Server: Fluent Bit v%s\r\n"
-                       "%s"
-                       "Content-Length: 0\r\n\r\n",
-                       FLB_VERSION_STR,
-                       context->success_headers_str);
+        flb_http_response_set_message(response, "OK");
     }
     else if (http_status == 204) {
-        flb_sds_printf(&out,
-                       "HTTP/1.1 204 No Content\r\n"
-                       "Server: Fluent Bit v%s\r\n"
-                       "%s"
-                       "\r\n\r\n",
-                       FLB_VERSION_STR,
-                       context->success_headers_str);
+        flb_http_response_set_message(response, "No Content");
     }
     else if (http_status == 400) {
-        flb_sds_printf(&out,
-                       "HTTP/1.1 400 Forbidden\r\n"
-                       "Server: Fluent Bit v%s\r\n"
-                       "Content-Length: %i\r\n\r\n%s",
-                       FLB_VERSION_STR,
-                       len, message);
+        flb_http_response_set_message(response, "Forbidden");
     }
 
-    /* We should check this operations result */
-    flb_io_net_write(conn->connection,
-                     (void *) out,
-                     flb_sds_len(out),
-                     &sent);
+    if (http_status == 200 || 
+        http_status == 201 ||
+        http_status == 204) {
 
-    flb_sds_destroy(out);
+        flb_config_map_foreach(header_iterator, 
+                            header_pair, 
+                            context->success_headers) {
+            header_name = mk_list_entry_first(header_pair->val.list,
+                                            struct flb_slist_entry,
+                                            _head);
+
+            header_value = mk_list_entry_last(header_pair->val.list,
+                                            struct flb_slist_entry,
+                                            _head);
+
+            flb_http_response_set_header(response, 
+                                        header_name->str, 0, 
+                                        header_value->str, 0);
+
+        }
+    }
+
+    if (message != NULL) {
+        flb_http_response_set_body(response, 
+                                   (unsigned char *) message, 
+                                   strlen(message));
+    }
+
+    flb_http_response_commit(response);
 
     return 0;
 }
 
 /* implements functionality to get tag from key in record */
-static flb_sds_t tag_key(struct flb_http *ctx, msgpack_object *map)
+static flb_sds_t tag_key(struct flb_http2 *ctx, msgpack_object *map)
 {
     size_t map_size = map->via.map.size;
     msgpack_object_kv *kv;
@@ -209,7 +198,7 @@ static flb_sds_t tag_key(struct flb_http *ctx, msgpack_object *map)
     return NULL;
 }
 
-int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
+static int process_pack(struct flb_http2 *ctx, flb_sds_t tag, char *buf, size_t size)
 {
     int ret;
     size_t off = 0;
@@ -359,13 +348,20 @@ int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
     return 0;
 }
 
-static ssize_t parse_payload_json(struct flb_http *ctx, flb_sds_t tag,
-                                  char *payload, size_t size)
+static ssize_t parse_payload_json(flb_sds_t tag,
+                                  struct flb_http_request_ng *request)
 {
     int ret;
     int out_size;
     char *pack;
     struct flb_pack_state pack_state;
+    struct flb_http2 *ctx;
+    char *payload;
+    size_t size;
+
+    ctx = (struct flb_http2 *) request->stream->user_data;
+    payload = (char *) request->body;
+    size = cfl_sds_len(request->body);
 
     /* Initialize packer */
     flb_pack_state_init(&pack_state);
@@ -395,8 +391,8 @@ static ssize_t parse_payload_json(struct flb_http *ctx, flb_sds_t tag,
     return 0;
 }
 
-static ssize_t parse_payload_urlencoded(struct flb_http *ctx, flb_sds_t tag,
-                                  char *payload, size_t size)
+static ssize_t parse_payload_urlencoded(flb_sds_t tag,
+                                        struct flb_http_request_ng *request)
 {
     struct mk_list *kvs;
     struct mk_list *head = NULL;
@@ -409,7 +405,11 @@ static ssize_t parse_payload_urlencoded(struct flb_http *ctx, flb_sds_t tag,
     int ret = -1;
     msgpack_packer pck;
     msgpack_sbuffer sbuf;
+    struct flb_http2 *ctx;
+    char *payload;
 
+    ctx = (struct flb_http2 *) request->stream->user_data;
+    payload = (char *) request->body;
 
     /* initialize buffers */
     msgpack_sbuffer_init(&sbuf);
@@ -486,124 +486,80 @@ split_error:
     return ret;
 }
 
-static int process_payload(struct flb_http *ctx, struct http_conn *conn,
-                           flb_sds_t tag,
-                           struct mk_http_session *session,
-                           struct mk_http_request *request)
+static int process_payload(flb_sds_t tag,
+                           struct flb_http_request_ng *request,
+                           struct flb_http_response_ng *response)
 {
-    int type = -1;
-    struct mk_http_header *header;
+    char *header;
+    int type;
 
-    header = &session->parser.headers[MK_HEADER_CONTENT_TYPE];
-    if (header->key.data == NULL) {
-        send_response(conn, 400, "error: header 'Content-Type' is not set\n");
+    type = -1;
+    
+    header = flb_http_request_get_header(request, "content-type");
+
+    if (header == NULL) {
+        send_response(response, 400, "error: header 'Content-Type' is not set\n");
         return -1;
     }
 
-    if (header->val.len == 16 &&
-        strncasecmp(header->val.data, "application/json", 16) == 0) {
+    if (strcasecmp(header, "application/json") == 0) {
         type = HTTP_CONTENT_JSON;
     }
 
-    if (header->val.len == 33 &&
-        strncasecmp(header->val.data, "application/x-www-form-urlencoded", 33) == 0) {
+    if (strcasecmp(header, "application/x-www-form-urlencoded") == 0) {
         type = HTTP_CONTENT_URLENCODED;
     }
 
     if (type == -1) {
-        send_response(conn, 400, "error: invalid 'Content-Type'\n");
+        send_response(response, 400, "error: invalid 'Content-Type'\n");
         return -1;
     }
 
-    if (request->data.len <= 0) {
-        send_response(conn, 400, "error: no payload found\n");
+    if (request->body == NULL || 
+        cfl_sds_len(request->body) == 0) {
+        send_response(response, 400, "error: no payload found\n");
         return -1;
     }
 
     if (type == HTTP_CONTENT_JSON) {
-        parse_payload_json(ctx, tag, request->data.data, request->data.len);
+        parse_payload_json(tag, request);
     } else if (type == HTTP_CONTENT_URLENCODED) {
-        parse_payload_urlencoded(ctx, tag, request->data.data, request->data.len);
+        parse_payload_urlencoded(tag, request);
     }
 
     return 0;
 }
 
-static inline int mk_http_point_header(mk_ptr_t *h,
-                                       struct mk_http_parser *parser, int key)
+int http2_handle_request(struct flb_http_request_ng *request,
+                         struct flb_http_response_ng *response)
 {
-    struct mk_http_header *header;
+    int                             i;
+    int                             ret;
+    int                             len;
+    flb_sds_t                       tag;
+    struct flb_http_server_session *session;
+    struct flb_http2               *context;
 
-    header = &parser->headers[key];
-    if (header->type == key) {
-        h->data = header->val.data;
-        h->len  = header->val.len;
-        return 0;
-    }
-    else {
-        h->data = NULL;
-        h->len  = -1;
-    }
+    context = (struct flb_http2 *) response->stream->user_data;
+    FLB_HTTP_STREAM_GET_SESSION(request->stream, &session);
 
-    return -1;
-}
-
-/*
- * Handle an incoming request. It perform extra checks over the request, if
- * everything is OK, it enqueue the incoming payload.
- */
-int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
-                     struct mk_http_session *session,
-                     struct mk_http_request *request)
-{
-    int i;
-    int ret;
-    int len;
-    char *uri;
-    char *qs;
-    off_t diff;
-    flb_sds_t tag;
-    struct mk_http_header *header;
-
-    if (request->uri.data[0] != '/') {
-        send_response(conn, 400, "error: invalid request\n");
+    if (request->path[0] != '/') {
+        send_response(response, 400, "error: invalid request\n");
         return -1;
     }
 
-    /* Decode URI */
-    uri = mk_utils_url_decode(request->uri);
-    if (!uri) {
-        uri = mk_mem_alloc_z(request->uri.len + 1);
-        if (!uri) {
-            return -1;
-        }
-        memcpy(uri, request->uri.data, request->uri.len);
-        uri[request->uri.len] = '\0';
-    }
-
-    /* Try to match a query string so we can remove it */
-    qs = strchr(uri, '?');
-    if (qs) {
-        /* remove the query string part */
-        diff = qs - uri;
-        uri[diff] = '\0';
-    }
-
     /* Compose the query string using the URI */
-    len = strlen(uri);
+    len = cfl_sds_len(request->path);
 
     if (len == 1) {
         tag = NULL; /* use default tag */
     }
     else {
-        tag = flb_sds_create_size(len);
-        if (!tag) {
-            mk_mem_free(uri);
+        tag = flb_sds_create(&request->path[1]);
+
+        if (tag == NULL) {
             return -1;
         }
-
-        /* New tag skipping the URI '/' */
-        flb_sds_cat(tag, uri + 1, len - 1);
 
         /* Sanitize, only allow alphanum chars */
         for (i = 0; i < flb_sds_len(tag); i++) {
@@ -613,53 +569,27 @@ int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
         }
     }
 
-    mk_mem_free(uri);
-
-    /* Check if we have a Host header: Hostname ; port */
-    mk_http_point_header(&request->host, &session->parser, MK_HEADER_HOST);
-
-    /* Header: Connection */
-    mk_http_point_header(&request->connection, &session->parser,
-                         MK_HEADER_CONNECTION);
-
+    /* ToDo: Fix me */
     /* HTTP/1.1 needs Host header */
-    if (!request->host.data && request->protocol == MK_HTTP_PROTOCOL_11) {
+    if (session->version == HTTP_PROTOCOL_HTTP1 && 
+        request->host == NULL) {
         flb_sds_destroy(tag);
+
         return -1;
-    }
-
-    /* Should we close the session after this request ? */
-    mk_http_keepalive_check(session, request, ctx->server);
-
-    /* Content Length */
-    header = &session->parser.headers[MK_HEADER_CONTENT_LENGTH];
-    if (header->type == MK_HEADER_CONTENT_LENGTH) {
-        request->_content_length.data = header->val.data;
-        request->_content_length.len  = header->val.len;
-    }
-    else {
-        request->_content_length.data = NULL;
     }
 
     if (request->method != MK_METHOD_POST) {
+        send_response(response, 400, "error: invalid HTTP method\n");
         flb_sds_destroy(tag);
-        send_response(conn, 400, "error: invalid HTTP method\n");
+
         return -1;
     }
 
-    ret = process_payload(ctx, conn, tag, session, request);
-    flb_sds_destroy(tag);
-    send_response(conn, ctx->successful_response_code, NULL);
-    return ret;
-}
+    ret = process_payload(tag, request, response);
 
-/*
- * Handle an incoming request which has resulted in an http parser error.
- */
-int http_prot_handle_error(struct flb_http *ctx, struct http_conn *conn,
-                           struct mk_http_session *session,
-                           struct mk_http_request *request)
-{
-    send_response(conn, 400, "error: invalid request\n");
-    return -1;
+    flb_sds_destroy(tag);
+
+    send_response(response, context->successful_response_code, NULL);
+
+    return ret;
 }

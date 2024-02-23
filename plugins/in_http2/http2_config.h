@@ -21,9 +21,9 @@
 #define FLB_IN_HTTP_CONFIG_H
 
 #include <fluent-bit/flb_input_plugin.h>
-#include "http.h"
+#include "http2.h"
 
-struct flb_http *http_config_create(struct flb_input_instance *ins);
-int http_config_destroy(struct flb_http *ctx);
+struct flb_http2 *http2_config_create(struct flb_input_instance *ins);
+int http2_config_destroy(struct flb_http2 *ctx);
 
 #endif
