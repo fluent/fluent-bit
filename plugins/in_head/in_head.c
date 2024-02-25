@@ -223,7 +223,7 @@ static int split_lines_per_record(struct flb_input_instance *i_ins,
             ret = flb_log_event_encoder_append_body_values(
                     &ctx->log_encoder,
                     FLB_LOG_EVENT_CSTRING_VALUE(key_str),
-                    FLB_LOG_EVENT_STRING_VALUE(ctx->buf, ctx->buf_len));
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->buf, str_len));
         }
     }
 
