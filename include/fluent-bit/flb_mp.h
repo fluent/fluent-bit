@@ -85,4 +85,7 @@ void flb_mp_accessor_set_active(struct flb_mp_accessor *mpa, int status);
 int flb_mp_accessor_set_active_by_pattern(struct flb_mp_accessor *mpa,
                                           const char *pattern, int status);
 
+struct cfl_object *flb_mp_object_to_cfl(msgpack_object *o);
+int flb_mp_cfl_to_msgpack(struct cfl_object *obj, char **out_buf, size_t *out_size);
+
 #endif
