@@ -49,8 +49,24 @@ int fw_conn_event(void *data)
 
     event = &connection->event;
 
+    flb_plg_info(ctx->ins, "ctx->handshake_status = %d", conn->handshake_status);
+    flb_plg_debug(ctx->ins, "[conn_event] conn->helo->nonce = %s", conn->helo->nonce);
+    flb_plg_debug(ctx->ins, "[conn_event] conn->helo->salt = %s", conn->helo->salt);
 
     if (event->mask & MK_EVENT_READ) {
+        if (conn->handshake_status == FW_HANDSHAKE_PINGPONG) {
+            flb_plg_debug(ctx->ins, "[conn_event] conn->helo = %p", conn->helo);
+            flb_plg_debug(ctx->ins, "[conn_event] conn->helo->nonce = %s", conn->helo->nonce);
+
+            ret = fw_prot_secure_forward_handshake(ctx->ins, conn);
+            if (ret == -1) {
+                return -1;
+            }
+            conn->handshake_status = FW_HANDSHAKE_ESTABLISHED;
+        }
+
+        flb_plg_info(ctx->ins, "[event->mask] ctx->status = %d", conn->handshake_status);
+
         available = (conn->buf_size - conn->buf_len);
         if (available < 1) {
             if (conn->buf_size >= ctx->buffer_max_size) {
@@ -116,6 +132,7 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
 {
     struct fw_conn *conn;
     int             ret;
+    struct flb_in_fw_helo *helo = NULL;
 
     conn = flb_malloc(sizeof(struct fw_conn));
     if (!conn) {
@@ -124,7 +141,30 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
         return NULL;
     }
 
+    conn->handshake_status = FW_HANDSHAKE_ESTABLISHED;
+    if (ctx->ins->use_tls == FLB_TRUE || ctx->shared_key != NULL) {
+        conn->handshake_status = FW_HANDSHAKE_HELO;
+        helo = flb_malloc(sizeof(struct flb_in_fw_helo));
+        if (!helo) {
+            flb_errno();
+
+            return NULL;
+        }
+        ret = fw_prot_secure_forward_handshake_start(ctx->ins, connection, helo);
+        if (ret != 0) {
+            return NULL;
+        }
+
+        flb_plg_debug(ctx->ins, "helo->nonce = %s", helo->nonce);
+        flb_plg_debug(ctx->ins, "helo->salt = %s", helo->salt);
+        conn->handshake_status = FW_HANDSHAKE_PINGPONG;
+    }
+
+    flb_plg_debug(ctx->ins, "helo: helo->nonce = %s", helo->nonce);
+    flb_plg_debug(ctx->ins, "helo: helo->salt = %s", helo->salt);
+
     conn->connection = connection;
+    conn->helo       = helo;
 
     /* Set data for the event-loop */
     connection->user_data     = conn;
@@ -147,6 +187,10 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
     }
     conn->buf_size = ctx->buffer_chunk_size;
     conn->in       = ctx->ins;
+
+    flb_plg_debug(ctx->ins, "helo: conn->helo = %p", conn->helo);
+    flb_plg_debug(ctx->ins, "helo: conn->helo->nonce = %s", conn->helo->nonce);
+    flb_plg_debug(ctx->ins, "helo: conn->helo->salt = %s", conn->helo->salt);
 
     /* Register instance into the event loop */
     ret = mk_event_add(flb_engine_evl_get(),
@@ -178,6 +222,15 @@ int fw_conn_del(struct fw_conn *conn)
     /* Release resources */
     mk_list_del(&conn->_head);
 
+    if (conn->helo != NULL) {
+        if (conn->helo->nonce != NULL) {
+            flb_sds_destroy(conn->helo->nonce);
+        }
+        if (conn->helo->salt != NULL) {
+            flb_sds_destroy(conn->helo->salt);
+        }
+        flb_free(conn->helo);
+    }
     flb_free(conn->buf);
     flb_free(conn);
 

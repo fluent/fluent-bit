@@ -288,6 +288,16 @@ static struct flb_config_map config_map[] = {
     "Prefix incoming tag with the defined value."
    },
    {
+    FLB_CONFIG_MAP_STR, "shared_key", NULL,
+    0, FLB_FALSE, 0,
+    "Shared key for authentication"
+   },
+   {
+    FLB_CONFIG_MAP_STR, "self_hostname", NULL,
+    0, FLB_FALSE, 0,
+    "Hostname"
+   },
+   {
     FLB_CONFIG_MAP_STR, "unix_path", NULL,
     0, FLB_TRUE, offsetof(struct flb_in_fw_config, unix_path),
     "The path to unix socket to receive a Forward message."

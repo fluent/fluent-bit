@@ -25,6 +25,19 @@
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
+enum {
+    FW_HANDSHAKE_HELO        = 1,
+    FW_HANDSHAKE_PINGPONG    = 2,
+    FW_HANDSHAKE_ESTABLISHED = 3,
+};
+
+struct flb_in_fw_helo {
+    flb_sds_t nonce;
+    int nonce_len;
+    flb_sds_t salt;
+    int salt_len;
+};
+
 struct flb_in_fw_config {
     size_t buffer_max_size;         /* Max Buffer size             */
     size_t buffer_chunk_size;       /* Chunk allocation size       */
@@ -39,6 +52,10 @@ struct flb_in_fw_config {
     char *unix_path;                /* Unix path for socket        */
     unsigned int unix_perm;         /* Permission for socket       */
     flb_sds_t unix_perm_str;        /* Permission (config map)     */
+
+    /* secure forward */
+    flb_sds_t shared_key;        /* shared key                   */
+    flb_sds_t self_hostname;     /* hostname used in certificate  */
 
     int coll_fd;
     struct flb_downstream *downstream; /* Client manager          */
