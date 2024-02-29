@@ -737,16 +737,15 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
         flb_sds_destroy(indent);
         indent = NULL;
     }
-    flb_free(buf);
 
     /* Append this file to the list */
     file = flb_malloc(sizeof(struct local_file));
     if (!file) {
         flb_errno();
         ctx->level--;
-        buf = NULL;
         goto error;
     }
+    flb_free(buf);
     file->path = flb_sds_create(cfg_file);
     mk_list_add(&file->_head, &ctx->includes);
     ctx->level--;
@@ -760,9 +759,7 @@ error:
     if (indent) {
         flb_sds_destroy(indent);
     }
-    if (buf) {
-        flb_free(buf);
-    }
+    flb_free(buf);
     return -1;
 }
 
