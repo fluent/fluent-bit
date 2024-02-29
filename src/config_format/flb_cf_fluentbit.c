@@ -744,6 +744,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     if (!file) {
         flb_errno();
         ctx->level--;
+        buf = NULL;
         goto error;
     }
     file->path = flb_sds_create(cfg_file);
