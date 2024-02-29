@@ -759,7 +759,9 @@ error:
     if (indent) {
         flb_sds_destroy(indent);
     }
-    flb_free(buf);
+    if (buf) {
+        flb_free(buf);
+    }
     return -1;
 }
 
