@@ -420,6 +420,7 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
 
         if (ctx->machine_id == NULL) {
             flb_plg_error(ctx->ins, "unable to retrieve machine_id");
+            flb_free(ctx);
             return -1;
         }
 
@@ -431,6 +432,7 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
 
     if (!ctx->i) {
         flb_plg_error(ctx->ins, "could not load metrics collector");
+        flb_free(ctx);
         return -1;
     }
 
