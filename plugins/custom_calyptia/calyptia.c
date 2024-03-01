@@ -245,7 +245,6 @@ static struct flb_output_instance *setup_cloud_output(struct flb_config *config,
 
     if (!cloud) {
         flb_plg_error(ctx->ins, "could not load Calyptia Cloud connector");
-        flb_free(ctx);
         return NULL;
     }
 
@@ -254,7 +253,6 @@ static struct flb_output_instance *setup_cloud_output(struct flb_config *config,
 
     if (ret != 0) {
         flb_plg_error(ctx->ins, "could not load Calyptia Cloud connector");
-        flb_free(ctx);
         return NULL;
     }
 
@@ -268,7 +266,6 @@ static struct flb_output_instance *setup_cloud_output(struct flb_config *config,
             label = flb_sds_create_size(strlen(key->str) + strlen(val->str) + 1);
 
             if (!label) {
-                flb_free(ctx);
                 return NULL;
             }
 
@@ -316,7 +313,6 @@ static struct flb_output_instance *setup_cloud_output(struct flb_config *config,
         label = flb_sds_create_size(strlen("fleet_id") + strlen(ctx->fleet_id) + 1);
 
         if (!label) {
-            flb_free(ctx);
             return NULL;
         }
 
@@ -455,6 +451,7 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
         ctx->o = setup_cloud_output(config, ctx);
 
         if (ctx->o == NULL) {
+            flb_free(ctx);
             return -1;
         }
     }
