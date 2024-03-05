@@ -271,6 +271,7 @@ option(FLB_FILTER_PARSER               "Enable parser filter"                   
 option(FLB_FILTER_KUBERNETES           "Enable kubernetes filter"                     Yes)
 option(FLB_FILTER_REWRITE_TAG          "Enable tag rewrite filter"                    Yes)
 option(FLB_FILTER_THROTTLE             "Enable throttle filter"                       Yes)
+option(FLB_FILTER_SAMPLING             "Enable sampling filter"                       Yes)
 option(FLB_FILTER_THROTTLE_SIZE        "Enable throttle size filter"                   No)
 option(FLB_FILTER_TYPE_CONVERTER       "Enable type converter filter"                 Yes)
 option(FLB_FILTER_MULTILINE            "Enable multiline filter"                      Yes)
