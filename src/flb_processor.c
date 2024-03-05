@@ -239,7 +239,7 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
         pu->unit_type = FLB_PROCESSOR_UNIT_NATIVE;
 
         /* create an instance of the processor */
-        processor_instance = flb_processor_instance_create(config, unit_name, NULL);
+        processor_instance = flb_processor_instance_create(config, pu->event_type, unit_name, NULL);
 
         if (processor_instance == NULL) {
             flb_error("[processor] error creating native processor instance %s", pu->name);
@@ -288,7 +288,7 @@ int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k
             for (i = 0; i < v->data.as_array->entry_count; i++) {
                 val = v->data.as_array->entries[i];
                 ret = flb_filter_set_property(pu->ctx, k, val->data.as_string);
-                
+
                 if (ret == -1) {
                     return ret;
                 }
@@ -335,7 +335,7 @@ int flb_processor_unit_init(struct flb_processor_unit *pu)
 
     if (pu->unit_type == FLB_PROCESSOR_UNIT_FILTER) {
         ret = flb_filter_init(proc->config, pu->ctx);
-        
+
         if (ret == -1) {
             flb_error("[processor] error initializing unit filter %s", pu->name);
             return -1;
@@ -371,7 +371,7 @@ int flb_processor_init(struct flb_processor *proc)
     mk_list_foreach(head, &proc->logs) {
         pu = mk_list_entry(head, struct flb_processor_unit, _head);
         ret = flb_processor_unit_init(pu);
-        
+
         if (ret == -1) {
             return -1;
         }
@@ -381,7 +381,7 @@ int flb_processor_init(struct flb_processor *proc)
     mk_list_foreach(head, &proc->metrics) {
         pu = mk_list_entry(head, struct flb_processor_unit, _head);
         ret = flb_processor_unit_init(pu);
-        
+
         if (ret == -1) {
             return -1;
         }
@@ -391,7 +391,7 @@ int flb_processor_init(struct flb_processor *proc)
     mk_list_foreach(head, &proc->traces) {
         pu = mk_list_entry(head, struct flb_processor_unit, _head);
         ret = flb_processor_unit_init(pu);
-        
+
         if (ret == -1) {
             return -1;
         }
@@ -500,7 +500,7 @@ int flb_processor_run(struct flb_processor *proc,
              *
              */
             if (ret == FLB_FILTER_MODIFIED) {
-                
+
                 /* release intermediate buffer */
                 if (cur_buf != data) {
                     flb_free(cur_buf);
@@ -614,7 +614,7 @@ int flb_processor_run(struct flb_processor *proc,
                 }
             }
             else if (type == FLB_PROCESSOR_METRICS) {
-                
+
                 if (p_ins->p->cb_process_metrics != NULL) {
                     ret = p_ins->p->cb_process_metrics(p_ins,
                                                        (struct cmt *) cur_buf,
@@ -631,7 +631,7 @@ int flb_processor_run(struct flb_processor *proc,
                 }
             }
             else if (type == FLB_PROCESSOR_TRACES) {
-                
+
                 if (p_ins->p->cb_process_traces != NULL) {
                     ret = p_ins->p->cb_process_traces(p_ins,
                                                       (struct ctrace *) cur_buf,
@@ -714,7 +714,7 @@ static int load_from_config_format_group(struct flb_processor *proc, int type, s
     for (i = 0; i < array->entry_count; i++) {
         /* every entry in the array must be a map */
         tmp = array->entries[i];
-        
+
         if (tmp->type != CFL_VARIANT_KVLIST) {
             return -1;
         }
@@ -723,7 +723,7 @@ static int load_from_config_format_group(struct flb_processor *proc, int type, s
 
         /* get the processor name, this is a mandatory config field */
         tmp = cfl_kvlist_fetch(kvlist, "name");
-        
+
         if (!tmp) {
             flb_error("processor configuration don't have a 'name' defined");
             return -1;
@@ -732,7 +732,7 @@ static int load_from_config_format_group(struct flb_processor *proc, int type, s
         /* create the processor unit and load all the properties */
         name = tmp->data.as_string;
         pu = flb_processor_unit_create(proc, type, name);
-        
+
         if (!pu) {
             flb_error("cannot create '%s' processor unit", name);
             return -1;
@@ -741,7 +741,7 @@ static int load_from_config_format_group(struct flb_processor *proc, int type, s
         /* iterate list of properties and set each one (skip name) */
         cfl_list_foreach(head, &kvlist->list) {
             pair = cfl_list_entry(head, struct cfl_kvpair, _head);
-            
+
             if (strcmp(pair->key, "name") == 0) {
                 continue;
             }
@@ -750,10 +750,10 @@ static int load_from_config_format_group(struct flb_processor *proc, int type, s
              * we must release the pre-allocated '*' match at first.
              */
             if (pu->unit_type == FLB_PROCESSOR_UNIT_FILTER) {
-                
+
                 if (strcmp(pair->key, "match") == 0) {
                     f_ins = (struct flb_filter_instance *)pu->ctx;
-                    
+
                     if (f_ins->match != NULL) {
                         flb_sds_destroy(f_ins->match);
                         f_ins->match = NULL;
@@ -762,7 +762,7 @@ static int load_from_config_format_group(struct flb_processor *proc, int type, s
             }
 
             ret = flb_processor_unit_set_property(pu, pair->key, pair->val);
-            
+
             if (ret == -1) {
                 flb_error("cannot set property '%s' for processor '%s'", pair->key, name);
                 return -1;
@@ -782,10 +782,10 @@ int flb_processors_load_from_config_format_group(struct flb_processor *proc, str
 
     /* logs */
     val = cfl_kvlist_fetch(g->properties, "logs");
-    
+
     if (val) {
         ret = load_from_config_format_group(proc, FLB_PROCESSOR_LOGS, val);
-        
+
         if (ret == -1) {
             flb_error("failed to load 'logs' processors");
             return -1;
@@ -794,10 +794,10 @@ int flb_processors_load_from_config_format_group(struct flb_processor *proc, str
 
     /* metrics */
     val = cfl_kvlist_fetch(g->properties, "metrics");
-    
+
     if (val) {
         ret = load_from_config_format_group(proc, FLB_PROCESSOR_METRICS, val);
-        
+
         if (ret == -1) {
             flb_error("failed to load 'metrics' processors");
             return -1;
@@ -808,7 +808,7 @@ int flb_processors_load_from_config_format_group(struct flb_processor *proc, str
     val = cfl_kvlist_fetch(g->properties, "traces");
     if (val) {
         ret = load_from_config_format_group(proc, FLB_PROCESSOR_TRACES, val);
-        
+
         if (ret == -1) {
             flb_error("failed to load 'traces' processors");
             return -1;
@@ -848,7 +848,7 @@ int flb_processor_instance_set_property(struct flb_processor_instance *ins,
 
     len = strlen(k);
     tmp = flb_env_var_translate(ins->config->env, v);
-    
+
     if (!tmp) {
         return -1;
     }
@@ -859,7 +859,7 @@ int flb_processor_instance_set_property(struct flb_processor_instance *ins,
     else if (prop_key_check("log_level", k, len) == 0 && tmp) {
         ret = flb_log_get_level_str(tmp);
         flb_sds_destroy(tmp);
-        
+
         if (ret == -1) {
             return -1;
         }
@@ -871,9 +871,9 @@ int flb_processor_instance_set_property(struct flb_processor_instance *ins,
          * map it directly to avoid an extra memory allocation.
          */
         kv = flb_kv_item_create(&ins->properties, (char *) k, NULL);
-        
+
         if (!kv) {
-            
+
             if (tmp) {
                 flb_sds_destroy(tmp);
             }
@@ -892,9 +892,9 @@ const char *flb_processor_instance_get_property(
     return flb_kv_get_key_value(key, &ins->properties);
 }
 
-struct flb_processor_instance *flb_processor_instance_create(
-                                    struct flb_config *config,
-                                    const char *name, void *data)
+struct flb_processor_instance *flb_processor_instance_create(struct flb_config *config,
+                                                             int event_type,
+                                                             const char *name, void *data)
 {
     struct flb_processor_instance *instance;
     struct flb_processor_plugin   *plugin;
@@ -907,7 +907,7 @@ struct flb_processor_instance *flb_processor_instance_create(
 
     mk_list_foreach(head, &config->processor_plugins) {
         plugin = mk_list_entry(head, struct flb_processor_plugin, _head);
-        
+
         if (strcasecmp(plugin->name, name) == 0) {
             break;
         }
@@ -919,7 +919,7 @@ struct flb_processor_instance *flb_processor_instance_create(
     }
 
     instance = flb_calloc(1, sizeof(struct flb_filter_instance));
-    
+
     if (!instance) {
         flb_errno();
         return NULL;
@@ -934,7 +934,8 @@ struct flb_processor_instance *flb_processor_instance_create(
     snprintf(instance->name, sizeof(instance->name) - 1,
              "%s.%i", plugin->name, id);
 
-    instance->id    = id;
+    instance->id         = id;
+    instance->event_type = event_type;
     instance->alias = NULL;
     instance->p     = plugin;
     instance->data  = data;
@@ -1003,7 +1004,7 @@ int flb_processor_instance_check_properties(
          * instance in question.
          */
         config_map = flb_config_map_create(config, p->config_map);
-        
+
         if (!config_map) {
             flb_error("[native processor] error loading config map for '%s' plugin",
                       p->name);
@@ -1015,9 +1016,9 @@ int flb_processor_instance_check_properties(
         ret = flb_config_map_properties_check(ins->p->name,
                                               &ins->properties,
                                               ins->config_map);
-        
+
         if (ret == -1) {
-            
+
             if (config->program_name) {
                 flb_helper("try the command: %s -F %s -h\n",
                            config->program_name, ins->p->name);
