@@ -506,7 +506,7 @@ static int winevtlog_next(struct winevtlog_channel *ch, int hit_threshold)
 
     wait = WaitForSingleObject(ch->signal_event, 0);
     if (wait == WAIT_FAILED) {
-        flb_error("subscription is invalid");
+        flb_error("subscription is invalid. err code = %d", GetLastError());
         return FLB_FALSE;
     }
     else if (wait != WAIT_OBJECT_0) {
