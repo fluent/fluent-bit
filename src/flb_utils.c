@@ -1456,7 +1456,6 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
         CFRelease(serialNumber);
 
         if (bret == false) {
-            flb_free(*out_size);
             *out_size = 0;
             return -1;
         }
