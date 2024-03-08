@@ -51,13 +51,18 @@ int fw_conn_event(void *data)
 
     if (event->mask & MK_EVENT_READ) {
         if (conn->handshake_status == FW_HANDSHAKE_PINGPONG) {
+            flb_plg_trace(ctx->ins, "handshake status = %d", conn->handshake_status);
 
             ret = fw_prot_secure_forward_handshake(ctx->ins, conn);
             if (ret == -1) {
                 return -1;
             }
+
             conn->handshake_status = FW_HANDSHAKE_ESTABLISHED;
+            return 0;
         }
+
+        flb_plg_trace(ctx->ins, "handshake status = %d", conn->handshake_status);
 
         available = (conn->buf_size - conn->buf_len);
         if (available < 1) {
