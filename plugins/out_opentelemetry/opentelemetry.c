@@ -1502,32 +1502,32 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "logs_timestamp_metadata_key", "$Timestamp",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_timestamp_metadata_key),
-     "Specify an Timestamp key"
+     "Specify a Timestamp key"
     },
     {
      FLB_CONFIG_MAP_STR, "logs_severity_text_metadata_key", "$SeverityText",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_severity_text_metadata_key),
-     "Specify an SeverityText key"
+     "Specify a SeverityText key"
     },
     {
      FLB_CONFIG_MAP_STR, "logs_severity_number_metadata_key", "$SeverityNumber",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_severity_number_metadata_key),
-     "Specify an SeverityNumber key"
+     "Specify a SeverityNumber key"
     },
     {
      FLB_CONFIG_MAP_STR, "logs_trace_flags_metadata_key", "$TraceFlags",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_trace_flags_metadata_key),
-     "Specify an TraceFlags key"
+     "Specify a TraceFlags key"
     },
     {
      FLB_CONFIG_MAP_STR, "logs_span_id_metadata_key", "$SpanId",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_span_id_metadata_key),
-     "Specify an SpanId key"
+     "Specify a SpanId key"
     },
     {
      FLB_CONFIG_MAP_STR, "logs_trace_id_metadata_key", "$TraceId",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_trace_id_metadata_key),
-     "Specify an TraceId key"
+     "Specify a TraceId key"
     },
     {
      FLB_CONFIG_MAP_STR, "logs_attributes_metadata_key", "$Attributes",
@@ -1542,7 +1542,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "logs_resource_metadata_key", "Resource",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_resource_metadata_key),
-     "Specify an Resource key"
+     "Specify a Resource key"
     },
 
     /* EOF */
