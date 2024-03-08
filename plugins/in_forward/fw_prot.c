@@ -246,8 +246,6 @@ int flb_secure_forward_set_helo(struct flb_input_instance *in,
     }
     helo->nonce = tmp;
     helo->nonce_len = FLB_IN_FW_NONCE_SIZE;
-    flb_plg_debug(in, "set_helo: nonce = %s", helo->nonce);
-    flb_plg_debug(in, "set_helo: nonce_size = %d", o.via.str.size);
     o = root.via.array.ptr[1];
 
     tmp = flb_sds_create_len(o.via.str.ptr, o.via.str.size);
@@ -260,8 +258,6 @@ int flb_secure_forward_set_helo(struct flb_input_instance *in,
     }
     helo->salt = tmp;
     helo->salt_len = FLB_IN_FW_SALT_SIZE;
-    flb_plg_debug(in, "set_helo: salt = %s", helo->salt);
-    flb_plg_debug(in, "set_helo: salt_size = %d", o.via.str.size);
 
     msgpack_unpacked_destroy(&result);
     msgpack_sbuffer_destroy(&mp_sbuf);
@@ -330,12 +326,7 @@ static int send_helo(struct flb_input_instance *in, struct flb_connection *conne
         result = 0;
     }
 
-    flb_plg_debug(in, "send_helo: nonce = %s", nonce);
-    flb_plg_debug(in, "send_helo: salt = %s", user_auth_salt);
-
     result = flb_secure_forward_set_helo(in, helo, nonce, user_auth_salt);
-
-    flb_plg_debug(in, "send_helo: helo = %p", helo);
 
     return result;
 }
@@ -373,9 +364,6 @@ static int flb_secure_forward_hash_shared_key(struct flb_input_instance *ins,
      * fixed 16 bytes. */
     data_entries[0]   = (unsigned char *) shared_key_salt;
     length_entries[0] = flb_sds_len(shared_key_salt);
-
-    flb_plg_info(ins, "[hash_digest] shared_key_salt = %s", shared_key_salt);
-    flb_plg_info(ins, "[hash_digest] shared_key_salt_len = %zd", flb_sds_len(shared_key_salt));
 
     data_entries[1]   = (unsigned char *) hostname;
     length_entries[1] = hostname_len;
@@ -423,22 +411,14 @@ static int flb_secure_forward_hash_digest(struct flb_input_instance *ins,
     data_entries[0]   = (unsigned char *) shared_key_salt;
     length_entries[0] = flb_sds_len(shared_key_salt);
 
-    flb_plg_info(ins, "[hash_digest] shared_key_salt = %s", shared_key_salt);
-    flb_plg_info(ins, "[hash_digest] shared_key_salt_len = %zd", flb_sds_len(shared_key_salt));
-
     data_entries[1]   = (unsigned char *) ctx->self_hostname;
     length_entries[1] = strlen(ctx->self_hostname);
-
-    flb_plg_info(ins, "[hash_digest] ctx->self_hostname = %s", ctx->self_hostname);
 
     data_entries[2]   = (unsigned char *) conn->helo->nonce;
     length_entries[2] = FLB_IN_FW_NONCE_SIZE; /* always 16 bytes. */
 
-    flb_plg_info(ins, "[hash_digest] conn->helo->nonce = %s", conn->helo->nonce);
-
     data_entries[3]   = (unsigned char *) ctx->shared_key;
     length_entries[3] = strlen(ctx->shared_key);
-    flb_plg_info(ins, "[hash_digest] ctx->shared_key = %s", ctx->shared_key);
 
     result = flb_hash_simple_batch(FLB_HASH_SHA512,
                                    4,
@@ -562,13 +542,6 @@ static int check_ping(struct flb_input_instance *ins,
         return -1;
     }
 
-    flb_plg_debug(ins, "[check_ping] conn->helo = %p", conn->helo);
-    flb_plg_debug(ins, "[check_ping] conn->helo->nonce = %s", conn->helo->nonce);
-    flb_plg_debug(ins, "[check_ping] hostname = %s\nshared_key_salt = %s\nshared_key_digest = %s",
-                  hostname, shared_key_salt, shared_key_digest);
-
-    flb_plg_debug(ins, "[check_ping] \nserverside        = %s\nshared_key_digest = %s", serverside, shared_key_digest);
-
     if (strncmp(serverside, shared_key_digest, shared_key_digest_len) != 0) {
         flb_plg_error(ins, "shared_key mismatch");
         flb_free(serverside);
@@ -631,8 +604,6 @@ static int send_pong(struct flb_input_instance *in,
     /* shared_key_digest */
     msgpack_pack_str(&mp_pck, 128);
     msgpack_pack_str_body(&mp_pck, shared_key_digest_hex, 128);
-
-    flb_plg_info(in, "[send_pong] shared_key_digest_hex = %s", shared_key_digest_hex);
 
     bytes = flb_io_net_write(conn->connection,
                              (void *) mp_sbuf.data,
@@ -1026,9 +997,6 @@ int fw_prot_secure_forward_handshake_start(struct flb_input_instance *ins,
         return -1;
     }
 
-    flb_plg_debug(ins, "protocol: nonce = %s", helo->nonce);
-    flb_plg_debug(ins, "protocol: salt = %s", helo->salt);
-
     return 0;
 }
 
@@ -1054,23 +1022,11 @@ int fw_prot_secure_forward_handshake(struct flb_input_instance *ins,
         goto error;
     }
 
-    /* if (conn->helo->nonce != NULL) { */
-    /*     flb_sds_destroy(conn->helo->nonce); */
-    /* } */
-    /* if (conn->helo->salt != NULL) { */
-    /*     flb_sds_destroy(conn->helo->salt); */
-    /* } */
     flb_sds_destroy(shared_key_salt);
 
     return 0;
 
 error:
-    if (conn->helo->nonce != NULL) {
-        flb_sds_destroy(conn->helo->nonce);
-    }
-    if (conn->helo->salt != NULL) {
-        flb_sds_destroy(conn->helo->salt);
-    }
     if (shared_key_salt != NULL) {
         flb_sds_destroy(shared_key_salt);
     }
