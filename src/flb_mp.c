@@ -22,9 +22,14 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mp.h>
+#include <fluent-bit/flb_mp_chunk.h>
+
 #include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_metrics.h>
+
+#include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 
 #include <msgpack.h>
 #include <mpack/mpack.h>
@@ -1012,5 +1017,208 @@ int flb_mp_cfl_to_msgpack(struct cfl_object *obj, char **out_buf, size_t *out_si
     *out_buf = mp_sbuf.data;
     *out_size = mp_sbuf.size;
 
+    return 0;
+}
+
+struct flb_mp_chunk_record *flb_mp_chunk_record_create(struct flb_mp_chunk_cobj *chunk_cobj)
+{
+    struct flb_mp_chunk_record *record;
+
+    record = flb_calloc(1, sizeof(struct flb_mp_chunk_record));
+    if (!record) {
+        flb_errno();
+        return NULL;
+    }
+    record->modified = FLB_FALSE;
+
+    return record;
+}
+
+struct flb_mp_chunk_cobj *flb_mp_chunk_cobj_create(struct flb_log_event_encoder *log_encoder, struct flb_log_event_decoder *log_decoder)
+{
+    struct flb_mp_chunk_cobj *chunk_cobj;
+
+    if (!log_encoder || !log_decoder) {
+        return NULL;
+    }
+
+    chunk_cobj = flb_calloc(1, sizeof(struct flb_mp_chunk_cobj));
+    if (!chunk_cobj) {
+        flb_errno();
+        return NULL;
+    }
+    cfl_list_init(&chunk_cobj->records);
+    chunk_cobj->record_pos  = NULL;
+    chunk_cobj->log_encoder = log_encoder;
+    chunk_cobj->log_decoder = log_decoder;
+
+    return chunk_cobj;
+}
+
+int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_buf, size_t *out_size)
+{
+    int ret;
+    char *mp_buf;
+    size_t mp_size;
+    struct cfl_list *head;
+    struct flb_mp_chunk_record *record;
+
+    if (!chunk_cobj) {
+        return -1;
+    }
+
+    /* Iterate all records */
+    cfl_list_foreach(head, &chunk_cobj->records) {
+        record = cfl_list_entry(head, struct flb_mp_chunk_record, _head);
+        if (record->modified == FLB_TRUE) {
+            //FIXME WRITE RAW BUFFER
+            continue;
+        }
+
+        ret = flb_log_event_encoder_begin_record(chunk_cobj->log_encoder);
+        if (ret == -1) {
+            return -1;
+        }
+
+        ret = flb_log_event_encoder_set_timestamp(chunk_cobj->log_encoder, &record->event.timestamp);
+        if (ret == -1) {
+            return -1;
+        }
+
+        if (record->cobj_metadata) {
+            ret = flb_mp_cfl_to_msgpack(record->cobj_metadata, &mp_buf, &mp_size);
+            if (ret == -1) {
+                return -1;
+            }
+
+            ret = flb_log_event_encoder_set_metadata_from_raw_msgpack(chunk_cobj->log_encoder, mp_buf, mp_size);
+            if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                flb_free(mp_buf);
+                return -1;
+            }
+            flb_free(mp_buf);
+        }
+
+        ret = flb_mp_cfl_to_msgpack(record->cobj_record, &mp_buf, &mp_size);
+        if (ret == -1) {
+            return -1;
+        }
+
+        ret = flb_log_event_encoder_set_body_from_raw_msgpack(chunk_cobj->log_encoder, mp_buf, mp_size);
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_free(mp_buf);
+            return -1;
+        }
+        flb_free(mp_buf);
+
+        ret = flb_log_event_encoder_commit_record(chunk_cobj->log_encoder);
+        if (ret == -1) {
+            return -1;
+        }
+    }
+
+    /* set new output buffer */
+    *out_buf = chunk_cobj->log_encoder->output_buffer;
+    *out_size = chunk_cobj->log_encoder->output_length;
+
+    flb_log_event_encoder_claim_internal_buffer_ownership(chunk_cobj->log_encoder);
+    return 0;
+}
+
+int flb_mp_chunk_cobj_destroy(struct flb_mp_chunk_cobj *chunk_cobj)
+{
+    struct cfl_list *tmp;
+    struct cfl_list *head;
+    struct flb_mp_chunk_record *record;
+
+    if (!chunk_cobj) {
+        return -1;
+    }
+
+    cfl_list_foreach_safe(head, tmp, &chunk_cobj->records) {
+        record = cfl_list_entry(head, struct flb_mp_chunk_record, _head);
+        if (record->cobj_metadata) {
+            cfl_object_destroy(record->cobj_metadata);
+        }
+        if (record->cobj_record) {
+            cfl_object_destroy(record->cobj_record);
+        }
+        cfl_list_del(&record->_head);
+        flb_free(record);
+    }
+
+    flb_free(chunk_cobj);
+    return 0;
+}
+
+int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
+                                  struct flb_mp_chunk_record **out_record)
+{
+    int ret;
+    size_t bytes;
+    struct flb_mp_chunk_record *record = NULL;
+
+    *out_record = NULL;
+
+    bytes = chunk_cobj->log_decoder->length - chunk_cobj->log_decoder->offset;
+
+    /*
+     * if there are remaining decoder bytes, keep iterating msgpack and populate
+     * the cobj list. Otherwise it means all the content is ready as a chunk_cobj_record.
+     */
+    if (bytes > 0) {
+        record = flb_mp_chunk_record_create(chunk_cobj);
+        if (!record) {
+            return FLB_MP_CHUNK_RECORD_ERROR;
+        }
+
+        ret = flb_log_event_decoder_next(chunk_cobj->log_decoder, &record->event);
+        if (ret != FLB_EVENT_DECODER_SUCCESS) {
+            flb_free(record);
+            return -1;
+        }
+
+        record->cobj_metadata = flb_mp_object_to_cfl(record->event.metadata);
+        if (!record->cobj_metadata) {
+            flb_free(record);
+            return -1;
+        }
+
+        record->cobj_record = flb_mp_object_to_cfl(record->event.body);
+        if (!record->cobj_record) {
+            cfl_object_destroy(record->cobj_metadata);
+            flb_free(record);
+            return -1;
+        }
+
+        cfl_list_add(&record->_head, &chunk_cobj->records);
+    }
+    else if (chunk_cobj->record_pos == NULL) {
+        /*
+         * bytes is zero, if record_next is not set it means we need to start iterating from
+         * this list, just assign the first entry from it.
+         */
+        record = cfl_list_entry_first(&chunk_cobj->records, struct flb_mp_chunk_record, _head);
+    }
+    else {
+        /* check if we are the last in the list */
+        record = cfl_list_entry_first(&chunk_cobj->records, struct flb_mp_chunk_record, _head);
+        if (chunk_cobj->record_pos == record) {
+            return FLB_MP_CHUNK_RECORD_EOF;
+        }
+
+        /* get the next entry from the list */
+        record = cfl_list_entry_next(&record->_head, struct flb_mp_chunk_record,
+                                      _head, &chunk_cobj->records);
+    }
+
+    chunk_cobj->record_pos = record;
+    *out_record = chunk_cobj->record_pos;
+
+    return FLB_MP_CHUNK_RECORD_OK;
+}
+
+int flb_mp_chunk_cobj_record_modified()
+{
     return 0;
 }
