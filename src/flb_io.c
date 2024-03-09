@@ -62,6 +62,7 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_pal.h>
 
 int flb_io_net_accept(struct flb_connection *connection,
                        struct flb_coro *coro)
@@ -422,7 +423,7 @@ retry:
 
                 if (error != 0) {
                     /* Connection is broken, not much to do here */
-                    strerror_r(error, so_error_buf, sizeof(so_error_buf) - 1);
+                    flb_strerror_r(error, so_error_buf, sizeof(so_error_buf));
 
                     flb_error("[io fd=%i] error sending data to: %s (%s)",
                               connection->fd,

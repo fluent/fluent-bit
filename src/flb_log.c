@@ -32,6 +32,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_pal.h>
 
 #ifdef FLB_HAVE_AWS_ERROR_REPORTER
 #include <fluent-bit/aws/flb_aws_error_reporter.h>
@@ -674,7 +675,7 @@ int flb_errno_print(int errnum, const char *file, int line)
 {
     char buf[256];
 
-    strerror_r(errnum, buf, sizeof(buf) - 1);
+    flb_strerror_r(errnum, buf, sizeof(buf));
     flb_error("[%s:%i errno=%i] %s", file, line, errnum, buf);
     return 0;
 }
