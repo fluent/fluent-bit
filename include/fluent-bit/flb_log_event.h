@@ -20,9 +20,9 @@
 #ifndef FLB_LOG_EVENT_H
 #define FLB_LOG_EVENT_H
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_sds.h>
-#include <fluent-bit/flb_mp.h>
 
 #include <msgpack.h>
 
