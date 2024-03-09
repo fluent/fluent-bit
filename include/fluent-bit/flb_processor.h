@@ -138,8 +138,7 @@ struct flb_processor_plugin {
                     struct flb_config *);
 
     int (*cb_process_logs) (struct flb_processor_instance *,
-                            struct flb_log_event_encoder *,
-                            struct flb_log_event *,
+                            void *,       /* struct flb_mp_chunk_cobj_create */
                             const char *,
                             int);
 

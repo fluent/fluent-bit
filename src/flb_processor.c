@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_processor_plugin.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_mp_chunk.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
@@ -413,6 +414,8 @@ int flb_processor_is_active(struct flb_processor *proc)
     return FLB_FALSE;
 }
 
+#include <fluent-bit/flb_pack.h>
+
 /*
  * This function will run all the processor units for the given tag and data, note
  * that depending of the 'type', 'data' can reference a msgpack for logs, a CMetrics
@@ -426,17 +429,18 @@ int flb_processor_run(struct flb_processor *proc,
                       void **out_buf, size_t *out_size)
 {
     int ret;
+    int finalize;
     void *cur_buf;
     size_t cur_size;
     void *tmp_buf;
     size_t tmp_size;
-    int decoder_result;
     struct mk_list *head;
     struct mk_list *list = NULL;
-    struct flb_log_event log_event;
     struct flb_processor_unit *pu;
+    struct flb_processor_unit *pu_next;
     struct flb_filter_instance *f_ins;
     struct flb_processor_instance *p_ins;
+    struct flb_mp_chunk_cobj *chunk_cobj = NULL;
 
     if (type == FLB_PROCESSOR_LOGS) {
         list = &proc->logs;
@@ -539,78 +543,96 @@ int flb_processor_run(struct flb_processor *proc,
             /* run the process callback */
             if (type == FLB_PROCESSOR_LOGS) {
                 if (p_ins->p->cb_process_logs != NULL) {
-                    flb_log_event_encoder_reset(p_ins->log_encoder);
 
-                    decoder_result = flb_log_event_decoder_init(
-                                        p_ins->log_decoder, cur_buf, cur_size);
+                    /* if no previous chunkj_cobj exist, create instance. Note that this context will last
+                     * until no more processors exists or the next one is a "filter" type processor.
+                     */
+                    if (!chunk_cobj) {
+                        flb_log_event_decoder_reset(p_ins->log_decoder, cur_buf, cur_size);
 
-                    if (decoder_result != FLB_EVENT_DECODER_SUCCESS) {
-                        flb_log_event_decoder_reset(p_ins->log_decoder, NULL, 0);
+                        /* create the context */
+                        chunk_cobj = flb_mp_chunk_cobj_create(p_ins->log_encoder, p_ins->log_decoder);
+                        if (chunk_cobj == NULL) {
+                            flb_log_event_decoder_reset(p_ins->log_decoder, NULL, 0);
+                            if (cur_buf != data) {
+                                flb_free(cur_buf);
+                            }
+
+                            release_lock(&pu->lock,
+                                        FLB_PROCESSOR_LOCK_RETRY_LIMIT,
+                                        FLB_PROCESSOR_LOCK_RETRY_DELAY);
+
+                            return -1;
+                        }
+                    }
+
+                    /* Invoke processor plugin callback */
+                    ret = p_ins->p->cb_process_logs(p_ins, chunk_cobj, tag, tag_len);
+                    if (ret != FLB_PROCESSOR_SUCCESS) {
+                        flb_warn("[processor] failed to process chunk");
+                    }
+                    chunk_cobj->record_pos = NULL;
+                    finalize = FLB_FALSE;
+
+                    /* is this processing_unit the last one from the list ? */
+                    if (head->next == list ) {
+                        finalize = FLB_TRUE;
+                    }
+                    else {
+                        pu_next = mk_list_entry(head->next, struct flb_processor_unit, _head);
+                        if (pu_next->unit_type == FLB_PROCESSOR_UNIT_FILTER) {
+                            /*
+                             * The next iterationm requires a raw msgpack buffer, let's do the
+                             * encoding.
+                             */
+                            finalize = FLB_TRUE;
+                        }
+                    }
+
+                    if (finalize == FLB_TRUE) {
+                        if (cfl_list_size(&chunk_cobj->records) == 0) {
+                            flb_log_event_encoder_reset(p_ins->log_encoder);
+                            flb_mp_chunk_cobj_destroy(chunk_cobj);
+
+                            *out_buf = NULL;
+                            *out_size = 0;
+
+                            release_lock(&pu->lock,
+                                        FLB_PROCESSOR_LOCK_RETRY_LIMIT,
+                                        FLB_PROCESSOR_LOCK_RETRY_DELAY);
+                            return 0;
+                        }
+
+                        /* encode chunk_cobj as msgpack */
+                        ret = flb_mp_chunk_cobj_encode(chunk_cobj, (char **) &tmp_buf, &tmp_size);
+                        if (ret != 0) {
+                            printf("failure\n");
+                            flb_log_event_decoder_reset(p_ins->log_decoder, NULL, 0);
+
+                            if (cur_buf != data) {
+                                flb_free(cur_buf);
+                            }
+
+                            release_lock(&pu->lock,
+                                        FLB_PROCESSOR_LOCK_RETRY_LIMIT,
+                                        FLB_PROCESSOR_LOCK_RETRY_DELAY);
+
+                            return -1;
+                        }
 
                         if (cur_buf != data) {
                             flb_free(cur_buf);
                         }
 
-                        release_lock(&pu->lock,
-                                     FLB_PROCESSOR_LOCK_RETRY_LIMIT,
-                                     FLB_PROCESSOR_LOCK_RETRY_DELAY);
+                        cur_buf = tmp_buf;
+                        cur_size = tmp_size;
 
-                        return -1;
+
+                        flb_log_event_decoder_reset(p_ins->log_decoder, NULL, 0);
+                        flb_log_event_encoder_claim_internal_buffer_ownership(p_ins->log_encoder);
+                        flb_mp_chunk_cobj_destroy(chunk_cobj);
+                        chunk_cobj = NULL;
                     }
-
-                    ret = FLB_PROCESSOR_SUCCESS;
-
-                    do {
-                        decoder_result = flb_log_event_decoder_next(
-                                            p_ins->log_decoder,
-                                            &log_event);
-
-                        if (decoder_result == FLB_EVENT_DECODER_SUCCESS) {
-                            ret = p_ins->p->cb_process_logs(p_ins,
-                                                            p_ins->log_encoder,
-                                                            &log_event,
-                                                            tag, tag_len);
-                        }
-                    }
-                    while (decoder_result == FLB_EVENT_DECODER_SUCCESS &&
-                           ret == FLB_PROCESSOR_SUCCESS);
-
-                    flb_log_event_decoder_reset(p_ins->log_decoder, NULL, 0);
-
-                    if (cur_buf != data) {
-                        flb_free(cur_buf);
-                    }
-
-                    if (ret != FLB_PROCESSOR_SUCCESS) {
-                        flb_log_event_encoder_reset(p_ins->log_encoder);
-
-                        release_lock(&pu->lock,
-                                     FLB_PROCESSOR_LOCK_RETRY_LIMIT,
-                                     FLB_PROCESSOR_LOCK_RETRY_DELAY);
-
-                        return -1;
-                    }
-
-                    if (p_ins->log_encoder->output_length == 0) {
-                        flb_log_event_encoder_reset(p_ins->log_encoder);
-
-                        *out_buf = NULL;
-                        *out_size = 0;
-
-                        release_lock(&pu->lock,
-                                     FLB_PROCESSOR_LOCK_RETRY_LIMIT,
-                                     FLB_PROCESSOR_LOCK_RETRY_DELAY);
-
-                        return 0;
-                    }
-
-                    flb_log_event_encoder_claim_internal_buffer_ownership(p_ins->log_encoder);
-
-                    /* set new buffer */
-                    cur_buf = p_ins->log_encoder->output_buffer;
-                    cur_size = p_ins->log_encoder->output_length;
-
-                    flb_log_event_encoder_reset(p_ins->log_encoder);
                 }
             }
             else if (type == FLB_PROCESSOR_METRICS) {
@@ -662,6 +684,8 @@ int flb_processor_run(struct flb_processor *proc,
     if (out_size != NULL) {
         *out_size = cur_size;
     }
+
+    flb_log_event_encoder_claim_internal_buffer_ownership(p_ins->log_encoder);
 
     return 0;
 }
@@ -919,12 +943,10 @@ struct flb_processor_instance *flb_processor_instance_create(struct flb_config *
     }
 
     instance = flb_calloc(1, sizeof(struct flb_filter_instance));
-
     if (!instance) {
         flb_errno();
         return NULL;
     }
-
     instance->config = config;
 
     /* Get an ID */
@@ -943,40 +965,31 @@ struct flb_processor_instance *flb_processor_instance_create(struct flb_config *
 
     mk_list_init(&instance->properties);
 
-    instance->log_encoder = flb_log_event_encoder_create(
-                                FLB_LOG_EVENT_FORMAT_DEFAULT);
-
+    instance->log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
     if (instance->log_encoder == NULL) {
         flb_plg_error(instance, "log event encoder initialization error");
-
         flb_processor_instance_destroy(instance);
-
         instance = NULL;
     }
 
-    instance->log_decoder = flb_log_event_decoder_create(NULL, 0);
 
+    instance->log_decoder = flb_log_event_decoder_create(NULL, 0);
     if (instance->log_decoder == NULL) {
         flb_plg_error(instance, "log event decoder initialization error");
-
         flb_processor_instance_destroy(instance);
-
         instance = NULL;
     }
 
     return instance;
 }
 
-void flb_processor_instance_exit(
-        struct flb_processor_instance *ins,
-        struct flb_config *config)
+void flb_processor_instance_exit(struct flb_processor_instance *ins, struct flb_config *config)
 {
     struct flb_processor_plugin *plugin;
 
     plugin = ins->p;
 
-    if (plugin->cb_exit != NULL &&
-        ins->context != NULL) {
+    if (plugin->cb_exit != NULL && ins->context != NULL) {
         plugin->cb_exit(ins);
     }
 }
@@ -1085,15 +1098,12 @@ int flb_processor_instance_init(
     return 0;
 }
 
-void flb_processor_instance_set_context(
-        struct flb_processor_instance *ins,
-        void *context)
+void flb_processor_instance_set_context(struct flb_processor_instance *ins, void *context)
 {
     ins->context = context;
 }
 
-void flb_processor_instance_destroy(
-        struct flb_processor_instance *ins)
+void flb_processor_instance_destroy(struct flb_processor_instance *ins)
 {
     if (ins == NULL) {
         return;
