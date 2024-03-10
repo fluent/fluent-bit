@@ -24,7 +24,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_filter.h>
 
-struct modifier_record {
+struct modifier_kv {
     char *key;
     char *val;
     int  key_len;
@@ -41,6 +41,7 @@ struct modifier_key {
 
 struct record_modifier_ctx {
     int records_num;
+    int metadata_num;
     int remove_keys_num;
     int allowlist_keys_num;
 
@@ -48,11 +49,13 @@ struct record_modifier_ctx {
 
     /* config map */
     struct mk_list *records_map;
+    struct mk_list *metadata_map;
     struct mk_list *remove_keys_map;
     struct mk_list *allowlist_keys_map;
     struct mk_list *whitelist_keys_map;
 
     struct mk_list records;
+    struct mk_list metadata;
     struct mk_list remove_keys;
     struct mk_list allowlist_keys;
     struct flb_filter_instance *ins;
@@ -63,6 +66,5 @@ typedef enum {
     TO_BE_REMAINED = 1,
     TAIL_OF_ARRAY = 2
 } bool_map_t;
-
 
 #endif /* FLB_FILTER_RECORD_MODIFIER_H */
