@@ -32,7 +32,7 @@ jobs:
         run: echo "date=$(date '+%Y-%m-%d-%H_%M_%S')" >> $GITHUB_OUTPUT
 
       - name: Debug event output
-        uses: hmarr/debug-action@v2
+        uses: hmarr/debug-action@v3
 
   pr-package-test-build-generate-matrix:
     name: PR - packages build matrix

@@ -33,6 +33,7 @@
 #include <cmetrics/cmt_encode_text.h>
 #include <cmetrics/cmt_encode_influx.h>
 #include <cmetrics/cmt_encode_splunk_hec.h>
+#include <cmetrics/cmt_encode_cloudwatch_emf.h>
 
 #include "cmt_tests.h"
 
@@ -65,19 +66,17 @@ static struct cmt *generate_simple_encoder_test_data()
     return cmt;
 }
 
-static struct cmt *generate_encoder_test_data()
+static struct cmt *generate_encoder_test_data_with_timestamp(uint64_t ts)
 {
     double                        quantiles[5];
     struct cmt_histogram_buckets *buckets;
     double                        val;
     struct cmt                   *cmt;
-    uint64_t                      ts;
     struct cmt_gauge             *g1;
     struct cmt_counter           *c1;
     struct cmt_summary           *s1;
     struct cmt_histogram         *h1;
 
-    ts = 0;
     cmt = cmt_create();
 
     c1 = cmt_counter_create(cmt, "kubernetes", "network", "load_counter", "Network load counter",
@@ -155,6 +154,11 @@ static struct cmt *generate_encoder_test_data()
     cmt_summary_set_default(s1, ts, quantiles, 51.612894511314444, 10, 1, (char *[]) {"my_val"});
 
     return cmt;
+}
+
+static struct cmt *generate_encoder_test_data()
+{
+    return generate_encoder_test_data_with_timestamp(0);
 }
 
 /*
@@ -510,10 +514,13 @@ void test_prometheus_remote_write()
     struct cmt *cmt;
     cfl_sds_t   payload;
     FILE       *sample_file;
+    uint64_t    ts;
+
+    ts = cfl_time_now();
 
     cmt_initialize();
 
-    cmt = generate_encoder_test_data();
+    cmt = generate_encoder_test_data_with_timestamp(ts);
 
     payload = cmt_encode_prometheus_remote_write_create(cmt);
     TEST_CHECK(NULL != payload);
@@ -537,6 +544,34 @@ curl -v 'http://localhost:9090/receive' -H 'Content-Type: application/x-protobuf
     fwrite(payload, 1, cfl_sds_len(payload), sample_file);
 
     fclose(sample_file);
+
+    cmt_encode_prometheus_remote_write_destroy(payload);
+
+    cmt_destroy(cmt);
+}
+
+void test_prometheus_remote_write_with_outdated_timestamps()
+{
+    struct cmt *cmt;
+    cfl_sds_t   payload;
+    uint64_t    ts;
+
+    ts = cfl_time_now() - CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_CUTOFF_THRESHOLD * 1.5;
+
+    cmt_initialize();
+
+    cmt = generate_encoder_test_data_with_timestamp(ts);
+
+    payload = cmt_encode_prometheus_remote_write_create(cmt);
+    TEST_CHECK(NULL != payload);
+
+    if (payload == NULL) {
+        cmt_destroy(cmt);
+
+        return;
+    }
+
+    TEST_CHECK(0 == cfl_sds_len(payload));
 
     cmt_encode_prometheus_remote_write_destroy(payload);
 
@@ -575,6 +610,46 @@ curl -v 'http://localhost:9090/v1/metrics' -H 'Content-Type: application/x-proto
     fclose(sample_file);
 
     cmt_encode_prometheus_remote_write_destroy(payload);
+
+    cmt_destroy(cmt);
+}
+
+void test_cloudwatch_emf()
+{
+    int ret;
+    struct cmt *cmt;
+    FILE *sample_file;
+    char *mp_buf = NULL;
+    size_t mp_size = 0;
+    int wrap_array = CMT_TRUE;
+
+    cmt_initialize();
+
+    cmt = generate_encoder_test_data();
+
+    cmt_label_add(cmt, "format", "EMF");
+    cmt_label_add(cmt, "dev", "CMetrics Authors");
+
+    ret = cmt_encode_cloudwatch_emf_create(cmt, &mp_buf, &mp_size, wrap_array);
+    TEST_CHECK(0 == ret);
+
+    if (ret != 0) {
+        cmt_destroy(cmt);
+
+        return;
+    }
+
+    printf("\n\nDumping cloudwatch EMF payload to cloudwatch_emf_payload.bin, in order to test it \
+we need to encode it as JSON and to send AWS Cloudwatch with out_cloudwatch plugin on \
+fluent-bit\n\n");
+
+    sample_file = fopen("cloudwatch_emf_payload.bin", "wb+");
+
+    fwrite(mp_buf, 1, mp_size, sample_file);
+
+    fclose(sample_file);
+
+    cmt_encode_cloudwatch_emf_destroy(mp_buf);
 
     cmt_destroy(cmt);
 }
@@ -1040,11 +1115,13 @@ TEST_LIST = {
     {"cmt_msgpack_cleanup_on_error",   test_cmt_to_msgpack_cleanup_on_error},
     {"cmt_msgpack_partial_processing", test_cmt_msgpack_partial_processing},
     {"prometheus_remote_write",        test_prometheus_remote_write},
+    {"prometheus_remote_write_old_cmt",test_prometheus_remote_write_with_outdated_timestamps},
     {"cmt_msgpack_stability",          test_cmt_to_msgpack_stability},
     {"cmt_msgpack_integrity",          test_cmt_to_msgpack_integrity},
     {"cmt_msgpack_labels",             test_cmt_to_msgpack_labels},
     {"cmt_msgpack",                    test_cmt_to_msgpack},
     {"opentelemetry",                  test_opentelemetry},
+    {"cloudwatch_emf",                 test_cloudwatch_emf},
     {"prometheus",                     test_prometheus},
     {"text",                           test_text},
     {"influx",                         test_influx},

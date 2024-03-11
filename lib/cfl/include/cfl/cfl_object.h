@@ -17,27 +17,25 @@
  *  limitations under the License.
  */
 
-#ifndef CFL_H
-#define CFL_H
+#ifndef CFL_OBJECT_H
+#define CFL_OBJECT_H
 
-#define CFL_FALSE   0
-#define CFL_TRUE    !CFL_FALSE
+enum {
+    CFL_OBJECT_NONE = 0,
+    CFL_OBJECT_KVLIST = 1,
+    CFL_OBJECT_VARIANT,
+    CFL_OBJECT_ARRAY
+};
 
-/* headers that are needed in general */
-#include <cfl/cfl_info.h>
-#include <cfl/cfl_version.h>
-#include <cfl/cfl_compat.h>
-#include <cfl/cfl_log.h>
-#include <cfl/cfl_sds.h>
-#include <cfl/cfl_list.h>
-#include <cfl/cfl_hash.h>
-#include <cfl/cfl_array.h>
-#include <cfl/cfl_kv.h>
-#include <cfl/cfl_kvlist.h>
-#include <cfl/cfl_time.h>
-#include <cfl/cfl_variant.h>
-#include <cfl/cfl_object.h>
+struct cfl_object {
+    int type;
+    struct cfl_variant *variant;
+    struct cfl_list _head;
+};
 
-int cfl_init();
+struct cfl_object *cfl_object_create();
+void cfl_object_destroy(struct cfl_object *obj);
+int cfl_object_set(struct cfl_object *o, int type, void *ptr);
+int cfl_object_print(FILE *stream, struct cfl_object *o);
 
 #endif

@@ -54,10 +54,10 @@ int cfl_array_append_bool(struct cfl_array *array, int value);
 int cfl_array_append_int64(struct cfl_array *array, int64_t value);
 int cfl_array_append_uint64(struct cfl_array *array, uint64_t value);
 int cfl_array_append_double(struct cfl_array *array, double value);
+int cfl_array_append_null(struct cfl_array *array);
 int cfl_array_append_array(struct cfl_array *array, struct cfl_array *value);
 int cfl_array_append_new_array(struct cfl_array *array, size_t size);
-int cfl_array_append_kvlist(struct cfl_array *array, struct 
-cfl_kvlist *value);
+int cfl_array_append_kvlist(struct cfl_array *array, struct cfl_kvlist *value);
 int cfl_array_print(FILE *fp, struct cfl_array *array);
 
 #endif

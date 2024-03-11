@@ -86,4 +86,9 @@
 	"\"END_KEY\": \"JSON_END\""		\
 	"}]"
 
+#define K8S_CLUSTER_NO_LOCAL_RESOURCE_ID	"["		\
+	"1591649196,"			\
+	"{"				\
+    "\"message\": \"K8S_CLUSTER_NO_LOCAL_RESOURCE_ID\""		\
+	"}]"
 	

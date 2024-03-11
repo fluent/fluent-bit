@@ -22,12 +22,14 @@ set(src
   cmt_time.c
   cmt_label.c
   cmt_cat.c
+  cmt_filter.c
   cmetrics.c
   cmt_encode_opentelemetry.c
   cmt_decode_opentelemetry.c
   cmt_encode_prometheus.c
   cmt_encode_prometheus_remote_write.c
   cmt_encode_splunk_hec.c
+  cmt_encode_cloudwatch_emf.c
   cmt_encode_text.c
   cmt_encode_influx.c
   cmt_encode_msgpack.c

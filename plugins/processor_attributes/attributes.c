@@ -317,66 +317,8 @@ static int cb_exit(struct flb_processor_instance *processor_instance)
     return FLB_PROCESSOR_SUCCESS;
 }
 
-static int cfl_kvlist_contains(struct cfl_kvlist *kvlist,
-                               char *name)
-{
-    struct cfl_list   *iterator;
-    struct cfl_kvpair *pair;
-
-    cfl_list_foreach(iterator, &kvlist->list) {
-        pair = cfl_list_entry(iterator,
-                              struct cfl_kvpair, _head);
-
-        if (strcasecmp(pair->key, name) == 0) {
-            return FLB_TRUE;
-        }
-    }
-
-    return FLB_FALSE;
-}
-
-static void cfl_kvpair_destroy(struct cfl_kvpair *pair)
-{
-    if (pair != NULL) {
-        if (!cfl_list_entry_is_orphan(&pair->_head)) {
-            cfl_list_del(&pair->_head);
-        }
-
-        if (pair->key != NULL) {
-            cfl_sds_destroy(pair->key);
-        }
-
-        if (pair->val != NULL) {
-            cfl_variant_destroy(pair->val);
-        }
-
-        free(pair);
-    }
-}
-
-static int cfl_kvlist_remove(struct cfl_kvlist *kvlist,
-                             char *name)
-{
-    struct cfl_list   *iterator_backup;
-    struct cfl_list   *iterator;
-    struct cfl_kvpair *pair;
-
-    cfl_list_foreach_safe(iterator, iterator_backup, &kvlist->list) {
-        pair = cfl_list_entry(iterator,
-                              struct cfl_kvpair, _head);
-
-        if (strcasecmp(pair->key, name) == 0) {
-            cfl_kvpair_destroy(pair);
-        }
-    }
-
-    return FLB_TRUE;
-}
-
 
 /* local declarations */
-
-
 static cfl_sds_t cfl_variant_convert_to_json(struct cfl_variant *value)
 {
     cfl_sds_t      json_result;
@@ -826,11 +768,11 @@ static void attribute_match_cb(const char *name,
     if (temporary_value != NULL) {
         span = (struct ctrace_span *) context;
 
-        if (span_contains_attribute(span, name) == FLB_TRUE) {
-            span_remove_attribute(span, name);
+        if (span_contains_attribute(span, (char *) name) == FLB_TRUE) {
+            span_remove_attribute(span, (char *) name);
         }
 
-        ctr_span_set_attribute_string(span, name, temporary_value);
+        ctr_span_set_attribute_string(span, (char *) name, temporary_value);
 
         cfl_sds_destroy(temporary_value);
     }

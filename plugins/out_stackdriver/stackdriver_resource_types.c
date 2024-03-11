@@ -27,7 +27,7 @@
 static const struct resource_type resource_types[] = {
     { 
         .id = RESOURCE_TYPE_K8S,
-        .resources = {"k8s_container", "k8s_node", "k8s_pod"},
+        .resources = {"k8s_container", "k8s_node", "k8s_pod", "k8s_cluster"},
         .required_labels = {"cluster_name", "location"}
     },
     { 

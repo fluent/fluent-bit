@@ -44,7 +44,6 @@ struct flb_mp_map_header {
     void *data;
 };
 
-
 /* */
 struct flb_mp_accessor_match {
     int matched;
@@ -52,6 +51,13 @@ struct flb_mp_accessor_match {
     msgpack_object *key;
     msgpack_object *val;
     struct flb_record_accessor *ra;
+};
+
+/* wrapper to hold a list of record_accessor contexts */
+struct flb_mp_accessor_ra {
+    int is_active;
+    struct flb_record_accessor *ra;
+    struct mk_list _head;
 };
 
 /* A context to abstract usage of record accessor when multiple patterns exists */
@@ -75,5 +81,11 @@ void flb_mp_accessor_destroy(struct flb_mp_accessor *mpa);
 int flb_mp_accessor_keys_remove(struct flb_mp_accessor *mpa,
                                 msgpack_object *map,
                                 void **out_buf, size_t *out_size);
+void flb_mp_accessor_set_active(struct flb_mp_accessor *mpa, int status);
+int flb_mp_accessor_set_active_by_pattern(struct flb_mp_accessor *mpa,
+                                          const char *pattern, int status);
+
+struct cfl_object *flb_mp_object_to_cfl(msgpack_object *o);
+int flb_mp_cfl_to_msgpack(struct cfl_object *obj, char **out_buf, size_t *out_size);
 
 #endif

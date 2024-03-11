@@ -2077,7 +2077,7 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                 */
 
                 ret = process_local_resource_id(ctx, tag, tag_len, K8S_POD);
-                if (ret != 0) {
+                if (ret == -1) {
                     flb_plg_error(ctx->ins, "fail to process local_resource_id from "
                                 "log entry for k8s_pod");
                     msgpack_sbuffer_destroy(&mp_sbuf);
@@ -2131,6 +2131,45 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                     msgpack_pack_str(&mp_pck, flb_sds_len(ctx->pod_name));
                     msgpack_pack_str_body(&mp_pck,
                                         ctx->pod_name, flb_sds_len(ctx->pod_name));
+                }
+
+                flb_mp_map_header_end(&mh);
+            }
+            else if (strcmp(ctx->resource, K8S_CLUSTER) == 0) {
+                /* k8s_cluster resource has fields project_id, location, cluster_name
+                *
+                * There is no local_resource_id for k8s_cluster as we get all info
+                *      from plugin config
+                */
+
+                flb_mp_map_header_init(&mh, &mp_pck);
+
+                if (ctx->project_id) {
+                    flb_mp_map_header_append(&mh);
+                    msgpack_pack_str(&mp_pck, 10);
+                    msgpack_pack_str_body(&mp_pck, "project_id", 10);
+                    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+                    msgpack_pack_str_body(&mp_pck,
+                                        ctx->project_id, flb_sds_len(ctx->project_id));
+                }
+
+                if (ctx->cluster_location) {
+                    flb_mp_map_header_append(&mh);
+                    msgpack_pack_str(&mp_pck, 8);
+                    msgpack_pack_str_body(&mp_pck, "location", 8);
+                    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_location));
+                    msgpack_pack_str_body(&mp_pck,
+                                        ctx->cluster_location,
+                                        flb_sds_len(ctx->cluster_location));
+                }
+
+                if (ctx->cluster_name) {
+                    flb_mp_map_header_append(&mh);
+                    msgpack_pack_str(&mp_pck, 12);
+                    msgpack_pack_str_body(&mp_pck, "cluster_name", 12);
+                    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_name));
+                    msgpack_pack_str_body(&mp_pck,
+                                        ctx->cluster_name, flb_sds_len(ctx->cluster_name));
                 }
 
                 flb_mp_map_header_end(&mh);
@@ -2903,15 +2942,18 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
 #endif
           if (c->resp.status >= 400 && c->resp.status < 500) {
             ret_code = FLB_ERROR;
-            flb_plg_warn(ctx->ins, "error: %s", c->resp.payload);
+            flb_plg_warn(ctx->ins, "tag=%s error sending to Cloud Logging: %s", event_chunk->tag,
+                         c->resp.payload);
           }
           else {
             if (c->resp.payload_size > 0) {
               /* we got an error */
-              flb_plg_warn(ctx->ins, "error: %s", c->resp.payload);
+              flb_plg_warn(ctx->ins, "tag=%s error sending to Cloud Logging: %s", event_chunk->tag,
+                           c->resp.payload);
             }
             else {
-              flb_plg_debug(ctx->ins, "response: %s", c->resp.payload);
+              flb_plg_debug(ctx->ins, "tag=%s response from Cloud Logging: %s", event_chunk->tag,
+                            c->resp.payload);
             }
             ret_code = FLB_RETRY;
           }
