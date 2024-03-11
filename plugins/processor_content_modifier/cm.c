@@ -72,8 +72,27 @@ static int cb_process_logs(struct flb_processor_instance *ins,
     if (!ins->context) {
         return FLB_PROCESSOR_FAILURE;
     }
+    ctx = ins->context;
 
-    ret = cm_logs_process(ins, ins->context, chunk_cobj, tag, tag_len);
+    ret = cm_logs_process(ins, ctx, chunk_cobj, tag, tag_len);
+    return ret;
+
+}
+
+static int cb_process_traces(struct flb_processor_instance *ins,
+                             struct ctrace *traces_context,
+                             const char *tag,
+                             int tag_len)
+{
+    int ret;
+    struct content_modifier_ctx *ctx;
+
+    if (!ins->context) {
+        return FLB_PROCESSOR_FAILURE;
+    }
+    ctx = ins->context;
+
+    ret = cm_traces_process(ins, ctx, traces_context, tag, tag_len);
     return ret;
 
 }
@@ -125,7 +144,7 @@ struct flb_processor_plugin processor_content_modifier_plugin = {
     .cb_init            = cb_init,
     .cb_process_logs    = cb_process_logs,
     .cb_process_metrics = NULL,
-    .cb_process_traces  = NULL,
+    .cb_process_traces  = cb_process_traces,
     .cb_exit            = cb_exit,
     .config_map         = config_map,
     .flags              = 0

@@ -142,7 +142,7 @@ static int set_context(struct content_modifier_ctx *ctx)
             /* if no context is set, use span attributes */
             context = CM_CONTEXT_TRACE_SPAN_ATTRIBUTES;
         }
-        if (strcasecmp(ctx->context_str, "span_name") == 0) {
+        else if (strcasecmp(ctx->context_str, "span_name") == 0) {
             context = CM_CONTEXT_TRACE_SPAN_NAME;
         }
         else if (strcasecmp(ctx->context_str, "span_kind") == 0) {
@@ -257,19 +257,12 @@ struct content_modifier_ctx *cm_config_create(struct flb_processor_instance *ins
         }
     }
 
-    // ret = set_converted_type(ctx);
-    // if (ret == -1) {
-    //     flb_free(ctx);
-    //     return NULL;
-    // }
-
     /* Certain actions needs extra configuration, e.g: insert -> requires a key and a value */
     ret = check_action_requirements(ctx);
     if (ret == -1) {
         flb_free(ctx);
         return NULL;
     }
-
     return ctx;
 }
 
