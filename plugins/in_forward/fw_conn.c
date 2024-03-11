@@ -142,7 +142,7 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
     }
 
     conn->handshake_status = FW_HANDSHAKE_ESTABLISHED;
-    if (ctx->ins->use_tls == FLB_TRUE || ctx->shared_key != NULL) {
+    if (ctx->shared_key != NULL) {
         conn->handshake_status = FW_HANDSHAKE_HELO;
         helo = flb_malloc(sizeof(struct flb_in_fw_helo));
         if (!helo) {
