@@ -476,6 +476,44 @@ static int flb_secure_forward_password_digest(struct flb_input_instance *ins,
     return 0;
 }
 
+static int user_authentication(struct flb_input_instance *ins,
+                               struct fw_conn *conn,
+                               flb_sds_t username,
+                               flb_sds_t password_digest,
+                               size_t password_digest_len)
+{
+    int user_found = FLB_FALSE;
+    char *userauth_digest = NULL;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_in_fw_user *user;
+    struct flb_in_fw_config *ctx = conn->ctx;
+
+    mk_list_foreach_safe(head, tmp, &ctx->users) {
+        user = mk_list_entry(head, struct flb_in_fw_user, _head);
+        if (strncmp(user->name, username, strlen(user->name)) != 0) {
+            continue;
+        }
+
+        userauth_digest = flb_calloc(128, sizeof(char));
+
+        if (flb_secure_forward_password_digest(ins, conn,
+                                               username, user->password,
+                                               userauth_digest, 128) == 0) {
+            if (strncmp(userauth_digest,
+                        password_digest, password_digest_len) == 0) {
+                flb_free(userauth_digest);
+                user_found = FLB_TRUE;
+                break;
+            }
+        }
+
+        flb_free(userauth_digest);
+    }
+
+    return user_found;
+}
+
 static int check_ping(struct flb_input_instance *ins,
                       struct fw_conn *conn,
                       flb_sds_t *out_shared_key_salt)
@@ -496,12 +534,8 @@ static int check_ping(struct flb_input_instance *ins,
     size_t shared_key_digest_len = 0;
     size_t password_digest_len = 0;
     char *serverside = NULL;
-    char *userauth_digest = NULL;
     size_t user_count = 0;
     int user_found = FLB_FALSE;
-    struct mk_list *tmp;
-    struct mk_list *head;
-    struct flb_in_fw_user *user;
     struct flb_in_fw_config *ctx = conn->ctx;
 
     serverside = flb_calloc(128, sizeof(char));
@@ -621,29 +655,8 @@ static int check_ping(struct flb_input_instance *ins,
 
     user_count = mk_list_size(&ctx->users);
     if (user_count > 0) {
-
-        mk_list_foreach_safe(head, tmp, &ctx->users) {
-            user = mk_list_entry(head, struct flb_in_fw_user, _head);
-            if (strncmp(user->name, username, strlen(user->name)) != 0) {
-                continue;
-            }
-
-            userauth_digest = flb_calloc(128, sizeof(char));
-
-            if (flb_secure_forward_password_digest(ins, conn,
-                                                   username, user->password,
-                                                   userauth_digest, 128) == 0) {
-
-                if (strncmp(userauth_digest,
-                            password_digest, password_digest_len) == 0) {
-                    flb_free(userauth_digest);
-                    user_found = FLB_TRUE;
-                    break;
-                }
-            }
-
-            flb_free(userauth_digest);
-        }
+        user_found = user_authentication(ins, conn, username,
+                                         password_digest, password_digest_len);
 
         if (user_found != FLB_TRUE) {
             goto failed_userauth;
