@@ -1,6 +1,7 @@
 set(src
   cm_config.c
   cm_logs.c
+  cm_traces.c
   cm.c
   )
 

@@ -336,10 +336,10 @@ static struct cfl_kvpair *cfl_object_kvpair_get(struct cfl_object *obj, cfl_sds_
     return NULL;
 }
 
-int run_action_insert(struct content_modifier_ctx *ctx,
-                      struct cfl_object *obj,
-                      const char *tag, int tag_len,
-                      cfl_sds_t key, cfl_sds_t value)
+static int run_action_insert(struct content_modifier_ctx *ctx,
+                            struct cfl_object *obj,
+                            const char *tag, int tag_len,
+                            cfl_sds_t key, cfl_sds_t value)
 {
     int ret;
     struct cfl_kvlist *kvlist;
@@ -360,10 +360,10 @@ int run_action_insert(struct content_modifier_ctx *ctx,
     return 0;
 }
 
-int run_action_upsert(struct content_modifier_ctx *ctx,
-                      struct cfl_object *obj,
-                      const char *tag, int tag_len,
-                      cfl_sds_t key, cfl_sds_t value)
+static int run_action_upsert(struct content_modifier_ctx *ctx,
+                            struct cfl_object *obj,
+                            const char *tag, int tag_len,
+                            cfl_sds_t key, cfl_sds_t value)
 {
     int ret;
     struct cfl_kvlist *kvlist;
@@ -386,10 +386,10 @@ int run_action_upsert(struct content_modifier_ctx *ctx,
     return 0;
 }
 
-int run_action_delete(struct content_modifier_ctx *ctx,
-                      struct cfl_object *obj,
-                      const char *tag, int tag_len,
-                      cfl_sds_t key, cfl_sds_t value)
+static int run_action_delete(struct content_modifier_ctx *ctx,
+                            struct cfl_object *obj,
+                            const char *tag, int tag_len,
+                            cfl_sds_t key)
 {
     struct cfl_kvpair *kvpair;
 
@@ -403,10 +403,10 @@ int run_action_delete(struct content_modifier_ctx *ctx,
     return -1;
 }
 
-int run_action_rename(struct content_modifier_ctx *ctx,
-                      struct cfl_object *obj,
-                      const char *tag, int tag_len,
-                      cfl_sds_t key, cfl_sds_t value)
+static int run_action_rename(struct content_modifier_ctx *ctx,
+                            struct cfl_object *obj,
+                            const char *tag, int tag_len,
+                            cfl_sds_t key, cfl_sds_t value)
 {
     cfl_sds_t tmp;
     struct cfl_kvpair *kvpair;
@@ -431,10 +431,10 @@ int run_action_rename(struct content_modifier_ctx *ctx,
     return 0;
 }
 
-int run_action_hash(struct content_modifier_ctx *ctx,
-                    struct cfl_object *obj,
-                    const char *tag, int tag_len,
-                    cfl_sds_t key)
+static int run_action_hash(struct content_modifier_ctx *ctx,
+                           struct cfl_object *obj,
+                           const char *tag, int tag_len,
+                           cfl_sds_t key)
 {
     int ret;
     struct cfl_kvpair *kvpair;
@@ -504,10 +504,10 @@ int run_action_extract(struct content_modifier_ctx *ctx,
     return 0;
 }
 
-int run_action_convert(struct content_modifier_ctx *ctx,
-                       struct cfl_object *obj,
-                       const char *tag, int tag_len,
-                       cfl_sds_t key, int converted_type)
+static int run_action_convert(struct content_modifier_ctx *ctx,
+                              struct cfl_object *obj,
+                              const char *tag, int tag_len,
+                              cfl_sds_t key, int converted_type)
 {
     int ret;
     struct cfl_kvlist *kvlist;
@@ -556,13 +556,9 @@ int cm_logs_process(struct flb_processor_instance *ins,
         /* retrieve the target cfl object */
         if (ctx->context_type == CM_CONTEXT_LOG_METADATA) {
             obj = record->cobj_metadata;
-            // printf("> IN : ");
-            // cfl_object_print(stdout, obj);
         }
         else if (ctx->context_type == CM_CONTEXT_LOG_BODY) {
             obj = record->cobj_record;
-            // printf("> IN : ");
-            // cfl_object_print(stdout, obj);
         }
 
         /* the operation on top of the data type is unsupported */
@@ -579,7 +575,7 @@ int cm_logs_process(struct flb_processor_instance *ins,
             ret = run_action_upsert(ctx, obj, tag, tag_len, ctx->key, ctx->value);
         }
         else if (ctx->action_type == CM_ACTION_DELETE) {
-            ret = run_action_delete(ctx, obj, tag, tag_len, ctx->key, ctx->value);
+            ret = run_action_delete(ctx, obj, tag, tag_len, ctx->key);
         }
         else if (ctx->action_type == CM_ACTION_RENAME) {
             ret = run_action_rename(ctx, obj, tag, tag_len, ctx->key, ctx->value);
