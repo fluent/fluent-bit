@@ -436,6 +436,46 @@ static int flb_secure_forward_hash_digest(struct flb_input_instance *ins,
     return 0;
 }
 
+static int flb_secure_forward_password_digest(struct flb_input_instance *ins,
+                                              struct fw_conn *conn,
+                                              flb_sds_t username,
+                                              flb_sds_t password,
+                                              char *buf, int buflen)
+{
+    int result;
+    size_t length_entries[3];
+    unsigned char *data_entries[3];
+    uint8_t hash[64];
+
+    if (buflen < 128) {
+        return -1;
+    }
+
+    data_entries[0]   = (unsigned char *) conn->helo->salt;
+    length_entries[0] = FLB_IN_FW_SALT_SIZE; /* always 16 bytes. */
+
+    data_entries[1]   = (unsigned char *) username;
+    length_entries[1] = flb_sds_len(username);
+
+    data_entries[2]   = (unsigned char *) password;
+    length_entries[2] = flb_sds_len(password);
+
+    result = flb_hash_simple_batch(FLB_HASH_SHA512,
+                                   3,
+                                   data_entries,
+                                   length_entries,
+                                   hash,
+                                   sizeof(hash));
+
+    if (result != FLB_CRYPTO_SUCCESS) {
+        return -1;
+    }
+
+    flb_secure_forward_format_bin_to_hex(hash, 64, buf);
+
+    return 0;
+}
+
 static int check_ping(struct flb_input_instance *ins,
                       struct fw_conn *conn,
                       flb_sds_t *out_shared_key_salt)
@@ -450,9 +490,18 @@ static int check_ping(struct flb_input_instance *ins,
     flb_sds_t hostname = NULL;
     flb_sds_t shared_key_salt = NULL;
     flb_sds_t shared_key_digest = NULL;
+    flb_sds_t username = NULL;
+    flb_sds_t password_digest = NULL;
     size_t hostname_len = 0;
     size_t shared_key_digest_len = 0;
+    size_t password_digest_len = 0;
     char *serverside = NULL;
+    char *userauth_digest = NULL;
+    size_t user_count = 0;
+    int user_found = FLB_FALSE;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_in_fw_user *user;
     struct flb_in_fw_config *ctx = conn->ctx;
 
     serverside = flb_calloc(128, sizeof(char));
@@ -477,7 +526,7 @@ static int check_ping(struct flb_input_instance *ins,
 
     /* Parse PING message */
     root = result.data;
-    if (root.via.array.size < 6) {
+    if (root.via.array.size != 6) {
         flb_plg_error(ins, "Invalid PING message");
         flb_free(serverside);
         msgpack_unpacked_destroy(&result);
@@ -532,13 +581,34 @@ static int check_ping(struct flb_input_instance *ins,
     shared_key_digest = flb_sds_create_len(o.via.str.ptr, o.via.str.size);
     shared_key_digest_len = o.via.str.size;
 
+    /* username */
+    o = root.via.array.ptr[4];
+    if (o.type != MSGPACK_OBJECT_STR) {
+        flb_plg_error(ins, "Invalid username type message");
+        flb_free(serverside);
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+    username = flb_sds_create_len(o.via.str.ptr, o.via.str.size);
+
+    /* password_digest */
+    o = root.via.array.ptr[5];
+    if (o.type != MSGPACK_OBJECT_STR) {
+        flb_plg_error(ins, "Invalid password_digest type message");
+        flb_free(serverside);
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+    password_digest = flb_sds_create_len(o.via.str.ptr, o.via.str.size);
+    password_digest_len = o.via.str.size;
+
     msgpack_unpacked_destroy(&result);
 
     if (flb_secure_forward_hash_shared_key(ins, conn,
                                            shared_key_salt, hostname, hostname_len,
                                            serverside, 128)) {
         flb_free(serverside);
-        flb_plg_error(ctx->ins, "failed to hash password");
+        flb_plg_error(ctx->ins, "failed to hash shard_key");
         return -1;
     }
 
@@ -549,8 +619,41 @@ static int check_ping(struct flb_input_instance *ins,
         goto error;
     }
 
+    user_count = mk_list_size(&ctx->users);
+    if (user_count > 0) {
+
+        mk_list_foreach_safe(head, tmp, &ctx->users) {
+            user = mk_list_entry(head, struct flb_in_fw_user, _head);
+            if (strncmp(user->name, username, strlen(user->name)) != 0) {
+                continue;
+            }
+
+            userauth_digest = flb_calloc(128, sizeof(char));
+
+            if (flb_secure_forward_password_digest(ins, conn,
+                                                   username, user->password,
+                                                   userauth_digest, 128) == 0) {
+
+                if (strncmp(userauth_digest,
+                            password_digest, password_digest_len) == 0) {
+                    flb_free(userauth_digest);
+                    user_found = FLB_TRUE;
+                    break;
+                }
+            }
+
+            flb_free(userauth_digest);
+        }
+
+        if (user_found != FLB_TRUE) {
+            goto failed_userauth;
+        }
+    }
+
     flb_sds_destroy(hostname);
     flb_sds_destroy(shared_key_digest);
+    flb_sds_destroy(username);
+    flb_sds_destroy(password_digest);
     flb_free(serverside);
 
     *out_shared_key_salt = shared_key_salt;
@@ -561,13 +664,30 @@ error:
     flb_sds_destroy(hostname);
     flb_sds_destroy(shared_key_salt);
     flb_sds_destroy(shared_key_digest);
+    flb_sds_destroy(username);
+    flb_sds_destroy(password_digest);
 
     return -1;
+
+failed_userauth:
+
+    flb_sds_destroy(hostname);
+    flb_sds_destroy(shared_key_digest);
+    flb_sds_destroy(username);
+    flb_sds_destroy(password_digest);
+    flb_free(serverside);
+
+    /* Even if user authentication is failed, salt of shared key is
+     * still needed to return the refusal result. */
+    *out_shared_key_salt = shared_key_salt;
+
+    return -2;
 }
 
 static int send_pong(struct flb_input_instance *in,
                      struct fw_conn *conn,
-                     flb_sds_t shared_key_salt)
+                     flb_sds_t shared_key_salt,
+                     int userauth, char *failed_reason)
 {
     int result;
     size_t sent;
@@ -575,6 +695,7 @@ static int send_pong(struct flb_input_instance *in,
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
     size_t hostname_len;
+    size_t reason_len;
     char shared_key_digest_hex[128];
     struct flb_in_fw_config *ctx = conn->ctx;
 
@@ -594,16 +715,31 @@ static int send_pong(struct flb_input_instance *in,
     msgpack_pack_str(&mp_pck, 4);
     msgpack_pack_str_body(&mp_pck, "PONG", 4);
     /* auth result */
-    msgpack_pack_true(&mp_pck);
-    /* reason or salt */
-    msgpack_pack_str(&mp_pck, 0);
-    msgpack_pack_str_body(&mp_pck, "", 0);
-    /* hostname */
-    msgpack_pack_str(&mp_pck, hostname_len);
-    msgpack_pack_str_body(&mp_pck, ctx->self_hostname, hostname_len);
-    /* shared_key_digest */
-    msgpack_pack_str(&mp_pck, 128);
-    msgpack_pack_str_body(&mp_pck, shared_key_digest_hex, 128);
+    if (userauth == FLB_TRUE) {
+        msgpack_pack_true(&mp_pck);
+        /* reason or salt */
+        msgpack_pack_str(&mp_pck, 0);
+        msgpack_pack_str_body(&mp_pck, "", 0);
+        /* hostname */
+        msgpack_pack_str(&mp_pck, hostname_len);
+        msgpack_pack_str_body(&mp_pck, ctx->self_hostname, hostname_len);
+        /* shared_key_digest */
+        msgpack_pack_str(&mp_pck, 128);
+        msgpack_pack_str_body(&mp_pck, shared_key_digest_hex, 128);
+    }
+    else {
+        msgpack_pack_false(&mp_pck);
+        /* reason or salt */
+        reason_len = strlen(failed_reason);
+        msgpack_pack_str(&mp_pck, reason_len);
+        msgpack_pack_str_body(&mp_pck, failed_reason, reason_len);
+        /* hostname */
+        msgpack_pack_str(&mp_pck, 0);
+        msgpack_pack_str_body(&mp_pck, "", 0);
+        /* shared_key_digest */
+        msgpack_pack_str(&mp_pck, 0);
+        msgpack_pack_str_body(&mp_pck, "", 0);
+    }
 
     bytes = flb_io_net_write(conn->connection,
                              (void *) mp_sbuf.data,
@@ -613,6 +749,11 @@ static int send_pong(struct flb_input_instance *in,
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     if (bytes == -1) {
+        flb_plg_error(in, "cannot send PONG");
+
+        result = -1;
+    }
+    else if (userauth == FLB_FALSE)  {
         flb_plg_error(in, "cannot send PONG");
 
         result = -1;
@@ -1005,7 +1146,10 @@ int fw_prot_secure_forward_handshake(struct flb_input_instance *ins,
 {
     int ret;
     char *shared_key_salt = NULL;
+    int userauth = FLB_TRUE;
+    flb_sds_t reason = NULL;
 
+    reason = flb_sds_create_size(32);
     flb_plg_debug(ins, "protocol: checking PING");
     ret = check_ping(ins, conn, &shared_key_salt);
     if (ret == -1) {
@@ -1013,9 +1157,14 @@ int fw_prot_secure_forward_handshake(struct flb_input_instance *ins,
 
         goto error;
     }
+    else if (ret == -2) {
+        flb_plg_warn(ins, "user authentication is failed");
+        userauth = FLB_FALSE;
+        reason = flb_sds_cat(reason, "username/password mismatch", 26);
+    }
 
     flb_plg_debug(ins, "protocol: sending PONG");
-    ret = send_pong(ins, conn, shared_key_salt);
+    ret = send_pong(ins, conn, shared_key_salt, userauth, reason);
     if (ret == -1) {
         flb_plg_error(ins, "handshake error sending PONG");
 
@@ -1023,12 +1172,16 @@ int fw_prot_secure_forward_handshake(struct flb_input_instance *ins,
     }
 
     flb_sds_destroy(shared_key_salt);
+    flb_sds_destroy(reason);
 
     return 0;
 
 error:
     if (shared_key_salt != NULL) {
         flb_sds_destroy(shared_key_salt);
+    }
+    if (reason != NULL) {
+        flb_sds_destroy(reason);
     }
 
     return -1;

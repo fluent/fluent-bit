@@ -55,6 +55,9 @@ int fw_conn_event(void *data)
 
             ret = fw_prot_secure_forward_handshake(ctx->ins, conn);
             if (ret == -1) {
+                flb_plg_trace(ctx->ins, "fd=%i closed connection", event->fd);
+                fw_conn_del(conn);
+
                 return -1;
             }
 

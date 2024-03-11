@@ -38,6 +38,12 @@ struct flb_in_fw_helo {
     int salt_len;
 };
 
+struct flb_in_fw_user {
+    flb_sds_t name;
+    flb_sds_t password;
+    struct mk_list _head;
+};
+
 struct flb_in_fw_config {
     size_t buffer_max_size;         /* Max Buffer size             */
     size_t buffer_chunk_size;       /* Chunk allocation size       */
@@ -56,6 +62,7 @@ struct flb_in_fw_config {
     /* secure forward */
     flb_sds_t shared_key;        /* shared key                   */
     flb_sds_t self_hostname;     /* hostname used in certificate  */
+    struct mk_list users;        /* username and password pairs  */
 
     int coll_fd;
     struct flb_downstream *downstream; /* Client manager          */
