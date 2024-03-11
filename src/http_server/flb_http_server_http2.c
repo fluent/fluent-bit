@@ -19,7 +19,7 @@
 
 #include <fluent-bit/flb_mem.h>
 
-#include "flb_http_server.h"
+#include <fluent-bit/http_server/flb_http_server.h>
 
 /* PRIVATE */
 static ssize_t http2_send_callback(nghttp2_session *inner_session, 
@@ -76,7 +76,7 @@ static inline size_t http2_lower_value(size_t left_value, size_t right_value)
 
 /* RESPONSE */
 
-struct flb_http_response_ng *flb_http2_response_begin(
+struct flb_http_response *flb_http2_response_begin(
                                 struct flb_http2_server_session *session, 
                                 struct flb_http_stream *stream)
 {
@@ -90,12 +90,11 @@ struct flb_http_response_ng *flb_http2_response_begin(
     }
 
     stream->response.stream = stream;
-    // stream->response.session = session->parent;
 
     return &stream->response;
 }
 
-int flb_http2_response_set_header(struct flb_http_response_ng *response, 
+int flb_http2_response_set_header(struct flb_http_response *response, 
                               char *name, size_t name_length,
                               char *value, size_t value_length)
 {
@@ -112,19 +111,20 @@ int flb_http2_response_set_header(struct flb_http_response_ng *response,
     return 0;
 }
 
-int flb_http2_response_set_status(struct flb_http_response_ng *response, 
+int flb_http2_response_set_status(struct flb_http_response *response, 
                               int status)
 {
     return 0;
 }
 
-int flb_http2_response_set_body(struct flb_http_response_ng *response, 
+int flb_http2_response_set_body(struct flb_http_response *response, 
                             unsigned char *body, size_t body_length)
 {
     return 0;
 }
 
-int flb_http2_response_commit(struct flb_http_response_ng *response)
+/*
+int flb_http2_response_commit(struct flb_http_response *response)
 {
     char                             status_as_text[16];
     struct mk_list                  *header_iterator;
@@ -218,6 +218,171 @@ int flb_http2_response_commit(struct flb_http_response_ng *response)
         stream->status = HTTP_STREAM_STATUS_ERROR;
 
         return -6;
+    }
+
+    stream->status = HTTP_STREAM_STATUS_RECEIVING_HEADERS;
+
+    flb_http_response_destroy(&stream->response);
+
+    return 0;
+}
+*/
+int flb_http2_response_commit(struct flb_http_response *response)
+{
+    size_t                           trailer_header_count;
+    char                             status_as_text[16];
+    struct mk_list                  *header_iterator;
+    nghttp2_nv                      *trailer_headers;
+    struct flb_http_server_session  *parent_session;
+    nghttp2_data_provider            data_provider;
+    size_t                           header_count;
+    size_t                           header_index;
+    struct flb_hash_table_entry     *header_entry;
+    nghttp2_nv                      *headers;
+    struct flb_http2_server_session *session;
+    struct flb_http_stream          *stream;
+    int                              result;
+
+    FLB_HTTP_STREAM_GET_SESSION(response->stream, &parent_session);
+
+    if (parent_session == NULL) {
+        return -1;
+    }
+
+    session = &parent_session->http2;
+
+    if (session == NULL) {
+        return -1;
+    }
+
+    stream  = (struct flb_http_stream *) response->stream;
+
+    if (stream == NULL) {
+        return -2;
+    }
+
+    header_count = response->headers->total_count + 1;
+
+    headers = flb_calloc(header_count, sizeof(nghttp2_nv));
+
+    if (headers == NULL) {
+        return -3;
+    }
+
+    snprintf(status_as_text, 
+             sizeof(status_as_text) - 1, 
+             "%d", 
+             response->status);
+
+    headers[0].name = (uint8_t *) ":status";
+    headers[0].namelen = strlen(":status");
+    headers[0].value = (uint8_t *) status_as_text;
+    headers[0].valuelen = strlen(status_as_text);
+
+    header_index = 1;
+
+    mk_list_foreach(header_iterator, &response->headers->entries) {
+        header_entry = mk_list_entry(header_iterator, 
+                                     struct flb_hash_table_entry, 
+                                     _head_parent);
+
+        if (header_entry == NULL) {
+            flb_free(headers);
+
+            return -4;
+        }
+
+        headers[header_index].name = (uint8_t *) header_entry->key;
+        headers[header_index].namelen = header_entry->key_len;
+        headers[header_index].value = (uint8_t *) header_entry->val;
+        headers[header_index].valuelen = header_entry->val_size;
+
+        if (headers[header_index].value[0] == '\0') {
+            headers[header_index].valuelen = 0;
+        }
+
+        header_index++;
+    }
+
+    data_provider.source.fd = 0;
+    data_provider.read_callback = http2_data_source_read_callback;
+
+    stream->status = HTTP_STREAM_STATUS_PROCESSING;
+
+    result = nghttp2_submit_response(session->inner_session, 
+                                     stream->id, 
+                                     headers, 
+                                     header_count, 
+                                     &data_provider);
+
+    if (result != 0) {
+        stream->status = HTTP_STREAM_STATUS_ERROR;
+
+        flb_free(headers);
+
+        return -5;
+    }
+
+    result = nghttp2_session_send(session->inner_session);
+
+    if (mk_list_is_empty(&response->trailer_headers->entries) != 0) {
+        trailer_header_count = response->trailer_headers->total_count;
+        
+        trailer_headers = flb_calloc(trailer_header_count, sizeof(nghttp2_nv));
+
+        if (trailer_headers == NULL) {
+            flb_free(headers);
+
+            return -6;
+        }
+
+        header_index = 0;
+
+        mk_list_foreach(header_iterator, &response->trailer_headers->entries) {
+            header_entry = mk_list_entry(header_iterator, 
+                                         struct flb_hash_table_entry, 
+                                         _head_parent);
+
+            if (header_entry == NULL) {
+                flb_free(trailer_headers);
+                flb_free(headers);
+
+                return -7;
+            }
+
+            trailer_headers[header_index].name = (uint8_t *) header_entry->key;
+            trailer_headers[header_index].namelen = header_entry->key_len;
+            trailer_headers[header_index].value = (uint8_t *) header_entry->val;
+            trailer_headers[header_index].valuelen = header_entry->val_size;
+
+            if (trailer_headers[header_index].value[0] == '\0') {
+                trailer_headers[header_index].valuelen = 0;
+            }
+
+            header_index++;
+        }
+
+        result = nghttp2_submit_trailer(session->inner_session, 
+                                        stream->id,
+                                        trailer_headers,
+                                        trailer_header_count);
+    }
+    else {
+        trailer_headers = NULL;
+    }
+
+    result = nghttp2_session_send(session->inner_session);
+
+    if (trailer_headers != NULL) {
+        flb_free(trailer_headers);
+    }
+
+    flb_free(headers);
+
+    if (result != 0) {
+        stream->status = HTTP_STREAM_STATUS_ERROR;
+
+        return -8;
     }
 
     stream->status = HTTP_STREAM_STATUS_RECEIVING_HEADERS;
@@ -376,25 +541,25 @@ static int http2_header_callback(nghttp2_session *inner_session,
         temporary_buffer[sizeof(temporary_buffer) - 1] = '\0';
 
         if (strcasecmp(temporary_buffer, "GET") == 0) {
-            stream->request.method = MK_METHOD_GET;
+            stream->request.method = HTTP_METHOD_GET;
         }
         else if (strcasecmp(temporary_buffer, "POST") == 0) {
-            stream->request.method = MK_METHOD_POST;
+            stream->request.method = HTTP_METHOD_POST;
         }
         else if (strcasecmp(temporary_buffer, "HEAD") == 0) {
-            stream->request.method = MK_METHOD_HEAD;
+            stream->request.method = HTTP_METHOD_HEAD;
         }
         else if (strcasecmp(temporary_buffer, "PUT") == 0) {
-            stream->request.method = MK_METHOD_PUT;
+            stream->request.method = HTTP_METHOD_PUT;
         }
         else if (strcasecmp(temporary_buffer, "DELETE") == 0) {
-            stream->request.method = MK_METHOD_DELETE;
+            stream->request.method = HTTP_METHOD_DELETE;
         }
         else if (strcasecmp(temporary_buffer, "OPTIONS") == 0) {
-            stream->request.method = MK_METHOD_OPTIONS;
+            stream->request.method = HTTP_METHOD_OPTIONS;
         }
         else {    
-            stream->request.method = MK_METHOD_UNKNOWN;
+            stream->request.method = HTTP_METHOD_UNKNOWN;
         }
     }
     else if (flb_http_server_strncasecmp(name, name_length, ":path", 0) == 0) {
@@ -422,6 +587,15 @@ static int http2_header_callback(nghttp2_session *inner_session,
         }
     }
     else if (flb_http_server_strncasecmp(
+                name, name_length, "content-type", 0) == 0) {
+
+        stream->request.content_type = cfl_sds_create_len((const char *) value, value_length);
+    
+        if (stream->request.content_type == NULL) {
+            return -1;
+        }
+    }
+    else if (flb_http_server_strncasecmp(
                 name, name_length, "content-length", 0) == 0) {
         strncpy(temporary_buffer, 
                 (const char *) value, 
@@ -433,7 +607,7 @@ static int http2_header_callback(nghttp2_session *inner_session,
     }
 
     result = flb_http_request_set_header(&stream->request, 
-                                         (const char *) name, 
+                                         (char *) name, 
                                          name_length, 
                                          (void *) value, 
                                          value_length);
@@ -463,25 +637,7 @@ static int http2_frame_recv_callback(nghttp2_session *inner_session,
         case NGHTTP2_CONTINUATION:
         case NGHTTP2_HEADERS:
             if ((frame->hd.flags & NGHTTP2_FLAG_END_HEADERS) != 0) {
-                if (stream->request.content_length > 0) {
-                    stream->status = HTTP_STREAM_STATUS_RECEIVING_DATA;
-                }
-                else {
-                    stream->status = HTTP_STREAM_STATUS_READY;
-
-                    if (!cfl_list_entry_is_orphan(&stream->request._head)) {
-                        cfl_list_del(&stream->request._head);
-                    }
-
-                    FLB_HTTP_STREAM_GET_SESSION(stream, &parent_session);
-
-                    if (parent_session == NULL) {
-                        return -1;
-                    }
-
-                    cfl_list_add(&stream->request._head, 
-                                 &parent_session->request_queue);
-                }
+                stream->status = HTTP_STREAM_STATUS_RECEIVING_DATA;
             }
             else {
                 stream->status = HTTP_STREAM_STATUS_RECEIVING_HEADERS;                
@@ -491,7 +647,24 @@ static int http2_frame_recv_callback(nghttp2_session *inner_session,
         default:
             break;
     }
-    
+
+    if ((frame->hd.flags & NGHTTP2_FLAG_END_STREAM) != 0) {
+        stream->status = HTTP_STREAM_STATUS_READY;
+
+        if (!cfl_list_entry_is_orphan(&stream->request._head)) {
+            cfl_list_del(&stream->request._head);
+        }
+
+        FLB_HTTP_STREAM_GET_SESSION(stream, &parent_session);
+
+        if (parent_session == NULL) {
+            return -1;
+        }
+
+        cfl_list_add(&stream->request._head, 
+                        &parent_session->request_queue);
+    }
+
     return 0;
 }
 
@@ -543,6 +716,8 @@ static int http2_begin_headers_callback(nghttp2_session *inner_session,
     if (stream == NULL) {
         return -1;
     }
+
+    stream->request.protocol_version = HTTP_PROTOCOL_VERSION_20;
 
     cfl_list_add(&stream->_head, &session->streams);
 
@@ -633,10 +808,10 @@ static ssize_t http2_data_source_read_callback(nghttp2_session *session,
                                                nghttp2_data_source *source, 
                                                void *user_data)
 {
-    size_t               content_length;
-    size_t               body_offset;
+    size_t                   content_length;
+    size_t                   body_offset;
     struct flb_http_stream  *stream;
-    ssize_t              result;
+    ssize_t                  result;
 
     stream = nghttp2_session_get_stream_user_data(session, 
                                                   stream_id);
@@ -645,8 +820,14 @@ static ssize_t http2_data_source_read_callback(nghttp2_session *session,
         return NGHTTP2_ERR_CALLBACK_FAILURE;
     }
 
-    body_offset    = stream->response.body_read_offset;
-    content_length = cfl_sds_len(stream->response.body) - body_offset;
+    if (stream->response.body != NULL) {
+        body_offset    = stream->response.body_read_offset;
+        content_length = cfl_sds_len(stream->response.body) - body_offset;
+    }
+    else {
+        body_offset = 0;
+        content_length = 0;
+    }
 
     if (content_length > length) {
         memcpy(buf, 
@@ -656,17 +837,20 @@ static ssize_t http2_data_source_read_callback(nghttp2_session *session,
 
         stream->response.body_read_offset += length;
     }
-    else if (content_length > 0) {
-        memcpy(buf, stream->response.body, content_length);
+    else {
+        if (content_length > 0) {
+            memcpy(buf, stream->response.body, content_length);
+
+            stream->response.body_read_offset += content_length;
+        }
 
         result = content_length;
 
-        stream->response.body_read_offset += length;
-
         *data_flags |= NGHTTP2_DATA_FLAG_EOF;
-    }
-    else {
-        result = NGHTTP2_ERR_PAUSE;
+
+        if (mk_list_is_empty(&stream->response.trailer_headers->entries) != 0) {
+            *data_flags |= NGHTTP2_DATA_FLAG_NO_END_STREAM;
+        }
     }
 
     return result;

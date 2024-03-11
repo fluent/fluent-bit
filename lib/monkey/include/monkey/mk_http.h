@@ -77,10 +77,12 @@
 #define MK_HTTP_PROTOCOL_09 (9)
 #define MK_HTTP_PROTOCOL_10 (10)
 #define MK_HTTP_PROTOCOL_11 (11)
+#define MK_HTTP_PROTOCOL_20 (20)
 
 #define MK_HTTP_PROTOCOL_09_STR "HTTP/0.9"
 #define MK_HTTP_PROTOCOL_10_STR "HTTP/1.0"
 #define MK_HTTP_PROTOCOL_11_STR "HTTP/1.1"
+#define MK_HTTP_PROTOCOL_20_STR "HTTP/2"
 
 extern const mk_ptr_t mk_http_method_get_p;
 extern const mk_ptr_t mk_http_method_post_p;

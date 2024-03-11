@@ -184,6 +184,20 @@ int flb_net_socket_reset(flb_sockfd_t fd)
     return 0;
 }
 
+int flb_net_socket_share_port(flb_sockfd_t fd)
+{
+    int on = 1;
+    int ret;
+
+    ret = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
+    if (ret == -1) {
+        flb_errno();
+        return -1;
+    }
+
+    return 0;
+}
+
 int flb_net_socket_tcp_nodelay(flb_sockfd_t fd)
 {
     int on = 1;
@@ -1513,7 +1527,7 @@ int flb_net_tcp_fd_connect(flb_sockfd_t fd, const char *host, unsigned long port
     return ret;
 }
 
-flb_sockfd_t flb_net_server(const char *port, const char *listen_addr)
+flb_sockfd_t flb_net_server(const char *port, const char *listen_addr, int share_port)
 {
     flb_sockfd_t fd = -1;
     int ret;
@@ -1539,6 +1553,10 @@ flb_sockfd_t flb_net_server(const char *port, const char *listen_addr)
             continue;
         }
 
+        if (share_port) {
+            flb_net_socket_share_port(fd);
+        }
+
         flb_net_socket_tcp_nodelay(fd);
         flb_net_socket_reset(fd);
 
@@ -1559,7 +1577,7 @@ flb_sockfd_t flb_net_server(const char *port, const char *listen_addr)
     return fd;
 }
 
-flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr)
+flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr, int share_port)
 {
     flb_sockfd_t fd = -1;
     int ret;
@@ -1585,6 +1603,10 @@ flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr)
             continue;
         }
 
+        if (share_port) {
+            flb_net_socket_share_port(fd);
+        }
+
         ret = flb_net_bind_udp(fd, rp->ai_addr, rp->ai_addrlen);
         if(ret == -1) {
             flb_warn("Cannot listen on %s port %s", listen_addr, port);
@@ -1605,7 +1627,8 @@ flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr)
 #ifdef FLB_HAVE_UNIX_SOCKET
 flb_sockfd_t flb_net_server_unix(const char *listen_path,
                                  int stream_mode,
-                                 int backlog)
+                                 int backlog,
+                                 int share_port)
 {
     size_t             address_length;
     size_t             path_length;
@@ -1632,6 +1655,10 @@ flb_sockfd_t flb_net_server_unix(const char *listen_path,
         address.sun_family = AF_UNIX;
 
         strncpy(address.sun_path, listen_path, sizeof(address.sun_path));
+
+        if (share_port) {
+            flb_net_socket_share_port(fd);
+        }
 
         if (stream_mode) {
             ret = flb_net_bind(fd,

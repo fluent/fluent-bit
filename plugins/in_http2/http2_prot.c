@@ -74,7 +74,7 @@ static int sds_uri_decode(flb_sds_t s)
     return 0;
 }
 
-static int send_response(struct flb_http_response_ng *response, int http_status, char *message)
+static int send_response(struct flb_http_response *response, int http_status, char *message)
 {
     struct mk_list            *header_iterator;
     struct flb_slist_entry    *header_value;
@@ -349,7 +349,7 @@ static int process_pack(struct flb_http2 *ctx, flb_sds_t tag, char *buf, size_t 
 }
 
 static ssize_t parse_payload_json(flb_sds_t tag,
-                                  struct flb_http_request_ng *request)
+                                  struct flb_http_request *request)
 {
     int ret;
     int out_size;
@@ -392,7 +392,7 @@ static ssize_t parse_payload_json(flb_sds_t tag,
 }
 
 static ssize_t parse_payload_urlencoded(flb_sds_t tag,
-                                        struct flb_http_request_ng *request)
+                                        struct flb_http_request *request)
 {
     struct mk_list *kvs;
     struct mk_list *head = NULL;
@@ -487,8 +487,8 @@ split_error:
 }
 
 static int process_payload(flb_sds_t tag,
-                           struct flb_http_request_ng *request,
-                           struct flb_http_response_ng *response)
+                           struct flb_http_request *request,
+                           struct flb_http_response *response)
 {
     char *header;
     int type;
@@ -530,8 +530,8 @@ static int process_payload(flb_sds_t tag,
     return 0;
 }
 
-int http2_handle_request(struct flb_http_request_ng *request,
-                         struct flb_http_response_ng *response)
+int http2_handle_request(struct flb_http_request *request,
+                         struct flb_http_response *response)
 {
     int                             i;
     int                             ret;
@@ -571,7 +571,7 @@ int http2_handle_request(struct flb_http_request_ng *request,
 
     /* ToDo: Fix me */
     /* HTTP/1.1 needs Host header */
-    if (session->version == HTTP_PROTOCOL_HTTP1 && 
+    if (request->protocol_version == HTTP_PROTOCOL_HTTP1 && 
         request->host == NULL) {
         flb_sds_destroy(tag);
 

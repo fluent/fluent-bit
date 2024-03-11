@@ -51,10 +51,6 @@ struct flb_http2 *http2_config_create(struct flb_input_instance *ins)
     /* Listen interface (if not set, defaults to 0.0.0.0:9880) */
     flb_input_net_default_listener("0.0.0.0", 9880, ins);
 
-    ctx->listen = flb_strdup(ins->host.listen);
-    snprintf(port, sizeof(port) - 1, "%d", ins->host.port);
-    ctx->tcp_port = flb_strdup(port);
-
     /* monkey detects server->workers == 0 as the server not being initialized at the
      * moment so we want to make sure that it stays that way!
      */
@@ -70,57 +66,11 @@ struct flb_http2 *http2_config_create(struct flb_input_instance *ins)
         return NULL;
     }
 
-    ctx->success_headers_str = flb_sds_create_size(1);
-
-    if (ctx->success_headers_str == NULL) {
-        http2_config_destroy(ctx);
-
-        return NULL;
-    }
-
-    flb_config_map_foreach(header_iterator, header_pair, ctx->success_headers) {
-        header_name = mk_list_entry_first(header_pair->val.list,
-                                          struct flb_slist_entry,
-                                          _head);
-
-        header_value = mk_list_entry_last(header_pair->val.list,
-                                          struct flb_slist_entry,
-                                          _head);
-
-        ret = flb_sds_cat_safe(&ctx->success_headers_str,
-                               header_name->str,
-                               flb_sds_len(header_name->str));
-
-        if (ret == 0) {
-            ret = flb_sds_cat_safe(&ctx->success_headers_str,
-                                   ": ",
-                                   2);
-        }
-
-        if (ret == 0) {
-            ret = flb_sds_cat_safe(&ctx->success_headers_str,
-                                   header_value->str,
-                                   flb_sds_len(header_value->str));
-        }
-
-        if (ret == 0) {
-            ret = flb_sds_cat_safe(&ctx->success_headers_str,
-                                   "\r\n",
-                                   2);
-        }
-
-        if (ret != 0) {
-            http2_config_destroy(ctx);
-
-            return NULL;
-        }
-    }
-
     ret = flb_http_server_init(&ctx->http_server, 
                                 HTTP_PROTOCOL_AUTODETECT,
-                                0,
+                                FLB_HTTP_SERVER_FLAG_AUTO_INFLATE,
                                 NULL,
-                                ctx->listen,
+                                ins->host.listen,
                                 ins->host.port,
                                 ins->tls,
                                 ins->flags,
@@ -143,13 +93,6 @@ int http2_config_destroy(struct flb_http2 *ctx)
     flb_http_server_destroy(&ctx->http_server);
 
     flb_log_event_encoder_destroy(&ctx->log_encoder);
-
-    if (ctx->success_headers_str != NULL) {
-        flb_sds_destroy(ctx->success_headers_str);
-    }
-
-    flb_sds_destroy(ctx->listen);
-    flb_sds_destroy(ctx->tcp_port);
 
     flb_free(ctx);
 

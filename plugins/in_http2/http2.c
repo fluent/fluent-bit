@@ -26,40 +26,6 @@
 #include "http2_prot.h"
 #include "http2_config.h"
 
-int request_processor(struct flb_http_request_ng *request,
-                      struct flb_http_response_ng *response)
-{
-    char *sample;
-    int   zz;
-
-    printf("REQUEST PROCESSOR\n");
-
-    if (request->method == MK_METHOD_POST) {
-        printf("BODY LENGTH : %zu\n\n", cfl_sds_len(request->body));
-
-        for (zz = 0 ; zz < cfl_sds_len(request->body) ; zz++) {
-            printf("%c", request->body[zz]);
-        }
-
-        printf("\n\n");
-    }
-
-    sample = flb_http_request_get_header(request, "user-agent");
-
-    if (sample != NULL) {
-        printf("HEADER VALUE = %s\n", sample);
-    }
-
-    flb_http_response_set_header(response, "test", 4, "value", 5);
-    flb_http_response_set_header(response, "content-length", 14, "5", 1);
-    flb_http_response_set_status(response, 200);
-    flb_http_response_set_message(response, "TEST MESSAGE!");
-    flb_http_response_set_body(response, (unsigned char *) "TEST!", 5);
-    flb_http_response_commit(response);
-
-    return 0;
-}
-
 static int in_http2_init(struct flb_input_instance *ins,
                         struct flb_config *config, void *data)
 {
@@ -74,8 +40,6 @@ static int in_http2_init(struct flb_input_instance *ins,
     if (!ctx) {
         return -1;
     }
-
-    ctx->collector_id = -1;
 
     /* Populate context with config map defaults and incoming properties */
     ret = flb_input_config_map_set(ins, (void *) ctx);
@@ -92,8 +56,8 @@ static int in_http2_init(struct flb_input_instance *ins,
 
     if (ret != 0) {
         flb_plg_error(ctx->ins,
-                      "could not initialize downstream on %s:%s. Aborting",
-                      ctx->listen, ctx->tcp_port);
+                      "could not initialize downstream on %s:%u. Aborting",
+                      ins->host.listen, ins->host.port);
 
         http2_config_destroy(ctx);
 
@@ -132,18 +96,6 @@ static int in_http2_exit(void *data, struct flb_config *config)
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
-    {
-     FLB_CONFIG_MAP_SIZE, "buffer_max_size", HTTP_BUFFER_MAX_SIZE,
-     0, FLB_TRUE, offsetof(struct flb_http2, buffer_max_size),
-     ""
-    },
-
-    {
-     FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", HTTP_BUFFER_CHUNK_SIZE,
-     0, FLB_TRUE, offsetof(struct flb_http2, buffer_chunk_size),
-     ""
-    },
-
     {
      FLB_CONFIG_MAP_SLIST_1, "success_header", NULL,
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_http2, success_headers),

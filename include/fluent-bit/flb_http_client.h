@@ -61,7 +61,7 @@
 #define FLB_HTTP_HEADER_CONNECTION       "Connection"
 #define FLB_HTTP_HEADER_KA               "keep-alive"
 
-struct flb_http_response {
+struct flb_http_client_response {
     int status;                /* HTTP response status          */
     int content_length;        /* Content length set by headers */
     int chunked_encoding;      /* Chunked transfer encoding ?   */
@@ -131,7 +131,7 @@ struct flb_http_client {
     struct flb_http_proxy proxy;
 
     /* Response */
-    struct flb_http_response resp;
+    struct flb_http_client_response resp;
 
     /* Reference to Callback context */
     void *cb_ctx;

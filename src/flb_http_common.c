@@ -19,12 +19,12 @@
 
 #include <fluent-bit/flb_mem.h>
 
-#include "flb_http_server.h"
-#include "flb_http_common.h"
+#include <fluent-bit/http_server/flb_http_server.h>
+#include <fluent-bit/flb_http_common.h>
 
 /* HTTP REQUEST */
 
-int flb_http_request_init(struct flb_http_request_ng *request)
+int flb_http_request_init(struct flb_http_request *request)
 {
     flb_http_request_destroy(request);
 
@@ -39,7 +39,7 @@ int flb_http_request_init(struct flb_http_request_ng *request)
     return 0;
 }
 
-void flb_http_request_destroy(struct flb_http_request_ng *request)
+void flb_http_request_destroy(struct flb_http_request *request)
 {
     if (request->path != NULL) {
          cfl_sds_destroy(request->path);
@@ -47,6 +47,10 @@ void flb_http_request_destroy(struct flb_http_request_ng *request)
 
     if (request->host != NULL) {
          cfl_sds_destroy(request->host);
+    }
+
+    if (request->content_type != NULL) {
+         cfl_sds_destroy(request->content_type);
     }
 
     if (request->query_string != NULL) {
@@ -65,10 +69,10 @@ void flb_http_request_destroy(struct flb_http_request_ng *request)
         cfl_list_del(&request->_head);
     }
 
-    memset(request, 0, sizeof(struct flb_http_request_ng));
+    memset(request, 0, sizeof(struct flb_http_request));
 }
 
-char *flb_http_request_get_header(struct flb_http_request_ng *request,
+char *flb_http_request_get_header(struct flb_http_request *request,
                                   char *name)
 {
     char   *lowercase_name;
@@ -97,7 +101,7 @@ char *flb_http_request_get_header(struct flb_http_request_ng *request,
     return (char *) value;
 }
 
-int flb_http_request_set_header(struct flb_http_request_ng *request,
+int flb_http_request_set_header(struct flb_http_request *request,
                                 char *name, size_t name_length,
                                 char *value, size_t value_length) 
 {
@@ -109,6 +113,19 @@ int flb_http_request_set_header(struct flb_http_request_ng *request,
 
     if (lowercase_name == NULL) {
         return -1;
+    }
+
+    if (name_length == 0) {
+        name_length = strlen(name);
+    }
+
+    if (value_length == 0) {
+        if (value[0] == '\0') {
+            value_length = 1; 
+        }
+        else {
+            value_length = strlen(value);
+        }
     }
 
     result = flb_hash_table_add(request->headers, 
@@ -126,9 +143,34 @@ int flb_http_request_set_header(struct flb_http_request_ng *request,
     return 0;
 }
 
+int flb_http_request_unset_header(struct flb_http_request *request,
+                                  char *name)
+{
+    char  *lowercase_name;
+    int    result;
+
+    lowercase_name = flb_http_server_convert_string_to_lowercase(
+                        name, strlen(name));
+
+    if (lowercase_name == NULL) {
+        return -1;
+    }
+
+    result = flb_hash_table_del(request->headers, 
+                                (const char *) lowercase_name);
+
+    flb_free(lowercase_name);
+
+    if (result == -1) {
+        return -1;
+    }
+
+    return 0;
+}
+
 /* HTTP RESPONSE */
 
-int flb_http_response_init(struct flb_http_response_ng *response)
+int flb_http_response_init(struct flb_http_response *response)
 {
     flb_http_response_destroy(response);
 
@@ -138,10 +180,18 @@ int flb_http_response_init(struct flb_http_response_ng *response)
         return -1;
     }
 
+    response->trailer_headers = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 16, -1);
+
+    if (response->trailer_headers == NULL) {
+        flb_http_response_destroy(response);
+
+        return -1;
+    }
+
     return 0;
 }
 
-void flb_http_response_destroy(struct flb_http_response_ng *response)
+void flb_http_response_destroy(struct flb_http_response *response)
 {
     if (response->message != NULL) {
          cfl_sds_destroy(response->message);
@@ -155,10 +205,14 @@ void flb_http_response_destroy(struct flb_http_response_ng *response)
          flb_hash_table_destroy(response->headers);
     }
 
-    memset(response, 0, sizeof(struct flb_http_response_ng));
+    if (response->trailer_headers != NULL) {
+         flb_hash_table_destroy(response->trailer_headers);
+    }
+
+    memset(response, 0, sizeof(struct flb_http_response));
 }
 
-struct flb_http_response_ng *flb_http_response_begin(
+struct flb_http_response *flb_http_response_begin(
                                 struct flb_http_server_session *session, 
                                 void *stream)
 {
@@ -170,9 +224,17 @@ struct flb_http_response_ng *flb_http_response_begin(
     }
 }
 
-int flb_http_response_commit(struct flb_http_response_ng *response)
+int flb_http_response_commit(struct flb_http_response *response)
 {
     struct flb_http_server_session *session;
+
+    if (response->body == NULL) {
+        flb_http_response_set_header(response, 
+                                     "content-length", 
+                                     strlen("content-length"),
+                                     "0", 
+                                     1);
+    }
 
     FLB_HTTP_STREAM_GET_SESSION(response->stream, &session);
 
@@ -183,11 +245,24 @@ int flb_http_response_commit(struct flb_http_response_ng *response)
     return flb_http1_response_commit(response);
 }
 
-int flb_http_response_set_header(struct flb_http_response_ng *response, 
+int flb_http_response_set_header(struct flb_http_response *response, 
                              char *name, size_t name_length,
                              char *value, size_t value_length)
 {
     struct flb_http_server_session *session;
+
+    if (name_length == 0) {
+        name_length = strlen(name);
+    }
+
+    if (value_length == 0) {
+        if (value[0] == '\0') {
+            value_length = 1; 
+        }
+        else {
+            value_length = strlen(value);
+        }
+    }
 
     FLB_HTTP_STREAM_GET_SESSION(response->stream, &session);
 
@@ -203,7 +278,49 @@ int flb_http_response_set_header(struct flb_http_response_ng *response,
     }
 }
 
-int flb_http_response_set_status(struct flb_http_response_ng *response, 
+int flb_http_response_set_trailer_header(struct flb_http_response *response, 
+                                         char *name, size_t name_length,
+                                         char *value, size_t value_length)
+{
+    char  *lowercase_name;
+    int    result;
+
+    if (name_length == 0) {
+        name_length = strlen(name);
+    }
+
+    if (value_length == 0) {
+        if (value[0] == '\0') {
+            value_length = 1; 
+        }
+        else {
+            value_length = strlen(value);
+        }
+    }
+
+    lowercase_name = flb_http_server_convert_string_to_lowercase(
+                        name, name_length);
+
+    if (lowercase_name == NULL) {
+        return -1;
+    }
+
+    result = flb_hash_table_add(response->trailer_headers, 
+                                (const char *) lowercase_name, 
+                                name_length,
+                                (void *) value, 
+                                value_length);
+
+    flb_free(lowercase_name);
+
+    if (result == -1) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int flb_http_response_set_status(struct flb_http_response *response, 
                              int status)
 {
     struct flb_http_server_session *session;
@@ -219,7 +336,7 @@ int flb_http_response_set_status(struct flb_http_response_ng *response,
     return flb_http1_response_set_status(response, status);
 }
 
-int flb_http_response_set_message(struct flb_http_response_ng *response, 
+int flb_http_response_set_message(struct flb_http_response *response, 
                                      char *message)
 {
     if (response->message != NULL) {
@@ -237,7 +354,7 @@ int flb_http_response_set_message(struct flb_http_response_ng *response,
     return 0;
 }
 
-int flb_http_response_set_body(struct flb_http_response_ng *response, 
+int flb_http_response_set_body(struct flb_http_response *response, 
                            unsigned char *body, size_t body_length)
 {
     struct flb_http_server_session *session;

@@ -25,9 +25,23 @@
 #include <cfl/cfl_list.h>
 #include <cfl/cfl_sds.h>
 
-#define HTTP_PROTOCOL_AUTODETECT               0
+#define HTTP_PROTOCOL_AUTODETECT              -1
+#define HTTP_PROTOCOL_HTTP0                    0
 #define HTTP_PROTOCOL_HTTP1                    1
 #define HTTP_PROTOCOL_HTTP2                    2
+
+#define HTTP_PROTOCOL_VERSION_09               MK_HTTP_PROTOCOL_09
+#define HTTP_PROTOCOL_VERSION_10               MK_HTTP_PROTOCOL_10
+#define HTTP_PROTOCOL_VERSION_11               MK_HTTP_PROTOCOL_11
+#define HTTP_PROTOCOL_VERSION_20               MK_HTTP_PROTOCOL_20
+
+#define HTTP_METHOD_GET                        MK_METHOD_GET
+#define HTTP_METHOD_POST                       MK_METHOD_POST
+#define HTTP_METHOD_HEAD                       MK_METHOD_HEAD
+#define HTTP_METHOD_PUT                        MK_METHOD_PUT
+#define HTTP_METHOD_DELETE                     MK_METHOD_DELETE
+#define HTTP_METHOD_OPTIONS                    MK_METHOD_OPTIONS
+#define HTTP_METHOD_UNKNOWN                    MK_METHOD_UNKNOWN
 
 #define HTTP_STREAM_ROLE_SERVER                0
 #define HTTP_STREAM_ROLE_CLIENT                1
@@ -42,13 +56,15 @@
 struct flb_http_stream;
 struct flb_http_server_session;
 
-struct flb_http_request_ng {
+struct flb_http_request {
+    int                               protocol_version;
     int                               method;
     cfl_sds_t                         path;
     cfl_sds_t                         host;
     cfl_sds_t                         query_string;
     struct flb_hash_table            *headers;
     size_t                            content_length;
+    char                             *content_type;
     cfl_sds_t                         body;
 
     struct flb_http_stream           *stream;
@@ -56,10 +72,11 @@ struct flb_http_request_ng {
     struct cfl_list                   _head;
 };
 
-struct flb_http_response_ng {
+struct flb_http_response {
     int                              status;
     cfl_sds_t                        message;
     struct flb_hash_table           *headers;
+    struct flb_hash_table           *trailer_headers;
     size_t                           content_length;
     cfl_sds_t                        body;
     size_t                           body_read_offset;
@@ -72,8 +89,8 @@ struct flb_http_stream {
     int                             role;
     int                             status;
 
-    struct flb_http_request_ng      request;
-    struct flb_http_response_ng     response;
+    struct flb_http_request         request;
+    struct flb_http_response        response;
 
     void                           *parent;
     void                           *user_data;
@@ -84,40 +101,47 @@ struct flb_http_stream {
 
 /* HTTP REQUEST */
 
-int flb_http_request_init(struct flb_http_request_ng *request);
+int flb_http_request_init(struct flb_http_request *request);
 
-void flb_http_request_destroy(struct flb_http_request_ng *request);
+void flb_http_request_destroy(struct flb_http_request *request);
 
-char *flb_http_request_get_header(struct flb_http_request_ng *request,
+char *flb_http_request_get_header(struct flb_http_request *request,
                                   char *name);
 
-int flb_http_request_set_header(struct flb_http_request_ng *request,
+int flb_http_request_set_header(struct flb_http_request *request,
                                 char *name, size_t name_length,
                                 char *value, size_t value_length);
 
+int flb_http_request_unset_header(struct flb_http_request *request,
+                                  char *name);
+
 /* HTTP RESPONSE */
 
-int flb_http_response_init(struct flb_http_response_ng *response);
+int flb_http_response_init(struct flb_http_response *response);
 
-void flb_http_response_destroy(struct flb_http_response_ng *response);
+void flb_http_response_destroy(struct flb_http_response *response);
 
-struct flb_http_response_ng *flb_http_response_begin(
+struct flb_http_response *flb_http_response_begin(
                                 struct flb_http_server_session *session, 
                                 void *stream);
 
-int flb_http_response_commit(struct flb_http_response_ng *response);
+int flb_http_response_commit(struct flb_http_response *response);
 
-int flb_http_response_set_header(struct flb_http_response_ng *response, 
+int flb_http_response_set_header(struct flb_http_response *response, 
                              char *name, size_t name_length,
                              char *value, size_t value_length);
 
-int flb_http_response_set_status(struct flb_http_response_ng *response, 
+int flb_http_response_set_trailer_header(struct flb_http_response *response, 
+                                         char *name, size_t name_length,
+                                         char *value, size_t value_length);
+
+int flb_http_response_set_status(struct flb_http_response *response, 
                              int status);
 
-int flb_http_response_set_message(struct flb_http_response_ng *response, 
+int flb_http_response_set_message(struct flb_http_response *response, 
                               char *message);
 
-int flb_http_response_set_body(struct flb_http_response_ng *response, 
+int flb_http_response_set_body(struct flb_http_response *response, 
                            unsigned char *body, size_t body_length);
 
 /* HTTP STREAM */

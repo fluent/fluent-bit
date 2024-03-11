@@ -37,4 +37,8 @@ int in_elasticsearch_bulk_prot_handle_error(struct flb_in_elasticsearch *ctx,
                                             struct mk_http_session *session,
                                             struct mk_http_request *request);
 
+
+int in_elasticsearch_bulk_prot_handle_ng(struct flb_http_request *request,
+                                         struct flb_http_response *response);
+
 #endif

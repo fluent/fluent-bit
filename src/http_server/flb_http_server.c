@@ -19,7 +19,40 @@
 
 #include <fluent-bit/flb_mem.h>
 
-#include "flb_http_server.h"
+#include <fluent-bit/http_server/flb_http_server.h>
+
+#include <fluent-bit/flb_snappy.h>
+#include <fluent-bit/flb_gzip.h>
+
+static \
+int uncompress_zlib(char **output_buffer,
+                    size_t *output_size,
+                    char *input_buffer,
+                    size_t input_size);
+
+static \
+int uncompress_zstd(char **output_buffer,
+                    size_t *output_size,
+                    char *input_buffer,
+                    size_t input_size);
+
+static \
+int uncompress_deflate(char **output_buffer,
+                       size_t *output_size,
+                       char *input_buffer,
+                       size_t input_size);
+
+static \
+int uncompress_snappy(char **output_buffer,
+                      size_t *output_size,
+                      char *input_buffer,
+                      size_t input_size);
+
+static \
+int uncompress_gzip(char **output_buffer,
+                    size_t *output_size,
+                    char *input_buffer,
+                    size_t input_size);
 
 /* COMMON */
 
@@ -143,13 +176,151 @@ static int flb_http_server_session_write(struct flb_http_server_session *session
     return 0;
 }
 
+
+
+static int flb_http_server_inflate_request_body(
+    struct flb_http_request *request)
+{
+    char                            *content_encoding_header_value;
+    char                             new_content_length[21];
+    struct flb_http_server_session  *parent_session;
+    cfl_sds_t                        inflated_body;
+    char                            *output_buffer;
+    size_t                           output_size;
+    struct flb_http_server          *server;
+    int                              result;
+
+    FLB_HTTP_STREAM_GET_SESSION(request->stream, &parent_session);
+
+    server = parent_session->parent;
+    result = 0;
+
+    if (request->body == NULL) {
+        return 0;
+    }
+
+    if ((server->flags & FLB_HTTP_SERVER_FLAG_AUTO_INFLATE) == 0) {
+        return 0;
+    }
+
+    content_encoding_header_value = flb_http_request_get_header(
+                                        request, 
+                                        "content-encoding");
+
+    if (content_encoding_header_value == NULL) {
+        return 0;
+    }
+
+    if (strncasecmp(content_encoding_header_value, "gzip", 4) == 0) {
+        result = uncompress_gzip(&output_buffer,
+                                    &output_size,
+                                    request->body,
+                                    cfl_sds_len(request->body));
+    }
+    else if (strncasecmp(content_encoding_header_value, "zlib", 4) == 0) {
+        result = uncompress_zlib(&output_buffer,
+                                    &output_size,
+                                    request->body,
+                                    cfl_sds_len(request->body));
+    }
+    else if (strncasecmp(content_encoding_header_value, "zstd", 4) == 0) {
+        result = uncompress_zstd(&output_buffer,
+                                    &output_size,
+                                    request->body,
+                                    cfl_sds_len(request->body));
+    }
+    else if (strncasecmp(content_encoding_header_value, "snappy", 6) == 0) {
+        result = uncompress_snappy(&output_buffer,
+                                    &output_size,
+                                    request->body,
+                                    cfl_sds_len(request->body));
+    }
+    else if (strncasecmp(content_encoding_header_value, "deflate", 4) == 0) {
+        result = uncompress_deflate(&output_buffer,
+                                    &output_size,
+                                    request->body,
+                                    cfl_sds_len(request->body));
+    }
+
+    if (result == 1) {
+        inflated_body = cfl_sds_create_len(output_buffer, output_size);
+
+        flb_free(output_buffer);
+
+        if (inflated_body == NULL) {
+            return -1;
+        }
+
+        cfl_sds_destroy(request->body);
+
+        request->body = inflated_body;
+
+        snprintf(new_content_length, 
+                 sizeof(new_content_length), 
+                 "%zu",
+                 output_size);
+
+        flb_http_request_unset_header(request, "content-encoding");
+        flb_http_request_set_header(request, 
+                                    "content-length", strlen("content-length"),
+                                    new_content_length, strlen(new_content_length));
+
+        request->content_length = output_size;
+    }
+
+    return 0;
+}
+
+static int flb_http_server_should_connection_be_closed(
+    struct flb_http_request *request)
+{
+    char                            *connection_header_value;
+    struct flb_http_server_session  *parent_session;
+    struct flb_http_server          *server;
+
+    FLB_HTTP_STREAM_GET_SESSION(request->stream, &parent_session);
+
+    server = parent_session->parent;
+
+    /* Version behaviors implemented in the following block :
+     * HTTP/0.9 keep-alive is opt-in
+     * HTTP/1.0 keep-alive is opt-in
+     * HTTP/1.1 keep-alive is opt-out
+     * HTTP/2   keep-alive is "mandatory"
+     */
+
+    if (request->protocol_version < HTTP_PROTOCOL_VERSION_20) {
+        if ((server->flags & FLB_HTTP_SERVER_FLAG_KEEPALIVE) == 0) {
+            return FLB_TRUE;
+        }
+        else {
+            connection_header_value = flb_http_request_get_header(request, 
+                                                                  "connection");
+
+            if (connection_header_value == NULL) {
+                if (request->protocol_version < HTTP_PROTOCOL_VERSION_11) {
+                    return FLB_TRUE;
+                }
+            }
+            else {
+                if (strcasecmp(connection_header_value, "keep-alive") != 0) {
+                    return FLB_TRUE;
+                }
+            }
+        }
+    }
+
+    return FLB_FALSE;
+}
+
 static int flb_http_server_client_activity_event_handler(void *data)
 {
+    int                             close_connection;
     struct cfl_list                *backup_iterator;
     struct flb_connection          *connection;
     struct cfl_list                *iterator;
-    struct flb_http_response_ng    *response;
-    struct flb_http_request_ng     *request;
+    struct flb_http_response       *response;
+    struct flb_http_request        *request;
     struct flb_http_server_session *session;
     struct flb_http_server         *server;
     struct flb_http_stream         *stream;
@@ -174,14 +345,28 @@ static int flb_http_server_client_activity_event_handler(void *data)
         }
     }
 
+    close_connection = FLB_FALSE;
+
     cfl_list_foreach_safe(iterator, 
                             backup_iterator, 
                             &session->request_queue) {
-        request = cfl_list_entry(iterator, struct flb_http_request_ng, _head);
+        request = cfl_list_entry(iterator, struct flb_http_request, _head);
 
         stream = (struct flb_http_stream *) request->stream;
 
         response = flb_http_response_begin(session, stream);
+
+        if (request->body != NULL && request->content_length == 0) {
+            request->content_length = cfl_sds_len(request->body);
+        }
+
+        result = flb_http_server_inflate_request_body(request);
+
+        if (result != 0) {
+            flb_http_server_session_destroy(session);
+
+            return -1;
+        }
 
         if (server->request_callback != NULL) {
             result = server->request_callback(request, response);
@@ -189,6 +374,8 @@ static int flb_http_server_client_activity_event_handler(void *data)
         else {
             /* Report */
         }
+
+        close_connection = flb_http_server_should_connection_be_closed(request);
 
         flb_http_request_destroy(&stream->request);
     }
@@ -199,6 +386,10 @@ static int flb_http_server_client_activity_event_handler(void *data)
         flb_http_server_session_destroy(session);
 
         return -4;
+    }
+
+    if (close_connection) {
+        flb_http_server_session_destroy(session);
     }
 
     return 0;
@@ -265,7 +456,7 @@ static int flb_http_server_client_connection_event_handler(void *data)
 
 int flb_http_server_init(struct flb_http_server *session, 
                          int protocol_version,
-                         int flags,
+                         uint64_t flags,
                          flb_http_server_request_processor_callback
                              request_callback,
                          char *address,
@@ -305,6 +496,14 @@ int flb_http_server_init(struct flb_http_server *session,
 int flb_http_server_start(struct flb_http_server *session)
 {
     int result;
+
+    if (session->tls_provider != NULL) {
+        result = flb_tls_set_alpn(session->tls_provider, "h2,http/1.0,http/1.1");
+
+        if (result != 0) {
+            return -1;
+        }
+    }
 
     session->downstream = flb_downstream_create(FLB_TRANSPORT_TCP,
                                                 session->networking_flags,
@@ -531,3 +730,78 @@ int flb_http_server_session_ingest(struct flb_http_server_session *session,
 
     return -1;
 }
+
+
+/* PRIVATE */
+
+static \
+int uncompress_zlib(char **output_buffer,
+                    size_t *output_size,
+                    char *input_buffer,
+                    size_t input_size)
+{
+    return 0;
+}
+
+static \
+int uncompress_zstd(char **output_buffer,
+                    size_t *output_size,
+                    char *input_buffer,
+                    size_t input_size)
+{
+    return 0;
+}
+
+static \
+int uncompress_deflate(char **output_buffer,
+                       size_t *output_size,
+                       char *input_buffer,
+                       size_t input_size)
+{
+    return 0;
+}
+
+static \
+int uncompress_snappy(char **output_buffer,
+                      size_t *output_size,
+                      char *input_buffer,
+                      size_t input_size)
+{
+    int ret;
+
+    ret = flb_snappy_uncompress_framed_data(input_buffer,
+                                            input_size,
+                                            output_buffer,
+                                            output_size);
+
+    if (ret != 0) {
+        flb_error("[opentelemetry] snappy decompression failed");
+
+        return -1;
+    }
+
+    return 1;
+}
+
+static \
+int uncompress_gzip(char **output_buffer,
+                    size_t *output_size,
+                    char *input_buffer,
+                    size_t input_size)
+{
+    int ret;
+
+    ret = flb_gzip_uncompress(input_buffer,
+                              input_size,
+                              (void *) output_buffer,
+                              output_size);
+
+    if (ret == -1) {
+        flb_error("[opentelemetry] gzip decompression failed");
+
+        return -1;
+    }
+
+    return 1;
+}
+

@@ -17,7 +17,7 @@
  *  limitations under the License.
  */
 
-#include "flb_http_server.h"
+#include <fluent-bit/http_server/flb_http_server.h>
 
 /* PRIVATE */
 
@@ -149,7 +149,43 @@ static int http1_session_process_request(struct flb_http1_server_session *sessio
         return -1;
     }
 
-    session->stream.request.method = session->inner_request.method;
+    switch (session->inner_request.protocol) {
+        case MK_HTTP_PROTOCOL_09:
+            session->stream.request.protocol_version = HTTP_PROTOCOL_VERSION_09;
+            break;
+        case MK_HTTP_PROTOCOL_10:
+            session->stream.request.protocol_version = HTTP_PROTOCOL_VERSION_10;
+            break;
+        case MK_HTTP_PROTOCOL_11:
+            session->stream.request.protocol_version = HTTP_PROTOCOL_VERSION_11;
+            break;
+        default:
+            session->stream.request.protocol_version = HTTP_PROTOCOL_VERSION_10;
+    }
+
+    switch (session->inner_request.method) {
+        case MK_METHOD_GET:
+            session->stream.request.method = HTTP_METHOD_GET;
+            break;
+        case MK_METHOD_POST:
+            session->stream.request.method = HTTP_METHOD_POST;
+            break;
+        case MK_METHOD_HEAD:
+            session->stream.request.method = HTTP_METHOD_HEAD;
+            break;
+        case MK_METHOD_PUT:
+            session->stream.request.method = HTTP_METHOD_PUT;
+            break;
+        case MK_METHOD_DELETE:
+            session->stream.request.method = HTTP_METHOD_DELETE;
+            break;
+        case MK_METHOD_OPTIONS:
+            session->stream.request.method = HTTP_METHOD_OPTIONS;
+            break;
+        default:
+            session->stream.request.method = HTTP_METHOD_UNKNOWN;
+            break;
+    }
 
     session->stream.request.content_length = session->inner_request.content_length;
 
@@ -169,6 +205,18 @@ static int http1_session_process_request(struct flb_http1_server_session *sessio
                                        header->val.len);
             
                 if (session->stream.request.host == NULL) {
+                    return -1;
+                }
+            }
+            else if (flb_http_server_strncasecmp(
+                        (const uint8_t *) header->key.data, 
+                        header->key.len, 
+                        "content-type", 0) == 0) {
+                session->stream.request.content_type = \
+                    cfl_sds_create_len((const char *) header->val.data, 
+                                       header->val.len);
+            
+                if (session->stream.request.content_type == NULL) {
                     return -1;
                 }
             }
@@ -219,7 +267,7 @@ static int http1_session_process_request(struct flb_http1_server_session *sessio
 
 /* RESPONSE */
 
-struct flb_http_response_ng *flb_http1_response_begin(
+struct flb_http_response *flb_http1_response_begin(
                                 struct flb_http1_server_session *session, 
                                 struct flb_http_stream *stream)
 {
@@ -236,7 +284,7 @@ struct flb_http_response_ng *flb_http1_response_begin(
     return &stream->response;
 }
 
-int flb_http1_response_commit(struct flb_http_response_ng *response)
+int flb_http1_response_commit(struct flb_http_response *response)
 {
     struct mk_list                  *header_iterator;
     cfl_sds_t                        response_buffer;
@@ -344,7 +392,7 @@ int flb_http1_response_commit(struct flb_http_response_ng *response)
 }
 
 
-int flb_http1_response_set_header(struct flb_http_response_ng *response, 
+int flb_http1_response_set_header(struct flb_http_response *response, 
                               char *name, size_t name_length,
                               char *value, size_t value_length)
 {
@@ -361,13 +409,13 @@ int flb_http1_response_set_header(struct flb_http_response_ng *response,
     return 0;
 }
 
-int flb_http1_response_set_status(struct flb_http_response_ng *response, 
+int flb_http1_response_set_status(struct flb_http_response *response, 
                               int status)
 {
     return 0;
 }
 
-int flb_http1_response_set_body(struct flb_http_response_ng *response, 
+int flb_http1_response_set_body(struct flb_http_response *response, 
                             unsigned char *body, size_t body_length)
 {
     return 0;

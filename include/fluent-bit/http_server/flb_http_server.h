@@ -32,12 +32,15 @@
 #include <cfl/cfl_list.h>
 #include <cfl/cfl_sds.h>
 
-#include "flb_http_common.h"
-#include "flb_http_server_http1.h"
-#include "flb_http_server_http2.h"
+#include <fluent-bit/flb_http_common.h>
+#include <fluent-bit/http_server/flb_http_server_http1.h>
+#include <fluent-bit/http_server/flb_http_server_http2.h>
 
 #define HTTP_SERVER_INITIAL_BUFFER_SIZE        (10 * 1024)
 #define HTTP_SERVER_MAXIMUM_BUFFER_SIZE        (10 * (1000 * 1024))
+
+#define FLB_HTTP_SERVER_FLAG_KEEPALIVE         (((uint64_t) 1) << 0)
+#define FLB_HTTP_SERVER_FLAG_AUTO_INFLATE      (((uint64_t) 1) << 1)
 
 #define HTTP_SERVER_SUCCESS                    0
 #define HTTP_SERVER_PROVIDER_ERROR            -1
@@ -49,8 +52,8 @@
 #define HTTP_SERVER_STOPPED                    3
 
 typedef int (*flb_http_server_request_processor_callback)(
-                struct flb_http_request_ng *request,
-                struct flb_http_response_ng *response);
+                struct flb_http_request *request,
+                struct flb_http_response *response);
 
 struct flb_http_server {
     /* Internal */
@@ -64,7 +67,7 @@ struct flb_http_server {
     struct flb_config     *system_context;
     /* Internal */
 
-    int                    flags;
+    uint64_t               flags;
     int                    status;
     int                    protocol_version;
     struct flb_downstream *downstream;
@@ -108,7 +111,7 @@ int flb_http_server_strncasecmp(const uint8_t *first_buffer,
 
 int flb_http_server_init(struct flb_http_server *session, 
                          int protocol_version,
-                         int flags,
+                         uint64_t flags,
                          flb_http_server_request_processor_callback
                              request_callback,
                          char *address,
