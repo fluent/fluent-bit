@@ -442,7 +442,8 @@ int run_action_hash(struct content_modifier_ctx *ctx,
     /* if the kv pair already exists, remove it from the list */
     kvpair = cfl_object_kvpair_get(obj, key);
     if (!kvpair) {
-        return -1;
+        /* the key was not found, so it's ok */
+        return 0;
     }
 
     ret = hash_transformer(NULL, kvpair->val);

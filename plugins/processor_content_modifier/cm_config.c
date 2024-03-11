@@ -166,6 +166,8 @@ static int set_context(struct content_modifier_ctx *ctx)
 
 static int check_action_requirements(struct content_modifier_ctx *ctx)
 {
+    int ret;
+
     if (!ctx->key) {
         flb_plg_error(ctx->ins, "key is required for action '%s'", ctx->action_str);
         return -1;
@@ -191,6 +193,12 @@ static int check_action_requirements(struct content_modifier_ctx *ctx)
     else if (ctx->action_type == CM_ACTION_CONVERT) {
         if (!ctx->converted_type_str) {
             flb_plg_error(ctx->ins, "converted_type is required for action '%s'", ctx->action_str);
+            return -1;
+        }
+
+        ret = set_converted_type(ctx);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "cannot set converted_type '%s'", ctx->converted_type_str);
             return -1;
         }
     }
@@ -248,7 +256,6 @@ struct content_modifier_ctx *cm_config_create(struct flb_processor_instance *ins
             return NULL;
         }
     }
-
 
     // ret = set_converted_type(ctx);
     // if (ret == -1) {
