@@ -685,8 +685,6 @@ int flb_processor_run(struct flb_processor *proc,
         *out_size = cur_size;
     }
 
-    flb_log_event_encoder_claim_internal_buffer_ownership(p_ins->log_encoder);
-
     return 0;
 }
 
