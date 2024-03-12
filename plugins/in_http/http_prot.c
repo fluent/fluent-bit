@@ -21,9 +21,12 @@
 #include <fluent-bit/flb_version.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_gzip.h>
 
 #include <monkey/monkey.h>
 #include <monkey/mk_core.h>
+
+#include <string.h>
 
 #include "http.h"
 #include "http_conn.h"
@@ -520,6 +523,12 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
     int ret;
     int type = -1;
     struct mk_http_header *header;
+    char *uncompressed_data;
+    size_t uncompressed_size = 0;
+
+    /* used when checking content-encoding */
+    int gzip_compressed = FLB_FALSE;
+    int gzip_ret;
 
     header = &session->parser.headers[MK_HEADER_CONTENT_TYPE];
     if (header->key.data == NULL) {
@@ -537,18 +546,31 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
         type = HTTP_CONTENT_URLENCODED;
     }
 
+    gzip_compressed = flb_is_http_session_gzip_compressed(session);
+    
+    if (gzip_compressed == FLB_TRUE) {
+        gzip_ret = flb_gzip_uncompress(request->data.data, request->data.len, (void **)&uncompressed_data, &uncompressed_size);
+        if (gzip_ret == -1) {
+            flb_error("[http] gzip decompression failed");
+            return -1;
+        }
+    } else {
+        uncompressed_data = request->data.data;
+        uncompressed_size = request->data.len;
+    }
+    
     if (type == -1) {
         send_response(conn, 400, "error: invalid 'Content-Type'\n");
         return -1;
     }
 
-    if (request->data.len <= 0) {
+    if (uncompressed_size <= 0) {
         send_response(conn, 400, "error: no payload found\n");
         return -1;
     }
 
     if (type == HTTP_CONTENT_JSON) {
-        parse_payload_json(ctx, tag, request->data.data, request->data.len);
+        parse_payload_json(ctx, tag, uncompressed_data, uncompressed_size);
     }
     else if (type == HTTP_CONTENT_URLENCODED) {
         ret = parse_payload_urlencoded(ctx, tag, request->data.data, request->data.len);
@@ -556,6 +578,10 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
             send_response(conn, 400, "error: invalid payload\n");
             return -1;
         }
+    }
+    
+    if (gzip_compressed) {
+        flb_free(uncompressed_data);
     }
 
     return 0;
@@ -646,23 +672,18 @@ int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
     }
 
     mk_mem_free(uri);
-
     /* Check if we have a Host header: Hostname ; port */
     mk_http_point_header(&request->host, &session->parser, MK_HEADER_HOST);
-
     /* Header: Connection */
     mk_http_point_header(&request->connection, &session->parser,
                          MK_HEADER_CONNECTION);
-
     /* HTTP/1.1 needs Host header */
     if (!request->host.data && request->protocol == MK_HTTP_PROTOCOL_11) {
         flb_sds_destroy(tag);
         return -1;
     }
-
     /* Should we close the session after this request ? */
     mk_http_keepalive_check(session, request, ctx->server);
-
     /* Content Length */
     header = &session->parser.headers[MK_HEADER_CONTENT_LENGTH];
     if (header->type == MK_HEADER_CONTENT_LENGTH) {
@@ -672,13 +693,11 @@ int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
     else {
         request->_content_length.data = NULL;
     }
-
     if (request->method != MK_METHOD_POST) {
         flb_sds_destroy(tag);
         send_response(conn, 400, "error: invalid HTTP method\n");
         return -1;
     }
-
     ret = process_payload(ctx, conn, tag, session, request);
     flb_sds_destroy(tag);
 
