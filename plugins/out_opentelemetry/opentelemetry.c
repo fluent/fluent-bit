@@ -1080,6 +1080,45 @@ static int append_v1_logs_metadata(struct opentelemetry_context *ctx,
     return 0;
 }
 
+static int append_v1_logs_message(struct opentelemetry_context *ctx,
+                                   struct flb_log_event *event,
+                                   Opentelemetry__Proto__Logs__V1__LogRecord  *log_record)
+{
+    struct flb_ra_value *ra_val;
+
+    if (ctx == NULL || event == NULL || log_record == NULL) {
+        return -1;
+    }
+
+    /* SpanId */
+    if (ctx->ra_span_id_message) {
+        ra_val = flb_ra_get_value_object(ctx->ra_span_id_message, *event->body);
+        if (ra_val != NULL && ra_val->o.type == MSGPACK_OBJECT_BIN) {
+            log_record->span_id.data = flb_calloc(1, ra_val->o.via.bin.size);
+            if (log_record->span_id.data) {
+                memcpy(log_record->span_id.data, ra_val->o.via.bin.ptr, ra_val->o.via.bin.size);
+                log_record->span_id.len = ra_val->o.via.bin.size;
+            }
+            flb_ra_key_value_destroy(ra_val);
+        }
+    }
+
+    /* TraceId */
+    if (ctx->ra_span_id_message) {
+        ra_val = flb_ra_get_value_object(ctx->ra_span_id_message, *event->body);
+        if (ra_val != NULL && ra_val->o.type == MSGPACK_OBJECT_BIN) {
+            log_record->trace_id.data = flb_calloc(1, ra_val->o.via.bin.size);
+            if (log_record->trace_id.data) {
+                memcpy(log_record->trace_id.data, ra_val->o.via.bin.ptr, ra_val->o.via.bin.size);
+                log_record->trace_id.len = ra_val->o.via.bin.size;
+            }
+            flb_ra_key_value_destroy(ra_val);
+        }
+    }
+
+    return 0;
+}
+
 static int process_logs(struct flb_event_chunk *event_chunk,
                         struct flb_output_flush *out_flush,
                         struct flb_input_instance *ins, void *out_context,
@@ -1157,6 +1196,8 @@ static int process_logs(struct flb_event_chunk *event_chunk,
         }
 
         append_v1_logs_metadata(ctx, &event, &log_records[log_record_count]);
+
+        append_v1_logs_message(ctx, &event, &log_records[log_record_count]);
 
         ret = FLB_OK;
 
@@ -1543,6 +1584,16 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "logs_resource_metadata_key", "Resource",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_resource_metadata_key),
      "Specify a Resource key"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "logs_span_id_message_key", "$SpanId",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_span_id_message_key),
+     "Specify a SpanId key"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "logs_trace_id_message_key", "$TraceId",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_trace_id_message_key),
+     "Specify a TraceId key"
     },
 
     /* EOF */
