@@ -382,7 +382,20 @@ static int is_timestamped_fleet_config_path(struct flb_in_calyptia_fleet_config 
 
     errno = 0;
     val = strtol(fname, &end, 10);
-    if ((errno == ERANGE && (val == LONG_MAX || val == LONG_MIN)) || (errno != 0 && val == 0)) {
+
+    /* the filename is not a number, that's fine. just report it and move on. */
+    if (errno == EINVAL) {
+        return FLB_FALSE;
+    }
+
+    /* throw an error if the number overflows */
+    if ((errno == ERANGE && (val == LONG_MAX || val == LONG_MIN))) {
+        flb_errno();
+        return FLB_FALSE;
+    }
+
+    /* ignore errors when we get a value back anyways. */
+    if (errno != 0 && val == 0) {
         flb_errno();
         return FLB_FALSE;
     }
