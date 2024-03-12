@@ -62,6 +62,7 @@ set(src
   flb_gzip.c
   flb_snappy.c
   flb_compression.c
+  flb_http_common.c
   flb_http_client.c
   flb_callback.c
   flb_strptime.c
@@ -210,13 +211,17 @@ endif()
 
 if(FLB_REGEX)
   set(FLB_DEPS
-    ${FLB_DEPSS}
+    ${FLB_DEPS}
     onigmo-static)
   set(src
     ${src}
     "flb_regex.c"
     )
 endif()
+
+set(FLB_DEPS
+  ${FLB_DEPS}
+  nghttp2)
 
 if(FLB_LUAJIT)
   set(extra_libs
