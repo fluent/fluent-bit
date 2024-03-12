@@ -89,17 +89,6 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
     if (ctx->use_tag_for_meta) {
         ctx->api_https = FLB_FALSE;
     }
-    else if (ctx->use_kubelet) {
-        ctx->api_host = flb_strdup(ctx->kubelet_host);
-        ctx->api_port = ctx->kubelet_port;
-        ctx->api_https = FLB_TRUE;
-
-        /* This is for unit test diagnostic purposes */
-        if (ctx->meta_preload_cache_dir) {
-            ctx->api_https = FLB_FALSE;
-        }
-
-    }
     else if (!url) {
         ctx->api_host = flb_strdup(FLB_API_HOST);
         ctx->api_port = FLB_API_PORT;
@@ -136,11 +125,6 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
         }
     }
 
-    snprintf(ctx->kube_url, sizeof(ctx->kube_url) - 1,
-             "%s://%s:%i",
-             ctx->api_https ? "https" : "http",
-             ctx->api_host, ctx->api_port);
-
     if (ctx->kube_meta_cache_ttl > 0) {
         ctx->hash_table = flb_hash_table_create_with_ttl(ctx->kube_meta_cache_ttl,
                                                          FLB_HASH_TABLE_EVICT_OLDER,
@@ -153,7 +137,22 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
                                                 FLB_HASH_TABLE_SIZE);
     }
     
-    if (!ctx->hash_table) {
+    if (ctx->kube_meta_namespace_cache_ttl > 0) {
+        ctx->namespace_hash_table = flb_hash_table_create_with_ttl(
+                                            ctx->kube_meta_namespace_cache_ttl,
+                                            FLB_HASH_TABLE_EVICT_OLDER,
+                                            FLB_HASH_TABLE_SIZE,
+                                            FLB_HASH_TABLE_SIZE);
+    }
+    else {
+        ctx->namespace_hash_table = flb_hash_table_create(
+                                            FLB_HASH_TABLE_EVICT_RANDOM,
+                                            FLB_HASH_TABLE_SIZE,
+                                            FLB_HASH_TABLE_SIZE);
+    }
+    
+
+    if (!ctx->hash_table || !ctx->namespace_hash_table) {
         flb_kube_conf_destroy(ctx);
         return NULL;
     }
@@ -203,6 +202,10 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
         flb_hash_table_destroy(ctx->hash_table);
     }
 
+    if (ctx->namespace_hash_table) {
+        flb_hash_table_destroy(ctx->namespace_hash_table);
+    }
+
     if (ctx->merge_log == FLB_TRUE) {
         flb_free(ctx->unesc_buf);
     }
@@ -218,13 +221,19 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
     flb_free(ctx->podname);
     flb_free(ctx->auth);
 
-    if (ctx->upstream) {
-        flb_upstream_destroy(ctx->upstream);
+    if (ctx->kubelet_upstream) {
+        flb_upstream_destroy(ctx->kubelet_upstream);
+    }
+    if (ctx->kube_api_upstream) {
+        flb_upstream_destroy(ctx->kube_api_upstream);
     }
 
 #ifdef FLB_HAVE_TLS
     if (ctx->tls) {
         flb_tls_destroy(ctx->tls);
+    }
+    if (ctx->kubelet_tls) {
+        flb_tls_destroy(ctx->kubelet_tls);
     }
 #endif
 
