@@ -55,6 +55,7 @@ struct flb_out_http {
 
     /* Output format */
     int out_format;
+    flb_sds_t format;
 
     int json_date_format;
     flb_sds_t json_date_key;

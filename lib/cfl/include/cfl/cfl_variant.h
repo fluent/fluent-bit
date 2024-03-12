@@ -21,23 +21,26 @@
 #define CFL_VARIANT_H
 
 #include <stdio.h>
+#include <string.h>
 #include <inttypes.h>
 
-#define CFL_VARIANT_STRING    1
-#define CFL_VARIANT_BOOL      2
-#define CFL_VARIANT_INT       3
-#define CFL_VARIANT_DOUBLE    4
-#define CFL_VARIANT_ARRAY     5
-#define CFL_VARIANT_KVLIST    6
-#define CFL_VARIANT_BYTES     7
-#define CFL_VARIANT_REFERENCE 8
-#define CFL_VARIANT_UINT      9
+#define CFL_VARIANT_STRING     1
+#define CFL_VARIANT_BOOL       2
+#define CFL_VARIANT_INT        3
+#define CFL_VARIANT_DOUBLE     4
+#define CFL_VARIANT_ARRAY      5
+#define CFL_VARIANT_KVLIST     6
+#define CFL_VARIANT_BYTES      7
+#define CFL_VARIANT_REFERENCE  8
+#define CFL_VARIANT_UINT       9
+#define CFL_VARIANT_NULL      10
 
 struct cfl_array;
 struct cfl_kvlist;
 
 struct cfl_variant {
     int type;
+    size_t size;
 
     union {
         cfl_sds_t as_string;
@@ -51,14 +54,17 @@ struct cfl_variant {
         struct cfl_kvlist *as_kvlist;
     } data;
 };
+
 int cfl_variant_print(FILE *fp, struct cfl_variant *val);
 struct cfl_variant *cfl_variant_create_from_string(char *value);
+struct cfl_variant *cfl_variant_create_from_string_s(char *value, size_t value_length);
 struct cfl_variant *cfl_variant_create_from_bytes(char *value, size_t length);
 struct cfl_variant *cfl_variant_create_from_bool(int value);
 struct cfl_variant *cfl_variant_create_from_int64(int64_t value);
 struct cfl_variant *cfl_variant_create_from_uint64(uint64_t value);
 struct cfl_variant *cfl_variant_create_from_double(double value);
 struct cfl_variant *cfl_variant_create_from_array(struct cfl_array *value);
+struct cfl_variant *cfl_variant_create_from_null();
 struct cfl_variant *cfl_variant_create_from_kvlist(struct cfl_kvlist *value);
 struct cfl_variant *cfl_variant_create_from_reference(void *value);
 struct cfl_variant *cfl_variant_create();

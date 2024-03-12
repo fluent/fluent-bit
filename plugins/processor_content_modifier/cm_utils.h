@@ -623,4 +623,11 @@ static inline int unpack_cfl_variant(mpack_reader_t *reader,
     return result;
 }
 
+cfl_sds_t cfl_variant_convert_to_json(struct cfl_variant *value);
+int cfl_variant_convert(struct cfl_variant *input_value,
+                        struct cfl_variant **output_value,
+                        int output_type);
+
+
+
 #endif

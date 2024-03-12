@@ -21,6 +21,7 @@
 #define FLB_MP_H
 
 #include <msgpack.h>
+#include <cfl/cfl.h>
 
 #define FLB_MP_MAP        MSGPACK_OBJECT_MAP
 #define FLB_MP_ARRAY      MSGPACK_OBJECT_ARRAY
@@ -67,6 +68,7 @@ struct flb_mp_accessor {
     struct mk_list ra_list;
 };
 
+
 int flb_mp_map_header_init(struct flb_mp_map_header *mh, msgpack_packer *mp_pck);
 int flb_mp_map_header_append(struct flb_mp_map_header *mh);
 void flb_mp_map_header_end(struct flb_mp_map_header *mh);
@@ -84,5 +86,11 @@ int flb_mp_accessor_keys_remove(struct flb_mp_accessor *mpa,
 void flb_mp_accessor_set_active(struct flb_mp_accessor *mpa, int status);
 int flb_mp_accessor_set_active_by_pattern(struct flb_mp_accessor *mpa,
                                           const char *pattern, int status);
+
+struct cfl_object *flb_mp_object_to_cfl(msgpack_object *o);
+int flb_mp_cfl_to_msgpack(struct cfl_object *obj, char **out_buf, size_t *out_size);
+
+
+
 
 #endif

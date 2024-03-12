@@ -294,10 +294,7 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
         return context->last_result;
     }
 
-    memset(event, 0, sizeof(struct flb_log_event));
-
     previous_offset = context->offset;
-
     result = msgpack_unpack_next(&context->unpacked_event,
                                  context->buffer,
                                  context->length,
@@ -314,8 +311,8 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
 
     context->previous_offset = previous_offset;
     context->last_result = flb_event_decoder_decode_object(context,
-                                                              event,
-                                                              &context->unpacked_event.data);
+                                                           event,
+                                                           &context->unpacked_event.data);
     return context->last_result;
 }
 
