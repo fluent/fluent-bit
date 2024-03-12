@@ -37,10 +37,11 @@
 
 #include "oci_logan_conf.h"
 #include "oci_logan.h"
+#include <fluent-bit/oracle/flb_oracle_client.h>
 
 
 static int check_config_from_record(msgpack_object key,
-                                   char *name, int len)
+                                    char *name, int len)
 {
     if (key.type != MSGPACK_OBJECT_STR) {
         return FLB_FALSE;
@@ -52,316 +53,6 @@ static int check_config_from_record(msgpack_object key,
 
 
     return memcmp(key.via.str.ptr, name, len) == 0;
-}
-
-/*
- * Authorization: Signature version="1",keyId="<tenancy_ocid>/<user_ocid>/<key_fingerprint>",
- * algorithm="rsa-sha256",headers="(request-target) date x-content-sha256 content-type content-length",
- * signature="signature"
- */
-static flb_sds_t create_authorization_header_content(struct flb_oci_logan *ctx,
-                                                     flb_sds_t signature)
-{
-    flb_sds_t content;
-
-    content = flb_sds_create_size(512);
-    flb_sds_cat_safe(&content, FLB_OCI_SIGN_SIGNATURE_VERSION,
-                           sizeof(FLB_OCI_SIGN_SIGNATURE_VERSION) - 1);
-    flb_sds_cat_safe(&content, ",", 1);
-    flb_sds_cat_safe(&content, FLB_OCI_SIGN_KEYID,
-                           sizeof(FLB_OCI_SIGN_KEYID) - 1);
-    flb_sds_cat_safe(&content, "=\"", 2);
-    flb_sds_cat_safe(&content, ctx->key_id, flb_sds_len(ctx->key_id));
-    flb_sds_cat_safe(&content, "\",", 2);
-    flb_sds_cat_safe(&content, FLB_OCI_SIGN_ALGORITHM,
-                           sizeof(FLB_OCI_SIGN_ALGORITHM) - 1);
-    flb_sds_cat_safe(&content, ",", 1);
-    flb_sds_cat_safe(&content, FLB_OCI_SIGN_HEADERS,
-                           sizeof(FLB_OCI_SIGN_HEADERS) - 1);
-    flb_sds_cat_safe(&content, ",", 1);
-    flb_sds_cat_safe(&content, FLB_OCI_SIGN_SIGNATURE,
-                           sizeof(FLB_OCI_SIGN_SIGNATURE) - 1);
-    flb_sds_cat_safe(&content, "=\"", 2);
-    flb_sds_cat_safe(&content, signature, flb_sds_len(signature));
-    flb_sds_cat_safe(&content, "\"", 1);
-
-    return content;
-}
-
-static flb_sds_t create_base64_sha256_signature(struct flb_oci_logan *ctx,
-                                                flb_sds_t signing_string)
-{
-    int len = 0, ret;
-    size_t outlen;
-    flb_sds_t signature;
-    unsigned char sha256_buf[32] = { 0 };
-    unsigned char sig[256] = { 0 };
-    size_t sig_len = sizeof(sig);
-
-    ret = flb_hash_simple(FLB_HASH_SHA256,
-                          (unsigned char*) signing_string,
-                          flb_sds_len(signing_string),
-                          sha256_buf, sizeof(sha256_buf));
-
-    if(ret != FLB_CRYPTO_SUCCESS) {
-        flb_plg_error(ctx->ins, "error generating hash buffer");
-        return NULL;
-    }
-
-    ret =   flb_crypto_sign_simple(FLB_CRYPTO_PRIVATE_KEY,
-                                   FLB_CRYPTO_PADDING_PKCS1,
-                                   FLB_HASH_SHA256,
-                                   (unsigned char *) ctx->private_key,
-                                   flb_sds_len(ctx->private_key),
-                                   sha256_buf, sizeof(sha256_buf),
-                                   sig, &sig_len);
-
-
-    if (ret != FLB_CRYPTO_SUCCESS) {
-        flb_plg_error(ctx->ins, "error signing SHA256");
-        return NULL;
-    }
-
-    signature = flb_sds_create_size(512);
-    if (!signature) {
-        flb_errno();
-        return NULL;
-    }
-
-    /* base 64 encode */
-    len = flb_sds_alloc(signature) - 1;
-    flb_base64_encode((unsigned char*) signature, len, &outlen, sig,
-                          sizeof(sig));
-    signature[outlen] = '\0';
-    flb_sds_len_set(signature, outlen);
-
-    return signature;
-}
-
-static flb_sds_t get_date(void)
-{
-
-    flb_sds_t rfc1123date;
-    time_t t;
-    size_t size;
-    struct tm tm = { 0 };
-
-    /* Format Date */
-    rfc1123date = flb_sds_create_size(32);
-    if (!rfc1123date) {
-        flb_errno();
-        return NULL;
-    }
-
-    t = time(NULL);
-    if (!gmtime_r(&t, &tm)) {
-        flb_errno();
-        flb_sds_destroy(rfc1123date);
-        return NULL;
-    }
-    size = strftime(rfc1123date, flb_sds_alloc(rfc1123date) - 1,
-                    "%a, %d %b %Y %H:%M:%S GMT", &tm);
-    if (size <= 0) {
-        flb_errno();
-        flb_sds_destroy(rfc1123date);
-        return NULL;
-    }
-    flb_sds_len_set(rfc1123date, size);
-    return rfc1123date;
-}
-
-static flb_sds_t add_header_and_signing(struct flb_http_client *c,
-                                        flb_sds_t signing_str, const char *header, int headersize,
-                                        const char *val, int val_size)
-{
-    if (!signing_str) {
-        return NULL;
-    }
-
-    flb_http_add_header(c, header, headersize, val, val_size);
-
-    flb_sds_cat_safe(&signing_str, "\n", 1);
-    flb_sds_cat_safe(&signing_str, header, headersize);
-    flb_sds_cat_safe(&signing_str, ": ", 2);
-    flb_sds_cat_safe(&signing_str, val, val_size);
-
-    return signing_str;
-}
-
-static int build_headers(struct flb_http_client *c, struct flb_oci_logan *ctx,
-                         flb_sds_t json, flb_sds_t hostname, int port, flb_sds_t uri)
-{
-    int ret = -1;
-    flb_sds_t tmp_sds = NULL;
-    flb_sds_t signing_str = NULL;
-    flb_sds_t rfc1123date = NULL;
-    flb_sds_t encoded_uri = NULL;
-    flb_sds_t signature = NULL;
-    flb_sds_t auth_header_str = NULL;
-
-    flb_sds_t tmp_ref = NULL;
-
-    size_t tmp_len = 0;
-
-    unsigned char sha256_buf[32] = { 0 };
-
-    tmp_sds = flb_sds_create_size(512);
-    if (!tmp_sds) {
-        flb_errno();
-        goto error_label;
-    }
-
-    signing_str = flb_sds_create_size(1024);
-    if (!signing_str) {
-        flb_errno();
-        goto error_label;
-    }
-
-    /* Add (requeset-target) to signing string */
-    encoded_uri = flb_uri_encode(uri, flb_sds_len(uri));
-    if (!encoded_uri) {
-        flb_errno();
-        goto error_label;
-    }
-    flb_sds_cat_safe(&signing_str, FLB_OCI_HEADER_REQUEST_TARGET,
-                               sizeof(FLB_OCI_HEADER_REQUEST_TARGET) - 1);
-    flb_sds_cat_safe(&signing_str, ": post ", sizeof(": post ") - 1);
-    flb_sds_cat_safe(&signing_str, encoded_uri,
-                               flb_sds_len(encoded_uri));
-
-    /* Add Host to Header */
-    if (((c->flags & FLB_IO_TLS) && c->port == 443)
-        || (!(c->flags & FLB_IO_TLS) && c->port == 80)) {
-        /* default port */
-        tmp_ref = flb_sds_copy(tmp_sds, c->host, strlen(c->host));
-    }
-    else {
-        tmp_ref = flb_sds_printf(&tmp_sds, "%s:%i", c->host, c->port);
-    }
-    if (!tmp_ref) {
-        flb_plg_error(ctx->ins, "cannot compose temporary host header");
-        goto error_label;
-    }
-    tmp_sds = tmp_ref;
-    tmp_ref = NULL;
-
-    signing_str = add_header_and_signing(c, signing_str, FLB_OCI_HEADER_HOST,
-                                         sizeof(FLB_OCI_HEADER_HOST) - 1,
-                                         tmp_sds, flb_sds_len(tmp_sds));
-    if (!signing_str) {
-        flb_plg_error(ctx->ins, "cannot compose signing string");
-        goto error_label;
-    }
-
-    /* Add Date header */
-    rfc1123date = get_date();
-    if (!rfc1123date) {
-        flb_plg_error(ctx->ins, "cannot compose temporary date header");
-        goto error_label;
-    }
-    signing_str = add_header_and_signing(c, signing_str, FLB_OCI_HEADER_DATE,
-                                         sizeof(FLB_OCI_HEADER_DATE) - 1, rfc1123date,
-                                         flb_sds_len(rfc1123date));
-    if (!signing_str) {
-        flb_plg_error(ctx->ins, "cannot compose signing string");
-        goto error_label;
-    }
-
-    /* Add x-content-sha256 Header */
-    ret = flb_hash_simple(FLB_HASH_SHA256,
-                          (unsigned char*) json,
-                          flb_sds_len(json),
-                          sha256_buf, sizeof(sha256_buf));
-
-    if (ret != FLB_CRYPTO_SUCCESS) {
-        flb_plg_error(ctx->ins, "error forming hash buffer for x-content-sha256 Header");
-        goto error_label;
-    }
-
-    flb_base64_encode((unsigned char*) tmp_sds, flb_sds_len(tmp_sds) - 1,
-                      &tmp_len, sha256_buf, sizeof(sha256_buf));
-
-    tmp_sds[tmp_len] = '\0';
-    flb_sds_len_set(tmp_sds, tmp_len);
-
-    signing_str = add_header_and_signing(c, signing_str,
-                                         FLB_OCI_HEADER_X_CONTENT_SHA256,
-                                         sizeof(FLB_OCI_HEADER_X_CONTENT_SHA256) - 1, tmp_sds,
-                                         flb_sds_len(tmp_sds));
-    if (!signing_str) {
-        flb_plg_error(ctx->ins, "cannot compose signing string");
-        goto error_label;
-    }
-
-    /* Add content-Type */
-    signing_str = add_header_and_signing(c, signing_str,
-                                         FLB_OCI_HEADER_CONTENT_TYPE, sizeof(FLB_OCI_HEADER_CONTENT_TYPE) - 1,
-                                         FLB_OCI_HEADER_CONTENT_TYPE_VAL,
-                                         sizeof(FLB_OCI_HEADER_CONTENT_TYPE_VAL) - 1);
-    if (!signing_str) {
-        flb_plg_error(ctx->ins, "cannot compose signing string");
-        goto error_label;
-    }
-
-    /* Add content-Length */
-    tmp_len = snprintf(tmp_sds, flb_sds_alloc(tmp_sds) - 1, "%i",
-                       (int) flb_sds_len(json));
-    flb_sds_len_set(tmp_sds, tmp_len);
-    signing_str = add_header_and_signing(c, signing_str,
-                                         FLB_OCI_HEADER_CONTENT_LENGTH, sizeof(FLB_OCI_HEADER_CONTENT_LENGTH) - 1,
-                                         tmp_sds, flb_sds_len(tmp_sds));
-    if (!signing_str) {
-        flb_plg_error(ctx->ins, "cannot compose signing string");
-        goto error_label;
-    }
-
-    /* Add Authorization header */
-    signature = create_base64_sha256_signature(ctx, signing_str);
-    if (!signature) {
-        flb_plg_error(ctx->ins, "cannot compose signing signature");
-        goto error_label;
-    }
-
-    auth_header_str = create_authorization_header_content(ctx, signature);
-    if (!auth_header_str) {
-        flb_plg_error(ctx->ins, "cannot compose authorization header");
-        goto error_label;
-    }
-
-    flb_http_add_header(c, FLB_OCI_HEADER_AUTH, sizeof(FLB_OCI_HEADER_AUTH) - 1,
-                        auth_header_str, flb_sds_len(auth_header_str));
-
-    /* User-Agent */
-    flb_http_add_header(c, FLB_OCI_HEADER_USER_AGENT,
-                        sizeof(FLB_OCI_HEADER_USER_AGENT) - 1,
-                        FLB_OCI_HEADER_USER_AGENT_VAL,
-                        sizeof(FLB_OCI_HEADER_USER_AGENT_VAL) - 1);
-
-    /* Accept */
-    flb_http_add_header(c, "Accept", 6, "*/*", 3);
-
-    ret = 0;
-
-    error_label:
-    if (tmp_sds) {
-        flb_sds_destroy(tmp_sds);
-    }
-    if (signing_str) {
-        flb_sds_destroy(signing_str);
-    }
-    if (rfc1123date) {
-        flb_sds_destroy(rfc1123date);
-    }
-    if (encoded_uri) {
-        flb_sds_destroy(encoded_uri);
-    }
-    if (signature) {
-        flb_sds_destroy(signature);
-    }
-    if (auth_header_str) {
-        flb_sds_destroy(auth_header_str);
-    }
-    return ret;
 }
 
 static struct flb_oci_error_response* parse_response_error(struct flb_oci_logan *ctx,
@@ -654,7 +345,7 @@ static int flush_to_endpoint(struct flb_oci_logan *ctx,
 
     flb_plg_debug(ctx->ins, "built client");
     flb_http_buffer_size(c, FLB_HTTP_DATA_SIZE_MAX);
-    if (build_headers(c, ctx, payload, ctx->ins->host.name, ctx->ins->host.port, full_uri) < 0) {
+    if (build_headers(c, ctx->private_key, ctx->key_id, payload, full_uri, ctx->ins, FLB_OCI_HEADER_CONTENT_TYPE_OCTET_STREAM) < 0) {
         flb_plg_error(ctx->ins, "failed to build headers");
         goto error_label;
     }
@@ -1188,6 +879,44 @@ static void cb_oci_logan_flush(struct flb_event_chunk *event_chunk,
 {
     struct flb_oci_logan *ctx = out_context;
     int ret = -1;
+    flb_sds_t host = NULL;
+
+    if (strcasecmp(ctx->auth_type, INSTANCE_PRINCIPAL) == 0) {
+        ret = refresh_security_token(ctx->fed_client, config,
+                                     ctx->ins, ctx->fed_u,
+                                     ctx->cert_u,
+                                     ctx->region_table);
+        if (ret != 0) {
+            flb_errno();
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+        ctx->private_key = ctx->fed_client->private_key;
+        ctx->region = ctx->fed_client->region;
+        flb_sds_snprintf(&ctx->key_id, flb_sds_alloc(ctx->key_id),
+                         "ST$%s", ctx->fed_client->security_token);
+        ret = set_upstream_ctx(ctx, ctx->ins, config);
+        if (ret != 0) {
+            flb_errno();
+            flb_plg_error(ctx->ins, "cannot create Upstream context");
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
+        flb_plg_debug(ctx->ins, "key_id = %s", ctx->key_id);
+    }
+    if (strcasecmp(ctx->auth_type, WORKLOAD_IDENTITY) == 0) {
+        ret = refresh_oke_workload_security_token(ctx->fed_client, config,
+                                                  ctx->ins, ctx->fed_u,
+                                                  ctx->oke_sa_ca_file,
+                                                  ctx->oke_sa_token_file,
+                                                  &ctx->key_id);
+        if (ret != 0) {
+            flb_errno();
+            flb_plg_error(ctx->ins,
+                          "failed to refresh RPST token from proxymux endpoint");
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+        ctx->private_key = ctx->fed_client->private_key;
+    }
+
 
     ret = total_flush(event_chunk, out_flush,
                       ins, out_context,
@@ -1287,6 +1016,31 @@ static struct flb_config_map config_map[] = {
         0, FLB_TRUE, offsetof(struct flb_oci_logan, proxy),
             "define proxy if required, in http://host:port format, supports only http protocol"
     },
+    {
+        FLB_CONFIG_MAP_STR, "auth_type", INSTANCE_PRINCIPAL,
+        0, FLB_TRUE, offsetof(struct flb_oci_logan, auth_type),
+        "authentication type of the plugin"
+    },
+    {
+        FLB_CONFIG_MAP_STR, "region", NULL,
+        0, FLB_TRUE, offsetof(struct flb_oci_logan, region),
+        "OCI region. This field is only applicable for workload identity authentication"
+    },
+    {
+        FLB_CONFIG_MAP_STR, "oke_sa_ca_file", FLB_OKE_DEFAULT_SA_CERT_PATH,
+        0, FLB_TRUE, offsetof(struct flb_oci_logan, oke_sa_ca_file),
+        "Kubernetes TLS CA file"
+    },
+
+    /* Kubernetes Token file */
+    {
+        FLB_CONFIG_MAP_STR, "oke_sa_token_file", FLB_OKE_TOKEN_PATH,
+        0, FLB_TRUE, offsetof(struct flb_oci_logan, oke_sa_token_file),
+        "Kubernetes authorization token file"
+    },
+
+
+
 
     {0}
 };

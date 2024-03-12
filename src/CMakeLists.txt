@@ -78,6 +78,7 @@ set(src
   flb_log_event_encoder_dynamic_field.c
   flb_processor.c
   flb_reload.c
+  "oracle/flb_oracle_client.c"
   )
 
 # Config format

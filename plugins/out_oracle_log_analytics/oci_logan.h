@@ -115,6 +115,15 @@
 #define FLB_OCI_HEADER_AUTH                            "Authorization"
 #define FLB_OCI_PAYLOAD_TYPE                           "payloadType"
 
+#define INSTANCE_PRINCIPAL                             "instance_principal"
+#define USER_PRINCIPAL                                 "user_principal"
+#define WORKLOAD_IDENTITY                              "oke_workload_identity"
+
+#define FLB_OKE_DEFAULT_SA_CERT_PATH  "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+#define FLB_OKE_TOKEN_PATH  "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+
+
 
 /* For OCI signing */
 #define FLB_OCI_PARAM_TENANCY     "tenancy"
@@ -150,6 +159,17 @@
 #define FLB_OCI_ERROR_CODE_TOO_MANY_REQUESTS               "TooManyRequests"
 #define FLB_OCI_ERROR_CODE_INTERNAL_SERVER_ERROR           "InternalServerError"
 
+#define OCI_FEDERATION_REQUEST_PAYLOAD            "{\"certificate\":\"%s\",\"publicKey\":\"%s\", \"intermediateCertificates\":[\"%s\"]}"
+#define OCI_OKE_PROXYMUX_PAYLOAD                  "{\"podKey\":\"%s\"}"
+
+#define METADATA_HOST_BASE "169.254.169.254"
+#define GET_REGION_URL  "/opc/v2/instance/region"
+#define GET_REGION_INFO_URL "/opc/v2/instance/regionInfo/"
+#define LEAF_CERTIFICATE_URL "/opc/v2/identity/cert.pem"
+#define LEAF_CERTIFICATE_PRIVATE_KEY_URL "/opc/v2/identity/key.pem"
+#define INTERMEDIATE_CERTIFICATE_URL "/opc/v2/identity/intermediate.pem"
+
+
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_record_accessor.h>
@@ -175,8 +195,13 @@ struct flb_oci_logan {
     flb_sds_t profile_name;
     int oci_config_in_record;
     flb_sds_t uri;
+    flb_sds_t auth_type;
 
     struct flb_upstream *u;
+
+    struct flb_upstream *cert_u;
+    struct flb_upstream *fed_u;
+
     flb_sds_t proxy;
     char *proxy_host;
     int proxy_port;
@@ -208,6 +233,13 @@ struct flb_oci_logan {
     /* For OCI signing */
     flb_sds_t key_id; // tenancy/user/key_fingerprint
     flb_sds_t private_key;
+    flb_sds_t oke_sa_ca_file;
+    flb_sds_t oke_sa_token_file;
+
+    struct federation_client *fed_client;
+
+    struct flb_hash_table *region_table;
+
 
     struct flb_output_instance *ins;
 
