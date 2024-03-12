@@ -563,6 +563,12 @@ add_subdirectory(${FLB_PATH_LIB_CMETRICS} EXCLUDE_FROM_ALL)
 # CTraces
 add_subdirectory(${FLB_PATH_LIB_CTRACES} EXCLUDE_FROM_ALL)
 
+# Nghttp2 options
+set(ENABLE_LIB_ONLY       ON)
+set(ENABLE_STATIC_LIB     ON)
+
+add_subdirectory(${FLB_PATH_LIB_NGHTTP2})
+
 # C-Ares (DNS library)
 FLB_OPTION(CARES_STATIC      ON)
 FLB_OPTION(CARES_SHARED      OFF)
