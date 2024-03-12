@@ -62,12 +62,13 @@ static int cb_exit(struct flb_processor_instance *ins)
 }
 
 static int cb_process_logs(struct flb_processor_instance *ins,
-                           struct flb_mp_chunk_cobj *chunk_cobj,
+                           void *chunk,
                            const char *tag,
                            int tag_len)
 {
     int ret;
     struct content_modifier_ctx *ctx;
+    struct flb_mp_chunk_cobj *chunk_cobj = (struct flb_mp_chunk_cobj *)chunk;
 
     if (!ins->context) {
         return FLB_PROCESSOR_FAILURE;
