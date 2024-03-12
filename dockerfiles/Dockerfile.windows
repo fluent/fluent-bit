@@ -60,7 +60,7 @@ RUN iex ((new-object net.webclient).DownloadString('https://chocolatey.org/insta
 WORKDIR /src/build
 COPY . /src/
 
-RUN cmake -G "'Visual Studio 16 2019'" -DOPENSSL_ROOT_DIR='C:\Program Files\OpenSSL-Win64' -DCMAKE_BUILD_TYPE=Release ../;`
+RUN cmake -G "'Visual Studio 16 2019'" -DOPENSSL_ROOT_DIR='C:\Program Files\OpenSSL-Win64\lib\VC\x64\MT' -DOPENSSL_INCLUDE_DIR='C:\Program Files\OpenSSL-Win64\include' -DCMAKE_BUILD_TYPE=Release ../;`
     cmake --build . --config Release;
 
 # Set up config files and binaries in single /fluent-bit hierarchy for easy copy in later stage

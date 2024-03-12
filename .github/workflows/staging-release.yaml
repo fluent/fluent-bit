@@ -784,7 +784,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Release 2.0 - not latest
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         if: startsWith(inputs.version, '2.0')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -795,7 +795,7 @@ jobs:
           target_commitish: '2.0'
 
       - name: Release 2.1 - not latest
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         if: startsWith(inputs.version, '2.1')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -940,7 +940,7 @@ jobs:
 
       - name: Raise docs PR
         id: cpr
-        uses: peter-evans/create-pull-request@v5
+        uses: peter-evans/create-pull-request@v6
         with:
           commit-message: 'release: update to v${{ inputs.version }}'
           signoff: true
@@ -1010,7 +1010,7 @@ jobs:
 
       - name: Raise FB PR to update version
         id: cpr
-        uses: peter-evans/create-pull-request@v5
+        uses: peter-evans/create-pull-request@v6
         with:
           commit-message: 'release: update to ${{ steps.semvers.outputs.patch }}'
           signoff: true
