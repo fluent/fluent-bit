@@ -1098,11 +1098,9 @@ int http_prot_handle_ng(struct flb_http_request *request,
     int                             ret;
     int                             len;
     flb_sds_t                       tag;
-    struct flb_http_server_session *session;
     struct flb_http                *context;
 
     context = (struct flb_http *) response->stream->user_data;
-    FLB_HTTP_STREAM_GET_SESSION(request->stream, &session);
 
     if (request->path[0] != '/') {
         send_response_ng(response, 400, "error: invalid request\n");
