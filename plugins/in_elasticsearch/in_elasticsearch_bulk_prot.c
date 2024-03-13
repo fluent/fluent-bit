@@ -1063,19 +1063,17 @@ static int process_payload_ng(struct flb_http_request *request,
 int in_elasticsearch_bulk_prot_handle_ng(struct flb_http_request *request,
                                          struct flb_http_response *response)
 {
-    flb_sds_t                       bulk_statuses;
-    flb_sds_t                       bulk_response;
-    const char                     *error_str;
-    struct flb_http_server_session *session;
-    struct flb_in_elasticsearch    *context;
-    flb_sds_t                       tag;
-    size_t                          len;
+    flb_sds_t                    bulk_statuses;
+    flb_sds_t                    bulk_response;
+    const char                  *error_str;
+    struct flb_in_elasticsearch *context;
+    flb_sds_t                    tag;
+    size_t                       len;
 
     bulk_statuses = NULL;
     bulk_response = NULL;
 
     context = (struct flb_in_elasticsearch *) response->stream->user_data;
-    FLB_HTTP_STREAM_GET_SESSION(request->stream, &session);
 
     if (request->path[0] != '/') {
         send_response_ng(response, 400, NULL, "error: invalid request\n");
