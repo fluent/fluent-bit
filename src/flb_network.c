@@ -49,6 +49,14 @@
 #include <monkey/mk_core.h>
 #include <ares.h>
 
+#ifdef FLB_SYSTEM_MACOS
+#ifdef _GNU_SOURCE
+#undef _GNU_SOURCE
+#endif
+/* Use POSIX version of strerror_r forcibly on macOS. */
+#include <string.h>
+#endif
+
 #ifndef SOL_TCP
 #define SOL_TCP IPPROTO_TCP
 #endif
