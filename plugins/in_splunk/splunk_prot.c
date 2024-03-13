@@ -942,13 +942,11 @@ static int process_hec_raw_payload_ng(struct flb_http_request *request,
 int splunk_prot_handle_ng(struct flb_http_request *request,
                           struct flb_http_response *response)
 {
-    struct flb_http_server_session *session;
-    struct flb_splunk              *context;
-    int                             ret;
-    flb_sds_t                       tag;
+    struct flb_splunk *context;
+    int                ret;
+    flb_sds_t          tag;
 
     context = (struct flb_splunk *) response->stream->user_data;
-    FLB_HTTP_STREAM_GET_SESSION(request->stream, &session);
 
     if (request->path[0] != '/') {
         send_response_ng(response, 400, "error: invalid request\n");
