@@ -2135,12 +2135,10 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
 {
     char                            payload_type;
     int                             grpc_request;
-    struct flb_http_server_session *session;
     struct flb_opentelemetry       *context;
     int                             result;
 
     context = (struct flb_opentelemetry *) response->stream->user_data;
-    FLB_HTTP_STREAM_GET_SESSION(request->stream, &session);
 
     if (request->path[0] != '/') {
         send_response_ng(response, 400, "error: invalid request\n");
