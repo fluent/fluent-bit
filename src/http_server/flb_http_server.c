@@ -378,6 +378,7 @@ static int flb_http_server_client_activity_event_handler(void *data)
         close_connection = flb_http_server_should_connection_be_closed(request);
 
         flb_http_request_destroy(&stream->request);
+        flb_http_response_destroy(&stream->response);
     }
 
     result = flb_http_server_session_write(session);
@@ -625,9 +626,9 @@ struct flb_http_server_session *flb_http_server_session_create(int version)
     session = flb_calloc(1, sizeof(struct flb_http_server_session));
 
     if (session != NULL) {
-        session->releasable = FLB_TRUE;
-
         result = flb_http_server_session_init(session, version);
+
+        session->releasable = FLB_TRUE;
 
         if (result != 0) {
             flb_http_server_session_destroy(session);
@@ -657,6 +658,9 @@ void flb_http_server_session_destroy(struct flb_http_server_session *session)
         if (session->outgoing_data != NULL) {
             cfl_sds_destroy(session->outgoing_data);
         }
+
+        flb_http1_server_session_destroy(&session->http1);
+        flb_http2_server_session_destroy(&session->http2);
 
         if (session->releasable) {
             flb_free(session);

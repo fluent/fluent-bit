@@ -387,8 +387,6 @@ int flb_http2_response_commit(struct flb_http_response *response)
 
     stream->status = HTTP_STREAM_STATUS_RECEIVING_HEADERS;
 
-    flb_http_response_destroy(&stream->response);
-
     return 0;
 }
 
@@ -400,6 +398,12 @@ int flb_http2_server_session_init(struct flb_http2_server_session *session,
     nghttp2_settings_entry     session_settings[1];
     nghttp2_session_callbacks *callbacks;
     int                        result;
+
+    session->parent = parent;
+    session->initialized = FLB_TRUE;
+    session->inner_session = NULL;
+
+    cfl_list_init(&session->streams);
 
     result = nghttp2_session_callbacks_new(&callbacks);
 
@@ -426,10 +430,6 @@ int flb_http2_server_session_init(struct flb_http2_server_session *session,
     if (result != 0) {
         return -2;
     }
-
-    cfl_list_init(&session->streams);
-
-    session->parent = parent;
 
     session_settings[0].settings_id = NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS;
     session_settings[0].value = 1;
@@ -459,15 +459,19 @@ void flb_http2_server_session_destroy(struct flb_http2_server_session *session)
     struct flb_http_stream  *stream;
 
     if (session != NULL) {
-        cfl_list_foreach_safe(iterator, 
-                              iterator_backup, 
-                              &session->streams) {
-            stream = cfl_list_entry(iterator, struct flb_http_stream, _head);
+        if (session->initialized) {
+            cfl_list_foreach_safe(iterator, 
+                                iterator_backup, 
+                                &session->streams) {
+                stream = cfl_list_entry(iterator, struct flb_http_stream, _head);
 
-            flb_http_stream_destroy(stream);
+                flb_http_stream_destroy(stream);
+            }
+
+            nghttp2_session_del(session->inner_session);
+
+            session->initialized = FLB_FALSE;
         }
-
-        nghttp2_session_del(session->inner_session);
     }
 }
 

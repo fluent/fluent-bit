@@ -202,7 +202,7 @@ void flb_http_response_destroy(struct flb_http_response *response)
     }
 
     if (response->headers != NULL) {
-         flb_hash_table_destroy(response->headers);
+        flb_hash_table_destroy(response->headers);
     }
 
     if (response->trailer_headers != NULL) {
