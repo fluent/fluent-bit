@@ -1086,16 +1086,21 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
 {
     struct flb_ra_value *ra_val;
 
+    flb_plg_info(ctx->ins, "Appending logs for message");
+
     if (ctx == NULL || event == NULL || log_record == NULL) {
         return -1;
     }
 
     /* SpanId */
     if (ctx->ra_span_id_message) {
+        flb_plg_info(ctx->ins, "span id message not null");
         ra_val = flb_ra_get_value_object(ctx->ra_span_id_message, *event->body);
         if (ra_val != NULL && ra_val->o.type == MSGPACK_OBJECT_BIN) {
+            flb_plg_info(ctx->ins, "span id ra_val");
             log_record->span_id.data = flb_calloc(1, ra_val->o.via.bin.size);
             if (log_record->span_id.data) {
+                flb_plg_info(ctx->ins, "span id has data");
                 memcpy(log_record->span_id.data, ra_val->o.via.bin.ptr, ra_val->o.via.bin.size);
                 log_record->span_id.len = ra_val->o.via.bin.size;
             }
@@ -1134,6 +1139,8 @@ static int process_logs(struct flb_event_chunk *event_chunk,
     struct opentelemetry_context               *ctx;
     struct flb_record_accessor *ra_match;
 
+    flb_plg_info(ctx->ins, "Process Logs");
+
     ctx = (struct opentelemetry_context *) out_context;
 
     log_record_list = (Opentelemetry__Proto__Logs__V1__LogRecord **)
@@ -1169,6 +1176,7 @@ static int process_logs(struct flb_event_chunk *event_chunk,
 
     ret = FLB_OK;
     while (flb_log_event_decoder_next(decoder, &event) == FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_info(ctx->ins, "Process Logs While");
         ra_match = NULL;
         opentelemetry__proto__logs__v1__log_record__init(&log_records[log_record_count]);
 
