@@ -1139,9 +1139,9 @@ static int process_logs(struct flb_event_chunk *event_chunk,
     struct opentelemetry_context               *ctx;
     struct flb_record_accessor *ra_match;
 
-    flb_plg_info(ctx->ins, "Process Logs");
-
     ctx = (struct opentelemetry_context *) out_context;
+
+    flb_plg_info(ctx->ins, "Process Logs");
 
     log_record_list = (Opentelemetry__Proto__Logs__V1__LogRecord **)
         flb_calloc(ctx->batch_size, sizeof(Opentelemetry__Proto__Logs__V1__LogRecord *));
