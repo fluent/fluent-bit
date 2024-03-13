@@ -26,6 +26,11 @@
 #include <openssl/err.h>
 #include <openssl/opensslv.h>
 
+#ifdef FLB_SYSTEM_WINDOWS
+    #define strtok_r(str, delimiter, context) \
+            strtok_s(str, delimiter, context)
+#endif
+
 /*
  * OPENSSL_VERSION_NUMBER has the following semantics
  *
@@ -198,7 +203,7 @@ int tls_context_alpn_set(void *ctx_backend, const char *alpn)
 }
 
 static int tls_context_server_alpn_select_callback(SSL *ssl,
-                                                   unsigned char **out,
+                                                   const unsigned char **out,
                                                    unsigned char *outlen,
                                                    const unsigned char *in,
                                                    unsigned int inlen,
