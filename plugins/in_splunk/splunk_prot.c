@@ -890,23 +890,19 @@ static int process_hec_payload_ng(struct flb_http_request *request,
 {
     int type = -1;
 
-    if (request->content_type == NULL) {
-        send_response_ng(response, 400, "error: header 'Content-Type' is not set\n");
+    type = HTTP_CONTENT_UNKNOWN;
 
-        return -1;
-    }
-
-    if (strcasecmp(request->content_type, "application/json") == 0) {
-        type = HTTP_CONTENT_JSON;
-    }
-    else if (strcasecmp(request->content_type, "text/plain") == 0) {
-        type = HTTP_CONTENT_TEXT;
-    }
-    else {
-        /* Not neccesary to specify content-type for Splunk HEC. */
-        flb_plg_debug(ctx->ins, "Mark as unknown type for ingested payloads");
-
-        type = HTTP_CONTENT_UNKNOWN;
+    if (request->content_type != NULL) {
+        if (strcasecmp(request->content_type, "application/json") == 0) {
+            type = HTTP_CONTENT_JSON;
+        }
+        else if (strcasecmp(request->content_type, "text/plain") == 0) {
+            type = HTTP_CONTENT_TEXT;
+        }
+        else {
+            /* Not neccesary to specify content-type for Splunk HEC. */
+            flb_plg_debug(ctx->ins, "Mark as unknown type for ingested payloads");
+        }
     }
 
     if (request->body == NULL || cfl_sds_len(request->body) <= 0) {
@@ -915,9 +911,7 @@ static int process_hec_payload_ng(struct flb_http_request *request,
         return -1;
     }
 
-    handle_hec_payload(ctx, type, tag, request->body, cfl_sds_len(request->body));
-
-    return 0;
+    return handle_hec_payload(ctx, type, tag, request->body, cfl_sds_len(request->body));
 }
 
 static int process_hec_raw_payload_ng(struct flb_http_request *request,
@@ -1016,7 +1010,7 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
     if (strcasecmp(request->path, "/services/collector/raw") == 0) {
         ret = process_hec_raw_payload_ng(request, response, tag, context);
 
-        if (!ret) {
+        if (ret != 0) {
             send_json_message_response_ng(response, 400, "{\"text\":\"Invalid data format\",\"code\":6}");
         }
         else {
@@ -1029,7 +1023,7 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
              strcasecmp(request->path, "/services/collector") == 0) {
         ret = process_hec_payload_ng(request, response, tag, context);
 
-        if (!ret) {
+        if (ret != 0) {
             send_json_message_response_ng(response, 400, "{\"text\":\"Invalid data format\",\"code\":6}");
         }
         else {
