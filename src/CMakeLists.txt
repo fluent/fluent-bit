@@ -219,10 +219,6 @@ if(FLB_REGEX)
     )
 endif()
 
-set(FLB_DEPS
-  ${FLB_DEPS}
-  nghttp2)
-
 if(FLB_LUAJIT)
   set(extra_libs
     ${extra_libs}
@@ -377,6 +373,7 @@ set(FLB_DEPS
   c-ares
   snappy-c
   lwrb
+  nghttp2_static
   )
 
 if(OPENSSL_FOUND)

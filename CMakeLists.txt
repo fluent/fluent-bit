@@ -566,6 +566,9 @@ add_subdirectory(${FLB_PATH_LIB_CTRACES} EXCLUDE_FROM_ALL)
 # Nghttp2 options
 set(ENABLE_LIB_ONLY       ON)
 set(ENABLE_STATIC_LIB     ON)
+set(ENABLE_SHARED_LIB     OFF)
+
+add_definitions(-DNGHTTP2_STATICLIB)
 
 add_subdirectory(${FLB_PATH_LIB_NGHTTP2})
 
