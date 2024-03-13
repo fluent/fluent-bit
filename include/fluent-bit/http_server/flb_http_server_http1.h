@@ -32,6 +32,7 @@ struct flb_http1_server_session {
     struct mk_http_request          inner_request;
     struct mk_http_parser           inner_parser;
     struct mk_server                inner_server;
+    int                             initialized;
     struct flb_http_stream          stream;
     struct flb_http_server_session *parent;
 };

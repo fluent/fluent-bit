@@ -382,6 +382,8 @@ int flb_http1_response_commit(struct flb_http_response *response)
                              response_buffer, 
                              cfl_sds_len(response_buffer));
 
+    cfl_sds_destroy(response_buffer);
+
     if (sds_result == NULL) {
         return -9;
     }
@@ -436,6 +438,8 @@ int flb_http1_server_session_init(struct flb_http1_server_session *session,
         user_data = NULL;
     }
 
+    session->initialized = FLB_TRUE;
+
     dummy_mk_http_session_init(&session->inner_session, &session->inner_server);
 
     dummy_mk_http_request_init(&session->inner_session, &session->inner_request);
@@ -456,10 +460,14 @@ int flb_http1_server_session_init(struct flb_http1_server_session *session,
 
 void flb_http1_server_session_destroy(struct flb_http1_server_session *session)
 {
-    if (session->inner_session.channel != NULL) {
-        mk_channel_release(session->inner_session.channel);
+    if (session->initialized) {
+        if (session->inner_session.channel != NULL) {
+            mk_channel_release(session->inner_session.channel);
 
-        session->inner_session.channel = NULL;
+            session->inner_session.channel = NULL;
+        }
+
+        session->initialized = FLB_FALSE;
     }
 }
 

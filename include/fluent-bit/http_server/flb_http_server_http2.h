@@ -29,6 +29,7 @@ struct flb_http_stream;
 
 struct flb_http2_server_session {
     nghttp2_session                *inner_session;
+    int                             initialized;
     struct cfl_list                 streams;
     struct flb_http_server_session *parent;
 };
