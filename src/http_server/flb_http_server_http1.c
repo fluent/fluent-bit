@@ -294,7 +294,7 @@ int flb_http1_response_commit(struct flb_http_response *response)
     struct flb_http1_server_session *session;
     struct flb_http_stream          *stream;
 
-    FLB_HTTP_STREAM_GET_SESSION(response->stream, &parent_session);
+    parent_session = (struct flb_http_server_session *) response->stream->parent;
 
     if (parent_session == NULL) {
         return -1;

@@ -94,9 +94,6 @@ struct flb_http_server_session {
     struct cfl_list                 _head;
 };
 
-#define FLB_HTTP_STREAM_GET_SESSION(stream, session) \
-    *(session) = (typeof(*(session))) stream->parent;
-
 /* COMMON */
 
 char *flb_http_server_convert_string_to_lowercase(char *input_buffer, 
