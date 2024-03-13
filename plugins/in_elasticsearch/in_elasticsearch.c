@@ -155,7 +155,7 @@ static int in_elasticsearch_bulk_init(struct flb_input_instance *ins,
                           "could not initialize http server on %s:%u. Aborting",
                           ins->host.listen, ins->host.port);
 
-            http_config_destroy(ctx);
+            in_elasticsearch_config_destroy(ctx);
 
             return -1;
         }
@@ -167,7 +167,7 @@ static int in_elasticsearch_bulk_init(struct flb_input_instance *ins,
                           "could not start http server on %s:%u. Aborting",
                           ins->host.listen, ins->host.port);
 
-            http_config_destroy(ctx);
+            in_elasticsearch_config_destroy(ctx);
 
             return -1;
         }
