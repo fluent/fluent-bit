@@ -243,7 +243,7 @@ int flb_http2_response_commit(struct flb_http_response *response)
     struct flb_http_stream          *stream;
     int                              result;
 
-    FLB_HTTP_STREAM_GET_SESSION(response->stream, &parent_session);
+    parent_session = (struct flb_http_server_session *) response->stream->parent;
 
     if (parent_session == NULL) {
         return -1;
@@ -659,7 +659,7 @@ static int http2_frame_recv_callback(nghttp2_session *inner_session,
             cfl_list_del(&stream->request._head);
         }
 
-        FLB_HTTP_STREAM_GET_SESSION(stream, &parent_session);
+        parent_session = (struct flb_http_server_session *) stream->parent;
 
         if (parent_session == NULL) {
             return -1;
@@ -790,7 +790,7 @@ static int http2_data_chunk_recv_callback(nghttp2_session *inner_session,
                 cfl_list_del(&stream->request._head);
             }
 
-            FLB_HTTP_STREAM_GET_SESSION(stream, &parent_session);
+            parent_session = (struct flb_http_server_session *) stream->parent;
 
             if (parent_session == NULL) {
                 return -1;

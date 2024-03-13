@@ -190,7 +190,7 @@ static int flb_http_server_inflate_request_body(
     struct flb_http_server          *server;
     int                              result;
 
-    FLB_HTTP_STREAM_GET_SESSION(request->stream, &parent_session);
+    parent_session = (struct flb_http_server_session *) request->stream->parent;
 
     server = parent_session->parent;
     result = 0;
@@ -278,7 +278,7 @@ static int flb_http_server_should_connection_be_closed(
     struct flb_http_server_session  *parent_session;
     struct flb_http_server          *server;
 
-    FLB_HTTP_STREAM_GET_SESSION(request->stream, &parent_session);
+    parent_session = (struct flb_http_server_session *) request->stream->parent;
 
     server = parent_session->parent;
 

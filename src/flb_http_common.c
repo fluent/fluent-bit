@@ -236,7 +236,7 @@ int flb_http_response_commit(struct flb_http_response *response)
                                      1);
     }
 
-    FLB_HTTP_STREAM_GET_SESSION(response->stream, &session);
+    session = (struct flb_http_server_session *) response->stream->parent;
 
     if (session->version == HTTP_PROTOCOL_HTTP2) {
         return flb_http2_response_commit(response);
@@ -264,7 +264,7 @@ int flb_http_response_set_header(struct flb_http_response *response,
         }
     }
 
-    FLB_HTTP_STREAM_GET_SESSION(response->stream, &session);
+    session = (struct flb_http_server_session *) response->stream->parent;
 
     if (session->version == HTTP_PROTOCOL_HTTP2) {
         return flb_http2_response_set_header(response, 
@@ -325,7 +325,7 @@ int flb_http_response_set_status(struct flb_http_response *response,
 {
     struct flb_http_server_session *session;
 
-    FLB_HTTP_STREAM_GET_SESSION(response->stream, &session);
+    session = (struct flb_http_server_session *) response->stream->parent;
 
     response->status = status;
 
@@ -359,7 +359,7 @@ int flb_http_response_set_body(struct flb_http_response *response,
 {
     struct flb_http_server_session *session;
 
-    FLB_HTTP_STREAM_GET_SESSION(response->stream, &session);
+    session = (struct flb_http_server_session *) response->stream->parent;
 
     response->body = cfl_sds_create_len((const char *) body, body_length);
     
