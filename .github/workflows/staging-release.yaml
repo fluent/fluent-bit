@@ -806,7 +806,7 @@ jobs:
           target_commitish: '2.1'
 
       - name: Release 2.2 - not latest
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         if: startsWith(inputs.version, '2.2')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -817,7 +817,7 @@ jobs:
           target_commitish: '2.2'
 
       - name: Release 3.0 and latest
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         if: startsWith(inputs.version, '3.0')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
