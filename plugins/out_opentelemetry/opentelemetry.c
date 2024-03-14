@@ -1095,7 +1095,11 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
     /* SpanId */
     if (ctx->ra_span_id_message) {
         flb_plg_info(ctx->ins, "span id message not null");
+        flb_plg_info(ctx->ins, "pattern is %s\n", ctx->ra_span_id_message->pattern);
         ra_val = flb_ra_get_value_object(ctx->ra_span_id_message, *event->body);
+        if(ra_val != NULL){
+            flb_plg_info(ctx->ins, "ra_val is null");
+        }
         if (ra_val != NULL && ra_val->o.type == MSGPACK_OBJECT_BIN) {
             flb_plg_info(ctx->ins, "span id ra_val");
             log_record->span_id.data = flb_calloc(1, ra_val->o.via.bin.size);
@@ -1109,8 +1113,9 @@ static int append_v1_logs_message(struct opentelemetry_context *ctx,
     }
 
     /* TraceId */
-    if (ctx->ra_span_id_message) {
-        ra_val = flb_ra_get_value_object(ctx->ra_span_id_message, *event->body);
+    if (ctx->ra_trace_id_message) {
+        flb_plg_info(ctx->ins, "trace id message not null");
+        ra_val = flb_ra_get_value_object(ctx->ra_trace_id_message, *event->body);
         if (ra_val != NULL && ra_val->o.type == MSGPACK_OBJECT_BIN) {
             log_record->trace_id.data = flb_calloc(1, ra_val->o.via.bin.size);
             if (log_record->trace_id.data) {

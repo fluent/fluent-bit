@@ -88,6 +88,7 @@ static int ra_key_val_id(flb_sds_t ckey, msgpack_object map)
     }
 
     map_size = map.via.map.size;
+    printf("map size %d", map_size);
     for (i = map_size - 1; i >= 0; i--) {
         key = map.via.map.ptr[i].key;
 
@@ -216,9 +217,11 @@ struct flb_ra_value *flb_ra_key_to_value(flb_sds_t ckey,
     /* Get the key position in the map */
     i = ra_key_val_id(ckey, map);
     if (i == -1) {
+        printf("map does not contain key");
         return NULL;
     }
 
+    printf("getting val from map");
     /* Reference entries */
     val = map.via.map.ptr[i].val;
 
