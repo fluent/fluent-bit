@@ -148,7 +148,7 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
     }
 
     /* setting default connection timeout to kusto azure blob endpoint */
-    ctx->u->base.net.connect_timeout = ctx->kusto_endpoint_connect_timeout;
+    ctx->u->base.net.connect_timeout = ctx->kusto_endpoint_connection_timeout;
 
     u_conn = flb_upstream_conn_get(u_node->u);
 
@@ -352,7 +352,7 @@ static int azure_kusto_enqueue_ingestion(struct flb_azure_kusto *ctx, flb_sds_t 
     }
 
     /* setting default connection timeout to kusto azure queue endpoint */
-    ctx->u->base.net.connect_timeout = ctx->kusto_endpoint_connect_timeout;
+    ctx->u->base.net.connect_timeout = ctx->kusto_endpoint_connection_timeout;
 
     u_conn = flb_upstream_conn_get(u_node->u);
 
