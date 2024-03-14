@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -70,13 +70,12 @@ struct kube_meta;
 /* Filter context */
 struct flb_kube {
     /* Configuration parameters */
-    char *api_host;
-    int api_port;
-    int api_https;
     int use_journal;
     int cache_use_docker_id;
     int labels;
     int annotations;
+    int namespace_labels;
+    int namespace_annotations;
     int dummy_meta;
     int tls_debug;
     int tls_verify;
@@ -113,7 +112,9 @@ struct flb_kube {
     int keep_log;
 
     /* API Server end point */
-    char kube_url[1024];
+    char *api_host;
+    int api_port;
+    int api_https;
 
     /* Kubernetes tag prefix */
     flb_sds_t kube_tag_prefix;
@@ -158,12 +159,16 @@ struct flb_kube {
     int kubelet_port;
 
     int kube_meta_cache_ttl;
+    int kube_meta_namespace_cache_ttl;
 
     struct flb_tls *tls;
+    struct flb_tls *kubelet_tls;
 
     struct flb_config *config;
     struct flb_hash_table *hash_table;
-    struct flb_upstream *upstream;
+    struct flb_hash_table *namespace_hash_table;
+    struct flb_upstream *kubelet_upstream;
+    struct flb_upstream *kube_api_upstream;
     struct flb_filter_instance *ins;
 };
 

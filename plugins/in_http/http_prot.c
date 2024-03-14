@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -21,9 +21,12 @@
 #include <fluent-bit/flb_version.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_gzip.h>
 
 #include <monkey/monkey.h>
 #include <monkey/mk_core.h>
+
+#include <string.h>
 
 #include "http.h"
 #include "http_conn.h"
@@ -61,9 +64,11 @@ static int sds_uri_decode(flb_sds_t s)
             }
             *optr++ = hex2nibble(*(iptr+1)) << 4 | hex2nibble(*(iptr+2));
             iptr+=2;
-        } else if (*iptr == '+') {
+        }
+        else if (*iptr == '+') {
             *optr++ = ' ';
-        } else {
+        }
+        else {
             *optr++ = *iptr;
         }
     }
@@ -203,8 +208,8 @@ static flb_sds_t tag_key(struct flb_http *ctx, msgpack_object *map)
         }
         return tag;
     }
-        
-        
+
+
     flb_plg_error(ctx->ins, "Could not find tag_key %s in record", ctx->tag_key);
     return NULL;
 }
@@ -276,11 +281,10 @@ int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
             }
 
             flb_log_event_encoder_reset(&ctx->log_encoder);
-        } 
+        }
         else if (result.data.type == MSGPACK_OBJECT_ARRAY) {
             obj = &result.data;
-            for (i = 0; i < obj->via.array.size; i++)
-            {
+            for (i = 0; i < obj->via.array.size; i++) {
                 record = obj->via.array.ptr[i];
 
                 tag_from_record = NULL;
@@ -343,7 +347,7 @@ int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
             }
 
             break;
-        } 
+        }
         else {
             flb_plg_error(ctx->ins, "skip record from invalid type: %i",
                          result.data.type);
@@ -398,15 +402,18 @@ static ssize_t parse_payload_json(struct flb_http *ctx, flb_sds_t tag,
 static ssize_t parse_payload_urlencoded(struct flb_http *ctx, flb_sds_t tag,
                                   char *payload, size_t size)
 {
+    int i;
+    int idx = 0;
+    int ret = -1;
+    int len;
     struct mk_list *kvs;
     struct mk_list *head = NULL;
+    struct mk_list *tmp;
     struct flb_split_entry *cur = NULL;
     char **keys = NULL;
     char **vals = NULL;
     char *sep;
     char *start;
-    int idx = 0;
-    int ret = -1;
     msgpack_packer pck;
     msgpack_sbuffer sbuf;
 
@@ -430,38 +437,60 @@ static ssize_t parse_payload_urlencoded(struct flb_http *ctx, flb_sds_t tag,
         goto vals_calloc_error;
     }
 
-    mk_list_foreach(head, kvs) {
+    mk_list_foreach_safe(head, tmp, kvs) {
         cur = mk_list_entry(head, struct flb_split_entry, _head);
         if (cur->value[0] == '\n') {
             start = &cur->value[1];
-        } else {
+        }
+        else {
             start = cur->value;
         }
-        sep = strchr(start, '=');
-        if (sep == NULL) {
-            vals[idx] = NULL;
+
+        if (!start || *start == '=' || strlen(start) == 0) {
+            flb_utils_split_free_entry(cur);
             continue;
         }
-        *sep++ = '\0';
 
-        keys[idx] = flb_sds_create_len(start, strlen(start));
-        vals[idx] = flb_sds_create_len(sep, strlen(sep));
+        sep = strchr(start, '=');
+        if (sep) {
+            len = sep - start;
+        }
+        else {
+            /* if no separator is found, just skip the content */
+            flb_utils_split_free_entry(cur);
+            continue;
+        }
+
+        keys[idx] = flb_sds_create_len(start, len);
+        len++;
+
+        if (start[len] == '\0') {
+            vals[idx] = flb_sds_create("");
+        }
+        else {
+            vals[idx] = flb_sds_create(start + len);
+        }
 
         flb_sds_trim(keys[idx]);
         flb_sds_trim(vals[idx]);
         idx++;
     }
 
-    msgpack_pack_map(&pck, mk_list_size(kvs));
-    for (idx = 0; idx < mk_list_size(kvs); idx++) {
-        msgpack_pack_str(&pck, flb_sds_len(keys[idx]));
-        msgpack_pack_str_body(&pck, keys[idx], flb_sds_len(keys[idx]));
+    if (mk_list_size(kvs) == 0) {
+        goto decode_error;
+    }
 
-        if (sds_uri_decode(vals[idx]) != 0) {
+    msgpack_pack_map(&pck, mk_list_size(kvs));
+    for (i = 0; i < idx; i++) {
+        msgpack_pack_str(&pck, flb_sds_len(keys[i]));
+        msgpack_pack_str_body(&pck, keys[i], flb_sds_len(keys[i]));
+
+        if (sds_uri_decode(vals[i]) != 0) {
             goto decode_error;
-        } else {
-            msgpack_pack_str(&pck, flb_sds_len(vals[idx]));
-            msgpack_pack_str_body(&pck, vals[idx], strlen(vals[idx]));            
+        }
+        else {
+            msgpack_pack_str(&pck, flb_sds_len(vals[i]));
+            msgpack_pack_str_body(&pck, vals[i], flb_sds_len(vals[i]));
         }
     }
 
@@ -491,8 +520,15 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
                            struct mk_http_session *session,
                            struct mk_http_request *request)
 {
+    int ret;
     int type = -1;
     struct mk_http_header *header;
+    char *uncompressed_data;
+    size_t uncompressed_size = 0;
+
+    /* used when checking content-encoding */
+    int gzip_compressed = FLB_FALSE;
+    int gzip_ret;
 
     header = &session->parser.headers[MK_HEADER_CONTENT_TYPE];
     if (header->key.data == NULL) {
@@ -510,20 +546,42 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
         type = HTTP_CONTENT_URLENCODED;
     }
 
+    gzip_compressed = flb_is_http_session_gzip_compressed(session);
+    
+    if (gzip_compressed == FLB_TRUE) {
+        gzip_ret = flb_gzip_uncompress(request->data.data, request->data.len, (void **)&uncompressed_data, &uncompressed_size);
+        if (gzip_ret == -1) {
+            flb_error("[http] gzip decompression failed");
+            return -1;
+        }
+    } else {
+        uncompressed_data = request->data.data;
+        uncompressed_size = request->data.len;
+    }
+    
     if (type == -1) {
         send_response(conn, 400, "error: invalid 'Content-Type'\n");
         return -1;
     }
 
-    if (request->data.len <= 0) {
+    if (uncompressed_size <= 0) {
         send_response(conn, 400, "error: no payload found\n");
         return -1;
     }
 
     if (type == HTTP_CONTENT_JSON) {
-        parse_payload_json(ctx, tag, request->data.data, request->data.len);
-    } else if (type == HTTP_CONTENT_URLENCODED) {
-        parse_payload_urlencoded(ctx, tag, request->data.data, request->data.len);
+        parse_payload_json(ctx, tag, uncompressed_data, uncompressed_size);
+    }
+    else if (type == HTTP_CONTENT_URLENCODED) {
+        ret = parse_payload_urlencoded(ctx, tag, request->data.data, request->data.len);
+        if (ret != 0) {
+            send_response(conn, 400, "error: invalid payload\n");
+            return -1;
+        }
+    }
+    
+    if (gzip_compressed) {
+        flb_free(uncompressed_data);
     }
 
     return 0;
@@ -614,23 +672,18 @@ int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
     }
 
     mk_mem_free(uri);
-
     /* Check if we have a Host header: Hostname ; port */
     mk_http_point_header(&request->host, &session->parser, MK_HEADER_HOST);
-
     /* Header: Connection */
     mk_http_point_header(&request->connection, &session->parser,
                          MK_HEADER_CONNECTION);
-
     /* HTTP/1.1 needs Host header */
     if (!request->host.data && request->protocol == MK_HTTP_PROTOCOL_11) {
         flb_sds_destroy(tag);
         return -1;
     }
-
     /* Should we close the session after this request ? */
     mk_http_keepalive_check(session, request, ctx->server);
-
     /* Content Length */
     header = &session->parser.headers[MK_HEADER_CONTENT_LENGTH];
     if (header->type == MK_HEADER_CONTENT_LENGTH) {
@@ -640,16 +693,18 @@ int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
     else {
         request->_content_length.data = NULL;
     }
-
     if (request->method != MK_METHOD_POST) {
         flb_sds_destroy(tag);
         send_response(conn, 400, "error: invalid HTTP method\n");
         return -1;
     }
-
     ret = process_payload(ctx, conn, tag, session, request);
     flb_sds_destroy(tag);
-    send_response(conn, ctx->successful_response_code, NULL);
+
+    if (ret == 0) {
+        send_response(conn, ctx->successful_response_code, NULL);
+    }
+
     return ret;
 }
 

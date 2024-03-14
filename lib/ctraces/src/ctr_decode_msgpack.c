@@ -124,6 +124,11 @@ static int unpack_instrumentation_scope_attributes(mpack_reader_t *reader, size_
             return CTR_DECODE_MSGPACK_VARIANT_DECODE_ERROR;
         }
 
+        if (context->scope_span->instrumentation_scope->attr != NULL) {
+            ctr_attributes_destroy(context->scope_span->instrumentation_scope->attr);
+            context->scope_span->instrumentation_scope->attr = NULL;
+        }
+
         context->scope_span->instrumentation_scope->attr = attributes;
     }
 
@@ -132,6 +137,7 @@ static int unpack_instrumentation_scope_attributes(mpack_reader_t *reader, size_
 
 static int unpack_scope_span_instrumentation_scope(mpack_reader_t *reader, size_t index, void *ctx)
 {
+    int result;
     struct ctrace_instrumentation_scope  *instrumentation_scope;
     struct ctr_msgpack_decode_context    *context = ctx;
     struct ctr_mpack_map_entry_callback_t callbacks[] = \
@@ -151,7 +157,12 @@ static int unpack_scope_span_instrumentation_scope(mpack_reader_t *reader, size_
 
     ctr_scope_span_set_instrumentation_scope(context->scope_span, instrumentation_scope);
 
-    return ctr_mpack_unpack_map(reader, callbacks, ctx);
+    result = ctr_mpack_unpack_map(reader, callbacks, ctx);
+    if (result != CTR_DECODE_MSGPACK_SUCCESS) {
+        ctr_instrumentation_scope_destroy(context->scope_span->instrumentation_scope);
+        context->scope_span->instrumentation_scope = NULL;
+    }
+    return result;
 }
 
 /* Event callbacks */
@@ -541,6 +552,7 @@ static int unpack_span_status(mpack_reader_t *reader, size_t index, void *ctx)
 
 static int unpack_span(mpack_reader_t *reader, size_t index, void *ctx)
 {
+    int result;
     struct ctr_msgpack_decode_context    *context = ctx;
     struct ctr_mpack_map_entry_callback_t callbacks[] = \
         {
@@ -565,8 +577,14 @@ static int unpack_span(mpack_reader_t *reader, size_t index, void *ctx)
     if (context->span == NULL) {
         return CTR_DECODE_MSGPACK_ALLOCATION_ERROR;
     }
+    result = ctr_mpack_unpack_map(reader, callbacks, ctx);
 
-    return ctr_mpack_unpack_map(reader, callbacks, ctx);
+    if (result != CTR_DECODE_MSGPACK_SUCCESS) {
+        ctr_span_destroy(context->span);
+        context->span = NULL;
+    }
+
+    return result;
 }
 
 /* Scope span callbacks */
@@ -591,6 +609,7 @@ static int unpack_scope_span_schema_url(mpack_reader_t *reader, size_t index, vo
 
 static int unpack_scope_span(mpack_reader_t *reader, size_t index, void *ctx)
 {
+    int result;
     struct ctr_msgpack_decode_context    *context = ctx;
     struct ctr_mpack_map_entry_callback_t callbacks[] = \
         {
@@ -606,7 +625,12 @@ static int unpack_scope_span(mpack_reader_t *reader, size_t index, void *ctx)
         return CTR_DECODE_MSGPACK_ALLOCATION_ERROR;
     }
 
-    return ctr_mpack_unpack_map(reader, callbacks, ctx);
+    result = ctr_mpack_unpack_map(reader, callbacks, ctx);
+    if (result != CTR_DECODE_MSGPACK_SUCCESS) {
+	ctr_scope_span_destroy(context->scope_span);
+	context->scope_span = NULL;
+    }
+    return result;
 }
 
 /* Resource span callbacks */

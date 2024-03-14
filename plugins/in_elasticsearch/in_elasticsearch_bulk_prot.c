@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2023 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -859,7 +859,7 @@ int in_elasticsearch_bulk_prot_handle(struct flb_in_elasticsearch *ctx,
             flb_sds_destroy(tag);
             mk_mem_free(uri);
 
-            send_response(conn, 400, "error: invaild HTTP endpoint\n");
+            send_response(conn, 400, "error: invalid HTTP endpoint\n");
 
             return -1;
         }

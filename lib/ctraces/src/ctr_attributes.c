@@ -29,7 +29,7 @@ struct ctrace_attributes *ctr_attributes_create()
         return NULL;
     }
 
-    attr->kv = cfl_kvlist_create(128);
+    attr->kv = cfl_kvlist_create();
     if (!attr->kv) {
         free(attr);
         return NULL;

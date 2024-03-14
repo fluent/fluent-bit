@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -30,10 +30,18 @@ struct flb_in_mqtt_config *mqtt_config_init(struct flb_input_instance *ins)
 {
     char tmp[16];
     struct flb_in_mqtt_config *config;
+    int ret;
 
     config = flb_calloc(1, sizeof(struct flb_in_mqtt_config));
     if (!config) {
         flb_errno();
+        return NULL;
+    }
+
+    ret = flb_input_config_map_set(ins, (void*) config);
+    if (ret == -1) {
+        flb_plg_error(ins, "could not initialize config map");
+        flb_free(config);
         return NULL;
     }
 

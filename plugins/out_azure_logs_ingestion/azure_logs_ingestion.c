@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -43,7 +43,7 @@ static int cb_azure_logs_ingestion_init(struct flb_output_instance *ins,
     /* Allocate and initialize a context from configuration */
     ctx = flb_az_li_ctx_create(ins, config);
     if (!ctx) {
-        flb_plg_error(ctx->ins, "configuration failed");
+        flb_plg_error(ins, "configuration failed");
         return -1;
     }
 

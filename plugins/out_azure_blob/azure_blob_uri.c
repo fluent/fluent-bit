@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -127,6 +127,10 @@ flb_sds_t azb_uri_ensure_or_create_container(struct flb_azure_blob *ctx)
     }
 
     flb_sds_printf(&uri, "?restype=container");
+    if (ctx->atype == AZURE_BLOB_AUTH_SAS && ctx->sas_token) {
+        flb_sds_printf(&uri, "&%s", ctx->sas_token);
+    }
+
     return uri;
 }
 
@@ -144,6 +148,10 @@ flb_sds_t azb_uri_create_blob(struct flb_azure_blob *ctx, char *tag)
     }
     else {
         flb_sds_printf(&uri, "/%s", tag);
+    }
+
+    if (ctx->atype == AZURE_BLOB_AUTH_SAS && ctx->sas_token) {
+        flb_sds_printf(&uri, "?%s", ctx->sas_token);
     }
 
     return uri;

@@ -22,6 +22,17 @@
 
 #include <cmetrics/cmetrics.h>
 
+struct cmt_counter;
+struct cmt_gauge;
+struct cmt_untyped;
+struct cmt_histogram;
+struct cmt_summary;
+
+int cmt_cat_counter(struct cmt *cmt, struct cmt_counter *counter);
+int cmt_cat_gauge(struct cmt *cmt, struct cmt_gauge *gauge);
+int cmt_cat_untyped(struct cmt *cmt, struct cmt_untyped *untyped);
+int cmt_cat_histogram(struct cmt *cmt, struct cmt_histogram *histogram);
+int cmt_cat_summary(struct cmt *cmt, struct cmt_summary *summary);
 int cmt_cat(struct cmt *dst, struct cmt *src);
 
 #endif

@@ -21,6 +21,7 @@
 #include <cfl/cfl_variant.h>
 #include <cfl/cfl_array.h>
 #include <cfl/cfl_kvlist.h>
+#include <cfl/cfl_compat.h>
 
 #if defined(__MINGW32__) || defined(__MINGW64__)
 #define HEXDUMPFORMAT "%#x"
@@ -53,8 +54,14 @@ int cfl_variant_print(FILE *fp, struct cfl_variant *val)
     case CFL_VARIANT_INT:
         ret = fprintf(fp, "%" PRId64, val->data.as_int64);
         break;
+    case CFL_VARIANT_UINT:
+        ret = fprintf(fp, "%" PRIu64, val->data.as_uint64);
+        break;
     case CFL_VARIANT_DOUBLE:
         ret = fprintf(fp, "%lf", val->data.as_double);
+        break;
+    case CFL_VARIANT_NULL:
+        ret = fprintf(fp, "null");
         break;
     case CFL_VARIANT_BYTES:
         size = cfl_sds_len(val->data.as_bytes);
@@ -80,14 +87,14 @@ int cfl_variant_print(FILE *fp, struct cfl_variant *val)
     return ret;
 }
 
-struct cfl_variant *cfl_variant_create_from_string(char *value)
+struct cfl_variant *cfl_variant_create_from_string_s(char *value, size_t value_size)
 {
     struct cfl_variant *instance;
 
     instance = cfl_variant_create();
 
     if (instance != NULL) {
-        instance->data.as_string = cfl_sds_create(value);
+        instance->data.as_string = cfl_sds_create_len(value, value_size);
         if (instance->data.as_string == NULL) {
             free(instance);
             instance = NULL;
@@ -98,6 +105,11 @@ struct cfl_variant *cfl_variant_create_from_string(char *value)
     }
 
     return instance;
+}
+
+struct cfl_variant *cfl_variant_create_from_string(char *value)
+{
+    return cfl_variant_create_from_string_s(value, strlen(value));
 }
 
 struct cfl_variant *cfl_variant_create_from_bytes(char *value, size_t length)
@@ -146,6 +158,19 @@ struct cfl_variant *cfl_variant_create_from_int64(int64_t value)
     return instance;
 }
 
+struct cfl_variant *cfl_variant_create_from_uint64(uint64_t value)
+{
+    struct cfl_variant *instance;
+
+    instance = cfl_variant_create();
+    if (instance != NULL) {
+        instance->data.as_uint64 = value;
+        instance->type = CFL_VARIANT_UINT;
+    }
+
+    return instance;
+}
+
 struct cfl_variant *cfl_variant_create_from_double(double value)
 {
     struct cfl_variant *instance;
@@ -154,6 +179,18 @@ struct cfl_variant *cfl_variant_create_from_double(double value)
     if (instance != NULL) {
         instance->data.as_double = value;
         instance->type = CFL_VARIANT_DOUBLE;
+    }
+
+    return instance;
+}
+
+struct cfl_variant *cfl_variant_create_from_null()
+{
+    struct cfl_variant *instance;
+
+    instance = cfl_variant_create();
+    if (instance != NULL) {
+        instance->type = CFL_VARIANT_NULL;
     }
 
     return instance;

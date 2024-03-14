@@ -2,7 +2,7 @@
 
 /*  Fluent Bit Demo
  *  ===============
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -697,7 +697,7 @@ int static do_start(flb_ctx_t *ctx)
             break;
         }
         else if (val == FLB_ENGINE_FAILED) {
-            flb_error("[lib] backend failed");
+            flb_debug("[lib] backend failed");
 #if defined(FLB_SYSTEM_MACOS)
             pthread_cancel(tid);
 #endif

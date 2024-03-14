@@ -83,7 +83,7 @@ static int pack_binary(struct winevtlog_config *ctx, PBYTE bin, size_t length)
     unsigned int idx = 0;
 
     if (length == 0) {
-        pack_nullstr(ctx->log_encoder);
+        pack_nullstr(ctx);
         return 0;
     }
 

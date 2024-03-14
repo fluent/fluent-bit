@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2023 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -31,6 +31,7 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_plugin.h>
+#include <fluent-bit/flb_reload.h>
 
 #include <cfl/cfl.h>
 #include <cfl/cfl_sds.h>
@@ -128,6 +129,7 @@ static int flb_filter_propery_check_all(struct flb_config *config)
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_filter_instance *ins;
+    struct flb_filter_plugin *p;
 
     /* Iterate all active input instance plugins */
     mk_list_foreach_safe(head, tmp, &config->filters) {
@@ -143,6 +145,17 @@ static int flb_filter_propery_check_all(struct flb_config *config)
         ret = flb_filter_plugin_property_check(ins, config);
         if (ret == -1) {
             return -1;
+        }
+
+        /* Check actual values with additional validator */
+        p = ins->p;
+        /* Run pre_run callback for the filter */
+        if (p->cb_pre_run) {
+            ret = p->cb_pre_run(ins, config, ins->data);
+            if (ret != 0) {
+                flb_error("Failed pre_run callback on filter %s", ins->name);
+                return -1;
+            }
         }
 
         /* destroy config map (will be recreated at flb_start) */
@@ -205,7 +218,7 @@ int flb_reload_property_check_all(struct flb_config *config)
     /* Check properties of filter plugins */
     ret = flb_filter_propery_check_all(config);
     if (ret == -1) {
-        flb_error("[reload] check properties for filter plugins is failed");
+        flb_error("[reload] check properties and additonal vaildations for filter plugins is failed");
 
         return -1;
     }
@@ -367,16 +380,17 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     struct flb_cf *new_cf;
     struct flb_cf *original_cf;
     int verbose;
+    int reloaded_count = 0;
 
     if (ctx == NULL) {
         flb_error("[reload] given flb context is NULL");
-        return -2;
+        return FLB_RELOAD_INVALID_CONTEXT;
     }
 
     old_config = ctx->config;
     if (old_config->enable_hot_reload != FLB_TRUE) {
         flb_warn("[reload] hot reloading is not enabled");
-        return -3;
+        return FLB_RELOAD_NOT_ENABLED;
     }
 
     if (old_config->ensure_thread_safety_on_hot_reloading) {
@@ -390,7 +404,7 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
      */
     new_cf = flb_cf_create();
     if (!new_cf) {
-        return -1;
+        return FLB_RELOAD_HALTED;
     }
 
     flb_info("reloading instance pid=%lu tid=%p", (long unsigned) getpid(), pthread_self());
@@ -403,8 +417,9 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
             if (file != NULL) {
                 flb_sds_destroy(file);
             }
+            flb_cf_destroy(new_cf);
             flb_error("[reload] reconstruct cf failed");
-            return -1;
+            return FLB_RELOAD_HALTED;
         }
     }
 
@@ -417,7 +432,7 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
         flb_cf_destroy(new_cf);
         flb_error("[reload] creating flb context is failed. Reloading is halted");
 
-        return -1;
+        return FLB_RELOAD_HALTED;
     }
 
     new_config = new_ctx->config;
@@ -425,6 +440,12 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     /* Inherit verbose from the old ctx instance */
     verbose = ctx->config->verbose;
     new_config->verbose = verbose;
+    /* Increment and store the number of hot reloaded times */
+    reloaded_count = ctx->config->hot_reloaded_count + 1;
+    /* Mark shutdown reason as hot_reloading */
+    ctx->config->shutdown_by_hot_reloading = FLB_TRUE;
+    /* Mark hot reloading */
+    new_config->hot_reloading = FLB_TRUE;
 
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     /* Inherit stream processor definitions from command line */
@@ -438,7 +459,7 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
         if (!new_cf) {
             flb_sds_destroy(file);
 
-            return -1;
+            return FLB_RELOAD_HALTED;
         }
     }
 
@@ -454,7 +475,7 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
             flb_destroy(new_ctx);
             flb_error("[reload] reloaded config is invalid. Reloading is halted");
 
-            return -1;
+            return FLB_RELOAD_HALTED;
         }
     }
 
@@ -468,7 +489,7 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 
         flb_error("[reload] reloaded config format is invalid. Reloading is halted");
 
-        return -1;
+        return FLB_RELOAD_HALTED;
     }
 
     /* Validate plugin properites before fluent-bit stops the old context. */
@@ -481,7 +502,7 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 
         flb_error("[reload] reloaded config is invalid. Reloading is halted");
 
-        return -1;
+        return FLB_RELOAD_HALTED;
     }
 
     /* Delete the original context of config format before replacing
@@ -503,6 +524,20 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     flb_info("[reload] start everything");
 
     ret = flb_start(new_ctx);
+
+    if (ret != 0) {
+        flb_stop(new_ctx);
+        flb_destroy(new_ctx);
+
+        flb_error("[reload] loaded configuration contains error(s). Reloading is aborted");
+
+        return FLB_RELOAD_ABORTED;
+    }
+
+    /* Store the new value of hot reloading times into the new context */
+    new_config->hot_reloaded_count = reloaded_count;
+    flb_debug("[reload] hot reloaded %d time(s)", reloaded_count);
+    new_config->hot_reloading = FLB_FALSE;
 
     return 0;
 }

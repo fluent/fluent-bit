@@ -262,7 +262,6 @@ void not_current_dir_files()
 /* data/config_format/nolimitline.conf */
 void test_nolimit_line()
 {
-    struct mk_list *head;
     struct flb_cf *cf;
     struct flb_cf_section *s;
     struct cfl_list *p_head;
@@ -306,6 +305,42 @@ void test_nolimit_line()
     flb_cf_destroy(cf);
 }
 
+static inline int check_snake_case(char *input, char *output)
+{
+    int len;
+    int ret;
+    flb_sds_t out;
+    struct flb_cf *cf;
+
+
+    cf = flb_cf_create();
+    flb_cf_set_origin_format(cf, FLB_CF_CLASSIC);
+
+    len = strlen(input);
+    out = flb_cf_key_translate(cf, input, len);
+
+    ret = strcmp(out, output);
+
+    flb_sds_destroy(out);
+
+    flb_cf_destroy(cf);
+
+    if (ret == 0) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+static void test_snake_case_key()
+{
+    /* normal conversion */
+    TEST_CHECK(check_snake_case("a", "a") == FLB_TRUE);
+    TEST_CHECK(check_snake_case("aB", "ab") == FLB_TRUE);
+    TEST_CHECK(check_snake_case("aBc", "abc") == FLB_TRUE);
+    TEST_CHECK(check_snake_case("interval_Sec", "interval_sec") == FLB_TRUE);
+}
+
 TEST_LIST = {
     { "basic"    , test_basic},
     { "missing_value_issue5880" , missing_value},
@@ -313,5 +348,6 @@ TEST_LIST = {
     { "recursion" , recursion},
     { "not_current_dir_files", not_current_dir_files},
     { "no_limit_line", test_nolimit_line},
+    { "snake_case_key", test_snake_case_key},
     { 0 }
 };

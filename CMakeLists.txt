@@ -6,9 +6,9 @@ cmake_policy(SET CMP0069 NEW)
 set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 
 # Fluent Bit Version
-set(FLB_VERSION_MAJOR  2)
-set(FLB_VERSION_MINOR  1)
-set(FLB_VERSION_PATCH  9)
+set(FLB_VERSION_MAJOR  3)
+set(FLB_VERSION_MINOR  0)
+set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -167,7 +167,6 @@ option(FLB_IN_DOCKER                   "Enable Docker input plugin"             
 option(FLB_IN_DOCKER_EVENTS            "Enable Docker events input plugin"            Yes)
 option(FLB_IN_EXEC                     "Enable Exec input plugin"                     Yes)
 option(FLB_IN_EXEC_WASI                "Enable Exec WASI input plugin"                Yes)
-option(FLB_IN_EVENT_TEST               "Enable Events test plugin"                    Yes)
 option(FLB_IN_EVENT_TYPE               "Enable event type plugin"                     Yes)
 option(FLB_IN_FLUENTBIT_METRICS        "Enable Fluent Bit metrics  plugin"            Yes)
 option(FLB_IN_FORWARD                  "Enable Forward input plugin"                  Yes)
@@ -209,6 +208,7 @@ option(FLB_IN_OPENTELEMETRY            "Enable OpenTelemetry input plugin"      
 option(FLB_IN_ELASTICSEARCH            "Enable Elasticsearch (Bulk API) input plugin" Yes)
 option(FLB_IN_CALYPTIA_FLEET           "Enable Calyptia Fleet input plugin"           Yes)
 option(FLB_IN_SPLUNK                   "Enable Splunk HTTP HEC input plugin"          Yes)
+option(FLB_IN_PROCESS_EXPORTER_METRICS "Enable process exporter metrics input plugin" Yes)
 option(FLB_OUT_AZURE                   "Enable Azure output plugin"                   Yes)
 option(FLB_OUT_AZURE_BLOB              "Enable Azure output plugin"                   Yes)
 option(FLB_OUT_AZURE_LOGS_INGESTION    "Enable Azure Logs Ingestion output plugin"    Yes)
@@ -255,6 +255,7 @@ option(FLB_OUT_PROMETHEUS_REMOTE_WRITE "Enable Prometheus remote write plugin"  
 option(FLB_OUT_S3                      "Enable AWS S3 output plugin"                  Yes)
 option(FLB_OUT_VIVO_EXPORTER           "Enabel Vivo exporter output plugin"           Yes)
 option(FLB_OUT_WEBSOCKET               "Enable Websocket output plugin"               Yes)
+option(FLB_OUT_ORACLE_LOG_ANALYTICS    "Enable Oracle Cloud Infrastructure Logging analytics plugin"          Yes)
 option(FLB_OUT_CHRONICLE               "Enable Google Chronicle output plugin"        Yes)
 option(FLB_FILTER_ALTER_SIZE           "Enable alter_size filter"                     Yes)
 option(FLB_FILTER_AWS                  "Enable aws filter"                            Yes)
@@ -264,6 +265,7 @@ option(FLB_FILTER_EXPECT               "Enable expect filter"                   
 option(FLB_FILTER_GREP                 "Enable grep filter"                           Yes)
 option(FLB_FILTER_MODIFY               "Enable modify filter"                         Yes)
 option(FLB_FILTER_STDOUT               "Enable stdout filter"                         Yes)
+option(FLB_FILTER_SYSINFO              "Enable sysinfo filter"                        Yes)
 option(FLB_FILTER_PARSER               "Enable parser filter"                         Yes)
 option(FLB_FILTER_KUBERNETES           "Enable kubernetes filter"                     Yes)
 option(FLB_FILTER_REWRITE_TAG          "Enable tag rewrite filter"                    Yes)
@@ -282,6 +284,7 @@ option(FLB_FILTER_NIGHTFALL            "Enable Nightfall filter"                
 option(FLB_FILTER_WASM                 "Enable WASM filter"                           Yes)
 option(FLB_PROCESSOR_LABELS            "Enable metrics label manipulation processor"  Yes)
 option(FLB_PROCESSOR_ATTRIBUTES        "Enable atributes manipulation processor"      Yes)
+option(FLB_PROCESSOR_CONTENT_MODIFIER  "Enable content modifier processor"            Yes)
 
 if(DEFINED FLB_NIGHTLY_BUILD AND NOT "${FLB_NIGHTLY_BUILD}" STREQUAL "")
   FLB_DEFINITION_VAL(FLB_NIGHTLY_BUILD ${FLB_NIGHTLY_BUILD})
@@ -393,6 +396,11 @@ if (FLB_SYSTEM_MACOS)
   include(cmake/macos-setup.cmake)
 endif()
 
+# Build for SystemZ - s390x arch
+if (FLB_SYSTEM_LINUX)
+  include(cmake/s390x.cmake)
+endif ()
+
 # Extract Git commit information for debug output.
 # Note that this is only set when cmake is run, the intent here is to use in CI for verification of releases so is acceptable.
 # For a better solution see https://jonathanhamberg.com/post/cmake-embedding-git-hash/ but this is simple and easy.
@@ -431,10 +439,10 @@ endif()
 # Enable Debug symbols if specified
 if(MSVC)
   set(CMAKE_BUILD_TYPE None)  # Avoid flag conflicts (See CMakeList.txt:L18)
-elseif(FLB_DEBUG)
-  set(CMAKE_BUILD_TYPE "Debug")
 elseif(FLB_RELEASE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
+elseif(FLB_DEBUG)
+  set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
 if(FLB_IPO STREQUAL "On" OR (FLB_IPO STREQUAL "ReleaseOnly" AND FLB_RELEASE))
@@ -612,6 +620,12 @@ if(FLB_TLS)
   find_package(OpenSSL)
   if(OPENSSL_FOUND)
     FLB_DEFINITION(FLB_HAVE_OPENSSL)
+  endif()
+
+  if (FLB_SYSTEM_WINDOWS AND NOT(OPENSSL_FOUND))
+    # win32 builds w/o openssl will fail later so we might as well catch it
+    # early instead.
+    MESSAGE(FATAL_ERROR "OpenSSL required on Windows, see DEVELOPER_GUIDE.md")
   endif()
 endif()
 

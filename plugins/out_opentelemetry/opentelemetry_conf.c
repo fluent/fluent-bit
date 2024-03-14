@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -25,6 +25,122 @@
 
 #include "opentelemetry.h"
 #include "opentelemetry_conf.h"
+
+/* create a single entry of log_body_key */
+static int log_body_key_create(struct opentelemetry_context *ctx, char *ra_pattern)
+{
+    struct opentelemetry_body_key *bk;
+
+    bk = flb_calloc(1, sizeof(struct opentelemetry_body_key));
+    if (!bk) {
+        flb_errno();
+        return -1;
+    }
+
+    bk->key = flb_sds_create(ra_pattern);
+    if (!bk->key) {
+        flb_free(bk);
+        return -1;
+    }
+
+    bk->ra = flb_ra_create(ra_pattern, FLB_TRUE);
+    if (!bk->ra) {
+        flb_plg_error(ctx->ins,
+                      "could not process event_field with pattern '%s'",
+                      ra_pattern);
+        flb_sds_destroy(bk->key);
+        flb_free(bk);
+        return -1;
+    }
+
+    mk_list_add(&bk->_head, &ctx->log_body_key_list);
+
+    return 0;
+}
+
+/* process and instance the list of body key patterns */
+static int log_body_key_list_create(struct opentelemetry_context *ctx)
+{
+    int ret;
+    struct mk_list *head;
+    struct flb_config_map_val *mv;
+
+    /* If no log_body_key are defined, set the default ones */
+    if (!ctx->log_body_key_list_str || mk_list_size(ctx->log_body_key_list_str) == 0) {
+        ret = log_body_key_create(ctx, "$log");
+        if (ret != 0) {
+            return -1;
+        }
+
+        ret = log_body_key_create(ctx, "$message");
+        if (ret != 0) {
+            return -1;
+        }
+
+        return 0;
+    }
+
+    /* Iterate the list of log body keys defined in the configuration and initiate them */
+    flb_config_map_foreach(head, mv, ctx->log_body_key_list_str) {
+        ret = log_body_key_create(ctx, mv->val.str);
+        if (ret != 0) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static void log_body_key_list_destroy(struct opentelemetry_context *ctx)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct opentelemetry_body_key *bk;
+
+    mk_list_foreach_safe(head, tmp, &ctx->log_body_key_list) {
+        bk = mk_list_entry(head, struct opentelemetry_body_key, _head);
+        flb_sds_destroy(bk->key);
+        flb_ra_destroy(bk->ra);
+        mk_list_del(&bk->_head);
+        flb_free(bk);
+    }
+}
+
+static int metadata_mp_accessor_create(struct opentelemetry_context *ctx)
+{
+    int ret;
+    struct mk_list *head;
+    struct mk_list slist;
+    struct opentelemetry_body_key *bk;
+    struct flb_mp_accessor *mpa;
+
+    ret = flb_slist_create(&slist);
+    if (ret != 0) {
+        return -1;
+    }
+
+    /* Iterate the list of log body keys and create a mp_accessor for each one */
+    mk_list_foreach(head, &ctx->log_body_key_list) {
+        bk = mk_list_entry(head, struct opentelemetry_body_key, _head);
+
+        ret = flb_slist_add(&slist, bk->key);
+        if (ret != 0) {
+            flb_slist_destroy(&slist);
+            return -1;
+        }
+    }
+
+    mpa = flb_mp_accessor_create(&slist);
+    if (!mpa) {
+        flb_slist_destroy(&slist);
+        return -1;
+    }
+
+    ctx->mp_accessor = mpa;
+    flb_slist_destroy(&slist);
+
+    return 0;
+}
 
 static int config_add_labels(struct flb_output_instance *ins,
                              struct opentelemetry_context *ctx)
@@ -119,8 +235,7 @@ static char *sanitize_uri(char *uri){
     return uri;
 }
 
-struct opentelemetry_context *flb_opentelemetry_context_create(
-    struct flb_output_instance *ins, struct flb_config *config)
+struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output_instance *ins, struct flb_config *config)
 {
     int ret;
     int io_flags = 0;
@@ -142,6 +257,7 @@ struct opentelemetry_context *flb_opentelemetry_context_create(
     }
     ctx->ins = ins;
     mk_list_init(&ctx->kv_labels);
+    mk_list_init(&ctx->log_body_key_list);
 
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
@@ -154,6 +270,7 @@ struct opentelemetry_context *flb_opentelemetry_context_create(
     if (ret == -1) {
         return NULL;
     }
+
 
     check_proxy(ins, ctx, host, port, protocol, metrics_uri);
     check_proxy(ins, ctx, host, port, protocol, logs_uri);
@@ -202,6 +319,8 @@ struct opentelemetry_context *flb_opentelemetry_context_create(
     ctx->host = ins->host.name;
     ctx->port = ins->host.port;
 
+
+    /* Logs Properties */
     if (logs_uri == NULL) {
         flb_plg_trace(ctx->ins,
                       "Could not allocate memory for sanitized "
@@ -209,6 +328,26 @@ struct opentelemetry_context *flb_opentelemetry_context_create(
     }
     else {
         ctx->logs_uri = logs_uri;
+    }
+
+    /* list of 'logs_body_key' */
+    ret = log_body_key_list_create(ctx);
+    if (ret != 0) {
+        flb_opentelemetry_context_destroy(ctx);
+        return NULL;
+    }
+
+    /*
+     * Add the pattern to the mp_accessor list: for every key that populates the log body, we need
+     * it also in the mp_accessor list so remaining keys are set into the metadata field.
+     *
+     * This process is far from being optimal since we are kind of duplicating the logic, however
+     * we can simply use the API already exists in place, let's optimize later (if needed).
+     */
+    ret = metadata_mp_accessor_create(ctx);
+    if (ret != 0) {
+        flb_opentelemetry_context_destroy(ctx);
+        return NULL;
     }
 
     if (traces_uri == NULL) {
@@ -244,8 +383,7 @@ struct opentelemetry_context *flb_opentelemetry_context_create(
     return ctx;
 }
 
-void flb_opentelemetry_context_destroy(
-    struct opentelemetry_context *ctx)
+void flb_opentelemetry_context_destroy(struct opentelemetry_context *ctx)
 {
     if (!ctx) {
         return;
@@ -255,6 +393,13 @@ void flb_opentelemetry_context_destroy(
 
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);
+    }
+
+    /* release log_body_key_list */
+    log_body_key_list_destroy(ctx);
+
+    if (ctx->mp_accessor) {
+        flb_mp_accessor_destroy(ctx->mp_accessor);
     }
 
     flb_free(ctx->proxy_host);

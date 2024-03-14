@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -76,6 +76,9 @@ struct flb_net_setup {
 
     /* prioritize ipv4 results when trying to establish a connection*/
     int   dns_prefer_ipv4;
+
+    /* prioritize ipv6 results when trying to establish a connection*/
+    int   dns_prefer_ipv6;
 
     /* maximum number of allowed active TCP connections */
     int max_worker_connections;

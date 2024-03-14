@@ -43,6 +43,35 @@ if (NOT DEFINED WAMR_BUILD_TARGET)
   endif ()
 endif ()
 
+string(TOUPPER ${WAMR_BUILD_TARGET} WAMR_BUILD_TARGET)
+
+# Add definitions for the build target
+if (WAMR_BUILD_TARGET STREQUAL "X86_64")
+  add_definitions(-DBUILD_TARGET_X86_64)
+elseif (WAMR_BUILD_TARGET STREQUAL "AMD_64")
+  add_definitions(-DBUILD_TARGET_AMD_64)
+elseif (WAMR_BUILD_TARGET STREQUAL "X86_32")
+  add_definitions(-DBUILD_TARGET_X86_32)
+elseif (WAMR_BUILD_TARGET MATCHES "AARCH64.*")
+  add_definitions(-DBUILD_TARGET_AARCH64)
+  add_definitions(-DBUILD_TARGET="${WAMR_BUILD_TARGET}")
+elseif (WAMR_BUILD_TARGET MATCHES "ARM.*")
+  add_definitions(-DBUILD_TARGET_ARM)
+  add_definitions(-DBUILD_TARGET="${WAMR_BUILD_TARGET}")
+elseif (WAMR_BUILD_TARGET STREQUAL "RISCV64" OR WAMR_BUILD_TARGET STREQUAL "RISCV64_LP64D")
+  add_definitions(-DBUILD_TARGET_RISCV64_LP64D)
+elseif (WAMR_BUILD_TARGET STREQUAL "RISCV64_LP64")
+  add_definitions(-DBUILD_TARGET_RISCV64_LP64)
+elseif (WAMR_BUILD_TARGET STREQUAL "RISCV32" OR WAMR_BUILD_TARGET STREQUAL "RISCV32_ILP32D")
+  add_definitions(-DBUILD_TARGET_RISCV32_ILP32D)
+elseif (WAMR_BUILD_TARGET STREQUAL "RISCV32_ILP32")
+  add_definitions(-DBUILD_TARGET_RISCV32_ILP32)
+else ()
+  message (FATAL_ERROR "-- Build target isn't set")
+endif ()
+
+message ("-- Build as target ${WAMR_BUILD_TARGET}")
+
 if (NOT CMAKE_BUILD_TYPE)
   set (CMAKE_BUILD_TYPE Release)
 endif ()
@@ -60,6 +89,9 @@ add_definitions(-DWASM_ENABLE_CUSTOM_NAME_SECTION=1)
 add_definitions(-DWASM_ENABLE_DUMP_CALL_STACK=1)
 add_definitions(-DWASM_ENABLE_PERF_PROFILING=1)
 add_definitions(-DWASM_ENABLE_LOAD_CUSTOM_SECTION=1)
+add_definitions(-DWASM_ENABLE_LIB_WASI_THREADS=1)
+add_definitions(-DWASM_ENABLE_MODULE_INST_CONTEXT=1)
+
 if (WAMR_BUILD_LLVM_LEGACY_PM EQUAL 1)
   add_definitions(-DWASM_ENABLE_LLVM_LEGACY_PM=1)
 endif()
@@ -148,10 +180,17 @@ if (LLVM_FOUND)
 
   enable_language (ASM)
 
+  if (NOT MINGW AND NOT MSVC)
+    set(WAMR_BUILD_LIBC_WASI 1)
+  else()
+    set(WAMR_BUILD_LIBC_UVWASI 1)
+  endif()
+
   include (${SHARED_DIR}/platform/${WAMR_BUILD_PLATFORM}/shared_platform.cmake)
   include (${SHARED_DIR}/mem-alloc/mem_alloc.cmake)
   include (${SHARED_DIR}/utils/shared_utils.cmake)
   include (${SHARED_DIR}/utils/uncommon/shared_uncommon.cmake)
+  include (${WAMR_ROOT_DIR}/core/shared/platform/common/libc-util/platform_common_libc_util.cmake)
   include (${IWASM_DIR}/libraries/thread-mgr/thread_mgr.cmake)
   include (${IWASM_DIR}/libraries/libc-builtin/libc_builtin.cmake)
   if (NOT MINGW)
@@ -162,6 +201,7 @@ if (LLVM_FOUND)
     endif()
   endif()
   include (${IWASM_DIR}/libraries/lib-pthread/lib_pthread.cmake)
+  include (${IWASM_DIR}/libraries/lib-wasi-threads/lib_wasi_threads.cmake)
   include (${IWASM_DIR}/common/iwasm_common.cmake)
   include (${IWASM_DIR}/interpreter/iwasm_interp.cmake)
   include (${IWASM_DIR}/aot/iwasm_aot.cmake)
@@ -176,11 +216,13 @@ if (LLVM_FOUND)
     ${LIBC_BUILTIN_SOURCE}
     ${LIBC_WASI_SOURCE}
     ${LIB_PTHREAD_SOURCE}
+    ${LIB_WASI_THREADS_SOURCE}
     ${IWASM_COMMON_SOURCE}
     ${IWASM_INTERP_SOURCE}
     ${IWASM_AOT_SOURCE})
   add_library (aotclib-static STATIC ${IWASM_COMPL_SOURCE})
   add_executable (flb-wamrc-bin ${WAMR_ROOT_DIR}/wamr-compiler/main.c)
+
   if (NOT MSVC)
     target_link_libraries (flb-wamrc-bin aotclib-static vmlib-wamrc-static LLVMDemangle ${LLVM_AVAILABLE_LIBS} ${lib_ubsan}
       -lm -lpthread ${lib_lldb} ${UV_A_LIBS})

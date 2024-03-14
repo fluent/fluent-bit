@@ -205,8 +205,12 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   REGISTER_IN_PLUGIN("in_netif")
   REGISTER_IN_PLUGIN("in_docker")
   REGISTER_IN_PLUGIN("in_docker_events")
-  REGISTER_IN_PLUGIN("in_node_exporter_metrics")
   REGISTER_IN_PLUGIN("in_podman_metrics")
+  REGISTER_IN_PLUGIN("in_process_exporter_metrics")
+endif()
+
+if(${CMAKE_SYSTEM_NAME} MATCHES "Linux" OR ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+  REGISTER_IN_PLUGIN("in_node_exporter_metrics")
 endif()
 
 REGISTER_IN_PLUGIN("in_kubernetes_events")
@@ -278,7 +282,7 @@ REGISTER_IN_PLUGIN("in_random")
 # PROCESSORS
 # ==========
 REGISTER_PROCESSOR_PLUGIN("processor_labels")
-REGISTER_PROCESSOR_PLUGIN("processor_attributes")
+REGISTER_PROCESSOR_PLUGIN("processor_content_modifier")
 
 # OUTPUTS
 # =======
@@ -304,6 +308,7 @@ REGISTER_OUT_PLUGIN("out_nats")
 REGISTER_OUT_PLUGIN("out_nrlogs")
 REGISTER_OUT_PLUGIN("out_null")
 REGISTER_OUT_PLUGIN("out_opensearch")
+REGISTER_OUT_PLUGIN("out_oracle_log_analytics")
 
 if (NOT CMAKE_SYSTEM_NAME MATCHES "Windows")
   REGISTER_OUT_PLUGIN("out_plot")
@@ -342,6 +347,7 @@ REGISTER_FILTER_PLUGIN("filter_checklist")
 REGISTER_FILTER_PLUGIN("filter_ecs")
 REGISTER_FILTER_PLUGIN("filter_encrypt")
 REGISTER_FILTER_PLUGIN("filter_record_modifier")
+REGISTER_FILTER_PLUGIN("filter_sysinfo")
 REGISTER_FILTER_PLUGIN("filter_throttle")
 REGISTER_FILTER_PLUGIN("filter_throttle_size")
 REGISTER_FILTER_PLUGIN("filter_tensorflow")

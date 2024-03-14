@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -28,6 +28,8 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_output.h>
 
+#include <fluent-bit/flb_hash.h>
+
 struct calyptia {
     /* config map options */
     flb_sds_t api_key;
@@ -35,6 +37,7 @@ struct calyptia {
     flb_sds_t cloud_host;
     flb_sds_t cloud_port;
     flb_sds_t machine_id;
+    int machine_id_auto_configured;
 
 /* used for reporting chunk trace records. */
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -125,6 +128,7 @@ flb_sds_t custom_calyptia_pipeline_config_get(struct flb_config *ctx)
     struct flb_output_instance *o_ins;
 
     buf = flb_sds_create_size(2048);
+
     if (!buf) {
         return NULL;
     }
@@ -134,9 +138,11 @@ flb_sds_t custom_calyptia_pipeline_config_get(struct flb_config *ctx)
         i_ins = mk_list_entry(head, struct flb_input_instance, _head);
         flb_sds_printf(&buf, "[INPUT]\n");
         flb_sds_printf(&buf, "    name %s\n", i_ins->name);
+
         if (i_ins->alias) {
             flb_sds_printf(&buf, "    alias %s\n", i_ins->alias);
         }
+
         if (i_ins->tag) {
             flb_sds_printf(&buf, "    tag %s\n", i_ins->tag);
         }
@@ -154,6 +160,7 @@ flb_sds_t custom_calyptia_pipeline_config_get(struct flb_config *ctx)
     /* Config: [FILTER] */
     mk_list_foreach(head, &ctx->filters) {
         f_ins = mk_list_entry(head, struct flb_filter_instance, _head);
+
         flb_sds_printf(&buf, "[FILTER]\n");
         flb_sds_printf(&buf, "    name  %s\n", f_ins->name);
         flb_sds_printf(&buf, "    match %s\n", f_ins->match);
@@ -165,8 +172,10 @@ flb_sds_t custom_calyptia_pipeline_config_get(struct flb_config *ctx)
     /* Config: [OUTPUT] */
     mk_list_foreach(head, &ctx->outputs) {
         o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+
         flb_sds_printf(&buf, "[OUTPUT]\n");
         flb_sds_printf(&buf, "    name  %s\n", o_ins->name);
+
         if (o_ins->match) {
             flb_sds_printf(&buf, "    match %s\n", o_ins->match);
         }
@@ -200,6 +209,7 @@ flb_sds_t custom_calyptia_pipeline_config_get(struct flb_config *ctx)
             }
         }
 #endif
+
         if (o_ins->retry_limit == FLB_OUT_RETRY_UNLIMITED) {
             flb_sds_printf(&buf, "    retry_limit no_limits\n");
         }
@@ -226,12 +236,13 @@ static struct flb_output_instance *setup_cloud_output(struct flb_config *config,
     int ret;
     struct flb_output_instance *cloud;
     struct mk_list *head;
-    struct flb_slist_entry *k = NULL;
-    struct flb_slist_entry *v = NULL;
-    flb_sds_t kv;
+    struct flb_slist_entry *key = NULL;
+    struct flb_slist_entry *val = NULL;
+    flb_sds_t label;
     struct flb_config_map_val *mv;
 
     cloud = flb_output_new(config, "calyptia", ctx, FLB_FALSE);
+
     if (!cloud) {
         flb_plg_error(ctx->ins, "could not load Calyptia Cloud connector");
         flb_free(ctx);
@@ -240,6 +251,7 @@ static struct flb_output_instance *setup_cloud_output(struct flb_config *config,
 
     /* direct connect / routing */
     ret = flb_router_connect_direct(ctx->i, cloud);
+
     if (ret != 0) {
         flb_plg_error(ctx->ins, "could not load Calyptia Cloud connector");
         flb_free(ctx);
@@ -247,24 +259,28 @@ static struct flb_output_instance *setup_cloud_output(struct flb_config *config,
     }
 
     if (ctx->add_labels && mk_list_size(ctx->add_labels) > 0) {
+
         /* iterate all 'add_label' definitions */
         flb_config_map_foreach(head, mv, ctx->add_labels) {
-            k = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
-            v = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
-            kv = flb_sds_create_size(strlen(k->str) + strlen(v->str) + 1);
-            if(!kv) {
+            key = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+            val = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
+
+            label = flb_sds_create_size(strlen(key->str) + strlen(val->str) + 1);
+
+            if (!label) {
                 flb_free(ctx);
                 return NULL;
             }
 
-            flb_sds_printf(&kv, "%s %s", k->str, v->str);
-            flb_output_set_property(cloud, "add_label", kv);
-            flb_sds_destroy(kv);
+            flb_sds_printf(&label, "%s %s", key->str, val->str);
+            flb_output_set_property(cloud, "add_label", label);
+            flb_sds_destroy(label);
         }
     }
 
     flb_output_set_property(cloud, "match", "_calyptia_cloud");
     flb_output_set_property(cloud, "api_key", ctx->api_key);
+
     if (ctx->store_path) {
         flb_output_set_property(cloud, "store_path", ctx->store_path);
     }
@@ -296,11 +312,81 @@ static struct flb_output_instance *setup_cloud_output(struct flb_config *config,
         flb_output_set_property(cloud, "tls.verify", "false");
     }
 
+    if (ctx->fleet_id) {
+        label = flb_sds_create_size(strlen("fleet_id") + strlen(ctx->fleet_id) + 1);
+
+        if (!label) {
+            flb_free(ctx);
+            return NULL;
+        }
+
+        flb_sds_printf(&label, "fleet_id %s", ctx->fleet_id);
+        flb_output_set_property(cloud, "add_label", label);
+        flb_sds_destroy(label);
+    }
+
 #ifdef FLB_HAVE_CHUNK_TRACE
     flb_output_set_property(cloud, "pipeline_id", ctx->pipeline_id);
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
     return cloud;
+}
+
+static flb_sds_t sha256_to_hex(unsigned char *sha256)
+{
+    int idx;
+    flb_sds_t hex;
+    flb_sds_t tmp;
+
+    hex = flb_sds_create_size(64);
+
+    if (!hex) {
+        return NULL;
+    }
+
+    for (idx = 0; idx < 32; idx++) {
+        tmp = flb_sds_printf(&hex, "%02x", sha256[idx]);
+
+        if (!tmp) {
+            flb_sds_destroy(hex);
+            return NULL;
+        }
+
+        hex = tmp;
+    }
+
+    flb_sds_len_set(hex, 64);
+    return hex;
+}
+
+static flb_sds_t get_machine_id(struct calyptia *ctx)
+{
+    int ret;
+    char *buf;
+    size_t blen;
+    unsigned char sha256_buf[64] = {0};
+
+    /* retrieve raw machine id */
+    ret = flb_utils_get_machine_id(&buf, &blen);
+
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "could not obtain machine id");
+        return NULL;
+    }
+
+    ret = flb_hash_simple(FLB_HASH_SHA256,
+                          (unsigned char *) buf,
+                          blen,
+                          sha256_buf,
+                          sizeof(sha256_buf));
+    flb_free(buf);
+
+    if (ret != FLB_CRYPTO_SUCCESS) {
+        return NULL;
+    }
+
+    /* convert to hex */
+    return sha256_to_hex(sha256_buf);
 }
 
 static int cb_calyptia_init(struct flb_custom_instance *ins,
@@ -309,9 +395,11 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
 {
     int ret;
     struct calyptia *ctx;
+    int is_fleet_mode;
     (void) data;
 
     ctx = flb_calloc(1, sizeof(struct calyptia));
+
     if (!ctx) {
         flb_errno();
         return -1;
@@ -320,6 +408,7 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
 
     /* Load the config map */
     ret = flb_custom_config_map_set(ins, (void *) ctx);
+
     if (ret == -1) {
         flb_free(ctx);
         return -1;
@@ -328,19 +417,43 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
     /* map instance and local context */
     flb_custom_set_context(ins, ctx);
 
+    /* If no machine_id has been provided via a configuration option get it from the local machine-id. */
+    if (!ctx->machine_id) {
+        /* machine id */
+        ctx->machine_id = get_machine_id(ctx);
+
+        if (ctx->machine_id == NULL) {
+            flb_plg_error(ctx->ins, "unable to retrieve machine_id");
+            return -1;
+        }
+
+        ctx->machine_id_auto_configured = 1;
+    }
+
     /* input collector */
     ctx->i = flb_input_new(config, "fluentbit_metrics", NULL, FLB_TRUE);
+
     if (!ctx->i) {
         flb_plg_error(ctx->ins, "could not load metrics collector");
         return -1;
     }
+
     flb_input_set_property(ctx->i, "tag", "_calyptia_cloud");
     flb_input_set_property(ctx->i, "scrape_on_start", "true");
     flb_input_set_property(ctx->i, "scrape_interval", "30");
 
+    if (ctx->fleet_name || ctx->fleet_id) {
+        is_fleet_mode = FLB_TRUE;
+    }
+    else {
+        is_fleet_mode = FLB_FALSE;
+    }
+
     /* output cloud connector */
-    if (ctx->fleet_id != NULL) {
+    if ((is_fleet_mode == FLB_TRUE && ctx->fleet_id != NULL) ||
+        (is_fleet_mode == FLB_FALSE)) {
         ctx->o = setup_cloud_output(config, ctx);
+
         if (ctx->o == NULL) {
             return -1;
         }
@@ -348,16 +461,17 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
 
     if (ctx->fleet_id || ctx->fleet_name) {
         ctx->fleet =  flb_input_new(config, "calyptia_fleet", NULL, FLB_FALSE);
+
         if (!ctx->fleet) {
             flb_plg_error(ctx->ins, "could not load Calyptia Fleet plugin");
             return -1;
         }
 
         if (ctx->fleet_name) {
-            // TODO: set this once the fleet_id has been retrieved...
-            // flb_output_set_property(ctx->o, "fleet_id", ctx->fleet_id);
             flb_input_set_property(ctx->fleet, "fleet_name", ctx->fleet_name);            
-        } else {
+        }
+
+        if (ctx->fleet_id) {
             flb_output_set_property(ctx->o, "fleet_id", ctx->fleet_id);
             flb_input_set_property(ctx->fleet, "fleet_id", ctx->fleet_id);
         }
@@ -365,18 +479,27 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
         flb_input_set_property(ctx->fleet, "api_key", ctx->api_key);
         flb_input_set_property(ctx->fleet, "host", ctx->cloud_host);
         flb_input_set_property(ctx->fleet, "port", ctx->cloud_port);
+
         if (ctx->cloud_tls == 1) {
             flb_input_set_property(ctx->fleet, "tls", "on");
-        } else {
+        }
+        else {
             flb_input_set_property(ctx->fleet, "tls", "off");
         }
+
         if (ctx->cloud_tls_verify == 1) {
             flb_input_set_property(ctx->fleet, "tls.verify", "on");
-        } else {
+        }
+        else {
             flb_input_set_property(ctx->fleet, "tls.verify", "off");
         }
+
         if (ctx->fleet_config_dir) {
             flb_input_set_property(ctx->fleet, "config_dir", ctx->fleet_config_dir);
+        }
+
+        if (ctx->machine_id) {
+            flb_input_set_property(ctx->fleet, "machine_id", ctx->machine_id);
         }
     }
 
@@ -393,6 +516,10 @@ static int cb_calyptia_exit(void *data, struct flb_config *config)
 
     if (!ctx) {
         return 0;
+    }
+
+    if (ctx->machine_id && ctx->machine_id_auto_configured) {
+        flb_sds_destroy(ctx->machine_id);
     }
 
     flb_free(ctx);

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -434,6 +434,13 @@ static int tls_net_read(struct flb_tls_session *session,
             ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
             flb_error("[tls] syscall error: %s", err_buf);
 
+            /* According to the documentation these are non-recoverable
+             * errors so we don't need to screen them before saving them
+             * to the net_error field.
+             */
+
+            session->connection->net_error = errno;
+
             ret = -1;
         }
         else if (ret < 0) {
@@ -488,6 +495,13 @@ static int tls_net_write(struct flb_tls_session *session,
             flb_errno();
             ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
             flb_error("[tls] syscall error: %s", err_buf);
+
+            /* According to the documentation these are non-recoverable
+             * errors so we don't need to screen them before saving them
+             * to the net_error field.
+             */
+
+            session->connection->net_error = errno;
 
             ret = -1;
         }

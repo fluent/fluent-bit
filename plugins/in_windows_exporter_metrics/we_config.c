@@ -42,6 +42,8 @@ struct flb_we *flb_we_config_create(struct flb_input_instance *ins,
     ctx->service_include_buffer_size = 0;
     ctx->service_exclude_buffer = NULL;
     ctx->service_exclude_buffer_size = 0;
+    ctx->allowing_process_regex = NULL;
+    ctx->denying_process_regex = NULL;
 
     /* Load the config map */
     ret = flb_input_config_map_set(ins, (void *) ctx);
@@ -91,6 +93,15 @@ struct flb_we *flb_we_config_create(struct flb_input_instance *ins,
         }
     }
 
+    /* Process allow/deny regex rules for process metrics */
+    if (ctx->raw_allowing_process != NULL) {
+        ctx->allowing_process_regex = flb_regex_create(ctx->raw_allowing_process);
+    }
+
+    if (ctx->raw_denying_process != NULL) {
+        ctx->denying_process_regex = flb_regex_create(ctx->raw_denying_process);
+    }
+
     ctx->cmt = cmt_create();
     if (!ctx->cmt) {
         flb_plg_error(ins, "could not initialize CMetrics");
@@ -125,6 +136,14 @@ void flb_we_config_destroy(struct flb_we *ctx)
 
     if (ctx->service_exclude_buffer != NULL) {
         flb_free(ctx->service_exclude_buffer);
+    }
+
+    if (ctx->allowing_process_regex != NULL) {
+        flb_regex_destroy(ctx->allowing_process_regex);
+    }
+
+    if (ctx->denying_disk_regex != NULL) {
+        flb_regex_destroy(ctx->denying_disk_regex);
     }
 
     if (ctx->cmt) {

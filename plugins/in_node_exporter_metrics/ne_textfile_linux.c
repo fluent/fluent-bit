@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -175,7 +175,7 @@ static int textfile_update(struct flb_ne *ctx)
     return 0;
 }
 
-int ne_textfile_init(struct flb_ne *ctx)
+static int ne_textfile_init(struct flb_ne *ctx)
 {
     ctx->load_errors = cmt_counter_create(ctx->cmt,
                                           "node",
@@ -191,14 +191,23 @@ int ne_textfile_init(struct flb_ne *ctx)
     return 0;
 }
 
-int ne_textfile_update(struct flb_ne *ctx)
+static int ne_textfile_update(struct flb_input_instance *ins, struct flb_config *config, void *in_context)
 {
+    struct flb_ne *ctx = (struct flb_ne *)in_context;
+
     textfile_update(ctx);
 
     return 0;
 }
 
-int ne_textfile_exit(struct flb_ne *ctx)
+static int ne_textfile_exit(struct flb_ne *ctx)
 {
     return 0;
 }
+
+struct flb_ne_collector textfile_collector = {
+    .name = "textfile",
+    .cb_init = ne_textfile_init,
+    .cb_update = ne_textfile_update,
+    .cb_exit = ne_textfile_exit
+};

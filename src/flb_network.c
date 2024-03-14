@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -48,6 +48,14 @@
 
 #include <monkey/mk_core.h>
 #include <ares.h>
+
+#ifdef FLB_SYSTEM_MACOS
+#ifdef _GNU_SOURCE
+#undef _GNU_SOURCE
+#endif
+/* Use POSIX version of strerror_r forcibly on macOS. */
+#include <string.h>
+#endif
 
 #ifndef SOL_TCP
 #define SOL_TCP IPPROTO_TCP
@@ -104,6 +112,7 @@ void flb_net_setup_init(struct flb_net_setup *net)
     net->dns_mode = NULL;
     net->dns_resolver = NULL;
     net->dns_prefer_ipv4 = FLB_FALSE;
+    net->dns_prefer_ipv6 = FLB_FALSE;
     net->keepalive = FLB_TRUE;
     net->keepalive_idle_timeout = 30;
     net->keepalive_max_recycle = 0;
@@ -523,7 +532,20 @@ static int net_connect_async(int fd,
             }
 
             /* Connection is broken, not much to do here */
+#if ((defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L) ||    \
+     (defined(_XOPEN_SOURCE) || _XOPEN_SOURCE - 0L >= 600L)) &&     \
+  (!defined(_GNU_SOURCE))
+            ret = strerror_r(error, so_error_buf, sizeof(so_error_buf));
+            if (ret == 0) {
+                str = so_error_buf;
+            }
+            else {
+                flb_errno();
+                return -1;
+            }
+#else
             str = strerror_r(error, so_error_buf, sizeof(so_error_buf));
+#endif
             flb_error("[net] TCP connection failed: %s:%i (%s)",
                       u->tcp_host, u->tcp_port, str);
             return -1;
@@ -1268,7 +1290,23 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         sorted_res = flb_net_sort_addrinfo_list(res, AF_INET);
 
         if (sorted_res == NULL) {
-            flb_debug("[net] error sorting getaddrinfo results");
+            flb_debug("[net] error sorting ipv4 getaddrinfo results");
+
+            if (use_async_dns) {
+                flb_net_free_translated_addrinfo(res);
+            }
+            else {
+                freeaddrinfo(res);
+            }
+
+            return -1;
+        }
+    }
+    else if (u_conn->net->dns_prefer_ipv6) {
+        sorted_res = flb_net_sort_addrinfo_list(res, AF_INET6);
+
+        if (sorted_res == NULL) {
+            flb_debug("[net] error sorting ipv6 getaddrinfo results");
 
             if (use_async_dns) {
                 flb_net_free_translated_addrinfo(res);

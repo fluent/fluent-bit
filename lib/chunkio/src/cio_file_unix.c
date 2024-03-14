@@ -497,45 +497,65 @@ int cio_file_native_sync(struct cio_file *cf, int sync_mode)
 
 int cio_file_native_resize(struct cio_file *cf, size_t new_size)
 {
+    int fallocate_available;
     int result;
 
     result = -1;
+
+#if defined(CIO_HAVE_FALLOCATE) || defined(CIO_HAVE_POSIX_FALLOCATE)
+    fallocate_available = CIO_TRUE;
+#else
+    fallocate_available = CIO_FALSE;
+#endif
 
     /*
      * fallocate() is not portable an Linux only. Since macOS does not have
      * fallocate() we use ftruncate().
      */
-#if defined(CIO_HAVE_FALLOCATE)
-    if (new_size > cf->alloc_size) {
+    if (fallocate_available && new_size > cf->fs_size) {
         retry:
 
-        if (cf->allocate_strategy == CIO_FILE_LINUX_FALLOCATE) {
-            /*
-             * To increase the file size we use fallocate() since this option
-             * will send a proper ENOSPC error if the file system ran out of
-             * space. ftruncate() will not fail and upon memcpy() over the
-             * mmap area it will trigger a 'Bus Error' crashing the program.
-             *
-             * fallocate() is not portable, Linux only.
-             */
-            result = fallocate(cf->fd, 0, 0, new_size);
-            if (result == -1 && errno == EOPNOTSUPP) {
-                /*
-                 * If fallocate fails with an EOPNOTSUPP try operation using
-                 * posix_fallocate. Required since some filesystems do not support
-                 * the fallocate operation e.g. ext3 and reiserfs.
-                 */
-                cf->allocate_strategy = CIO_FILE_LINUX_POSIX_FALLOCATE;
-                goto retry;
-            }
-        }
-        else if (cf->allocate_strategy == CIO_FILE_LINUX_POSIX_FALLOCATE) {
+       if (cf->allocate_strategy == CIO_FILE_LINUX_FALLOCATE) {
+           /*
+            * To increase the file size we use fallocate() since this option
+            * will send a proper ENOSPC error if the file system ran out of
+            * space. ftruncate() will not fail and upon memcpy() over the
+            * mmap area it will trigger a 'Bus Error' crashing the program.
+            *
+            * fallocate() is not portable, Linux only.
+            */
+#if defined(CIO_HAVE_FALLOCATE)
+           result = fallocate(cf->fd, 0, 0, new_size);
+
+#elif defined(CIO_HAVE_POSIX_FALLOCATE)
+           result = -1;
+           errno = EOPNOTSUPP;
+#endif
+
+           if (result == -1 && errno == EOPNOTSUPP) {
+               /*
+                * If fallocate fails with an EOPNOTSUPP try operation using
+                * posix_fallocate. Required since some filesystems do not support
+                * the fallocate operation e.g. ext3 and reiserfs.
+                */
+               cf->allocate_strategy = CIO_FILE_LINUX_POSIX_FALLOCATE;
+               goto retry;
+           }
+       }
+       else if (cf->allocate_strategy == CIO_FILE_LINUX_POSIX_FALLOCATE) {
+#if defined(CIO_HAVE_POSIX_FALLOCATE)
             result = posix_fallocate(cf->fd, 0, new_size);
-        }
+#else
+            goto fallback;
+#endif
+       }
     }
     else
-#endif
     {
+#if !defined(CIO_HAVE_POSIX_FALLOCATE)
+        fallback:
+#endif
+
         result = ftruncate(cf->fd, new_size);
     }
 

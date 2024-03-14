@@ -25,6 +25,11 @@
 # Helper function to get the language of a source file.
 function (sanitizer_lang_of_source FILE RETURN_VAR)
     get_filename_component(LONGEST_EXT "${FILE}" EXT)
+    # If extension is empty return. This can happen for extensionless headers
+    if("${LONGEST_EXT}" STREQUAL "")
+       set(${RETURN_VAR} "" PARENT_SCOPE)
+       return()
+    endif()
     # Get shortest extension as some files can have dot in their names
     string(REGEX REPLACE "^.*(\\.[^.]+)$" "\\1" FILE_EXT ${LONGEST_EXT})
     string(TOLOWER "${FILE_EXT}" FILE_EXT)
@@ -70,6 +75,7 @@ endfunction ()
 
 # Helper function to check compiler flags for language compiler.
 function (sanitizer_check_compiler_flag FLAG LANG VARIABLE)
+
     if (${LANG} STREQUAL "C")
         include(CheckCCompilerFlag)
         check_c_compiler_flag("${FLAG}" ${VARIABLE})
@@ -92,6 +98,7 @@ function (sanitizer_check_compiler_flag FLAG LANG VARIABLE)
                 " - Failed (Check not supported)")
         endif ()
     endif()
+
 endfunction ()
 
 
@@ -105,7 +112,7 @@ function (sanitizer_check_compiler_flags FLAG_CANDIDATES NAME PREFIX)
         # So instead of searching flags foreach language, search flags foreach
         # compiler used.
         set(COMPILER ${CMAKE_${LANG}_COMPILER_ID})
-        if (NOT DEFINED ${PREFIX}_${COMPILER}_FLAGS)
+        if (COMPILER AND NOT DEFINED ${PREFIX}_${COMPILER}_FLAGS)
             foreach (FLAG ${FLAG_CANDIDATES})
                 if(NOT CMAKE_REQUIRED_QUIET)
                     message(STATUS "Try ${COMPILER} ${NAME} flag = [${FLAG}]")
@@ -162,11 +169,10 @@ function (sanitizer_add_flags TARGET NAME PREFIX)
         return()
     endif()
 
-    # Set compile- and link-flags for target.
-    set_property(TARGET ${TARGET} APPEND_STRING
-        PROPERTY COMPILE_FLAGS " ${${PREFIX}_${TARGET_COMPILER}_FLAGS}")
-    set_property(TARGET ${TARGET} APPEND_STRING
-        PROPERTY COMPILE_FLAGS " ${SanBlist_${TARGET_COMPILER}_FLAGS}")
-    set_property(TARGET ${TARGET} APPEND_STRING
-        PROPERTY LINK_FLAGS " ${${PREFIX}_${TARGET_COMPILER}_FLAGS}")
+    separate_arguments(flags_list UNIX_COMMAND "${${PREFIX}_${TARGET_COMPILER}_FLAGS} ${SanBlist_${TARGET_COMPILER}_FLAGS}")
+    target_compile_options(${TARGET} PUBLIC ${flags_list})
+
+    separate_arguments(flags_list UNIX_COMMAND "${${PREFIX}_${TARGET_COMPILER}_FLAGS}")
+    target_link_options(${TARGET} PUBLIC ${flags_list})
+
 endfunction ()

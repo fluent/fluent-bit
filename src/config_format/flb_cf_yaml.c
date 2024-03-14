@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2022 The Fluent Bit Authors
+ *  Copyright (C) 2015-2024 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -429,7 +429,7 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
     for (idx = 0; idx < glb.gl_pathc; idx++) {
         ret = read_config(conf, ctx, state->file, glb.gl_pathv[idx]);
 
-    if (ret < 0) {
+        if (ret < 0) {
             break;
         }
     }
@@ -546,7 +546,7 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
 static void print_current_state(struct local_ctx *ctx, struct parser_state *state,
                                 yaml_event_t *event)
 {
-    flb_error("%*s%s->%s", state->level*2, "", state_str(state->state),
+    flb_debug("%*s%s->%s", state->level*2, "", state_str(state->state),
              event_type_str(event));
 }
 
@@ -557,21 +557,21 @@ static void print_current_properties(struct parser_state *state)
     struct cfl_variant *var;
     int idx;
 
-    flb_error("%*s[%s] PROPERTIES:", state->level*2, "", section_names[state->section]);
+    flb_debug("%*s[%s] PROPERTIES:", state->level*2, "", section_names[state->section]);
 
     cfl_list_foreach(head, &state->keyvals->list) {
         prop = cfl_list_entry(head, struct cfl_kvpair, _head);
         switch (prop->val->type) {
         case CFL_VARIANT_STRING:
-            flb_error("%*s%s: %s", (state->level+2)*2, "", prop->key, prop->val->data.as_string);
+            flb_debug("%*s%s: %s", (state->level+2)*2, "", prop->key, prop->val->data.as_string);
             break;
         case CFL_VARIANT_ARRAY:
-            flb_error("%*s%s: [", (state->level+2)*2, "", prop->key);
+            flb_debug("%*s%s: [", (state->level+2)*2, "", prop->key);
             for (idx = 0; idx < prop->val->data.as_array->entry_count; idx++) {
                 var = cfl_array_fetch_by_index(prop->val->data.as_array, idx);
-                flb_error("%*s%s", (state->level+3)*2, "", var->data.as_string);
+                flb_debug("%*s%s", (state->level+3)*2, "", var->data.as_string);
             }
-            flb_error("%*s]", (state->level+2)*2, "");
+            flb_debug("%*s]", (state->level+2)*2, "");
             break;
         }
     }
@@ -648,11 +648,12 @@ static enum status state_copy_into_config_group(struct parser_state *state, stru
         case CFL_VARIANT_ARRAY:
             carr = cfl_array_create(kvp->val->data.as_array->entry_count);
 
-            if (carr) {
+            if (carr == NULL) {
                 flb_error("unable to allocate array");
                 cfl_kvlist_destroy(copy);
                 return YAML_FAILURE;
             }
+
             for (idx = 0; idx < kvp->val->data.as_array->entry_count; idx++) {
                 var = cfl_array_fetch_by_index(kvp->val->data.as_array, idx);
 
@@ -877,7 +878,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             break;
         case YAML_SCALAR_EVENT:
             value = (char *) event->data.scalar.value;
-            flb_error("[config yaml] including: %s", value);
+            flb_debug("[config yaml] including: %s", value);
 
             if (strchr(value, '*') != NULL) {
                 ret = read_glob(conf, ctx, state, value);
@@ -1285,13 +1286,13 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             break;
         case YAML_SEQUENCE_START_EVENT: /* start a new group */
 
-            if (strcmp(state->key, "processors") == 0) {
-                yaml_error_event(ctx, state, event);
+            if (state->key == NULL) {
+                flb_error("no key");
                 return YAML_FAILURE;
             }
 
-            if (state->key == NULL) {
-                flb_error("no key");
+            if (strcmp(state->key, "processors") == 0) {
+                yaml_error_event(ctx, state, event);
                 return YAML_FAILURE;
             }
 
@@ -1933,10 +1934,16 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
             return -1;
         }
 
-        if (flb_sds_printf(&include_dir, "%s/%s", parent->path, cfg_file) == NULL) {
+#ifdef _WIN32
+#define PATH_CONCAT_TEMPLATE "%s\\%s"
+#else
+#define PATH_CONCAT_TEMPLATE "%s/%s"
+#endif
+        if (flb_sds_printf(&include_dir, PATH_CONCAT_TEMPLATE, parent->path, cfg_file) == NULL) {
             flb_error("unable to create full filename");
             return -1;
         }
+#undef PATH_CONCAT_TEMPLATE
 
     }
     else {
@@ -1982,7 +1989,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
         return -1;
     }
 
-    flb_error("============ %s ============", cfg_file);
+    flb_debug("============ %s ============", cfg_file);
     fh = fopen(include_file, "r");
 
     if (!fh) {
@@ -2031,7 +2038,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
 
     } while (state->state != STATE_STOP);
 
-    flb_error("==============================");
+    flb_debug("==============================");
 done:
 
     if (code == -1) {
@@ -2039,7 +2046,14 @@ done:
     }
 
     yaml_parser_delete(&parser);
-    state_pop(ctx);
+
+    /* free all remaining states */
+    if (code == -1) {
+        while (state = state_pop(ctx));
+    }
+    else {
+        state = state_pop(ctx);
+    }
 
     fclose(fh);
     ctx->level--;
@@ -2074,10 +2088,11 @@ struct flb_cf *flb_cf_yaml_create(struct flb_cf *conf, char *file_path,
 
     if (!conf) {
         conf = flb_cf_create();
-
         if (!conf) {
             return NULL;
         }
+
+        flb_cf_set_origin_format(conf, FLB_CF_YAML);
     }
 
     /* initialize the parser state */

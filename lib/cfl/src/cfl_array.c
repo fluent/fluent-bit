@@ -2,7 +2,7 @@
 
 /*  CFL
  *  ===
- *  Copyright (C) 2022 The CFL Authors
+ *  Copyright (C) 2022-2024 The CFL Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -261,6 +261,27 @@ int cfl_array_append_int64(struct cfl_array *array, int64_t value)
     return 0;
 }
 
+int cfl_array_append_uint64(struct cfl_array *array, uint64_t value)
+{
+    struct cfl_variant *value_instance;
+    int                 result;
+
+    value_instance = cfl_variant_create_from_uint64(value);
+
+    if (value_instance == NULL) {
+        return -1;
+    }
+
+    result = cfl_array_append(array, value_instance);
+
+    if (result) {
+        cfl_variant_destroy(value_instance);
+        return -2;
+    }
+
+    return 0;
+}
+
 
 int cfl_array_append_double(struct cfl_array *array, double value)
 {
@@ -284,6 +305,24 @@ int cfl_array_append_double(struct cfl_array *array, double value)
     return 0;
 }
 
+int cfl_array_append_null(struct cfl_array *array)
+{
+    struct cfl_variant *value_instance;
+    int                 result;
+
+    value_instance = cfl_variant_create_from_null();
+    if (value_instance == NULL) {
+        return -1;
+    }
+
+    result = cfl_array_append(array, value_instance);
+    if (result) {
+        cfl_variant_destroy(value_instance);
+        return -2;
+    }
+
+    return 0;
+}
 
 int cfl_array_append_array(struct cfl_array *array, struct cfl_array *value)
 {
@@ -326,8 +365,7 @@ int cfl_array_append_new_array(struct cfl_array *array, size_t size)
     return result;
 }
 
-int cfl_array_append_kvlist(struct cfl_array *array, struct 
-cfl_kvlist *value)
+int cfl_array_append_kvlist(struct cfl_array *array, struct cfl_kvlist *value)
 {
     struct cfl_variant *value_instance;
     int                 result;
