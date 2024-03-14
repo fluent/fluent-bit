@@ -55,6 +55,9 @@ include(GNUInstallDirs)
 # For documentation
 find_package(Python3 COMPONENTS Interpreter)
 
+set(OPENSSL_USE_STATIC_LIBS ON)
+set(OPENSSL_MSVC_STATIC_RT  ON)
+
 # Auto-detection of features that can be toggled
 find_package(OpenSSL 1.0.1)
 find_package(Libev 4.11)
@@ -89,8 +92,6 @@ set(WITH_LIBXML2_DEFAULT    ${LIBXML2_FOUND})
 find_package(Jemalloc)
 set(WITH_JEMALLOC_DEFAULT   ${JEMALLOC_FOUND})
 
-set(OPENSSL_USE_STATIC_LIBS ON)
-set(OPENSSL_MSVC_STATIC_RT  ON)
 
 include(CMakeOptions.txt)
 
