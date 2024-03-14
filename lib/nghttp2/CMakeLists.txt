@@ -56,9 +56,7 @@ include(GNUInstallDirs)
 find_package(Python3 COMPONENTS Interpreter)
 
 # Auto-detection of features that can be toggled
-find_package(OpenSSL 1.0.1
-             PATHS ${OPENSSL_ROOT_DIR})
-             
+find_package(OpenSSL 1.0.1)
 find_package(Libev 4.11)
 find_package(Libcares 1.7.5)
 find_package(ZLIB 1.2.3)
@@ -90,6 +88,9 @@ find_package(LibXml2 2.6.26)
 set(WITH_LIBXML2_DEFAULT    ${LIBXML2_FOUND})
 find_package(Jemalloc)
 set(WITH_JEMALLOC_DEFAULT   ${JEMALLOC_FOUND})
+
+set(OPENSSL_USE_STATIC_LIBS ON)
+set(OPENSSL_MSVC_STATIC_RT  ON)
 
 include(CMakeOptions.txt)
 
