@@ -56,7 +56,7 @@ include(GNUInstallDirs)
 find_package(Python3 COMPONENTS Interpreter)
 
 # Auto-detection of features that can be toggled
-find_package(OpenSSL 1.0.1)
+find_package(OpenSSL)
 find_package(Libev 4.11)
 find_package(Libcares 1.7.5)
 find_package(ZLIB 1.2.3)
