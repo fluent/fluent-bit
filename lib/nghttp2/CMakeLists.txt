@@ -52,6 +52,10 @@ endif()
 
 include(GNUInstallDirs)
 
+# This is necessary to ensure that we link openssl statically
+set(OPENSSL_USE_STATIC_LIBS ON)
+set(OPENSSL_MSVC_STATIC_RT  ON)
+
 # For documentation
 find_package(Python3 COMPONENTS Interpreter)
 
