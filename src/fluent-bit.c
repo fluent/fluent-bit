@@ -604,8 +604,8 @@ static void flb_signal_handler(int signal)
     case SIGCONT:
         flb_dump(ctx->config);
         break;
-    case SIGHUP:
 #ifndef FLB_HAVE_STATIC_CONF
+    case SIGHUP:
         if (flb_bin_restarting == FLB_RELOAD_IDLE) {
             flb_bin_restarting = FLB_RELOAD_IN_PROGRESS;
         }
