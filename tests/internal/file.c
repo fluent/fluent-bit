@@ -8,6 +8,9 @@
 #define TEXT_FILE    FLB_TESTS_DATA_PATH "/data/file/text_file.txt"
 #define EMPTY_FILE    FLB_TESTS_DATA_PATH "/data/file/empty_file.txt"
 
+#define NEWLINE "\n"
+#define CRNEWLINE "\r\n"
+
 static void check_equals(flb_sds_t result, const char *expected)
 {
     size_t expected_len = strlen(expected);
@@ -23,7 +26,13 @@ static void check_equals(flb_sds_t result, const char *expected)
 static void test_file_read_text_file()
 {
     flb_sds_t result = flb_file_read(TEXT_FILE);
-    check_equals(result, "Some text file\n\nline 3\n\nline 5\n");
+    /* In Windows, \n is replaced with \r\n by git settings. */
+    if (strstr(result, "\r\n") != NULL) {
+      check_equals(result, "Some text file\r\n\r\nline 3\r\n\r\nline 5\r\n");
+    }
+    else {
+      check_equals(result, "Some text file\n\nline 3\n\nline 5\n");
+    }
     flb_sds_destroy(result);
 }
 
